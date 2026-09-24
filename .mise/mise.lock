@@ -151,10 +151,10 @@ url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/56
 provenance = "github-attestations"
 
 [[tools.oxfmt]]
-version = "0.69.0"
-aube = { path = "locks/oxfmt/0.69.0", digest = "sha256:4217838399cff2e650dd06da4cb3f0a1a230d9124729e2b1c1532bbad895b170" }
+version = "0.70.0"
+aube = { path = "locks/oxfmt/0.70.0", digest = "sha256:6f43444e29a288a4c8eaae0fd4842397419f6bde12beb04d2be2216a275f96e2" }
 backend = "npm:oxfmt"
-specifiers = ["0.69.0"]
+specifiers = ["0.70.0"]
 
 [[tools.yq]]
 version = "4.53.6"
