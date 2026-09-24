@@ -8,7 +8,7 @@ require (
 	github.com/KimMachineGun/automemlimit v1.0.0
 	github.com/bmatcuk/doublestar/v4 v4.10.2
 	github.com/caarlos0/env/v11 v11.4.1
-	github.com/go-git/go-billy/v5 v5.9.0
+	github.com/go-git/go-billy/v5 v5.9.1
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-github/v92 v92.0.0
