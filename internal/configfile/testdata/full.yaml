@@ -1,0 +1,64 @@
+providers:
+  openrouter:
+    type: openrouter
+    apiKey: { env: TEST_OPENROUTER_API_KEY }
+  local:
+    type: openai
+    baseUrl: http://litellm.ai.svc:4000/v1
+    apiKey: { file: __DIR__/local-key }
+
+defaults:
+  models:
+    review: openrouter/openai/gpt-6-sol
+    fallback: local/claude-sonnet-5
+  filter: "!pr.draft"
+  forks: false
+  limits:
+    concurrency: 3
+
+retention:
+  disabledIndexGrace: 720h
+
+tenants:
+  - slug: home-operations
+    runner:
+      resources: { limits: { cpu: "2", memory: 4Gi } }
+      activeDeadlineSeconds: 900
+    installations:
+      - name: sticky-gecko
+        forge: github
+        account: home-operations
+        app:
+          clientId: Iv1.xxxxxxxx
+          privateKey: { file: __DIR__/private-key.pem }
+          webhookSecret: { env: TEST_WEBHOOK_SECRET }
+    limits:
+      reviewsPerDay: 200
+    repositories:
+      - name: home-operations/flate
+        konflate: https://konflate.example.org
+        ignore:
+          - "**/testdata/**"
+      - name: home-operations/kopiur
+        filter: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
+      - name: home-operations/charts-mirror
+        enabled: false
+
+  - slug: onedr0p
+    installations:
+      - name: bot-ross
+        forge: github
+        account: onedr0p
+        app:
+          clientIdFrom: { env: TEST_CLIENT_ID }
+          privateKey: { file: __DIR__/private-key.pem }
+          webhookSecret: { env: TEST_WEBHOOK_SECRET }
+      - name: onedr0p-forgejo
+        forge: forgejo
+        host: git.example.org
+        account: onedr0p
+        token: { env: TEST_FORGEJO_TOKEN }
+        webhookSecret: { env: TEST_WEBHOOK_SECRET }
+    models:
+      review: local/claude-opus-5
+    forks: true

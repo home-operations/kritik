@@ -1,0 +1,8 @@
+suite: configmap without a file
+templates:
+  - configmap.tpl
+tests:
+  - it: fails without a file or an existing ConfigMap
+    asserts:
+      - failedTemplate:
+          errorPattern: config.file is required

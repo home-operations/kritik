@@ -1,0 +1,328 @@
+---
+# Default values for kritik.
+#
+# Most string, list and map values below are rendered through Helm's `tpl`, so
+# they may carry template expressions that resolve at install time, e.g.
+#   ingress.hosts[0].host: kritik.{{ .Values.global.domain }}
+# Plain numbers and booleans, and `config.file`, are passed through as they are.
+
+image:
+  # -- Image repository.
+  repository: ghcr.io/home-operations/kritik
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag; defaults to the chart appVersion.
+  tag: ""
+  # -- Pin the image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published image's digest.
+  digest: ""
+
+# -- Image pull secrets for private registries.
+imagePullSecrets: []
+# -- Override the chart name used in resource names.
+nameOverride: ""
+# -- Override the full release name.
+fullnameOverride: ""
+
+# kritik is one binary with three roles. `all` runs ingest and worker in one
+# process (the usual shape); a split topology enables `ingest` and `worker`
+# separately and scales each. Every enabled role renders its own Deployment
+# from the same image, config and secrets. Runner pods are not a role here:
+# the worker creates them as Jobs per review and index.
+roles:
+  all:
+    # -- Run the single-process topology: webhooks, leader duties and the worker in one Deployment.
+    enabled: true
+    # -- Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time.
+    replicas: 1
+    # -- Resources for this role's pods; empty falls back to `resources`.
+    resources: {}
+  ingest:
+    # -- Run webhook ingest as its own Deployment (split topology).
+    enabled: false
+    # -- Replicas for the ingest Deployment.
+    replicas: 2
+    # -- Resources for this role's pods; empty falls back to `resources`.
+    resources: {}
+  worker:
+    # -- Run the worker (queues, runner Jobs, leader duties) as its own Deployment (split topology).
+    enabled: false
+    # -- Replicas for the worker Deployment.
+    replicas: 1
+    # -- Resources for this role's pods; empty falls back to `resources`.
+    resources: {}
+
+# The declarative configuration file (providers, defaults, tenants with their
+# installations and repositories). Either inline as `file`, rendered into a
+# chart-managed ConfigMap, or an existing ConfigMap with a `config.yaml` key.
+# Secret material never goes in the file: it references files under
+# `secretMounts` or environment variables. Every replica re-reads the file on
+# `reloadInterval`; the leader applies it to the store.
+config:
+  # -- (required unless `existingConfigMap` is set) The configuration file, as YAML. Passed through verbatim, not tpl'd. See the README for the schema.
+  file: {}
+  # -- Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`.
+  existingConfigMap: ""
+  # -- How often each replica re-reads the file (Go duration).
+  reloadInterval: 10s
+  # -- Log level: debug, info, warn or error.
+  logLevel: info
+  # -- Log format: json or text.
+  logFormat: json
+  # -- Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count.
+  reviewWorkers: 2
+  # -- Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews.
+  indexWorkers: 1
+  # -- How often the leader lists each installation's open pull requests as a backstop for missed webhooks (Go duration); "0" disables.
+  pollInterval: 10m
+  # -- How far back a first or long-idle poll looks (Go duration).
+  pollLookback: 24h
+  # -- Extra raw env vars merged into every role's container (advanced).
+  extraEnv: []
+  # - name: KRITIK_LEADER_RETRY_INTERVAL
+  #   value: 30s
+
+# Three Postgres connection strings, each from its own Secret. The
+# application role must not own the tables (row-level security), the owner
+# role runs migrations and applies configuration on the leader, and the
+# runner role is handed to runner Jobs and can only write its own run. On
+# CloudNativePG, declare `app` and `runner` under `spec.managed.roles` and
+# use the bootstrap owner as `owner`; see the README.
+database:
+  app:
+    # -- (required) Secret holding the application role's connection URI.
+    existingSecret: ""
+    # -- Key in that Secret.
+    key: uri
+    # -- Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing).
+    role: kritik_app
+  owner:
+    # -- (required for roles.all / roles.worker) Secret holding the owner role's connection URI, used only by the leader for migrations and configuration sync.
+    existingSecret: ""
+    # -- Key in that Secret.
+    key: uri
+  runner:
+    # -- (required for roles.all / roles.worker) Secret holding the runner role's connection URI; referenced by runner Jobs, never read by the worker.
+    existingSecret: ""
+    # -- Key in that Secret.
+    key: uri
+    # -- Name of the runner role, granted only what runner Jobs need.
+    role: kritik_runner
+
+# The deployment-wide embedder that builds the pgvector index and powers the
+# similar-code context stage. All of `baseUrl`, `model`, `dims` and a key must
+# be set together; leaving `model` empty turns indexing off and reviews run
+# without vector retrieval. Changing model or dims later is refused unless
+# `reindexOnModelChange` is set, because it rebuilds every repository.
+embedding:
+  # -- OpenAI-compatible embeddings endpoint (OpenRouter serves Voyage's code models).
+  baseUrl: https://openrouter.ai/api/v1
+  # -- Embedding model id; empty disables indexing.
+  model: ""
+  # -- Vector dimension, at most 4000 (the halfvec index limit).
+  dims: 1024
+  # -- API key, rendered into a chart-managed Secret. Prefer `existingSecret`.
+  apiKey: ""
+  # -- Existing Secret holding the API key.
+  existingSecret: ""
+  # -- Key in that Secret.
+  existingSecretKey: api-key
+  # -- Rebuild the index when the model or dimension changes instead of refusing to start.
+  reindexOnModelChange: false
+  # -- Max inputs per embedding request.
+  maxBatch: 64
+  # -- Max characters per embedding request.
+  maxBatchChars: 200000
+  # -- Max characters per input; longer inputs are truncated.
+  maxItemChars: 16000
+
+# Secrets the configuration file references by path (GitHub App private keys
+# and webhook secrets, provider API keys). Each entry mounts one Secret,
+# read-only, at `mountPath` in every role's pods; the file then points at
+# `<mountPath>/<key>`.
+# -- Secrets mounted as files for the configuration file to reference.
+secretMounts: []
+# - name: bot
+#   secretName: kritik-bot
+#   mountPath: /var/run/secrets/kritik/bot
+# - name: providers
+#   secretName: kritik-providers
+#   mountPath: /var/run/secrets/kritik/providers
+
+# Runner Jobs: one pod per review or index run, created by the worker in the
+# release namespace from the same image, running as a service account with
+# no permissions and a database role that can only touch its own run.
+runner:
+  # -- Image for runner Jobs; empty uses the chart's image.
+  image: ""
+  # -- Default active deadline for a runner Job (Go duration); tenants may lower it in the file.
+  deadline: 15m
+  # -- How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew.
+  ttl: 1h
+  serviceAccount:
+    # -- Create the runner ServiceAccount (no permissions, no token mounted).
+    create: true
+    # -- Runner ServiceAccount name; generated from the release name if empty.
+    name: ""
+    # -- Annotations for the runner ServiceAccount.
+    annotations: {}
+
+serviceAccount:
+  # -- Create the ServiceAccount the roles run as.
+  create: true
+  # -- Automount the API token. The worker needs it to create runner Jobs; a pure ingest topology could turn it off.
+  automount: true
+  # -- Annotations for the ServiceAccount.
+  annotations: {}
+  # -- ServiceAccount name; generated from the release name if empty.
+  name: ""
+
+rbac:
+  # -- Create the Role and RoleBinding the worker needs: Jobs in the release namespace, plus their pods and logs. Nothing cluster-wide.
+  create: true
+
+# -- Annotations added to every Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`.
+deploymentAnnotations: {}
+# -- Annotations added to the pods.
+podAnnotations: {}
+# -- Labels added to the pods.
+podLabels: {}
+
+# -- Pod-level securityContext (non-root uid/gid 65532, RuntimeDefault seccomp).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container securityContext (no privilege escalation, read-only root filesystem, drops ALL capabilities).
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  # -- Service type for the webhook listener.
+  type: ClusterIP
+  # -- Webhook port (`POST /hooks/{installation}`), served by `all` and `ingest` pods.
+  port: 8080
+  # -- Metrics and probe port, served by every pod.
+  metricsPort: 8081
+
+ingress:
+  # -- Expose the webhook listener via an Ingress.
+  enabled: false
+  # -- IngressClass name.
+  className: ""
+  # -- Ingress annotations.
+  annotations: {}
+  # -- Ingress hosts and their paths.
+  hosts:
+    - host: kritik.example.com
+      paths:
+        - path: /hooks
+          pathType: Prefix
+  # -- Ingress TLS configuration.
+  tls: []
+
+# Gateway API HTTPRoute, an alternative to `ingress` for the webhook listener.
+httpRoute:
+  # -- Expose the webhook listener via a Gateway API HTTPRoute.
+  enabled: false
+  # -- HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1.
+  apiVersion: ""
+  # -- HTTPRoute annotations.
+  annotations: {}
+  # -- HTTPRoute labels.
+  labels: {}
+  # -- Gateways (and listeners) this route attaches to.
+  parentRefs: []
+  # -- Hostnames matched against the Host header (templated).
+  hostnames: []
+  # -- Match conditions for the route.
+  matches:
+    - path:
+        type: PathPrefix
+        value: /hooks
+
+# NetworkPolicies (off by default): one for the service pods (ingress to the
+# webhook and metrics ports; egress to DNS, the forges and models over the
+# egress ports, and Postgres) and one for runner pods (egress only: DNS, the
+# git remote over the egress ports, and Postgres). The Postgres port is
+# allowed to any peer because the database may live in another namespace.
+networkPolicy:
+  # -- Create the NetworkPolicies.
+  enabled: false
+  # -- Allow DNS egress (UDP/TCP 53).
+  allowDNS: true
+  # -- TCP ports the pods may egress to for forges, model endpoints and git remotes.
+  egressPorts:
+    - 443
+  # -- Postgres port allowed for egress.
+  postgresPort: 5432
+
+# -- Pod resource requests/limits shared by every role; `roles.<role>.resources` overrides per role.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# -- Liveness probe, on the metrics port.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: metrics
+  periodSeconds: 20
+# -- Readiness probe, on the metrics port. A replica is ready once it has a database connection and its listeners are up.
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: metrics
+  periodSeconds: 10
+
+# -- Grace period for a clean shutdown; the worker stops taking jobs and lets running ones finish for up to 30s.
+terminationGracePeriodSeconds: 45
+
+monitoring:
+  serviceMonitor:
+    # -- Create a Prometheus Operator ServiceMonitor for every role's metrics (requires its CRDs).
+    enabled: false
+    # -- Scrape interval.
+    interval: 30s
+    # -- Scrape timeout.
+    scrapeTimeout: 10s
+    # -- ServiceMonitor labels.
+    labels: {}
+    # -- ServiceMonitor annotations.
+    annotations: {}
+    # -- Prometheus metric relabelings.
+    metricRelabelings: []
+    # -- Prometheus relabelings.
+    relabelings: []
+
+podDisruptionBudget:
+  # -- Create a PodDisruptionBudget per role with more than one replica.
+  enabled: false
+  # -- Maximum pods of a role that may be unavailable, as a count or percentage.
+  # @schema
+  # type: [integer, string]
+  # @schema
+  maxUnavailable: 1
+
+# -- Node selector for pod scheduling.
+nodeSelector: {}
+# -- Tolerations for pod scheduling.
+tolerations: []
+# -- Affinity rules for pod scheduling.
+affinity: {}
+# -- PriorityClass for the pods. Empty uses the cluster default.
+priorityClassName: ""
+
+# -- Additional volumes on every Deployment.
+volumes: []
+# -- Additional volume mounts on every container.
+volumeMounts: []

@@ -1,0 +1,63 @@
+version: "2"
+run:
+  allow-parallel-runners: true
+  # Without this the build-tagged integration suite is invisible to CI (nothing
+  # else compiles it), and it silently rots against internal/ API changes.
+  build-tags:
+    - integration
+    - bench
+linters:
+  default: none
+  enable:
+    - copyloopvar
+    - dupl
+    - errcheck
+    - goconst
+    - gocyclo
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nakedret
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+  settings:
+    goconst:
+      ignore-tests: true
+    lll:
+      line-length: 140
+    revive:
+      rules:
+        - name: comment-spacings
+        - name: import-shadowing
+  exclusions:
+    generated: lax
+    rules:
+      - path: (.+)_test.go
+        linters:
+          - goconst
+          - dupl
+          - lll
+      # dupl is noisy on the structurally-parallel provider/handler code; lll now
+      # runs on internal/ (see settings.lll) to keep production lines in check.
+      - linters:
+          - dupl
+        path: internal/*
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

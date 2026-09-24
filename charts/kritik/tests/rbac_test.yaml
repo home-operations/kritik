@@ -1,0 +1,51 @@
+suite: rbac and service accounts
+templates:
+  - rbac.tpl
+  - serviceaccount.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: renders the worker Role, its binding and both service accounts
+    asserts:
+      - hasDocuments:
+          count: 2
+        template: rbac.tpl
+      - isKind:
+          of: Role
+        template: rbac.tpl
+        documentIndex: 0
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["batch"]
+            resources: ["jobs"]
+            verbs: ["create", "get", "list", "watch", "delete"]
+        template: rbac.tpl
+        documentIndex: 0
+      - hasDocuments:
+          count: 2
+        template: serviceaccount.tpl
+      - equal:
+          path: automountServiceAccountToken
+          value: false
+        template: serviceaccount.tpl
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-runner
+        template: serviceaccount.tpl
+        documentIndex: 1
+
+  - it: renders no worker RBAC or runner account for an ingest-only topology
+    set:
+      roles.all.enabled: false
+      roles.ingest.enabled: true
+      database.owner.existingSecret: ""
+      database.runner.existingSecret: ""
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: rbac.tpl
+      - hasDocuments:
+          count: 1
+        template: serviceaccount.tpl

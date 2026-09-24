@@ -1,0 +1,283 @@
+// Package config loads kritik's process configuration from environment
+// variables. Everything the service manages (tenants, installations,
+// repositories, models) lives in the declarative configuration file, not
+// here; this package covers only what the process itself needs to start.
+package config
+
+import (
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/caarlos0/env/v11"
+)
+
+// Role selects which part of kritik a process runs. One image serves every
+// role; a homelab runs "all" in one pod while a larger deployment runs
+// "ingest" and "worker" as separate Deployments and lets the worker spawn
+// "runner" Jobs.
+type Role string
+
+// Roles a kritik process can run as.
+const (
+	RoleAll    Role = "all"
+	RoleIngest Role = "ingest"
+	RoleWorker Role = "worker"
+	RoleRunner Role = "runner"
+)
+
+// ParseRole validates a role name from the command line.
+func ParseRole(s string) (Role, error) {
+	switch r := Role(strings.ToLower(strings.TrimSpace(s))); r {
+	case RoleAll, RoleIngest, RoleWorker, RoleRunner:
+		return r, nil
+	default:
+		return "", fmt.Errorf("config: unknown role %q (want all, ingest, worker or runner)", s)
+	}
+}
+
+// Config holds the process configuration for kritik. All fields are populated
+// from environment variables via caarlos0/env. Call [Load] to parse and
+// validate; do not construct directly.
+type Config struct {
+	// Addr is the listen address for the HTTP surface the ingest role serves:
+	// /hooks/{installation} and nothing else. Port 8080 matches the container
+	// image's EXPOSE and the other services in the fleet.
+	Addr string `env:"KRITIK_ADDR" envDefault:":8080"`
+
+	// MetricsAddr is the listen address for /healthz, /readyz and /metrics.
+	// Kept on a separate port from the hook surface, as konflate does, so the
+	// management endpoints are never reachable through the ingress that fronts
+	// the webhooks.
+	MetricsAddr string `env:"KRITIK_METRICS_ADDR" envDefault:":8081"`
+
+	// ConfigFile is the path of the declarative configuration file (tenants,
+	// installations, repositories, models). Every role except runner loads it
+	// at startup and watches it for changes. The default is where the Helm
+	// chart mounts it.
+	ConfigFile string `env:"KRITIK_CONFIG_FILE" envDefault:"/etc/kritik/config.yaml"`
+
+	// ConfigReloadInterval is how often the configuration file is re-read
+	// for changes. Polling, because a ConfigMap mount updates by swapping a
+	// symlink that inotify on the file misses; ten seconds keeps a Flux
+	// reconcile visible without hammering the disk.
+	ConfigReloadInterval time.Duration `env:"KRITIK_CONFIG_RELOAD_INTERVAL" envDefault:"10s"`
+
+	// DatabaseURL is the DSN every role connects with for request and job
+	// work. It must be the application role: not a superuser, no BYPASSRLS,
+	// owning nothing, so row-level security applies to it. Runner pods get
+	// the runner role's DSN under the same variable name. Checked at
+	// startup; a DSN that bypasses row-level security refuses to start.
+	DatabaseURL string `env:"KRITIK_DATABASE_URL,required,notEmpty,unset"`
+
+	// DatabaseOwnerURL is the DSN of the role that owns the schema. It runs
+	// migrations, the configuration loader and the chunks DDL, all of which
+	// write across tenants. Only the roles that can become leader (all and
+	// worker) need it; ingest and runner must not have it.
+	DatabaseOwnerURL string `env:"KRITIK_DATABASE_OWNER_URL,unset"`
+
+	// DatabaseAppRole and DatabaseRunnerRole are the Postgres role names the
+	// owner grants privileges to during migrations. They default to what
+	// deploy/dev and the chart's CloudNativePG example declare.
+	DatabaseAppRole    string `env:"KRITIK_DATABASE_APP_ROLE" envDefault:"kritik_app"`
+	DatabaseRunnerRole string `env:"KRITIK_DATABASE_RUNNER_ROLE" envDefault:"kritik_runner"`
+
+	// LeaderRetryInterval is how often a leader-eligible replica retries the
+	// leader lock and how often the holder verifies it still has it.
+	LeaderRetryInterval time.Duration `env:"KRITIK_LEADER_RETRY_INTERVAL" envDefault:"15s"`
+
+	// EmbedBaseURL, EmbedAPIKey, EmbedModel and EmbedDims configure the
+	// deployment-wide embedder, always OpenAI-compatible. They live here
+	// rather than in the configuration file because changing the model
+	// reindexes every repository, so it should take a deploy, not a config
+	// reload. All four are set together or not at all; unset means indexing
+	// is off and reviews run without vector retrieval.
+	EmbedBaseURL string `env:"KRITIK_EMBED_BASE_URL"`
+	EmbedAPIKey  string `env:"KRITIK_EMBED_API_KEY,unset"`
+	EmbedModel   string `env:"KRITIK_EMBED_MODEL"`
+	EmbedDims    int    `env:"KRITIK_EMBED_DIMS"`
+
+	// EmbedMaxBatch, EmbedMaxBatchChars and EmbedMaxItemChars bound one
+	// embedding request. OpenAI-compatible servers differ widely in what
+	// they accept; these defaults are conservative enough for the common
+	// ones and can be raised per deployment.
+	EmbedMaxBatch      int `env:"KRITIK_EMBED_MAX_BATCH" envDefault:"64"`
+	EmbedMaxBatchChars int `env:"KRITIK_EMBED_MAX_BATCH_CHARS" envDefault:"200000"`
+	EmbedMaxItemChars  int `env:"KRITIK_EMBED_MAX_ITEM_CHARS" envDefault:"16000"`
+
+	// ReindexOnModelChange lets a worker start when EmbedModel differs from
+	// the model recorded in the store at the same dimension, and enqueues a
+	// reindex of every repository. Off by default so a mistyped model name
+	// cannot trigger a fleet-wide re-embed.
+	ReindexOnModelChange bool `env:"KRITIK_REINDEX_ON_MODEL_CHANGE" envDefault:"false"`
+
+	// PollInterval is how often the leader lists each installation's open
+	// pull requests to catch missed webhooks; 0 disables the poll.
+	// PollLookback bounds how far back a first or long-idle poll looks.
+	PollInterval time.Duration `env:"KRITIK_POLL_INTERVAL" envDefault:"10m"`
+	PollLookback time.Duration `env:"KRITIK_POLL_LOOKBACK" envDefault:"24h"`
+
+	// ReviewWorkers is how many review jobs one worker replica runs at once.
+	// Each one holds a runner pod open for the length of a fetch and diff,
+	// so this bounds pods per replica, not model calls.
+	ReviewWorkers int `env:"KRITIK_REVIEW_WORKERS" envDefault:"2"`
+	// IndexWorkers is how many index jobs one worker replica runs at once;
+	// indexing is rate-limited apart from reviews so onboarding a large
+	// account cannot starve them.
+	IndexWorkers int `env:"KRITIK_INDEX_WORKERS" envDefault:"1"`
+
+	// Executor selects how runners run: "kubernetes" creates a Job per run
+	// in the pod's own namespace; "local" runs the runner in-process and is
+	// for development and tests only, because it gives the checkout the
+	// worker's credentials.
+	Executor string `env:"KRITIK_EXECUTOR" envDefault:"kubernetes"`
+
+	// RunnerImage is the image runner Jobs use, normally the worker's own.
+	// Required for the worker and all roles with the kubernetes executor.
+	RunnerImage string `env:"KRITIK_RUNNER_IMAGE"`
+
+	// RunnerServiceAccount is the permissionless service account runner pods
+	// run as. RunnerDatabaseSecret and RunnerDatabaseSecretKey locate the
+	// runner role's DSN, which the Job injects as KRITIK_DATABASE_URL.
+	RunnerServiceAccount    string `env:"KRITIK_RUNNER_SERVICE_ACCOUNT" envDefault:"kritik-runner"`
+	RunnerDatabaseSecret    string `env:"KRITIK_RUNNER_DATABASE_SECRET" envDefault:"kritik-postgres-runner"`
+	RunnerDatabaseSecretKey string `env:"KRITIK_RUNNER_DATABASE_SECRET_KEY" envDefault:"uri"`
+
+	// RunnerDeadline bounds a runner when the tenant sets none; RunnerTTL is
+	// how long a finished Job stays for kubectl before Kubernetes removes it.
+	// The run row keeps everything the Job knew.
+	RunnerDeadline time.Duration `env:"KRITIK_RUNNER_DEADLINE" envDefault:"15m"`
+	RunnerTTL      time.Duration `env:"KRITIK_RUNNER_TTL" envDefault:"10m"`
+
+	// RunnerDatabaseURL is the runner role's DSN, needed only by the local
+	// executor, which runs the runner inside the worker process.
+	RunnerDatabaseURL string `env:"KRITIK_RUNNER_DATABASE_URL,unset"`
+
+	// The runner role's own inputs, set on the Job by the worker. RunKind
+	// is review (fetch, diff, context stages) or index (chunk a tree).
+	RunKind  string `env:"KRITIK_RUN_KIND" envDefault:"review"`
+	RunID    string `env:"KRITIK_RUN_ID"`
+	CloneURL string `env:"KRITIK_CLONE_URL"`
+	GitToken string `env:"KRITIK_GIT_TOKEN,unset"`
+	HeadSHA  string `env:"KRITIK_HEAD_SHA"`
+	BaseSHA  string `env:"KRITIK_BASE_SHA"`
+	// Ignore is the resolved ignore glob list for the repository, comma
+	// separated, skipped by the context stages.
+	Ignore []string `env:"KRITIK_IGNORE" envSeparator:","`
+
+	// LogLevel is the minimum slog level emitted: debug, info, warn or error.
+	LogLevel string `env:"KRITIK_LOG_LEVEL" envDefault:"info"`
+
+	// LogFormat selects the slog handler: "json" (the default, for containers)
+	// or "text" for local runs.
+	LogFormat string `env:"KRITIK_LOG_FORMAT" envDefault:"json"`
+}
+
+// ValidateWorker checks what the worker role needs beyond the common set.
+func (c *Config) ValidateWorker() error {
+	if c.Executor == "kubernetes" && c.RunnerImage == "" {
+		return fmt.Errorf("config: KRITIK_RUNNER_IMAGE is required with the kubernetes executor")
+	}
+	if c.Executor == "local" && c.RunnerDatabaseURL == "" {
+		return fmt.Errorf("config: KRITIK_RUNNER_DATABASE_URL is required with the local executor")
+	}
+	return nil
+}
+
+// ValidateRunner checks what a runner pod needs.
+func (c *Config) ValidateRunner() error {
+	required := map[string]string{"KRITIK_RUN_ID": c.RunID, "KRITIK_CLONE_URL": c.CloneURL, "KRITIK_HEAD_SHA": c.HeadSHA}
+	switch c.RunKind {
+	case "review":
+		required["KRITIK_BASE_SHA"] = c.BaseSHA
+	case "index":
+	default:
+		return fmt.Errorf("config: KRITIK_RUN_KIND must be review or index, got %q", c.RunKind)
+	}
+	for name, v := range required {
+		if v == "" {
+			return fmt.Errorf("config: %s is required for the runner role", name)
+		}
+	}
+	return nil
+}
+
+// EmbeddingEnabled reports whether a deployment-wide embedder is configured.
+func (c *Config) EmbeddingEnabled() bool { return c.EmbedModel != "" }
+
+// Load parses the environment into a Config and validates it. It fails fast
+// on an invalid value so a misconfigured process never starts serving.
+func Load() (*Config, error) {
+	cfg, err := env.ParseAs[Config]()
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func (c *Config) validate() error {
+	if _, err := c.Level(); err != nil {
+		return err
+	}
+	switch strings.ToLower(c.LogFormat) {
+	case "json", "text":
+	default:
+		return fmt.Errorf("config: KRITIK_LOG_FORMAT must be json or text, got %q", c.LogFormat)
+	}
+	if c.ConfigReloadInterval <= 0 {
+		return fmt.Errorf("config: KRITIK_CONFIG_RELOAD_INTERVAL must be positive, got %s", c.ConfigReloadInterval)
+	}
+	set := 0
+	for _, v := range []bool{c.EmbedBaseURL != "", c.EmbedAPIKey != "", c.EmbedModel != "", c.EmbedDims != 0} {
+		if v {
+			set++
+		}
+	}
+	if set != 0 && set != 4 {
+		return fmt.Errorf("config: KRITIK_EMBED_BASE_URL, KRITIK_EMBED_API_KEY, KRITIK_EMBED_MODEL and KRITIK_EMBED_DIMS must be set together")
+	}
+	if c.EmbedDims < 0 || c.EmbedDims > 4000 {
+		return fmt.Errorf("config: KRITIK_EMBED_DIMS must be between 1 and 4000 (the halfvec index limit), got %d", c.EmbedDims)
+	}
+	if c.EmbedMaxBatch <= 0 || c.EmbedMaxBatchChars <= 0 || c.EmbedMaxItemChars <= 0 {
+		return fmt.Errorf("config: KRITIK_EMBED_MAX_* must be positive")
+	}
+	if c.DatabaseAppRole == "" || c.DatabaseRunnerRole == "" || c.DatabaseAppRole == c.DatabaseRunnerRole {
+		return fmt.Errorf("config: KRITIK_DATABASE_APP_ROLE and KRITIK_DATABASE_RUNNER_ROLE must be set and distinct")
+	}
+	if c.LeaderRetryInterval <= 0 {
+		return fmt.Errorf("config: KRITIK_LEADER_RETRY_INTERVAL must be positive, got %s", c.LeaderRetryInterval)
+	}
+	switch c.Executor {
+	case "kubernetes", "local":
+	default:
+		return fmt.Errorf("config: KRITIK_EXECUTOR must be kubernetes or local, got %q", c.Executor)
+	}
+	if c.PollInterval < 0 || c.PollLookback <= 0 {
+		return fmt.Errorf("config: KRITIK_POLL_INTERVAL must not be negative and KRITIK_POLL_LOOKBACK must be positive")
+	}
+	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.RunnerDeadline <= 0 || c.RunnerTTL <= 0 {
+		return fmt.Errorf("config: KRITIK_REVIEW_WORKERS, KRITIK_INDEX_WORKERS, KRITIK_RUNNER_DEADLINE and KRITIK_RUNNER_TTL must be positive")
+	}
+	return nil
+}
+
+// Level returns the slog level named by LogLevel.
+func (c *Config) Level() (slog.Level, error) {
+	switch strings.ToLower(c.LogLevel) {
+	case "debug":
+		return slog.LevelDebug, nil
+	case "info":
+		return slog.LevelInfo, nil
+	case "warn", "warning":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return 0, fmt.Errorf("config: KRITIK_LOG_LEVEL must be debug, info, warn or error, got %q", c.LogLevel)
+	}
+}

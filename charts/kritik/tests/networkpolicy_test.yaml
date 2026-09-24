@@ -1,0 +1,38 @@
+suite: networkPolicy
+templates:
+  - networkpolicy.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: is not rendered by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a policy for the service pods and one for runner pods
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: NetworkPolicy
+      - contains:
+          path: spec.ingress[0].ports
+          content:
+            port: 8080
+            protocol: TCP
+        documentIndex: 0
+      - contains:
+          path: spec.egress[1].ports
+          content:
+            port: 5432
+            protocol: TCP
+        documentIndex: 0
+      - equal:
+          path: spec.podSelector.matchLabels["kritik.home-operations.com/role"]
+          value: runner
+        documentIndex: 1
+      - notExists:
+          path: spec.ingress
+        documentIndex: 1

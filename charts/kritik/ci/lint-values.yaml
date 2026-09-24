@@ -1,0 +1,37 @@
+---
+# Values that make the chart render without a real cluster: helm lint,
+# helm template and CI use them. Nothing here is a working configuration.
+database:
+  app:
+    existingSecret: kritik-postgres-app
+  owner:
+    existingSecret: kritik-postgres-credentials
+  runner:
+    existingSecret: kritik-postgres-runner
+config:
+  file:
+    providers:
+      openrouter:
+        type: openrouter
+        apiKey: { file: /var/run/secrets/kritik/providers/openrouter-api-key }
+    defaults:
+      models:
+        review: openrouter/openai/gpt-6-sol
+      filter: "!pr.draft"
+    tenants:
+      - slug: example
+        installations:
+          - name: example-github
+            forge: github
+            account: example
+            app:
+              clientId: Iv1.example
+              privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+              webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+secretMounts:
+  - name: bot
+    secretName: kritik-bot
+    mountPath: /var/run/secrets/kritik/bot
+  - name: providers
+    secretName: kritik-providers
+    mountPath: /var/run/secrets/kritik/providers

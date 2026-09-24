@@ -1,0 +1,169 @@
+# mise is the single source of truth for the Go toolchain (and project tools)
+# across developer shells, CI, and the container build. The `go` version here
+# is the toolchain that builds and tests; go.mod's `go` directive is pinned to
+# the lowest patch of the same minor and is expected to lag behind (see
+# AGENTS.md). The Dockerfile and release workflow read `tools.go` with
+# `mise config get tools.go`.
+#
+# `mise tasks` lists tasks; `mise run <task>` runs one.
+
+[tools]
+actionlint = "1.7.12"
+go = "1.27.1"
+helm = "4.3.0"
+helm-docs = "1.14.2"
+"aqua:dadav/helm-schema" = "0.23.5"
+"go:golang.org/x/vuln/cmd/govulncheck" = "v1.8.0"
+golangci-lint = "2.13.2"
+lefthook = "2.1.14"
+oxfmt = "0.69.0"
+yq = "4.53.6"
+zizmor = "1.30.1"
+
+[tasks.build]
+description = "Compile the binary (and the whole module)"
+run = "go build ./..."
+
+[tasks.vet]
+description = "Run go vet"
+run = "go vet ./..."
+
+[tasks.vulncheck]
+description = "Scan for known vulnerabilities with govulncheck"
+run = "govulncheck ./..."
+
+[tasks.test]
+description = "Run the unit test suite with the race detector and coverage"
+run = "go test -race ./... -coverprofile cover.out"
+
+[tasks.fmt]
+description = "Format the code in place"
+run = "go fmt ./..."
+
+[tasks.fmt-check]
+description = "Verify formatting without changing files (CI gate)"
+run = "test -z \"$(gofmt -l .)\" || { gofmt -l .; exit 1; }"
+
+[tasks.lint]
+description = "Run golangci-lint"
+run = "golangci-lint run"
+
+[tasks.lint-fix]
+description = "Run golangci-lint with --fix"
+run = "golangci-lint run --fix"
+
+[tasks.tidy-check]
+description = "Fail if go.mod/go.sum are not tidy (CI gate)"
+run = """
+go mod tidy
+git diff --exit-code go.mod go.sum
+"""
+
+[tasks.test-integration]
+description = "Run the Postgres integration suite against a throwaway pgvector container with the three kritik roles"
+run = """
+set -e
+cid=$(docker run -d --rm -e POSTGRES_PASSWORD=super -p 127.0.0.1::5432 pgvector/pgvector:pg17)
+trap 'docker stop "$cid" >/dev/null' EXIT
+port=$(docker port "$cid" 5432/tcp | head -1 | sed 's/.*://')
+for i in $(seq 1 30); do docker exec "$cid" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
+docker exec "$cid" psql -U postgres -v ON_ERROR_STOP=1 -q -c "CREATE ROLE kritik LOGIN PASSWORD 'owner'" -c "CREATE ROLE kritik_app LOGIN PASSWORD 'app'" -c "CREATE ROLE kritik_runner LOGIN PASSWORD 'runner'" -c "CREATE DATABASE kritik OWNER kritik"
+docker exec "$cid" psql -U postgres -d kritik -v ON_ERROR_STOP=1 -q -c "CREATE EXTENSION vector" -c "GRANT ALL ON SCHEMA public TO kritik" -c "GRANT USAGE ON SCHEMA public TO kritik_app, kritik_runner"
+export KRITIK_TEST_SUPER_URL="postgres://postgres:super@127.0.0.1:${port}/kritik?sslmode=disable"
+export KRITIK_TEST_OWNER_URL="postgres://kritik:owner@127.0.0.1:${port}/kritik?sslmode=disable"
+export KRITIK_TEST_APP_URL="postgres://kritik_app:app@127.0.0.1:${port}/kritik?sslmode=disable"
+export KRITIK_TEST_RUNNER_URL="postgres://kritik_runner:runner@127.0.0.1:${port}/kritik?sslmode=disable"
+# -p 1: every integration package shares the one database, so packages must not run concurrently.
+go test -race -tags integration -count=1 -p 1 ./... "$@"
+"""
+
+[tasks.bench]
+description = "Run the evaluation harness against a live model (OPENROUTER_API_KEY; KRITIK_BENCH_DRY=1 runs it without model calls)"
+run = "go test -tags bench -run TestBench -v -count=1 -timeout 60m ./bench/"
+
+[tasks.bench-mine]
+description = "Rebuild the corpus from the sibling flate and konflate checkouts' history"
+run = """
+go run -tags bench ./bench/cmd/mine -repo ../flate -name home-operations/flate -out bench/cases/flate.yaml
+go run -tags bench ./bench/cmd/mine -repo ../konflate -name home-operations/konflate -out bench/cases/konflate.yaml
+"""
+
+[tasks.helm-lint]
+description = "Lint the Helm chart"
+run = "helm lint charts/kritik --values charts/kritik/ci/lint-values.yaml"
+
+[tasks.helm-unittest]
+description = "Run helm-unittest template tests (needs the helm-unittest plugin)"
+run = "helm unittest charts/kritik"
+
+[tasks.helm-template]
+description = "Render the Helm chart with the lint values"
+run = "helm template kritik charts/kritik --values charts/kritik/ci/lint-values.yaml"
+
+[tasks.generate]
+description = "Regenerate the chart's committed README and values.schema.json from Chart.yaml and values.yaml"
+run = """
+helm-docs --chart-search-root=charts --log-level=warn
+helm-schema --chart-search-root charts/kritik --skip-auto-generation required,additionalProperties --append-newline
+"""
+
+[tasks.generate-check]
+description = "Fail if the generated chart README or schema are stale (CI gate)"
+run = """
+mise run generate
+git diff --exit-code charts/kritik/README.md charts/kritik/values.schema.json
+"""
+
+[tasks.dev]
+description = "Run kritik locally with the all role"
+run = "go run ./cmd/kritik --role all"
+
+# --- Cluster development loop -------------------------------------------
+# Everything cluster-specific lives in the gitignored .private/ folder: the
+# kustomization (.private/deploy), the KUBECONFIG pointer
+# (.private/mise.local.toml, symlinked from the repo root as .mise.local.toml;
+# a local file inside .mise/ would make `mise lock` prune this file's lock)
+# and the last pushed image reference (.private/image).
+
+[tasks.image-push]
+description = "Build the image and push it to ttl.sh under a fresh name (24h TTL); the reference lands in .private/image"
+run = """
+set -e
+image="ttl.sh/kritik-$(id -un)-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n'):24h"
+docker build --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" -t "$image" .
+docker push "$image"
+mkdir -p .private
+echo "$image" > .private/image
+echo "pushed $image"
+"""
+
+[tasks.deploy]
+description = "Push a fresh image, apply .private/deploy (namespace, database, secrets) and install the chart into kritik"
+depends = ["image-push"]
+run = """
+set -e
+: "${KUBECONFIG:?set KUBECONFIG to the target cluster (see .private/mise.local.toml)}"
+image="$(cat .private/image)"
+kubectl apply --server-side --field-manager kritik-dev -k .private/deploy
+# ttl.sh references are repo:tag with the TTL as the tag.
+helm upgrade --install kritik charts/kritik -n kritik --values .private/values.yaml \
+  --set image.repository="${image%%:*}" --set image.tag="${image##*:}" --wait --timeout 10m
+"""
+
+[tasks.undeploy]
+description = "Uninstall the chart and delete everything .private/deploy created, database and namespace included"
+run = """
+: "${KUBECONFIG:?set KUBECONFIG to the target cluster (see .private/mise.local.toml)}"
+helm uninstall kritik -n kritik --ignore-not-found --wait 2>/dev/null || true
+kubectl delete -k .private/deploy --ignore-not-found --wait=true
+"""
+
+[tasks.logs]
+description = "Follow the kritik deployment's logs in the cluster"
+run = """
+: "${KUBECONFIG:?set KUBECONFIG to the target cluster (see .private/mise.local.toml)}"
+kubectl -n kritik logs deployment/kritik --follow
+"""
+
+[hooks]
+postinstall = "lefthook install"

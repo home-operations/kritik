@@ -1,0 +1,934 @@
+# Mined by `go run -tags bench ./bench/cmd/mine`: each case is a squash merged
+# pull request whose lines a later fix commit changed. Curate by hand: demote
+# `must` where the defect was not visible in the diff, and add notes.
+cases:
+  - id: home-operations/konflate#140
+    repository: home-operations/konflate
+    pr: 140
+    title: "perf(server): ETag/304 for the diff endpoint and unescaped JSON bodies"
+    head: de6e0feb85519671d41d679388fa6b59d82db1d7
+    base: 5ac45d546f26509739cc9f7ce7cd88ea7eb48bf7
+    expected:
+      - path: internal/server/store.go
+        lines:
+          - 272
+          - 272
+        description: "fix(server): close five PR-lifecycle state-machine races"
+        must: true
+        fix: c4f66d23cc3bedeb606c9184a30f52ce0721ef73
+    source: mined
+  - id: home-operations/konflate#143
+    repository: home-operations/konflate
+    pr: 143
+    title: "fix(server): render a PR that becomes filter-allowed without a new push"
+    head: 1b8391113043a41bbfffca85526d877ceeb5e029
+    base: f79c9f0e29bcf338e4f7a2e95c905ed398b85599
+    expected:
+      - path: internal/server/handlers.go
+        lines:
+          - 489
+          - 495
+        description: "fix(server): close five PR-lifecycle state-machine races"
+        must: true
+        fix: c4f66d23cc3bedeb606c9184a30f52ce0721ef73
+    source: mined
+  - id: home-operations/konflate#144
+    repository: home-operations/konflate
+    pr: 144
+    title: "perf(server): marshal the diff off the store write lock; commit the digest after save"
+    head: c37084ca4cc00c626db7432dbf1f4d846bd73ec9
+    base: 1b8391113043a41bbfffca85526d877ceeb5e029
+    expected:
+      - path: internal/server/store.go
+        lines:
+          - 221
+          - 221
+        description: "fix(server): close five PR-lifecycle state-machine races"
+        must: true
+        fix: c4f66d23cc3bedeb606c9184a30f52ce0721ef73
+      - path: internal/server/store.go
+        lines:
+          - 232
+          - 232
+        description: "fix(server): close five PR-lifecycle state-machine races"
+        must: true
+        fix: c4f66d23cc3bedeb606c9184a30f52ce0721ef73
+      - path: internal/server/store.go
+        lines:
+          - 241
+          - 241
+        description: "fix(server): close five PR-lifecycle state-machine races"
+        must: true
+        fix: c4f66d23cc3bedeb606c9184a30f52ce0721ef73
+      - path: internal/server/store.go
+        lines:
+          - 378
+          - 378
+        description: "fix(server): close five PR-lifecycle state-machine races"
+        must: true
+        fix: c4f66d23cc3bedeb606c9184a30f52ce0721ef73
+    source: mined
+  - id: home-operations/konflate#147
+    repository: home-operations/konflate
+    pr: 147
+    title: "fix(provider): paginate ListPRs across all pages (github/gitlab/forgejo)"
+    head: 462e64df42e5f0d4019289a230c5df98f4ec7f90
+    base: f8088968af27e361dcd5ce3de9dd3c970a01d552
+    expected:
+      - path: internal/provider/forgejo.go
+        lines:
+          - 48
+          - 48
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+      - path: internal/provider/github.go
+        lines:
+          - 40
+          - 40
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+      - path: internal/provider/gitlab.go
+        lines:
+          - 37
+          - 37
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+    source: mined
+  - id: home-operations/konflate#149
+    repository: home-operations/konflate
+    pr: 149
+    title: "fix(gitclone): repack the bare mirror once packfiles accumulate"
+    head: 4e6ec03f1327ffb816fa19f5c4fc7f76c30dbd1c
+    base: 462e64df42e5f0d4019289a230c5df98f4ec7f90
+    expected:
+      - path: internal/gitclone/gitclone.go
+        lines:
+          - 237
+          - 241
+        description: "fix(gitclone): repack mirrors containing submodules without re-cloning"
+        must: true
+        fix: ca7e3e25393898f263a673d0f0d32c6eba37b093
+      - path: internal/gitclone/gitclone.go
+        lines:
+          - 242
+          - 242
+        description: "fix(gitclone): hold one lock across fetch+extract to stop the repack race"
+        must: true
+        fix: ceebd6baf5cf4a503965b6fa4d85d5c3bd2581cf
+      - path: internal/gitclone/gitclone.go
+        lines:
+          - 251
+          - 253
+        description: "fix(gitclone): repack mirrors containing submodules without re-cloning"
+        must: true
+        fix: ca7e3e25393898f263a673d0f0d32c6eba37b093
+    source: mined
+  - id: home-operations/konflate#154
+    repository: home-operations/konflate
+    pr: 154
+    title: "fix(web): make status:hidden work in the list filter and palette"
+    head: 0a3382e128044fbd4d179370de7a5b14f0bc9289
+    base: f5cefa68d681fbde32b5af18f72042d59d59764d
+    expected:
+      - path: internal/web/src/lib/List.svelte
+        lines:
+          - 6
+          - 8
+        description: "fix(web): resync on ws reconnect, unstick row previews, fix nav order and type drift"
+        must: true
+        fix: d5fc90c68f0d69027eca29281a9671f3f2620921
+      - path: internal/web/src/lib/List.svelte
+        lines:
+          - 51
+          - 55
+        description: "fix(web): resync on ws reconnect, unstick row previews, fix nav order and type drift"
+        must: true
+        fix: d5fc90c68f0d69027eca29281a9671f3f2620921
+    source: mined
+  - id: home-operations/konflate#182
+    repository: home-operations/konflate
+    pr: 182
+    title: "fix(images): merge rename-split add/remove pairs into one transition"
+    head: 51088716b97096dfe42583245bfce7ac8df21772
+    base: 4ea6c760b23d39cb7a2d9b8941da03f47f3ccd1d
+    expected:
+      - path: internal/engine/images.go
+        lines:
+          - 127
+          - 127
+        description: "fix(engine,diff): dedup coincident image moves and recognize build-metadata chart labels"
+        must: true
+        fix: 556d90efa404924bb66ec744b73f566a390f71be
+    source: mined
+  - id: home-operations/konflate#185
+    repository: home-operations/konflate
+    pr: 185
+    title: "feat: CI check status in the PR list (poll + webhook push)"
+    head: cb9487c8066c9cf425ad1d6fadce96e9288a8067
+    base: e699892b4e17c4c4a25d4348e782203d8929cf72
+    expected:
+      - path: internal/provider/forgejo.go
+        lines:
+          - 89
+          - 97
+        description: "fix(provider): make write-back survive rate limits, big diffs, and >30 checks"
+        must: true
+        fix: 3072287fee326fc49e1637ebcc4501a828bffa89
+      - path: internal/provider/github.go
+        lines:
+          - 97
+          - 97
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+      - path: internal/provider/gitlab.go
+        lines:
+          - 76
+          - 76
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+      - path: internal/server/handlers.go
+        lines:
+          - 454
+          - 454
+        description: "fix(server): coalesce check-status webhooks per head SHA"
+        must: true
+        fix: e3bb2cd1beaff63459b4626cb24195c2c57ed995
+      - path: internal/server/handlers.go
+        lines:
+          - 560
+          - 560
+        description: "fix(server): coalesce check-status webhooks per head SHA"
+        must: true
+        fix: e3bb2cd1beaff63459b4626cb24195c2c57ed995
+    source: mined
+  - id: home-operations/konflate#186
+    repository: home-operations/konflate
+    pr: 186
+    title: "feat(writeback): opt-in commit-status write-back (PAT or GitHub App)"
+    head: a80f782fc651850c4860fc520ccbfb26f3ad02c0
+    base: cb9487c8066c9cf425ad1d6fadce96e9288a8067
+    expected:
+      - path: internal/config/config.go
+        lines:
+          - 86
+          - 88
+        description: "fix(provider): authenticate GitHub reads with the App, not just write-back"
+        must: true
+        fix: 2b0e477575ea9f21f1a88a5783f22bde4ec2d9ce
+      - path: internal/provider/writer.go
+        lines:
+          - 79
+          - 79
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 84
+          - 84
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 92
+          - 92
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 101
+          - 103
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 108
+          - 108
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 117
+          - 120
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 129
+          - 129
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 142
+          - 142
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 143
+          - 143
+        description: "fix(provider): authenticate GitHub reads with the App, not just write-back"
+        must: true
+        fix: 2b0e477575ea9f21f1a88a5783f22bde4ec2d9ce
+      - path: internal/provider/writer.go
+        lines:
+          - 144
+          - 144
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 196
+          - 196
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 228
+          - 228
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/server/server.go
+        lines:
+          - 126
+          - 126
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+    source: mined
+  - id: home-operations/konflate#187
+    repository: home-operations/konflate
+    pr: 187
+    title: "feat(writeback): post/update a PR comment with the rendered summary"
+    head: 0a9909de0aa8cdd687bad66cfb9c5cb2dc67028c
+    base: a80f782fc651850c4860fc520ccbfb26f3ad02c0
+    expected:
+      - path: internal/provider/writer.go
+        lines:
+          - 46
+          - 46
+        description: "fix(writeback): skip the comment edit when the body is unchanged"
+        must: true
+        fix: b27606035715abf72035d581df5acef0cada3b7f
+      - path: internal/provider/writer.go
+        lines:
+          - 186
+          - 187
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 192
+          - 192
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 240
+          - 240
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 243
+          - 243
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+      - path: internal/provider/writer.go
+        lines:
+          - 250
+          - 250
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 302
+          - 302
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+      - path: internal/provider/writer.go
+        lines:
+          - 309
+          - 309
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/server/comment.go
+        lines:
+          - 18
+          - 18
+        description: "fix(server): close Markdown injection into konflate's own PR comment and check-run"
+        must: true
+        fix: 2f71fd7c1b5476710692e5746590db36342ffa14
+      - path: internal/server/comment.go
+        lines:
+          - 22
+          - 22
+        description: "fix(server): close Markdown injection into konflate's own PR comment and check-run"
+        must: true
+        fix: 2f71fd7c1b5476710692e5746590db36342ffa14
+      - path: internal/server/comment.go
+        lines:
+          - 51
+          - 51
+        description: "fix(server): close Markdown injection into konflate's own PR comment and check-run"
+        must: true
+        fix: 2f71fd7c1b5476710692e5746590db36342ffa14
+      - path: internal/server/comment.go
+        lines:
+          - 72
+          - 72
+        description: "fix(server): close Markdown injection into konflate's own PR comment and check-run"
+        must: true
+        fix: 2f71fd7c1b5476710692e5746590db36342ffa14
+      - path: internal/server/comment.go
+        lines:
+          - 84
+          - 84
+        description: "fix(config): disambiguate PR comment markers across konflate instances"
+        must: true
+        fix: e2669bc1b7409de8d35ad6a3ac6ce0c4a3a05f1b
+      - path: internal/server/comment.go
+        lines:
+          - 89
+          - 91
+        description: "fix(config): disambiguate PR comment markers across konflate instances"
+        must: true
+        fix: e2669bc1b7409de8d35ad6a3ac6ce0c4a3a05f1b
+      - path: internal/server/comment.go
+        lines:
+          - 95
+          - 95
+        description: "fix(config): disambiguate PR comment markers across konflate instances"
+        must: true
+        fix: e2669bc1b7409de8d35ad6a3ac6ce0c4a3a05f1b
+      - path: internal/server/markdown.go
+        lines:
+          - 11
+          - 16
+        description: "fix(config): disambiguate PR comment markers across konflate instances"
+        must: true
+        fix: e2669bc1b7409de8d35ad6a3ac6ce0c4a3a05f1b
+      - path: internal/server/server.go
+        lines:
+          - 85
+          - 88
+        description: "fix(server): coalesce check-status webhooks per head SHA"
+        must: true
+        fix: e3bb2cd1beaff63459b4626cb24195c2c57ed995
+      - path: internal/server/server.go
+        lines:
+          - 172
+          - 172
+        description: "fix(config): disambiguate PR comment markers across konflate instances"
+        must: true
+        fix: e2669bc1b7409de8d35ad6a3ac6ce0c4a3a05f1b
+    source: mined
+  - id: home-operations/konflate#196
+    repository: home-operations/konflate
+    pr: 196
+    title: "feat(writeback): auto-detect the GitHub App installation"
+    head: 0ee3b04681fa421a9bb4ece4b5cfe0b50bc7b019
+    base: c3f2f71875f77464f80c7ff78226e934263ea88a
+    expected:
+      - path: internal/config/config.go
+        lines:
+          - 102
+          - 104
+        description: "fix(provider): authenticate GitHub reads with the App, not just write-back"
+        must: true
+        fix: 2b0e477575ea9f21f1a88a5783f22bde4ec2d9ce
+      - path: internal/provider/writer.go
+        lines:
+          - 136
+          - 136
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 210
+          - 214
+        description: "fix(security): harden write-back and the avatar proxy"
+        must: true
+        fix: 981f115e5893be6186938a110b43017d87de1104
+      - path: internal/provider/writer.go
+        lines:
+          - 282
+          - 282
+        description: "fix(provider): make write-back survive rate limits, big diffs, and >30 checks"
+        must: true
+        fix: 3072287fee326fc49e1637ebcc4501a828bffa89
+    source: mined
+  - id: home-operations/konflate#198
+    repository: home-operations/konflate
+    pr: 198
+    title: "fix(security): harden write-back and the avatar proxy"
+    head: 981f115e5893be6186938a110b43017d87de1104
+    base: bbd1f7b931ef24b67c20367037006d5959f481f3
+    expected:
+      - path: internal/provider/writer.go
+        lines:
+          - 102
+          - 102
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 106
+          - 115
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 120
+          - 122
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 131
+          - 131
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 148
+          - 148
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 159
+          - 165
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 180
+          - 180
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 211
+          - 224
+        description: "fix(provider): authenticate GitHub reads with the App, not just write-back"
+        must: true
+        fix: 2b0e477575ea9f21f1a88a5783f22bde4ec2d9ce
+      - path: internal/provider/writer.go
+        lines:
+          - 323
+          - 324
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 329
+          - 329
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 375
+          - 375
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 395
+          - 395
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 463
+          - 463
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 481
+          - 481
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+    source: mined
+  - id: home-operations/konflate#205
+    repository: home-operations/konflate
+    pr: 205
+    title: "refactor(provider): hand-roll GitHub App auth on jwt/v5; drop ghinstallation"
+    head: 27bc350d4eb7170bc695838e7eead56eaf09d916
+    base: 7c5840346fb37a02a206f896881a23019ea0ac2c
+    expected:
+      - path: internal/provider/writer.go
+        lines:
+          - 176
+          - 183
+        description: "fix(provider): authenticate GitHub reads with the App, not just write-back"
+        must: true
+        fix: 2b0e477575ea9f21f1a88a5783f22bde4ec2d9ce
+      - path: internal/provider/writer.go
+        lines:
+          - 191
+          - 191
+        description: "fix(provider): authenticate GitHub reads with the App, not just write-back"
+        must: true
+        fix: 2b0e477575ea9f21f1a88a5783f22bde4ec2d9ce
+      - path: internal/provider/writer.go
+        lines:
+          - 198
+          - 198
+        description: "fix(provider): authenticate GitHub reads with the App, not just write-back"
+        must: true
+        fix: 2b0e477575ea9f21f1a88a5783f22bde4ec2d9ce
+      - path: internal/provider/writer.go
+        lines:
+          - 204
+          - 209
+        description: "fix(provider): authenticate GitHub reads with the App, not just write-back"
+        must: true
+        fix: 2b0e477575ea9f21f1a88a5783f22bde4ec2d9ce
+    source: mined
+  - id: home-operations/konflate#213
+    repository: home-operations/konflate
+    pr: 213
+    title: "fix(provider): authenticate GitHub reads with the App, not just write-back"
+    head: 2b0e477575ea9f21f1a88a5783f22bde4ec2d9ce
+    base: e9967459a0b94d3466d88d5ed29eef906ee39159
+    expected:
+      - path: internal/provider/writer.go
+        lines:
+          - 189
+          - 195
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+    source: mined
+  - id: home-operations/konflate#216
+    repository: home-operations/konflate
+    pr: 216
+    title: "feat: surface forge rate-limit / poll failures instead of an empty list"
+    head: 8444e25d9a83629202e8b9d29603bbade0f38aec
+    base: e14d9d844d5ad6ca16a5b09207da20c1b559630b
+    expected:
+      - path: internal/gitclone/gitclone.go
+        lines:
+          - 196
+          - 203
+        description: "fix(gitclone): hold one lock across fetch+extract to stop the repack race"
+        must: true
+        fix: ceebd6baf5cf4a503965b6fa4d85d5c3bd2581cf
+    source: mined
+  - id: home-operations/konflate#218
+    repository: home-operations/konflate
+    pr: 218
+    title: "feat(writeback): post a GitHub Check Run for the render verdict"
+    head: 654c56693c6b9f8b59cbc99bf3a92bd3af15bc21
+    base: 8444e25d9a83629202e8b9d29603bbade0f38aec
+    expected:
+      - path: internal/provider/writer.go
+        lines:
+          - 168
+          - 168
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 178
+          - 178
+        description: "fix(provider): match GitHub comments by user id so an App rename doesn't orphan them"
+        must: true
+        fix: 9945bd548ffd8c3f96735ab21447b05ea7d18174
+      - path: internal/provider/writer.go
+        lines:
+          - 403
+          - 403
+        description: "fix(provider): make write-back survive rate limits, big diffs, and >30 checks"
+        must: true
+        fix: 3072287fee326fc49e1637ebcc4501a828bffa89
+      - path: internal/provider/writer.go
+        lines:
+          - 410
+          - 417
+        description: "fix(provider): resend check-run started_at so GitHub stops inflating its duration"
+        must: true
+        fix: 90062daa3c8041da35d1cb200c4b46c170a8eccd
+      - path: internal/provider/writer.go
+        lines:
+          - 419
+          - 419
+        description: "fix(provider): make write-back survive rate limits, big diffs, and >30 checks"
+        must: true
+        fix: 3072287fee326fc49e1637ebcc4501a828bffa89
+      - path: internal/provider/writer.go
+        lines:
+          - 433
+          - 433
+        description: "fix(provider): make write-back survive rate limits, big diffs, and >30 checks"
+        must: true
+        fix: 3072287fee326fc49e1637ebcc4501a828bffa89
+      - path: internal/provider/writer.go
+        lines:
+          - 447
+          - 448
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+      - path: internal/provider/writer.go
+        lines:
+          - 451
+          - 451
+        description: "fix(provider): make write-back survive rate limits, big diffs, and >30 checks"
+        must: true
+        fix: 3072287fee326fc49e1637ebcc4501a828bffa89
+    source: mined
+  - id: home-operations/konflate#220
+    repository: home-operations/konflate
+    pr: 220
+    title: "feat: opt-in read-only MCP endpoint for AI agents"
+    head: 15d3805e9d118f297eabcc83a31854eacc08186c
+    base: 4ea398197d960940249ca286c3cbf486aae71fd8
+    expected:
+      - path: internal/server/mcp.go
+        lines:
+          - 30
+          - 35
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+    source: mined
+  - id: home-operations/konflate#224
+    repository: home-operations/konflate
+    pr: 224
+    title: "fix(gitclone): self-heal of the mirror"
+    head: 3bd4a152bdc317cb36abbec4a7c2610e0870a893
+    base: 7094d68ab2b9b2b85fc672847e87bedc48f9ce94
+    expected:
+      - path: internal/gitclone/gitclone.go
+        lines:
+          - 215
+          - 219
+        description: "fix(gitclone): hold one lock across fetch+extract to stop the repack race"
+        must: true
+        fix: ceebd6baf5cf4a503965b6fa4d85d5c3bd2581cf
+      - path: internal/gitclone/gitclone.go
+        lines:
+          - 229
+          - 230
+        description: "fix(gitclone): hold one lock across fetch+extract to stop the repack race"
+        must: true
+        fix: ceebd6baf5cf4a503965b6fa4d85d5c3bd2581cf
+    source: mined
+  - id: home-operations/konflate#236
+    repository: home-operations/konflate
+    pr: 236
+    title: "fix(gitclone): hold one lock across fetch+extract to stop the repack race"
+    head: ceebd6baf5cf4a503965b6fa4d85d5c3bd2581cf
+    base: f78ca9125ba8debf87ecb1882aeee99b98484219
+    expected:
+      - path: internal/gitclone/gitclone.go
+        lines:
+          - 331
+          - 331
+        description: "fix(gitclone): repack mirrors containing submodules without re-cloning"
+        must: true
+        fix: ca7e3e25393898f263a673d0f0d32c6eba37b093
+    source: mined
+  - id: home-operations/konflate#242
+    repository: home-operations/konflate
+    pr: 242
+    title: "feat(gitclone): shallow-clone the PR mirror with merge-base deepening"
+    head: 77dde4d9a424a34d53ec5bebbdfed562a5ee2876
+    base: e3bb2cd1beaff63459b4626cb24195c2c57ed995
+    expected:
+      - path: charts/konflate/values.yaml
+        lines:
+          - 130
+          - 138
+        description: "fix(gitclone): disable shallow clone by default — it breaks rendering"
+        must: true
+        fix: 79489aae5635cf10a3e32beb3675d8f0754ec2c2
+      - path: internal/config/config.go
+        lines:
+          - 296
+          - 306
+        description: "fix(gitclone): disable shallow clone by default — it breaks rendering"
+        must: true
+        fix: 79489aae5635cf10a3e32beb3675d8f0754ec2c2
+    source: mined
+  - id: home-operations/konflate#254
+    repository: home-operations/konflate
+    pr: 254
+    title: "fix(provider): resend check-run started_at so GitHub stops inflating its duration"
+    head: 90062daa3c8041da35d1cb200c4b46c170a8eccd
+    base: ceb98f5b6c6e1decbb85c067e17467628090945e
+    expected:
+      - path: internal/provider/writer.go
+        lines:
+          - 423
+          - 431
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+    source: mined
+  - id: home-operations/konflate#260
+    repository: home-operations/konflate
+    pr: 260
+    title: "build: standardize on the distroless/static:nonroot base image"
+    head: 33b4832f6315a662529330b1de4296d43a0de09f
+    base: 2dbec9bb8403efb17d3bb9b3e13032000180ffd1
+    expected:
+      - path: Dockerfile
+        lines:
+          - 27
+          - 29
+        description: "fix: drop UPX compression, packed binaries segfault (upx/upx#18902)"
+        must: true
+        fix: 80c02923471b3a02f341fe0e258e967f21aa870a
+      - path: Dockerfile
+        lines:
+          - 47
+          - 48
+        description: "fix: drop UPX compression, packed binaries segfault (upx/upx#18902)"
+        must: true
+        fix: 80c02923471b3a02f341fe0e258e967f21aa870a
+    source: mined
+  - id: home-operations/konflate#273
+    repository: home-operations/konflate
+    pr: 273
+    title: "feat(web): routine PR filter + diff-row alignment fix"
+    head: 5ab38ce66cf7d612a172fc66735267b2f904f1df
+    base: ad732c2efaff8b958428e235a36511b5d7c3ac9a
+    expected:
+      - path: internal/diff/routine.go
+        lines:
+          - 10
+          - 18
+        description: "fix(diff): make routine fire on real image/chart-version bumps"
+        must: true
+        fix: adcc4d4ec50aa7a5ef09345cfa7f87325346e8f5
+      - path: internal/diff/routine.go
+        lines:
+          - 28
+          - 28
+        description: "fix(diff): make routine fire on real image/chart-version bumps"
+        must: true
+        fix: adcc4d4ec50aa7a5ef09345cfa7f87325346e8f5
+    source: mined
+  - id: home-operations/konflate#311
+    repository: home-operations/konflate
+    pr: 311
+    title: "fix(provider): make write-back survive rate limits, big diffs, and >30 checks"
+    head: 3072287fee326fc49e1637ebcc4501a828bffa89
+    base: c4f66d23cc3bedeb606c9184a30f52ce0721ef73
+    expected:
+      - path: internal/provider/forgejo.go
+        lines:
+          - 102
+          - 102
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+    source: mined
+  - id: home-operations/konflate#314
+    repository: home-operations/konflate
+    pr: 314
+    title: "fix(server): close Markdown injection into konflate's own PR comment and check-run"
+    head: 2f71fd7c1b5476710692e5746590db36342ffa14
+    base: d5fc90c68f0d69027eca29281a9671f3f2620921
+    expected:
+      - path: internal/server/markdown.go
+        lines:
+          - 335
+          - 342
+        description: "fix(server): stop escaping parens in mdInline"
+        must: true
+        fix: 58902c27f2ba534bc195df2cce84191bb158e148
+    source: mined
+  - id: home-operations/konflate#456
+    repository: home-operations/konflate
+    pr: 456
+    title: "feat: Add base path config to app and chart"
+    head: c80f31083c2733aa067569ca5f82790a97bb93f8
+    base: 348c15c42169be9c3e9eebb691b4c96b89b7a263
+    expected:
+      - path: internal/config/config.go
+        lines:
+          - 568
+          - 568
+        description: "fix(go): update to go 1.27.0"
+        must: true
+        fix: 39180a75b134074552ec4066f196caf8e538f79a
+    source: mined
+  - id: home-operations/konflate#504
+    repository: home-operations/konflate
+    pr: 504
+    title: "feat(comment): keep image tags, flag chart-ref majors, trim the summary"
+    head: 5119966997d44371835548c1468caa9d05a02069
+    base: 74f99a5abbe01e237ddd38cfb146c82c98dde3e2
+    expected:
+      - path: internal/server/comment.go
+        lines:
+          - 80
+          - 80
+        description: "fix(config): disambiguate PR comment markers across konflate instances"
+        must: true
+        fix: e2669bc1b7409de8d35ad6a3ac6ce0c4a3a05f1b
+      - path: internal/server/handlers.go
+        lines:
+          - 234
+          - 234
+        description: "fix(config): disambiguate PR comment markers across konflate instances"
+        must: true
+        fix: e2669bc1b7409de8d35ad6a3ac6ce0c4a3a05f1b
+      - path: internal/server/markdown.go
+        lines:
+          - 23
+          - 24
+        description: "fix(config): disambiguate PR comment markers across konflate instances"
+        must: true
+        fix: e2669bc1b7409de8d35ad6a3ac6ce0c4a3a05f1b
+      - path: internal/server/markdown.go
+        lines:
+          - 498
+          - 499
+        description: "fix(config): disambiguate PR comment markers across konflate instances"
+        must: true
+        fix: e2669bc1b7409de8d35ad6a3ac6ce0c4a3a05f1b
+    source: mined

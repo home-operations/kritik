@@ -1,0 +1,14 @@
+# Go
+/bench/results/
+/cover.out
+*.out
+/kritik
+/dist/
+
+# Everything that touches a private cluster: manifests, kubeconfig
+# pointer, pushed image reference, replay helpers.
+/.private/
+/.mise.local.toml
+
+# Editor / OS
+.DS_Store

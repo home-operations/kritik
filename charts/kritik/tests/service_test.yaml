@@ -1,0 +1,32 @@
+suite: services
+templates:
+  - service.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: renders the webhook Service for hook-serving pods and a metrics Service for all pods
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: spec.selector["kritik.home-operations.com/hooks"]
+          value: "true"
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-metrics
+        documentIndex: 1
+      - notExists:
+          path: spec.selector["kritik.home-operations.com/hooks"]
+        documentIndex: 1
+
+  - it: renders only the metrics Service for a worker-only topology
+    set:
+      roles.all.enabled: false
+      roles.worker.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-metrics

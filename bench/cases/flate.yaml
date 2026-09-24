@@ -1,0 +1,1357 @@
+# Mined by `go run -tags bench ./bench/cmd/mine`: each case is a squash merged
+# pull request whose lines a later fix commit changed. Curate by hand: demote
+# `must` where the defect was not visible in the diff, and add notes.
+cases:
+  - id: home-operations/flate#566
+    repository: home-operations/flate
+    pr: 566
+    title: "feat(source): retry source fetches + one fetch path for all sources (HelmChart + OCI unification)"
+    head: b65fac21597865aed107b9f1c0761f8190ee013a
+    base: 0607228c7bc2b6c4c6d9c01a7d0a2b4c9f680c06
+    expected:
+      - path: pkg/source/helmchart/fetcher.go
+        lines:
+          - 143
+          - 144
+        description: "fix(source): route OCI HelmRepository semver constraints to ref.SemVer"
+        must: true
+        fix: 30441fc0b509e551c3f56c416a87ad864a18b968
+      - path: pkg/source/helmchart/fetcher.go
+        lines:
+          - 152
+          - 158
+        description: "fix(source): route OCI HelmRepository semver constraints to ref.SemVer"
+        must: true
+        fix: 30441fc0b509e551c3f56c416a87ad864a18b968
+      - path: pkg/source/oci/fetch.go
+        lines:
+          - 52
+          - 56
+        description: "fix: bound git/OCI/bucket HTTP fetches with a response-header liveness backstop"
+        must: true
+        fix: e0ec6609db79e7044831c01d027a6b9c6ce294ac
+      - path: pkg/source/oci/fetch.go
+        lines:
+          - 61
+          - 63
+        description: "fix: bound git/OCI/bucket HTTP fetches with a response-header liveness backstop"
+        must: true
+        fix: e0ec6609db79e7044831c01d027a6b9c6ce294ac
+    source: mined
+  - id: home-operations/flate#572
+    repository: home-operations/flate
+    pr: 572
+    title: "fix(loader): resolve postBuild substitute vars in Kustomization dependsOn"
+    head: 8e5b2e0a2e013a746603278c5e61c860dfeafea3
+    base: f6f779ad67eba6e8da360ae9b8718c631316dee4
+    expected:
+      - path: pkg/loader/depsubst.go
+        lines:
+          - 49
+          - 49
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/loader/depsubst.go
+        lines:
+          - 70
+          - 70
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#574
+    repository: home-operations/flate
+    pr: 574
+    title: "fix(loader): attribute self-produced substituteFrom ConfigMaps across the bare-dir/component graph"
+    head: 31bb0eb18074a3a9da4cc56ac86e14e18ade7cc3
+    base: e360f8ed4ac85da12cfb7fb3b0facab8fb1cb14d
+    expected:
+      - path: pkg/loader/selfproduce.go
+        lines:
+          - 61
+          - 61
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/loader/selfproduce.go
+        lines:
+          - 71
+          - 72
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+      - path: pkg/loader/selfproduce.go
+        lines:
+          - 86
+          - 93
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+      - path: pkg/loader/selfproduce.go
+        lines:
+          - 109
+          - 109
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+      - path: pkg/loader/selfproduce.go
+        lines:
+          - 122
+          - 122
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+      - path: pkg/loader/selfproduce.go
+        lines:
+          - 149
+          - 149
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+      - path: pkg/loader/transformer_ns.go
+        lines:
+          - 220
+          - 220
+        description: "fix: resolve replacements-based targetNamespace so base HelmReleases aren't empty-namespaced"
+        must: true
+        fix: 7927c59f820c6025448381672ccaf9951133fa89
+    source: mined
+  - id: home-operations/flate#575
+    repository: home-operations/flate
+    pr: 575
+    title: "fix(loader): skip the bootstrap-sibling scan inside an already-rendered tree"
+    head: c1f45a45f1fae02cc5e50b6903ea8a5d6be2c177
+    base: 31bb0eb18074a3a9da4cc56ac86e14e18ade7cc3
+    expected:
+      - path: pkg/loader/loader.go
+        lines:
+          - 478
+          - 478
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#579
+    repository: home-operations/flate
+    pr: 579
+    title: "refactor(controllers): lift shared render helpers into base.Controller"
+    head: fdf06b48e5915fe1c538625856cbf13f5754471e
+    base: 30a53e1deb3f3776d59a30af31c237ff37f4b1aa
+    expected:
+      - path: pkg/controllers/base/base.go
+        lines:
+          - 169
+          - 169
+        description: "fix(change): resolve an emitted child's chart source off its manifest"
+        must: true
+        fix: c08ae723925e909b097b30de903290a9deff9807
+      - path: pkg/controllers/helmrelease/controller.go
+        lines:
+          - 487
+          - 487
+        description: "fix(change): resolve an emitted child's chart source off its manifest"
+        must: true
+        fix: c08ae723925e909b097b30de903290a9deff9807
+      - path: pkg/controllers/helmrelease/controller.go
+        lines:
+          - 554
+          - 554
+        description: "fix(change): resolve an emitted child's chart source off its manifest"
+        must: true
+        fix: c08ae723925e909b097b30de903290a9deff9807
+      - path: pkg/controllers/kustomization/dispatch.go
+        lines:
+          - 67
+          - 67
+        description: "fix(change): resolve an emitted child's chart source off its manifest"
+        must: true
+        fix: c08ae723925e909b097b30de903290a9deff9807
+      - path: pkg/controllers/kustomization/dispatch.go
+        lines:
+          - 79
+          - 79
+        description: "fix(change): resolve an emitted child's chart source off its manifest"
+        must: true
+        fix: c08ae723925e909b097b30de903290a9deff9807
+    source: mined
+  - id: home-operations/flate#583
+    repository: home-operations/flate
+    pr: 583
+    title: "perf(discovery): compute KS path prefixes once; defer namespace pass"
+    head: d99ba7fc8bc2c2a3ff1340a124996700ef543a85
+    base: 98f3c4c1ea958749fbc8257655542fdb93f5652b
+    expected:
+      - path: pkg/discovery/discovery.go
+        lines:
+          - 158
+          - 158
+        description: "fix(loader): don't let an external-sourced Kustomization claim the local tree"
+        must: true
+        fix: 51204ab41790f5043252f1c5b270a077d0812538
+    source: mined
+  - id: home-operations/flate#589
+    repository: home-operations/flate
+    pr: 589
+    title: "refactor(manifest,loader): dedup parseSecret field loops and path resolution"
+    head: 0afefb68e6466251b4358ef2c7f2d35001488a08
+    base: 2040927e1f43f0351c3759abcf1c7e42631080d3
+    expected:
+      - path: pkg/manifest/configmap.go
+        lines:
+          - 106
+          - 109
+        description: "fix(manifest): wipe only SOPS ciphertext, not all Secret values"
+        must: true
+        fix: 74beebe6bad2fe5809401a379980a6603fce1acc
+      - path: pkg/manifest/configmap.go
+        lines:
+          - 113
+          - 115
+        description: "fix(manifest): wipe only SOPS ciphertext, not all Secret values"
+        must: true
+        fix: 74beebe6bad2fe5809401a379980a6603fce1acc
+      - path: pkg/manifest/configmap.go
+        lines:
+          - 120
+          - 133
+        description: "fix(manifest): wipe only SOPS ciphertext, not all Secret values"
+        must: true
+        fix: 74beebe6bad2fe5809401a379980a6603fce1acc
+    source: mined
+  - id: home-operations/flate#592
+    repository: home-operations/flate
+    pr: 592
+    title: "perf(values): share cached valuesFrom trees via copy-on-collision merge"
+    head: be064c1c8a2a4564dadbc2e53d2aaf1c2474df6c
+    base: 41803c41b873f933451bdc406a7454c863eb3a4d
+    expected:
+      - path: pkg/values/values.go
+        lines:
+          - 462
+          - 462
+        description: "fix(values): preserve configMapGenerator values with unresolved substitution placeholders"
+        must: true
+        fix: d20f0e839bcbd9486483a673c4b3e5afa99b04a5
+    source: mined
+  - id: home-operations/flate#601
+    repository: home-operations/flate
+    pr: 601
+    title: "feat(git): shallow clone + narrow the initial mirror fetch for GitRepository sources"
+    head: 3f8d1056f4b89f8054b624c8accd20dbc4f9081d
+    base: da556a54bd7d832f797aefe0d627e518e2f33f01
+    expected:
+      - path: pkg/orchestrator/orchestrator.go
+        lines:
+          - 332
+          - 332
+        description: "fix(source): reject file:// (non-https/ssh) git schemes under --restrict-egress"
+        must: true
+        fix: bffdee55041884f094c4e9798242d614c287d8e5
+    source: mined
+  - id: home-operations/flate#620
+    repository: home-operations/flate
+    pr: 620
+    title: "refactor(manifest): single-source the cross-package KS/substitute invariants"
+    head: efe65cd77de084d5acd5e116a41e45555ae1fbd9
+    base: 90af88b6ecb4c1105dc5ffff6e1b751f68fa1ccc
+    expected:
+      - path: pkg/loader/parent.go
+        lines:
+          - 73
+          - 73
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/manifest/kustomize_fs.go
+        lines:
+          - 159
+          - 159
+        description: "fix: match root prefix in matchingPrefixes"
+        must: true
+        fix: 78007497c60b8c8b5faa3dca7c47178cd32c174f
+      - path: pkg/manifest/kustomize_fs.go
+        lines:
+          - 176
+          - 176
+        description: "fix(loader): attribute children to Kustomizations whose spec.path has a leading slash"
+        must: true
+        fix: ec2e8d79d254321da9a0745c6b8979009d76c2ac
+    source: mined
+  - id: home-operations/flate#621
+    repository: home-operations/flate
+    pr: 621
+    title: "refactor(kustomize): unify staging-cache internals + extract testable cosign verify"
+    head: d882e8bb13a138ce81fa732251f182c806c981d4
+    base: efe65cd77de084d5acd5e116a41e45555ae1fbd9
+    expected:
+      - path: pkg/source/oci/cosign.go
+        lines:
+          - 151
+          - 151
+        description: "fix(manifest): wipe only SOPS ciphertext, not all Secret values"
+        must: true
+        fix: 74beebe6bad2fe5809401a379980a6603fce1acc
+    source: mined
+  - id: home-operations/flate#622
+    repository: home-operations/flate
+    pr: 622
+    title: "refactor(controllers): fuse dep-wait re-read, route adapters via GetByName[T], fix RS attribution"
+    head: 18812e01453d56a3cf4a07aa7ab16f3d68274d10
+    base: d882e8bb13a138ce81fa732251f182c806c981d4
+    expected:
+      - path: pkg/controllers/kustomization/controller.go
+        lines:
+          - 179
+          - 179
+        description: "fix: keep a re-rendered Kustomization Ready so dependents don't race quiescence"
+        must: true
+        fix: 07efc797046ab864fa56c65bc74fbbeb695f2414
+      - path: pkg/helm/resolver.go
+        lines:
+          - 49
+          - 49
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/helm/resolver.go
+        lines:
+          - 54
+          - 54
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/helm/resolver.go
+        lines:
+          - 65
+          - 65
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/values/values.go
+        lines:
+          - 71
+          - 71
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/values/values.go
+        lines:
+          - 76
+          - 76
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#623
+    repository: home-operations/flate
+    pr: 623
+    title: "refactor(helmrelease): extract resolvePreRenderValuesFrom from reconcile"
+    head: 9cf4499ff578cd9b6e3cff568e0b81fdd32bc365
+    base: 8189d4a3133bfb22fa5cac0286a3c50c9e9d84c8
+    expected:
+      - path: pkg/controllers/helmrelease/valuesfrom.go
+        lines:
+          - 16
+          - 16
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/helmrelease/valuesfrom.go
+        lines:
+          - 66
+          - 66
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#626
+    repository: home-operations/flate
+    pr: 626
+    title: "refactor(kustomize): render in memory, drop the on-disk staging cache"
+    head: 23a148018bfe2e1d277ad8279ccea5e585f563d5
+    base: a39c4507487abde67f4485f3c5bb50bcf31609c0
+    expected:
+      - path: pkg/kustomize/copytree.go
+        lines:
+          - 20
+          - 25
+        description: "fix(kustomize): confine remote-git-base symlinks to the base root (#741)"
+        must: true
+        fix: ec34f6f381c592703f6a89b0b709851c790fbda2
+      - path: pkg/kustomize/copytree.go
+        lines:
+          - 29
+          - 29
+        description: "fix(kustomize): confine remote-git-base symlinks to the base root (#741)"
+        must: true
+        fix: ec34f6f381c592703f6a89b0b709851c790fbda2
+      - path: pkg/kustomize/copytree.go
+        lines:
+          - 43
+          - 43
+        description: "fix(kustomize): confine remote-git-base symlinks to the base root (#741)"
+        must: true
+        fix: ec34f6f381c592703f6a89b0b709851c790fbda2
+      - path: pkg/kustomize/copytree.go
+        lines:
+          - 56
+          - 56
+        description: "fix(kustomize): confine remote-git-base symlinks to the base root (#741)"
+        must: true
+        fix: ec34f6f381c592703f6a89b0b709851c790fbda2
+      - path: pkg/kustomize/flux.go
+        lines:
+          - 47
+          - 48
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/flux.go
+        lines:
+          - 88
+          - 88
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/flux.go
+        lines:
+          - 100
+          - 110
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/flux.go
+        lines:
+          - 116
+          - 116
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/generate.go
+        lines:
+          - 41
+          - 42
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/generate.go
+        lines:
+          - 68
+          - 76
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/generate.go
+        lines:
+          - 82
+          - 85
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/kustomize/generate.go
+        lines:
+          - 202
+          - 202
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/generate.go
+        lines:
+          - 219
+          - 219
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/generate.go
+        lines:
+          - 225
+          - 228
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/kustomize/generate.go
+        lines:
+          - 257
+          - 259
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/generate.go
+        lines:
+          - 282
+          - 290
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/overlayfs.go
+        lines:
+          - 86
+          - 86
+        description: "fix(kustomize): propagate filepath.SkipDir to the disk layer in overlayFS.Walk"
+        must: true
+        fix: 4ff40ccbf07881fe6013e6d70b4ede2ccd0d8b59
+    source: mined
+  - id: home-operations/flate#630
+    repository: home-operations/flate
+    pr: 630
+    title: "refactor: codebase-wide behavior-preserving cleanliness pass"
+    head: c8722fd7f74ec177556b77e11bc20fd0b6f8673d
+    base: 7ec83d2e81e5e2f3875c044c77ac354b7581ce17
+    expected:
+      - path: pkg/source/helmchart/fetcher.go
+        lines:
+          - 120
+          - 124
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/values/values.go
+        lines:
+          - 419
+          - 419
+        description: "fix(values): honor literal valuesFrom target paths"
+        must: true
+        fix: 54aef4f47efcc288bd2a96c79f85a2a11261da7f
+    source: mined
+  - id: home-operations/flate#631
+    repository: home-operations/flate
+    pr: 631
+    title: "refactor: second behavior-preserving cleanliness pass"
+    head: 2fbb444269c006f091c7ed67c1bc7bb326f086a2
+    base: c8722fd7f74ec177556b77e11bc20fd0b6f8673d
+    expected:
+      - path: pkg/depwait/depwait.go
+        lines:
+          - 327
+          - 327
+        description: "fix: bind dependency waits to fetch completion, not a wall clock"
+        must: true
+        fix: 462be1c116f26f153850a006865005f088427672
+    source: mined
+  - id: home-operations/flate#632
+    repository: home-operations/flate
+    pr: 632
+    title: "refactor: third behavior-preserving cleanliness pass"
+    head: 38c7c07fb38567c3320d76044531f7a55aecebf6
+    base: 2fbb444269c006f091c7ed67c1bc7bb326f086a2
+    expected:
+      - path: pkg/loader/inherit.go
+        lines:
+          - 232
+          - 232
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+    source: mined
+  - id: home-operations/flate#633
+    repository: home-operations/flate
+    pr: 633
+    title: "refactor: fourth behavior-preserving cleanliness pass"
+    head: f27cf92d6231a4579cd42ade5c8e5a62df50e1ea
+    base: 38c7c07fb38567c3320d76044531f7a55aecebf6
+    expected:
+      - path: pkg/controllers/base/base.go
+        lines:
+          - 471
+          - 471
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/orchestrator/run.go
+        lines:
+          - 360
+          - 360
+        description: "fix(orchestrator): a FAILED HelmRelease emits no rendered children"
+        must: true
+        fix: 7c1c0e939085199d6ece8ea5c99eff7ca345e2af
+    source: mined
+  - id: home-operations/flate#635
+    repository: home-operations/flate
+    pr: 635
+    title: "refactor: sixth behavior-preserving cleanliness pass"
+    head: 6a61d60f4861ce7f103b506ff970b4ccf9f0ab57
+    base: 47f500733994364ba00e4f9472e31853a7302374
+    expected:
+      - path: internal/cli/common.go
+        lines:
+          - 578
+          - 584
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+      - path: internal/cli/common.go
+        lines:
+          - 591
+          - 592
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+      - path: internal/cli/common.go
+        lines:
+          - 624
+          - 624
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+    source: mined
+  - id: home-operations/flate#638
+    repository: home-operations/flate
+    pr: 638
+    title: "refactor: ninth behavior-preserving cleanliness pass"
+    head: 495e87178a78d1eb037baad1ff44472553cc67e6
+    base: 05e3a794441a74fde17d9e95527f0c1c84acf081
+    expected:
+      - path: pkg/loader/inherit.go
+        lines:
+          - 98
+          - 100
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#640
+    repository: home-operations/flate
+    pr: 640
+    title: "refactor: eleventh behavior-preserving cleanliness pass"
+    head: 252afe7353aaa8bd6c22b199535721f826f32fc0
+    base: c6af0c1e2e7cb863776c796b68627275c67edd4e
+    expected:
+      - path: pkg/change/ownership.go
+        lines:
+          - 85
+          - 86
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+    source: mined
+  - id: home-operations/flate#646
+    repository: home-operations/flate
+    pr: 646
+    title: "perf: benchmark-gated warm-path optimizations (round 2)"
+    head: 3755cd23e6f74a8c965c2c7fd392f7600952e8c6
+    base: ea80f99ee1c02a238eccf259d275ac7e32d86409
+    expected:
+      - path: pkg/kustomize/flux.go
+        lines:
+          - 161
+          - 162
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+    source: mined
+  - id: home-operations/flate#649
+    repository: home-operations/flate
+    pr: 649
+    title: "refactor: deep cleanliness pass 3 (recompute hoist + stale docs)"
+    head: 52b24fcd620c0e5ddcdd70661384291ddbb15934
+    base: fdec58c7aaf9918e1d46c9215098118a9aea8598
+    expected:
+      - path: pkg/kustomize/flux.go
+        lines:
+          - 51
+          - 53
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+    source: mined
+  - id: home-operations/flate#650
+    repository: home-operations/flate
+    pr: 650
+    title: "refactor: deep cleanliness pass 4 (dedup + modern idioms)"
+    head: 5fde63256fbeb2361bef2e70b6c4d2ddc63b2975
+    base: 52b24fcd620c0e5ddcdd70661384291ddbb15934
+    expected:
+      - path: pkg/source/git/fetcher.go
+        lines:
+          - 122
+          - 122
+        description: "fix(source): reject file:// (non-https/ssh) git schemes under --restrict-egress"
+        must: true
+        fix: bffdee55041884f094c4e9798242d614c287d8e5
+      - path: pkg/source/git/fetcher.go
+        lines:
+          - 223
+          - 223
+        description: "fix(source): reject file:// (non-https/ssh) git schemes under --restrict-egress"
+        must: true
+        fix: bffdee55041884f094c4e9798242d614c287d8e5
+    source: mined
+  - id: home-operations/flate#652
+    repository: home-operations/flate
+    pr: 652
+    title: "refactor: deep cleanliness pass 6 (iter.Seq + stale-doc/type fixes)"
+    head: 16c46d22d287f62bb7e9eea6223f2771882886be
+    base: 95c04060988c02c8f13bb4f7e103bf9bbde470dd
+    expected:
+      - path: pkg/change/ownership.go
+        lines:
+          - 105
+          - 106
+        description: "fix: match root prefix in matchingPrefixes"
+        must: true
+        fix: 78007497c60b8c8b5faa3dca7c47178cd32c174f
+      - path: pkg/change/ownership.go
+        lines:
+          - 112
+          - 116
+        description: "fix: match root prefix in matchingPrefixes"
+        must: true
+        fix: 78007497c60b8c8b5faa3dca7c47178cd32c174f
+      - path: pkg/change/ownership.go
+        lines:
+          - 127
+          - 129
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+    source: mined
+  - id: home-operations/flate#665
+    repository: home-operations/flate
+    pr: 665
+    title: "fix: resolve replacements-based targetNamespace so base HelmReleases aren't empty-namespaced"
+    head: 7927c59f820c6025448381672ccaf9951133fa89
+    base: d5269f8012453f540db7349172f6d2650f81056f
+    expected:
+      - path: pkg/loader/transformer_ns.go
+        lines:
+          - 165
+          - 165
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+    source: mined
+  - id: home-operations/flate#667
+    repository: home-operations/flate
+    pr: 667
+    title: "feat: render Helm with a deterministic clock to stop now-derived churn"
+    head: 1e85b6527e7e4817c6de10080639b60ad40a48ea
+    base: 6215fdebb71fe1c5348b574aa5cd4a7c4dd3efee
+    expected:
+      - path: pkg/helm/deterministic/doc.go
+        lines:
+          - 3
+          - 4
+        description: "fix(helm): override sprig shuffle so renders are deterministic"
+        must: true
+        fix: 3be1225c4958aa957ada2462b481f657e2320139
+    source: mined
+  - id: home-operations/flate#675
+    repository: home-operations/flate
+    pr: 675
+    title: "refactor(controllers): add engine-agnostic Require dependency seam"
+    head: fe88398a47f33a6b0d94a6f2fd133157a7dde853
+    base: 8d9c3f920314c955adb7b86048f262da13015bfe
+    expected:
+      - path: pkg/controllers/base/base.go
+        lines:
+          - 510
+          - 512
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/base/base.go
+        lines:
+          - 523
+          - 523
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/helmrelease/controller.go
+        lines:
+          - 244
+          - 245
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/kustomization/controller.go
+        lines:
+          - 141
+          - 142
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#676
+    repository: home-operations/flate
+    pr: 676
+    title: "feat(engine): re-entrant fixpoint scheduler behind --engine=dag"
+    head: 0ba51144670c9e63f9ed72c11914d4dcdd5c2e1c
+    base: fe88398a47f33a6b0d94a6f2fd133157a7dde853
+    expected:
+      - path: pkg/controllers/base/base.go
+        lines:
+          - 705
+          - 706
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/base/base.go
+        lines:
+          - 749
+          - 751
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/base/base.go
+        lines:
+          - 759
+          - 759
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/helmrelease/controller.go
+        lines:
+          - 159
+          - 159
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/kustomization/controller.go
+        lines:
+          - 131
+          - 131
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/source/controller.go
+        lines:
+          - 101
+          - 102
+        description: "fix(manifest): match source CRs on API group, not kind alone"
+        must: true
+        fix: 67de8e519ad307d56bca823d467e2691fb79bd27
+      - path: pkg/controllers/source/controller.go
+        lines:
+          - 113
+          - 113
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/orchestrator/dagrun.go
+        lines:
+          - 31
+          - 31
+        description: "fix(manifest): match source CRs on API group, not kind alone"
+        must: true
+        fix: 67de8e519ad307d56bca823d467e2691fb79bd27
+      - path: pkg/orchestrator/dagrun.go
+        lines:
+          - 62
+          - 62
+        description: "fix(manifest): match source CRs on API group, not kind alone"
+        must: true
+        fix: 67de8e519ad307d56bca823d467e2691fb79bd27
+    source: mined
+  - id: home-operations/flate#681
+    repository: home-operations/flate
+    pr: 681
+    title: "refactor(loader): typed decode + unified strategies in transformer_ns.go"
+    head: a2eb1ffba62df21eee022fb315ffd421ea12900b
+    base: 021bcbeef922a73e481c83dc2acb584e85193329
+    expected:
+      - path: pkg/loader/transformer_ns.go
+        lines:
+          - 380
+          - 380
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+    source: mined
+  - id: home-operations/flate#683
+    repository: home-operations/flate
+    pr: 683
+    title: "perf(orchestrator): drop the blocking git-mirror prewarm pass"
+    head: 477c1d76fcad2c24e7085e85ea62aef7c081de8e
+    base: f6131316086a0c4f8625a552122a0841b1497b06
+    expected:
+      - path: pkg/source/git/fetcher.go
+        lines:
+          - 222
+          - 222
+        description: "fix(source): reject file:// (non-https/ssh) git schemes under --restrict-egress"
+        must: true
+        fix: bffdee55041884f094c4e9798242d614c287d8e5
+    source: mined
+  - id: home-operations/flate#684
+    repository: home-operations/flate
+    pr: 684
+    title: "feat(cli): live per-resource progress on stderr"
+    head: 481a37a4ce9515597f2ee141b19333b94bb80837
+    base: 477c1d76fcad2c24e7085e85ea62aef7c081de8e
+    expected:
+      - path: internal/cli/root.go
+        lines:
+          - 53
+          - 53
+        description: "fix(cli): suppress the status bar when --stream shares the terminal"
+        must: true
+        fix: abcc2c946ba01642370b6b3b540854c2cbec001c
+    source: mined
+  - id: home-operations/flate#686
+    repository: home-operations/flate
+    pr: 686
+    title: "feat(cli): replace scrolling progress with a live status bar"
+    head: 57f4a3ed682f33f5f454763fcb05bdf44390e49e
+    base: a4f0c56a35353e97590ae1d50252982af72af390
+    expected:
+      - path: internal/cli/progress.go
+        lines:
+          - 11
+          - 15
+        description: "fix(cli): suppress the status bar when --stream shares the terminal"
+        must: true
+        fix: abcc2c946ba01642370b6b3b540854c2cbec001c
+      - path: internal/cli/root.go
+        lines:
+          - 49
+          - 52
+        description: "fix(cli): suppress the status bar when --stream shares the terminal"
+        must: true
+        fix: abcc2c946ba01642370b6b3b540854c2cbec001c
+      - path: internal/cli/root.go
+        lines:
+          - 57
+          - 57
+        description: "fix(cli): suppress the status bar when --stream shares the terminal"
+        must: true
+        fix: abcc2c946ba01642370b6b3b540854c2cbec001c
+      - path: internal/cli/statusbar.go
+        lines:
+          - 46
+          - 49
+        description: "fix(cli): count only declared resources in the status bar"
+        must: true
+        fix: 80095a9a0d2b2b95199b46b82f49f86bb18189b2
+    source: mined
+  - id: home-operations/flate#696
+    repository: home-operations/flate
+    pr: 696
+    title: "feat(cli): modern `flate test` output on a shared lipgloss style layer"
+    head: 713ae9b347412d37311c104cb9df7265365a7609
+    base: abcc2c946ba01642370b6b3b540854c2cbec001c
+    expected:
+      - path: internal/testrunner/runner.go
+        lines:
+          - 96
+          - 96
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+    source: mined
+  - id: home-operations/flate#698
+    repository: home-operations/flate
+    pr: 698
+    title: "refactor(cli): drive the status bar with Bubble Tea v2"
+    head: 69b1ef300ab64ff52e147a7680ea7155a6ef3fec
+    base: 25a40ef4859b1d4de5aea34fffa283f10d913717
+    expected:
+      - path: internal/cli/common.go
+        lines:
+          - 551
+          - 551
+        description: "fix(cli): stop terminal capability probes leaking into the shell"
+        must: true
+        fix: 794395049586f7f3f6705dc18378f49577d5b7dd
+    source: mined
+  - id: home-operations/flate#699
+    repository: home-operations/flate
+    pr: 699
+    title: "refactor(cli): unify the bar + test vocabulary; verdict glyph & timing"
+    head: b7585ba49233f2472e1a4b0e856b07fec133b3e0
+    base: 69b1ef300ab64ff52e147a7680ea7155a6ef3fec
+    expected:
+      - path: internal/style/style.go
+        lines:
+          - 25
+          - 27
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+      - path: internal/testrunner/runner.go
+        lines:
+          - 104
+          - 107
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+    source: mined
+  - id: home-operations/flate#705
+    repository: home-operations/flate
+    pr: 705
+    title: "feat(resourceset): make ResourceSet a first-class DAG node"
+    head: 84bbb22a45c3c6de1eaac6bc77686bbe0159905a
+    base: 1f1f93573f29d0b9a04a30ea0550fe107ca4987b
+    expected:
+      - path: pkg/controllers/resourceset/controller.go
+        lines:
+          - 97
+          - 97
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/resourceset/controller.go
+        lines:
+          - 121
+          - 122
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/resourceset/controller.go
+        lines:
+          - 206
+          - 208
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/resourceset/controller.go
+        lines:
+          - 219
+          - 223
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/controllers/resourceset/controller.go
+        lines:
+          - 240
+          - 240
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: pkg/orchestrator/dagrun.go
+        lines:
+          - 55
+          - 55
+        description: "fix(manifest): match source CRs on API group, not kind alone"
+        must: true
+        fix: 67de8e519ad307d56bca823d467e2691fb79bd27
+    source: mined
+  - id: home-operations/flate#706
+    repository: home-operations/flate
+    pr: 706
+    title: "refactor(emit): return parsed children so ResourceSet skips a re-parse"
+    head: e0f23965ca68234ec6124418ca79fd1b5f8af120
+    base: 84bbb22a45c3c6de1eaac6bc77686bbe0159905a
+    expected:
+      - path: pkg/controllers/emit/emit.go
+        lines:
+          - 88
+          - 88
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#717
+    repository: home-operations/flate
+    pr: 717
+    title: "chore: remove dead code and relocate test-only scaffolding"
+    head: 2e323e749f4e428013c37fe83e3baedd3e056f3e
+    base: d2a8b2d2a0a02f5366560eb881ffc1db45fd1787
+    expected:
+      - path: pkg/kustomize/copytree.go
+        lines:
+          - 21
+          - 21
+        description: "fix(kustomize): confine remote-git-base symlinks to the base root (#741)"
+        must: true
+        fix: ec34f6f381c592703f6a89b0b709851c790fbda2
+    source: mined
+  - id: home-operations/flate#720
+    repository: home-operations/flate
+    pr: 720
+    title: "fix(manifest): skip non-manifest YAML instead of failing the file"
+    head: e56f6e4080f55e8b264e4c3798cfaa3808b0f403
+    base: 94947a2176d9de752253518547a76dcb5a197baf
+    expected:
+      - path: pkg/manifest/io.go
+        lines:
+          - 124
+          - 125
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#728
+    repository: home-operations/flate
+    pr: 728
+    title: "feat(cli): root-cause failure report — collapse cascades, defer log noise"
+    head: 79a8a188ea01af644f595653aefd5238d0b13a3c
+    base: fec00dea9692d30991634b3748634a0655f3841d
+    expected:
+      - path: internal/cli/common.go
+        lines:
+          - 659
+          - 670
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+      - path: internal/cli/root.go
+        lines:
+          - 122
+          - 123
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+      - path: internal/report/report.go
+        lines:
+          - 77
+          - 83
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+      - path: internal/report/report.go
+        lines:
+          - 102
+          - 102
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+      - path: internal/report/report.go
+        lines:
+          - 145
+          - 149
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+      - path: internal/report/report.go
+        lines:
+          - 174
+          - 181
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+      - path: internal/report/report.go
+        lines:
+          - 185
+          - 186
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+      - path: internal/report/report.go
+        lines:
+          - 209
+          - 216
+        description: "fix(cli): fold dependency cascades under their root cause on every surface"
+        must: true
+        fix: 7895f1ff7537b279cb2a147987ba2fffd9ec2668
+      - path: pkg/controllers/base/base.go
+        lines:
+          - 633
+          - 634
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#731
+    repository: home-operations/flate
+    pr: 731
+    title: "feat(kustomize): cross-run render cache validated by a recorded read-set"
+    head: 835836521a76491fcffd36307cb2779ae1665c49
+    base: 1e753d8a6b8f4ee39c93e57c64c0930cf4215b7e
+    expected:
+      - path: pkg/kustomize/flux.go
+        lines:
+          - 87
+          - 90
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/flux.go
+        lines:
+          - 109
+          - 109
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/flux.go
+        lines:
+          - 136
+          - 146
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+      - path: pkg/kustomize/flux.go
+        lines:
+          - 204
+          - 232
+        description: "fix(kustomize): apply .sourceignore from the source root for working-tree renders"
+        must: true
+        fix: 25821b1dc76fb672372fb7e2fba71086e0052663
+    source: mined
+  - id: home-operations/flate#750
+    repository: home-operations/flate
+    pr: 750
+    title: "feat(source): opt-in SSRF egress guard for source fetches (#742)"
+    head: 82ff482af70ca1202631a169683fda50970b8d56
+    base: 9fd2aa089ab22580115e82e38bb960277a2fdc67
+    expected:
+      - path: internal/cli/common.go
+        lines:
+          - 122
+          - 125
+        description: "fix(source): reject file:// (non-https/ssh) git schemes under --restrict-egress"
+        must: true
+        fix: bffdee55041884f094c4e9798242d614c287d8e5
+      - path: pkg/orchestrator/orchestrator.go
+        lines:
+          - 79
+          - 86
+        description: "fix(source): reject file:// (non-https/ssh) git schemes under --restrict-egress"
+        must: true
+        fix: bffdee55041884f094c4e9798242d614c287d8e5
+    source: mined
+  - id: home-operations/flate#753
+    repository: home-operations/flate
+    pr: 753
+    title: "feat(orchestrator): structured Result.Warnings channel + stale HelmRelease values (#744)"
+    head: eabe181182c90c05e19366eb86b35cc214faf0a9
+    base: bffdee55041884f094c4e9798242d614c287d8e5
+    expected:
+      - path: pkg/helm/stalevalues.go
+        lines:
+          - 68
+          - 70
+        description: "fix(helm): treat dependency condition and tags keys as used values"
+        must: true
+        fix: 37b0d1a4c3261d35f46ac26ce668eef15e325e2b
+    source: mined
+  - id: home-operations/flate#757
+    repository: home-operations/flate
+    pr: 757
+    title: "fix(loader): don't let an external-sourced Kustomization claim the local tree"
+    head: 51204ab41790f5043252f1c5b270a077d0812538
+    base: 7204ef1309ddaaf6172971bb814cf1ae002064ff
+    expected:
+      - path: pkg/loader/parent.go
+        lines:
+          - 59
+          - 59
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#764
+    repository: home-operations/flate
+    pr: 764
+    title: "refactor: cleanup sweep pass 4 — fold HR parent gate onto base.RequireRefresh (post-v0.4.5)"
+    head: 90baa716a3090cde35c3e846c525ca598d449031
+    base: 5c06a6dd448b6672cf4143faa64438c4a149f4e0
+    expected:
+      - path: pkg/controllers/helmrelease/controller.go
+        lines:
+          - 157
+          - 158
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#772
+    repository: home-operations/flate
+    pr: 772
+    title: "feat(loader): materialize placeholder Secrets at discovery for known-key secrets"
+    head: 60d80e7ca6b448abcb807a11b437b5986c8287cd
+    base: 71ab506312e8cd6a69249ae7cde97ded033f45dd
+    expected:
+      - path: pkg/manifest/producer.go
+        lines:
+          - 104
+          - 105
+        description: "fix(go)!: update to go 1.27.0 and adopt generic methods"
+        must: true
+        fix: 82e5a04d5a8b869c05989200f9fd60164e7c24bf
+    source: mined
+  - id: home-operations/flate#775
+    repository: home-operations/flate
+    pr: 775
+    title: "build: standardize on the distroless/static:nonroot base image"
+    head: bf84e6945e5a6edd5d3cfbe3acd585a0f89388ee
+    base: 94780a1129c43dd45e7feee6c1aa5f0e48b0d51d
+    expected:
+      - path: Dockerfile
+        lines:
+          - 6
+          - 6
+        description: "fix: drop UPX compression, packed binaries segfault (upx/upx#18902)"
+        must: true
+        fix: ea3d95b1c3188d6c01754611a3558b82d33c15b9
+    source: mined
+  - id: home-operations/flate#785
+    repository: home-operations/flate
+    pr: 785
+    title: "fix(orchestrator): orphan unreferenced base Kustomizations"
+    head: 21784388a2e57f04e375b5125c8a8b5a09c35904
+    base: a87d9ab5dc3fa376d70019549de8785f56a88069
+    expected:
+      - path: pkg/loader/kustomization.go
+        lines:
+          - 235
+          - 235
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+    source: mined
+  - id: home-operations/flate#840
+    repository: home-operations/flate
+    pr: 840
+    title: "fix(cli): stop terminal capability probes leaking into the shell"
+    head: 794395049586f7f3f6705dc18378f49577d5b7dd
+    base: 3d82f737827643c74780f2c09183c2e5d131403a
+    expected:
+      - path: internal/cli/progress.go
+        lines:
+          - 63
+          - 63
+        description: "fix(cli): strip the Kitty keyboard probe from progress output"
+        must: true
+        fix: 22be53ed815cc907d6b5c20c21bf7908439caa96
+      - path: internal/cli/progress.go
+        lines:
+          - 76
+          - 78
+        description: "fix(cli): strip the Kitty keyboard probe from progress output"
+        must: true
+        fix: 22be53ed815cc907d6b5c20c21bf7908439caa96
+    source: mined
+  - id: home-operations/flate#917
+    repository: home-operations/flate
+    pr: 917
+    title: "fix(change): exclude external-sourced KS claims from the ownership index"
+    head: 14ce977b81df1291f6282d7da0e6eb62a5712e9e
+    base: 6a8353233afeca906a8e99fe8ac25918f5f9d6b8
+    expected:
+      - path: pkg/change/filter.go
+        lines:
+          - 148
+          - 148
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+      - path: pkg/change/filter.go
+        lines:
+          - 171
+          - 171
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+      - path: pkg/change/filter.go
+        lines:
+          - 487
+          - 487
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+      - path: pkg/change/ownership.go
+        lines:
+          - 56
+          - 56
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+      - path: pkg/orchestrator/changefilter.go
+        lines:
+          - 34
+          - 34
+        description: "fix(change): attribute resources: escapes to their owning Kustomization"
+        must: true
+        fix: 8e43f49fd69eccc6d265458221a8c7b5182c6d81
+    source: mined
