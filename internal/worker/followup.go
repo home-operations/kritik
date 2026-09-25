@@ -347,12 +347,15 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 		if err := tx.QueryRow(ctx, `SELECT body FROM pull_requests WHERE id = $1`, f.pr.id).Scan(&rec.body); err != nil {
 			return fmt.Errorf("worker: load pull request body: %w", err)
 		}
-		var reviewID string
+		last, err := lastCompleted(ctx, tx, f.pr.id)
+		if err != nil || last.id == "" {
+			return err
+		}
+		rec.findings = reviewFindings(last.findings)
 		var stages []byte
-		err := tx.QueryRow(ctx, `SELECT r.id, c.diff, c.changed_paths, c.stages FROM reviews r
-			JOIN runner_runs rr ON rr.review_id = r.id JOIN context_packs c ON c.runner_run_id = rr.id
-			WHERE r.pull_request_id = $1 AND r.status = 'completed' ORDER BY r.created_at DESC LIMIT 1`, f.pr.id).
-			Scan(&reviewID, &rec.diff, &rec.changed, &stages)
+		err = tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages FROM runner_runs rr
+			JOIN context_packs c ON c.runner_run_id = rr.id WHERE rr.review_id = $1`, last.id).
+			Scan(&rec.diff, &rec.changed, &stages)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -364,22 +367,7 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 				return fmt.Errorf("worker: decode context pack: %w", err)
 			}
 		}
-		rows, err := tx.Query(ctx, `SELECT path, line, severity, title, explanation, suggested_fix FROM findings
-			WHERE review_id = $1 ORDER BY path, line`, reviewID)
-		if err != nil {
-			return fmt.Errorf("worker: load findings: %w", err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var fd review.Finding
-			var sev string
-			if err := rows.Scan(&fd.Path, &fd.Line, &sev, &fd.Title, &fd.Explanation, &fd.SuggestedFix); err != nil {
-				return err
-			}
-			fd.Severity = review.Severity(sev)
-			rec.findings = append(rec.findings, fd)
-		}
-		return rows.Err()
+		return nil
 	})
 	return rec, err
 }

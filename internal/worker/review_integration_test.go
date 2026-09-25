@@ -729,6 +729,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkRepoConfig(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, tenant.ID())
 	})
 
+	t.Run("re-reviews build on the last reviewed head", func(t *testing.T) {
+		checkIncremental(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, tenant.ID())
+	})
+
 	t.Run("superseded when the head moves before the job runs", func(t *testing.T) {
 		// Insert a job for a head that is no longer the PR's head.
 		res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{TenantID: tenant.ID(), RepositoryID: configfile.RepositoryID(in.ID(), "onedr0p/home-ops"), Number: 1, HeadSHA: "0000000000000000000000000000000000000000", Trigger: "poll"}, nil)
@@ -871,6 +875,159 @@ review:
 	if forgeStatus != "success: kritik: skipped (filtered by .kritik.yaml)" {
 		t.Fatalf("status = %q", forgeStatus)
 	}
+}
+
+// checkIncremental reviews a pull request, pushes a commit on top, and then
+// force-pushes it away: the second review is incremental and does not post
+// the repeated finding inline again, the third is full because the head it
+// would build on is gone.
+func checkIncremental(
+	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
+	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), tenantID string,
+) {
+	t.Helper()
+	const number = 5
+	r, _ := git.PlainOpen(dir)
+	wt, _ := r.Worktree()
+	commit := func(content string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add("main.go"); err != nil {
+			t.Fatal(err)
+		}
+		h, err := wt.Commit("change", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h.String()
+	}
+	reset := func() {
+		t.Helper()
+		if err := wt.Reset(&git.ResetOptions{Commit: plumbing.NewHash(base), Mode: git.HardReset}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reviewHead := func(head string) (reviewScopeRow, string, int) {
+		t.Helper()
+		lf.mu.Lock()
+		inlineBefore := len(lf.inline)
+		lf.mu.Unlock()
+		dispatchPR(number, head, false)
+		if status, _, _ := waitReview(head); status != "completed" {
+			t.Fatalf("status = %s, want completed", status)
+		}
+		fc.mu.Lock()
+		prompt := fc.users[len(fc.users)-1]
+		fc.mu.Unlock()
+		lf.mu.Lock()
+		newInline := len(lf.inline) - inlineBefore
+		lf.mu.Unlock()
+		return scopeRow(ctx, t, appStore, tenantID, head), prompt, newInline
+	}
+
+	reset()
+	lf.setBase(base)
+	first := commit("package main\n\nfunc f1() {}\n")
+	firstRow, prompt, inline := reviewHead(first)
+	if firstRow.scope != "full" || firstRow.reason != "no completed review to build on" || firstRow.prior != "" || inline != 1 {
+		t.Fatalf("first review = %+v, %d inline comment(s)", firstRow, inline)
+	}
+	if strings.Contains(prompt, "Changed since the last review") {
+		t.Fatalf("a first review has no incremental sections:\n%s", prompt)
+	}
+	if p := postedInline(ctx, t, appStore, tenantID, firstRow.id); len(p) != 1 || !p[0] {
+		t.Fatalf("posted_inline = %v", p)
+	}
+
+	second := commit("package main\n\nfunc f1() {}\n\nfunc f2() {}\n")
+	secondRow, prompt, inline := reviewHead(second)
+	if secondRow.scope != "incremental" || secondRow.reason != "" || secondRow.prior != firstRow.id || inline != 0 {
+		t.Fatalf("second review = %+v, %d inline comment(s); want incremental on %s with nothing posted inline again",
+			secondRow, inline, firstRow.id)
+	}
+	for _, want := range []string{
+		"Changed since the last review (" + first[:7], "+func f2() {}",
+		"Findings from the last review (verify each; report again only if still present)", "- main.go:1 [important] first line: look here",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("missing %q in the incremental prompt:\n%s", want, prompt)
+		}
+	}
+	if p := postedInline(ctx, t, appStore, tenantID, secondRow.id); len(p) != 1 || !p[0] {
+		t.Fatalf("a finding carried from the last review keeps posted_inline, got %v", p)
+	}
+	checkIncrementalRecord(ctx, t, appStore, lf, tenantID, secondRow.id, first)
+
+	// Force-push: the second head is no longer reachable from any ref.
+	reset()
+	third := commit("package main\n\nfunc f3() {}\n")
+	thirdRow, prompt, inline := reviewHead(third)
+	if thirdRow.scope != "full" || thirdRow.reason != "prior head unreachable" || thirdRow.prior != secondRow.id || inline != 0 {
+		t.Fatalf("third review = %+v, %d inline comment(s)", thirdRow, inline)
+	}
+	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "Findings from the last review") {
+		t.Fatalf("a full re-review has no incremental sections:\n%s", prompt)
+	}
+
+}
+
+type reviewScopeRow struct{ id, scope, reason, prior string }
+
+func scopeRow(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, head string) reviewScopeRow {
+	t.Helper()
+	var out reviewScopeRow
+	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT id, scope, scope_reason, coalesce(prior_review_id::text, '') FROM reviews
+			WHERE head_sha = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, head).Scan(&out.id, &out.scope, &out.reason, &out.prior)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func postedInline(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, reviewID string) []bool {
+	t.Helper()
+	var out []bool
+	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT posted_inline FROM findings WHERE review_id = $1`, reviewID)
+		if err != nil {
+			return err
+		}
+		out, err = pgx.CollectRows(rows, pgx.RowTo[bool])
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// checkIncrementalRecord asserts the context pack and sticky comment of an
+// incremental review of PR 5 that builds on prior.
+func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, tenantID, reviewID, prior string) {
+	t.Helper()
+	var priorHead string
+	var deltaPaths []string
+	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT c.prior_head_sha, c.delta_paths FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
+			WHERE rr.review_id = $1`, reviewID).Scan(&priorHead, &deltaPaths)
+	}); err != nil || priorHead != prior || len(deltaPaths) != 1 || deltaPaths[0] != "main.go" {
+		t.Fatalf("pack prior = %s delta = %v err = %v", priorHead, deltaPaths, err)
+	}
+	lf.mu.Lock()
+	var sticky string
+	for _, body := range lf.comments {
+		if strings.HasPrefix(body, "<!-- kritik:pr-5 -->\n") {
+			sticky = body
+		}
+	}
+	lf.mu.Unlock()
+	if !strings.Contains(sticky, "_Incremental review of the changes since `"+prior[:7]+"`._") ||
+		!strings.Contains(sticky, "`main.go:1` first line") {
+		t.Fatalf("sticky comment = %q", sticky)
+	}
+
 }
 
 // checkSupervision holds review runs open and moves the head, then stales

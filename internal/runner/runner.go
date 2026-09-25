@@ -1,9 +1,9 @@
-// Package runner is what a runner pod does: fetch the two commits, diff
-// them, compute the patch id, and write a context pack under its own run
-// id. It works from one versioned job document (Spec); its credentials, a
-// git token for one repository and for an agentic review a model key,
-// arrive apart from it (Secrets). Its database role can only touch its own
-// run.
+// Package runner is what a runner pod does: fetch the head and merge-base
+// (and the last reviewed head when there is one), diff them, compute the
+// patch id, and write a context pack under its own run id. It works from
+// one versioned job document (Spec); its credentials, a git token for one
+// repository and for an agentic review a model key, arrive apart from it
+// (Secrets). Its database role can only touch its own run.
 package runner
 
 import (
@@ -11,8 +11,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/contextpack"
@@ -47,7 +49,9 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err := setPhase(ctx, st, p.RunID, "fetching"); err != nil {
 		return err
 	}
-	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base})
+	res, err := gitfetch.Run(ctx, gitfetch.Fetch{
+		CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base, Prior: p.PriorHead,
+	})
 	if err != nil {
 		_ = fail(ctx, st, p.RunID, err)
 		return err
@@ -68,6 +72,17 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err != nil {
 		_ = fail(ctx, st, p.RunID, err)
 		return err
+	}
+	// A nil prior head tells the worker the delta is unknown, not empty.
+	var priorHead *string
+	deltaPaths := []string{}
+	if res.Prior != nil {
+		priorHead, deltaPaths = &p.PriorHead, notIgnored(res.DeltaChanged, ignore)
+		logger.Info("fetched prior head", "prior", p.PriorHead[:7], "delta_paths", len(deltaPaths), "delta_bytes", len(res.DeltaDiff))
+	} else if p.PriorHead != "" {
+		// Best effort: the review goes on in full. A force-push is the
+		// expected cause; the error tells it apart from auth or network.
+		logger.Warn("prior head not fetched", "prior", p.PriorHead[:7], "error", res.PriorErr)
 	}
 	chunks, stats, err := stages(ctx, res, ignore)
 	if err != nil {
@@ -96,9 +111,11 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		// tenant_id is copied from the run row: the runner never receives it
 		// and cannot invent one, and the policy only opens its own run.
 		_, err := tx.Exec(ctx, `
-			INSERT INTO context_packs (runner_run_id, tenant_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes)
-			SELECT id, tenant_id, $2, $3, $4, $5, $6, $7, $8, $9 FROM runner_runs WHERE id = $1`,
-			p.RunID, p.Head, p.Base, res.PatchID, res.Diff, res.Changed, stagesJSON, filesJSON, repoNotes)
+			INSERT INTO context_packs (runner_run_id, tenant_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes,
+				prior_head_sha, delta_diff, delta_paths)
+			SELECT id, tenant_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM runner_runs WHERE id = $1`,
+			p.RunID, p.Head, p.Base, res.PatchID, res.Diff, res.Changed, stagesJSON, filesJSON, repoNotes,
+			priorHead, res.DeltaDiff, deltaPaths)
 		if err != nil {
 			return fmt.Errorf("runner: write context pack: %w", err)
 		}
@@ -111,6 +128,17 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	}
 	logger.Info("context pack written", "run", p.RunID, "patch_id", res.PatchID[:12])
 	return nil
+}
+
+// notIgnored returns the paths no ignore glob matches, never nil.
+func notIgnored(paths, ignore []string) []string {
+	out := []string{}
+	for _, p := range paths {
+		if !slices.ContainsFunc(ignore, func(g string) bool { ok, _ := doublestar.Match(g, p); return ok }) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // stages runs context stages 1 to 3 over the fetched trees. The chunk list

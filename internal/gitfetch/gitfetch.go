@@ -1,7 +1,8 @@
-// Package gitfetch fetches exactly the two commits a review needs, the head
-// and the merge-base, at depth one into a throwaway bare repository, and
-// diffs their trees. Two trees are enough: `git diff` compares trees and
-// needs no history. It is pure go-git; the runner image has no git binary.
+// Package gitfetch fetches exactly the commits a review needs, the head and
+// the merge-base and, for a re-review, the head of the last review, at
+// depth one into a throwaway bare repository, and diffs their trees. Trees
+// are enough: `git diff` compares trees and needs no history. It is pure
+// go-git; the runner image has no git binary.
 package gitfetch
 
 import (
@@ -24,9 +25,12 @@ import (
 // Refs the two commits are fetched into. They are private to kritik so the
 // bare repository never gains a branch a later fetch could confuse.
 const (
-	headRef = "refs/kritik/head"
-	baseRef = "refs/kritik/base"
+	headRef  = "refs/kritik/head"
+	baseRef  = "refs/kritik/base"
+	priorRef = "refs/kritik/prior"
 )
+
+const remoteName = "origin"
 
 // Fetch describes what to fetch.
 type Fetch struct {
@@ -37,6 +41,9 @@ type Fetch struct {
 	Token string
 	// Head and Base are full commit SHAs.
 	Head, Base string
+	// Prior, when set, is the full SHA of the head the last review saw. It
+	// is fetched best effort: a force-push may have made it unreachable.
+	Prior string
 }
 
 // Result is the two fetched commits and the diff between them.
@@ -53,6 +60,14 @@ type Result struct {
 	PatchID string
 	// Changed lists the paths the diff touches, head-side names.
 	Changed []string
+	// Prior is the fetched prior head, nil when none was asked for or it
+	// could not be fetched, in which case PriorErr says why. DeltaDiff and
+	// DeltaChanged are the diff from it to head and the paths that diff
+	// touches.
+	Prior        *object.Commit
+	PriorErr     error
+	DeltaDiff    string
+	DeltaChanged []string
 	// Dir is the bare repository on disk; the caller removes it.
 	Dir string
 }
@@ -63,8 +78,8 @@ func (r *Result) Close() error { return os.RemoveAll(r.Dir) }
 // Run fetches head and base at depth one and diffs them. The temp dir is
 // removed on error; on success the caller owns it through Result.Close.
 func Run(ctx context.Context, f Fetch) (*Result, error) {
-	if !isSHA(f.Head) || (f.Base != "" && !isSHA(f.Base)) {
-		return nil, fmt.Errorf("gitfetch: head %q and base %q must be full commit SHAs", f.Head, f.Base)
+	if !isSHA(f.Head) || (f.Base != "" && !isSHA(f.Base)) || (f.Prior != "" && !isSHA(f.Prior)) {
+		return nil, fmt.Errorf("gitfetch: head %q, base %q and prior %q must be full commit SHAs", f.Head, f.Base, f.Prior)
 	}
 	dir, err := os.MkdirTemp("", "kritik-fetch-")
 	if err != nil {
@@ -83,7 +98,7 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gitfetch: init: %w", err)
 	}
-	if _, err := repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{f.CloneURL}}); err != nil {
+	if _, err := repo.CreateRemote(&config.RemoteConfig{Name: remoteName, URLs: []string{f.CloneURL}}); err != nil {
 		return nil, fmt.Errorf("gitfetch: remote: %w", err)
 	}
 	var auth transport.AuthMethod
@@ -94,7 +109,7 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	// Forgejo do for reachable commits. Both refspecs in one fetch so the
 	// server can send one pack.
 	err = repo.FetchContext(ctx, &git.FetchOptions{
-		RemoteName: "origin",
+		RemoteName: remoteName,
 		Auth:       auth,
 		Depth:      1,
 		Tags:       git.NoTags,
@@ -115,32 +130,78 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gitfetch: base %s: %w", f.Base, err)
 	}
-	headTree, err := head.Tree()
+	diff, changed, err := diffCommits(ctx, base, head)
 	if err != nil {
-		return nil, fmt.Errorf("gitfetch: head tree: %w", err)
+		return nil, err
 	}
-	baseTree, err := base.Tree()
-	if err != nil {
-		return nil, fmt.Errorf("gitfetch: base tree: %w", err)
+	res := &Result{Repo: repo, Head: head, Base: base, Diff: diff, PatchID: PatchID(diff), Changed: changed, Dir: dir}
+	if f.Prior == "" {
+		return res, nil
 	}
-	changes, err := object.DiffTreeWithOptions(ctx, baseTree, headTree, object.DefaultDiffTreeOptions)
+	if res.Prior, res.PriorErr = fetchPrior(ctx, repo, auth, f.Prior); res.Prior == nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("gitfetch: prior: %w", ctx.Err())
+		}
+		return res, nil
+	}
+	if res.DeltaDiff, res.DeltaChanged, err = diffCommits(ctx, res.Prior, head); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// fetchPrior fetches the prior head in a fetch of its own, so that an
+// unreachable prior cannot fail the fetch of head and base. The error says
+// why the prior could not be had; the caller decides whether that matters.
+func fetchPrior(ctx context.Context, repo *git.Repository, auth transport.AuthMethod, prior string) (*object.Commit, error) {
+	if c, err := repo.CommitObject(plumbing.NewHash(prior)); err == nil {
+		return c, nil
+	}
+	err := repo.FetchContext(ctx, &git.FetchOptions{
+		RemoteName: remoteName,
+		Auth:       auth,
+		Depth:      1,
+		Tags:       git.NoTags,
+		RefSpecs:   []config.RefSpec{config.RefSpec(prior + ":" + priorRef)},
+	})
+	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return nil, fmt.Errorf("gitfetch: fetch prior %s: %w", prior, err)
+	}
+	c, err := repo.CommitObject(plumbing.NewHash(prior))
 	if err != nil {
-		return nil, fmt.Errorf("gitfetch: diff: %w", err)
+		return nil, fmt.Errorf("gitfetch: prior %s: %w", prior, err)
+	}
+	return c, nil
+}
+
+// diffCommits diffs two commits' trees and lists the touched paths,
+// head-side names.
+func diffCommits(ctx context.Context, from, to *object.Commit) (string, []string, error) {
+	fromTree, err := from.Tree()
+	if err != nil {
+		return "", nil, fmt.Errorf("gitfetch: tree of %s: %w", from.Hash, err)
+	}
+	toTree, err := to.Tree()
+	if err != nil {
+		return "", nil, fmt.Errorf("gitfetch: tree of %s: %w", to.Hash, err)
+	}
+	changes, err := object.DiffTreeWithOptions(ctx, fromTree, toTree, object.DefaultDiffTreeOptions)
+	if err != nil {
+		return "", nil, fmt.Errorf("gitfetch: diff: %w", err)
 	}
 	patch, err := changes.PatchContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("gitfetch: patch: %w", err)
+		return "", nil, fmt.Errorf("gitfetch: patch: %w", err)
 	}
-	diff := patch.String()
-	res := &Result{Repo: repo, Head: head, Base: base, Diff: diff, PatchID: PatchID(diff), Dir: dir}
+	var changed []string
 	for _, c := range changes {
 		name := c.To.Name
 		if name == "" {
 			name = c.From.Name
 		}
-		res.Changed = append(res.Changed, name)
+		changed = append(changed, name)
 	}
-	return res, nil
+	return patch.String(), changed, nil
 }
 
 func refSpecs(f Fetch) []config.RefSpec {

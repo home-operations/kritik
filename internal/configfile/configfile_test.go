@@ -501,6 +501,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		{"zero tool output", "{ name: acme/x, agent: { maxToolOutputBytes: 0 } }", "agent.maxToolOutputBytes must be positive"},
 		{"zero timeout", "{ name: acme/x, agent: { timeout: 0s } }", "agent.timeout must be positive"},
 		{"zero delta files", "{ name: acme/x, incremental: { maxDeltaFiles: 0 } }", "incremental.maxDeltaFiles must be positive"},
+		{"negative delta files", "{ name: acme/x, incremental: { maxDeltaFiles: -3 } }", "incremental.maxDeltaFiles must be positive"},
 		{"unknown agent key", "{ name: acme/x, agent: { steps: 3 } }", "field steps not found"},
 		{"absolute instruction path", "{ name: acme/x, review: { instructions: [/etc/passwd] } }", "must be relative"},
 		{"escaping template path", "{ name: acme/x, review: { templates: { summary: ../x.j2 } } }", "escapes the repository"},
