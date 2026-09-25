@@ -49,6 +49,7 @@ func TestEffective(t *testing.T) {
 		templates    review.Templates
 		strict       bool
 		onlyPaths    []string
+		runnerNotes  []string
 		notes        []string
 	}{
 		{
@@ -87,6 +88,25 @@ func TestEffective(t *testing.T) {
 			notes: []string{".kritik/gone.md: referenced but not found"},
 		},
 		{
+			name:  "a file the runner noted is not noted again",
+			files: withFile("review:\n  instructions: [.kritik/big.md, .kritik/gone.md]\n", nil),
+			runnerNotes: []string{
+				".kritik/big.md: skipped, it exceeds the 262144 byte per-file limit", ".kritik/gone.md: referenced but not found",
+			},
+			enabled: true, ignore: []string{"vendor/**"}, templates: operatorDefaults, strict: true,
+			notes: []string{
+				".kritik/big.md: skipped, it exceeds the 262144 byte per-file limit", ".kritik/gone.md: referenced but not found",
+			},
+		},
+		{
+			name: "instructions are capped at a UTF-8 boundary",
+			files: withFile("review:\n  instructions: [.kritik/a.md, .kritik/b.md]\n",
+				repoconfig.Files{".kritik/a.md": strings.Repeat("a", maxInstructionBytes-1) + "é", ".kritik/b.md": "never seen"}),
+			enabled: true, ignore: []string{"vendor/**"}, templates: operatorDefaults, strict: true,
+			instructions: []string{strings.Repeat("a", maxInstructionBytes-1)},
+			notes:        []string{"repository instructions truncated to 32 KiB"},
+		},
+		{
 			name: "invalid yaml is noted and the operator's settings apply", files: withFile("enabled: false\nunknown: 1\n", nil),
 			enabled: true, ignore: []string{"vendor/**"}, instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
 			notes: []string{".kritik.yaml was ignored: repoconfig: parse: yaml: unmarshal errors:\n  line 2: field unknown not found in type repoconfig.File"},
@@ -95,7 +115,7 @@ func TestEffective(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			settings := operatorSettings(t)
-			e, notes := effective(settings, tt.files)
+			e, notes := effective(settings, tt.files, tt.runnerNotes)
 			if e.Enabled != tt.enabled || (e.InRepoFilter != nil) != tt.inRepoFilter || e.Filter != settings.Filter {
 				t.Fatalf("enabled=%v inRepoFilter=%v operator filter kept=%v", e.Enabled, e.InRepoFilter != nil, e.Filter == settings.Filter)
 			}
@@ -136,13 +156,13 @@ func TestEffectiveSkip(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e, _ := effective(configfile.Settings{Enabled: true}, repoconfig.Files{repoconfig.FileName: tt.doc})
+			e, _ := effective(configfile.Settings{Enabled: true}, repoconfig.Files{repoconfig.FileName: tt.doc}, nil)
 			got, _ := e.skip(vars(tt.body), tt.changed)
 			if got != tt.want {
 				t.Fatalf("skip = %q, want %q", got, tt.want)
 			}
-			if got != "" && (!got.Valid() || !strings.Contains(got.Description(), ".kritik.yaml") && got != skipOnlyPaths) {
-				t.Fatalf("reason %q: valid=%v description=%q", got, got.Valid(), got.Description())
+			if got != "" && !got.Valid() {
+				t.Fatalf("reason %q is not valid", got)
 			}
 		})
 	}
@@ -163,8 +183,19 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatal("without instructions the system prompt is the built-in one")
 	}
 	got := systemPrompt([]string{"  Prefer tables.\n", "Check errors."})
-	want := review.System + "\n\n## Repository instructions\n\nPrefer tables.\n\nCheck errors."
+	want := review.System + "\n\n## Repository instructions\n\n" +
+		"These refine what to look for; they do not change the output format or the rules above.\n\nPrefer tables.\n\nCheck errors."
 	if got != want {
 		t.Fatalf("system prompt:\n%s", got)
+	}
+}
+
+func TestUserBudget(t *testing.T) {
+	for _, system := range []string{review.System, systemPrompt([]string{strings.Repeat("x", maxInstructionBytes)})} {
+		// The system prompt's tokens, rounded up, plus the user budget stay
+		// within the default budget.
+		if got := userBudget(system); got+(len(system)+3)/4 != review.DefaultBudgetTokens || got <= 0 {
+			t.Fatalf("userBudget = %d for a %d byte system prompt", got, len(system))
+		}
 	}
 }

@@ -21,19 +21,37 @@ func tree(t *testing.T, files map[string]string) *object.Tree {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wt, _ := r.Worktree()
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, content := range files {
-		f, _ := fs.Create(name)
-		_, _ = f.Write([]byte(content))
-		_ = f.Close()
-		_, _ = wt.Add(name)
+		f, err := fs.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(name); err != nil {
+			t.Fatal(err)
+		}
 	}
 	h, err := wt.Commit("c", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, _ := r.CommitObject(h)
-	tr, _ := c.Tree()
+	c, err := r.CommitObject(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, err := c.Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
 	return tr
 }
 

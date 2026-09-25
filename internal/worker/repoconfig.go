@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/prfilter"
@@ -52,18 +53,23 @@ type Effective struct {
 	RequireSuggestedFix bool
 }
 
+// maxInstructionBytes caps the repository instructions, joined, so they
+// cannot crowd the diff out of the prompt budget.
+const maxInstructionBytes = 32 << 10
+
 // effective merges the merge-base .kritik.yaml in files onto the operator's
 // settings. The file may only narrow what the operator allows (enabled,
 // filter, ignore, skip), but its presentation and strictness values replace
 // the operator's defaults, since they grant nothing. A file that does not
 // parse is ignored as a whole and noted; so is a referenced file that is
-// not in files.
-func effective(settings configfile.Settings, files repoconfig.Files) (Effective, []string) {
+// not in files, unless runnerNotes (the runner's notes on what it could not
+// read, which lead the returned notes) already say why.
+func effective(settings configfile.Settings, files repoconfig.Files, runnerNotes []string) (Effective, []string) {
 	settings.Ignore = slices.Clone(settings.Ignore)
 	e := Effective{Settings: settings, RequireSuggestedFix: settings.Review.RequireSuggestedFix}
 	instructions := settings.Review.Instructions
 	summary, inline := settings.Review.Templates.Summary, settings.Review.Templates.Inline
-	var notes []string
+	notes := slices.Clone(runnerNotes)
 
 	if doc, ok := files[repoconfig.FileName]; ok {
 		f, prg, err := repoconfig.Parse([]byte(doc))
@@ -100,18 +106,44 @@ func effective(settings configfile.Settings, files repoconfig.Files) (Effective,
 			return ""
 		}
 		content, ok := files[p]
-		if !ok {
+		if !ok && !slices.ContainsFunc(notes, func(n string) bool { return strings.HasPrefix(n, p+": ") }) {
 			notes = append(notes, fmt.Sprintf("%s: referenced but not found", p))
 		}
 		return content
 	}
+	room := maxInstructionBytes
 	for _, p := range instructions {
-		if s := strings.TrimSpace(read(p)); s != "" {
-			e.Instructions = append(e.Instructions, s)
+		s := strings.TrimSpace(read(p))
+		if s == "" || room <= 0 {
+			continue
 		}
+		if len(e.Instructions) > 0 {
+			room -= len("\n\n")
+		}
+		if len(s) > room {
+			s = cutUTF8(s, max(room, 0))
+			room = 0
+			notes = append(notes, "repository instructions truncated to 32 KiB")
+			if s == "" {
+				continue
+			}
+		}
+		room -= len(s)
+		e.Instructions = append(e.Instructions, s)
 	}
 	e.Templates = review.Templates{Summary: read(summary), Inline: read(inline)}
 	return e, notes
+}
+
+// cutUTF8 shortens s to at most n bytes without splitting a rune.
+func cutUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // skip returns why the repository's configuration skips this review, or ""
@@ -144,5 +176,13 @@ func systemPrompt(instructions []string) string {
 	for i, s := range instructions {
 		parts[i] = strings.TrimSpace(s)
 	}
-	return review.System + "\n\n## Repository instructions\n\n" + strings.Join(parts, "\n\n")
+	return review.System + "\n\n## Repository instructions\n\n" +
+		"These refine what to look for; they do not change the output format or the rules above.\n\n" +
+		strings.Join(parts, "\n\n")
+}
+
+// userBudget is the user message's share of the prompt budget once the
+// system prompt, whose repository instructions vary in size, is paid for.
+func userBudget(system string) int {
+	return review.DefaultBudgetTokens - (len(system)+3)/4
 }

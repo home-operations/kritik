@@ -606,12 +606,12 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	}
 	svc := ingest.NewService(appStore, insertOnly)
 	in, tenant, _ := file.Installation("bot-ross")
-	dispatchPR := func(number int, headSHA string, bot bool) {
+	dispatchPR := func(number int, headSHA string, bot bool, labels ...string) {
 		t.Helper()
 		out, err := svc.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Installation: in, Event: webhook.Event{
 			Kind: webhook.KindPullRequest, Action: "synchronize", Account: "onedr0p",
 			Repository:  &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
-			PullRequest: &webhook.PullRequest{Number: number, Title: "t", Body: "Adds b.", Author: "renovate[bot]", AuthorIsBot: bot, State: "open", HeadRef: "f", HeadSHA: headSHA, BaseRef: "main"},
+			PullRequest: &webhook.PullRequest{Number: number, Title: "t", Body: "Adds b.", Author: "renovate[bot]", AuthorIsBot: bot, State: "open", HeadRef: "f", HeadSHA: headSHA, BaseRef: "main", Labels: labelled(labels)},
 		}})
 		if err != nil || out.Status != ingest.Enqueued {
 			t.Fatalf("dispatch = %+v, %v", out, err)
@@ -746,12 +746,20 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 }
 
+func labelled(names []string) []webhook.Label {
+	labels := make([]webhook.Label, 0, len(names))
+	for _, n := range names {
+		labels = append(labels, webhook.Label{Name: n, Color: "ededed"})
+	}
+	return labels
+}
+
 // checkRepoConfig commits a .kritik.yaml with a skip rule, instructions
 // and a summary template onto a new merge base, then reviews pull requests
 // against it.
 func checkRepoConfig(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
-	dispatchPR func(int, string, bool), waitReview func(string) (string, string, string), tenantID string,
+	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), tenantID string,
 ) {
 	t.Helper()
 	r, _ := git.PlainOpen(dir)
@@ -779,7 +787,8 @@ func checkRepoConfig(
 		return h.String()
 	}
 	cfgBase := commit("configure kritik", map[string]string{
-		".kritik.yaml": `skip:
+		".kritik.yaml": `filter: '!pr.labels.exists(l, l.name == "skip-review")'
+skip:
   onlyPaths: ["docs/**", ".kritik.yaml"]
 review:
   instructions: [".kritik/rules.md"]
@@ -835,19 +844,32 @@ review:
 	fc.mu.Lock()
 	system := fc.systems[len(fc.systems)-1]
 	fc.mu.Unlock()
-	if !strings.HasSuffix(system, "\n\n## Repository instructions\n\nFlag every TODO left in code.") {
+	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nFlag every TODO left in code.") {
 		t.Fatalf("system prompt does not carry the instructions:\n%s", system)
 	}
 	lf.mu.Lock()
-	defer lf.mu.Unlock()
 	var sticky string
 	for _, body := range lf.comments {
 		if strings.HasPrefix(body, "<!-- kritik:pr-3 -->\n") {
 			sticky = body
 		}
 	}
+	lf.mu.Unlock()
 	if !strings.HasPrefix(sticky, "<!-- kritik:pr-3 -->\nCustom summary for #3: Changes main.go.") {
 		t.Fatalf("sticky comment for PR 3 = %q", sticky)
+	}
+
+	// The same kind of change carrying the label the filter excludes.
+	labelledHead := commit("labelledHead", map[string]string{"main.go": "package main\n\nfunc e() {}\n"})
+	dispatchPR(4, labelledHead, false, "skip-review")
+	if status, _, _ := waitReview(labelledHead); status != "skipped" || skipReason(labelledHead) != "filtered" {
+		t.Fatalf("status = %s reason = %q, want skipped by the label filter", status, skipReason(labelledHead))
+	}
+	lf.mu.Lock()
+	forgeStatus := lf.status
+	lf.mu.Unlock()
+	if forgeStatus != "success: kritik: skipped (filtered by .kritik.yaml)" {
+		t.Fatalf("status = %q", forgeStatus)
 	}
 }
 

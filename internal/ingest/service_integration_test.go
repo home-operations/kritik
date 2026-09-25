@@ -4,9 +4,11 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -80,7 +82,8 @@ func repo(name string) *webhook.Repository {
 func TestDispatchPullRequest(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
-	pr := &webhook.PullRequest{Number: 7, Title: "t", Body: "please review", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "aaa", BaseRef: "main"}
+	pr := &webhook.PullRequest{Number: 7, Title: "t", Body: "please review", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "aaa", BaseRef: "main",
+		Labels: []webhook.Label{{Name: "stale", Color: "ffffff"}}}
 
 	out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo("onedr0p/home-ops"), PullRequest: pr}))
 	if err != nil || out.Status != Enqueued || out.Job != "review" {
@@ -92,6 +95,7 @@ func TestDispatchPullRequest(t *testing.T) {
 	}
 	pr2 := *pr
 	pr2.HeadSHA = "bbb"
+	pr2.Labels = []webhook.Label{{Name: "ready", Color: "00ff00"}}
 	out, err = svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "synchronize", Repository: repo("onedr0p/home-ops"), PullRequest: &pr2}))
 	if err != nil || out.Status != Enqueued {
 		t.Fatalf("a new head must enqueue: %+v, %v", out, err)
@@ -99,15 +103,24 @@ func TestDispatchPullRequest(t *testing.T) {
 
 	tenant, _ := f.Tenant("onedr0p")
 	var headSHA, body string
+	var labels []byte
+	var merged bool
 	var jobsN int
 	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT head_sha, body FROM pull_requests WHERE number = 7`).Scan(&headSHA, &body); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT head_sha, body, labels, merged FROM pull_requests WHERE number = 7`).
+			Scan(&headSHA, &body, &labels, &merged); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'review'`).Scan(&jobsN)
 	})
 	if err != nil || headSHA != "bbb" || body != "please review" || jobsN != 2 {
 		t.Fatalf("head_sha = %q body = %q jobs = %d err = %v; want bbb, %q and 2", headSHA, body, jobsN, err, "please review")
+	}
+	// Labels are stored in the filter's own shape and replaced on every event.
+	var stored []map[string]any
+	if err := json.Unmarshal(labels, &stored); err != nil || merged ||
+		!reflect.DeepEqual(stored, []map[string]any{{"name": "ready", "color": "00ff00"}}) {
+		t.Fatalf("labels = %s merged = %v err = %v", labels, merged, err)
 	}
 
 	t.Run("gates", func(t *testing.T) {

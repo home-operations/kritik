@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -250,7 +249,7 @@ func (w *Review) afterRun(
 	if err := json.Unmarshal(filesJSON, &files); err != nil {
 		return prepared{}, "", fmt.Errorf("worker: decode repository files: %w", err)
 	}
-	eff, effNotes := effective(settings, files)
+	eff, notes := effective(settings, files, repoNotes)
 	reason, ferr := eff.skip(vars, changed)
 	if ferr != nil {
 		logger.Warn("repository filter failed to evaluate", "error", ferr)
@@ -282,49 +281,39 @@ func (w *Review) afterRun(
 		return prepared{}, "", fmt.Errorf("worker: mark review prepared: %w", err)
 	}
 	logger.Info("review prepared", "patch_id", short(patchID))
-	return prepared{patchID: patchID, eff: eff, notes: mergeNotes(repoNotes, effNotes)}, statusPrepared, nil
+	return prepared{patchID: patchID, eff: eff, notes: notes}, statusPrepared, nil
 }
 
 // filterVars rebuilds the filter's pr variable from the stored pull request
-// row. Labels and the merged flag are not stored, so they read as none and
-// false; an open pull request is never merged.
+// row, the same keys webhook.PullRequest.FilterVars gives ingest.
 func filterVars(ctx context.Context, tx pgx.Tx, prID string) (map[string]any, error) {
 	var (
 		number                                               int
 		title, author, state, headRef, headSHA, baseRef, url string
 		body                                                 string
-		draft, fork                                          bool
+		draft, fork, merged                                  bool
 		openedAt                                             *time.Time
+		labelsJSON                                           []byte
 	)
-	err := tx.QueryRow(ctx, `SELECT number, title, author, state, draft, fork, head_ref, head_sha, base_ref, url, body, opened_at
-		FROM pull_requests WHERE id = $1`, prID).
-		Scan(&number, &title, &author, &state, &draft, &fork, &headRef, &headSHA, &baseRef, &url, &body, &openedAt)
+	err := tx.QueryRow(ctx, `SELECT number, title, author, state, merged, draft, fork, head_ref, head_sha, base_ref, url, body,
+		opened_at, labels FROM pull_requests WHERE id = $1`, prID).
+		Scan(&number, &title, &author, &state, &merged, &draft, &fork, &headRef, &headSHA, &baseRef, &url, &body, &openedAt, &labelsJSON)
 	if err != nil {
 		return nil, fmt.Errorf("worker: read pull request for the filter: %w", err)
+	}
+	labels := []any{}
+	if err := json.Unmarshal(labelsJSON, &labels); err != nil {
+		return nil, fmt.Errorf("worker: decode pull request labels: %w", err)
 	}
 	var createdAt time.Time
 	if openedAt != nil {
 		createdAt = *openedAt
 	}
 	return map[string]any{
-		"number": number, "title": title, "author": author, "state": state, "open": state == "open", "merged": false,
+		"number": number, "title": title, "author": author, "state": state, "open": state == "open", "merged": merged,
 		"draft": draft, "fork": fork, "headRef": headRef, "headSha": headSHA, "baseRef": baseRef, "url": url,
-		"body": body, "createdAt": createdAt, "labels": []any{},
+		"body": body, "createdAt": createdAt, "labels": labels,
 	}, nil
-}
-
-// mergeNotes joins note lists, dropping repeats: the runner and the worker
-// both note a referenced file that could not be read.
-func mergeNotes(lists ...[]string) []string {
-	var out []string
-	for _, l := range lists {
-		for _, n := range l {
-			if !slices.Contains(out, n) {
-				out = append(out, n)
-			}
-		}
-	}
-	return out
 }
 
 func (w *Review) load(ctx context.Context, args jobs.ReviewArgs) (*pullRequest, error) {
