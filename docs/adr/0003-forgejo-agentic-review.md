@@ -237,7 +237,10 @@ results reported back.
 - **Results.** The runner reports through the runner database role only:
   the context pack, and in agentic mode an `agent_runs` row with the result,
   stop reason, usage and a per-step timeline (tool, duration, bytes, tokens).
-  It never writes to the forge.
+  On its own `runner_runs` row it may update only `phase`, `error` and
+  `heartbeat_at` (column grants, re-applied with the other grants after
+  every migration because the role's name is configuration), never the
+  tenant or review the run belongs to. It never writes to the forge.
 
 ## 3. Consequences
 
