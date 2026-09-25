@@ -14,7 +14,7 @@ require (
 	github.com/google/go-github/v92 v92.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/odvcencio/gotreesitter v0.54.0
+	github.com/odvcencio/gotreesitter v0.55.0
 	github.com/openai/openai-go/v3 v3.66.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/riverqueue/river v0.47.0
