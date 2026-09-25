@@ -5,10 +5,12 @@
 {{ else -}}
 {{ if .Result.Findings -}}
 **{{ len .Result.Findings }} {{ plural "finding" "findings" (len .Result.Findings) }}** · {{ .Counts.Blocking }} blocking · {{ .Counts.Important }} important · {{ .Counts.Nit }} nit
+
 {{ end -}}
-{{ if and .Incremental .PriorHeadSHA }}
+{{ if and .Incremental .PriorHeadSHA -}}
 _Incremental review of the changes since `{{ trunc 7 .PriorHeadSHA }}`._
-{{ end }}
+
+{{ end -}}
 {{ .Result.Summary.Take }}
 {{ if .Result.Summary.Praise }}
 **What's good**
