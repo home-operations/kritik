@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"github.com/home-operations/kritik/internal/runner"
 )
 
 // runnerRole is the --role value and container name of a runner pod.
@@ -54,15 +57,32 @@ func NewKubeInCluster() (kubernetes.Interface, string, error) {
 	return client, ns, nil
 }
 
-// Run implements Executor: create the Job, wait for it, capture the pod's
-// log tail, delete nothing (the TTL does), and report.
+// Run implements Executor: create the run's Secret and Job, wait for the
+// Job, capture the pod's log tail, and report. A finished Job is left to its
+// TTL, and its Secret goes with it. When ctx ends first the Job is deleted,
+// pod included, and the result's error is ctx's cause.
 func (k *Kube) Run(ctx context.Context, spec Spec) Result {
-	job := k.job(spec)
+	name := jobName(spec.RunID)
+	job, err := k.job(spec)
+	if err != nil {
+		return Result{Err: err}
+	}
+	secrets := k.Client.CoreV1().Secrets(k.Namespace)
+	if _, err := secrets.Create(ctx, k.secret(spec), metav1.CreateOptions{}); err != nil {
+		return Result{Err: fmt.Errorf("executor: create secret: %w", err)}
+	}
 	created, err := k.Client.BatchV1().Jobs(k.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
+		k.deleteSecret(name)
 		return Result{Err: fmt.Errorf("executor: create job: %w", err)}
 	}
 	res := Result{JobName: created.Name}
+	if err := k.own(ctx, created); err != nil {
+		k.deleteJob(created.Name)
+		k.deleteSecret(name)
+		res.Err = err
+		return res
+	}
 	poll := k.Poll
 	if poll <= 0 {
 		poll = 3 * time.Second
@@ -72,24 +92,78 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	for {
 		select {
 		case <-ctx.Done():
-			res.Err = ctx.Err()
-			k.finish(&res)
+			k.cancel(ctx, &res, spec.Secrets)
 			return res
 		case <-t.C:
 		}
 		j, err := k.Client.BatchV1().Jobs(k.Namespace).Get(ctx, created.Name, metav1.GetOptions{})
 		if err != nil {
+			if ctx.Err() != nil {
+				k.cancel(ctx, &res, spec.Secrets)
+				return res
+			}
 			res.Err = fmt.Errorf("executor: get job: %w", err)
 			return res
 		}
 		if j.Status.Succeeded > 0 || j.Status.Failed > 0 || jobFinished(j) {
-			k.finish(&res)
+			k.finish(&res, spec.Secrets)
 			if j.Status.Succeeded == 0 {
 				res.Err = fmt.Errorf("executor: job %s failed: %s", created.Name, res.TerminationReason)
 			}
 			return res
 		}
 	}
+}
+
+// own makes the Job the Secret's owner so garbage collection deletes the
+// Secret with the Job. It is not the controller and must not block the
+// Job's deletion.
+func (k *Kube) own(ctx context.Context, job *batchv1.Job) error {
+	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"ownerReferences": []metav1.OwnerReference{{
+		APIVersion: "batch/v1", Kind: "Job", Name: job.Name, UID: job.UID,
+		Controller: ptr(false), BlockOwnerDeletion: ptr(false),
+	}}}})
+	if err != nil {
+		return fmt.Errorf("executor: encode owner reference: %w", err)
+	}
+	if _, err := k.Client.CoreV1().Secrets(k.Namespace).Patch(ctx, job.Name, types.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("executor: own secret: %w", err)
+	}
+	return nil
+}
+
+// cancel deletes the Job after ctx ended, then records what the pod got to.
+func (k *Kube) cancel(ctx context.Context, res *Result, secrets runner.Secrets) {
+	res.Err = context.Cause(ctx)
+	k.deleteJob(res.JobName)
+	k.finish(res, secrets)
+}
+
+// deleteJob removes a Job and, with foreground propagation, its pod. It
+// runs on its own context because the caller's has usually ended.
+func (k *Kube) deleteJob(name string) {
+	dctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	opts := metav1.DeleteOptions{PropagationPolicy: ptr(metav1.DeletePropagationForeground)}
+	if err := k.Client.BatchV1().Jobs(k.Namespace).Delete(dctx, name, opts); err != nil && !apierrors.IsNotFound(err) {
+		k.logger().Warn("delete runner job", "job", name, "error", err)
+	}
+}
+
+// deleteSecret removes a Secret no Job owns yet.
+func (k *Kube) deleteSecret(name string) {
+	dctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := k.Client.CoreV1().Secrets(k.Namespace).Delete(dctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+		k.logger().Warn("delete runner secret", "secret", name, "error", err)
+	}
+}
+
+func (k *Kube) logger() *slog.Logger {
+	if k.Logger == nil {
+		return slog.Default()
+	}
+	return k.Logger
 }
 
 func jobFinished(j *batchv1.Job) bool {
@@ -101,9 +175,10 @@ func jobFinished(j *batchv1.Job) bool {
 	return false
 }
 
-// finish fills the pod-level fields of a result from the Job's pod. Best
-// effort: a missing pod leaves the fields empty rather than failing the run.
-func (k *Kube) finish(res *Result) {
+// finish fills the pod-level fields of a result from the Job's pod, with
+// the run's secrets masked out of the log tail. Best effort: a missing pod
+// leaves the fields empty rather than failing the run.
+func (k *Kube) finish(res *Result, secrets runner.Secrets) {
 	fctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	pods, err := k.Client.CoreV1().Pods(k.Namespace).List(fctx, metav1.ListOptions{LabelSelector: "job-name=" + res.JobName})
@@ -134,14 +209,52 @@ func (k *Kube) finish(res *Result) {
 	}
 	defer func() { _ = stream.Close() }()
 	b, _ := io.ReadAll(io.LimitReader(stream, LogTailBytes))
-	res.LogTail = string(b)
+	res.LogTail = secrets.Mask(string(b))
 }
 
-// job builds the Job for a spec. The runner gets the git token as a plain
-// variable (it is short-lived and scoped to one repository) and the runner
-// role's DSN from the Secret; nothing else.
-func (k *Kube) job(spec Spec) *batchv1.Job {
-	name := "kritik-run-" + spec.RunID[:8]
+// Secret keys of a run's job-scoped Secret.
+const (
+	secretKeyGitToken    = "git-token"
+	secretKeyModelAPIKey = "model-api-key"
+)
+
+func jobName(runID string) string { return "kritik-run-" + runID[:8] }
+
+// runnerLabels are shared by a run's Job, pod and Secret. The role label is what
+// a NetworkPolicy selects runner pods by.
+func runnerLabels(spec Spec) map[string]string {
+	l := map[string]string{
+		"app.kubernetes.io/name": "kritik", "app.kubernetes.io/component": runnerRole, "kritik.home-operations.com/role": runnerRole,
+	}
+	for key, v := range spec.Labels {
+		l["kritik.home-operations.com/"+key] = v
+	}
+	return l
+}
+
+// secret builds the run's job-scoped Secret. The model key is left out when
+// the run has none; the pod reads it as an optional key.
+func (k *Kube) secret(spec Spec) *corev1.Secret {
+	data := map[string][]byte{secretKeyGitToken: []byte(spec.Secrets.GitToken)}
+	if spec.Secrets.ModelAPIKey != "" {
+		data[secretKeyModelAPIKey] = []byte(spec.Secrets.ModelAPIKey)
+	}
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: jobName(spec.RunID), Namespace: k.Namespace, Labels: runnerLabels(spec)},
+		Type:       corev1.SecretTypeOpaque,
+		Data:       data,
+	}
+}
+
+// job builds the Job for a spec. The runner gets its job document as one
+// variable, its credentials from the run's Secret, and the runner role's
+// DSN from the database Secret; nothing else.
+func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
+	runSpec, err := json.Marshal(spec.Job)
+	if err != nil {
+		return nil, fmt.Errorf("executor: encode run spec: %w", err)
+	}
+	name := jobName(spec.RunID)
 	deadline := int64(spec.Deadline / time.Second)
 	if deadline <= 0 {
 		deadline = 900
@@ -150,26 +263,20 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 	if ttl <= 0 {
 		ttl = 600
 	}
-	// The role label is what a NetworkPolicy selects runner pods by.
-	labels := map[string]string{
-		"app.kubernetes.io/name": "kritik", "app.kubernetes.io/component": runnerRole, "kritik.home-operations.com/role": runnerRole,
-	}
-	for key, v := range spec.Labels {
-		labels["kritik.home-operations.com/"+key] = v
-	}
+	labels := runnerLabels(spec)
 	annotations := map[string]string{}
 	for key, v := range spec.Annotations {
 		annotations["kritik.home-operations.com/"+key] = v
 	}
 	var backoff int32
+	secretRef := func(key string, optional bool) *corev1.EnvVarSource {
+		return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: name}, Key: key, Optional: ptr(optional)}}
+	}
 	env := []corev1.EnvVar{
-		{Name: "KRITIK_RUN_KIND", Value: runKind(spec.Params.Kind)},
-		{Name: "KRITIK_RUN_ID", Value: spec.Params.RunID},
-		{Name: "KRITIK_CLONE_URL", Value: spec.Params.CloneURL},
-		{Name: "KRITIK_GIT_TOKEN", Value: spec.Params.Token},
-		{Name: "KRITIK_HEAD_SHA", Value: spec.Params.Head},
-		{Name: "KRITIK_BASE_SHA", Value: spec.Params.Base},
-		{Name: "KRITIK_IGNORE", Value: strings.Join(spec.Params.Ignore, ",")},
+		{Name: "KRITIK_RUN_SPEC", Value: string(runSpec)},
+		{Name: "KRITIK_GIT_TOKEN", ValueFrom: secretRef(secretKeyGitToken, false)},
+		{Name: "KRITIK_MODEL_API_KEY", ValueFrom: secretRef(secretKeyModelAPIKey, true)},
 		{Name: "KRITIK_LOG_FORMAT", Value: "json"},
 		{Name: "KRITIK_DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{Name: k.DatabaseSecret}, Key: k.DatabaseSecretKey}}},
@@ -212,14 +319,7 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 				},
 			},
 		},
-	}
+	}, nil
 }
 
 func ptr[T any](v T) *T { return &v }
-
-func runKind(kind string) string {
-	if kind == "" {
-		return "review"
-	}
-	return kind
-}

@@ -22,11 +22,11 @@ const stagingBatch = 500
 // cannot be fetched (unreachable after a force push, or older than the
 // server will serve by SHA) it falls back to a full build and says so in
 // the pack, so the worker never has to retry the Job.
-func runIndex(ctx context.Context, st *store.Store, p Params, logger *slog.Logger) error {
+func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, logger *slog.Logger) error {
 	if err := setPhase(ctx, st, p.RunID, "fetching"); err != nil {
 		return err
 	}
-	res, mode, err := fetchForIndex(ctx, p, logger)
+	res, mode, err := fetchForIndex(ctx, p, secrets.GitToken, logger)
 	if err != nil {
 		_ = fail(ctx, st, p.RunID, err)
 		return err
@@ -84,9 +84,9 @@ func runIndex(ctx context.Context, st *store.Store, p Params, logger *slog.Logge
 	return nil
 }
 
-func fetchForIndex(ctx context.Context, p Params, logger *slog.Logger) (*gitfetch.Result, string, error) {
+func fetchForIndex(ctx context.Context, p Spec, token string, logger *slog.Logger) (*gitfetch.Result, string, error) {
 	if p.Base != "" {
-		res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: p.Token, Head: p.Head, Base: p.Base})
+		res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head, Base: p.Base})
 		if err == nil {
 			return res, "incremental", nil
 		}
@@ -95,7 +95,7 @@ func fetchForIndex(ctx context.Context, p Params, logger *slog.Logger) (*gitfetc
 		}
 		logger.Warn("incremental fetch failed, building the index in full", "base", p.Base[:7], "error", err)
 	}
-	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: p.Token, Head: p.Head})
+	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head})
 	if err != nil {
 		return nil, "", err
 	}

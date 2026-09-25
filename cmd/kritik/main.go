@@ -64,11 +64,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	var runSpec runner.Spec
 	switch role {
 	case config.RoleAll, config.RoleWorker:
 		err = cfg.ValidateWorker()
 	case config.RoleRunner:
-		err = cfg.ValidateRunner()
+		if err = cfg.ValidateRunner(); err == nil {
+			runSpec, err = runner.DecodeSpec([]byte(cfg.RunSpec))
+		}
 	}
 	if err != nil {
 		return err
@@ -171,10 +174,7 @@ func run() error {
 
 	if role == config.RoleRunner {
 		// A runner does one thing and exits; it never becomes ready.
-		return runner.Run(ctx, st, runner.Params{
-			Kind: cfg.RunKind, RunID: cfg.RunID, CloneURL: cfg.CloneURL, Token: cfg.GitToken,
-			Head: cfg.HeadSHA, Base: cfg.BaseSHA, Ignore: cfg.Ignore,
-		}, logger)
+		return runner.Run(ctx, st, runSpec, runner.Secrets{GitToken: cfg.GitToken, ModelAPIKey: cfg.ModelAPIKey}, logger)
 	}
 
 	if role == config.RoleAll || role == config.RoleIngest {

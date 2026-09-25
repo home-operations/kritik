@@ -22,6 +22,14 @@ tests:
             verbs: ["create", "get", "list", "watch", "delete"]
         template: rbac.tpl
         documentIndex: 0
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: ["secrets"]
+            verbs: ["create", "get", "patch", "delete"]
+        template: rbac.tpl
+        documentIndex: 0
       - hasDocuments:
           count: 2
         template: serviceaccount.tpl

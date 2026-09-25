@@ -2,26 +2,37 @@ package executor
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/home-operations/kritik/internal/runner"
+)
+
+const (
+	headSHA = "0123456789abcdef0123456789abcdef01234567"
+	baseSHA = "89abcdef0123456789abcdef0123456789abcdef"
 )
 
 func spec() Spec {
 	return Spec{
 		RunID:       "0123456789abcdef-run",
-		Labels:      map[string]string{"tenant": "onedr0p", "pr": "42", "kind": "review"},
-		Annotations: map[string]string{"head-sha": "aaa"},
-		Params: runner.Params{
-			RunID: "0123456789abcdef-run", CloneURL: "https://x/y.git", Token: "ghs_x", Head: "aaa", Base: "bbb",
+		Labels:      map[string]string{"tenant": "acme", "pr": "42", "kind": "review"},
+		Annotations: map[string]string{"head-sha": headSHA},
+		Job: runner.Spec{
+			Version: runner.SpecVersion, Kind: runner.KindReview, RunID: "0123456789abcdef-run",
+			CloneURL: "https://forge.example.com/acme/widgets.git", Head: headSHA, Base: baseSHA,
 			Ignore: []string{"vendor/**", "**/*.lock"},
 		},
+		Secrets:   runner.Secrets{GitToken: "ghs_secret_token", ModelAPIKey: "sk-model-key"},
 		Deadline:  5 * time.Minute,
 		Resources: map[string]any{"limits": map[string]any{"memory": "2Gi"}},
 	}
@@ -29,14 +40,17 @@ func spec() Spec {
 
 func TestJobSpec(t *testing.T) {
 	k := &Kube{Namespace: "kritik", Image: "ttl.sh/x:1h", ServiceAccount: "kritik-runner", DatabaseSecret: "kritik-postgres-runner", DatabaseSecretKey: "uri", TTL: 10 * time.Minute}
-	j := k.job(spec())
+	j, err := k.job(spec())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if j.Name != "kritik-run-01234567" || j.Namespace != "kritik" {
 		t.Fatalf("name/namespace = %s/%s", j.Name, j.Namespace)
 	}
 	if *j.Spec.ActiveDeadlineSeconds != 300 || *j.Spec.TTLSecondsAfterFinished != 600 || *j.Spec.BackoffLimit != 0 {
 		t.Fatalf("deadline/ttl/backoff = %d/%d/%d", *j.Spec.ActiveDeadlineSeconds, *j.Spec.TTLSecondsAfterFinished, *j.Spec.BackoffLimit)
 	}
-	if j.Labels["kritik.home-operations.com/tenant"] != "onedr0p" || j.Annotations["kritik.home-operations.com/head-sha"] != "aaa" ||
+	if j.Labels["kritik.home-operations.com/tenant"] != "acme" || j.Annotations["kritik.home-operations.com/head-sha"] != headSHA ||
 		j.Spec.Template.Labels["kritik.home-operations.com/role"] != "runner" {
 		t.Fatalf("labels/annotations = %v %v", j.Labels, j.Annotations)
 	}
@@ -48,13 +62,46 @@ func TestJobSpec(t *testing.T) {
 	if c.Image != "ttl.sh/x:1h" || len(c.Args) != 2 || c.Args[1] != "runner" {
 		t.Fatalf("container = %+v", c)
 	}
+	checkRunnerEnv(t, c.Env)
+	if c.Resources.Limits.Memory().String() != "2Gi" {
+		t.Fatalf("resources = %+v", c.Resources)
+	}
+	if !*c.SecurityContext.ReadOnlyRootFilesystem || !*pod.SecurityContext.RunAsNonRoot {
+		t.Fatal("runner pod must be read-only and non-root")
+	}
+}
+
+// checkRunnerEnv asserts the runner gets its job document, its credentials
+// only through secret references, and nothing it must never see.
+func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
+	t.Helper()
 	env := map[string]corev1.EnvVar{}
-	for _, e := range c.Env {
+	for _, e := range vars {
 		env[e.Name] = e
 	}
-	if env["KRITIK_GIT_TOKEN"].Value != "ghs_x" || env["KRITIK_HEAD_SHA"].Value != "aaa" || env["KRITIK_BASE_SHA"].Value != "bbb" ||
-		env["KRITIK_IGNORE"].Value != "vendor/**,**/*.lock" {
-		t.Fatalf("env = %v", env)
+	got, err := runner.DecodeSpec([]byte(env["KRITIK_RUN_SPEC"].Value))
+	if err != nil || got.Head != headSHA || got.Base != baseSHA || strings.Join(got.Ignore, ",") != "vendor/**,**/*.lock" {
+		t.Fatalf("run spec = %+v, %v", got, err)
+	}
+	for _, e := range vars {
+		if strings.Contains(e.Value, "ghs_secret_token") || strings.Contains(e.Value, "sk-model-key") {
+			t.Fatalf("%s carries a secret in plain text", e.Name)
+		}
+	}
+	for name, want := range map[string]struct {
+		key      string
+		optional bool
+	}{"KRITIK_GIT_TOKEN": {"git-token", false}, "KRITIK_MODEL_API_KEY": {"model-api-key", true}} {
+		ref := env[name].ValueFrom
+		if ref == nil || ref.SecretKeyRef == nil || ref.SecretKeyRef.Name != "kritik-run-01234567" || ref.SecretKeyRef.Key != want.key ||
+			(ref.SecretKeyRef.Optional != nil && *ref.SecretKeyRef.Optional) != want.optional {
+			t.Fatalf("%s = %+v", name, env[name])
+		}
+	}
+	for _, name := range []string{"KRITIK_RUN_KIND", "KRITIK_RUN_ID", "KRITIK_CLONE_URL", "KRITIK_HEAD_SHA", "KRITIK_BASE_SHA", "KRITIK_IGNORE"} {
+		if _, ok := env[name]; ok {
+			t.Fatalf("%s is replaced by KRITIK_RUN_SPEC", name)
+		}
 	}
 	if ref := env["KRITIK_DATABASE_URL"].ValueFrom.SecretKeyRef; ref.Name != "kritik-postgres-runner" || ref.Key != "uri" {
 		t.Fatalf("db env = %+v", ref)
@@ -63,12 +110,6 @@ func TestJobSpec(t *testing.T) {
 		if _, leaked := env[name]; leaked {
 			t.Fatalf("%s must never reach a runner pod", name)
 		}
-	}
-	if c.Resources.Limits.Memory().String() != "2Gi" {
-		t.Fatalf("resources = %+v", c.Resources)
-	}
-	if !*c.SecurityContext.ReadOnlyRootFilesystem || !*pod.SecurityContext.RunAsNonRoot {
-		t.Fatal("runner pod must be read-only and non-root")
 	}
 }
 
@@ -134,4 +175,123 @@ func TestKubeRunReportsFailure(t *testing.T) {
 	}
 }
 
-var _ = context.Background
+func newKube(client *fake.Clientset) *Kube {
+	return &Kube{Client: client, Namespace: "kritik", Image: "img", ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}
+}
+
+// waitJob returns the Job once Run has created it.
+func waitJob(t *testing.T, client *fake.Clientset) *batchv1.Job {
+	t.Helper()
+	for range 400 {
+		jobs, _ := client.BatchV1().Jobs("kritik").List(t.Context(), metav1.ListOptions{})
+		if len(jobs.Items) == 1 {
+			return &jobs.Items[0]
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("job was not created")
+	return nil
+}
+
+func TestKubeRunSecretLifecycle(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	k := newKube(client)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(ctx, spec()) }()
+	j := waitJob(t, client)
+
+	var sec *corev1.Secret
+	for range 400 {
+		s, err := client.CoreV1().Secrets("kritik").Get(t.Context(), j.Name, metav1.GetOptions{})
+		if err == nil && len(s.OwnerReferences) == 1 {
+			sec = s
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if sec == nil {
+		t.Fatal("secret was not given an owner reference")
+	}
+	if string(sec.Data["git-token"]) != "ghs_secret_token" || string(sec.Data["model-api-key"]) != "sk-model-key" {
+		t.Fatalf("secret data = %v", sec.Data)
+	}
+	if sec.Labels["kritik.home-operations.com/role"] != "runner" || sec.Labels["kritik.home-operations.com/tenant"] != "acme" {
+		t.Fatalf("secret labels = %v", sec.Labels)
+	}
+	ref := sec.OwnerReferences[0]
+	if ref.Kind != "Job" || ref.APIVersion != "batch/v1" || ref.Name != j.Name ||
+		ref.Controller == nil || *ref.Controller || ref.BlockOwnerDeletion == nil || *ref.BlockOwnerDeletion {
+		t.Fatalf("owner reference = %+v", ref)
+	}
+
+	var order []string
+	for _, a := range client.Actions() {
+		if a.GetVerb() == "create" || a.GetVerb() == "patch" {
+			order = append(order, a.GetVerb()+" "+a.GetResource().Resource)
+		}
+	}
+	if strings.Join(order, ",") != "create secrets,create jobs,patch secrets" {
+		t.Fatalf("order = %v", order)
+	}
+	cancel()
+	<-done
+}
+
+func TestKubeRunDeletesSecretWhenJobCreateFails(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("create", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("quota exceeded")
+	})
+	res := newKube(client).Run(t.Context(), spec())
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "quota exceeded") {
+		t.Fatalf("err = %v", res.Err)
+	}
+	secrets, _ := client.CoreV1().Secrets("kritik").List(t.Context(), metav1.ListOptions{})
+	if len(secrets.Items) != 0 {
+		t.Fatalf("secret left behind: %v", secrets.Items)
+	}
+}
+
+func TestKubeRunCancelDeletesJobInForeground(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("get", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetSubresource() == "log" {
+			return true, &runtime.Unknown{Raw: []byte("cloning with ghs_secret_token and sk-model-key\n")}, nil
+		}
+		return false, nil, nil
+	})
+	k := newKube(client)
+	cause := errors.New("superseded")
+	ctx, cancel := context.WithCancelCause(t.Context())
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(ctx, spec()) }()
+	j := waitJob(t, client)
+	_, _ = client.CoreV1().Pods("kritik").Create(t.Context(), &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: j.Name + "-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": j.Name}},
+	}, metav1.CreateOptions{})
+	cancel(cause)
+
+	var res Result
+	select {
+	case res = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after cancellation")
+	}
+	if !errors.Is(res.Err, cause) {
+		t.Fatalf("err = %v, want the cancellation cause", res.Err)
+	}
+	var deleted bool
+	for _, a := range client.Actions() {
+		if d, ok := a.(k8stesting.DeleteAction); ok && a.GetResource().Resource == "jobs" && d.GetName() == j.Name {
+			p := d.GetDeleteOptions().PropagationPolicy
+			deleted = p != nil && *p == metav1.DeletePropagationForeground
+		}
+	}
+	if !deleted {
+		t.Fatal("the Job must be deleted with foreground propagation")
+	}
+	if strings.Contains(res.LogTail, "ghs_secret_token") || strings.Contains(res.LogTail, "sk-model-key") || !strings.Contains(res.LogTail, "***") {
+		t.Fatalf("log tail not masked: %q", res.LogTail)
+	}
+}
