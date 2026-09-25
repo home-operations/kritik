@@ -12,7 +12,7 @@ func TestMerge(t *testing.T) {
 	t.Parallel()
 	op := Operator{
 		Enabled: true, Ignore: []string{"vendor/**"}, Instructions: []string{"docs/rules.md"}, RequireSuggestedFix: true,
-		Templates: Templates{Summary: "docs/summary.j2"},
+		Templates: Templates{Summary: "docs/summary.tmpl"},
 	}
 	tests := []struct {
 		name    string
@@ -26,9 +26,9 @@ func TestMerge(t *testing.T) {
 		{
 			name: "the file narrows and replaces presentation",
 			doc: "enabled: false\nfilter: '!pr.draft'\nignore: [gen/**, vendor/**]\nskip:\n  onlyPaths: [docs/**]\n" +
-				"review:\n  instructions: [.kritik/rules.md]\n  requireSuggestedFix: false\n  templates:\n    inline: .kritik/inline.j2\n",
+				"review:\n  instructions: [.kritik/rules.md]\n  requireSuggestedFix: false\n  templates:\n    inline: .kritik/inline.tmpl\n",
 			want: Operator{Ignore: []string{"vendor/**", "gen/**"}, Instructions: []string{".kritik/rules.md"},
-				Templates: Templates{Summary: "docs/summary.j2", Inline: ".kritik/inline.j2"}},
+				Templates: Templates{Summary: "docs/summary.tmpl", Inline: ".kritik/inline.tmpl"}},
 			filter: true, skip: []string{"docs/**"},
 		},
 		{name: "enabled true cannot widen", doc: "enabled: true\n", want: op},

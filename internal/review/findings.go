@@ -4,35 +4,27 @@
 //
 // # Templates
 //
-// Comments are rendered from Jinja2 templates (gonja) that a repository may
-// replace. Templates run in a bounded subset of the language, and one that
-// steps outside it falls back to kritik's default with a note:
+// Comments are rendered from Go text/template templates that a repository
+// may replace, with the go-sprout/sprout helpers that tuppr and chaski
+// expose: the std, strings, conversion, encoding, numeric, slices, maps,
+// regex, time, semver and reflect registries, less set and unset. Not
+// available: env, filesystem, network, random, uniqueid, checksum and
+// crypto, and the template, define and block actions, so a template can
+// read no file and call no other template. Rendering is bounded, and a
+// template that steps outside a bound falls back to kritik's default with
+// a note:
 //
-//   - Statements: if/elif/else, for (with else, break, continue; not
-//     recursive), set in the expression form {% set name = expression %},
-//     raw and autoescape. Not available: block-form set, filter, call,
-//     macro, with, block, do, trans, include, import, from and extends.
-//   - Operators: comparisons, and, or, not, in, is, -, /, //, % and binary
-//   - on numbers. Not available: + on strings or lists, unary +, ~, * and
-//     **. Write parts side by side instead of concatenating them.
-//   - Globals: range (at most 10,000 items), dict, cycler and joiner.
-//     Filters: gonja's built-ins except random and format. Methods: string
-//     methods and the read-only dict (keys, values, items, get, copy) and
-//     list (copy) methods.
-//   - Limits: output of 64 KiB, marker included; 20,000 loop iterations
-//     per render, charged when a loop starts; values kept by set or
-//     returned by a filter or method of at most 64 KiB; a filter or method
-//     call whose input or estimated allocation exceeds 256 KiB is refused,
-//     widths are at most 65,536 (wordwrap's at most 1,000, and wrapping
-//     costs input × width / 2 against that 256 KiB), slice and batch counts
-//     at most 10,000, and indent, tojson's indent and expandtabs at most 16;
-//     literals of at most
-//     256 items; nesting of at most 64; a template source of at most
-//     64 KiB; two seconds per render. Identifiers starting with __kritik_
-//     are reserved.
+//   - output of 64 KiB, marker included;
+//   - 20,000 loop iterations per render, charged when a loop starts;
+//   - 256 KiB per function call, counting its arguments, its result and,
+//     for repeat, indent, nindent, join, replace, regexReplaceAll,
+//     regexReplaceAllLiteral, seq, until, untilStep and printf, an estimate
+//     of what it allocates; printf refuses a width or precision given as *;
+//   - two seconds per render; identifiers starting with __kritik_ are
+//     reserved.
 //
-// Trim-blocks and lstrip-blocks are on. The context keys are documented on
-// RenderData; see templates/ for the defaults.
+// The summary template's dot is a RenderData, the inline template's a
+// Finding; see templates/ for the defaults.
 package review
 
 import (

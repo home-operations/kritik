@@ -22,13 +22,13 @@ func operatorSettings(t *testing.T) configfile.Settings {
 		Enabled: true, Filter: filter, Ignore: []string{"vendor/**"},
 		Review: configfile.Review{
 			Instructions: []string{"ops/rules.md"}, RequireSuggestedFix: true,
-			Templates: configfile.ReviewTemplates{Summary: "ops/summary.j2", Inline: "ops/inline.j2"},
+			Templates: configfile.ReviewTemplates{Summary: "ops/summary.tmpl", Inline: "ops/inline.tmpl"},
 		},
 	}
 }
 
 func TestEffective(t *testing.T) {
-	operatorFiles := repoconfig.Files{"ops/rules.md": "operator rules", "ops/summary.j2": "op summary", "ops/inline.j2": "op inline"}
+	operatorFiles := repoconfig.Files{"ops/rules.md": "operator rules", "ops/summary.tmpl": "op summary", "ops/inline.tmpl": "op inline"}
 	withFile := func(doc string, extra repoconfig.Files) repoconfig.Files {
 		files := repoconfig.Files{repoconfig.FileName: doc}
 		for _, src := range []repoconfig.Files{operatorFiles, extra} {
@@ -75,8 +75,8 @@ func TestEffective(t *testing.T) {
 		},
 		{
 			name: "repository instructions and summary template replace the operator's",
-			files: withFile("review:\n  instructions: [.kritik/rules.md]\n  templates:\n    summary: .kritik/summary.j2\n",
-				repoconfig.Files{".kritik/rules.md": "repo rules", ".kritik/summary.j2": "repo summary"}),
+			files: withFile("review:\n  instructions: [.kritik/rules.md]\n  templates:\n    summary: .kritik/summary.tmpl\n",
+				repoconfig.Files{".kritik/rules.md": "repo rules", ".kritik/summary.tmpl": "repo summary"}),
 			enabled: true, ignore: []string{"vendor/**"}, instructions: []string{"repo rules"},
 			templates: review.Templates{Summary: "repo summary", Inline: "op inline"}, strict: true,
 		},
