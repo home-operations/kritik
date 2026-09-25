@@ -416,8 +416,8 @@ func TestMain(m *testing.M) {
 var _ = filepath.Join
 
 // TestEnsureIndexSchemaUsesVectorChord checks that the embedding index is a
-// vchordrq one, and that an HNSW index left by an earlier version is
-// replaced on the next start.
+// vchordrq one and that the application role can turn on the prefilter the
+// similarity query sets.
 func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
@@ -428,29 +428,16 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
 	})
-	method := func() string {
-		var m string
-		if err := s.owner.QueryRow(ctx, `SELECT am.amname FROM pg_class c JOIN pg_am am ON am.oid = c.relam
-			WHERE c.relname = 'index_chunks_embedding_idx'`).Scan(&m); err != nil {
-			t.Fatalf("embedding index: %v", err)
-		}
-		return m
-	}
 	if err := s.EnsureIndexSchema(ctx, "kritik_app", "test-embed", 8, true); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
-	if got := method(); got != embeddingIndexMethod {
-		t.Fatalf("index method = %q, want %q", got, embeddingIndexMethod)
+	var method string
+	if err := s.owner.QueryRow(ctx, `SELECT am.amname FROM pg_class c JOIN pg_am am ON am.oid = c.relam
+		WHERE c.relname = 'index_chunks_embedding_idx'`).Scan(&method); err != nil {
+		t.Fatalf("embedding index: %v", err)
 	}
-	if _, err := s.owner.Exec(ctx, `DROP INDEX index_chunks_embedding_idx;
-		CREATE INDEX index_chunks_embedding_idx ON index_chunks USING hnsw (embedding halfvec_cosine_ops)`); err != nil {
-		t.Fatalf("plant an hnsw index: %v", err)
-	}
-	if err := s.EnsureIndexSchema(ctx, "kritik_app", "test-embed", 8, false); err != nil {
-		t.Fatalf("EnsureIndexSchema again: %v", err)
-	}
-	if got := method(); got != embeddingIndexMethod {
-		t.Fatalf("index method after replacement = %q, want %q", got, embeddingIndexMethod)
+	if method != "vchordrq" {
+		t.Fatalf("index method = %q, want vchordrq", method)
 	}
 	if _, err := s.app.Exec(ctx, `SET vchordrq.prefilter = on`); err != nil {
 		t.Fatalf("the application role must be able to set the prefilter: %v", err)

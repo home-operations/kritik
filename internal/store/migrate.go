@@ -144,10 +144,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		// The runner role sees only its own job through the runner_job
 		// policies; it needs the table privileges those policies gate. On
 		// runner_runs it may update only what a runner reports, never the
-		// tenant or review its run belongs to: revoking the table-level
-		// grant an older release made also drops column grants, which the
-		// next statement restores, in the same transaction.
-		`REVOKE UPDATE ON runner_runs FROM ` + runner,
+		// tenant or review its run belongs to.
 		`GRANT SELECT, UPDATE (` + strings.Join(runnerRunColumns, ", ") + `) ON runner_runs TO ` + runner,
 		`GRANT SELECT, INSERT ON context_packs, index_packs, index_staging, agent_runs TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + runner,
@@ -167,8 +164,6 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 	for _, table := range river {
 		stmts = append(stmts, `GRANT SELECT, INSERT, UPDATE, DELETE ON `+pgx.Identifier{table}.Sanitize()+` TO `+app)
 	}
-	// One transaction, so a runner working through a restart never sees
-	// runner_runs between the revoke and the grant.
 	tx, err := s.owner.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("store: begin grants: %w", err)
