@@ -14,8 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/sealbox"
+	"github.com/home-operations/kritik/internal/server"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -112,18 +115,30 @@ func configPath(t *testing.T) string {
 	return path
 }
 
-// countingHandler counts records at error level.
-type countingHandler struct{ errors atomic.Int32 }
+// countingHandler counts records at error level and reloads.
+type countingHandler struct{ errors, reloads atomic.Int32 }
 
 func (h *countingHandler) Enabled(context.Context, slog.Level) bool { return true }
 func (h *countingHandler) Handle(_ context.Context, r slog.Record) error {
 	if r.Level >= slog.LevelError {
 		h.errors.Add(1)
 	}
+	if r.Message == "configuration reloaded" {
+		h.reloads.Add(1)
+	}
 	return nil
 }
 func (h *countingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *countingHandler) WithGroup(string) slog.Handler      { return h }
+
+func dashRevision(f *configfile.File, slug string) int64 {
+	for _, d := range f.Dashboard() {
+		if d.Slug == slug {
+			return d.Revision
+		}
+	}
+	return 0
+}
 
 func hasInstallation(f *configfile.File, name string) bool {
 	_, _, ok := f.Installation(name)
@@ -196,9 +211,26 @@ func TestRun(t *testing.T) {
 	k := testKeyring(t)
 	fs := newFakeStore()
 	logs := &countingHandler{}
-	s := &Source{Store: fs, Keyring: k, Logger: slog.New(logs), Poll: time.Hour}
+	reg := prometheus.NewRegistry()
+	s := &Source{Store: fs, Keyring: k, Logger: slog.New(logs), Poll: time.Hour, Errors: server.NewConfigErrorGauge(reg)}
 	if _, err := s.Load(t.Context(), path); err != nil {
 		t.Fatal(err)
+	}
+	mergeGauge := func() float64 {
+		t.Helper()
+		families, err := reg.Gather()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, mf := range families {
+			for _, m := range mf.GetMetric() {
+				if m.GetLabel()[0].GetValue() == "merge" {
+					return m.GetGauge().GetValue()
+				}
+			}
+		}
+		t.Fatal("no merge series")
+		return 0
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -206,7 +238,7 @@ func TestRun(t *testing.T) {
 	h := <-fs.handlers
 	current := func() *configfile.File { return s.Current.Get() }
 	// Sealing is randomised, so a row sealed twice is two different specs.
-	beta1, beta2 := dashRow(t, k, "beta", "beta-bot", 1), dashRow(t, k, "beta", "beta-bot", 2)
+	beta1, beta2, beta3 := dashRow(t, k, "beta", "beta-bot", 1), dashRow(t, k, "beta", "beta-bot", 2), dashRow(t, k, "beta", "beta-bot", 3)
 
 	t.Run("a config notification merges the new row", func(t *testing.T) {
 		fs.set("1", beta1)
@@ -218,48 +250,48 @@ func TestRun(t *testing.T) {
 		}
 	})
 
+	// Triggers are handled one at a time in order, so once a later change is
+	// live every trigger sent before it has been handled too.
 	t.Run("a repeat trigger with nothing new keeps the snapshot", func(t *testing.T) {
-		before := current()
-		changed := s.Current.Changed()
+		reloads := logs.reloads.Load()
 		h.OnReconnect()
 		h.OnConfig("beta")
-		time.Sleep(50 * time.Millisecond)
-		select {
-		case <-changed:
-			t.Fatal("Current was replaced though nothing changed")
-		default:
-		}
-		if current() != before {
-			t.Fatal("snapshot changed")
+		fs.set("2", beta2)
+		h.OnConfig("beta")
+		waitFor(t, "beta at revision 2", func() bool { return dashRevision(current(), "beta") == 2 })
+		if n := logs.reloads.Load() - reloads; n != 1 {
+			t.Fatalf("Current was set %d times for one change, want 1", n)
 		}
 	})
 
 	t.Run("a collision keeps the last good snapshot and logs once", func(t *testing.T) {
 		before := current()
-		fs.set("2", beta1, dashRow(t, k, "gamma", "acme-bot", 1))
+		fs.set("3", beta2, dashRow(t, k, "gamma", "acme-bot", 1))
 		errsBefore := logs.errors.Load()
 		h.OnConfig("gamma")
 		waitFor(t, "LastError", func() bool { return s.LastError() != nil })
-		h.OnConfig("gamma")
-		h.OnReconnect()
-		time.Sleep(50 * time.Millisecond)
 		if current() != before {
 			t.Fatal("a failed merge replaced the snapshot")
 		}
 		if _, ok := errors.AsType[*configfile.MergeError](s.LastError()); !ok {
 			t.Fatalf("LastError = %v, want a *configfile.MergeError", s.LastError())
 		}
+		if v := mergeGauge(); v != 1 {
+			t.Fatalf("merge error gauge = %v while failing, want 1", v)
+		}
+		h.OnConfig("gamma")
+		h.OnReconnect()
+		fs.set("4", beta3)
+		h.OnReconnect()
+		waitFor(t, "recovery", func() bool { return s.LastError() == nil && dashRevision(current(), "beta") == 3 })
 		if n := logs.errors.Load() - errsBefore; n != 1 {
 			t.Fatalf("logged %d errors for one distinct failure, want 1", n)
 		}
-	})
-
-	t.Run("resolving the collision recovers", func(t *testing.T) {
-		fs.set("3", beta2)
-		h.OnReconnect()
-		waitFor(t, "recovery", func() bool { return s.LastError() == nil })
-		if !hasInstallation(current(), "acme-bot") || !hasInstallation(current(), "beta-bot") {
-			t.Fatal("snapshot after recovery is missing an installation")
+		if v := mergeGauge(); v != 0 {
+			t.Fatalf("merge error gauge = %v after recovery, want 0", v)
+		}
+		if !hasInstallation(current(), "acme-bot") || hasInstallation(current(), "gamma-bot") {
+			t.Fatal("snapshot after recovery is wrong")
 		}
 	})
 
@@ -271,7 +303,7 @@ func TestRun(t *testing.T) {
 		if current() != before || !strings.Contains(s.LastError().Error(), "connection refused") {
 			t.Fatalf("snapshot replaced or error %v unexpected", s.LastError())
 		}
-		fs.set("3", beta2)
+		fs.set("4", beta3)
 		h.OnConfig("beta")
 		waitFor(t, "recovery", func() bool { return s.LastError() == nil })
 		if current() != before {

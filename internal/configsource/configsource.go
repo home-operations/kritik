@@ -19,6 +19,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/sealbox"
+	"github.com/home-operations/kritik/internal/server"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -53,6 +54,9 @@ type Source struct {
 	Logger *slog.Logger
 	// Poll defaults to DefaultPoll.
 	Poll time.Duration
+	// Errors, when set, is raised at the merge stage while LastError is
+	// not nil.
+	Errors *server.ConfigErrorGauge
 
 	mu sync.Mutex
 	// file is the latest file that parsed, whether or not it has merged.
@@ -230,6 +234,7 @@ func (s *Source) fail(err error) {
 	repeat := err.Error() == s.loggedErr
 	s.loggedErr = err.Error()
 	s.mu.Unlock()
+	s.Errors.Set(server.ConfigErrorMerge, true)
 	if !repeat {
 		s.logger().Error("configsource: rejected, keeping the last good configuration", "error", err)
 	}
@@ -237,8 +242,9 @@ func (s *Source) fail(err error) {
 
 func (s *Source) succeed() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.lastErr, s.loggedErr = nil, ""
+	s.mu.Unlock()
+	s.Errors.Set(server.ConfigErrorMerge, false)
 }
 
 func (s *Source) logger() *slog.Logger {
