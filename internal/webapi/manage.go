@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -231,7 +230,7 @@ func (s *Server) checkSpec(
 	}
 	sealed, err := sealSpec(spec, stored, s.keyring.Seal, generateWebhookSecret)
 	if se, ok := errors.AsType[*specError](err); ok {
-		return nil, sealed, errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, se.Error(), pathDetails{Path: se.path})
+		return nil, sealed, errStatus(http.StatusUnprocessableEntity, se.errorCode(), se.Error(), pathDetails{Path: se.path})
 	}
 	if err != nil {
 		return nil, sealed, err
@@ -242,8 +241,7 @@ func (s *Server) checkSpec(
 	}
 	next, err := configfile.DecodeTenant(candidate)
 	if err != nil {
-		msg := strings.TrimPrefix(err.Error(), "configfile: ")
-		return nil, sealed, errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, msg, pathDetails{})
+		return nil, sealed, decodeFailure(err)
 	}
 	if prev != nil && !p.Operator {
 		old, err := configfile.DecodeTenant(*prev)
@@ -255,8 +253,9 @@ func (s *Server) checkSpec(
 				path+" can only be changed by an instance operator", pathDetails{Path: path})
 		}
 	}
-	if err := configfile.ValidateDashboard(s.current.Get(), candidate, s.keyring); err != nil {
-		return nil, sealed, mergeFailure(slug, err)
+	current := s.current.Get()
+	if err := configfile.ValidateDashboard(current, candidate, s.keyring); err != nil {
+		return nil, sealed, mergeFailure(slug, &next, err, func() error { return validateWithout(current, slug, s.keyring) })
 	}
 	return &next, sealed, nil
 }
@@ -313,6 +312,9 @@ func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) error {
 		case errors.Is(err, store.ErrDashboardConflict):
 			return errRevisionConflict
 		case err != nil:
+			return err
+		}
+		if err := store.DeleteTenantAccess(ctx, tx, tid); err != nil {
 			return err
 		}
 		return record(ctx, tx, p, &tid, AuditTenantDelete, slug, tenantAudit{Revision: rev})

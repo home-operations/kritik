@@ -3,7 +3,7 @@ package webapi
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/home-operations/kritik/internal/auth"
@@ -70,6 +70,17 @@ func TestOperatorOnlyChange(t *testing.T) {
 			want: "repositories",
 		},
 		{
+			name: "incremental bounds spend",
+			old:  `{` + base + `,"repositories":[{"name":"alpha/x"}]}`,
+			new:  `{` + base + `,"repositories":[{"name":"alpha/x","incremental":{"maxDeltaFiles":500}}]}`,
+			want: "repositories[0].incremental",
+		},
+		{
+			name: "removing a repository with incremental settings resets them",
+			old:  `{` + base + `,"repositories":[{"name":"alpha/x","incremental":{"maxDeltaFiles":5}}]}`, new: `{` + base + `}`,
+			want: "repositories",
+		},
+		{
 			name: "removing a plain repository is fine",
 			old:  `{` + base + `,"repositories":[{"name":"alpha/x"}]}`, new: `{` + base + `}`,
 		},
@@ -85,13 +96,16 @@ func TestOperatorOnlyChange(t *testing.T) {
 }
 
 func TestMergeFailure(t *testing.T) {
+	candidate := &configfile.Tenant{Slug: "alpha", Installations: []configfile.Installation{{Name: "own"}, {Name: "shared"}}}
+	broken := errors.New("still broken")
 	tests := []struct {
-		name    string
-		err     error
-		status  int
-		code    ErrorCode
-		path    string
-		message string
+		name     string
+		err      error
+		baseline error
+		status   int
+		code     ErrorCode
+		path     string
+		message  string
 	}{
 		{
 			name:   "the edited tenant is blamed with its prefix stripped",
@@ -109,25 +123,42 @@ func TestMergeFailure(t *testing.T) {
 			status: 422, code: CodeInvalidSpec, path: "", message: `(alpha) must list at least one installation`,
 		},
 		{
-			name: "a decode error",
-			err: &configfile.MergeError{Slug: "alpha", Err: fmt.Errorf("configfile: tenant spec: %w",
-				errors.New("yaml: field nope not found"))},
-			status: 422, code: CodeInvalidSpec, path: "", message: "tenant spec: yaml: field nope not found",
+			name: "another tenant's slug is not revealed",
+			err: &configfile.MergeError{Slug: "alpha", Err: errors.New(
+				`configfile: dashboard[alpha].installations[0].name "x" duplicates an installation in tenant "secret-co"; names must be unique`)},
+			status: 422, code: CodeInvalidSpec, path: "installations[0].name",
+			message: `installations[0].name "x" duplicates an installation in another tenant; names must be unique`,
 		},
 		{
-			name:   "another tenant blocks the write",
-			err:    &configfile.MergeError{Slug: "beta", Err: errors.New(`configfile: dashboard[beta].installations[0].token: cannot open`)},
-			status: 409, code: CodeConfigBlocked,
+			name: "a duplicate slug names no tenant",
+			err: &configfile.MergeError{Slug: "alpha", Err: errors.New(
+				`configfile: dashboard[alpha].slug "alpha" duplicates tenants[3]`)},
+			status: 422, code: CodeInvalidSpec, path: "slug", message: `slug "alpha" duplicates another tenant`,
 		},
 		{
-			name:   "the file itself",
-			err:    errors.New("configfile: tenants must list at least one tenant"),
-			status: 409, code: CodeConfigBlocked,
+			name: "a clash reported against a later tenant is the candidate's",
+			err: &configfile.MergeError{Slug: "beta", Err: errors.New(
+				`configfile: dashboard[beta].installations[0].name "shared" duplicates an installation in tenant "alpha"; names must be unique`)},
+			status: 422, code: CodeInvalidSpec, path: "installations[1].name",
+			message: `installations[1].name: conflicts with another tenant: "shared" duplicates an installation in tenant "alpha"; ` +
+				`names must be unique`,
+		},
+		{
+			name:     "another tenant blocks the write",
+			err:      &configfile.MergeError{Slug: "beta", Err: errors.New(`configfile: dashboard[beta].installations[0].token: cannot open`)},
+			baseline: broken,
+			status:   409, code: CodeConfigBlocked,
+		},
+		{
+			name:     "the file itself",
+			err:      errors.New("configfile: tenants must list at least one tenant"),
+			baseline: broken,
+			status:   409, code: CodeConfigBlocked,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e, ok := errors.AsType[*apiError](mergeFailure("alpha", tt.err))
+			e, ok := errors.AsType[*apiError](mergeFailure("alpha", candidate, tt.err, func() error { return tt.baseline }))
 			if !ok {
 				t.Fatal("not an apiError")
 			}
@@ -140,9 +171,36 @@ func TestMergeFailure(t *testing.T) {
 			if e.message != tt.message {
 				t.Errorf("message = %q, want %q", e.message, tt.message)
 			}
+			if strings.Contains(e.message, "beta") || strings.Contains(e.message, "secret-co") {
+				t.Errorf("message names another tenant: %q", e.message)
+			}
 			var d pathDetails
 			if err := json.Unmarshal(e.details, &d); err != nil || d.Path != tt.path {
 				t.Errorf("details = %s, want path %q", e.details, tt.path)
+			}
+		})
+	}
+}
+
+func TestDecodeFailure(t *testing.T) {
+	tests := []struct {
+		spec, path, message string
+	}{
+		{`{"slug":"alpha","nope":1}`, "nope", "tenant spec: field nope not found"},
+		{`{"slug":"alpha","installations":[{"name":"a","bogus":true}]}`, "bogus", "tenant spec: field bogus not found"},
+		{`{"slug":"beta"}`, "slug", `tenant spec slug "beta" does not match "alpha"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.spec, func(t *testing.T) {
+			_, err := configfile.DecodeTenant(configfile.DashboardTenant{Slug: "alpha", Spec: json.RawMessage(tt.spec)})
+			if err == nil {
+				t.Fatal("decoded")
+			}
+			e, _ := errors.AsType[*apiError](decodeFailure(err))
+			var d pathDetails
+			_ = json.Unmarshal(e.details, &d)
+			if e.status != 422 || e.message != tt.message || d.Path != tt.path || strings.Contains(e.message, "line ") {
+				t.Errorf("got %d %q path %q, want %q path %q (from %v)", e.status, e.message, d.Path, tt.message, tt.path, err)
 			}
 		})
 	}

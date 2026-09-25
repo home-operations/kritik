@@ -141,7 +141,7 @@ func TestFileTenantConfigIsRedacted(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &c); err != nil {
 		t.Fatal(err)
 	}
-	if c.ManagedBy != "file" || c.Editable || c.Revision != nil || len(c.OperatorOnlyFields) != 4 {
+	if c.ManagedBy != "file" || c.Editable || c.Revision != nil || len(c.OperatorOnlyFields) != 5 {
 		t.Errorf("config = %+v", c)
 	}
 	if body := w.Body.String(); strings.Contains(body, "KRITIK_TEST_TOKEN") || !strings.Contains(body, `"token":{"set":true}`) {

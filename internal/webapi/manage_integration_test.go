@@ -45,7 +45,7 @@ web:
       clientId: kritik
       clientSecret: { env: KRITIK_TEST_TOKEN }
   operators: ["corp:mgr-op"]
-  dashboardForgeHosts: [git.example]
+  dashboardForgeHosts: [git.example, git2.example]
 tenants:
   - slug: mgr-file
     installations:
@@ -432,12 +432,19 @@ func testAdminUpdate(t *testing.T, e *manageEnv) {
 	env := UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, dashSpec(map[string]any{"env": "HOME"}, keep, nil))}
 	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", env)
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	badHost := dashSpec(keep, keep, nil)
+	badHost := dashSpec(map[string]any{"value": "t"}, keep, nil)
 	badHost["installations"].([]any)[0].(map[string]any)["host"] = "evil.example"
 	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, badHost)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
 	if !strings.Contains(string(body), `"path":"installations[0].host"`) || strings.Contains(string(body), "dashboard[") {
 		t.Errorf("merge error = %s", body)
+	}
+	moved := dashSpec(keep, keep, nil)
+	moved["installations"].([]any)[0].(map[string]any)["host"] = "git2.example"
+	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, moved)})
+	e.expect(status, body, http.StatusUnprocessableEntity, CodeReenterSecret)
+	if !strings.Contains(string(body), `"path":"installations[0].token"`) {
+		t.Errorf("reenter_secret details = %s", body)
 	}
 	good := UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, dashSpec(keep, keep, map[string]any{"filter": "true"}))}
 	status, body = e.do("member", "PUT", "/api/v1/tenants/mgr-dash/config", good)
@@ -492,6 +499,26 @@ func testCollisions(t *testing.T, e *manageEnv) {
 	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
 	if e.totalAudits() != before {
 		t.Errorf("refused creates left %d audit rows", e.totalAudits()-before)
+	}
+
+	// mgr-zed sorts after mgr-dash, so the merge reports mgr-dash taking
+	// its installation name against mgr-zed; the blame is still mgr-dash's.
+	zed := map[string]any{"slug": "mgr-zed", "installations": []any{map[string]any{
+		"name": "mgr-zed-bot", "forge": "forgejo", "host": "git.example", "account": "mz",
+		"token": map[string]any{"value": "z"}, "webhookSecret": map[string]any{"value": "z"},
+	}}}
+	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-zed", Spec: mustJSON(t, zed)})
+	e.expect(status, body, http.StatusCreated, "")
+	e.waitFor("mgr-zed to merge", func(f *configfile.File) bool { _, ok := f.Tenant("mgr-zed"); return ok })
+	taken := dashSpec(keep, keep, map[string]any{"filter": "true"})
+	taken["installations"] = append(taken["installations"].([]any), map[string]any{
+		"name": "mgr-zed-bot", "forge": "forgejo", "host": "git.example", "account": "mz2",
+		"token": map[string]any{"value": "t"}, "webhookSecret": map[string]any{"value": "w"},
+	})
+	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, taken)})
+	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
+	if !strings.Contains(string(body), `"path":"installations[1].name"`) || strings.Contains(string(body), "dashboard[mgr-zed]") || strings.Contains(string(body), `tenant \"mgr-zed\"`) {
+		t.Errorf("clash against a later tenant = %s", body)
 	}
 }
 
@@ -552,6 +579,8 @@ func testMembers(t *testing.T, e *manageEnv, dashID string) {
 	}
 	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: "Carol@example.com", Role: "member"})
 	e.expect(status, body, http.StatusConflict, CodeInviteExists)
+	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: "Member@example.com", Role: "admin"})
+	e.expect(status, body, http.StatusConflict, CodeAlreadyMember)
 
 	var members Members
 	status, body = e.do("member", "GET", "/api/v1/tenants/mgr-dash/members", nil)
@@ -606,6 +635,8 @@ func testMembers(t *testing.T, e *manageEnv, dashID string) {
 	}
 	status, body = e.do("carol", "GET", "/api/v1/tenants/mgr-dash/members", nil)
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
+	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: "erin@example.com", Role: "member"})
+	e.expect(status, body, http.StatusCreated, "")
 }
 
 func testAuditLog(t *testing.T, e *manageEnv) {
@@ -663,6 +694,11 @@ func testDelete(t *testing.T, e *manageEnv) {
 	e.expect(status, body, http.StatusNoContent, "")
 	if e.audits(AuditTenantDelete, "mgr-dash") != 1 {
 		t.Errorf("tenant.delete audit rows are wrong")
+	}
+	dashID := (&configfile.Tenant{Slug: "mgr-dash"}).ID()
+	if n := e.scalar(`SELECT ((SELECT count(*) FROM memberships WHERE tenant_id = '` + dashID + `') +
+		(SELECT count(*) FROM invites WHERE tenant_id = '` + dashID + `' AND accepted_at IS NULL))::text`); n != "0" {
+		t.Errorf("%s memberships and invites outlived the tenant", n)
 	}
 	e.waitFor("mgr-dash to leave", func(f *configfile.File) bool { _, ok := f.Tenant("mgr-dash"); return !ok })
 	status, body = e.do("operator", "GET", "/api/v1/tenants/mgr-dash/config", nil)

@@ -27,17 +27,20 @@ type secretKey struct {
 	path string
 	// generatable secrets may be minted by the server.
 	generatable bool
+	// bound secrets authenticate to one forge account, so a kept one only
+	// stays kept while the installation still names that account.
+	bound bool
 }
 
 // sealedKey is SecretRef.Sealed's spec key.
 const sealedKey = "sealed"
 
 var secretKeys = []secretKey{
-	{path: "token"},
+	{path: "token", bound: true},
 	{path: "webhookSecret", generatable: true},
-	{path: "gitToken"},
-	{path: "app.clientIdFrom"},
-	{path: "app.privateKey"},
+	{path: "gitToken", bound: true},
+	{path: "app.clientIdFrom", bound: true},
+	{path: "app.privateKey", bound: true},
 	{path: "app.webhookSecret", generatable: true},
 }
 
@@ -46,6 +49,15 @@ var secretKeys = []secretKey{
 type specError struct {
 	path string
 	msg  string
+	// code defaults to CodeInvalidSpec.
+	code ErrorCode
+}
+
+func (e *specError) errorCode() ErrorCode {
+	if e.code == "" {
+		return CodeInvalidSpec
+	}
+	return e.code
 }
 
 func (e *specError) Error() string {
@@ -92,7 +104,7 @@ func sealSpec(spec, stored json.RawMessage, seal func([]byte) (string, error), g
 			}
 			where := fmt.Sprintf("installations[%d].%s", i, k.path)
 			logical := fmt.Sprintf("installations[%s].%s", name, k.path)
-			ref, err := sealRef(v, k, where, func() (any, bool) { return storedRef(prev, name, k.path) })
+			ref, err := sealRef(v, k, where, func() (any, *specError) { return keepRef(prev, in, k, where) })
 			if err != nil {
 				return out, err
 			}
@@ -133,7 +145,7 @@ type secretInput struct {
 }
 
 // sealRef reads the write form at where; keep looks up the stored ref.
-func sealRef(v any, k secretKey, where string, keep func() (any, bool)) (secretInput, error) {
+func sealRef(v any, k secretKey, where string, keep func() (any, *specError)) (secretInput, error) {
 	var in secretInput
 	m, ok := v.(map[string]any)
 	if !ok || len(m) != 1 {
@@ -151,9 +163,9 @@ func sealRef(v any, k secretKey, where string, keep func() (any, bool)) (secretI
 			if x != true {
 				return in, &specError{path: where, msg: "keep must be true"}
 			}
-			ref, ok := keep()
-			if !ok {
-				return in, &specError{path: where, msg: "has no stored value to keep"}
+			ref, err := keep()
+			if err != nil {
+				return in, err
 			}
 			in.kept = ref
 		case "generate":
@@ -173,11 +185,28 @@ func sealRef(v any, k secretKey, where string, keep func() (any, bool)) (secretI
 	return in, nil
 }
 
+// keepRef is the sealed ref stored at k under the stored installation with
+// next's name. A bound secret is kept only while the installation still
+// names the same forge, host and account: kept under another, a token
+// would be sent to a host it was never meant for.
+func keepRef(stored, next map[string]any, k secretKey, where string) (any, *specError) {
+	name, _ := next["name"].(string)
+	ref, prev := storedRef(stored, name, k.path)
+	if ref == nil {
+		return nil, &specError{path: where, msg: "has no stored value to keep"}
+	}
+	if k.bound && identityOf(prev) != identityOf(next) {
+		return nil, &specError{path: where, code: CodeReenterSecret,
+			msg: "the installation's forge, host or account changed; enter this secret again"}
+	}
+	return ref, nil
+}
+
 // storedRef is the sealed ref stored at path under the installation named
-// name, if there is one.
-func storedRef(stored map[string]any, name, path string) (any, bool) {
+// name, and that installation, if there is one.
+func storedRef(stored map[string]any, name, path string) (any, map[string]any) {
 	if name == "" {
-		return nil, false
+		return nil, nil
 	}
 	for _, in := range objects(stored["installations"]) {
 		if in["name"] != name {
@@ -186,11 +215,33 @@ func storedRef(stored map[string]any, name, path string) (any, bool) {
 		parent, leaf := lookupParent(in, path)
 		ref, ok := parent[leaf].(map[string]any)
 		if s, _ := ref[sealedKey].(string); !ok || s == "" {
-			return nil, false
+			return nil, nil
 		}
-		return map[string]any{"sealed": ref[sealedKey]}, true
+		return map[string]any{sealedKey: ref[sealedKey]}, in
 	}
-	return nil, false
+	return nil, nil
+}
+
+// installationIdentity is who an installation's credentials speak for.
+type installationIdentity struct {
+	forge, host, account string
+}
+
+// identityOf normalises an installation's forge, host and account: host
+// without scheme, path or case, github.com when a GitHub one names none.
+func identityOf(in map[string]any) installationIdentity {
+	forge, _ := in["forge"].(string)
+	host, _ := in["host"].(string)
+	account, _ := in["account"].(string)
+	host = strings.ToLower(strings.TrimSpace(host))
+	if _, rest, ok := strings.Cut(host, "://"); ok {
+		host = rest
+	}
+	host, _, _ = strings.Cut(host, "/")
+	if host == "" && forge == string(configfile.ForgeGitHub) {
+		host = "github.com"
+	}
+	return installationIdentity{forge: forge, host: host, account: strings.ToLower(account)}
 }
 
 // redactSpec replaces every secret position in a stored or file spec with

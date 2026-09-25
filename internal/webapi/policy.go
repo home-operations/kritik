@@ -1,12 +1,9 @@
 package webapi
 
 import (
-	"errors"
-	"net/http"
 	"reflect"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
@@ -15,7 +12,7 @@ import (
 
 // operatorOnlyFields are the spec fields only an operator may change on a
 // dashboard tenant (ADR-0009 §2.15).
-var operatorOnlyFields = []string{"runner", "limits", "repositories[].agent", "repositories[].mode"}
+var operatorOnlyFields = []string{"runner", "limits", "repositories[].agent", "repositories[].mode", "repositories[].incremental"}
 
 // operatorOnlyChange is the path of the first operator-only field that
 // differs between the stored tenant and its replacement, "" when none
@@ -46,9 +43,12 @@ func operatorOnlyChange(prev, next *configfile.Tenant) string {
 		if !agentEqual(p.Agent, n.Agent) {
 			return "repositories[" + strconv.Itoa(i) + "].agent"
 		}
+		if !ptrEqual(p.Incremental.MaxDeltaFiles, n.Incremental.MaxDeltaFiles) {
+			return "repositories[" + strconv.Itoa(i) + "].incremental"
+		}
 	}
 	for _, p := range byName {
-		if modeOf(p.Mode) != modeOf(zero.Mode) || !agentEqual(p.Agent, zero.Agent) {
+		if modeOf(p.Mode) != modeOf(zero.Mode) || !agentEqual(p.Agent, zero.Agent) || p.Incremental.MaxDeltaFiles != nil {
 			return "repositories"
 		}
 	}
@@ -91,35 +91,6 @@ func ptrEqual[T comparable](a, b *T) bool {
 		return a == b
 	}
 	return *a == *b
-}
-
-// mergeFailure turns a failed configfile.ValidateDashboard into the API's
-// answer. An error about the tenant being written is the client's to fix,
-// a 422 naming the path within its spec; an error about any other tenant
-// or the file itself means the configuration is already broken elsewhere,
-// and no write can be judged until an operator fixes that.
-func mergeFailure(slug string, err error) error {
-	me, ok := errors.AsType[*configfile.MergeError](err)
-	if !ok || me.Slug != slug {
-		return errStatus(http.StatusConflict, CodeConfigBlocked,
-			"the configuration is invalid elsewhere, so this change cannot be checked; an operator must fix it first", nil)
-	}
-	msg := me.Err.Error()
-	for strings.HasPrefix(msg, "configfile: ") {
-		msg = strings.TrimPrefix(msg, "configfile: ")
-	}
-	prefix := "dashboard[" + slug + "]"
-	var path string
-	if rest, ok := strings.CutPrefix(msg, prefix+"."); ok {
-		msg = rest
-		path = msg
-		if i := strings.IndexAny(path, ": "); i >= 0 {
-			path = path[:i]
-		}
-	} else {
-		msg = strings.TrimSpace(strings.TrimPrefix(msg, prefix))
-	}
-	return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, msg, pathDetails{Path: path})
 }
 
 // leavesNoAdmin reports whether changing an admin's own invite grant to

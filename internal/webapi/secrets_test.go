@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -29,6 +30,7 @@ func TestSealSpec(t *testing.T) {
 		generated map[string]string
 		changed   []string
 		errPath   string
+		errCode   ErrorCode
 	}{
 		{
 			name:    "value is sealed",
@@ -39,11 +41,40 @@ func TestSealSpec(t *testing.T) {
 		{
 			name:   "keep copies the stored sealed value by installation name",
 			stored: storedSpec,
-			spec: `{"slug":"alpha","installations":[{"name":"alpha-gh","app":{"clientId":"cid","privateKey":{"keep":true},` +
-				`"webhookSecret":{"keep":true}}},{"name":"alpha-bot","token":{"keep":true},"webhookSecret":{"value":"new"}}]}`,
-			want: `{"installations":[{"app":{"clientId":"cid","privateKey":{"sealed":"old-key"},"webhookSecret":{"sealed":"old-app-hook"}},` +
-				`"name":"alpha-gh"},{"name":"alpha-bot","token":{"sealed":"old-token"},"webhookSecret":{"sealed":"sealed:new"}}],"slug":"alpha"}`,
+			spec: `{"slug":"alpha","installations":[{"name":"alpha-gh","forge":"github","host":"GitHub.com","account":"Alpha",` +
+				`"app":{"clientId":"cid","privateKey":{"keep":true},"webhookSecret":{"keep":true}}},` +
+				`{"name":"alpha-bot","forge":"forgejo","host":"https://git.example/","account":"alpha","token":{"keep":true},` +
+				`"webhookSecret":{"value":"new"}}]}`,
+			want: `{"installations":[{"account":"Alpha","app":{"clientId":"cid","privateKey":{"sealed":"old-key"},` +
+				`"webhookSecret":{"sealed":"old-app-hook"}},"forge":"github","host":"GitHub.com","name":"alpha-gh"},` +
+				`{"account":"alpha","forge":"forgejo","host":"https://git.example/","name":"alpha-bot","token":{"sealed":"old-token"},` +
+				`"webhookSecret":{"sealed":"sealed:new"}}],"slug":"alpha"}`,
 			changed: []string{"installations[alpha-bot].webhookSecret"},
+		},
+		{
+			name:   "a webhook secret stays keepable when the host changes",
+			stored: storedSpec,
+			spec:   `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"other.example","account":"alpha","webhookSecret":{"keep":true}}]}`,
+			want:   `{"installations":[{"account":"alpha","forge":"forgejo","host":"other.example","name":"alpha-bot","webhookSecret":{"sealed":"old-hook"}}],"slug":"alpha"}`,
+		},
+		{
+			name:    "a token is not kept onto another host",
+			stored:  storedSpec,
+			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"other.example","account":"alpha","token":{"keep":true}}]}`,
+			errPath: "installations[0].token", errCode: CodeReenterSecret,
+		},
+		{
+			name:    "a token is not kept onto another account",
+			stored:  storedSpec,
+			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"git.example","account":"beta","token":{"keep":true}}]}`,
+			errPath: "installations[0].token", errCode: CodeReenterSecret,
+		},
+		{
+			name:   "a private key is not kept onto another forge",
+			stored: storedSpec,
+			spec: `{"slug":"alpha","installations":[{"name":"alpha-gh","forge":"forgejo","host":"github.com","account":"alpha",` +
+				`"app":{"privateKey":{"keep":true}}}]}`,
+			errPath: "installations[0].app.privateKey", errCode: CodeReenterSecret,
 		},
 		{
 			name:      "generate makes a webhook secret and returns it once",
@@ -140,6 +171,9 @@ func TestSealSpec(t *testing.T) {
 				}
 				if se.path != tt.errPath {
 					t.Fatalf("path = %q, want %q (%v)", se.path, tt.errPath, err)
+				}
+				if want := cmp.Or(tt.errCode, CodeInvalidSpec); se.errorCode() != want {
+					t.Fatalf("code = %q, want %q", se.errorCode(), want)
 				}
 				return
 			}

@@ -118,6 +118,14 @@ func (s *Server) createInvite(w http.ResponseWriter, r *http.Request, t *tenantS
 		ExpiresAt: now.Add(time.Duration(ttl) * time.Hour),
 	}
 	err = s.read(ctx, t, func(tx pgx.Tx) error {
+		member, err := store.IsMemberEmail(ctx, tx, v.TenantID, v.Email)
+		if err != nil {
+			return err
+		}
+		if member {
+			return errStatus(http.StatusConflict, CodeAlreadyMember,
+				"an account with this email is already a member; change its role instead", nil)
+		}
 		if err := store.CreateInvite(ctx, tx, v, p.Account.ID, now); err != nil {
 			if errors.Is(err, store.ErrInviteExists) {
 				return errStatus(http.StatusConflict, CodeInviteExists, "a pending invite for this email already exists", nil)
@@ -190,6 +198,9 @@ func (s *Server) changeInviteGrant(w http.ResponseWriter, r *http.Request, t *te
 	}
 	tid := t.tenant.ID()
 	err := s.read(ctx, t, func(tx pgx.Tx) error {
+		if err := store.LockTenantAdmins(ctx, tx, tid); err != nil {
+			return err
+		}
 		grants, err := store.MemberGrants(ctx, tx, tid, target)
 		if err != nil {
 			return err

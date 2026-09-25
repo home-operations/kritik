@@ -34,6 +34,8 @@ const (
 	CodeNoHead             ErrorCode = "no_head"
 	CodeNotCancelable      ErrorCode = "not_cancelable"
 	CodeActionsDisabled    ErrorCode = "actions_disabled"
+	CodeReenterSecret      ErrorCode = "reenter_secret"
+	CodeAlreadyMember      ErrorCode = "already_member"
 )
 
 // apiError is an error a handler returns to be written as ErrorBody.
