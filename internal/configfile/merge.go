@@ -182,7 +182,9 @@ func (f *File) checkDashboardForgeHosts(allowed []string) error {
 }
 
 // mergedHash is the parsed file's hash when no tenant is merged in, so a
-// deployment without dashboard tenants reports the hash it always has.
+// deployment without dashboard tenants reports the hash it always has. Each
+// spec is hashed as well as its revision: a tenant deleted and created again
+// starts over at revision 1.
 func mergedHash(fileHash string, sorted []DashboardTenant) string {
 	if len(sorted) == 0 {
 		return fileHash
@@ -190,7 +192,8 @@ func mergedHash(fileHash string, sorted []DashboardTenant) string {
 	h := sha256.New()
 	h.Write([]byte(fileHash))
 	for _, d := range sorted {
-		h.Write([]byte("\n" + d.Slug + ":" + strconv.FormatInt(d.Revision, 10)))
+		spec := sha256.Sum256(d.Spec)
+		h.Write([]byte("\n" + d.Slug + ":" + strconv.FormatInt(d.Revision, 10) + ":" + hex.EncodeToString(spec[:])))
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

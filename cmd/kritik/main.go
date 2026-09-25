@@ -27,6 +27,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configsource"
 	"github.com/home-operations/kritik/internal/egress"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/ingest"
@@ -97,17 +98,6 @@ func run() error {
 		"embedding", cfg.EmbeddingEnabled(),
 	)
 
-	// The runner gets everything it needs from its Job spec; every other role
-	// is driven by the configuration file and must not start without one.
-	var file *configfile.File
-	if role != config.RoleRunner {
-		file, err = configfile.Load(cfg.ConfigFile)
-		if err != nil {
-			return err
-		}
-		logConfig(logger, file, "configuration loaded")
-	}
-
 	// Graceful shutdown on the usual termination signals. stop() runs as soon
 	// as the first signal arrives so a second signal restores default handling
 	// and force-terminates instead of being swallowed during a slow drain.
@@ -123,6 +113,7 @@ func run() error {
 	// open, so the pod waits rather than being killed by its own probe.
 	mgmt := server.NewManagement(cfg.MetricsAddr, logger)
 	drift := server.NewConfigDriftGauge(mgmt.Registry())
+	configErrors := server.NewConfigErrorGauge(mgmt.Registry())
 	m := metrics.New(mgmt.Registry())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return mgmt.Run(ctx) })
@@ -143,19 +134,22 @@ func run() error {
 	}
 	defer st.Close()
 
+	// The runner gets everything it needs from its Job spec; every other role
+	// is driven by the configuration file, merged with the dashboard's
+	// tenants, and must not start without it.
 	var current *configfile.Current
 	var exec executor.Executor
-	if file != nil {
-		// current is the last good file; the leader applies it on election and
-		// on every reload, followers only compare hashes.
-		current = configfile.NewCurrent(file)
-		g.Go(func() error {
-			configfile.Watch(ctx, cfg.ConfigFile, cfg.ConfigReloadInterval, logger, func(f *configfile.File) {
-				current.Set(f)
-				logConfig(logger, f, "configuration reloaded")
-			})
-			return nil
-		})
+	if role != config.RoleRunner {
+		// current is the last good merged file; the leader applies it on
+		// election and on every reload, followers only compare hashes.
+		src := &configsource.Source{Store: st, Keyring: cfg.DashboardKeyring(), Logger: logger, Errors: configErrors}
+		file, err := src.Load(ctx, cfg.ConfigFile)
+		if err != nil {
+			return err
+		}
+		logConfig(logger, file, "configuration loaded")
+		current = src.Current
+		g.Go(func() error { return src.Run(ctx, cfg.ConfigFile, cfg.ConfigReloadInterval) })
 		g.Go(func() error {
 			return reportDrift(ctx, st, current, drift, cfg.ConfigReloadInterval)
 		})
@@ -175,7 +169,7 @@ func run() error {
 			}
 			g.Go(func() error {
 				return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
-					return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, hostname, logger)
+					return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, configErrors, hostname, logger)
 				})
 			})
 		} else if role != config.RoleIngest {
@@ -390,7 +384,7 @@ const secretSweepInterval = 5 * time.Minute
 // onboarding index job for every repository that has none.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	sweeper *executor.Kube, m *metrics.Metrics, leader string, logger *slog.Logger,
+	sweeper *executor.Kube, m *metrics.Metrics, configErrors *server.ConfigErrorGauge, leader string, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
@@ -423,25 +417,69 @@ func lead(
 			return ids
 		}, secretSweepInterval)
 	}
-	applied := ""
+	return applyLoop(ctx, current, func(ctx context.Context, f *configfile.File) error {
+		return st.ApplyConfig(ctx, f, leader)
+	}, func(ctx context.Context) error {
+		if !cfg.EmbeddingEnabled() {
+			return nil
+		}
+		return enqueueMissingIndexes(ctx, st, queue, logger)
+	}, refusedRetryInterval, configErrors, logger)
+}
+
+// refusedRetryInterval is how often the leader re-applies a configuration
+// the store refused. A refusal is expected to need a new configuration, but
+// one misclassified race must not leave the store stale until the next edit.
+const refusedRetryInterval = time.Minute
+
+// applyLoop applies current's snapshot, then each replacement, until ctx
+// ends, calling onApplied after each success. A snapshot the store refuses
+// for its content (store.IsConfigContentError) must not end leadership, or
+// every replica would crash-loop on it in turn: it is logged once per
+// distinct error and raised on the gauge, the last applied state stays, and
+// the loop waits for the next snapshot, retrying the refused one every
+// retry. Any other error is returned, which ends the process for a restart.
+func applyLoop(
+	ctx context.Context, current *configfile.Current, apply func(context.Context, *configfile.File) error,
+	onApplied func(context.Context) error, retry time.Duration, gauge *server.ConfigErrorGauge, logger *slog.Logger,
+) error {
+	applied, refused, logged := "", "", ""
 	for {
+		// Taken before Get, so a replacement that lands while applying still
+		// wakes the loop.
+		changed := current.Changed()
 		f := current.Get()
-		if f.Hash() != applied {
-			if err := st.ApplyConfig(ctx, f, leader); err != nil {
+		if h := f.Hash(); h != applied && h != refused {
+			err := apply(ctx, f)
+			switch {
+			case err != nil && store.IsConfigContentError(err):
+				refused = h
+				gauge.Set(server.ConfigErrorApply, true)
+				if err.Error() != logged {
+					logged = err.Error()
+					logger.Error("configuration refused by the store, keeping the last applied one", "hash", h[:12], "error", err)
+				}
+			case err != nil:
 				return err
-			}
-			applied = f.Hash()
-			logger.Info("configuration applied to the store", "hash", applied[:12])
-			if cfg.EmbeddingEnabled() {
-				if err := enqueueMissingIndexes(ctx, st, queue, logger); err != nil {
+			default:
+				applied, refused, logged = h, "", ""
+				gauge.Set(server.ConfigErrorApply, false)
+				logger.Info("configuration applied to the store", "hash", h[:12])
+				if err := onApplied(ctx); err != nil {
 					return err
 				}
 			}
 		}
+		var retryC <-chan time.Time
+		if refused != "" {
+			retryC = time.After(retry)
+		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-current.Changed():
+		case <-changed:
+		case <-retryC:
+			refused = ""
 		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/egress"
 	"github.com/home-operations/kritik/internal/jobtimeout"
+	"github.com/home-operations/kritik/internal/sealbox"
 )
 
 // Role selects which part of kritik a process runs. One image serves every
@@ -196,12 +197,26 @@ type Config struct {
 	GitToken     string `env:"KRITIK_GIT_TOKEN,unset"`
 	GatewayToken string `env:"KRITIK_GATEWAY_TOKEN,unset"`
 
+	// DashboardKey is the base64 32-byte key that seals and opens the
+	// credentials a dashboard-managed tenant stores (ADR-0009 §2.5). Empty
+	// is valid while no dashboard tenant exists; startup fails once one
+	// does. Passed like every other secret here, from the environment and
+	// unset once read.
+	DashboardKey string `env:"KRITIK_DASHBOARD_KEY,unset"`
+	// DashboardOldKeys are earlier DashboardKey values, comma-separated,
+	// still able to open what they sealed so a key can be rotated without
+	// resealing every tenant first. Empty by default: there is nothing to
+	// rotate from until a key has been replaced.
+	DashboardOldKeys []string `env:"KRITIK_DASHBOARD_OLD_KEYS,unset" envSeparator:","`
+
 	// LogLevel is the minimum slog level emitted: debug, info, warn or error.
 	LogLevel string `env:"KRITIK_LOG_LEVEL" envDefault:"info"`
 
 	// LogFormat selects the slog handler: "json" (the default, for containers)
 	// or "text" for local runs.
 	LogFormat string `env:"KRITIK_LOG_FORMAT" envDefault:"json"`
+
+	keyring *sealbox.Keyring
 }
 
 // ValidateWorker checks what the worker role needs beyond the common set.
@@ -226,6 +241,10 @@ func (c *Config) ValidateRunner() error {
 
 // EmbeddingEnabled reports whether a deployment-wide embedder is configured.
 func (c *Config) EmbeddingEnabled() bool { return c.EmbedModel != "" }
+
+// DashboardKeyring returns the keyring built from DashboardKey and
+// DashboardOldKeys, nil when no key is configured.
+func (c *Config) DashboardKeyring() *sealbox.Keyring { return c.keyring }
 
 // Load parses the environment into a Config and validates it. It fails fast
 // on an invalid value so a misconfigured process never starts serving.
@@ -292,9 +311,37 @@ func (c *Config) validate() error {
 	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.RunnerDeadline <= 0 || c.RunnerTTL <= 0 {
 		return fmt.Errorf("config: KRITIK_REVIEW_WORKERS, KRITIK_INDEX_WORKERS, KRITIK_RUNNER_DEADLINE and KRITIK_RUNNER_TTL must be positive")
 	}
+	if err := c.buildKeyring(); err != nil {
+		return err
+	}
 	if c.RunnerDeadline > jobtimeout.MaxRunnerDeadline {
 		return fmt.Errorf("config: KRITIK_RUNNER_DEADLINE must not exceed %s (the %s job cap less the review and index headroom), got %s",
 			jobtimeout.MaxRunnerDeadline, jobtimeout.MaxJobTimeout, c.RunnerDeadline)
+	}
+	return nil
+}
+
+func (c *Config) buildKeyring() error {
+	if c.DashboardKey == "" {
+		if len(c.DashboardOldKeys) > 0 {
+			return fmt.Errorf("config: KRITIK_DASHBOARD_OLD_KEYS needs KRITIK_DASHBOARD_KEY")
+		}
+		return nil
+	}
+	current, err := sealbox.ParseKey(c.DashboardKey)
+	if err != nil {
+		return fmt.Errorf("config: KRITIK_DASHBOARD_KEY: %w", err)
+	}
+	old := make([][]byte, 0, len(c.DashboardOldKeys))
+	for i, s := range c.DashboardOldKeys {
+		k, err := sealbox.ParseKey(s)
+		if err != nil {
+			return fmt.Errorf("config: KRITIK_DASHBOARD_OLD_KEYS[%d]: %w", i, err)
+		}
+		old = append(old, k)
+	}
+	if c.keyring, err = sealbox.NewKeyring(current, old...); err != nil {
+		return fmt.Errorf("config: KRITIK_DASHBOARD_KEY: %w", err)
 	}
 	return nil
 }
