@@ -88,3 +88,21 @@ func TestAgenticSystemPrompt(t *testing.T) {
 		t.Fatal("the single-mode prompt changed")
 	}
 }
+
+// TestSystemRulesInBothModes pins the rules that shape what is reported,
+// which both the single-shot and the agentic reviewer must share.
+func TestSystemRulesInBothModes(t *testing.T) {
+	for _, want := range []string{
+		"ask whether a maintainer would stop the review for it",
+		"Never\nreport: comments or docstrings to add",
+		"you do not recognise is not a finding",
+		"A finding you would have to hedge (may, could, appears to)",
+		"mentions a concern only if it is also a finding",
+	} {
+		for name, system := range map[string]string{"single": System, "agentic": AgenticSystemPrompt(nil)} {
+			if !strings.Contains(system, want) {
+				t.Fatalf("%s prompt lacks %q", name, want)
+			}
+		}
+	}
+}
