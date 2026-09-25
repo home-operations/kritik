@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -29,15 +30,19 @@ const (
 	RoleIngest Role = "ingest"
 	RoleWorker Role = "worker"
 	RoleRunner Role = "runner"
+	// RoleWeb serves the operator dashboard (ADR-0009): sign-in, sessions
+	// and the tenant/config surfaces a dashboard-managed installation uses.
+	// "all" also serves it once WebURL is configured; see [Config.WebEnabled].
+	RoleWeb Role = "web"
 )
 
 // ParseRole validates a role name from the command line.
 func ParseRole(s string) (Role, error) {
 	switch r := Role(strings.ToLower(strings.TrimSpace(s))); r {
-	case RoleAll, RoleIngest, RoleWorker, RoleRunner:
+	case RoleAll, RoleIngest, RoleWorker, RoleRunner, RoleWeb:
 		return r, nil
 	default:
-		return "", fmt.Errorf("config: unknown role %q (want all, ingest, worker or runner)", s)
+		return "", fmt.Errorf("config: unknown role %q (want all, ingest, worker, runner or web)", s)
 	}
 }
 
@@ -74,6 +79,22 @@ type Config struct {
 	// deadline before it expires on its own, in case the worker that
 	// minted it dies before revoking it.
 	GatewayTokenTTL time.Duration `env:"KRITIK_GATEWAY_TOKEN_TTL" envDefault:"1h"`
+
+	// WebAddr is the listen address for the operator dashboard the web role
+	// serves. Its own port, matching the pattern of Addr/MetricsAddr/
+	// GatewayAddr, so the dashboard can be exposed without opening the
+	// other surfaces.
+	WebAddr string `env:"KRITIK_WEB_ADDR" envDefault:":8083"`
+
+	// WebURL is the dashboard's externally reachable origin: an absolute
+	// http(s) URL with a host and no query or fragment. It is how the
+	// dashboard builds absolute links (OIDC redirect URIs, session cookie
+	// scope) back to itself, so it must be required for the web role and
+	// must match how the ingress/HTTPRoute actually exposes it. A trailing
+	// slash is trimmed. Empty means no role serves the dashboard; see
+	// [Config.WebEnabled]. Parsed once into an unexported *url.URL, read
+	// back with [Config.WebURLParsed].
+	WebURL string `env:"KRITIK_WEB_URL"`
 
 	// ConfigFile is the path of the declarative configuration file (tenants,
 	// installations, repositories, models). Every role except runner loads it
@@ -217,6 +238,7 @@ type Config struct {
 	LogFormat string `env:"KRITIK_LOG_FORMAT" envDefault:"json"`
 
 	keyring *sealbox.Keyring
+	webURL  *url.URL
 }
 
 // ValidateWorker checks what the worker role needs beyond the common set.
@@ -236,6 +258,47 @@ func (c *Config) ValidateRunner() error {
 	if c.RunSpecFile == "" {
 		return fmt.Errorf("config: KRITIK_RUN_SPEC_FILE is required for the runner role")
 	}
+	return nil
+}
+
+// ValidateWeb checks what the web role needs beyond the common set.
+func (c *Config) ValidateWeb() error {
+	if c.WebURL == "" {
+		return fmt.Errorf("config: KRITIK_WEB_URL is required for the web role")
+	}
+	return nil
+}
+
+// WebEnabled reports whether role serves the operator dashboard: the web
+// role always does, and all does once WebURL is configured.
+func (c *Config) WebEnabled(role Role) bool {
+	return role == RoleWeb || (role == RoleAll && c.WebURL != "")
+}
+
+// WebURLParsed returns WebURL parsed into a *url.URL, or nil when WebURL is
+// unset.
+func (c *Config) WebURLParsed() *url.URL { return c.webURL }
+
+// parseWebURL trims a trailing slash from WebURL, rejects anything that
+// isn't an absolute http(s) URL with a host and no query or fragment, and
+// caches the result for WebURLParsed. A no-op when WebURL is unset.
+func (c *Config) parseWebURL() error {
+	if c.WebURL == "" {
+		return nil
+	}
+	trimmed := strings.TrimSuffix(c.WebURL, "/")
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("config: KRITIK_WEB_URL: %w", err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("config: KRITIK_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("config: KRITIK_WEB_URL must not have a query or fragment, got %q", c.WebURL)
+	}
+	c.WebURL = trimmed
+	c.webURL = u
 	return nil
 }
 
@@ -278,6 +341,9 @@ func (c *Config) validate() error {
 	}
 	if c.GatewayTokenTTL <= 0 {
 		return fmt.Errorf("config: KRITIK_GATEWAY_TOKEN_TTL must be positive, got %s", c.GatewayTokenTTL)
+	}
+	if err := c.parseWebURL(); err != nil {
+		return err
 	}
 	set := 0
 	for _, v := range []bool{c.EmbedBaseURL != "", c.EmbedAPIKey != "", c.EmbedModel != "", c.EmbedDims != 0} {
