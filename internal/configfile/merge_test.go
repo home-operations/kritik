@@ -156,6 +156,11 @@ func TestMergeHash(t *testing.T) {
 	if hash(a, b) == hash(a, b2) {
 		t.Fatal("a revision bump does not change the hash")
 	}
+	// A tenant deleted and created again starts over at revision 1.
+	b3 := dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), "tok-beta", "tok-rotated", 1), 2)
+	if hash(a, b) == hash(a, b3) {
+		t.Fatal("a different spec at the same revision does not change the hash")
+	}
 }
 
 func TestMergeRejects(t *testing.T) {
