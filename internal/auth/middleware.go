@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/home-operations/kritik/internal/configfile"
@@ -58,7 +60,8 @@ func PrincipalFrom(ctx context.Context) *Principal {
 // Authenticate resolves the session cookie, if any, to a Principal on the
 // request's context. A request without a valid session passes through
 // unauthenticated; RequirePrincipal is what rejects it. So does a session
-// whose sign-in the file no longer declares.
+// whose sign-in the file no longer declares, or now points at another host
+// or issuer.
 func (h *Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(CookieName)
@@ -78,7 +81,8 @@ func (h *Handler) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 		file := h.current.Get()
-		if _, ok := file.Web.SignInByName(sess.Identity.Provider); !ok {
+		signIn, ok := file.Web.SignInByName(sess.Identity.Provider)
+		if !ok || signInOrigin(signIn) != sess.Identity.Origin {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -126,11 +130,35 @@ func (h *Handler) SameOrigin(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		sameOrigin := strings.EqualFold(r.Header.Get("Origin"), h.origin) || r.Header.Get("Sec-Fetch-Site") == "same-origin"
+		sameOrigin := normalizeOrigin(r.Header.Get("Origin")) == h.origin || r.Header.Get("Sec-Fetch-Site") == "same-origin"
 		if r.Header.Get("X-Kritik") != "1" || !sameOrigin {
 			writeJSON(w, http.StatusForbidden, errorBody{Code: codeCSRF})
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// normalizeOrigin lowercases an origin's scheme and host and drops a default
+// port, so https://host:443 and https://host compare equal; anything that
+// is not an http or https origin normalises to "".
+func normalizeOrigin(s string) string {
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	scheme, host, port := strings.ToLower(u.Scheme), strings.ToLower(u.Hostname()), u.Port()
+	if (scheme == schemeHTTPS && port == "443") || (scheme == schemeHTTP && port == "80") {
+		port = ""
+	}
+	if scheme != schemeHTTPS && scheme != schemeHTTP {
+		return ""
+	}
+	if port != "" {
+		return scheme + "://" + net.JoinHostPort(host, port)
+	}
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return scheme + "://" + host
 }

@@ -39,13 +39,14 @@ func TestReturnTo(t *testing.T) {
 func TestSessionCookie(t *testing.T) {
 	expires := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	tests := []struct {
-		web, path string
-		secure    bool
+		web, path, loginPath string
+		secure               bool
 	}{
-		{"https://kritik.example.com", "/", true},
-		{"https://example.com/kritik/", "/kritik/", true},
-		{"http://localhost:8080", "/", false},
-		{"http://localhost:8080/dash", "/dash", false},
+		{"https://kritik.example.com", "/", "/auth/callback", true},
+		{"https://kritik.example.com/", "/", "/auth/callback", true},
+		{"https://example.com/kritik/", "/kritik", "/kritik/auth/callback", true},
+		{"http://localhost:8080", "/", "/auth/callback", false},
+		{"http://localhost:8080/dash", "/dash", "/dash/auth/callback", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.web, func(t *testing.T) {
@@ -58,6 +59,14 @@ func TestSessionCookie(t *testing.T) {
 			gone := clearedCookie(u)
 			if gone.Name != CookieName || gone.Value != "" || gone.MaxAge >= 0 || gone.Path != tt.path || gone.Secure != tt.secure || !gone.HttpOnly {
 				t.Fatalf("cleared cookie = %+v", gone)
+			}
+			lc := loginCookie(u, "browser")
+			if lc.Name != "kritik_login" || lc.Value != "browser" || lc.Path != tt.loginPath || lc.Secure != tt.secure ||
+				!lc.HttpOnly || lc.SameSite != http.SameSiteLaxMode || lc.MaxAge != 600 {
+				t.Fatalf("login cookie = %+v", lc)
+			}
+			if lg := clearedLoginCookie(u); lg.Name != "kritik_login" || lg.MaxAge >= 0 || lg.Path != tt.loginPath {
+				t.Fatalf("cleared login cookie = %+v", lg)
 			}
 		})
 	}

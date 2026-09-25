@@ -57,10 +57,12 @@ func (githubAPI) orgRole(ctx context.Context, c apiClient, _, org string) (Role,
 		State string `json:"state"`
 		Role  string `json:"role"`
 	}
-	status, err := c.get(ctx, "/user/memberships/orgs/"+url.PathEscape(org), &m)
+	status, header, err := c.get(ctx, "/user/memberships/orgs/"+url.PathEscape(org), &m)
 	switch {
 	case err != nil:
 		return "", err
+	case status == http.StatusForbidden && githubRateLimited(header):
+		return "", fmt.Errorf("%w: organization membership: rate limited", ErrForgeAPI)
 	case notMember(status):
 		return "", nil
 	case status != http.StatusOK:
@@ -72,4 +74,10 @@ func (githubAPI) orgRole(ctx context.Context, c apiClient, _, org string) (Role,
 		return r, nil
 	}
 	return "", nil
+}
+
+// githubRateLimited reports whether a 403 is GitHub's primary or secondary
+// rate limit rather than a refusal to disclose membership.
+func githubRateLimited(h http.Header) bool {
+	return h.Get("X-RateLimit-Remaining") == "0" || h.Get("Retry-After") != ""
 }

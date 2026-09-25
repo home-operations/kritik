@@ -20,8 +20,19 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
+// URL schemes the dashboard may be served on.
+const (
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
+)
+
 // CookieName is the dashboard session cookie.
 const CookieName = "kritik_session"
+
+// loginCookieName binds an in-flight sign-in to the browser that started
+// it, so a callback URL carried into another browser cannot sign that
+// browser in as someone else (login CSRF).
+const loginCookieName = "kritik_login"
 
 // defaultHTTPTimeout bounds each call to a sign-in provider.
 const defaultHTTPTimeout = 15 * time.Second
@@ -72,7 +83,7 @@ func New(c Config) *Handler {
 		store:     c.Store,
 		current:   c.Current,
 		webURL:    c.WebURL,
-		origin:    strings.ToLower(c.WebURL.Scheme + "://" + c.WebURL.Host),
+		origin:    normalizeOrigin(c.WebURL.Scheme + "://" + c.WebURL.Host),
 		now:       c.Now,
 		logger:    c.Logger,
 		providers: newProviders(c.WebURL, c.HTTPClient, c.Now),
@@ -120,27 +131,44 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
 		return
 	}
-	ls := store.LoginState{
-		Provider: name, Nonce: nonce, PKCEVerifier: oauth2.GenerateVerifier(),
-		ReturnTo: returnTo(r.URL.Query().Get("return_to")),
-	}
-	state, err := h.store.CreateLoginState(r.Context(), ls, h.now())
+	browser, err := randomString()
 	if err != nil {
 		h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
 		return
 	}
+	ls := store.LoginState{
+		Provider: name, Nonce: nonce, PKCEVerifier: oauth2.GenerateVerifier(),
+		ReturnTo: returnTo(r.URL.Query().Get("return_to")),
+	}
+	state, err := h.store.CreateLoginState(r.Context(), ls, browser, h.now())
+	if err != nil {
+		h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
+		return
+	}
+	http.SetCookie(w, loginCookie(h.webURL, browser))
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, p.AuthCodeURL(state, ls.Nonce, ls.PKCEVerifier), http.StatusFound)
 }
 
 // callback completes a sign-in: it consumes the state the login left,
-// trades the code for an identity, refreshes the account and its forge
-// memberships, accepts pending invites for a verified email, and starts a
-// session.
+// provided this browser holds the login cookie it was bound to, trades the
+// code for an identity, refreshes the account and its forge memberships,
+// accepts pending invites for a verified email, and starts a session in
+// place of any this browser already had.
 func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name, q := r.PathValue("name"), r.URL.Query()
-	ls, err := h.store.ConsumeLoginState(ctx, q.Get("state"), h.now())
+	// Whatever happens, this sign-in attempt is over for the browser.
+	http.SetCookie(w, clearedLoginCookie(h.webURL))
+	var browser string
+	if c, err := r.Cookie(loginCookieName); err == nil {
+		browser = c.Value
+	}
+	if browser == "" {
+		h.fail(w, r, http.StatusBadRequest, codeInvalidState, nil)
+		return
+	}
+	ls, err := h.store.ConsumeLoginState(ctx, q.Get("state"), browser, h.now())
 	if errors.Is(err, store.ErrLoginState) || (err == nil && ls.Provider != name) {
 		h.fail(w, r, http.StatusBadRequest, codeInvalidState, nil)
 		return
@@ -174,6 +202,12 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, http.StatusBadGateway, codeMembershipFailed, err)
 		return
 	}
+	if c, err := r.Cookie(CookieName); err == nil && c.Value != "" {
+		if err := h.store.DeleteSession(ctx, c.Value); err != nil {
+			h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
+			return
+		}
+	}
 	token, expires, err := h.startSession(r, id, grants, file.Web.SessionTTLOrDefault())
 	if err != nil {
 		h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
@@ -205,7 +239,7 @@ func (h *Handler) startSession(r *http.Request, id Identity, grants []Grant, ttl
 		}
 	}
 	expires := now.Add(ttl)
-	token, err := h.store.CreateSession(ctx, acct.ID, id.Provider, now, expires)
+	token, err := h.store.CreateSession(ctx, acct.ID, id.Provider, id.Origin, now, expires)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -255,26 +289,52 @@ func returnTo(s string) string {
 	return "#/"
 }
 
-// cookiePath scopes the session cookie to the dashboard.
+// cookiePath scopes the session cookie to the dashboard: WebURL's path
+// without a trailing slash, or "/" at the root.
 func cookiePath(webURL *url.URL) string {
-	if webURL.Path == "" {
-		return "/"
+	if p := strings.TrimRight(webURL.Path, "/"); p != "" {
+		return p
 	}
-	return webURL.Path
+	return "/"
+}
+
+// loginCookiePath limits the login cookie to the callback routes.
+func loginCookiePath(webURL *url.URL) string {
+	return strings.TrimSuffix(cookiePath(webURL), "/") + "/auth/callback"
+}
+
+// newCookie is a cookie with the attributes every auth cookie shares:
+// HttpOnly, SameSite=Lax, and Secure unless the dashboard is served over
+// plain http.
+func newCookie(webURL *url.URL, name, value, path string) *http.Cookie {
+	return &http.Cookie{
+		Name: name, Value: value, Path: path,
+		HttpOnly: true, Secure: webURL.Scheme != schemeHTTP, SameSite: http.SameSiteLaxMode,
+	}
 }
 
 func sessionCookie(webURL *url.URL, token string, expires time.Time) *http.Cookie {
-	return &http.Cookie{
-		Name: CookieName, Value: token, Path: cookiePath(webURL), Expires: expires,
-		HttpOnly: true, Secure: webURL.Scheme != "http", SameSite: http.SameSiteLaxMode,
-	}
+	c := newCookie(webURL, CookieName, token, cookiePath(webURL))
+	c.Expires = expires
+	return c
 }
 
 func clearedCookie(webURL *url.URL) *http.Cookie {
-	return &http.Cookie{
-		Name: CookieName, Path: cookiePath(webURL), MaxAge: -1,
-		HttpOnly: true, Secure: webURL.Scheme != "http", SameSite: http.SameSiteLaxMode,
-	}
+	c := newCookie(webURL, CookieName, "", cookiePath(webURL))
+	c.MaxAge = -1
+	return c
+}
+
+func loginCookie(webURL *url.URL, value string) *http.Cookie {
+	c := newCookie(webURL, loginCookieName, value, loginCookiePath(webURL))
+	c.MaxAge = int(store.LoginStateTTL / time.Second)
+	return c
+}
+
+func clearedLoginCookie(webURL *url.URL) *http.Cookie {
+	c := newCookie(webURL, loginCookieName, "", loginCookiePath(webURL))
+	c.MaxAge = -1
+	return c
 }
 
 func randomString() (string, error) {

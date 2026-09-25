@@ -2,10 +2,14 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritik/internal/configfile"
 )
@@ -130,5 +134,52 @@ func TestProvidersCacheRebuildsOnChange(t *testing.T) {
 	}
 	if _, _, err := ps.get(context.Background(), web, "nope"); err == nil {
 		t.Fatal("unknown sign-in resolved")
+	}
+}
+
+func TestSignInOrigin(t *testing.T) {
+	tests := []struct {
+		signIn configfile.SignIn
+		want   string
+	}{
+		{configfile.SignIn{Type: configfile.SignInGitHub, Host: "github.com"}, "github:https://github.com"},
+		{configfile.SignIn{Type: configfile.SignInGitHub, Host: "https://GitHub.com/"}, "github:https://github.com"},
+		{configfile.SignIn{Type: configfile.SignInGitHub, Host: "GHE.example.com"}, "github:https://ghe.example.com"},
+		{configfile.SignIn{Type: configfile.SignInForgejo, Host: "code.example.org"}, "forgejo:https://code.example.org"},
+		{configfile.SignIn{Type: configfile.SignInForgejo, Host: "http://127.0.0.1:3000/"}, "forgejo:http://127.0.0.1:3000"},
+		{configfile.SignIn{Type: configfile.SignInOIDC, Issuer: "https://id.example.com/realms/a"}, "oidc:https://id.example.com/realms/a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := signInOrigin(tt.signIn); got != tt.want {
+				t.Fatalf("signInOrigin = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProvidersRemembersFailedDiscovery(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	now := time.Now()
+	u, _ := url.Parse("https://kritik.example.com")
+	ps := newProviders(u, srv.Client(), func() time.Time { return now })
+	web := configfile.Web{SignIn: []configfile.SignIn{{Name: "corp", Type: configfile.SignInOIDC, Issuer: srv.URL, ClientID: "c"}}}
+	for range 3 {
+		if _, _, err := ps.get(context.Background(), web, "corp"); err == nil || errors.Is(err, ErrUnknownProvider) {
+			t.Fatalf("get = %v, want a discovery error", err)
+		}
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("discovery requests = %d within the retry window, want 1", hits.Load())
+	}
+	now = now.Add(failedBuildTTL)
+	_, _, _ = ps.get(context.Background(), web, "corp")
+	if hits.Load() != 2 {
+		t.Fatalf("discovery requests = %d after the retry window, want 2", hits.Load())
 	}
 }

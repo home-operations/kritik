@@ -100,7 +100,7 @@ func (p *oidcProvider) Exchange(ctx context.Context, code, pkceVerifier, nonce s
 		return Identity{}, nil, fmt.Errorf("%w: %s: claims: %w", ErrOIDC, p.signIn.Name, err)
 	}
 	id := Identity{
-		Provider: p.signIn.Name, Subject: idt.Subject, Login: c.PreferredUsername,
+		Provider: p.signIn.Name, Origin: signInOrigin(p.signIn), Subject: idt.Subject, Login: c.PreferredUsername,
 		Email: c.Email, EmailVerified: bool(c.EmailVerified) && c.Email != "",
 		DisplayName: c.Name, AvatarURL: c.Picture,
 	}

@@ -55,21 +55,46 @@ func TestReplaceForgeMemberships(t *testing.T) {
 	if err := s.ReplaceForgeMemberships(ctx, acct.ID, []Grant{{TenantID: alpha, Role: "owner"}}, now); err == nil {
 		t.Fatal("an invalid role was stored")
 	}
+
+	// Sources are kept apart and combine to the higher role.
+	email := "store-invite-" + now.Format("150405.000000") + "@example.com"
+	if _, err := s.App().Exec(ctx, `INSERT INTO invites (id, tenant_id, email, role, expires_at) VALUES (gen_random_uuid(), $1, $2, 'member', $3)`,
+		alpha, email, now.Add(time.Hour)); err != nil {
+		t.Fatalf("insert invite: %v", err)
+	}
+	if n, err := s.AcceptInvites(ctx, acct.ID, email, now); err != nil || n != 1 {
+		t.Fatalf("AcceptInvites = %d, %v", n, err)
+	}
+	if err := s.ReplaceForgeMemberships(ctx, acct.ID, []Grant{{TenantID: alpha, Role: RoleAdmin}}, now); err != nil {
+		t.Fatalf("ReplaceForgeMemberships: %v", err)
+	}
+	if got, _ := s.Memberships(ctx, acct.ID); got[alpha] != RoleAdmin || len(got) != 1 {
+		t.Fatalf("forge admin + member invite = %v, want admin", got)
+	}
+	if err := s.ReplaceForgeMemberships(ctx, acct.ID, nil, now); err != nil {
+		t.Fatalf("ReplaceForgeMemberships: %v", err)
+	}
+	if got, _ := s.Memberships(ctx, acct.ID); got[alpha] != RoleMember || len(got) != 1 {
+		t.Fatalf("lapsed forge admin + member invite = %v, want member", got)
+	}
 }
 
 func TestLoginStateConsumedOnce(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	now := time.Now()
-	state, err := s.CreateLoginState(ctx, LoginState{Provider: "gh", Nonce: "n", PKCEVerifier: "v", ReturnTo: "#/x"}, now)
+	state, err := s.CreateLoginState(ctx, LoginState{Provider: "gh", Nonce: "n", PKCEVerifier: "v", ReturnTo: "#/x"}, "browser", now)
 	if err != nil {
 		t.Fatalf("CreateLoginState: %v", err)
 	}
-	ls, err := s.ConsumeLoginState(ctx, state, now)
+	if _, err := s.ConsumeLoginState(ctx, state, "another-browser", now); !errors.Is(err, ErrLoginState) {
+		t.Fatalf("ConsumeLoginState from another browser = %v, want ErrLoginState", err)
+	}
+	ls, err := s.ConsumeLoginState(ctx, state, "browser", now)
 	if err != nil || ls != (LoginState{Provider: "gh", Nonce: "n", PKCEVerifier: "v", ReturnTo: "#/x"}) {
 		t.Fatalf("ConsumeLoginState = %+v, %v", ls, err)
 	}
-	if _, err := s.ConsumeLoginState(ctx, state, now); !errors.Is(err, ErrLoginState) {
+	if _, err := s.ConsumeLoginState(ctx, state, "browser", now); !errors.Is(err, ErrLoginState) {
 		t.Fatalf("second ConsumeLoginState = %v, want ErrLoginState", err)
 	}
 }

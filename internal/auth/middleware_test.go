@@ -43,6 +43,7 @@ func TestSameOrigin(t *testing.T) {
 		{"POST origin on another port", http.MethodPost, "1", "https://kritik.example.com:8443", "", http.StatusForbidden},
 		{"PUT same-site is not same-origin", http.MethodPut, "1", "", "same-site", http.StatusForbidden},
 		{"PATCH cross-site fetch with a forged-looking origin", http.MethodPatch, "1", "null", "cross-site", http.StatusForbidden},
+		{"POST origin with the default port spelled out", http.MethodPost, "1", "https://KRITIK.example.com:443", "", http.StatusTeapot},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -156,5 +157,34 @@ func TestPrincipalFor(t *testing.T) {
 	file.Web.Operators = nil
 	if principalFor(file, sess, nil).Operator {
 		t.Fatal("operator removed from the file is still an operator")
+	}
+}
+
+func TestNormalizeOrigin(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"https://Kritik.Example.com", "https://kritik.example.com"},
+		{"https://kritik.example.com:443", "https://kritik.example.com"},
+		{"http://kritik.example.com:80", "http://kritik.example.com"},
+		{"http://kritik.example.com:443", "http://kritik.example.com:443"},
+		{"https://kritik.example.com:8443", "https://kritik.example.com:8443"},
+		{"https://[::1]:443", "https://[::1]"},
+		{"https://[::1]:8443", "https://[::1]:8443"},
+		{"null", ""},
+		{"", ""},
+		{"ftp://kritik.example.com", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			if got := normalizeOrigin(tt.in); got != tt.want {
+				t.Fatalf("normalizeOrigin(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrincipalRejectsMovedSignIn(t *testing.T) {
+	signIn := configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, Host: "github.com"}
+	if signInOrigin(signIn) == signInOrigin(configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, Host: "ghe.example.com"}) {
+		t.Fatal("moving a sign-in to another host kept its origin")
 	}
 }

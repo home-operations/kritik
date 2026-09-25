@@ -97,6 +97,7 @@ type authEnv struct {
 	file     *configfile.File
 	oidc     *fakeOAuth
 	gh, fj   *fakeOAuth
+	gh2      *fakeOAuth
 	now      time.Time
 	tenantID map[string]string
 }
@@ -116,7 +117,10 @@ func newAuthEnv(t *testing.T) *authEnv {
 	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	e := &authEnv{t: t, st: st, oidc: newFakeOIDC(t), gh: newFakeGitHub(t), fj: newFakeForgejo(t), now: time.Now(), tenantID: map[string]string{}}
+	e := &authEnv{
+		t: t, st: st, oidc: newFakeOIDC(t), gh: newFakeGitHub(t), gh2: newFakeGitHub(t), fj: newFakeForgejo(t),
+		now: time.Now(), tenantID: map[string]string{},
+	}
 	t.Setenv("KRITIK_TEST_TOKEN", fakeClientSecret)
 	e.file, err = configfile.Parse(fmt.Appendf(nil, authConfigYAML, e.oidc.srv.URL, e.gh.srv.URL, e.fj.srv.URL))
 	if err != nil {
@@ -131,7 +135,7 @@ func newAuthEnv(t *testing.T) *authEnv {
 	e.current = configfile.NewCurrent(e.file)
 	e.h = New(Config{
 		Store: st, Current: e.current, WebURL: mustParseURL(t, "https://kritik.example.com/dash/"),
-		HTTPClient: trustingClient(e.oidc, e.gh, e.fj), Now: func() time.Time { return e.now },
+		HTTPClient: trustingClient(e.oidc, e.gh, e.gh2, e.fj), Now: func() time.Time { return e.now },
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	e.mux = http.NewServeMux()
@@ -145,32 +149,69 @@ func (e *authEnv) do(r *http.Request) *httptest.ResponseRecorder {
 	return w
 }
 
-// startLogin begins a sign-in and returns the provider authorize URL.
-func (e *authEnv) startLogin(provider, returnTo string) *url.URL {
+// login is a sign-in the browser has started: the provider authorize URL
+// it was sent to and the login cookie that binds the sign-in to it.
+type login struct {
+	loc    *url.URL
+	cookie *http.Cookie
+}
+
+func (l login) state() string { return l.loc.Query().Get("state") }
+
+// startLogin begins a sign-in.
+func (e *authEnv) startLogin(provider, returnTo string) login {
 	e.t.Helper()
 	w := e.do(httptest.NewRequest(http.MethodGet, "/auth/login/"+provider+"?return_to="+url.QueryEscape(returnTo), nil))
 	if w.Code != http.StatusFound {
 		e.t.Fatalf("login %s: status %d body %s", provider, w.Code, w.Body.String())
 	}
-	return mustParseURL(e.t, w.Header().Get("Location"))
+	l := login{loc: mustParseURL(e.t, w.Header().Get("Location"))}
+	for _, c := range w.Result().Cookies() {
+		if c.Name == loginCookieName {
+			l.cookie = c
+		}
+	}
+	if l.cookie == nil || l.cookie.Path != "/dash/auth/callback" || !l.cookie.HttpOnly || !l.cookie.Secure || l.cookie.MaxAge != 600 {
+		e.t.Fatalf("login cookie = %+v", l.cookie)
+	}
+	return l
 }
 
-func (e *authEnv) callback(provider string, q url.Values) *httptest.ResponseRecorder {
-	return e.do(httptest.NewRequest(http.MethodGet, "/auth/callback/"+provider+"?"+q.Encode(), nil))
+// callback calls the callback route as a browser holding cookies.
+func (e *authEnv) callback(provider string, q url.Values, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+	e.t.Helper()
+	r := httptest.NewRequest(http.MethodGet, "/auth/callback/"+provider+"?"+q.Encode(), nil)
+	for _, c := range cookies {
+		r.AddCookie(c)
+	}
+	w := e.do(r)
+	cleared := false
+	for _, c := range w.Result().Cookies() {
+		cleared = cleared || (c.Name == loginCookieName && c.MaxAge < 0)
+	}
+	if !cleared {
+		e.t.Fatalf("callback (status %d) did not clear the login cookie", w.Code)
+	}
+	return w
+}
+
+// finish completes l as user in the browser that started it.
+func (e *authEnv) finish(provider string, fake *fakeOAuth, l login, user *fakeUser, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+	e.t.Helper()
+	code := fake.authorize(l.loc.String(), user, "")
+	return e.callback(provider, url.Values{"code": {code}, "state": {l.state()}}, append(cookies, l.cookie)...)
 }
 
 // signIn runs a whole sign-in as user and returns the callback's response.
-func (e *authEnv) signIn(provider string, fake *fakeOAuth, user *fakeUser, returnTo string) *httptest.ResponseRecorder {
+func (e *authEnv) signIn(provider string, fake *fakeOAuth, user *fakeUser, returnTo string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 	e.t.Helper()
-	loc := e.startLogin(provider, returnTo)
-	code := fake.authorize(loc.String(), user, "")
-	return e.callback(provider, url.Values{"code": {code}, "state": {loc.Query().Get("state")}})
+	return e.finish(provider, fake, e.startLogin(provider, returnTo), user, cookies...)
 }
 
 // mustSignIn signs in and returns the session cookie.
-func (e *authEnv) mustSignIn(provider string, fake *fakeOAuth, user *fakeUser) *http.Cookie {
+func (e *authEnv) mustSignIn(provider string, fake *fakeOAuth, user *fakeUser, cookies ...*http.Cookie) *http.Cookie {
 	e.t.Helper()
-	w := e.signIn(provider, fake, user, "")
+	w := e.signIn(provider, fake, user, "", cookies...)
 	if w.Code != http.StatusFound {
 		e.t.Fatalf("sign in %s as %s: status %d body %s", provider, user.Login, w.Code, w.Body.String())
 	}
@@ -251,7 +292,7 @@ func TestOIDCSignIn(t *testing.T) {
 			cookie = c
 		}
 	}
-	if cookie == nil || cookie.Path != "/dash/" || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode {
+	if cookie == nil || cookie.Path != "/dash" || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("session cookie = %+v", cookie)
 	}
 	p := e.principal(cookie)
@@ -267,40 +308,56 @@ func TestOIDCSignIn(t *testing.T) {
 		}
 	})
 	t.Run("state cannot be replayed", func(t *testing.T) {
-		loc := e.startLogin("corp", "")
-		state := loc.Query().Get("state")
-		if w := e.callback("corp", url.Values{"code": {e.oidc.authorize(loc.String(), alice, "")}, "state": {state}}); w.Code != http.StatusFound {
+		l := e.startLogin("corp", "")
+		if w := e.finish("corp", e.oidc, l, alice); w.Code != http.StatusFound {
 			t.Fatalf("first callback: %d %s", w.Code, w.Body.String())
 		}
-		assertFailed(t, e.callback("corp", url.Values{"code": {e.oidc.authorize(loc.String(), alice, "")}, "state": {state}}),
-			http.StatusBadRequest, "invalid_state")
+		assertFailed(t, e.finish("corp", e.oidc, l, alice), http.StatusBadRequest, "invalid_state")
+	})
+	t.Run("login CSRF: a callback in a browser that did not start the sign-in", func(t *testing.T) {
+		l := e.startLogin("corp", "")
+		code := e.oidc.authorize(l.loc.String(), alice, "")
+		q := url.Values{"code": {code}, "state": {l.state()}}
+		assertFailed(t, e.callback("corp", q), http.StatusBadRequest, "invalid_state")
+		assertFailed(t, e.callback("corp", q, &http.Cookie{Name: loginCookieName, Value: "attacker-browser"}), http.StatusBadRequest, "invalid_state")
+		// Neither attempt burned the state: the browser that started the
+		// sign-in can still finish it.
+		if w := e.callback("corp", q, l.cookie); w.Code != http.StatusFound {
+			t.Fatalf("callback in the starting browser: %d %s", w.Code, w.Body.String())
+		}
 	})
 	t.Run("state is bound to its sign-in", func(t *testing.T) {
-		loc := e.startLogin("corp", "")
-		assertFailed(t, e.callback("gh", url.Values{"code": {"x"}, "state": {loc.Query().Get("state")}}), http.StatusBadRequest, "invalid_state")
+		l := e.startLogin("corp", "")
+		assertFailed(t, e.callback("gh", url.Values{"code": {"x"}, "state": {l.state()}}, l.cookie), http.StatusBadRequest, "invalid_state")
 	})
 	t.Run("expired state", func(t *testing.T) {
-		loc := e.startLogin("corp", "")
+		l := e.startLogin("corp", "")
 		e.now = e.now.Add(store.LoginStateTTL + time.Second)
 		defer func() { e.now = e.now.Add(-store.LoginStateTTL - time.Second) }()
-		assertFailed(t, e.callback("corp", url.Values{"code": {"x"}, "state": {loc.Query().Get("state")}}), http.StatusBadRequest, "invalid_state")
+		assertFailed(t, e.callback("corp", url.Values{"code": {"x"}, "state": {l.state()}}, l.cookie), http.StatusBadRequest, "invalid_state")
 	})
 	t.Run("nonce mismatch", func(t *testing.T) {
-		loc := e.startLogin("corp", "")
-		code := e.oidc.authorize(loc.String(), alice, "another-nonce")
-		assertFailed(t, e.callback("corp", url.Values{"code": {code}, "state": {loc.Query().Get("state")}}), http.StatusBadGateway, "exchange_failed")
+		l := e.startLogin("corp", "")
+		code := e.oidc.authorize(l.loc.String(), alice, "another-nonce")
+		assertFailed(t, e.callback("corp", url.Values{"code": {code}, "state": {l.state()}}, l.cookie), http.StatusBadGateway, "exchange_failed")
 	})
 	t.Run("PKCE verifier must match the challenge", func(t *testing.T) {
-		loc := e.startLogin("corp", "")
-		q := loc.Query()
+		l := e.startLogin("corp", "")
+		q := l.loc.Query()
 		q.Set("code_challenge", "not-the-challenge")
-		loc.RawQuery = q.Encode()
-		code := e.oidc.authorize(loc.String(), alice, "")
-		assertFailed(t, e.callback("corp", url.Values{"code": {code}, "state": {q.Get("state")}}), http.StatusBadGateway, "exchange_failed")
+		l.loc.RawQuery = q.Encode()
+		assertFailed(t, e.finish("corp", e.oidc, l, alice), http.StatusBadGateway, "exchange_failed")
+	})
+	t.Run("signing in again ends the browser's previous session", func(t *testing.T) {
+		old := e.mustSignIn("corp", e.oidc, alice)
+		fresh := e.mustSignIn("corp", e.oidc, alice, old)
+		if e.principal(old) != nil || e.principal(fresh) == nil {
+			t.Fatal("the previous session survived a new sign-in in the same browser")
+		}
 	})
 	t.Run("provider error is not echoed", func(t *testing.T) {
-		loc := e.startLogin("corp", "")
-		w := e.callback("corp", url.Values{"error": {"<script>x</script>"}, "state": {loc.Query().Get("state")}})
+		l := e.startLogin("corp", "")
+		w := e.callback("corp", url.Values{"error": {"<script>x</script>"}, "state": {l.state()}}, l.cookie)
 		assertFailed(t, w, http.StatusBadRequest, "sign_in_denied")
 		if strings.Contains(w.Body.String(), "script") {
 			t.Fatalf("provider error leaked: %s", w.Body.String())
@@ -410,12 +467,16 @@ func TestInviteAcceptance(t *testing.T) {
 	// An accepted invite survives the next sign-in's forge refresh.
 	assertRoles(t, e.roles(e.principal(e.mustSignIn("corp", e.oidc, carol))), map[string]Role{"auth-invite": RoleMember})
 
-	t.Run("an invite never downgrades an admin", func(t *testing.T) {
+	t.Run("forge and invite memberships combine to the higher role", func(t *testing.T) {
 		dana := &fakeUser{ID: 3001, Login: "dana-" + suffix, Email: "dana-" + suffix + "@gh.example", EmailVerified: true,
 			Orgs: map[string]string{"widgets": "admin"}}
 		insertInvite(t, e.st, e.tenantID["auth-widgets"], dana.Email, RoleMember, e.now.Add(time.Hour))
 		insertInvite(t, e.st, e.tenantID["auth-acme"], dana.Email, RoleAdmin, e.now.Add(time.Hour))
+		// Forge admin plus a member invite is admin while the forge says so.
 		assertRoles(t, e.roles(e.principal(e.mustSignIn("gh", e.gh, dana))), map[string]Role{"auth-widgets": RoleAdmin, "auth-acme": RoleAdmin})
+		// Once the forge admin lapses, the invite's member role is what is left.
+		delete(dana.Orgs, "widgets")
+		assertRoles(t, e.roles(e.principal(e.mustSignIn("gh", e.gh, dana))), map[string]Role{"auth-widgets": RoleMember, "auth-acme": RoleAdmin})
 	})
 }
 
@@ -499,5 +560,27 @@ func TestIdentitiesNotLinkedAcrossProviders(t *testing.T) {
 	viaForgejo := e.principal(e.mustSignIn("fj", e.fj, &fakeUser{ID: 5001, Login: "shared-fj", Email: email, EmailVerified: true}))
 	if viaOIDC.Account.ID == viaGitHub.Account.ID || viaGitHub.Account.ID == viaForgejo.Account.ID || viaOIDC.Account.ID == viaForgejo.Account.ID {
 		t.Fatalf("accounts linked by email: oidc %s github %s forgejo %s", viaOIDC.Account.ID, viaGitHub.Account.ID, viaForgejo.Account.ID)
+	}
+}
+
+func TestSignInMovedToAnotherOrigin(t *testing.T) {
+	e := newAuthEnv(t)
+	user := &fakeUser{ID: 6001, Login: "frank-" + randomHex(t), Email: "frank@gh.example", EmailVerified: true}
+	before := e.mustSignIn("gh", e.gh, user)
+	was := e.principal(before)
+
+	// The same sign-in name, now pointing at another GitHub host whose
+	// user 6001 is someone else entirely.
+	moved, err := configfile.Parse(fmt.Appendf(nil, authConfigYAML, e.oidc.srv.URL, e.gh2.srv.URL, e.fj.srv.URL))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	e.current.Set(moved)
+	if p := e.principal(before); p != nil {
+		t.Fatalf("session from the old origin still authenticates: %+v", p)
+	}
+	now := e.principal(e.mustSignIn("gh", e.gh2, user))
+	if now == nil || now.Account.ID == was.Account.ID {
+		t.Fatalf("same subject on a new origin linked to account %s", was.Account.ID)
 	}
 }

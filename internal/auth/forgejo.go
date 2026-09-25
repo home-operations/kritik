@@ -45,7 +45,7 @@ func (forgejoAPI) identity(ctx context.Context, c apiClient) (Identity, error) {
 // orgRole asks whether the user is a member of org (204, or 404 when not)
 // and, if so, whether they own or administer it.
 func (forgejoAPI) orgRole(ctx context.Context, c apiClient, login, org string) (Role, error) {
-	status, err := c.get(ctx, "/orgs/"+url.PathEscape(org)+"/members/"+url.PathEscape(login), nil)
+	status, _, err := c.get(ctx, "/orgs/"+url.PathEscape(org)+"/members/"+url.PathEscape(login), nil)
 	switch {
 	case err != nil:
 		return "", err

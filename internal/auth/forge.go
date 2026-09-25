@@ -77,7 +77,7 @@ func (p *forgeProvider) Exchange(ctx context.Context, code, pkceVerifier, _ stri
 	if err != nil {
 		return Identity{}, nil, fmt.Errorf("auth: %s: %w", p.signIn.Name, err)
 	}
-	id.Provider = p.signIn.Name
+	id.Provider, id.Origin = p.signIn.Name, signInOrigin(p.signIn)
 	if id.DisplayName == "" {
 		id.DisplayName = id.Login
 	}
@@ -101,12 +101,12 @@ type apiClient struct {
 }
 
 // get fetches path and, on a 2xx answer, decodes its JSON body into v when v
-// is non-nil. It returns the status for the caller to classify; only a
-// transport or decoding failure is an error.
-func (c apiClient) get(ctx context.Context, path string, v any) (int, error) {
+// is non-nil. It returns the status and headers for the caller to classify;
+// only a transport or decoding failure is an error.
+func (c apiClient) get(ctx context.Context, path string, v any) (int, http.Header, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
 	if err != nil {
-		return 0, fmt.Errorf("%w: %w", ErrForgeAPI, err)
+		return 0, nil, fmt.Errorf("%w: %w", ErrForgeAPI, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
@@ -115,23 +115,23 @@ func (c apiClient) get(ctx context.Context, path string, v any) (int, error) {
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("%w: GET %s: %w", ErrForgeAPI, path, err)
+		return 0, nil, fmt.Errorf("%w: GET %s: %w", ErrForgeAPI, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body := io.LimitReader(resp.Body, maxAPIBody)
 	if resp.StatusCode/100 != 2 || v == nil {
 		_, _ = io.Copy(io.Discard, body) // drain for connection reuse
-		return resp.StatusCode, nil
+		return resp.StatusCode, resp.Header, nil
 	}
 	if err := json.NewDecoder(body).Decode(v); err != nil {
-		return resp.StatusCode, fmt.Errorf("%w: GET %s: decode: %w", ErrForgeAPI, path, err)
+		return resp.StatusCode, resp.Header, fmt.Errorf("%w: GET %s: decode: %w", ErrForgeAPI, path, err)
 	}
-	return resp.StatusCode, nil
+	return resp.StatusCode, resp.Header, nil
 }
 
 // getOK is get for a call that must succeed.
 func (c apiClient) getOK(ctx context.Context, path string, v any) error {
-	status, err := c.get(ctx, path, v)
+	status, _, err := c.get(ctx, path, v)
 	if err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ type forgeEmail struct {
 // match an email operator.
 func verifiedEmail(ctx context.Context, c apiClient, id *Identity) error {
 	var emails []forgeEmail
-	status, err := c.get(ctx, "/user/emails", &emails)
+	status, _, err := c.get(ctx, "/user/emails", &emails)
 	if err != nil {
 		return err
 	}

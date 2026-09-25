@@ -18,11 +18,18 @@ import (
 )
 
 // Identity is who a sign-in provider says a human is. Provider is the
-// sign-in's configured name, Subject the provider's stable id for them.
+// sign-in's configured name and Origin where it points (see signInOrigin);
+// Subject is the provider's stable id for them, unique within that origin.
+//
+// EmailVerified is the provider's own word: the OIDC email_verified claim,
+// or the forge's verified flag on the primary address. kritik cannot check
+// it, and a verified email accepts invites and matches "email:" operators,
+// so an operator should only configure sign-ins whose email verification
+// they trust.
 type Identity struct {
-	Provider, Subject, Login, Email string
-	EmailVerified                   bool
-	DisplayName, AvatarURL          string
+	Provider, Origin, Subject, Login, Email string
+	EmailVerified                           bool
+	DisplayName, AvatarURL                  string
 }
 
 // Provider is one configured way to sign in.
@@ -41,21 +48,35 @@ type Provider interface {
 // ErrUnknownProvider is a sign-in name the file does not declare.
 var ErrUnknownProvider = errors.New("auth: unknown sign-in")
 
+// failedBuildTTL is how long a failed build, an unreachable OIDC issuer's
+// discovery, is remembered before a sign-in retries it, so a dead issuer
+// does not cost a network round trip on every attempt.
+const failedBuildTTL = 30 * time.Second
+
 // providers builds each sign-in's Provider on first use and keeps it until
-// the file's sign-ins change. A build that fails, an unreachable OIDC
-// issuer's discovery, is not cached, so the next sign-in retries.
+// the file's sign-ins change. A failed build is remembered for
+// failedBuildTTL.
 type providers struct {
 	webURL *url.URL
 	client *http.Client
 	now    func() time.Time
 
-	mu    sync.Mutex
-	key   [sha256.Size]byte
-	built map[string]Provider
+	mu     sync.Mutex
+	key    [sha256.Size]byte
+	built  map[string]Provider
+	failed map[string]failedBuild
+}
+
+type failedBuild struct {
+	at  time.Time
+	err error
 }
 
 func newProviders(webURL *url.URL, client *http.Client, now func() time.Time) *providers {
-	return &providers{webURL: webURL, client: client, now: now, built: map[string]Provider{}}
+	if now == nil {
+		now = time.Now
+	}
+	return &providers{webURL: webURL, client: client, now: now, built: map[string]Provider{}, failed: map[string]failedBuild{}}
 }
 
 // get returns the provider for the named sign-in and its configuration.
@@ -69,23 +90,33 @@ func (ps *providers) get(ctx context.Context, web configfile.Web, name string) (
 	if key != ps.key {
 		ps.key = key
 		ps.built = map[string]Provider{}
+		ps.failed = map[string]failedBuild{}
 	}
 	p, ok := ps.built[name]
+	failed, hasFailed := ps.failed[name]
 	ps.mu.Unlock()
 	if ok {
 		return p, signIn, nil
 	}
+	if hasFailed && ps.now().Sub(failed.at) < failedBuildTTL {
+		return nil, configfile.SignIn{}, failed.err
+	}
 	// Built outside the lock: OIDC discovery is a network round trip, and two
 	// concurrent first builds only cost a duplicate discovery.
 	p, err := buildProvider(ctx, signIn, redirectURL(ps.webURL, name), ps.client, ps.now)
+	ps.mu.Lock()
+	if ps.key == key {
+		if err != nil {
+			ps.failed[name] = failedBuild{at: ps.now(), err: err}
+		} else {
+			ps.built[name] = p
+			delete(ps.failed, name)
+		}
+	}
+	ps.mu.Unlock()
 	if err != nil {
 		return nil, configfile.SignIn{}, err
 	}
-	ps.mu.Lock()
-	if ps.key == key {
-		ps.built[name] = p
-	}
-	ps.mu.Unlock()
 	return p, signIn, nil
 }
 
@@ -116,6 +147,23 @@ func buildProvider(ctx context.Context, s configfile.SignIn, redirect string, cl
 		return newForgejoProvider(s, redirect, client), nil
 	default:
 		return nil, fmt.Errorf("auth: sign-in %s: unsupported type %q", s.Name, s.Type)
+	}
+}
+
+// signInOrigin is where a sign-in points: its type and normalised base URL,
+// or for OIDC its issuer exactly as configured, since the issuer is compared
+// exactly against the ID token's. Identities and sessions are bound to it.
+func signInOrigin(s configfile.SignIn) string {
+	switch s.Type {
+	case configfile.SignInOIDC:
+		return string(s.Type) + ":" + s.Issuer
+	case configfile.SignInGitHub:
+		if forgeHost(string(s.Type), s.Host) == githubHost {
+			return string(s.Type) + ":https://" + githubHost
+		}
+		return string(s.Type) + ":" + webBase(s.Host)
+	default:
+		return string(s.Type) + ":" + webBase(s.Host)
 	}
 }
 
