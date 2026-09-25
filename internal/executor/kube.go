@@ -42,6 +42,8 @@ type Kube struct {
 	// nothing else, every byte the runner sends out passes the gateway's
 	// host allowlist (ADR-0008).
 	GatewayURL string
+	// RuntimeClass, when set, is the RuntimeClass the pod runs under.
+	RuntimeClass string
 	// TTL is ttlSecondsAfterFinished; the run row outlives the Job.
 	TTL time.Duration
 	// Poll is how often the Job is checked.
@@ -356,6 +358,10 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 			_ = json.Unmarshal(b, &container.Resources)
 		}
 	}
+	var runtimeClass *string
+	if k.RuntimeClass != "" {
+		runtimeClass = new(k.RuntimeClass)
+	}
 	return &batchv1.Job{
 		Name: name, Namespace: k.Namespace, Labels: labels, Annotations: annotations,
 		Spec: batchv1.JobSpec{
@@ -368,6 +374,7 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 					ServiceAccountName:           k.ServiceAccount,
 					AutomountServiceAccountToken: new(false),
 					RestartPolicy:                corev1.RestartPolicyNever,
+					RuntimeClassName:             runtimeClass,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: new(true), RunAsUser: new(int64(65532)), RunAsGroup: new(int64(65532)),
 						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},

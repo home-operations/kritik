@@ -168,6 +168,12 @@ type Config struct {
 	RunnerDeadline time.Duration `env:"KRITIK_RUNNER_DEADLINE" envDefault:"15m"`
 	RunnerTTL      time.Duration `env:"KRITIK_RUNNER_TTL" envDefault:"10m"`
 
+	// RunnerRuntimeClass is the RuntimeClass runner pods run under, such as
+	// a gVisor or Kata class, so a pod that parses untrusted repository
+	// content is kept from the node's kernel. Empty uses the cluster's
+	// default runtime. Advised, not required (ADR-0008 §2.4).
+	RunnerRuntimeClass string `env:"KRITIK_RUNNER_RUNTIME_CLASS"`
+
 	// RunnerDatabaseURL is the runner role's DSN, needed only by the local
 	// executor, which runs the runner inside the worker process.
 	RunnerDatabaseURL string `env:"KRITIK_RUNNER_DATABASE_URL,unset"`

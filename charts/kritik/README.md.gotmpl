@@ -135,6 +135,17 @@ config:
 `gateway.enabled: false` removes the listener and the Service and gives runner
 pods the `networkPolicy.egressPorts` to anywhere instead.
 
+### Runner sandbox
+
+Runner Jobs parse untrusted repository content and, in agentic mode, run what
+the model asks of them. Set `runner.runtimeClassName` to a sandboxed runtime
+the cluster offers (`gvisor` with runsc, or a Kata class) so a kernel
+vulnerability reachable from the pod is contained by the sandbox rather than
+the node. It is advised, not required: without it the pod's other bounds
+still hold (no long-lived secret, egress by hostname through the gateway,
+read-only root, no capabilities), but the container runtime alone separates
+it from the node.
+
 ### Topology
 
 `roles.all` runs everything in one Deployment and is the usual shape. For a

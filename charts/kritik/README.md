@@ -130,6 +130,17 @@ config:
 `gateway.enabled: false` removes the listener and the Service and gives runner
 pods the `networkPolicy.egressPorts` to anywhere instead.
 
+### Runner sandbox
+
+Runner Jobs parse untrusted repository content and, in agentic mode, run what
+the model asks of them. Set `runner.runtimeClassName` to a sandboxed runtime
+the cluster offers (`gvisor` with runsc, or a Kata class) so a kernel
+vulnerability reachable from the pod is contained by the sandbox rather than
+the node. It is advised, not required: without it the pod's other bounds
+still hold (no long-lived secret, egress by hostname through the gateway,
+read-only root, no capabilities), but the container runtime alone separates
+it from the node.
+
 ### Topology
 
 `roles.all` runs everything in one Deployment and is the usual shape. For a
@@ -239,6 +250,7 @@ Kubernetes: `>=1.25.0-0`
 | roles.worker.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
 | runner.deadline | string | `"15m"` | Default active deadline for a runner Job (Go duration); tenants may lower it in the file. |
 | runner.image | string | `""` | Image for runner Jobs; empty uses the chart's image. |
+| runner.runtimeClassName | string | `""` | RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and, in agentic mode, runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
 | runner.serviceAccount.create | bool | `true` | Create the runner ServiceAccount (no permissions, no token mounted). |
 | runner.serviceAccount.name | string | `""` | Runner ServiceAccount name; generated from the release name if empty. |
