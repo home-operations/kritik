@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -18,10 +17,8 @@ import (
 	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/metrics"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/store"
 )
 
 // Follow-up bounds: mentions answered per pull request per hour before a
@@ -43,13 +40,8 @@ const (
 // @-mentioned the bot, scoped to its thread.
 type FollowUp struct {
 	river.WorkerDefaults[jobs.FollowUpArgs]
-	Store      *store.Store
-	Current    *configfile.Current
-	Forges     Forges
+	Base
 	Completers CompleterSource
-	Logger     *slog.Logger
-	// Metrics may be nil.
-	Metrics *metrics.Metrics
 }
 
 type followUpPR struct {
@@ -62,9 +54,9 @@ type followUpPR struct {
 func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) error {
 	args := job.Args
 	file := w.Current.Get()
-	tenant := tenantByID(file, args.TenantID)
-	if tenant == nil {
-		return river.JobCancel(fmt.Errorf("worker: tenant %s is not in the configuration", args.TenantID))
+	tenant, err := w.tenant(file, args.TenantID)
+	if err != nil {
+		return err
 	}
 	logger := w.Logger.With("tenant", tenant.Slug, "pr", args.Number, "comment", args.CommentID)
 	pr, err := w.loadPR(ctx, args)
@@ -72,11 +64,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		return err
 	}
 	pr.number = args.Number
-	in, _, ok := file.Installation(pr.installation)
-	if !ok {
-		return river.JobCancel(fmt.Errorf("worker: installation %s is not in the configuration", pr.installation))
-	}
-	client, err := w.Forges.For(ctx, in, pr.externalID, pr.repository)
+	client, err := w.client(ctx, file, pr.installation, pr.externalID, pr.repository)
 	if err != nil {
 		return err
 	}
@@ -228,20 +216,23 @@ func (f *followUp) number() int { return f.pr.number }
 
 var mentionPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)`)
 
+// mentioned reports whether body @-mentions slug as a whole word.
+func mentioned(body, slug string) bool {
+	for _, m := range mentionPattern.FindAllStringSubmatch(body, -1) {
+		if strings.EqualFold(m[2], slug) {
+			return true
+		}
+	}
+	return false
+}
+
 // disqualified returns why the mention is not answered, or "".
 func (f *followUp) disqualified(ctx context.Context) string {
 	if f.comment.AuthorIsBot || strings.EqualFold(f.comment.Author, f.botLogin) {
 		return "author is a bot"
 	}
 	slug := strings.TrimSuffix(f.botLogin, "[bot]")
-	mentioned := false
-	for _, m := range mentionPattern.FindAllStringSubmatch(f.comment.Body, -1) {
-		if strings.EqualFold(m[2], slug) {
-			mentioned = true
-			break
-		}
-	}
-	if !mentioned {
+	if !mentioned(f.comment.Body, slug) {
 		return "does not mention @" + slug
 	}
 	perm, err := f.client.Permission(ctx, f.owner, f.repo, f.comment.Author)
@@ -383,23 +374,6 @@ func (f *followUp) complete(ctx context.Context, msg string) (model.CompletionRe
 	if ref == "" {
 		return model.CompletionResponse{}, errors.New("worker: no review model is configured for this repository")
 	}
-	slots := f.settings.Limits.Concurrency
-	if slots <= 0 {
-		slots = configfile.DefaultConcurrency
-	}
-	waited := time.Now()
-	l, err := acquireLease(ctx, f.w.Store, f.tenant.ID(), string(ref), slots, f.jobID)
-	if err != nil {
-		return model.CompletionResponse{}, err
-	}
-	f.w.Metrics.LeaseWait(f.tenant.Slug, string(ref), time.Since(waited))
-	defer func() {
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		if err := l.release(rctx); err != nil {
-			f.logger.Warn("lease not released", "error", err)
-		}
-	}()
 	completer, err := f.w.Completers.For(f.file, ref.Provider())
 	if err != nil {
 		return model.CompletionResponse{}, err
@@ -411,9 +385,14 @@ func (f *followUp) complete(ctx context.Context, msg string) (model.CompletionRe
 	if fb := f.settings.Models.Fallback; fb != "" && fb.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fb.Model()}
 	}
-	resp, err := completer.Complete(ctx, req)
-	f.w.Metrics.ModelCall(f.tenant.Slug, string(ref), "followup", callOutcome(err),
-		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
+	var resp model.CompletionResponse
+	err = f.w.withLease(ctx, f.tenant, string(ref), f.settings.Slots(), f.jobID, func(ctx context.Context) error {
+		var err error
+		resp, err = completer.Complete(ctx, req)
+		f.w.Metrics.ModelCall(f.tenant.Slug, string(ref), "followup", callOutcome(err),
+			resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
+		return err
+	})
 	return resp, err
 }
 

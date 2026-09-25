@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -35,9 +34,7 @@ const (
 // embeds the chunks and swaps or advances the active generation.
 type Index struct {
 	river.WorkerDefaults[jobs.IndexArgs]
-	Store    *store.Store
-	Current  *configfile.Current
-	Forges   Forges
+	Base
 	Executor executor.Executor
 	Embedder model.Embedder
 	// EmbedModel and EmbedDims name the deployment embedder; a generation
@@ -45,9 +42,6 @@ type Index struct {
 	EmbedModel string
 	EmbedDims  int
 	Deadline   time.Duration
-	Logger     *slog.Logger
-	// Metrics may be nil.
-	Metrics *metrics.Metrics
 }
 
 type indexRepo struct {
@@ -69,9 +63,9 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return river.JobCancel(errors.New("worker: no embedder is configured, indexing is off"))
 	}
 	file := w.Current.Get()
-	tenant := tenantByID(file, args.TenantID)
-	if tenant == nil {
-		return river.JobCancel(fmt.Errorf("worker: tenant %s is not in the configuration", args.TenantID))
+	tenant, err := w.tenant(file, args.TenantID)
+	if err != nil {
+		return err
 	}
 	repo, err := w.loadRepo(ctx, args)
 	if err != nil {
@@ -83,11 +77,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		logger.Info("index skipped, repository disabled")
 		return nil
 	}
-	in, _, ok := file.Installation(repo.installation)
-	if !ok {
-		return river.JobCancel(fmt.Errorf("worker: installation %s is not in the configuration", repo.installation))
-	}
-	client, err := w.Forges.For(ctx, in, repo.externalID, repo.name)
+	client, err := w.client(ctx, file, repo.installation, repo.externalID, repo.name)
 	if err != nil {
 		return err
 	}
@@ -148,7 +138,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		w.Metrics.IndexRun(tenant.Slug, mode, "failed", 0)
 		return w.finish(ctx, args.TenantID, runID, "failed", 0, res.Err.Error())
 	}
-	n, mode, err := w.embed(ctx, args, tenant.Slug, commit, runID, runnerRunID, active, settings, job.ID, logger)
+	n, mode, err := w.embed(ctx, args, tenant, commit, runID, runnerRunID, active, settings, job.ID)
 	if err != nil {
 		logger.Error("index embedding failed", "error", err)
 		w.Metrics.IndexRun(tenant.Slug, mode, "failed", 0)
@@ -244,8 +234,8 @@ type stagedChunk struct {
 // replaces the changed paths inside the active generation. Either way the
 // swap is one transaction, so a review never sees a half-built index.
 func (w *Index) embed(
-	ctx context.Context, args jobs.IndexArgs, tenant, commit, runID, runnerRunID string, active *activeGeneration,
-	settings configfile.Settings, jobID int64, logger *slog.Logger,
+	ctx context.Context, args jobs.IndexArgs, tenant *configfile.Tenant, commit, runID, runnerRunID string, active *activeGeneration,
+	settings configfile.Settings, jobID int64,
 ) (int, string, error) {
 	var pack indexPack
 	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
@@ -268,84 +258,69 @@ func (w *Index) embed(
 	if err != nil {
 		return 0, pack.mode, fmt.Errorf("worker: record index mode: %w", err)
 	}
-	slots := settings.Limits.Concurrency
-	if slots <= 0 {
-		slots = configfile.DefaultConcurrency
-	}
-	waited := time.Now()
-	l, err := acquireLease(ctx, w.Store, args.TenantID, "embed:"+w.EmbedModel, slots, jobID)
-	if err != nil {
-		return 0, pack.mode, err
-	}
-	w.Metrics.LeaseWait(tenant, w.EmbedModel, time.Since(waited))
-	defer func() {
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		if err := l.release(rctx); err != nil {
-			logger.Warn("lease not released", "error", err)
-		}
-	}()
-
 	var total int
 	var tokens int64
-	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
-		if pack.mode == modeIncremental && len(pack.changedPaths) > 0 {
-			if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`, target, pack.changedPaths); err != nil {
-				return fmt.Errorf("worker: drop stale chunks: %w", err)
+	err = w.withLease(ctx, tenant, "embed:"+w.EmbedModel, settings.Slots(), jobID, func(ctx context.Context) error {
+		return w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+			if pack.mode == modeIncremental && len(pack.changedPaths) > 0 {
+				if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`,
+					target, pack.changedPaths); err != nil {
+					return fmt.Errorf("worker: drop stale chunks: %w", err)
+				}
 			}
-		}
-		var last int64
-		for {
-			batch, err := readStaged(ctx, tx, runnerRunID, last, embedBatch)
-			if err != nil {
-				return err
+			var last int64
+			for {
+				batch, err := readStaged(ctx, tx, runnerRunID, last, embedBatch)
+				if err != nil {
+					return err
+				}
+				if len(batch) == 0 {
+					break
+				}
+				texts := make([]string, len(batch))
+				for i, c := range batch {
+					texts[i] = embedText(c)
+				}
+				vectors, used, err := w.Embedder.Embed(ctx, texts)
+				if err != nil {
+					w.Metrics.ModelCall(tenant.Slug, w.EmbedModel, roleEmbedding, "error", 0, 0, 0, 0)
+					return err
+				}
+				w.Metrics.ModelCall(tenant.Slug, w.EmbedModel, roleEmbedding, "ok", used, 0, 0, 0)
+				tokens += used
+				if err := insertChunks(ctx, tx, args.TenantID, args.RepositoryID, target, batch, vectors); err != nil {
+					return err
+				}
+				total += len(batch)
+				last = batch[len(batch)-1].id
 			}
-			if len(batch) == 0 {
-				break
-			}
-			texts := make([]string, len(batch))
-			for i, c := range batch {
-				texts[i] = embedText(c)
-			}
-			vectors, used, err := w.Embedder.Embed(ctx, texts)
-			if err != nil {
-				w.Metrics.ModelCall(tenant, w.EmbedModel, roleEmbedding, "error", 0, 0, 0, 0)
-				return err
-			}
-			w.Metrics.ModelCall(tenant, w.EmbedModel, roleEmbedding, "ok", used, 0, 0, 0)
-			tokens += used
-			if err := insertChunks(ctx, tx, args.TenantID, args.RepositoryID, target, batch, vectors); err != nil {
-				return err
-			}
-			total += len(batch)
-			last = batch[len(batch)-1].id
-		}
-		if pack.mode == modeIncremental && active != nil {
-			if _, err := tx.Exec(ctx, `UPDATE index_runs SET commit_sha = $2 WHERE id = $1`, active.id, commit); err != nil {
-				return fmt.Errorf("worker: advance generation: %w", err)
-			}
-		} else {
-			if _, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, args.RepositoryID, runID); err != nil {
-				return fmt.Errorf("worker: activate generation: %w", err)
-			}
-			if active != nil {
-				if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now())
+			if pack.mode == modeIncremental && active != nil {
+				if _, err := tx.Exec(ctx, `UPDATE index_runs SET commit_sha = $2 WHERE id = $1`, active.id, commit); err != nil {
+					return fmt.Errorf("worker: advance generation: %w", err)
+				}
+			} else {
+				if _, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, args.RepositoryID, runID); err != nil {
+					return fmt.Errorf("worker: activate generation: %w", err)
+				}
+				if active != nil {
+					if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now())
 					WHERE id = $1`, active.id); err != nil {
-					return fmt.Errorf("worker: supersede generation: %w", err)
-				}
-				if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1`, active.id); err != nil {
-					return fmt.Errorf("worker: drop superseded chunks: %w", err)
+						return fmt.Errorf("worker: supersede generation: %w", err)
+					}
+					if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1`, active.id); err != nil {
+						return fmt.Errorf("worker: drop superseded chunks: %w", err)
+					}
 				}
 			}
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID); err != nil {
-			return fmt.Errorf("worker: clear staging: %w", err)
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO usage (tenant_id, repository_id, role, model, input_tokens) VALUES ($1, $2, 'embedding', $3, $4)`,
-			args.TenantID, args.RepositoryID, w.EmbedModel, tokens); err != nil {
-			return fmt.Errorf("worker: record embedding usage: %w", err)
-		}
-		return nil
+			if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID); err != nil {
+				return fmt.Errorf("worker: clear staging: %w", err)
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO usage (tenant_id, repository_id, role, model, input_tokens) VALUES ($1, $2, 'embedding', $3, $4)`,
+				args.TenantID, args.RepositoryID, w.EmbedModel, tokens); err != nil {
+				return fmt.Errorf("worker: record embedding usage: %w", err)
+			}
+			return nil
+		})
 	})
 	return total, pack.mode, err
 }
@@ -410,13 +385,7 @@ func insertChunks(ctx context.Context, tx pgx.Tx, tenantID, repositoryID, runID 
 func recordRun(
 	ctx context.Context, st *store.Store, m *metrics.Metrics, tenant, tenantID, runID, kind string, res executor.Result,
 ) error {
-	outcome := "success"
-	switch {
-	case res.DeadlineExceeded:
-		outcome = "deadline"
-	case res.Err != nil:
-		outcome = "failed"
-	}
+	outcome := runOutcome(res)
 	var took time.Duration
 	if !res.StartedAt.IsZero() {
 		took = time.Since(res.StartedAt)
@@ -435,6 +404,18 @@ func recordRun(
 		}
 		return nil
 	})
+}
+
+// runOutcome names how a runner Job ended for the metric label.
+func runOutcome(res executor.Result) string {
+	switch {
+	case res.DeadlineExceeded:
+		return "deadline"
+	case res.Err != nil:
+		return "failed"
+	default:
+		return "success"
+	}
 }
 
 // runnerSpec applies the tenant's runner block over the deployment default.

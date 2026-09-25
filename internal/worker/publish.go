@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -183,24 +182,19 @@ func (p *publishPhase) load(ctx context.Context) (reviewInput, error) {
 // the provider (OpenRouter switches server-side); one on another provider
 // is a second call from here. The returned role says which answered.
 func (p *publishPhase) complete(ctx context.Context, ref configfile.ModelRef, msg string) (model.CompletionResponse, string, error) {
-	slots := p.settings.Limits.Concurrency
-	if slots <= 0 {
-		slots = configfile.DefaultConcurrency
-	}
-	waited := time.Now()
-	l, err := acquireLease(ctx, p.w.Store, p.tenant.ID(), string(ref), slots, p.jobID)
-	if err != nil {
-		return model.CompletionResponse{}, "", err
-	}
-	p.w.Metrics.LeaseWait(p.tenant.Slug, string(ref), time.Since(waited))
-	defer func() {
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		if err := l.release(rctx); err != nil {
-			p.logger.Warn("lease not released", "error", err)
-		}
-	}()
+	var resp model.CompletionResponse
+	role := roleReview
+	err := p.w.withLease(ctx, p.tenant, string(ref), p.settings.Slots(), p.jobID, func(ctx context.Context) error {
+		var err error
+		resp, role, err = p.callModels(ctx, ref, msg)
+		return err
+	})
+	return resp, role, err
+}
 
+// callModels asks the primary model and, when configured on another
+// provider, the fallback. The caller holds the lease.
+func (p *publishPhase) callModels(ctx context.Context, ref configfile.ModelRef, msg string) (model.CompletionResponse, string, error) {
 	req := model.CompletionRequest{
 		System: review.System, User: msg, Model: ref.Model(),
 		Schema: review.Schema(), SchemaName: "findings", MaxTokens: maxOutputTokens,
@@ -353,21 +347,14 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 		}
 		texts[i] = t
 	}
-	slots := p.settings.Limits.Concurrency
-	if slots <= 0 {
-		slots = configfile.DefaultConcurrency
-	}
-	waited := time.Now()
-	l, err := acquireLease(ctx, p.w.Store, p.tenant.ID(), "embed:"+p.w.EmbedModel, slots, p.jobID)
-	if err != nil {
-		return nil, err
-	}
-	p.w.Metrics.LeaseWait(p.tenant.Slug, p.w.EmbedModel, time.Since(waited))
-	vectors, tokens, err := p.w.Embedder.Embed(ctx, texts)
-	p.w.Metrics.ModelCall(p.tenant.Slug, p.w.EmbedModel, roleEmbedding, callOutcome(err), tokens, 0, 0, 0)
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	_ = l.release(rctx)
-	cancel()
+	var vectors [][]float32
+	var tokens int64
+	err = p.w.withLease(ctx, p.tenant, "embed:"+p.w.EmbedModel, p.settings.Slots(), p.jobID, func(ctx context.Context) error {
+		var err error
+		vectors, tokens, err = p.w.Embedder.Embed(ctx, texts)
+		p.w.Metrics.ModelCall(p.tenant.Slug, p.w.EmbedModel, roleEmbedding, callOutcome(err), tokens, 0, 0, 0)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -146,11 +146,11 @@ func Anchors(diff string) map[string]map[int]bool {
 
 func hunkStart(header string) int {
 	// header looks like "@@ -12,7 +12,8 @@ optional text"
-	plus := strings.Index(header, "+")
-	if plus < 0 {
+	_, after, ok := strings.Cut(header, "+")
+	if !ok {
 		return 0
 	}
-	rest := header[plus+1:]
+	rest := after
 	end := strings.IndexAny(rest, ", @")
 	if end < 0 {
 		end = len(rest)
