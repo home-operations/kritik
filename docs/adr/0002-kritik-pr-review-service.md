@@ -919,7 +919,9 @@ type Embedder interface {
 }
 ```
 
-**v1 is OpenRouter only**, decided 2026-09-24. OpenRouter is one
+**v1 is OpenRouter only**, decided 2026-09-24 and amended by
+[ADR-0003](0003-forgejo-agentic-review.md) §2.5, which adds direct
+Anthropic and OpenAI providers and replaces Fantasy. OpenRouter is one
 OpenAI-compatible endpoint that covers every call the service makes:
 `/chat/completions` for structured findings, `/embeddings` for the
 deployment-wide embedder, a per-request `models` list for server-side
