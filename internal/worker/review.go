@@ -155,15 +155,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	secrets := runner.Secrets{GitToken: token}
 	if agentic {
-		if spec.Prompt, err = w.agentPrompt(ctx, args.TenantID, reviewID, pr, settings, prior); err != nil {
+		if deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, pr, settings, prior, admitted, &spec, &secrets, deadline); err != nil {
 			return errors.Join(err, w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", err.Error()))
 		}
-		spec.Mode, spec.Model, secrets.ModelAPIKey = runner.ModeAgentic, admitted.endpoint, admitted.key
-		spec.Agent = &runner.AgentLimits{
-			MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes,
-			TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
-		}
-		deadline = agentDeadline(deadline, settings.Agent.Timeout)
 	}
 	sup := runSupervision(w.Store, args.TenantID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
@@ -178,14 +172,21 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		Deadline:    deadline,
 		Resources:   resources,
 	})
+	// The agent's spend is read before recordRun settles the run's phase:
+	// a stopped run's row may still be on its way from the terminating pod.
+	var agentOutcome *agentRun
+	var chargeErr error
+	if agentic {
+		agentOutcome, chargeErr = w.chargeAgentRun(ctx, tenant, pr, reviewID, runID, settings.Models.Review, stopped(ctx, res, cause))
+	}
 	if err := recordRun(ctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err
 	}
-	var agentOutcome *agentRun
-	if agentic {
-		if agentOutcome, err = w.chargeAgentRun(ctx, tenant, pr, reviewID, runID, settings.Models.Review); err != nil {
-			return err
-		}
+	if chargeErr != nil {
+		logger.Error("agent run not charged", "error", chargeErr)
+		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
+		// A retry would run the agent again; the review ends here.
+		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", chargeErr.Error())
 	}
 	// A run that finished despite a cancel is judged by its result; the
 	// head check after it catches a supersede.

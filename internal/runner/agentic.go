@@ -166,7 +166,7 @@ func runAgentic(
 	}
 	if reason != "" {
 		logger.Info("agent not run", "reason", reason)
-		return writeAgentRun(ctx, st, p, agentRecord{stop: AgentSkipped, toolCalls: []byte("{}"), timeline: []byte("[]"), err: reason})
+		return writeAgentRun(ctx, st, p, agentRecord{stop: AgentSkipped, toolCalls: []byte("{}"), timeline: []byte("[]"), err: reason}, "done")
 	}
 	stepper, err := model.NewStepper(p.Model.Provider, p.Model.BaseURL, secrets.ModelAPIKey, p.Model.Pricing, nil)
 	if err != nil {
@@ -176,8 +176,23 @@ func runAgentic(
 	logger.Info("agent started", "model", p.Model.Model, "scope", pack.Scope, "prompt_chars", len(system)+len(user))
 	res, timeline := reviewAgent(ctx, stepper, p, head, ignore, system, user, strict,
 		time.Duration(p.Agent.TimeoutSeconds)*time.Second, logger)
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("runner: agent: %w", err)
+	if cerr := ctx.Err(); cerr != nil {
+		// The run was cancelled, deleted or ran out of Job time: what the
+		// agent spent so far is still spent, so the row is written on a
+		// context of its own, short enough for the pod's termination grace.
+		res.Stop = agent.StopCanceled
+		if res.Err == "" {
+			res.Err = context.Cause(ctx).Error()
+		}
+		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), canceledWriteTimeout)
+		defer cancel()
+		rec, err := newAgentRecord(res, timeline, secrets)
+		if err == nil {
+			err = writeAgentRun(wctx, st, p, rec, "failed")
+		}
+		logger.Warn("agent canceled", "steps", res.Steps, "input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output,
+			"cost_usd", res.CostUSD, "error", err)
+		return errors.Join(fmt.Errorf("runner: agent: %w", cerr), err)
 	}
 	rec, err := newAgentRecord(res, timeline, secrets)
 	if err != nil {
@@ -185,8 +200,12 @@ func runAgentic(
 	}
 	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls,
 		"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD, "error", rec.err)
-	return writeAgentRun(ctx, st, p, rec)
+	return writeAgentRun(ctx, st, p, rec, "done")
 }
+
+// canceledWriteTimeout bounds writing a cancelled agent's row, well inside
+// a runner pod's termination grace period.
+const canceledWriteTimeout = 5 * time.Second
 
 // agentRecord is an agent_runs row.
 type agentRecord struct {
@@ -216,7 +235,8 @@ func newAgentRecord(res agent.Result, timeline []timelineStep, secrets Secrets) 
 	return rec, nil
 }
 
-func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord) error {
+// writeAgentRun records the agent's row and moves the run to phase.
+func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord, phase string) error {
 	return st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, tenant_id, stop_reason, result, steps, tool_calls, timeline,
@@ -227,7 +247,7 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}
-		_, err = tx.Exec(ctx, `UPDATE runner_runs SET phase = 'done' WHERE id = $1`, p.RunID)
+		_, err = tx.Exec(ctx, `UPDATE runner_runs SET phase = $2 WHERE id = $1`, p.RunID, phase)
 		return err
 	})
 }

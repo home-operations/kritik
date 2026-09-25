@@ -81,6 +81,8 @@ const (
 	scriptProse
 	// scriptReject refuses the key and echoes it back in the error.
 	scriptReject
+	// scriptStall answers grep, then calls stalled and never answers again.
+	scriptStall
 )
 
 // scriptedModel is an OpenAI-compatible chat completions endpoint.
@@ -91,6 +93,8 @@ type scriptedModel struct {
 	auth     []string
 	systems  []string
 	requests int
+	// stalled runs once when scriptStall starts holding a request.
+	stalled func()
 }
 
 func (m *scriptedModel) reset(script modelScript) {
@@ -117,6 +121,17 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Unlock()
 
+	if script == scriptStall && step > 1 {
+		m.mu.Lock()
+		stalled := m.stalled
+		m.stalled = nil
+		m.mu.Unlock()
+		if stalled != nil {
+			stalled()
+		}
+		<-r.Context().Done()
+		return
+	}
 	if script == scriptReject {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -130,7 +145,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return fmt.Sprintf(`{"role":"assistant","content":null,"tool_calls":[{"id":"c%d","type":"function","function":{"name":%q,"arguments":%s}}]}`,
 			step, name, b)
 	}
-	if script == scriptSubmit {
+	if script == scriptSubmit || script == scriptStall {
 		finish = "tool_calls"
 		switch step {
 		case 1:
@@ -296,6 +311,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a key the provider echoes back is masked", func(t *testing.T) { checkAgentKeyMasked(t, h) })
 	t.Run("the merge-base filter skips before the agent runs", func(t *testing.T) { checkAgentFiltered(t, h) })
 	t.Run("a review outlives the client's job timeout", func(t *testing.T) { checkAgentOutlivesJobTimeout(t, h) })
+	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
 	t.Run("another tenant cannot read the agent runs", func(t *testing.T) {
 		count := func(tenantID string) int {
 			var n int
@@ -306,7 +322,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 6 || foreign != 0 {
+		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 7 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -410,13 +426,20 @@ type hookExecutor struct {
 	after func()
 	// hold delays the next run before it starts, as a slow node would.
 	hold time.Duration
+	// detach makes the next run end the way a deleted pod does: Run
+	// returns as soon as ctx ends, and the runner only sees the
+	// cancellation a moment later, as a terminating pod would.
+	detach bool
 }
 
 func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
 	e.mu.Lock()
-	hold := e.hold
-	e.hold = 0
+	hold, detach := e.hold, e.detach
+	e.hold, e.detach = 0, false
 	e.mu.Unlock()
+	if detach {
+		return e.runDetached(ctx, spec)
+	}
 	select {
 	case <-time.After(hold):
 	case <-ctx.Done():
@@ -431,6 +454,21 @@ func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 		after()
 	}
 	return res
+}
+
+func (e *hookExecutor) runDetached(ctx context.Context, spec executor.Spec) executor.Result {
+	ictx, icancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	done := make(chan executor.Result, 1)
+	go func() { done <- e.inner.Run(ictx, spec) }()
+	select {
+	case res := <-done:
+		icancel(nil)
+		return res
+	case <-ctx.Done():
+		cause := context.Cause(ctx)
+		time.AfterFunc(300*time.Millisecond, func() { icancel(cause) })
+		return executor.Result{JobName: "kritik-run-deleted", Err: cause}
+	}
 }
 
 // commit writes one file on top of the test repository's HEAD.
@@ -550,5 +588,37 @@ func checkAgentOutlivesJobTimeout(t *testing.T, h *agenticHarness) {
 	})
 	if err != nil || reviews != 1 {
 		t.Fatalf("the review was cut off and retried: %d review rows, err=%v", reviews, err)
+	}
+}
+
+func checkAgentCanceledCharges(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptStall)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc h() {}\n")
+	h.sm.mu.Lock()
+	h.sm.stalled = func() {
+		// A push lands while the agent waits on its second step, and
+		// supervision cancels the run.
+		err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = $1 WHERE number = 1`, strings.Repeat("e", 40))
+			return err
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	h.sm.mu.Unlock()
+	h.exec.mu.Lock()
+	h.exec.detach = true
+	h.exec.mu.Unlock()
+	h.dispatch(t, next)
+	reviewID, status, _ := h.waitReview(t, next)
+	if status != "superseded" {
+		t.Fatalf("status = %s, want superseded", status)
+	}
+	if run := h.agentRow(t, reviewID); run.stop != "canceled" || run.steps != 1 || run.input != 100 || run.output != 10 {
+		t.Fatalf("agent run = %+v", run)
+	}
+	if rows, tokens := h.usageTokens(t, reviewID); rows != 1 || tokens != 110 {
+		t.Fatalf("a cancelled agent run must still be charged: rows=%d tokens=%d", rows, tokens)
 	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
@@ -176,10 +177,20 @@ func (w *Review) loadAgentRun(ctx context.Context, tenantID, runID string) (run 
 // the review after it: the tokens are spent either way, and the caps count
 // them from the usage table. It is the only place an agentic review
 // records usage.
+//
+// A run that ended in error may still be writing its row: a deleted runner
+// pod records what its agent spent while it terminates. await waits for
+// that, until the run settles or agentRowWait passes. ctx's cancellation is
+// not inherited, so a job River cancels still charges its tokens.
 func (w *Review) chargeAgentRun(
-	ctx context.Context, tenant *configfile.Tenant, pr *pullRequest, reviewID, runID string, ref configfile.ModelRef,
+	ctx context.Context, tenant *configfile.Tenant, pr *pullRequest, reviewID, runID string, ref configfile.ModelRef, await bool,
 ) (*agentRun, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agentRowWait+10*time.Second)
+	defer cancel()
 	run, found, err := w.loadAgentRun(ctx, tenant.ID(), runID)
+	if err == nil && !found && await {
+		run, found, err = w.awaitAgentRun(ctx, tenant.ID(), runID)
+	}
 	if err != nil || !found {
 		return nil, err
 	}
@@ -199,6 +210,66 @@ func (w *Review) chargeAgentRun(
 		return nil, fmt.Errorf("worker: insert agent usage: %w", err)
 	}
 	return &run, nil
+}
+
+// agentSpec makes spec an agentic run: the prompt, the model and its key,
+// and the agent's bounds. It returns the runner Job's deadline, which the
+// agent's timeout may lengthen.
+func (w *Review) agentSpec(
+	ctx context.Context, tenantID, reviewID string, pr *pullRequest, settings configfile.Settings, prior priorReview,
+	admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
+) (time.Duration, error) {
+	prompt, err := w.agentPrompt(ctx, tenantID, reviewID, pr, settings, prior)
+	if err != nil {
+		return deadline, err
+	}
+	spec.Prompt, spec.Mode, spec.Model, secrets.ModelAPIKey = prompt, runner.ModeAgentic, admitted.endpoint, admitted.key
+	spec.Agent = &runner.AgentLimits{
+		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes,
+		TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
+	}
+	return agentDeadline(deadline, settings.Agent.Timeout), nil
+}
+
+// stopped reports whether a run was stopped from outside, by supervision,
+// the job's context or the Job's deadline, rather than ending on its own.
+func stopped(ctx context.Context, res executor.Result, cause error) bool {
+	return res.Err != nil && (cause != nil || ctx.Err() != nil || res.DeadlineExceeded)
+}
+
+// agentRowWait is how long a failed run's agent row is waited for: a
+// runner pod's termination grace period.
+const agentRowWait = 30 * time.Second
+
+// agentRowPoll is how often awaitAgentRun looks again.
+const agentRowPoll = time.Second
+
+// awaitAgentRun polls for a run's agent_runs row until it appears, the
+// run's phase settles without one, or agentRowWait passes.
+func (w *Review) awaitAgentRun(ctx context.Context, tenantID, runID string) (agentRun, bool, error) {
+	deadline := time.After(agentRowWait)
+	for {
+		var phase string
+		err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT phase FROM runner_runs WHERE id = $1`, runID).Scan(&phase)
+		})
+		if err != nil {
+			return agentRun{}, false, fmt.Errorf("worker: read run phase: %w", err)
+		}
+		// The runner writes its agent row before it settles the phase.
+		settled := phase == "done" || phase == "failed"
+		run, found, err := w.loadAgentRun(ctx, tenantID, runID)
+		if err != nil || found || settled {
+			return run, found, err
+		}
+		select {
+		case <-deadline:
+			return agentRun{}, false, nil
+		case <-ctx.Done():
+			return agentRun{}, false, nil
+		case <-time.After(agentRowPoll):
+		}
+	}
 }
 
 // runAgentic publishes what the runner's agent submitted, as run does for
