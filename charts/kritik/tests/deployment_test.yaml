@@ -201,3 +201,169 @@ tests:
           content:
             name: KRITIK_RUNNER_RUNTIME_CLASS
             value: gvisor
+
+  - it: renders a web-only Deployment with the dashboard env and port, and no http/gateway port
+    set:
+      roles.all.enabled: false
+      roles.web.enabled: true
+      web.url: https://dash.example.com
+      web.port: 9090
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-web
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: web
+      - equal:
+          path: spec.template.metadata.labels["kritik.home-operations.com/web"]
+          value: "true"
+      - notExists:
+          path: spec.template.metadata.labels["kritik.home-operations.com/hooks"]
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_WEB_URL
+            value: https://dash.example.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_WEB_ADDR
+            value: ":9090"
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: web
+            containerPort: 9090
+            protocol: TCP
+      - notContains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: http
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: gateway
+          any: true
+      # The web role never gets the owner DSN or the runner/gateway settings.
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_EXECUTOR
+            value: kubernetes
+          any: true
+
+  - it: hands the all role the dashboard env and port when web.url is set
+    set:
+      web.url: https://dash.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_WEB_URL
+            value: https://dash.example.com
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: web
+            containerPort: 8083
+            protocol: TCP
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: http
+          any: true
+
+  - it: leaves the dashboard env and port out of the all role when web.url is unset
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_WEB_URL
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: web
+          any: true
+
+  - it: fails when roles.web.enabled is true without web.url
+    set:
+      roles.web.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: web.url is required when roles.web.enabled is true
+
+  - it: fails when web.url is not an http(s) URL
+    set:
+      web.url: ftp://dash.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: web.url must be an http\(s\) URL
+
+  - it: wires the dashboard key and old-keys secrets into every non-runner role
+    set:
+      roles.all.enabled: false
+      roles.ingest.enabled: true
+      roles.worker.enabled: true
+      roles.web.enabled: true
+      web.url: https://dash.example.com
+      dashboard.keySecret.name: kritik-dashboard-key
+      dashboard.keySecret.key: key
+      dashboard.oldKeysSecret.name: kritik-dashboard-old-keys
+      dashboard.oldKeysSecret.key: old-keys
+    asserts:
+      - hasDocuments:
+          count: 3
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_DASHBOARD_KEY
+            valueFrom:
+              secretKeyRef:
+                name: kritik-dashboard-key
+                key: key
+        documentIndex: 0
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_DASHBOARD_OLD_KEYS
+            valueFrom:
+              secretKeyRef:
+                name: kritik-dashboard-old-keys
+                key: old-keys
+        documentIndex: 0
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_DASHBOARD_KEY
+            valueFrom:
+              secretKeyRef:
+                name: kritik-dashboard-key
+                key: key
+        documentIndex: 1
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_DASHBOARD_KEY
+            valueFrom:
+              secretKeyRef:
+                name: kritik-dashboard-key
+                key: key
+        documentIndex: 2
+
+  - it: leaves the dashboard key env out when no secret is configured
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_DASHBOARD_KEY
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_DASHBOARD_OLD_KEYS
+          any: true

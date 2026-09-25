@@ -22,6 +22,10 @@ spec:
           protocol: TCP
         - port: {{ .Values.service.metricsPort }}
           protocol: TCP
+        {{- if include "kritik.hasWeb" . }}
+        - port: {{ .Values.service.webPort }}
+          protocol: TCP
+        {{- end }}
     {{- if .Values.gateway.enabled }}
     # The gateway is for runner pods alone.
     - from:

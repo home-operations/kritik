@@ -463,6 +463,10 @@ func lead(
 			return ids
 		}, secretSweepInterval)
 	}
+	// And so is retention: model-call transcripts past their configured
+	// window (owner pool, bypassing row-level security) and expired
+	// dashboard sessions (app pool).
+	go retentionSweep(pollCtx, st, current, retentionSweepInterval, logger)
 	return applyLoop(ctx, current, func(ctx context.Context, f *configfile.File) error {
 		return st.ApplyConfig(ctx, f, leader)
 	}, func(ctx context.Context) error {
@@ -471,6 +475,48 @@ func lead(
 		}
 		return enqueueMissingIndexes(ctx, st, queue, logger)
 	}, refusedRetryInterval, configErrors, logger)
+}
+
+// retentionSweepInterval is how often the leader deletes model-call
+// transcripts and dashboard sessions past their retention window.
+const retentionSweepInterval = time.Hour
+
+// retentionStore is the subset of *store.Store that retentionSweep needs,
+// narrowed so it can be exercised in tests with a fake.
+type retentionStore interface {
+	SweepModelCalls(ctx context.Context, olderThan time.Duration) (int64, error)
+	SweepSessions(ctx context.Context, now time.Time) (int64, error)
+}
+
+// retentionSweep runs once immediately, then every interval until ctx ends,
+// deleting model-call transcripts older than the current file's retention
+// window (owner pool, bypassing row-level security) and expired dashboard
+// sessions (app pool). A sweep failure is logged, never fatal: it just
+// leaves stale rows for the next tick.
+func retentionSweep(ctx context.Context, st retentionStore, current *configfile.Current, interval time.Duration, logger *slog.Logger) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		if n, err := st.SweepModelCalls(ctx, current.Get().Retention.TranscriptsOrDefault()); err != nil {
+			if ctx.Err() == nil {
+				logger.Warn("model call transcripts not swept", "error", err)
+			}
+		} else if n > 0 {
+			logger.Info("model call transcripts swept", "rows", n)
+		}
+		if n, err := st.SweepSessions(ctx, time.Now()); err != nil {
+			if ctx.Err() == nil {
+				logger.Warn("dashboard sessions not swept", "error", err)
+			}
+		} else if n > 0 {
+			logger.Info("dashboard sessions swept", "rows", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 // refusedRetryInterval is how often the leader re-applies a configuration
