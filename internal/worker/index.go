@@ -56,6 +56,12 @@ type activeGeneration struct {
 	dims              int
 }
 
+// Timeout implements river.Worker: the runner Job's deadline plus the
+// embedding pass, which for a large repository is many batched calls.
+func (w *Index) Timeout(*river.Job[jobs.IndexArgs]) time.Duration {
+	return w.Deadline + 4*jobTimeoutSlack
+}
+
 // Work implements river.Worker.
 func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error {
 	args := job.Args

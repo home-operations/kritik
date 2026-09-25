@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -49,6 +50,9 @@ type followUpPR struct {
 	externalID                                                         int64
 	number                                                             int
 }
+
+// Timeout implements river.Worker.
+func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration { return followUpTimeout }
 
 // Work implements river.Worker.
 func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) error {

@@ -51,6 +51,13 @@ func (b *Base) client(
 // releaseTimeout bounds the lease release after the job's context is gone.
 const releaseTimeout = 10 * time.Second
 
+// jobTimeoutSlack is what a job may spend beyond its runner Job's deadline:
+// lease waits, model calls and write-back.
+const jobTimeoutSlack = 15 * time.Minute
+
+// followUpTimeout bounds a follow-up, which has no runner Job.
+const followUpTimeout = 10 * time.Minute
+
 // withLease runs fn while holding one of the tenant's slots on key,
 // records the wait, and releases the slot afterwards even when the job's
 // context has been cancelled.

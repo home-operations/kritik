@@ -364,8 +364,12 @@ func checkIndexing(ctx context.Context, t *testing.T, st *store.Store, queue *ri
 		t.Helper()
 		deadline := time.Now().Add(30 * time.Second)
 		for time.Now().Before(deadline) {
+			// An incremental step advances the active generation's commit
+			// before its own row finishes, so only read once nothing is
+			// running; the newest finished row is then the step itself.
 			err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `SELECT status, mode FROM index_runs WHERE commit_sha = $1 AND finished_at IS NOT NULL
+					AND NOT EXISTS (SELECT 1 FROM index_runs WHERE status = 'running')
 					ORDER BY created_at DESC LIMIT 1`, commit).Scan(&status, &mode)
 			})
 			if err == nil {

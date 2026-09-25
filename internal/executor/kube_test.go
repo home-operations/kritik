@@ -2,6 +2,9 @@ package executor
 
 import (
 	"context"
+	"errors"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -108,6 +111,37 @@ func TestKubeRunWaitsForCompletion(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after the job succeeded")
+	}
+}
+
+func TestKubeRunDeletesTheJobWhenCancelled(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k := &Kube{
+		Client: client, Namespace: "kritik", Image: "img", ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri",
+		Poll: 10 * time.Millisecond, Logger: logger,
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(ctx, spec()) }()
+	for i := 0; i < 100; i++ {
+		time.Sleep(5 * time.Millisecond)
+		if jobs, _ := client.BatchV1().Jobs("kritik").List(t.Context(), metav1.ListOptions{}); len(jobs.Items) == 1 {
+			break
+		}
+	}
+	cancel()
+	select {
+	case res := <-done:
+		if !errors.Is(res.Err, context.Canceled) {
+			t.Fatalf("result = %+v; want the cancellation surfaced", res)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after cancellation")
+	}
+	jobs, _ := client.BatchV1().Jobs("kritik").List(t.Context(), metav1.ListOptions{})
+	if len(jobs.Items) != 0 {
+		t.Fatalf("the orphaned Job must be deleted, %d left", len(jobs.Items))
 	}
 }
 
