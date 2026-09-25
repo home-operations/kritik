@@ -143,3 +143,18 @@ func TestBuildIncrementalNothingChanged(t *testing.T) {
 		t.Fatalf("an unchanged head says so:\n%s", msg)
 	}
 }
+
+// TestReReviewLeadOnlyWithADelta checks that the stricter re-review bar is
+// stated with the delta and not when nothing changed since the last review.
+func TestReReviewLeadOnlyWithADelta(t *testing.T) {
+	const lead = "This is a re-review: the last review set the bar"
+	in := Input{Diff: "diff --git a/x b/x\n+1\n", Incremental: &IncrementalInput{PriorHeadSHA: "0123456789abcdef"}}
+	if msg, _, _ := Build(in); strings.Contains(msg, lead) {
+		t.Fatalf("lead stated with no delta:\n%s", msg)
+	}
+	in.Incremental.DeltaDiff = "diff --git a/x b/x\n+2\n"
+	msg, _, _ := Build(in)
+	if i, j := strings.Index(msg, lead), strings.Index(msg, deltaHeading); i < 0 || j < i {
+		t.Fatalf("lead missing or after the delta heading:\n%s", msg)
+	}
+}
