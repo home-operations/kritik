@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/home-operations/kritik/internal/configfile"
 )
@@ -17,6 +19,23 @@ import (
 // file rejects a slug or name both declare, so this guards the database
 // rather than being expected.
 var ErrManagedBy = errors.New("store: row is managed by another origin")
+
+// IsConfigContentError reports whether an ApplyConfig error was caused by
+// the configuration it was given rather than by the database: a row another
+// origin holds, or a value or constraint the schema rejects. Applying the
+// same configuration again fails the same way; only a new one can succeed.
+func IsConfigContentError(err error) bool {
+	if errors.Is(err, ErrManagedBy) {
+		return true
+	}
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		return false
+	}
+	// Class 22 is a data exception, class 23 an integrity constraint
+	// violation.
+	return strings.HasPrefix(pgErr.Code, "22") || strings.HasPrefix(pgErr.Code, "23")
+}
 
 // ApplyConfig upserts the file's tenants, installations and listed
 // repositories as rows managed by each tenant's origin, disables file and
