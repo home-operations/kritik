@@ -98,6 +98,7 @@ func TestSystemRulesInBothModes(t *testing.T) {
 		"you do not recognise is not a finding",
 		"A finding you would have to hedge (may, could, appears to)",
 		"mentions a concern only if it is also a finding",
+		"It does not say what the diff cannot show",
 	} {
 		for name, system := range map[string]string{"single": System, "agentic": AgenticSystemPrompt(nil)} {
 			if !strings.Contains(system, want) {

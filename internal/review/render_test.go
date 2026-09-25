@@ -45,6 +45,9 @@ func TestRenderSummaryDefault(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, body)
 		}
 	}
+	if strings.Contains(body, "\n\n\n") {
+		t.Fatalf("blank lines doubled:\n%s", body)
+	}
 	if strings.Index(body, "2 findings") > strings.Index(body, "Solid change") || strings.Index(body, "Solid change") > strings.Index(body, "`main.go:11`") {
 		t.Fatalf("sections out of order:\n%s", body)
 	}
@@ -54,7 +57,7 @@ func TestRenderSummaryDefault(t *testing.T) {
 	empty.Incremental, empty.PriorHeadSHA = true, "fedcba9876543210"
 	body, _ = RenderSummary(t.Context(), Templates{}, empty)
 	if !strings.Contains(body, "Nothing worth flagging") || strings.Contains(body, "_1 file") || !strings.Contains(body, "`fedcba9`") ||
-		strings.Contains(body, "0 findings") {
+		strings.Contains(body, "0 findings") || strings.Contains(body, "\n\n\n") {
 		t.Fatalf("empty body:\n%s", body)
 	}
 }
