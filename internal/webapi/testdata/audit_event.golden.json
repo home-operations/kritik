@@ -1,0 +1,17 @@
+{
+  "id": "7",
+  "at": "2026-09-01T12:00:00Z",
+  "actor": {
+    "id": "acct-1",
+    "displayName": "Ada",
+    "email": "ada@example.com",
+    "avatarUrl": "https://img.example/a.png"
+  },
+  "tenant": "alpha",
+  "action": "tenant.update",
+  "target": "alpha",
+  "detail": {
+    "revision": 2,
+    "secretsChanged": ["installations[alpha-bot].token"]
+  }
+}

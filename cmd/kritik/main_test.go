@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/server"
 	"github.com/home-operations/kritik/internal/store"
@@ -191,5 +192,26 @@ func TestApplyLoopRetriesARefusal(t *testing.T) {
 	}
 	if v := applyStage(reg); v != 0 {
 		t.Fatalf("apply gauge after a successful retry = %v, want 0", v)
+	}
+}
+
+func TestStoreOptionsOwnerDSN(t *testing.T) {
+	cfg := &config.Config{DatabaseURL: "postgres://app", DatabaseOwnerURL: "postgres://owner"}
+	for _, tt := range []struct {
+		role  config.Role
+		owner string
+	}{
+		{config.RoleAll, "postgres://owner"},
+		{config.RoleWorker, "postgres://owner"},
+		{config.RoleIngest, ""},
+		{config.RoleRunner, ""},
+		{config.RoleWeb, ""},
+	} {
+		t.Run(string(tt.role), func(t *testing.T) {
+			opts := storeOptions(tt.role, cfg, slog.New(slog.DiscardHandler))
+			if opts.OwnerURL != tt.owner || opts.AppURL != "postgres://app" {
+				t.Errorf("owner = %q, app = %q; want owner %q", opts.OwnerURL, opts.AppURL, tt.owner)
+			}
+		})
 	}
 }
