@@ -193,3 +193,125 @@ func TestApplyLoopRetriesARefusal(t *testing.T) {
 		t.Fatalf("apply gauge after a successful retry = %v, want 0", v)
 	}
 }
+
+// sweepCall is one call fakeRetentionStore received, carrying the argument
+// it was given. Sending the value on the channel (rather than stashing it in
+// a field the test reads separately) means the data only ever crosses
+// goroutines through the channel op itself, so there's no shared state for
+// a later, unsynchronized pass to race against.
+type sweepCall struct {
+	name    string
+	swept   time.Duration
+	sweptAt time.Time
+}
+
+// fakeRetentionStore signals every call on a channel, so a test can wait for
+// a specific pass instead of sleeping.
+type fakeRetentionStore struct {
+	calls chan sweepCall
+	fail  bool
+}
+
+func (s *fakeRetentionStore) SweepModelCalls(_ context.Context, olderThan time.Duration) (int64, error) {
+	s.calls <- sweepCall{name: "modelCalls", swept: olderThan}
+	if s.fail {
+		return 0, errors.New("db down")
+	}
+	return 1, nil
+}
+
+func (s *fakeRetentionStore) SweepSessions(_ context.Context, now time.Time) (int64, error) {
+	s.calls <- sweepCall{name: "sessions", sweptAt: now}
+	if s.fail {
+		return 0, errors.New("db down")
+	}
+	return 1, nil
+}
+
+// warnCounter counts warn-level (or higher) records.
+type warnCounter struct{ n atomic.Int32 }
+
+func (h *warnCounter) Enabled(context.Context, slog.Level) bool { return true }
+func (h *warnCounter) Handle(_ context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelWarn {
+		h.n.Add(1)
+	}
+	return nil
+}
+func (h *warnCounter) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *warnCounter) WithGroup(string) slog.Handler      { return h }
+
+func TestRetentionSweep(t *testing.T) {
+	current := configfile.NewCurrent(parseTenant(t, "acme"))
+	st := &fakeRetentionStore{calls: make(chan sweepCall, 16)}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		retentionSweep(ctx, st, current, 5*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		close(done)
+	}()
+
+	next := func() sweepCall {
+		select {
+		case c := <-st.calls:
+			return c
+		case <-time.After(5 * time.Second):
+			t.Fatal("retentionSweep never called the store")
+			return sweepCall{}
+		}
+	}
+	// The first pass runs immediately, without waiting for a tick.
+	first := next()
+	if first.name != "modelCalls" {
+		t.Fatalf("first call = %q, want modelCalls", first.name)
+	}
+	if want := current.Get().Retention.TranscriptsOrDefault(); first.swept != want {
+		t.Fatalf("olderThan = %s, want %s", first.swept, want)
+	}
+	if got := next(); got.name != "sessions" {
+		t.Fatalf("second call = %q, want sessions", got.name)
+	}
+	// A second pass proves the loop actually re-runs after the interval.
+	if got := next(); got.name != "modelCalls" {
+		t.Fatalf("third call = %q, want modelCalls", got.name)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("retentionSweep did not return once ctx ended")
+	}
+}
+
+func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
+	current := configfile.NewCurrent(parseTenant(t, "acme"))
+	st := &fakeRetentionStore{calls: make(chan sweepCall, 16), fail: true}
+	logs := &warnCounter{}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		retentionSweep(ctx, st, current, 5*time.Millisecond, slog.New(logs))
+		close(done)
+	}()
+
+	// Both sweeps fail on every pass; wait for two full passes (4 calls)
+	// to prove a failure doesn't stop the loop.
+	for range 4 {
+		select {
+		case <-st.calls:
+		case <-time.After(5 * time.Second):
+			t.Fatal("retentionSweep stopped calling the store after an error")
+		}
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("retentionSweep did not return once ctx ended")
+	}
+	if n := logs.n.Load(); n < 4 {
+		t.Fatalf("logged %d warnings for two failed passes, want >= 4", n)
+	}
+}
