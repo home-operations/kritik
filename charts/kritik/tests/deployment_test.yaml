@@ -6,6 +6,11 @@ values:
 tests:
   - it: renders one Deployment for the all role by default
     asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_RUNNER_RUNTIME_CLASS
+          any: true
       - hasDocuments:
           count: 1
       - isKind:
@@ -186,3 +191,13 @@ tests:
           content:
             name: KRITIK_RUNNER_IMAGE
             value: ghcr.io/home-operations/kritik@sha256:deadbeef
+
+  - it: hands the worker a runner RuntimeClass only when one is set
+    set:
+      runner.runtimeClassName: gvisor
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_RUNNER_RUNTIME_CLASS
+            value: gvisor

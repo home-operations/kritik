@@ -125,6 +125,10 @@ spec:
               value: {{ tpl (toString $.Values.runner.deadline) $ | quote }}
             - name: KRITIK_RUNNER_TTL
               value: {{ tpl (toString $.Values.runner.ttl) $ | quote }}
+            {{- with $.Values.runner.runtimeClassName }}
+            - name: KRITIK_RUNNER_RUNTIME_CLASS
+              value: {{ tpl . $ | quote }}
+            {{- end }}
             - name: KRITIK_GATEWAY_ADDR
               value: {{ printf ":%d" (int $.Values.gateway.port) | quote }}
             {{- with include "kritik.gatewayURL" $ }}

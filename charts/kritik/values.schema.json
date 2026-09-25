@@ -854,6 +854,12 @@
           "title": "image",
           "type": "string"
         },
+        "runtimeClassName": {
+          "default": "",
+          "description": "RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and, in agentic mode, runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default.",
+          "title": "runtimeClassName",
+          "type": "string"
+        },
         "serviceAccount": {
           "properties": {
             "annotations": {

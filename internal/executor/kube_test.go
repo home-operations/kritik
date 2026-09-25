@@ -42,7 +42,7 @@ func spec() Spec {
 
 func TestJobSpec(t *testing.T) {
 	k := &Kube{Namespace: "kritik", Image: "ttl.sh/x:1h", ServiceAccount: "kritik-runner", DatabaseSecret: "kritik-postgres-runner", DatabaseSecretKey: "uri",
-		GatewayURL: "http://kritik-gateway:8082", TTL: 10 * time.Minute}
+		GatewayURL: "http://kritik-gateway:8082", RuntimeClass: "gvisor", TTL: 10 * time.Minute}
 	j := k.job(spec())
 	if j.Name != "kritik-run-01234567" || j.Namespace != "kritik" {
 		t.Fatalf("name/namespace = %s/%s", j.Name, j.Namespace)
@@ -74,6 +74,12 @@ func TestJobSpec(t *testing.T) {
 	}
 	if !*c.SecurityContext.ReadOnlyRootFilesystem || !*pod.SecurityContext.RunAsNonRoot {
 		t.Fatal("runner pod must be read-only and non-root")
+	}
+	if pod.RuntimeClassName == nil || *pod.RuntimeClassName != "gvisor" {
+		t.Fatalf("runtimeClassName = %v, want gvisor", pod.RuntimeClassName)
+	}
+	if bare := (&Kube{Namespace: "kritik", Image: "x"}).job(spec()).Spec.Template.Spec; bare.RuntimeClassName != nil {
+		t.Fatal("a Kube without a RuntimeClass must leave the pod on the default runtime")
 	}
 }
 

@@ -216,6 +216,8 @@ runner:
   deadline: 15m
   # -- How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew.
   ttl: 1h
+  # -- RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and, in agentic mode, runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default.
+  runtimeClassName: ""
   serviceAccount:
     # -- Create the runner ServiceAccount (no permissions, no token mounted).
     create: true
