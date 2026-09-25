@@ -205,20 +205,14 @@ func run() error {
 		embedder := newEmbedder(cfg)
 		forges := &worker.ForgeCache{Build: worker.BuildForge}
 		workers := river.NewWorkers()
+		base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
+		completers := &worker.Completers{Build: worker.BuildCompleter}
 		river.AddWorker(workers, &worker.Review{
-			Store: st, Current: current, Forges: forges,
-			Completers: &worker.Completers{Build: worker.BuildCompleter},
-			Embedder:   embedder, EmbedModel: cfg.EmbedModel,
-			Executor: exec, Deadline: cfg.RunnerDeadline, Logger: logger, Metrics: m,
+			Base: base, Executor: exec, Completers: completers, Embedder: embedder, EmbedModel: cfg.EmbedModel, Deadline: cfg.RunnerDeadline,
 		})
-		river.AddWorker(workers, &worker.FollowUp{
-			Store: st, Current: current, Forges: forges,
-			Completers: &worker.Completers{Build: worker.BuildCompleter}, Logger: logger, Metrics: m,
-		})
+		river.AddWorker(workers, &worker.FollowUp{Base: base, Completers: completers})
 		river.AddWorker(workers, &worker.Index{
-			Store: st, Current: current, Forges: forges, Executor: exec,
-			Embedder: embedder, EmbedModel: cfg.EmbedModel, EmbedDims: cfg.EmbedDims,
-			Deadline: cfg.RunnerDeadline, Logger: logger, Metrics: m,
+			Base: base, Executor: exec, Embedder: embedder, EmbedModel: cfg.EmbedModel, EmbedDims: cfg.EmbedDims, Deadline: cfg.RunnerDeadline,
 		})
 		queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
 			Logger: logger,
@@ -375,7 +369,6 @@ const secretSweepInterval = 5 * time.Minute
 // apply the current file, then re-apply whenever the file changes. With an
 // embedder configured it also owns the index schema and enqueues an
 // onboarding index job for every repository that has none.
-
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
 	sweeper *executor.Kube, m *metrics.Metrics, leader string, logger *slog.Logger,

@@ -188,6 +188,30 @@ func TestKubeRunWaitsForCompletion(t *testing.T) {
 	}
 }
 
+// TestKubeRunDeletesTheJobWhenCancelled checks the Job is actually gone
+// after a plain cancellation, not only that a delete was sent.
+func TestKubeRunDeletesTheJobWhenCancelled(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	k := newKube(client)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(ctx, spec()) }()
+	waitJob(t, client)
+	cancel()
+	select {
+	case res := <-done:
+		if !errors.Is(res.Err, context.Canceled) {
+			t.Fatalf("result = %+v; want the cancellation surfaced", res)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after cancellation")
+	}
+	jobs, _ := client.BatchV1().Jobs("kritik").List(t.Context(), metav1.ListOptions{})
+	if len(jobs.Items) != 0 {
+		t.Fatalf("the orphaned Job must be deleted, %d left", len(jobs.Items))
+	}
+}
+
 func TestKubeRunReportsFailure(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	k := &Kube{Client: client, Namespace: "kritik", Image: "img", ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}

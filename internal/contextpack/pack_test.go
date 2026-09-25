@@ -186,3 +186,14 @@ func TestHunks(t *testing.T) {
 		t.Fatalf("hunks = %+v", h)
 	}
 }
+
+func TestPickPrefersDistinctFiles(t *testing.T) {
+	cs := []Chunk{{Path: "a", StartLine: 1}, {Path: "a", StartLine: 10}, {Path: "b", StartLine: 1}}
+	got := pick(cs, 2)
+	if len(got) != 2 || got[0].Path != "a" || got[1].Path != "b" {
+		t.Fatalf("pick = %+v", got)
+	}
+	if got := pick(cs, 5); len(got) != 3 {
+		t.Fatalf("pick under the cap must keep everything, got %d", len(got))
+	}
+}

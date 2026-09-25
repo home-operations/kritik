@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/home-operations/kritik/internal/chunk"
@@ -129,14 +128,7 @@ type builder struct {
 	callers     map[string][]Chunk
 }
 
-func (b *builder) ignored(path string) bool {
-	for _, g := range b.in.Ignore {
-		if ok, _ := doublestar.Match(g, path); ok {
-			return true
-		}
-	}
-	return false
-}
+func (b *builder) ignored(path string) bool { return chunk.Ignored(b.in.Ignore, path) }
 
 func (b *builder) read(tree *object.Tree, path string) []byte {
 	if tree == nil {

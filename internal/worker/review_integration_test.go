@@ -380,8 +380,12 @@ func checkIndexing(ctx context.Context, t *testing.T, st *store.Store, queue *ri
 		t.Helper()
 		deadline := time.Now().Add(30 * time.Second)
 		for time.Now().Before(deadline) {
+			// An incremental step advances the active generation's commit
+			// before its own row finishes, so only read once nothing is
+			// running; the newest finished row is then the step itself.
 			err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `SELECT status, mode FROM index_runs WHERE commit_sha = $1 AND finished_at IS NOT NULL
+					AND NOT EXISTS (SELECT 1 FROM index_runs WHERE status = 'running')
 					ORDER BY created_at DESC LIMIT 1`, commit).Scan(&status, &mode)
 			})
 			if err == nil {
@@ -624,17 +628,14 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	fe := &fakeEmbedder{}
 	exec := &gateExecutor{inner: &executor.Local{Store: runnerStore}, started: make(chan executor.Spec)}
 	workers := river.NewWorkers()
+	wb := Base{Store: appStore, Current: current, Forges: &forges{f: lf}, Logger: logger}
 	river.AddWorker(workers, &Review{
-		Store: appStore, Current: current, Forges: &forges{f: lf}, Completers: &completers{c: fc},
-		Embedder: fe, EmbedModel: "fake-embed",
-		Executor: exec, Deadline: time.Minute, Logger: logger, superviseEvery: 50 * time.Millisecond,
+		Base: wb, Completers: &completers{c: fc}, Embedder: fe, EmbedModel: "fake-embed", Executor: exec, Deadline: time.Minute,
+		superviseEvery: 50 * time.Millisecond,
 	})
-	river.AddWorker(workers, &FollowUp{
-		Store: appStore, Current: current, Forges: &forges{f: lf}, Completers: &completers{c: fc}, Logger: logger,
-	})
+	river.AddWorker(workers, &FollowUp{Base: wb, Completers: &completers{c: fc}})
 	river.AddWorker(workers, &Index{
-		Store: appStore, Current: current, Forges: &forges{f: lf}, Executor: exec,
-		Embedder: fe, EmbedModel: "fake-embed", EmbedDims: 8, Deadline: time.Minute, Logger: logger,
+		Base: wb, Executor: exec, Embedder: fe, EmbedModel: "fake-embed", EmbedDims: 8, Deadline: time.Minute,
 	})
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{
