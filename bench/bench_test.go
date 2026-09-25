@@ -136,9 +136,11 @@ func TestBench(t *testing.T) {
 	modelID := envOr("KRITIK_BENCH_MODEL", "openai/gpt-6-sol")
 	var completer model.Completer
 	if !dry {
-		if completer, err = model.NewOpenRouter(key, nil); err != nil {
+		s, err := model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil)
+		if err != nil {
 			t.Fatal(err)
 		}
+		completer = model.Structured{Stepper: s}
 	}
 
 	rep := report{Model: modelID, When: time.Now().UTC(), Dry: dry, Cases: len(cases), Modes: map[string]modeTotals{}}

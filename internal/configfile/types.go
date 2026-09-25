@@ -14,17 +14,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/prfilter"
 )
 
 // ProviderType selects the model adapter a provider uses.
-type ProviderType string
+type ProviderType = model.ProviderType
 
-// Provider types kritik implements: OpenRouter itself, or any
-// OpenAI-compatible endpoint reached through its baseUrl.
+// Provider types kritik implements. Each accepts a baseUrl, so any gateway
+// compatible with the OpenAI or Anthropic API is a provider.
 const (
-	ProviderOpenRouter ProviderType = "openrouter"
-	ProviderOpenAI     ProviderType = "openai"
+	ProviderOpenRouter = model.ProviderOpenRouter
+	ProviderOpenAI     = model.ProviderOpenAI
+	ProviderAnthropic  = model.ProviderAnthropic
 )
 
 // Forge identifies which forge an installation talks to.
@@ -68,9 +70,14 @@ func (s Secret) GoString() string { return s.String() }
 // Provider is a model endpoint. Keys are references, never values, so the
 // file can live in git.
 type Provider struct {
-	Type    ProviderType `yaml:"type"`
-	BaseURL string       `yaml:"baseUrl,omitempty"`
-	APIKey  SecretRef    `yaml:"apiKey"`
+	Type ProviderType `yaml:"type"`
+	// BaseURL overrides the type's default endpoint.
+	BaseURL string    `yaml:"baseUrl,omitempty"`
+	APIKey  SecretRef `yaml:"apiKey"`
+	// Pricing, keyed by model id, computes the cost of calls the provider
+	// does not report a cost for; without it such calls cost zero while
+	// their tokens still count against limits.
+	Pricing model.Pricing `yaml:"pricing,omitempty"`
 
 	apiKey Secret
 }
@@ -95,11 +102,11 @@ func (m ModelRef) Provider() string {
 // Model returns the model half of the reference, or "" when the reference
 // has no slash.
 func (m ModelRef) Model() string {
-	_, model, ok := strings.Cut(string(m), "/")
+	_, id, ok := strings.Cut(string(m), "/")
 	if !ok {
 		return ""
 	}
-	return model
+	return id
 }
 
 // Models are the per-tenant completion roles. Empty means "inherit from the

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -128,20 +129,22 @@ func (f *File) validate() error {
 
 func (f *File) validateProviders() error {
 	for name, p := range f.Providers {
-		switch p.Type {
-		case ProviderOpenRouter:
-			if p.BaseURL != "" {
-				return fmt.Errorf("configfile: providers.%s.baseUrl is not used by type %s", name, ProviderOpenRouter)
+		if !p.Type.Valid() {
+			return fmt.Errorf("configfile: providers.%s.type must be %s, %s or %s, got %q",
+				name, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, p.Type)
+		}
+		if p.BaseURL != "" {
+			if u, err := url.Parse(p.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
+				return fmt.Errorf("configfile: providers.%s.baseUrl %q must be an absolute URL", name, p.BaseURL)
 			}
-		case ProviderOpenAI:
-			if p.BaseURL == "" {
-				return fmt.Errorf("configfile: providers.%s.baseUrl is required for type %s", name, ProviderOpenAI)
-			}
-		default:
-			return fmt.Errorf("configfile: providers.%s.type must be %s or %s, got %q", name, ProviderOpenRouter, ProviderOpenAI, p.Type)
 		}
 		if p.apiKey.Value() == "" {
 			return fmt.Errorf("configfile: providers.%s.apiKey resolved to an empty value", name)
+		}
+		for id, price := range p.Pricing {
+			if price.Input < 0 || price.Output < 0 || price.CacheRead < 0 || price.CacheWrite < 0 {
+				return fmt.Errorf("configfile: providers.%s.pricing.%s: prices must not be negative", name, id)
+			}
 		}
 	}
 	return nil

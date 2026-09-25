@@ -3,10 +3,9 @@ package review
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
-
-	"charm.land/fantasy/schema"
 )
 
 // Message is one comment in a thread, as the follow-up prompt shows it.
@@ -26,16 +25,16 @@ Answer the last message directly and concisely in plain markdown without heading
 path and line when it helps. If you were wrong in a finding, say so plainly. If the question cannot be answered
 from what you see, say what is missing.`
 
+var followUpSchema = jsonSchema{
+	Type: schemaObject,
+	Properties: map[string]*jsonSchema{
+		"reply": {Type: schemaString, Description: "The reply to post, in markdown without headings."},
+	},
+	Required: []string{"reply"},
+}.mustMarshal()
+
 // FollowUpSchema is the answer shape: one reply.
-func FollowUpSchema() schema.Schema {
-	return schema.Schema{
-		Type: "object",
-		Properties: map[string]*schema.Schema{
-			"reply": {Type: "string", Description: "The reply to post, in markdown without headings."},
-		},
-		Required: []string{"reply"},
-	}
-}
+func FollowUpSchema() json.RawMessage { return slices.Clone(followUpSchema) }
 
 // ParseFollowUp decodes the model's answer.
 func ParseFollowUp(raw string) (string, error) {
