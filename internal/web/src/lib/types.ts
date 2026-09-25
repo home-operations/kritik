@@ -586,7 +586,9 @@ export type ManagementErrorCode =
   | 'last_admin'
   | 'no_head'
   | 'not_cancelable'
-  | 'actions_disabled';
+  | 'actions_disabled'
+  | 'reenter_secret'
+  | 'already_member';
 
 // details of an invalid_spec, operator_only or slug_taken error.
 export interface PathDetails {
