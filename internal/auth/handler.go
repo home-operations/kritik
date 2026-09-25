@@ -118,13 +118,18 @@ type ProviderInfo struct {
 	DisplayName string                `json:"displayName"`
 }
 
-func (h *Handler) listProviders(w http.ResponseWriter, _ *http.Request) {
+// Providers lists the sign-ins the current file declares, in file order.
+func (h *Handler) Providers() []ProviderInfo {
 	signIns := h.current.Get().Web.SignIn
 	out := make([]ProviderInfo, 0, len(signIns))
 	for _, s := range signIns {
 		out = append(out, ProviderInfo{Name: s.Name, Type: s.Type, DisplayName: displayName(s)})
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out
+}
+
+func (h *Handler) listProviders(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, h.Providers())
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
