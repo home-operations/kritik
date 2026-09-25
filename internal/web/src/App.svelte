@@ -5,6 +5,7 @@
   import { getJSON, sendJSON, ApiError, signinState } from './lib/api.svelte';
   import { initEvents, closeEvents } from './lib/events.svelte';
   import { theme, cycleTheme, initTheme } from './lib/theme.svelte';
+  import { initClock } from './lib/time.svelte';
   import { initKeyboard, help, toggleHelp, togglePalette } from './lib/keyboard.svelte';
   import {
     mdiThemeLightDark,
@@ -27,7 +28,7 @@
   import Icon from './lib/Icon.svelte';
   import Palette from './lib/Palette.svelte';
   import SignIn from './lib/SignIn.svelte';
-  import Placeholder from './lib/Placeholder.svelte';
+  import Page from './lib/pages/Page.svelte';
   import type { Me } from './lib/types';
 
   let me = $state<Me | undefined>(undefined);
@@ -36,6 +37,7 @@
     initTheme();
     initRouter();
     initKeyboard();
+    initClock();
     void loadMe();
   });
 
@@ -43,18 +45,22 @@
     try {
       me = await getJSON<Me>('/api/v1/me');
       initEvents();
-      // A signed-in user never sits on the sign-in card: send them where a
-      // 401 bounced them from, or the overview.
-      if (router.route.name === 'signin') {
-        const back = parse(signinState.returnTo || '#/');
-        replace(back.name === 'signin' ? { name: 'overview' } : back);
-      }
     } catch (err) {
       // A 401 already redirected to #/signin (see api.svelte.ts); anything
       // else leaves `me` unset and the shell renders signed-out.
       if (!(err instanceof ApiError && err.status === 401)) console.error('load me:', err);
     }
   }
+
+  // A signed-in user never sits on the sign-in card, however they got there
+  // (page load or in-app navigation): send them where a 401 bounced them
+  // from, or the overview.
+  $effect(() => {
+    if (!me || router.route.name !== 'signin') return;
+    const back = parse(signinState.returnTo || '#/');
+    signinState.returnTo = '';
+    replace(back.name === 'signin' ? { name: 'overview' } : back);
+  });
 
   async function signOut(): Promise<void> {
     try {
@@ -227,7 +233,7 @@
       </div>
     </header>
 
-    <Placeholder route={router.route} />
+    <Page route={router.route} />
 
     <Palette {me} />
 

@@ -21,6 +21,11 @@ export {
   mdiClipboardTextClockOutline,
   mdiCogOutline,
   mdiLogin,
+  mdiContentCopy,
+  mdiCheck,
+  mdiChevronRight,
+  mdiOpenInNew,
+  mdiRefresh,
 } from '@mdi/js';
 
 import { siForgejo, siGithub, siGitlab } from 'simple-icons';

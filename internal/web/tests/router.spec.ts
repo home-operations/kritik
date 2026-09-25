@@ -2,9 +2,9 @@
 // Svelte pipeline, so `parse()` can't be unit-tested by importing it into a
 // plain Node/Playwright-test context. Instead we drive it end-to-end through
 // the browser: navigate to a hash and read back what the app actually parsed
-// it into, via Placeholder.svelte's `.placeholder-route` element
-// ({JSON.stringify(route)}). #/signin is exercised separately in
-// app.spec.ts, since it renders SignIn.svelte, not Placeholder.svelte.
+// it into, via the page host's `data-route` attribute
+// ({JSON.stringify(route)}, see pages/Page.svelte). #/signin is exercised
+// separately in app.spec.ts, since it renders SignIn.svelte instead.
 //
 // Pure parse()/href() round-trip and malformed-hash coverage lives in
 // routes.spec.ts, which imports those functions directly with no browser.
@@ -13,7 +13,7 @@ import type { Route } from '../src/lib/routes';
 
 async function expectRoute(page: import('@playwright/test').Page, hash: string, route: Route): Promise<void> {
   await page.goto(hash ? `/${hash}` : '/');
-  await expect(page.locator('.placeholder-route')).toHaveText(JSON.stringify(route));
+  await expect(page.locator('.route-host')).toHaveAttribute('data-route', JSON.stringify(route));
 }
 
 test.describe('router: parse()', () => {
