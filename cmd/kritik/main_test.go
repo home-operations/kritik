@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -48,10 +49,24 @@ func TestApplyLoopReturnsOnAppliedError(t *testing.T) {
 	current := configfile.NewCurrent(parseTenant(t, "good"))
 	gauge := server.NewConfigErrorGauge(prometheus.NewRegistry())
 	err := applyLoop(t.Context(), current, func(context.Context, *configfile.File) error { return nil },
-		recordApplied(current, make(chan string, 1), errors.New("enqueue failed")), gauge, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		recordApplied(current, make(chan string, 1), errors.New("enqueue failed")), time.Hour, gauge, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || err.Error() != "enqueue failed" {
 		t.Fatalf("applyLoop = %v, want the onApplied error", err)
 	}
+}
+
+// applyStage is the kritik_config_error{stage="apply"} value on reg, -1 when
+// absent.
+func applyStage(reg *prometheus.Registry) float64 {
+	families, _ := reg.Gather()
+	for _, mf := range families {
+		for _, m := range mf.GetMetric() {
+			if m.GetLabel()[0].GetValue() == "apply" {
+				return m.GetGauge().GetValue()
+			}
+		}
+	}
+	return -1
 }
 
 func TestApplyLoop(t *testing.T) {
@@ -59,18 +74,7 @@ func TestApplyLoop(t *testing.T) {
 	current := configfile.NewCurrent(good)
 	reg := prometheus.NewRegistry()
 	gauge := server.NewConfigErrorGauge(reg)
-	applyGauge := func() float64 {
-		t.Helper()
-		families, _ := reg.Gather()
-		for _, mf := range families {
-			for _, m := range mf.GetMetric() {
-				if m.GetLabel()[0].GetValue() == "apply" {
-					return m.GetGauge().GetValue()
-				}
-			}
-		}
-		return -1
-	}
+	applyGauge := func() float64 { return applyStage(reg) }
 	appliedCh := make(chan string, 10)
 	attempts := make(chan string, 10)
 	apply := func(_ context.Context, f *configfile.File) error {
@@ -87,7 +91,7 @@ func TestApplyLoop(t *testing.T) {
 	onApplied := recordApplied(current, appliedCh, nil)
 	done := make(chan error, 1)
 	go func() {
-		done <- applyLoop(t.Context(), current, apply, onApplied, gauge, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		done <- applyLoop(t.Context(), current, apply, onApplied, time.Hour, gauge, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	}()
 	next := func(t *testing.T, ch chan string) string {
 		t.Helper()
@@ -141,5 +145,51 @@ func TestApplyLoop(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("applyLoop kept running after a database error")
+	}
+}
+
+// errorCounter counts error records.
+type errorCounter struct{ n atomic.Int32 }
+
+func (h *errorCounter) Enabled(context.Context, slog.Level) bool { return true }
+func (h *errorCounter) Handle(_ context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelError {
+		h.n.Add(1)
+	}
+	return nil
+}
+func (h *errorCounter) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *errorCounter) WithGroup(string) slog.Handler      { return h }
+
+func TestApplyLoopRetriesARefusal(t *testing.T) {
+	current := configfile.NewCurrent(parseTenant(t, "racy"))
+	reg := prometheus.NewRegistry()
+	gauge := server.NewConfigErrorGauge(reg)
+	logs := &errorCounter{}
+	var attempts atomic.Int32
+	apply := func(context.Context, *configfile.File) error {
+		// The first three attempts lose a race; the fourth wins.
+		if attempts.Add(1) <= 3 {
+			return fmt.Errorf("store: tenant racy: %w", store.ErrManagedBy)
+		}
+		return nil
+	}
+	applied := make(chan string, 1)
+	go func() {
+		_ = applyLoop(t.Context(), current, apply, recordApplied(current, applied, nil), 5*time.Millisecond, gauge, slog.New(logs))
+	}()
+	select {
+	case <-applied:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("a refused snapshot was never retried (%d attempts)", attempts.Load())
+	}
+	if n := attempts.Load(); n != 4 {
+		t.Fatalf("attempts = %d, want 4", n)
+	}
+	if n := logs.n.Load(); n != 1 {
+		t.Fatalf("logged %d errors for one distinct refusal, want 1", n)
+	}
+	if v := applyStage(reg); v != 0 {
+		t.Fatalf("apply gauge after a successful retry = %v, want 0", v)
 	}
 }

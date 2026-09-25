@@ -424,18 +424,24 @@ func lead(
 			return nil
 		}
 		return enqueueMissingIndexes(ctx, st, queue, logger)
-	}, configErrors, logger)
+	}, refusedRetryInterval, configErrors, logger)
 }
+
+// refusedRetryInterval is how often the leader re-applies a configuration
+// the store refused. A refusal is expected to need a new configuration, but
+// one misclassified race must not leave the store stale until the next edit.
+const refusedRetryInterval = time.Minute
 
 // applyLoop applies current's snapshot, then each replacement, until ctx
 // ends, calling onApplied after each success. A snapshot the store refuses
 // for its content (store.IsConfigContentError) must not end leadership, or
 // every replica would crash-loop on it in turn: it is logged once per
 // distinct error and raised on the gauge, the last applied state stays, and
-// the loop waits for the next snapshot. Any other error is returned.
+// the loop waits for the next snapshot, retrying the refused one every
+// retry. Any other error is returned, which ends the process for a restart.
 func applyLoop(
 	ctx context.Context, current *configfile.Current, apply func(context.Context, *configfile.File) error,
-	onApplied func(context.Context) error, gauge *server.ConfigErrorGauge, logger *slog.Logger,
+	onApplied func(context.Context) error, retry time.Duration, gauge *server.ConfigErrorGauge, logger *slog.Logger,
 ) error {
 	applied, refused, logged := "", "", ""
 	for {
@@ -464,10 +470,16 @@ func applyLoop(
 				}
 			}
 		}
+		var retryC <-chan time.Time
+		if refused != "" {
+			retryC = time.After(retry)
+		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-changed:
+		case <-retryC:
+			refused = ""
 		}
 	}
 }

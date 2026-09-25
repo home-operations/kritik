@@ -17,7 +17,9 @@ func TestIsConfigContentError(t *testing.T) {
 	}{
 		{"nil", nil, false},
 		{"managed by another origin", fmt.Errorf("store: tenant x: %w", ErrManagedBy), true},
-		{"unique violation", fmt.Errorf("store: upsert: %w", &pgconn.PgError{Code: "23505"}), true},
+		{"unique violation, a concurrent insert", fmt.Errorf("store: upsert: %w", &pgconn.PgError{Code: "23505"}), false},
+		{"foreign key violation, a concurrent delete", &pgconn.PgError{Code: "23503"}, false},
+		{"not null violation", &pgconn.PgError{Code: "23502"}, true},
 		{"check violation", &pgconn.PgError{Code: "23514"}, true},
 		{"value too long", &pgconn.PgError{Code: "22001"}, true},
 		{"connection failure", &pgconn.PgError{Code: "08006"}, false},

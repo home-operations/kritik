@@ -22,8 +22,11 @@ var ErrManagedBy = errors.New("store: row is managed by another origin")
 
 // IsConfigContentError reports whether an ApplyConfig error was caused by
 // the configuration it was given rather than by the database: a row another
-// origin holds, or a value or constraint the schema rejects. Applying the
-// same configuration again fails the same way; only a new one can succeed.
+// origin holds, a value the schema cannot store (class 22), or a NOT NULL
+// (23502) or CHECK (23514) constraint it breaks. Those depend only on the
+// configuration. Unique (23505) and foreign-key (23503) violations are not
+// counted: ingest inserting a repository concurrently with ApplyConfig
+// raises one, and a retry succeeds.
 func IsConfigContentError(err error) bool {
 	if errors.Is(err, ErrManagedBy) {
 		return true
@@ -32,9 +35,7 @@ func IsConfigContentError(err error) bool {
 	if !ok {
 		return false
 	}
-	// Class 22 is a data exception, class 23 an integrity constraint
-	// violation.
-	return strings.HasPrefix(pgErr.Code, "22") || strings.HasPrefix(pgErr.Code, "23")
+	return strings.HasPrefix(pgErr.Code, "22") || pgErr.Code == "23502" || pgErr.Code == "23514"
 }
 
 // ApplyConfig upserts the file's tenants, installations and listed
