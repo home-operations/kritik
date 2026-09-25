@@ -345,3 +345,39 @@ func DeleteInvite(ctx context.Context, tx pgx.Tx, tenantID, id string) (Invite, 
 	}
 	return v, nil
 }
+
+// LockTenantAdmins serialises, until tx ends, every change that could take
+// away one of the tenant's admins, so two admins demoting each other at
+// once cannot both see the other as the admin who remains.
+func LockTenantAdmins(ctx context.Context, tx pgx.Tx, tenantID string) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('kritik:tenant-admins:' || $1, 0))`, tenantID); err != nil {
+		return fmt.Errorf("store: lock tenant admins: %w", err)
+	}
+	return nil
+}
+
+// IsMemberEmail reports whether an account whose verified email is email
+// already has access to the tenant, by any source.
+func IsMemberEmail(ctx context.Context, tx pgx.Tx, tenantID, email string) (bool, error) {
+	var ok bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM memberships m JOIN accounts a ON a.id = m.account_id
+		WHERE m.tenant_id = $1 AND a.email_verified AND lower(a.email) = lower($2))`, tenantID, email).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("store: member email: %w", err)
+	}
+	return ok, nil
+}
+
+// DeleteTenantAccess removes every membership of and pending invite to the
+// tenant. Tenant ids derive from slugs, so a tenant deleted and created
+// again under the same slug would otherwise inherit the old access.
+func DeleteTenantAccess(ctx context.Context, tx pgx.Tx, tenantID string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM memberships WHERE tenant_id = $1`, tenantID); err != nil {
+		return fmt.Errorf("store: delete tenant access: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM invites WHERE tenant_id = $1 AND accepted_at IS NULL`, tenantID); err != nil {
+		return fmt.Errorf("store: delete tenant access: %w", err)
+	}
+	return nil
+}
