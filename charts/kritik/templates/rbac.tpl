@@ -1,9 +1,6 @@
 {{- if and .Values.rbac.create (include "kritik.hasWorker" .) }}
-# The worker creates runner Jobs in its own namespace, each with a
-# job-scoped Secret it creates and hands to the Job, and reads their pods
-# and logs; nothing cluster-wide, nothing else. Listing Secrets lets the
-# leader find run Secrets a dead worker left without an owning Job; a Role
-# cannot narrow list by label, so it reaches every Secret in the namespace.
+# The worker creates runner Jobs in its own namespace and reads their pods
+# and logs; nothing cluster-wide, nothing else.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -21,9 +18,13 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+  # One Secret per runner Job carries that run's credentials, owned by the
+  # Job. No get or list: the worker writes them and never reads any; the
+  # leader deletes one a dead worker left unowned by name, from the run's
+  # database row.
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["create", "list", "patch", "delete"]
+    verbs: ["create", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

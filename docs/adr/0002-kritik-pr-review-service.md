@@ -727,8 +727,9 @@ environment, and makes the Job its owner once created, so the TTL that
 removes the Job removes the Secret. The token never appears in the Job
 spec, which anyone allowed to read Jobs could read. ADR-0003 §2.9 extends
 this Secret into the run's job-scoped Secret (the job document and, in
-agentic mode, the model key beside the token) and gives the worker Role
-`list` on Secrets so the leader can sweep ones no Job owns.
+agentic mode, the model key beside the token), and has the leader delete
+one no Job owns by name, from the run's row, so the worker Role still has
+neither `get` nor `list` on Secrets.
 
 **A Job never outlives its queue job.** River bounds every job with a
 timeout, one minute by default, and cancels its context past it. Each

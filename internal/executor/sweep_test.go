@@ -1,7 +1,9 @@
 package executor
 
 import (
+	"context"
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -10,56 +12,123 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 )
 
-func TestSweepSecrets(t *testing.T) {
-	old := metav1.NewTime(time.Now().Add(-time.Hour))
-	fresh := metav1.NewTime(time.Now().Add(-time.Minute))
-	runnerLabel := map[string]string{"kritik.home-operations.com/role": "runner"}
-	owned := []metav1.OwnerReference{{APIVersion: "batch/v1", Kind: "Job", Name: "kritik-run-owned", UID: "u1"}}
-	secret := func(name string, created metav1.Time, labels map[string]string, owners []metav1.OwnerReference) *corev1.Secret {
-		return &corev1.Secret{
-			Name: name, Namespace: "kritik", CreationTimestamp: created, Labels: labels, OwnerReferences: owners,
-		}
+const (
+	runA = "aaaaaaaa-0000-0000-0000-000000000000"
+	runB = "bbbbbbbb-0000-0000-0000-000000000000"
+	runC = "cccccccc-0000-0000-0000-000000000000"
+)
+
+// fakeRunStore hands out each tenant's pending runs and records the marks.
+type fakeRunStore struct {
+	pending map[string][]string
+	marked  map[string][]string
+	listErr error
+}
+
+func (f *fakeRunStore) RunSecretsToSweep(_ context.Context, tenantID string, settle, abandoned time.Duration, _ int) ([]string, error) {
+	if settle != RunSecretSettle || abandoned != RunSecretAbandoned {
+		return nil, errors.New("unexpected sweep bounds")
 	}
-	client := fake.NewSimpleClientset(
-		secret("kritik-run-orphan", old, runnerLabel, nil),
-		secret("kritik-run-owned", old, runnerLabel, owned),
-		secret("kritik-run-fresh", fresh, runnerLabel, nil),
-		secret("kritik-postgres-runner", old, nil, nil),
-	)
-	n, err := newKube(client).SweepSecrets(t.Context(), OrphanSecretAge)
-	if err != nil || n != 1 {
-		t.Fatalf("SweepSecrets = %d, %v", n, err)
-	}
+	return f.pending[tenantID], f.listErr
+}
+
+func (f *fakeRunStore) MarkRunSecretsSwept(_ context.Context, tenantID string, ids []string) error {
+	f.marked[tenantID] = append(f.marked[tenantID], ids...)
+	return nil
+}
+
+func runSecret(runID string) *corev1.Secret {
+	return &corev1.Secret{Name: jobName(runID), Namespace: "kritik"}
+}
+
+func secretNames(t *testing.T, client *fake.Clientset) []string {
+	t.Helper()
 	list, err := client.CoreV1().Secrets("kritik").List(t.Context(), metav1.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	left := make([]string, 0, len(list.Items))
+	names := make([]string, 0, len(list.Items))
 	for _, s := range list.Items {
-		left = append(left, s.Name)
+		names = append(names, s.Name)
 	}
-	slices.Sort(left)
-	if want := []string{"kritik-postgres-runner", "kritik-run-fresh", "kritik-run-owned"}; !slices.Equal(left, want) {
-		t.Fatalf("left = %v, want %v", left, want)
+	slices.Sort(names)
+	return names
+}
+
+func TestDeleteRunSecret(t *testing.T) {
+	tests := []struct {
+		name    string
+		objects []runtime.Object
+		failure error
+		wantErr bool
+	}{
+		{name: "present", objects: []runtime.Object{runSecret(runA)}},
+		{name: "already gone", objects: nil},
+		{name: "api failure", objects: []runtime.Object{runSecret(runA)}, failure: apierrors.NewForbidden(corev1.Resource("secrets"), "x", errors.New("no")), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewClientset(tt.objects...)
+			if tt.failure != nil {
+				client.PrependReactor("delete", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, tt.failure
+				})
+			}
+			k := newKube(client)
+			for range 2 {
+				if err := k.DeleteRunSecret(t.Context(), runA); (err != nil) != tt.wantErr {
+					t.Fatalf("DeleteRunSecret = %v, wantErr %v", err, tt.wantErr)
+				}
+			}
+			if tt.failure == nil && len(secretNames(t, client)) != 0 {
+				t.Fatalf("secret left behind: %v", secretNames(t, client))
+			}
+		})
 	}
 }
 
-func TestSweepSecretsToleratesALostRace(t *testing.T) {
-	old := metav1.NewTime(time.Now().Add(-time.Hour))
-	client := fake.NewSimpleClientset(&corev1.Secret{
-		Name: "kritik-run-raced", Namespace: "kritik", CreationTimestamp: old,
-		Labels: map[string]string{"kritik.home-operations.com/role": "runner"},
+func TestSweepRunSecrets(t *testing.T) {
+	client := fake.NewClientset(runSecret(runA), runSecret(runC), &corev1.Secret{Name: "kritik-postgres-runner", Namespace: "kritik"})
+	st := &fakeRunStore{
+		pending: map[string][]string{"alpha": {runA, runB}, "beta": {runC}},
+		marked:  map[string][]string{},
+	}
+	n, err := newKube(client).SweepRunSecrets(t.Context(), st, []string{"alpha", "beta"})
+	if err != nil || n != 3 {
+		t.Fatalf("SweepRunSecrets = %d, %v", n, err)
+	}
+	// The sweep reads no Secret: the worker's Role grants neither get nor list.
+	for _, a := range client.Actions() {
+		if a.GetResource().Resource == "secrets" && a.GetVerb() != "delete" {
+			t.Fatalf("sweep issued %s on secrets", a.GetVerb())
+		}
+	}
+	if want := map[string][]string{"alpha": {runA, runB}, "beta": {runC}}; !maps.EqualFunc(st.marked, want, slices.Equal) {
+		t.Fatalf("marked = %v, want %v", st.marked, want)
+	}
+	if got, want := secretNames(t, client), []string{"kritik-postgres-runner"}; !slices.Equal(got, want) {
+		t.Fatalf("left = %v, want %v", got, want)
+	}
+}
+
+func TestSweepRunSecretsMarksOnlyDeleted(t *testing.T) {
+	client := fake.NewClientset(runSecret(runA), runSecret(runB))
+	client.PrependReactor("delete", "secrets", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.(k8stesting.DeleteAction).GetName() == jobName(runB) {
+			return true, nil, errors.New("apiserver unavailable")
+		}
+		return false, nil, nil
 	})
-	// The owner reference lands between the list and the delete.
-	client.PrependReactor("delete", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, apierrors.NewConflict(schema.GroupResource{Resource: "secrets"}, "kritik-run-raced", errors.New("precondition failed"))
-	})
-	if n, err := newKube(client).SweepSecrets(t.Context(), OrphanSecretAge); err != nil || n != 0 {
-		t.Fatalf("SweepSecrets = %d, %v", n, err)
+	st := &fakeRunStore{pending: map[string][]string{"alpha": {runA, runB}}, marked: map[string][]string{}}
+	n, err := newKube(client).SweepRunSecrets(t.Context(), st, []string{"alpha"})
+	if err == nil || n != 1 {
+		t.Fatalf("SweepRunSecrets = %d, %v; want 1 and an error", n, err)
+	}
+	if got := st.marked["alpha"]; !slices.Equal(got, []string{runA}) {
+		t.Fatalf("marked = %v, want only the deleted run", got)
 	}
 }

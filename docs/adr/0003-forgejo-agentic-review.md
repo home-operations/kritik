@@ -166,8 +166,9 @@ each tenant its own key with a spending limit, and on Forgejo a read-only
 `gitToken` (§2.1), since the git token reaches the same pod.
 
 Runner Jobs run in the worker's namespace, and the worker's Role can create,
-list (which returns Secret data), patch and delete every Secret in it, which
-a Role cannot narrow to the run Secrets it names only at runtime. kritik should therefore get a namespace
+patch and delete every Secret in it, which a Role cannot narrow to the run
+Secrets it names only at runtime. It has no `get` or `list`: the worker
+writes Secrets and never reads any. kritik should therefore get a namespace
 of its own, holding no Secrets but its own.
 
 ### 2.7 Incremental re-review
@@ -223,8 +224,15 @@ results reported back.
   deletes it with the Job. The worker creates the Secret, then the Job, then
   sets the Secret's owner reference; a failure deletes the Secret. A worker
   that dies between the first and last step leaves a Secret no Job owns, so
-  the leader deletes runner-labelled Secrets without an owner reference once
-  they are 15 minutes old. That is why the worker's Role can list Secrets.
+  the leader sweeps from the database rather than the API server: for each
+  configured tenant, under that tenant's row-level security, it takes the
+  `runner_runs` rows older than 15 minutes whose `secret_swept_at` is unset
+  and that either have `finished_at` or are older than the three-hour job
+  cap (a worker that died never records an end, and no Job it started can
+  outlive its deadline by then), deletes Secret `kritik-run-<id8>` by name,
+  treating NotFound as done, and stamps `secret_swept_at`. A row whose
+  delete failed is left for the next pass. The sweep never lists or reads a
+  Secret, so the worker's Role has no `get` or `list` on them.
   The worker masks those values out of the log tail it stores.
 - **Heartbeat.** The runner stamps `runner_runs.heartbeat_at` while it
   works. The worker treats a run whose heartbeat is older than 90 seconds

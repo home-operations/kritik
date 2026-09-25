@@ -361,8 +361,8 @@ func openStore(ctx context.Context, opts store.Options, logger *slog.Logger) (*s
 	}
 }
 
-// secretSweepInterval is how often the leader looks for orphaned run
-// Secrets.
+// secretSweepInterval is how often the leader deletes the Secrets of runs
+// that no longer need one.
 const secretSweepInterval = 5 * time.Minute
 
 // lead runs for as long as this replica holds the leader lock: migrate,
@@ -391,9 +391,18 @@ func lead(
 			Logger: logger, Metrics: m,
 		}).Run(pollCtx)
 	}()
-	// So is sweeping run Secrets a dead worker left without an owner.
+	// So is deleting, by name, run Secrets a dead worker left without an
+	// owner. Like the poller it walks the configured tenants, each under
+	// its own row-level security scope.
 	if sweeper != nil {
-		go sweeper.RunSecretSweeper(pollCtx, secretSweepInterval)
+		go sweeper.RunSecretSweeper(pollCtx, st, func() []string {
+			tenants := current.Get().Tenants
+			ids := make([]string, 0, len(tenants))
+			for i := range tenants {
+				ids = append(ids, tenants[i].ID())
+			}
+			return ids
+		}, secretSweepInterval)
 	}
 	applied := ""
 	for {

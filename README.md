@@ -72,8 +72,8 @@ optionally an embedder under `embedding` for the index. `roles.all` runs the
 single-process topology; `roles.ingest` and `roles.worker` split it.
 
 Two security notes. Install kritik into a namespace of its own: runner Jobs
-run in the release namespace, and the worker's Role can create, list (and
-so read), patch and delete every Secret there. And give a Forgejo
+run in the release namespace, and the worker's Role can create, patch and
+delete every Secret there, though it can never get or list one. And give a Forgejo
 installation a read-only `gitToken` beside its `token`: runners fetch with
 `gitToken` when it is set, and otherwise with `token`, which can write to
 the forge, inside the pod that reads untrusted pull request content.

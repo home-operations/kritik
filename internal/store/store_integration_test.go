@@ -274,6 +274,7 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 		{name: "tenant", stmt: `UPDATE runner_runs SET tenant_id = '` + beta + `' WHERE id = $1`},
 		{name: "log tail", stmt: `UPDATE runner_runs SET log_tail = 'forged' WHERE id = $1`},
 		{name: "exit code", stmt: `UPDATE runner_runs SET exit_code = 0 WHERE id = $1`},
+		{name: "secret swept", stmt: `UPDATE runner_runs SET secret_swept_at = now() WHERE id = $1`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -298,6 +299,58 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 		return tx.QueryRow(ctx, `SELECT tenant_id FROM runner_runs WHERE id = $1`, runID).Scan(&tenant)
 	}); err != nil || tenant != alpha {
 		t.Fatalf("run tenant = %q, %v", tenant, err)
+	}
+}
+
+func TestRunSecretsToSweep(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha, beta := tenantID(t, s, "alpha"), tenantID(t, s, "beta")
+	insert := func(tenant, age string, finished, swept bool) string {
+		t.Helper()
+		var id string
+		if err := s.WithTenant(ctx, tenant, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, kind, created_at, finished_at, secret_swept_at)
+				VALUES ($1, 'index', now() - $2::interval,
+					CASE WHEN $3 THEN now() END, CASE WHEN $4 THEN now() END) RETURNING id`,
+				tenant, age, finished, swept).Scan(&id)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	finishedOld := insert(alpha, "20 minutes", true, false)
+	abandoned := insert(alpha, "4 hours", false, false)
+	insert(alpha, "5 minutes", true, false)   // too fresh
+	insert(alpha, "20 minutes", false, false) // may still be running
+	insert(alpha, "20 minutes", true, true)   // already swept
+	betaRun := insert(beta, "20 minutes", true, false)
+
+	got, err := s.RunSecretsToSweep(ctx, alpha, 15*time.Minute, 3*time.Hour, 100)
+	if err != nil {
+		t.Fatalf("RunSecretsToSweep: %v", err)
+	}
+	if want := []string{abandoned, finishedOld}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("alpha runs to sweep = %v, want %v (oldest first, none of beta's)", got, want)
+	}
+	if limited, err := s.RunSecretsToSweep(ctx, alpha, 15*time.Minute, 3*time.Hour, 1); err != nil || len(limited) != 1 || limited[0] != abandoned {
+		t.Fatalf("limited sweep = %v, %v; want the oldest run only", limited, err)
+	}
+	// Marking is idempotent and scoped to the tenant: beta's run is not
+	// visible from alpha, so marking it there changes nothing.
+	for range 2 {
+		if err := s.MarkRunSecretsSwept(ctx, alpha, append(got, betaRun)); err != nil {
+			t.Fatalf("MarkRunSecretsSwept: %v", err)
+		}
+	}
+	if left, err := s.RunSecretsToSweep(ctx, alpha, 15*time.Minute, 3*time.Hour, 100); err != nil || len(left) != 0 {
+		t.Fatalf("alpha after marking = %v, %v; want none", left, err)
+	}
+	if left, err := s.RunSecretsToSweep(ctx, beta, 15*time.Minute, 3*time.Hour, 100); err != nil || len(left) != 1 || left[0] != betaRun {
+		t.Fatalf("beta after alpha's marking = %v, %v; want its own run", left, err)
 	}
 }
 

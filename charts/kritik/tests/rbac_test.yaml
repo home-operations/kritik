@@ -27,7 +27,7 @@ tests:
           content:
             apiGroups: [""]
             resources: ["secrets"]
-            verbs: ["create", "list", "patch", "delete"]
+            verbs: ["create", "patch", "delete"]
         template: rbac.tpl
         documentIndex: 0
       - hasDocuments:
