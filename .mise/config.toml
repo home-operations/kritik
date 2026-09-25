@@ -132,7 +132,7 @@ description = "Build the image and push it to ttl.sh under a fresh name (24h TTL
 run = """
 set -e
 image="ttl.sh/kritik-$(id -un)-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n'):24h"
-docker build --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" -t "$image" .
+docker build --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" --build-arg NODE_VERSION="$(mise config get -f .mise/config.toml tools.node)" --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" -t "$image" .
 docker push "$image"
 mkdir -p .private
 echo "$image" > .private/image
