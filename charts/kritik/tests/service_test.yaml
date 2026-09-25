@@ -58,3 +58,44 @@ tests:
           path: metadata.name
           value: RELEASE-NAME-kritik-metrics
         documentIndex: 1
+
+  - it: renders a dashboard Service for the web role
+    set:
+      roles.all.enabled: false
+      roles.web.enabled: true
+      web.url: https://dash.example.com
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-web
+        documentIndex: 0
+      - equal:
+          path: spec.ports[0].port
+          value: 8083
+        documentIndex: 0
+      - equal:
+          path: spec.ports[0].targetPort
+          value: web
+        documentIndex: 0
+      - equal:
+          path: spec.selector["kritik.home-operations.com/web"]
+          value: "true"
+        documentIndex: 0
+
+  - it: renders the dashboard Service for the all role when web.url is set
+    set:
+      web.url: https://dash.example.com
+    asserts:
+      - hasDocuments:
+          count: 4
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-web
+        documentIndex: 2
+
+  - it: leaves the dashboard Service out when web.url is unset
+    asserts:
+      - hasDocuments:
+          count: 3

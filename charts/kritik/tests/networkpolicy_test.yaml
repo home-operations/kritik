@@ -61,6 +61,29 @@ tests:
           value: 8082
         documentIndex: 1
 
+  - it: leaves the dashboard port out of ingress when no role serves the web UI
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - notContains:
+          path: spec.ingress[0].ports
+          content:
+            port: 8083
+            protocol: TCP
+        documentIndex: 0
+
+  - it: allows ingress to the dashboard port when a role serves the web UI
+    set:
+      networkPolicy.enabled: true
+      web.url: https://dash.example.com
+    asserts:
+      - contains:
+          path: spec.ingress[0].ports
+          content:
+            port: 8083
+            protocol: TCP
+        documentIndex: 0
+
   - it: gives runners direct egress on the egress ports when the gateway is disabled
     set:
       networkPolicy.enabled: true
