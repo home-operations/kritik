@@ -12,18 +12,20 @@ import (
 )
 
 // ErrManagedBy is an ApplyConfig write that would take over a live row
-// another origin manages: a file tenant over a dashboard one or the reverse.
-// Merging the dashboard into the file rejects such a collision first, so
-// this guards the database rather than being expected.
+// another origin manages. ApplyConfig disables every row whose origin no
+// longer declares it before upserting, and merging the dashboard into the
+// file rejects a slug or name both declare, so this guards the database
+// rather than being expected.
 var ErrManagedBy = errors.New("store: row is managed by another origin")
 
 // ApplyConfig upserts the file's tenants, installations and listed
 // repositories as rows managed by each tenant's origin, disables file and
 // dashboard rows the file no longer declares, and records the applied hash.
-// A disabled row may be taken over by another origin; an enabled one never
-// is (ErrManagedBy). It runs as the owner in one
-// transaction, so a replica reading config_state never sees a half-applied
-// file. Only the leader calls it.
+// A row declared again by another origin (a file tenant removed and a
+// dashboard tenant of the same slug added, or the reverse) is disabled and
+// then taken over; an enabled row is never taken over (ErrManagedBy). It
+// runs as the owner in one transaction, so a replica reading config_state
+// never sees a half-applied file. Only the leader calls it.
 func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader string) error {
 	if s.owner == nil {
 		return errors.New("store: applying configuration needs the owner DSN")
@@ -34,11 +36,11 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	seenTenants := make([]string, 0, len(f.Tenants))
-	seenInstallations := []string{}
+	if err := disableUndeclared(ctx, tx, f); err != nil {
+		return err
+	}
 	for i := range f.Tenants {
 		t := &f.Tenants[i]
-		seenTenants = append(seenTenants, t.Slug)
 		tenantID, err := upsertTenant(ctx, tx, t)
 		if err != nil {
 			return err
@@ -46,7 +48,6 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 		installationIDs := map[string]string{}
 		for j := range t.Installations {
 			in := &t.Installations[j]
-			seenInstallations = append(seenInstallations, in.Name)
 			id, err := upsertInstallation(ctx, tx, tenantID, t.Origin(), in)
 			if err != nil {
 				return err
@@ -60,22 +61,6 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 				return err
 			}
 		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-			WHERE tenant_id = $1 AND managed_by IN ('file', 'dashboard') AND enabled AND name <> ALL($2)`,
-			tenantID, repoNames(t)); err != nil {
-			return fmt.Errorf("store: disable removed repositories: %w", err)
-		}
-	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE installations SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-		WHERE managed_by IN ('file', 'dashboard') AND enabled AND name <> ALL($1)`, seenInstallations); err != nil {
-		return fmt.Errorf("store: disable removed installations: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE tenants SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-		WHERE managed_by IN ('file', 'dashboard') AND enabled AND slug <> ALL($1)`, seenTenants); err != nil {
-		return fmt.Errorf("store: disable removed tenants: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO config_state (id, applied_hash, applied_at, leader) VALUES (1, $1, now(), $2)
@@ -85,6 +70,52 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("store: commit config apply: %w", err)
+	}
+	return nil
+}
+
+// disableUndeclared disables every file or dashboard tenant and installation
+// f does not declare with that same origin, then every file or dashboard
+// repository under a disabled tenant or installation or no longer listed by
+// its tenant. The upserts that follow re-enable what f still declares.
+// Forge-discovered repositories are left alone.
+func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error {
+	slugs, slugOrigins := make([]string, 0, len(f.Tenants)), make([]string, 0, len(f.Tenants))
+	var names, nameOrigins []string
+	for i := range f.Tenants {
+		t := &f.Tenants[i]
+		slugs, slugOrigins = append(slugs, t.Slug), append(slugOrigins, string(t.Origin()))
+		for j := range t.Installations {
+			names, nameOrigins = append(names, t.Installations[j].Name), append(nameOrigins, string(t.Origin()))
+		}
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE tenants SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
+		WHERE managed_by IN ('file', 'dashboard') AND enabled
+			AND (slug, managed_by) NOT IN (SELECT * FROM unnest($1::text[], $2::text[]))`, slugs, slugOrigins); err != nil {
+		return fmt.Errorf("store: disable removed tenants: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE installations SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
+		WHERE managed_by IN ('file', 'dashboard') AND enabled
+			AND (name, managed_by) NOT IN (SELECT * FROM unnest($1::text[], $2::text[]))`, names, nameOrigins); err != nil {
+		return fmt.Errorf("store: disable removed installations: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE repositories r SET enabled = false, disabled_at = coalesce(r.disabled_at, now()), updated_at = now()
+		WHERE r.managed_by IN ('file', 'dashboard') AND r.enabled AND (
+			EXISTS (SELECT 1 FROM tenants t WHERE t.id = r.tenant_id AND NOT t.enabled)
+			OR EXISTS (SELECT 1 FROM installations i WHERE i.id = r.installation_id AND NOT i.enabled))`); err != nil {
+		return fmt.Errorf("store: disable repositories of removed tenants and installations: %w", err)
+	}
+	for i := range f.Tenants {
+		t := &f.Tenants[i]
+		if _, err := tx.Exec(ctx, `
+			UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
+			WHERE tenant_id = $1 AND managed_by IN ('file', 'dashboard') AND enabled AND name <> ALL($2)`,
+			t.ID(), repoNames(t)); err != nil {
+			return fmt.Errorf("store: disable removed repositories: %w", err)
+		}
 	}
 	return nil
 }

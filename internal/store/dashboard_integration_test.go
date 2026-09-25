@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -196,25 +198,6 @@ func TestApplyConfigManagedBy(t *testing.T) {
 		}
 	})
 
-	t.Run("a file tenant never takes over a live dashboard one", func(t *testing.T) {
-		clash := parse(t, twoTenants+`
-  - slug: gamma
-    installations:
-      - name: gamma-file-bot
-        forge: forgejo
-        account: gamma
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
-`)
-		err := s.ApplyConfig(ctx, clash, "test")
-		if !errors.Is(err, ErrManagedBy) || !strings.Contains(err.Error(), "managed by dashboard") {
-			t.Fatalf("ApplyConfig = %v, want ErrManagedBy naming the dashboard", err)
-		}
-		if by, on := row(t, tenantQ); by != "dashboard" || !on {
-			t.Fatalf("gamma after refused apply: managed_by=%s enabled=%v", by, on)
-		}
-	})
-
 	t.Run("a deleted dashboard tenant is disabled", func(t *testing.T) {
 		gone, err := configfile.Merge(merged, nil, plainOpener{})
 		if err != nil {
@@ -241,6 +224,76 @@ func TestApplyConfigManagedBy(t *testing.T) {
 		}
 	})
 	if err := s.ApplyConfig(ctx, file, "test"); err != nil {
+		t.Fatalf("ApplyConfig cleanup: %v", err)
+	}
+}
+
+// swapFileTenant is a file tenant declaring what dashboardSpec("swap",
+// "swap-bot") does: the same slug, installation and repository.
+const swapFileTenant = `
+  - slug: swap
+    installations:
+      - name: swap-bot
+        forge: forgejo
+        account: swap
+        token: { env: KRITIK_TEST_TOKEN }
+        webhookSecret: { env: KRITIK_TEST_TOKEN }
+    repositories:
+      - name: swap/one
+`
+
+func TestApplyConfigCrossOriginReAdd(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	base := parse(t, twoTenants)
+	withFile := parse(t, twoTenants+swapFileTenant)
+	withDashboard, err := configfile.Merge(base, []configfile.DashboardTenant{
+		{Slug: "swap", Spec: dashboardSpec("swap", "swap-bot"), Revision: 1},
+	}, plainOpener{})
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	states := func(t *testing.T) []string {
+		t.Helper()
+		var tb, ib, rb string
+		var te, ie, re bool
+		err := s.owner.QueryRow(ctx, `
+			SELECT t.managed_by, t.enabled, i.managed_by, i.enabled, r.managed_by, r.enabled
+			FROM tenants t JOIN installations i ON i.tenant_id = t.id JOIN repositories r ON r.installation_id = i.id
+			WHERE t.slug = 'swap' AND i.name = 'swap-bot' AND r.name = 'swap/one'`).Scan(&tb, &te, &ib, &ie, &rb, &re)
+		if err != nil {
+			t.Fatalf("read swap rows: %v", err)
+		}
+		return []string{tb + ":" + strconv.FormatBool(te), ib + ":" + strconv.FormatBool(ie), rb + ":" + strconv.FormatBool(re)}
+	}
+	want := func(origin string, enabled bool) []string {
+		v := origin + ":" + strconv.FormatBool(enabled)
+		return []string{v, v, v}
+	}
+	tests := []struct {
+		name  string
+		steps []*configfile.File
+		want  []string
+	}{
+		{"file to dashboard, one apply apart", []*configfile.File{withFile, base, withDashboard}, want("dashboard", true)},
+		{"file to dashboard in the same apply", []*configfile.File{withFile, withDashboard}, want("dashboard", true)},
+		{"dashboard to file, one apply apart", []*configfile.File{withDashboard, base, withFile}, want("file", true)},
+		{"dashboard to file in the same apply", []*configfile.File{withDashboard, withFile}, want("file", true)},
+		{"removing the tenant disables its repositories", []*configfile.File{withDashboard, base}, want("dashboard", false)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for i, f := range tt.steps {
+				if err := s.ApplyConfig(ctx, f, "test"); err != nil {
+					t.Fatalf("step %d: ApplyConfig: %v", i, err)
+				}
+			}
+			if got := states(t); !slices.Equal(got, tt.want) {
+				t.Fatalf("swap tenant, installation, repository = %v, want %v", got, tt.want)
+			}
+		})
+	}
+	if err := s.ApplyConfig(ctx, base, "test"); err != nil {
 		t.Fatalf("ApplyConfig cleanup: %v", err)
 	}
 }
