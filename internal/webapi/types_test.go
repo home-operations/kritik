@@ -20,8 +20,6 @@ import (
 
 var update = flag.Bool("update", false, "rewrite testdata/*.golden.json")
 
-//go:fix inline
-
 var (
 	t0 = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	t1 = t0.Add(90 * time.Second)

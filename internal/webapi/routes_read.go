@@ -266,7 +266,7 @@ func repoSettings(s configfile.Settings) RepoSettings {
 	}
 	return RepoSettings{
 		Enabled: s.Enabled, Mode: s.Mode, Models: models(s.Models), Filter: filterSource(s), Forks: s.Forks,
-		Ignore: slices.Clone(s.Ignore), SettleSeconds: int64(s.Settle.Seconds()), MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
+		Ignore: nonNil(slices.Clone(s.Ignore)), SettleSeconds: int64(s.Settle.Seconds()), MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
 		Review: ReviewBlock{Instructions: instructions, RequireSuggestedFix: s.Review.RequireSuggestedFix},
 		Agent: AgentLimits{
 			MaxSteps: s.Agent.MaxSteps, MaxToolOutputBytes: s.Agent.MaxToolOutputBytes, MaxTokens: s.Agent.MaxTokens,
