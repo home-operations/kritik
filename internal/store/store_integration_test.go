@@ -496,6 +496,7 @@ func TestGatewayTokens(t *testing.T) {
 	if got, err := s.LookupGatewayToken(ctx, token); err != nil || got.Spent != 600 {
 		t.Fatalf("spent = %d, %v", got.Spent, err)
 	}
+	checkReservations(t, s, token)
 	for _, bad := range []string{"", "krk_", token[:len(token)-1] + "0", "sk-" + token[4:]} {
 		if _, err := s.LookupGatewayToken(ctx, bad); !errors.Is(err, ErrGatewayToken) {
 			t.Fatalf("lookup %q = %v, want ErrGatewayToken", bad, err)
@@ -508,6 +509,9 @@ func TestGatewayTokens(t *testing.T) {
 	}
 	if _, err := s.LookupGatewayToken(ctx, expired); !errors.Is(err, ErrGatewayToken) {
 		t.Fatalf("expired token = %v", err)
+	}
+	if ok, err := s.ReserveGatewayTokens(ctx, expired, 1); err != nil || ok {
+		t.Fatalf("reserve on an expired token = %v, %v", ok, err)
 	}
 	other := grant()
 	live, err := s.MintGatewayToken(ctx, other, time.Now().Add(time.Hour))
@@ -532,5 +536,32 @@ func TestGatewayTokens(t *testing.T) {
 	// The suites share one database: leave no live token behind.
 	if err := s.RevokeGatewayTokens(ctx, other.RunID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// checkReservations reserves against a token with 600 of its 1000 tokens
+// spent: a reservation succeeds while the run is under its budget, whatever
+// its size, and not once the run is at or over it; a refund brings it back.
+func checkReservations(t *testing.T, s *Store, token string) {
+	t.Helper()
+	ctx := context.Background()
+	for _, tt := range []struct {
+		tokens int64
+		ok     bool
+		spent  int64
+	}{{300, true, 900}, {5000, true, 5900}, {1, false, 5900}} {
+		ok, err := s.ReserveGatewayTokens(ctx, token, tt.tokens)
+		if err != nil || ok != tt.ok {
+			t.Fatalf("reserve %d = %v, %v; want %v", tt.tokens, ok, err, tt.ok)
+		}
+		if got, _ := s.LookupGatewayToken(ctx, token); got.Spent != tt.spent {
+			t.Fatalf("spent after reserving %d = %d, want %d", tt.tokens, got.Spent, tt.spent)
+		}
+	}
+	if err := s.ChargeGatewayToken(ctx, token, -5000); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.ReserveGatewayTokens(ctx, token, 1); err != nil || !ok {
+		t.Fatalf("reserve after a refund = %v, %v", ok, err)
 	}
 }

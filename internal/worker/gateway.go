@@ -6,36 +6,44 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// StepperSource resolves a configured provider to its model adapter.
-type StepperSource interface {
-	Stepper(f *configfile.File, name string) (model.Stepper, error)
-}
-
 // Gateway serves the worker's gateway listener: the egress proxy runner
 // pods reach the outside through (ADR-0008), and the model endpoint an
 // agentic runner calls with its run token (ADR-0004). No provider key
-// enters a runner pod: the gateway checks the run's budget and the
-// tenant's monthly cap before each step, answers it through the tenant's
-// provider, and records what it spent where the caps see it.
+// enters a runner pod: the gateway reserves each step against the run's
+// budget and checks the tenant's monthly cap, answers it through the
+// tenant's provider, and records what it spent where the caps see it.
 type Gateway struct {
 	Base
 	// Proxy serves CONNECT and absolute-URI requests.
 	Proxy    http.Handler
-	Steppers StepperSource
+	Steppers *Completers
 }
 
 // maxGatewayBody bounds one step's request: the whole conversation so far,
 // every tool output in it capped.
 const maxGatewayBody = 16 << 20
+
+// GatewayDrain is how long a stopping worker lets model steps in flight
+// finish. A step it cuts is paid for and not recorded, and the runner's
+// retry is paid for again, so it covers a long step rather than the usual
+// few seconds; the chart's grace period outlasts it.
+const GatewayDrain = 2 * time.Minute
+
+// maxStepOutput caps the answer to one step, whatever the runner asks: the
+// agent loop's own cap.
+var maxStepOutput = agent.Limits{}.WithDefaults().MaxOutputTokensPerStep
 
 // ServeHTTP implements http.Handler.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -49,11 +57,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// refuse answers a step with an error the runner does not retry: the
-// gateway's own adapter has already retried the provider.
+// refuse answers a step with an error. Only a 500, the gateway's own
+// trouble reaching its database, is worth the runner's retry; every other
+// refusal is final: the provider was already retried, the budget is spent,
+// or the request is wrong.
 func refuse(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Should-Retry", "false")
+	if status != http.StatusInternalServerError {
+		w.Header().Set("X-Should-Retry", "false")
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write(model.EncodeChatError(code, message))
 }
@@ -72,8 +84,12 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxGatewayBody))
-	if err != nil {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		refuse(w, http.StatusRequestEntityTooLarge, "invalid_request", err.Error())
+		return
+	}
+	if err != nil {
+		refuse(w, http.StatusBadRequest, "invalid_request", "reading the request: "+err.Error())
 		return
 	}
 	req, err := model.DecodeChatRequest(body)
@@ -92,7 +108,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger := g.Logger.With("tenant", tenant.Slug, "run", short(grant.RunID))
-	capped, err := g.capped(ctx, file, tenant, grant)
+	capped, err := g.monthCapped(ctx, file, tenant)
 	if err != nil {
 		logger.Error("gateway: caps not read", "error", err)
 		refuse(w, http.StatusInternalServerError, "server_error", "the caps could not be checked")
@@ -116,23 +132,42 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	if fb := configfile.ModelRef(grant.Fallback); fb != "" && fb.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fb.Model()}
 	}
+	if req.MaxTokens <= 0 || req.MaxTokens > maxStepOutput {
+		req.MaxTokens = maxStepOutput
+	}
+	// The step is reserved before it runs, its prompt estimated at four
+	// characters a token of the request, so concurrent steps cannot all
+	// pass a budget one of them spends; its actual spend replaces the
+	// estimate once the provider answers.
+	reserved := int64(len(body))/4 + req.MaxTokens
+	ok, err := g.Store.ReserveGatewayTokens(ctx, token, reserved)
+	if err != nil {
+		logger.Error("gateway: step not reserved", "error", err)
+		refuse(w, http.StatusInternalServerError, "server_error", "the run's budget could not be checked")
+		return
+	}
+	if !ok {
+		reason := fmt.Sprintf("the run's budget of %d tokens is spent", grant.Budget)
+		logger.Info("gateway: step refused", "reason", reason)
+		refuse(w, http.StatusTooManyRequests, model.BudgetCode, reason)
+		return
+	}
 	resp, err := stepper.Step(ctx, req)
 	g.Metrics.ModelCall(tenant.Slug, grant.Model, roleReview, callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
 		resp.Usage.Output, resp.CostUSD)
+	if cerr := g.charge(ctx, grant, token, reserved, resp, err == nil); cerr != nil {
+		// A step that was answered is paid for either way; the run still
+		// gets the answer.
+		logger.Error("gateway: step not charged", "error", cerr)
+	}
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;
-		// it must not carry the key if the provider echoed it.
-		msg := err.Error()
-		if key := provider.APIKeyValue().Value(); key != "" {
-			msg = strings.ReplaceAll(msg, key, "***")
-		}
+		// it must not carry the key, or credentials in the provider's URL,
+		// if the provider or the SDK echoed them.
+		msg := maskProvider(err.Error(), provider)
 		logger.Warn("gateway: step failed", "error", msg)
 		refuse(w, http.StatusBadGateway, "upstream_error", msg)
 		return
-	}
-	if err := g.charge(ctx, grant, token, resp); err != nil {
-		// The answer is paid for either way; the run still gets it.
-		logger.Error("gateway: step not charged", "error", err)
 	}
 	logger.Debug("gateway: step", "model", resp.Model, "input_tokens", resp.Usage.Prompt(), "output_tokens", resp.Usage.Output,
 		"cost_usd", resp.CostUSD)
@@ -145,40 +180,64 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(out)
 }
 
-// capped says why the run may not take another step, or "": its budget is
-// spent, or the tenant's monthly token cap is.
-func (g *Gateway) capped(ctx context.Context, file *configfile.File, tenant *configfile.Tenant, grant store.GatewayGrant) (string, error) {
-	if grant.Spent >= grant.Budget {
-		return fmt.Sprintf("the run's budget of %d tokens is spent", grant.Budget), nil
-	}
+// monthCapped says why the tenant may not take another step this month,
+// or "".
+func (g *Gateway) monthCapped(ctx context.Context, file *configfile.File, tenant *configfile.Tenant) (string, error) {
 	limits := file.Settings(tenant, "").Limits
 	if limits.TokensPerMonth <= 0 {
 		return "", nil
 	}
-	u, err := readUsage(ctx, g.Store, tenant.ID())
+	var spent int64
+	err := g.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		var err error
+		spent, err = monthTokens(ctx, tx)
+		return err
+	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("worker: read month's tokens: %w", err)
 	}
-	if u.tokens >= limits.TokensPerMonth {
+	if spent >= limits.TokensPerMonth {
 		return fmt.Sprintf("tokensPerMonth (%d) reached", limits.TokensPerMonth), nil
 	}
 	return "", nil
 }
 
-// charge records a step's usage against the run's review, where the caps
-// count it, and against the run's budget.
-func (g *Gateway) charge(ctx context.Context, grant store.GatewayGrant, token string, resp model.StepResponse) error {
+// charge settles a step's reservation: an answered step's actual spend
+// replaces it and is recorded against the run's review, where the caps
+// count it; a failed step is refunded. The two writes are independent, so
+// a failed usage row still leaves the run's budget charged.
+func (g *Gateway) charge(
+	ctx context.Context, grant store.GatewayGrant, token string, reserved int64, resp model.StepResponse, answered bool,
+) error {
 	ctx = context.WithoutCancel(ctx)
-	err := g.Store.WithTenant(ctx, grant.TenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO usage
-			(tenant_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-			grant.TenantID, grant.RepositoryID, grant.ReviewID, roleReview, resp.Model, resp.Upstream,
-			resp.Usage.Prompt(), resp.Usage.Output, resp.CostUSD)
-		return err
-	})
-	if err != nil {
-		return fmt.Errorf("worker: insert gateway usage: %w", err)
+	if !answered {
+		return g.Store.ChargeGatewayToken(ctx, token, -reserved)
 	}
-	return g.Store.ChargeGatewayToken(ctx, token, resp.Usage.Prompt()+resp.Usage.Output)
+	spent := resp.Usage.Prompt() + resp.Usage.Output
+	budgetErr := g.Store.ChargeGatewayToken(ctx, token, spent-reserved)
+	usageErr := g.Store.WithTenant(ctx, grant.TenantID, func(tx pgx.Tx) error {
+		return insertUsage(ctx, tx, reviewUsage{
+			tenantID: grant.TenantID, repositoryID: grant.RepositoryID, reviewID: grant.ReviewID, role: roleReview, model: resp.Model,
+			upstream: resp.Upstream, input: resp.Usage.Prompt(), output: resp.Usage.Output, costUSD: resp.CostUSD,
+		})
+	})
+	return errors.Join(budgetErr, usageErr)
+}
+
+// maskProvider removes a provider's key, and any credentials in its base
+// URL, from text bound for a runner.
+func maskProvider(text string, p configfile.Provider) string {
+	secrets := []string{p.APIKeyValue().Value()}
+	if u, err := url.Parse(p.BaseURL); err == nil && u.User != nil {
+		secrets = append(secrets, u.User.String())
+		if pw, ok := u.User.Password(); ok {
+			secrets = append(secrets, pw)
+		}
+	}
+	for _, s := range secrets {
+		if s != "" {
+			text = strings.ReplaceAll(text, s, "***")
+		}
+	}
+	return text
 }

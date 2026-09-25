@@ -69,10 +69,15 @@ func (m *Management) Run(ctx context.Context) error {
 	return Serve(ctx, m.addr, m.Handler(), m.logger.With("listener", "management"))
 }
 
-// serve is the shared listen-and-drain loop for every kritik listener.
 // Serve runs h on addr until ctx is cancelled, then drains within
 // shutdownTimeout.
 func Serve(ctx context.Context, addr string, h http.Handler, logger *slog.Logger) error {
+	return ServeDrain(ctx, addr, h, shutdownTimeout, logger)
+}
+
+// ServeDrain is Serve with its own drain. Requests still in flight when it
+// runs out are cut: a stopping process is not failing.
+func ServeDrain(ctx context.Context, addr string, h http.Handler, drain time.Duration, logger *slog.Logger) error {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           h,
@@ -91,10 +96,11 @@ func Serve(ctx context.Context, addr string, h http.Handler, logger *slog.Logger
 		return fmt.Errorf("server: %w", err)
 	case <-ctx.Done():
 	}
-	drain, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	dctx, cancel := context.WithTimeout(context.Background(), drain)
 	defer cancel()
-	if err := srv.Shutdown(drain); err != nil {
-		return fmt.Errorf("server: shutdown: %w", err)
+	if err := srv.Shutdown(dctx); err != nil {
+		logger.Warn("requests cut at shutdown", "drain", drain, "error", err)
+		return srv.Close()
 	}
 	return nil
 }

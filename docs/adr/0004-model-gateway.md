@@ -167,12 +167,27 @@ differs from the text above:
   gateway's record of a step is its usage row, not an `agent_runs` timeline
   entry, since that row is the runner's to write once, at the end; the two
   agree to the token (checked live on a five-step review).
+- **Each step is reserved before it runs.** The gateway caps the answer at
+  the agent loop's own 8,192 tokens, whatever the request asks, and adds an
+  estimate of the step (the request at four characters a token, plus that
+  cap) to the run's spend in one update that succeeds only while the run is
+  under its budget; the actual spend replaces the estimate when the
+  provider answers, and a failed step is refunded. Parallel steps on one
+  token therefore overshoot the budget by at most one step, as the loop's
+  own check may, however they interleave. The monthly cap is checked before
+  each step from the usage table.
 - **A budget refusal ends the run as `budget`.** The gateway answers `429`
-  with code `budget_exhausted` and `X-Should-Retry: false`; the runner's
-  loop stops as its own budget check would, and the review ends incomplete.
-  Every other refusal also carries `X-Should-Retry: false`, since the
-  worker's adapter has already retried the provider, and a provider error
-  reaches the runner with the key masked out of it.
+  with code `budget_exhausted`; the runner's loop stops as its own budget
+  check would, and the review ends incomplete. Every refusal but a `500`
+  carries `X-Should-Retry: false`, since the worker's adapter has already
+  retried the provider or the request cannot succeed; a `500` is the
+  gateway's own trouble reaching its database, which a retry may get past.
+  A provider error reaches the runner with the key, and any credentials in
+  the provider's base URL, masked out of it.
+- **A stopping worker drains its steps.** The gateway lets steps in flight
+  finish for up to two minutes, since a step it cuts is paid for without
+  being recorded and the runner's retry is paid for again; the chart's
+  grace period is 150 seconds to fit it.
 - **`NO_PROXY` names the gateway.** Runner pods send everything through the
   forward proxy on the same port, so the gateway's own host is excepted,
   or a model call would arrive as a proxy request for a host the allowlist

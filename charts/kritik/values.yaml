@@ -352,8 +352,8 @@ readinessProbe:
     port: metrics
   periodSeconds: 10
 
-# -- Grace period for a clean shutdown; the worker stops taking jobs and lets running ones finish for up to 30s.
-terminationGracePeriodSeconds: 45
+# -- Grace period for a clean shutdown: the worker stops taking jobs and lets running ones finish for up to 30s, and its gateway lets model steps in flight finish for up to 2m.
+terminationGracePeriodSeconds: 150
 
 monitoring:
   serviceMonitor:

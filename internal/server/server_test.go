@@ -127,3 +127,48 @@ func TestServeDrainsOnCancel(t *testing.T) {
 		t.Fatal("serve did not return after cancel")
 	}
 }
+
+func TestServeDrainCutsWhatOutlastsIt(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+
+	started, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	slow := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- ServeDrain(ctx, addr, slow, 50*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		conn, err := net.Dial("tcp", addr)
+		if err == nil {
+			_ = conn.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("listener never came up")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	go func() { _, _ = http.Get("http://" + addr + "/") }()
+	<-started
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serve returned %v when the drain ran out", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serve did not return when the drain ran out")
+	}
+}
