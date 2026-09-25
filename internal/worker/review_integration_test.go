@@ -312,6 +312,15 @@ func testRepo(t *testing.T) (dir, base, head string) {
 	commit("other.go", "package main\n\nfunc c() {}\n", "other")
 	base = commit("main.go", "package main\n", "base")
 	head = commit("main.go", "package main\n\nfunc b() {}\n", "head")
+	// checkActions later resets the branch back to base and commits again to
+	// mint fresh heads (rerunHead, canceling, ...), which orphans head from
+	// every branch. A lightweight tag keeps it reachable so a later fetch of
+	// head (e.g. EnqueueReindex's BranchTip-resolved commit) still satisfies
+	// upload-pack's allowReachableSHA1InWant check instead of failing "not
+	// our ref".
+	if _, err := r.CreateTag("kritik-head", plumbing.NewHash(head), nil); err != nil {
+		t.Fatal(err)
+	}
 	return dir, base, head
 }
 
@@ -756,6 +765,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	t.Run("supervision ends a running review", func(t *testing.T) {
 		checkSupervision(ctx, t, appStore, exec, dispatch, waitReview, tenant.ID(), repoID)
 	})
+
+	t.Run("worker actions: rerun, cancel and forced reindex", func(t *testing.T) {
+		checkActions(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, dir, base, head, tenant.ID(), repoID)
+	})
 }
 
 func labelled(names []string) []webhook.Label {
@@ -1105,6 +1118,258 @@ func checkSupervision(
 			t.Fatalf("error = %q", text)
 		}
 	})
+}
+
+// checkActions exercises the web dashboard's enqueue helpers (internal/jobs/
+// actions.go) against a real running worker: a manual rerun of a completed
+// head, a cancel of a review while its runner is blocked, a cancel rejected
+// once the review has finished, and a forced full reindex over an active
+// incremental generation. Each scenario lives in its own helper (below) so
+// this dispatcher stays trivial to read.
+func checkActions(
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], exec *gateExecutor,
+	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, head, tenantID, repoID string,
+) {
+	t.Helper()
+
+	var rerunHead string
+	t.Run("EnqueueRerun produces a second completed review of the same head", func(t *testing.T) {
+		rerunHead = checkEnqueueRerun(ctx, t, appStore, insertOnly, dispatch, waitReview, dir, base, tenantID, repoID)
+	})
+	t.Run("RequestCancel on a completed review is rejected", func(t *testing.T) {
+		checkRequestCancelRejected(ctx, t, appStore, insertOnly, tenantID, rerunHead)
+	})
+	t.Run("RequestCancel ends a running review as canceled with no retry", func(t *testing.T) {
+		checkRequestCancelRunning(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, tenantID)
+	})
+	t.Run("EnqueueReindex forces a full generation even when one is active", func(t *testing.T) {
+		checkEnqueueReindex(ctx, t, appStore, insertOnly, tenantID, repoID, head)
+	})
+}
+
+// countReviewsByStatus returns how many reviews rows exist for headSHA with
+// exactly status, scoped to the tenant.
+func countReviewsByStatus(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, headSHA, status string) int {
+	t.Helper()
+	var n int
+	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1 AND status = $2`, headSHA, status).Scan(&n)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// latestReviewID returns the most recently created review's id for headSHA.
+func latestReviewID(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, headSHA string) string {
+	t.Helper()
+	var id string
+	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT id FROM reviews WHERE head_sha = $1 ORDER BY created_at DESC LIMIT 1`, headSHA).Scan(&id)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// newTestAccount inserts a bare accounts row and returns its id, standing in
+// for whichever human account RequestCancel's by should record.
+func newTestAccount(ctx context.Context, t *testing.T, appStore *store.Store, tenantID string) string {
+	t.Helper()
+	var id string
+	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `INSERT INTO accounts DEFAULT VALUES RETURNING id`).Scan(&id)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// commitOnBase resets dir's worktree to base, writes body to main.go, and
+// commits it, returning the new commit's SHA.
+func commitOnBase(t *testing.T, dir, base, msg, body string) string {
+	t.Helper()
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wt.Reset(&git.ResetOptions{Commit: plumbing.NewHash(base), Mode: git.HardReset}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("main.go"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := wt.Commit(msg, &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c.String()
+}
+
+// checkEnqueueRerun re-runs EnqueueRerun over an already-completed head and
+// asserts a second completed review lands, returning the head it exercised.
+func checkEnqueueRerun(
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx],
+	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, tenantID, repoID string,
+) string {
+	t.Helper()
+	rerunHead := commitOnBase(t, dir, base, "rerun target", "package main\n\nfunc rerun() {}\n")
+	dispatch(rerunHead, false)
+	if status, _, _ := waitReview(rerunHead); status != "completed" {
+		t.Fatalf("status = %s, want completed", status)
+	}
+	if n := countReviewsByStatus(ctx, t, appStore, tenantID, rerunHead, "completed"); n != 1 {
+		t.Fatalf("completed reviews for %s = %d, want 1 before the rerun", rerunHead[:7], n)
+	}
+
+	var jobID int64
+	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var err error
+		jobID, err = jobs.EnqueueRerun(ctx, tx, insertOnly, tenantID, repoID, 1)
+		return err
+	})
+	if err != nil || jobID == 0 {
+		t.Fatalf("EnqueueRerun: jobID=%d err=%v", jobID, err)
+	}
+
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) && countReviewsByStatus(ctx, t, appStore, tenantID, rerunHead, "completed") < 2 {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if n := countReviewsByStatus(ctx, t, appStore, tenantID, rerunHead, "completed"); n != 2 {
+		t.Fatalf("completed reviews for %s = %d, want 2 after the rerun", rerunHead[:7], n)
+	}
+	return rerunHead
+}
+
+// checkRequestCancelRejected asserts RequestCancel refuses a review that has
+// already finished.
+func checkRequestCancelRejected(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], tenantID, headSHA string) {
+	t.Helper()
+	id := latestReviewID(ctx, t, appStore, tenantID, headSHA)
+	by := newTestAccount(ctx, t, appStore, tenantID)
+	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
+	})
+	if !errors.Is(err, jobs.ErrNotCancelable) {
+		t.Fatalf("RequestCancel on a completed review = %v, want ErrNotCancelable", err)
+	}
+}
+
+// checkRequestCancelRunning blocks a review mid-run, cancels it, and asserts
+// it lands as 'canceled' exactly once (no River retry).
+func checkRequestCancelRunning(
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], exec *gateExecutor,
+	dispatch func(string, bool), waitReview func(string) (string, string, string), tenantID string,
+) {
+	t.Helper()
+	const canceling = "4444444444444444444444444444444444444444"
+	exec.setBlock(true)
+	t.Cleanup(func() { exec.setBlock(false) })
+	dispatch(canceling, false)
+	select {
+	case <-exec.started:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the review runner never started")
+	}
+
+	id := latestReviewID(ctx, t, appStore, tenantID, canceling)
+	by := newTestAccount(ctx, t, appStore, tenantID)
+	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
+	})
+	if err != nil {
+		t.Fatalf("RequestCancel: %v", err)
+	}
+
+	if status, _, _ := waitReview(canceling); status != "canceled" {
+		t.Fatalf("status = %s, want canceled", status)
+	}
+	if n := countReviewsByStatus(ctx, t, appStore, tenantID, canceling, "canceled"); n != 1 {
+		t.Fatalf("canceled reviews for %s = %d, want 1 (no River retry)", canceling, n)
+	}
+}
+
+// activeIndexGeneration returns repositories.active_index_run_id for repoID.
+func activeIndexGeneration(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, repoID string) string {
+	t.Helper()
+	var id string
+	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT coalesce(active_index_run_id::text, '') FROM repositories WHERE id = $1`, repoID).Scan(&id)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// checkEnqueueReindex asserts a forced reindex replaces the active
+// generation with a new full/completed one and supersedes the old one.
+//
+// A completed full generation supersedes whatever it replaces (see embed()
+// in internal/worker/index.go), so the count of mode='full' AND
+// status='completed' rows for a commit never exceeds 1: the prior
+// generation drops to 'superseded' at essentially the same time the new one
+// lands. What actually distinguishes "forced a new generation" from "no-op"
+// is the repository's active_index_run_id switching to a different row.
+func checkEnqueueReindex(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], tenantID, repoID, head string) {
+	t.Helper()
+	before := activeIndexGeneration(ctx, t, appStore, tenantID, repoID)
+	if before == "" {
+		t.Fatal("no active index generation before forcing a reindex")
+	}
+
+	var jobID int64
+	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var err error
+		jobID, err = jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, repoID)
+		return err
+	})
+	if err != nil || jobID == 0 {
+		t.Fatalf("EnqueueReindex: jobID=%d err=%v", jobID, err)
+	}
+
+	deadline := time.Now().Add(20 * time.Second)
+	after := before
+	for time.Now().Before(deadline) {
+		if after = activeIndexGeneration(ctx, t, appStore, tenantID, repoID); after != "" && after != before {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if after == before {
+		t.Fatalf("active index generation for %s = %q, want a new generation distinct from %q", head[:7], after, before)
+	}
+
+	var mode, status string
+	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT mode, status FROM index_runs WHERE id = $1`, after).Scan(&mode, &status)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if mode != "full" || status != "completed" {
+		t.Fatalf("new active generation %s mode=%s status=%s, want full/completed", after, mode, status)
+	}
+
+	var priorStatus string
+	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT status FROM index_runs WHERE id = $1`, before).Scan(&priorStatus)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if priorStatus != "superseded" {
+		t.Fatalf("prior generation %s status = %s, want superseded", before, priorStatus)
+	}
 }
 
 // gateExecutor runs the real runner, or once blocked holds each review run
