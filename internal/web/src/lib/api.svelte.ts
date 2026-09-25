@@ -45,12 +45,12 @@ async function toApiError(res: Response): Promise<ApiError> {
 }
 
 async function handle<T>(res: Response): Promise<T> {
-  // A signed-out visit to the bare root has no hash to remember and nothing
-  // to bounce away from -- that's the public overview shell, not a dead
-  // session, so only a 401 against an in-app destination (a non-empty hash)
-  // redirects to sign-in.
-  if (res.status === 401 && location.hash && location.hash !== '#/signin') {
-    signinState.returnTo = location.hash;
+  // The dashboard has no public content: a 401 means the session is dead
+  // (expired cookie, revoked token, or no session at all) and every route --
+  // including the bare root, which has no hash -- redirects to sign-in. The
+  // only guard is against a redirect loop when already on #/signin.
+  if (res.status === 401 && location.hash !== '#/signin') {
+    signinState.returnTo = location.hash || '#/';
     replace({ name: 'signin' });
   }
   if (!res.ok) throw await toApiError(res);
