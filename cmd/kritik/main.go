@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
+	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/configsource"
@@ -38,6 +40,8 @@ import (
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/server"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/web"
+	"github.com/home-operations/kritik/internal/webapi"
 	"github.com/home-operations/kritik/internal/worker"
 )
 
@@ -55,7 +59,7 @@ func main() {
 }
 
 func run() error {
-	roleFlag := pflag.String("role", string(config.RoleAll), "process role: all, ingest, worker or runner")
+	roleFlag := pflag.String("role", string(config.RoleAll), "process role: all, ingest, worker, runner or web")
 	pflag.Parse()
 	role, err := config.ParseRole(*roleFlag)
 	if err != nil {
@@ -74,6 +78,8 @@ func run() error {
 		if err = cfg.ValidateRunner(); err == nil {
 			runSpec, err = runner.ReadSpec(cfg.RunSpecFile)
 		}
+	case config.RoleWeb:
+		err = cfg.ValidateWeb()
 	}
 	if err != nil {
 		return err
@@ -121,14 +127,7 @@ func run() error {
 	// Every role connects with the application DSN and refuses to start if
 	// that DSN could bypass row-level security or the vector extension is
 	// missing. Leader-eligible roles also open the owner DSN.
-	ownerURL := ""
-	if role == config.RoleAll || role == config.RoleWorker {
-		ownerURL = cfg.DatabaseOwnerURL
-	}
-	st, err := openStore(ctx, store.Options{
-		AppURL: cfg.DatabaseURL, OwnerURL: ownerURL,
-		AppRole: cfg.DatabaseAppRole, RunnerRole: cfg.DatabaseRunnerRole, Logger: logger,
-	}, logger)
+	st, err := openStore(ctx, storeOptions(role, cfg, logger), logger)
 	if err != nil {
 		return err
 	}
@@ -172,7 +171,7 @@ func run() error {
 					return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, configErrors, hostname, logger)
 				})
 			})
-		} else if role != config.RoleIngest {
+		} else if role != config.RoleIngest && role != config.RoleWeb {
 			logger.Warn("no owner DSN configured; this replica can never migrate or apply configuration")
 		}
 	}
@@ -192,6 +191,9 @@ func run() error {
 		handler.Metrics = m
 		hooks := server.NewHooks(cfg.Addr, handler, logger)
 		g.Go(func() error { return hooks.Run(ctx) })
+	}
+	if err := startWeb(ctx, g, role, st, cfg, current, logger); err != nil {
+		return err
 	}
 	if role == config.RoleAll || role == config.RoleWorker {
 		if exec == nil {
@@ -264,6 +266,50 @@ func run() error {
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("%s: %w", role, err)
 	}
+	return nil
+}
+
+// storeOptions is how role connects to the database. Only a
+// leader-eligible role, all or worker, is given the owner DSN; the web role
+// in particular never is (ADR-0009 §3).
+func storeOptions(role config.Role, cfg *config.Config, logger *slog.Logger) store.Options {
+	opts := store.Options{
+		AppURL: cfg.DatabaseURL, AppRole: cfg.DatabaseAppRole, RunnerRole: cfg.DatabaseRunnerRole, Logger: logger,
+	}
+	if role == config.RoleAll || role == config.RoleWorker {
+		opts.OwnerURL = cfg.DatabaseOwnerURL
+	}
+	return opts
+}
+
+// webDrain is how long a stopping web role lets requests finish. Event
+// streams end at once, when the API's Run returns.
+const webDrain = 10 * time.Second
+
+// startWeb serves the dashboard, its sign-in and its API on WebAddr until
+// ctx ends, when role serves it. Without a sealing key the dashboard still
+// serves, but cannot write dashboard tenants.
+func startWeb(
+	ctx context.Context, g *errgroup.Group, role config.Role, st *store.Store, cfg *config.Config, current *configfile.Current,
+	logger *slog.Logger,
+) error {
+	if !cfg.WebEnabled(role) {
+		return nil
+	}
+	if role == config.RoleWeb && st.LeaderEligible() {
+		return errors.New("the web role must never hold the owner DSN")
+	}
+	webLogger := logger.With("listener", "web")
+	authHandler, err := auth.New(auth.Config{Store: st, Current: current, WebURL: cfg.WebURLParsed(), Logger: webLogger})
+	if err != nil {
+		return err
+	}
+	api := webapi.New(webapi.Config{
+		Store: st, Current: current, Auth: authHandler, Keyring: cfg.DashboardKeyring(), UI: web.FS(),
+		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger,
+	})
+	g.Go(func() error { return api.Run(ctx) })
+	g.Go(func() error { return server.ServeDrain(ctx, cfg.WebAddr, api.Handler(), webDrain, webLogger) })
 	return nil
 }
 
