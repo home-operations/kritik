@@ -24,23 +24,42 @@ Postgres store with row-level security and River, the ingest role (a signed
 forge webhook becomes rows and a review job), and the worker role, which
 takes the merge-base from the forge, runs a Kubernetes Job per review
 that fetches the two commits, diffs them and writes a context pack, then
-holds a per-tenant model lease, asks the configured OpenRouter model for
-structured findings, and writes back a sticky summary comment, inline
-review comments and a commit status. The runner also builds the context
-the prompt carries beyond the diff: whole declarations the diff touches,
-definitions of identifiers on changed lines, and callers of changed
-declarations, all cut by tree-sitter (pure Go, every grammar embedded;
-the stripped static binary is about 122 MiB). With a deployment embedder
-configured (`KRITIK_EMBED_*`), the leader onboards every declared
-repository into a pgvector index of the default branch, default-branch
-pushes advance it incrementally, and reviews add the most similar indexed
-chunks as a fourth context stage. An @-mention of the bot by someone with
-write access gets an answer in the thread, with the diff, the review's
-context and findings, and the thread in the prompt, five per pull request
-per hour. The leader also polls each installation's open pull requests on
-an interval as a backstop for missed webhooks; a head the webhook already
-enqueued is deduplicated by the job queue. The other forges, the Helm
-chart and the evaluation harness come next; see the ADR for the rest.
+holds a per-tenant model lease, asks a configured model for structured
+findings, and writes back a sticky summary comment, inline review comments
+and a commit status. GitHub and Forgejo are both wired forges; a
+`providers` entry picks the `openrouter`, `openai` or `anthropic` adapter
+per tenant, with per-model `pricing` to cost calls a provider itself
+doesn't report a cost for. A repository's `mode` can ask for an agentic
+review instead of the default single pass: a bounded, read-only tool loop
+(listing, reading and grepping the repository, capped steps and tool
+output, a wall-clock timeout) that lets the model pull more of the
+repository into its own context before submitting structured findings.
+`settle` delays a new head's
+review so a burst of force-pushes only costs one; a later push builds on
+the pull request's last completed review, scoped to what changed since,
+as long as that review's head is still reachable and fewer files changed
+than a configurable ceiling, and falls back to a full review otherwise. A
+repository's own `.kritik.yaml`, read
+from the merge-base tree so a pull request can't use it to weaken its own
+review, can narrow what the operator allows (disable itself, add an
+additional filter or ignore globs, skip a pull request whose changes match
+only certain paths) and set its own instructions and comment templates;
+see [`.kritik.yaml` reference](#kritikyaml-reference) below. The runner
+also builds the context the prompt carries beyond the diff: whole
+declarations the diff touches, definitions of identifiers on changed
+lines, and callers of changed declarations, all cut by tree-sitter (pure
+Go, every grammar embedded; the stripped static binary is about 122 MiB).
+With a deployment embedder configured (`KRITIK_EMBED_*`), the leader
+onboards every declared repository into a pgvector index of the default
+branch, default-branch pushes advance it incrementally, and reviews add
+the most similar indexed chunks as a fourth context stage. An @-mention of
+the bot by someone with write access gets an answer in the thread, with
+the diff, the review's context and findings, and the thread in the prompt,
+five per pull request per hour. The leader also polls each installation's
+open pull requests on an interval as a backstop for missed webhooks; a
+head the webhook already enqueued is deduplicated by the job queue. GitLab
+support, the Helm chart's remaining hardening and the evaluation harness
+come next; see the ADR for the rest.
 
 ## Installing
 
@@ -51,6 +70,45 @@ Postgres with an owner, an application and a runner role, the configuration
 file under `config.file`, the secrets it references under `secretMounts`, and
 optionally an embedder under `embedding` for the index. `roles.all` runs the
 single-process topology; `roles.ingest` and `roles.worker` split it.
+
+## `.kritik.yaml` reference
+
+A repository may commit an optional `.kritik.yaml` at its root to narrow how
+kritik reviews it. It is read from the merge-base commit, never the pull
+request's own tree, so a pull request cannot use its own copy to weaken the
+review applied to it; a file that fails to parse is ignored as a whole, and
+noted rather than failing the review. It can only narrow what the operator
+already allows — `mode`, `agent` and `incremental` stay operator-only — and
+its keys are:
+
+- `enabled: false` — disables review for the repository (it cannot turn a
+  disabled repository back on).
+- `filter` — a filter expression ANDed with the operator's own; it is
+  compiled and smoke-tested against a sample pull request when the file is
+  parsed, so a broken expression is rejected rather than silently skipping
+  every review.
+- `ignore` — path globs added to the operator's own ignore list.
+- `skip.onlyPaths` — path globs; the pull request is skipped only when
+  every changed path matches at least one of them.
+- `review.instructions` — paths to files (read from the same merge-base
+  tree) appended to the reviewer's system prompt, capped at 32 KiB joined.
+- `review.requireSuggestedFix` — whether findings must include a suggested
+  fix.
+- `review.templates.summary` / `review.templates.inline` — paths to
+  [gonja](https://github.com/nikolalohinski/gonja) templates that replace
+  kritik's built-in summary and inline comment templates. Templates run in
+  a sandboxed subset: `if`/`for`/`break`/`continue`/`autoescape`/`raw` and a
+  restricted expression-only `set`; no `block`, `macro`, `include`,
+  `extends`, `import` or `with` (a template cannot read any file but its
+  own), no arithmetic beyond `+ - * /` and no string/list concatenation via
+  `+`; filters and string/dict/list methods are drawn from fixed allowlists,
+  and dict/list methods are read-only. Rendering is bounded (recursion
+  depth, loop iterations, output size) so a template cannot hang or
+  exhaust memory.
+
+Every referenced file, plus `.kritik.yaml` itself, is capped at 256 KiB,
+and 1 MiB in total; a file over either limit is skipped and noted rather
+than failing the review.
 
 ## Evaluation
 
