@@ -173,7 +173,7 @@ func (l *localForge) addComment(author, body string) int64 {
 	return id
 }
 
-func (l *localForge) GetComment(_ context.Context, _, _ string, id int64, inline bool) (forge.Comment, error) {
+func (l *localForge) GetComment(_ context.Context, _, _ string, _ int, id int64, inline bool) (forge.Comment, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	body, ok := l.comments[id]

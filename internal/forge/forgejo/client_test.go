@@ -2,6 +2,7 @@ package forgejo
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -179,7 +180,7 @@ func TestCreateUpdateGetComment(t *testing.T) {
 	if err := c.UpdateComment(t.Context(), "acme", "widgets", 42, "updated"); err != nil {
 		t.Fatalf("UpdateComment: %v", err)
 	}
-	cm, err := c.GetComment(t.Context(), "acme", "widgets", 42, false)
+	cm, err := c.GetComment(t.Context(), "acme", "widgets", 9, 42, false)
 	if err != nil {
 		t.Fatalf("GetComment: %v", err)
 	}
@@ -209,9 +210,8 @@ func TestCreateReview(t *testing.T) {
 			if r.URL.Path != "/api/v1/repos/acme/widgets/pulls/9/reviews" {
 				t.Errorf("path = %s", r.URL.Path)
 			}
-			buf := make([]byte, 4096)
-			n, _ := r.Body.Read(buf)
-			gotBody = string(buf[:n])
+			b, _ := io.ReadAll(r.Body)
+			gotBody = string(b)
 			_, _ = w.Write([]byte(`{"id":1}`))
 		})
 		defer srv.Close()
@@ -238,6 +238,9 @@ func TestCreateReview(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected an error for a 422 response")
 		}
+		if !strings.Contains(err.Error(), "bad diff line") {
+			t.Fatalf("error = %q, want it to contain the forge's message %q", err.Error(), "bad diff line")
+		}
 	})
 }
 
@@ -247,9 +250,8 @@ func TestSetStatus(t *testing.T) {
 		if r.URL.Path != "/api/v1/repos/acme/widgets/statuses/deadbeef" {
 			t.Errorf("path = %s", r.URL.Path)
 		}
-		buf := make([]byte, 4096)
-		n, _ := r.Body.Read(buf)
-		gotBody = string(buf[:n])
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
 	})
 	defer srv.Close()
 
@@ -309,7 +311,11 @@ func TestListOpenPullRequests(t *testing.T) {
 		if r.URL.Path != "/api/v1/repos/acme/widgets/pulls" {
 			t.Errorf("path = %s", r.URL.Path)
 		}
-		page := r.URL.Query().Get("page")
+		q := r.URL.Query()
+		if q.Get("state") != "open" || q.Get("sort") != "recentupdate" || q.Get("limit") != "50" {
+			t.Errorf("query = %q, want state=open&sort=recentupdate&limit=50", r.URL.RawQuery)
+		}
+		page := q.Get("page")
 		switch page {
 		case "", "1":
 			w.Header().Set("Link", `<`+"http://"+r.Host+r.URL.Path+`?page=2>; rel="next"`)
@@ -318,7 +324,12 @@ func TestListOpenPullRequests(t *testing.T) {
 				 "updated_at":"2026-01-15T00:00:00Z","created_at":"2026-01-15T00:00:00Z","html_url":"https://forge.example.com/acme/widgets/pulls/3",
 				 "head":{"ref":"feature","sha":"h1","repo":{"full_name":"acme/widgets","fork":false}},
 				 "base":{"ref":"main","sha":"b1","repo":{"full_name":"acme/widgets","default_branch":"main"}},
-				 "labels":[{"name":"bug","color":"f00"}]}
+				 "labels":[{"name":"bug","color":"f00"}]},
+				{"number":4,"title":"bot draft","user":{"login":"bob[bot]"},"state":"open","draft":true,
+				 "updated_at":"2026-01-16T00:00:00Z","created_at":"2026-01-16T00:00:00Z","html_url":"https://forge.example.com/acme/widgets/pulls/4",
+				 "head":{"ref":"fork-feature","sha":"h4","repo":{"full_name":"someone/widgets","fork":true}},
+				 "base":{"ref":"main","sha":"b4","repo":{"full_name":"acme/widgets","default_branch":"main"}},
+				 "labels":[]}
 			]`))
 		case "2":
 			_, _ = w.Write([]byte(`[
@@ -338,12 +349,16 @@ func TestListOpenPullRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListOpenPullRequests: %v", err)
 	}
-	if len(prs) != 1 {
-		t.Fatalf("got %d pull requests, want 1 (page 2 is older than since)", len(prs))
+	if len(prs) != 2 {
+		t.Fatalf("got %d pull requests, want 2 (page 2 is older than since)", len(prs))
 	}
 	pr := prs[0]
-	if pr.Number != 3 || pr.DefaultBranch != "main" || pr.Fork || pr.AuthorIsBot || len(pr.Labels) != 1 || pr.Labels[0].Name != "bug" {
+	if pr.Number != 3 || pr.DefaultBranch != "main" || pr.Fork || pr.AuthorIsBot || pr.Draft || len(pr.Labels) != 1 || pr.Labels[0].Name != "bug" {
 		t.Fatalf("mapped PR = %+v", pr)
+	}
+	bot := prs[1]
+	if bot.Number != 4 || !bot.Fork || !bot.AuthorIsBot || !bot.Draft {
+		t.Fatalf("mapped bot/draft/fork PR = %+v", bot)
 	}
 }
 
@@ -384,18 +399,19 @@ func TestListInlineAndReplyAndGetComment(t *testing.T) {
 		t.Fatalf("comments not oldest-first: %+v", comments)
 	}
 
-	// GetComment(inline=true) hits after ListInline populated the cache.
-	cm, err := c.GetComment(t.Context(), "acme", "widgets", 200, true)
+	// GetComment(inline=true) finds the comment by traversing reviews, with
+	// no cache and no dependency on the prior ListInline call above.
+	cm, err := c.GetComment(t.Context(), "acme", "widgets", 9, 200, true)
 	if err != nil {
-		t.Fatalf("GetComment(inline=true) cache hit: %v", err)
+		t.Fatalf("GetComment(inline=true): %v", err)
 	}
 	if cm.ID != 200 || cm.Path != "a.go" {
 		t.Fatalf("GetComment(inline=true) = %+v", cm)
 	}
 
-	// GetComment(inline=true) cache miss for a comment ListInline never saw.
-	if _, err := c.GetComment(t.Context(), "acme", "widgets", 999, true); !errors.Is(err, ErrCommentUnknown) {
-		t.Fatalf("GetComment cache miss error = %v, want ErrCommentUnknown", err)
+	// GetComment(inline=true) for an id no review comment carries.
+	if _, err := c.GetComment(t.Context(), "acme", "widgets", 9, 999, true); !errors.Is(err, ErrCommentUnknown) {
+		t.Fatalf("GetComment unknown id error = %v, want ErrCommentUnknown", err)
 	}
 
 	id, err := c.ReplyInline(t.Context(), "acme", "widgets", 9, 200, "reply body")
@@ -413,7 +429,7 @@ func TestNotFoundWrapsSentinel(t *testing.T) {
 		_, _ = w.Write([]byte(`{"message":"not found"}`))
 	})
 	defer srv.Close()
-	_, err := c.GetComment(t.Context(), "acme", "widgets", 1, false)
+	_, err := c.GetComment(t.Context(), "acme", "widgets", 9, 1, false)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want errors.Is(err, ErrNotFound)", err)
 	}
@@ -434,5 +450,87 @@ func TestNewClientAcceptsHostWithOrWithoutScheme(t *testing.T) {
 	}
 	if c2.CloneURL("a", "b") != "http://127.0.0.1:1234/a/b.git" {
 		t.Fatalf("scheme host CloneURL = %q", c2.CloneURL("a", "b"))
+	}
+}
+
+// TestGetCommentAndReplyInlineWithoutPriorListInline is the critical-fix
+// regression test: an inline reply can arrive as the very first request
+// this process makes for a PR (e.g. right after a restart), so
+// GetComment(inline=true) and ReplyInline must resolve the comment by
+// traversing reviews directly, not depend on an earlier ListInline call
+// having populated some cache.
+func TestGetCommentAndReplyInlineWithoutPriorListInline(t *testing.T) {
+	srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/acme/widgets/pulls/9/reviews":
+			_, _ = w.Write([]byte(`[{"id":100,"commit_id":"sha1","submitted_at":"2026-01-01T00:00:00Z"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/acme/widgets/pulls/9/reviews/100/comments":
+			_, _ = w.Write([]byte(`[{"id":200,"body":"first","path":"a.go","position":5,"commit_id":"sha1","user":{"login":"kritik-bot"},"created_at":"2026-01-01T00:00:01Z"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos/acme/widgets/pulls/9/reviews":
+			_, _ = w.Write([]byte(`{"id":101}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+	defer srv.Close()
+
+	// No ListInline call before this: c has never seen this PR, yet
+	// GetComment(inline=true) must still resolve comment 200.
+	cm, err := c.GetComment(t.Context(), "acme", "widgets", 9, 200, true)
+	if err != nil {
+		t.Fatalf("GetComment(inline=true) on a fresh client: %v", err)
+	}
+	if cm.ID != 200 || cm.Path != "a.go" {
+		t.Fatalf("GetComment(inline=true) = %+v", cm)
+	}
+
+	if _, err := c.ReplyInline(t.Context(), "acme", "widgets", 9, 200, "reply body"); err != nil {
+		t.Fatalf("ReplyInline on a fresh client: %v", err)
+	}
+}
+
+func TestOpenPullRequestForkDetection(t *testing.T) {
+	base := repository{FullName: "acme/widgets", DefaultBranch: "main"}
+
+	t.Run("deleted head repo is treated as a fork", func(t *testing.T) {
+		pr := pullRequest{
+			Number: 5,
+			Head:   branchInfo{Ref: "gone", SHA: "h1", Repo: nil},
+			Base:   branchInfo{Ref: "main", SHA: "b1", Repo: &base},
+		}
+		out := openPullRequest(pr)
+		if !out.Fork {
+			t.Fatalf("Fork = false, want true for a nil head.repo (deleted fork)")
+		}
+	})
+
+	t.Run("same-repo head is not a fork", func(t *testing.T) {
+		pr := pullRequest{
+			Number: 6,
+			Head:   branchInfo{Ref: "topic", SHA: "h2", Repo: &base},
+			Base:   branchInfo{Ref: "main", SHA: "b2", Repo: &base},
+		}
+		out := openPullRequest(pr)
+		if out.Fork {
+			t.Fatalf("Fork = true, want false when head.repo == base.repo")
+		}
+	})
+}
+
+func TestIsBot(t *testing.T) {
+	cases := []struct {
+		login string
+		want  bool
+	}{
+		{"kritik-bot", false},
+		{"some-bot", false},
+		{"dependabot[bot]", true},
+		{"renovate[bot]", true},
+		{"alice", false},
+	}
+	for _, tc := range cases {
+		if got := isBot(tc.login); got != tc.want {
+			t.Errorf("isBot(%q) = %v, want %v", tc.login, got, tc.want)
+		}
 	}
 }

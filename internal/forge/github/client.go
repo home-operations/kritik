@@ -162,8 +162,9 @@ func (c *Client) CreateReview(ctx context.Context, owner, repo string, number in
 	return nil
 }
 
-// GetComment implements forge.Client.
-func (c *Client) GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (forge.Comment, error) {
+// GetComment implements forge.Client. GitHub resolves a comment by id alone,
+// so number (the pull request it belongs to) is unused.
+func (c *Client) GetComment(ctx context.Context, owner, repo string, _ int, id int64, inline bool) (forge.Comment, error) {
 	if inline {
 		cm, _, err := c.api.PullRequests.GetComment(ctx, owner, repo, id)
 		if err != nil {
@@ -224,10 +225,14 @@ func (c *Client) Permission(ctx context.Context, owner, repo, login string) (for
 	}
 	// role_name carries maintain and triage, which permission folds into
 	// write and read.
-	if name := level.GetRoleName(); name != "" {
-		return forge.Permission(name), nil
+	p := forge.Permission(level.GetRoleName())
+	if p == "" {
+		p = forge.Permission(level.GetPermission())
 	}
-	return forge.Permission(level.GetPermission()), nil
+	if !p.Valid() {
+		return "", fmt.Errorf("github: unrecognized permission %q for %s on %s/%s", p, login, owner, repo)
+	}
+	return p, nil
 }
 
 // ReplyInline implements forge.Client.

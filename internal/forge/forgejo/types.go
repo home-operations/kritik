@@ -22,11 +22,13 @@ type repository struct {
 	Fork          bool   `json:"fork"`
 }
 
-// branchInfo is a pull request's head or base side.
+// branchInfo is a pull request's head or base side. Repo is a pointer
+// because a deleted fork leaves head.repo JSON null, which a value-typed
+// field could not distinguish from an empty repository.
 type branchInfo struct {
-	Ref  string     `json:"ref"`
-	SHA  string     `json:"sha"`
-	Repo repository `json:"repo"`
+	Ref  string      `json:"ref"`
+	SHA  string      `json:"sha"`
+	Repo *repository `json:"repo"`
 }
 
 // pullRequest is the subset of Forgejo's PullRequest model kritik reads.

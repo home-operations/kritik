@@ -37,13 +37,13 @@ const maxErrorBody = 512
 // branch on a missing resource with errors.Is(err, ErrNotFound).
 var ErrNotFound = errors.New("forgejo: not found")
 
-// ErrCommentUnknown is returned by GetComment for an inline comment id the
-// cache has never seen. Forgejo has no endpoint to fetch a single inline
-// review comment by id alone (unlike a conversation comment): the id is
-// only ever returned nested under a review, listed per pull request. The
-// cache is populated by ListInline, so a comment must be listed at least
-// once before GetComment(inline=true) can resolve it.
-var ErrCommentUnknown = errors.New("forgejo: inline comment unknown (not yet listed)")
+// ErrCommentUnknown is returned when an inline comment id is not found
+// among any review on the given pull request. Forgejo has no endpoint to
+// fetch a single inline review comment by id alone (unlike a conversation
+// comment): the id is only ever returned nested under a review, so
+// resolving one means listing every review on the pull request and every
+// comment under each.
+var ErrCommentUnknown = errors.New("forgejo: inline comment unknown")
 
 // apiError is returned for any non-2xx response.
 type apiError struct {
@@ -65,14 +65,6 @@ func (e *apiError) Unwrap() error {
 	return nil
 }
 
-// inlineLocation is where the cache last saw an inline comment: the pull
-// request and review it belongs to, needed to answer GetComment(inline=true)
-// without an id-only lookup endpoint.
-type inlineLocation struct {
-	number   int
-	reviewID int64
-}
-
 // Client is one Forgejo instance's API, authenticated as a single account
 // or app token.
 type Client struct {
@@ -83,9 +75,6 @@ type Client struct {
 
 	mu    sync.Mutex
 	login string // cached BotLogin result
-
-	inlineMu    sync.Mutex
-	inlineCache map[int64]inlineLocation
 }
 
 // NewClient builds a Client against host's API. host may be a bare hostname
@@ -107,11 +96,10 @@ func NewClient(host, token string, httpClient *http.Client) (*Client, error) {
 		httpClient = http.DefaultClient
 	}
 	return &Client{
-		httpClient:  httpClient,
-		base:        webBase + "/api/v1",
-		webBase:     webBase,
-		token:       token,
-		inlineCache: make(map[int64]inlineLocation),
+		httpClient: httpClient,
+		base:       webBase + "/api/v1",
+		webBase:    webBase,
+		token:      token,
 	}, nil
 }
 
@@ -283,9 +271,9 @@ func (c *Client) UpdateComment(ctx context.Context, owner, repo string, id int64
 
 // GetComment implements forge.Client. inline=false uses the id-only
 // conversation-comment endpoint. inline=true has no such endpoint on
-// Forgejo, so it resolves via the cache ListInline populates, returning
-// ErrCommentUnknown on a cold miss.
-func (c *Client) GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (forge.Comment, error) {
+// Forgejo: it lists every review on number and every review's comments
+// until id turns up.
+func (c *Client) GetComment(ctx context.Context, owner, repo string, number int, id int64, inline bool) (forge.Comment, error) {
 	if !inline {
 		var cm comment
 		path := fmt.Sprintf("%s/issues/comments/%d", repoPath(owner, repo), id)
@@ -294,26 +282,36 @@ func (c *Client) GetComment(ctx context.Context, owner, repo string, id int64, i
 		}
 		return conversationComment(cm), nil
 	}
-
-	c.inlineMu.Lock()
-	loc, ok := c.inlineCache[id]
-	c.inlineMu.Unlock()
-	if !ok {
-		return forge.Comment{}, fmt.Errorf("forgejo: get inline comment %d on %s/%s: %w", id, owner, repo, ErrCommentUnknown)
-	}
-	comments, err := c.listReviewComments(ctx, owner, repo, loc.number, loc.reviewID)
+	raw, err := c.findInlineComment(ctx, owner, repo, number, id)
 	if err != nil {
 		return forge.Comment{}, err
 	}
-	for _, cm := range comments {
-		if cm.ID == id {
-			return cm, nil
-		}
-	}
-	return forge.Comment{}, fmt.Errorf("forgejo: get inline comment %d on %s/%s: %w", id, owner, repo, ErrCommentUnknown)
+	return inlineComment(raw), nil
 }
 
-// CreateReview implements forge.Client. A no comments is a no-op: Forgejo
+// findInlineComment locates a single inline comment by id, traversing every
+// review on the pull request since Forgejo has no id-only lookup endpoint
+// for review comments.
+func (c *Client) findInlineComment(ctx context.Context, owner, repo string, number int, id int64) (pullReviewComment, error) {
+	reviews, err := c.listReviews(ctx, owner, repo, number)
+	if err != nil {
+		return pullReviewComment{}, err
+	}
+	for _, rv := range reviews {
+		raw, err := c.rawReviewComments(ctx, owner, repo, number, rv.ID)
+		if err != nil {
+			return pullReviewComment{}, err
+		}
+		for _, cm := range raw {
+			if cm.ID == id {
+				return cm, nil
+			}
+		}
+	}
+	return pullReviewComment{}, fmt.Errorf("forgejo: get inline comment %d on %s/%s#%d: %w", id, owner, repo, number, ErrCommentUnknown)
+}
+
+// CreateReview implements forge.Client. No comments is a no-op: Forgejo
 // rejects a review with no body and no comments as meaningless.
 func (c *Client) CreateReview(ctx context.Context, owner, repo string, number int, headSHA string, comments []forge.InlineComment) error {
 	if len(comments) == 0 {
@@ -374,27 +372,23 @@ func (c *Client) Permission(ctx context.Context, owner, repo, login string) (for
 
 // ReplyInline implements forge.Client. Forgejo carries no reply-linkage
 // field on an inline comment, so a "reply" is a new single-comment review
-// on the same line, reusing the original comment's commit and path.
-// Forgejo's review-creation response carries no per-comment id, so this
-// always returns 0.
+// on the same line, reusing the original comment's commit and path. A
+// single findInlineComment fetch supplies everything the new review needs
+// (path, line, and commit id), unlike forge.Comment which carries no commit
+// id of its own. Forgejo's review-creation response carries no per-comment
+// id, so this always returns 0.
 func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, rootID int64, body string) (int64, error) {
-	root, err := c.GetComment(ctx, owner, repo, rootID, true)
+	root, err := c.findInlineComment(ctx, owner, repo, number, rootID)
 	if err != nil {
 		return 0, fmt.Errorf("forgejo: reply to inline comment %d on %s/%s#%d: %w", rootID, owner, repo, number, err)
 	}
 	opts := createPullReviewOptions{
-		Event: "COMMENT",
+		CommitID: root.CommitID,
+		Event:    "COMMENT",
 		Comments: []createPullReviewComment{
-			{Path: root.Path, Body: body, NewLineNum: int64(root.Line)},
+			{Path: root.Path, Body: body, NewLineNum: int64(root.LineNum)},
 		},
 	}
-	// forge.Comment carries no commit id of its own, so it is looked up
-	// separately from the cached review location.
-	commitID, err := c.commentCommitID(ctx, owner, repo, rootID)
-	if err != nil {
-		return 0, err
-	}
-	opts.CommitID = commitID
 	path := fmt.Sprintf("%s/pulls/%d/reviews", repoPath(owner, repo), number)
 	if err := c.do(ctx, http.MethodPost, path, opts, nil); err != nil {
 		return 0, fmt.Errorf("forgejo: reply to inline comment %d on %s/%s#%d: %w", rootID, owner, repo, number, err)
@@ -402,57 +396,26 @@ func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int
 	return 0, nil
 }
 
-// commentCommitID looks up the commit_id of a cached inline comment, since
-// forge.Comment does not carry it but a reply review must reuse it.
-func (c *Client) commentCommitID(ctx context.Context, owner, repo string, id int64) (string, error) {
-	c.inlineMu.Lock()
-	loc, ok := c.inlineCache[id]
-	c.inlineMu.Unlock()
-	if !ok {
-		return "", fmt.Errorf("forgejo: reply to inline comment %d on %s/%s: %w", id, owner, repo, ErrCommentUnknown)
-	}
-	var raw []pullReviewComment
-	path := fmt.Sprintf("%s/pulls/%d/reviews/%d/comments", repoPath(owner, repo), loc.number, loc.reviewID)
-	if err := c.do(ctx, http.MethodGet, path, nil, &raw); err != nil {
-		return "", fmt.Errorf("forgejo: reply to inline comment %d on %s/%s: %w", id, owner, repo, err)
-	}
-	for _, cm := range raw {
-		if cm.ID == id {
-			return cm.CommitID, nil
-		}
-	}
-	return "", fmt.Errorf("forgejo: reply to inline comment %d on %s/%s: %w", id, owner, repo, ErrCommentUnknown)
-}
-
 // ListInline implements forge.Client: it lists every review on the pull
-// request, then every comment under each review, populating the inline
-// cache as it goes. Every returned comment's InReplyTo is 0: Forgejo's
-// model has no reply-linkage field, so a "thread" always degenerates to a
-// flat list of root comments.
+// request, then every comment under each review. Every returned comment's
+// InReplyTo is 0: Forgejo's model has no reply-linkage field, so a "thread"
+// always degenerates to a flat list of root comments.
 func (c *Client) ListInline(ctx context.Context, owner, repo string, number int) ([]forge.Comment, error) {
 	reviews, err := c.listReviews(ctx, owner, repo, number)
 	if err != nil {
 		return nil, err
 	}
 	var out []forge.Comment
-	cacheUpdates := make(map[int64]inlineLocation)
 	for _, rv := range reviews {
-		comments, err := c.listReviewComments(ctx, owner, repo, number, rv.ID)
+		raw, err := c.rawReviewComments(ctx, owner, repo, number, rv.ID)
 		if err != nil {
 			return nil, err
 		}
-		for _, cm := range comments {
-			cacheUpdates[cm.ID] = inlineLocation{number: number, reviewID: rv.ID}
-			out = append(out, cm)
+		for _, cm := range raw {
+			out = append(out, inlineComment(cm))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-
-	c.inlineMu.Lock()
-	for id, loc := range cacheUpdates {
-		c.inlineCache[id] = loc
-	}
-	c.inlineMu.Unlock()
 	return out, nil
 }
 
@@ -482,30 +445,37 @@ func (c *Client) listReviews(ctx context.Context, owner, repo string, number int
 	}
 }
 
-// listReviewComments fetches GET /pulls/{n}/reviews/{id}/comments, which is
-// not paginated, and maps the results to forge.Comment with InReplyTo
-// always 0.
-func (c *Client) listReviewComments(ctx context.Context, owner, repo string, number int, reviewID int64) ([]forge.Comment, error) {
+// rawReviewComments fetches GET /pulls/{n}/reviews/{id}/comments, which is
+// not paginated. It returns the raw API shape (unlike listReviewComments'
+// former mapped form) so callers that need fields forge.Comment drops
+// (commit id) can still get at them.
+func (c *Client) rawReviewComments(ctx context.Context, owner, repo string, number int, reviewID int64) ([]pullReviewComment, error) {
 	var raw []pullReviewComment
 	path := fmt.Sprintf("%s/pulls/%d/reviews/%d/comments", repoPath(owner, repo), number, reviewID)
 	if err := c.do(ctx, http.MethodGet, path, nil, &raw); err != nil {
 		return nil, fmt.Errorf("forgejo: list review comments for %s/%s#%d review %d: %w", owner, repo, number, reviewID, err)
 	}
-	out := make([]forge.Comment, 0, len(raw))
-	for _, cm := range raw {
-		out = append(out, forge.Comment{
-			ID:          cm.ID,
-			Author:      cm.User.Login,
-			AuthorIsBot: isBot(cm.User.Login),
-			Body:        cm.Body,
-			CreatedAt:   cm.CreatedAt,
-			Inline:      true,
-			Path:        cm.Path,
-			Line:        int(cm.LineNum),
-		})
-	}
-	return out, nil
+	return raw, nil
 }
+
+// inlineComment maps one raw review comment to forge.Comment, with
+// InReplyTo always 0: Forgejo's model has no reply-linkage field.
+func inlineComment(cm pullReviewComment) forge.Comment {
+	return forge.Comment{
+		ID:          cm.ID,
+		Author:      cm.User.Login,
+		AuthorIsBot: isBot(cm.User.Login),
+		Body:        cm.Body,
+		CreatedAt:   cm.CreatedAt,
+		Inline:      true,
+		Path:        cm.Path,
+		Line:        int(cm.LineNum),
+	}
+}
+
+// openPullRequestsPageSize bounds each GET /pulls page, for the same
+// short-page-means-last-page reasoning as reviewsPageSize.
+const openPullRequestsPageSize = 50
 
 // ListOpenPullRequests implements forge.Client. Forgejo sorts by
 // recentupdate server-side, so pagination stops as soon as a page's pull
@@ -515,7 +485,7 @@ func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string, s
 	page := 1
 	for {
 		var batch []pullRequest
-		path := fmt.Sprintf("%s/pulls?state=open&sort=recentupdate&page=%d", repoPath(owner, repo), page)
+		path := fmt.Sprintf("%s/pulls?state=open&sort=recentupdate&page=%d&limit=%d", repoPath(owner, repo), page, openPullRequestsPageSize)
 		if err := c.do(ctx, http.MethodGet, path, nil, &batch); err != nil {
 			return nil, fmt.Errorf("forgejo: list open pull requests for %s/%s: %w", owner, repo, err)
 		}
@@ -532,10 +502,21 @@ func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string, s
 	}
 }
 
+// fullName returns r's full_name, or "" for a nil r: a deleted fork leaves
+// head.repo JSON null, which decodes to a nil *repository.
+func fullName(r *repository) string {
+	if r == nil {
+		return ""
+	}
+	return r.FullName
+}
+
 func openPullRequest(pr pullRequest) forge.OpenPullRequest {
 	out := forge.OpenPullRequest{
-		UpdatedAt:     pr.UpdatedAt,
-		DefaultBranch: pr.Base.Repo.DefaultBranch,
+		UpdatedAt: pr.UpdatedAt,
+	}
+	if pr.Base.Repo != nil {
+		out.DefaultBranch = pr.Base.Repo.DefaultBranch
 	}
 	out.Number = pr.Number
 	out.Title = pr.Title
@@ -544,7 +525,11 @@ func openPullRequest(pr pullRequest) forge.OpenPullRequest {
 	out.State = pr.State
 	out.Merged = pr.Merged
 	out.Draft = pr.Draft
-	out.Fork = pr.Head.Repo.Fork
+	// A fork PR's head lives in a different repository than its base. A
+	// deleted fork leaves head.repo null, which is also not the base repo.
+	// Forgejo's own head.repo.fork flag is not trusted directly: it can lag
+	// or disagree with the repository comparison, matching webhook's rule.
+	out.Fork = pr.Head.Repo == nil || fullName(pr.Head.Repo) != fullName(pr.Base.Repo)
 	out.HeadRef = pr.Head.Ref
 	out.HeadSHA = pr.Head.SHA
 	out.BaseRef = pr.Base.Ref
@@ -557,10 +542,12 @@ func openPullRequest(pr pullRequest) forge.OpenPullRequest {
 	return out
 }
 
-// isBot heuristically detects a bot account from its login, since Forgejo's
-// user model has no bot/type flag (unlike GitHub's).
+// isBot heuristically detects a bot account from its login, matching the
+// login-suffix half of webhook's ghUser.isBot rule: Forgejo's REST user
+// model carries no Type field (unlike GitHub's), so only the login check
+// applies here.
 func isBot(login string) bool {
-	return strings.HasSuffix(login, "[bot]") || strings.HasSuffix(login, "-bot")
+	return strings.HasSuffix(login, "[bot]")
 }
 
 // truncate shortens s to at most n bytes, matching the cap Forgejo (like

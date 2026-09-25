@@ -108,7 +108,9 @@ type Client interface {
 
 	// GetComment fetches one comment; inline selects the review-comment
 	// namespace, which the forge keeps apart from conversation comments.
-	GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (Comment, error)
+	// number is the pull request the comment belongs to; forges that can
+	// resolve a comment by id alone (GitHub) ignore it.
+	GetComment(ctx context.Context, owner, repo string, number int, id int64, inline bool) (Comment, error)
 	// ListConversation returns the PR's conversation comments, oldest first.
 	ListConversation(ctx context.Context, owner, repo string, number int) ([]Comment, error)
 	// ListInline returns the PR's inline review comments, oldest first.
