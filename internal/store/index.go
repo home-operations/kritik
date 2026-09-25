@@ -8,13 +8,20 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// maxEmbedDims bounds the embedding dimension. halfvec holds up to 16,000
+// and vchordrq indexes any halfvec; the cap is kritik's, as an embedding
+// wider than this is a configuration mistake rather than a model.
+const maxEmbedDims = 4000
+
 // ErrIndexSchemaMismatch is returned when index_chunks was created for a
 // different embedding model or dimension than the deployment now runs.
 var ErrIndexSchemaMismatch = errors.New("store: index_chunks was built for a different embedding model")
 
 // EnsureIndexSchema creates index_chunks at the deployment's embedding
 // dimension on first use, records the model and dimension in
-// index_schema, and on later starts checks they still match. A changed
+// index_schema, and on later starts checks they still match and that the
+// embedding index is a VectorChord one, replacing a pgvector HNSW index
+// left by an earlier version. A changed
 // model at the same dimension, or a changed dimension, is refused unless
 // reindex is set, in which case every generation is dropped and the table
 // is rebuilt: each repository is then re-indexed from scratch by its next
@@ -23,8 +30,8 @@ func (s *Store) EnsureIndexSchema(ctx context.Context, appRole, model string, di
 	if s.owner == nil {
 		return errors.New("store: EnsureIndexSchema needs the owner connection")
 	}
-	if dims <= 0 || dims > 4000 {
-		return fmt.Errorf("store: embedding dimension %d is outside halfvec index limits", dims)
+	if dims <= 0 || dims > maxEmbedDims {
+		return fmt.Errorf("store: embedding dimension %d is outside the index limit of %d", dims, maxEmbedDims)
 	}
 	return pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritik-index-schema'))`); err != nil {
@@ -39,7 +46,7 @@ func (s *Store) EnsureIndexSchema(ctx context.Context, appRole, model string, di
 		case err != nil:
 			return fmt.Errorf("store: read index schema: %w", err)
 		case curModel == model && curDims == dims:
-			return nil
+			return ensureEmbeddingIndex(ctx, tx)
 		case !reindex:
 			return fmt.Errorf("%w: table has %s/%d, deployment wants %s/%d (set KRITIK_REINDEX_ON_MODEL_CHANGE=true to rebuild)",
 				ErrIndexSchemaMismatch, curModel, curDims, model, dims)
@@ -82,7 +89,6 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 		)`, dims),
 		`CREATE INDEX IF NOT EXISTS index_chunks_run_path_idx ON index_chunks (index_run_id, path)`,
 		`CREATE INDEX IF NOT EXISTS index_chunks_tenant_id_idx ON index_chunks (tenant_id)`,
-		`CREATE INDEX IF NOT EXISTS index_chunks_embedding_idx ON index_chunks USING hnsw (embedding halfvec_cosine_ops)`,
 		`ALTER TABLE index_chunks ENABLE ROW LEVEL SECURITY`,
 		`DROP POLICY IF EXISTS tenant_isolation ON index_chunks`,
 		`CREATE POLICY tenant_isolation ON index_chunks
@@ -95,8 +101,42 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 			return fmt.Errorf("store: create index_chunks: %w", err)
 		}
 	}
+	if err := ensureEmbeddingIndex(ctx, tx); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO index_schema (id, embed_model, embed_dims) VALUES (1, $1, $2)`, model, dims); err != nil {
 		return fmt.Errorf("store: record index schema: %w", err)
+	}
+	return nil
+}
+
+// embeddingIndexMethod is the access method the embedding index must use:
+// VectorChord's, which partitions and quantizes rather than building a
+// graph, so it builds faster and answers a filtered query in full.
+const embeddingIndexMethod = "vchordrq"
+
+// ensureEmbeddingIndex creates the cosine index on index_chunks.embedding,
+// dropping one built with another access method first. The index is
+// unpartitioned: the table stays far below the size at which VectorChord
+// recommends lists.
+func ensureEmbeddingIndex(ctx context.Context, tx pgx.Tx) error {
+	var method string
+	err := tx.QueryRow(ctx, `SELECT am.amname FROM pg_class c JOIN pg_am am ON am.oid = c.relam
+		WHERE c.relname = 'index_chunks_embedding_idx' AND c.relkind = 'i'`).Scan(&method)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+	case err != nil:
+		return fmt.Errorf("store: inspect embedding index: %w", err)
+	case method == embeddingIndexMethod:
+		return nil
+	default:
+		if _, err := tx.Exec(ctx, `DROP INDEX index_chunks_embedding_idx`); err != nil {
+			return fmt.Errorf("store: drop %s embedding index: %w", method, err)
+		}
+	}
+	if _, err := tx.Exec(ctx, `CREATE INDEX index_chunks_embedding_idx ON index_chunks USING `+embeddingIndexMethod+
+		` (embedding halfvec_cosine_ops)`); err != nil {
+		return fmt.Errorf("store: create embedding index: %w", err)
 	}
 	return nil
 }

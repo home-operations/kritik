@@ -5,8 +5,10 @@
 - **Supersedes:** [ADR-0001](0001-kritik-pr-review-service.md), kept unchanged as historical input.
 - **Amended by:** [ADR-0003](0003-forgejo-agentic-review.md) (Forgejo,
   providers, the contract, `.kritik.yaml`, agentic mode, the worker–runner
-  protocol) and [ADR-0004](0004-model-gateway.md) (the worker as model
-  gateway; no provider key in a runner pod).
+  protocol), [ADR-0004](0004-model-gateway.md) (the worker as model
+  gateway; no provider key in a runner pod) and
+  [ADR-0007](0007-vectorchord.md) (the vector index is VectorChord's
+  `vchordrq`, replacing the pgvector HNSW of §2.8 and §2.9).
 - **Authors:** perfectra1n (this ADR, as published at
   [gist 6a67dd03](https://gist.github.com/perfectra1n/6a67dd0362ea9d7afd24a4e917028581));
   rebased onto ADR-0001's final revision by onedr0p. The rebase adds the

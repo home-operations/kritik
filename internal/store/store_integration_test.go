@@ -21,7 +21,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
-// The suite needs a pgvector-enabled Postgres with three roles, as
+// The suite needs a VectorChord-enabled Postgres with three roles, as
 // `mise run test-integration` provisions:
 //   KRITIK_TEST_OWNER_URL   database owner (not superuser)
 //   KRITIK_TEST_APP_URL     application role, owns nothing
@@ -406,7 +406,7 @@ func TestMain(m *testing.M) {
 		if err == nil {
 			_, _ = pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;
 				GRANT ALL ON SCHEMA public TO kritik; GRANT USAGE ON SCHEMA public TO kritik_app, kritik_runner;
-				CREATE EXTENSION IF NOT EXISTS vector`)
+				CREATE EXTENSION IF NOT EXISTS vchord CASCADE`)
 			pool.Close()
 		}
 	}
@@ -414,3 +414,45 @@ func TestMain(m *testing.M) {
 }
 
 var _ = filepath.Join
+
+// TestEnsureIndexSchemaUsesVectorChord checks that the embedding index is a
+// vchordrq one, and that an HNSW index left by an earlier version is
+// replaced on the next start.
+func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t)
+	if err := s.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	// The suites share one database: leave no index schema behind.
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+	})
+	method := func() string {
+		var m string
+		if err := s.owner.QueryRow(ctx, `SELECT am.amname FROM pg_class c JOIN pg_am am ON am.oid = c.relam
+			WHERE c.relname = 'index_chunks_embedding_idx'`).Scan(&m); err != nil {
+			t.Fatalf("embedding index: %v", err)
+		}
+		return m
+	}
+	if err := s.EnsureIndexSchema(ctx, "kritik_app", "test-embed", 8, true); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	if got := method(); got != embeddingIndexMethod {
+		t.Fatalf("index method = %q, want %q", got, embeddingIndexMethod)
+	}
+	if _, err := s.owner.Exec(ctx, `DROP INDEX index_chunks_embedding_idx;
+		CREATE INDEX index_chunks_embedding_idx ON index_chunks USING hnsw (embedding halfvec_cosine_ops)`); err != nil {
+		t.Fatalf("plant an hnsw index: %v", err)
+	}
+	if err := s.EnsureIndexSchema(ctx, "kritik_app", "test-embed", 8, false); err != nil {
+		t.Fatalf("EnsureIndexSchema again: %v", err)
+	}
+	if got := method(); got != embeddingIndexMethod {
+		t.Fatalf("index method after replacement = %q, want %q", got, embeddingIndexMethod)
+	}
+	if _, err := s.app.Exec(ctx, `SET vchordrq.prefilter = on`); err != nil {
+		t.Fatalf("the application role must be able to set the prefilter: %v", err)
+	}
+}
