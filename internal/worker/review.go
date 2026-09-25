@@ -477,28 +477,35 @@ func errText(err error) string {
 }
 
 // ForgeCache is the Forges implementation over configured GitHub Apps. One
-// client per installation, built on first use.
+// client per installation, built on first use and rebuilt when the
+// installation's credentials change.
 type ForgeCache struct {
 	Build func(ctx context.Context, in *configfile.Installation, externalID int64, repo string) (forge.Client, error)
 
 	mu      sync.Mutex
-	clients map[string]forge.Client
+	clients map[string]cachedForge
+}
+
+type cachedForge struct {
+	fingerprint string
+	client      forge.Client
 }
 
 // For implements Forges.
 func (c *ForgeCache) For(ctx context.Context, in *configfile.Installation, externalID int64, repo string) (forge.Client, error) {
+	fp := credentialFingerprint(in)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if client, ok := c.clients[in.Name]; ok {
-		return client, nil
+	if cached, ok := c.clients[in.Name]; ok && cached.fingerprint == fp {
+		return cached.client, nil
 	}
 	client, err := c.Build(ctx, in, externalID, repo)
 	if err != nil {
 		return nil, err
 	}
 	if c.clients == nil {
-		c.clients = map[string]forge.Client{}
+		c.clients = map[string]cachedForge{}
 	}
-	c.clients[in.Name] = client
+	c.clients[in.Name] = cachedForge{fingerprint: fp, client: client}
 	return client, nil
 }
