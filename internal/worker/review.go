@@ -156,7 +156,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	secrets := runner.Secrets{GitToken: token}
 	if agentic {
 		if deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, pr, settings, prior, admitted, &spec, &secrets, deadline); err != nil {
-			return errors.Join(err, w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", err.Error()))
+			return errors.Join(err, w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", err.Error()),
+				failRun(ctx, w.Store, args.TenantID, runID, err.Error()))
 		}
 	}
 	sup := runSupervision(w.Store, args.TenantID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
@@ -432,6 +433,19 @@ func (w *Review) finishReview(ctx context.Context, tenantID, reviewID, status, p
 			reviewID, status, patchID, errText)
 		if err != nil {
 			return fmt.Errorf("worker: finish review: %w", err)
+		}
+		return nil
+	})
+}
+
+// failRun ends a runner run that never got a Job, so it does not stay
+// 'created' for good.
+func failRun(ctx context.Context, st *store.Store, tenantID, runID, errText string) error {
+	return st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000), finished_at = now() WHERE id = $1`,
+			runID, errText)
+		if err != nil {
+			return fmt.Errorf("worker: fail runner run: %w", err)
 		}
 		return nil
 	})

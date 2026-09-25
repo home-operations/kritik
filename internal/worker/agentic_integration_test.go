@@ -183,6 +183,7 @@ type agenticHarness struct {
 	other  *configfile.Tenant
 	lf     *localForge
 	exec   *hookExecutor
+	review *Review
 	fc     *fakeCompleter
 	sm     *scriptedModel
 	dir    string
@@ -234,10 +235,11 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	}
 	h.svc = ingest.NewService(appStore, insertOnly)
 	workers := river.NewWorkers()
-	river.AddWorker(workers, &Review{
+	h.review = &Review{
 		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf}, Completers: &completers{c: h.fc},
 		Executor: h.exec, Deadline: time.Minute, Logger: logger, superviseEvery: 50 * time.Millisecond,
-	})
+	}
+	river.AddWorker(workers, h.review)
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{jobs.QueueReview: {MaxWorkers: 1}}, Workers: workers,
 		FetchCooldown: 50 * time.Millisecond, FetchPollInterval: 100 * time.Millisecond,
@@ -312,6 +314,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("the merge-base filter skips before the agent runs", func(t *testing.T) { checkAgentFiltered(t, h) })
 	t.Run("a review outlives the client's job timeout", func(t *testing.T) { checkAgentOutlivesJobTimeout(t, h) })
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
+	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
 	t.Run("another tenant cannot read the agent runs", func(t *testing.T) {
 		count := func(tenantID string) int {
 			var n int
@@ -626,5 +629,30 @@ func checkAgentCanceledCharges(t *testing.T, h *agenticHarness) {
 	}
 	if rows, tokens := h.usageTokens(t, reviewID); rows != 1 || tokens != 110 {
 		t.Fatalf("a cancelled agent run must still be charged: rows=%d tokens=%d", rows, tokens)
+	}
+}
+
+func checkFailRun(t *testing.T, h *agenticHarness) {
+	args := jobs.ReviewArgs{TenantID: h.tenant.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
+		HeadSHA: strings.Repeat("d", 40), Trigger: "test"}
+	pr, err := h.review.load(h.ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, runID, _, err := h.review.start(h.ctx, args, pr, h.base, configfile.ReviewAgentic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := failRun(h.ctx, h.st, h.tenant.ID(), runID, "worker: read pull request for the filter: boom"); err != nil {
+		t.Fatal(err)
+	}
+	var phase, errText string
+	var finished bool
+	err = h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT phase, error, finished_at IS NOT NULL FROM runner_runs WHERE id = $1`, runID).
+			Scan(&phase, &errText, &finished)
+	})
+	if err != nil || phase != "failed" || !strings.Contains(errText, "boom") || !finished {
+		t.Fatalf("run phase=%q error=%q finished=%v err=%v", phase, errText, finished, err)
 	}
 }

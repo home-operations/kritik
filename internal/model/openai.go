@@ -110,6 +110,13 @@ func (o *OpenAI) step(
 	}
 	msg := cc.Choices[0].Message
 	out := StepResponse{Text: msg.Content, Stop: openAIStop(cc.Choices[0].FinishReason), Model: modelID}
+	if o.openRouter && cc.Model != "" {
+		// OpenRouter's server-side fallback may answer with another model
+		// in the list; its response says which. Another provider's model
+		// field names a dated snapshot of the one asked for, which is not
+		// what the operator configured, so it is not used.
+		out.Model = cc.Model
+	}
 	for _, tc := range msg.ToolCalls {
 		if tc.Type != "function" {
 			continue

@@ -37,8 +37,11 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 		err = runner.Run(ctx, l.Store, job, spec.Secrets, logger)
 	}
 	logTail := tail(spec.Secrets.Mask(buf.String()), LogTailBytes)
-	res := Result{JobName: "local", PodName: "local", StartedAt: started, LogTail: logTail, Err: err}
+	res := Result{JobName: "local", PodName: "local", StartedAt: started, LogTail: logTail}
 	if err != nil {
+		// A git or provider error can carry a credential, and the worker
+		// stores and shows this one.
+		res.Err = maskedError{msg: spec.Secrets.Mask(err.Error()), err: err}
 		res.ExitCode = 1
 		res.TerminationReason = "Error"
 		if ctx.Err() == context.DeadlineExceeded {
@@ -48,6 +51,16 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 	}
 	return res
 }
+
+// maskedError is an error whose message has the run's secrets masked. It
+// still unwraps to the original, so errors.Is sees a deadline or a cancel.
+type maskedError struct {
+	msg string
+	err error
+}
+
+func (e maskedError) Error() string { return e.msg }
+func (e maskedError) Unwrap() error { return e.err }
 
 func specRoundTrip(s runner.Spec) (runner.Spec, error) {
 	b, err := runner.EncodeSpec(s)

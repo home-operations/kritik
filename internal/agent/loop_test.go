@@ -98,9 +98,10 @@ type runCase struct {
 
 func setupGrepReadSubmit(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
 	st := &scriptedStepper{steps: []model.StepResponse{
-		{ToolCalls: []model.ToolCall{toolCall("1", "grep", `{"pattern":"x"}`)}},
-		{ToolCalls: []model.ToolCall{toolCall("2", "read_file", `{"path":"widget.go"}`)}},
-		{ToolCalls: []model.ToolCall{toolCall("3", "submit_review", validSubmitInput)}},
+		{ToolCalls: []model.ToolCall{toolCall("1", "grep", `{"pattern":"x"}`)}, Model: "acme/large"},
+		{ToolCalls: []model.ToolCall{toolCall("2", "read_file", `{"path":"widget.go"}`)}, Model: "acme/large"},
+		// The provider fell back for the last step.
+		{ToolCalls: []model.ToolCall{toolCall("3", "submit_review", validSubmitInput)}, Model: "acme/small"},
 	}}
 	return st, nil, st
 }
@@ -108,6 +109,9 @@ func setupGrepReadSubmit(t *testing.T) (model.Stepper, context.Context, *scripte
 func checkGrepReadSubmit(t *testing.T, result Result, _ []StepEvent, _ *scriptedStepper) {
 	if string(result.Submitted) != validSubmitInput {
 		t.Fatalf("Submitted = %s, want %s", result.Submitted, validSubmitInput)
+	}
+	if result.Model != "acme/small" {
+		t.Fatalf("Model = %q, want the model that answered the last step", result.Model)
 	}
 	want := map[string]int{"grep": 1, "read_file": 1, "submit_review": 1}
 	if len(result.ToolCalls) != len(want) {

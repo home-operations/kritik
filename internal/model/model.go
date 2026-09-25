@@ -169,8 +169,8 @@ type StepResponse struct {
 	// CostUSD is the provider's reported cost, else the cost Pricing gives,
 	// else zero.
 	CostUSD float64
-	// Model is the model kritik asked for that answered; OpenRouter's
-	// server-side fallback does not always say which one did.
+	// Model is the model that answered: the one OpenRouter reports after
+	// its server-side fallback, else the one kritik asked for.
 	Model string
 	// Upstream is the provider that served the request, when known.
 	Upstream string
@@ -200,8 +200,7 @@ type CompletionRequest struct {
 type CompletionResponse struct {
 	// Raw is the JSON the model produced.
 	Raw string
-	// Model is the model that was asked for; providers that fall back do
-	// not always say which one answered.
+	// Model is the model that answered, as StepResponse.Model.
 	Model string
 	// Upstream is the provider that served the request, when known.
 	Upstream string

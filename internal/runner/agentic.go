@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -215,13 +216,15 @@ type agentRecord struct {
 	toolCalls, timeline []byte
 	usage               model.Usage
 	costUSD             float64
-	err                 string
+	// model answered the run; empty means the one the spec asked for.
+	model string
+	err   string
 }
 
 // newAgentRecord encodes a finished Run. The error text is masked: a
 // provider may echo the key back in an error the worker later shows.
 func newAgentRecord(res agent.Result, timeline []timelineStep, secrets Secrets) (agentRecord, error) {
-	rec := agentRecord{stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, err: secrets.Mask(res.Err)}
+	rec := agentRecord{stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, model: res.Model, err: secrets.Mask(res.Err)}
 	var err error
 	if rec.toolCalls, err = json.Marshal(res.ToolCalls); err != nil {
 		return agentRecord{}, fmt.Errorf("runner: encode tool calls: %w", err)
@@ -243,7 +246,7 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error)
 			SELECT id, tenant_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000) FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
-			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, p.Model.Model, rec.err)
+			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, cmp.Or(rec.model, p.Model.Model), rec.err)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}
