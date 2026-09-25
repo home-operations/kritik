@@ -47,8 +47,9 @@ func NewClient(app *App, installationID int64, host string) (*Client, error) {
 }
 
 // MergeBase implements forge.Client through the compare API, whose
-// merge_base_commit is exactly what GitHub diffs a PR against.
-func (c *Client) MergeBase(ctx context.Context, owner, repo, base, head string) (string, error) {
+// merge_base_commit is exactly what GitHub diffs a PR against. number is
+// unused: GitHub's compare API needs only the two refs.
+func (c *Client) MergeBase(ctx context.Context, owner, repo string, number int, base, head string) (string, error) {
 	cmp, _, err := c.api.Repositories.CompareCommits(ctx, owner, repo, base, head, &gh.ListOptions{PerPage: 1})
 	if err != nil {
 		return "", fmt.Errorf("github: compare %s...%s: %w", base, head, err)
@@ -216,7 +217,7 @@ func (c *Client) ListInline(ctx context.Context, owner, repo string, number int)
 }
 
 // Permission implements forge.Client.
-func (c *Client) Permission(ctx context.Context, owner, repo, login string) (string, error) {
+func (c *Client) Permission(ctx context.Context, owner, repo, login string) (forge.Permission, error) {
 	level, _, err := c.api.Repositories.GetPermissionLevel(ctx, owner, repo, login)
 	if err != nil {
 		return "", fmt.Errorf("github: permission of %s on %s/%s: %w", login, owner, repo, err)
@@ -224,9 +225,9 @@ func (c *Client) Permission(ctx context.Context, owner, repo, login string) (str
 	// role_name carries maintain and triage, which permission folds into
 	// write and read.
 	if name := level.GetRoleName(); name != "" {
-		return name, nil
+		return forge.Permission(name), nil
 	}
-	return level.GetPermission(), nil
+	return forge.Permission(level.GetPermission()), nil
 }
 
 // ReplyInline implements forge.Client.

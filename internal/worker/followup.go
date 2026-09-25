@@ -250,7 +250,7 @@ func (f *followUp) disqualified(ctx context.Context) string {
 		return "permission unknown"
 	}
 	if !forge.CanWrite(perm) {
-		return "author has " + perm + " access, write is required"
+		return "author has " + string(perm) + " access, write is required"
 	}
 	return ""
 }

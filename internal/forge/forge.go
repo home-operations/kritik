@@ -54,11 +54,34 @@ const (
 	StatusSuccess StatusState = "success"
 )
 
+// Permission is a login's access level to a repository, in ascending order.
+type Permission string
+
+// Levels a forge grants a collaborator.
+const (
+	PermissionNone     Permission = "none"
+	PermissionRead     Permission = "read"
+	PermissionTriage   Permission = "triage"
+	PermissionWrite    Permission = "write"
+	PermissionMaintain Permission = "maintain"
+	PermissionAdmin    Permission = "admin"
+)
+
+// Valid reports whether p is one of the known permission levels.
+func (p Permission) Valid() bool {
+	switch p {
+	case PermissionNone, PermissionRead, PermissionTriage, PermissionWrite, PermissionMaintain, PermissionAdmin:
+		return true
+	}
+	return false
+}
+
 // Client is one installation's access to its forge.
 type Client interface {
 	// MergeBase asks the forge for the merge-base of base (a branch) and
-	// head (a commit), the same way the forge computes the PR diff.
-	MergeBase(ctx context.Context, owner, repo, base, head string) (string, error)
+	// head (a commit) of pull request number, the same way the forge
+	// computes the PR diff.
+	MergeBase(ctx context.Context, owner, repo string, number int, base, head string) (string, error)
 	// CloneURL is the HTTPS clone URL of a repository on this forge.
 	CloneURL(owner, repo string) string
 	// GitToken is a short-lived credential a runner can fetch with.
@@ -92,7 +115,7 @@ type Client interface {
 	ListInline(ctx context.Context, owner, repo string, number int) ([]Comment, error)
 	// Permission is the login's access to the repository: admin, maintain,
 	// write, triage, read or none.
-	Permission(ctx context.Context, owner, repo, login string) (string, error)
+	Permission(ctx context.Context, owner, repo, login string) (Permission, error)
 	// ReplyInline posts a reply under a root inline comment.
 	ReplyInline(ctx context.Context, owner, repo string, number int, rootID int64, body string) (int64, error)
 	// ListOpenPullRequests returns the open pull requests updated since a
@@ -101,9 +124,9 @@ type Client interface {
 }
 
 // CanWrite reports whether a permission level allows pushing.
-func CanWrite(permission string) bool {
+func CanWrite(permission Permission) bool {
 	switch permission {
-	case "admin", "maintain", "write":
+	case PermissionAdmin, PermissionMaintain, PermissionWrite:
 		return true
 	}
 	return false

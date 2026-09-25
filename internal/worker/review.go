@@ -104,7 +104,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		return err
 	}
 	owner, repo, _ := strings.Cut(pr.repository, "/")
-	mergeBase, err := client.MergeBase(ctx, owner, repo, pr.baseRef, pr.headSHA)
+	mergeBase, err := client.MergeBase(ctx, owner, repo, pr.number, pr.baseRef, pr.headSHA)
 	if err != nil {
 		return err
 	}

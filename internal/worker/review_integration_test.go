@@ -80,7 +80,7 @@ type localForge struct {
 	inline   []forge.InlineComment
 	status   string
 	// permissions by login; unknown logins have read access.
-	permissions map[string]string
+	permissions map[string]forge.Permission
 	replies     []string
 }
 
@@ -90,7 +90,7 @@ func (l *localForge) setBase(base string) {
 	l.base = base
 }
 
-func (l *localForge) MergeBase(context.Context, string, string, string, string) (string, error) {
+func (l *localForge) MergeBase(context.Context, string, string, int, string, string) (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.base, nil
@@ -196,13 +196,13 @@ func (l *localForge) ListInline(context.Context, string, string, int) ([]forge.C
 	return nil, nil
 }
 
-func (l *localForge) Permission(_ context.Context, _, _, login string) (string, error) {
+func (l *localForge) Permission(_ context.Context, _, _, login string) (forge.Permission, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if p, ok := l.permissions[login]; ok {
 		return p, nil
 	}
-	return "read", nil
+	return forge.PermissionRead, nil
 }
 
 func (l *localForge) ListOpenPullRequests(context.Context, string, string, time.Time) ([]forge.OpenPullRequest, error) {
@@ -602,7 +602,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		}
 	}
 
-	lf := &localForge{dir: dir, base: base, tip: head, permissions: map[string]string{"onedr0p": "admin"}}
+	lf := &localForge{dir: dir, base: base, tip: head, permissions: map[string]forge.Permission{"onedr0p": forge.PermissionAdmin}}
 	fc := &fakeCompleter{}
 	fe := &fakeEmbedder{}
 	exec := &executor.Local{Store: runnerStore}
