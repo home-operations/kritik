@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { basePath } from './lib/base';
-  import { router, initRouter, href, navigate } from './lib/router.svelte';
-  import { getJSON, sendJSON, ApiError } from './lib/api.svelte';
+  import { router, initRouter, href, navigate, parse, replace } from './lib/router.svelte';
+  import { getJSON, sendJSON, ApiError, signinState } from './lib/api.svelte';
   import { initEvents, closeEvents } from './lib/events.svelte';
   import { theme, cycleTheme, initTheme } from './lib/theme.svelte';
   import { initKeyboard, help, toggleHelp, togglePalette } from './lib/keyboard.svelte';
@@ -43,6 +43,12 @@
     try {
       me = await getJSON<Me>('/api/v1/me');
       initEvents();
+      // A signed-in user never sits on the sign-in card: send them where a
+      // 401 bounced them from, or the overview.
+      if (router.route.name === 'signin') {
+        const back = parse(signinState.returnTo || '#/');
+        replace(back.name === 'signin' ? { name: 'overview' } : back);
+      }
     } catch (err) {
       // A 401 already redirected to #/signin (see api.svelte.ts); anything
       // else leaves `me` unset and the shell renders signed-out.

@@ -1,7 +1,11 @@
 import { test, expect, DEFAULT_ME } from './fixtures';
 
 test.describe('signed-out shell', () => {
-  test('lands on the overview placeholder with no tenant chrome', async ({ page }) => {
+  // The dashboard has no public content: a 401 from /api/v1/me on the bare
+  // root -- same as on any other route -- shows the sign-in page rather
+  // than a public overview shell.
+  test('a 401 at the bare root bounces to sign-in with providers', async ({ page, mockProviders }) => {
+    await mockProviders();
     await page.route('**/api/v1/me', (route) =>
       route.fulfill({
         status: 401,
@@ -10,14 +14,11 @@ test.describe('signed-out shell', () => {
       }),
     );
     await page.goto('/');
-    await expect(page.locator('.placeholder h1')).toHaveText('Overview');
-    await expect(page.locator('.wordmark')).toHaveText('kritik');
-    await expect(page.locator('.tenant-switch')).toHaveCount(0);
-    await expect(page.locator('.nav')).toHaveCount(0);
-    await expect(page.locator('.account-menu')).toHaveCount(0);
-    // palette, help, theme -- no operator link (no `me`), no account menu.
-    await expect(page.locator('.actions .btn-icon')).toHaveCount(3);
-    await expect(page.locator('.actions a[title="Operator console"]')).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/signin$/);
+    await expect(page.locator('.signin-card h1')).toHaveText('kritik');
+
+    const link = page.locator('.signin-provider');
+    await expect(link).toHaveAttribute('href', /return_to=%23%2F$/);
   });
 
   test('a 401 from the API bounces to sign-in and remembers the return path', async ({ page, mockProviders }) => {
@@ -35,6 +36,24 @@ test.describe('signed-out shell', () => {
 
     const link = page.locator('.signin-provider');
     await expect(link).toHaveAttribute('href', /return_to=%23%2Ft%2Facme%2Frepos/);
+  });
+
+  // "#/signin/" parses as the sign-in route, so a 401 there must neither
+  // loop nor record the sign-in page itself as the place to return to.
+  test('a 401 on #/signin/ stays on sign-in and returns to the overview', async ({ page, mockProviders }) => {
+    await mockProviders();
+    await page.route('**/api/v1/me', (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'unauthorized', message: 'no session' }),
+      }),
+    );
+    await page.goto('/#/signin/');
+    await expect(page.locator('.signin-card h1')).toHaveText('kritik');
+
+    const link = page.locator('.signin-provider');
+    await expect(link).toHaveAttribute('href', /return_to=%23%2F$/);
   });
 });
 
@@ -101,6 +120,15 @@ test.describe('signed-in shell', () => {
     await expect(page).toHaveURL(/#\/t\/globex$/);
   });
 
+  test('a signed-in visit to #/signin redirects to the overview', async ({ page, signIn, mockProviders }) => {
+    await signIn();
+    await mockProviders();
+    await page.goto('/#/signin');
+    await expect(page).toHaveURL(/#\/$/);
+    await expect(page.locator('.signin-card')).toHaveCount(0);
+    await expect(page.locator('.tenant-switch')).toBeVisible();
+  });
+
   test('signing out clears the shell and returns to sign-in', async ({ page, signIn }) => {
     await signIn();
     await page.route('**/auth/logout', (route) => route.fulfill({ status: 204 }));
@@ -146,7 +174,8 @@ test.describe('keyboard shortcuts', () => {
     await expect(page.locator('.help-overlay')).toHaveCount(0);
   });
 
-  test('Ctrl/Cmd+K opens the command palette; typing filters; Enter navigates', async ({ page }) => {
+  test('Ctrl/Cmd+K opens the command palette; typing filters; Enter navigates', async ({ page, signIn }) => {
+    await signIn({ ...DEFAULT_ME, operator: true });
     await page.goto('/');
     await page.keyboard.press('ControlOrMeta+k');
     await expect(page.locator('.palette-input input')).toBeFocused();
