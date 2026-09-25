@@ -191,3 +191,50 @@ test('dark theme renders every page without console errors', async ({ page }) =>
   expect(await page.evaluate(() => document.documentElement.className)).toBe('dark');
   expect(errors).toEqual([]);
 });
+
+test.describe('pulls load more', () => {
+  test('a Load more still in flight when the query changes is discarded', async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await g.mockApi(page, g.defaultApi());
+    let held = false;
+    await page.route((u) => u.pathname.endsWith('/pulls') && u.searchParams.has('cursor'), async (route) => {
+      held = true;
+      await gate;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(g.pageOf([{ ...g.pull, number: 8, title: 'More widgets' }])) });
+    });
+    await page.goto(`/${T}/pulls`);
+    await expect(page.locator('.pull-rows .row')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Load more' }).click();
+    await expect.poll(() => held).toBe(true);
+    await page.getByRole('combobox', { name: 'State' }).selectOption('all');
+    await expect(page.locator('.pull-rows .row')).toHaveCount(1);
+    release();
+    await page.waitForTimeout(300);
+    await expect(page.locator('.pull-rows')).not.toContainText('More widgets');
+    await expect(page.locator('.pull-rows .row')).toHaveCount(1);
+  });
+
+  test('a live refetch keeps the pages already loaded', async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const seen = await g.mockApi(page, g.defaultApi());
+    await page.route('**/api/events', async (route) => {
+      await gate;
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `event: review\ndata: ${JSON.stringify(g.liveEvent)}\n\n`,
+      });
+    });
+    await page.goto(`/${T}/pulls`);
+    await page.getByRole('button', { name: 'Load more' }).click();
+    await expect(page.locator('.pull-rows .row')).toHaveCount(2);
+    const firstPages = () => seen.filter((u) => u.pathname.endsWith('/pulls') && !u.searchParams.has('cursor')).length;
+    const before = firstPages();
+    release();
+    await expect.poll(firstPages).toBeGreaterThan(before);
+    await expect(page.locator('.pull-rows .row')).toHaveCount(2);
+    await expect(page.locator('.pull-rows')).toContainText('More widgets');
+  });
+});
