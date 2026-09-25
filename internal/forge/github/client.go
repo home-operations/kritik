@@ -108,7 +108,7 @@ func (c *Client) BotLogin(ctx context.Context) (string, error) {
 
 // FindComment implements forge.Client.
 func (c *Client) FindComment(ctx context.Context, owner, repo string, number int, login, marker string) (int64, error) {
-	opts := &gh.IssueListCommentsOptions{ListOptions: gh.ListOptions{PerPage: 100}}
+	opts := &gh.IssueListCommentsOptions{PerPage: 100}
 	for {
 		comments, resp, err := c.api.Issues.ListComments(ctx, owner, repo, number, opts)
 		if err != nil {
@@ -179,7 +179,7 @@ func (c *Client) GetComment(ctx context.Context, owner, repo string, id int64, i
 
 // ListConversation implements forge.Client.
 func (c *Client) ListConversation(ctx context.Context, owner, repo string, number int) ([]forge.Comment, error) {
-	opts := &gh.IssueListCommentsOptions{Sort: new("created"), Direction: new("asc"), ListOptions: gh.ListOptions{PerPage: 100}}
+	opts := &gh.IssueListCommentsOptions{Sort: new("created"), Direction: new("asc"), PerPage: 100}
 	var out []forge.Comment
 	for {
 		comments, resp, err := c.api.Issues.ListComments(ctx, owner, repo, number, opts)
@@ -198,7 +198,7 @@ func (c *Client) ListConversation(ctx context.Context, owner, repo string, numbe
 
 // ListInline implements forge.Client.
 func (c *Client) ListInline(ctx context.Context, owner, repo string, number int) ([]forge.Comment, error) {
-	opts := &gh.PullRequestListCommentsOptions{Sort: "created", Direction: "asc", ListOptions: gh.ListOptions{PerPage: 100}}
+	opts := &gh.PullRequestListCommentsOptions{Sort: "created", Direction: "asc", PerPage: 100}
 	var out []forge.Comment
 	for {
 		comments, resp, err := c.api.PullRequests.ListComments(ctx, owner, repo, number, opts)
@@ -257,7 +257,7 @@ func inlineComment(cm *gh.PullRequestComment) forge.Comment {
 // time server-side, so the walk stops at the first page item older than
 // since.
 func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]forge.OpenPullRequest, error) {
-	opts := &gh.PullRequestListOptions{State: "open", Sort: "updated", Direction: "desc", ListOptions: gh.ListOptions{PerPage: 100}}
+	opts := &gh.PullRequestListOptions{State: "open", Sort: "updated", Direction: "desc", PerPage: 100}
 	var out []forge.OpenPullRequest
 	for {
 		prs, resp, err := c.api.PullRequests.List(ctx, owner, repo, opts)
@@ -279,15 +279,15 @@ func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string, s
 
 func openPullRequest(pr *gh.PullRequest) forge.OpenPullRequest {
 	head, base := pr.GetHead(), pr.GetBase()
-	out := forge.OpenPullRequest{UpdatedAt: pr.GetUpdatedAt().Time, DefaultBranch: base.GetRepo().GetDefaultBranch()}
-	out.PullRequest = webhook.PullRequest{
-		Number: pr.GetNumber(), Title: pr.GetTitle(), Author: pr.GetUser().GetLogin(),
-		AuthorIsBot: pr.GetUser().GetType() == userTypeBot || strings.HasSuffix(pr.GetUser().GetLogin(), "[bot]"),
-		State:       pr.GetState(), Merged: pr.GetMerged(), Draft: pr.GetDraft(),
-		Fork:    head.GetRepo().GetFullName() != "" && head.GetRepo().GetFullName() != base.GetRepo().GetFullName(),
-		HeadRef: head.GetRef(), HeadSHA: head.GetSHA(), BaseRef: base.GetRef(), BaseSHA: base.GetSHA(),
-		URL: pr.GetHTMLURL(), CreatedAt: pr.GetCreatedAt().Time,
-	}
+	out := forge.OpenPullRequest{UpdatedAt: pr.GetUpdatedAt().Time, DefaultBranch: base.GetRepo().GetDefaultBranch(),
+		PullRequest: webhook.PullRequest{
+			Number: pr.GetNumber(), Title: pr.GetTitle(), Author: pr.GetUser().GetLogin(),
+			AuthorIsBot: pr.GetUser().GetType() == userTypeBot || strings.HasSuffix(pr.GetUser().GetLogin(), "[bot]"),
+			State:       pr.GetState(), Merged: pr.GetMerged(), Draft: pr.GetDraft(),
+			Fork:    head.GetRepo().GetFullName() != "" && head.GetRepo().GetFullName() != base.GetRepo().GetFullName(),
+			HeadRef: head.GetRef(), HeadSHA: head.GetSHA(), BaseRef: base.GetRef(), BaseSHA: base.GetSHA(),
+			URL: pr.GetHTMLURL(), CreatedAt: pr.GetCreatedAt().Time,
+		}}
 	for _, l := range pr.Labels {
 		out.Labels = append(out.Labels, webhook.Label{Name: l.GetName(), Color: l.GetColor()})
 	}

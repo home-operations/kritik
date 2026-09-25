@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/grammars"
 )
@@ -427,4 +428,14 @@ func Windows(src []byte, size, overlap int) []Decl {
 		}
 	}
 	return out
+}
+
+// Ignored reports whether path matches any of the doublestar globs.
+func Ignored(globs []string, path string) bool {
+	for _, g := range globs {
+		if ok, _ := doublestar.Match(g, path); ok {
+			return true
+		}
+	}
+	return false
 }

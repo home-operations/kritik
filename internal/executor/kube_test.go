@@ -92,8 +92,8 @@ func TestKubeRunWaitsForCompletion(t *testing.T) {
 		t.Fatal("job was not created")
 	}
 	_, _ = client.CoreV1().Pods("kritik").Create(ctx, &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name + "-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": name}},
-		Spec:       corev1.PodSpec{NodeName: "k8s-1"},
+		Name: name + "-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": name},
+		Spec: corev1.PodSpec{NodeName: "k8s-1"},
 		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{State: corev1.ContainerState{
 			Terminated: &corev1.ContainerStateTerminated{ExitCode: 0, Reason: "Completed"}}}}},
 	}, metav1.CreateOptions{})

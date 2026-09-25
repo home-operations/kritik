@@ -607,17 +607,13 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	fe := &fakeEmbedder{}
 	exec := &executor.Local{Store: runnerStore}
 	workers := river.NewWorkers()
+	wb := Base{Store: appStore, Current: current, Forges: &forges{f: lf}, Logger: logger}
 	river.AddWorker(workers, &Review{
-		Store: appStore, Current: current, Forges: &forges{f: lf}, Completers: &completers{c: fc},
-		Embedder: fe, EmbedModel: "fake-embed",
-		Executor: exec, Deadline: time.Minute, Logger: logger,
+		Base: wb, Completers: &completers{c: fc}, Embedder: fe, EmbedModel: "fake-embed", Executor: exec, Deadline: time.Minute,
 	})
-	river.AddWorker(workers, &FollowUp{
-		Store: appStore, Current: current, Forges: &forges{f: lf}, Completers: &completers{c: fc}, Logger: logger,
-	})
+	river.AddWorker(workers, &FollowUp{Base: wb, Completers: &completers{c: fc}})
 	river.AddWorker(workers, &Index{
-		Store: appStore, Current: current, Forges: &forges{f: lf}, Executor: exec,
-		Embedder: fe, EmbedModel: "fake-embed", EmbedDims: 8, Deadline: time.Minute, Logger: logger,
+		Base: wb, Executor: exec, Embedder: fe, EmbedModel: "fake-embed", EmbedDims: 8, Deadline: time.Minute,
 	})
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{

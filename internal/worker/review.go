@@ -21,10 +21,8 @@ import (
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/metrics"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/runner"
-	"github.com/home-operations/kritik/internal/store"
 )
 
 // Forges builds and caches a forge client per installation. repo is a
@@ -37,21 +35,16 @@ type Forges interface {
 // Review works the review queue.
 type Review struct {
 	river.WorkerDefaults[jobs.ReviewArgs]
-	Store    *store.Store
-	Current  *configfile.Current
-	Forges   Forges
+	Base
 	Executor executor.Executor
 	// Completers resolves the configured model providers.
 	Completers CompleterSource
-	// Embedder, EmbedModel and EmbedDims enable stage 4 (similar code from
-	// the repository's active index); nil Embedder skips it.
+	// Embedder and EmbedModel enable stage 4 (similar code from the
+	// repository's active index); nil Embedder skips it.
 	Embedder   model.Embedder
 	EmbedModel string
-	// Metrics may be nil.
-	Metrics *metrics.Metrics
 	// Deadline bounds a runner when the tenant sets none.
 	Deadline time.Duration
-	Logger   *slog.Logger
 }
 
 // Review statuses the worker writes; the table's CHECK lists the same set.
@@ -79,9 +72,9 @@ type pullRequest struct {
 func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) error {
 	args := job.Args
 	file := w.Current.Get()
-	tenant := tenantByID(file, args.TenantID)
-	if tenant == nil {
-		return river.JobCancel(fmt.Errorf("worker: tenant %s is not in the configuration", args.TenantID))
+	tenant, err := w.tenant(file, args.TenantID)
+	if err != nil {
+		return err
 	}
 	logger := w.Logger.With("tenant", tenant.Slug, "pr", args.Number, "head", short(args.HeadSHA))
 	started := time.Now()
@@ -95,11 +88,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		w.Metrics.Review(tenant.Slug, statusSuperseded, time.Since(started))
 		return w.record(ctx, args, pr, statusSuperseded, "", "", "")
 	}
-	in, _, ok := file.Installation(pr.installation)
-	if !ok {
-		return river.JobCancel(fmt.Errorf("worker: installation %s is not in the configuration", pr.installation))
-	}
-	client, err := w.Forges.For(ctx, in, pr.externalID, pr.repository)
+	client, err := w.client(ctx, file, pr.installation, pr.externalID, pr.repository)
 	if err != nil {
 		return err
 	}
@@ -269,15 +258,6 @@ func (w *Review) finishReview(ctx context.Context, tenantID, reviewID, status, p
 		}
 		return nil
 	})
-}
-
-func tenantByID(f *configfile.File, id string) *configfile.Tenant {
-	for i := range f.Tenants {
-		if f.Tenants[i].ID() == id {
-			return &f.Tenants[i]
-		}
-	}
-	return nil
 }
 
 func short(sha string) string {

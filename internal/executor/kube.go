@@ -172,7 +172,7 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 		{Name: "KRITIK_IGNORE", Value: strings.Join(spec.Params.Ignore, ",")},
 		{Name: "KRITIK_LOG_FORMAT", Value: "json"},
 		{Name: "KRITIK_DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-			LocalObjectReference: corev1.LocalObjectReference{Name: k.DatabaseSecret}, Key: k.DatabaseSecretKey}}},
+			Name: k.DatabaseSecret, Key: k.DatabaseSecretKey}}},
 	}
 	container := corev1.Container{
 		Name:  runnerRole,
@@ -180,8 +180,8 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 		Args:  []string{"--role", runnerRole},
 		Env:   env,
 		SecurityContext: &corev1.SecurityContext{
-			AllowPrivilegeEscalation: ptr(false),
-			ReadOnlyRootFilesystem:   ptr(true),
+			AllowPrivilegeEscalation: new(false),
+			ReadOnlyRootFilesystem:   new(true),
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 		},
 		VolumeMounts: []corev1.VolumeMount{{Name: "scratch", MountPath: "/tmp"}},
@@ -192,7 +192,7 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 		}
 	}
 	return &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: k.Namespace, Labels: labels, Annotations: annotations},
+		Name: name, Namespace: k.Namespace, Labels: labels, Annotations: annotations,
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoff,
 			ActiveDeadlineSeconds:   &deadline,
@@ -201,21 +201,19 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
 					ServiceAccountName:           k.ServiceAccount,
-					AutomountServiceAccountToken: ptr(false),
+					AutomountServiceAccountToken: new(false),
 					RestartPolicy:                corev1.RestartPolicyNever,
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: ptr(true), RunAsUser: ptr(int64(65532)), RunAsGroup: ptr(int64(65532)),
+						RunAsNonRoot: new(true), RunAsUser: new(int64(65532)), RunAsGroup: new(int64(65532)),
 						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 					},
 					Containers: []corev1.Container{container},
-					Volumes:    []corev1.Volume{{Name: "scratch", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}},
+					Volumes:    []corev1.Volume{{Name: "scratch", EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 				},
 			},
 		},
 	}
 }
-
-func ptr[T any](v T) *T { return &v }
 
 func runKind(kind string) string {
 	if kind == "" {
