@@ -19,6 +19,21 @@ const (
 	CodeInvalidCursor ErrorCode = "invalid_cursor"
 	CodeAmbiguous     ErrorCode = "ambiguous"
 	CodeInternal      ErrorCode = "internal"
+
+	CodeForbidden          ErrorCode = "forbidden"
+	CodeInvalidSpec        ErrorCode = "invalid_spec"
+	CodeOperatorOnly       ErrorCode = "operator_only"
+	CodeRevisionConflict   ErrorCode = "revision_conflict"
+	CodeConfigBlocked      ErrorCode = "config_blocked"
+	CodeSlugTaken          ErrorCode = "slug_taken"
+	CodeFileManaged        ErrorCode = "file_managed"
+	CodeManagementDisabled ErrorCode = "management_disabled"
+	CodeInviteExists       ErrorCode = "invite_exists"
+	CodeNotInviteMember    ErrorCode = "not_invite_member"
+	CodeLastAdmin          ErrorCode = "last_admin"
+	CodeNoHead             ErrorCode = "no_head"
+	CodeNotCancelable      ErrorCode = "not_cancelable"
+	CodeActionsDisabled    ErrorCode = "actions_disabled"
 )
 
 // apiError is an error a handler returns to be written as ErrorBody.
@@ -26,6 +41,7 @@ type apiError struct {
 	status  int
 	code    ErrorCode
 	message string
+	details json.RawMessage
 }
 
 func (e *apiError) Error() string { return string(e.code) + ": " + e.message }
@@ -36,6 +52,20 @@ func errNotFound(what string) error {
 
 func errBadRequest(code ErrorCode, message string) error {
 	return &apiError{status: http.StatusBadRequest, code: code, message: message}
+}
+
+// errStatus is an error with any status, and details when non-nil.
+func errStatus(status int, code ErrorCode, message string, details any) error {
+	e := &apiError{status: status, code: code, message: message}
+	if details != nil {
+		e.details, _ = json.Marshal(details) // details are always plain structs
+	}
+	return e
+}
+
+// pathDetails names where in a request body an error is.
+type pathDetails struct {
+	Path string `json:"path"`
 }
 
 // writeJSON writes v as the response. Every API response is no-store:
@@ -52,7 +82,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // nothing about its cause.
 func writeError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, err error) {
 	if e, ok := errors.AsType[*apiError](err); ok {
-		writeJSON(w, e.status, ErrorBody{Code: e.code, Message: e.message})
+		writeJSON(w, e.status, ErrorBody{Code: e.code, Message: e.message, Details: e.details})
 		return
 	}
 	switch {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/sealbox"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -23,6 +24,13 @@ type Config struct {
 	Store   *store.Store
 	Current *configfile.Current
 	Auth    *auth.Handler
+	// Keyring seals the secrets of dashboard tenants; nil disables writing
+	// them.
+	Keyring *sealbox.Keyring
+	// Actions queues re-runs, cancels and reindexes; nil disables them.
+	Actions Actions
+	// Version is the build's version, shown by /api/v1/meta.
+	Version string
 	// UI is the built dashboard, served under the base path; nil serves
 	// no UI.
 	UI fs.FS
@@ -40,6 +48,10 @@ type Server struct {
 	store    *store.Store
 	current  *configfile.Current
 	auth     *auth.Handler
+	keyring  *sealbox.Keyring
+	actions  Actions
+	version  string
+	webURL   *url.URL
 	ui       fs.FS
 	basePath string
 	logger   *slog.Logger
@@ -60,7 +72,8 @@ func New(cfg Config) *Server {
 		base = strings.TrimRight(cfg.WebURL.Path, "/")
 	}
 	return &Server{
-		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, ui: cfg.UI, basePath: base,
+		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, keyring: cfg.Keyring, actions: cfg.Actions, version: cfg.Version,
+		webURL: cfg.WebURL, ui: cfg.UI, basePath: base,
 		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger),
 	}
 }
@@ -105,6 +118,9 @@ func (s *Server) routes() http.Handler {
 	// Mutations are held to the dashboard's own origin; every API route
 	// needs a principal.
 	apiHandler := s.auth.SameOrigin(s.auth.RequirePrincipal(api))
+	// What the sign-in page needs is served before anyone signs in.
+	public := http.NewServeMux()
+	public.HandleFunc("GET "+metaPath, s.handler(s.getMeta))
 
 	signIn := http.NewServeMux()
 	s.auth.Register(signIn)
@@ -113,6 +129,9 @@ func (s *Server) routes() http.Handler {
 	ui := s.uiHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == metaPath:
+			w.Header().Set("Cache-Control", "no-store")
+			public.ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, "/api/"):
 			w.Header().Set("Cache-Control", "no-store")
 			apiHandler.ServeHTTP(w, r)
@@ -130,6 +149,10 @@ func (s *Server) routes() http.Handler {
 func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/events", s.hub.serve)
 	s.registerReads(mux)
+	s.registerManage(mux)
+	s.registerMembers(mux)
+	s.registerActions(mux)
+	s.registerAudit(mux)
 }
 
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {

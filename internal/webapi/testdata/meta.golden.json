@@ -1,0 +1,12 @@
+{
+  "version": "v1.2.3",
+  "management": true,
+  "signIn": [
+    {
+      "name": "corp",
+      "type": "oidc",
+      "displayName": "Corp"
+    }
+  ],
+  "webUrl": "https://kritik.example"
+}

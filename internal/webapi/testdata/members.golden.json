@@ -1,0 +1,37 @@
+{
+  "members": [
+    {
+      "account": {
+        "id": "acct-1",
+        "displayName": "Ada",
+        "email": "ada@example.com",
+        "avatarUrl": "https://img.example/a.png"
+      },
+      "role": "admin",
+      "sources": [
+        {
+          "source": "forge",
+          "role": "member"
+        },
+        {
+          "source": "invite",
+          "role": "admin"
+        }
+      ]
+    }
+  ],
+  "invites": [
+    {
+      "id": "inv-1",
+      "email": "bob@example.com",
+      "role": "member",
+      "createdBy": {
+        "id": "acct-1",
+        "displayName": "Ada",
+        "email": "ada@example.com",
+        "avatarUrl": "https://img.example/a.png"
+      },
+      "expiresAt": "2026-09-01T12:01:30Z"
+    }
+  ]
+}
