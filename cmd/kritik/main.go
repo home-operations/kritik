@@ -27,6 +27,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configsource"
 	"github.com/home-operations/kritik/internal/egress"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/ingest"
@@ -97,17 +98,6 @@ func run() error {
 		"embedding", cfg.EmbeddingEnabled(),
 	)
 
-	// The runner gets everything it needs from its Job spec; every other role
-	// is driven by the configuration file and must not start without one.
-	var file *configfile.File
-	if role != config.RoleRunner {
-		file, err = configfile.Load(cfg.ConfigFile)
-		if err != nil {
-			return err
-		}
-		logConfig(logger, file, "configuration loaded")
-	}
-
 	// Graceful shutdown on the usual termination signals. stop() runs as soon
 	// as the first signal arrives so a second signal restores default handling
 	// and force-terminates instead of being swallowed during a slow drain.
@@ -143,19 +133,22 @@ func run() error {
 	}
 	defer st.Close()
 
+	// The runner gets everything it needs from its Job spec; every other role
+	// is driven by the configuration file, merged with the dashboard's
+	// tenants, and must not start without it.
 	var current *configfile.Current
 	var exec executor.Executor
-	if file != nil {
-		// current is the last good file; the leader applies it on election and
-		// on every reload, followers only compare hashes.
-		current = configfile.NewCurrent(file)
-		g.Go(func() error {
-			configfile.Watch(ctx, cfg.ConfigFile, cfg.ConfigReloadInterval, logger, func(f *configfile.File) {
-				current.Set(f)
-				logConfig(logger, f, "configuration reloaded")
-			})
-			return nil
-		})
+	if role != config.RoleRunner {
+		// current is the last good merged file; the leader applies it on
+		// election and on every reload, followers only compare hashes.
+		src := &configsource.Source{Store: st, Keyring: cfg.DashboardKeyring(), Logger: logger}
+		file, err := src.Load(ctx, cfg.ConfigFile)
+		if err != nil {
+			return err
+		}
+		logConfig(logger, file, "configuration loaded")
+		current = src.Current
+		g.Go(func() error { return src.Run(ctx, cfg.ConfigFile, cfg.ConfigReloadInterval) })
 		g.Go(func() error {
 			return reportDrift(ctx, st, current, drift, cfg.ConfigReloadInterval)
 		})
