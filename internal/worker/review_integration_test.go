@@ -4,6 +4,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -250,7 +251,7 @@ func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.St
 
 // fakeCompleter answers a review with one finding on the first added line
 // of main.go and one that cannot be anchored, and a follow-up with a fixed
-// reply.
+// reply, as the forced tool call a model.Structured makes.
 type fakeCompleter struct {
 	mu      sync.Mutex
 	calls   int
@@ -258,26 +259,30 @@ type fakeCompleter struct {
 	systems []string
 }
 
-func (f *fakeCompleter) Complete(_ context.Context, req model.CompletionRequest) (model.CompletionResponse, error) {
+func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
-	f.users = append(f.users, req.User)
+	f.users = append(f.users, req.Messages[0].Text)
 	f.systems = append(f.systems, req.System)
-	if req.SchemaName == "reply" {
-		return model.CompletionResponse{Raw: `{"reply":"Because b is new."}`, Model: req.Model, InputTokens: 20, OutputTokens: 5}, nil
+	answer := func(raw string, usage model.Usage, upstream string, cost float64) model.StepResponse {
+		return model.StepResponse{
+			ToolCalls: []model.ToolCall{{ID: "call", Name: req.Tools[0].Name, Input: json.RawMessage(raw)}}, Stop: model.StopToolUse,
+			Usage: usage, Model: req.Model, Upstream: upstream, CostUSD: cost,
+		}
 	}
-	return model.CompletionResponse{
-		Raw: `{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
+	if req.Tools[0].Name == "reply" {
+		return answer(`{"reply":"Because b is new."}`, model.Usage{Input: 20, Output: 5}, "", 0), nil
+	}
+	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
 		  {"path":"main.go","line":1,"severity":"important","title":"first line","explanation":"look here","suggested_fix":"do this"},
 		  {"path":"main.go","line":500,"severity":"blocking","title":"off the diff","explanation":"dropped"}]}`,
-		Model: req.Model, Upstream: "test", InputTokens: 10, OutputTokens: 5, CostUSD: 0.001,
-	}, nil
+		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil
 }
 
-type completers struct{ c model.Completer }
+type completers struct{ c model.Stepper }
 
-func (c *completers) For(*configfile.File, string) (model.Completer, error) { return c.c, nil }
+func (c *completers) Stepper(*configfile.File, string) (model.Stepper, error) { return c.c, nil }
 
 type forges struct{ f forge.Client }
 
@@ -518,6 +523,7 @@ func checkFollowUps(
 	if _, body := lastComment(); !strings.Contains(body, "Because b is new.") || !strings.Contains(body, "kritik follow-up with reviewer") {
 		t.Fatalf("reply = %q", body)
 	}
+	checkFollowUpTranscript(ctx, t, st, tenantID, id, fc)
 	fc.mu.Lock()
 	prompt := fc.users[len(fc.users)-1]
 	fc.mu.Unlock()
@@ -598,7 +604,9 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	t.Cleanup(runnerStore.Close)
 
 	t.Setenv("TEST_PEM", "pem")
-	t.Setenv("TEST_SECRET", "s")
+	// Long enough that masking it out of the transcripts leaves the prompts
+	// they are checked against intact.
+	t.Setenv("TEST_SECRET", "test-provider-key")
 	file, err := configfile.Parse([]byte(configYAML))
 	if err != nil {
 		t.Fatal(err)
@@ -688,6 +696,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		}
 		checkWriteBack(t, lf, fc)
 		checkReviewRows(ctx, t, appStore, tenant.ID(), head)
+		checkSingleShotTranscript(ctx, t, appStore, tenant.ID(), head, fc)
 		var diff, phase, logTail, stages string
 		var changed []string
 		var heartbeat bool

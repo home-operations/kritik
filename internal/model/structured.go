@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Structured implements Completer on a Stepper by forcing a call to one tool
@@ -12,17 +13,26 @@ import (
 // formats.
 type Structured struct {
 	Stepper Stepper
+	// OnStep, when set, is called after every Step Complete makes, with the
+	// step's request, its response or error, and how long it took, so the
+	// caller can record the call.
+	OnStep func(req StepRequest, resp StepResponse, err error, d time.Duration)
 }
 
 // Complete implements Completer.
 func (s Structured) Complete(ctx context.Context, req CompletionRequest) (CompletionResponse, error) {
-	resp, err := s.Stepper.Step(ctx, StepRequest{
+	step := StepRequest{
 		Model: req.Model, Fallbacks: req.Fallbacks, System: req.System,
 		Messages:   []Message{{Role: RoleUser, Text: req.User}},
 		Tools:      []ToolDef{{Name: req.SchemaName, InputSchema: req.Schema}},
 		ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: req.SchemaName},
 		MaxTokens:  req.MaxTokens,
-	})
+	}
+	start := time.Now()
+	resp, err := s.Stepper.Step(ctx, step)
+	if s.OnStep != nil {
+		s.OnStep(step, resp, err, time.Since(start))
+	}
 	if err != nil {
 		return CompletionResponse{}, err
 	}

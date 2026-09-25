@@ -30,6 +30,7 @@ type Metrics struct {
 	modelTokens    *prometheus.CounterVec
 	modelCost      *prometheus.CounterVec
 	egress         *prometheus.CounterVec
+	transcripts    *prometheus.CounterVec
 }
 
 // Label names shared across series.
@@ -60,6 +61,10 @@ func New(reg prometheus.Registerer) *Metrics {
 		egress: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_egress_requests_total",
 			Help: "Requests runner pods made through the gateway, by kind (connect, http) and outcome (allowed, refused, error).",
+		}, []string{lblKind, lblOutcome}),
+		transcripts: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritik_transcript_writes_total",
+			Help: "Model calls recorded for the transcript view, by kind (agent_step, review, fallback, followup) and outcome (ok, error).",
 		}, []string{lblKind, lblOutcome}),
 		reviewDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritik_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",
@@ -105,7 +110,7 @@ func New(reg prometheus.Registerer) *Metrics {
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,
 		m.contextChunks, m.indexRuns, m.indexChunks,
-		m.runnerRuns, m.runnerDuration, m.leaseWait, m.modelCalls, m.modelTokens, m.modelCost, m.egress)
+		m.runnerRuns, m.runnerDuration, m.leaseWait, m.modelCalls, m.modelTokens, m.modelCost, m.egress, m.transcripts)
 	return m
 }
 
@@ -213,4 +218,12 @@ func (m *Metrics) Egress(kind, outcome string) {
 		return
 	}
 	m.egress.WithLabelValues(kind, outcome).Inc()
+}
+
+// TranscriptWrite counts one model call recorded, or not, for the
+// transcript view.
+func (m *Metrics) TranscriptWrite(kind, outcome string) {
+	if m != nil {
+		m.transcripts.WithLabelValues(kind, outcome).Inc()
+	}
 }
