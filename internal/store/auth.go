@@ -212,6 +212,11 @@ func insertForgeMembership(ctx context.Context, tx pgx.Tx, accountID string, g G
 // invite-sourced membership of the account, with the invite's role, and
 // marks it accepted, returning how many it accepted. email must be one the
 // provider verified. Forge-sourced memberships are untouched.
+//
+// It does not take LockTenantAdmins, so an accepted member invite can
+// replace an earlier invite's admin role without the last-admin check. The
+// dashboard refuses to invite an email that is already a member, which
+// leaves only an invite issued before its account joined by another source.
 func (s *Store) AcceptInvites(ctx context.Context, accountID, email string, now time.Time) (int, error) {
 	if email == "" {
 		return 0, nil
