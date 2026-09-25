@@ -1,6 +1,8 @@
 # ADR-0003: Forgejo, agentic reviews, in-repo configuration and a templated contract
 
 - **Status:** Proposed
+- **Amended by:** [ADR-0005](0005-go-templates.md), which replaces the
+  Jinja2 templates of §2.4 with Go templates.
 - **Date:** 2026-09-24
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6, §2.7, §2.11 and §2.12.
 

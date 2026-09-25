@@ -1,0 +1,8 @@
+**[{{ .Severity }}]** **{{ .Title }}**
+
+{{ .Explanation }}
+{{ if .SuggestedFix }}
+**Suggested fix**
+
+{{ .SuggestedFix }}
+{{ end -}}

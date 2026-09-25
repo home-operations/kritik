@@ -1,0 +1,35 @@
+### kritik review
+
+{{ if .Incomplete -}}
+**Review incomplete for `{{ trunc 7 .HeadSHA }}`:** {{ .Incomplete }}. Findings posted for earlier heads may no longer apply.
+{{ else -}}
+- **Blocking:** {{ .Counts.Blocking }}
+- **Important:** {{ .Counts.Important }}
+- **Nit:** {{ .Counts.Nit }}
+{{ if and .Incremental .PriorHeadSHA }}
+_Incremental review of the changes since `{{ trunc 7 .PriorHeadSHA }}`._
+{{ end }}
+{{ .Result.Summary.Take }}
+{{ if .Result.Summary.Praise }}
+**What's good**
+
+{{ range .Result.Summary.Praise -}}
+- {{ . }}
+{{ end -}}
+{{ end -}}
+{{ if .Result.Findings }}
+**Findings**
+
+{{ range .Result.Findings -}}
+- **[{{ .Severity }}]** `{{ .Path }}:{{ .Line }}` {{ .Title }}
+{{ end -}}
+{{ else }}
+Nothing worth flagging in this diff.
+{{ end -}}
+{{ end -}}
+{{ if .Notes }}
+{{ range .Notes -}}
+_{{ . }}._
+{{ end -}}
+{{ end }}
+<sub>Reviewed `{{ trunc 7 .HeadSHA }}` by kritik with {{ .Model }}. Reviews never block a merge.</sub>
