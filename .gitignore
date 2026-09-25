@@ -9,10 +9,6 @@
 # pointer, pushed image reference, replay helpers.
 /.private/
 /.mise.local.toml
-# Per-version sidecars `mise lock` writes for npm-backed tools; konflate and
-# flate leave them untracked, and a tracked one makes CI demand it for every
-# version Renovate bumps to.
-/.mise/locks/
 
 # Editor / OS
 .DS_Store
