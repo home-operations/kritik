@@ -106,11 +106,12 @@ func (ps *providers) get(ctx context.Context, web configfile.Web, name string) (
 	p, err := buildProvider(ctx, signIn, redirectURL(ps.webURL, name), ps.client, ps.now)
 	ps.mu.Lock()
 	if ps.key == key {
-		if err != nil {
-			ps.failed[name] = failedBuild{at: ps.now(), err: err}
-		} else {
+		switch {
+		case err == nil:
 			ps.built[name] = p
 			delete(ps.failed, name)
+		case !requestEnded(ctx, err):
+			ps.failed[name] = failedBuild{at: ps.now(), err: err}
 		}
 	}
 	ps.mu.Unlock()
@@ -118,6 +119,13 @@ func (ps *providers) get(ctx context.Context, web configfile.Web, name string) (
 		return nil, configfile.SignIn{}, err
 	}
 	return p, signIn, nil
+}
+
+// requestEnded reports whether err is the caller's request going away
+// rather than the provider failing, which says nothing about the provider
+// and must not hold back the next sign-in.
+func requestEnded(ctx context.Context, err error) bool {
+	return ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // signInsKey fingerprints everything a built provider depends on, the

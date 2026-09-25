@@ -133,11 +133,14 @@ func newAuthEnv(t *testing.T) *authEnv {
 		e.tenantID[e.file.Tenants[i].Slug] = e.file.Tenants[i].ID()
 	}
 	e.current = configfile.NewCurrent(e.file)
-	e.h = New(Config{
+	e.h, err = New(Config{
 		Store: st, Current: e.current, WebURL: mustParseURL(t, "https://kritik.example.com/dash/"),
 		HTTPClient: trustingClient(e.oidc, e.gh, e.gh2, e.fj), Now: func() time.Time { return e.now },
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	e.mux = http.NewServeMux()
 	e.h.Register(e.mux)
 	return e

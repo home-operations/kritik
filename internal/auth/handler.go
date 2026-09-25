@@ -68,8 +68,15 @@ type Handler struct {
 	providers *providers
 }
 
-// New builds a Handler from c.
-func New(c Config) *Handler {
+// New builds a Handler from c, or fails with ErrWebURL.
+func New(c Config) (*Handler, error) {
+	if c.WebURL == nil {
+		return nil, ErrWebURL
+	}
+	origin := normalizeOrigin(c.WebURL.Scheme + "://" + c.WebURL.Host)
+	if origin == "" || c.WebURL.Hostname() == "" {
+		return nil, fmt.Errorf("%w: got %q", ErrWebURL, c.WebURL.Redacted())
+	}
 	if c.HTTPClient == nil {
 		c.HTTPClient = &http.Client{Timeout: defaultHTTPTimeout}
 	}
@@ -83,12 +90,17 @@ func New(c Config) *Handler {
 		store:     c.Store,
 		current:   c.Current,
 		webURL:    c.WebURL,
-		origin:    normalizeOrigin(c.WebURL.Scheme + "://" + c.WebURL.Host),
+		origin:    origin,
 		now:       c.Now,
 		logger:    c.Logger,
 		providers: newProviders(c.WebURL, c.HTTPClient, c.Now),
-	}
+	}, nil
 }
+
+// ErrWebURL is a dashboard URL that is not an absolute http or https URL
+// with a host: the allowed Origin, the callbacks and the cookies all derive
+// from it.
+var ErrWebURL = errors.New("auth: the web URL must be an absolute http or https URL with a host")
 
 // Register mounts the sign-in routes on mux, relative to the dashboard's
 // root; the caller strips any base path.

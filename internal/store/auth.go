@@ -223,6 +223,7 @@ func (s *Store) AcceptInvites(ctx context.Context, accountID, email string, now 
 		)
 		INSERT INTO memberships (tenant_id, account_id, role, source, refreshed_at)
 		SELECT tenant_id, $1, role, 'invite', $3 FROM accepted
+		-- The latest accepted invite wins: its role replaces an earlier invite's.
 		ON CONFLICT (tenant_id, account_id, source) DO UPDATE SET
 			role = EXCLUDED.role, refreshed_at = EXCLUDED.refreshed_at`, accountID, email, now)
 	if err != nil {

@@ -130,7 +130,9 @@ func (h *Handler) SameOrigin(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		sameOrigin := normalizeOrigin(r.Header.Get("Origin")) == h.origin || r.Header.Get("Sec-Fetch-Site") == "same-origin"
+		// An empty origin never matches, even an absent Origin header.
+		originOK := h.origin != "" && normalizeOrigin(r.Header.Get("Origin")) == h.origin
+		sameOrigin := originOK || r.Header.Get("Sec-Fetch-Site") == "same-origin"
 		if r.Header.Get("X-Kritik") != "1" || !sameOrigin {
 			writeJSON(w, http.StatusForbidden, errorBody{Code: codeCSRF})
 			return

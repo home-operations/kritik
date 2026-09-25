@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,7 +21,11 @@ func testHandler(t *testing.T, webURL string, f *configfile.File) *Handler {
 	if f == nil {
 		f = &configfile.File{}
 	}
-	return New(Config{Current: configfile.NewCurrent(f), WebURL: u})
+	h, err := New(Config{Current: configfile.NewCurrent(f), WebURL: u})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return h
 }
 
 func TestSameOrigin(t *testing.T) {
@@ -186,5 +191,33 @@ func TestPrincipalRejectsMovedSignIn(t *testing.T) {
 	signIn := configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, Host: "github.com"}
 	if signInOrigin(signIn) == signInOrigin(configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, Host: "ghe.example.com"}) {
 		t.Fatal("moving a sign-in to another host kept its origin")
+	}
+}
+
+func TestNewRejectsBadWebURL(t *testing.T) {
+	for _, raw := range []string{"", "kritik.example.com", "/dash/", "ftp://kritik.example.com", "https://", "https://:443/", "mailto:ops@example.com"} {
+		t.Run(raw, func(t *testing.T) {
+			u, err := url.Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := New(Config{Current: configfile.NewCurrent(&configfile.File{}), WebURL: u}); !errors.Is(err, ErrWebURL) {
+				t.Fatalf("New(%q) = %v, want ErrWebURL", raw, err)
+			}
+		})
+	}
+	if _, err := New(Config{Current: configfile.NewCurrent(&configfile.File{})}); !errors.Is(err, ErrWebURL) {
+		t.Fatalf("New without a WebURL = %v, want ErrWebURL", err)
+	}
+}
+
+func TestSameOriginEmptyOriginNeverMatches(t *testing.T) {
+	h := &Handler{}
+	r := httptest.NewRequest(http.MethodPost, "/api/x", nil)
+	r.Header.Set("X-Kritik", "1")
+	w := httptest.NewRecorder()
+	h.SameOrigin(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("reached next") })).ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", w.Code)
 	}
 }

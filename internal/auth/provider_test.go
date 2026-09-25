@@ -183,3 +183,23 @@ func TestProvidersRemembersFailedDiscovery(t *testing.T) {
 		t.Fatalf("discovery requests = %d after the retry window, want 2", hits.Load())
 	}
 }
+
+func TestProvidersDoesNotRememberAnEndedRequest(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	u, _ := url.Parse("https://kritik.example.com")
+	ps := newProviders(u, srv.Client(), nil)
+	web := configfile.Web{SignIn: []configfile.SignIn{{Name: "corp", Type: configfile.SignInOIDC, Issuer: srv.URL, ClientID: "c"}}}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := ps.get(canceled, web, "corp"); err == nil {
+		t.Fatal("get with a canceled request succeeded")
+	}
+	if _, _, err := ps.get(context.Background(), web, "corp"); err == nil || hits.Load() != 1 {
+		t.Fatalf("get after a canceled request = %v with %d discovery requests, want a fresh attempt", err, hits.Load())
+	}
+}
