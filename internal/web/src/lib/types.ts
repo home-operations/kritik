@@ -569,3 +569,135 @@ export interface LiveEvent {
   id: string;
   reviewId: string | null;
 }
+
+// The management API: dashboard tenants, members and invites, actions and
+// the audit log. ErrorBody.code may also be one of these.
+export type ManagementErrorCode =
+  | 'forbidden'
+  | 'invalid_spec'
+  | 'operator_only'
+  | 'revision_conflict'
+  | 'config_blocked'
+  | 'slug_taken'
+  | 'file_managed'
+  | 'management_disabled'
+  | 'invite_exists'
+  | 'not_invite_member'
+  | 'last_admin'
+  | 'no_head'
+  | 'not_cancelable'
+  | 'actions_disabled';
+
+// details of an invalid_spec, operator_only or slug_taken error.
+export interface PathDetails {
+  path: string;
+}
+
+export interface Meta {
+  version: string;
+  management: boolean;
+  signIn: SignInProvider[];
+  webUrl: string;
+}
+
+// A secret as a read shows it, and the forms a write may give instead:
+// generate only for a webhook secret, keep only when updating.
+export interface SecretState {
+  set: boolean;
+}
+export type SecretInput = { value: string } | { keep: true } | { generate: true };
+
+export interface TenantConfig {
+  managedBy: TenantManagedBy;
+  revision: number | null;
+  editable: boolean;
+  operatorOnlyFields: string[];
+  // A tenant entry of the configuration file, in JSON, with every secret
+  // a SecretState.
+  spec: Record<string, unknown>;
+}
+
+export interface CreateTenantRequest {
+  slug: string;
+  spec: Record<string, unknown>;
+}
+
+export interface UpdateTenantRequest {
+  revision: number;
+  spec: Record<string, unknown>;
+}
+
+export interface TenantWriteResult {
+  slug: string;
+  revision: number;
+  // Each server-generated secret, keyed "installations[<name>].<key>";
+  // shown once, never again.
+  generated?: Record<string, string>;
+}
+
+export type MembershipSource = 'forge' | 'invite';
+
+export interface MemberSource {
+  source: MembershipSource;
+  role: TenantRole;
+}
+
+export interface Member {
+  account: Account;
+  role: TenantRole;
+  sources: MemberSource[];
+}
+
+export interface Invite {
+  id: string;
+  email: string;
+  role: TenantRole;
+  createdBy: Account | null;
+  expiresAt: string;
+}
+
+export interface Members {
+  members: Member[];
+  // null unless the viewer is an admin.
+  invites: Invite[] | null;
+}
+
+export interface CreateInviteRequest {
+  email: string;
+  role: TenantRole;
+  ttlHours?: number;
+}
+
+export interface UpdateMemberRequest {
+  role: TenantRole;
+}
+
+export interface MemberRemoved {
+  note: string;
+}
+
+export interface Accepted {
+  jobId?: number;
+}
+
+export type AuditAction =
+  | 'tenant.create'
+  | 'tenant.update'
+  | 'tenant.delete'
+  | 'invite.create'
+  | 'invite.delete'
+  | 'member.update'
+  | 'member.remove'
+  | 'review.rerun'
+  | 'review.cancel'
+  | 'repo.reindex';
+
+export interface AuditEvent {
+  id: string;
+  at: string;
+  actor: Account | null;
+  tenant: string;
+  action: AuditAction;
+  target: string;
+  detail: Record<string, unknown>;
+}
