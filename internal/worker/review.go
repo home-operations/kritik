@@ -115,7 +115,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	// the model lease come before it rather than after.
 	var admitted admission
 	if agentic {
-		a, status, reason, err := w.agentAdmit(ctx, file, tenant, settings, job.ID)
+		a, status, reason, err := w.agentAdmit(ctx, logger, file, tenant, settings, job.ID)
 		if err != nil {
 			return err
 		}
@@ -125,7 +125,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 			return w.record(ctx, args, pr, status, mergeBase, "", reason)
 		}
 		admitted = a
-		defer w.releaseLease(ctx, a.lease, string(settings.Models.Review))
+		defer w.releaseLease(ctx, logger, a.lease, string(settings.Models.Review))
 	}
 
 	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, settings.Mode)

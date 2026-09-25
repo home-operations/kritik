@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -74,7 +75,7 @@ type admission struct {
 // lease is taken, renewed until released. A non-empty status ends the
 // review before it runs, for the reason given.
 func (w *Review) agentAdmit(
-	ctx context.Context, file *configfile.File, tenant *configfile.Tenant, settings configfile.Settings, jobID int64,
+	ctx context.Context, logger *slog.Logger, file *configfile.File, tenant *configfile.Tenant, settings configfile.Settings, jobID int64,
 ) (admission, string, string, error) {
 	ref := settings.Models.Review
 	if ref == "" {
@@ -94,7 +95,7 @@ func (w *Review) agentAdmit(
 	// pass a cap of one.
 	budget, capped, err := w.agentCaps(ctx, tenant, settings)
 	if err != nil || capped != "" {
-		w.releaseLease(ctx, l, string(ref))
+		w.releaseLease(ctx, logger, l, string(ref))
 		if err != nil {
 			return admission{}, "", "", err
 		}

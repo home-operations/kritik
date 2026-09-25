@@ -61,16 +61,17 @@ func (b *Base) withLease(
 		return err
 	}
 	b.Metrics.LeaseWait(tenant.Slug, key, time.Since(waited))
-	defer b.releaseLease(ctx, l, key)
+	defer b.releaseLease(ctx, b.Logger, l, key)
 	return fn(ctx)
 }
 
 // releaseLease releases l on a context of its own, since the job's has
-// usually ended by the time a lease is let go.
-func (b *Base) releaseLease(ctx context.Context, l *lease, key string) {
+// usually ended by the time a lease is let go, and logs a failure to
+// logger, which carries whatever the caller knows of the job.
+func (b *Base) releaseLease(ctx context.Context, logger *slog.Logger, l *lease, key string) {
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
 	if err := l.release(rctx); err != nil {
-		b.Logger.Warn("lease not released", "key", key, "error", err)
+		logger.Warn("lease not released", "key", key, "error", err)
 	}
 }
