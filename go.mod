@@ -8,8 +8,10 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.75.0
 	github.com/bmatcuk/doublestar/v4 v4.10.2
 	github.com/caarlos0/env/v11 v11.4.1
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-git/go-billy/v5 v5.9.1
 	github.com/go-git/go-git/v5 v5.19.2
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-sprout/sprout v1.1.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-github/v92 v92.0.0
@@ -23,6 +25,7 @@ require (
 	github.com/riverqueue/river/rivertype v0.47.0
 	github.com/spf13/pflag v1.0.10
 	go.yaml.in/yaml/v3 v3.0.5
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.23.0
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
@@ -105,7 +108,6 @@ require (
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
