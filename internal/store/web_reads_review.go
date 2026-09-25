@@ -179,7 +179,7 @@ func ListReviewUsage(ctx context.Context, tx pgx.Tx, reviewID string) ([]UsageRo
 }
 
 // ContextPackMeta is a context pack without its diffs, stage texts or file
-// contents.
+// contents, which the database leaves out rather than sending.
 type ContextPackMeta struct {
 	HeadSHA      string
 	BaseSHA      string
@@ -188,8 +188,8 @@ type ContextPackMeta struct {
 	DeltaPaths   []string
 	PriorHeadSHA *string
 	RepoNotes    []string
-	// Stages are the context chunks with Text emptied; StageBytes[i] is the
-	// length of Stages[i]'s text.
+	// Stages are the context chunks with Text empty; StageBytes[i] is the
+	// size of Stages[i]'s text.
 	Stages     []contextpack.Chunk
 	StageBytes []int
 	// RepoFiles maps each repository file the pack read to its size.
@@ -197,49 +197,75 @@ type ContextPackMeta struct {
 	CreatedAt time.Time
 }
 
-// ContextPackBodies is what a context pack read that ContextPackMeta
-// leaves out.
-type ContextPackBodies struct {
-	Diff      string
-	DeltaDiff string
-	Stages    []contextpack.Chunk
-	RepoFiles map[string]string
+// stageMeta is a stage chunk as FindContextPackMeta's query returns it.
+type stageMeta struct {
+	contextpack.Chunk
+	Bytes int `json:"bytes"`
 }
 
-// FindContextPack returns the context pack a runner run wrote, or
-// ErrNotFound.
-func FindContextPack(ctx context.Context, tx pgx.Tx, runnerRunID string) (ContextPackMeta, ContextPackBodies, error) {
+// FindContextPackMeta returns the metadata of the context pack a runner run
+// wrote, or ErrNotFound.
+func FindContextPackMeta(ctx context.Context, tx pgx.Tx, runnerRunID string) (ContextPackMeta, error) {
 	var m ContextPackMeta
-	var b ContextPackBodies
 	var stages, files []byte
-	err := tx.QueryRow(ctx, `SELECT head_sha, base_sha, patch_id, diff, delta_diff, changed_paths, delta_paths, prior_head_sha,
-		repo_notes, stages, repo_files, created_at FROM context_packs WHERE runner_run_id = $1`, runnerRunID).
-		Scan(&m.HeadSHA, &m.BaseSHA, &m.PatchID, &b.Diff, &b.DeltaDiff, &m.ChangedPaths, &m.DeltaPaths, &m.PriorHeadSHA,
-			&m.RepoNotes, &stages, &files, &m.CreatedAt)
+	err := tx.QueryRow(ctx, `SELECT head_sha, base_sha, patch_id, changed_paths, delta_paths, prior_head_sha, repo_notes,
+		(SELECT coalesce(jsonb_agg((e - 'text') || jsonb_build_object('bytes', octet_length(e->>'text')) ORDER BY n), '[]')
+			FROM jsonb_array_elements(stages) WITH ORDINALITY AS s(e, n)),
+		(SELECT coalesce(jsonb_object_agg(k, octet_length(v)), '{}') FROM jsonb_each_text(repo_files) AS f(k, v)),
+		created_at FROM context_packs WHERE runner_run_id = $1`, runnerRunID).
+		Scan(&m.HeadSHA, &m.BaseSHA, &m.PatchID, &m.ChangedPaths, &m.DeltaPaths, &m.PriorHeadSHA, &m.RepoNotes, &stages, &files, &m.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return m, b, ErrNotFound
+		return m, ErrNotFound
 	}
 	if err != nil {
-		return m, b, fmt.Errorf("store: find context pack: %w", err)
+		return m, fmt.Errorf("store: find context pack: %w", err)
 	}
-	b.Stages, b.RepoFiles = []contextpack.Chunk{}, map[string]string{}
-	if err := json.Unmarshal(stages, &b.Stages); err != nil {
-		return m, b, fmt.Errorf("store: decode context stages: %w", err)
+	var chunks []stageMeta
+	if err := json.Unmarshal(stages, &chunks); err != nil {
+		return m, fmt.Errorf("store: decode context stages: %w", err)
 	}
-	if err := json.Unmarshal(files, &b.RepoFiles); err != nil {
-		return m, b, fmt.Errorf("store: decode repository files: %w", err)
+	if err := json.Unmarshal(files, &m.RepoFiles); err != nil {
+		return m, fmt.Errorf("store: decode repository files: %w", err)
 	}
-	m.Stages, m.StageBytes = make([]contextpack.Chunk, len(b.Stages)), make([]int, len(b.Stages))
-	for i, c := range b.Stages {
-		m.StageBytes[i] = len(c.Text)
-		c.Text = ""
-		m.Stages[i] = c
+	m.Stages, m.StageBytes = make([]contextpack.Chunk, len(chunks)), make([]int, len(chunks))
+	for i, c := range chunks {
+		m.Stages[i], m.StageBytes[i] = c.Chunk, c.Bytes
 	}
-	m.RepoFiles = make(map[string]int, len(b.RepoFiles))
-	for path, content := range b.RepoFiles {
-		m.RepoFiles[path] = len(content)
+	return m, nil
+}
+
+// ContextPackDiffs returns the diff and delta diff of the context pack a
+// runner run wrote, or ErrNotFound.
+func ContextPackDiffs(ctx context.Context, tx pgx.Tx, runnerRunID string) (diff, delta string, err error) {
+	err = tx.QueryRow(ctx, `SELECT diff, delta_diff FROM context_packs WHERE runner_run_id = $1`, runnerRunID).Scan(&diff, &delta)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", ErrNotFound
 	}
-	return m, b, nil
+	if err != nil {
+		return "", "", fmt.Errorf("store: context pack diffs: %w", err)
+	}
+	return diff, delta, nil
+}
+
+// ContextPackInputs returns the context chunks and repository files of the
+// context pack a runner run wrote, or ErrNotFound.
+func ContextPackInputs(ctx context.Context, tx pgx.Tx, runnerRunID string) ([]contextpack.Chunk, map[string]string, error) {
+	var stages, files []byte
+	err := tx.QueryRow(ctx, `SELECT stages, repo_files FROM context_packs WHERE runner_run_id = $1`, runnerRunID).Scan(&stages, &files)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("store: context pack inputs: %w", err)
+	}
+	chunks, repoFiles := []contextpack.Chunk{}, map[string]string{}
+	if err := json.Unmarshal(stages, &chunks); err != nil {
+		return nil, nil, fmt.Errorf("store: decode context stages: %w", err)
+	}
+	if err := json.Unmarshal(files, &repoFiles); err != nil {
+		return nil, nil, fmt.Errorf("store: decode repository files: %w", err)
+	}
+	return chunks, repoFiles, nil
 }
 
 // ReviewModelCalls returns a review's own model calls, in the order they

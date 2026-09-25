@@ -17,17 +17,15 @@ import (
 )
 
 // reviewRecord is a review and what its newest runner run left behind;
-// run, agent and pack are nil where there is none.
+// run and agent are nil where there is none.
 type reviewRecord struct {
 	review store.ReviewRow
 	run    *store.RunnerRunRow
 	agent  *store.AgentRunRow
-	meta   *store.ContextPackMeta
-	bodies *store.ContextPackBodies
 }
 
-// loadReview reads the review {id} and, when withRun, its runner run,
-// agent run and context pack.
+// loadReview reads the review {id} and, when withRun, its newest runner
+// run and that run's agent run.
 func loadReview(ctx context.Context, tx pgx.Tx, r *http.Request, withRun bool) (reviewRecord, error) {
 	var rec reviewRecord
 	id := r.PathValue("id")
@@ -56,12 +54,16 @@ func loadReview(ctx context.Context, tx pgx.Tx, r *http.Request, withRun bool) (
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return rec, err
 	}
-	if m, b, err := store.FindContextPack(ctx, tx, run.ID); err == nil {
-		rec.meta, rec.bodies = &m, &b
-	} else if !errors.Is(err, store.ErrNotFound) {
-		return rec, err
-	}
 	return rec, nil
+}
+
+// missing turns a store miss into "there is none", which a review whose
+// runner never wrote a pack legitimately has.
+func missing(err error) (bool, error) {
+	if errors.Is(err, store.ErrNotFound) {
+		return true, nil
+	}
+	return false, err
 }
 
 func (s *Server) getReview(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
@@ -81,6 +83,14 @@ func (s *Server) getReview(w http.ResponseWriter, r *http.Request, t *tenantScop
 			return err
 		}
 		d = reviewDetail(rec, findings, usage)
+		if rec.run == nil {
+			return nil
+		}
+		m, err := store.FindContextPackMeta(ctx, tx, rec.run.ID)
+		if none, err := missing(err); none || err != nil {
+			return err
+		}
+		d.ContextPack = contextPack(&m)
 		return nil
 	}); err != nil {
 		return err
@@ -126,9 +136,6 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 	if a := rec.agent; a != nil {
 		d.AgentRun = agentRun(a)
 	}
-	if m := rec.meta; m != nil {
-		d.ContextPack = contextPack(m)
-	}
 	return d
 }
 
@@ -171,12 +178,14 @@ func (s *Server) getReviewDiff(w http.ResponseWriter, r *http.Request, t *tenant
 	d := ReviewDiff{}
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		rec, err := loadReview(ctx, tx, r, true)
-		if err != nil {
+		if err != nil || rec.run == nil {
 			return err
 		}
-		if rec.bodies != nil {
-			d = ReviewDiff{Diff: rec.bodies.Diff, DeltaDiff: rec.bodies.DeltaDiff}
+		diff, delta, err := store.ContextPackDiffs(ctx, tx, rec.run.ID)
+		if none, err := missing(err); none || err != nil {
+			return err
 		}
+		d = ReviewDiff{Diff: diff, DeltaDiff: delta}
 		return nil
 	}); err != nil {
 		return err
@@ -193,15 +202,18 @@ func (s *Server) getReviewRaw(w http.ResponseWriter, r *http.Request, t *tenantS
 		if err != nil {
 			return err
 		}
-		if rec.run != nil {
-			raw.LogTail = rec.run.LogTail
-		}
 		if rec.agent != nil {
 			raw.Result = rec.agent.Result
 		}
-		if b := rec.bodies; b != nil {
-			raw.RepoFiles, raw.Stages = b.RepoFiles, contextChunks(b.Stages)
+		if rec.run == nil {
+			return nil
 		}
+		raw.LogTail = rec.run.LogTail
+		stages, files, err := store.ContextPackInputs(ctx, tx, rec.run.ID)
+		if none, err := missing(err); none || err != nil {
+			return err
+		}
+		raw.RepoFiles, raw.Stages = files, contextChunks(stages)
 		return nil
 	}); err != nil {
 		return err
