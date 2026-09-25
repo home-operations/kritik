@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+
+	"github.com/home-operations/kritik/internal/jobtimeout"
 )
 
 // Role selects which part of kritik a process runs. One image serves every
@@ -144,9 +146,12 @@ type Config struct {
 	RunnerDatabaseSecret    string `env:"KRITIK_RUNNER_DATABASE_SECRET" envDefault:"kritik-postgres-runner"`
 	RunnerDatabaseSecretKey string `env:"KRITIK_RUNNER_DATABASE_SECRET_KEY" envDefault:"uri"`
 
-	// RunnerDeadline bounds a runner when the tenant sets none; RunnerTTL is
-	// how long a finished Job stays for kubectl before Kubernetes removes it.
-	// The run row keeps everything the Job knew.
+	// RunnerDeadline bounds a runner when the tenant sets none, and like a
+	// tenant's runner.activeDeadlineSeconds must not exceed
+	// jobtimeout.MaxRunnerDeadline, past which River would cut the job off
+	// before the deadline does; RunnerTTL is how long a finished Job stays
+	// for kubectl before Kubernetes removes it. The run row keeps everything
+	// the Job knew.
 	RunnerDeadline time.Duration `env:"KRITIK_RUNNER_DEADLINE" envDefault:"15m"`
 	RunnerTTL      time.Duration `env:"KRITIK_RUNNER_TTL" envDefault:"10m"`
 
@@ -251,6 +256,10 @@ func (c *Config) validate() error {
 	}
 	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.RunnerDeadline <= 0 || c.RunnerTTL <= 0 {
 		return fmt.Errorf("config: KRITIK_REVIEW_WORKERS, KRITIK_INDEX_WORKERS, KRITIK_RUNNER_DEADLINE and KRITIK_RUNNER_TTL must be positive")
+	}
+	if c.RunnerDeadline > jobtimeout.MaxRunnerDeadline {
+		return fmt.Errorf("config: KRITIK_RUNNER_DEADLINE must not exceed %s (the %s job cap less the review and index headroom), got %s",
+			jobtimeout.MaxRunnerDeadline, jobtimeout.MaxJobTimeout, c.RunnerDeadline)
 	}
 	return nil
 }

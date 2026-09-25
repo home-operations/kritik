@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritik/internal/jobtimeout"
 )
 
 func TestLoad(t *testing.T) {
@@ -56,6 +58,16 @@ func TestLoad(t *testing.T) {
 		{name: "zero leader retry", env: map[string]string{"KRITIK_LEADER_RETRY_INTERVAL": "0"}, wantErr: true},
 		{name: "unknown executor", env: map[string]string{"KRITIK_EXECUTOR": "docker"}, wantErr: true},
 		{name: "zero review workers", env: map[string]string{"KRITIK_REVIEW_WORKERS": "0"}, wantErr: true},
+		{name: "runner deadline past the cap", env: map[string]string{"KRITIK_RUNNER_DEADLINE": (jobtimeout.MaxRunnerDeadline + time.Second).String()}, wantErr: true},
+		{
+			name: "runner deadline at the cap",
+			env:  map[string]string{"KRITIK_RUNNER_DEADLINE": jobtimeout.MaxRunnerDeadline.String()},
+			check: func(t *testing.T, c *Config) {
+				if c.RunnerDeadline != jobtimeout.MaxRunnerDeadline {
+					t.Fatalf("runner deadline = %s", c.RunnerDeadline)
+				}
+			},
+		},
 		{
 			name: "embedder fully configured",
 			env:  map[string]string{"KRITIK_EMBED_BASE_URL": "https://e", "KRITIK_EMBED_API_KEY": "k", "KRITIK_EMBED_MODEL": "m", "KRITIK_EMBED_DIMS": "1024"},
