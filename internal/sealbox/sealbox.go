@@ -17,6 +17,7 @@
 package sealbox
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -80,7 +81,8 @@ type Keyring struct {
 // and any older keys that may still need to open previously sealed values.
 // Every key, current or old, must be exactly 32 bytes, and no two keys
 // (compared by content, which is exactly what KeyID collides on) may
-// repeat.
+// repeat. NewKeyring copies every key it's given, so the caller is free to
+// reuse or zero its own buffers once it returns.
 func NewKeyring(current []byte, old ...[]byte) (*Keyring, error) {
 	if len(current) == 0 {
 		return nil, ErrNoKey
@@ -90,7 +92,7 @@ func NewKeyring(current []byte, old ...[]byte) (*Keyring, error) {
 	}
 
 	keys := make(map[string][]byte, len(old)+1)
-	keys[KeyID(current)] = current
+	keys[KeyID(current)] = bytes.Clone(current)
 	for _, k := range old {
 		if err := checkKeyLen(k); err != nil {
 			return nil, err
@@ -99,7 +101,7 @@ func NewKeyring(current []byte, old ...[]byte) (*Keyring, error) {
 		if _, dup := keys[id]; dup {
 			return nil, fmt.Errorf("sealbox: duplicate key %s", id)
 		}
-		keys[id] = k
+		keys[id] = bytes.Clone(k)
 	}
 
 	return &Keyring{currentID: KeyID(current), keys: keys}, nil
@@ -155,6 +157,9 @@ func KeyID(key []byte) string {
 // Keyring's current key, returning the ks1 wire format described in the
 // package doc.
 func (k *Keyring) Seal(plaintext []byte) (string, error) {
+	if k == nil {
+		return "", ErrNoKey
+	}
 	kek, ok := k.keys[k.currentID]
 	if !ok {
 		return "", ErrNoKey
@@ -164,7 +169,7 @@ func (k *Keyring) Seal(plaintext []byte) (string, error) {
 	if _, err := rand.Read(dek); err != nil {
 		return "", fmt.Errorf("sealbox: generate dek: %w", err)
 	}
-	defer zero(dek)
+	defer clear(dek)
 
 	aad := additionalData(k.currentID)
 
@@ -189,6 +194,9 @@ func (k *Keyring) Seal(plaintext []byte) (string, error) {
 // Open decrypts a value produced by Seal (by this Keyring or one sharing
 // one of its keys). It satisfies configfile's Opener interface.
 func (k *Keyring) Open(sealed string) ([]byte, error) {
+	if k == nil {
+		return nil, ErrNoKey
+	}
 	id, blob, err := parseSealed(sealed)
 	if err != nil {
 		return nil, err
@@ -209,7 +217,7 @@ func (k *Keyring) Open(sealed string) ([]byte, error) {
 	if err != nil {
 		return nil, ErrOpen
 	}
-	defer zero(dek)
+	defer clear(dek)
 
 	plaintext, err := openLayer(dek, dataNonce, ciphertext, aad)
 	if err != nil {
@@ -223,6 +231,9 @@ func (k *Keyring) Open(sealed string) ([]byte, error) {
 // it's written. A malformed sealed value is reported as not needing
 // rotation: Open is the authority on whether it's usable at all.
 func (k *Keyring) NeedsRotation(sealed string) bool {
+	if k == nil {
+		return false
+	}
 	id, _, err := parseSealed(sealed)
 	if err != nil {
 		return false
@@ -233,19 +244,21 @@ func (k *Keyring) NeedsRotation(sealed string) bool {
 // parseSealed validates the wire format and returns the key id and decoded
 // payload, without touching any key material.
 func parseSealed(sealed string) (id string, blob []byte, err error) {
+	if strings.ContainsAny(sealed, "\r\n") {
+		return "", nil, ErrMalformed
+	}
 	parts := strings.SplitN(sealed, ".", 3)
 	if len(parts) != 3 || parts[0] != version {
 		return "", nil, ErrMalformed
 	}
 	id = parts[1]
-	if len(id) != idHexLen {
-		return "", nil, ErrMalformed
-	}
-	if _, err := hex.DecodeString(id); err != nil {
+	if len(id) != idHexLen || !isLowerHex(id) {
 		return "", nil, ErrMalformed
 	}
 
-	blob, err = base64.RawURLEncoding.DecodeString(parts[2])
+	// Strict rejects a payload whose unused trailing bits aren't zero, so
+	// a base64 string can't have more than one valid decoding.
+	blob, err = base64.RawURLEncoding.Strict().DecodeString(parts[2])
 	if err != nil {
 		return "", nil, ErrMalformed
 	}
@@ -253,6 +266,17 @@ func parseSealed(sealed string) (id string, blob []byte, err error) {
 		return "", nil, ErrMalformed
 	}
 	return id, blob, nil
+}
+
+// isLowerHex reports whether s consists only of lowercase hex digits, the
+// only form KeyID ever produces.
+func isLowerHex(s string) bool {
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // additionalData binds a GCM layer to the format version and key id it was
@@ -298,10 +322,4 @@ func newGCM(key []byte) (cipher.AEAD, error) {
 		return nil, fmt.Errorf("sealbox: %w", err)
 	}
 	return gcm, nil
-}
-
-func zero(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
 }

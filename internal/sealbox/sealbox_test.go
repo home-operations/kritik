@@ -23,43 +23,96 @@ func TestNewKeyring(t *testing.T) {
 	valid2 := testKey(t, 2)
 
 	tests := map[string]struct {
-		current []byte
-		old     [][]byte
-		wantErr error // nil means "some error", checked via errors.Is when set
+		current    []byte
+		old        [][]byte
+		wantErr    error // checked via errors.Is when set
+		wantAnyErr bool  // some error expected, sentinel not checked
+		wantOK     bool  // NewKeyring must succeed
 	}{
-		"valid current only":     {current: valid},
-		"valid current plus old": {current: valid, old: [][]byte{valid2}},
+		"valid current only":     {current: valid, wantOK: true},
+		"valid current plus old": {current: valid, old: [][]byte{valid2}, wantOK: true},
 		"no current key":         {current: nil, wantErr: ErrNoKey},
 		"empty current key":      {current: []byte{}, wantErr: ErrNoKey},
-		"current too short":      {current: valid[:16]},
-		"current too long":       {current: append(append([]byte{}, valid...), 0)},
-		"old key too short":      {current: valid, old: [][]byte{valid2[:16]}},
-		"duplicate current+old":  {current: valid, old: [][]byte{valid}},
-		"duplicate among old":    {current: valid, old: [][]byte{valid2, valid2}},
+		"current too short":      {current: valid[:16], wantAnyErr: true},
+		"current too long":       {current: append(append([]byte{}, valid...), 0), wantAnyErr: true},
+		"old key too short":      {current: valid, old: [][]byte{valid2[:16]}, wantAnyErr: true},
+		"duplicate current+old":  {current: valid, old: [][]byte{valid}, wantAnyErr: true},
+		"duplicate among old":    {current: valid, old: [][]byte{valid2, valid2}, wantAnyErr: true},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			kr, err := NewKeyring(tt.current, tt.old...)
-			if tt.wantErr != nil {
+			switch {
+			case tt.wantErr != nil:
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("NewKeyring() err = %v, want %v", err, tt.wantErr)
 				}
-				return
-			}
-			if wantOK := name == "valid current only" || name == "valid current plus old"; wantOK {
+			case tt.wantAnyErr:
+				if err == nil {
+					t.Fatal("NewKeyring() expected an error, got nil")
+				}
+			case tt.wantOK:
 				if err != nil {
 					t.Fatalf("NewKeyring() unexpected err: %v", err)
 				}
 				if kr == nil {
 					t.Fatal("NewKeyring() returned nil keyring with nil error")
 				}
-				return
-			}
-			if err == nil {
-				t.Fatal("NewKeyring() expected an error, got nil")
+			default:
+				t.Fatal("test case must set wantErr, wantAnyErr, or wantOK")
 			}
 		})
+	}
+}
+
+func TestNewKeyringClonesKeys(t *testing.T) {
+	current := testKey(t, 1)
+	old := testKey(t, 2)
+	currentCopy := append([]byte(nil), current...)
+	oldCopy := append([]byte(nil), old...)
+
+	// A value sealed under the real, unmutated old key: used below to prove
+	// kr retained its own copy rather than aliasing the caller's old-key
+	// slice.
+	refOld, err := NewKeyring(oldCopy)
+	if err != nil {
+		t.Fatalf("NewKeyring() err: %v", err)
+	}
+	sealedUnderOld, err := refOld.Seal([]byte("sealed under the real old key"))
+	if err != nil {
+		t.Fatalf("Seal() err: %v", err)
+	}
+
+	kr, err := NewKeyring(current, old)
+	if err != nil {
+		t.Fatalf("NewKeyring() err: %v", err)
+	}
+
+	// Mutate the caller's buffers after NewKeyring returns. A Keyring that
+	// stores these by reference would now seal and open using garbage key
+	// material instead of what was actually passed in.
+	clear(current)
+	clear(old)
+
+	if _, err := kr.Open(sealedUnderOld); err != nil {
+		t.Fatalf("Open() of a value sealed under the real old key failed after the caller zeroed its buffer: %v", err)
+	}
+
+	sealed, err := kr.Seal([]byte("sealed after the caller zeroed current"))
+	if err != nil {
+		t.Fatalf("Seal() err: %v", err)
+	}
+	refCurrent, err := NewKeyring(currentCopy)
+	if err != nil {
+		t.Fatalf("NewKeyring() err: %v", err)
+	}
+	opened, err := refCurrent.Open(sealed)
+	if err != nil {
+		t.Fatalf("a reference Keyring holding the real, unmutated current key could not open a value kr sealed after the caller zeroed its buffer: %v", err)
+	}
+	if string(opened) != "sealed after the caller zeroed current" {
+		t.Fatalf("Open() = %q, want %q", opened, "sealed after the caller zeroed current")
 	}
 }
 
@@ -184,6 +237,16 @@ func TestSealNoCurrentKey(t *testing.T) {
 	}
 }
 
+func TestNilKeyringReceiver(t *testing.T) {
+	var kr *Keyring
+	if _, err := kr.Seal([]byte("x")); !errors.Is(err, ErrNoKey) {
+		t.Fatalf("Seal() on nil *Keyring err = %v, want %v", err, ErrNoKey)
+	}
+	if _, err := kr.Open("ks1.0000000000000000.AA"); !errors.Is(err, ErrNoKey) {
+		t.Fatalf("Open() on nil *Keyring err = %v, want %v", err, ErrNoKey)
+	}
+}
+
 func TestOpenWrongKeyring(t *testing.T) {
 	sealer, err := NewKeyring(testKey(t, 1))
 	if err != nil {
@@ -262,6 +325,28 @@ func splitSealed(t *testing.T, sealed string) (prefix, id, payload string) {
 	return parts[0], parts[1], parts[2]
 }
 
+// b64URLAlphabet is the RFC 4648 base64url alphabet, in symbol order, used
+// by flipSpareBits to find a non-canonical encoding of an existing symbol.
+const b64URLAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+// flipSpareBits sets a base64url payload's unused trailing bits to a
+// non-zero value without changing the bytes it decodes to under a
+// non-strict decoder, letting a test distinguish strict from non-strict
+// decoding of the same underlying bytes.
+func flipSpareBits(t *testing.T, encoded string) string {
+	t.Helper()
+	last := encoded[len(encoded)-1]
+	idx := strings.IndexByte(b64URLAlphabet, last)
+	if idx < 0 {
+		t.Fatalf("payload's last byte %q is not in the base64url alphabet", last)
+	}
+	nonCanonical := idx | 0b11
+	if nonCanonical == idx {
+		t.Fatal("test fixture's last symbol already has non-zero spare bits; adjust the plaintext length")
+	}
+	return encoded[:len(encoded)-1] + string(b64URLAlphabet[nonCanonical])
+}
+
 func TestOpenTamperedSegments(t *testing.T) {
 	kr, err := NewKeyring(testKey(t, 1), testKey(t, 9))
 	if err != nil {
@@ -302,6 +387,10 @@ func TestOpenTamperedSegments(t *testing.T) {
 			sealed:  prefix + "." + strings.Repeat("z", idHexLen) + "." + payload,
 			wantErr: ErrMalformed,
 		},
+		"uppercase key id": {
+			sealed:  prefix + "." + strings.ToUpper(id) + "." + payload,
+			wantErr: ErrMalformed,
+		},
 		"short key id": {
 			sealed:  prefix + "." + id[:idHexLen-2] + "." + payload,
 			wantErr: ErrMalformed,
@@ -310,8 +399,24 @@ func TestOpenTamperedSegments(t *testing.T) {
 			sealed:  prefix + "." + strings.Repeat("a", idHexLen) + "." + payload,
 			wantErr: ErrUnknownKey,
 		},
+		"key id swapped to another held key": {
+			sealed:  prefix + "." + KeyID(testKey(t, 9)) + "." + payload,
+			wantErr: ErrOpen,
+		},
 		"invalid base64 payload": {
 			sealed:  prefix + "." + id + ".not!base64",
+			wantErr: ErrMalformed,
+		},
+		"non-canonical base64 padding bits": {
+			sealed:  prefix + "." + id + "." + flipSpareBits(t, payload),
+			wantErr: ErrMalformed,
+		},
+		"carriage return in sealed value": {
+			sealed:  sealed + "\r",
+			wantErr: ErrMalformed,
+		},
+		"newline in sealed value": {
+			sealed:  sealed + "\n",
 			wantErr: ErrMalformed,
 		},
 		"truncated payload": {
