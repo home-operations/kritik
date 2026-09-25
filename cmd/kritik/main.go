@@ -185,7 +185,7 @@ func run() error {
 
 	if role == config.RoleRunner {
 		// A runner does one thing and exits; it never becomes ready.
-		return runner.Run(ctx, st, runSpec, runner.Secrets{GitToken: cfg.GitToken, ModelAPIKey: cfg.ModelAPIKey}, logger)
+		return runner.Run(ctx, st, runSpec, runner.Secrets{GitToken: cfg.GitToken, GatewayToken: cfg.GatewayToken}, logger)
 	}
 
 	if role == config.RoleAll || role == config.RoleIngest {
@@ -205,20 +205,27 @@ func run() error {
 				return err
 			}
 		}
-		// The egress gateway: runner pods' one route out, allowed by the
-		// hosts the current configuration names (ADR-0008).
-		proxy := &egress.Proxy{
-			Rules:   func() egress.Rules { return current.Get().EgressRules() },
-			Observe: m.Egress, Logger: logger.With("listener", "gateway"),
-		}
-		g.Go(func() error { return server.Serve(ctx, cfg.GatewayAddr, proxy, logger.With("listener", "gateway")) })
 		embedder := newEmbedder(cfg)
 		forges := &worker.ForgeCache{Build: worker.BuildForge}
 		workers := river.NewWorkers()
 		base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
-		completers := &worker.Completers{Build: worker.BuildCompleter}
+		completers := &worker.Completers{Build: worker.BuildStepper}
+		// The gateway: runner pods' one route out, allowed by the hosts the
+		// current configuration names (ADR-0008), and the model endpoint an
+		// agentic runner calls with its run token (ADR-0004).
+		gatewayLogger := logger.With("listener", "gateway")
+		gateway := &worker.Gateway{
+			Store: st, Current: current, Logger: gatewayLogger, Metrics: m,
+			Proxy: &egress.Proxy{
+				Rules:   func() egress.Rules { return current.Get().EgressRules() },
+				Observe: m.Egress, Logger: gatewayLogger,
+			},
+			Steppers: completers,
+		}
+		g.Go(func() error { return server.Serve(ctx, cfg.GatewayAddr, gateway, gatewayLogger) })
 		river.AddWorker(workers, &worker.Review{
 			Base: base, Executor: exec, Completers: completers, Embedder: embedder, EmbedModel: cfg.EmbedModel, Deadline: cfg.RunnerDeadline,
+			GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
 		})
 		river.AddWorker(workers, &worker.FollowUp{Base: base, Completers: completers})
 		river.AddWorker(workers, &worker.Index{

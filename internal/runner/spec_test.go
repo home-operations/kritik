@@ -12,7 +12,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 )
@@ -33,8 +32,7 @@ func agenticSpec() Spec {
 	s := reviewSpec()
 	s.Mode = ModeAgentic
 	s.Agent = &AgentLimits{MaxSteps: 30, MaxToolOutputBytes: 16 << 10, MaxTokens: 200000}
-	s.Model = &ModelEndpoint{Provider: model.ProviderAnthropic, Model: "example-model",
-		Pricing: model.Pricing{"example-model": {Input: 3, Output: 15}}}
+	s.Model = &ModelEndpoint{GatewayURL: "http://kritik-gateway:8082", Model: "review"}
 	s.Prompt = &Prompt{
 		Repository: "acme/widgets",
 		PullRequest: repoconfig.PullRequest{Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main", State: "open",
@@ -57,9 +55,9 @@ func TestDecodeSpec(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid review", in: encode(reviewSpec())},
-		{name: "valid index without base", in: encode(Spec{Version: 1, Kind: KindIndex, RunID: "r", CloneURL: "u", Head: shaA})},
+		{name: "valid index without base", in: encode(Spec{Version: SpecVersion, Kind: KindIndex, RunID: "r", CloneURL: "u", Head: shaA})},
 		{name: "valid agentic", in: encode(agenticSpec())},
-		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":1`, `"version":2`, 1), wantErr: "version"},
+		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":2`, `"version":3`, 1), wantErr: "version"},
 		{name: "unknown field", in: strings.Replace(encode(reviewSpec()), `{`, `{"token":"x",`, 1), wantErr: "unknown field"},
 		{name: "bad head sha", in: strings.Replace(encode(reviewSpec()), shaA, "abc", 1), wantErr: "head"},
 		{name: "uppercase sha", in: strings.Replace(encode(reviewSpec()), shaA, strings.ToUpper(shaA), 1), wantErr: "head"},
@@ -71,7 +69,8 @@ func TestDecodeSpec(t *testing.T) {
 		{name: "agentic without model", in: func() string { s := agenticSpec(); s.Model = nil; return encode(s) }(), wantErr: "model"},
 		{name: "agentic without limits", in: func() string { s := agenticSpec(); s.Agent = nil; return encode(s) }(), wantErr: "agent"},
 		{name: "agentic without a prompt", in: func() string { s := agenticSpec(); s.Prompt = nil; return encode(s) }(), wantErr: "prompt"},
-		{name: "agentic with unknown provider", in: func() string { s := agenticSpec(); s.Model.Provider = "x"; return encode(s) }(), wantErr: "provider"},
+		{name: "agentic without the gateway", in: func() string { s := agenticSpec(); s.Model.GatewayURL = ""; return encode(s) }(), wantErr: "gateway"},
+		{name: "a version 1 document", in: func() string { s := agenticSpec(); s.Version = 1; return encode(s) }(), wantErr: "version 1"},
 		{name: "valid agentic with commands", in: func() string {
 			s := agenticSpec()
 			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 30
@@ -116,8 +115,8 @@ func TestSpecRoundTripKeepsAgentFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Mode != ModeAgentic || got.Agent.MaxSteps != 30 || got.Model.Provider != model.ProviderAnthropic ||
-		got.Model.Pricing["example-model"].Output != 15 || got.Prompt.PullRequest.Title != "Add b" || len(got.Prompt.Prior) != 1 {
+	if got.Mode != ModeAgentic || got.Agent.MaxSteps != 30 || got.Model.Model != "review" ||
+		got.Model.GatewayURL != "http://kritik-gateway:8082" || got.Prompt.PullRequest.Title != "Add b" || len(got.Prompt.Prior) != 1 {
 		t.Fatalf("round trip = %+v %+v %+v", got, got.Agent, got.Model)
 	}
 }
@@ -130,11 +129,11 @@ func TestSecretsMask(t *testing.T) {
 		want    string
 	}{
 		{name: "empty secrets leave text untouched", in: "clone ok", want: "clone ok"},
-		{name: "both replaced", secrets: Secrets{GitToken: "tok-123", ModelAPIKey: "key-456"},
+		{name: "both replaced", secrets: Secrets{GitToken: "tok-123", GatewayToken: "key-456"},
 			in: "auth tok-123 and key-456 twice tok-123", want: "auth *** and *** twice ***"},
-		{name: "overlapping secrets mask the longer whole", secrets: Secrets{GitToken: "abc", ModelAPIKey: "abcdef"},
+		{name: "overlapping secrets mask the longer whole", secrets: Secrets{GitToken: "abc", GatewayToken: "abcdef"},
 			in: "x abcdef y abc", want: "x *** y ***"},
-		{name: "only one set", secrets: Secrets{ModelAPIKey: "key"}, in: "key", want: "***"},
+		{name: "only one set", secrets: Secrets{GatewayToken: "key"}, in: "key", want: "***"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -138,6 +138,48 @@ has a fourth Service; the `ingest` role does not serve the gateway.
    without it is refused at load, so no deployment can fall back to a key
    in the pod by omission.
 
+### 2.6 As built (2026-09-25)
+
+The three rollout steps landed as one change, since kritik has no release
+a key in the pod would have to stay compatible with. Where the build
+differs from the text above:
+
+- **Every provider through the worker's adapter.** The endpoint decodes a
+  chat completions request into kritik's own step request and answers it
+  through the tenant's provider adapter, the one single mode uses, then
+  encodes the result as a chat completion, with the cost and serving
+  provider in `usage` the way OpenRouter reports them. `openai` and
+  `openrouter` are not passed through: one path for every provider, and
+  the adapters already compute usage and cost. Streaming is not served;
+  the runner's adapter does not ask for it.
+- **The job document is version 2.** Its model block is the gateway URL
+  and the name `review`; the provider, fallbacks and pricing are gone with
+  the key, because the gateway reports each step's cost and applies the
+  same-provider fallback itself. A document without a gateway is refused,
+  so an agentic runner never runs single shot, and the worker refuses an
+  agentic review when `KRITIK_GATEWAY_URL` is empty.
+- **`gateway_tokens` carries the grant.** Beside the ids and the expiry, a
+  row holds the model and fallback references the run may call and its
+  budget and spend, so a step is checked against the run's own grant, not
+  the configuration as it stands when the step arrives.
+- **Leases and timelines stay where they were.** The worker holds the run's
+  model lease for the Job's lifetime, so the gateway takes none. The
+  gateway's record of a step is its usage row, not an `agent_runs` timeline
+  entry, since that row is the runner's to write once, at the end; the two
+  agree to the token (checked live on a five-step review).
+- **A budget refusal ends the run as `budget`.** The gateway answers `429`
+  with code `budget_exhausted` and `X-Should-Retry: false`; the runner's
+  loop stops as its own budget check would, and the review ends incomplete.
+  Every other refusal also carries `X-Should-Retry: false`, since the
+  worker's adapter has already retried the provider, and a provider error
+  reaches the runner with the key masked out of it.
+- **`NO_PROXY` names the gateway.** Runner pods send everything through the
+  forward proxy on the same port, so the gateway's own host is excepted,
+  or a model call would arrive as a proxy request for a host the allowlist
+  does not name.
+- **Not built:** `search_index` on the gateway, and a fallback model on
+  another provider, which the gateway now makes possible (ADR-0003 §4).
+
 ## 3. Consequences
 
 **Positive.** No provider credential in any pod that touches repository

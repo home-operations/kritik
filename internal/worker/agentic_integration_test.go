@@ -5,6 +5,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,6 +28,7 @@ import (
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/webhook"
 )
@@ -202,11 +204,14 @@ type agenticHarness struct {
 	lf     *localForge
 	exec   *hookExecutor
 	review *Review
-	fc     *fakeCompleter
-	sm     *scriptedModel
-	dir    string
-	base   string
-	head   string
+	// gatewayURL is the worker's gateway the runner calls its model
+	// through, which calls sm with the tenant's key.
+	gatewayURL string
+	fc         *fakeCompleter
+	sm         *scriptedModel
+	dir        string
+	base       string
+	head       string
 }
 
 func newAgenticHarness(t *testing.T) *agenticHarness {
@@ -263,6 +268,13 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf}, Completers: &completers{c: h.fc},
 		Executor: h.exec, Deadline: time.Minute, Logger: logger, superviseEvery: 50 * time.Millisecond,
 	}
+	gateway := httptest.NewServer(&Gateway{
+		Store: appStore, Current: h.review.Current, Logger: logger,
+		Proxy: http.NotFoundHandler(), Steppers: &Completers{Build: BuildStepper},
+	})
+	t.Cleanup(gateway.Close)
+	h.gatewayURL = gateway.URL
+	h.review.GatewayURL, h.review.GatewayTokenTTL = gateway.URL, time.Hour
 	river.AddWorker(workers, h.review)
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{jobs.QueueReview: {MaxWorkers: 1}}, Workers: workers,
@@ -341,6 +353,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
 	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
 	t.Run("a capped review is capped under the lease and lets it go", func(t *testing.T) { checkAgentCappedUnderLease(t, h) })
+	t.Run("the gateway serves a run token's steps within its budget", func(t *testing.T) { checkGatewayEndpoint(t, h) })
 	t.Run("the agent runs curl and the comment lists what it fetched", func(t *testing.T) { checkAgentRunsCommands(t, h) })
 	t.Run("another tenant cannot read the agent runs", func(t *testing.T) {
 		count := func(tenantID string) int {
@@ -391,7 +404,8 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 		return tx.QueryRow(h.ctx, `SELECT count(*), max(model), sum(input_tokens + output_tokens) FROM usage
 			WHERE review_id = $1 AND role = 'review'`, reviewID).Scan(&usage, &usageModel, &tokens)
 	})
-	if err != nil || findings != 1 || usage != 1 || usageModel != "agent-model" || tokens != 330 {
+	// The gateway records each of the three steps as it serves it.
+	if err != nil || findings != 1 || usage != 3 || usageModel != "agent-model" || tokens != 330 {
 		t.Fatalf("findings=%d usage=%d model=%s tokens=%d err=%v", findings, usage, usageModel, tokens, err)
 	}
 	h.lf.mu.Lock()
@@ -447,6 +461,81 @@ func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 	}
 }
 
+// checkGatewayEndpoint calls the gateway the way a runner does, with a run
+// token minted for a run of its own: steps are answered through the
+// tenant's provider and charged, and refused once the budget is spent, for
+// a model other than the run's, or without a valid token.
+func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	args := jobs.ReviewArgs{TenantID: h.tenant.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
+		HeadSHA: strings.Repeat("c", 40), Trigger: "test"}
+	pr, err := h.review.load(h.ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, configfile.ReviewAgentic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
+		RunID: runID, TenantID: h.tenant.ID(), ReviewID: reviewID, RepositoryID: pr.repositoryID, Model: "gateway/agent-model", Budget: 150,
+	}, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	step := func(token, name string) (model.StepResponse, error) {
+		c, err := model.NewOpenAI(model.OpenAIConfig{BaseURL: h.gatewayURL + "/v1", APIKey: token, ReportsModel: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.Step(h.ctx, model.StepRequest{Model: name, Messages: []model.Message{{Role: model.RoleUser, Text: "review"}}})
+	}
+	resp, err := step(token, gatewayModel)
+	if err != nil || resp.Model != "agent-model" || len(resp.ToolCalls) != 1 || resp.Usage.Prompt() != 100 || resp.CostUSD != 0.01 {
+		t.Fatalf("step = %+v, %v", resp, err)
+	}
+	if rows, tokens := h.usageTokens(t, reviewID); rows != 1 || tokens != 110 {
+		t.Fatalf("usage rows=%d tokens=%d", rows, tokens)
+	}
+	if _, err := step(token, "gpt-9-max"); err == nil || !strings.Contains(err.Error(), "400") {
+		t.Fatalf("a model other than the run's = %v", err)
+	}
+	for _, bad := range []string{"krk_", "krk_" + strings.Repeat("0", 64), "model-key"} {
+		if _, err := step(bad, gatewayModel); err == nil || !strings.Contains(err.Error(), "401") {
+			t.Fatalf("token %q = %v", bad, err)
+		}
+	}
+	// A second step is still within the budget; the third is not.
+	if _, err := step(token, gatewayModel); err != nil {
+		t.Fatal(err)
+	}
+	h.sm.mu.Lock()
+	before := h.sm.requests
+	h.sm.mu.Unlock()
+	if _, err := step(token, gatewayModel); !errors.Is(err, model.ErrBudget) || !strings.Contains(err.Error(), "budget of 150 tokens") {
+		t.Fatalf("a step past the budget = %v", err)
+	}
+	h.sm.mu.Lock()
+	after := h.sm.requests
+	h.sm.mu.Unlock()
+	if after != before {
+		t.Fatal("a refused step reached the provider")
+	}
+	if err := h.st.RevokeGatewayTokens(h.ctx, runID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := step(token, gatewayModel); err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("a revoked token = %v", err)
+	}
+	var left int
+	if err := h.st.App().QueryRow(h.ctx, `SELECT count(*) FROM gateway_tokens`).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("gateway tokens left after the reviews = %d, %v", left, err)
+	}
+	if err := failRun(h.ctx, h.st, h.tenant.ID(), runID, "test run"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func checkAgentNeverSubmits(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptProse)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc c() {}\n")
@@ -458,13 +547,8 @@ func checkAgentNeverSubmits(t *testing.T, h *agenticHarness) {
 	if run := h.agentRow(t, reviewID); run.stop != "no_submit" || run.steps != 2 {
 		t.Fatalf("agent run = %+v", run)
 	}
-	var usage int
-	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(h.ctx, `SELECT count(*) FROM usage WHERE review_id = $1 AND role = 'review' AND input_tokens = 200`, reviewID).
-			Scan(&usage)
-	})
-	if err != nil || usage != 1 {
-		t.Fatalf("an unsubmitted run still spent tokens: usage rows=%d err=%v", usage, err)
+	if rows, tokens := h.usageTokens(t, reviewID); rows != 2 || tokens != 220 {
+		t.Fatalf("an unsubmitted run still spent tokens: usage rows=%d tokens=%d", rows, tokens)
 	}
 	h.lf.mu.Lock()
 	comments, sticky, forgeStatus := len(h.lf.comments), h.lf.comments[commentBase+1], h.lf.status
@@ -593,7 +677,7 @@ func checkAgentSupersededCharges(t *testing.T, h *agenticHarness) {
 	if run := h.agentRow(t, reviewID); run.stop != "submitted" {
 		t.Fatalf("agent run = %+v", run)
 	}
-	if rows, tokens := h.usageTokens(t, reviewID); rows != 1 || tokens != 330 {
+	if rows, tokens := h.usageTokens(t, reviewID); rows != 3 || tokens != 330 {
 		t.Fatalf("a superseded agent run must still be charged: rows=%d tokens=%d", rows, tokens)
 	}
 }
@@ -608,7 +692,8 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 		strings.Contains(run.errText, "model-key") || strings.Contains(errText, "model-key") || !strings.Contains(errText, "***") {
 		t.Fatalf("status=%s review error=%q agent error=%q", status, errText, run.errText)
 	}
-	if rows, _ := h.usageTokens(t, reviewID); rows != 1 {
+	// The provider refused the step, so nothing was spent.
+	if rows, _ := h.usageTokens(t, reviewID); rows != 0 {
 		t.Fatalf("usage rows = %d", rows)
 	}
 }

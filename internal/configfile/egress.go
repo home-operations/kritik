@@ -7,15 +7,7 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritik/internal/egress"
-	"github.com/home-operations/kritik/internal/model"
 )
-
-// Hosts a provider type reaches when its baseUrl is unset.
-var providerDefaultHosts = map[model.ProviderType]string{
-	model.ProviderOpenRouter: "openrouter.ai",
-	model.ProviderOpenAI:     "api.openai.com",
-	model.ProviderAnthropic:  "api.anthropic.com",
-}
 
 // githubHost is where a GitHub installation without a host lives.
 const githubHost = "github.com"
@@ -54,9 +46,10 @@ func checkHost(h string) error {
 }
 
 // EgressRules is what the gateway allows for this file: the configured
-// hosts, every installation's forge host and every provider's endpoint,
-// since runners fetch from the one and an agentic review calls the other,
-// plus the credentials as Authorization header values.
+// hosts and every installation's forge host, since runners fetch from it,
+// plus the credentials as Authorization header values. Provider endpoints
+// are not among them: a runner reaches its model through the gateway's
+// model endpoint, and the worker calls the provider (ADR-0004).
 func (f *File) EgressRules() egress.Rules {
 	hosts := slices.Clone(f.Egress.AllowHosts)
 	add := func(h string) {
@@ -73,13 +66,6 @@ func (f *File) EgressRules() egress.Rules {
 			case i.Forge == ForgeGitHub:
 				add(githubHost)
 			}
-		}
-	}
-	for _, p := range f.Providers {
-		if p.BaseURL != "" {
-			add(hostOf(p.BaseURL))
-		} else {
-			add(providerDefaultHosts[p.Type])
 		}
 	}
 	creds := make(map[string]string, len(f.Egress.credentials))

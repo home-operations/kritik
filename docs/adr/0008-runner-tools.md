@@ -52,8 +52,8 @@ port on worker pods: no direct 443. Everything the runner sends out goes
 through the proxy and is allowed or refused by hostname:
 
 - `CONNECT host:443` is allowed when the host matches the allowlist and
-  tunnelled without inspection, which is how `curl`, go-git's fetch and the
-  model SDKs reach TLS endpoints;
+  tunnelled without inspection, which is how `curl` and go-git's fetch
+  reach TLS endpoints;
 - a plain `http://host/path` request to an allowed host is upgraded to
   HTTPS by the gateway, which adds a credential when one is configured for
   that host, so the runner can use the GitHub API at the installation's
@@ -61,15 +61,18 @@ through the proxy and is allowed or refused by hostname:
 
 The allowlist and credentials are operator configuration
 (`egress.allowHosts`, `egress.credentials`) in the configuration file. The
-allowlist always includes the forges of the file's installations and the
-model endpoints of its providers, since fetches and model calls need them;
-the operator adds registries and release hosts. An empty gateway URL keeps
-the runner's direct 443 egress, so a deployment without the gateway keeps
-working as before; the chart enables the gateway by default.
+allowlist always includes the forges of the file's installations, since
+fetches need them; the operator adds registries and release hosts. It does
+not include the providers' model endpoints: an agentic runner calls its
+model through the gateway's own model endpoint (ADR-0004), so no runner
+needs a provider's host, and one it could reach would take a key of an
+attacker's choosing. An empty gateway URL keeps the runner's direct 443
+egress, so a deployment without the gateway keeps working as before, less
+agentic reviews; the chart enables the gateway by default.
 
-The gateway's authorisation is the network: only pods labelled as runners
-may reach its port, by the worker's ingress policy. ADR-0004's per-run
-token is a second factor to add when the gateway also fronts model calls.
+The proxy's authorisation is the network: only pods labelled as runners
+may reach its port, by the worker's ingress policy. The model endpoint on
+the same port takes ADR-0004's per-run token as well.
 
 ### 2.2 The `run` tool
 

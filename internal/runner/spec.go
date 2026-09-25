@@ -12,7 +12,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 )
@@ -20,7 +19,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 1
+const SpecVersion = 2
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -57,14 +56,15 @@ func (m Mode) Valid() bool { return m == "" || m == ModeSingle || m == ModeAgent
 
 func (m Mode) String() string { return string(m) }
 
-// ModelEndpoint is the model an agentic run talks to. The key is not here:
+// ModelEndpoint is where an agentic run's model calls go: the worker's
+// gateway, which holds the provider key, picks the provider model and its
+// fallbacks, and counts what the run spends (ADR-0004). The run's token for
 // it reaches the pod as a job-scoped secret.
 type ModelEndpoint struct {
-	Provider  model.ProviderType `json:"provider"`
-	BaseURL   string             `json:"baseUrl,omitempty"`
-	Model     string             `json:"model"`
-	Fallbacks []string           `json:"fallbacks,omitempty"`
-	Pricing   model.Pricing      `json:"pricing,omitempty"`
+	// GatewayURL is the gateway's address, http://host:port.
+	GatewayURL string `json:"gatewayUrl"`
+	// Model is the name the gateway knows the run's model by.
+	Model string `json:"model"`
 }
 
 // AgentLimits bound an agentic run. A zero limit takes the agent loop's
@@ -154,11 +154,8 @@ func (s Spec) Validate() error {
 		if s.Agent == nil {
 			return errors.New("runner: an agentic spec needs agent limits")
 		}
-		if s.Model == nil || s.Model.Model == "" {
-			return errors.New("runner: an agentic spec needs a model endpoint")
-		}
-		if !s.Model.Provider.Valid() {
-			return fmt.Errorf("runner: spec model provider %q is not supported", s.Model.Provider)
+		if s.Model == nil || s.Model.Model == "" || s.Model.GatewayURL == "" {
+			return errors.New("runner: an agentic spec needs a model and the gateway to reach it through")
 		}
 		if s.Prompt == nil {
 			return errors.New("runner: an agentic spec needs a prompt")
@@ -194,7 +191,7 @@ func isSHA(s string) bool {
 // with a pull request is cut before it is encoded.
 const (
 	// MaxSpecBytes bounds an encoded spec, leaving the Secret room for the
-	// git token and model key.
+	// git and gateway tokens.
 	MaxSpecBytes = 900 << 10
 	// MaxPriorFindings is how many of the last review's findings a spec
 	// carries.
@@ -282,16 +279,18 @@ func DecodeSpec(data []byte) (Spec, error) {
 	return s, nil
 }
 
-// Secrets are a run's credentials, delivered apart from the spec.
+// Secrets are a run's credentials, delivered apart from the spec: the git
+// token it fetches with and, for an agentic run, its token for the model
+// gateway.
 type Secrets struct {
-	GitToken    string
-	ModelAPIKey string
+	GitToken     string
+	GatewayToken string
 }
 
 // Mask replaces every occurrence of each non-empty secret in text with
 // "***". Longer secrets go first so one containing another is masked whole.
 func (s Secrets) Mask(text string) string {
-	values := []string{s.GitToken, s.ModelAPIKey}
+	values := []string{s.GitToken, s.GatewayToken}
 	slices.SortFunc(values, func(a, b string) int { return len(b) - len(a) })
 	for _, v := range values {
 		if v != "" {

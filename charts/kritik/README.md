@@ -107,13 +107,12 @@ Secrets `Password` generator plus a templated `uri` works).
 Worker-capable pods serve a forward proxy on `gateway.port`, and runner Jobs
 are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
-fetch, an agentic review's model calls and every command it runs go through
-the gateway, which allows a destination by hostname only. The forges of the
-file's installations and the endpoints of its providers are always allowed;
-`egress.allowHosts` in the configuration file adds the rest (registries,
-release APIs), and `egress.credentials` names hosts the gateway adds a
-bearer token to when a runner sends it a plain `http://` request, so the
-runner never holds the token:
+fetch and every command it runs go through the gateway, which allows a
+destination by hostname only. The forges of the file's installations are
+always allowed; `egress.allowHosts` in the configuration file adds the rest
+(registries, release APIs), and `egress.credentials` names hosts the gateway
+adds a bearer token to when a runner sends it a plain `http://` request, so
+the runner never holds the token:
 
 ```yaml
 config:
@@ -127,8 +126,17 @@ config:
         api.github.com: { file: /var/run/secrets/kritik/github-token }
 ```
 
+The same port is an agentic runner's model endpoint. The worker mints a
+token for each run, good for that run until its Job's deadline and revoked
+when it ends, and hands it to the pod in place of a provider key; the
+gateway answers each step through the tenant's provider with the key only
+the worker holds, refuses a step once the run's token budget or the
+tenant's `tokensPerMonth` is spent, and records the step's usage. Provider
+endpoints are therefore not in a runner's allowlist.
+
 `gateway.enabled: false` removes the listener and the Service and gives runner
-pods the `networkPolicy.egressPorts` to anywhere instead.
+pods the `networkPolicy.egressPorts` to anywhere instead. Agentic reviews are
+refused without the gateway.
 
 ### Runner tools
 
@@ -230,7 +238,7 @@ Kubernetes: `>=1.25.0-0`
 | embedding.model | string | `""` | Embedding model id; empty disables indexing. |
 | embedding.reindexOnModelChange | bool | `false` | Rebuild the index when the model or dimension changes instead of refusing to start. |
 | fullnameOverride | string | `""` | Override the full release name. |
-| gateway.enabled | bool | `true` | Serve the egress gateway (ADR-0008): a forward proxy on `all` and `worker` pods that runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration file names (forges, model endpoints, `egress.allowHosts`). With it, runner pods need no direct internet egress. |
+| gateway.enabled | bool | `true` | Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration file names (forges, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews are refused without it. |
 | gateway.port | int | `8082` | Gateway port on the pods and its Service. |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |

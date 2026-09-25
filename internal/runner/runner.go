@@ -2,8 +2,9 @@
 // (and the last reviewed head when there is one), diff them, compute the
 // patch id, and write a context pack under its own run id. It works from
 // one versioned job document (Spec); its credentials, a git token for one
-// repository and for an agentic review a model key, arrive apart from it
-// (Secrets). Its database role can only touch its own run.
+// repository and for an agentic review a token for the worker's model
+// gateway, arrive apart from it (Secrets). Its database role can only touch
+// its own run.
 package runner
 
 import (

@@ -9,9 +9,9 @@ import (
 
 func TestCompletersRebuildOnChange(t *testing.T) {
 	builds := 0
-	c := &Completers{Build: func(configfile.Provider) (model.Completer, error) {
+	c := &Completers{Build: func(configfile.Provider) (model.Stepper, error) {
 		builds++
-		return model.Structured{}, nil
+		return &model.OpenAI{}, nil
 	}}
 	base := configfile.Provider{Type: configfile.ProviderAnthropic, Pricing: model.Pricing{"acme-large": {Input: 3}}}
 	tests := []struct {
@@ -30,6 +30,10 @@ func TestCompletersRebuildOnChange(t *testing.T) {
 			if _, err := c.For(f, "p"); err != nil {
 				t.Fatal(err)
 			}
+			// The gateway's steppers share the cache.
+			if _, err := c.Stepper(f, "p"); err != nil {
+				t.Fatal(err)
+			}
 			if builds != tt.wantBuilds {
 				t.Fatalf("builds = %d, want %d", builds, tt.wantBuilds)
 			}
@@ -40,10 +44,10 @@ func TestCompletersRebuildOnChange(t *testing.T) {
 	}
 }
 
-func TestBuildCompleter(t *testing.T) {
+func TestBuildStepper(t *testing.T) {
 	for _, typ := range []configfile.ProviderType{configfile.ProviderOpenRouter, configfile.ProviderOpenAI, configfile.ProviderAnthropic} {
 		t.Run(string(typ), func(t *testing.T) {
-			if _, err := BuildCompleter(configfile.Provider{Type: typ}); err == nil {
+			if _, err := BuildStepper(configfile.Provider{Type: typ}); err == nil {
 				t.Fatal("a provider without a key must not build")
 			}
 		})

@@ -289,6 +289,23 @@ func checkStepperError(t *testing.T, result Result, _ []StepEvent, _ *scriptedSt
 	}
 }
 
+// budgetStepper refuses like the gateway once a run's budget is spent.
+type budgetStepper struct{}
+
+func (budgetStepper) Step(context.Context, model.StepRequest) (model.StepResponse, error) {
+	return model.StepResponse{}, fmt.Errorf("model: review: %w: run budget spent", model.ErrBudget)
+}
+
+func setupGatewayBudgetRefusal(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	return budgetStepper{}, nil, nil
+}
+
+func checkGatewayBudgetRefusal(t *testing.T, result Result, _ []StepEvent, _ *scriptedStepper) {
+	if !strings.Contains(result.Err, "run budget spent") {
+		t.Fatalf("Err = %q, want the gateway's refusal", result.Err)
+	}
+}
+
 func setupStepperErrorWhileCtxCanceled(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
 	ctx, cancel := context.WithCancel(t.Context())
 	return &ctxCancelStepper{cancel: cancel}, ctx, nil
@@ -521,6 +538,15 @@ func TestRun(t *testing.T) {
 			wantStop:  StopError,
 			wantSteps: 0,
 			check:     checkStepperError,
+		},
+		{
+			// The gateway refusing a step for the budget ends the run the
+			// way the loop's own budget check does.
+			name:      "gateway_budget_refusal_is_stop_budget",
+			setup:     setupGatewayBudgetRefusal,
+			wantStop:  StopBudget,
+			wantSteps: 0,
+			check:     checkGatewayBudgetRefusal,
 		},
 		{
 			// A Stepper error correlated with the Run's own ctx cancellation

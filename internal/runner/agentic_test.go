@@ -148,10 +148,10 @@ func TestAgentSkip(t *testing.T) {
 }
 
 func TestAgentErrorsAreMasked(t *testing.T) {
-	secrets := Secrets{GitToken: "git-token", ModelAPIKey: "sk-model-key"}
-	rec, err := newAgentRecord(agent.Result{Stop: agent.StopError, Err: `401: {"error":"bad key sk-model-key"}`},
-		nil, []string{"https://example.com/?key=sk-model-key"}, secrets)
-	if err != nil || strings.Contains(rec.err, "sk-model-key") || !strings.Contains(rec.err, "bad key ***") {
+	secrets := Secrets{GitToken: "git-token", GatewayToken: "krk_run_token"}
+	rec, err := newAgentRecord(agent.Result{Stop: agent.StopError, Err: `401: {"error":"bad token krk_run_token"}`},
+		nil, []string{"https://example.com/?key=krk_run_token"}, secrets)
+	if err != nil || strings.Contains(rec.err, "krk_run_token") || !strings.Contains(rec.err, "bad token ***") {
 		t.Fatalf("agent run error = %q, %v", rec.err, err)
 	}
 	if string(rec.sources) != `["https://example.com/?key=***"]` {
@@ -227,7 +227,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 	if submit.Name != "submit_review" || string(submit.InputSchema) != string(review.SchemaStrict()) {
 		t.Fatalf("submit tool = %+v", submit)
 	}
-	if st.reqs[0].Model != "example-model" || st.reqs[0].System != "system" || st.reqs[0].MaxTokens != 8192 {
+	if st.reqs[0].Model != "review" || st.reqs[0].System != "system" || st.reqs[0].MaxTokens != 8192 {
 		t.Fatalf("request = %+v", st.reqs[0])
 	}
 }
