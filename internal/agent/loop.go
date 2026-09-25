@@ -83,7 +83,9 @@ type Result struct {
 	ToolCalls map[string]int
 	Usage     model.Usage
 	CostUSD   float64
-	// Err is the Stepper's error message, set iff Stop == StopError.
+	// Err says why the Run stopped where the reason alone does not: Do
+	// sets it to the Stepper's error for StopError, and a caller that
+	// bounds ctx may set it to explain a StopCanceled.
 	Err string
 }
 

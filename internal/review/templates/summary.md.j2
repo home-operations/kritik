@@ -1,5 +1,8 @@
 ### kritik review
 
+{% if incomplete %}
+**Review incomplete for `{{ head_sha[:7] }}`:** {{ incomplete }}. Findings posted for earlier heads may no longer apply.
+{% else %}
 - **Blocking:** {{ counts.blocking }}
 - **Important:** {{ counts.important }}
 - **Nit:** {{ counts.nit }}
@@ -27,6 +30,7 @@ _Incremental review of the changes since `{{ prior_head_sha[:7] }}`._
 {% else %}
 
 Nothing worth flagging in this diff.
+{% endif %}
 {% endif %}
 {% if notes %}
 

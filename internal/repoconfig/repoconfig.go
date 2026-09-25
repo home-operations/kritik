@@ -19,6 +19,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v3"
@@ -38,6 +39,10 @@ const (
 	MaxFileBytes  = 256 << 10
 	MaxTotalBytes = 1 << 20
 )
+
+// MaxInstructionBytes caps the repository instructions, joined, so they
+// cannot crowd the diff out of the prompt budget.
+const MaxInstructionBytes = 32 << 10
 
 // Templates names in-repo files whose contents replace kritik's built-in
 // summary/inline comment templates.
@@ -252,4 +257,42 @@ func matchesAny(patterns []string, p string) bool {
 		}
 	}
 	return false
+}
+
+// Instructions returns the contents of the named files, trimmed and in
+// order, skipping any that are absent or blank, so that joined by blank
+// lines they fit MaxInstructionBytes. truncated reports that the cap cut
+// them short.
+func Instructions(files Files, paths []string) (out []string, truncated bool) {
+	room := MaxInstructionBytes
+	for _, p := range paths {
+		s := strings.TrimSpace(files[p])
+		if s == "" || room <= 0 {
+			continue
+		}
+		if len(out) > 0 {
+			room -= len("\n\n")
+		}
+		if len(s) > room {
+			s = cutUTF8(s, max(room, 0))
+			room, truncated = 0, true
+			if s == "" {
+				continue
+			}
+		}
+		room -= len(s)
+		out = append(out, s)
+	}
+	return out, truncated
+}
+
+// cutUTF8 shortens s to at most n bytes without splitting a rune.
+func cutUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

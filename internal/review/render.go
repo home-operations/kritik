@@ -32,8 +32,8 @@ type Templates struct {
 // RenderData is what the summary template sees, under the keys number,
 // head_sha, model, summary.take, summary.praise, findings (each with path,
 // line, severity, title, explanation and suggested_fix), counts.blocking,
-// counts.important, counts.nit, notes, incremental and prior_head_sha. The
-// inline template sees one finding's keys at the top level.
+// counts.important, counts.nit, notes, incremental, prior_head_sha and
+// incomplete. The inline template sees one finding's keys at the top level.
 type RenderData struct {
 	Number       int
 	HeadSHA      string
@@ -43,6 +43,9 @@ type RenderData struct {
 	Notes        []string
 	Incremental  bool
 	PriorHeadSHA string
+	// Incomplete, when set, says why the head was not fully reviewed; the
+	// default template then states that instead of a verdict.
+	Incomplete string
 }
 
 var (
@@ -129,6 +132,7 @@ func summaryContext(d RenderData) map[string]any {
 		"notes":          notes,
 		"incremental":    d.Incremental,
 		"prior_head_sha": d.PriorHeadSHA,
+		"incomplete":     d.Incomplete,
 	}
 }
 

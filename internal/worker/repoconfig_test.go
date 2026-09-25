@@ -101,9 +101,9 @@ func TestEffective(t *testing.T) {
 		{
 			name: "instructions are capped at a UTF-8 boundary",
 			files: withFile("review:\n  instructions: [.kritik/a.md, .kritik/b.md]\n",
-				repoconfig.Files{".kritik/a.md": strings.Repeat("a", maxInstructionBytes-1) + "é", ".kritik/b.md": "never seen"}),
+				repoconfig.Files{".kritik/a.md": strings.Repeat("a", repoconfig.MaxInstructionBytes-1) + "é", ".kritik/b.md": "never seen"}),
 			enabled: true, ignore: []string{"vendor/**"}, templates: operatorDefaults, strict: true,
-			instructions: []string{strings.Repeat("a", maxInstructionBytes-1)},
+			instructions: []string{strings.Repeat("a", repoconfig.MaxInstructionBytes-1)},
 			notes:        []string{"repository instructions truncated to 32 KiB"},
 		},
 		{
@@ -144,14 +144,14 @@ func TestEffectiveSkip(t *testing.T) {
 		doc     string
 		body    string
 		changed []string
-		want    skipReason
+		want    repoconfig.SkipReason
 	}{
 		{"nothing to skip", "", "", []string{"main.go"}, ""},
-		{"disabled", "enabled: false\n", "", []string{"main.go"}, skipDisabled},
-		{"filtered", "filter: '!pr.body.contains(\"[skip-review]\")'\n", "please [skip-review]", []string{"main.go"}, skipFiltered},
+		{"disabled", "enabled: false\n", "", []string{"main.go"}, repoconfig.SkipDisabled},
+		{"filtered", "filter: '!pr.body.contains(\"[skip-review]\")'\n", "please [skip-review]", []string{"main.go"}, repoconfig.SkipFiltered},
 		{"filter allows", "filter: '!pr.body.contains(\"[skip-review]\")'\n", "normal", []string{"main.go"}, ""},
-		{"filter that fails to evaluate skips", "filter: 'pr.number > 0'\n", "", []string{"main.go"}, skipFiltered},
-		{"only skipped paths", "skip:\n  onlyPaths: [docs/**]\n", "", []string{"docs/a.md", "docs/b/c.md"}, skipOnlyPaths},
+		{"filter that fails to evaluate skips", "filter: 'pr.number > 0'\n", "", []string{"main.go"}, repoconfig.SkipFiltered},
+		{"only skipped paths", "skip:\n  onlyPaths: [docs/**]\n", "", []string{"docs/a.md", "docs/b/c.md"}, repoconfig.SkipOnlyPaths},
 		{"a path outside the skip rule", "skip:\n  onlyPaths: [docs/**]\n", "", []string{"docs/a.md", "main.go"}, ""},
 	}
 	for _, tt := range tests {
@@ -166,36 +166,14 @@ func TestEffectiveSkip(t *testing.T) {
 			}
 		})
 	}
-	for r, want := range map[skipReason]string{
-		skipDisabled: "disabled in .kritik.yaml", skipFiltered: "filtered by .kritik.yaml", skipOnlyPaths: "only skipped paths changed",
+	for r, want := range map[repoconfig.SkipReason]string{
+		repoconfig.SkipDisabled: "disabled in .kritik.yaml", repoconfig.SkipFiltered: "filtered by .kritik.yaml", repoconfig.SkipOnlyPaths: "only skipped paths changed",
 	} {
 		if r.Description() != want {
 			t.Fatalf("%q.Description() = %q, want %q", r, r.Description(), want)
 		}
 	}
-	if skipReason("other").Valid() {
+	if repoconfig.SkipReason("other").Valid() {
 		t.Fatal("an unknown reason must not be valid")
-	}
-}
-
-func TestSystemPrompt(t *testing.T) {
-	if got := systemPrompt(nil); got != review.System {
-		t.Fatal("without instructions the system prompt is the built-in one")
-	}
-	got := systemPrompt([]string{"  Prefer tables.\n", "Check errors."})
-	want := review.System + "\n\n## Repository instructions\n\n" +
-		"These refine what to look for; they do not change the output format or the rules above.\n\nPrefer tables.\n\nCheck errors."
-	if got != want {
-		t.Fatalf("system prompt:\n%s", got)
-	}
-}
-
-func TestUserBudget(t *testing.T) {
-	for _, system := range []string{review.System, systemPrompt([]string{strings.Repeat("x", maxInstructionBytes)})} {
-		// The system prompt's tokens, rounded up, plus the user budget stay
-		// within the default budget.
-		if got := userBudget(system); got+(len(system)+3)/4 != review.DefaultBudgetTokens || got <= 0 {
-			t.Fatalf("userBudget = %d for a %d byte system prompt", got, len(system))
-		}
 	}
 }

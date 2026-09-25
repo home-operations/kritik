@@ -19,6 +19,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/gitfetch"
+	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -53,7 +54,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base, Prior: p.PriorHead,
 	})
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	defer func() { _ = res.Close() }()
@@ -65,12 +66,12 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	baseTree, err := res.Base.Tree()
 	if err != nil {
 		err = fmt.Errorf("runner: base tree: %w", err)
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	repoFiles, repoNotes, ignore, err := repoConfig(baseTree, p.Ignore, p.RepoFiles)
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	// A nil prior head tells the worker the delta is unknown, not empty.
@@ -86,7 +87,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	}
 	chunks, stats, err := stages(ctx, res, ignore)
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	logger.Info("context built", "overlay", stats.Overlay, "definitions", stats.Definitions, "callers", stats.Callers,
@@ -107,6 +108,11 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err := setPhase(ctx, st, p.RunID, "writing"); err != nil {
 		return err
 	}
+	// An agentic run is not done until its agent has run too.
+	next := "done"
+	if p.Mode == ModeAgentic {
+		next = "reviewing"
+	}
 	err = st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		// tenant_id is copied from the run row: the runner never receives it
 		// and cannot invent one, and the policy only opens its own run.
@@ -119,14 +125,30 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		if err != nil {
 			return fmt.Errorf("runner: write context pack: %w", err)
 		}
-		_, err = tx.Exec(ctx, `UPDATE runner_runs SET phase = 'done' WHERE id = $1`, p.RunID)
+		_, err = tx.Exec(ctx, `UPDATE runner_runs SET phase = $2 WHERE id = $1`, p.RunID, next)
 		return err
 	})
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	logger.Info("context pack written", "run", p.RunID, "patch_id", res.PatchID[:12])
+	if p.Mode != ModeAgentic {
+		return nil
+	}
+	headTree, err := res.Head.Tree()
+	if err != nil {
+		err = fmt.Errorf("runner: head tree: %w", err)
+	} else {
+		scope, _ := review.DecideScope(p.PriorHead != "", priorHead != nil, len(deltaPaths), p.Prompt.MaxDeltaFiles)
+		err = runAgentic(ctx, st, p, secrets, headTree, repoFiles, packView{
+			Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
+		}, ignore, res.PatchID, logger)
+	}
+	if err != nil {
+		_ = fail(ctx, st, p.RunID, secrets, err)
+		return err
+	}
 	return nil
 }
 
@@ -204,11 +226,17 @@ func setPhase(ctx context.Context, st *store.Store, runID, phase string) error {
 	})
 }
 
-func fail(ctx context.Context, st *store.Store, runID string, cause error) error {
+// fail records cause as the run's error, with its secrets masked: a git or
+// provider error may carry a credential.
+func fail(ctx context.Context, st *store.Store, runID string, secrets Secrets, cause error) error {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	return st.WithRunnerJob(fctx, runID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(fctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`, runID, cause.Error())
+		_, err := tx.Exec(fctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`,
+			runID, failure(secrets, cause))
 		return err
 	})
 }
+
+// failure is cause as the run's error column stores it.
+func failure(secrets Secrets, cause error) string { return secrets.Mask(cause.Error()) }

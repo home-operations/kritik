@@ -10,33 +10,6 @@ import (
 	"github.com/home-operations/kritik/internal/review"
 )
 
-// reviewScope is what a review covered; the reviews table's CHECK lists
-// the same set.
-type reviewScope string
-
-const (
-	scopeFull        reviewScope = "full"
-	scopeIncremental reviewScope = "incremental"
-)
-
-// Valid reports whether s is a known scope.
-func (s reviewScope) Valid() bool { return s == scopeFull || s == scopeIncremental }
-
-// decideScope says whether a review can build on the last completed one:
-// only when there is one, the runner fetched its head, and fewer than
-// maxDeltaFiles files changed since. A full review says why it is one.
-func decideScope(hasPrior, priorFetched bool, deltaFiles, maxDeltaFiles int) (reviewScope, string) {
-	switch {
-	case !hasPrior:
-		return scopeFull, "no completed review to build on"
-	case !priorFetched:
-		return scopeFull, "prior head unreachable"
-	case deltaFiles >= maxDeltaFiles:
-		return scopeFull, fmt.Sprintf("%d files changed since last review", deltaFiles)
-	}
-	return scopeIncremental, ""
-}
-
 // priorReview is a pull request's last completed review; id is "" when it
 // has none.
 type priorReview struct {

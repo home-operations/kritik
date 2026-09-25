@@ -59,6 +59,27 @@ func TestRenderSummaryDefault(t *testing.T) {
 	}
 }
 
+func TestRenderSummaryIncomplete(t *testing.T) {
+	d := RenderData{Number: 7, HeadSHA: "0123456789abcdef", Model: "vendor/model-x", Incomplete: "agent stopped: max_steps",
+		Notes: []string{"a note"}}
+	body, notes := RenderSummary(t.Context(), Templates{}, d)
+	if len(notes) != 0 {
+		t.Fatalf("notes = %v", notes)
+	}
+	for _, want := range []string{
+		Marker(7), "### kritik review", "**Review incomplete for `0123456`:** agent stopped: max_steps.", "_a note._",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in:\n%s", want, body)
+		}
+	}
+	for _, unwanted := range []string{"Nothing worth flagging", "**Blocking:**"} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("an incomplete review must not claim %q:\n%s", unwanted, body)
+		}
+	}
+}
+
 func TestRenderSummaryCustom(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -359,3 +359,39 @@ func TestCollectExtra(t *testing.T) {
 		})
 	}
 }
+
+func TestInstructions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		files     Files
+		paths     []string
+		want      []string
+		truncated bool
+	}{
+		{name: "none", files: Files{"a.md": "x"}},
+		{
+			name: "read in order, trimmed, empty and missing skipped", files: Files{"a.md": " one\n", "b.md": "  ", "c.md": "two"},
+			paths: []string{"c.md", "gone.md", "b.md", "a.md"}, want: []string{"two", "one"},
+		},
+		{
+			name:  "capped at a UTF-8 boundary",
+			files: Files{"a.md": strings.Repeat("a", MaxInstructionBytes-1) + "é", "b.md": "never seen"},
+			paths: []string{"a.md", "b.md"}, want: []string{strings.Repeat("a", MaxInstructionBytes-1)}, truncated: true,
+		},
+		{
+			name:  "the separator counts against the cap",
+			files: Files{"a.md": strings.Repeat("a", MaxInstructionBytes-4), "b.md": "bbbb"},
+			paths: []string{"a.md", "b.md"}, want: []string{strings.Repeat("a", MaxInstructionBytes-4), "bb"}, truncated: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, truncated := Instructions(tt.files, tt.paths)
+			if !slices.Equal(got, tt.want) || truncated != tt.truncated {
+				t.Fatalf("Instructions = %d item(s), truncated=%v; want %d, %v", len(got), truncated, len(tt.want), tt.truncated)
+			}
+		})
+	}
+}

@@ -179,7 +179,12 @@ results reported back.
 - **Job document.** The worker hands the runner one typed, versioned
   `runner.Spec` (`version: 1`) as JSON: run kind and id, clone URL, head,
   merge-base and prior head, ignore globs, review mode, agent limits and the
-  model endpoint (provider, base URL, models, pricing). It holds no secret.
+  model endpoint (provider, base URL, models, pricing). In agentic mode it
+  also carries a prompt block: the pull request's metadata and text (the
+  fields the repository filter sees), the operator's instruction paths and
+  strictness, and the last completed review's findings. The runner applies
+  the merge-base `.kritik.yaml` with the same code as the worker and does not
+  run the agent for a review the worker will skip. It holds no secret.
   The runner rejects a version it does not know rather than guessing.
 - **Job-scoped secrets.** The git token and, in agentic mode, the model key
   go into a Secret created for the run and owned by its Job, so Kubernetes
@@ -213,3 +218,6 @@ results reported back.
   tiers keyed on pull request size.
 - A follow-up responder that edits code.
 - The GitLab client.
+- In agentic mode, a fallback model on another provider (the runner holds
+  one provider's key) and similar-code context from the index (the agent
+  greps instead).
