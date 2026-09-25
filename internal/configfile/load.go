@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -220,6 +221,9 @@ func (f *File) validateTenants() error {
 			if r.Settle < 0 {
 				return fmt.Errorf("configfile: %s.settle must not be negative", rwhere)
 			}
+			if err := r.validateReview(rwhere); err != nil {
+				return err
+			}
 			if f.InstallationFor(&t, r.Name) == nil {
 				owner, _, _ := strings.Cut(r.Name, "/")
 				return fmt.Errorf("configfile: %s.name %q: no installation in tenant %q has account %q", rwhere, r.Name, t.Slug, owner)
@@ -230,6 +234,57 @@ func (f *File) validateTenants() error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// validateReview checks the operator-only review keys of a repository.
+func (r Repository) validateReview(where string) error {
+	if r.Mode != "" && !r.Mode.Valid() {
+		return fmt.Errorf("configfile: %s.mode must be %s or %s, got %q", where, ReviewSingle, ReviewAgentic, r.Mode)
+	}
+	for _, c := range []struct {
+		name string
+		v    *int
+	}{
+		{"agent.maxSteps", r.Agent.MaxSteps},
+		{"agent.maxToolOutputBytes", r.Agent.MaxToolOutputBytes},
+		{"incremental.maxDeltaFiles", r.Incremental.MaxDeltaFiles},
+	} {
+		if c.v != nil && *c.v <= 0 {
+			return fmt.Errorf("configfile: %s.%s must be positive", where, c.name)
+		}
+	}
+	if r.Agent.Timeout != nil && *r.Agent.Timeout <= 0 {
+		return fmt.Errorf("configfile: %s.agent.timeout must be positive", where)
+	}
+	for i, p := range r.Review.Instructions {
+		if err := checkRepoPath(p); err != nil {
+			return fmt.Errorf("configfile: %s.review.instructions[%d]: %w", where, i, err)
+		}
+	}
+	for _, t := range [][2]string{{"summary", r.Review.Templates.Summary}, {"inline", r.Review.Templates.Inline}} {
+		if t[1] == "" {
+			continue
+		}
+		if err := checkRepoPath(t[1]); err != nil {
+			return fmt.Errorf("configfile: %s.review.templates.%s: %w", where, t[0], err)
+		}
+	}
+	return nil
+}
+
+// checkRepoPath rejects a repository path that is empty, absolute or
+// escapes the repository root.
+func checkRepoPath(p string) error {
+	if strings.TrimSpace(p) == "" {
+		return errors.New("path must not be empty")
+	}
+	if path.IsAbs(p) {
+		return fmt.Errorf("path %q must be relative", p)
+	}
+	if c := path.Clean(p); c == ".." || strings.HasPrefix(c, "../") {
+		return fmt.Errorf("path %q escapes the repository", p)
 	}
 	return nil
 }

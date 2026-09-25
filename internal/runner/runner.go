@@ -58,7 +58,18 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err := setPhase(ctx, st, p.RunID, "parsing"); err != nil {
 		return err
 	}
-	chunks, stats, err := stages(ctx, res, p.Ignore)
+	baseTree, err := res.Base.Tree()
+	if err != nil {
+		err = fmt.Errorf("runner: base tree: %w", err)
+		_ = fail(ctx, st, p.RunID, err)
+		return err
+	}
+	repoFiles, repoNotes, ignore, err := repoConfig(baseTree, p.Ignore, p.RepoFiles)
+	if err != nil {
+		_ = fail(ctx, st, p.RunID, err)
+		return err
+	}
+	chunks, stats, err := stages(ctx, res, ignore)
 	if err != nil {
 		_ = fail(ctx, st, p.RunID, err)
 		return err
@@ -70,6 +81,13 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err != nil {
 		return fmt.Errorf("runner: encode context: %w", err)
 	}
+	filesJSON, err := json.Marshal(repoFiles)
+	if err != nil {
+		return fmt.Errorf("runner: encode repository files: %w", err)
+	}
+	if repoNotes == nil {
+		repoNotes = []string{}
+	}
 
 	if err := setPhase(ctx, st, p.RunID, "writing"); err != nil {
 		return err
@@ -78,9 +96,9 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		// tenant_id is copied from the run row: the runner never receives it
 		// and cannot invent one, and the policy only opens its own run.
 		_, err := tx.Exec(ctx, `
-			INSERT INTO context_packs (runner_run_id, tenant_id, head_sha, base_sha, patch_id, diff, changed_paths, stages)
-			SELECT id, tenant_id, $2, $3, $4, $5, $6, $7 FROM runner_runs WHERE id = $1`,
-			p.RunID, p.Head, p.Base, res.PatchID, res.Diff, res.Changed, stagesJSON)
+			INSERT INTO context_packs (runner_run_id, tenant_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes)
+			SELECT id, tenant_id, $2, $3, $4, $5, $6, $7, $8, $9 FROM runner_runs WHERE id = $1`,
+			p.RunID, p.Head, p.Base, res.PatchID, res.Diff, res.Changed, stagesJSON, filesJSON, repoNotes)
 		if err != nil {
 			return fmt.Errorf("runner: write context pack: %w", err)
 		}

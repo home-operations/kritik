@@ -60,6 +60,10 @@ func (f *File) Settings(t *Tenant, repo string) Settings {
 		Limits:  f.Defaults.Limits,
 		Ignore:  append([]string(nil), DefaultIgnore...),
 		Settle:  f.Defaults.Settle,
+
+		Mode:        ReviewSingle,
+		Agent:       DefaultAgent,
+		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
 	}
 	s.Models = s.Models.overlay(t.Models)
 	if t.filter != nil {
@@ -88,6 +92,14 @@ func (f *File) Settings(t *Tenant, repo string) Settings {
 		if r.Settle > 0 {
 			s.Settle = r.Settle
 		}
+		if r.Mode != "" {
+			s.Mode = r.Mode
+		}
+		s.Agent = s.Agent.overlay(r.Agent)
+		if r.Incremental.MaxDeltaFiles != nil {
+			s.Incremental.MaxDeltaFiles = *r.Incremental.MaxDeltaFiles
+		}
+		s.Review = r.Review
 		break
 	}
 	if s.Limits.Concurrency == 0 {
@@ -125,4 +137,17 @@ func (l Limits) overlay(o Limits) Limits {
 		l.TokensPerMonth = o.TokensPerMonth
 	}
 	return l
+}
+
+func (a AgentSettings) overlay(o Agent) AgentSettings {
+	if o.MaxSteps != nil {
+		a.MaxSteps = *o.MaxSteps
+	}
+	if o.MaxToolOutputBytes != nil {
+		a.MaxToolOutputBytes = *o.MaxToolOutputBytes
+	}
+	if o.Timeout != nil {
+		a.Timeout = *o.Timeout
+	}
+	return a
 }

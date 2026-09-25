@@ -20,7 +20,7 @@ const (
 func reviewSpec() Spec {
 	return Spec{
 		Version: SpecVersion, Kind: KindReview, RunID: "run-1", CloneURL: "https://forge.example.com/acme/widgets.git",
-		Head: shaA, Base: shaB, Ignore: []string{"vendor/**"},
+		Head: shaA, Base: shaB, Ignore: []string{"vendor/**"}, RepoFiles: []string{"docs/rules.md"},
 	}
 }
 

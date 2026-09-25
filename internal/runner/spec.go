@@ -85,10 +85,13 @@ type Spec struct {
 	Base      string `json:"base,omitempty"`
 	PriorHead string `json:"priorHead,omitempty"`
 	// Ignore globs are skipped by the context stages.
-	Ignore []string       `json:"ignore,omitempty"`
-	Mode   Mode           `json:"mode,omitempty"`
-	Agent  *AgentLimits   `json:"agent,omitempty"`
-	Model  *ModelEndpoint `json:"model,omitempty"`
+	Ignore []string `json:"ignore,omitempty"`
+	// RepoFiles are repository paths the operator's review settings name,
+	// read from the merge base alongside .kritik.yaml.
+	RepoFiles []string       `json:"repoFiles,omitempty"`
+	Mode      Mode           `json:"mode,omitempty"`
+	Agent     *AgentLimits   `json:"agent,omitempty"`
+	Model     *ModelEndpoint `json:"model,omitempty"`
 }
 
 // Validate checks a spec is one this runner can carry out.

@@ -424,3 +424,94 @@ func TestWatch(t *testing.T) {
 	write(strings.Replace(minimal, "slug: acme", "slug: acme-three", 1))
 	expectApply("acme-three")
 }
+
+func TestRepositoryModeAgentReview(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	withRepo := func(repo string) string {
+		return strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: ["+repo+"]", 1)
+	}
+
+	t.Run("defaults resolve when unset", func(t *testing.T) {
+		f, err := Parse([]byte(withRepo("{ name: acme/x }")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, repo := range []string{"acme/x", "acme/unlisted"} {
+			s := f.Settings(&f.Tenants[0], repo)
+			if s.Mode != ReviewSingle || s.Agent != DefaultAgent || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
+				t.Fatalf("%s: mode=%q agent=%+v incremental=%+v", repo, s.Mode, s.Agent, s.Incremental)
+			}
+			if s.Review.RequireSuggestedFix || len(s.Review.Instructions) != 0 || s.Review.Templates != (ReviewTemplates{}) {
+				t.Fatalf("%s: review = %+v", repo, s.Review)
+			}
+		}
+		if DefaultMaxDeltaFiles != 25 {
+			t.Fatalf("DefaultMaxDeltaFiles = %d", DefaultMaxDeltaFiles)
+		}
+	})
+
+	t.Run("repository values override the defaults", func(t *testing.T) {
+		f, err := Parse([]byte(withRepo(`{ name: acme/x, mode: agentic,
+      agent: { maxSteps: 12, maxToolOutputBytes: 4096, timeout: 3m },
+      incremental: { maxDeltaFiles: 5 },
+      review: { instructions: [docs/rules.md], requireSuggestedFix: true,
+        templates: { summary: .kritik/summary.md.j2, inline: .kritik/inline.md.j2 } } }`)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := f.Settings(&f.Tenants[0], "acme/x")
+		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, Timeout: 3 * time.Minute}
+		if s.Mode != ReviewAgentic || s.Agent != want || s.Incremental.MaxDeltaFiles != 5 {
+			t.Fatalf("mode=%q agent=%+v incremental=%+v", s.Mode, s.Agent, s.Incremental)
+		}
+		if !s.Review.RequireSuggestedFix || len(s.Review.Instructions) != 1 || s.Review.Instructions[0] != "docs/rules.md" ||
+			s.Review.Templates.Summary != ".kritik/summary.md.j2" || s.Review.Templates.Inline != ".kritik/inline.md.j2" {
+			t.Fatalf("review = %+v", s.Review)
+		}
+		if got := s.Review.Referenced(); strings.Join(got, ",") != "docs/rules.md,.kritik/summary.md.j2,.kritik/inline.md.j2" {
+			t.Fatalf("referenced = %v", got)
+		}
+	})
+
+	t.Run("a partial agent block keeps the other defaults", func(t *testing.T) {
+		f, err := Parse([]byte(withRepo("{ name: acme/x, agent: { maxSteps: 7 } }")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := DefaultAgent
+		want.MaxSteps = 7
+		if got := f.Settings(&f.Tenants[0], "acme/x").Agent; got != want {
+			t.Fatalf("agent = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("review modes", func(t *testing.T) {
+		for m, valid := range map[ReviewMode]bool{ReviewSingle: true, ReviewAgentic: true, "": false, "loop": false} {
+			if m.Valid() != valid {
+				t.Fatalf("%q.Valid() = %v", m, !valid)
+			}
+		}
+	})
+
+	rejects := []struct{ name, repo, want string }{
+		{"invalid mode", "{ name: acme/x, mode: loop }", "mode must be single or agentic"},
+		{"zero max steps", "{ name: acme/x, agent: { maxSteps: 0 } }", "agent.maxSteps must be positive"},
+		{"negative max steps", "{ name: acme/x, agent: { maxSteps: -1 } }", "agent.maxSteps must be positive"},
+		{"zero tool output", "{ name: acme/x, agent: { maxToolOutputBytes: 0 } }", "agent.maxToolOutputBytes must be positive"},
+		{"zero timeout", "{ name: acme/x, agent: { timeout: 0s } }", "agent.timeout must be positive"},
+		{"zero delta files", "{ name: acme/x, incremental: { maxDeltaFiles: 0 } }", "incremental.maxDeltaFiles must be positive"},
+		{"unknown agent key", "{ name: acme/x, agent: { steps: 3 } }", "field steps not found"},
+		{"absolute instruction path", "{ name: acme/x, review: { instructions: [/etc/passwd] } }", "must be relative"},
+		{"escaping template path", "{ name: acme/x, review: { templates: { summary: ../x.j2 } } }", "escapes the repository"},
+		{"empty instruction path", "{ name: acme/x, review: { instructions: [''] } }", "must not be empty"},
+	}
+	for _, tt := range rejects {
+		t.Run("rejects "+tt.name, func(t *testing.T) {
+			_, err := Parse([]byte(withRepo(tt.repo)))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want it to mention %q", err, tt.want)
+			}
+		})
+	}
+}

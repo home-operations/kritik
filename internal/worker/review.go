@@ -6,6 +6,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,6 +24,8 @@ import (
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/metrics"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/repoconfig"
+	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
 )
@@ -132,7 +135,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": args.HeadSHA},
 		Job: runner.Spec{
 			Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
-			Head: args.HeadSHA, Base: mergeBase, Ignore: settings.Ignore,
+			Head: args.HeadSHA, Base: mergeBase, Ignore: settings.Ignore, RepoFiles: settings.Review.Referenced(),
 		},
 		Secrets:   runner.Secrets{GitToken: token},
 		Deadline:  deadline,
@@ -157,16 +160,19 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
 		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", res.Err.Error())
 	}
-	patchID, status, err := w.afterRun(ctx, args, pr, reviewID, runID, logger)
-	if err != nil || patchID == "" {
+	prep, status, err := w.afterRun(ctx, args, pr, settings, client, reviewID, runID, logger)
+	if err != nil || prep.patchID == "" {
 		if err == nil {
 			w.Metrics.Review(tenant.Slug, status, time.Since(started))
 		}
 		return err
 	}
+	patchID := prep.patchID
 	phase := &publishPhase{
-		w: w, file: file, tenant: tenant, settings: settings, client: client, pr: pr,
+		w: w, file: file, tenant: tenant, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, jobID: job.ID, logger: logger,
+		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.RequireSuggestedFix}, templates: prep.eff.Templates,
+		instructions: prep.eff.Instructions, repoNotes: prep.notes,
 	}
 	status, perr := phase.run(ctx)
 	if perr != nil && status == statusFailed {
@@ -177,46 +183,94 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	return w.finishReview(ctx, args.TenantID, reviewID, status, patchID, errText(perr))
 }
 
-// afterRun re-checks the head under the tenant transaction and lifts the
-// patch id out of the context pack. A bot-authored PR whose patch id equals
-// its last prepared review is skipped: a Renovate rebase changes nothing.
-// It returns the patch id when the review should go on to the model, and
-// "" plus the terminal status it recorded otherwise.
+// prepared is what afterRun hands the model phase: the patch id, the
+// settings with the repository's .kritik.yaml applied, and the notes the
+// summary states about that file.
+type prepared struct {
+	patchID string
+	eff     Effective
+	notes   []string
+}
+
+// afterRun re-checks the head under the tenant transaction, lifts the patch
+// id and the merge-base repository files out of the context pack, and
+// applies .kritik.yaml: a review it disables, filters out or whose changes
+// its skip rule covers ends skipped with a success status saying why. A
+// bot-authored PR whose patch id equals its last prepared review is skipped
+// too: a Renovate rebase changes nothing. It returns a patch id when the
+// review should go on to the model, and "" plus the terminal status it
+// recorded otherwise.
 func (w *Review) afterRun(
-	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, reviewID, runID string, logger *slog.Logger,
-) (string, string, error) {
-	status, patchID := statusPrepared, ""
+	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, settings configfile.Settings, client forge.Client,
+	reviewID, runID string, logger *slog.Logger,
+) (prepared, string, error) {
+	var (
+		patchID, lastPatch string
+		superseded         bool
+		changed, repoNotes []string
+		filesJSON          []byte
+		vars               map[string]any
+	)
 	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		var currentHead string
 		if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1`, pr.id).Scan(&currentHead); err != nil {
 			return fmt.Errorf("worker: re-read head: %w", err)
 		}
 		if currentHead != args.HeadSHA {
-			status = statusSuperseded
+			superseded = true
 			return nil
 		}
-		if err := tx.QueryRow(ctx, `SELECT patch_id FROM context_packs WHERE runner_run_id = $1`, runID).Scan(&patchID); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT patch_id, changed_paths, repo_files, repo_notes FROM context_packs WHERE runner_run_id = $1`, runID).
+			Scan(&patchID, &changed, &filesJSON, &repoNotes); err != nil {
 			return fmt.Errorf("worker: read context pack: %w", err)
 		}
+		var err error
+		if vars, err = filterVars(ctx, tx, pr.id); err != nil {
+			return err
+		}
 		if pr.authorIsBot {
-			var last string
 			err := tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
-				AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, pr.id, reviewID).Scan(&last)
-			if err == nil && last == patchID {
-				status = statusSkipped
-			} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, pr.id, reviewID).Scan(&lastPatch)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return fmt.Errorf("worker: read last review: %w", err)
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		return "", "", err
+		return prepared{}, "", err
 	}
-	if status != statusPrepared {
-		logger.Info("review "+status, "patch_id", short(patchID))
-		return "", status, w.finishReview(ctx, args.TenantID, reviewID, status, patchID, "")
+	if superseded {
+		logger.Info("review "+statusSuperseded, "patch_id", short(patchID))
+		return prepared{}, statusSuperseded, w.finishReview(ctx, args.TenantID, reviewID, statusSuperseded, patchID, "")
 	}
+
+	var files repoconfig.Files
+	if err := json.Unmarshal(filesJSON, &files); err != nil {
+		return prepared{}, "", fmt.Errorf("worker: decode repository files: %w", err)
+	}
+	eff, notes := effective(settings, files, repoNotes)
+	reason, ferr := eff.skip(vars, changed)
+	if ferr != nil {
+		logger.Warn("repository filter failed to evaluate", "error", ferr)
+	}
+	if reason != "" {
+		logger.Info("review "+statusSkipped, "reason", reason, "patch_id", short(patchID))
+		if err := w.finishSkipped(ctx, args.TenantID, reviewID, patchID, reason); err != nil {
+			return prepared{}, "", err
+		}
+		owner, repo, _ := strings.Cut(pr.repository, "/")
+		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusSuccess,
+			"kritik: skipped ("+reason.Description()+")"); err != nil {
+			logger.Warn("commit status not set", "error", err)
+		}
+		return prepared{}, statusSkipped, nil
+	}
+	if pr.authorIsBot && lastPatch != "" && lastPatch == patchID {
+		logger.Info("review "+statusSkipped, "patch_id", short(patchID))
+		return prepared{}, statusSkipped, w.finishReview(ctx, args.TenantID, reviewID, statusSkipped, patchID, "")
+	}
+
 	// Prepared is not terminal: the model phase follows, so finished_at
 	// stays NULL until it ends one way or the other.
 	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
@@ -224,10 +278,42 @@ func (w *Review) afterRun(
 		return err
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("worker: mark review prepared: %w", err)
+		return prepared{}, "", fmt.Errorf("worker: mark review prepared: %w", err)
 	}
 	logger.Info("review prepared", "patch_id", short(patchID))
-	return patchID, statusPrepared, nil
+	return prepared{patchID: patchID, eff: eff, notes: notes}, statusPrepared, nil
+}
+
+// filterVars rebuilds the filter's pr variable from the stored pull request
+// row, the same keys webhook.PullRequest.FilterVars gives ingest.
+func filterVars(ctx context.Context, tx pgx.Tx, prID string) (map[string]any, error) {
+	var (
+		number                                               int
+		title, author, state, headRef, headSHA, baseRef, url string
+		body                                                 string
+		draft, fork, merged                                  bool
+		openedAt                                             *time.Time
+		labelsJSON                                           []byte
+	)
+	err := tx.QueryRow(ctx, `SELECT number, title, author, state, merged, draft, fork, head_ref, head_sha, base_ref, url, body,
+		opened_at, labels FROM pull_requests WHERE id = $1`, prID).
+		Scan(&number, &title, &author, &state, &merged, &draft, &fork, &headRef, &headSHA, &baseRef, &url, &body, &openedAt, &labelsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("worker: read pull request for the filter: %w", err)
+	}
+	labels := []any{}
+	if err := json.Unmarshal(labelsJSON, &labels); err != nil {
+		return nil, fmt.Errorf("worker: decode pull request labels: %w", err)
+	}
+	var createdAt time.Time
+	if openedAt != nil {
+		createdAt = *openedAt
+	}
+	return map[string]any{
+		"number": number, "title": title, "author": author, "state": state, "open": state == "open", "merged": merged,
+		"draft": draft, "fork": fork, "headRef": headRef, "headSha": headSHA, "baseRef": baseRef, "url": url,
+		"body": body, "createdAt": createdAt, "labels": labels,
+	}, nil
 }
 
 func (w *Review) load(ctx context.Context, args jobs.ReviewArgs) (*pullRequest, error) {
@@ -281,6 +367,17 @@ func (w *Review) finishReview(ctx context.Context, tenantID, reviewID, status, p
 	return w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, error = left($4, 2000), finished_at = now() WHERE id = $1`,
 			reviewID, status, patchID, errText)
+		if err != nil {
+			return fmt.Errorf("worker: finish review: %w", err)
+		}
+		return nil
+	})
+}
+
+func (w *Review) finishSkipped(ctx context.Context, tenantID, reviewID, patchID string, reason skipReason) error {
+	return w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, skip_reason = $4, finished_at = now() WHERE id = $1`,
+			reviewID, statusSkipped, patchID, string(reason))
 		if err != nil {
 			return fmt.Errorf("worker: finish review: %w", err)
 		}

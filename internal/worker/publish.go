@@ -63,6 +63,10 @@ type publishPhase struct {
 	// values are kritik's defaults.
 	parse     review.ParseOptions
 	templates review.Templates
+	// instructions are the repository's review instructions, and repoNotes
+	// what the summary states about its configuration files.
+	instructions []string
+	repoNotes    []string
 }
 
 func (p *publishPhase) run(ctx context.Context) (status string, err error) {
@@ -88,9 +92,10 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 		p.logger.Warn("similar-code retrieval skipped", "error", err)
 	}
 	in.context = append(in.context, similar...)
+	system := systemPrompt(p.instructions)
 	msg, omitted, contextOmitted := review.Build(review.Input{
 		Repository: p.pr.repository, Number: p.pr.number, Title: in.title, Author: in.author, Body: in.body,
-		BaseRef: p.pr.baseRef, Changed: in.changed, Diff: in.diff, Context: in.context,
+		BaseRef: p.pr.baseRef, Changed: in.changed, Diff: in.diff, Context: in.context, BudgetTokens: userBudget(system),
 	})
 	p.logger.Info("prompt built", "chars", len(msg), "diff_files_omitted", len(omitted),
 		"context_chunks", len(in.context), "context_omitted", contextOmitted)
@@ -102,7 +107,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 		p.w.Metrics.ContextChunks(p.tenant.Slug, stage, n)
 	}
 
-	resp, role, err := p.complete(ctx, ref, msg)
+	resp, role, err := p.complete(ctx, ref, system, msg)
 	if err != nil {
 		return statusFailed, err
 	}
@@ -117,7 +122,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
 
-	commentID, err := p.writeBack(ctx, res, resp.Model, reviewNotes(omitted, dropped))
+	commentID, err := p.writeBack(ctx, res, resp.Model, append(reviewNotes(omitted, dropped), p.repoNotes...))
 	if err != nil {
 		return statusFailed, err
 	}
@@ -188,7 +193,9 @@ func (p *publishPhase) load(ctx context.Context) (reviewInput, error) {
 // configured fallback model. A fallback on the same provider is handed to
 // the provider (OpenRouter switches server-side); one on another provider
 // is a second call from here. The returned role says which answered.
-func (p *publishPhase) complete(ctx context.Context, ref configfile.ModelRef, msg string) (model.CompletionResponse, string, error) {
+func (p *publishPhase) complete(
+	ctx context.Context, ref configfile.ModelRef, system, msg string,
+) (model.CompletionResponse, string, error) {
 	slots := p.settings.Limits.Concurrency
 	if slots <= 0 {
 		slots = configfile.DefaultConcurrency
@@ -208,7 +215,7 @@ func (p *publishPhase) complete(ctx context.Context, ref configfile.ModelRef, ms
 	}()
 
 	req := model.CompletionRequest{
-		System: review.System, User: msg, Model: ref.Model(),
+		System: system, User: msg, Model: ref.Model(),
 		Schema: review.Schema(), SchemaName: "findings", MaxTokens: maxOutputTokens,
 	}
 	if p.parse.RequireSuggestedFix {

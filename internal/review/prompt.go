@@ -18,12 +18,9 @@ type Input struct {
 	// Body is the pull request description. The author wrote it, so it is
 	// shown to the model as data to judge the change against, never as
 	// instructions.
-	Body string
-	// Instructions are the repository's review instructions, read from the
-	// merge base, so they carry the maintainers' authority.
-	Instructions []string
-	Changed      []string
-	Diff         string
+	Body    string
+	Changed []string
+	Diff    string
 	// Context is the runner's context pack, in stage order. It is spent
 	// after the diff, so a huge diff crowds it out rather than the reverse.
 	Context []contextpack.Chunk
@@ -32,6 +29,9 @@ type Input struct {
 	// ceiling, not a target.
 	BudgetTokens int
 }
+
+// DefaultBudgetTokens bounds the user message when Input sets no budget.
+const DefaultBudgetTokens = 24_000
 
 // charsPerToken is the conservative approximation used for budgeting.
 const charsPerToken = 4
@@ -78,17 +78,11 @@ func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 		fmt.Fprintf(&b, "- %s\n", p)
 	}
 	writeDescription(&b, in.Body)
-	if len(in.Instructions) > 0 {
-		b.WriteString("\nRepository review instructions (from the repository's configuration):\n")
-		for _, s := range in.Instructions {
-			b.WriteString("\n" + strings.TrimSpace(s) + "\n")
-		}
-	}
 	b.WriteString("\nDiff (unified, base to head):\n\n")
 
 	budget := in.BudgetTokens * charsPerToken
 	if budget <= 0 {
-		budget = 24_000 * charsPerToken
+		budget = DefaultBudgetTokens * charsPerToken
 	}
 	room := budget - b.Len() - 512 // headroom for the omission note
 	diff, omitted := fitDiff(in.Diff, room)
