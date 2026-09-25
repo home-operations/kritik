@@ -1,6 +1,8 @@
 package store
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -98,6 +100,98 @@ func TestParseEvent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNextConnectedOnce(t *testing.T) {
+	tests := []struct {
+		name        string
+		was         bool
+		reachedLoop bool
+		want        bool
+	}{
+		{
+			name:        "first attempt fails to connect",
+			was:         false,
+			reachedLoop: false,
+			want:        false, // must stay false, or the *next* successful connect would wrongly look like a reconnect
+		},
+		{
+			name:        "first attempt reaches the loop",
+			was:         false,
+			reachedLoop: true,
+			want:        true,
+		},
+		{
+			name:        "later attempt drops before reaching the loop, but a prior one already had",
+			was:         true,
+			reachedLoop: false,
+			want:        true, // sticky: once true, never reverts
+		},
+		{
+			name:        "later attempt reaches the loop again",
+			was:         true,
+			reachedLoop: true,
+			want:        true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := nextConnectedOnce(tt.was, tt.reachedLoop); got != tt.want {
+				t.Errorf("nextConnectedOnce(%v, %v) = %v, want %v", tt.was, tt.reachedLoop, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEnqueueReconnect(t *testing.T) {
+	t.Run("delivers immediately when the queue has room", func(t *testing.T) {
+		notifications := make(chan func(), 2)
+		warner := &dropWarner{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+		called := false
+		enqueueReconnect(notifications, func() { called = true }, warner)
+
+		select {
+		case fn := <-notifications:
+			fn()
+		default:
+			t.Fatal("expected the reconnect callback to be queued")
+		}
+		if !called {
+			t.Error("queued callback was not the reconnect callback")
+		}
+		if warner.dropped != 0 {
+			t.Errorf("dropped = %d, want 0 (room was available, nothing should be evicted)", warner.dropped)
+		}
+	})
+
+	t.Run("evicts the oldest queued item when full rather than dropping the reconnect signal", func(t *testing.T) {
+		notifications := make(chan func(), 1)
+		// lastWarnAt starts non-zero so drop()'s once-per-second warning does
+		// not fire (and reset the counter) on this very first call, letting
+		// the assertion below observe the increment.
+		warner := &dropWarner{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), lastWarnAt: time.Now()}
+
+		oldestRan := false
+		notifications <- func() { oldestRan = true } // fill the queue
+
+		reconnectRan := false
+		enqueueReconnect(notifications, func() { reconnectRan = true }, warner)
+
+		if len(notifications) != 1 {
+			t.Fatalf("len(notifications) = %d, want 1 (evict-then-send should leave exactly the reconnect callback queued)", len(notifications))
+		}
+		(<-notifications)()
+		if oldestRan {
+			t.Error("evicted callback ran; it should have been discarded, not invoked")
+		}
+		if !reconnectRan {
+			t.Error("reconnect callback was not delivered after eviction")
+		}
+		if warner.dropped != 1 {
+			t.Errorf("dropped = %d, want 1 (the evicted item should be counted as a drop)", warner.dropped)
+		}
+	})
 }
 
 func TestListenBackoff(t *testing.T) {
