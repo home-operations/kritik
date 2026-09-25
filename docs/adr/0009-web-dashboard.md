@@ -5,7 +5,7 @@
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.17 and
   [ADR-0001](0001-kritik-pr-review-service.md) §2.14, the deferred v2
   dashboard sketch in both: this ADR is that dashboard, built.
-- **Authors:** onedr0p.
+- **Authors:** perfectra1n.
 
 > Scope: the `web` role, sign-in and membership, dashboard-managed tenants
 > and their credentials, live updates, model-conversation capture, and the
@@ -32,13 +32,13 @@ Exploration before this ADR found:
 
 - **The conversation is not recorded today.** `agent_runs.timeline` holds
   only step index, tool names, duration, bytes and usage
-  (`internal/runner/agentic.go:39`). The single-shot
+  (`internal/runner/agentic.go`). The single-shot
   `model.Structured.Complete` path throws the `StepResponse` away
-  (`internal/model/structured.go:18`).
+  (`internal/model/structured.go`).
 - **The gateway is the right place to capture it.** Every agentic step
-  passes through `worker/gateway.go:73 chat()`, carrying the whole
-  conversation as a `model.StepRequest`, and the `GatewayGrant` already
-  carries the run and review IDs.
+  passes through the gateway's `chat` function (`internal/worker/gateway.go`),
+  carrying the whole conversation as a `model.StepRequest`, and the
+  `GatewayGrant` already carries the run and review IDs.
 - **The runtime reads config only from the in-memory `*configfile.File`**,
   served through `configfile.Current`. The jsonb `settings` columns are
   write-only, so a tenant that exists only as a database row is invisible
@@ -223,11 +223,11 @@ review through.
 ### 2.10 Cancel: a new status, not deleting a job out from under a run
 
 `reviews.river_job_id` is set by `start`. `reviews.cancel_requested_at`
-and `canceled_by` are set by the web handler, which then calls
-`JobCancelTx` (River 0.47, `client.go:1453`). A new `canceled` status
-lets the worker's cancel path check `cancel_requested_at` and finish the
-review as `canceled` rather than `failed`; job deletion and lease release
-reuse the existing supersede path in `worker/supervise.go`.
+and `canceled_by` are set by the web handler, which then calls River's
+`Client.JobCancelTx` (River 0.47). A new `canceled` status lets the
+worker's cancel path check `cancel_requested_at` and finish the review as
+`canceled` rather than `failed`; job deletion and lease release reuse the
+existing supersede path in `internal/worker/supervise.go`.
 
 The alternative was canceling by deleting the Job directly from outside
 the worker, or reusing `failed` for it. The worker already has a
@@ -242,7 +242,7 @@ later.
 ### 2.11 Reindex: a forced full path
 
 `IndexArgs` gains `Full bool`; the worker skips the incremental path in
-`worker/index.go` when it is set. A reindex is enqueued with
+`internal/worker/index.go` when it is set. A reindex is enqueued with
 `CommitSHA: ""` and `Trigger: "reindex"`. An empty `CommitSHA` is already
 what distinguishes "no specific commit" from an incremental update tied
 to one, so the flag rides the signal the incremental path already
@@ -255,7 +255,7 @@ can only be added under a dashboard-managed tenant. A slug or
 installation-name collision fails the merge: the web write that would
 cause it is rejected with a `422` carrying the path of the error. A
 colliding file edit, instead, is logged, the last good snapshot stays
-live, and the drift gauge rises. `ApplyConfig` (`store/configsync.go`)
+live, and the drift gauge rises. `ApplyConfig` (`internal/store/configsync.go`)
 writes `managed_by` from each tenant's origin, and never takes over a row
 with a different `managed_by`.
 
@@ -276,13 +276,48 @@ removes a class of exposure, a browser history entry, a copy-paste into
 the wrong place, for no loss of function: an operator who needs to change
 a credential simply supplies a new one.
 
+### 2.14 `web.dashboardForgeHosts`: bounding which forge hosts a dashboard tenant may reach
+
+A new `web.dashboardForgeHosts []string` config key holds an
+operator-set allowlist of forge hostnames a dashboard-managed tenant's
+installations may reference: plain hostnames only, no scheme or path.
+When it is empty, the default is `github.com` plus every host already
+used by the file's own installations; a non-empty list replaces that
+default rather than extending it. `configfile.Merge` rejects a dashboard
+installation naming a host outside the allowlist.
+
+Every installation host is already allowed as runner egress: `EgressRules`
+scopes a run's network access to the hosts its installations name.
+Without this allowlist, a dashboard tenant admin could add an installation
+on an arbitrary forge host and thereby widen the runner pod's egress
+allowlist beyond anything an operator declared in the file. Defaulting to
+the file's own hosts plus `github.com` keeps the common case, one forge
+already declared, working with no configuration, while still giving an
+operator who wants a narrower or wider set of reachable hosts a way to say
+so.
+
+### 2.15 Runner, limits, agent and mode stay operator-only on a dashboard tenant
+
+A dashboard tenant's `runner` and `limits` fields, and a dashboard-managed
+repository's `agent` and `mode` fields, can be set only by an instance
+operator, never by a tenant admin, through the web API; a tenant-admin
+request that includes one of them is rejected with a `422`. An operator
+may still set any of them for any tenant.
+
+`limits` bounds what a tenant may spend and `runner` selects the pod a
+review runs in; `agent` chooses which agent reviews the pull request and
+`mode` how much of the result it may act on. Letting a tenant admin change
+any of the four would let one tenant unilaterally raise its own cost or
+its own runner's privilege past whatever the operator sized the instance
+for when the tenant was created.
+
 ## 3. Security model
 
-| Role              | Scope                                                                               |
-| ----------------- | ----------------------------------------------------------------------------------- |
-| Instance operator | File allowlist. Sees and administers every tenant; the only way to create a tenant. |
-| Tenant admin      | State-changing endpoints for their tenant(s). Every write is audit-logged.          |
-| Tenant member     | Read access to their tenant's own content.                                          |
+| Role              | Scope                                                                                                                                        |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Instance operator | File allowlist. Sees and administers every tenant; the only way to create a tenant or set a tenant's `runner`, `limits`, `agent`, `mode`.    |
+| Tenant admin      | State-changing endpoints for their tenant(s), except `runner`, `limits`, and repository `agent`/`mode` (§2.15). Every write is audit-logged. |
+| Tenant member     | Read access to their tenant's own content.                                                                                                   |
 
 Sessions, cookies and CSRF are as described in §2.7. Credentials are
 sealed with envelope encryption from `internal/sealbox` (§2.5): each
@@ -293,7 +328,10 @@ OLD_KEYS` lists older keys, used only to decrypt, and each sealed value
 records its key ID, the first 8 bytes of the SHA-256 of the key. Every
 non-runner role needs the key once dashboard rows exist; startup fails
 without it. `model_calls` rows pass through `maskProvider` and the egress
-credentials mask before they are written (§2.8).
+credentials mask before they are written (§2.8). A dashboard tenant's
+installations are further bounded to `web.dashboardForgeHosts` (§2.14), so
+a tenant admin cannot use the dashboard to widen runner egress past what
+an operator allows.
 
 **What web can never do:**
 
