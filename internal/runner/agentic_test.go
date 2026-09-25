@@ -75,8 +75,8 @@ func TestAgentPrompt(t *testing.T) {
 			if tt.scope == review.ScopeIncremental {
 				pack.DeltaDiff = agentDiff
 			}
-			system, user, strict := agentPrompt(s, tt.files, pack)
-			if want := review.AgenticSystemPrompt(tt.instructions); system != want {
+			system, user, strict := agentPrompt(s, tt.files, pack, nil)
+			if want := review.AgenticSystemPrompt(tt.instructions, nil); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
@@ -149,9 +149,16 @@ func TestAgentSkip(t *testing.T) {
 
 func TestAgentErrorsAreMasked(t *testing.T) {
 	secrets := Secrets{GitToken: "git-token", ModelAPIKey: "sk-model-key"}
-	rec, err := newAgentRecord(agent.Result{Stop: agent.StopError, Err: `401: {"error":"bad key sk-model-key"}`}, nil, secrets)
+	rec, err := newAgentRecord(agent.Result{Stop: agent.StopError, Err: `401: {"error":"bad key sk-model-key"}`},
+		nil, []string{"https://example.com/?key=sk-model-key"}, secrets)
 	if err != nil || strings.Contains(rec.err, "sk-model-key") || !strings.Contains(rec.err, "bad key ***") {
 		t.Fatalf("agent run error = %q, %v", rec.err, err)
+	}
+	if string(rec.sources) != `["https://example.com/?key=***"]` {
+		t.Fatalf("sources = %s", rec.sources)
+	}
+	if rec, err := newAgentRecord(agent.Result{Stop: agent.StopMaxSteps}, nil, nil, secrets); err != nil || string(rec.sources) != "[]" {
+		t.Fatalf("sources of a run without commands = %s, %v", rec.sources, err)
 	}
 	if got := failure(secrets, errors.New("clone https://x:git-token@forge.example.com: denied")); strings.Contains(got, "git-token") {
 		t.Fatalf("run error = %q", got)
@@ -189,7 +196,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 	}}
 	s := agentPromptSpec()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	res, timeline := reviewAgent(t.Context(), st, s, head, []string{"vendor/**"}, "system", "user", true, time.Minute, logger)
+	res, timeline := reviewAgent(t.Context(), st, s, head, []string{"vendor/**"}, nil, "system", "user", true, time.Minute, logger)
 	if res.Stop != agent.StopSubmitted || res.Steps != 3 || res.ToolCalls["grep"] != 1 || res.ToolCalls["read_file"] != 1 ||
 		res.ToolCalls["submit_review"] != 1 || res.CostUSD != 0.5 {
 		t.Fatalf("result = %+v", res)
@@ -229,7 +236,7 @@ func TestReviewAgentTimeout(t *testing.T) {
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	st := blockingStepper{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	res, _ := reviewAgent(t.Context(), st, agentPromptSpec(), head, nil, "s", "u", false, 20*time.Millisecond, logger)
+	res, _ := reviewAgent(t.Context(), st, agentPromptSpec(), head, nil, nil, "s", "u", false, 20*time.Millisecond, logger)
 	if res.Stop != agent.StopCanceled || !strings.Contains(res.Err, "timeout") {
 		t.Fatalf("result = %+v", res)
 	}

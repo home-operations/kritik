@@ -67,13 +67,14 @@ func merged(p Spec, files repoconfig.Files) repoconfig.Merged {
 
 // agentPrompt composes the system prompt and user message the way a
 // single-mode review does, from the same repository files and pack, with
-// the agentic addendum to the system prompt. Only the similar-code stage
-// is missing: the runner has no index, and the agent can grep instead.
-// strict says whether the contract requires a suggested fix.
-func agentPrompt(p Spec, files repoconfig.Files, pack packView) (system, user string, strict bool) {
+// the agentic addendum to the system prompt, which describes the run tool
+// when commands are offered. Only the similar-code stage is missing: the
+// runner has no index, and the agent can grep instead. strict says whether
+// the contract requires a suggested fix.
+func agentPrompt(p Spec, files repoconfig.Files, pack packView, commands []string) (system, user string, strict bool) {
 	m := merged(p, files)
 	instructions, _ := repoconfig.Instructions(files, m.Instructions)
-	system = review.AgenticSystemPrompt(instructions)
+	system = review.AgenticSystemPrompt(instructions, commands)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior}
@@ -106,10 +107,16 @@ func agentSkip(p Spec, files repoconfig.Files, changed []string, patchID string,
 	return string(reason), nil
 }
 
-// reviewAgent runs the tool loop over head. A positive timeout bounds it;
-// running out of time ends it as canceled with the timeout in Err.
+// limits are the agent loop's bounds, defaults filled in.
+func (a *AgentLimits) limits() agent.Limits {
+	return agent.Limits{MaxSteps: a.MaxSteps, MaxToolOutputBytes: a.MaxToolOutputBytes, MaxTokens: a.MaxTokens}.WithDefaults()
+}
+
+// reviewAgent runs the tool loop over head, with extra tools beside the
+// read-only ones. A positive timeout bounds it; running out of time ends
+// it as canceled with the timeout in Err.
 func reviewAgent(
-	ctx context.Context, stepper model.Stepper, p Spec, head *object.Tree, ignore []string,
+	ctx context.Context, stepper model.Stepper, p Spec, head *object.Tree, ignore []string, extra []agent.Tool,
 	system, user string, strict bool, timeout time.Duration, logger *slog.Logger,
 ) (agent.Result, []timelineStep) {
 	actx, cancel := ctx, context.CancelFunc(func() {})
@@ -117,9 +124,7 @@ func reviewAgent(
 		actx, cancel = context.WithTimeout(ctx, timeout)
 	}
 	defer cancel()
-	limits := agent.Limits{
-		MaxSteps: p.Agent.MaxSteps, MaxToolOutputBytes: p.Agent.MaxToolOutputBytes, MaxTokens: p.Agent.MaxTokens,
-	}.WithDefaults()
+	limits := p.Agent.limits()
 	schema := review.Schema()
 	if strict {
 		schema = review.SchemaStrict()
@@ -128,11 +133,11 @@ func reviewAgent(
 	timeline := []timelineStep{}
 	res := agent.Run{
 		Stepper: stepper, Model: p.Model.Model, Fallbacks: p.Model.Fallbacks, System: system, User: user,
-		Tools: []agent.Tool{
+		Tools: append([]agent.Tool{
 			agent.ReadFileTool(tree, limits.MaxToolOutputBytes),
 			agent.GrepTool(tree, limits.MaxToolOutputBytes),
 			agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
-		},
+		}, extra...),
 		Submit: model.ToolDef{Name: submitReview, Description: submitDescription, InputSchema: schema},
 		Limits: limits,
 		OnStep: func(e agent.StepEvent) {
@@ -167,16 +172,28 @@ func runAgentic(
 	}
 	if reason != "" {
 		logger.Info("agent not run", "reason", reason)
-		return writeAgentRun(ctx, st, p, agentRecord{stop: AgentSkipped, toolCalls: []byte("{}"), timeline: []byte("[]"), err: reason}, "done")
+		rec := agentRecord{stop: AgentSkipped, toolCalls: []byte("{}"), timeline: []byte("[]"), sources: []byte("[]"), err: reason}
+		return writeAgentRun(ctx, st, p, rec, "done")
 	}
 	stepper, err := model.NewStepper(p.Model.Provider, p.Model.BaseURL, secrets.ModelAPIKey, p.Model.Pricing, nil)
 	if err != nil {
 		return fmt.Errorf("runner: %w", err)
 	}
-	system, user, strict := agentPrompt(p, files, pack)
-	logger.Info("agent started", "model", p.Model.Model, "scope", pack.Scope, "prompt_chars", len(system)+len(user))
-	res, timeline := reviewAgent(ctx, stepper, p, head, ignore, system, user, strict,
+	run, cleanup := commandTool(ctx, p, agent.NewTree(head, ignore), p.Agent.limits().MaxToolOutputBytes, logger)
+	defer cleanup()
+	var extra []agent.Tool
+	var commands []string
+	if run != nil {
+		extra, commands = []agent.Tool{run}, run.Names()
+	}
+	system, user, strict := agentPrompt(p, files, pack, commands)
+	logger.Info("agent started", "model", p.Model.Model, "scope", pack.Scope, "prompt_chars", len(system)+len(user), "commands", commands)
+	res, timeline := reviewAgent(ctx, stepper, p, head, ignore, extra, system, user, strict,
 		time.Duration(p.Agent.TimeoutSeconds)*time.Second, logger)
+	sources := []string{}
+	if run != nil {
+		sources = run.Sources()
+	}
 	if cerr := ctx.Err(); cerr != nil {
 		// The run was cancelled, deleted or ran out of Job time: what the
 		// agent spent so far is still spent, so the row is written on a
@@ -187,7 +204,7 @@ func runAgentic(
 		}
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), canceledWriteTimeout)
 		defer cancel()
-		rec, err := newAgentRecord(res, timeline, secrets)
+		rec, err := newAgentRecord(res, timeline, sources, secrets)
 		if err == nil {
 			err = writeAgentRun(wctx, st, p, rec, "failed")
 		}
@@ -195,11 +212,11 @@ func runAgentic(
 			"cost_usd", res.CostUSD, "error", err)
 		return errors.Join(fmt.Errorf("runner: agent: %w", cerr), err)
 	}
-	rec, err := newAgentRecord(res, timeline, secrets)
+	rec, err := newAgentRecord(res, timeline, sources, secrets)
 	if err != nil {
 		return err
 	}
-	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls,
+	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls, "sources", len(sources),
 		"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD, "error", rec.err)
 	return writeAgentRun(ctx, st, p, rec, "done")
 }
@@ -210,22 +227,30 @@ const canceledWriteTimeout = 5 * time.Second
 
 // agentRecord is an agent_runs row.
 type agentRecord struct {
-	stop                agent.StopReason
-	result              any
-	steps               int
-	toolCalls, timeline []byte
-	usage               model.Usage
-	costUSD             float64
+	stop                         agent.StopReason
+	result                       any
+	steps                        int
+	toolCalls, timeline, sources []byte
+	usage                        model.Usage
+	costUSD                      float64
 	// model answered the run; empty means the one the spec asked for.
 	model string
 	err   string
 }
 
-// newAgentRecord encodes a finished Run. The error text is masked: a
-// provider may echo the key back in an error the worker later shows.
-func newAgentRecord(res agent.Result, timeline []timelineStep, secrets Secrets) (agentRecord, error) {
+// newAgentRecord encodes a finished Run and the sources its commands
+// fetched. The error text and the sources are masked: a provider may echo
+// the key back in an error, and the worker shows both.
+func newAgentRecord(res agent.Result, timeline []timelineStep, sources []string, secrets Secrets) (agentRecord, error) {
 	rec := agentRecord{stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, model: res.Model, err: secrets.Mask(res.Err)}
+	masked := make([]string, len(sources))
+	for i, s := range sources {
+		masked[i] = secrets.Mask(s)
+	}
 	var err error
+	if rec.sources, err = json.Marshal(masked); err != nil {
+		return agentRecord{}, fmt.Errorf("runner: encode sources: %w", err)
+	}
 	if rec.toolCalls, err = json.Marshal(res.ToolCalls); err != nil {
 		return agentRecord{}, fmt.Errorf("runner: encode tool calls: %w", err)
 	}
@@ -243,10 +268,11 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 	return st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, tenant_id, stop_reason, result, steps, tool_calls, timeline,
-				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error)
-			SELECT id, tenant_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000) FROM runner_runs WHERE id = $1`,
+				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources)
+			SELECT id, tenant_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14 FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
-			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, cmp.Or(rec.model, p.Model.Model), rec.err)
+			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, cmp.Or(rec.model, p.Model.Model), rec.err,
+			rec.sources)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}

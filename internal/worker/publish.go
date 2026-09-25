@@ -362,9 +362,13 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 		}
 		inline = append(inline, c)
 	}
+	var sources []string
+	if p.agent != nil {
+		sources = p.agent.sources
+	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Result: res, Counts: res.Counts(), Notes: notes,
-		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA,
+		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources,
 	})
 	for _, n := range renderNotes {
 		p.logger.Warn("template fell back to the default", "note", n)

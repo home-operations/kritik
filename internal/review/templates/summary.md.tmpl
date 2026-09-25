@@ -29,6 +29,15 @@ _Incremental review of the changes since `{{ trunc 7 .PriorHeadSHA }}`._
 Nothing worth flagging in this diff.
 {{ end -}}
 {{ end -}}
+{{ if .Sources }}
+<details>
+<summary>Sources consulted</summary>
+
+{{ range .Sources -}}
+- <{{ . }}>
+{{ end }}
+</details>
+{{ end -}}
 {{ if .Notes }}
 {{ range .Notes -}}
 _{{ . }}._

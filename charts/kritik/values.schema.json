@@ -850,7 +850,7 @@
         },
         "image": {
           "default": "",
-          "description": "Image for runner Jobs; empty uses the chart's image.",
+          "description": "Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd and rg for an agentic review's `agent.commands`.",
           "title": "image",
           "type": "string"
         },

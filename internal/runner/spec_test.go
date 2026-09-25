@@ -72,6 +72,18 @@ func TestDecodeSpec(t *testing.T) {
 		{name: "agentic without limits", in: func() string { s := agenticSpec(); s.Agent = nil; return encode(s) }(), wantErr: "agent"},
 		{name: "agentic without a prompt", in: func() string { s := agenticSpec(); s.Prompt = nil; return encode(s) }(), wantErr: "prompt"},
 		{name: "agentic with unknown provider", in: func() string { s := agenticSpec(); s.Model.Provider = "x"; return encode(s) }(), wantErr: "provider"},
+		{name: "valid agentic with commands", in: func() string {
+			s := agenticSpec()
+			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 30
+			return encode(s)
+		}()},
+		{name: "commands without a timeout", in: func() string { s := agenticSpec(); s.Agent.Commands = []string{"rg"}; return encode(s) }(),
+			wantErr: "command timeout"},
+		{name: "a command given as a path", in: func() string {
+			s := agenticSpec()
+			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"../../tmp/x"}, 30
+			return encode(s)
+		}(), wantErr: "bare command name"},
 		{name: "trailing data", in: encode(reviewSpec()) + "{}", wantErr: "trailing"},
 		{name: "not json", in: "nope", wantErr: "runner"},
 	}

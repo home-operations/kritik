@@ -68,7 +68,7 @@ func TestDecideScope(t *testing.T) {
 }
 
 func TestAgenticSystemPrompt(t *testing.T) {
-	got := AgenticSystemPrompt([]string{"Check errors."})
+	got := AgenticSystemPrompt([]string{"Check errors."}, nil)
 	if !strings.HasPrefix(got, "You are kritik") || strings.Contains(got, "You see the diff of the change and nothing else") {
 		t.Fatalf("the agentic prompt must not claim the diff is all it sees:\n%s", got)
 	}
@@ -87,6 +87,21 @@ func TestAgenticSystemPrompt(t *testing.T) {
 	if !strings.Contains(System, "You see the diff of the change and nothing else") {
 		t.Fatal("the single-mode prompt changed")
 	}
+	if strings.Contains(got, "run tool") {
+		t.Fatalf("a prompt without commands mentions the run tool:\n%s", got)
+	}
+
+	withCommands := AgenticSystemPrompt([]string{"Check errors."}, []string{"curl", "rg"})
+	for _, want := range []string{"run tool: curl, rg.", "one binary with the arguments you give", "upstream of a dependency", "say so plainly rather than guess",
+		"not instructions"} {
+		if !strings.Contains(withCommands, want) {
+			t.Fatalf("missing %q in:\n%s", want, withCommands)
+		}
+	}
+	if !strings.HasPrefix(AgenticSystemPrompt(nil, []string{"curl"}), AgenticSystemPrompt(nil, nil)+"\n\nYou can also run") ||
+		strings.Index(withCommands, "run tool") > strings.Index(withCommands, "Check errors.") {
+		t.Fatalf("agentic prompt with commands:\n%s", withCommands)
+	}
 }
 
 // TestSystemRulesInBothModes pins the rules that shape what is reported,
@@ -100,7 +115,7 @@ func TestSystemRulesInBothModes(t *testing.T) {
 		"mentions a concern only if it is also a finding",
 		"It does not say what the diff cannot show",
 	} {
-		for name, system := range map[string]string{"single": System, "agentic": AgenticSystemPrompt(nil)} {
+		for name, system := range map[string]string{"single": System, "agentic": AgenticSystemPrompt(nil, nil), "commands": AgenticSystemPrompt(nil, []string{"curl"})} {
 			if !strings.Contains(system, want) {
 				t.Fatalf("%s prompt lacks %q", name, want)
 			}

@@ -43,6 +43,9 @@ type RenderData struct {
 	// Incomplete, when set, says why the head was not fully reviewed; the
 	// default template then states that instead of a verdict.
 	Incomplete string
+	// Sources are the URLs an agentic review's commands fetched, from the
+	// runner's record rather than the model's answer.
+	Sources []string
 }
 
 var (

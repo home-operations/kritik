@@ -74,6 +74,10 @@ type AgentLimits struct {
 	MaxToolOutputBytes int   `json:"maxToolOutputBytes"`
 	MaxTokens          int64 `json:"maxTokens"`
 	TimeoutSeconds     int   `json:"timeoutSeconds,omitempty"`
+	// Commands name the binaries the run tool may execute; the runner
+	// offers those it finds on its PATH, and no run tool without any.
+	Commands              []string `json:"commands,omitempty"`
+	CommandTimeoutSeconds int      `json:"commandTimeoutSeconds,omitempty"`
 }
 
 // Prompt is what an agentic run needs beyond the checkout to write its
@@ -158,6 +162,15 @@ func (s Spec) Validate() error {
 		}
 		if s.Prompt == nil {
 			return errors.New("runner: an agentic spec needs a prompt")
+		}
+		if len(s.Agent.Commands) > 0 && s.Agent.CommandTimeoutSeconds <= 0 {
+			return errors.New("runner: an agentic spec with commands needs a command timeout")
+		}
+		for _, c := range s.Agent.Commands {
+			// A name with a separator would make exec.LookPath take it as a path.
+			if c == "" || strings.ContainsRune(c, '/') {
+				return fmt.Errorf("runner: spec command %q is not a bare command name", c)
+			}
 		}
 	}
 	return nil
