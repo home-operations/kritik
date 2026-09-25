@@ -337,6 +337,10 @@ func TestParseRejects(t *testing.T) {
 		{"missing file reference", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{ file: /nonexistent/token }", 1), "no such file"},
 		{"env and file both set", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{ env: TEST_FORGEJO_TOKEN, file: /x }", 1), "not both"},
 		{"empty reference", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{}", 1), "token is required"},
+		{"empty gitToken", minimal + "        gitToken: { env: TEST_EMPTY }\n", "gitToken resolved to an empty value"},
+		{"unset gitToken", minimal + "        gitToken: { env: TEST_DOES_NOT_EXIST }\n", "gitToken"},
+		{"github with gitToken", strings.TrimSuffix(githubMinimal("clientId: x, "), "\n") + "\n        gitToken: { env: TEST_FORGEJO_TOKEN }\n",
+			"not token, gitToken or webhookSecret"},
 		{"unknown provider type", "providers:\n  p:\n    type: cohere\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" + minimal, "type must be"},
 		{"negative pricing", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
 			"    pricing: { acme-large: { input: 3, output: -1 } }\n" + minimal, "providers.p.pricing.acme-large"},

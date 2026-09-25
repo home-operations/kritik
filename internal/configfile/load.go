@@ -106,6 +106,11 @@ func (f *File) resolve() error {
 					return fmt.Errorf("configfile: %s.webhookSecret: %w", where, err)
 				}
 			}
+			if !in.GitToken.empty() {
+				if in.gitToken, err = in.GitToken.resolve(); err != nil {
+					return fmt.Errorf("configfile: %s.gitToken: %w", where, err)
+				}
+			}
 		}
 		for ri := range t.Repositories {
 			r := &t.Repositories[ri]
@@ -298,8 +303,8 @@ func (in Installation) validate(where string) error {
 		if in.App == nil {
 			return fmt.Errorf("configfile: %s: a github installation needs an app", where)
 		}
-		if !in.Token.empty() || !in.WebhookSecret.empty() {
-			return fmt.Errorf("configfile: %s: a github installation takes app credentials, not token or webhookSecret", where)
+		if !in.Token.empty() || !in.WebhookSecret.empty() || !in.GitToken.empty() {
+			return fmt.Errorf("configfile: %s: a github installation takes app credentials, not token, gitToken or webhookSecret", where)
 		}
 		if (in.App.ClientID == "") == in.App.ClientIDFrom.empty() {
 			return fmt.Errorf("configfile: %s.app: set exactly one of clientId or clientIdFrom", where)
@@ -322,6 +327,9 @@ func (in Installation) validate(where string) error {
 		}
 		if in.webhookSecret.Value() == "" {
 			return fmt.Errorf("configfile: %s.webhookSecret is required", where)
+		}
+		if !in.GitToken.empty() && in.gitToken.Value() == "" {
+			return fmt.Errorf("configfile: %s.gitToken resolved to an empty value", where)
 		}
 	default:
 		return fmt.Errorf("configfile: %s.forge must be %s, %s or %s, got %q", where, ForgeGitHub, ForgeGitLab, ForgeForgejo, in.Forge)

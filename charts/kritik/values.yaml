@@ -99,6 +99,10 @@ config:
   #         host: forge.example.com
   #         account: example
   #         token: { file: /var/run/secrets/kritik/bot/forgejo-token }
+  #         # Runner pods fetch with gitToken instead of token when set; a
+  #         # read-only token keeps a write-capable one out of the pod that
+  #         # reads untrusted pull request content.
+  #         gitToken: { file: /var/run/secrets/kritik/bot/forgejo-read-token }
   #         webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
   #     repositories:
   #       - name: example/widgets
@@ -202,7 +206,9 @@ secretMounts: []
 
 # Runner Jobs: one pod per review or index run, created by the worker in the
 # release namespace from the same image, running as a service account with
-# no permissions and a database role that can only touch its own run.
+# no permissions and a database role that can only touch its own run. The
+# worker's Role reaches every Secret in the release namespace, so install
+# kritik into a namespace of its own.
 runner:
   # -- Image for runner Jobs; empty uses the chart's image.
   image: ""

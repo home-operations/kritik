@@ -215,13 +215,23 @@ type Installation struct {
 	// Token and WebhookSecret are set for GitLab and Forgejo installations.
 	Token         SecretRef `yaml:"token,omitempty"`
 	WebhookSecret SecretRef `yaml:"webhookSecret,omitempty"`
+	// GitToken, optional for GitLab and Forgejo, is the token runner pods
+	// fetch with in place of Token. Token can write to the forge and would
+	// otherwise reach the pod that reads untrusted content, so a read-only
+	// token belongs here.
+	GitToken SecretRef `yaml:"gitToken,omitempty"`
 
 	token         Secret
 	webhookSecret Secret
+	gitToken      Secret
 }
 
 // TokenValue returns the resolved bot token for GitLab and Forgejo.
 func (i Installation) TokenValue() Secret { return i.token }
+
+// GitTokenValue returns the resolved fetch token for GitLab and Forgejo,
+// empty when none is configured.
+func (i Installation) GitTokenValue() Secret { return i.gitToken }
 
 // WebhookSecretValue returns the resolved webhook secret for any forge.
 func (i Installation) WebhookSecretValue() Secret {

@@ -72,6 +72,10 @@ type Client struct {
 	base       string // e.g. https://forge.example.com/api/v1
 	webBase    string // e.g. https://forge.example.com
 	token      string
+	// FetchToken, when set, is what GitToken hands a runner instead of
+	// the API token: a read-only token keeps the pod that reads untrusted
+	// content from holding one that can write to the forge.
+	FetchToken string
 
 	mu    sync.Mutex
 	login string // cached BotLogin result
@@ -168,8 +172,12 @@ func (c *Client) CloneURL(owner, repo string) string {
 }
 
 // GitToken implements forge.Client: Forgejo authenticates git operations
-// with the same static token used for the API.
+// with a static token, FetchToken when one is set and the API token
+// otherwise.
 func (c *Client) GitToken(_ context.Context) (string, error) {
+	if c.FetchToken != "" {
+		return c.FetchToken, nil
+	}
 	return c.token, nil
 }
 

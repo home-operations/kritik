@@ -821,7 +821,7 @@
       "type": "object"
     },
     "runner": {
-      "description": "Runner Jobs: one pod per review or index run, created by the worker in the\nrelease namespace from the same image, running as a service account with\nno permissions and a database role that can only touch its own run.",
+      "description": "Runner Jobs: one pod per review or index run, created by the worker in the\nrelease namespace from the same image, running as a service account with\nno permissions and a database role that can only touch its own run. The\nworker's Role reaches every Secret in the release namespace, so install\nkritik into a namespace of its own.",
       "properties": {
         "deadline": {
           "default": "15m",

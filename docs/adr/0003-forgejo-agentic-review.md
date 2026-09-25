@@ -38,6 +38,14 @@ permissions normalise onto a typed `forge.Permission`. The poller serves every
 forge with a client. Forgejo's `synchronized` action is normalised to
 `synchronize`.
 
+Forgejo has no short-lived installation token: `GitToken`, the credential a
+runner fetches with, is a static token. A Forgejo (and later GitLab)
+installation takes an optional `gitToken` secret reference, resolved and
+validated like `token`, and runners receive it in place of `token` when it is
+set. `token` must write comments, reviews and statuses; `gitToken` should be a
+separate read-only token, so the pod that reads untrusted content (§2.6)
+cannot write to the forge. Without it the API token reaches the runner.
+
 ### 2.2 Filter inputs
 
 `pr.body` joins the CEL filter's variables, the stored pull request row, and
@@ -154,7 +162,13 @@ This puts a model key into the pod that reads untrusted content. The pod runs
 no repository code, the model's tools are read-only, and its only output is
 findings text the worker validates, so a prompt injection can at worst shape
 that text. The key reaches the pod as described in §2.9. Operators should give
-each tenant its own key with a spending limit.
+each tenant its own key with a spending limit, and on Forgejo a read-only
+`gitToken` (§2.1), since the git token reaches the same pod.
+
+Runner Jobs run in the worker's namespace, and the worker's Role can create,
+patch and delete every Secret in it, which a Role cannot narrow to the run
+Secrets it names only at runtime. kritik should therefore get a namespace
+of its own, holding no Secrets but its own.
 
 ### 2.7 Incremental re-review
 
