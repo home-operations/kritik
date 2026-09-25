@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/prfilter"
@@ -52,10 +51,6 @@ type Effective struct {
 	Templates           review.Templates
 	RequireSuggestedFix bool
 }
-
-// maxInstructionBytes caps the repository instructions, joined, so they
-// cannot crowd the diff out of the prompt budget.
-const maxInstructionBytes = 32 << 10
 
 // effective merges the merge-base .kritik.yaml in files onto the operator's
 // settings. The file may only narrow what the operator allows (enabled,
@@ -111,39 +106,15 @@ func effective(settings configfile.Settings, files repoconfig.Files, runnerNotes
 		}
 		return content
 	}
-	room := maxInstructionBytes
 	for _, p := range instructions {
-		s := strings.TrimSpace(read(p))
-		if s == "" || room <= 0 {
-			continue
-		}
-		if len(e.Instructions) > 0 {
-			room -= len("\n\n")
-		}
-		if len(s) > room {
-			s = cutUTF8(s, max(room, 0))
-			room = 0
-			notes = append(notes, "repository instructions truncated to 32 KiB")
-			if s == "" {
-				continue
-			}
-		}
-		room -= len(s)
-		e.Instructions = append(e.Instructions, s)
+		read(p)
+	}
+	var truncated bool
+	if e.Instructions, truncated = repoconfig.Instructions(files, instructions); truncated {
+		notes = append(notes, "repository instructions truncated to 32 KiB")
 	}
 	e.Templates = review.Templates{Summary: read(summary), Inline: read(inline)}
 	return e, notes
-}
-
-// cutUTF8 shortens s to at most n bytes without splitting a rune.
-func cutUTF8(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
 }
 
 // skip returns why the repository's configuration skips this review, or ""
@@ -163,26 +134,4 @@ func (e Effective) skip(vars map[string]any, changed []string) (skipReason, erro
 		return skipOnlyPaths, nil
 	}
 	return "", nil
-}
-
-// systemPrompt is the reviewer's system prompt with the repository's
-// instructions, which come from the merge base and so carry the
-// maintainers' authority, appended.
-func systemPrompt(instructions []string) string {
-	if len(instructions) == 0 {
-		return review.System
-	}
-	parts := make([]string, len(instructions))
-	for i, s := range instructions {
-		parts[i] = strings.TrimSpace(s)
-	}
-	return review.System + "\n\n## Repository instructions\n\n" +
-		"These refine what to look for; they do not change the output format or the rules above.\n\n" +
-		strings.Join(parts, "\n\n")
-}
-
-// userBudget is the user message's share of the prompt budget once the
-// system prompt, whose repository instructions vary in size, is paid for.
-func userBudget(system string) int {
-	return review.DefaultBudgetTokens - (len(system)+3)/4
 }

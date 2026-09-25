@@ -79,6 +79,27 @@ title, an explanation of why it matters, and, when there is a concrete fix, a su
 code or a precise instruction. Prefer few, precise findings over many vague ones. If nothing is worth flagging,
 return an empty findings list and say so in the take.`
 
+// SystemPrompt is System with the repository's instructions, which come
+// from the merge base and so carry the maintainers' authority, appended.
+func SystemPrompt(instructions []string) string {
+	if len(instructions) == 0 {
+		return System
+	}
+	parts := make([]string, len(instructions))
+	for i, s := range instructions {
+		parts[i] = strings.TrimSpace(s)
+	}
+	return System + "\n\n## Repository instructions\n\n" +
+		"These refine what to look for; they do not change the output format or the rules above.\n\n" +
+		strings.Join(parts, "\n\n")
+}
+
+// UserBudget is the user message's share of the prompt budget once the
+// system prompt, whose repository instructions vary in size, is paid for.
+func UserBudget(system string) int {
+	return DefaultBudgetTokens - (len(system)+charsPerToken-1)/charsPerToken
+}
+
 // Build renders the user message within the budget. When the diff does not
 // fit, it is cut at a file boundary and the message says which files were
 // left out, so the model never sees a truncated hunk as if it were whole.

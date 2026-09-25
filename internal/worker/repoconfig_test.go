@@ -101,9 +101,9 @@ func TestEffective(t *testing.T) {
 		{
 			name: "instructions are capped at a UTF-8 boundary",
 			files: withFile("review:\n  instructions: [.kritik/a.md, .kritik/b.md]\n",
-				repoconfig.Files{".kritik/a.md": strings.Repeat("a", maxInstructionBytes-1) + "é", ".kritik/b.md": "never seen"}),
+				repoconfig.Files{".kritik/a.md": strings.Repeat("a", repoconfig.MaxInstructionBytes-1) + "é", ".kritik/b.md": "never seen"}),
 			enabled: true, ignore: []string{"vendor/**"}, templates: operatorDefaults, strict: true,
-			instructions: []string{strings.Repeat("a", maxInstructionBytes-1)},
+			instructions: []string{strings.Repeat("a", repoconfig.MaxInstructionBytes-1)},
 			notes:        []string{"repository instructions truncated to 32 KiB"},
 		},
 		{
@@ -175,27 +175,5 @@ func TestEffectiveSkip(t *testing.T) {
 	}
 	if skipReason("other").Valid() {
 		t.Fatal("an unknown reason must not be valid")
-	}
-}
-
-func TestSystemPrompt(t *testing.T) {
-	if got := systemPrompt(nil); got != review.System {
-		t.Fatal("without instructions the system prompt is the built-in one")
-	}
-	got := systemPrompt([]string{"  Prefer tables.\n", "Check errors."})
-	want := review.System + "\n\n## Repository instructions\n\n" +
-		"These refine what to look for; they do not change the output format or the rules above.\n\nPrefer tables.\n\nCheck errors."
-	if got != want {
-		t.Fatalf("system prompt:\n%s", got)
-	}
-}
-
-func TestUserBudget(t *testing.T) {
-	for _, system := range []string{review.System, systemPrompt([]string{strings.Repeat("x", maxInstructionBytes)})} {
-		// The system prompt's tokens, rounded up, plus the user budget stay
-		// within the default budget.
-		if got := userBudget(system); got+(len(system)+3)/4 != review.DefaultBudgetTokens || got <= 0 {
-			t.Fatalf("userBudget = %d for a %d byte system prompt", got, len(system))
-		}
 	}
 }

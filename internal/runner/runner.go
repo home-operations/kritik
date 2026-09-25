@@ -19,6 +19,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/gitfetch"
+	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -107,6 +108,11 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err := setPhase(ctx, st, p.RunID, "writing"); err != nil {
 		return err
 	}
+	// An agentic run is not done until its agent has run too.
+	next := "done"
+	if p.Mode == ModeAgentic {
+		next = "reviewing"
+	}
 	err = st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		// tenant_id is copied from the run row: the runner never receives it
 		// and cannot invent one, and the policy only opens its own run.
@@ -119,7 +125,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		if err != nil {
 			return fmt.Errorf("runner: write context pack: %w", err)
 		}
-		_, err = tx.Exec(ctx, `UPDATE runner_runs SET phase = 'done' WHERE id = $1`, p.RunID)
+		_, err = tx.Exec(ctx, `UPDATE runner_runs SET phase = $2 WHERE id = $1`, p.RunID, next)
 		return err
 	})
 	if err != nil {
@@ -127,6 +133,22 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		return err
 	}
 	logger.Info("context pack written", "run", p.RunID, "patch_id", res.PatchID[:12])
+	if p.Mode != ModeAgentic {
+		return nil
+	}
+	headTree, err := res.Head.Tree()
+	if err != nil {
+		err = fmt.Errorf("runner: head tree: %w", err)
+	} else {
+		scope, _ := review.DecideScope(p.PriorHead != "", priorHead != nil, len(deltaPaths), p.Prompt.MaxDeltaFiles)
+		err = runAgentic(ctx, st, p, secrets, headTree, repoFiles, packView{
+			Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
+		}, ignore, res.PatchID, logger)
+	}
+	if err != nil {
+		_ = fail(ctx, st, p.RunID, err)
+		return err
+	}
 	return nil
 }
 

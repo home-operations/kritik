@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/review"
 )
 
 // SpecVersion is the only job document version this runner understands. A
@@ -63,11 +64,35 @@ type ModelEndpoint struct {
 	Pricing   model.Pricing      `json:"pricing,omitempty"`
 }
 
-// AgentLimits bound an agentic run.
+// AgentLimits bound an agentic run. A zero limit takes the agent loop's
+// default; a zero timeout leaves the tool loop to the Job deadline.
 type AgentLimits struct {
 	MaxSteps           int   `json:"maxSteps"`
 	MaxToolOutputBytes int   `json:"maxToolOutputBytes"`
 	MaxTokens          int64 `json:"maxTokens"`
+	TimeoutSeconds     int   `json:"timeoutSeconds,omitempty"`
+}
+
+// Prompt is what an agentic run's review prompt needs beyond the checkout:
+// the pull request, the operator's review defaults the merge-base
+// .kritik.yaml may override, and the last completed review's findings.
+type Prompt struct {
+	Repository string `json:"repository"`
+	Number     int    `json:"number"`
+	Title      string `json:"title"`
+	Author     string `json:"author"`
+	Body       string `json:"body,omitempty"`
+	BaseRef    string `json:"baseRef"`
+	// Instructions name repository files, as the operator's review
+	// settings do.
+	Instructions        []string `json:"instructions,omitempty"`
+	RequireSuggestedFix bool     `json:"requireSuggestedFix,omitempty"`
+	// MaxDeltaFiles is the incremental re-review threshold.
+	MaxDeltaFiles int              `json:"maxDeltaFiles"`
+	Prior         []review.Finding `json:"prior,omitempty"`
+	// UnchangedPatchID, when the head's patch id equals it, means the
+	// worker will skip the review, so the agent is not run.
+	UnchangedPatchID string `json:"unchangedPatchId,omitempty"`
 }
 
 // Spec is the job document a worker hands a runner: everything the run
@@ -92,6 +117,7 @@ type Spec struct {
 	Mode      Mode           `json:"mode,omitempty"`
 	Agent     *AgentLimits   `json:"agent,omitempty"`
 	Model     *ModelEndpoint `json:"model,omitempty"`
+	Prompt    *Prompt        `json:"prompt,omitempty"`
 }
 
 // Validate checks a spec is one this runner can carry out.
@@ -128,6 +154,9 @@ func (s Spec) Validate() error {
 		}
 		if !s.Model.Provider.Valid() {
 			return fmt.Errorf("runner: spec model provider %q is not supported", s.Model.Provider)
+		}
+		if s.Prompt == nil {
+			return errors.New("runner: an agentic spec needs a prompt")
 		}
 	}
 	return nil

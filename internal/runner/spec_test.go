@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/review"
 )
 
 const (
@@ -30,6 +31,8 @@ func agenticSpec() Spec {
 	s.Agent = &AgentLimits{MaxSteps: 30, MaxToolOutputBytes: 16 << 10, MaxTokens: 200000}
 	s.Model = &ModelEndpoint{Provider: model.ProviderAnthropic, Model: "example-model",
 		Pricing: model.Pricing{"example-model": {Input: 3, Output: 15}}}
+	s.Prompt = &Prompt{Repository: "acme/widgets", Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main",
+		MaxDeltaFiles: 25, Prior: []review.Finding{{Path: "main.go", Line: 1, Severity: review.SeverityNit, Title: "earlier finding"}}}
 	return s
 }
 
@@ -60,6 +63,7 @@ func TestDecodeSpec(t *testing.T) {
 		{name: "missing run id", in: func() string { s := reviewSpec(); s.RunID = ""; return encode(s) }(), wantErr: "runId"},
 		{name: "agentic without model", in: func() string { s := agenticSpec(); s.Model = nil; return encode(s) }(), wantErr: "model"},
 		{name: "agentic without limits", in: func() string { s := agenticSpec(); s.Agent = nil; return encode(s) }(), wantErr: "agent"},
+		{name: "agentic without a prompt", in: func() string { s := agenticSpec(); s.Prompt = nil; return encode(s) }(), wantErr: "prompt"},
 		{name: "agentic with unknown provider", in: func() string { s := agenticSpec(); s.Model.Provider = "x"; return encode(s) }(), wantErr: "provider"},
 		{name: "trailing data", in: encode(reviewSpec()) + "{}", wantErr: "trailing"},
 		{name: "not json", in: "nope", wantErr: "runner"},
@@ -94,7 +98,7 @@ func TestSpecRoundTripKeepsAgentFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Mode != ModeAgentic || got.Agent.MaxSteps != 30 || got.Model.Provider != model.ProviderAnthropic ||
-		got.Model.Pricing["example-model"].Output != 15 {
+		got.Model.Pricing["example-model"].Output != 15 || got.Prompt.Title != "Add b" || len(got.Prompt.Prior) != 1 {
 		t.Fatalf("round trip = %+v %+v %+v", got, got.Agent, got.Model)
 	}
 }

@@ -213,3 +213,6 @@ results reported back.
   tiers keyed on pull request size.
 - A follow-up responder that edits code.
 - The GitLab client.
+- In agentic mode, a fallback model on another provider (the runner holds
+  one provider's key) and similar-code context from the index (the agent
+  greps instead).

@@ -140,11 +140,11 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON installations, repositories, model_leases, pull_requests TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, followups, poll_state TO ` + app,
-		`GRANT SELECT ON index_schema TO ` + app,
+		`GRANT SELECT ON index_schema, agent_runs TO ` + app,
 		// The runner role sees only its own job through the runner_job
 		// policies; it needs the table privileges those policies gate.
 		`GRANT SELECT, UPDATE ON runner_runs TO ` + runner,
-		`GRANT SELECT, INSERT ON context_packs, index_packs, index_staging TO ` + runner,
+		`GRANT SELECT, INSERT ON context_packs, index_packs, index_staging, agent_runs TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + app,
 	}

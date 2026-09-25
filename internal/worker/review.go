@@ -119,12 +119,52 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		return err
 	}
 
+	settings := file.Settings(tenant, pr.repository)
+	agentic := settings.Mode == configfile.ReviewAgentic
+	// An agentic runner spends against the model itself, so the caps and
+	// the model lease come before it rather than after.
+	var admitted admission
+	if agentic {
+		a, status, reason, err := w.agentAdmit(ctx, file, tenant, settings, job.ID)
+		if err != nil {
+			return err
+		}
+		if status != "" {
+			logger.Warn("review "+status, "reason", reason)
+			w.Metrics.Review(tenant.Slug, status, time.Since(started))
+			return w.record(ctx, args, pr, status, mergeBase, "", reason)
+		}
+		admitted = a
+		defer func() {
+			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			if err := a.lease.release(rctx); err != nil {
+				logger.Warn("lease not released", "error", err)
+			}
+		}()
+	}
+
 	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase)
 	if err != nil {
 		return err
 	}
-	settings := file.Settings(tenant, pr.repository)
 	deadline, resources := runnerSpec(tenant, w.Deadline)
+	spec := runner.Spec{
+		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
+		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, Ignore: settings.Ignore, RepoFiles: settings.Review.Referenced(),
+	}
+	secrets := runner.Secrets{GitToken: token}
+	if agentic {
+		if spec.Prompt, err = w.agentPrompt(ctx, args.TenantID, pr, settings, prior); err != nil {
+			return errors.Join(err, w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", err.Error()))
+		}
+		spec.Mode, spec.Model, secrets.ModelAPIKey = runner.ModeAgentic, admitted.endpoint, admitted.key
+		spec.Agent = &runner.AgentLimits{
+			MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes,
+			TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
+		}
+		deadline = agentDeadline(deadline, settings.Agent.Timeout)
+	}
 	sup := runSupervision(w.Store, args.TenantID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runID,
@@ -133,13 +173,10 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 			"pr": strconv.Itoa(args.Number), "kind": jobs.QueueReview,
 		},
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": args.HeadSHA},
-		Job: runner.Spec{
-			Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
-			Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, Ignore: settings.Ignore, RepoFiles: settings.Review.Referenced(),
-		},
-		Secrets:   runner.Secrets{GitToken: token},
-		Deadline:  deadline,
-		Resources: resources,
+		Job:         spec,
+		Secrets:     secrets,
+		Deadline:    deadline,
+		Resources:   resources,
 	})
 	if err := recordRun(ctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err
@@ -174,7 +211,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.RequireSuggestedFix}, templates: prep.eff.Templates,
 		instructions: prep.eff.Instructions, repoNotes: prep.notes, prior: prior, scope: prep.scope,
 	}
-	status, perr := phase.run(ctx)
+	publish := phase.run
+	if agentic {
+		publish = phase.runAgentic
+	}
+	status, perr := publish(ctx)
 	if perr != nil && status == statusFailed {
 		logger.Error("review failed", "error", perr)
 	}
@@ -191,7 +232,7 @@ type prepared struct {
 	patchID string
 	eff     Effective
 	notes   []string
-	scope   reviewScope
+	scope   review.Scope
 }
 
 // afterRun re-checks the head under the tenant transaction, lifts the patch
@@ -275,7 +316,7 @@ func (w *Review) afterRun(
 		return prepared{}, statusSkipped, w.finishReview(ctx, args.TenantID, reviewID, statusSkipped, patchID, "")
 	}
 
-	scope, scopeReason := decideScope(prior.id != "", priorFetched != nil, len(deltaPaths), eff.Incremental.MaxDeltaFiles)
+	scope, scopeReason := review.DecideScope(prior.id != "", priorFetched != nil, len(deltaPaths), eff.Incremental.MaxDeltaFiles)
 	var priorID *string
 	if prior.id != "" {
 		priorID = &prior.id

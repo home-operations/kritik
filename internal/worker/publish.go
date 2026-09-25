@@ -17,6 +17,7 @@ import (
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 // CompleterSource resolves a configured provider name to a Completer.
@@ -72,7 +73,7 @@ type publishPhase struct {
 	// prior is the last completed review, whose inline comments are not
 	// posted again; scope says whether this review builds on it.
 	prior priorReview
-	scope reviewScope
+	scope review.Scope
 }
 
 func (p *publishPhase) run(ctx context.Context) (status string, err error) {
@@ -98,9 +99,9 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 		p.logger.Warn("similar-code retrieval skipped", "error", err)
 	}
 	in.context = append(in.context, similar...)
-	system := systemPrompt(p.instructions)
+	system := review.SystemPrompt(p.instructions)
 	var incremental *review.IncrementalInput
-	if p.scope == scopeIncremental {
+	if p.scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{
 			PriorHeadSHA: p.prior.headSHA, DeltaDiff: in.deltaDiff, Prior: reviewFindings(p.prior.findings),
 		}
@@ -108,7 +109,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	msg, omitted, contextOmitted := review.Build(review.Input{
 		Repository: p.pr.repository, Number: p.pr.number, Title: in.title, Author: in.author, Body: in.body,
 		BaseRef: p.pr.baseRef, Changed: in.changed, Diff: in.diff, Context: in.context, Incremental: incremental,
-		BudgetTokens: userBudget(system),
+		BudgetTokens: review.UserBudget(system),
 	})
 	p.logger.Info("prompt built", "chars", len(msg), "diff_files_omitted", len(omitted),
 		"context_chunks", len(in.context), "context_omitted", contextOmitted)
@@ -139,6 +140,14 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	if err != nil {
 		return statusFailed, err
 	}
+	p.countFindings(res)
+	if err := p.persist(ctx, res, inline, resp, role, commentID); err != nil {
+		return statusFailed, err
+	}
+	return statusCompleted, nil
+}
+
+func (p *publishPhase) countFindings(res review.Result) {
 	bySeverity := map[string]int{}
 	for _, f := range res.Findings {
 		bySeverity[string(f.Severity)]++
@@ -146,20 +155,21 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	for severity, n := range bySeverity {
 		p.w.Metrics.Findings(p.tenant.Slug, severity, n)
 	}
-	if err := p.persist(ctx, res, inline, resp, role, commentID); err != nil {
-		return statusFailed, err
-	}
-	return statusCompleted, nil
 }
 
 // checkCaps returns a description of the cap that is exhausted, or "".
 func (p *publishPhase) checkCaps(ctx context.Context) (string, error) {
-	limits := p.settings.Limits
+	return capReached(ctx, p.w.Store, p.tenant.ID(), p.settings.Limits)
+}
+
+// capReached returns a description of the tenant's cap that is exhausted,
+// or "".
+func capReached(ctx context.Context, st *store.Store, tenantID string, limits configfile.Limits) (string, error) {
 	if limits.ReviewsPerDay <= 0 && limits.TokensPerMonth <= 0 {
 		return "", nil
 	}
 	var reviews, tokens int64
-	err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM reviews
 			WHERE status = 'completed' AND created_at >= date_trunc('day', now())`).Scan(&reviews); err != nil {
 			return err
@@ -293,10 +303,6 @@ func reviewNotes(omitted []string, dropped []review.Dropped) []string {
 // on the forge.
 func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, []bool, error) {
 	owner, repo, _ := strings.Cut(p.pr.repository, "/")
-	login, err := p.client.BotLogin(ctx)
-	if err != nil {
-		return 0, nil, err
-	}
 	onForge := alreadyInline(res.Findings, p.prior.findings)
 	// Inline comments render first so a failing inline template is noted
 	// in the summary. After one failure the rest use the default, so a
@@ -314,29 +320,15 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 		}
 		inline = append(inline, forge.InlineComment{Path: f.Path, Line: f.Line, Body: body})
 	}
-	marker := review.Marker(p.pr.number)
 	body, renderNotes := review.RenderSummary(ctx, p.templates, review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Result: res, Counts: res.Counts(), Notes: notes,
-		Incremental: p.scope == scopeIncremental, PriorHeadSHA: p.prior.headSHA,
+		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA,
 	})
 	for _, n := range renderNotes {
 		p.logger.Warn("template fell back to the default", "note", n)
 	}
 
-	var commentID int64
-	_ = p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT forge_comment_id FROM sticky_comments WHERE pull_request_id = $1`, p.pr.id).Scan(&commentID)
-	})
-	if commentID == 0 {
-		if commentID, err = p.client.FindComment(ctx, owner, repo, p.pr.number, login, marker); err != nil {
-			return 0, nil, err
-		}
-	}
-	if commentID != 0 {
-		err = p.client.UpdateComment(ctx, owner, repo, commentID, body)
-	} else {
-		commentID, err = p.client.CreateComment(ctx, owner, repo, p.pr.number, body)
-	}
+	commentID, err := p.upsertSticky(ctx, body)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -356,6 +348,34 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 		p.logger.Warn("commit status not set", "error", err)
 	}
 	return commentID, onForge, nil
+}
+
+// upsertSticky edits the pull request's sticky comment to body, creating
+// it the first time, and returns its id.
+func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, error) {
+	owner, repo, _ := strings.Cut(p.pr.repository, "/")
+	login, err := p.client.BotLogin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var commentID int64
+	_ = p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT forge_comment_id FROM sticky_comments WHERE pull_request_id = $1`, p.pr.id).Scan(&commentID)
+	})
+	if commentID == 0 {
+		if commentID, err = p.client.FindComment(ctx, owner, repo, p.pr.number, login, review.Marker(p.pr.number)); err != nil {
+			return 0, err
+		}
+	}
+	if commentID != 0 {
+		err = p.client.UpdateComment(ctx, owner, repo, commentID, body)
+	} else {
+		commentID, err = p.client.CreateComment(ctx, owner, repo, p.pr.number, body)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return commentID, nil
 }
 
 func (p *publishPhase) persist(
