@@ -44,9 +44,19 @@ const MALFORMED: [string, Route][] = [
   ['#/t', { name: 'overview' }],
   ['#/t/', { name: 'overview' }],
   ['#/t//repos', { name: 'overview' }],
-  ['#/t/acme/', { name: 'overview' }],
+  ['#/t//acme', { name: 'overview' }],
+  // A single trailing slash is tolerated and parses like its absence, even
+  // on a bare tenant slug -- this is no longer "malformed" so much as an
+  // accepted alternate spelling.
+  ['#/t/acme/', { name: 'tenant', slug: 'acme' }],
   ['#/t/acme/repos/only-owner', { name: 'tenant', slug: 'acme' }],
   ['#/t/acme/repos/o/r/extra', { name: 'tenant', slug: 'acme' }],
+  // Same case as above, but with a tolerated trailing slash: still falls
+  // back to the tenant overview, not the global one.
+  ['#/t/acme/repos/o/r/extra/', { name: 'tenant', slug: 'acme' }],
+  // A double slash after the slug is downstream of it, so it falls back to
+  // that tenant's overview rather than the global one.
+  ['#/t/acme//repos', { name: 'tenant', slug: 'acme' }],
   ['#/t/acme/pulls/o/r/abc', { name: 'tenant', slug: 'acme' }],
   ['#/t/acme/pulls/o/r/-5', { name: 'tenant', slug: 'acme' }],
   ['#/t/acme/pulls/o/r/3.5', { name: 'tenant', slug: 'acme' }],

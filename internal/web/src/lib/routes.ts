@@ -19,12 +19,15 @@
 //
 // Segments round-trip through encodeURIComponent/decodeURIComponent, so a
 // slug/owner/repo/id/section containing a literal "/" or other reserved
-// character survives href() -> parse(). A malformed hash -- an empty segment
-// (e.g. "#/t//repos", or a trailing slash producing a trailing empty
-// segment), an undecodable percent-escape, or extra trailing segments beyond
-// what a route shape accepts -- falls back the same way an unrecognized one
-// does: to that tenant's overview once a slug has been parsed, otherwise to
-// the global overview.
+// character survives href() -> parse(). A single trailing slash is
+// tolerated -- "#/t/<slug>/repos/" parses exactly like "#/t/<slug>/repos" --
+// since href() never produces one but a bookmark or typed URL might. Any
+// other malformation -- an empty non-trailing segment (e.g. "#/t//repos"),
+// more than one trailing slash, an undecodable percent-escape, or extra
+// trailing segments beyond what a route shape accepts -- falls back to that
+// tenant's overview once a slug has been parsed, and to the global overview
+// otherwise, including when the malformation is what prevents the slug
+// itself from being parsed (e.g. "#/t//acme").
 
 export const REVIEW_TABS = ['summary', 'diff', 'conversation', 'timeline', 'raw', 'usage'] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
@@ -51,21 +54,28 @@ export type Route =
 const PULL_NUMBER = /^\d+$/;
 
 // segments splits the part of the hash after "#/" on "/" and decodes each
-// piece, returning undefined if the hash is malformed: an empty segment
-// (adjacent or trailing slashes) or an undecodable percent-escape.
-function segments(hash: string): string[] | undefined {
+// piece. A single trailing slash (exactly one trailing empty segment) is
+// tolerated and dropped, so it decodes identically to the same hash without
+// it. Any other malformation -- an empty non-trailing segment, more than one
+// trailing slash, or an undecodable percent-escape -- stops decoding right
+// there: `ok` is false and `parts` holds only what decoded cleanly before
+// the bad segment, so a caller can still recover a slug that was fully
+// parsed before the malformation struck.
+function segments(hash: string): { parts: string[]; ok: boolean } {
   const stripped = hash.replace(/^#\/?/, '');
-  if (stripped === '') return [];
+  if (stripped === '') return { parts: [], ok: true };
+  const raw = stripped.split('/');
+  if (raw.length > 1 && raw[raw.length - 1] === '') raw.pop();
   const decoded: string[] = [];
-  for (const part of stripped.split('/')) {
-    if (part === '') return undefined;
+  for (const part of raw) {
+    if (part === '') return { parts: decoded, ok: false };
     try {
       decoded.push(decodeURIComponent(part));
     } catch {
-      return undefined;
+      return { parts: decoded, ok: false };
     }
   }
-  return decoded;
+  return { parts: decoded, ok: true };
 }
 
 // parseTenantRoute handles everything under #/t/<slug>/... . Anything
@@ -109,8 +119,17 @@ function parseTenantRoute(slug: string, rest: string[]): Route {
 }
 
 export function parse(hash: string): Route {
-  const parts = segments(hash);
-  if (parts === undefined || parts.length === 0) return { name: 'overview' };
+  const { parts, ok } = segments(hash);
+  if (!ok) {
+    // The malformation struck before a slug could be parsed: nothing to
+    // fall back into but the global overview. Once a slug WAS parsed
+    // (parts[0] === 't' && parts[1]), the malformation is downstream of it
+    // (a bad section, an empty segment, extra segments, ...), so fall back
+    // to that tenant's own overview instead.
+    if (parts[0] === 't' && parts[1] !== undefined) return { name: 'tenant', slug: parts[1] };
+    return { name: 'overview' };
+  }
+  if (parts.length === 0) return { name: 'overview' };
   if (parts.length === 1 && parts[0] === 'signin') return { name: 'signin' };
   if (parts.length === 1 && parts[0] === 'operator') return { name: 'operator' };
   if (parts[0] === 't' && parts[1] !== undefined) return parseTenantRoute(parts[1], parts.slice(2));
