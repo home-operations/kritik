@@ -16,6 +16,7 @@ helm-docs = "1.14.2"
 "go:golang.org/x/vuln/cmd/govulncheck" = "v1.8.0"
 golangci-lint = "2.13.2"
 lefthook = "2.1.14"
+node = "24.21.0"
 oxfmt = "0.70.0"
 yq = "4.53.6"
 zizmor = "1.30.1"
@@ -165,6 +166,26 @@ run = """
 : "${KUBECONFIG:?set KUBECONFIG to the target cluster (see .private/mise.local.toml)}"
 kubectl -n kritik logs deployment/kritik --follow
 """
+
+[tasks.ui-install]
+description = "Install the dashboard UI's npm dependencies from its lockfile"
+dir = "internal/web"
+run = "npm ci"
+
+[tasks.ui-typecheck]
+description = "Type-check the dashboard UI (svelte-check)"
+dir = "internal/web"
+run = "npm run typecheck"
+
+[tasks.ui-build]
+description = "Build the dashboard UI into internal/web/dist for go:embed"
+dir = "internal/web"
+run = "npm run build"
+
+[tasks.ui-test]
+description = "Run the dashboard UI's Playwright end-to-end tests"
+dir = "internal/web"
+run = "npm run test:e2e"
 
 [hooks]
 postinstall = "lefthook install"
