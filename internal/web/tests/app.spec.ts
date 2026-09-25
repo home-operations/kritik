@@ -146,7 +146,8 @@ test.describe('keyboard shortcuts', () => {
     await expect(page.locator('.help-overlay')).toHaveCount(0);
   });
 
-  test('Ctrl/Cmd+K opens the command palette; typing filters; Enter navigates', async ({ page }) => {
+  test('Ctrl/Cmd+K opens the command palette; typing filters; Enter navigates', async ({ page, signIn }) => {
+    await signIn({ ...DEFAULT_ME, operator: true });
     await page.goto('/');
     await page.keyboard.press('ControlOrMeta+k');
     await expect(page.locator('.palette-input input')).toBeFocused();

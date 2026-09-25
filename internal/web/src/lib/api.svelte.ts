@@ -45,8 +45,12 @@ async function toApiError(res: Response): Promise<ApiError> {
 }
 
 async function handle<T>(res: Response): Promise<T> {
-  if (res.status === 401) {
-    if (location.hash && location.hash !== '#/signin') signinState.returnTo = location.hash;
+  // A signed-out visit to the bare root has no hash to remember and nothing
+  // to bounce away from -- that's the public overview shell, not a dead
+  // session, so only a 401 against an in-app destination (a non-empty hash)
+  // redirects to sign-in.
+  if (res.status === 401 && location.hash && location.hash !== '#/signin') {
+    signinState.returnTo = location.hash;
     replace({ name: 'signin' });
   }
   if (!res.ok) throw await toApiError(res);
