@@ -1,3 +1,5 @@
+@import 'tailwindcss';
+
 /* ---- theme tokens ---------------------------------------------------- */
 :root,
 .light {
@@ -13,8 +15,8 @@
   --del-bg: #fdeeec;
   --del-bar: #cf222e;
   --danger: #cf222e;
-  --caution: #9a6700; /* lint caution — amber, a notch below the --danger red of a render failure */
-  --warn: #9a6700; /* amber accent: changed-status pill, the "showing last render" notice, truncation */
+  --caution: #9a6700; /* amber accent, a notch below --danger */
+  --warn: #9a6700; /* amber accent for warnings */
   --ok: #1a7f37;
   --merged: #8250df;
   --warn-bg: #fff8c5;
@@ -32,8 +34,8 @@
   --del-bg: #221015;
   --del-bar: #f85149;
   --danger: #f85149;
-  --caution: #d29922; /* lint caution — amber, a notch below the --danger red of a render failure */
-  --warn: #d29922; /* amber accent: changed-status pill, the "showing last render" notice, truncation */
+  --caution: #d29922; /* amber accent, a notch below --danger */
+  --warn: #d29922; /* amber accent for warnings */
   --ok: #3fb950;
   --merged: #a371f7;
   --warn-bg: #272115;
