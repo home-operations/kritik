@@ -29,10 +29,8 @@ type Base struct {
 // tenant finds the job's tenant in the current file. A tenant that has
 // been removed cancels the job: it will not come back by retrying.
 func (b *Base) tenant(file *configfile.File, id string) (*configfile.Tenant, error) {
-	for i := range file.Tenants {
-		if file.Tenants[i].ID() == id {
-			return &file.Tenants[i], nil
-		}
+	if t := tenantByID(file, id); t != nil {
+		return t, nil
 	}
 	return nil, river.JobCancel(fmt.Errorf("worker: tenant %s is not in the configuration", id))
 }
@@ -63,12 +61,16 @@ func (b *Base) withLease(
 		return err
 	}
 	b.Metrics.LeaseWait(tenant.Slug, key, time.Since(waited))
-	defer func() {
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
-		defer cancel()
-		if err := l.release(rctx); err != nil {
-			b.Logger.Warn("lease not released", "key", key, "error", err)
-		}
-	}()
+	defer b.releaseLease(ctx, l, key)
 	return fn(ctx)
+}
+
+// releaseLease releases l on a context of its own, since the job's has
+// usually ended by the time a lease is let go.
+func (b *Base) releaseLease(ctx context.Context, l *lease, key string) {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+	if err := l.release(rctx); err != nil {
+		b.Logger.Warn("lease not released", "key", key, "error", err)
+	}
 }

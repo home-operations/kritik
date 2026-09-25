@@ -125,13 +125,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 			return w.record(ctx, args, pr, status, mergeBase, "", reason)
 		}
 		admitted = a
-		defer func() {
-			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-			defer cancel()
-			if err := a.lease.release(rctx); err != nil {
-				logger.Warn("lease not released", "error", err)
-			}
-		}()
+		defer w.releaseLease(ctx, a.lease, string(settings.Models.Review))
 	}
 
 	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, settings.Mode)
