@@ -166,8 +166,8 @@ each tenant its own key with a spending limit, and on Forgejo a read-only
 `gitToken` (§2.1), since the git token reaches the same pod.
 
 Runner Jobs run in the worker's namespace, and the worker's Role can create,
-patch and delete every Secret in it, which a Role cannot narrow to the run
-Secrets it names only at runtime. kritik should therefore get a namespace
+list (which returns Secret data), patch and delete every Secret in it, which
+a Role cannot narrow to the run Secrets it names only at runtime. kritik should therefore get a namespace
 of its own, holding no Secrets but its own.
 
 ### 2.7 Incremental re-review
@@ -221,8 +221,11 @@ results reported back.
 - **Job-scoped secrets.** The git token, in agentic mode the model key,
   and the job document go into a Secret created for the run and owned by its Job, so Kubernetes
   deletes it with the Job. The worker creates the Secret, then the Job, then
-  sets the Secret's owner reference; a failure deletes the Secret. The worker
-  masks those values out of the log tail it stores.
+  sets the Secret's owner reference; a failure deletes the Secret. A worker
+  that dies between the first and last step leaves a Secret no Job owns, so
+  the leader deletes runner-labelled Secrets without an owner reference once
+  they are 15 minutes old. That is why the worker's Role can list Secrets.
+  The worker masks those values out of the log tail it stores.
 - **Heartbeat.** The runner stamps `runner_runs.heartbeat_at` while it
   works. The worker treats a run whose heartbeat is older than 90 seconds
   after start as dead and ends it, instead of waiting out the Job deadline.

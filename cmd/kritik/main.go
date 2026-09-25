@@ -141,6 +141,7 @@ func run() error {
 	defer st.Close()
 
 	var current *configfile.Current
+	var exec executor.Executor
 	if file != nil {
 		// current is the last good file; the leader applies it on election and
 		// on every reload, followers only compare hashes.
@@ -156,6 +157,13 @@ func run() error {
 			return reportDrift(ctx, st, current, drift, cfg.ConfigReloadInterval)
 		})
 		if st.LeaderEligible() {
+			// Only an all or worker role holds the owner DSN, so a leader
+			// always has the executor it would sweep up after.
+			exec, err = newExecutor(ctx, cfg, logger)
+			if err != nil {
+				return err
+			}
+			sweeper, _ := exec.(*executor.Kube)
 			hostname, _ := os.Hostname()
 			// Insert-only client: the leader enqueues onboarding index jobs.
 			leaderQueue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
@@ -164,7 +172,7 @@ func run() error {
 			}
 			g.Go(func() error {
 				return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
-					return lead(ctx, st, cfg, current, leaderQueue, m, hostname, logger)
+					return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, hostname, logger)
 				})
 			})
 		} else if role != config.RoleIngest {
@@ -189,9 +197,10 @@ func run() error {
 		g.Go(func() error { return hooks.Run(ctx) })
 	}
 	if role == config.RoleAll || role == config.RoleWorker {
-		exec, err := newExecutor(ctx, cfg, logger)
-		if err != nil {
-			return err
+		if exec == nil {
+			if exec, err = newExecutor(ctx, cfg, logger); err != nil {
+				return err
+			}
 		}
 		embedder := newEmbedder(cfg)
 		forges := &worker.ForgeCache{Build: worker.BuildForge}
@@ -362,9 +371,13 @@ func openStore(ctx context.Context, opts store.Options, logger *slog.Logger) (*s
 // apply the current file, then re-apply whenever the file changes. With an
 // embedder configured it also owns the index schema and enqueues an
 // onboarding index job for every repository that has none.
+// secretSweepInterval is how often the leader looks for orphaned run
+// Secrets.
+const secretSweepInterval = 5 * time.Minute
+
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	m *metrics.Metrics, leader string, logger *slog.Logger,
+	sweeper *executor.Kube, m *metrics.Metrics, leader string, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
@@ -384,6 +397,10 @@ func lead(
 			Logger: logger, Metrics: m,
 		}).Run(pollCtx)
 	}()
+	// So is sweeping run Secrets a dead worker left without an owner.
+	if sweeper != nil {
+		go sweeper.RunSecretSweeper(pollCtx, secretSweepInterval)
+	}
 	applied := ""
 	for {
 		f := current.Get()
