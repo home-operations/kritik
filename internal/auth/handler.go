@@ -181,7 +181,7 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, sessionCookie(h.webURL, token, expires))
 	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, h.home()+ls.ReturnTo, http.StatusFound)
+	http.Redirect(w, r, h.home()+returnTo(ls.ReturnTo), http.StatusFound)
 }
 
 // startSession records the signed-in identity and its memberships and
