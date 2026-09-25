@@ -1,12 +1,13 @@
 -- An agentic review's tool loop, written by the runner after its context
--- pack: how it stopped, the submitted review when it did, the tool
+-- pack: how it stopped ('skipped', with the skip reason as the error, when
+-- the runner did not run it because the worker will skip the review), the submitted review when it did, the tool
 -- histogram, usage and cost, and a per-step timeline of tool names,
 -- duration, output bytes and tokens.
 CREATE TABLE agent_runs (
     runner_run_id      uuid           PRIMARY KEY REFERENCES runner_runs (id),
     tenant_id          uuid           NOT NULL REFERENCES tenants (id),
     stop_reason        text           NOT NULL
-        CHECK (stop_reason IN ('submitted', 'max_steps', 'budget', 'no_submit', 'canceled', 'error')),
+        CHECK (stop_reason IN ('submitted', 'max_steps', 'budget', 'no_submit', 'canceled', 'error', 'skipped')),
     result             jsonb,
     steps              int            NOT NULL DEFAULT 0,
     tool_calls         jsonb          NOT NULL DEFAULT '{}'::jsonb,

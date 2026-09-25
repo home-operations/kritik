@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 )
 
@@ -73,16 +74,14 @@ type AgentLimits struct {
 	TimeoutSeconds     int   `json:"timeoutSeconds,omitempty"`
 }
 
-// Prompt is what an agentic run's review prompt needs beyond the checkout:
-// the pull request, the operator's review defaults the merge-base
-// .kritik.yaml may override, and the last completed review's findings.
+// Prompt is what an agentic run needs beyond the checkout to write its
+// review prompt and to tell whether the worker will skip the review: the
+// pull request, the operator's review defaults the merge-base .kritik.yaml
+// may override, and the last completed review's findings.
 type Prompt struct {
 	Repository string `json:"repository"`
-	Number     int    `json:"number"`
-	Title      string `json:"title"`
-	Author     string `json:"author"`
-	Body       string `json:"body,omitempty"`
-	BaseRef    string `json:"baseRef"`
+	// PullRequest is also what the merge-base .kritik.yaml filter sees.
+	PullRequest repoconfig.PullRequest `json:"pullRequest"`
 	// Instructions name repository files, as the operator's review
 	// settings do.
 	Instructions        []string `json:"instructions,omitempty"`

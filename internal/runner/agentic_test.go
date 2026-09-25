@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"slices"
@@ -75,7 +76,7 @@ func TestAgentPrompt(t *testing.T) {
 				pack.DeltaDiff = agentDiff
 			}
 			system, user, strict := agentPrompt(s, tt.files, pack)
-			if want := review.SystemPrompt(tt.instructions); system != want {
+			if want := review.AgenticSystemPrompt(tt.instructions); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
@@ -100,6 +101,9 @@ func TestAgentPrompt(t *testing.T) {
 }
 
 func TestAgentSkip(t *testing.T) {
+	filter := func(expr string) repoconfig.Files {
+		return repoconfig.Files{repoconfig.FileName: "filter: '" + expr + "'\n"}
+	}
 	tests := []struct {
 		name    string
 		files   repoconfig.Files
@@ -108,24 +112,49 @@ func TestAgentSkip(t *testing.T) {
 		want    string
 	}{
 		{name: "reviewed", files: repoconfig.Files{}, changed: []string{"main.go"}, patchID: "p2"},
-		{name: "unchanged bot patch", files: repoconfig.Files{}, changed: []string{"main.go"}, patchID: "p1", want: "unchanged patch"},
+		{name: "unchanged bot patch", files: repoconfig.Files{}, changed: []string{"main.go"}, patchID: "p1", want: SkipUnchangedPatch},
 		{name: "disabled", files: repoconfig.Files{repoconfig.FileName: "enabled: false\n"}, changed: []string{"main.go"}, patchID: "p2",
-			want: "disabled"},
+			want: string(repoconfig.SkipDisabled)},
+		{name: "filtered on the body", files: filter(`!pr.body.contains("[skip-review]")`), changed: []string{"main.go"}, patchID: "p2",
+			want: string(repoconfig.SkipFiltered)},
+		{name: "filtered on labels and merged", files: filter(`!pr.merged && pr.labels.exists(l, l.name == "deps")`),
+			changed: []string{"main.go"}, patchID: "p2"},
+		{name: "a filter that fails to evaluate skips", files: filter(`pr.number == 1 || pr.labels[9].name == "x"`),
+			changed: []string{"main.go"}, patchID: "p2", want: string(repoconfig.SkipFiltered)},
 		{
 			name: "only skipped paths", files: repoconfig.Files{repoconfig.FileName: "skip:\n  onlyPaths: ['**/*.md']\n"},
-			changed: []string{"docs/a.md"}, patchID: "p2", want: "only skipped paths",
+			changed: []string{"docs/a.md"}, patchID: "p2", want: string(repoconfig.SkipOnlyPaths),
 		},
 		{name: "a broken file skips nothing", files: repoconfig.Files{repoconfig.FileName: "enabled: [\n"}, changed: []string{"main.go"},
 			patchID: "p2"},
 	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
 			s.Prompt.UnchangedPatchID = "p1"
-			if got := agentSkip(s, tt.files, tt.changed, tt.patchID); got != tt.want {
-				t.Fatalf("agentSkip = %q, want %q", got, tt.want)
+			s.Prompt.PullRequest.Body = "please [skip-review]"
+			got, err := agentSkip(s, tt.files, tt.changed, tt.patchID, logger)
+			if err != nil || got != tt.want {
+				t.Fatalf("agentSkip = %q, %v; want %q", got, err, tt.want)
 			}
 		})
+	}
+	s := agentPromptSpec()
+	s.Prompt.PullRequest.Labels = []byte("not json")
+	if _, err := agentSkip(s, repoconfig.Files{}, []string{"main.go"}, "p2", logger); err == nil {
+		t.Fatal("undecodable labels must fail the run, not skip it")
+	}
+}
+
+func TestAgentErrorsAreMasked(t *testing.T) {
+	secrets := Secrets{GitToken: "git-token", ModelAPIKey: "sk-model-key"}
+	rec, err := newAgentRecord(agent.Result{Stop: agent.StopError, Err: `401: {"error":"bad key sk-model-key"}`}, nil, secrets)
+	if err != nil || strings.Contains(rec.err, "sk-model-key") || !strings.Contains(rec.err, "bad key ***") {
+		t.Fatalf("agent run error = %q, %v", rec.err, err)
+	}
+	if got := failure(secrets, errors.New("clone https://x:git-token@forge.example.com: denied")); strings.Contains(got, "git-token") {
+		t.Fatalf("run error = %q", got)
 	}
 }
 

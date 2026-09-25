@@ -11,34 +11,6 @@ import (
 	"github.com/home-operations/kritik/internal/review"
 )
 
-// skipReason says why the repository's own configuration skipped a review.
-// The values match the reviews.skip_reason CHECK.
-type skipReason string
-
-const (
-	skipDisabled  skipReason = "disabled"
-	skipFiltered  skipReason = "filtered"
-	skipOnlyPaths skipReason = "only_skipped_paths"
-)
-
-// Valid reports whether r is a skip reason.
-func (r skipReason) Valid() bool {
-	return r == skipDisabled || r == skipFiltered || r == skipOnlyPaths
-}
-
-// Description is the reason as the commit status states it.
-func (r skipReason) Description() string {
-	switch r {
-	case skipDisabled:
-		return "disabled in " + repoconfig.FileName
-	case skipFiltered:
-		return "filtered by " + repoconfig.FileName
-	case skipOnlyPaths:
-		return "only skipped paths changed"
-	}
-	return string(r)
-}
-
 // Effective is a repository's settings once its .kritik.yaml is applied.
 // Instructions and Templates hold file contents, not paths.
 type Effective struct {
@@ -60,41 +32,18 @@ type Effective struct {
 // not in files, unless runnerNotes (the runner's notes on what it could not
 // read, which lead the returned notes) already say why.
 func effective(settings configfile.Settings, files repoconfig.Files, runnerNotes []string) (Effective, []string) {
-	settings.Ignore = slices.Clone(settings.Ignore)
-	e := Effective{Settings: settings, RequireSuggestedFix: settings.Review.RequireSuggestedFix}
-	instructions := settings.Review.Instructions
-	summary, inline := settings.Review.Templates.Summary, settings.Review.Templates.Inline
 	notes := slices.Clone(runnerNotes)
-
-	if doc, ok := files[repoconfig.FileName]; ok {
-		f, prg, err := repoconfig.Parse([]byte(doc))
-		if err != nil {
-			notes = append(notes, fmt.Sprintf("%s was ignored: %v", repoconfig.FileName, err))
-		} else {
-			if f.Enabled != nil && !*f.Enabled {
-				e.Enabled = false
-			}
-			e.InRepoFilter = prg
-			for _, g := range f.Ignore {
-				if !slices.Contains(e.Ignore, g) {
-					e.Ignore = append(e.Ignore, g)
-				}
-			}
-			e.Skip = f.Skip
-			if len(f.Review.Instructions) > 0 {
-				instructions = f.Review.Instructions
-			}
-			if f.Review.RequireSuggestedFix != nil {
-				e.RequireSuggestedFix = *f.Review.RequireSuggestedFix
-			}
-			if f.Review.Templates.Summary != "" {
-				summary = f.Review.Templates.Summary
-			}
-			if f.Review.Templates.Inline != "" {
-				inline = f.Review.Templates.Inline
-			}
-		}
+	m, err := repoconfig.Merge(files, repoconfig.Operator{
+		Enabled: settings.Enabled, Ignore: settings.Ignore, Instructions: settings.Review.Instructions,
+		RequireSuggestedFix: settings.Review.RequireSuggestedFix,
+		Templates:           repoconfig.Templates{Summary: settings.Review.Templates.Summary, Inline: settings.Review.Templates.Inline},
+	})
+	if err != nil {
+		notes = append(notes, fmt.Sprintf("%s was ignored: %v", repoconfig.FileName, err))
 	}
+	settings.Enabled, settings.Ignore = m.Enabled, m.Ignore
+	e := Effective{Settings: settings, InRepoFilter: m.Filter, Skip: m.Skip, RequireSuggestedFix: m.RequireSuggestedFix}
+	instructions, summary, inline := m.Instructions, m.Templates.Summary, m.Templates.Inline
 
 	read := func(p string) string {
 		if p == "" {
@@ -118,20 +67,7 @@ func effective(settings configfile.Settings, files repoconfig.Files, runnerNotes
 }
 
 // skip returns why the repository's configuration skips this review, or ""
-// when it does not. A filter that fails to evaluate skips, since the file
-// may only narrow; the error is returned for the log.
-func (e Effective) skip(vars map[string]any, changed []string) (skipReason, error) {
-	if !e.Enabled {
-		return skipDisabled, nil
-	}
-	if e.InRepoFilter != nil {
-		ok, err := e.InRepoFilter.Eval(vars)
-		if err != nil || !ok {
-			return skipFiltered, err
-		}
-	}
-	if e.Skip.All(changed) {
-		return skipOnlyPaths, nil
-	}
-	return "", nil
+// when it does not; see repoconfig.Merged.Check.
+func (e Effective) skip(vars map[string]any, changed []string) (repoconfig.SkipReason, error) {
+	return repoconfig.Merged{Operator: repoconfig.Operator{Enabled: e.Enabled}, Filter: e.InRepoFilter, Skip: e.Skip}.Check(vars, changed)
 }

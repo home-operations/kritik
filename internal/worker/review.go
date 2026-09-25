@@ -155,7 +155,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	secrets := runner.Secrets{GitToken: token}
 	if agentic {
-		if spec.Prompt, err = w.agentPrompt(ctx, args.TenantID, pr, settings, prior); err != nil {
+		if spec.Prompt, err = w.agentPrompt(ctx, args.TenantID, reviewID, pr, settings, prior); err != nil {
 			return errors.Join(err, w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", err.Error()))
 		}
 		spec.Mode, spec.Model, secrets.ModelAPIKey = runner.ModeAgentic, admitted.endpoint, admitted.key
@@ -180,6 +180,12 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	})
 	if err := recordRun(ctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err
+	}
+	var agentOutcome *agentRun
+	if agentic {
+		if agentOutcome, err = w.chargeAgentRun(ctx, tenant, pr, reviewID, runID, settings.Models.Review); err != nil {
+			return err
+		}
 	}
 	// A run that finished despite a cancel is judged by its result; the
 	// head check after it catches a supersede.
@@ -209,7 +215,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		w: w, file: file, tenant: tenant, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, jobID: job.ID, logger: logger,
 		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.RequireSuggestedFix}, templates: prep.eff.Templates,
-		instructions: prep.eff.Instructions, repoNotes: prep.notes, prior: prior, scope: prep.scope,
+		instructions: prep.eff.Instructions, repoNotes: prep.notes, prior: prior, scope: prep.scope, agent: agentOutcome,
 	}
 	publish := phase.run
 	if agentic {
@@ -338,33 +344,30 @@ func (w *Review) afterRun(
 // filterVars rebuilds the filter's pr variable from the stored pull request
 // row, the same keys webhook.PullRequest.FilterVars gives ingest.
 func filterVars(ctx context.Context, tx pgx.Tx, prID string) (map[string]any, error) {
+	pr, err := loadFilterPR(ctx, tx, prID)
+	if err != nil {
+		return nil, err
+	}
+	return pr.Vars()
+}
+
+// loadFilterPR reads what the repository filter sees of a pull request.
+func loadFilterPR(ctx context.Context, tx pgx.Tx, prID string) (repoconfig.PullRequest, error) {
 	var (
-		number                                               int
-		title, author, state, headRef, headSHA, baseRef, url string
-		body                                                 string
-		draft, fork, merged                                  bool
-		openedAt                                             *time.Time
-		labelsJSON                                           []byte
+		pr       repoconfig.PullRequest
+		openedAt *time.Time
 	)
 	err := tx.QueryRow(ctx, `SELECT number, title, author, state, merged, draft, fork, head_ref, head_sha, base_ref, url, body,
 		opened_at, labels FROM pull_requests WHERE id = $1`, prID).
-		Scan(&number, &title, &author, &state, &merged, &draft, &fork, &headRef, &headSHA, &baseRef, &url, &body, &openedAt, &labelsJSON)
+		Scan(&pr.Number, &pr.Title, &pr.Author, &pr.State, &pr.Merged, &pr.Draft, &pr.Fork, &pr.HeadRef, &pr.HeadSHA, &pr.BaseRef,
+			&pr.URL, &pr.Body, &openedAt, &pr.Labels)
 	if err != nil {
-		return nil, fmt.Errorf("worker: read pull request for the filter: %w", err)
+		return repoconfig.PullRequest{}, fmt.Errorf("worker: read pull request for the filter: %w", err)
 	}
-	labels := []any{}
-	if err := json.Unmarshal(labelsJSON, &labels); err != nil {
-		return nil, fmt.Errorf("worker: decode pull request labels: %w", err)
-	}
-	var createdAt time.Time
 	if openedAt != nil {
-		createdAt = *openedAt
+		pr.CreatedAt = *openedAt
 	}
-	return map[string]any{
-		"number": number, "title": title, "author": author, "state": state, "open": state == "open", "merged": merged,
-		"draft": draft, "fork": fork, "headRef": headRef, "headSha": headSHA, "baseRef": baseRef, "url": url,
-		"body": body, "createdAt": createdAt, "labels": labels,
-	}, nil
+	return pr, nil
 }
 
 func (w *Review) load(ctx context.Context, args jobs.ReviewArgs) (*pullRequest, error) {
@@ -433,7 +436,7 @@ func (w *Review) finishReview(ctx context.Context, tenantID, reviewID, status, p
 	})
 }
 
-func (w *Review) finishSkipped(ctx context.Context, tenantID, reviewID, patchID string, reason skipReason) error {
+func (w *Review) finishSkipped(ctx context.Context, tenantID, reviewID, patchID string, reason repoconfig.SkipReason) error {
 	return w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, skip_reason = $4, finished_at = now() WHERE id = $1`,
 			reviewID, statusSkipped, patchID, string(reason))

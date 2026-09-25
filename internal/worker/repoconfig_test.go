@@ -144,14 +144,14 @@ func TestEffectiveSkip(t *testing.T) {
 		doc     string
 		body    string
 		changed []string
-		want    skipReason
+		want    repoconfig.SkipReason
 	}{
 		{"nothing to skip", "", "", []string{"main.go"}, ""},
-		{"disabled", "enabled: false\n", "", []string{"main.go"}, skipDisabled},
-		{"filtered", "filter: '!pr.body.contains(\"[skip-review]\")'\n", "please [skip-review]", []string{"main.go"}, skipFiltered},
+		{"disabled", "enabled: false\n", "", []string{"main.go"}, repoconfig.SkipDisabled},
+		{"filtered", "filter: '!pr.body.contains(\"[skip-review]\")'\n", "please [skip-review]", []string{"main.go"}, repoconfig.SkipFiltered},
 		{"filter allows", "filter: '!pr.body.contains(\"[skip-review]\")'\n", "normal", []string{"main.go"}, ""},
-		{"filter that fails to evaluate skips", "filter: 'pr.number > 0'\n", "", []string{"main.go"}, skipFiltered},
-		{"only skipped paths", "skip:\n  onlyPaths: [docs/**]\n", "", []string{"docs/a.md", "docs/b/c.md"}, skipOnlyPaths},
+		{"filter that fails to evaluate skips", "filter: 'pr.number > 0'\n", "", []string{"main.go"}, repoconfig.SkipFiltered},
+		{"only skipped paths", "skip:\n  onlyPaths: [docs/**]\n", "", []string{"docs/a.md", "docs/b/c.md"}, repoconfig.SkipOnlyPaths},
 		{"a path outside the skip rule", "skip:\n  onlyPaths: [docs/**]\n", "", []string{"docs/a.md", "main.go"}, ""},
 	}
 	for _, tt := range tests {
@@ -166,14 +166,14 @@ func TestEffectiveSkip(t *testing.T) {
 			}
 		})
 	}
-	for r, want := range map[skipReason]string{
-		skipDisabled: "disabled in .kritik.yaml", skipFiltered: "filtered by .kritik.yaml", skipOnlyPaths: "only skipped paths changed",
+	for r, want := range map[repoconfig.SkipReason]string{
+		repoconfig.SkipDisabled: "disabled in .kritik.yaml", repoconfig.SkipFiltered: "filtered by .kritik.yaml", repoconfig.SkipOnlyPaths: "only skipped paths changed",
 	} {
 		if r.Description() != want {
 			t.Fatalf("%q.Description() = %q, want %q", r, r.Description(), want)
 		}
 	}
-	if skipReason("other").Valid() {
+	if repoconfig.SkipReason("other").Valid() {
 		t.Fatal("an unknown reason must not be valid")
 	}
 }

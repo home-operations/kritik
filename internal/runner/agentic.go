@@ -44,62 +44,65 @@ type timelineStep struct {
 	OutputTokens int64    `json:"output_tokens"`
 }
 
-// repoFile parses the merge-base .kritik.yaml; ok is false when there is
-// none or it does not parse, in which case the operator's settings stand.
-func repoFile(files repoconfig.Files) (repoconfig.File, bool) {
-	doc, ok := files[repoconfig.FileName]
-	if !ok {
-		return repoconfig.File{}, false
-	}
-	f, _, err := repoconfig.Parse([]byte(doc))
-	return f, err == nil
+// AgentSkipped is the stop reason an agent_runs row records when the
+// runner did not run the agent because the worker will skip the review; its
+// error column holds the reason, a repoconfig.SkipReason or
+// SkipUnchangedPatch.
+const AgentSkipped agent.StopReason = "skipped"
+
+// SkipUnchangedPatch is the skip reason for a bot's pull request whose patch
+// id equals its last prepared review's.
+const SkipUnchangedPatch = "unchanged_patch"
+
+// merged applies the merge-base .kritik.yaml over the operator's defaults
+// the prompt carries. A file that does not parse leaves them as they are,
+// as the worker does.
+func merged(p Spec, files repoconfig.Files) repoconfig.Merged {
+	m, _ := repoconfig.Merge(files, repoconfig.Operator{
+		Enabled: true, Instructions: p.Prompt.Instructions, RequireSuggestedFix: p.Prompt.RequireSuggestedFix,
+	})
+	return m
 }
 
 // agentPrompt composes the system prompt and user message the way a
-// single-mode review does, from the same repository files and pack. Only
-// the similar-code stage is missing: the runner has no index, and the
-// agent can grep instead. strict says whether the contract requires a
-// suggested fix.
+// single-mode review does, from the same repository files and pack, with
+// the agentic addendum to the system prompt. Only the similar-code stage
+// is missing: the runner has no index, and the agent can grep instead.
+// strict says whether the contract requires a suggested fix.
 func agentPrompt(p Spec, files repoconfig.Files, pack packView) (system, user string, strict bool) {
-	paths, strict := p.Prompt.Instructions, p.Prompt.RequireSuggestedFix
-	if f, ok := repoFile(files); ok {
-		if len(f.Review.Instructions) > 0 {
-			paths = f.Review.Instructions
-		}
-		if f.Review.RequireSuggestedFix != nil {
-			strict = *f.Review.RequireSuggestedFix
-		}
-	}
-	instructions, _ := repoconfig.Instructions(files, paths)
-	system = review.SystemPrompt(instructions)
+	m := merged(p, files)
+	instructions, _ := repoconfig.Instructions(files, m.Instructions)
+	system = review.AgenticSystemPrompt(instructions)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior}
 	}
+	pr := p.Prompt.PullRequest
 	user, _, _ = review.Build(review.Input{
-		Repository: p.Prompt.Repository, Number: p.Prompt.Number, Title: p.Prompt.Title, Author: p.Prompt.Author,
-		Body: p.Prompt.Body, BaseRef: p.Prompt.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
+		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
+		BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
 		Incremental: incremental, BudgetTokens: review.UserBudget(system),
 	})
-	return system, user, strict
+	return system, user, m.RequireSuggestedFix
 }
 
 // agentSkip returns why the worker will skip this review whatever the
-// agent finds, or "". It mirrors the worker's checks that need no pull
-// request fields; a review the in-repo filter rejects still runs.
-func agentSkip(p Spec, files repoconfig.Files, changed []string, patchID string) string {
+// agent finds, or "": the checks the worker makes after the run, made
+// before it so a skipped review spends nothing. A filter that fails to
+// evaluate skips, as in the worker; its error is logged.
+func agentSkip(p Spec, files repoconfig.Files, changed []string, patchID string, logger *slog.Logger) (string, error) {
 	if p.Prompt.UnchangedPatchID != "" && patchID == p.Prompt.UnchangedPatchID {
-		return "unchanged patch"
+		return SkipUnchangedPatch, nil
 	}
-	if f, ok := repoFile(files); ok {
-		if f.Enabled != nil && !*f.Enabled {
-			return "disabled"
-		}
-		if f.Skip.All(changed) {
-			return "only skipped paths"
-		}
+	vars, err := p.Prompt.PullRequest.Vars()
+	if err != nil {
+		return "", fmt.Errorf("runner: %w", err)
 	}
-	return ""
+	reason, err := merged(p, files).Check(vars, changed)
+	if err != nil {
+		logger.Warn("repository filter failed to evaluate", "error", err)
+	}
+	return string(reason), nil
 }
 
 // reviewAgent runs the tool loop over head. A positive timeout bounds it;
@@ -152,14 +155,18 @@ func reviewAgent(
 
 // runAgentic runs the agent over the fetched head and writes its
 // agent_runs row, then marks the run done. A review the worker will skip
-// anyway writes no row.
+// anyway is recorded as skipped without running the agent.
 func runAgentic(
 	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, files repoconfig.Files,
 	pack packView, ignore []string, patchID string, logger *slog.Logger,
 ) error {
-	if reason := agentSkip(p, files, pack.Changed, patchID); reason != "" {
+	reason, err := agentSkip(p, files, pack.Changed, patchID, logger)
+	if err != nil {
+		return err
+	}
+	if reason != "" {
 		logger.Info("agent not run", "reason", reason)
-		return setPhase(ctx, st, p.RunID, "done")
+		return writeAgentRun(ctx, st, p, agentRecord{stop: AgentSkipped, toolCalls: []byte("{}"), timeline: []byte("[]"), err: reason})
 	}
 	stepper, err := model.NewStepper(p.Model.Provider, p.Model.BaseURL, secrets.ModelAPIKey, p.Model.Pricing, nil)
 	if err != nil {
@@ -172,28 +179,51 @@ func runAgentic(
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("runner: agent: %w", err)
 	}
+	rec, err := newAgentRecord(res, timeline, secrets)
+	if err != nil {
+		return err
+	}
 	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls,
-		"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD, "error", res.Err)
+		"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD, "error", rec.err)
+	return writeAgentRun(ctx, st, p, rec)
+}
 
-	toolCalls, err := json.Marshal(res.ToolCalls)
-	if err != nil {
-		return fmt.Errorf("runner: encode tool calls: %w", err)
+// agentRecord is an agent_runs row.
+type agentRecord struct {
+	stop                agent.StopReason
+	result              any
+	steps               int
+	toolCalls, timeline []byte
+	usage               model.Usage
+	costUSD             float64
+	err                 string
+}
+
+// newAgentRecord encodes a finished Run. The error text is masked: a
+// provider may echo the key back in an error the worker later shows.
+func newAgentRecord(res agent.Result, timeline []timelineStep, secrets Secrets) (agentRecord, error) {
+	rec := agentRecord{stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, err: secrets.Mask(res.Err)}
+	var err error
+	if rec.toolCalls, err = json.Marshal(res.ToolCalls); err != nil {
+		return agentRecord{}, fmt.Errorf("runner: encode tool calls: %w", err)
 	}
-	timelineJSON, err := json.Marshal(timeline)
-	if err != nil {
-		return fmt.Errorf("runner: encode timeline: %w", err)
+	if rec.timeline, err = json.Marshal(timeline); err != nil {
+		return agentRecord{}, fmt.Errorf("runner: encode timeline: %w", err)
 	}
-	var result any
 	if res.Stop == agent.StopSubmitted {
-		result = string(res.Submitted)
+		rec.result = string(res.Submitted)
 	}
+	return rec, nil
+}
+
+func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord) error {
 	return st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, tenant_id, stop_reason, result, steps, tool_calls, timeline,
 				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error)
 			SELECT id, tenant_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000) FROM runner_runs WHERE id = $1`,
-			p.RunID, string(res.Stop), result, res.Steps, toolCalls, timelineJSON,
-			res.Usage.Input, res.Usage.CacheRead, res.Usage.CacheWrite, res.Usage.Output, res.CostUSD, p.Model.Model, res.Err)
+			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
+			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, p.Model.Model, rec.err)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}

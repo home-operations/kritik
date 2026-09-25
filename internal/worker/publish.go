@@ -74,6 +74,9 @@ type publishPhase struct {
 	// posted again; scope says whether this review builds on it.
 	prior priorReview
 	scope review.Scope
+	// agent is an agentic review's run, whose usage the worker recorded
+	// as soon as the runner ended.
+	agent *agentRun
 }
 
 func (p *publishPhase) run(ctx context.Context) (status string, err error) {
@@ -395,12 +398,14 @@ func (p *publishPhase) persist(
 			p.pr.id, p.tenant.ID(), commentID); err != nil {
 			return fmt.Errorf("worker: upsert sticky comment: %w", err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO usage
-			(tenant_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-			p.tenant.ID(), p.pr.repositoryID, p.reviewID, role, resp.Model, resp.Upstream,
-			resp.InputTokens, resp.OutputTokens, resp.CostUSD); err != nil {
-			return fmt.Errorf("worker: insert usage: %w", err)
+		if p.agent == nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO usage
+				(tenant_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+				p.tenant.ID(), p.pr.repositoryID, p.reviewID, role, resp.Model, resp.Upstream,
+				resp.InputTokens, resp.OutputTokens, resp.CostUSD); err != nil {
+				return fmt.Errorf("worker: insert usage: %w", err)
+			}
 		}
 		summary, err := json.Marshal(res.Summary)
 		if err != nil {

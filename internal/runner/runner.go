@@ -54,7 +54,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base, Prior: p.PriorHead,
 	})
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	defer func() { _ = res.Close() }()
@@ -66,12 +66,12 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	baseTree, err := res.Base.Tree()
 	if err != nil {
 		err = fmt.Errorf("runner: base tree: %w", err)
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	repoFiles, repoNotes, ignore, err := repoConfig(baseTree, p.Ignore, p.RepoFiles)
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	// A nil prior head tells the worker the delta is unknown, not empty.
@@ -87,7 +87,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	}
 	chunks, stats, err := stages(ctx, res, ignore)
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	logger.Info("context built", "overlay", stats.Overlay, "definitions", stats.Definitions, "callers", stats.Callers,
@@ -129,7 +129,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		return err
 	})
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	logger.Info("context pack written", "run", p.RunID, "patch_id", res.PatchID[:12])
@@ -146,7 +146,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		}, ignore, res.PatchID, logger)
 	}
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, err)
+		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	return nil
@@ -226,11 +226,17 @@ func setPhase(ctx context.Context, st *store.Store, runID, phase string) error {
 	})
 }
 
-func fail(ctx context.Context, st *store.Store, runID string, cause error) error {
+// fail records cause as the run's error, with its secrets masked: a git or
+// provider error may carry a credential.
+func fail(ctx context.Context, st *store.Store, runID string, secrets Secrets, cause error) error {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	return st.WithRunnerJob(fctx, runID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(fctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`, runID, cause.Error())
+		_, err := tx.Exec(fctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`,
+			runID, failure(secrets, cause))
 		return err
 	})
 }
+
+// failure is cause as the run's error column stores it.
+func failure(secrets Secrets, cause error) string { return secrets.Mask(cause.Error()) }

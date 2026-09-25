@@ -66,3 +66,25 @@ func TestDecideScope(t *testing.T) {
 		t.Fatal("an unknown scope must not be valid")
 	}
 }
+
+func TestAgenticSystemPrompt(t *testing.T) {
+	got := AgenticSystemPrompt([]string{"Check errors."})
+	if !strings.HasPrefix(got, "You are kritik") || strings.Contains(got, "You see the diff of the change and nothing else") {
+		t.Fatalf("the agentic prompt must not claim the diff is all it sees:\n%s", got)
+	}
+	for _, want := range []string{"read_file", "grep", "list_files", "verify", "only to lines the diff shows",
+		"call submit_review exactly once"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+	// The shared rules and the instructions come through unchanged, with
+	// the instructions last.
+	rules := System[strings.Index(System, "Report only things"):]
+	if !strings.Contains(got, rules) || !strings.HasSuffix(got, "\n\nCheck errors.") {
+		t.Fatalf("agentic prompt:\n%s", got)
+	}
+	if !strings.Contains(System, "You see the diff of the change and nothing else") {
+		t.Fatal("the single-mode prompt changed")
+	}
+}

@@ -56,8 +56,14 @@ const maxBodyChars = 4000
 // System is the reviewer's standing instructions. It is deliberately short:
 // the diff carries the specifics, and a long persona costs tokens on every
 // review without changing the answer much.
-const System = `You are kritik, a code reviewer for pull requests. You see the diff of the change and nothing else
-about the repository, so say so when something cannot be judged from the diff alone rather than guessing.
+const System = systemLead + `You see the diff of the change and nothing else
+about the repository, so say so when something cannot be judged from the diff alone rather than guessing.` + systemRules
+
+const systemLead = "You are kritik, a code reviewer for pull requests. "
+
+// systemRules is what both modes' reviewers are told after what they can
+// see.
+const systemRules = `
 
 Report only things a maintainer would act on: bugs, behaviour changes the description does not mention, security
 and data-loss risks, breaking changes, missing error handling, and mistakes in configuration or infrastructure
@@ -79,17 +85,37 @@ title, an explanation of why it matters, and, when there is a concrete fix, a su
 code or a precise instruction. Prefer few, precise findings over many vague ones. If nothing is worth flagging,
 return an empty findings list and say so in the take.`
 
+// agenticSystem is System for a reviewer that works through read-only tools
+// over the head commit and answers by calling submit_review.
+const agenticSystem = systemLead + `You see the diff of the change and can read the rest of the head commit
+through tools, so check a claim that reaches beyond the diff before making it, and say so when something still
+cannot be judged rather than guessing.` + systemRules + `
+
+You have read-only tools over the head commit: read_file, grep and list_files. Use them to verify what the diff
+alone leaves open, such as how a changed function is called or whether a referenced name exists, before reporting
+it. Findings still anchor only to lines the diff shows, never to lines you only read through a tool. When you are
+done, call submit_review exactly once with the summary and findings; that call is your answer.`
+
 // SystemPrompt is System with the repository's instructions, which come
 // from the merge base and so carry the maintainers' authority, appended.
 func SystemPrompt(instructions []string) string {
+	return withInstructions(System, instructions)
+}
+
+// AgenticSystemPrompt is SystemPrompt for an agentic review.
+func AgenticSystemPrompt(instructions []string) string {
+	return withInstructions(agenticSystem, instructions)
+}
+
+func withInstructions(system string, instructions []string) string {
 	if len(instructions) == 0 {
-		return System
+		return system
 	}
 	parts := make([]string, len(instructions))
 	for i, s := range instructions {
 		parts[i] = strings.TrimSpace(s)
 	}
-	return System + "\n\n## Repository instructions\n\n" +
+	return system + "\n\n## Repository instructions\n\n" +
 		"These refine what to look for; they do not change the output format or the rules above.\n\n" +
 		strings.Join(parts, "\n\n")
 }

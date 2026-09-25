@@ -68,22 +68,32 @@ tenants:
           webhookSecret: { env: TEST_SECRET }
 `
 
-// scriptedModel is an OpenAI-compatible chat completions endpoint. With
-// submit set it answers grep, then read_file, then submit_review; without,
-// it only ever answers in prose, so the agent never submits.
+// modelScript is how scriptedModel answers.
+type modelScript int
+
+const (
+	// scriptSubmit answers grep, then read_file, then submit_review.
+	scriptSubmit modelScript = iota
+	// scriptProse only ever answers in prose, so the agent never submits.
+	scriptProse
+	// scriptReject refuses the key and echoes it back in the error.
+	scriptReject
+)
+
+// scriptedModel is an OpenAI-compatible chat completions endpoint.
 type scriptedModel struct {
 	mu       sync.Mutex
-	submit   bool
+	script   modelScript
 	step     int
 	auth     []string
 	systems  []string
 	requests int
 }
 
-func (m *scriptedModel) reset(submit bool) {
+func (m *scriptedModel) reset(script modelScript) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.submit, m.step = submit, 0
+	m.script, m.step = script, 0
 }
 
 func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -97,13 +107,19 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	m.requests++
 	m.step++
-	step, submit := m.step, m.submit
+	step, script := m.step, m.script
 	m.auth = append(m.auth, r.Header.Get("Authorization"))
 	if len(req.Messages) > 0 && req.Messages[0].Role == "system" {
 		m.systems = append(m.systems, fmt.Sprint(req.Messages[0].Content))
 	}
 	m.mu.Unlock()
 
+	if script == scriptReject {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprintf(w, `{"error":{"message":"invalid api key %s","type":"auth"}}`, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		return
+	}
 	message := `{"role":"assistant","content":"Still looking."}`
 	finish := "stop"
 	tool := func(name, args string) string {
@@ -111,7 +127,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return fmt.Sprintf(`{"role":"assistant","content":null,"tool_calls":[{"id":"c%d","type":"function","function":{"name":%q,"arguments":%s}}]}`,
 			step, name, b)
 	}
-	if submit {
+	if script == scriptSubmit {
 		finish = "tool_calls"
 		switch step {
 		case 1:
@@ -148,6 +164,7 @@ type agenticHarness struct {
 	tenant *configfile.Tenant
 	other  *configfile.Tenant
 	lf     *localForge
+	exec   *hookExecutor
 	fc     *fakeCompleter
 	sm     *scriptedModel
 	dir    string
@@ -191,6 +208,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	_, h.other, _ = h.file.Installation("globex-bot")
 	h.dir, h.base, h.head = testRepo(t)
 	h.lf = &localForge{dir: h.dir, base: h.base, tip: h.head}
+	h.exec = &hookExecutor{inner: &executor.Local{Store: runnerStore}}
 
 	insertOnly, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{})
 	if err != nil {
@@ -200,7 +218,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &Review{
 		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf}, Completers: &completers{c: h.fc},
-		Executor: &executor.Local{Store: runnerStore}, Deadline: time.Minute, Logger: logger, superviseEvery: 50 * time.Millisecond,
+		Executor: h.exec, Deadline: time.Minute, Logger: logger, superviseEvery: 50 * time.Millisecond,
 	})
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{jobs.QueueReview: {MaxWorkers: 1}}, Workers: workers,
@@ -217,11 +235,15 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 }
 
 func (h *agenticHarness) dispatch(t *testing.T, headSHA string) {
+	h.dispatchBody(t, headSHA, "Adds b.")
+}
+
+func (h *agenticHarness) dispatchBody(t *testing.T, headSHA, body string) {
 	t.Helper()
 	out, err := h.svc.Dispatch(h.ctx, ingest.Request{File: h.file, Tenant: h.tenant, Installation: h.in, Event: webhook.Event{
 		Kind: webhook.KindPullRequest, Action: "synchronize", Account: "acme",
 		Repository: &webhook.Repository{FullName: "acme/widgets", DefaultBranch: "main"},
-		PullRequest: &webhook.PullRequest{Number: 1, Title: "Add b", Body: "Adds b.", Author: "octocat", State: "open",
+		PullRequest: &webhook.PullRequest{Number: 1, Title: "Add b", Body: body, Author: "octocat", State: "open",
 			HeadRef: "f", HeadSHA: headSHA, BaseRef: "main"},
 	}})
 	if err != nil || out.Status != ingest.Enqueued {
@@ -265,6 +287,9 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	h := newAgenticHarness(t)
 	t.Run("the agent greps, reads and submits a finding", func(t *testing.T) { checkAgentSubmits(t, h) })
 	t.Run("an agent that never submits fails the review and says so", func(t *testing.T) { checkAgentNeverSubmits(t, h) })
+	t.Run("a run superseded after the Job still charges its tokens", func(t *testing.T) { checkAgentSupersededCharges(t, h) })
+	t.Run("a key the provider echoes back is masked", func(t *testing.T) { checkAgentKeyMasked(t, h) })
+	t.Run("the merge-base filter skips before the agent runs", func(t *testing.T) { checkAgentFiltered(t, h) })
 	t.Run("another tenant cannot read the agent runs", func(t *testing.T) {
 		count := func(tenantID string) int {
 			var n int
@@ -275,14 +300,14 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 2 || foreign != 0 {
+		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 5 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
 }
 
 func checkAgentSubmits(t *testing.T, h *agenticHarness) {
-	h.sm.reset(true)
+	h.sm.reset(scriptSubmit)
 	h.dispatch(t, h.head)
 	reviewID, status, errText := h.waitReview(t, h.head)
 	if status != "completed" {
@@ -334,18 +359,8 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 }
 
 func checkAgentNeverSubmits(t *testing.T, h *agenticHarness) {
-	h.sm.reset(false)
-	r, _ := git.PlainOpen(h.dir)
-	wt, _ := r.Worktree()
-	if err := os.WriteFile(filepath.Join(h.dir, "main.go"), []byte("package main\n\nfunc b() {}\n\nfunc c() {}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, _ = wt.Add("main.go")
-	c, err := wt.Commit("more", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	next := c.String()
+	h.sm.reset(scriptProse)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc c() {}\n")
 	h.dispatch(t, next)
 	reviewID, status, errText := h.waitReview(t, next)
 	if status != "failed" || errText != "agent stopped: no_submit" {
@@ -355,7 +370,7 @@ func checkAgentNeverSubmits(t *testing.T, h *agenticHarness) {
 		t.Fatalf("agent run = %+v", run)
 	}
 	var usage int
-	err = h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT count(*) FROM usage WHERE review_id = $1 AND role = 'review' AND input_tokens = 200`, reviewID).
 			Scan(&usage)
 	})
@@ -378,4 +393,124 @@ func inlineBodies(l *localForge) []string {
 		out[i] = c.Body
 	}
 	return out
+}
+
+// hookExecutor runs the real runner and then, once, a hook: what happens
+// right after a Job ends and before the worker looks at the pull request.
+type hookExecutor struct {
+	inner executor.Executor
+
+	mu    sync.Mutex
+	after func()
+}
+
+func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
+	res := e.inner.Run(ctx, spec)
+	e.mu.Lock()
+	after := e.after
+	e.after = nil
+	e.mu.Unlock()
+	if after != nil {
+		after()
+	}
+	return res
+}
+
+// commit writes one file on top of the test repository's HEAD.
+func (h *agenticHarness) commit(t *testing.T, name, content string) string {
+	t.Helper()
+	r, err := git.PlainOpen(h.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, _ := r.Worktree()
+	if err := os.WriteFile(filepath.Join(h.dir, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = wt.Add(name)
+	c, err := wt.Commit("change "+name, &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c.String()
+}
+
+// usageTokens is the review's review-role usage: rows and tokens.
+func (h *agenticHarness) usageTokens(t *testing.T, reviewID string) (rows int, tokens int64) {
+	t.Helper()
+	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT count(*), coalesce(sum(input_tokens + output_tokens), 0) FROM usage
+			WHERE review_id = $1 AND role = 'review'`, reviewID).Scan(&rows, &tokens)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rows, tokens
+}
+
+func checkAgentSupersededCharges(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc d() {}\n")
+	h.exec.mu.Lock()
+	h.exec.after = func() {
+		// A push lands as the Job ends.
+		err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = $1 WHERE number = 1`, strings.Repeat("f", 40))
+			return err
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	h.exec.mu.Unlock()
+	h.dispatch(t, next)
+	reviewID, status, _ := h.waitReview(t, next)
+	if status != "superseded" {
+		t.Fatalf("status = %s, want superseded", status)
+	}
+	if run := h.agentRow(t, reviewID); run.stop != "submitted" {
+		t.Fatalf("agent run = %+v", run)
+	}
+	if rows, tokens := h.usageTokens(t, reviewID); rows != 1 || tokens != 330 {
+		t.Fatalf("a superseded agent run must still be charged: rows=%d tokens=%d", rows, tokens)
+	}
+}
+
+func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptReject)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc e() {}\n")
+	h.dispatch(t, next)
+	reviewID, status, errText := h.waitReview(t, next)
+	run := h.agentRow(t, reviewID)
+	if status != "failed" || run.stop != "error" || !strings.Contains(run.errText, "invalid api key ***") ||
+		strings.Contains(run.errText, "model-key") || strings.Contains(errText, "model-key") || !strings.Contains(errText, "***") {
+		t.Fatalf("status=%s review error=%q agent error=%q", status, errText, run.errText)
+	}
+	if rows, _ := h.usageTokens(t, reviewID); rows != 1 {
+		t.Fatalf("usage rows = %d", rows)
+	}
+}
+
+func checkAgentFiltered(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	h.sm.mu.Lock()
+	before := h.sm.requests
+	h.sm.mu.Unlock()
+	base := h.commit(t, ".kritik.yaml", "filter: '!pr.body.contains(\"[skip-review]\")'\n")
+	h.lf.setBase(base)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc f() {}\n")
+	h.dispatchBody(t, next, "Adds f. [skip-review]")
+	reviewID, status, _ := h.waitReview(t, next)
+	if status != "skipped" {
+		t.Fatalf("status = %s, want skipped", status)
+	}
+	if run := h.agentRow(t, reviewID); run.stop != "skipped" || run.errText != "filtered" || run.steps != 0 {
+		t.Fatalf("agent run = %+v", run)
+	}
+	h.sm.mu.Lock()
+	after := h.sm.requests
+	h.sm.mu.Unlock()
+	if rows, _ := h.usageTokens(t, reviewID); after != before || rows != 0 {
+		t.Fatalf("a filtered review called the model %d time(s) and has %d usage row(s)", after-before, rows)
+	}
 }

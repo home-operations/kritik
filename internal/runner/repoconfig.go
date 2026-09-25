@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"slices"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 
@@ -21,15 +20,8 @@ func repoConfig(base *object.Tree, ignore, extra []string) (repoconfig.Files, []
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("runner: %w", err)
 	}
-	ignore = slices.Clone(ignore)
-	if f, _, err := repoconfig.Parse([]byte(files[repoconfig.FileName])); err == nil {
-		for _, g := range f.Ignore {
-			if !slices.Contains(ignore, g) {
-				ignore = append(ignore, g)
-			}
-		}
-	}
-	return files, notes, ignore, nil
+	m, _ := repoconfig.Merge(files, repoconfig.Operator{Ignore: ignore})
+	return files, notes, m.Ignore, nil
 }
 
 // treeReader reads a blob by path. Anything that is not a file in the tree

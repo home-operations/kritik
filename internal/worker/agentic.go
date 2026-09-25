@@ -13,6 +13,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/runner"
 )
@@ -121,27 +122,27 @@ func modelEndpoint(file *configfile.File, models configfile.Models) (*runner.Mod
 	}, provider.APIKeyValue().Value(), nil
 }
 
-// agentPrompt reads what the runner's prompt states about the pull request,
-// and for a bot author the patch id of its last prepared review, which the
-// worker would skip as unchanged.
+// agentPrompt reads what the runner needs to write the prompt and to tell
+// a review the worker will skip: the pull request as the repository filter
+// sees it and, for a bot author, the patch id of its last prepared review,
+// which afterRun skips as unchanged.
 func (w *Review) agentPrompt(
-	ctx context.Context, tenantID string, pr *pullRequest, settings configfile.Settings, prior priorReview,
+	ctx context.Context, tenantID, reviewID string, pr *pullRequest, settings configfile.Settings, prior priorReview,
 ) (*runner.Prompt, error) {
 	p := &runner.Prompt{
-		Repository: pr.repository, Number: pr.number, BaseRef: pr.baseRef,
-		Instructions: settings.Review.Instructions, RequireSuggestedFix: settings.Review.RequireSuggestedFix,
+		Repository: pr.repository, Instructions: settings.Review.Instructions, RequireSuggestedFix: settings.Review.RequireSuggestedFix,
 		MaxDeltaFiles: settings.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
 	}
 	err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT title, author, body FROM pull_requests WHERE id = $1`, pr.id).
-			Scan(&p.Title, &p.Author, &p.Body); err != nil {
-			return fmt.Errorf("worker: read pull request: %w", err)
+		var err error
+		if p.PullRequest, err = loadFilterPR(ctx, tx, pr.id); err != nil {
+			return err
 		}
 		if !pr.authorIsBot {
 			return nil
 		}
-		err := tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1
-			AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, pr.id).Scan(&p.UnchangedPatchID)
+		err = tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
+			AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, pr.id, reviewID).Scan(&p.UnchangedPatchID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("worker: read last review: %w", err)
 		}
@@ -150,44 +151,90 @@ func (w *Review) agentPrompt(
 	return p, err
 }
 
-// runAgentic publishes what the runner's agent submitted, as run does for
-// a single model call. An agent that stopped without submitting fails the
-// review, and the sticky comment says this head was not fully reviewed so
-// an earlier verdict does not stand in for it.
-func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
-	var (
-		run  agentRun
-		stop string
-		diff string
-	)
-	err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT diff FROM context_packs WHERE runner_run_id = $1`, p.runID).Scan(&diff); err != nil {
-			return fmt.Errorf("worker: read context pack: %w", err)
-		}
-		err := tx.QueryRow(ctx, `SELECT stop_reason, result::text, steps, input_tokens, cache_read_tokens, cache_write_tokens,
-			output_tokens, cost_usd::float8, model, error FROM agent_runs WHERE runner_run_id = $1`, p.runID).
+// loadAgentRun reads the agent_runs row of a runner run; found is false
+// when the runner wrote none.
+func (w *Review) loadAgentRun(ctx context.Context, tenantID, runID string) (run agentRun, found bool, err error) {
+	var stop string
+	err = w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT stop_reason, result::text, steps, input_tokens, cache_read_tokens, cache_write_tokens,
+			output_tokens, cost_usd::float8, model, error FROM agent_runs WHERE runner_run_id = $1`, runID).
 			Scan(&stop, &run.result, &run.steps, &run.usage.Input, &run.usage.CacheRead, &run.usage.CacheWrite,
 				&run.usage.Output, &run.costUSD, &run.model, &run.errText)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return errors.New("worker: the runner wrote no agent run")
-		}
-		if err != nil {
-			return fmt.Errorf("worker: read agent run: %w", err)
-		}
-		return nil
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return agentRun{}, false, nil
+	}
 	if err != nil {
-		return statusFailed, err
+		return agentRun{}, false, fmt.Errorf("worker: read agent run: %w", err)
 	}
 	run.stop = agent.StopReason(stop)
+	return run, true, nil
+}
+
+// chargeAgentRun reads the run's agent_runs row, nil when the runner wrote
+// none, and charges what the agent spent to the review whatever becomes of
+// the review after it: the tokens are spent either way, and the caps count
+// them from the usage table. It is the only place an agentic review
+// records usage.
+func (w *Review) chargeAgentRun(
+	ctx context.Context, tenant *configfile.Tenant, pr *pullRequest, reviewID, runID string, ref configfile.ModelRef,
+) (*agentRun, error) {
+	run, found, err := w.loadAgentRun(ctx, tenant.ID(), runID)
+	if err != nil || !found {
+		return nil, err
+	}
+	if run.stop == runner.AgentSkipped {
+		return &run, nil
+	}
 	resp := run.response()
-	ref := p.settings.Models.Review
-	stopErr := run.stopError()
-	p.w.Metrics.ModelCall(p.tenant.Slug, string(ref), roleReview, callOutcome(stopErr),
+	w.Metrics.ModelCall(tenant.Slug, string(ref), roleReview, callOutcome(run.stopError()),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
+	err = w.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO usage (tenant_id, repository_id, review_id, role, model, input_tokens, output_tokens, cost_usd)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, tenant.ID(), pr.repositoryID, reviewID, roleReview, resp.Model,
+			resp.InputTokens, resp.OutputTokens, resp.CostUSD)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("worker: insert agent usage: %w", err)
+	}
+	return &run, nil
+}
+
+// runAgentic publishes what the runner's agent submitted, as run does for
+// a single model call; the run's usage is already recorded. An agent that
+// stopped without submitting fails the review, and the sticky comment says
+// this head was not fully reviewed so an earlier verdict does not stand in
+// for it. A run the runner skipped ends the review skipped.
+func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
+	if p.agent == nil {
+		return statusFailed, errors.New("worker: the runner wrote no agent run")
+	}
+	run := *p.agent
+	if run.stop == runner.AgentSkipped {
+		p.logger.Info("review "+statusSkipped+" by the runner", "reason", run.errText)
+		if reason := repoconfig.SkipReason(run.errText); reason.Valid() {
+			err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, `UPDATE reviews SET skip_reason = $2 WHERE id = $1`, p.reviewID, string(reason))
+				return err
+			})
+			if err != nil {
+				return statusFailed, fmt.Errorf("worker: record skip reason: %w", err)
+			}
+		}
+		return statusSkipped, nil
+	}
+	var diff string
+	err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT diff FROM context_packs WHERE runner_run_id = $1`, p.runID).Scan(&diff)
+	})
+	if err != nil {
+		return statusFailed, fmt.Errorf("worker: read context pack: %w", err)
+	}
+	resp := run.response()
 	p.logger.Info("agent answered", "stop", run.stop, "steps", run.steps, "model", run.model, "input_tokens", resp.InputTokens,
 		"cached_tokens", resp.CachedTokens, "output_tokens", resp.OutputTokens, "cost_usd", resp.CostUSD)
-	if stopErr != nil {
+	if stopErr := run.stopError(); stopErr != nil {
 		return statusFailed, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+string(run.stop), resp))
 	}
 	res, dropped, err := review.Parse(string(run.result), review.Anchors(diff), p.parse)
