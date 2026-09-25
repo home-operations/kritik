@@ -18,9 +18,11 @@ Job pod that holds no secrets.
 
 The design is recorded in
 [`docs/adr/0002-kritik-pr-review-service.md`](docs/adr/0002-kritik-pr-review-service.md),
-amended by [`docs/adr/0003-agentic-review-loop.md`](docs/adr/0003-agentic-review-loop.md),
-which turns the single-shot review into an agent loop in the runner pod
-with the worker as its model gateway; ADR-0001 is kept as historical input.
+amended by [`docs/adr/0003-forgejo-agentic-review.md`](docs/adr/0003-forgejo-agentic-review.md)
+(Forgejo, providers, the contract, `.kritik.yaml`, agentic mode) and
+[`docs/adr/0004-model-gateway.md`](docs/adr/0004-model-gateway.md) (the worker
+as model gateway, no provider key in a runner pod); ADR-0001 is kept as
+historical input.
 What works today: the configuration file loader with live reload, the
 Postgres store with row-level security and River, the ingest role (a signed
 forge webhook becomes rows and a review job), and the worker role, which
