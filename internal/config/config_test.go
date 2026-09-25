@@ -36,6 +36,12 @@ func TestLoad(t *testing.T) {
 				if lvl, _ := c.Level(); lvl != slog.LevelInfo {
 					t.Fatalf("level default = %v", lvl)
 				}
+				if c.WebAddr != ":8083" {
+					t.Fatalf("web addr default = %q", c.WebAddr)
+				}
+				if c.WebURL != "" || c.WebURLParsed() != nil || c.WebEnabled(RoleAll) {
+					t.Fatalf("web should be unconfigured by default: %+v", c)
+				}
 			},
 		},
 		{
@@ -102,6 +108,60 @@ func TestLoad(t *testing.T) {
 	}
 }
 
+func TestWebURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+		want    string // expected WebURL after Load, defaults to url when empty and wantErr is false
+	}{
+		{name: "unset", url: ""},
+		{name: "valid https", url: "https://dash.example.com"},
+		{name: "trailing slash trimmed", url: "http://dash.example.com/", want: "http://dash.example.com"},
+		{name: "missing scheme", url: "dash.example.com", wantErr: true},
+		{name: "non-http scheme", url: "ftp://dash.example.com", wantErr: true},
+		{name: "missing host", url: "https:///path", wantErr: true},
+		{name: "with query", url: "https://dash.example.com?x=1", wantErr: true},
+		{name: "with fragment", url: "https://dash.example.com#frag", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("KRITIK_DATABASE_URL", "postgres://app@db/kritik")
+			t.Setenv("KRITIK_WEB_URL", tt.url)
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			want := tt.want
+			if want == "" {
+				want = tt.url
+			}
+			if cfg.WebURL != want {
+				t.Fatalf("WebURL = %q, want %q", cfg.WebURL, want)
+			}
+			if tt.url == "" {
+				if cfg.WebURLParsed() != nil || cfg.WebEnabled(RoleAll) || !cfg.WebEnabled(RoleWeb) {
+					t.Fatalf("web role always serves the dashboard, all does only once WebURL is set: %+v", cfg)
+				}
+				return
+			}
+			u := cfg.WebURLParsed()
+			if u == nil || u.String() == "" {
+				t.Fatalf("WebURLParsed() = %v", u)
+			}
+			if !cfg.WebEnabled(RoleAll) || !cfg.WebEnabled(RoleWeb) {
+				t.Fatal("web should be enabled for all and web once WebURL is set")
+			}
+		})
+	}
+}
+
 func TestRoleValidation(t *testing.T) {
 	t.Setenv("KRITIK_DATABASE_URL", "postgres://app@db/kritik")
 	cfg, err := Load()
@@ -126,6 +186,13 @@ func TestRoleValidation(t *testing.T) {
 	if err := cfg.ValidateRunner(); err != nil {
 		t.Fatal(err)
 	}
+	if err := cfg.ValidateWeb(); err == nil {
+		t.Fatal("web role without KRITIK_WEB_URL must fail")
+	}
+	cfg.WebURL = "https://dash.example.com"
+	if err := cfg.ValidateWeb(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestParseRole(t *testing.T) {
@@ -138,7 +205,7 @@ func TestParseRole(t *testing.T) {
 		{in: " Worker ", want: RoleWorker},
 		{in: "ingest", want: RoleIngest},
 		{in: "runner", want: RoleRunner},
-		{in: "web", wantErr: true},
+		{in: "Web", want: RoleWeb},
 		{in: "", wantErr: true},
 	}
 	for _, tt := range tests {
