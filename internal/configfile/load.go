@@ -322,6 +322,7 @@ func SamplePR() map[string]any {
 		"url":       "https://example.invalid/pull/1",
 		"createdAt": time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		"labels":    []any{map[string]any{"name": "sample", "color": "ffffff"}},
+		"body":      "sample body",
 	}
 }
 

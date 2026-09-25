@@ -286,7 +286,7 @@ func openPullRequest(pr *gh.PullRequest) forge.OpenPullRequest {
 		State:       pr.GetState(), Merged: pr.GetMerged(), Draft: pr.GetDraft(),
 		Fork:    head.GetRepo().GetFullName() != "" && head.GetRepo().GetFullName() != base.GetRepo().GetFullName(),
 		HeadRef: head.GetRef(), HeadSHA: head.GetSHA(), BaseRef: base.GetRef(), BaseSHA: base.GetSHA(),
-		URL: pr.GetHTMLURL(), CreatedAt: pr.GetCreatedAt().Time,
+		URL: pr.GetHTMLURL(), Body: pr.GetBody(), CreatedAt: pr.GetCreatedAt().Time,
 	}
 	for _, l := range pr.Labels {
 		out.Labels = append(out.Labels, webhook.Label{Name: l.GetName(), Color: l.GetColor()})

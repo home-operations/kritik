@@ -77,7 +77,7 @@ func repo(name string) *webhook.Repository {
 func TestDispatchPullRequest(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
-	pr := &webhook.PullRequest{Number: 7, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "aaa", BaseRef: "main"}
+	pr := &webhook.PullRequest{Number: 7, Title: "t", Body: "please review", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "aaa", BaseRef: "main"}
 
 	out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo("onedr0p/home-ops"), PullRequest: pr}))
 	if err != nil || out.Status != Enqueued || out.Job != "review" {
@@ -95,16 +95,16 @@ func TestDispatchPullRequest(t *testing.T) {
 	}
 
 	tenant, _ := f.Tenant("onedr0p")
-	var headSHA string
+	var headSHA, body string
 	var jobsN int
 	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE number = 7`).Scan(&headSHA); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT head_sha, body FROM pull_requests WHERE number = 7`).Scan(&headSHA, &body); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'review'`).Scan(&jobsN)
 	})
-	if err != nil || headSHA != "bbb" || jobsN != 2 {
-		t.Fatalf("head_sha = %q jobs = %d err = %v; want bbb and 2", headSHA, jobsN, err)
+	if err != nil || headSHA != "bbb" || body != "please review" || jobsN != 2 {
+		t.Fatalf("head_sha = %q body = %q jobs = %d err = %v; want bbb, %q and 2", headSHA, body, jobsN, err, "please review")
 	}
 
 	t.Run("gates", func(t *testing.T) {

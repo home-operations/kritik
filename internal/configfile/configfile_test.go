@@ -204,6 +204,20 @@ func TestRetentionAndIgnore(t *testing.T) {
 	}
 }
 
+func TestFilterOnBody(t *testing.T) {
+	prg, err := compileFilter(`pr.body.contains("[skip-review]")`)
+	if err != nil {
+		t.Fatalf("compileFilter: %v", err)
+	}
+	marked := with(SamplePR(), "body", "please review\n\n[skip-review]")
+	if ok, err := prg.Eval(marked); err != nil || !ok {
+		t.Fatalf("filter should accept a body containing the marker: ok=%v err=%v", ok, err)
+	}
+	if ok, err := prg.Eval(SamplePR()); err != nil || ok {
+		t.Fatalf("filter should reject the sample body: ok=%v err=%v", ok, err)
+	}
+}
+
 func with(pr map[string]any, k string, v any) map[string]any {
 	out := make(map[string]any, len(pr))
 	for kk, vv := range pr {

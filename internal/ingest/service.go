@@ -98,14 +98,14 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO pull_requests (tenant_id, repository_id, number, title, author, author_is_bot, draft, fork, state,
-				head_ref, head_sha, base_ref, base_sha, url, opened_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11, $12, $13, $14)
+				head_ref, head_sha, base_ref, base_sha, url, body, opened_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11, $12, $13, $14, $15)
 			ON CONFLICT (repository_id, number) DO UPDATE SET
 				title = EXCLUDED.title, author = EXCLUDED.author, author_is_bot = EXCLUDED.author_is_bot, draft = EXCLUDED.draft,
 				fork = EXCLUDED.fork, state = 'open', head_ref = EXCLUDED.head_ref, head_sha = EXCLUDED.head_sha,
-				base_ref = EXCLUDED.base_ref, base_sha = EXCLUDED.base_sha, url = EXCLUDED.url, updated_at = now()`,
+				base_ref = EXCLUDED.base_ref, base_sha = EXCLUDED.base_sha, url = EXCLUDED.url, body = EXCLUDED.body, updated_at = now()`,
 			req.Tenant.ID(), rid, pr.Number, pr.Title, pr.Author, pr.AuthorIsBot, pr.Draft, pr.Fork,
-			pr.HeadRef, pr.HeadSHA, pr.BaseRef, pr.BaseSHA, pr.URL, nullTime(pr)); err != nil {
+			pr.HeadRef, pr.HeadSHA, pr.BaseRef, pr.BaseSHA, pr.URL, pr.Body, nullTime(pr)); err != nil {
 			return fmt.Errorf("ingest: upsert pull request: %w", err)
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
