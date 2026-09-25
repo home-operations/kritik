@@ -109,6 +109,10 @@ type Run struct {
 // no tool call, before a second such turn ends the Run.
 const nudgeText = "call submit_review"
 
+// noResponseText replaces an empty Text on an appended assistant message, so
+// the conversation never carries a message with neither text nor tool calls.
+const noResponseText = "(no response)"
+
 // Do runs the loop to completion.
 func (r Run) Do(ctx context.Context) Result {
 	limits := r.Limits.WithDefaults()
@@ -157,6 +161,10 @@ func (r Run) Do(ctx context.Context) Result {
 		start := time.Now()
 		resp, err := r.Stepper.Step(ctx, req)
 		if err != nil {
+			if ctx.Err() != nil {
+				result.Stop = StopCanceled
+				return result
+			}
 			result.Stop = StopError
 			result.Err = err.Error()
 			return result
@@ -180,11 +188,14 @@ func (r Run) Do(ctx context.Context) Result {
 				return result
 			}
 			nudged = true
-			messages = append(messages, model.Message{Role: model.RoleAssistant, Text: resp.Text})
+			text := resp.Text
+			if text == "" {
+				text = noResponseText
+			}
+			messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
 			messages = append(messages, model.Message{Role: model.RoleUser, Text: nudgeText})
 			continue
 		}
-		nudged = false
 
 		var toolResults []model.ToolResult
 		var submitted json.RawMessage
@@ -203,7 +214,7 @@ func (r Run) Do(ctx context.Context) Result {
 					}
 					toolResults = append(toolResults, model.ToolResult{
 						CallID: call.ID, IsError: true,
-						Content: fmt.Sprintf("agent: submit_review: invalid JSON: %s", err),
+						Content: truncate(fmt.Sprintf("agent: submit_review: invalid JSON: %s", err), limits.MaxToolOutputBytes),
 					})
 					continue
 				}
@@ -215,13 +226,16 @@ func (r Run) Do(ctx context.Context) Result {
 			if !ok {
 				toolResults = append(toolResults, model.ToolResult{
 					CallID: call.ID, IsError: true,
-					Content: fmt.Sprintf("agent: unknown tool %q", call.Name),
+					Content: truncate(fmt.Sprintf("agent: unknown tool %q", call.Name), limits.MaxToolOutputBytes),
 				})
 				continue
 			}
 			out, err := tool.Run(ctx, call.Input)
 			if err != nil {
-				toolResults = append(toolResults, model.ToolResult{CallID: call.ID, IsError: true, Content: err.Error()})
+				toolResults = append(toolResults, model.ToolResult{
+					CallID: call.ID, IsError: true,
+					Content: truncate(err.Error(), limits.MaxToolOutputBytes),
+				})
 				continue
 			}
 			out = truncate(out, limits.MaxToolOutputBytes)

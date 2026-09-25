@@ -78,6 +78,12 @@ func TestReadFileTool(t *testing.T) {
 			t.Fatalf("out = %q; want truncation marker", out)
 		}
 	})
+
+	t.Run("oversized blob rejected", func(t *testing.T) {
+		if _, err := tool.Run(t.Context(), json.RawMessage(`{"path":"huge.txt"}`)); err == nil {
+			t.Fatal("expected error for a blob over the size limit")
+		}
+	})
 }
 
 func TestGrepTool(t *testing.T) {
@@ -133,6 +139,53 @@ func TestGrepTool(t *testing.T) {
 			t.Fatal("expected error for invalid RE2 pattern")
 		}
 	})
+
+	t.Run("invalid path_glob errors", func(t *testing.T) {
+		if _, err := tool.Run(t.Context(), json.RawMessage(`{"pattern":"x","path_glob":"["}`)); err == nil {
+			t.Fatal("expected error for invalid path_glob")
+		}
+	})
+
+	t.Run("oversized blob skipped", func(t *testing.T) {
+		out, err := tool.Run(t.Context(), json.RawMessage(`{"pattern":"filler-line-of-text"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out != "" {
+			t.Fatalf("out = %q; want no matches (oversized blob skipped)", out)
+		}
+	})
+
+	t.Run("sorted across multiple files", func(t *testing.T) {
+		out, err := tool.Run(t.Context(), json.RawMessage(`{"pattern":"SORTME"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "alpha.go:1: SORTME one\nalpha.go:3: SORTME three\nzeta.go:2: SORTME two"
+		if out != want {
+			t.Fatalf("out = %q, want %q", out, want)
+		}
+	})
+
+	t.Run("max_results defaults to 100", func(t *testing.T) {
+		out, err := tool.Run(t.Context(), json.RawMessage(`{"pattern":"MANY"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(strings.Split(out, "\n")); got != 100 {
+			t.Fatalf("got %d matches, want 100 (default max_results)", got)
+		}
+	})
+
+	t.Run("max_results capped at 500", func(t *testing.T) {
+		out, err := tool.Run(t.Context(), json.RawMessage(`{"pattern":"MANY","max_results":10000}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(strings.Split(out, "\n")); got != 500 {
+			t.Fatalf("got %d matches, want 500 (max_results cap)", got)
+		}
+	})
 }
 
 func TestListFilesTool(t *testing.T) {
@@ -159,6 +212,12 @@ func TestListFilesTool(t *testing.T) {
 		}
 		if out != "image.png" {
 			t.Fatalf("out = %q", out)
+		}
+	})
+
+	t.Run("invalid glob errors", func(t *testing.T) {
+		if _, err := tool.Run(t.Context(), json.RawMessage(`{"glob":"["}`)); err == nil {
+			t.Fatal("expected error for invalid glob")
 		}
 	})
 }

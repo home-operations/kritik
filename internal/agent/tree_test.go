@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +16,9 @@ import (
 var binaryContent = "\x00\x01\x02binary stuff"
 
 // testTree builds a small commit in memory and returns its tree: a Go
-// file, a file matching an ignore glob, and a binary file.
+// file, a file matching an ignore glob, a binary file, a blob over the
+// read_file/grep size cap, and two small files sharing a marker at
+// different lines so grep's sort order can be asserted across files.
 func testTree(t *testing.T) *object.Tree {
 	t.Helper()
 	fs := memfs.New()
@@ -46,6 +49,10 @@ func testTree(t *testing.T) *object.Tree {
 	write("widget.go", "package main\n\n// this function is the marker grep looks for.\nfunc findMe() {}\n\nfunc other() {}\n")
 	write("generated/gen.go", "package generated\n\nfunc findMe() {}\n")
 	write("image.png", binaryContent)
+	write("huge.txt", strings.Repeat("filler-line-of-text\n", 60000))
+	write("alpha.go", "SORTME one\n\nSORTME three\n")
+	write("zeta.go", "\nSORTME two\n")
+	write("many.txt", strings.Repeat("MANY\n", 600))
 	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Now()}
 	hash, err := wt.Commit("initial", &git.CommitOptions{Author: sig})
 	if err != nil {

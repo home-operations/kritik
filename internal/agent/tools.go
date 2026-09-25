@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -21,6 +22,16 @@ const (
 	defaultGrepMaxResults = 100
 	grepMaxResultsCap     = 500
 )
+
+// maxBlobBytes bounds how large a blob read_file and grep will read into
+// memory. read_file rejects an oversized blob with a tool error; grep skips
+// it and keeps walking.
+const maxBlobBytes = 1 << 20
+
+// errStopWalk is returned from a tree walk's ForEach callback to end the
+// walk early once grep has collected max_results matches. It is unwrapped
+// after ForEach returns and never surfaced as a tool error.
+var errStopWalk = errors.New("agent: stop walk")
 
 // truncate caps s at max bytes, appending a note of how much was cut. A
 // non-positive max disables truncation.
@@ -83,6 +94,9 @@ func (rt *readFileTool) Run(_ context.Context, input json.RawMessage) (string, e
 	f, cleaned, err := rt.tree.file(req.Path)
 	if err != nil {
 		return "", fmt.Errorf("agent: read_file: %w", err)
+	}
+	if f.Size > maxBlobBytes {
+		return "", fmt.Errorf("agent: read_file: %s is %d bytes, over the %d byte limit", cleaned, f.Size, maxBlobBytes)
 	}
 	content, err := f.Contents()
 	if err != nil {
@@ -177,6 +191,9 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 	if glob == "" {
 		glob = "**"
 	}
+	if !doublestar.ValidatePattern(glob) {
+		return "", fmt.Errorf("agent: grep: invalid path_glob %q", glob)
+	}
 	max := req.MaxResults
 	if max <= 0 {
 		max = defaultGrepMaxResults
@@ -190,10 +207,16 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if len(matches) >= max {
+			return errStopWalk
+		}
 		if gt.tree.ignored(f.Name) {
 			return nil
 		}
 		if ok, _ := doublestar.Match(glob, f.Name); !ok {
+			return nil
+		}
+		if f.Size > maxBlobBytes {
 			return nil
 		}
 		content, err := f.Contents()
@@ -204,13 +227,16 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 			return nil
 		}
 		for i, line := range splitLines(content) {
+			if len(matches) >= max {
+				break
+			}
 			if re.MatchString(line) {
-				matches = append(matches, grepMatch{path: f.Name, line: i + 1, text: line})
+				matches = append(matches, grepMatch{path: f.Name, line: i + 1, text: strings.Clone(line)})
 			}
 		}
 		return nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errStopWalk) {
 		return "", fmt.Errorf("agent: grep: %w", err)
 	}
 
@@ -268,6 +294,9 @@ func (lt *listFilesTool) Run(ctx context.Context, input json.RawMessage) (string
 	glob := req.Glob
 	if glob == "" {
 		glob = "**"
+	}
+	if !doublestar.ValidatePattern(glob) {
+		return "", fmt.Errorf("agent: list_files: invalid glob %q", glob)
 	}
 
 	var paths []string
