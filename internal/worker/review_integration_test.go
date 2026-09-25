@@ -29,6 +29,7 @@ import (
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/webhook"
 )
@@ -258,9 +259,9 @@ func (f *fakeCompleter) Complete(_ context.Context, req model.CompletionRequest)
 		return model.CompletionResponse{Raw: `{"reply":"Because b is new."}`, Model: req.Model, InputTokens: 20, OutputTokens: 5}, nil
 	}
 	return model.CompletionResponse{
-		Raw: `{"summary":"Changes main.go.","findings":[
-		  {"path":"main.go","line":1,"severity":"warning","title":"first line","body":"look here"},
-		  {"path":"main.go","line":500,"severity":"error","title":"off the diff","body":"dropped"}]}`,
+		Raw: `{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
+		  {"path":"main.go","line":1,"severity":"important","title":"first line","explanation":"look here","suggested_fix":"do this"},
+		  {"path":"main.go","line":500,"severity":"blocking","title":"off the diff","explanation":"dropped"}]}`,
 		Model: req.Model, Upstream: "test", InputTokens: 10, OutputTokens: 5, CostUSD: 0.001,
 	}, nil
 }
@@ -311,17 +312,21 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 	lf.mu.Lock()
 	comments, inline, forgeStatus := lf.comments, lf.inline, lf.status
 	lf.mu.Unlock()
-	if len(comments) != 1 || !strings.Contains(comments[commentBase+1], "<!-- kritik:pr-1 -->") ||
-		!strings.Contains(comments[commentBase+1], "`main.go:1` first line") {
+	sticky := comments[commentBase+1]
+	if len(comments) != 1 || !strings.HasPrefix(sticky, "<!-- kritik:pr-1 -->\n") ||
+		!strings.Contains(sticky, "- **[important]** `main.go:1` first line") || !strings.Contains(sticky, "- **Important:** 1") ||
+		!strings.Contains(sticky, "- Small and focused") || !strings.Contains(sticky, "_1 finding(s) were dropped (unanchored: 1)._") {
 		t.Fatalf("comments = %v", comments)
 	}
-	if len(inline) != 1 || inline[0].Line != 1 || forgeStatus != "success: kritik: 1 finding(s)" {
+	if len(inline) != 1 || inline[0].Line != 1 || !strings.Contains(inline[0].Body, "**[important]** **first line**") ||
+		!strings.Contains(inline[0].Body, "do this") || forgeStatus != "success: kritik: 1 finding(s)" {
 		t.Fatalf("inline = %+v status = %q", inline, forgeStatus)
 	}
 	fc.mu.Lock()
 	calls, user := fc.calls, fc.users[0]
 	fc.mu.Unlock()
-	if calls != 1 || !strings.Contains(user, "Pull request #1: t") || !strings.Contains(user, "diff --git a/main.go") {
+	if calls != 1 || !strings.Contains(user, "Pull request #1: t") || !strings.Contains(user, "diff --git a/main.go") ||
+		!strings.Contains(user, "<description>\nAdds b.\n</description>") {
 		t.Fatalf("calls = %d, prompt:\n%s", calls, user)
 	}
 	// Stage 4: other.go looks like the diff and is not a changed path.
@@ -335,10 +340,14 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, tenantID, head string) {
 	t.Helper()
 	var findings, usage, leasesHeld int
-	var modelName string
+	var modelName, take, explanation, fix, fingerprint string
 	var tokens int64
 	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM findings`).Scan(&findings); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT count(*), min(explanation), min(suggested_fix), min(fingerprint) FROM findings`).
+			Scan(&findings, &explanation, &fix, &fingerprint); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT summary->>'take' FROM reviews WHERE head_sha = $1`, head).Scan(&take); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `SELECT count(*), coalesce(sum(input_tokens + output_tokens), 0) FROM usage`).Scan(&usage, &tokens); err != nil {
@@ -353,6 +362,10 @@ func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, tenantI
 	// embedding; index runs add their own.
 	if err != nil || findings != 1 || usage < 2 || tokens < 15 || leasesHeld != 0 || modelName != "reviewer" {
 		t.Fatalf("rows: err=%v findings=%d usage=%d tokens=%d leases=%d model=%s", err, findings, usage, tokens, leasesHeld, modelName)
+	}
+	wantPrint := review.Fingerprint(review.Finding{Path: "main.go", Title: "first line"})
+	if take != "Changes main.go." || explanation != "look here" || fix != "do this" || fingerprint != wantPrint {
+		t.Fatalf("contract rows: take=%q explanation=%q fix=%q fingerprint=%q", take, explanation, fix, fingerprint)
 	}
 }
 
@@ -494,7 +507,7 @@ func checkFollowUps(
 	fc.mu.Lock()
 	prompt := fc.users[len(fc.users)-1]
 	fc.mu.Unlock()
-	for _, want := range []string{"Thread, oldest first", "<!-- kritik:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritik posted"} {
+	for _, want := range []string{"Thread, oldest first", "<!-- kritik:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritik posted", "main.go:1 [important] first line: look here", "<description>\nAdds b.\n</description>"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("follow-up prompt missing %q:\n%s", want, prompt)
 		}
@@ -595,7 +608,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		out, err := svc.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Installation: in, Event: webhook.Event{
 			Kind: webhook.KindPullRequest, Action: "synchronize", Account: "onedr0p",
 			Repository:  &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
-			PullRequest: &webhook.PullRequest{Number: 1, Title: "t", Author: "renovate[bot]", AuthorIsBot: bot, State: "open", HeadRef: "f", HeadSHA: headSHA, BaseRef: "main"},
+			PullRequest: &webhook.PullRequest{Number: 1, Title: "t", Body: "Adds b.", Author: "renovate[bot]", AuthorIsBot: bot, State: "open", HeadRef: "f", HeadSHA: headSHA, BaseRef: "main"},
 		}})
 		if err != nil || out.Status != ingest.Enqueued {
 			t.Fatalf("dispatch = %+v, %v", out, err)

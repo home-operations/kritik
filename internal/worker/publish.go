@@ -42,6 +42,7 @@ type reviewInput struct {
 	context []contextpack.Chunk
 	title   string
 	author  string
+	body    string
 }
 
 // publishPhase runs the model over a prepared review and writes the answer
@@ -58,6 +59,10 @@ type publishPhase struct {
 	runID    string
 	jobID    int64
 	logger   *slog.Logger
+	// parse and templates are the repository's contract settings; the zero
+	// values are kritik's defaults.
+	parse     review.ParseOptions
+	templates review.Templates
 }
 
 func (p *publishPhase) run(ctx context.Context) (status string, err error) {
@@ -84,7 +89,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	}
 	in.context = append(in.context, similar...)
 	msg, omitted, contextOmitted := review.Build(review.Input{
-		Repository: p.pr.repository, Number: p.pr.number, Title: in.title, Author: in.author,
+		Repository: p.pr.repository, Number: p.pr.number, Title: in.title, Author: in.author, Body: in.body,
 		BaseRef: p.pr.baseRef, Changed: in.changed, Diff: in.diff, Context: in.context,
 	})
 	p.logger.Info("prompt built", "chars", len(msg), "diff_files_omitted", len(omitted),
@@ -101,18 +106,18 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	if err != nil {
 		return statusFailed, err
 	}
-	res, dropped, err := review.Parse(resp.Raw, review.Anchors(in.diff))
+	res, dropped, err := review.Parse(resp.Raw, review.Anchors(in.diff), p.parse)
 	if err != nil {
 		return statusFailed, err
 	}
 	p.logger.Info("model answered", "model", resp.Model, "upstream", resp.Upstream, "findings", len(res.Findings),
 		"dropped", len(dropped), "omitted", len(omitted), "input_tokens", resp.InputTokens, "cached_tokens", resp.CachedTokens,
 		"output_tokens", resp.OutputTokens, "cost_usd", resp.CostUSD)
-	for _, f := range dropped {
-		p.logger.Debug("finding dropped", "path", f.Path, "line", f.Line, "title", f.Title)
+	for _, d := range dropped {
+		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
 
-	commentID, err := p.writeBack(ctx, res, resp.Model, omitted, len(dropped))
+	commentID, err := p.writeBack(ctx, res, resp.Model, reviewNotes(omitted, dropped))
 	if err != nil {
 		return statusFailed, err
 	}
@@ -170,7 +175,8 @@ func (p *publishPhase) load(ctx context.Context) (reviewInput, error) {
 				return fmt.Errorf("worker: decode context pack: %w", err)
 			}
 		}
-		if err := tx.QueryRow(ctx, `SELECT title, author FROM pull_requests WHERE id = $1`, p.pr.id).Scan(&in.title, &in.author); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT title, author, body FROM pull_requests WHERE id = $1`, p.pr.id).
+			Scan(&in.title, &in.author, &in.body); err != nil {
 			return fmt.Errorf("worker: read pull request: %w", err)
 		}
 		return nil
@@ -205,6 +211,9 @@ func (p *publishPhase) complete(ctx context.Context, ref configfile.ModelRef, ms
 		System: review.System, User: msg, Model: ref.Model(),
 		Schema: review.Schema(), SchemaName: "findings", MaxTokens: maxOutputTokens,
 	}
+	if p.parse.RequireSuggestedFix {
+		req.Schema = review.SchemaStrict()
+	}
 	fallback := p.settings.Models.Fallback
 	if fallback != "" && fallback.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fallback.Model()}
@@ -234,18 +243,57 @@ func (p *publishPhase) complete(ctx context.Context, ref configfile.ModelRef, ms
 	return resp, roleFallback, nil
 }
 
+// reviewNotes are the caveats the sticky comment states about a review.
+func reviewNotes(omitted []string, dropped []review.Dropped) []string {
+	var notes []string
+	if len(omitted) > 0 {
+		notes = append(notes, fmt.Sprintf("%d file(s) were omitted from the diff to fit the context budget", len(omitted)))
+	}
+	if len(dropped) > 0 {
+		byReason := map[review.DropReason]int{}
+		for _, d := range dropped {
+			byReason[d.Reason]++
+		}
+		reasons := make([]string, 0, len(byReason))
+		for r, n := range byReason {
+			reasons = append(reasons, fmt.Sprintf("%s: %d", r, n))
+		}
+		sort.Strings(reasons)
+		notes = append(notes, fmt.Sprintf("%d finding(s) were dropped (%s)", len(dropped), strings.Join(reasons, ", ")))
+	}
+	return notes
+}
+
 // writeBack posts the sticky comment (created once, edited after), the
 // inline review, and the commit status. Only the sticky comment is
 // required: the other two are best effort and logged when they fail, so a
 // forge quirk cannot turn a finished review into a retry storm.
-func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, omitted []string, dropped int) (int64, error) {
+func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, error) {
 	owner, repo, _ := strings.Cut(p.pr.repository, "/")
 	login, err := p.client.BotLogin(ctx)
 	if err != nil {
 		return 0, err
 	}
+	// Inline comments render first so a failing inline template is noted
+	// in the summary. After one failure the rest use the default, so a
+	// template that times out costs one deadline, not one per finding.
+	templates := p.templates
+	inline := make([]forge.InlineComment, 0, len(res.Findings))
+	for _, f := range res.Findings {
+		body, inlineNotes := review.RenderInline(ctx, templates, f)
+		if len(inlineNotes) > 0 {
+			templates.Inline = ""
+			notes = append(notes, inlineNotes...)
+		}
+		inline = append(inline, forge.InlineComment{Path: f.Path, Line: f.Line, Body: body})
+	}
 	marker := review.Marker(p.pr.number)
-	body := review.StickyBody(p.pr.number, res, modelName, omitted, dropped)
+	body, renderNotes := review.RenderSummary(ctx, p.templates, review.RenderData{
+		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Result: res, Counts: res.Counts(), Notes: notes,
+	})
+	for _, n := range renderNotes {
+		p.logger.Warn("template fell back to the default", "note", n)
+	}
 
 	var commentID int64
 	_ = p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
@@ -265,10 +313,6 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 		return 0, err
 	}
 
-	inline := make([]forge.InlineComment, 0, len(res.Findings))
-	for _, f := range res.Findings {
-		inline = append(inline, forge.InlineComment{Path: f.Path, Line: f.Line, Body: review.InlineBody(f)})
-	}
 	if err := p.client.CreateReview(ctx, owner, repo, p.pr.number, p.pr.headSHA, inline); err != nil {
 		p.logger.Warn("inline review not posted", "error", err)
 	}
@@ -285,8 +329,10 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 func (p *publishPhase) persist(ctx context.Context, res review.Result, resp model.CompletionResponse, role string, commentID int64) error {
 	return p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
 		for _, f := range res.Findings {
-			if _, err := tx.Exec(ctx, `INSERT INTO findings (tenant_id, review_id, path, line, severity, title, body)
-				VALUES ($1, $2, $3, $4, $5, $6, $7)`, p.tenant.ID(), p.reviewID, f.Path, f.Line, string(f.Severity), f.Title, f.Body); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO findings
+				(tenant_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, p.tenant.ID(), p.reviewID, f.Path, f.Line, string(f.Severity),
+				f.Title, f.Explanation, f.SuggestedFix, review.Fingerprint(f)); err != nil {
 				return fmt.Errorf("worker: insert finding: %w", err)
 			}
 		}
@@ -302,7 +348,11 @@ func (p *publishPhase) persist(ctx context.Context, res review.Result, resp mode
 			resp.InputTokens, resp.OutputTokens, resp.CostUSD); err != nil {
 			return fmt.Errorf("worker: insert usage: %w", err)
 		}
-		if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2 WHERE id = $1`, p.reviewID, resp.Model); err != nil {
+		summary, err := json.Marshal(res.Summary)
+		if err != nil {
+			return fmt.Errorf("worker: encode summary: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2, summary = $3 WHERE id = $1`, p.reviewID, resp.Model, summary); err != nil {
 			return fmt.Errorf("worker: record model: %w", err)
 		}
 		return nil

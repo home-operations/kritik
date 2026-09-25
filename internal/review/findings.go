@@ -4,10 +4,12 @@
 package review
 
 import (
+	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 )
 
@@ -16,27 +18,117 @@ type Severity string
 
 // Severities a finding may carry.
 const (
-	SeverityError   Severity = "error"
-	SeverityWarning Severity = "warning"
-	SeverityInfo    Severity = "info"
+	SeverityBlocking  Severity = "blocking"
+	SeverityImportant Severity = "important"
+	SeverityNit       Severity = "nit"
 )
+
+var severities = []Severity{SeverityBlocking, SeverityImportant, SeverityNit}
+
+// Valid reports whether s is one of the severities.
+func (s Severity) Valid() bool { return slices.Contains(severities, s) }
+
+// Rank orders severities most serious first; an invalid one sorts last.
+func (s Severity) Rank() int {
+	if i := slices.Index(severities, s); i >= 0 {
+		return i
+	}
+	return len(severities)
+}
+
+// Summary is the review's overall judgement for the sticky comment.
+type Summary struct {
+	Take   string   `json:"take"`
+	Praise []string `json:"praise"`
+}
+
+// maxPraise bounds Summary.Praise; the schema says so and Parse enforces it.
+const maxPraise = 3
 
 // Finding is one thing the reviewer wants a human to look at, anchored to a
 // line on the head side of the diff.
 type Finding struct {
-	Path     string   `json:"path"`
-	Line     int      `json:"line"`
-	Severity Severity `json:"severity"`
-	Title    string   `json:"title"`
-	Body     string   `json:"body"`
+	Path         string   `json:"path"`
+	Line         int      `json:"line"`
+	Severity     Severity `json:"severity"`
+	Title        string   `json:"title"`
+	Explanation  string   `json:"explanation"`
+	SuggestedFix string   `json:"suggested_fix,omitempty"`
 }
 
 // Result is the whole answer.
 type Result struct {
-	// Summary is a short paragraph for the sticky comment.
-	Summary  string    `json:"summary"`
+	Summary  Summary   `json:"summary"`
 	Findings []Finding `json:"findings"`
 }
+
+// Counts is the number of findings at each severity.
+type Counts struct {
+	Blocking, Important, Nit int
+}
+
+// Counts tallies the findings by severity.
+func (r Result) Counts() Counts {
+	var c Counts
+	for _, f := range r.Findings {
+		switch f.Severity {
+		case SeverityBlocking:
+			c.Blocking++
+		case SeverityImportant:
+			c.Important++
+		case SeverityNit:
+			c.Nit++
+		}
+	}
+	return c
+}
+
+// DropReason says why Parse discarded a finding.
+type DropReason string
+
+// Reasons a finding is dropped.
+const (
+	DropUnanchored  DropReason = "unanchored"
+	DropIncomplete  DropReason = "incomplete"
+	DropNoFix       DropReason = "no_suggested_fix"
+	DropBadSeverity DropReason = "bad_severity"
+)
+
+// Valid reports whether r is one of the drop reasons.
+func (r DropReason) Valid() bool {
+	switch r {
+	case DropUnanchored, DropIncomplete, DropNoFix, DropBadSeverity:
+		return true
+	}
+	return false
+}
+
+// Dropped is a finding Parse discarded, with the reason.
+type Dropped struct {
+	Finding Finding
+	Reason  DropReason
+}
+
+// ParseOptions tune what Parse accepts.
+type ParseOptions struct {
+	// RequireSuggestedFix drops findings that carry no suggested fix.
+	RequireSuggestedFix bool
+}
+
+// Field names of the contract, shared by its JSON Schema and the template
+// context, so a template sees the names the model was asked for.
+const (
+	keySummary      = "summary"
+	keyTake         = "take"
+	keyPraise       = "praise"
+	keyFindings     = "findings"
+	keyPath         = "path"
+	keyLine         = "line"
+	keySeverity     = "severity"
+	keyTitle        = "title"
+	keyExplanation  = "explanation"
+	keySuggestedFix = "suggested_fix"
+)
 
 // JSON Schema types the answer shapes use more than once.
 const schemaObject, schemaString = "object", "string"
@@ -49,6 +141,7 @@ type jsonSchema struct {
 	Properties  map[string]*jsonSchema `json:"properties,omitempty"`
 	Items       *jsonSchema            `json:"items,omitempty"`
 	Required    []string               `json:"required,omitempty"`
+	MaxItems    int                    `json:"maxItems,omitempty"`
 }
 
 func (s jsonSchema) mustMarshal() json.RawMessage {
@@ -59,72 +152,134 @@ func (s jsonSchema) mustMarshal() json.RawMessage {
 	return b
 }
 
-// findingsSchema is kept minimal on purpose: every extra field is something
+// contractSchema is kept minimal on purpose: every extra field is something
 // a model can get wrong.
-var findingsSchema = jsonSchema{
-	Type: schemaObject,
-	Properties: map[string]*jsonSchema{
-		"summary": {
-			Type:        schemaString,
-			Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
-		},
-		"findings": {
-			Type: "array",
-			Items: &jsonSchema{
+func contractSchema(requireFix bool) json.RawMessage {
+	required := []string{keyPath, keyLine, keySeverity, keyTitle, keyExplanation}
+	fix := "A concrete fix: replacement code or a precise instruction. Markdown allowed, no headings."
+	if requireFix {
+		required = append(required, keySuggestedFix)
+	} else {
+		fix += " Omit it when there is no concrete fix."
+	}
+	enum := make([]string, len(severities))
+	for i, s := range severities {
+		enum[i] = string(s)
+	}
+	return jsonSchema{
+		Type: schemaObject,
+		Properties: map[string]*jsonSchema{
+			keySummary: {
 				Type: schemaObject,
 				Properties: map[string]*jsonSchema{
-					"path":     {Type: schemaString, Description: "Path of the changed file, exactly as it appears in the diff header."},
-					"line":     {Type: "integer", Description: "Line number in the new version of the file (a + or context line inside a hunk)."},
-					"severity": {Type: schemaString, Enum: []string{string(SeverityError), string(SeverityWarning), string(SeverityInfo)}},
-					"title":    {Type: schemaString, Description: "One line, under 80 characters."},
-					"body":     {Type: schemaString, Description: "Why it matters and what to do instead. Markdown allowed, no headings."},
+					keyTake: {
+						Type:        schemaString,
+						Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
+					},
+					keyPraise: {
+						Type:        "array",
+						Description: "Up to three specific things the change does well; empty when nothing stands out.",
+						Items:       &jsonSchema{Type: schemaString},
+						MaxItems:    maxPraise,
+					},
 				},
-				Required: []string{"path", "line", "severity", "title", "body"},
+				Required: []string{keyTake, keyPraise},
+			},
+			keyFindings: {
+				Type: "array",
+				Items: &jsonSchema{
+					Type: schemaObject,
+					Properties: map[string]*jsonSchema{
+						keyPath: {Type: schemaString, Description: "Path of the changed file, exactly as it appears in the diff header."},
+						keyLine: {Type: "integer", Description: "Line number in the new version of the file (a + or context line inside a hunk)."},
+						keySeverity: {Type: schemaString, Enum: enum,
+							Description: "blocking: must be fixed before merging. important: should be fixed. nit: optional polish."},
+						keyTitle:        {Type: schemaString, Description: "One line, under 80 characters."},
+						keyExplanation:  {Type: schemaString, Description: "Why it matters. Markdown allowed, no headings."},
+						keySuggestedFix: {Type: schemaString, Description: fix},
+					},
+					Required: required,
+				},
 			},
 		},
-	},
-	Required: []string{"summary", "findings"},
-}.mustMarshal()
+		Required: []string{keySummary, keyFindings},
+	}.mustMarshal()
+}
+
+var (
+	findingsSchema       = contractSchema(false)
+	findingsSchemaStrict = contractSchema(true)
+)
 
 // Schema is the JSON Schema of the answer the model must produce.
 func Schema() json.RawMessage { return slices.Clone(findingsSchema) }
 
-// Parse decodes the model's JSON and drops findings that cannot be anchored:
-// a path the diff does not touch, or a line the diff does not add or keep.
-// Dropped findings are returned separately so they can be logged, never
-// silently lost. anchors maps a path to the head-side lines the diff covers.
-func Parse(raw string, anchors map[string]map[int]bool) (Result, []Finding, error) {
+// SchemaStrict is Schema with suggested_fix required on every finding.
+func SchemaStrict() json.RawMessage { return slices.Clone(findingsSchemaStrict) }
+
+// Parse decodes the model's JSON and drops findings kritik cannot post: an
+// unknown severity, a missing field, a missing fix when opts require one,
+// or a line the diff does not add or keep. Dropped findings are returned
+// with the reason so they can be logged and counted, never silently lost.
+// anchors maps a path to the head-side lines the diff covers. Kept findings
+// are ordered most severe first, then by path and line.
+func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Result, []Dropped, error) {
 	var res Result
 	dec := json.NewDecoder(strings.NewReader(strings.TrimSpace(raw)))
 	if err := dec.Decode(&res); err != nil {
 		return Result{}, nil, fmt.Errorf("review: model output is not the expected JSON: %w", err)
 	}
-	res.Summary = strings.TrimSpace(res.Summary)
-	kept := res.Findings[:0]
-	var dropped []Finding
+	res.Summary.Take = strings.TrimSpace(res.Summary.Take)
+	praise := make([]string, 0, maxPraise)
+	for _, p := range res.Summary.Praise {
+		if p = strings.TrimSpace(p); p != "" && len(praise) < maxPraise {
+			praise = append(praise, p)
+		}
+	}
+	res.Summary.Praise = praise
+	kept := make([]Finding, 0, len(res.Findings))
+	var dropped []Dropped
 	for _, f := range res.Findings {
 		f.Path = strings.TrimSpace(f.Path)
 		f.Title = strings.TrimSpace(f.Title)
-		f.Body = strings.TrimSpace(f.Body)
-		switch f.Severity {
-		case SeverityError, SeverityWarning, SeverityInfo:
-		default:
-			f.Severity = SeverityInfo
+		f.Explanation = strings.TrimSpace(f.Explanation)
+		f.SuggestedFix = strings.TrimSpace(f.SuggestedFix)
+		var reason DropReason
+		switch {
+		case !f.Severity.Valid():
+			reason = DropBadSeverity
+		case f.Path == "" || f.Line <= 0 || f.Title == "" || f.Explanation == "":
+			reason = DropIncomplete
+		case opts.RequireSuggestedFix && f.SuggestedFix == "":
+			reason = DropNoFix
+		case !anchors[f.Path][f.Line]:
+			reason = DropUnanchored
 		}
-		if f.Title == "" || f.Body == "" || f.Path == "" || f.Line <= 0 || !anchors[f.Path][f.Line] {
-			dropped = append(dropped, f)
+		if reason != "" {
+			dropped = append(dropped, Dropped{Finding: f, Reason: reason})
 			continue
 		}
 		kept = append(kept, f)
 	}
-	res.Findings = kept
-	sort.SliceStable(res.Findings, func(i, j int) bool {
-		if res.Findings[i].Path != res.Findings[j].Path {
-			return res.Findings[i].Path < res.Findings[j].Path
-		}
-		return res.Findings[i].Line < res.Findings[j].Line
+	slices.SortStableFunc(kept, func(a, b Finding) int {
+		return cmp.Or(
+			cmp.Compare(a.Severity.Rank(), b.Severity.Rank()),
+			strings.Compare(a.Path, b.Path),
+			cmp.Compare(a.Line, b.Line),
+		)
 	})
+	res.Findings = kept
 	return res, dropped, nil
+}
+
+// Fingerprint identifies a finding across reviews of the same pull request:
+// the path and the title, ignoring case and whitespace, so a finding that
+// moves by a few lines or is reworded in case only is recognised as the
+// same one.
+func Fingerprint(f Finding) string {
+	title := strings.ToLower(strings.Join(strings.Fields(f.Title), " "))
+	sum := sha256.Sum256([]byte(f.Path + "\x00" + title))
+	return hex.EncodeToString(sum[:])
 }
 
 // Anchors reads a unified diff and returns, per head-side path, the set of
