@@ -35,6 +35,7 @@ type branchInfo struct {
 type pullRequest struct {
 	Number    int        `json:"number"`
 	Title     string     `json:"title"`
+	Body      string     `json:"body"`
 	User      user       `json:"user"`
 	State     string     `json:"state"`
 	Merged    bool       `json:"merged"`

@@ -520,6 +520,7 @@ func openPullRequest(pr pullRequest) forge.OpenPullRequest {
 	}
 	out.Number = pr.Number
 	out.Title = pr.Title
+	out.Body = pr.Body
 	out.Author = pr.User.Login
 	out.AuthorIsBot = isBot(pr.User.Login)
 	out.State = pr.State
