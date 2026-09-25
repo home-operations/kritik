@@ -67,6 +67,15 @@ func (f *File) resolve() error {
 		f.Providers[name] = p
 	}
 
+	f.Egress.credentials = make(map[string]Secret, len(f.Egress.Credentials))
+	for host, ref := range f.Egress.Credentials {
+		v, err := ref.resolve()
+		if err != nil {
+			return fmt.Errorf("configfile: egress.credentials.%s: %w", host, err)
+		}
+		f.Egress.credentials[strings.ToLower(host)] = v
+	}
+
 	prg, err := compileFilter(f.Defaults.Filter)
 	if err != nil {
 		return fmt.Errorf("configfile: defaults.filter: %w", err)
@@ -126,6 +135,9 @@ func (f *File) resolve() error {
 // validate checks every invariant the rest of kritik relies on.
 func (f *File) validate() error {
 	if err := f.validateProviders(); err != nil {
+		return err
+	}
+	if err := f.validateEgress(); err != nil {
 		return err
 	}
 	if err := f.checkModels("defaults.models", f.Defaults.Models); err != nil {

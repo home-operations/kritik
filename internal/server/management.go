@@ -66,11 +66,13 @@ func (m *Management) Handler() http.Handler {
 
 // Run serves until ctx is cancelled, then drains within shutdownTimeout.
 func (m *Management) Run(ctx context.Context) error {
-	return serve(ctx, m.addr, m.Handler(), m.logger.With("listener", "management"))
+	return Serve(ctx, m.addr, m.Handler(), m.logger.With("listener", "management"))
 }
 
 // serve is the shared listen-and-drain loop for every kritik listener.
-func serve(ctx context.Context, addr string, h http.Handler, logger *slog.Logger) error {
+// Serve runs h on addr until ctx is cancelled, then drains within
+// shutdownTimeout.
+func Serve(ctx context.Context, addr string, h http.Handler, logger *slog.Logger) error {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           h,

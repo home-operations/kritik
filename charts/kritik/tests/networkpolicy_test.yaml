@@ -36,3 +36,45 @@ tests:
       - notExists:
           path: spec.ingress
         documentIndex: 1
+      # With the gateway, runners reach only DNS, Postgres and the gateway
+      # port on gateway pods: no 443 to anywhere.
+      - equal:
+          path: spec.ingress[1].from[0].podSelector.matchLabels["kritik.home-operations.com/role"]
+          value: runner
+        documentIndex: 0
+      - equal:
+          path: spec.ingress[1].ports[0].port
+          value: 8082
+        documentIndex: 0
+      - notContains:
+          path: spec.egress[1].ports
+          content:
+            port: 443
+            protocol: TCP
+        documentIndex: 1
+      - equal:
+          path: spec.egress[2].to[0].podSelector.matchLabels["kritik.home-operations.com/gateway"]
+          value: "true"
+        documentIndex: 1
+      - equal:
+          path: spec.egress[2].ports[0].port
+          value: 8082
+        documentIndex: 1
+
+  - it: gives runners direct egress on the egress ports when the gateway is disabled
+    set:
+      networkPolicy.enabled: true
+      gateway.enabled: false
+    asserts:
+      - contains:
+          path: spec.egress[1].ports
+          content:
+            port: 443
+            protocol: TCP
+        documentIndex: 1
+      - notExists:
+          path: spec.egress[2]
+        documentIndex: 1
+      - notExists:
+          path: spec.ingress[1]
+        documentIndex: 0

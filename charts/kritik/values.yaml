@@ -224,6 +224,12 @@ runner:
     # -- Annotations for the runner ServiceAccount.
     annotations: {}
 
+gateway:
+  # -- Serve the egress gateway (ADR-0008): a forward proxy on `all` and `worker` pods that runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration file names (forges, model endpoints, `egress.allowHosts`). With it, runner pods need no direct internet egress.
+  enabled: true
+  # -- Gateway port on the pods and its Service.
+  port: 8082
+
 serviceAccount:
   # -- Create the ServiceAccount the roles run as.
   create: true
@@ -315,7 +321,7 @@ networkPolicy:
   enabled: false
   # -- Allow DNS egress (UDP/TCP 53).
   allowDNS: true
-  # -- TCP ports the pods may egress to for forges, model endpoints and git remotes.
+  # -- TCP ports the service pods may egress to for forges and model endpoints. Runner pods get these only when the gateway is disabled; with it, they reach the gateway alone.
   egressPorts:
     - 443
   # -- Postgres port allowed for egress.

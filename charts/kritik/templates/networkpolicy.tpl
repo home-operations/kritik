@@ -22,6 +22,16 @@ spec:
           protocol: TCP
         - port: {{ .Values.service.metricsPort }}
           protocol: TCP
+    {{- if .Values.gateway.enabled }}
+    # The gateway is for runner pods alone.
+    - from:
+        - podSelector:
+            matchLabels:
+              kritik.home-operations.com/role: runner
+      ports:
+        - port: {{ .Values.gateway.port }}
+          protocol: TCP
+    {{- end }}
   egress:
     {{- if $np.allowDNS }}
     - ports:
@@ -47,8 +57,10 @@ spec:
     {{- end }}
 {{- if include "kritik.hasWorker" . }}
 ---
-# Runner pods: no ingress at all; egress to DNS, Postgres, the git remote and
-# (via the same egressPorts) whatever model endpoint an agentic review calls.
+# Runner pods: no ingress at all; egress to DNS, Postgres and, with the
+# gateway, the gateway port on worker-capable pods, through which the git
+# remote, the model endpoint and every allowed host are reached. Without
+# the gateway, the egressPorts to anywhere, as before.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -73,11 +85,22 @@ spec:
           protocol: TCP
     {{- end }}
     - ports:
+        {{- if not .Values.gateway.enabled }}
         {{- range $np.egressPorts }}
         - port: {{ . }}
           protocol: TCP
         {{- end }}
+        {{- end }}
         - port: {{ $np.postgresPort }}
           protocol: TCP
+    {{- if .Values.gateway.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              kritik.home-operations.com/gateway: "true"
+      ports:
+        - port: {{ .Values.gateway.port }}
+          protocol: TCP
+    {{- end }}
 {{- end }}
 {{- end }}

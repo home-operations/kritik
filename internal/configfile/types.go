@@ -355,11 +355,25 @@ type Tenant struct {
 	filter *prfilter.Program
 }
 
+// Egress is what runner pods may reach through the worker's gateway beyond
+// the forges and model endpoints the file itself names, which are always
+// allowed. Hosts are exact, or a suffix with a leading "*."; the gateway
+// tunnels TLS to port 443 only. A credential is the token the gateway adds,
+// as a bearer, to a plain http:// request a runner makes to that host, so
+// the runner can use an API at a token's rate limit without holding it.
+type Egress struct {
+	AllowHosts  []string             `yaml:"allowHosts,omitempty"`
+	Credentials map[string]SecretRef `yaml:"credentials,omitempty"`
+
+	credentials map[string]Secret
+}
+
 // File is the whole configuration document.
 type File struct {
 	Providers map[string]Provider `yaml:"providers,omitempty"`
 	Defaults  Defaults            `yaml:"defaults,omitempty"`
 	Retention Retention           `yaml:"retention,omitempty"`
+	Egress    Egress              `yaml:"egress,omitempty"`
 	Tenants   []Tenant            `yaml:"tenants"`
 
 	defaultFilter *prfilter.Program

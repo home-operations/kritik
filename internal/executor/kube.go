@@ -23,6 +23,9 @@ import (
 // runnerRole is the --role value and container name of a runner pod.
 const runnerRole = "runner"
 
+// noProxy is what a runner pod with a gateway reaches directly.
+const noProxy = "localhost,127.0.0.1"
+
 // Kube runs each spec as a Kubernetes Job in the worker's own namespace.
 type Kube struct {
 	Client    kubernetes.Interface
@@ -34,6 +37,11 @@ type Kube struct {
 	// DatabaseSecret and DatabaseSecretKey reference the Secret holding the
 	// runner role's DSN, injected as KRITIK_DATABASE_URL.
 	DatabaseSecret, DatabaseSecretKey string
+	// GatewayURL, when set, is the egress gateway the pod is handed as its
+	// HTTPS_PROXY and HTTP_PROXY: with the runner network policy allowing
+	// nothing else, every byte the runner sends out passes the gateway's
+	// host allowlist (ADR-0008).
+	GatewayURL string
 	// TTL is ttlSecondsAfterFinished; the run row outlives the Job.
 	TTL time.Duration
 	// Poll is how often the Job is checked.
@@ -318,6 +326,15 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 		{Name: "KRITIK_LOG_FORMAT", Value: "json"},
 		{Name: "KRITIK_DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			Name: k.DatabaseSecret, Key: k.DatabaseSecretKey}}},
+	}
+	if k.GatewayURL != "" {
+		env = append(env,
+			corev1.EnvVar{Name: "HTTPS_PROXY", Value: k.GatewayURL},
+			corev1.EnvVar{Name: "HTTP_PROXY", Value: k.GatewayURL},
+			// Postgres is not HTTP and the runner talks to no Service, so
+			// only loopback is excepted.
+			corev1.EnvVar{Name: "NO_PROXY", Value: noProxy},
+		)
 	}
 	container := corev1.Container{
 		Name:  runnerRole,

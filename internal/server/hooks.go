@@ -29,5 +29,5 @@ func (h *Hooks) Handler() http.Handler {
 
 // Run serves until ctx is cancelled.
 func (h *Hooks) Run(ctx context.Context) error {
-	return serve(ctx, h.addr, h.Handler(), h.logger.With("listener", "hooks"))
+	return Serve(ctx, h.addr, h.Handler(), h.logger.With("listener", "hooks"))
 }

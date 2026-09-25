@@ -157,6 +157,16 @@ render deterministically.
 Whether any enabled role works jobs (and so needs the worker RBAC, the
 runner account and the owner/runner database secrets).
 */}}
+{{/*
+In-cluster URL runner Jobs are handed as HTTPS_PROXY, empty when the gateway
+is off.
+*/}}
+{{- define "kritik.gatewayURL" -}}
+{{- if .Values.gateway.enabled -}}
+{{- printf "http://%s-gateway.%s.svc.cluster.local:%d" (include "kritik.fullname" .) .Release.Namespace (int .Values.gateway.port) -}}
+{{- end -}}
+{{- end }}
+
 {{- define "kritik.hasWorker" -}}
 {{- if or .Values.roles.all.enabled .Values.roles.worker.enabled -}}true{{- end -}}
 {{- end }}

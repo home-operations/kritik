@@ -161,7 +161,7 @@
       "type": "object"
     },
     "embedding": {
-      "description": "The deployment-wide embedder that builds the pgvector index and powers the\nsimilar-code context stage. All of `baseUrl`, `model`, `dims` and a key must\nbe set together; leaving `model` empty turns indexing off and reviews run\nwithout vector retrieval. Changing model or dims later is refused unless\n`reindexOnModelChange` is set, because it rebuilds every repository.",
+      "description": "The deployment-wide embedder that builds the vector index and powers the\nsimilar-code context stage. All of `baseUrl`, `model`, `dims` and a key must\nbe set together; leaving `model` empty turns indexing off and reviews run\nwithout vector retrieval. Changing model or dims later is refused unless\n`reindexOnModelChange` is set, because it rebuilds every repository.",
       "properties": {
         "apiKey": {
           "default": "",
@@ -177,7 +177,7 @@
         },
         "dims": {
           "default": 1024,
-          "description": "Vector dimension, at most 4000 (the halfvec index limit).",
+          "description": "Vector dimension, at most 4000.",
           "title": "dims",
           "type": "integer"
         },
@@ -233,6 +233,25 @@
       "description": "Override the full release name.",
       "title": "fullnameOverride",
       "type": "string"
+    },
+    "gateway": {
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Serve the egress gateway (ADR-0008): a forward proxy on `all` and `worker` pods that runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration file names (forges, model endpoints, `egress.allowHosts`). With it, runner pods need no direct internet egress.",
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "port": {
+          "default": 8082,
+          "description": "Gateway port on the pods and its Service.",
+          "title": "port",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "gateway",
+      "type": "object"
     },
     "global": {
       "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
@@ -546,7 +565,7 @@
           "type": "boolean"
         },
         "egressPorts": {
-          "description": "TCP ports the pods may egress to for forges, model endpoints and git remotes.",
+          "description": "TCP ports the service pods may egress to for forges and model endpoints. Runner pods get these only when the gateway is disabled; with it, they reach the gateway alone.",
           "items": {
             "anyOf": [
               {
