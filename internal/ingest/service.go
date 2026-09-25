@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -40,6 +41,18 @@ const (
 // reviewActions are the pull request actions that start a review; "poll"
 // is the poller's synthetic action.
 var reviewActions = map[string]bool{"opened": true, "synchronize": true, "reopened": true, "ready_for_review": true, "poll": true}
+
+// reviewInsertOpts returns the River insert options for a review job, or nil
+// for the default (immediate). Only a new head (synchronize, or the
+// poller's synthetic poll) settles: an initial open, reopen, or draft
+// transition has no prior head to supersede, so there is nothing to wait
+// out.
+func reviewInsertOpts(trigger string, settle time.Duration, now time.Time) *river.InsertOpts {
+	if (trigger == "synchronize" || trigger == "poll") && settle > 0 {
+		return &river.InsertOpts{ScheduledAt: now.Add(settle)}
+	}
+	return nil
+}
 
 // Dispatch implements Dispatcher.
 func (s *Service) Dispatch(ctx context.Context, req Request) (Outcome, error) {
@@ -110,7 +123,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
 			TenantID: req.Tenant.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: ev.Action,
-		}, nil)
+		}, reviewInsertOpts(ev.Action, settings.Settle, time.Now()))
 		if err != nil {
 			return fmt.Errorf("ingest: enqueue review: %w", err)
 		}

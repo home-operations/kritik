@@ -150,6 +150,9 @@ type Defaults struct {
 	Filter string `yaml:"filter,omitempty"`
 	Forks  *bool  `yaml:"forks,omitempty"`
 	Limits Limits `yaml:"limits,omitempty"`
+	// Settle delays a review job for a new head, so a burst of pushes
+	// collapses onto the last one before anything is spent.
+	Settle time.Duration `yaml:"settle,omitempty"`
 }
 
 // Retention controls what is deleted and when. Reviews, findings and usage
@@ -230,11 +233,12 @@ func (i Installation) WebhookSecretValue() Secret {
 // Repository carries per-repository overrides. Everything an installation
 // grants access to is watched whether or not it is listed here.
 type Repository struct {
-	Name     string   `yaml:"name"`
-	Enabled  *bool    `yaml:"enabled,omitempty"`
-	Filter   string   `yaml:"filter,omitempty"`
-	Konflate string   `yaml:"konflate,omitempty"`
-	Ignore   []string `yaml:"ignore,omitempty"`
+	Name     string        `yaml:"name"`
+	Enabled  *bool         `yaml:"enabled,omitempty"`
+	Filter   string        `yaml:"filter,omitempty"`
+	Konflate string        `yaml:"konflate,omitempty"`
+	Ignore   []string      `yaml:"ignore,omitempty"`
+	Settle   time.Duration `yaml:"settle,omitempty"`
 
 	filter *prfilter.Program
 }
@@ -249,6 +253,7 @@ type Tenant struct {
 	Forks         *bool          `yaml:"forks,omitempty"`
 	Limits        Limits         `yaml:"limits,omitempty"`
 	Repositories  []Repository   `yaml:"repositories,omitempty"`
+	Settle        time.Duration  `yaml:"settle,omitempty"`
 
 	filter *prfilter.Program
 }
@@ -281,4 +286,6 @@ type Settings struct {
 	// Ignore is DefaultIgnore plus the repository's own globs. The in-repo
 	// file's globs are unioned in by the caller that has the checkout.
 	Ignore []string
+	// Settle delays a review job for a new head; zero means immediate.
+	Settle time.Duration
 }

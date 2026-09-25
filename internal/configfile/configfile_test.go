@@ -81,6 +81,7 @@ func TestLoadFull(t *testing.T) {
 			conc     int
 			perDay   int
 			konflate string
+			settle   time.Duration
 			filterOK map[string]any // a PR the effective filter must accept
 			filterNo map[string]any // a PR the effective filter must reject
 		}{
@@ -92,6 +93,7 @@ func TestLoadFull(t *testing.T) {
 			{
 				name: "listed repo adds konflate", tenant: ho, repo: "home-operations/flate",
 				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200, konflate: "https://konflate.example.org",
+				settle:   30 * time.Second,
 				filterOK: SamplePR(),
 			},
 			{
@@ -106,6 +108,7 @@ func TestLoadFull(t *testing.T) {
 			{
 				name: "tenant overrides review model and forks", tenant: od, repo: "onedr0p/home-ops",
 				enabled: true, review: "local/claude-opus-5", forks: true, conc: 3,
+				settle:   2 * time.Minute,
 				filterOK: SamplePR(),
 			},
 		}
@@ -113,7 +116,8 @@ func TestLoadFull(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				s := f.Settings(tt.tenant, tt.repo)
 				if s.Enabled != tt.enabled || s.Models.Review != tt.review || s.Forks != tt.forks ||
-					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay || s.Konflate != tt.konflate {
+					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay || s.Konflate != tt.konflate ||
+					s.Settle != tt.settle {
 					t.Fatalf("Settings = %+v", s)
 				}
 				if s.Models.Fallback != "local/claude-sonnet-5" {
@@ -336,6 +340,9 @@ func TestParseRejects(t *testing.T) {
 		{"negative limit", "defaults:\n  limits:\n    reviewsPerDay: -1\n" + minimal, "must not be negative"},
 		{"negative deadline", strings.Replace(minimal, "slug: acme", "slug: acme\n    runner: { activeDeadlineSeconds: -5 }", 1), "must not be negative"},
 		{"negative retention", "retention:\n  disabledIndexGrace: -1h\n" + minimal, "retention.disabledIndexGrace"},
+		{"negative settle default", "defaults:\n  settle: -1s\n" + minimal, "defaults.settle must not be negative"},
+		{"negative settle tenant", strings.Replace(minimal, "slug: acme", "slug: acme\n    settle: -1s", 1), "must not be negative"},
+		{"negative settle repository", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, settle: -1s }]", 1), "must not be negative"},
 		{"indexing role removed", "defaults:\n  models:\n    indexing: p/m\n" + minimal, "field indexing not found"},
 		{"bad ignore glob", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, ignore: ['['] }]", 1), "not a valid glob"},
 		{"filter syntax error", "defaults:\n  filter: 'pr.draft &&'\n" + minimal, "defaults.filter"},

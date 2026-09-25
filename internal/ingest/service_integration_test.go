@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -51,6 +52,8 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
     repositories:
       - name: onedr0p/disabled
         enabled: false
+      - name: onedr0p/settle
+        settle: 60s
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -147,6 +150,49 @@ func TestDispatchPullRequest(t *testing.T) {
 			t.Fatalf("state = %q", state)
 		}
 	})
+}
+
+func TestDispatchPullRequestSettle(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	tenant, _ := f.Tenant("onedr0p")
+	scheduledAt := func(headSHA string) time.Time {
+		t.Helper()
+		var ts time.Time
+		err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx,
+				`SELECT scheduled_at FROM river_job WHERE kind = 'review' AND args->>'head_sha' = $1`, headSHA).Scan(&ts)
+		})
+		if err != nil {
+			t.Fatalf("scheduled_at for %s: %v", headSHA, err)
+		}
+		return ts
+	}
+
+	opened := &webhook.PullRequest{Number: 9, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "s1", BaseRef: "main"}
+	before := time.Now()
+	out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo("onedr0p/settle"), PullRequest: opened}))
+	after := time.Now()
+	if err != nil || out.Status != Enqueued {
+		t.Fatalf("opened dispatch = %+v, %v", out, err)
+	}
+	if got := scheduledAt("s1"); got.Before(before.Add(-time.Second)) || got.After(after.Add(time.Second)) {
+		t.Fatalf("opened scheduled_at = %v, want within [%v, %v]", got, before, after)
+	}
+
+	synced := *opened
+	synced.HeadSHA = "s2"
+	before = time.Now()
+	out, err = svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "synchronize", Repository: repo("onedr0p/settle"), PullRequest: &synced}))
+	after = time.Now()
+	if err != nil || out.Status != Enqueued {
+		t.Fatalf("synchronize dispatch = %+v, %v", out, err)
+	}
+	got := scheduledAt("s2")
+	want := before.Add(60 * time.Second)
+	if got.Before(want.Add(-time.Second)) || got.After(after.Add(60*time.Second).Add(time.Second)) {
+		t.Fatalf("synchronize scheduled_at = %v, want ~%v", got, want)
+	}
 }
 
 func TestDispatchCommentPushInstallation(t *testing.T) {
