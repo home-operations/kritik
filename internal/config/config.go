@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+
+	"github.com/home-operations/kritik/internal/jobtimeout"
 )
 
 // Role selects which part of kritik a process runs. One image serves every
@@ -144,9 +146,12 @@ type Config struct {
 	RunnerDatabaseSecret    string `env:"KRITIK_RUNNER_DATABASE_SECRET" envDefault:"kritik-postgres-runner"`
 	RunnerDatabaseSecretKey string `env:"KRITIK_RUNNER_DATABASE_SECRET_KEY" envDefault:"uri"`
 
-	// RunnerDeadline bounds a runner when the tenant sets none; RunnerTTL is
-	// how long a finished Job stays for kubectl before Kubernetes removes it.
-	// The run row keeps everything the Job knew.
+	// RunnerDeadline bounds a runner when the tenant sets none, and like a
+	// tenant's runner.activeDeadlineSeconds must not exceed
+	// jobtimeout.MaxRunnerDeadline, past which River would cut the job off
+	// before the deadline does; RunnerTTL is how long a finished Job stays
+	// for kubectl before Kubernetes removes it. The run row keeps everything
+	// the Job knew.
 	RunnerDeadline time.Duration `env:"KRITIK_RUNNER_DEADLINE" envDefault:"15m"`
 	RunnerTTL      time.Duration `env:"KRITIK_RUNNER_TTL" envDefault:"10m"`
 
@@ -154,17 +159,15 @@ type Config struct {
 	// executor, which runs the runner inside the worker process.
 	RunnerDatabaseURL string `env:"KRITIK_RUNNER_DATABASE_URL,unset"`
 
-	// The runner role's own inputs, set on the Job by the worker. RunKind
-	// is review (fetch, diff, context stages) or index (chunk a tree).
-	RunKind  string `env:"KRITIK_RUN_KIND" envDefault:"review"`
-	RunID    string `env:"KRITIK_RUN_ID"`
-	CloneURL string `env:"KRITIK_CLONE_URL"`
-	GitToken string `env:"KRITIK_GIT_TOKEN,unset"`
-	HeadSHA  string `env:"KRITIK_HEAD_SHA"`
-	BaseSHA  string `env:"KRITIK_BASE_SHA"`
-	// Ignore is the resolved ignore glob list for the repository, comma
-	// separated, skipped by the context stages.
-	Ignore []string `env:"KRITIK_IGNORE" envSeparator:","`
+	// RunSpecFile is the path of the runner role's job document, a
+	// versioned JSON runner spec the worker mounts into the Job from the
+	// run's Secret. A file rather than a variable: a spec can outgrow the
+	// kernel's 128 KiB limit on one environment string.
+	RunSpecFile string `env:"KRITIK_RUN_SPEC_FILE"`
+	// GitToken and ModelAPIKey are the runner's credentials, read from the
+	// run's own Secret. The model key is set only for an agentic review.
+	GitToken    string `env:"KRITIK_GIT_TOKEN,unset"`
+	ModelAPIKey string `env:"KRITIK_MODEL_API_KEY,unset"`
 
 	// LogLevel is the minimum slog level emitted: debug, info, warn or error.
 	LogLevel string `env:"KRITIK_LOG_LEVEL" envDefault:"info"`
@@ -185,20 +188,11 @@ func (c *Config) ValidateWorker() error {
 	return nil
 }
 
-// ValidateRunner checks what a runner pod needs.
+// ValidateRunner checks what a runner pod needs. The job document itself is
+// decoded and validated by the runner package.
 func (c *Config) ValidateRunner() error {
-	required := map[string]string{"KRITIK_RUN_ID": c.RunID, "KRITIK_CLONE_URL": c.CloneURL, "KRITIK_HEAD_SHA": c.HeadSHA}
-	switch c.RunKind {
-	case "review":
-		required["KRITIK_BASE_SHA"] = c.BaseSHA
-	case "index":
-	default:
-		return fmt.Errorf("config: KRITIK_RUN_KIND must be review or index, got %q", c.RunKind)
-	}
-	for name, v := range required {
-		if v == "" {
-			return fmt.Errorf("config: %s is required for the runner role", name)
-		}
+	if c.RunSpecFile == "" {
+		return fmt.Errorf("config: KRITIK_RUN_SPEC_FILE is required for the runner role")
 	}
 	return nil
 }
@@ -262,6 +256,10 @@ func (c *Config) validate() error {
 	}
 	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.RunnerDeadline <= 0 || c.RunnerTTL <= 0 {
 		return fmt.Errorf("config: KRITIK_REVIEW_WORKERS, KRITIK_INDEX_WORKERS, KRITIK_RUNNER_DEADLINE and KRITIK_RUNNER_TTL must be positive")
+	}
+	if c.RunnerDeadline > jobtimeout.MaxRunnerDeadline {
+		return fmt.Errorf("config: KRITIK_RUNNER_DEADLINE must not exceed %s (the %s job cap less the review and index headroom), got %s",
+			jobtimeout.MaxRunnerDeadline, jobtimeout.MaxJobTimeout, c.RunnerDeadline)
 	}
 	return nil
 }

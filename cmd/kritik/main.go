@@ -64,11 +64,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	var runSpec runner.Spec
 	switch role {
 	case config.RoleAll, config.RoleWorker:
 		err = cfg.ValidateWorker()
 	case config.RoleRunner:
-		err = cfg.ValidateRunner()
+		if err = cfg.ValidateRunner(); err == nil {
+			runSpec, err = runner.ReadSpec(cfg.RunSpecFile)
+		}
 	}
 	if err != nil {
 		return err
@@ -138,6 +141,7 @@ func run() error {
 	defer st.Close()
 
 	var current *configfile.Current
+	var exec executor.Executor
 	if file != nil {
 		// current is the last good file; the leader applies it on election and
 		// on every reload, followers only compare hashes.
@@ -153,6 +157,13 @@ func run() error {
 			return reportDrift(ctx, st, current, drift, cfg.ConfigReloadInterval)
 		})
 		if st.LeaderEligible() {
+			// Only an all or worker role holds the owner DSN, so a leader
+			// always has the executor it would sweep up after.
+			exec, err = newExecutor(ctx, cfg, logger)
+			if err != nil {
+				return err
+			}
+			sweeper, _ := exec.(*executor.Kube)
 			hostname, _ := os.Hostname()
 			// Insert-only client: the leader enqueues onboarding index jobs.
 			leaderQueue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
@@ -161,7 +172,7 @@ func run() error {
 			}
 			g.Go(func() error {
 				return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
-					return lead(ctx, st, cfg, current, leaderQueue, m, hostname, logger)
+					return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, hostname, logger)
 				})
 			})
 		} else if role != config.RoleIngest {
@@ -171,10 +182,7 @@ func run() error {
 
 	if role == config.RoleRunner {
 		// A runner does one thing and exits; it never becomes ready.
-		return runner.Run(ctx, st, runner.Params{
-			Kind: cfg.RunKind, RunID: cfg.RunID, CloneURL: cfg.CloneURL, Token: cfg.GitToken,
-			Head: cfg.HeadSHA, Base: cfg.BaseSHA, Ignore: cfg.Ignore,
-		}, logger)
+		return runner.Run(ctx, st, runSpec, runner.Secrets{GitToken: cfg.GitToken, ModelAPIKey: cfg.ModelAPIKey}, logger)
 	}
 
 	if role == config.RoleAll || role == config.RoleIngest {
@@ -189,9 +197,10 @@ func run() error {
 		g.Go(func() error { return hooks.Run(ctx) })
 	}
 	if role == config.RoleAll || role == config.RoleWorker {
-		exec, err := newExecutor(ctx, cfg, logger)
-		if err != nil {
-			return err
+		if exec == nil {
+			if exec, err = newExecutor(ctx, cfg, logger); err != nil {
+				return err
+			}
 		}
 		embedder := newEmbedder(cfg)
 		forges := &worker.ForgeCache{Build: worker.BuildForge}
@@ -207,6 +216,9 @@ func run() error {
 		})
 		queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
 			Logger: logger,
+			// Review and index workers set their own timeouts from the
+			// runner deadline; rescue must wait out the longest of them.
+			RescueStuckJobsAfter: worker.RescueStuckJobsAfter,
 			Queues: map[string]river.QueueConfig{
 				jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
 				jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
@@ -349,13 +361,17 @@ func openStore(ctx context.Context, opts store.Options, logger *slog.Logger) (*s
 	}
 }
 
+// secretSweepInterval is how often the leader deletes the Secrets of runs
+// that no longer need one.
+const secretSweepInterval = 5 * time.Minute
+
 // lead runs for as long as this replica holds the leader lock: migrate,
 // apply the current file, then re-apply whenever the file changes. With an
 // embedder configured it also owns the index schema and enqueues an
 // onboarding index job for every repository that has none.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	m *metrics.Metrics, leader string, logger *slog.Logger,
+	sweeper *executor.Kube, m *metrics.Metrics, leader string, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
@@ -375,6 +391,19 @@ func lead(
 			Logger: logger, Metrics: m,
 		}).Run(pollCtx)
 	}()
+	// So is deleting, by name, run Secrets a dead worker left without an
+	// owner. Like the poller it walks the configured tenants, each under
+	// its own row-level security scope.
+	if sweeper != nil {
+		go sweeper.RunSecretSweeper(pollCtx, st, func() []string {
+			tenants := current.Get().Tenants
+			ids := make([]string, 0, len(tenants))
+			for i := range tenants {
+				ids = append(ids, tenants[i].ID())
+			}
+			return ids
+		}, secretSweepInterval)
+	}
 	applied := ""
 	for {
 		f := current.Get()

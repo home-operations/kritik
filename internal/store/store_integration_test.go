@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/home-operations/kritik/internal/configfile"
@@ -244,6 +245,115 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 	})
 }
 
+func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha, beta := tenantID(t, s, "alpha"), tenantID(t, s, "beta")
+	var runID string
+	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, kind) VALUES ($1, 'index') RETURNING id`, alpha).Scan(&runID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIK_TEST_RUNNER_URL"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatalf("Open runner: %v", err)
+	}
+	t.Cleanup(runner.Close)
+	tests := []struct {
+		name    string
+		stmt    string
+		allowed bool
+	}{
+		{name: "phase", stmt: `UPDATE runner_runs SET phase = 'fetching' WHERE id = $1`, allowed: true},
+		{name: "heartbeat", stmt: `UPDATE runner_runs SET heartbeat_at = now() WHERE id = $1`, allowed: true},
+		{name: "error", stmt: `UPDATE runner_runs SET phase = 'failed', error = 'boom' WHERE id = $1`, allowed: true},
+		{name: "tenant", stmt: `UPDATE runner_runs SET tenant_id = '` + beta + `' WHERE id = $1`},
+		{name: "log tail", stmt: `UPDATE runner_runs SET log_tail = 'forged' WHERE id = $1`},
+		{name: "exit code", stmt: `UPDATE runner_runs SET exit_code = 0 WHERE id = $1`},
+		{name: "secret swept", stmt: `UPDATE runner_runs SET secret_swept_at = now() WHERE id = $1`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runner.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
+				tag, err := tx.Exec(ctx, tt.stmt, runID)
+				if err == nil && tag.RowsAffected() != 1 {
+					return errors.New("no row updated")
+				}
+				return err
+			})
+			var pgErr *pgconn.PgError
+			switch {
+			case tt.allowed && err != nil:
+				t.Fatalf("a runner must be able to update its %s: %v", tt.name, err)
+			case !tt.allowed && (!errors.As(err, &pgErr) || pgErr.Code != "42501"):
+				t.Fatalf("a runner updating its %s must be refused permission, got %v", tt.name, err)
+			}
+		})
+	}
+	var tenant string
+	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT tenant_id FROM runner_runs WHERE id = $1`, runID).Scan(&tenant)
+	}); err != nil || tenant != alpha {
+		t.Fatalf("run tenant = %q, %v", tenant, err)
+	}
+}
+
+func TestRunSecretsToSweep(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha, beta := tenantID(t, s, "alpha"), tenantID(t, s, "beta")
+	insert := func(tenant, age string, finished, swept bool) string {
+		t.Helper()
+		var id string
+		if err := s.WithTenant(ctx, tenant, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, kind, created_at, finished_at, secret_swept_at)
+				VALUES ($1, 'index', now() - $2::interval,
+					CASE WHEN $3 THEN now() END, CASE WHEN $4 THEN now() END) RETURNING id`,
+				tenant, age, finished, swept).Scan(&id)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	finishedOld := insert(alpha, "20 minutes", true, false)
+	abandoned := insert(alpha, "4 hours", false, false)
+	insert(alpha, "5 minutes", true, false)   // too fresh
+	insert(alpha, "20 minutes", false, false) // may still be running
+	insert(alpha, "20 minutes", true, true)   // already swept
+	betaRun := insert(beta, "20 minutes", true, false)
+
+	got, err := s.RunSecretsToSweep(ctx, alpha, 15*time.Minute, 3*time.Hour, 100)
+	if err != nil {
+		t.Fatalf("RunSecretsToSweep: %v", err)
+	}
+	if want := []string{abandoned, finishedOld}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("alpha runs to sweep = %v, want %v (oldest first, none of beta's)", got, want)
+	}
+	if limited, err := s.RunSecretsToSweep(ctx, alpha, 15*time.Minute, 3*time.Hour, 1); err != nil || len(limited) != 1 || limited[0] != abandoned {
+		t.Fatalf("limited sweep = %v, %v; want the oldest run only", limited, err)
+	}
+	// Marking is idempotent and scoped to the tenant: beta's run is not
+	// visible from alpha, so marking it there changes nothing.
+	for range 2 {
+		if err := s.MarkRunSecretsSwept(ctx, alpha, append(got, betaRun)); err != nil {
+			t.Fatalf("MarkRunSecretsSwept: %v", err)
+		}
+	}
+	if left, err := s.RunSecretsToSweep(ctx, alpha, 15*time.Minute, 3*time.Hour, 100); err != nil || len(left) != 0 {
+		t.Fatalf("alpha after marking = %v, %v; want none", left, err)
+	}
+	if left, err := s.RunSecretsToSweep(ctx, beta, 15*time.Minute, 3*time.Hour, 100); err != nil || len(left) != 1 || left[0] != betaRun {
+		t.Fatalf("beta after alpha's marking = %v, %v; want its own run", left, err)
+	}
+}
+
 func TestLeaderLockIsExclusive(t *testing.T) {
 	s := openStore(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -266,8 +376,7 @@ func TestLeaderLockIsExclusive(t *testing.T) {
 
 	second := openStore(t)
 	got := make(chan struct{}, 1)
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
+	ctx2 := t.Context()
 	go func() {
 		_ = second.RunAsLeader(ctx2, 50*time.Millisecond, func(ctx context.Context) error {
 			got <- struct{}{}

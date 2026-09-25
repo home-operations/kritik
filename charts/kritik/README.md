@@ -177,7 +177,7 @@ Kubernetes: `>=1.25.0-0`
 | podLabels | object | `{}` | Labels added to the pods. |
 | podSecurityContext | object | `{"runAsGroup":65532,"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level securityContext (non-root uid/gid 65532, RuntimeDefault seccomp). |
 | priorityClassName | string | `""` | PriorityClass for the pods. Empty uses the cluster default. |
-| rbac.create | bool | `true` | Create the Role and RoleBinding the worker needs: Jobs in the release namespace, plus their pods and logs. Nothing cluster-wide. |
+| rbac.create | bool | `true` | Create the Role and RoleBinding the worker needs: Jobs in the release namespace, their pods and logs, and the Secrets it hands them. Nothing cluster-wide. |
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"metrics"},"periodSeconds":10}` | Readiness probe, on the metrics port. A replica is ready once it has a database connection and its listeners are up. |
 | resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Pod resource requests/limits shared by every role; `roles.<role>.resources` overrides per role. |
 | roles.all.enabled | bool | `true` | Run the single-process topology: webhooks, leader duties and the worker in one Deployment. |

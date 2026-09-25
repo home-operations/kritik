@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -51,9 +50,6 @@ type followUpPR struct {
 	number                                                             int
 }
 
-// Timeout implements river.Worker.
-func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration { return followUpTimeout }
-
 // Work implements river.Worker.
 func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) error {
 	args := job.Args
@@ -73,7 +69,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		return err
 	}
 	owner, repo, _ := strings.Cut(pr.repository, "/")
-	comment, err := client.GetComment(ctx, owner, repo, args.CommentID, args.Inline)
+	comment, err := client.GetComment(ctx, owner, repo, args.Number, args.CommentID, args.Inline)
 	if err != nil {
 		return err
 	}
@@ -177,7 +173,7 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	}
 	msg := review.BuildFollowUp(review.Input{
 		Repository: f.pr.repository, Number: f.pr.number, Title: f.pr.title, Author: f.pr.author, BaseRef: f.pr.baseRef,
-		Changed: rec.changed, Diff: rec.diff, Context: rec.context,
+		Body: rec.body, Changed: rec.changed, Diff: rec.diff, Context: rec.context,
 	}, rec.findings, thread)
 	resp, err := f.complete(ctx, msg)
 	if err != nil {
@@ -245,7 +241,7 @@ func (f *followUp) disqualified(ctx context.Context) string {
 		return "permission unknown"
 	}
 	if !forge.CanWrite(perm) {
-		return "author has " + perm + " access, write is required"
+		return "author has " + string(perm) + " access, write is required"
 	}
 	return ""
 }
@@ -326,23 +322,31 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, int64, error) 
 }
 
 type reviewRecord struct {
+	body     string
 	diff     string
 	changed  []string
 	context  []contextpack.Chunk
 	findings []review.Finding
 }
 
-// reviewRecord loads the latest completed review's diff, context pack and
-// findings; without one the thread stands alone.
+// reviewRecord loads the pull request description and the latest completed
+// review's diff, context pack and findings; without a review the thread
+// stands alone.
 func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 	var rec reviewRecord
 	err := f.w.Store.WithTenant(ctx, f.tenant.ID(), func(tx pgx.Tx) error {
-		var reviewID string
+		if err := tx.QueryRow(ctx, `SELECT body FROM pull_requests WHERE id = $1`, f.pr.id).Scan(&rec.body); err != nil {
+			return fmt.Errorf("worker: load pull request body: %w", err)
+		}
+		last, err := lastCompleted(ctx, tx, f.pr.id)
+		if err != nil || last.id == "" {
+			return err
+		}
+		rec.findings = reviewFindings(last.findings)
 		var stages []byte
-		err := tx.QueryRow(ctx, `SELECT r.id, c.diff, c.changed_paths, c.stages FROM reviews r
-			JOIN runner_runs rr ON rr.review_id = r.id JOIN context_packs c ON c.runner_run_id = rr.id
-			WHERE r.pull_request_id = $1 AND r.status = 'completed' ORDER BY r.created_at DESC LIMIT 1`, f.pr.id).
-			Scan(&reviewID, &rec.diff, &rec.changed, &stages)
+		err = tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages FROM runner_runs rr
+			JOIN context_packs c ON c.runner_run_id = rr.id WHERE rr.review_id = $1`, last.id).
+			Scan(&rec.diff, &rec.changed, &stages)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -354,21 +358,7 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 				return fmt.Errorf("worker: decode context pack: %w", err)
 			}
 		}
-		rows, err := tx.Query(ctx, `SELECT path, line, severity, title, body FROM findings WHERE review_id = $1 ORDER BY path, line`, reviewID)
-		if err != nil {
-			return fmt.Errorf("worker: load findings: %w", err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var fd review.Finding
-			var sev string
-			if err := rows.Scan(&fd.Path, &fd.Line, &sev, &fd.Title, &fd.Body); err != nil {
-				return err
-			}
-			fd.Severity = review.Severity(sev)
-			rec.findings = append(rec.findings, fd)
-		}
-		return rows.Err()
+		return nil
 	})
 	return rec, err
 }

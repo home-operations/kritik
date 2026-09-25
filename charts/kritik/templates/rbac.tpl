@@ -18,8 +18,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
-  # One Secret per runner Job carries that run's git token, owned by the
-  # Job. No get or list: the worker writes them and never reads any.
+  # One Secret per runner Job carries that run's credentials, owned by the
+  # Job. No get or list: the worker writes them and never reads any; the
+  # leader deletes one a dead worker left unowned by name, from the run's
+  # database row.
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["create", "patch", "delete"]

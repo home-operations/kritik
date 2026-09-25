@@ -7,12 +7,13 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/forge"
+	"github.com/home-operations/kritik/internal/forge/forgejo"
 	"github.com/home-operations/kritik/internal/forge/github"
 )
 
 // BuildForge constructs the forge client for an installation from its
-// credentials in the configuration file. GitHub only for now; GitLab and
-// Forgejo follow the rollout order in the ADR.
+// credentials in the configuration file. GitHub and Forgejo are
+// implemented; GitLab follows the rollout order in the ADR.
 func BuildForge(ctx context.Context, in *configfile.Installation, externalID int64, repo string) (forge.Client, error) {
 	switch in.Forge {
 	case configfile.ForgeGitHub:
@@ -32,6 +33,13 @@ func BuildForge(ctx context.Context, in *configfile.Installation, externalID int
 			externalID = id
 		}
 		return github.NewClient(app, externalID, in.Host)
+	case configfile.ForgeForgejo:
+		c, err := forgejo.NewClient(in.Host, in.TokenValue().Value(), nil)
+		if err != nil {
+			return nil, err
+		}
+		c.FetchToken = in.GitTokenValue().Value()
+		return c, nil
 	default:
 		return nil, fmt.Errorf("worker: forge %s is not implemented yet", in.Forge)
 	}

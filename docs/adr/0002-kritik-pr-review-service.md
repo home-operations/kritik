@@ -725,15 +725,19 @@ from the Kubernetes API.
 token into a Secret named after the Job, references it from the Job's
 environment, and makes the Job its owner once created, so the TTL that
 removes the Job removes the Secret. The token never appears in the Job
-spec, which anyone allowed to read Jobs could read. The worker Role may
-create, patch and delete Secrets, never get or list them.
+spec, which anyone allowed to read Jobs could read. ADR-0003 §2.9 extends
+this Secret into the run's job-scoped Secret (the job document and, in
+agentic mode, the model key beside the token), and has the leader delete
+one no Job owns by name, from the run's row, so the worker Role still has
+neither `get` nor `list` on Secrets.
 
 **A Job never outlives its queue job.** River bounds every job with a
 timeout, one minute by default, and cancels its context past it. Each
-worker sets its own: the runner deadline plus fifteen minutes for a
-review, plus an hour for an index (the embedding pass of a large
-repository is many calls), ten minutes for a follow-up. When the context
-ends while a runner Job is still running, whether by timeout or by a
+worker sets its own from the tenant's runner deadline (the agent's timeout
+in agentic mode) plus headroom for the lease wait, publish or embedding
+pass, capped at three hours; a follow-up gets thirty minutes. Stuck jobs
+are rescued only after that cap plus an hour. When the context ends while
+a runner Job is still running, whether by timeout, supersession or a
 worker shutting down, the executor deletes the Job and its pod before
 returning, so no runner finishes work nobody will read; the run row keeps
 what the Job reported up to that point.
@@ -941,7 +945,9 @@ type Embedder interface {
 }
 ```
 
-**v1 is OpenRouter only**, decided 2026-09-24. OpenRouter is one
+**v1 is OpenRouter only**, decided 2026-09-24 and amended by
+[ADR-0003](0003-forgejo-agentic-review.md) §2.5, which adds direct
+Anthropic and OpenAI providers and replaces Fantasy. OpenRouter is one
 OpenAI-compatible endpoint that covers every call the service makes:
 `/chat/completions` for structured findings, `/embeddings` for the
 deployment-wide embedder, a per-request `models` list for server-side

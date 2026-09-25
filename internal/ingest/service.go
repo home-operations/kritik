@@ -2,8 +2,10 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -40,6 +42,18 @@ const (
 // reviewActions are the pull request actions that start a review; "poll"
 // is the poller's synthetic action.
 var reviewActions = map[string]bool{"opened": true, "synchronize": true, "reopened": true, "ready_for_review": true, "poll": true}
+
+// reviewInsertOpts returns the River insert options for a review job, or nil
+// for the default (immediate). Only a new head (synchronize, or the
+// poller's synthetic poll) settles: an initial open, reopen, or draft
+// transition has no prior head to supersede, so there is nothing to wait
+// out.
+func reviewInsertOpts(trigger string, settle time.Duration, now time.Time) *river.InsertOpts {
+	if (trigger == "synchronize" || trigger == "poll") && settle > 0 {
+		return &river.InsertOpts{ScheduledAt: now.Add(settle)}
+	}
+	return nil
+}
 
 // Dispatch implements Dispatcher.
 func (s *Service) Dispatch(ctx context.Context, req Request) (Outcome, error) {
@@ -90,27 +104,32 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		}
 	}
 
+	labels, err := json.Marshal(pr.FilterVars()["labels"])
+	if err != nil {
+		return Outcome{}, fmt.Errorf("ingest: encode labels: %w", err)
+	}
 	out := Outcome{Status: Enqueued, Job: "review"}
-	err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
+	err = s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
 		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
 		if err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO pull_requests (tenant_id, repository_id, number, title, author, author_is_bot, draft, fork, state,
-				head_ref, head_sha, base_ref, base_sha, url, opened_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11, $12, $13, $14)
+				head_ref, head_sha, base_ref, base_sha, url, body, opened_at, labels, merged)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11, $12, $13, $14, $15, $16, $17)
 			ON CONFLICT (repository_id, number) DO UPDATE SET
 				title = EXCLUDED.title, author = EXCLUDED.author, author_is_bot = EXCLUDED.author_is_bot, draft = EXCLUDED.draft,
 				fork = EXCLUDED.fork, state = 'open', head_ref = EXCLUDED.head_ref, head_sha = EXCLUDED.head_sha,
-				base_ref = EXCLUDED.base_ref, base_sha = EXCLUDED.base_sha, url = EXCLUDED.url, updated_at = now()`,
+				base_ref = EXCLUDED.base_ref, base_sha = EXCLUDED.base_sha, url = EXCLUDED.url, body = EXCLUDED.body,
+				labels = EXCLUDED.labels, merged = EXCLUDED.merged, updated_at = now()`,
 			req.Tenant.ID(), rid, pr.Number, pr.Title, pr.Author, pr.AuthorIsBot, pr.Draft, pr.Fork,
-			pr.HeadRef, pr.HeadSHA, pr.BaseRef, pr.BaseSHA, pr.URL, nullTime(pr)); err != nil {
+			pr.HeadRef, pr.HeadSHA, pr.BaseRef, pr.BaseSHA, pr.URL, pr.Body, nullTime(pr), labels, pr.Merged); err != nil {
 			return fmt.Errorf("ingest: upsert pull request: %w", err)
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
 			TenantID: req.Tenant.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: ev.Action,
-		}, nil)
+		}, reviewInsertOpts(ev.Action, settings.Settle, time.Now()))
 		if err != nil {
 			return fmt.Errorf("ingest: enqueue review: %w", err)
 		}

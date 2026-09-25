@@ -54,14 +54,40 @@ const (
 	StatusSuccess StatusState = "success"
 )
 
+// Permission is a login's access level to a repository, in ascending order.
+type Permission string
+
+// Levels a forge grants a collaborator.
+const (
+	PermissionNone     Permission = "none"
+	PermissionRead     Permission = "read"
+	PermissionTriage   Permission = "triage"
+	PermissionWrite    Permission = "write"
+	PermissionMaintain Permission = "maintain"
+	PermissionAdmin    Permission = "admin"
+)
+
+// Valid reports whether p is one of the known permission levels.
+func (p Permission) Valid() bool {
+	switch p {
+	case PermissionNone, PermissionRead, PermissionTriage, PermissionWrite, PermissionMaintain, PermissionAdmin:
+		return true
+	}
+	return false
+}
+
 // Client is one installation's access to its forge.
 type Client interface {
 	// MergeBase asks the forge for the merge-base of base (a branch) and
-	// head (a commit), the same way the forge computes the PR diff.
-	MergeBase(ctx context.Context, owner, repo, base, head string) (string, error)
+	// head (a commit) of pull request number, the same way the forge
+	// computes the PR diff.
+	MergeBase(ctx context.Context, owner, repo string, number int, base, head string) (string, error)
 	// CloneURL is the HTTPS clone URL of a repository on this forge.
 	CloneURL(owner, repo string) string
-	// GitToken is a short-lived credential a runner can fetch with.
+	// GitToken is the credential a runner fetches with: a short-lived
+	// installation token on GitHub, and on Forgejo a static token, the
+	// installation's gitToken when configured and its API token otherwise.
+	// It reaches a pod that reads untrusted content.
 	GitToken(ctx context.Context) (string, error)
 	// BranchTip returns the commit a branch points at; an empty branch
 	// means the repository's default branch, whose name is also returned.
@@ -85,14 +111,16 @@ type Client interface {
 
 	// GetComment fetches one comment; inline selects the review-comment
 	// namespace, which the forge keeps apart from conversation comments.
-	GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (Comment, error)
+	// number is the pull request the comment belongs to; forges that can
+	// resolve a comment by id alone (GitHub) ignore it.
+	GetComment(ctx context.Context, owner, repo string, number int, id int64, inline bool) (Comment, error)
 	// ListConversation returns the PR's conversation comments, oldest first.
 	ListConversation(ctx context.Context, owner, repo string, number int) ([]Comment, error)
 	// ListInline returns the PR's inline review comments, oldest first.
 	ListInline(ctx context.Context, owner, repo string, number int) ([]Comment, error)
 	// Permission is the login's access to the repository: admin, maintain,
 	// write, triage, read or none.
-	Permission(ctx context.Context, owner, repo, login string) (string, error)
+	Permission(ctx context.Context, owner, repo, login string) (Permission, error)
 	// ReplyInline posts a reply under a root inline comment.
 	ReplyInline(ctx context.Context, owner, repo string, number int, rootID int64, body string) (int64, error)
 	// ListOpenPullRequests returns the open pull requests updated since a
@@ -101,9 +129,9 @@ type Client interface {
 }
 
 // CanWrite reports whether a permission level allows pushing.
-func CanWrite(permission string) bool {
+func CanWrite(permission Permission) bool {
 	switch permission {
-	case "admin", "maintain", "write":
+	case PermissionAdmin, PermissionMaintain, PermissionWrite:
 		return true
 	}
 	return false

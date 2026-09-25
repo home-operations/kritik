@@ -29,10 +29,8 @@ type Base struct {
 // tenant finds the job's tenant in the current file. A tenant that has
 // been removed cancels the job: it will not come back by retrying.
 func (b *Base) tenant(file *configfile.File, id string) (*configfile.Tenant, error) {
-	for i := range file.Tenants {
-		if file.Tenants[i].ID() == id {
-			return &file.Tenants[i], nil
-		}
+	if t := tenantByID(file, id); t != nil {
+		return t, nil
 	}
 	return nil, river.JobCancel(fmt.Errorf("worker: tenant %s is not in the configuration", id))
 }
@@ -51,13 +49,6 @@ func (b *Base) client(
 // releaseTimeout bounds the lease release after the job's context is gone.
 const releaseTimeout = 10 * time.Second
 
-// jobTimeoutSlack is what a job may spend beyond its runner Job's deadline:
-// lease waits, model calls and write-back.
-const jobTimeoutSlack = 15 * time.Minute
-
-// followUpTimeout bounds a follow-up, which has no runner Job.
-const followUpTimeout = 10 * time.Minute
-
 // withLease runs fn while holding one of the tenant's slots on key,
 // records the wait, and releases the slot afterwards even when the job's
 // context has been cancelled.
@@ -70,12 +61,17 @@ func (b *Base) withLease(
 		return err
 	}
 	b.Metrics.LeaseWait(tenant.Slug, key, time.Since(waited))
-	defer func() {
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
-		defer cancel()
-		if err := l.release(rctx); err != nil {
-			b.Logger.Warn("lease not released", "key", key, "error", err)
-		}
-	}()
+	defer b.releaseLease(ctx, b.Logger, l, key)
 	return fn(ctx)
+}
+
+// releaseLease releases l on a context of its own, since the job's has
+// usually ended by the time a lease is let go, and logs a failure to
+// logger, which carries whatever the caller knows of the job.
+func (b *Base) releaseLease(ctx context.Context, logger *slog.Logger, l *lease, key string) {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+	if err := l.release(rctx); err != nil {
+		logger.Warn("lease not released", "key", key, "error", err)
+	}
 }

@@ -83,6 +83,7 @@ type PullRequest struct {
 	BaseRef     string
 	BaseSHA     string
 	URL         string
+	Body        string
 	CreatedAt   time.Time
 	Labels      []Label
 }
@@ -112,6 +113,7 @@ func (p *PullRequest) FilterVars() map[string]any {
 		"headSha":   p.HeadSHA,
 		"baseRef":   p.BaseRef,
 		"url":       p.URL,
+		"body":      p.Body,
 		"createdAt": p.CreatedAt,
 		"labels":    labels,
 	}
@@ -218,6 +220,7 @@ func (r ghRepo) event() *Repository {
 type ghPR struct {
 	Number    int       `json:"number"`
 	Title     string    `json:"title"`
+	Body      string    `json:"body"`
 	State     string    `json:"state"`
 	Merged    bool      `json:"merged"`
 	Draft     bool      `json:"draft"`
@@ -249,7 +252,7 @@ func (p ghPR) event() *PullRequest {
 		Number: p.Number, Title: p.Title, Author: p.User.Login, AuthorIsBot: p.User.isBot(),
 		State: cmp.Or(p.State, stateOpen), Merged: p.Merged, Draft: p.Draft,
 		HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, BaseRef: p.Base.Ref, BaseSHA: p.Base.SHA,
-		URL: p.HTMLURL, CreatedAt: p.CreatedAt,
+		URL: p.HTMLURL, Body: p.Body, CreatedAt: p.CreatedAt,
 	}
 	// A fork PR's head lives in a different repository than its base. A
 	// deleted fork leaves head.repo null, which is also not the base repo.
@@ -282,7 +285,14 @@ func parseGitHub(event, delivery string, body []byte) (Event, error) {
 func parseForgejo(event, delivery string, body []byte) (Event, error) {
 	switch event {
 	case evPullRequest:
-		return parsePullRequestEvent(delivery, body)
+		ev, err := parsePullRequestEvent(delivery, body)
+		// Forgejo spells the synchronize action "synchronized" (past
+		// tense), unlike GitHub's "synchronize"; normalize so downstream
+		// action-string matching doesn't need to know which forge sent it.
+		if err == nil && ev.Action == "synchronized" {
+			ev.Action = "synchronize"
+		}
+		return ev, err
 	case evIssueComment, "pull_request_comment":
 		return parseIssueComment(delivery, body)
 	case evReviewComment:
@@ -453,6 +463,7 @@ func parseGitLab(delivery string, body []byte) (Event, error) {
 			ObjectAttributes struct {
 				IID          int    `json:"iid"`
 				Title        string `json:"title"`
+				Description  string `json:"description"`
 				State        string `json:"state"` // opened, closed, merged
 				Action       string `json:"action"`
 				Draft        bool   `json:"draft"`
@@ -480,7 +491,7 @@ func parseGitLab(delivery string, body []byte) (Event, error) {
 			Number: a.IID, Title: a.Title, Author: probe.User.Username, AuthorIsBot: probe.User.Bot,
 			State: map[bool]string{true: stateOpen, false: "closed"}[a.State == "opened"], Merged: a.State == "merged",
 			Draft: a.Draft, Fork: a.SourceProjID != a.TargetProjID,
-			HeadRef: a.SourceBranch, HeadSHA: a.LastCommit.ID, BaseRef: a.TargetBranch, URL: a.URL, CreatedAt: created,
+			HeadRef: a.SourceBranch, HeadSHA: a.LastCommit.ID, BaseRef: a.TargetBranch, URL: a.URL, Body: a.Description, CreatedAt: created,
 		}
 		for _, l := range p.Labels {
 			pr.Labels = append(pr.Labels, Label{Name: l.Title, Color: l.Color})

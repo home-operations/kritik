@@ -16,6 +16,7 @@ import (
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 // CompleterSource resolves a configured provider name to a Completer.
@@ -41,6 +42,9 @@ type reviewInput struct {
 	context []contextpack.Chunk
 	title   string
 	author  string
+	body    string
+	// deltaDiff is the diff since the last review's head.
+	deltaDiff string
 }
 
 // publishPhase runs the model over a prepared review and writes the answer
@@ -57,6 +61,21 @@ type publishPhase struct {
 	runID    string
 	jobID    int64
 	logger   *slog.Logger
+	// parse and templates are the repository's contract settings; the zero
+	// values are kritik's defaults.
+	parse     review.ParseOptions
+	templates review.Templates
+	// instructions are the repository's review instructions, and repoNotes
+	// what the summary states about its configuration files.
+	instructions []string
+	repoNotes    []string
+	// prior is the last completed review, whose inline comments are not
+	// posted again; scope says whether this review builds on it.
+	prior priorReview
+	scope review.Scope
+	// agent is an agentic review's run, whose usage the worker recorded
+	// as soon as the runner ended.
+	agent *agentRun
 }
 
 func (p *publishPhase) run(ctx context.Context) (status string, err error) {
@@ -74,9 +93,17 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 		p.logger.Warn("similar-code retrieval skipped", "error", err)
 	}
 	in.context = append(in.context, similar...)
+	system := review.SystemPrompt(p.instructions)
+	var incremental *review.IncrementalInput
+	if p.scope == review.ScopeIncremental {
+		incremental = &review.IncrementalInput{
+			PriorHeadSHA: p.prior.headSHA, DeltaDiff: in.deltaDiff, Prior: reviewFindings(p.prior.findings),
+		}
+	}
 	msg, omitted, contextOmitted := review.Build(review.Input{
-		Repository: p.pr.repository, Number: p.pr.number, Title: in.title, Author: in.author,
-		BaseRef: p.pr.baseRef, Changed: in.changed, Diff: in.diff, Context: in.context,
+		Repository: p.pr.repository, Number: p.pr.number, Title: in.title, Author: in.author, Body: in.body,
+		BaseRef: p.pr.baseRef, Changed: in.changed, Diff: in.diff, Context: in.context, Incremental: incremental,
+		BudgetTokens: review.UserBudget(system),
 	})
 	p.logger.Info("prompt built", "chars", len(msg), "diff_files_omitted", len(omitted),
 		"context_chunks", len(in.context), "context_omitted", contextOmitted)
@@ -88,30 +115,37 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 		p.w.Metrics.ContextChunks(p.tenant.Slug, stage, n)
 	}
 
-	resp, role, err := p.complete(ctx, ref, msg)
-	var capped cappedError
-	if errors.As(err, &capped) {
+	resp, role, err := p.complete(ctx, ref, system, msg)
+	if capped, ok := errors.AsType[cappedError](err); ok {
 		p.logger.Warn("review capped", "cap", string(capped))
 		return statusCapped, err
 	}
 	if err != nil {
 		return statusFailed, err
 	}
-	res, dropped, err := review.Parse(resp.Raw, review.Anchors(in.diff))
+	res, dropped, err := review.Parse(resp.Raw, review.Anchors(in.diff), p.parse)
 	if err != nil {
 		return statusFailed, err
 	}
 	p.logger.Info("model answered", "model", resp.Model, "upstream", resp.Upstream, "findings", len(res.Findings),
 		"dropped", len(dropped), "omitted", len(omitted), "input_tokens", resp.InputTokens, "cached_tokens", resp.CachedTokens,
 		"output_tokens", resp.OutputTokens, "cost_usd", resp.CostUSD)
-	for _, f := range dropped {
-		p.logger.Debug("finding dropped", "path", f.Path, "line", f.Line, "title", f.Title)
+	for _, d := range dropped {
+		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
 
-	commentID, err := p.writeBack(ctx, res, resp.Model, omitted, len(dropped))
+	commentID, inline, err := p.writeBack(ctx, res, resp.Model, append(reviewNotes(omitted, dropped), p.repoNotes...))
 	if err != nil {
 		return statusFailed, err
 	}
+	p.countFindings(res)
+	if err := p.persist(ctx, res, inline, resp, role, commentID); err != nil {
+		return statusFailed, err
+	}
+	return statusCompleted, nil
+}
+
+func (p *publishPhase) countFindings(res review.Result) {
 	bySeverity := map[string]int{}
 	for _, f := range res.Findings {
 		bySeverity[string(f.Severity)]++
@@ -119,45 +153,65 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	for severity, n := range bySeverity {
 		p.w.Metrics.Findings(p.tenant.Slug, severity, n)
 	}
-	if err := p.persist(ctx, res, resp, role, commentID); err != nil {
-		return statusFailed, err
-	}
-	return statusCompleted, nil
 }
 
 // checkCaps returns a description of the cap that is exhausted, or "".
 func (p *publishPhase) checkCaps(ctx context.Context) (string, error) {
-	limits := p.settings.Limits
+	return capReached(ctx, p.w.Store, p.tenant.ID(), p.settings.Limits)
+}
+
+// capReached returns a description of the tenant's cap that is exhausted,
+// or "".
+func capReached(ctx context.Context, st *store.Store, tenantID string, limits configfile.Limits) (string, error) {
 	if limits.ReviewsPerDay <= 0 && limits.TokensPerMonth <= 0 {
 		return "", nil
 	}
-	var reviews, tokens int64
-	err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+	u, err := readUsage(ctx, st, tenantID)
+	if err != nil {
+		return "", err
+	}
+	return u.reached(limits), nil
+}
+
+// capUsage is what a tenant's caps count: completed reviews today and
+// tokens this month.
+type capUsage struct {
+	reviews, tokens int64
+}
+
+func readUsage(ctx context.Context, st *store.Store, tenantID string) (capUsage, error) {
+	var u capUsage
+	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM reviews
-			WHERE status = 'completed' AND created_at >= date_trunc('day', now())`).Scan(&reviews); err != nil {
+			WHERE status = 'completed' AND created_at >= date_trunc('day', now())`).Scan(&u.reviews); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `SELECT coalesce(sum(input_tokens + output_tokens), 0) FROM usage
-			WHERE created_at >= date_trunc('month', now())`).Scan(&tokens)
+			WHERE created_at >= date_trunc('month', now())`).Scan(&u.tokens)
 	})
 	if err != nil {
-		return "", fmt.Errorf("worker: read caps: %w", err)
+		return capUsage{}, fmt.Errorf("worker: read caps: %w", err)
 	}
-	if limits.ReviewsPerDay > 0 && reviews >= int64(limits.ReviewsPerDay) {
-		return fmt.Sprintf("reviewsPerDay (%d) reached", limits.ReviewsPerDay), nil
+	return u, nil
+}
+
+// reached says which cap u has reached, or "".
+func (u capUsage) reached(limits configfile.Limits) string {
+	if limits.ReviewsPerDay > 0 && u.reviews >= int64(limits.ReviewsPerDay) {
+		return fmt.Sprintf("reviewsPerDay (%d) reached", limits.ReviewsPerDay)
 	}
-	if limits.TokensPerMonth > 0 && tokens >= limits.TokensPerMonth {
-		return fmt.Sprintf("tokensPerMonth (%d) reached", limits.TokensPerMonth), nil
+	if limits.TokensPerMonth > 0 && u.tokens >= limits.TokensPerMonth {
+		return fmt.Sprintf("tokensPerMonth (%d) reached", limits.TokensPerMonth)
 	}
-	return "", nil
+	return ""
 }
 
 func (p *publishPhase) load(ctx context.Context) (reviewInput, error) {
 	var in reviewInput
 	err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
 		var stages []byte
-		if err := tx.QueryRow(ctx, `SELECT diff, changed_paths, stages FROM context_packs WHERE runner_run_id = $1`, p.runID).
-			Scan(&in.diff, &in.changed, &stages); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT diff, changed_paths, stages, delta_diff FROM context_packs WHERE runner_run_id = $1`, p.runID).
+			Scan(&in.diff, &in.changed, &stages, &in.deltaDiff); err != nil {
 			return fmt.Errorf("worker: read context pack: %w", err)
 		}
 		// Packs written before the context stages existed hold '{}'.
@@ -166,7 +220,8 @@ func (p *publishPhase) load(ctx context.Context) (reviewInput, error) {
 				return fmt.Errorf("worker: decode context pack: %w", err)
 			}
 		}
-		if err := tx.QueryRow(ctx, `SELECT title, author FROM pull_requests WHERE id = $1`, p.pr.id).Scan(&in.title, &in.author); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT title, author, body FROM pull_requests WHERE id = $1`, p.pr.id).
+			Scan(&in.title, &in.author, &in.body); err != nil {
 			return fmt.Errorf("worker: read pull request: %w", err)
 		}
 		return nil
@@ -178,7 +233,9 @@ func (p *publishPhase) load(ctx context.Context) (reviewInput, error) {
 // configured fallback model. A fallback on the same provider is handed to
 // the provider (OpenRouter switches server-side); one on another provider
 // is a second call from here. The returned role says which answered.
-func (p *publishPhase) complete(ctx context.Context, ref configfile.ModelRef, msg string) (model.CompletionResponse, string, error) {
+func (p *publishPhase) complete(
+	ctx context.Context, ref configfile.ModelRef, system, msg string,
+) (model.CompletionResponse, string, error) {
 	var resp model.CompletionResponse
 	role := roleReview
 	err := p.w.withLease(ctx, p.tenant, string(ref), p.settings.Slots(), p.jobID, func(ctx context.Context) error {
@@ -191,7 +248,7 @@ func (p *publishPhase) complete(ctx context.Context, ref configfile.ModelRef, ms
 		if capped != "" {
 			return cappedError(capped)
 		}
-		resp, role, err = p.callModels(ctx, ref, msg)
+		resp, role, err = p.callModels(ctx, ref, system, msg)
 		return err
 	})
 	return resp, role, err
@@ -204,10 +261,15 @@ func (e cappedError) Error() string { return string(e) }
 
 // callModels asks the primary model and, when configured on another
 // provider, the fallback. The caller holds the lease.
-func (p *publishPhase) callModels(ctx context.Context, ref configfile.ModelRef, msg string) (model.CompletionResponse, string, error) {
+func (p *publishPhase) callModels(
+	ctx context.Context, ref configfile.ModelRef, system, msg string,
+) (model.CompletionResponse, string, error) {
 	req := model.CompletionRequest{
-		System: review.System, User: msg, Model: ref.Model(),
+		System: system, User: msg, Model: ref.Model(),
 		Schema: review.Schema(), SchemaName: "findings", MaxTokens: maxOutputTokens,
+	}
+	if p.parse.RequireSuggestedFix {
+		req.Schema = review.SchemaStrict()
 	}
 	fallback := p.settings.Models.Fallback
 	if fallback != "" && fallback.Provider() == ref.Provider() {
@@ -238,25 +300,97 @@ func (p *publishPhase) callModels(ctx context.Context, ref configfile.ModelRef, 
 	return resp, roleFallback, nil
 }
 
+// reviewNotes are the caveats the sticky comment states about a review.
+func reviewNotes(omitted []string, dropped []review.Dropped) []string {
+	var notes []string
+	if len(omitted) > 0 {
+		notes = append(notes, fmt.Sprintf("%d file(s) were omitted from the diff to fit the context budget", len(omitted)))
+	}
+	if len(dropped) > 0 {
+		byReason := map[review.DropReason]int{}
+		for _, d := range dropped {
+			byReason[d.Reason]++
+		}
+		reasons := make([]string, 0, len(byReason))
+		for r, n := range byReason {
+			reasons = append(reasons, fmt.Sprintf("%s: %d", r, n))
+		}
+		sort.Strings(reasons)
+		notes = append(notes, fmt.Sprintf("%d finding(s) were dropped (%s)", len(dropped), strings.Join(reasons, ", ")))
+	}
+	return notes
+}
+
 // writeBack posts the sticky comment (created once, edited after), the
 // inline review, and the commit status. Only the sticky comment is
 // required: the other two are best effort and logged when they fail, so a
-// forge quirk cannot turn a finished review into a retry storm.
-func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, omitted []string, dropped int) (int64, error) {
+// forge quirk cannot turn a finished review into a retry storm. A finding
+// the last review already posted inline is listed in the summary only.
+// The returned flags say, per finding, whether an inline comment for it is
+// on the forge.
+func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, []bool, error) {
+	owner, repo, _ := strings.Cut(p.pr.repository, "/")
+	onForge := alreadyInline(res.Findings, p.prior.findings)
+	// Inline comments render first so a failing inline template is noted
+	// in the summary. After one failure the rest use the default, so a
+	// template that times out costs one deadline, not one per finding.
+	templates := p.templates
+	inline := make([]forge.InlineComment, 0, len(res.Findings))
+	for i, f := range res.Findings {
+		if onForge[i] {
+			continue
+		}
+		body, inlineNotes := review.RenderInline(ctx, templates, f)
+		if len(inlineNotes) > 0 {
+			templates.Inline = ""
+			notes = append(notes, inlineNotes...)
+		}
+		inline = append(inline, forge.InlineComment{Path: f.Path, Line: f.Line, Body: body})
+	}
+	body, renderNotes := review.RenderSummary(ctx, p.templates, review.RenderData{
+		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Result: res, Counts: res.Counts(), Notes: notes,
+		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA,
+	})
+	for _, n := range renderNotes {
+		p.logger.Warn("template fell back to the default", "note", n)
+	}
+
+	commentID, err := p.upsertSticky(ctx, body)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if err := p.client.CreateReview(ctx, owner, repo, p.pr.number, p.pr.headSHA, inline); err != nil {
+		p.logger.Warn("inline review not posted", "error", err)
+	} else {
+		for i := range onForge {
+			onForge[i] = true
+		}
+	}
+	desc := "no findings"
+	if n := len(res.Findings); n > 0 {
+		desc = fmt.Sprintf("%d finding(s)", n)
+	}
+	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: "+desc); err != nil {
+		p.logger.Warn("commit status not set", "error", err)
+	}
+	return commentID, onForge, nil
+}
+
+// upsertSticky edits the pull request's sticky comment to body, creating
+// it the first time, and returns its id.
+func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, error) {
 	owner, repo, _ := strings.Cut(p.pr.repository, "/")
 	login, err := p.client.BotLogin(ctx)
 	if err != nil {
 		return 0, err
 	}
-	marker := review.Marker(p.pr.number)
-	body := review.StickyBody(p.pr.number, res, modelName, omitted, dropped)
-
 	var commentID int64
 	_ = p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT forge_comment_id FROM sticky_comments WHERE pull_request_id = $1`, p.pr.id).Scan(&commentID)
 	})
 	if commentID == 0 {
-		if commentID, err = p.client.FindComment(ctx, owner, repo, p.pr.number, login, marker); err != nil {
+		if commentID, err = p.client.FindComment(ctx, owner, repo, p.pr.number, login, review.Marker(p.pr.number)); err != nil {
 			return 0, err
 		}
 	}
@@ -268,29 +402,18 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	if err != nil {
 		return 0, err
 	}
-
-	inline := make([]forge.InlineComment, 0, len(res.Findings))
-	for _, f := range res.Findings {
-		inline = append(inline, forge.InlineComment{Path: f.Path, Line: f.Line, Body: review.InlineBody(f)})
-	}
-	if err := p.client.CreateReview(ctx, owner, repo, p.pr.number, p.pr.headSHA, inline); err != nil {
-		p.logger.Warn("inline review not posted", "error", err)
-	}
-	desc := "no findings"
-	if n := len(res.Findings); n > 0 {
-		desc = fmt.Sprintf("%d finding(s)", n)
-	}
-	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: "+desc); err != nil {
-		p.logger.Warn("commit status not set", "error", err)
-	}
 	return commentID, nil
 }
 
-func (p *publishPhase) persist(ctx context.Context, res review.Result, resp model.CompletionResponse, role string, commentID int64) error {
+func (p *publishPhase) persist(
+	ctx context.Context, res review.Result, inline []bool, resp model.CompletionResponse, role string, commentID int64,
+) error {
 	return p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
-		for _, f := range res.Findings {
-			if _, err := tx.Exec(ctx, `INSERT INTO findings (tenant_id, review_id, path, line, severity, title, body)
-				VALUES ($1, $2, $3, $4, $5, $6, $7)`, p.tenant.ID(), p.reviewID, f.Path, f.Line, string(f.Severity), f.Title, f.Body); err != nil {
+		for i, f := range res.Findings {
+			if _, err := tx.Exec(ctx, `INSERT INTO findings
+				(tenant_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint, posted_inline)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, p.tenant.ID(), p.reviewID, f.Path, f.Line, string(f.Severity),
+				f.Title, f.Explanation, f.SuggestedFix, review.Fingerprint(f), inline[i]); err != nil {
 				return fmt.Errorf("worker: insert finding: %w", err)
 			}
 		}
@@ -299,14 +422,20 @@ func (p *publishPhase) persist(ctx context.Context, res review.Result, resp mode
 			p.pr.id, p.tenant.ID(), commentID); err != nil {
 			return fmt.Errorf("worker: upsert sticky comment: %w", err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO usage
-			(tenant_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-			p.tenant.ID(), p.pr.repositoryID, p.reviewID, role, resp.Model, resp.Upstream,
-			resp.InputTokens, resp.OutputTokens, resp.CostUSD); err != nil {
-			return fmt.Errorf("worker: insert usage: %w", err)
+		if p.agent == nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO usage
+				(tenant_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+				p.tenant.ID(), p.pr.repositoryID, p.reviewID, role, resp.Model, resp.Upstream,
+				resp.InputTokens, resp.OutputTokens, resp.CostUSD); err != nil {
+				return fmt.Errorf("worker: insert usage: %w", err)
+			}
 		}
-		if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2 WHERE id = $1`, p.reviewID, resp.Model); err != nil {
+		summary, err := json.Marshal(res.Summary)
+		if err != nil {
+			return fmt.Errorf("worker: encode summary: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2, summary = $3 WHERE id = $1`, p.reviewID, resp.Model, summary); err != nil {
 			return fmt.Errorf("worker: record model: %w", err)
 		}
 		return nil

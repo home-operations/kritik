@@ -19,7 +19,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	m := New(reg)
 	m.Webhook("onedr0p-github", "enqueued")
 	m.Review("onedr0p", "completed", 12*time.Second)
-	m.Findings("onedr0p", "warning", 2)
+	m.Findings("onedr0p", "important", 2)
 	m.ContextChunks("onedr0p", "similar", 4)
 	m.IndexRun("onedr0p", "full", "completed", 565)
 	m.RunnerRun("onedr0p", "index", "success", 4*time.Second)

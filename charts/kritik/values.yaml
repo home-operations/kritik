@@ -60,6 +60,62 @@ roles:
 config:
   # -- (required unless `existingConfigMap` is set) The configuration file, as YAML. Passed through verbatim, not tpl'd. See the README for the schema.
   file: {}
+  # providers:
+  #   openrouter:
+  #     type: openrouter
+  #     apiKey: { env: OPENROUTER_API_KEY }
+  #   gateway:
+  #     # Any OpenAI- or Anthropic-API-compatible endpoint is a provider via `baseUrl`.
+  #     type: openai
+  #     baseUrl: https://gateway.example.com/v1
+  #     apiKey: { file: /var/run/secrets/kritik/providers/gateway-api-key }
+  #     # Pricing (USD per million tokens) only matters for providers that
+  #     # don't self-report cost; OpenRouter does, so it needs none here.
+  #     pricing:
+  #       gpt-6-sol: { input: 1.25, output: 10 }
+  #   anthropic:
+  #     type: anthropic
+  #     apiKey: { file: /var/run/secrets/kritik/providers/anthropic-api-key }
+  #     pricing:
+  #       claude-sonnet-5: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }
+  # defaults:
+  #   models:
+  #     review: openrouter/openai/gpt-6-sol
+  #   filter: "!pr.draft"
+  # tenants:
+  #   - slug: example
+  #     installations:
+  #       - name: example-github
+  #         forge: github
+  #         account: example
+  #         app:
+  #           clientId: Iv1.example
+  #           privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+  #           webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+  #       # GitLab and Forgejo installations authenticate with a bot token
+  #       # instead of a GitHub App.
+  #       - name: example-forgejo
+  #         forge: forgejo
+  #         host: forge.example.com
+  #         account: example
+  #         token: { file: /var/run/secrets/kritik/bot/forgejo-token }
+  #         # Runner pods fetch with gitToken instead of token when set; a
+  #         # read-only token keeps a write-capable one out of the pod that
+  #         # reads untrusted pull request content.
+  #         gitToken: { file: /var/run/secrets/kritik/bot/forgejo-read-token }
+  #         webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+  #     repositories:
+  #       - name: example/widgets
+  #         # agentic mode gives the model a bounded, read-only tool loop
+  #         # over the commit tree instead of one prompt with the diff.
+  #         mode: agentic
+  #         # maxTokens bounds one review's spend; it is cut further to what
+  #         # is left of the tenant's tokensPerMonth.
+  #         agent: { timeout: 15m, maxTokens: 1000000 }
+  #         # Collapse a burst of pushes onto the last head before spending
+  #         # anything on a review.
+  #         settle: 2m
+
   # -- Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`.
   existingConfigMap: ""
   # -- How often each replica re-reads the file (Go duration).
@@ -150,7 +206,9 @@ secretMounts: []
 
 # Runner Jobs: one pod per review or index run, created by the worker in the
 # release namespace from the same image, running as a service account with
-# no permissions and a database role that can only touch its own run.
+# no permissions and a database role that can only touch its own run. The
+# worker's Role reaches every Secret in the release namespace, so install
+# kritik into a namespace of its own.
 runner:
   # -- Image for runner Jobs; empty uses the chart's image.
   image: ""
@@ -177,7 +235,7 @@ serviceAccount:
   name: ""
 
 rbac:
-  # -- Create the Role and RoleBinding the worker needs: Jobs in the release namespace, plus their pods and logs. Nothing cluster-wide.
+  # -- Create the Role and RoleBinding the worker needs: Jobs in the release namespace, their pods and logs, and the Secrets it hands them. Nothing cluster-wide.
   create: true
 
 # -- Annotations added to every Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`.

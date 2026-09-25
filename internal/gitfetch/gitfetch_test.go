@@ -135,3 +135,56 @@ func allowSHAFetch(t *testing.T, r *git.Repository) {
 		t.Fatal(err)
 	}
 }
+
+func TestRunPriorDelta(t *testing.T) {
+	r := build(t)
+	cases := []struct {
+		name        string
+		prior       string
+		wantPrior   bool
+		wantChanged []string
+		wantInDelta string
+	}{
+		// head and rebased carry the same main.go; rebased also changes
+		// README.md, so that is all that changed since head.
+		{name: "reachable prior", prior: r.head, wantPrior: true, wantChanged: []string{"README.md"}, wantInDelta: "+there"},
+		{name: "prior already fetched as the base", prior: r.other, wantPrior: true, wantChanged: []string{"main.go"}, wantInDelta: "+func b() {}"},
+		{name: "prior is the head", prior: r.rebased, wantPrior: true},
+		{name: "unknown prior", prior: "0123456789abcdef0123456789abcdef01234567"},
+		{name: "no prior"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := Run(t.Context(), Fetch{CloneURL: r.dir, Head: r.rebased, Base: r.other, Prior: tc.prior})
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			defer func() { _ = res.Close() }()
+			if (res.Prior != nil) != tc.wantPrior {
+				t.Fatalf("prior = %v, want present %v", res.Prior, tc.wantPrior)
+			}
+			if wantErr := tc.prior != "" && !tc.wantPrior; (res.PriorErr != nil) != wantErr {
+				t.Fatalf("prior error = %v, want one %v", res.PriorErr, wantErr)
+			}
+			if tc.wantPrior && res.Prior.Hash.String() != tc.prior {
+				t.Fatalf("prior = %s", res.Prior.Hash)
+			}
+			if strings.Join(res.DeltaChanged, ",") != strings.Join(tc.wantChanged, ",") {
+				t.Fatalf("delta changed = %v, want %v", res.DeltaChanged, tc.wantChanged)
+			}
+			if !strings.Contains(res.DeltaDiff, tc.wantInDelta) || (!tc.wantPrior && res.DeltaDiff != "") {
+				t.Fatalf("delta diff = %q", res.DeltaDiff)
+			}
+			if len(res.Changed) != 1 || res.Changed[0] != "main.go" {
+				t.Fatalf("the merge-base diff must not change: %v", res.Changed)
+			}
+		})
+	}
+}
+
+func TestRunRejectsNonSHAPrior(t *testing.T) {
+	r := build(t)
+	if _, err := Run(t.Context(), Fetch{CloneURL: r.dir, Head: r.head, Base: r.base, Prior: "main"}); err == nil {
+		t.Fatal("a prior head that is not a SHA must be rejected")
+	}
+}

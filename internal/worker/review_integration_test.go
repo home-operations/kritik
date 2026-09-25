@@ -29,6 +29,8 @@ import (
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/webhook"
 )
@@ -80,7 +82,7 @@ type localForge struct {
 	inline   []forge.InlineComment
 	status   string
 	// permissions by login; unknown logins have read access.
-	permissions map[string]string
+	permissions map[string]forge.Permission
 	replies     []string
 }
 
@@ -90,7 +92,7 @@ func (l *localForge) setBase(base string) {
 	l.base = base
 }
 
-func (l *localForge) MergeBase(context.Context, string, string, string, string) (string, error) {
+func (l *localForge) MergeBase(context.Context, string, string, int, string, string) (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.base, nil
@@ -171,7 +173,7 @@ func (l *localForge) addComment(author, body string) int64 {
 	return id
 }
 
-func (l *localForge) GetComment(_ context.Context, _, _ string, id int64, inline bool) (forge.Comment, error) {
+func (l *localForge) GetComment(_ context.Context, _, _ string, _ int, id int64, inline bool) (forge.Comment, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	body, ok := l.comments[id]
@@ -196,13 +198,13 @@ func (l *localForge) ListInline(context.Context, string, string, int) ([]forge.C
 	return nil, nil
 }
 
-func (l *localForge) Permission(_ context.Context, _, _, login string) (string, error) {
+func (l *localForge) Permission(_ context.Context, _, _, login string) (forge.Permission, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if p, ok := l.permissions[login]; ok {
 		return p, nil
 	}
-	return "read", nil
+	return forge.PermissionRead, nil
 }
 
 func (l *localForge) ListOpenPullRequests(context.Context, string, string, time.Time) ([]forge.OpenPullRequest, error) {
@@ -244,9 +246,10 @@ func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.St
 // of main.go and one that cannot be anchored, and a follow-up with a fixed
 // reply.
 type fakeCompleter struct {
-	mu    sync.Mutex
-	calls int
-	users []string
+	mu      sync.Mutex
+	calls   int
+	users   []string
+	systems []string
 }
 
 func (f *fakeCompleter) Complete(_ context.Context, req model.CompletionRequest) (model.CompletionResponse, error) {
@@ -254,13 +257,14 @@ func (f *fakeCompleter) Complete(_ context.Context, req model.CompletionRequest)
 	defer f.mu.Unlock()
 	f.calls++
 	f.users = append(f.users, req.User)
+	f.systems = append(f.systems, req.System)
 	if req.SchemaName == "reply" {
 		return model.CompletionResponse{Raw: `{"reply":"Because b is new."}`, Model: req.Model, InputTokens: 20, OutputTokens: 5}, nil
 	}
 	return model.CompletionResponse{
-		Raw: `{"summary":"Changes main.go.","findings":[
-		  {"path":"main.go","line":1,"severity":"warning","title":"first line","body":"look here"},
-		  {"path":"main.go","line":500,"severity":"error","title":"off the diff","body":"dropped"}]}`,
+		Raw: `{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
+		  {"path":"main.go","line":1,"severity":"important","title":"first line","explanation":"look here","suggested_fix":"do this"},
+		  {"path":"main.go","line":500,"severity":"blocking","title":"off the diff","explanation":"dropped"}]}`,
 		Model: req.Model, Upstream: "test", InputTokens: 10, OutputTokens: 5, CostUSD: 0.001,
 	}, nil
 }
@@ -311,17 +315,21 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 	lf.mu.Lock()
 	comments, inline, forgeStatus := lf.comments, lf.inline, lf.status
 	lf.mu.Unlock()
-	if len(comments) != 1 || !strings.Contains(comments[commentBase+1], "<!-- kritik:pr-1 -->") ||
-		!strings.Contains(comments[commentBase+1], "`main.go:1` first line") {
+	sticky := comments[commentBase+1]
+	if len(comments) != 1 || !strings.HasPrefix(sticky, "<!-- kritik:pr-1 -->\n") ||
+		!strings.Contains(sticky, "- **[important]** `main.go:1` first line") || !strings.Contains(sticky, "- **Important:** 1") ||
+		!strings.Contains(sticky, "- Small and focused") || !strings.Contains(sticky, "_1 finding(s) were dropped (unanchored: 1)._") {
 		t.Fatalf("comments = %v", comments)
 	}
-	if len(inline) != 1 || inline[0].Line != 1 || forgeStatus != "success: kritik: 1 finding(s)" {
+	if len(inline) != 1 || inline[0].Line != 1 || !strings.Contains(inline[0].Body, "**[important]** **first line**") ||
+		!strings.Contains(inline[0].Body, "do this") || forgeStatus != "success: kritik: 1 finding(s)" {
 		t.Fatalf("inline = %+v status = %q", inline, forgeStatus)
 	}
 	fc.mu.Lock()
 	calls, user := fc.calls, fc.users[0]
 	fc.mu.Unlock()
-	if calls != 1 || !strings.Contains(user, "Pull request #1: t") || !strings.Contains(user, "diff --git a/main.go") {
+	if calls != 1 || !strings.Contains(user, "Pull request #1: t") || !strings.Contains(user, "diff --git a/main.go") ||
+		!strings.Contains(user, "<description>\nAdds b.\n</description>") {
 		t.Fatalf("calls = %d, prompt:\n%s", calls, user)
 	}
 	// Stage 4: other.go looks like the diff and is not a changed path.
@@ -335,10 +343,14 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, tenantID, head string) {
 	t.Helper()
 	var findings, usage, leasesHeld int
-	var modelName string
+	var modelName, take, explanation, fix, fingerprint string
 	var tokens int64
 	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM findings`).Scan(&findings); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT count(*), min(explanation), min(suggested_fix), min(fingerprint) FROM findings`).
+			Scan(&findings, &explanation, &fix, &fingerprint); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT summary->>'take' FROM reviews WHERE head_sha = $1`, head).Scan(&take); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `SELECT count(*), coalesce(sum(input_tokens + output_tokens), 0) FROM usage`).Scan(&usage, &tokens); err != nil {
@@ -353,6 +365,10 @@ func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, tenantI
 	// embedding; index runs add their own.
 	if err != nil || findings != 1 || usage < 2 || tokens < 15 || leasesHeld != 0 || modelName != "reviewer" {
 		t.Fatalf("rows: err=%v findings=%d usage=%d tokens=%d leases=%d model=%s", err, findings, usage, tokens, leasesHeld, modelName)
+	}
+	wantPrint := review.Fingerprint(review.Finding{Path: "main.go", Title: "first line"})
+	if take != "Changes main.go." || explanation != "look here" || fix != "do this" || fingerprint != wantPrint {
+		t.Fatalf("contract rows: take=%q explanation=%q fix=%q fingerprint=%q", take, explanation, fix, fingerprint)
 	}
 }
 
@@ -498,7 +514,7 @@ func checkFollowUps(
 	fc.mu.Lock()
 	prompt := fc.users[len(fc.users)-1]
 	fc.mu.Unlock()
-	for _, want := range []string{"Thread, oldest first", "<!-- kritik:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritik posted"} {
+	for _, want := range []string{"Thread, oldest first", "<!-- kritik:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritik posted", "main.go:1 [important] first line: look here", "<description>\nAdds b.\n</description>"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("follow-up prompt missing %q:\n%s", want, prompt)
 		}
@@ -594,26 +610,28 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	}
 	svc := ingest.NewService(appStore, insertOnly)
 	in, tenant, _ := file.Installation("bot-ross")
-	dispatch := func(headSHA string, bot bool) {
+	dispatchPR := func(number int, headSHA string, bot bool, labels ...string) {
 		t.Helper()
 		out, err := svc.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Installation: in, Event: webhook.Event{
 			Kind: webhook.KindPullRequest, Action: "synchronize", Account: "onedr0p",
 			Repository:  &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
-			PullRequest: &webhook.PullRequest{Number: 1, Title: "t", Author: "renovate[bot]", AuthorIsBot: bot, State: "open", HeadRef: "f", HeadSHA: headSHA, BaseRef: "main"},
+			PullRequest: &webhook.PullRequest{Number: number, Title: "t", Body: "Adds b.", Author: "renovate[bot]", AuthorIsBot: bot, State: "open", HeadRef: "f", HeadSHA: headSHA, BaseRef: "main", Labels: labelled(labels)},
 		}})
 		if err != nil || out.Status != ingest.Enqueued {
 			t.Fatalf("dispatch = %+v, %v", out, err)
 		}
 	}
+	dispatch := func(headSHA string, bot bool) { t.Helper(); dispatchPR(1, headSHA, bot) }
 
-	lf := &localForge{dir: dir, base: base, tip: head, permissions: map[string]string{"onedr0p": "admin"}}
+	lf := &localForge{dir: dir, base: base, tip: head, permissions: map[string]forge.Permission{"onedr0p": forge.PermissionAdmin}}
 	fc := &fakeCompleter{}
 	fe := &fakeEmbedder{}
-	exec := &executor.Local{Store: runnerStore}
+	exec := &gateExecutor{inner: &executor.Local{Store: runnerStore}, started: make(chan executor.Spec)}
 	workers := river.NewWorkers()
 	wb := Base{Store: appStore, Current: current, Forges: &forges{f: lf}, Logger: logger}
 	river.AddWorker(workers, &Review{
 		Base: wb, Completers: &completers{c: fc}, Embedder: fe, EmbedModel: "fake-embed", Executor: exec, Deadline: time.Minute,
+		superviseEvery: 50 * time.Millisecond,
 	})
 	river.AddWorker(workers, &FollowUp{Base: wb, Completers: &completers{c: fc}})
 	river.AddWorker(workers, &Index{
@@ -665,12 +683,13 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkReviewRows(ctx, t, appStore, tenant.ID(), head)
 		var diff, phase, logTail, stages string
 		var changed []string
+		var heartbeat bool
 		err := appStore.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages::text, r.phase, r.log_tail FROM context_packs c
-				JOIN runner_runs r ON r.id = c.runner_run_id WHERE c.head_sha = $1`, head).Scan(&diff, &changed, &stages, &phase, &logTail)
+			return tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages::text, r.phase, r.log_tail, r.heartbeat_at IS NOT NULL FROM context_packs c
+				JOIN runner_runs r ON r.id = c.runner_run_id WHERE c.head_sha = $1`, head).Scan(&diff, &changed, &stages, &phase, &logTail, &heartbeat)
 		})
-		if err != nil || phase != "done" || len(changed) != 1 || changed[0] != "main.go" || logTail == "" {
-			t.Fatalf("pack: err=%v phase=%s changed=%v log=%q", err, phase, changed, logTail)
+		if err != nil || phase != "done" || len(changed) != 1 || changed[0] != "main.go" || logTail == "" || !heartbeat {
+			t.Fatalf("pack: err=%v phase=%s changed=%v log=%q heartbeat=%v", err, phase, changed, logTail, heartbeat)
 		}
 		// The whole three-line file is shown by the diff, so the pack is an
 		// empty array rather than the pre-context '{}' default.
@@ -707,6 +726,14 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("the merge-base .kritik.yaml skips, instructs and templates", func(t *testing.T) {
+		checkRepoConfig(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, tenant.ID())
+	})
+
+	t.Run("re-reviews build on the last reviewed head", func(t *testing.T) {
+		checkIncremental(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, tenant.ID())
+	})
+
 	t.Run("superseded when the head moves before the job runs", func(t *testing.T) {
 		// Insert a job for a head that is no longer the PR's head.
 		res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{TenantID: tenant.ID(), RepositoryID: configfile.RepositoryID(in.ID(), "onedr0p/home-ops"), Number: 1, HeadSHA: "0000000000000000000000000000000000000000", Trigger: "poll"}, nil)
@@ -718,6 +745,393 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 			t.Fatalf("status = %s, want superseded", status)
 		}
 	})
+
+	t.Run("supervision ends a running review", func(t *testing.T) {
+		checkSupervision(ctx, t, appStore, exec, dispatch, waitReview, tenant.ID(), repoID)
+	})
+}
+
+func labelled(names []string) []webhook.Label {
+	labels := make([]webhook.Label, 0, len(names))
+	for _, n := range names {
+		labels = append(labels, webhook.Label{Name: n, Color: "ededed"})
+	}
+	return labels
+}
+
+// checkRepoConfig commits a .kritik.yaml with a skip rule, instructions
+// and a summary template onto a new merge base, then reviews pull requests
+// against it.
+func checkRepoConfig(
+	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
+	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), tenantID string,
+) {
+	t.Helper()
+	r, _ := git.PlainOpen(dir)
+	wt, _ := r.Worktree()
+	if err := wt.Reset(&git.ResetOptions{Commit: plumbing.NewHash(base), Mode: git.HardReset}); err != nil {
+		t.Fatal(err)
+	}
+	commit := func(msg string, files map[string]string) string {
+		t.Helper()
+		for name, content := range files {
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := wt.Add(name); err != nil {
+				t.Fatal(err)
+			}
+		}
+		h, err := wt.Commit(msg, &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h.String()
+	}
+	cfgBase := commit("configure kritik", map[string]string{
+		".kritik.yaml": `filter: '!pr.labels.exists(l, l.name == "skip-review")'
+skip:
+  onlyPaths: ["docs/**", ".kritik.yaml"]
+review:
+  instructions: [".kritik/rules.md"]
+  templates:
+    summary: ".kritik/summary.md.j2"
+`,
+		".kritik/rules.md":      "Flag every TODO left in code.\n",
+		".kritik/summary.md.j2": "Custom summary for #{{ number }}: {{ summary.take }}\n",
+	})
+	docsHead := commit("docs", map[string]string{"docs/guide.md": "# Guide\n"})
+	loosened := commit("drop the skip rule", map[string]string{".kritik.yaml": "review: {}\n"})
+	lf.setBase(cfgBase)
+
+	fc.mu.Lock()
+	callsBefore := fc.calls
+	fc.mu.Unlock()
+	skipReason := func(head string) string {
+		var reason string
+		if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT skip_reason FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL`, head).Scan(&reason)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return reason
+	}
+	for _, head := range []string{docsHead, loosened} {
+		dispatchPR(2, head, false)
+		if status, _, _ := waitReview(head); status != "skipped" {
+			t.Fatalf("status = %s, want skipped: the merge-base skip rule covers every changed path", status)
+		}
+		lf.mu.Lock()
+		forgeStatus := lf.status
+		lf.mu.Unlock()
+		if forgeStatus != "success: kritik: skipped (only skipped paths changed)" || skipReason(head) != "only_skipped_paths" {
+			t.Fatalf("status = %q reason = %q", forgeStatus, skipReason(head))
+		}
+	}
+	fc.mu.Lock()
+	calls := fc.calls
+	fc.mu.Unlock()
+	if calls != callsBefore {
+		t.Fatalf("a skipped review called the model %d time(s)", calls-callsBefore)
+	}
+
+	if err := wt.Reset(&git.ResetOptions{Commit: plumbing.NewHash(cfgBase), Mode: git.HardReset}); err != nil {
+		t.Fatal(err)
+	}
+	codeHead := commit("code", map[string]string{"main.go": "package main\n\nfunc d() {}\n"})
+	dispatchPR(3, codeHead, false)
+	if status, _, _ := waitReview(codeHead); status != "completed" {
+		t.Fatalf("status = %s, want completed", status)
+	}
+	fc.mu.Lock()
+	system := fc.systems[len(fc.systems)-1]
+	fc.mu.Unlock()
+	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nFlag every TODO left in code.") {
+		t.Fatalf("system prompt does not carry the instructions:\n%s", system)
+	}
+	lf.mu.Lock()
+	var sticky string
+	for _, body := range lf.comments {
+		if strings.HasPrefix(body, "<!-- kritik:pr-3 -->\n") {
+			sticky = body
+		}
+	}
+	lf.mu.Unlock()
+	if !strings.HasPrefix(sticky, "<!-- kritik:pr-3 -->\nCustom summary for #3: Changes main.go.") {
+		t.Fatalf("sticky comment for PR 3 = %q", sticky)
+	}
+
+	// The same kind of change carrying the label the filter excludes.
+	labelledHead := commit("labelledHead", map[string]string{"main.go": "package main\n\nfunc e() {}\n"})
+	dispatchPR(4, labelledHead, false, "skip-review")
+	if status, _, _ := waitReview(labelledHead); status != "skipped" || skipReason(labelledHead) != "filtered" {
+		t.Fatalf("status = %s reason = %q, want skipped by the label filter", status, skipReason(labelledHead))
+	}
+	lf.mu.Lock()
+	forgeStatus := lf.status
+	lf.mu.Unlock()
+	if forgeStatus != "success: kritik: skipped (filtered by .kritik.yaml)" {
+		t.Fatalf("status = %q", forgeStatus)
+	}
+}
+
+// checkIncremental reviews a pull request, pushes a commit on top, and then
+// force-pushes it away: the second review is incremental and does not post
+// the repeated finding inline again, the third is full because the head it
+// would build on is gone.
+func checkIncremental(
+	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
+	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), tenantID string,
+) {
+	t.Helper()
+	const number = 5
+	r, _ := git.PlainOpen(dir)
+	wt, _ := r.Worktree()
+	commit := func(content string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add("main.go"); err != nil {
+			t.Fatal(err)
+		}
+		h, err := wt.Commit("change", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h.String()
+	}
+	reset := func() {
+		t.Helper()
+		if err := wt.Reset(&git.ResetOptions{Commit: plumbing.NewHash(base), Mode: git.HardReset}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reviewHead := func(head string) (reviewScopeRow, string, int) {
+		t.Helper()
+		lf.mu.Lock()
+		inlineBefore := len(lf.inline)
+		lf.mu.Unlock()
+		dispatchPR(number, head, false)
+		if status, _, _ := waitReview(head); status != "completed" {
+			t.Fatalf("status = %s, want completed", status)
+		}
+		fc.mu.Lock()
+		prompt := fc.users[len(fc.users)-1]
+		fc.mu.Unlock()
+		lf.mu.Lock()
+		newInline := len(lf.inline) - inlineBefore
+		lf.mu.Unlock()
+		return scopeRow(ctx, t, appStore, tenantID, head), prompt, newInline
+	}
+
+	reset()
+	lf.setBase(base)
+	first := commit("package main\n\nfunc f1() {}\n")
+	firstRow, prompt, inline := reviewHead(first)
+	if firstRow.scope != "full" || firstRow.reason != "no completed review to build on" || firstRow.prior != "" || inline != 1 {
+		t.Fatalf("first review = %+v, %d inline comment(s)", firstRow, inline)
+	}
+	if strings.Contains(prompt, "Changed since the last review") {
+		t.Fatalf("a first review has no incremental sections:\n%s", prompt)
+	}
+	if p := postedInline(ctx, t, appStore, tenantID, firstRow.id); len(p) != 1 || !p[0] {
+		t.Fatalf("posted_inline = %v", p)
+	}
+
+	second := commit("package main\n\nfunc f1() {}\n\nfunc f2() {}\n")
+	secondRow, prompt, inline := reviewHead(second)
+	if secondRow.scope != "incremental" || secondRow.reason != "" || secondRow.prior != firstRow.id || inline != 0 {
+		t.Fatalf("second review = %+v, %d inline comment(s); want incremental on %s with nothing posted inline again",
+			secondRow, inline, firstRow.id)
+	}
+	for _, want := range []string{
+		"Changed since the last review (" + first[:7], "+func f2() {}",
+		"Findings from the last review (verify each; report again only if still present)", "- main.go:1 [important] first line: look here",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("missing %q in the incremental prompt:\n%s", want, prompt)
+		}
+	}
+	if p := postedInline(ctx, t, appStore, tenantID, secondRow.id); len(p) != 1 || !p[0] {
+		t.Fatalf("a finding carried from the last review keeps posted_inline, got %v", p)
+	}
+	checkIncrementalRecord(ctx, t, appStore, lf, tenantID, secondRow.id, first)
+
+	// Force-push: the second head is no longer reachable from any ref.
+	reset()
+	third := commit("package main\n\nfunc f3() {}\n")
+	thirdRow, prompt, inline := reviewHead(third)
+	if thirdRow.scope != "full" || thirdRow.reason != "prior head unreachable" || thirdRow.prior != secondRow.id || inline != 0 {
+		t.Fatalf("third review = %+v, %d inline comment(s)", thirdRow, inline)
+	}
+	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "Findings from the last review") {
+		t.Fatalf("a full re-review has no incremental sections:\n%s", prompt)
+	}
+
+}
+
+type reviewScopeRow struct{ id, scope, reason, prior string }
+
+func scopeRow(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, head string) reviewScopeRow {
+	t.Helper()
+	var out reviewScopeRow
+	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT id, scope, scope_reason, coalesce(prior_review_id::text, '') FROM reviews
+			WHERE head_sha = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, head).Scan(&out.id, &out.scope, &out.reason, &out.prior)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func postedInline(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, reviewID string) []bool {
+	t.Helper()
+	var out []bool
+	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT posted_inline FROM findings WHERE review_id = $1`, reviewID)
+		if err != nil {
+			return err
+		}
+		out, err = pgx.CollectRows(rows, pgx.RowTo[bool])
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// checkIncrementalRecord asserts the context pack and sticky comment of an
+// incremental review of PR 5 that builds on prior.
+func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, tenantID, reviewID, prior string) {
+	t.Helper()
+	var priorHead string
+	var deltaPaths []string
+	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT c.prior_head_sha, c.delta_paths FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
+			WHERE rr.review_id = $1`, reviewID).Scan(&priorHead, &deltaPaths)
+	}); err != nil || priorHead != prior || len(deltaPaths) != 1 || deltaPaths[0] != "main.go" {
+		t.Fatalf("pack prior = %s delta = %v err = %v", priorHead, deltaPaths, err)
+	}
+	lf.mu.Lock()
+	var sticky string
+	for _, body := range lf.comments {
+		if strings.HasPrefix(body, "<!-- kritik:pr-5 -->\n") {
+			sticky = body
+		}
+	}
+	lf.mu.Unlock()
+	if !strings.Contains(sticky, "_Incremental review of the changes since `"+prior[:7]+"`._") ||
+		!strings.Contains(sticky, "`main.go:1` first line") {
+		t.Fatalf("sticky comment = %q", sticky)
+	}
+
+}
+
+// checkSupervision holds review runs open and moves the head, then stales
+// the heartbeat, expecting supervision to cancel each run.
+func checkSupervision(
+	ctx context.Context, t *testing.T, appStore *store.Store, exec *gateExecutor, dispatch func(string, bool),
+	waitReview func(string) (string, string, string), tenantID, repoID string,
+) {
+	exec.setBlock(true)
+	t.Cleanup(func() { exec.setBlock(false) })
+	started := func() executor.Spec {
+		t.Helper()
+		select {
+		case spec := <-exec.started:
+			return spec
+		case <-time.After(20 * time.Second):
+			t.Fatal("the review runner never started")
+			return executor.Spec{}
+		}
+	}
+	reviewError := func(headSHA string) string {
+		t.Helper()
+		var text string
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT error FROM reviews WHERE head_sha = $1 ORDER BY created_at DESC LIMIT 1`, headSHA).Scan(&text)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return text
+	}
+
+	t.Run("superseded when the head moves while the runner works", func(t *testing.T) {
+		const running, newer = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
+		dispatch(running, false)
+		spec := started()
+		if spec.Job.Version != runner.SpecVersion || spec.Job.Kind != runner.KindReview || spec.Job.Head != running || spec.Job.Base == "" {
+			t.Fatalf("job = %+v", spec.Job)
+		}
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE pull_requests SET head_sha = $2 WHERE repository_id = $1 AND number = 1`, repoID, newer)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status, _, _ := waitReview(running); status != "superseded" {
+			t.Fatalf("status = %s, want superseded", status)
+		}
+	})
+
+	t.Run("failed when the runner heartbeat goes stale", func(t *testing.T) {
+		const running = "3333333333333333333333333333333333333333"
+		dispatch(running, false)
+		spec := started()
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() - interval '5 minutes' WHERE id = $1`, spec.RunID)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status, _, _ := waitReview(running); status != "failed" {
+			t.Fatalf("status = %s, want failed", status)
+		}
+		if text := reviewError(running); text != "runner heartbeat lost" {
+			t.Fatalf("error = %q", text)
+		}
+	})
+}
+
+// gateExecutor runs the real runner, or once blocked holds each review run
+// until supervision cancels it, the way a Job runs until it is deleted.
+type gateExecutor struct {
+	inner   executor.Executor
+	started chan executor.Spec
+
+	mu    sync.Mutex
+	block bool
+}
+
+func (g *gateExecutor) setBlock(b bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.block = b
+}
+
+func (g *gateExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
+	if err := spec.Job.Validate(); err != nil {
+		return executor.Result{Err: err}
+	}
+	g.mu.Lock()
+	block := g.block
+	g.mu.Unlock()
+	if !block || spec.Job.Kind != runner.KindReview {
+		return g.inner.Run(ctx, spec)
+	}
+	select {
+	case g.started <- spec:
+	case <-ctx.Done():
+	}
+	<-ctx.Done()
+	return executor.Result{JobName: "kritik-run-blocked", Err: context.Cause(ctx)}
 }
 
 func allowSHAFetch(t *testing.T, r *git.Repository) {

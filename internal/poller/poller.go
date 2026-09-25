@@ -63,14 +63,16 @@ func (p *Poller) Run(ctx context.Context) error {
 	}
 }
 
-// PollAll polls every GitHub installation in the current configuration.
+// PollAll polls every installation in the current configuration whose forge
+// the worker can build a client for.
 func (p *Poller) PollAll(ctx context.Context) {
 	file := p.Current.Get()
 	for ti := range file.Tenants {
 		tenant := &file.Tenants[ti]
 		for ii := range tenant.Installations {
 			in := &tenant.Installations[ii]
-			if in.Forge != configfile.ForgeGitHub {
+			if in.Forge == configfile.ForgeGitLab {
+				p.Logger.Debug("poll skipped: forge not supported", "installation", in.Name, "forge", in.Forge)
 				continue
 			}
 			if ctx.Err() != nil {

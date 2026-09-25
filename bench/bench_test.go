@@ -136,9 +136,11 @@ func TestBench(t *testing.T) {
 	modelID := envOr("KRITIK_BENCH_MODEL", "openai/gpt-6-sol")
 	var completer model.Completer
 	if !dry {
-		if completer, err = model.NewOpenRouter(key, nil); err != nil {
+		s, err := model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil)
+		if err != nil {
 			t.Fatal(err)
 		}
+		completer = model.Structured{Stepper: s}
 	}
 
 	rep := report{Model: modelID, When: time.Now().UTC(), Dry: dry, Cases: len(cases), Modes: map[string]modeTotals{}}
@@ -188,7 +190,7 @@ func TestBench(t *testing.T) {
 					t.Logf("%s [%s]: model error: %v", c.ID, m, err)
 				} else {
 					cr.Input, cr.Cached, cr.Output, cr.CostUSD = resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD
-					parsed, dropped, err := review.Parse(resp.Raw, anchors)
+					parsed, dropped, err := review.Parse(resp.Raw, anchors, review.ParseOptions{})
 					if err != nil {
 						cr.Error = err.Error()
 					} else {

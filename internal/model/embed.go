@@ -12,9 +12,7 @@ import (
 )
 
 // OpenAIEmbedder is an Embedder over any OpenAI-compatible embeddings
-// endpoint, OpenRouter included. Fantasy has no embedding interface yet;
-// when it gains one this becomes a Fantasy provider and the SDK dependency
-// goes away.
+// endpoint, OpenRouter included.
 type OpenAIEmbedder struct {
 	client openai.Client
 	model  string

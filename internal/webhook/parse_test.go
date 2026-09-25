@@ -11,7 +11,7 @@ const ghPullRequest = `{
   "action": "synchronize",
   "number": 42,
   "pull_request": {
-    "number": 42, "title": "feat: thing", "state": "open", "draft": false, "merged": false,
+    "number": 42, "title": "feat: thing", "body": "a body", "state": "open", "draft": false, "merged": false,
     "html_url": "https://github.com/onedr0p/home-ops/pull/42", "created_at": "2026-09-24T10:00:00Z",
     "user": {"login": "renovate[bot]", "type": "Bot"},
     "head": {"ref": "renovate/x", "sha": "aaa111", "repo": {"full_name": "onedr0p/home-ops"}},
@@ -54,7 +54,7 @@ func TestParseGitHubPullRequest(t *testing.T) {
 		t.Fatalf("repo = %+v", ev.Repository)
 	}
 	vars := pr.FilterVars()
-	if vars["open"] != true || vars["author"] != "renovate[bot]" {
+	if vars["open"] != true || vars["author"] != "renovate[bot]" || vars["body"] != "a body" {
 		t.Fatalf("vars = %v", vars)
 	}
 	labels := vars["labels"].([]any)
@@ -163,13 +163,14 @@ func TestParseRejectsMalformedAndOversized(t *testing.T) {
 func TestParseGitLab(t *testing.T) {
 	mr := `{"object_kind":"merge_request","user":{"username":"devin","bot":false},
 	  "project":{"path_with_namespace":"group/repo","default_branch":"main","git_http_url":"https://gl/group/repo.git"},
-	  "object_attributes":{"iid":5,"title":"t","state":"opened","action":"update","draft":false,"url":"u",
+	  "object_attributes":{"iid":5,"title":"t","description":"mr body","state":"opened","action":"update","draft":false,"url":"u",
 	    "created_at":"2026-09-24 10:00:00 UTC","source_branch":"f","target_branch":"main",
 	    "source_project_id":1,"target_project_id":1,"last_commit":{"id":"abc"}},
 	  "labels":[{"title":"x","color":"#fff"}]}`
 	ev, err := Parse(configfile.ForgeGitLab, hdr("X-Gitlab-Event-UUID", "u-1"), []byte(mr))
 	if err != nil || ev.Kind != KindPullRequest || ev.Account != "group" || ev.PullRequest.Number != 5 ||
-		ev.PullRequest.State != "open" || ev.PullRequest.HeadSHA != "abc" || ev.PullRequest.Fork || len(ev.PullRequest.Labels) != 1 {
+		ev.PullRequest.State != "open" || ev.PullRequest.HeadSHA != "abc" || ev.PullRequest.Fork || len(ev.PullRequest.Labels) != 1 ||
+		ev.PullRequest.Body != "mr body" {
 		t.Fatalf("gitlab mr = %+v %+v %v", ev, ev.PullRequest, err)
 	}
 	//nolint:misspell // GitLab's field is spelled noteable
@@ -190,7 +191,7 @@ func TestParseGitLab(t *testing.T) {
 func TestParseForgejo(t *testing.T) {
 	h := hdr("X-Gitea-Event", "pull_request", "X-Gitea-Delivery", "f-1")
 	ev, err := Parse(configfile.ForgeForgejo, h, []byte(ghPullRequest))
-	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "f-1" || ev.PullRequest.Number != 42 {
+	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "f-1" || ev.PullRequest.Number != 42 || ev.PullRequest.Body != "a body" || ev.Action != "synchronize" {
 		t.Fatalf("forgejo pr = %+v %v", ev, err)
 	}
 	h.Set("X-Gitea-Event", "issue_comment")
@@ -198,5 +199,35 @@ func TestParseForgejo(t *testing.T) {
 	  "comment":{"id":5,"body":"@bot","user":{"login":"x"}},"repository":{"full_name":"a/b","owner":{"login":"a"}}}`))
 	if err != nil || ev.Kind != KindComment || ev.Comment.Number != 3 {
 		t.Fatalf("forgejo comment = %+v %v", ev, err)
+	}
+}
+
+// TestParseForgejoSynchronizedAction covers the past-tense "synchronized"
+// spelling Forgejo sends for this action, which must normalize to GitHub's
+// "synchronize" so callers can match on one action string regardless of
+// forge.
+func TestParseForgejoSynchronizedAction(t *testing.T) {
+	h := hdr("X-Gitea-Event", "pull_request", "X-Gitea-Delivery", "f-2")
+	body := `{
+	  "action": "synchronized",
+	  "number": 7,
+	  "pull_request": {
+	    "number": 7, "title": "feat: thing", "state": "open",
+	    "user": {"login": "alice"},
+	    "head": {"ref": "topic", "sha": "aaa111", "repo": {"full_name": "acme/widgets"}},
+	    "base": {"ref": "main", "sha": "bbb222", "repo": {"full_name": "acme/widgets"}}
+	  },
+	  "repository": {"full_name": "acme/widgets", "owner": {"login": "acme"}}
+	}`
+	ev, err := Parse(configfile.ForgeForgejo, h, []byte(body))
+	if err != nil || ev.Kind != KindPullRequest || ev.Action != "synchronize" {
+		t.Fatalf("forgejo synchronized pr = %+v %v", ev, err)
+	}
+	// The same raw action, parsed as a GitHub payload, must be left alone:
+	// only the Forgejo path normalizes it.
+	gh := hdr("X-GitHub-Event", "pull_request", "X-GitHub-Delivery", "f-3")
+	ev, err = Parse(configfile.ForgeGitHub, gh, []byte(body))
+	if err != nil || ev.Action != "synchronized" {
+		t.Fatalf("github synchronized pr = %+v %v", ev, err)
 	}
 }

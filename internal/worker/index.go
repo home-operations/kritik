@@ -42,6 +42,9 @@ type Index struct {
 	EmbedModel string
 	EmbedDims  int
 	Deadline   time.Duration
+
+	// superviseEvery overrides superviseInterval.
+	superviseEvery time.Duration
 }
 
 type indexRepo struct {
@@ -54,12 +57,6 @@ type indexRepo struct {
 type activeGeneration struct {
 	id, commit, model string
 	dims              int
-}
-
-// Timeout implements river.Worker: the runner Job's deadline plus the
-// embedding pass, which for a large repository is many batched calls.
-func (w *Index) Timeout(*river.Job[jobs.IndexArgs]) time.Duration {
-	return w.Deadline + 4*jobTimeoutSlack
 }
 
 // Work implements river.Worker.
@@ -124,25 +121,31 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	deadline, resources := runnerSpec(tenant, w.Deadline)
-	res := w.Executor.Run(ctx, executor.Spec{
+	sup := runSupervision(w.Store, args.TenantID, runnerRunID, "", "", w.superviseEvery, logger)
+	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runnerRunID,
 		Labels: map[string]string{
 			"tenant": tenant.Slug, "repository": strings.ReplaceAll(repo.name, "/", "_"), "kind": jobs.QueueIndex,
 		},
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": commit},
-		Params: runner.Params{
-			Kind: runner.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name), Token: token,
+		Job: runner.Spec{
+			Version: runner.SpecVersion, Kind: runner.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name),
 			Head: commit, Base: base, Ignore: settings.Ignore,
 		},
+		Secrets:  runner.Secrets{GitToken: token},
 		Deadline: deadline, Resources: resources,
 	})
 	if err := recordRun(ctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runnerRunID, jobs.QueueIndex, res); err != nil {
 		return err
 	}
 	if res.Err != nil {
-		logger.Warn("index runner failed", "error", res.Err, "job", res.JobName, "reason", res.TerminationReason)
+		reason := res.Err.Error()
+		if errors.Is(cause, errHeartbeatLost) {
+			reason = "runner heartbeat lost"
+		}
+		logger.Warn("index runner failed", "error", reason, "job", res.JobName, "reason", res.TerminationReason)
 		w.Metrics.IndexRun(tenant.Slug, mode, "failed", 0)
-		return w.finish(ctx, args.TenantID, runID, "failed", 0, res.Err.Error())
+		return w.finish(ctx, args.TenantID, runID, "failed", 0, reason)
 	}
 	n, mode, err := w.embed(ctx, args, tenant, commit, runID, runnerRunID, active, settings, job.ID)
 	if err != nil {

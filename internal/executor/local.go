@@ -3,8 +3,10 @@ package executor
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf8"
 
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
@@ -28,9 +30,18 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 		ctx, cancel = context.WithTimeout(ctx, spec.Deadline)
 		defer cancel()
 	}
-	err := runner.Run(ctx, l.Store, spec.Params, logger)
-	res := Result{JobName: "local", PodName: "local", StartedAt: started, LogTail: tail(buf.String(), LogTailBytes), Err: err}
+	// The spec goes through the same encoding and strict decoding as a
+	// Job's mounted document, size limit included.
+	job, err := specRoundTrip(spec.Job)
+	if err == nil {
+		err = runner.Run(ctx, l.Store, job, spec.Secrets, logger)
+	}
+	logTail := tail(spec.Secrets.Mask(buf.String()), LogTailBytes)
+	res := Result{JobName: "local", PodName: "local", StartedAt: started, LogTail: logTail}
 	if err != nil {
+		// A git or provider error can carry a credential, and the worker
+		// stores and shows this one.
+		res.Err = maskedError{msg: spec.Secrets.Mask(err.Error()), err: err}
 		res.ExitCode = 1
 		res.TerminationReason = "Error"
 		if ctx.Err() == context.DeadlineExceeded {
@@ -41,13 +52,37 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 	return res
 }
 
+// maskedError is an error whose message has the run's secrets masked. It
+// still unwraps to the original, so errors.Is sees a deadline or a cancel.
+type maskedError struct {
+	msg string
+	err error
+}
+
+func (e maskedError) Error() string { return e.msg }
+func (e maskedError) Unwrap() error { return e.err }
+
+func specRoundTrip(s runner.Spec) (runner.Spec, error) {
+	b, err := runner.EncodeSpec(s)
+	if err != nil {
+		return runner.Spec{}, fmt.Errorf("executor: %w", err)
+	}
+	return runner.DecodeSpec(b)
+}
+
 // LogTailBytes is how much of a runner's output is kept: enough to diagnose,
 // small enough to store per run.
 const LogTailBytes = 64 << 10
 
+// tail is the last n bytes of s, less any leading bytes of a rune the cut
+// split, so the result stays valid UTF-8 for a text column.
 func tail(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[len(s)-n:]
+	start := len(s) - n
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return s[start:]
 }
