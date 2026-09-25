@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -20,9 +21,10 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// CompleterSource resolves a configured provider name to a Completer.
+// CompleterSource resolves a configured provider name to a Completer. It
+// is a model.Structured so each call can record its steps.
 type CompleterSource interface {
-	For(f *configfile.File, name string) (model.Completer, error)
+	For(f *configfile.File, name string) (model.Structured, error)
 }
 
 // maxOutputTokens bounds one review answer. Findings are short by
@@ -309,6 +311,7 @@ func (p *publishPhase) callModels(
 	if err != nil {
 		return model.CompletionResponse{}, "", err
 	}
+	completer.OnStep = p.onStep(ctx, ref.Provider(), store.ModelCallReview, 0)
 	resp, err := completer.Complete(ctx, req)
 	p.w.Metrics.ModelCall(p.tenant.Slug, string(ref), roleReview, callOutcome(err),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
@@ -321,6 +324,7 @@ func (p *publishPhase) callModels(
 		return model.CompletionResponse{}, "", errors.Join(err, ferr)
 	}
 	req.Model, req.Fallbacks = fallback.Model(), nil
+	fc.OnStep = p.onStep(ctx, fallback.Provider(), store.ModelCallFallback, 1)
 	resp, ferr = fc.Complete(ctx, req)
 	p.w.Metrics.ModelCall(p.tenant.Slug, string(fallback), roleFallback, callOutcome(ferr),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
@@ -328,6 +332,15 @@ func (p *publishPhase) callModels(
 		return model.CompletionResponse{}, "", errors.Join(err, ferr)
 	}
 	return resp, roleFallback, nil
+}
+
+// onStep records a single-shot call on the named provider against the
+// review.
+func (p *publishPhase) onStep(
+	ctx context.Context, provider string, kind store.ModelCallKind, step int,
+) func(model.StepRequest, model.StepResponse, error, time.Duration) {
+	c := store.ModelCall{TenantID: p.tenant.ID(), ReviewID: p.reviewID, Kind: kind, Step: step}
+	return p.w.onStep(ctx, p.logger, c, transcriptMask(p.file, p.file.Providers[provider]))
 }
 
 // reviewNotes are the caveats the sticky comment states about a review.

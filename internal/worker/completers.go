@@ -26,10 +26,10 @@ type stepperEntry struct {
 }
 
 // For returns the completer for the named provider in f.
-func (c *Completers) For(f *configfile.File, name string) (model.Completer, error) {
+func (c *Completers) For(f *configfile.File, name string) (model.Structured, error) {
 	s, err := c.Stepper(f, name)
 	if err != nil {
-		return nil, err
+		return model.Structured{}, err
 	}
 	return model.Structured{Stepper: s}, nil
 }

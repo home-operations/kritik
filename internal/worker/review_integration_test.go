@@ -4,6 +4,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -277,7 +278,29 @@ func (f *fakeCompleter) Complete(_ context.Context, req model.CompletionRequest)
 
 type completers struct{ c model.Completer }
 
-func (c *completers) For(*configfile.File, string) (model.Completer, error) { return c.c, nil }
+// For answers through model.Structured, as the real Completers does, so
+// every call is recorded the way production records it.
+func (c *completers) For(*configfile.File, string) (model.Structured, error) {
+	return model.Structured{Stepper: completerStepper{c.c}}, nil
+}
+
+// completerStepper answers Structured's forced tool call with a Completer.
+type completerStepper struct{ c model.Completer }
+
+func (s completerStepper) Step(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
+	resp, err := s.c.Complete(ctx, model.CompletionRequest{
+		System: req.System, User: req.Messages[0].Text, Model: req.Model, Fallbacks: req.Fallbacks,
+		Schema: req.Tools[0].InputSchema, SchemaName: req.Tools[0].Name, MaxTokens: req.MaxTokens,
+	})
+	if err != nil {
+		return model.StepResponse{}, err
+	}
+	return model.StepResponse{
+		ToolCalls: []model.ToolCall{{ID: "call", Name: req.Tools[0].Name, Input: json.RawMessage(resp.Raw)}}, Stop: model.StopToolUse,
+		Usage:   model.Usage{Input: resp.InputTokens - resp.CachedTokens, CacheRead: resp.CachedTokens, Output: resp.OutputTokens},
+		CostUSD: resp.CostUSD, Model: resp.Model, Upstream: resp.Upstream,
+	}, nil
+}
 
 type forges struct{ f forge.Client }
 
@@ -518,6 +541,7 @@ func checkFollowUps(
 	if _, body := lastComment(); !strings.Contains(body, "Because b is new.") || !strings.Contains(body, "kritik follow-up with reviewer") {
 		t.Fatalf("reply = %q", body)
 	}
+	checkFollowUpTranscript(ctx, t, st, tenantID, id, fc)
 	fc.mu.Lock()
 	prompt := fc.users[len(fc.users)-1]
 	fc.mu.Unlock()
@@ -598,7 +622,9 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	t.Cleanup(runnerStore.Close)
 
 	t.Setenv("TEST_PEM", "pem")
-	t.Setenv("TEST_SECRET", "s")
+	// Long enough that masking it out of the transcripts leaves the prompts
+	// they are checked against intact.
+	t.Setenv("TEST_SECRET", "test-provider-key")
 	file, err := configfile.Parse([]byte(configYAML))
 	if err != nil {
 		t.Fatal(err)
@@ -688,6 +714,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		}
 		checkWriteBack(t, lf, fc)
 		checkReviewRows(ctx, t, appStore, tenant.ID(), head)
+		checkSingleShotTranscript(ctx, t, appStore, tenant.ID(), head, fc)
 		var diff, phase, logTail, stages string
 		var changed []string
 		var heartbeat bool

@@ -30,6 +30,7 @@ import (
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/transcript"
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
@@ -105,6 +106,8 @@ type scriptedModel struct {
 	maxTokens []int64
 	// stalled runs once when scriptStall starts holding a request.
 	stalled func()
+	// bodies are the requests as the provider received them.
+	bodies [][]byte
 }
 
 func (m *scriptedModel) reset(script modelScript) {
@@ -121,8 +124,10 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} `json:"messages"`
 		MaxCompletionTokens int64 `json:"max_completion_tokens"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	body, _ := io.ReadAll(r.Body)
+	_ = json.Unmarshal(body, &req)
 	m.mu.Lock()
+	m.bodies = append(m.bodies, body)
 	m.requests++
 	m.step++
 	step, script := m.step, m.script
@@ -435,6 +440,94 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	if calls != 0 {
 		t.Fatalf("the worker's own model was called %d time(s) in agentic mode", calls)
 	}
+	checkAgentTranscript(t, h, reviewID)
+}
+
+// checkAgentTranscript checks that the gateway recorded a review's steps
+// so that they rebuild into the conversation the provider was last sent,
+// with no secret in any column and nothing another tenant can read.
+func checkAgentTranscript(t *testing.T, h *agenticHarness, reviewID string) {
+	t.Helper()
+	rows := h.modelCalls(t, h.tenant.ID(), store.ModelCallFilter{ReviewID: reviewID})
+	if len(rows) != 3 {
+		t.Fatalf("%d model calls recorded, want 3", len(rows))
+	}
+	for i, r := range rows {
+		if r.Kind != store.ModelCallAgentStep || r.Step != i || r.Model != "agent-model" || r.Usage.Input != 100 || r.CostUSD != 0.01 {
+			t.Fatalf("model call %d = %+v", i, r)
+		}
+	}
+	conv := transcript.Rebuild(rows)
+	h.sm.mu.Lock()
+	last := h.sm.bodies[len(h.sm.bodies)-1]
+	h.sm.mu.Unlock()
+	saw, err := model.DecodeChatRequest(last)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msgs []transcript.Message
+	for _, turn := range conv.Turns {
+		if turn.Reset {
+			t.Fatalf("turn %d reset the conversation", turn.Step)
+		}
+		msgs = append(msgs[:turn.MessagesFrom], turn.Messages...)
+	}
+	got, _ := json.Marshal(msgs)
+	want, _ := json.Marshal(transcript.Delta(transcript.State{}, saw).Messages)
+	if string(got) != string(want) {
+		t.Fatalf("rebuilt conversation:\n%s\nthe provider was sent:\n%s", got, want)
+	}
+	if conv.System != saw.System || len(conv.Tools) != len(saw.Tools) || len(msgs) != 5 {
+		t.Fatalf("system %.40q, %d tools, %d messages", conv.System, len(conv.Tools), len(msgs))
+	}
+	if calls := conv.Turns[2].Response.ToolCalls; len(calls) != 1 || calls[0].Name != "submit_review" ||
+		!strings.Contains(string(calls[0].Input), "b is unused") {
+		t.Fatalf("last response = %+v", conv.Turns[2].Response)
+	}
+	h.checkNoSecrets(t, `review_id = $1`, reviewID)
+	if n := len(h.modelCalls(t, h.other.ID(), store.ModelCallFilter{ReviewID: reviewID})); n != 0 {
+		t.Fatalf("globex reads %d of acme's model calls", n)
+	}
+}
+
+func (h *agenticHarness) modelCalls(t *testing.T, tenantID string, f store.ModelCallFilter) []transcript.StoredRow {
+	t.Helper()
+	var rows []transcript.StoredRow
+	if err := h.st.WithTenant(h.ctx, tenantID, func(tx pgx.Tx) error {
+		var err error
+		rows, err = store.ModelCalls(h.ctx, tx, f)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return rows
+}
+
+// checkStepMasked checks that the run's recorded step kept its text with
+// the run token and provider key in it masked.
+func (h *agenticHarness) checkStepMasked(t *testing.T, runID string) {
+	t.Helper()
+	if text := h.checkNoSecrets(t, `runner_run_id = $1`, runID); !strings.Contains(text, "review with *** and ***") {
+		t.Fatalf("the step's masked text is not recorded:\n%s", text)
+	}
+}
+
+// checkNoSecrets fails when any column of the model calls where selects
+// holds the provider's key or URL credentials, or a run token.
+func (h *agenticHarness) checkNoSecrets(t *testing.T, where string, args ...any) string {
+	t.Helper()
+	var text string
+	if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT coalesce(string_agg(to_jsonb(m)::text, ''), '') FROM model_calls m WHERE `+where, args...).Scan(&text)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"model-key", "provider-secret", "krk_"} {
+		if strings.Contains(text, secret) {
+			t.Fatalf("a model call holds %q:\n%s", secret, text)
+		}
+	}
+	return text
 }
 
 func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
@@ -496,7 +589,10 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 			t.Fatal(err)
 		}
 		// Far more than one step may answer with.
-		return c.Step(h.ctx, model.StepRequest{Model: name, Messages: []model.Message{{Role: model.RoleUser, Text: "review"}}, MaxTokens: 1 << 20})
+		// The text carries the run's token and the provider's key, which the
+		// transcript must mask.
+		return c.Step(h.ctx, model.StepRequest{Model: name, Messages: []model.Message{{Role: model.RoleUser,
+			Text: "review with " + token + " and model-key"}}, MaxTokens: 1 << 20})
 	}
 	resp, err := step(token, gatewayModel)
 	if err != nil || resp.Model != "agent-model" || len(resp.ToolCalls) != 1 || resp.Usage.Prompt() != 100 || resp.CostUSD != 0.01 {
@@ -514,6 +610,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	if rows, tokens := h.usageTokens(t, reviewID); rows != 1 || tokens != 110 {
 		t.Fatalf("usage rows=%d tokens=%d", rows, tokens)
 	}
+	h.checkStepMasked(t, runID)
 	if _, err := step(token, "gpt-9-max"); err == nil || !strings.Contains(err.Error(), "400") {
 		t.Fatalf("a model other than the run's = %v", err)
 	}
@@ -772,6 +869,12 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 	if rows, _ := h.usageTokens(t, reviewID); rows != 0 {
 		t.Fatalf("usage rows = %d", rows)
 	}
+	// The refused step is still recorded, the key it echoed masked.
+	rows := h.modelCalls(t, h.tenant.ID(), store.ModelCallFilter{ReviewID: reviewID})
+	if len(rows) == 0 || !strings.Contains(rows[0].Error, "invalid api key ***") {
+		t.Fatalf("model calls = %+v", rows)
+	}
+	h.checkNoSecrets(t, `review_id = $1`, reviewID)
 }
 
 func checkAgentFiltered(t *testing.T, h *agenticHarness) {
