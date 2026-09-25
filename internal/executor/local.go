@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf8"
 
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
@@ -60,9 +61,15 @@ func specRoundTrip(s runner.Spec) (runner.Spec, error) {
 // small enough to store per run.
 const LogTailBytes = 64 << 10
 
+// tail is the last n bytes of s, less any leading bytes of a rune the cut
+// split, so the result stays valid UTF-8 for a text column.
 func tail(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[len(s)-n:]
+	start := len(s) - n
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return s[start:]
 }

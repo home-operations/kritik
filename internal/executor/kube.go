@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -210,17 +211,38 @@ func (k *Kube) finish(res *Result, secrets runner.Secrets) {
 			res.DeadlineExceeded = cs.State.Terminated.Reason == "DeadlineExceeded"
 		}
 	}
-	// Reading past the kept size by the longest secret lets a secret that
-	// straddles the cut be masked whole before the cut is made.
-	limit := int64(LogTailBytes + max(len(secrets.GitToken), len(secrets.ModelAPIKey)))
-	stream, err := k.Client.CoreV1().Pods(k.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{LimitBytes: &limit}).Stream(fctx)
+	// LimitBytes keeps the first bytes of what it is given, so the tail is
+	// asked for by lines, generously, with LimitBytes only as a ceiling;
+	// the kept tail is cut from the end of what came back.
+	lines, limit := int64(logTailLines), int64(logReadBytes)
+	stream, err := k.Client.CoreV1().Pods(k.Namespace).GetLogs(pod.Name,
+		&corev1.PodLogOptions{TailLines: &lines, LimitBytes: &limit}).Stream(fctx)
 	if err != nil {
 		return
 	}
 	defer func() { _ = stream.Close() }()
 	b, _ := io.ReadAll(io.LimitReader(stream, limit))
-	masked := secrets.Mask(string(b))
-	res.LogTail = masked[:min(len(masked), LogTailBytes)]
+	res.LogTail = logTail(string(b), int64(len(b)) >= limit, secrets)
+}
+
+// The log read for a run's tail: enough lines to fill LogTailBytes many
+// times over, and a byte ceiling well above that.
+const (
+	logTailLines = 5000
+	logReadBytes = 4 << 20
+)
+
+// logTail is the last LogTailBytes of a pod's log, secrets masked before
+// the cut so none straddles it. A read that hit the byte ceiling ends
+// mid-line, where a secret could be cut short of its mask, so that partial
+// line is dropped.
+func logTail(log string, hitCeiling bool, secrets runner.Secrets) string {
+	if hitCeiling {
+		if i := strings.LastIndexByte(log, '\n'); i >= 0 {
+			log = log[:i+1]
+		}
+	}
+	return tail(secrets.Mask(log), LogTailBytes)
 }
 
 // Secret keys of a run's job-scoped Secret.

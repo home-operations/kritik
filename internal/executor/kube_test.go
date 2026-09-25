@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -392,29 +393,68 @@ func TestKubeRunCleansUpWhenOwnerPatchFails(t *testing.T) {
 	}
 }
 
-func TestFinishMasksSecretStraddlingTheTailLimit(t *testing.T) {
+func TestFinishKeepsTheTailOfTheLog(t *testing.T) {
 	const token = "ghs_secret_token"
-	logs := strings.Repeat("x", LogTailBytes-4) + token + " and more output"
-	client := fake.NewSimpleClientset()
-	var limit int64
-	client.PrependReactor("get", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
-		if a.GetSubresource() != "log" {
-			return false, nil, nil
-		}
-		if opts, ok := a.(k8stesting.GenericAction).GetValue().(*corev1.PodLogOptions); ok && opts.LimitBytes != nil {
-			limit = *opts.LimitBytes
-		}
-		return true, &runtime.Unknown{Raw: []byte(logs)}, nil
-	})
-	_, _ = client.CoreV1().Pods("kritik").Create(t.Context(), &corev1.Pod{
-		Name: "kritik-run-01234567-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": "kritik-run-01234567"},
-	}, metav1.CreateOptions{})
-	res := Result{JobName: "kritik-run-01234567"}
-	newKube(client).finish(&res, runner.Secrets{GitToken: token, ModelAPIKey: "sk-model-key"})
-	if limit != int64(LogTailBytes+len(token)) {
-		t.Fatalf("requested %d log bytes, want the tail plus the longest secret", limit)
+	secrets := runner.Secrets{GitToken: token, ModelAPIKey: "sk-model-key"}
+	// A secret straddles the point LogTailBytes from the end.
+	straddling := "HEAD " + strings.Repeat("x", 1000) + token + strings.Repeat("y", LogTailBytes-8) + " END\n"
+	tests := []struct {
+		name  string
+		logs  string
+		check func(t *testing.T, tail string)
+	}{
+		{name: "the end is kept and a straddling secret masked", logs: straddling, check: func(t *testing.T, tail string) {
+			if len(tail) > LogTailBytes || !strings.HasSuffix(tail, " END\n") || strings.Contains(tail, "HEAD") ||
+				strings.Contains(tail, "ghs_") || strings.Contains(tail, "_token") {
+				t.Fatalf("tail len %d starts %q ends %q", len(tail), tail[:20], tail[len(tail)-20:])
+			}
+		}},
+		{name: "a short log is kept whole", logs: "fetched\ndone\n", check: func(t *testing.T, tail string) {
+			if tail != "fetched\ndone\n" {
+				t.Fatalf("tail = %q", tail)
+			}
+		}},
 	}
-	if len(res.LogTail) != LogTailBytes || strings.Contains(res.LogTail, "ghs_") || !strings.HasSuffix(res.LogTail, "*** ") {
-		t.Fatalf("tail len %d ends %q", len(res.LogTail), res.LogTail[len(res.LogTail)-20:])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewSimpleClientset()
+			var opts *corev1.PodLogOptions
+			client.PrependReactor("get", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
+				if a.GetSubresource() != "log" {
+					return false, nil, nil
+				}
+				opts, _ = a.(k8stesting.GenericAction).GetValue().(*corev1.PodLogOptions)
+				return true, &runtime.Unknown{Raw: []byte(tt.logs)}, nil
+			})
+			_, _ = client.CoreV1().Pods("kritik").Create(t.Context(), &corev1.Pod{
+				Name: "kritik-run-01234567-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": "kritik-run-01234567"},
+			}, metav1.CreateOptions{})
+			res := Result{JobName: "kritik-run-01234567"}
+			newKube(client).finish(&res, secrets)
+			if opts == nil || opts.TailLines == nil || *opts.TailLines != logTailLines || opts.LimitBytes == nil || *opts.LimitBytes != logReadBytes {
+				t.Fatalf("log options = %+v", opts)
+			}
+			tt.check(t, res.LogTail)
+		})
+	}
+}
+
+func TestLogTailDropsALineCutAtTheCeiling(t *testing.T) {
+	const token = "ghs_secret_token"
+	// The read stopped inside the secret on its last line.
+	log := "first\nsecond\nclone with ghs_secr"
+	got := logTail(log, true, runner.Secrets{GitToken: token})
+	if got != "first\nsecond\n" {
+		t.Fatalf("tail = %q", got)
+	}
+	if got := logTail(log, false, runner.Secrets{GitToken: token}); got != log {
+		t.Fatalf("a read under the ceiling is kept whole, got %q", got)
+	}
+}
+
+func TestTailKeepsValidUTF8(t *testing.T) {
+	got := tail("ab€cd", 4)
+	if got != "cd" || !utf8.ValidString(got) {
+		t.Fatalf("tail = %q", got)
 	}
 }
