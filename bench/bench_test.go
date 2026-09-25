@@ -190,7 +190,7 @@ func TestBench(t *testing.T) {
 					t.Logf("%s [%s]: model error: %v", c.ID, m, err)
 				} else {
 					cr.Input, cr.Cached, cr.Output, cr.CostUSD = resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD
-					parsed, dropped, err := review.Parse(resp.Raw, anchors)
+					parsed, dropped, err := review.Parse(resp.Raw, anchors, review.ParseOptions{})
 					if err != nil {
 						cr.Error = err.Error()
 					} else {
