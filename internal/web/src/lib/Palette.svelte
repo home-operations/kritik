@@ -77,9 +77,13 @@
   let recent = $state<Pull[]>([]);
   let recentSlug = $state('');
 
+  let recentSeq = 0;
+
   async function loadRecent(slug: string): Promise<void> {
+    const seq = ++recentSeq;
     try {
       const p = await getJSON<Page<Pull>>(`/api/v1/tenants/${encodeURIComponent(slug)}/pulls?state=all&limit=20`);
+      if (seq !== recentSeq) return;
       recent = p.items;
       recentSlug = slug;
     } catch (err) {
@@ -160,7 +164,7 @@
       </div>
 
       <div class="palette-body">
-        {#each rows as row, i (row.label + (row.hint ?? ''))}
+        {#each rows as row, i (i)}
           <button
             class="palette-row"
             class:active={i === idx}

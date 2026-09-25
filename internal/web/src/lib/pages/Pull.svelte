@@ -4,6 +4,7 @@
   import { Resource, live } from '../resource.svelte';
   import { repoRoute } from '../links';
   import { shortSha } from '../format';
+  import { safeHref } from '../markdown';
   import type { PullDetail } from '../types';
   import StateView from '../components/StateView.svelte';
   import Time from '../components/Time.svelte';
@@ -24,7 +25,13 @@
   $effect(() => {
     void res.load();
   });
-  $effect(() => live((e) => e.tenant === slug && e.kind !== 'index_run', () => void res.load()));
+  $effect(() => live((e) => e.tenant === slug && e.kind !== 'index_run' && e.kind !== 'model_call', () => void res.load()));
+
+  // Label colours come from the forge; anything but a hex triplet/quad/etc.
+  // falls back to the border colour rather than reaching the style attribute.
+  function labelColor(c: string): string | undefined {
+    return /^[0-9a-f]{3,8}$/i.test(c) ? `#${c}` : undefined;
+  }
 
   const skipText: Record<string, string> = {
     disabled: 'reviews disabled',
@@ -38,6 +45,7 @@
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
         {@const p = d.pull}
+        {@const forgeUrl = safeHref(p.url)}
         <header class="page-head">
           <p class="crumbs">
             <a href={href({ name: 'pulls', slug })}>Pull requests</a> /
@@ -50,9 +58,9 @@
             <span class="mono" title={p.headSha}>{shortSha(p.headSha)}</span>
             <span>{p.merged ? 'merged' : p.draft ? 'draft' : p.state}</span>
             <span>updated <Time iso={p.updatedAt} /></span>
-            {#each p.labels as l (l.name)}<span class="label-chip" style:--label="#{l.color}">{l.name}</span>{/each}
-            {#if p.url}
-              <a href={p.url} target="_blank" rel="noopener noreferrer">View on forge <Icon path={mdiOpenInNew} size={12} /></a>
+            {#each p.labels as l, i (i)}<span class="label-chip" style:--label={labelColor(l.color)}>{l.name}</span>{/each}
+            {#if forgeUrl}
+              <a href={forgeUrl} target="_blank" rel="noopener noreferrer">View on forge <Icon path={mdiOpenInNew} size={12} /></a>
             {/if}
           </p>
         </header>

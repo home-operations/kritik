@@ -87,7 +87,7 @@
           {#if tab === 'summary'}
             <SummaryTab {d} />
           {:else if tab === 'diff'}
-            <DiffTab {base} {d} {version} />
+            <DiffTab {base} {d} />
           {:else if tab === 'conversation'}
             <ConversationTab {base} {version} />
           {:else if tab === 'timeline'}

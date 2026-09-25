@@ -43,4 +43,7 @@
       </g>
     {/each}
   </svg>
+  <ul class="sr-only" aria-label="{label}, values">
+    {#each bars as b, i (i)}<li>{b.title}</li>{/each}
+  </ul>
 </div>

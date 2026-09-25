@@ -7,7 +7,7 @@
 </script>
 
 <ul class="tool-defs">
-  {#each tools as t (t.name)}
+  {#each tools as t, i (i)}
     <li>
       <Collapsible title={t.name}>
         {#snippet meta()}<span class="muted">{t.description.split('\n')[0]}</span>{/snippet}

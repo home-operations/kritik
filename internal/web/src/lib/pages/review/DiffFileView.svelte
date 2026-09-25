@@ -1,12 +1,13 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { DiffFile } from '../../diff';
   import type { Finding } from '../../types';
   import Icon from '../../Icon.svelte';
   import { mdiChevronDown, mdiChevronRight } from '../../icons';
   import FindingCard from './FindingCard.svelte';
 
-  let { file, findings }: { file: DiffFile; findings: Finding[] } = $props();
-  let open = $state(true);
+  let { file, findings, initiallyOpen = true }: { file: DiffFile; findings: Finding[]; initiallyOpen?: boolean } = $props();
+  let open = $state(untrack(() => initiallyOpen));
   const id = `df${Math.random().toString(36).slice(2, 9)}`;
 
   // Findings keyed by the new-side line they point at; anything that points
@@ -22,10 +23,11 @@
 
 <section class="diff-file">
   <h3 class="diff-file-head">
-    <button aria-expanded={open} aria-controls={id} onclick={() => (open = !open)}>
+    <button aria-expanded={open} aria-controls={open ? id : undefined} onclick={() => (open = !open)}>
       <Icon path={open ? mdiChevronDown : mdiChevronRight} size={14} />
       <span class="mono diff-path">{file.oldPath && file.oldPath !== file.newPath && file.newPath ? `${file.oldPath} → ${file.newPath}` : file.path}</span>
       <span class="small"><span class="add">+{file.added}</span> <span class="del">−{file.removed}</span></span>
+      {#if !open && !initiallyOpen}<span class="small muted">{file.lines.length} lines, collapsed</span>{/if}
       {#if findings.length}<span class="badge">{findings.length} finding{findings.length === 1 ? '' : 's'}</span>{/if}
     </button>
   </h3>

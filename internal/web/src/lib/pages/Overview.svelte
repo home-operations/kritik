@@ -27,7 +27,7 @@
     <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any tenant yet.">
       {#snippet children(list)}
         <ul class="tenant-cards">
-          {#each list as t (t.slug)}
+          {#each list as t, i (i)}
             <li>
               <a class="tenant-card" href={href({ name: 'tenant', slug: t.slug })}>
                 <span class="tenant-card-title mono">{t.slug}</span>

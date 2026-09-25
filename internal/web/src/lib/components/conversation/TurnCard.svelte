@@ -43,7 +43,7 @@
     <div class="message role-assistant response">
       <span class="role-label">response{turn.response.stop ? ` · ${turn.response.stop}` : ''}</span>
       {#if turn.response.text}<CodeBlock text={turn.response.text} plain />{/if}
-      {#each turn.response.toolCalls as c (c.id)}<ToolCallView call={c} />{/each}
+      {#each turn.response.toolCalls as c, i (i)}<ToolCallView call={c} />{/each}
       {#if !turn.response.text && turn.response.toolCalls.length === 0}<p class="small muted">No content.</p>{/if}
     </div>
   {/if}

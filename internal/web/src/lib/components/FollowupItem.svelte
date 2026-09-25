@@ -23,7 +23,7 @@
     {#if f.model}<span class="mono small muted">{f.model}</span>{/if}
     <Time iso={f.createdAt} />
     <span class="spacer"></span>
-    <button class="btn btn-small" aria-expanded={open} aria-controls={id} onclick={() => (open = !open)}>
+    <button class="btn btn-small" aria-expanded={open} aria-controls={open ? id : undefined} onclick={() => (open = !open)}>
       {open ? 'Hide transcript' : 'Transcript'}
     </button>
   </div>

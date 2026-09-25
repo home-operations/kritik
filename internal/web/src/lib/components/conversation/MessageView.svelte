@@ -13,8 +13,8 @@
 <div class="message role-{m.role}">
   <span class="role-label">{m.role}</span>
   {#if m.text}<CodeBlock text={m.text} plain copy={false} />{/if}
-  {#each m.toolCalls as c (c.id)}<ToolCallView call={c} />{/each}
-  {#each m.toolResults as r (r.callId)}
+  {#each m.toolCalls as c, i (i)}<ToolCallView call={c} />{/each}
+  {#each m.toolResults as r, i (i)}
     <Collapsible
       title="tool result · {toolNames.get(r.callId) ?? r.callId}"
       tone={r.isError ? 'danger' : ''}

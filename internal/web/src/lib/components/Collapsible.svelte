@@ -17,7 +17,7 @@
 </script>
 
 <div class="collapsible" class:tone-danger-edge={tone === 'danger'}>
-  <button class="collapsible-head" aria-expanded={open} aria-controls={id} onclick={() => (open = !open)}>
+  <button class="collapsible-head" aria-expanded={open} aria-controls={open ? id : undefined} onclick={() => (open = !open)}>
     <Icon path={open ? mdiChevronDown : mdiChevronRight} size={14} />
     <span class="collapsible-title">{title}</span>
     {#if meta}<span class="collapsible-meta">{@render meta()}</span>{/if}

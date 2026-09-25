@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
-  import { Resource, live } from '../resource.svelte';
+  import { Resource, live, type Dirty } from '../resource.svelte';
   import { tokens, usd, wholeNumber, indexTone, jobTone, splitRepo } from '../format';
   import type { Job, JobState, Page, Pull, Repository, TenantSummary } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -23,26 +24,66 @@
 
   const base = $derived(`/api/v1/tenants/${encodeURIComponent(slug)}`);
 
-  const res = new Resource<Data>(async () => {
+  type Part = 'summary' | 'repos' | 'pulls' | 'queue';
+  const ALL: readonly Part[] = ['summary', 'repos', 'pulls', 'queue'];
+  // Which parts the next load refetches; the rest are reused from the last
+  // load, so one live event costs one or two requests rather than five.
+  let stale = new Set<Part>(ALL);
+
+  function partsFor(dirty: Dirty): Part[] {
+    if (dirty.has('resync')) return [...ALL];
+    const out = new Set<Part>();
+    if (dirty.has('review')) ['summary', 'pulls', 'queue'].forEach((p) => out.add(p as Part));
+    if (dirty.has('index_run')) ['repos', 'queue'].forEach((p) => out.add(p as Part));
+    if (dirty.has('runner_run') || dirty.has('followup')) out.add('queue');
+    return [...out];
+  }
+
+  const res: Resource<Data> = new Resource<Data>(async (): Promise<Data> => {
     const b = base;
-    const [tenants, repos, open, all, queue] = await Promise.all([
-      getJSON<TenantSummary[]>('/api/v1/tenants'),
-      getJSON<Page<Repository>>(`${b}/repos?limit=100`),
-      getJSON<Page<Pull>>(`${b}/pulls?state=open&limit=100`),
-      getJSON<Page<Pull>>(`${b}/pulls?state=all&limit=50`),
-      getJSON<Job[]>(`${b}/queue`),
+    // untrack: the load effect must not re-run just because data arrived.
+    const prev: Data | undefined = untrack(() => res.data);
+    const want = prev ? stale : new Set(ALL);
+    stale = new Set();
+    const [tenants, repos, pulls, queue] = await Promise.all([
+      want.has('summary') || !prev ? getJSON<TenantSummary[]>('/api/v1/tenants') : undefined,
+      want.has('repos') || !prev ? getJSON<Page<Repository>>(`${b}/repos?limit=100`) : prev.repos,
+      want.has('pulls') || !prev
+        ? Promise.all([getJSON<Page<Pull>>(`${b}/pulls?state=open&limit=100`), getJSON<Page<Pull>>(`${b}/pulls?state=all&limit=50`)])
+        : undefined,
+      want.has('queue') || !prev ? getJSON<Job[]>(`${b}/queue`) : prev.queue,
     ]);
-    const recent = all.items
-      .filter((p) => p.lastReview)
-      .sort((a, z) => (z.lastReview?.createdAt ?? '').localeCompare(a.lastReview?.createdAt ?? ''))
-      .slice(0, 10);
-    return { summary: tenants.find((t) => t.slug === slug), repos, open, recent, queue };
+    const recent = pulls
+      ? pulls[1].items
+          .filter((p) => p.lastReview)
+          .sort((a, z) => (z.lastReview?.createdAt ?? '').localeCompare(a.lastReview?.createdAt ?? ''))
+          .slice(0, 10)
+      : prev!.recent;
+    return {
+      summary: tenants ? tenants.find((t) => t.slug === slug) : prev?.summary,
+      repos,
+      open: pulls ? pulls[0] : prev!.open,
+      recent,
+      queue,
+    };
   });
 
   $effect(() => {
     void res.load();
   });
-  $effect(() => live((e) => e.tenant === slug, () => void res.load()));
+  // model_call events are ignored: nothing here changes per model call
+  // except the token tile, which the next review event refreshes.
+  $effect(() =>
+    live(
+      (e) => e.tenant === slug && e.kind !== 'model_call',
+      (dirty) => {
+        const parts = partsFor(dirty);
+        if (!parts.length) return;
+        for (const p of parts) stale.add(p);
+        void res.load();
+      },
+    ),
+  );
 
   const INFLIGHT: readonly JobState[] = ['running', 'available', 'scheduled', 'retryable', 'pending'];
 
@@ -96,7 +137,7 @@
               <p class="state-msg">No reviews yet.</p>
             {:else}
               <ul class="rows">
-                {#each d.recent as p (p.repository + p.number)}
+                {#each d.recent as p (`${p.repository}#${p.number}`)}
                   {@const r = p.lastReview!}
                   <li class="row">
                     <a class="row-link" href={href({ name: 'review', slug, id: r.id })}>

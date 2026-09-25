@@ -35,9 +35,12 @@
     return parts.join('\n').toLowerCase();
   }
 
+  // Built once per transcript, not per keystroke.
+  const haystacks = $derived(transcript.turns.map(haystack));
+
   const shown = $derived.by(() => {
     const needle = q.trim().toLowerCase();
-    return needle ? transcript.turns.filter((t) => haystack(t).includes(needle)) : transcript.turns;
+    return needle ? transcript.turns.filter((_, i) => haystacks[i]!.includes(needle)) : transcript.turns;
   });
 </script>
 

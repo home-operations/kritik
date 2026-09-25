@@ -2,12 +2,13 @@
   import { tick } from 'svelte';
   import { getJSON } from '../api.svelte';
   import { navigate } from '../router.svelte';
-  import { Resource, live } from '../resource.svelte';
+  import { Paged, Resource, live } from '../resource.svelte';
   import { pullRoute } from '../links';
   import { listKeys } from '../listkeys';
   import type { Page, Pull, Repository, ReviewStatus } from '../types';
   import StateView from '../components/StateView.svelte';
   import PullRows from '../components/PullRows.svelte';
+  import LoadMore from '../components/LoadMore.svelte';
 
   let { slug }: { slug: string } = $props();
 
@@ -18,10 +19,6 @@
   let repoName = $state('');
   let qInput = $state('');
   let q = $state('');
-  let extra = $state<Pull[]>([]);
-  let cursor = $state<string | null>(null);
-  let loadingMore = $state(false);
-  let moreError = $state('');
   let selected = $state(-1);
   let searchEl = $state<HTMLInputElement | undefined>(undefined);
 
@@ -36,21 +33,17 @@
     return `${tenant}/pulls?${p}`;
   }
 
-  const res = new Resource(() => getJSON<Page<Pull>>(query()));
+  const paged = new Paged<Pull>(query, (p) => `${p.repository}#${p.number}`);
+  const res = paged.first;
   const repos = new Resource(() => getJSON<Page<Repository>>(`${tenant}/repos?limit=100`));
 
   $effect(() => {
-    void res.load();
+    void paged.load();
   });
   $effect(() => {
     void repos.load();
   });
-  $effect(() => live((e) => e.tenant === slug && (e.kind === 'review' || e.kind === 'followup'), () => void res.load()));
-  $effect(() => {
-    cursor = res.data?.nextCursor ?? null;
-    extra = [];
-    moreError = '';
-  });
+  $effect(() => live((e) => e.tenant === slug && (e.kind === 'review' || e.kind === 'followup'), () => void paged.load()));
   // Debounce the search box so typing doesn't fire a request per keystroke.
   $effect(() => {
     const v = qInput.trim();
@@ -58,22 +51,7 @@
     return () => clearTimeout(t);
   });
 
-  const items = $derived([...(res.data?.items ?? []), ...extra]);
-
-  async function more(): Promise<void> {
-    if (!cursor) return;
-    loadingMore = true;
-    moreError = '';
-    try {
-      const p = await getJSON<Page<Pull>>(query(cursor));
-      extra = [...extra, ...p.items];
-      cursor = p.nextCursor;
-    } catch (err) {
-      moreError = err instanceof Error ? err.message : String(err);
-    } finally {
-      loadingMore = false;
-    }
-  }
+  const items = $derived(paged.items);
 
   async function select(i: number): Promise<void> {
     selected = i;
@@ -134,10 +112,7 @@
     <StateView {res} retry={() => res.load()} isEmpty={() => items.length === 0} empty="No pull requests match.">
       {#snippet children()}
         <PullRows {slug} {items} {selected} />
-        {#if moreError}<p class="state-msg state-error" role="alert">{moreError}</p>{/if}
-        {#if cursor}
-          <button class="btn load-more" onclick={more} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more'}</button>
-        {/if}
+        <LoadMore {paged} />
       {/snippet}
     </StateView>
   </div>

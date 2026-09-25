@@ -39,7 +39,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each list as t (t.slug)}
+              {#each list as t, i (i)}
                 <tr>
                   <td class="mono">
                     {#if t.live}<a href={href({ name: 'tenant', slug: t.slug })}>{t.slug}</a>{:else}{t.slug}{/if}

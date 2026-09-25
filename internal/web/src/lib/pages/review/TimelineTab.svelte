@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ReviewDetail, RunnerRun } from '../../types';
   import { between, duration, tokens, usd, wholeNumber, bytes } from '../../format';
-  import { absolute } from '../../time.svelte';
+  import { absolute, clock } from '../../time.svelte';
   import Time from '../../components/Time.svelte';
   import BarChart from '../../components/BarChart.svelte';
 
@@ -15,11 +15,11 @@
     cls: string;
   }
 
-  function segments(r: RunnerRun): Segment[] {
+  function segments(r: RunnerRun, now: number): Segment[] {
     const out: Segment[] = [];
     const add = (name: string, cls: string, from: string | null, to: string | null) => {
       if (!from) return;
-      out.push({ name, cls, from, to, ms: between(from, to ?? new Date().toISOString()) ?? 0 });
+      out.push({ name, cls, from, to, ms: between(from, to ?? new Date(now).toISOString()) ?? 0 });
     };
     add('queued', 'seg-queued', r.createdAt, r.scheduledAt ?? r.startedAt ?? r.finishedAt);
     add('starting', 'seg-starting', r.scheduledAt, r.startedAt ?? r.finishedAt);
@@ -27,7 +27,7 @@
     return out;
   }
 
-  const segs = $derived(d.runnerRun ? segments(d.runnerRun) : []);
+  const segs = $derived(d.runnerRun ? segments(d.runnerRun, clock.now) : []);
   const totalMs = $derived(segs.reduce((a, s) => a + s.ms, 0));
   const steps = $derived(
     (d.agentRun?.timeline ?? []).map((s) => ({
@@ -94,7 +94,7 @@
         <dt>Sources</dt>
         <dd>
           <ul class="plain-list">
-            {#each a.sources as s (s)}<li class="mono small">{s}</li>{/each}
+            {#each a.sources as s, i (i)}<li class="mono small">{s}</li>{/each}
           </ul>
         </dd>
       {/if}

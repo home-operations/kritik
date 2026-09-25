@@ -1,49 +1,32 @@
 <script lang="ts">
-  import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
-  import { Resource, live } from '../resource.svelte';
+  import { Paged, live } from '../resource.svelte';
   import { indexTone, splitRepo } from '../format';
-  import type { Page, Repository } from '../types';
+  import type { Repository } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
   import ReviewStatusPill from '../components/ReviewStatusPill.svelte';
+  import LoadMore from '../components/LoadMore.svelte';
 
   let { slug }: { slug: string } = $props();
   let filter = $state('');
-  let extra = $state<Repository[]>([]);
-  let cursor = $state<string | null>(null);
-  let loadingMore = $state(false);
 
   const base = $derived(`/api/v1/tenants/${encodeURIComponent(slug)}/repos`);
-  const res = new Resource(() => getJSON<Page<Repository>>(`${base}?limit=100`));
+  const paged = new Paged<Repository>(
+    (cursor) => `${base}?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+    (r) => r.id,
+  );
+  const res = paged.first;
 
   $effect(() => {
-    void res.load();
+    void paged.load();
   });
-  $effect(() => live((e) => e.tenant === slug && e.kind === 'index_run', () => void res.load()));
-  $effect(() => {
-    cursor = res.data?.nextCursor ?? null;
-    extra = [];
-  });
+  $effect(() => live((e) => e.tenant === slug && e.kind === 'index_run', () => void paged.load()));
 
-  async function more(): Promise<void> {
-    if (!cursor) return;
-    loadingMore = true;
-    try {
-      const p = await getJSON<Page<Repository>>(`${base}?limit=100&cursor=${encodeURIComponent(cursor)}`);
-      extra = [...extra, ...p.items];
-      cursor = p.nextCursor;
-    } catch (err) {
-      console.error('load more repos:', err);
-    } finally {
-      loadingMore = false;
-    }
-  }
-
-  function visible(items: Repository[]): Repository[] {
+  function visible(): Repository[] {
     const needle = filter.trim().toLowerCase();
-    const all = [...items, ...extra];
+    const all = paged.items;
     return needle ? all.filter((r) => r.fullName.toLowerCase().includes(needle) || r.installation.toLowerCase().includes(needle)) : all;
   }
 </script>
@@ -58,8 +41,8 @@
       </label>
     </div>
     <StateView {res} retry={() => res.load()} isEmpty={(d) => d.items.length === 0} empty="No repositories yet.">
-      {#snippet children(d)}
-        {@const rows = visible(d.items)}
+      {#snippet children()}
+        {@const rows = visible()}
         {#if rows.length === 0}
           <p class="state-msg">Nothing matches “{filter}”.</p>
         {:else}
@@ -100,9 +83,7 @@
             </table>
           </div>
         {/if}
-        {#if cursor}
-          <button class="btn load-more" onclick={more} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more'}</button>
-        {/if}
+        <LoadMore {paged} />
       {/snippet}
     </StateView>
   </div>

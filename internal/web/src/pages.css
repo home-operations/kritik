@@ -183,7 +183,7 @@ input:focus-visible {
   font-size: 11px;
   padding: 0 7px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--label) 60%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--label, var(--border)) 60%, var(--border));
   color: var(--text);
 }
 .chips {

@@ -24,7 +24,7 @@
   });
   $effect(() =>
     live(
-      (e) => e.tenant === slug,
+      (e) => e.tenant === slug && e.kind !== 'model_call',
       () => {
         void res.load();
         void pulls.load();
