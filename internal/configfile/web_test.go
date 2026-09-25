@@ -89,6 +89,8 @@ func TestWebRejects(t *testing.T) {
 		{"ttl too long", rep("sessionTTL: 8h", "sessionTTL: 800h"), "web.sessionTTL"},
 		{"ttl negative", rep("sessionTTL: 8h", "sessionTTL: -1h"), "web.sessionTTL"},
 		{"unknown key", rep("scopes:", "scope:"), "field scope not found"},
+		{"dashboard forge host with scheme", rep("sessionTTL: 8h", "sessionTTL: 8h\n  dashboardForgeHosts: [https://git.example.com]"), "web.dashboardForgeHosts[0]"},
+		{"dashboard forge host wildcard", rep("sessionTTL: 8h", "sessionTTL: 8h\n  dashboardForgeHosts: ['*.example.com']"), "web.dashboardForgeHosts[0]"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
