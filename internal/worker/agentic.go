@@ -84,30 +84,41 @@ func (w *Review) agentAdmit(
 	if err != nil {
 		return admission{}, statusFailed, err.Error(), nil
 	}
-	budget, capped := settings.Agent.MaxTokens, ""
-	if limits := settings.Limits; limits.ReviewsPerDay > 0 || limits.TokensPerMonth > 0 {
-		u, err := readUsage(ctx, w.Store, tenant.ID())
-		if err != nil {
-			return admission{}, "", "", err
-		}
-		if capped = u.reached(limits); capped == "" {
-			budget, capped = agentBudget(settings.Agent.MaxTokens, limits.TokensPerMonth, u.tokens)
-		}
-	}
-	if capped != "" {
-		return admission{}, statusCapped, capped, nil
-	}
-	slots := settings.Limits.Concurrency
-	if slots <= 0 {
-		slots = configfile.DefaultConcurrency
-	}
 	waited := time.Now()
-	l, err := acquireLease(ctx, w.Store, tenant.ID(), string(ref), slots, jobID)
+	l, err := acquireLease(ctx, w.Store, tenant.ID(), string(ref), settings.Slots(), jobID)
 	if err != nil {
 		return admission{}, "", "", err
 	}
 	w.Metrics.LeaseWait(tenant.Slug, string(ref), time.Since(waited))
+	// The caps are read under the lease, so concurrent reviews cannot all
+	// pass a cap of one.
+	budget, capped, err := w.agentCaps(ctx, tenant, settings)
+	if err != nil || capped != "" {
+		w.releaseLease(ctx, l, string(ref))
+		if err != nil {
+			return admission{}, "", "", err
+		}
+		return admission{}, statusCapped, capped, nil
+	}
 	return admission{lease: l, endpoint: endpoint, key: key, maxTokens: budget}, "", "", nil
+}
+
+// agentCaps is the token budget an agentic review may spend, or the cap
+// that stops it.
+func (w *Review) agentCaps(ctx context.Context, tenant *configfile.Tenant, settings configfile.Settings) (int64, string, error) {
+	limits := settings.Limits
+	if limits.ReviewsPerDay <= 0 && limits.TokensPerMonth <= 0 {
+		return settings.Agent.MaxTokens, "", nil
+	}
+	u, err := readUsage(ctx, w.Store, tenant.ID())
+	if err != nil {
+		return 0, "", err
+	}
+	if capped := u.reached(limits); capped != "" {
+		return 0, capped, nil
+	}
+	budget, capped := agentBudget(settings.Agent.MaxTokens, limits.TokensPerMonth, u.tokens)
+	return budget, capped, nil
 }
 
 // minAgentTokens is the least monthly headroom an agentic review starts
