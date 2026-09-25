@@ -203,3 +203,32 @@ func TestProvidersDoesNotRememberAnEndedRequest(t *testing.T) {
 		t.Fatalf("get after a canceled request = %v with %d discovery requests, want a fresh attempt", err, hits.Load())
 	}
 }
+
+func TestProvidersRemembersASlowIssuer(t *testing.T) {
+	var hits atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+	client := srv.Client()
+	client.Timeout = 50 * time.Millisecond
+	u, _ := url.Parse("https://kritik.example.com")
+	ps := newProviders(u, client, nil)
+	web := configfile.Web{SignIn: []configfile.SignIn{{Name: "corp", Type: configfile.SignInOIDC, Issuer: srv.URL, ClientID: "c"}}}
+	if _, _, err := ps.get(context.Background(), web, "corp"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("get = %v, want the client timeout", err)
+	}
+	start := time.Now()
+	if _, _, err := ps.get(context.Background(), web, "corp"); err == nil {
+		t.Fatal("second get succeeded")
+	}
+	if hits.Load() != 1 || time.Since(start) >= client.Timeout {
+		t.Fatalf("second get hit the issuer (%d requests, %s): a client timeout was not remembered", hits.Load(), time.Since(start))
+	}
+}

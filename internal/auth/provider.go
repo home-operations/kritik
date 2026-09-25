@@ -110,7 +110,7 @@ func (ps *providers) get(ctx context.Context, web configfile.Web, name string) (
 		case err == nil:
 			ps.built[name] = p
 			delete(ps.failed, name)
-		case !requestEnded(ctx, err):
+		case !requestEnded(ctx):
 			ps.failed[name] = failedBuild{at: ps.now(), err: err}
 		}
 	}
@@ -121,11 +121,13 @@ func (ps *providers) get(ctx context.Context, web configfile.Web, name string) (
 	return p, signIn, nil
 }
 
-// requestEnded reports whether err is the caller's request going away
-// rather than the provider failing, which says nothing about the provider
-// and must not hold back the next sign-in.
-func requestEnded(ctx context.Context, err error) bool {
-	return ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+// requestEnded reports whether a failed build is the caller's request going
+// away rather than the provider failing, which says nothing about the
+// provider and must not hold back the next sign-in. Only ctx decides: an
+// http.Client timeout also matches context.DeadlineExceeded, yet it is the
+// provider being slow.
+func requestEnded(ctx context.Context) bool {
+	return ctx.Err() != nil
 }
 
 // signInsKey fingerprints everything a built provider depends on, the
