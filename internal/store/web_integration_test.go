@@ -54,7 +54,7 @@ func TestListenPublishesReviewEvents(t *testing.T) {
 
 	events := make(chan Event, 10)
 	listenCtx := t.Context()
-	go func() { _ = s.Listen(listenCtx, func(e Event) { events <- e }, func(string) {}) }()
+	go s.Listen(listenCtx, ListenHandlers{OnEvent: func(e Event) { events <- e }})
 	// Postgres only delivers NOTIFY to sessions already LISTENing at commit
 	// time; give Listen's connection a moment to register before the write.
 	time.Sleep(250 * time.Millisecond)
@@ -79,7 +79,7 @@ func TestListenPublishesReviewEvents(t *testing.T) {
 // TestListenSkipsRunnerRunHeartbeatOnlyUpdates checks the WHEN clause on
 // kritik_notify_runner_run: a heartbeat-only update must not notify, while a
 // phase change (the positive control, proving the listener itself works)
-// must.
+// must, and must not fire more than once for it.
 func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
@@ -96,7 +96,7 @@ func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 
 	events := make(chan Event, 10)
 	listenCtx := t.Context()
-	go func() { _ = s.Listen(listenCtx, func(e Event) { events <- e }, func(string) {}) }()
+	go s.Listen(listenCtx, ListenHandlers{OnEvent: func(e Event) { events <- e }})
 	time.Sleep(250 * time.Millisecond)
 
 	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
@@ -125,6 +125,13 @@ func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("no runner_run event received for the phase change (listener not working?)")
 	}
+	// The phase change above must produce exactly one event, not a spurious
+	// second one (e.g. a stray heartbeat notification re-delivered).
+	select {
+	case e := <-events:
+		t.Fatalf("unexpected second event after the phase change: %+v", e)
+	case <-time.After(500 * time.Millisecond):
+	}
 }
 
 // TestListenPublishesConfigEvents checks kritik_notify_config: an insert or
@@ -135,7 +142,7 @@ func TestListenPublishesConfigEvents(t *testing.T) {
 
 	configs := make(chan string, 10)
 	listenCtx := t.Context()
-	go func() { _ = s.Listen(listenCtx, func(Event) {}, func(slug string) { configs <- slug }) }()
+	go s.Listen(listenCtx, ListenHandlers{OnConfig: func(slug string) { configs <- slug }})
 	time.Sleep(250 * time.Millisecond)
 
 	// dashboard_tenants carries no RLS (read before the tenant it describes
@@ -206,8 +213,9 @@ func TestModelCallsRowLevelSecurity(t *testing.T) {
 		_, err := tx.Exec(ctx, `INSERT INTO model_calls (tenant_id, kind, model) VALUES ($1, 'review', 'acme/large')`, beta)
 		return err
 	})
-	if err == nil {
-		t.Fatal("insert into model_calls with a foreign tenant_id must be refused")
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+		t.Fatalf("insert into model_calls with a foreign tenant_id: err = %v, want a 42501 permission-denied error", err)
 	}
 }
 

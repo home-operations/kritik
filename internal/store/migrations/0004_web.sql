@@ -67,6 +67,7 @@ CREATE TABLE memberships (
     refreshed_at  timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, account_id)
 );
+CREATE INDEX memberships_account_id_idx ON memberships (account_id);
 
 -- invites are looked up by their id before the invited account exists, so
 -- they carry no RLS either; a pending invite is unique per tenant+email.
@@ -75,11 +76,11 @@ CREATE TABLE invites (
     tenant_id    uuid        NOT NULL REFERENCES tenants (id),
     email        text        NOT NULL,
     role         text        NOT NULL CHECK (role IN ('admin', 'member')),
-    created_by   uuid        REFERENCES accounts (id),
+    created_by   uuid        REFERENCES accounts (id) ON DELETE SET NULL,
     created_at   timestamptz NOT NULL DEFAULT now(),
     expires_at   timestamptz NOT NULL,
     accepted_at  timestamptz,
-    accepted_by  uuid        REFERENCES accounts (id)
+    accepted_by  uuid        REFERENCES accounts (id) ON DELETE SET NULL
 );
 CREATE UNIQUE INDEX invites_pending_email_idx ON invites (tenant_id, lower(email)) WHERE accepted_at IS NULL;
 
@@ -88,7 +89,7 @@ CREATE UNIQUE INDEX invites_pending_email_idx ON invites (tenant_id, lower(email
 CREATE TABLE audit_events (
     id         bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     at         timestamptz NOT NULL DEFAULT now(),
-    account_id uuid        REFERENCES accounts (id),
+    account_id uuid        REFERENCES accounts (id) ON DELETE SET NULL,
     tenant_id  uuid        REFERENCES tenants (id),
     action     text        NOT NULL,
     target     text        NOT NULL DEFAULT '',
@@ -105,8 +106,8 @@ CREATE TABLE dashboard_tenants (
     slug       text        PRIMARY KEY,
     spec       jsonb       NOT NULL,
     revision   bigint      NOT NULL DEFAULT 1,
-    created_by uuid        REFERENCES accounts (id),
-    updated_by uuid        REFERENCES accounts (id),
+    created_by uuid        REFERENCES accounts (id) ON DELETE SET NULL,
+    updated_by uuid        REFERENCES accounts (id) ON DELETE SET NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -134,11 +135,11 @@ CREATE TABLE model_calls (
     messages            jsonb       NOT NULL DEFAULT '[]'::jsonb,
     response            jsonb       NOT NULL DEFAULT '{}'::jsonb,
     stop_reason         text        NOT NULL DEFAULT '',
-    input_tokens        bigint      DEFAULT 0,
-    cache_read_tokens   bigint      DEFAULT 0,
-    cache_write_tokens  bigint      DEFAULT 0,
-    output_tokens       bigint      DEFAULT 0,
-    cost_usd            numeric(12, 6) DEFAULT 0,
+    input_tokens        bigint      NOT NULL DEFAULT 0,
+    cache_read_tokens   bigint      NOT NULL DEFAULT 0,
+    cache_write_tokens  bigint      NOT NULL DEFAULT 0,
+    output_tokens       bigint      NOT NULL DEFAULT 0,
+    cost_usd            numeric(12, 6) NOT NULL DEFAULT 0,
     duration_ms         int         NOT NULL DEFAULT 0,
     error               text        NOT NULL DEFAULT '',
     truncated           boolean     NOT NULL DEFAULT false,
@@ -158,7 +159,7 @@ CREATE POLICY tenant_isolation ON model_calls
 ALTER TABLE reviews
     ADD COLUMN river_job_id        bigint,
     ADD COLUMN cancel_requested_at timestamptz,
-    ADD COLUMN canceled_by         uuid REFERENCES accounts (id);
+    ADD COLUMN canceled_by         uuid REFERENCES accounts (id) ON DELETE SET NULL;
 
 ALTER TABLE reviews DROP CONSTRAINT reviews_status_check;
 ALTER TABLE reviews ADD CONSTRAINT reviews_status_check

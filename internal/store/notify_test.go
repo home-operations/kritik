@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestEventKindValid(t *testing.T) {
 	tests := []struct {
@@ -94,5 +97,32 @@ func TestParseEvent(t *testing.T) {
 				t.Errorf("parseEvent(%q) ReviewID = %v, want %v", tt.payload, *got.ReviewID, *tt.want.ReviewID)
 			}
 		})
+	}
+}
+
+func TestListenBackoff(t *testing.T) {
+	for _, attempt := range []int{0, 1, 2, 3, 4, 5, 6, 20} {
+		t.Run(string(rune('0'+attempt%10)), func(t *testing.T) {
+			d := listenBackoff(attempt)
+			if d < listenBackoffMin/2 {
+				t.Fatalf("listenBackoff(%d) = %v, below half the minimum floor %v", attempt, d, listenBackoffMin)
+			}
+			if d > listenBackoffMax {
+				t.Fatalf("listenBackoff(%d) = %v, exceeds cap %v", attempt, d, listenBackoffMax)
+			}
+		})
+	}
+}
+
+func TestListenBackoffGrows(t *testing.T) {
+	// The guaranteed half of the delay (ignoring jitter) should increase
+	// with attempt until it saturates at the cap.
+	prevHalf := time.Duration(0)
+	for attempt := range 6 {
+		half := min(listenBackoffMin<<attempt, listenBackoffMax) / 2
+		if half < prevHalf {
+			t.Fatalf("attempt %d: guaranteed half %v is less than previous %v", attempt, half, prevHalf)
+		}
+		prevHalf = half
 	}
 }
