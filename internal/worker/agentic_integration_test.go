@@ -312,6 +312,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a run superseded after the Job still charges its tokens", func(t *testing.T) { checkAgentSupersededCharges(t, h) })
 	t.Run("a key the provider echoes back is masked", func(t *testing.T) { checkAgentKeyMasked(t, h) })
 	t.Run("the merge-base filter skips before the agent runs", func(t *testing.T) { checkAgentFiltered(t, h) })
+	t.Run("a runner skip the worker does not repeat still sets the status", func(t *testing.T) { checkRunnerOnlySkip(t, h) })
 	t.Run("a review outlives the client's job timeout", func(t *testing.T) { checkAgentOutlivesJobTimeout(t, h) })
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
 	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
@@ -325,7 +326,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 7 || foreign != 0 {
+		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 8 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -654,5 +655,40 @@ func checkFailRun(t *testing.T, h *agenticHarness) {
 	})
 	if err != nil || phase != "failed" || !strings.Contains(errText, "boom") || !finished {
 		t.Fatalf("run phase=%q error=%q finished=%v err=%v", phase, errText, finished, err)
+	}
+}
+
+func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc k() {}\n")
+	h.lf.mu.Lock()
+	h.lf.status = ""
+	h.lf.mu.Unlock()
+	h.exec.mu.Lock()
+	h.exec.after = func() {
+		// The body is edited as the Job ends: the runner saw the skip
+		// marker, the worker's own filter check does not.
+		err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET body = 'Adds k.' WHERE number = 1`)
+			return err
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	h.exec.mu.Unlock()
+	h.dispatchBody(t, next, "Adds k. [skip-review]")
+	reviewID, status, _ := h.waitReview(t, next)
+	if status != "skipped" {
+		t.Fatalf("status = %s, want skipped", status)
+	}
+	if run := h.agentRow(t, reviewID); run.stop != "skipped" || run.errText != "filtered" {
+		t.Fatalf("agent run = %+v", run)
+	}
+	h.lf.mu.Lock()
+	forgeStatus := h.lf.status
+	h.lf.mu.Unlock()
+	if forgeStatus != "success: kritik: skipped (filtered by .kritik.yaml)" {
+		t.Fatalf("forge status = %q", forgeStatus)
 	}
 }

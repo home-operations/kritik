@@ -312,6 +312,7 @@ func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
 	run := *p.agent
 	if run.stop == runner.AgentSkipped {
 		p.logger.Info("review "+statusSkipped+" by the runner", "reason", run.errText)
+		p.skippedStatus(ctx, run.errText)
 		if reason := repoconfig.SkipReason(run.errText); reason.Valid() {
 			err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, `UPDATE reviews SET skip_reason = $2 WHERE id = $1`, p.reviewID, string(reason))
@@ -352,6 +353,20 @@ func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
 		return statusFailed, err
 	}
 	return statusCompleted, nil
+}
+
+// skippedStatus says on the head why the runner skipped its review: the
+// worker only reaches the runner's skip when its own checks did not skip,
+// and so did not say so itself.
+func (p *publishPhase) skippedStatus(ctx context.Context, reason string) {
+	desc := repoconfig.SkipReason(reason).Description()
+	if reason == runner.SkipUnchangedPatch {
+		desc = "patch unchanged since the last review"
+	}
+	owner, repo, _ := strings.Cut(p.pr.repository, "/")
+	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: skipped ("+desc+")"); err != nil {
+		p.logger.Warn("commit status not set", "error", err)
+	}
 }
 
 // incomplete replaces the sticky comment with one saying why this head was
