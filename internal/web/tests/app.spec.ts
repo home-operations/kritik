@@ -37,6 +37,24 @@ test.describe('signed-out shell', () => {
     const link = page.locator('.signin-provider');
     await expect(link).toHaveAttribute('href', /return_to=%23%2Ft%2Facme%2Frepos/);
   });
+
+  // "#/signin/" parses as the sign-in route, so a 401 there must neither
+  // loop nor record the sign-in page itself as the place to return to.
+  test('a 401 on #/signin/ stays on sign-in and returns to the overview', async ({ page, mockProviders }) => {
+    await mockProviders();
+    await page.route('**/api/v1/me', (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'unauthorized', message: 'no session' }),
+      }),
+    );
+    await page.goto('/#/signin/');
+    await expect(page.locator('.signin-card h1')).toHaveText('kritik');
+
+    const link = page.locator('.signin-provider');
+    await expect(link).toHaveAttribute('href', /return_to=%23%2F$/);
+  });
 });
 
 test.describe('sign-in page', () => {
@@ -100,6 +118,15 @@ test.describe('signed-in shell', () => {
     await page.goto('/');
     await page.locator('.tenant-switch').selectOption('globex');
     await expect(page).toHaveURL(/#\/t\/globex$/);
+  });
+
+  test('a signed-in visit to #/signin redirects to the overview', async ({ page, signIn, mockProviders }) => {
+    await signIn();
+    await mockProviders();
+    await page.goto('/#/signin');
+    await expect(page).toHaveURL(/#\/$/);
+    await expect(page.locator('.signin-card')).toHaveCount(0);
+    await expect(page.locator('.tenant-switch')).toBeVisible();
   });
 
   test('signing out clears the shell and returns to sign-in', async ({ page, signIn }) => {

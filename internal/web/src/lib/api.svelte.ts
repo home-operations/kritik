@@ -5,7 +5,7 @@
 // (expired cookie, revoked token) — redirect to sign-in without a history
 // entry so "back" doesn't bounce the user right back into the 401.
 import { basePath } from './base';
-import { replace } from './router.svelte';
+import { parse, replace } from './router.svelte';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -31,7 +31,9 @@ const commonHeaders: HeadersInit = { 'X-Kritik': '1' };
 
 // Where SignIn.svelte should send the user back to after signing in: the
 // hash they were on when a 401 bounced them, captured before replace()
-// overwrites it with #/signin.
+// overwrites it with #/signin. Never a sign-in route itself: a 401 while
+// already on sign-in doesn't redirect, so returnTo keeps its '' default and
+// SignIn.svelte falls back to '#/'.
 export const signinState = $state<{ returnTo: string }>({ returnTo: '' });
 
 async function toApiError(res: Response): Promise<ApiError> {
@@ -48,8 +50,10 @@ async function handle<T>(res: Response): Promise<T> {
   // The dashboard has no public content: a 401 means the session is dead
   // (expired cookie, revoked token, or no session at all) and every route --
   // including the bare root, which has no hash -- redirects to sign-in. The
-  // only guard is against a redirect loop when already on #/signin.
-  if (res.status === 401 && location.hash !== '#/signin') {
+  // only guard is against a redirect loop when already on sign-in, decided
+  // by the router's parse so every spelling it accepts (e.g. "#/signin/")
+  // counts.
+  if (res.status === 401 && parse(location.hash).name !== 'signin') {
     signinState.returnTo = location.hash || '#/';
     replace({ name: 'signin' });
   }
