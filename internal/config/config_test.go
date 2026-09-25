@@ -107,7 +107,7 @@ func TestRoleValidation(t *testing.T) {
 	if err := cfg.ValidateRunner(); err == nil {
 		t.Fatal("runner without its inputs must fail")
 	}
-	cfg.RunSpec = `{"version":1}`
+	cfg.RunSpecFile = "/var/run/kritik/spec.json"
 	if err := cfg.ValidateRunner(); err != nil {
 		t.Fatal(err)
 	}

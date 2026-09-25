@@ -320,7 +320,7 @@ func TestListOpenPullRequests(t *testing.T) {
 		case "", "1":
 			w.Header().Set("Link", `<`+"http://"+r.Host+r.URL.Path+`?page=2>; rel="next"`)
 			_, _ = w.Write([]byte(`[
-				{"number":3,"title":"newest","user":{"login":"alice"},"state":"open","draft":false,
+				{"number":3,"title":"newest","body":"Fixes the widget.","user":{"login":"alice"},"state":"open","draft":false,
 				 "updated_at":"2026-01-15T00:00:00Z","created_at":"2026-01-15T00:00:00Z","html_url":"https://forge.example.com/acme/widgets/pulls/3",
 				 "head":{"ref":"feature","sha":"h1","repo":{"full_name":"acme/widgets","fork":false}},
 				 "base":{"ref":"main","sha":"b1","repo":{"full_name":"acme/widgets","default_branch":"main"}},
@@ -353,7 +353,7 @@ func TestListOpenPullRequests(t *testing.T) {
 		t.Fatalf("got %d pull requests, want 2 (page 2 is older than since)", len(prs))
 	}
 	pr := prs[0]
-	if pr.Number != 3 || pr.DefaultBranch != "main" || pr.Fork || pr.AuthorIsBot || pr.Draft || len(pr.Labels) != 1 || pr.Labels[0].Name != "bug" {
+	if pr.Number != 3 || pr.Body != "Fixes the widget." || pr.DefaultBranch != "main" || pr.Fork || pr.AuthorIsBot || pr.Draft || len(pr.Labels) != 1 || pr.Labels[0].Name != "bug" {
 		t.Fatalf("mapped PR = %+v", pr)
 	}
 	bot := prs[1]

@@ -34,7 +34,12 @@ func BuildForge(ctx context.Context, in *configfile.Installation, externalID int
 		}
 		return github.NewClient(app, externalID, in.Host)
 	case configfile.ForgeForgejo:
-		return forgejo.NewClient(in.Host, in.TokenValue().Value(), nil)
+		c, err := forgejo.NewClient(in.Host, in.TokenValue().Value(), nil)
+		if err != nil {
+			return nil, err
+		}
+		c.FetchToken = in.GitTokenValue().Value()
+		return c, nil
 	default:
 		return nil, fmt.Errorf("worker: forge %s is not implemented yet", in.Forge)
 	}

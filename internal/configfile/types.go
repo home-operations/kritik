@@ -215,13 +215,23 @@ type Installation struct {
 	// Token and WebhookSecret are set for GitLab and Forgejo installations.
 	Token         SecretRef `yaml:"token,omitempty"`
 	WebhookSecret SecretRef `yaml:"webhookSecret,omitempty"`
+	// GitToken, optional for GitLab and Forgejo, is the token runner pods
+	// fetch with in place of Token. Token can write to the forge and would
+	// otherwise reach the pod that reads untrusted content, so a read-only
+	// token belongs here.
+	GitToken SecretRef `yaml:"gitToken,omitempty"`
 
 	token         Secret
 	webhookSecret Secret
+	gitToken      Secret
 }
 
 // TokenValue returns the resolved bot token for GitLab and Forgejo.
 func (i Installation) TokenValue() Secret { return i.token }
+
+// GitTokenValue returns the resolved fetch token for GitLab and Forgejo,
+// empty when none is configured.
+func (i Installation) GitTokenValue() Secret { return i.gitToken }
 
 // WebhookSecretValue returns the resolved webhook secret for any forge.
 func (i Installation) WebhookSecretValue() Secret {
@@ -268,20 +278,25 @@ func (m ReviewMode) String() string { return string(m) }
 // Agent bounds an agentic review. A field left unset takes its default from
 // DefaultAgent; one that is set must be positive.
 type Agent struct {
-	MaxSteps           *int           `yaml:"maxSteps,omitempty"`
-	MaxToolOutputBytes *int           `yaml:"maxToolOutputBytes,omitempty"`
-	Timeout            *time.Duration `yaml:"timeout,omitempty"`
+	MaxSteps           *int `yaml:"maxSteps,omitempty"`
+	MaxToolOutputBytes *int `yaml:"maxToolOutputBytes,omitempty"`
+	// MaxTokens bounds the prompt plus output tokens one agentic review
+	// may spend across all its steps.
+	MaxTokens *int64         `yaml:"maxTokens,omitempty"`
+	Timeout   *time.Duration `yaml:"timeout,omitempty"`
 }
 
 // AgentSettings are the resolved agent bounds.
 type AgentSettings struct {
 	MaxSteps           int
 	MaxToolOutputBytes int
+	MaxTokens          int64
 	Timeout            time.Duration
 }
 
-// DefaultAgent applies to every agent bound a repository leaves unset.
-var DefaultAgent = AgentSettings{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, Timeout: 20 * time.Minute}
+// DefaultAgent applies to every agent bound a repository leaves unset. Its
+// MaxTokens is the agent loop's own default budget.
+var DefaultAgent = AgentSettings{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, Timeout: 20 * time.Minute}
 
 // Incremental tunes incremental re-review.
 type Incremental struct {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/home-operations/kritik/internal/configfile"
@@ -242,6 +243,62 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 			t.Fatalf("beta re-enabled=%v err=%v", enabled, err)
 		}
 	})
+}
+
+func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha, beta := tenantID(t, s, "alpha"), tenantID(t, s, "beta")
+	var runID string
+	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, kind) VALUES ($1, 'index') RETURNING id`, alpha).Scan(&runID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIK_TEST_RUNNER_URL"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatalf("Open runner: %v", err)
+	}
+	t.Cleanup(runner.Close)
+	tests := []struct {
+		name    string
+		stmt    string
+		allowed bool
+	}{
+		{name: "phase", stmt: `UPDATE runner_runs SET phase = 'fetching' WHERE id = $1`, allowed: true},
+		{name: "heartbeat", stmt: `UPDATE runner_runs SET heartbeat_at = now() WHERE id = $1`, allowed: true},
+		{name: "error", stmt: `UPDATE runner_runs SET phase = 'failed', error = 'boom' WHERE id = $1`, allowed: true},
+		{name: "tenant", stmt: `UPDATE runner_runs SET tenant_id = '` + beta + `' WHERE id = $1`},
+		{name: "log tail", stmt: `UPDATE runner_runs SET log_tail = 'forged' WHERE id = $1`},
+		{name: "exit code", stmt: `UPDATE runner_runs SET exit_code = 0 WHERE id = $1`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runner.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
+				tag, err := tx.Exec(ctx, tt.stmt, runID)
+				if err == nil && tag.RowsAffected() != 1 {
+					return errors.New("no row updated")
+				}
+				return err
+			})
+			var pgErr *pgconn.PgError
+			switch {
+			case tt.allowed && err != nil:
+				t.Fatalf("a runner must be able to update its %s: %v", tt.name, err)
+			case !tt.allowed && (!errors.As(err, &pgErr) || pgErr.Code != "42501"):
+				t.Fatalf("a runner updating its %s must be refused permission, got %v", tt.name, err)
+			}
+		})
+	}
+	var tenant string
+	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT tenant_id FROM runner_runs WHERE id = $1`, runID).Scan(&tenant)
+	}); err != nil || tenant != alpha {
+		t.Fatalf("run tenant = %q, %v", tenant, err)
+	}
 }
 
 func TestLeaderLockIsExclusive(t *testing.T) {

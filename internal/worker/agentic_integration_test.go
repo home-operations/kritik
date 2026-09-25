@@ -68,6 +68,9 @@ tenants:
           webhookSecret: { env: TEST_SECRET }
 `
 
+// agentJobTimeout is the harness client's JobTimeout.
+const agentJobTimeout = 2 * time.Second
+
 // modelScript is how scriptedModel answers.
 type modelScript int
 
@@ -78,6 +81,8 @@ const (
 	scriptProse
 	// scriptReject refuses the key and echoes it back in the error.
 	scriptReject
+	// scriptStall answers grep, then calls stalled and never answers again.
+	scriptStall
 )
 
 // scriptedModel is an OpenAI-compatible chat completions endpoint.
@@ -88,6 +93,8 @@ type scriptedModel struct {
 	auth     []string
 	systems  []string
 	requests int
+	// stalled runs once when scriptStall starts holding a request.
+	stalled func()
 }
 
 func (m *scriptedModel) reset(script modelScript) {
@@ -114,6 +121,17 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Unlock()
 
+	if script == scriptStall && step > 1 {
+		m.mu.Lock()
+		stalled := m.stalled
+		m.stalled = nil
+		m.mu.Unlock()
+		if stalled != nil {
+			stalled()
+		}
+		<-r.Context().Done()
+		return
+	}
 	if script == scriptReject {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -127,7 +145,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return fmt.Sprintf(`{"role":"assistant","content":null,"tool_calls":[{"id":"c%d","type":"function","function":{"name":%q,"arguments":%s}}]}`,
 			step, name, b)
 	}
-	if script == scriptSubmit {
+	if script == scriptSubmit || script == scriptStall {
 		finish = "tool_calls"
 		switch step {
 		case 1:
@@ -165,6 +183,7 @@ type agenticHarness struct {
 	other  *configfile.Tenant
 	lf     *localForge
 	exec   *hookExecutor
+	review *Review
 	fc     *fakeCompleter
 	sm     *scriptedModel
 	dir    string
@@ -216,13 +235,16 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	}
 	h.svc = ingest.NewService(appStore, insertOnly)
 	workers := river.NewWorkers()
-	river.AddWorker(workers, &Review{
+	h.review = &Review{
 		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf}, Completers: &completers{c: h.fc},
 		Executor: h.exec, Deadline: time.Minute, Logger: logger, superviseEvery: 50 * time.Millisecond,
-	})
+	}
+	river.AddWorker(workers, h.review)
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{jobs.QueueReview: {MaxWorkers: 1}}, Workers: workers,
 		FetchCooldown: 50 * time.Millisecond, FetchPollInterval: 100 * time.Millisecond,
+		// Far shorter than any review: the worker's own Timeout must win.
+		JobTimeout: agentJobTimeout,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -290,6 +312,10 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a run superseded after the Job still charges its tokens", func(t *testing.T) { checkAgentSupersededCharges(t, h) })
 	t.Run("a key the provider echoes back is masked", func(t *testing.T) { checkAgentKeyMasked(t, h) })
 	t.Run("the merge-base filter skips before the agent runs", func(t *testing.T) { checkAgentFiltered(t, h) })
+	t.Run("a runner skip the worker does not repeat still sets the status", func(t *testing.T) { checkRunnerOnlySkip(t, h) })
+	t.Run("a review outlives the client's job timeout", func(t *testing.T) { checkAgentOutlivesJobTimeout(t, h) })
+	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
+	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
 	t.Run("another tenant cannot read the agent runs", func(t *testing.T) {
 		count := func(tenantID string) int {
 			var n int
@@ -300,7 +326,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 5 || foreign != 0 {
+		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 8 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -312,6 +338,12 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	reviewID, status, errText := h.waitReview(t, h.head)
 	if status != "completed" {
 		t.Fatalf("status = %s (%s)", status, errText)
+	}
+	var mode string
+	if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT mode FROM reviews WHERE id = $1`, reviewID).Scan(&mode)
+	}); err != nil || mode != "agentic" {
+		t.Fatalf("review mode = %q, %v", mode, err)
 	}
 	run := h.agentRow(t, reviewID)
 	var tools map[string]int
@@ -402,9 +434,27 @@ type hookExecutor struct {
 
 	mu    sync.Mutex
 	after func()
+	// hold delays the next run before it starts, as a slow node would.
+	hold time.Duration
+	// detach makes the next run end the way a deleted pod does: Run
+	// returns as soon as ctx ends, and the runner only sees the
+	// cancellation a moment later, as a terminating pod would.
+	detach bool
 }
 
 func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
+	e.mu.Lock()
+	hold, detach := e.hold, e.detach
+	e.hold, e.detach = 0, false
+	e.mu.Unlock()
+	if detach {
+		return e.runDetached(ctx, spec)
+	}
+	select {
+	case <-time.After(hold):
+	case <-ctx.Done():
+		return executor.Result{JobName: "kritik-run-held", Err: context.Cause(ctx)}
+	}
 	res := e.inner.Run(ctx, spec)
 	e.mu.Lock()
 	after := e.after
@@ -414,6 +464,21 @@ func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 		after()
 	}
 	return res
+}
+
+func (e *hookExecutor) runDetached(ctx context.Context, spec executor.Spec) executor.Result {
+	ictx, icancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	done := make(chan executor.Result, 1)
+	go func() { done <- e.inner.Run(ictx, spec) }()
+	select {
+	case res := <-done:
+		icancel(nil)
+		return res
+	case <-ctx.Done():
+		cause := context.Cause(ctx)
+		time.AfterFunc(300*time.Millisecond, func() { icancel(cause) })
+		return executor.Result{JobName: "kritik-run-deleted", Err: cause}
+	}
 }
 
 // commit writes one file on top of the test repository's HEAD.
@@ -512,5 +577,118 @@ func checkAgentFiltered(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Unlock()
 	if rows, _ := h.usageTokens(t, reviewID); after != before || rows != 0 {
 		t.Fatalf("a filtered review called the model %d time(s) and has %d usage row(s)", after-before, rows)
+	}
+}
+
+func checkAgentOutlivesJobTimeout(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc g() {}\n")
+	h.exec.mu.Lock()
+	h.exec.hold = 2 * agentJobTimeout
+	h.exec.mu.Unlock()
+	started := time.Now()
+	h.dispatch(t, next)
+	_, status, errText := h.waitReview(t, next)
+	if status != "completed" || time.Since(started) < 2*agentJobTimeout {
+		t.Fatalf("status = %s (%s) after %s", status, errText, time.Since(started))
+	}
+	var reviews int
+	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1`, next).Scan(&reviews)
+	})
+	if err != nil || reviews != 1 {
+		t.Fatalf("the review was cut off and retried: %d review rows, err=%v", reviews, err)
+	}
+}
+
+func checkAgentCanceledCharges(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptStall)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc h() {}\n")
+	h.sm.mu.Lock()
+	h.sm.stalled = func() {
+		// A push lands while the agent waits on its second step, and
+		// supervision cancels the run.
+		err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = $1 WHERE number = 1`, strings.Repeat("e", 40))
+			return err
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	h.sm.mu.Unlock()
+	h.exec.mu.Lock()
+	h.exec.detach = true
+	h.exec.mu.Unlock()
+	h.dispatch(t, next)
+	reviewID, status, _ := h.waitReview(t, next)
+	if status != "superseded" {
+		t.Fatalf("status = %s, want superseded", status)
+	}
+	if run := h.agentRow(t, reviewID); run.stop != "canceled" || run.steps != 1 || run.input != 100 || run.output != 10 {
+		t.Fatalf("agent run = %+v", run)
+	}
+	if rows, tokens := h.usageTokens(t, reviewID); rows != 1 || tokens != 110 {
+		t.Fatalf("a cancelled agent run must still be charged: rows=%d tokens=%d", rows, tokens)
+	}
+}
+
+func checkFailRun(t *testing.T, h *agenticHarness) {
+	args := jobs.ReviewArgs{TenantID: h.tenant.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
+		HeadSHA: strings.Repeat("d", 40), Trigger: "test"}
+	pr, err := h.review.load(h.ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, runID, _, err := h.review.start(h.ctx, args, pr, h.base, configfile.ReviewAgentic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := failRun(h.ctx, h.st, h.tenant.ID(), runID, "worker: read pull request for the filter: boom"); err != nil {
+		t.Fatal(err)
+	}
+	var phase, errText string
+	var finished bool
+	err = h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT phase, error, finished_at IS NOT NULL FROM runner_runs WHERE id = $1`, runID).
+			Scan(&phase, &errText, &finished)
+	})
+	if err != nil || phase != "failed" || !strings.Contains(errText, "boom") || !finished {
+		t.Fatalf("run phase=%q error=%q finished=%v err=%v", phase, errText, finished, err)
+	}
+}
+
+func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc k() {}\n")
+	h.lf.mu.Lock()
+	h.lf.status = ""
+	h.lf.mu.Unlock()
+	h.exec.mu.Lock()
+	h.exec.after = func() {
+		// The body is edited as the Job ends: the runner saw the skip
+		// marker, the worker's own filter check does not.
+		err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET body = 'Adds k.' WHERE number = 1`)
+			return err
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	h.exec.mu.Unlock()
+	h.dispatchBody(t, next, "Adds k. [skip-review]")
+	reviewID, status, _ := h.waitReview(t, next)
+	if status != "skipped" {
+		t.Fatalf("status = %s, want skipped", status)
+	}
+	if run := h.agentRow(t, reviewID); run.stop != "skipped" || run.errText != "filtered" {
+		t.Fatalf("agent run = %+v", run)
+	}
+	h.lf.mu.Lock()
+	forgeStatus := h.lf.status
+	h.lf.mu.Unlock()
+	if forgeStatus != "success: kritik: skipped (filtered by .kritik.yaml)" {
+		t.Fatalf("forge status = %q", forgeStatus)
 	}
 }

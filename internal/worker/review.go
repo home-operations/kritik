@@ -144,7 +144,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		}()
 	}
 
-	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase)
+	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, settings.Mode)
 	if err != nil {
 		return err
 	}
@@ -155,15 +155,10 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	secrets := runner.Secrets{GitToken: token}
 	if agentic {
-		if spec.Prompt, err = w.agentPrompt(ctx, args.TenantID, reviewID, pr, settings, prior); err != nil {
-			return errors.Join(err, w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", err.Error()))
+		if deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, pr, settings, prior, admitted, &spec, &secrets, deadline); err != nil {
+			return errors.Join(err, w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", err.Error()),
+				failRun(ctx, w.Store, args.TenantID, runID, err.Error()))
 		}
-		spec.Mode, spec.Model, secrets.ModelAPIKey = runner.ModeAgentic, admitted.endpoint, admitted.key
-		spec.Agent = &runner.AgentLimits{
-			MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes,
-			TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
-		}
-		deadline = agentDeadline(deadline, settings.Agent.Timeout)
 	}
 	sup := runSupervision(w.Store, args.TenantID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
@@ -178,14 +173,21 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		Deadline:    deadline,
 		Resources:   resources,
 	})
+	// The agent's spend is read before recordRun settles the run's phase:
+	// a stopped run's row may still be on its way from the terminating pod.
+	var agentOutcome *agentRun
+	var chargeErr error
+	if agentic {
+		agentOutcome, chargeErr = w.chargeAgentRun(ctx, tenant, pr, reviewID, runID, settings.Models.Review, stopped(ctx, res, cause))
+	}
 	if err := recordRun(ctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err
 	}
-	var agentOutcome *agentRun
-	if agentic {
-		if agentOutcome, err = w.chargeAgentRun(ctx, tenant, pr, reviewID, runID, settings.Models.Review); err != nil {
-			return err
-		}
+	if chargeErr != nil {
+		logger.Error("agent run not charged", "error", chargeErr)
+		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
+		// A retry would run the agent again; the review ends here.
+		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", chargeErr.Error())
 	}
 	// A run that finished despite a cancel is judged by its result; the
 	// head check after it catches a supersede.
@@ -404,16 +406,16 @@ func (w *Review) record(ctx context.Context, args jobs.ReviewArgs, pr *pullReque
 // start records the review and its runner run, and reads the last
 // completed review the new one may build on.
 func (w *Review) start(
-	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase string,
+	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase string, mode configfile.ReviewMode,
 ) (reviewID, runID string, prior priorReview, err error) {
 	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		var err error
 		if prior, err = lastCompleted(ctx, tx, pr.id); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO reviews (tenant_id, pull_request_id, head_sha, merge_base_sha, status, trigger)
-			VALUES ($1, $2, $3, $4, 'running', $5) RETURNING id`,
-			args.TenantID, pr.id, args.HeadSHA, mergeBase, args.Trigger).Scan(&reviewID); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO reviews (tenant_id, pull_request_id, head_sha, merge_base_sha, status, trigger, mode)
+			VALUES ($1, $2, $3, $4, 'running', $5, $6) RETURNING id`,
+			args.TenantID, pr.id, args.HeadSHA, mergeBase, args.Trigger, string(mode)).Scan(&reviewID); err != nil {
 			return fmt.Errorf("worker: insert review: %w", err)
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, review_id, kind) VALUES ($1, $2, 'review') RETURNING id`,
@@ -431,6 +433,19 @@ func (w *Review) finishReview(ctx context.Context, tenantID, reviewID, status, p
 			reviewID, status, patchID, errText)
 		if err != nil {
 			return fmt.Errorf("worker: finish review: %w", err)
+		}
+		return nil
+	})
+}
+
+// failRun ends a runner run that never got a Job, so it does not stay
+// 'created' for good.
+func failRun(ctx context.Context, st *store.Store, tenantID, runID, errText string) error {
+	return st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000), finished_at = now() WHERE id = $1`,
+			runID, errText)
+		if err != nil {
+			return fmt.Errorf("worker: fail runner run: %w", err)
 		}
 		return nil
 	})

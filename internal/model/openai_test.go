@@ -325,6 +325,38 @@ func TestOpenAIFallbacks(t *testing.T) {
 	})
 }
 
+func TestOpenAIAnsweringModel(t *testing.T) {
+	answeredBy := func(model string) string {
+		return strings.Replace(chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", plainUsage, ""),
+			`"model":"acme/large"`, `"model":"`+model+`"`, 1)
+	}
+	tests := []struct {
+		name       string
+		openRouter bool
+		body       string
+		want       string
+	}{
+		{name: "openrouter fell back server-side", openRouter: true, body: answeredBy("acme/small"), want: "acme/small"},
+		{name: "openrouter without a model field", openRouter: true,
+			body: strings.Replace(answeredBy("x"), `"model":"x",`, "", 1), want: "acme/large"},
+		{name: "plain openai names a snapshot", body: answeredBy("acme/large-2026-01-01"), want: "acme/large"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, _ := fakeProvider(t, http.StatusOK, tt.body)
+			c := newTestOpenAI(t, srv, tt.openRouter, nil)
+			resp, err := c.Step(t.Context(), StepRequest{Model: "acme/large", Fallbacks: []string{"acme/small"},
+				Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+			if err != nil {
+				t.Fatalf("Step: %v", err)
+			}
+			if resp.Model != tt.want {
+				t.Fatalf("model = %q, want %q", resp.Model, tt.want)
+			}
+		})
+	}
+}
+
 func TestOpenAIErrors(t *testing.T) {
 	srv, _ := fakeProvider(t, http.StatusTooManyRequests, `{"error":{"message":"rate limited"}}`)
 	c := newTestOpenAI(t, srv, false, nil)

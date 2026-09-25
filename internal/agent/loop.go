@@ -83,6 +83,9 @@ type Result struct {
 	ToolCalls map[string]int
 	Usage     model.Usage
 	CostUSD   float64
+	// Model is the model that answered the last step, empty before one
+	// has.
+	Model string
 	// Err says why the Run stopped where the reason alone does not: Do
 	// sets it to the Stepper's error for StopError, and a caller that
 	// bounds ctx may set it to explain a StopCanceled.
@@ -173,6 +176,7 @@ func (r Run) Do(ctx context.Context) Result {
 		}
 		result.Steps++
 		result.Usage = result.Usage.Add(resp.Usage)
+		result.Model = resp.Model
 		result.CostUSD += resp.CostUSD
 
 		event := StepEvent{Index: step, Usage: resp.Usage}

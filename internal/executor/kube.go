@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -66,12 +67,13 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 		return Result{Err: fmt.Errorf("executor: %w", err)}
 	}
 	name := jobName(spec.RunID)
-	job, err := k.job(spec)
+	runSpec, err := runner.EncodeSpec(spec.Job)
 	if err != nil {
-		return Result{Err: err}
+		return Result{Err: fmt.Errorf("executor: %w", err)}
 	}
+	job := k.job(spec)
 	secrets := k.Client.CoreV1().Secrets(k.Namespace)
-	if _, err := secrets.Create(ctx, k.secret(spec), metav1.CreateOptions{}); err != nil {
+	if _, err := secrets.Create(ctx, k.secret(spec, runSpec), metav1.CreateOptions{}); err != nil {
 		return Result{Err: fmt.Errorf("executor: create secret: %w", err)}
 	}
 	created, err := k.Client.BatchV1().Jobs(k.Namespace).Create(ctx, job, metav1.CreateOptions{})
@@ -209,23 +211,52 @@ func (k *Kube) finish(res *Result, secrets runner.Secrets) {
 			res.DeadlineExceeded = cs.State.Terminated.Reason == "DeadlineExceeded"
 		}
 	}
-	// Reading past the kept size by the longest secret lets a secret that
-	// straddles the cut be masked whole before the cut is made.
-	limit := int64(LogTailBytes + max(len(secrets.GitToken), len(secrets.ModelAPIKey)))
-	stream, err := k.Client.CoreV1().Pods(k.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{LimitBytes: &limit}).Stream(fctx)
+	// LimitBytes keeps the first bytes of what it is given, so the tail is
+	// asked for by lines, generously, with LimitBytes only as a ceiling;
+	// the kept tail is cut from the end of what came back.
+	lines, limit := int64(logTailLines), int64(logReadBytes)
+	stream, err := k.Client.CoreV1().Pods(k.Namespace).GetLogs(pod.Name,
+		&corev1.PodLogOptions{TailLines: &lines, LimitBytes: &limit}).Stream(fctx)
 	if err != nil {
 		return
 	}
 	defer func() { _ = stream.Close() }()
 	b, _ := io.ReadAll(io.LimitReader(stream, limit))
-	masked := secrets.Mask(string(b))
-	res.LogTail = masked[:min(len(masked), LogTailBytes)]
+	res.LogTail = logTail(string(b), int64(len(b)) >= limit, secrets)
+}
+
+// The log read for a run's tail: enough lines to fill LogTailBytes many
+// times over, and a byte ceiling well above that.
+const (
+	logTailLines = 5000
+	logReadBytes = 4 << 20
+)
+
+// logTail is the last LogTailBytes of a pod's log, secrets masked before
+// the cut so none straddles it. A read that hit the byte ceiling ends
+// mid-line, where a secret could be cut short of its mask, so that partial
+// line is dropped.
+func logTail(log string, hitCeiling bool, secrets runner.Secrets) string {
+	if hitCeiling {
+		if i := strings.LastIndexByte(log, '\n'); i >= 0 {
+			log = log[:i+1]
+		}
+	}
+	return tail(secrets.Mask(log), LogTailBytes)
 }
 
 // Secret keys of a run's job-scoped Secret.
 const (
 	secretKeyGitToken    = "git-token"
 	secretKeyModelAPIKey = "model-api-key"
+	secretKeyRunSpec     = "run-spec.json"
+)
+
+// The run's job document is mounted read-only from its Secret at
+// specDir/specFile.
+const (
+	specDir  = "/var/run/kritik"
+	specFile = "spec.json"
 )
 
 func jobName(runID string) string { return "kritik-run-" + runID[:8] }
@@ -242,10 +273,11 @@ func runnerLabels(spec Spec) map[string]string {
 	return l
 }
 
-// secret builds the run's job-scoped Secret. The model key is left out when
-// the run has none; the pod reads it as an optional key.
-func (k *Kube) secret(spec Spec) *corev1.Secret {
-	data := map[string][]byte{secretKeyGitToken: []byte(spec.Secrets.GitToken)}
+// secret builds the run's job-scoped Secret: the credentials and the
+// encoded job document. The model key is left out when the run has none;
+// the pod reads it as an optional key.
+func (k *Kube) secret(spec Spec, runSpec []byte) *corev1.Secret {
+	data := map[string][]byte{secretKeyGitToken: []byte(spec.Secrets.GitToken), secretKeyRunSpec: runSpec}
 	if spec.Secrets.ModelAPIKey != "" {
 		data[secretKeyModelAPIKey] = []byte(spec.Secrets.ModelAPIKey)
 	}
@@ -256,14 +288,10 @@ func (k *Kube) secret(spec Spec) *corev1.Secret {
 	}
 }
 
-// job builds the Job for a spec. The runner gets its job document as one
-// variable, its credentials from the run's Secret, and the runner role's
-// DSN from the database Secret; nothing else.
-func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
-	runSpec, err := json.Marshal(spec.Job)
-	if err != nil {
-		return nil, fmt.Errorf("executor: encode run spec: %w", err)
-	}
+// job builds the Job for a spec. The runner gets its job document as a
+// read-only file and its credentials as variables, both from the run's
+// Secret, and the runner role's DSN from the database Secret; nothing else.
+func (k *Kube) job(spec Spec) *batchv1.Job {
 	name := jobName(spec.RunID)
 	deadline := int64(spec.Deadline / time.Second)
 	if deadline <= 0 {
@@ -284,7 +312,7 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 			Name: name, Key: key, Optional: new(optional)}}
 	}
 	env := []corev1.EnvVar{
-		{Name: "KRITIK_RUN_SPEC", Value: string(runSpec)},
+		{Name: "KRITIK_RUN_SPEC_FILE", Value: specDir + "/" + specFile},
 		{Name: "KRITIK_GIT_TOKEN", ValueFrom: secretRef(secretKeyGitToken, false)},
 		{Name: "KRITIK_MODEL_API_KEY", ValueFrom: secretRef(secretKeyModelAPIKey, true)},
 		{Name: "KRITIK_LOG_FORMAT", Value: "json"},
@@ -301,7 +329,10 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 			ReadOnlyRootFilesystem:   new(true),
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 		},
-		VolumeMounts: []corev1.VolumeMount{{Name: "scratch", MountPath: "/tmp"}},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "scratch", MountPath: "/tmp"},
+			{Name: "spec", MountPath: specDir, ReadOnly: true},
+		},
 	}
 	if spec.Resources != nil {
 		if b, err := json.Marshal(spec.Resources); err == nil {
@@ -325,9 +356,14 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 					},
 					Containers: []corev1.Container{container},
-					Volumes:    []corev1.Volume{{Name: "scratch", EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+					Volumes: []corev1.Volume{
+						{Name: "scratch", EmptyDir: &corev1.EmptyDirVolumeSource{}},
+						{Name: "spec", Secret: &corev1.SecretVolumeSource{
+							SecretName: name, Items: []corev1.KeyToPath{{Key: secretKeyRunSpec, Path: specFile}},
+						}},
+					},
 				},
 			},
 		},
-	}, nil
+	}
 }

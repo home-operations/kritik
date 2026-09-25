@@ -43,3 +43,31 @@ func TestBuildForgeReturnsForgejoClient(t *testing.T) {
 		t.Fatalf("BuildForge returned %T, want *forgejo.Client", client)
 	}
 }
+
+func TestBuildForgeGitToken(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_BUILD_TOKEN", "api-token")
+	t.Setenv("TEST_FORGEJO_BUILD_SECRET", "s")
+	t.Setenv("TEST_FORGEJO_FETCH_TOKEN", "fetch-token")
+	tests := []struct {
+		name, extra, want string
+	}{
+		{name: "the API token when no gitToken is set", want: "api-token"},
+		{name: "the gitToken when set", extra: "        gitToken: { env: TEST_FORGEJO_FETCH_TOKEN }\n", want: "fetch-token"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file, err := configfile.Parse([]byte(forgejoConfigYAML + tt.extra))
+			if err != nil {
+				t.Fatal(err)
+			}
+			in, _, _ := file.Installation("acme-forgejo")
+			client, err := BuildForge(t.Context(), in, 0, "acme/widgets")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := client.GitToken(t.Context()); err != nil || got != tt.want {
+				t.Fatalf("GitToken = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+}

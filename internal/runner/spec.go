@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
@@ -172,6 +174,81 @@ func isSHA(s string) bool {
 		}
 	}
 	return true
+}
+
+// Spec size bounds. A spec travels as a key of the run's Secret, which
+// Kubernetes caps at 1 MiB with the credentials beside it, so what grows
+// with a pull request is cut before it is encoded.
+const (
+	// MaxSpecBytes bounds an encoded spec, leaving the Secret room for the
+	// git token and model key.
+	MaxSpecBytes = 900 << 10
+	// MaxPriorFindings is how many of the last review's findings a spec
+	// carries.
+	MaxPriorFindings = 200
+	// MaxBodyBytes bounds the pull request body a spec carries. Encoding
+	// can grow it sixfold (each '<' becomes \u003c), which the spec bound
+	// still holds.
+	MaxBodyBytes = 64 << 10
+)
+
+// maxPromptBytes is what Trim leaves an encoded prompt, under MaxSpecBytes
+// with room for the rest of the spec.
+const maxPromptBytes = 768 << 10
+
+// Trim cuts what a pull request can grow without bound to what a spec
+// carries: the body, at a rune boundary, and the prior findings, first to
+// MaxPriorFindings and then, while the encoded prompt is still over its
+// share of the spec, by half at a time, keeping the first in the order the
+// worker read them.
+func (p *Prompt) Trim() {
+	if body := p.PullRequest.Body; len(body) > MaxBodyBytes {
+		n := MaxBodyBytes
+		for n > 0 && !utf8.RuneStart(body[n]) {
+			n--
+		}
+		p.PullRequest.Body = body[:n]
+	}
+	if len(p.Prior) > MaxPriorFindings {
+		p.Prior = p.Prior[:MaxPriorFindings]
+	}
+	for len(p.Prior) > 0 {
+		b, err := json.Marshal(p)
+		if err != nil || len(b) <= maxPromptBytes {
+			return
+		}
+		p.Prior = p.Prior[:len(p.Prior)/2]
+	}
+}
+
+// EncodeSpec is the job document a runner reads, refused when it is too
+// large to deliver.
+func EncodeSpec(s Spec) ([]byte, error) {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil, fmt.Errorf("runner: encode spec: %w", err)
+	}
+	if len(b) > MaxSpecBytes {
+		return nil, fmt.Errorf("runner: encoded spec is %d bytes, over the %d byte limit", len(b), MaxSpecBytes)
+	}
+	return b, nil
+}
+
+// ReadSpec reads and strictly decodes the job document at path.
+func ReadSpec(path string) (Spec, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Spec{}, fmt.Errorf("runner: read spec: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, MaxSpecBytes+1))
+	if err != nil {
+		return Spec{}, fmt.Errorf("runner: read spec: %w", err)
+	}
+	if len(data) > MaxSpecBytes {
+		return Spec{}, fmt.Errorf("runner: spec at %s is over the %d byte limit", path, MaxSpecBytes)
+	}
+	return DecodeSpec(data)
 }
 
 // DecodeSpec parses a job document strictly: a field this runner does not

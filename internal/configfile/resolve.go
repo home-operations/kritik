@@ -146,6 +146,9 @@ func (a AgentSettings) overlay(o Agent) AgentSettings {
 	if o.MaxToolOutputBytes != nil {
 		a.MaxToolOutputBytes = *o.MaxToolOutputBytes
 	}
+	if o.MaxTokens != nil {
+		a.MaxTokens = *o.MaxTokens
+	}
 	if o.Timeout != nil {
 		a.Timeout = *o.Timeout
 	}

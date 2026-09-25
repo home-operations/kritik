@@ -38,6 +38,14 @@ permissions normalise onto a typed `forge.Permission`. The poller serves every
 forge with a client. Forgejo's `synchronized` action is normalised to
 `synchronize`.
 
+Forgejo has no short-lived installation token: `GitToken`, the credential a
+runner fetches with, is a static token. A Forgejo (and later GitLab)
+installation takes an optional `gitToken` secret reference, resolved and
+validated like `token`, and runners receive it in place of `token` when it is
+set. `token` must write comments, reviews and statuses; `gitToken` should be a
+separate read-only token, so the pod that reads untrusted content (§2.6)
+cannot write to the forge. Without it the API token reaches the runner.
+
 ### 2.2 Filter inputs
 
 `pr.body` joins the CEL filter's variables, the stored pull request row, and
@@ -72,7 +80,7 @@ matches) are evaluated after the runner, since only the runner has the tree
 and the changed paths. A skipped review posts a success status saying why.
 
 Operator-only repository keys are `mode` (`single`, the default, or
-`agentic`), `agent` (`maxSteps`, `maxToolOutputBytes`, `timeout`),
+`agentic`), `agent` (`maxSteps`, `maxToolOutputBytes`, `maxTokens`, `timeout`),
 `incremental.maxDeltaFiles` (default 25), `settle` (a duration) and a
 `review` block of defaults the in-repo file may override.
 
@@ -137,7 +145,13 @@ is no path or symlink escape:
 
 Every tool's output is capped. The loop ends on `submit_review`, `maxSteps`,
 the token budget or the Job deadline, and writes an `agent_runs` row with the
-result, the stop reason, steps, a tool histogram and usage.
+result, the stop reason, steps, a tool histogram and usage. A run cancelled
+from outside (superseded, heartbeat lost, deadline) still writes its row, with
+stop `canceled` and the usage so far, and the worker charges it.
+
+The token budget is the repository's `agent.maxTokens` (4M by default), cut
+to what is left of the tenant's `tokensPerMonth` when one is set; with less
+than a small floor left the review ends `capped` before the Job starts.
 
 The worker keeps everything that writes outward or spends against limits: it
 checks caps, takes the model lease and renews it for the Job's lifetime,
@@ -148,7 +162,13 @@ This puts a model key into the pod that reads untrusted content. The pod runs
 no repository code, the model's tools are read-only, and its only output is
 findings text the worker validates, so a prompt injection can at worst shape
 that text. The key reaches the pod as described in §2.9. Operators should give
-each tenant its own key with a spending limit.
+each tenant its own key with a spending limit, and on Forgejo a read-only
+`gitToken` (§2.1), since the git token reaches the same pod.
+
+Runner Jobs run in the worker's namespace, and the worker's Role can create,
+list (which returns Secret data), patch and delete every Secret in it, which
+a Role cannot narrow to the run Secrets it names only at runtime. kritik should therefore get a namespace
+of its own, holding no Secrets but its own.
 
 ### 2.7 Incremental re-review
 
@@ -185,12 +205,27 @@ results reported back.
   strictness, and the last completed review's findings. The runner applies
   the merge-base `.kritik.yaml` with the same code as the worker and does not
   run the agent for a review the worker will skip. It holds no secret.
-  The runner rejects a version it does not know rather than guessing.
-- **Job-scoped secrets.** The git token and, in agentic mode, the model key
-  go into a Secret created for the run and owned by its Job, so Kubernetes
+  The runner rejects a version it does not know, or a field it does not
+  know, rather than guessing.
+- **Transport and size.** The document is a key (`run-spec.json`) of the
+  run's Secret, mounted read-only into the pod at
+  `/var/run/kritik/spec.json`, whose path `KRITIK_RUN_SPEC_FILE` names. An
+  environment variable was ruled out: Linux caps one environment string at
+  128 KiB and JSON escaping can grow a body sixfold, so a large pull request
+  would fail the Job on every retry with `E2BIG`. A Secret is capped at
+  1 MiB with the credentials beside it, so the encoded document is refused
+  above 900 KiB, and the worker cuts what a pull request grows without
+  bound first: the body to 64 KiB at a rune boundary, and the prior
+  findings to 200, halved further while the prompt is still over its
+  share.
+- **Job-scoped secrets.** The git token, in agentic mode the model key,
+  and the job document go into a Secret created for the run and owned by its Job, so Kubernetes
   deletes it with the Job. The worker creates the Secret, then the Job, then
-  sets the Secret's owner reference; a failure deletes the Secret. The worker
-  masks those values out of the log tail it stores.
+  sets the Secret's owner reference; a failure deletes the Secret. A worker
+  that dies between the first and last step leaves a Secret no Job owns, so
+  the leader deletes runner-labelled Secrets without an owner reference once
+  they are 15 minutes old. That is why the worker's Role can list Secrets.
+  The worker masks those values out of the log tail it stores.
 - **Heartbeat.** The runner stamps `runner_runs.heartbeat_at` while it
   works. The worker treats a run whose heartbeat is older than 90 seconds
   after start as dead and ends it, instead of waiting out the Job deadline.
@@ -202,7 +237,10 @@ results reported back.
 - **Results.** The runner reports through the runner database role only:
   the context pack, and in agentic mode an `agent_runs` row with the result,
   stop reason, usage and a per-step timeline (tool, duration, bytes, tokens).
-  It never writes to the forge.
+  On its own `runner_runs` row it may update only `phase`, `error` and
+  `heartbeat_at` (column grants, re-applied with the other grants after
+  every migration because the role's name is configuration), never the
+  tenant or review the run belongs to. It never writes to the forge.
 
 ## 3. Consequences
 

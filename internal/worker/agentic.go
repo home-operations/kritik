@@ -11,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
@@ -66,6 +67,8 @@ type admission struct {
 	lease    *lease
 	endpoint *runner.ModelEndpoint
 	key      string
+	// maxTokens is the agent's token budget for this review.
+	maxTokens int64
 }
 
 // agentAdmit settles what an agentic review may spend before its runner
@@ -84,9 +87,15 @@ func (w *Review) agentAdmit(
 	if err != nil {
 		return admission{}, statusFailed, err.Error(), nil
 	}
-	capped, err := capReached(ctx, w.Store, tenant.ID(), settings.Limits)
-	if err != nil {
-		return admission{}, "", "", err
+	budget, capped := settings.Agent.MaxTokens, ""
+	if limits := settings.Limits; limits.ReviewsPerDay > 0 || limits.TokensPerMonth > 0 {
+		u, err := readUsage(ctx, w.Store, tenant.ID())
+		if err != nil {
+			return admission{}, "", "", err
+		}
+		if capped = u.reached(limits); capped == "" {
+			budget, capped = agentBudget(settings.Agent.MaxTokens, limits.TokensPerMonth, u.tokens)
+		}
 	}
 	if capped != "" {
 		return admission{}, statusCapped, capped, nil
@@ -101,7 +110,26 @@ func (w *Review) agentAdmit(
 		return admission{}, "", "", err
 	}
 	w.Metrics.LeaseWait(tenant.Slug, string(ref), time.Since(waited))
-	return admission{lease: l, endpoint: endpoint, key: key}, "", "", nil
+	return admission{lease: l, endpoint: endpoint, key: key, maxTokens: budget}, "", "", nil
+}
+
+// minAgentTokens is the least monthly headroom an agentic review starts
+// with: below it the agent could not read the diff before running out.
+const minAgentTokens = 50_000
+
+// agentBudget is how many tokens one agentic review may spend: the
+// repository's agent budget, cut to what is left of the tenant's monthly
+// cap when one is set. A non-empty reason caps the review instead, when
+// too little is left for an agent to do anything with.
+func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) {
+	if tokensPerMonth <= 0 {
+		return agentMax, ""
+	}
+	left := tokensPerMonth - usedThisMonth
+	if left <= minAgentTokens {
+		return 0, fmt.Sprintf("tokensPerMonth (%d) nearly reached: %d tokens left", tokensPerMonth, max(left, 0))
+	}
+	return min(agentMax, left), ""
 }
 
 // modelEndpoint is the review model an agentic runner talks to, and its
@@ -148,6 +176,7 @@ func (w *Review) agentPrompt(
 		}
 		return nil
 	})
+	p.Trim()
 	return p, err
 }
 
@@ -176,10 +205,20 @@ func (w *Review) loadAgentRun(ctx context.Context, tenantID, runID string) (run 
 // the review after it: the tokens are spent either way, and the caps count
 // them from the usage table. It is the only place an agentic review
 // records usage.
+//
+// A run that ended in error may still be writing its row: a deleted runner
+// pod records what its agent spent while it terminates. await waits for
+// that, until the run settles or agentRowWait passes. ctx's cancellation is
+// not inherited, so a job River cancels still charges its tokens.
 func (w *Review) chargeAgentRun(
-	ctx context.Context, tenant *configfile.Tenant, pr *pullRequest, reviewID, runID string, ref configfile.ModelRef,
+	ctx context.Context, tenant *configfile.Tenant, pr *pullRequest, reviewID, runID string, ref configfile.ModelRef, await bool,
 ) (*agentRun, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agentRowWait+10*time.Second)
+	defer cancel()
 	run, found, err := w.loadAgentRun(ctx, tenant.ID(), runID)
+	if err == nil && !found && await {
+		run, found, err = w.awaitAgentRun(ctx, tenant.ID(), runID)
+	}
 	if err != nil || !found {
 		return nil, err
 	}
@@ -201,6 +240,66 @@ func (w *Review) chargeAgentRun(
 	return &run, nil
 }
 
+// agentSpec makes spec an agentic run: the prompt, the model and its key,
+// and the agent's bounds. It returns the runner Job's deadline, which the
+// agent's timeout may lengthen.
+func (w *Review) agentSpec(
+	ctx context.Context, tenantID, reviewID string, pr *pullRequest, settings configfile.Settings, prior priorReview,
+	admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
+) (time.Duration, error) {
+	prompt, err := w.agentPrompt(ctx, tenantID, reviewID, pr, settings, prior)
+	if err != nil {
+		return deadline, err
+	}
+	spec.Prompt, spec.Mode, spec.Model, secrets.ModelAPIKey = prompt, runner.ModeAgentic, admitted.endpoint, admitted.key
+	spec.Agent = &runner.AgentLimits{
+		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
+		TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
+	}
+	return agentDeadline(deadline, settings.Agent.Timeout), nil
+}
+
+// stopped reports whether a run was stopped from outside, by supervision,
+// the job's context or the Job's deadline, rather than ending on its own.
+func stopped(ctx context.Context, res executor.Result, cause error) bool {
+	return res.Err != nil && (cause != nil || ctx.Err() != nil || res.DeadlineExceeded)
+}
+
+// agentRowWait is how long a failed run's agent row is waited for: a
+// runner pod's termination grace period.
+const agentRowWait = 30 * time.Second
+
+// agentRowPoll is how often awaitAgentRun looks again.
+const agentRowPoll = time.Second
+
+// awaitAgentRun polls for a run's agent_runs row until it appears, the
+// run's phase settles without one, or agentRowWait passes.
+func (w *Review) awaitAgentRun(ctx context.Context, tenantID, runID string) (agentRun, bool, error) {
+	deadline := time.After(agentRowWait)
+	for {
+		var phase string
+		err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT phase FROM runner_runs WHERE id = $1`, runID).Scan(&phase)
+		})
+		if err != nil {
+			return agentRun{}, false, fmt.Errorf("worker: read run phase: %w", err)
+		}
+		// The runner writes its agent row before it settles the phase.
+		settled := phase == "done" || phase == "failed"
+		run, found, err := w.loadAgentRun(ctx, tenantID, runID)
+		if err != nil || found || settled {
+			return run, found, err
+		}
+		select {
+		case <-deadline:
+			return agentRun{}, false, nil
+		case <-ctx.Done():
+			return agentRun{}, false, nil
+		case <-time.After(agentRowPoll):
+		}
+	}
+}
+
 // runAgentic publishes what the runner's agent submitted, as run does for
 // a single model call; the run's usage is already recorded. An agent that
 // stopped without submitting fails the review, and the sticky comment says
@@ -213,6 +312,7 @@ func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
 	run := *p.agent
 	if run.stop == runner.AgentSkipped {
 		p.logger.Info("review "+statusSkipped+" by the runner", "reason", run.errText)
+		p.skippedStatus(ctx, run.errText)
 		if reason := repoconfig.SkipReason(run.errText); reason.Valid() {
 			err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, `UPDATE reviews SET skip_reason = $2 WHERE id = $1`, p.reviewID, string(reason))
@@ -253,6 +353,20 @@ func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
 		return statusFailed, err
 	}
 	return statusCompleted, nil
+}
+
+// skippedStatus says on the head why the runner skipped its review: the
+// worker only reaches the runner's skip when its own checks did not skip,
+// and so did not say so itself.
+func (p *publishPhase) skippedStatus(ctx context.Context, reason string) {
+	desc := repoconfig.SkipReason(reason).Description()
+	if reason == runner.SkipUnchangedPatch {
+		desc = "patch unchanged since the last review"
+	}
+	owner, repo, _ := strings.Cut(p.pr.repository, "/")
+	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: skipped ("+desc+")"); err != nil {
+		p.logger.Warn("commit status not set", "error", err)
+	}
 }
 
 // incomplete replaces the sticky comment with one saying why this head was

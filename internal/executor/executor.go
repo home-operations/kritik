@@ -20,7 +20,8 @@ type Spec struct {
 	Labels map[string]string
 	// Annotations carry the River job id and head SHA.
 	Annotations map[string]string
-	// Job is the runner's job document, handed over as KRITIK_RUN_SPEC.
+	// Job is the runner's job document, mounted from the run's Secret as the
+	// file KRITIK_RUN_SPEC_FILE names.
 	Job runner.Spec
 	// Secrets reach the runner through a Secret owned by its Job, and are
 	// masked out of the log tail.

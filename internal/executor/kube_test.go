@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,10 +41,7 @@ func spec() Spec {
 
 func TestJobSpec(t *testing.T) {
 	k := &Kube{Namespace: "kritik", Image: "ttl.sh/x:1h", ServiceAccount: "kritik-runner", DatabaseSecret: "kritik-postgres-runner", DatabaseSecretKey: "uri", TTL: 10 * time.Minute}
-	j, err := k.job(spec())
-	if err != nil {
-		t.Fatal(err)
-	}
+	j := k.job(spec())
 	if j.Name != "kritik-run-01234567" || j.Namespace != "kritik" {
 		t.Fatalf("name/namespace = %s/%s", j.Name, j.Namespace)
 	}
@@ -63,6 +61,7 @@ func TestJobSpec(t *testing.T) {
 		t.Fatalf("container = %+v", c)
 	}
 	checkRunnerEnv(t, c.Env)
+	checkSpecMount(t, pod, c)
 	if c.Resources.Limits.Memory().String() != "2Gi" {
 		t.Fatalf("resources = %+v", c.Resources)
 	}
@@ -79,9 +78,11 @@ func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
 	for _, e := range vars {
 		env[e.Name] = e
 	}
-	got, err := runner.DecodeSpec([]byte(env["KRITIK_RUN_SPEC"].Value))
-	if err != nil || got.Head != headSHA || got.Base != baseSHA || strings.Join(got.Ignore, ",") != "vendor/**,**/*.lock" {
-		t.Fatalf("run spec = %+v, %v", got, err)
+	if e, ok := env["KRITIK_RUN_SPEC_FILE"]; !ok || e.Value != "/var/run/kritik/spec.json" {
+		t.Fatalf("KRITIK_RUN_SPEC_FILE = %+v", e)
+	}
+	if _, ok := env["KRITIK_RUN_SPEC"]; ok {
+		t.Fatal("the job document must not travel as a variable")
 	}
 	for _, e := range vars {
 		if strings.Contains(e.Value, "ghs_secret_token") || strings.Contains(e.Value, "sk-model-key") {
@@ -100,7 +101,7 @@ func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
 	}
 	for _, name := range []string{"KRITIK_RUN_KIND", "KRITIK_RUN_ID", "KRITIK_CLONE_URL", "KRITIK_HEAD_SHA", "KRITIK_BASE_SHA", "KRITIK_IGNORE"} {
 		if _, ok := env[name]; ok {
-			t.Fatalf("%s is replaced by KRITIK_RUN_SPEC", name)
+			t.Fatalf("%s is replaced by the job document", name)
 		}
 	}
 	if ref := env["KRITIK_DATABASE_URL"].ValueFrom.SecretKeyRef; ref.Name != "kritik-postgres-runner" || ref.Key != "uri" {
@@ -110,6 +111,41 @@ func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
 		if _, leaked := env[name]; leaked {
 			t.Fatalf("%s must never reach a runner pod", name)
 		}
+	}
+}
+
+// checkSpecMount asserts the job document is mounted read-only from the
+// run's Secret, and only that key of it.
+func checkSpecMount(t *testing.T, pod corev1.PodSpec, c corev1.Container) {
+	t.Helper()
+	var mounted bool
+	for _, m := range c.VolumeMounts {
+		if m.Name == "spec" {
+			mounted = m.MountPath == "/var/run/kritik" && m.ReadOnly
+		}
+	}
+	var vol *corev1.SecretVolumeSource
+	for _, v := range pod.Volumes {
+		if v.Name == "spec" {
+			vol = v.Secret
+		}
+	}
+	if !mounted || vol == nil || vol.SecretName != "kritik-run-01234567" || len(vol.Items) != 1 ||
+		vol.Items[0].Key != "run-spec.json" || vol.Items[0].Path != "spec.json" {
+		t.Fatalf("spec mount = %v, volume = %+v", mounted, vol)
+	}
+}
+
+func TestKubeRunRejectsOversizedSpecBeforeCreatingAnything(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	s := spec()
+	s.Job.RepoFiles = []string{strings.Repeat("<", runner.MaxSpecBytes)}
+	res := newKube(client).Run(t.Context(), s)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "byte limit") {
+		t.Fatalf("err = %v", res.Err)
+	}
+	if n := len(client.Actions()); n != 0 {
+		t.Fatalf("%d API calls for a spec that cannot be delivered", n)
 	}
 }
 
@@ -215,6 +251,10 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 	}
 	if string(sec.Data["git-token"]) != "ghs_secret_token" || string(sec.Data["model-api-key"]) != "sk-model-key" {
 		t.Fatalf("secret data = %v", sec.Data)
+	}
+	got, err := runner.DecodeSpec(sec.Data["run-spec.json"])
+	if err != nil || got.Head != headSHA || got.Base != baseSHA || strings.Join(got.Ignore, ",") != "vendor/**,**/*.lock" {
+		t.Fatalf("run spec = %+v, %v", got, err)
 	}
 	if sec.Labels["kritik.home-operations.com/role"] != "runner" || sec.Labels["kritik.home-operations.com/tenant"] != "acme" {
 		t.Fatalf("secret labels = %v", sec.Labels)
@@ -353,29 +393,68 @@ func TestKubeRunCleansUpWhenOwnerPatchFails(t *testing.T) {
 	}
 }
 
-func TestFinishMasksSecretStraddlingTheTailLimit(t *testing.T) {
+func TestFinishKeepsTheTailOfTheLog(t *testing.T) {
 	const token = "ghs_secret_token"
-	logs := strings.Repeat("x", LogTailBytes-4) + token + " and more output"
-	client := fake.NewSimpleClientset()
-	var limit int64
-	client.PrependReactor("get", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
-		if a.GetSubresource() != "log" {
-			return false, nil, nil
-		}
-		if opts, ok := a.(k8stesting.GenericAction).GetValue().(*corev1.PodLogOptions); ok && opts.LimitBytes != nil {
-			limit = *opts.LimitBytes
-		}
-		return true, &runtime.Unknown{Raw: []byte(logs)}, nil
-	})
-	_, _ = client.CoreV1().Pods("kritik").Create(t.Context(), &corev1.Pod{
-		Name: "kritik-run-01234567-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": "kritik-run-01234567"},
-	}, metav1.CreateOptions{})
-	res := Result{JobName: "kritik-run-01234567"}
-	newKube(client).finish(&res, runner.Secrets{GitToken: token, ModelAPIKey: "sk-model-key"})
-	if limit != int64(LogTailBytes+len(token)) {
-		t.Fatalf("requested %d log bytes, want the tail plus the longest secret", limit)
+	secrets := runner.Secrets{GitToken: token, ModelAPIKey: "sk-model-key"}
+	// A secret straddles the point LogTailBytes from the end.
+	straddling := "HEAD " + strings.Repeat("x", 1000) + token + strings.Repeat("y", LogTailBytes-8) + " END\n"
+	tests := []struct {
+		name  string
+		logs  string
+		check func(t *testing.T, tail string)
+	}{
+		{name: "the end is kept and a straddling secret masked", logs: straddling, check: func(t *testing.T, tail string) {
+			if len(tail) > LogTailBytes || !strings.HasSuffix(tail, " END\n") || strings.Contains(tail, "HEAD") ||
+				strings.Contains(tail, "ghs_") || strings.Contains(tail, "_token") {
+				t.Fatalf("tail len %d starts %q ends %q", len(tail), tail[:20], tail[len(tail)-20:])
+			}
+		}},
+		{name: "a short log is kept whole", logs: "fetched\ndone\n", check: func(t *testing.T, tail string) {
+			if tail != "fetched\ndone\n" {
+				t.Fatalf("tail = %q", tail)
+			}
+		}},
 	}
-	if len(res.LogTail) != LogTailBytes || strings.Contains(res.LogTail, "ghs_") || !strings.HasSuffix(res.LogTail, "*** ") {
-		t.Fatalf("tail len %d ends %q", len(res.LogTail), res.LogTail[len(res.LogTail)-20:])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewSimpleClientset()
+			var opts *corev1.PodLogOptions
+			client.PrependReactor("get", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
+				if a.GetSubresource() != "log" {
+					return false, nil, nil
+				}
+				opts, _ = a.(k8stesting.GenericAction).GetValue().(*corev1.PodLogOptions)
+				return true, &runtime.Unknown{Raw: []byte(tt.logs)}, nil
+			})
+			_, _ = client.CoreV1().Pods("kritik").Create(t.Context(), &corev1.Pod{
+				Name: "kritik-run-01234567-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": "kritik-run-01234567"},
+			}, metav1.CreateOptions{})
+			res := Result{JobName: "kritik-run-01234567"}
+			newKube(client).finish(&res, secrets)
+			if opts == nil || opts.TailLines == nil || *opts.TailLines != logTailLines || opts.LimitBytes == nil || *opts.LimitBytes != logReadBytes {
+				t.Fatalf("log options = %+v", opts)
+			}
+			tt.check(t, res.LogTail)
+		})
+	}
+}
+
+func TestLogTailDropsALineCutAtTheCeiling(t *testing.T) {
+	const token = "ghs_secret_token"
+	// The read stopped inside the secret on its last line.
+	log := "first\nsecond\nclone with ghs_secr"
+	got := logTail(log, true, runner.Secrets{GitToken: token})
+	if got != "first\nsecond\n" {
+		t.Fatalf("tail = %q", got)
+	}
+	if got := logTail(log, false, runner.Secrets{GitToken: token}); got != log {
+		t.Fatalf("a read under the ceiling is kept whole, got %q", got)
+	}
+}
+
+func TestTailKeepsValidUTF8(t *testing.T) {
+	got := tail("ab€cd", 4)
+	if got != "cd" || !utf8.ValidString(got) {
+		t.Fatalf("tail = %q", got)
 	}
 }
