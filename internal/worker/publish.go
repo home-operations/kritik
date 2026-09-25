@@ -63,6 +63,10 @@ type publishPhase struct {
 	// values are kritik's defaults.
 	parse     review.ParseOptions
 	templates review.Templates
+	// instructions are the repository's review instructions, and repoNotes
+	// what the summary states about its configuration files.
+	instructions []string
+	repoNotes    []string
 }
 
 func (p *publishPhase) run(ctx context.Context) (status string, err error) {
@@ -117,7 +121,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
 
-	commentID, err := p.writeBack(ctx, res, resp.Model, reviewNotes(omitted, dropped))
+	commentID, err := p.writeBack(ctx, res, resp.Model, append(reviewNotes(omitted, dropped), p.repoNotes...))
 	if err != nil {
 		return statusFailed, err
 	}
@@ -208,7 +212,7 @@ func (p *publishPhase) complete(ctx context.Context, ref configfile.ModelRef, ms
 	}()
 
 	req := model.CompletionRequest{
-		System: review.System, User: msg, Model: ref.Model(),
+		System: systemPrompt(p.instructions), User: msg, Model: ref.Model(),
 		Schema: review.Schema(), SchemaName: "findings", MaxTokens: maxOutputTokens,
 	}
 	if p.parse.RequireSuggestedFix {

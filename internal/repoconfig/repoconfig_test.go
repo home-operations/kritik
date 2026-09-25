@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -307,6 +308,53 @@ func TestSkip_All(t *testing.T) {
 			t.Parallel()
 			if got := c.skip.All(c.changed); got != c.want {
 				t.Fatalf("All(%v) = %v, want %v", c.changed, got, c.want)
+			}
+		})
+	}
+}
+
+func TestCollectExtra(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		src       map[string][]byte
+		extra     []string
+		wantFiles []string
+		wantNotes []string
+	}{
+		{
+			name:      "extra paths are read without a .kritik.yaml",
+			src:       map[string][]byte{"docs/rules.md": []byte("rules")},
+			extra:     []string{"docs/rules.md", "docs/gone.md"},
+			wantFiles: []string{"docs/rules.md"},
+			wantNotes: []string{"docs/gone.md: referenced but not found"},
+		},
+		{
+			name: "extra paths follow the file's own, deduplicated",
+			src: map[string][]byte{
+				FileName: []byte("review:\n  instructions: [docs/a.md]\n"), "docs/a.md": []byte("a"), "docs/b.md": []byte("b"),
+			},
+			extra:     []string{"docs/a.md", "docs/b.md"},
+			wantFiles: []string{FileName, "docs/a.md", "docs/b.md"},
+		},
+		{
+			name:      "an escaping extra path is noted, not read",
+			src:       map[string][]byte{"../secret": []byte("x")},
+			extra:     []string{"../secret"},
+			wantNotes: []string{`repoconfig: referenced path "../secret" escapes the repository`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			files, notes, err := Collect(mapReader(tt.src), tt.extra...)
+			if err != nil {
+				t.Fatalf("Collect: %v", err)
+			}
+			got := slices.Sorted(maps.Keys(files))
+			want := slices.Sorted(slices.Values(tt.wantFiles))
+			if !slices.Equal(got, want) || !slices.Equal(notes, tt.wantNotes) {
+				t.Fatalf("files = %v notes = %q, want %v %q", got, notes, want, tt.wantNotes)
 			}
 		})
 	}

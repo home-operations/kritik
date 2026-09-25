@@ -17,6 +17,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -160,34 +161,27 @@ func (f File) Referenced() []string {
 // oversized) is simply absent from the map.
 type Files map[string]string
 
-// Collect reads FileName and every path it references through read, which
-// must return an error satisfying errors.Is(err, fs.ErrNotExist) for a
-// missing path. A file over MaxFileBytes, or one that would push the total
-// over MaxTotalBytes, is omitted and reported in the returned notes rather
-// than failing the call; so is a missing referenced path. A missing
-// FileName is not an error either: it returns empty Files and no notes,
-// since the file is optional. Any other read error is returned as-is.
+// Collect reads FileName, every path it references, then every path in
+// extra (the operator's own review files) through read, which must return
+// an error satisfying errors.Is(err, fs.ErrNotExist) for a missing path. A
+// file over MaxFileBytes, or one that would push the total over
+// MaxTotalBytes, is omitted and reported in the returned notes rather than
+// failing the call; so is a missing referenced path and an extra path that
+// escapes the repository. A missing FileName is not an error either, since
+// the file is optional. Any other read error is returned as-is.
 //
 // The .kritik.yaml content itself is decoded best-effort to discover
 // Referenced() paths: a malformed file is Parse's concern (the caller
 // validates separately), not Collect's - Collect still gathers whatever
 // context it can.
-func Collect(read func(name string) ([]byte, error)) (Files, []string, error) {
-	data, err := read(FileName)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return Files{}, nil, nil
-		}
-		return nil, nil, fmt.Errorf("repoconfig: read %s: %w", FileName, err)
-	}
-
+func Collect(read func(name string) ([]byte, error), extra ...string) (Files, []string, error) {
 	files := Files{}
 	var notes []string
 	var total int
 
 	keep := func(p string, b []byte) {
 		if len(b) > MaxFileBytes {
-			notes = append(notes, fmt.Sprintf("%s: skipped, %d bytes exceeds the %d byte per-file limit", p, len(b), MaxFileBytes))
+			notes = append(notes, fmt.Sprintf("%s: skipped, it exceeds the %d byte per-file limit", p, MaxFileBytes))
 			return
 		}
 		if total+len(b) > MaxTotalBytes {
@@ -197,12 +191,30 @@ func Collect(read func(name string) ([]byte, error)) (Files, []string, error) {
 		files[p] = string(b)
 		total += len(b)
 	}
-	keep(FileName, data)
 
-	var f File
-	_ = yaml.Unmarshal(data, &f)
+	var refs []string
+	data, err := read(FileName)
+	switch {
+	case err == nil:
+		keep(FileName, data)
+		var f File
+		_ = yaml.Unmarshal(data, &f)
+		refs = f.Referenced()
+	case !errors.Is(err, fs.ErrNotExist):
+		return nil, nil, fmt.Errorf("repoconfig: read %s: %w", FileName, err)
+	}
+	for _, p := range extra {
+		if p == "" || slices.Contains(refs, p) {
+			continue
+		}
+		if err := validateRefPath(p); err != nil {
+			notes = append(notes, err.Error())
+			continue
+		}
+		refs = append(refs, p)
+	}
 
-	for _, p := range f.Referenced() {
+	for _, p := range refs {
 		b, err := read(p)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
