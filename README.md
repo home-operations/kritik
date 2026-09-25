@@ -78,8 +78,8 @@ kritik reviews it. It is read from the merge-base commit, never the pull
 request's own tree, so a pull request cannot use its own copy to weaken the
 review applied to it; a file that fails to parse is ignored as a whole, and
 noted rather than failing the review. It can only narrow what the operator
-already allows — `mode`, `agent` and `incremental` stay operator-only — and
-its keys are:
+already allows — `mode`, `agent`, `incremental` and `settle` stay
+operator-only — and its keys are:
 
 - `enabled: false` — disables review for the repository (it cannot turn a
   disabled repository back on).
@@ -100,11 +100,13 @@ its keys are:
   a sandboxed subset: `if`/`for`/`break`/`continue`/`autoescape`/`raw` and a
   restricted expression-only `set`; no `block`, `macro`, `include`,
   `extends`, `import` or `with` (a template cannot read any file but its
-  own), no arithmetic beyond `+ - * /` and no string/list concatenation via
-  `+`; filters and string/dict/list methods are drawn from fixed allowlists,
-  and dict/list methods are read-only. Rendering is bounded (recursion
-  depth, loop iterations, output size) so a template cannot hang or
-  exhaust memory.
+  own). Operators are comparisons, `and`, `or`, `not`, `in`, `is`, `-`,
+  `/`, `//`, `%` and binary `+` on numbers; there is no `+` on strings or
+  lists, no unary `+`, and no `~`, `*` or `**` — parts are written side by
+  side instead of concatenated. Filters and string/dict/list methods are
+  drawn from fixed allowlists, and dict/list methods are read-only.
+  Rendering is bounded (recursion depth, loop iterations, output size) so a
+  template cannot hang or exhaust memory.
 
 Every referenced file, plus `.kritik.yaml` itself, is capped at 256 KiB,
 and 1 MiB in total; a file over either limit is skipped and noted rather
