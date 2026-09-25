@@ -4,7 +4,9 @@
 - **Amended by:** [ADR-0005](0005-go-templates.md), which replaces the
   Jinja2 templates of §2.4 with Go templates, and
   [ADR-0006](0006-finding-fixes.md), which adds a range, a replacement and
-  an agent prompt to the findings of §2.4.
+  an agent prompt to the findings of §2.4, and
+  [ADR-0008](0008-runner-tools.md), which adds a command tool to the agent
+  of §2.6 and routes the runner pod's egress of §2.9 through the gateway.
 - **Date:** 2026-09-24
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6, §2.7, §2.11 and §2.12.
 

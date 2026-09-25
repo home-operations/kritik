@@ -10,6 +10,9 @@
   `0003-agentic-review-loop.md` on 2026-09-25, removed by this ADR). Its
   loop, tools, trajectory record and rollout gate were built by ADR-0003
   as merged; what remains of it is the credential question, decided here.
+- **Amended by:** [ADR-0008](0008-runner-tools.md), which makes the
+  gateway the runner pod's only route out, as a forward proxy with a host
+  allowlist, before it fronts model calls.
 - **Authors:** onedr0p.
 
 > Scope: where the provider credential lives when a runner pod runs the
