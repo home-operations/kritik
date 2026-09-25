@@ -28,16 +28,12 @@ type DashboardTenantMeta struct {
 	UpdatedAt time.Time
 }
 
-// dashboardReadable reports whether dashboard_tenants exists and the
-// application role may read it. On a database the leader has not yet
-// migrated, or has migrated but not yet granted, there are no dashboard
-// tenants to read rather than an error.
-func (s *Store) dashboardReadable(ctx context.Context) (bool, error) {
+// dashboardExists reports whether dashboard_tenants exists: on a database
+// the leader has not yet migrated there are no dashboard tenants rather
+// than an error.
+func (s *Store) dashboardExists(ctx context.Context) (bool, error) {
 	var ok bool
-	err := s.app.QueryRow(ctx, `
-		SELECT CASE WHEN to_regclass('dashboard_tenants') IS NULL THEN false
-			ELSE has_table_privilege(to_regclass('dashboard_tenants'), 'SELECT') END`).Scan(&ok)
-	if err != nil {
+	if err := s.app.QueryRow(ctx, `SELECT to_regclass('dashboard_tenants') IS NOT NULL`).Scan(&ok); err != nil {
 		return false, fmt.Errorf("store: check dashboard tenants: %w", err)
 	}
 	return ok, nil
@@ -45,7 +41,7 @@ func (s *Store) dashboardReadable(ctx context.Context) (bool, error) {
 
 // DashboardTenants returns every dashboard tenant, sorted by slug.
 func (s *Store) DashboardTenants(ctx context.Context) ([]configfile.DashboardTenant, error) {
-	if ok, err := s.dashboardReadable(ctx); err != nil || !ok {
+	if ok, err := s.dashboardExists(ctx); err != nil || !ok {
 		return nil, err
 	}
 	rows, err := s.app.Query(ctx, `SELECT slug, spec, revision FROM dashboard_tenants ORDER BY slug`)
@@ -68,7 +64,7 @@ func (s *Store) DashboardTenants(ctx context.Context) ([]configfile.DashboardTen
 // would return something new. updated_at is part of it because a tenant
 // deleted and created again starts over at revision 1.
 func (s *Store) DashboardFingerprint(ctx context.Context) (string, error) {
-	if ok, err := s.dashboardReadable(ctx); err != nil || !ok {
+	if ok, err := s.dashboardExists(ctx); err != nil || !ok {
 		return "", err
 	}
 	var fp string
