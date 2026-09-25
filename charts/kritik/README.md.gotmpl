@@ -15,8 +15,9 @@ of its alt text, and carries its own annotation. */}}
 
 ## Usage
 
-kritik ships as an OCI Helm chart. It needs a pgvector-enabled Postgres with
-three roles, the configuration file, and the secrets the file references:
+kritik ships as an OCI Helm chart. It needs a Postgres with
+[VectorChord](https://github.com/tensorchord/VectorChord) and pgvector, three
+roles, the configuration file, and the secrets the file references:
 
 ```sh
 helm install kritik oci://ghcr.io/home-operations/charts/kritik \
@@ -30,7 +31,7 @@ where `my-values.yaml` carries `config.file` (the declarative configuration:
 providers, defaults, tenants with installations and repositories) and
 `secretMounts` for the GitHub App keys, webhook secrets and provider API
 keys the file references by path. Set `embedding.model` and a key to turn
-on the pgvector index and the similar-code context stage.
+on the vector index and the similar-code context stage.
 
 ### Database
 
@@ -39,10 +40,15 @@ kritik separates three Postgres roles and refuses to start otherwise: the
 be a superuser), the **application** role (`database.app.role`, must not own
 the tables so row-level security applies to it) and the **runner** role
 (`database.runner.role`, handed to runner Jobs, can only write its own run).
-The `vector` extension must exist before the first start.
+The `vchord` (VectorChord) and `vector` (pgvector, whose types it builds on)
+extensions must exist before the first start, and `vchord` must be in
+`shared_preload_libraries`.
 
-On CloudNativePG, the bootstrap owner is `owner`, the other two are declared
-under `spec.managed.roles`, and a `Database` resource creates the extension:
+On CloudNativePG, use TensorChord's image (`ghcr.io/tensorchord/cloudnative-vectorchord`,
+tagged `<postgres>-<vchord>`) or mount `ghcr.io/tensorchord/vchord-scratch` as an
+image-volume extension, load the library, make the bootstrap owner `owner`,
+declare the other two roles under `spec.managed.roles`, and let a `Database`
+resource create the extensions:
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -82,6 +88,18 @@ spec:
   extensions:
     - name: vector
       ensure: present
+    - name: vchord
+      ensure: present
+```
+
+with, on the `Cluster`:
+
+```yaml
+spec:
+  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.6-1.1.1
+  postgresql:
+    shared_preload_libraries:
+      - vchord
 ```
 
 Each `passwordSecret` is a basic-auth Secret; kritik reads a `uri` key from

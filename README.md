@@ -60,7 +60,7 @@ declarations the diff touches, definitions of identifiers on changed
 lines, and callers of changed declarations, all cut by tree-sitter (pure
 Go, every grammar embedded; the stripped static binary is about 122 MiB).
 With a deployment embedder configured (`KRITIK_EMBED_*`), the leader
-onboards every declared repository into a pgvector index of the default
+onboards every declared repository into a VectorChord index of the default
 branch, default-branch pushes advance it incrementally, and reviews add
 the most similar indexed chunks as a fourth context stage. An @-mention of
 the bot by someone with write access gets an answer in the thread, with
@@ -75,8 +75,9 @@ come next; see the ADR for the rest.
 
 kritik ships as an OCI Helm chart, `oci://ghcr.io/home-operations/charts/kritik`.
 The chart's [README](charts/kritik/README.md) lists every value and shows the
-CloudNativePG setup for the three database roles. In short: a pgvector
-Postgres with an owner, an application and a runner role, the configuration
+CloudNativePG setup for the three database roles. In short: a Postgres with
+[VectorChord](https://github.com/tensorchord/VectorChord) (and the pgvector
+it builds on) loaded, with an owner, an application and a runner role, the configuration
 file under `config.file`, the secrets it references under `secretMounts`, and
 optionally an embedder under `embedding` for the index. `roles.all` runs the
 single-process topology; `roles.ingest` and `roles.worker` split it.
@@ -151,7 +152,7 @@ Tool versions and tasks live in [`.mise/config.toml`](.mise/config.toml):
 mise install
 mise run build
 mise run test               # unit tests
-mise run test-integration   # store suite against a throwaway pgvector container
+mise run test-integration   # store suite against a throwaway VectorChord container
 mise run lint
 ```
 

@@ -164,7 +164,7 @@ database:
     # -- Name of the runner role, granted only what runner Jobs need.
     role: kritik_runner
 
-# The deployment-wide embedder that builds the pgvector index and powers the
+# The deployment-wide embedder that builds the vector index and powers the
 # similar-code context stage. All of `baseUrl`, `model`, `dims` and a key must
 # be set together; leaving `model` empty turns indexing off and reviews run
 # without vector retrieval. Changing model or dims later is refused unless
@@ -174,7 +174,7 @@ embedding:
   baseUrl: https://openrouter.ai/api/v1
   # -- Embedding model id; empty disables indexing.
   model: ""
-  # -- Vector dimension, at most 4000 (the halfvec index limit).
+  # -- Vector dimension, at most 4000.
   dims: 1024
   # -- API key, rendered into a chart-managed Secret. Prefer `existingSecret`.
   apiKey: ""

@@ -535,6 +535,12 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 			VALUES ($1, $2, $3, 'embedding', $4, $5)`, p.tenant.ID(), p.pr.repositoryID, p.reviewID, p.w.EmbedModel, tokens); err != nil {
 			return fmt.Errorf("worker: record embedding usage: %w", err)
 		}
+		// The generation and tenant filters are strict and cheap, exactly
+		// what VectorChord's prefilter wants: it then skips the distance of
+		// every chunk outside this repository's generation.
+		if _, err := tx.Exec(ctx, `SET LOCAL vchordrq.prefilter = on`); err != nil {
+			return fmt.Errorf("worker: enable prefilter: %w", err)
+		}
 		for _, v := range vectors {
 			rows, err := tx.Query(ctx, `SELECT path, start_line, end_line, language, symbol, kind, scope, text, 1 - (embedding <=> $1::halfvec)
 				FROM index_chunks WHERE index_run_id = $2 AND NOT (path = ANY($3))

@@ -134,7 +134,7 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
-      # Runs the store suite against a throwaway pgvector container with the
+      # Runs the store suite against a throwaway VectorChord container with the
       # owner, application and runner roles, the same way it runs locally.
       - name: Run integration tests
         run: mise run test-integration

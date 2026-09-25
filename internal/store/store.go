@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -161,17 +162,20 @@ func IsConfigurationError(err error) bool {
 	return errors.Is(err, ErrIsolationOff) || errors.Is(err, ErrNoVectorExtension) || errors.Is(err, ErrOwnerSuperuser)
 }
 
-// ErrNoVectorExtension is returned when pgvector is absent.
-var ErrNoVectorExtension = errors.New("store: the vector extension is not installed in this database")
+// ErrNoVectorExtension is returned when VectorChord (vchord) or pgvector
+// (vector, whose types it builds on) is absent.
+var ErrNoVectorExtension = errors.New("store: the vchord and vector extensions are not both installed in this database")
 
 func (s *Store) assertExtension(ctx context.Context) error {
-	var present bool
-	if err := s.app.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')`).Scan(&present); err != nil {
+	var missing []string
+	if err := s.app.QueryRow(ctx, `SELECT array_agg(name ORDER BY name) FROM unnest(ARRAY['vchord', 'vector']) AS name
+		WHERE NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = name)`).Scan(&missing); err != nil {
 		return fmt.Errorf("store: inspect extensions: %w", err)
 	}
-	if !present {
-		return fmt.Errorf("%w; on CloudNativePG declare it on the Database resource, elsewhere CREATE EXTENSION vector as a superuser",
-			ErrNoVectorExtension)
+	if len(missing) > 0 {
+		return fmt.Errorf("%w (missing: %s); use a VectorChord image with vchord in shared_preload_libraries, and on CloudNativePG "+
+			"declare vector and vchord on the Database resource, elsewhere CREATE EXTENSION vchord CASCADE as a superuser",
+			ErrNoVectorExtension, strings.Join(missing, ", "))
 	}
 	return nil
 }
