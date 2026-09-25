@@ -787,6 +787,8 @@ Whether the dashboard should ever be able to edit what the file manages
 is a v2 question; the default answer is no, so that git stays the source
 of truth for anything declared in git.
 
+Amended by [ADR-0009](0009-web-dashboard.md), which builds this dashboard.
+
 ---
 
 ## 3. Consequences

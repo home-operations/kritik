@@ -29,8 +29,10 @@ carry a replacement the forge offers as a suggestion, and an agent prompt),
 [`docs/adr/0007-vectorchord.md`](docs/adr/0007-vectorchord.md) (the vector
 index is VectorChord) and
 [`docs/adr/0008-runner-tools.md`](docs/adr/0008-runner-tools.md) (the agent
-may run allowlisted commands; runner egress goes through the gateway);
-ADR-0001 is kept as historical input.
+may run allowlisted commands; runner egress goes through the gateway) and
+[`docs/adr/0009-web-dashboard.md`](docs/adr/0009-web-dashboard.md) (the web
+dashboard: sign-in, dashboard-managed tenants, live updates and the full
+model conversation); ADR-0001 is kept as historical input.
 What works today: the configuration file loader with live reload, the
 Postgres store with row-level security and River, the ingest role (a signed
 forge webhook becomes rows and a review job), and the worker role, which
