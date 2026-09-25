@@ -19,7 +19,6 @@ import (
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/webhook"
 )
 
 const configYAML = `
@@ -112,8 +111,8 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	}
 	in, tenant, _ := file.Installation("bot-ross")
 	lf := &listForge{prs: []forge.OpenPullRequest{{
-		PullRequest: webhook.PullRequest{Number: 7, Title: "poll me", Author: "onedr0p", State: "open", HeadRef: "f", HeadSHA: "abc123", BaseRef: "main"},
-		UpdatedAt:   time.Now(), DefaultBranch: "main",
+		Number: 7, Title: "poll me", Author: "onedr0p", State: "open", HeadRef: "f", HeadSHA: "abc123", BaseRef: "main",
+		UpdatedAt: time.Now(), DefaultBranch: "main",
 	}}}
 	p := &Poller{
 		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: lf}, Dispatcher: ingest.NewService(st, queue),
@@ -232,8 +231,8 @@ func TestPollerEnqueuesOnceAndAdvancesStateForgejo(t *testing.T) {
 		t.Fatal("installation not found")
 	}
 	lf := &listForge{prs: []forge.OpenPullRequest{{
-		PullRequest: webhook.PullRequest{Number: 9001, Title: "poll me too", Author: "acme", State: "open", HeadRef: "f", HeadSHA: "fedcba9", BaseRef: "main"},
-		UpdatedAt:   time.Now(), DefaultBranch: "main",
+		Number: 9001, Title: "poll me too", Author: "acme", State: "open", HeadRef: "f", HeadSHA: "fedcba9", BaseRef: "main",
+		UpdatedAt: time.Now(), DefaultBranch: "main",
 	}}}
 	p := &Poller{
 		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: lf}, Dispatcher: ingest.NewService(st, queue),

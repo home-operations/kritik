@@ -45,10 +45,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 	for start := 0; start < len(inputs); {
 		end, chars := start, 0
 		for end < len(inputs) && end-start < e.MaxBatch {
-			item := len(inputs[end])
-			if item > e.MaxItemChars {
-				item = e.MaxItemChars
-			}
+			item := min(len(inputs[end]), e.MaxItemChars)
 			if end > start && chars+item > e.MaxBatchChars {
 				break
 			}

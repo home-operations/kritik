@@ -2,3 +2,20 @@
 git_url = "https://github.com/home-operations/.github"
 ref = "main"
 configs = ["lefthook.common.toml"]
+
+[pre-commit.commands.golangci-lint]
+glob = "*.go"
+run = "mise exec -- golangci-lint run"
+
+[pre-commit.commands.tidy]
+glob = "go.{mod,sum}"
+run = "mise exec -- go mod tidy"
+stage_fixed = true
+
+[pre-push.commands.test]
+run = "mise run test"
+
+# The bench harness sits behind the `bench` tag, so `mise run test` never
+# compiles it; `-run=^$` builds it without starting the live-model eval.
+[pre-push.commands.bench-compile]
+run = "mise exec -- go test -tags bench -run=^$ ./bench/"

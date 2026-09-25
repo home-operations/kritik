@@ -18,6 +18,7 @@ linters:
     - ineffassign
     - lll
     - misspell
+    - modernize
     - nakedret
     - prealloc
     - revive
@@ -28,25 +29,34 @@ linters:
   settings:
     goconst:
       ignore-tests: true
+    gocyclo:
+      min-complexity: 30
     lll:
       line-length: 140
     revive:
       rules:
         - name: comment-spacings
         - name: import-shadowing
+        # A ratchet: set to the longest non-test, non-generated file when it
+        # was introduced, and only ever lowered.
+        - name: file-length-limit
+          arguments:
+            - max: 800
+              skipComments: false
+              skipBlankLines: false
   exclusions:
     generated: lax
     rules:
+      # Tests favour readability over the stricter prod rules.
       - path: (.+)_test.go
         linters:
           - goconst
           - dupl
           - lll
-      # dupl is noisy on the structurally-parallel provider/handler code; lll now
-      # runs on internal/ (see settings.lll) to keep production lines in check.
-      - linters:
-          - dupl
-        path: internal/*
+      - path: (.+)_test.go
+        linters:
+          - revive
+        text: file-length-limit
     paths:
       - third_party$
       - builtin$

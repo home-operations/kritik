@@ -525,7 +525,7 @@ func (m *measure) add(x reflect.Value, depth int) {
 			return
 		}
 		if x.CanInterface() {
-			if ev, ok := x.Interface().(*exec.Value); ok {
+			if ev, ok := reflect.TypeAssert[*exec.Value](x); ok {
 				x = ev.Val
 				continue
 			}
@@ -559,8 +559,8 @@ func (m *measure) add(x reflect.Value, depth int) {
 		if depth >= maxMeasureDepth {
 			return
 		}
-		for i := range x.NumField() {
-			m.add(x.Field(i), depth+1)
+		for _, field := range x.Fields() {
+			m.add(field, depth+1)
 		}
 	default:
 		m.bytes++

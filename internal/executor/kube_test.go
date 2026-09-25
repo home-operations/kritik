@@ -133,8 +133,8 @@ func TestKubeRunWaitsForCompletion(t *testing.T) {
 		t.Fatal("job was not created")
 	}
 	_, _ = client.CoreV1().Pods("kritik").Create(ctx, &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name + "-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": name}},
-		Spec:       corev1.PodSpec{NodeName: "k8s-1"},
+		Name: name + "-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": name},
+		Spec: corev1.PodSpec{NodeName: "k8s-1"},
 		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{State: corev1.ContainerState{
 			Terminated: &corev1.ContainerStateTerminated{ExitCode: 0, Reason: "Completed"}}}}},
 	}, metav1.CreateOptions{})
@@ -268,7 +268,7 @@ func TestKubeRunCancelDeletesJobInForeground(t *testing.T) {
 	go func() { done <- k.Run(ctx, spec()) }()
 	j := waitJob(t, client)
 	_, _ = client.CoreV1().Pods("kritik").Create(t.Context(), &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: j.Name + "-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": j.Name}},
+		Name: j.Name + "-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": j.Name},
 	}, metav1.CreateOptions{})
 	cancel(cause)
 
@@ -368,7 +368,7 @@ func TestFinishMasksSecretStraddlingTheTailLimit(t *testing.T) {
 		return true, &runtime.Unknown{Raw: []byte(logs)}, nil
 	})
 	_, _ = client.CoreV1().Pods("kritik").Create(t.Context(), &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "kritik-run-01234567-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": "kritik-run-01234567"}},
+		Name: "kritik-run-01234567-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": "kritik-run-01234567"},
 	}, metav1.CreateOptions{})
 	res := Result{JobName: "kritik-run-01234567"}
 	newKube(client).finish(&res, runner.Secrets{GitToken: token, ModelAPIKey: "sk-model-key"})

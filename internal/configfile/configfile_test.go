@@ -1,7 +1,6 @@
 package configfile
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -224,9 +223,7 @@ func TestFilterOnBody(t *testing.T) {
 
 func with(pr map[string]any, k string, v any) map[string]any {
 	out := make(map[string]any, len(pr))
-	for kk, vv := range pr {
-		out[kk] = vv
-	}
+	maps.Copy(out, pr)
 	out[k] = v
 	return out
 }
@@ -392,8 +389,7 @@ func TestWatch(t *testing.T) {
 	write(minimal)
 
 	applied := make(chan *File, 4)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go Watch(ctx, path, 20*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)), func(f *File) { applied <- f })
 
 	expectNone := func(why string) {

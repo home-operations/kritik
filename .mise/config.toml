@@ -25,8 +25,8 @@ description = "Compile the binary (and the whole module)"
 run = "go build ./..."
 
 [tasks.vet]
-description = "Run go vet"
-run = "go vet ./..."
+description = "Run go vet, including the integration and bench build-tagged files"
+run = "go vet -tags integration,bench ./..."
 
 [tasks.vulncheck]
 description = "Scan for known vulnerabilities with govulncheck"
@@ -34,6 +34,7 @@ run = "govulncheck ./..."
 
 [tasks.test]
 description = "Run the unit test suite with the race detector and coverage"
+depends = ["fmt-check", "vet"]
 run = "go test -race ./... -coverprofile cover.out"
 
 [tasks.fmt]
