@@ -3,7 +3,7 @@
   import { href, setLeaveGuard } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { tokens, usd } from '../format';
-  import { describe, errorPath } from '../manage';
+  import { describe, errorPath, isCode } from '../manage';
   import { MANAGEMENT_OFF, management } from '../session.svelte';
   import { toast } from '../toast.svelte';
   import type { CreateTenantRequest, OperatorTenant, TenantWriteResult } from '../types';
@@ -24,12 +24,18 @@
   let dirty = $state(false);
   let errMessage = $state('');
   let errPath = $state('');
+  let errSeq = $state(0);
   let generated = $state<Record<string, string> | undefined>(undefined);
 
   $effect(() => {
-    setLeaveGuard(() => creating && dirty);
+    setLeaveGuard(() => (creating && dirty) || generated !== undefined);
     return () => setLeaveGuard(undefined);
   });
+
+  function cancelCreate(): void {
+    if (dirty && !window.confirm('Discard the new tenant you have started?')) return;
+    closeCreate();
+  }
 
   function closeCreate(): void {
     creating = false;
@@ -52,6 +58,7 @@
     } catch (err) {
       errMessage = describe(err);
       errPath = errorPath(err);
+      errSeq++;
     } finally {
       saving = false;
     }
@@ -83,6 +90,12 @@
       void res.load();
     } catch (err) {
       deleteError = describe(err);
+      if (isCode(err, 'revision_conflict')) {
+        await res.load();
+        const fresh = res.data?.find((x) => x.slug === t.slug);
+        if (fresh) target = fresh;
+        deleteError += ' The latest revision is loaded; confirm again to delete it.';
+      }
     } finally {
       deleting = false;
     }
@@ -101,10 +114,10 @@
       <section class="panel" aria-labelledby="op-create">
         <header class="panel-head">
           <h2 id="op-create">New dashboard tenant</h2>
-          <button class="btn btn-small" onclick={closeCreate}>Cancel</button>
+          <button class="btn btn-small" onclick={cancelCreate}>Cancel</button>
         </header>
         <div class="panel-body">
-          <ConfigEditor initial={{}} creating operator {saving} {errMessage} {errPath} bind:dirty submitLabel="Create tenant" onsave={create} />
+          <ConfigEditor initial={{}} creating operator {saving} {errMessage} {errPath} {errSeq} bind:dirty submitLabel="Create tenant" onsave={create} />
         </div>
       </section>
     {:else}
@@ -131,7 +144,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each list as t, i (i)}
+              {#each list as t (t.slug)}
                 <tr>
                   <td class="mono">
                     {#if t.live}<a href={href({ name: 'tenant', slug: t.slug })}>{t.slug}</a>{:else}{t.slug}{/if}

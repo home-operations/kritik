@@ -11,8 +11,12 @@
     children: Snippet;
     footer?: Snippet;
     onclose?: () => void;
+    // Where focus goes on close when the opener is gone from the page (a
+    // save that remounted it, or a disabled button that dropped focus to
+    // the body): a selector, by default the page title.
+    fallback?: string;
   }
-  let { open = $bindable(false), title, children, footer, onclose }: Props = $props();
+  let { open = $bindable(false), title, children, footer, onclose, fallback = 'main h1' }: Props = $props();
   const id = `d${Math.random().toString(36).slice(2, 9)}`;
   let el = $state<HTMLDialogElement | undefined>(undefined);
   let restore: HTMLElement | null = null;
@@ -30,7 +34,15 @@
   function closed(): void {
     open = false;
     onclose?.();
-    restore?.focus();
+    if (restore && restore !== document.body && restore.isConnected) {
+      restore.focus();
+    } else {
+      const el = document.querySelector<HTMLElement>(fallback) ?? document.querySelector<HTMLElement>('main h1');
+      if (el) {
+        if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+        el.focus();
+      }
+    }
     restore = null;
   }
 </script>

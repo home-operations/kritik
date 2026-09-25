@@ -22,13 +22,14 @@
   let dirty = $state(false);
   let errMessage = $state('');
   let errPath = $state('');
+  let errSeq = $state(0);
   let conflict = $state(false);
   let generated = $state<Record<string, string> | undefined>(undefined);
   // Bumped to remount the editor on a fresh draft.
   let epoch = $state(0);
 
   $effect(() => {
-    setLeaveGuard(() => dirty);
+    setLeaveGuard(() => dirty || generated !== undefined);
     return () => setLeaveGuard(undefined);
   });
 
@@ -56,6 +57,7 @@
     } catch (err) {
       errMessage = describe(err);
       errPath = errorPath(err);
+      errSeq++;
       conflict = isCode(err, 'revision_conflict');
     } finally {
       saving = false;
@@ -90,6 +92,7 @@
               {saving}
               {errMessage}
               {errPath}
+              {errSeq}
               bind:dirty
               onsave={(spec) => save(cfg, spec)}
             >
@@ -104,4 +107,4 @@
   {/snippet}
 </StateView>
 
-<GeneratedSecrets bind:generated />
+<GeneratedSecrets bind:generated fallback="#admin-config" />

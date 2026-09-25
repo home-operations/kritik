@@ -82,6 +82,8 @@ test.describe('tenant configuration', () => {
     await dialog.getByRole('button', { name: 'I have copied them' }).click();
     await expect(dialog).toBeHidden();
     await expect(page.getByTestId('generated-secret')).toHaveCount(0);
+    // The Save button that opened it was remounted away; focus lands on the panel heading.
+    await expect(page.locator('#admin-config')).toBeFocused();
     // Saved: the config reloads and the typed secret is gone with the old draft.
     await expect(page.locator('#admin-config').locator('..')).toContainText('revision 4');
     expect(seen.filter((u) => u.pathname.endsWith('/config')).length).toBeGreaterThanOrEqual(2);
@@ -112,7 +114,7 @@ test.describe('tenant configuration', () => {
         'PUT',
         new RegExp(`${API}/config$`),
         () =>
-          sent.length === 1
+          sent.length <= 2
             ? g.apiError(422, 'invalid_spec', `${host}: the host is not allowed`, { path: host })
             : g.apiError(422, 'reenter_secret', 'enter this secret again', { path: 'installations[0].token' }),
       ],
@@ -123,11 +125,62 @@ test.describe('tenant configuration', () => {
     await expect(page.getByRole('alert')).toContainText('the host is not allowed');
     await expect(page.locator(`[data-path="${host}"]`)).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator(`[data-path="${host}"]`)).toBeFocused();
+    // The same error again still moves focus back to the field.
+    await page.getByLabel('Filter').first().focus();
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => sent.length).toBe(2);
+    await expect(page.locator(`[data-path="${host}"]`)).toBeFocused();
 
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByRole('alert')).toContainText('must be entered again');
     await expect(page.locator('[data-path="installations[0].token"]')).toHaveClass(/invalid/);
     await expect(page.locator(`[data-path="${host}"]`)).not.toHaveAttribute('aria-invalid', 'true');
+    // Adding or removing an item shifts indexes, so it dismisses a path error.
+    await page.getByRole('button', { name: 'Add repository' }).click();
+    await expect(page.locator('[data-path="installations[0].token"]')).not.toHaveClass(/invalid/);
+    await expect(page.locator('.form-alert')).toHaveCount(0);
+  });
+
+  test('a renamed installation cannot keep the secrets stored under its new name', async ({ page }) => {
+    const b = (dashboardConfig.spec.installations as Record<string, unknown>[])[0]!;
+    const two: T.TenantConfig = {
+      ...dashboardConfig,
+      spec: { ...dashboardConfig.spec, installations: [b, { ...b, name: 'beta-bot' }] },
+    };
+    await setup(page, adminMe, [configRow(two)]);
+    const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { slug: S, revision: 4 } }]]);
+    await page.goto(`/${ADMIN}/config`);
+    await page.getByRole('button', { name: 'Remove installation' }).first().click();
+    await page.locator('[data-path="installations[0].name"]').fill('alpha-bot');
+    await expect(page.getByRole('note').filter({ hasText: 'Renamed from' })).toContainText('beta-bot');
+    const token = page.locator('[data-path="installations[0].token"]');
+    await expect(token.getByLabel('Keep current')).toHaveCount(0);
+    await expect(page.locator('[data-path="installations[0].webhookSecret"]').getByLabel('Generate')).toBeChecked();
+    await token.getByLabel('Token: new value').fill('fresh');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    const insts = (sent[0]!.body as T.UpdateTenantRequest).spec.installations as Record<string, unknown>[];
+    expect(insts).toHaveLength(1);
+    expect(insts[0]!.name).toBe('alpha-bot');
+    expect(insts[0]!.token).toEqual({ value: 'fresh' });
+    expect(insts[0]!.webhookSecret).toEqual({ generate: true });
+    expect(JSON.stringify(insts[0])).not.toContain('keep');
+  });
+
+  test('switching to JSON with a typed secret is refused, so the typed value is still what saves', async ({ page }) => {
+    await setup(page, adminMe, [configRow(dashboardConfig)]);
+    const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { slug: S, revision: 4 } }]]);
+    await page.goto(`/${ADMIN}/config`);
+    const token = page.locator('[data-path="installations[0].token"]');
+    await token.getByLabel('Replace with a new value').check();
+    await token.getByLabel('Token: new value').fill('typed');
+    await page.getByRole('button', { name: 'Advanced: edit JSON' }).click();
+    await expect(page.locator('.form-alert')).toContainText('JSON view never shows them');
+    await expect(page.getByLabel('Spec JSON')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    const inst = ((sent[0]!.body as T.UpdateTenantRequest).spec.installations as Record<string, unknown>[])[0]!;
+    expect(inst.token).toEqual({ value: 'typed' });
   });
 
   test('a revision conflict offers to reload the latest', async ({ page }) => {
@@ -150,11 +203,9 @@ test.describe('tenant configuration', () => {
     await page.goto(`/${ADMIN}/config`);
     const token = page.locator('[data-path="installations[0].token"]');
     await token.getByLabel('Replace with a new value').check();
-    await token.getByLabel('Token: new value').fill('never-shown');
     await page.getByRole('button', { name: 'Advanced: edit JSON' }).click();
     const box = page.getByLabel('Spec JSON');
     const text = await box.inputValue();
-    expect(text).not.toContain('never-shown');
     const spec = JSON.parse(text) as Record<string, unknown>;
     expect((spec.installations as Record<string, unknown>[])[0]!.token).toEqual({ keep: true });
 
@@ -374,9 +425,15 @@ test.describe('operator console', () => {
     expect(sent).toHaveLength(0);
   });
 
-  test('deletes a tenant after the slug is typed', async ({ page }) => {
-    await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([g.auditEvent])]]);
-    const sent = await g.mockWrites(page, [['DELETE', new RegExp(`/api/v1/tenants/${S}$`), { status: 204 }]]);
+  test('deletes a tenant after the slug is typed, reloading the revision on a conflict', async ({ page }) => {
+    let lists = 0;
+    await setup(page, operatorMe, [
+      [/\/api\/v1\/operator\/audit$/, g.pageOf([g.auditEvent])],
+      [/\/api\/v1\/operator\/tenants$/, () => [lists++ === 0 ? g.operatorTenant : { ...g.operatorTenant, revision: 5 }]],
+    ]);
+    const sent = await g.mockWrites(page, [
+      ['DELETE', new RegExp(`/api/v1/tenants/${S}$`), () => (sent.length === 1 ? g.apiError(409, 'revision_conflict', 'changed') : { status: 204 })],
+    ]);
     await page.goto('/#/operator');
     await expect(page.locator('#op-audit').locator('../..')).toContainText(g.auditEvent.action);
     await page.getByRole('button', { name: `Delete tenant ${S}` }).click();
@@ -389,6 +446,10 @@ test.describe('operator console', () => {
     await confirm.click();
     await expect.poll(() => sent.length).toBe(1);
     expect(sent[0]!.url.searchParams.get('revision')).toBe(String(g.operatorTenant.revision));
+    await expect(dialog.getByRole('alert')).toContainText('confirm again');
+    await confirm.click();
+    await expect.poll(() => sent.length).toBe(2);
+    expect(sent[1]!.url.searchParams.get('revision')).toBe('5');
     await expect(page.getByRole('status')).toContainText(`Deleted tenant ${S}`);
   });
 });

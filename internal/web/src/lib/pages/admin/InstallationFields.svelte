@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { InstallationDraft } from '../../spec';
+  import { canKeep, type InstallationDraft, type SecretDraft } from '../../spec';
   import SecretField from './SecretField.svelte';
 
   interface Props {
@@ -16,7 +16,9 @@
   // issued for; the server refuses the save otherwise (reenter_secret).
   const orig = untrack(() => ({ forge: inst.forge, host: inst.host, account: inst.account }));
   const moved = $derived(inst.forge !== orig.forge || inst.host !== orig.host || inst.account !== orig.account);
-  const rehint = $derived(moved ? 'The forge, host or account changed: enter this secret again rather than keeping it.' : undefined);
+  const keepable = $derived(canKeep(inst));
+  const re = (s: SecretDraft) =>
+    moved && s.wasSet && keepable ? 'The forge, host or account changed: enter this secret again rather than keeping it.' : undefined;
 </script>
 
 <div class="item-card">
@@ -24,6 +26,9 @@
     <span class="mono">{inst.name || 'New installation'}</span>
     <button type="button" class="btn btn-small btn-danger" onclick={onremove}>Remove installation</button>
   </div>
+  {#if inst.origName && !keepable}
+    <p class="field-hint" role="note">Renamed from <span class="mono">{inst.origName}</span>: its stored secrets cannot be kept, so enter or generate each again.</p>
+  {/if}
   <div class="fields">
     <label class="field">
       <span>Name</span>
@@ -54,16 +59,16 @@
         <input data-path="{p}.app.clientId" aria-invalid={inv(`${p}.app.clientId`) || undefined} bind:value={inst.clientId} />
       </label>
       {#if inst.clientIdFrom.wasSet || inst.clientIdFrom.mode !== 'none'}
-        <SecretField label="App client ID (secret)" path="{p}.app.clientIdFrom" bind:secret={inst.clientIdFrom} optional invalid={inv(`${p}.app.clientIdFrom`)} hint={rehint} />
+        <SecretField label="App client ID (secret)" path="{p}.app.clientIdFrom" bind:secret={inst.clientIdFrom} optional {keepable} invalid={inv(`${p}.app.clientIdFrom`)} hint={re(inst.clientIdFrom)} />
       {/if}
-      <SecretField label="App private key" path="{p}.app.privateKey" bind:secret={inst.privateKey} invalid={inv(`${p}.app.privateKey`)} hint={rehint} />
-      <SecretField label="Webhook secret" path="{p}.app.webhookSecret" bind:secret={inst.appWebhookSecret} generatable invalid={inv(`${p}.app.webhookSecret`)} />
+      <SecretField label="App private key" path="{p}.app.privateKey" bind:secret={inst.privateKey} {keepable} invalid={inv(`${p}.app.privateKey`)} hint={re(inst.privateKey)} />
+      <SecretField label="Webhook secret" path="{p}.app.webhookSecret" bind:secret={inst.appWebhookSecret} generatable {keepable} invalid={inv(`${p}.app.webhookSecret`)} />
     </div>
   {:else}
     <div class="fields">
-      <SecretField label="Token" path="{p}.token" bind:secret={inst.token} invalid={inv(`${p}.token`)} hint={rehint} />
-      <SecretField label="Webhook secret" path="{p}.webhookSecret" bind:secret={inst.webhookSecret} generatable invalid={inv(`${p}.webhookSecret`)} />
-      <SecretField label="Git token" path="{p}.gitToken" bind:secret={inst.gitToken} optional invalid={inv(`${p}.gitToken`)} hint={rehint ?? 'Optional: a separate token for git clones.'} />
+      <SecretField label="Token" path="{p}.token" bind:secret={inst.token} {keepable} invalid={inv(`${p}.token`)} hint={re(inst.token)} />
+      <SecretField label="Webhook secret" path="{p}.webhookSecret" bind:secret={inst.webhookSecret} generatable {keepable} invalid={inv(`${p}.webhookSecret`)} />
+      <SecretField label="Git token" path="{p}.gitToken" bind:secret={inst.gitToken} optional {keepable} invalid={inv(`${p}.gitToken`)} hint={re(inst.gitToken) ?? 'Optional: a separate token for git clones.'} />
     </div>
   {/if}
   <p class="field-hint">Webhook path: <span class="mono">/hooks/{inst.name || '<name>'}</span></p>

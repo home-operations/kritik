@@ -21,7 +21,7 @@ export const router = $state<{ route: Route }>({ route: parse(location.hash) });
 let dirty: (() => boolean) | undefined;
 let currentHash = location.hash;
 
-const LEAVE_PROMPT = 'You have unsaved changes. Leave this page and discard them?';
+const LEAVE_PROMPT = 'Leave this page? Unsaved changes, and any secret shown only this once, will be lost.';
 
 export function navigate(to: Route): void {
   const next = href(to);

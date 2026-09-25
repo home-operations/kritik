@@ -11,11 +11,12 @@
   let { repo = $bindable(), index, operator, inv, onremove }: Props = $props();
   const p = $derived(`repositories[${index}]`);
   const opHint = 'operator only';
+  const opSet = $derived(!operator && (repo.mode !== '' || repo.agent.trim() !== '' || repo.maxDeltaFiles.trim() !== ''));
 </script>
 
 <div class="item-card">
   <div class="item-head">
-    <span class="mono">{repo.name || 'New repository'}</span>
+    <span class="mono">{repo.name || 'New repository'}{#if opSet} <span class="field-hint">(operator-set fields)</span>{/if}</span>
     <button type="button" class="btn btn-small btn-danger" onclick={onremove}>Remove repository</button>
   </div>
   <div class="fields">

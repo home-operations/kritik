@@ -11,20 +11,35 @@
     secret: SecretDraft;
     generatable?: boolean;
     optional?: boolean;
+    // false once the installation is renamed: the stored value can't be kept.
+    keepable?: boolean;
     invalid?: boolean;
     hint?: string;
   }
-  let { label, path, secret = $bindable(), generatable = false, optional = false, invalid = false, hint }: Props = $props();
+  let {
+    label,
+    path,
+    secret = $bindable(),
+    generatable = false,
+    optional = false,
+    keepable = true,
+    invalid = false,
+    hint,
+  }: Props = $props();
   const name = `s${Math.random().toString(36).slice(2, 9)}`;
 
   const modes = $derived(
     [
-      secret.wasSet ? (['keep', 'Keep current'] as const) : undefined,
+      secret.wasSet && keepable ? (['keep', 'Keep current'] as const) : undefined,
       ['replace', secret.wasSet ? 'Replace with a new value' : 'Enter a value'] as const,
       generatable ? (['generate', 'Generate'] as const) : undefined,
       optional ? (['none', secret.wasSet ? 'Remove' : 'Not set'] as const) : undefined,
     ].filter((m) => m !== undefined),
   );
+
+  $effect(() => {
+    if (!keepable && secret.mode === 'keep') pick(generatable ? 'generate' : 'replace');
+  });
 
   function pick(m: SecretMode): void {
     secret.mode = m;

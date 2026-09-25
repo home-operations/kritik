@@ -8,6 +8,7 @@
   import {
     buildSpec,
     draftOf,
+    hasTypedSecret,
     newInstallation,
     newRepository,
     pathMatches,
@@ -27,6 +28,8 @@
     // The last failed save's message and the spec path it points at.
     errMessage?: string;
     errPath?: string;
+    // Bumped on every failed save, so a repeated error still refocuses.
+    errSeq?: number;
     alertAction?: Snippet;
     dirty?: boolean;
     submitLabel?: string;
@@ -39,6 +42,7 @@
     saving,
     errMessage = '',
     errPath = '',
+    errSeq = 0,
     alertAction,
     dirty = $bindable(false),
     submitLabel = 'Save',
@@ -58,8 +62,20 @@
     dirty = formDirty || (jsonMode && jsonText !== jsonEntered);
   });
 
-  const activePath = $derived(clientError ? clientError.path : errPath);
-  const alert = $derived(clientError ? `${clientError.path ? `${clientError.path}: ` : ''}${clientError.message}` : errMessage);
+  // A structural edit shifts indexes, so a server error pointing at a path
+  // is dismissed by one; clearedSeq is the errSeq dismissed.
+  let clearedSeq = $state(-1);
+  const serverShown = $derived(clearedSeq !== errSeq);
+  const activePath = $derived(clientError ? clientError.path : serverShown ? errPath : '');
+  const alert = $derived(
+    clientError ? `${clientError.path ? `${clientError.path}: ` : ''}${clientError.message}` : serverShown ? errMessage : '',
+  );
+
+  function structural(edit: () => void): void {
+    edit();
+    clientError = undefined;
+    if (errPath) clearedSeq = errSeq;
+  }
   const inv = (path: string) => pathMatches(path, activePath);
   const opHint = 'operator only';
 
@@ -76,8 +92,9 @@
 
   // A new server error moves focus to the field it names.
   $effect(() => {
-    const p = errPath;
-    if (p && !jsonMode) void tick().then(() => focusPath(p));
+    void errSeq;
+    const p = untrack(() => errPath);
+    if (p && !untrack(() => jsonMode)) void tick().then(() => focusPath(p));
   });
 
   function parseJSON(): Obj | undefined {
@@ -94,6 +111,14 @@
   function toggleJSON(): void {
     clientError = undefined;
     if (!jsonMode) {
+      // The JSON view never shows a typed secret, so switching would lose it.
+      if (hasTypedSecret(draft)) {
+        clientError = {
+          path: '',
+          message: 'Save, or clear, the secret values typed into the form first: the JSON view never shows them, so they would be lost.',
+        };
+        return;
+      }
       jsonText = JSON.stringify(buildSpec(draft, true).spec, null, 2);
       jsonEntered = jsonText;
       jsonMode = true;
@@ -208,12 +233,12 @@
           bind:inst={draft.installations[i]!}
           index={i}
           {inv}
-          onremove={() => (draft.installations = draft.installations.filter((x) => x.key !== inst.key))}
+          onremove={() => structural(() => (draft.installations = draft.installations.filter((x) => x.key !== inst.key)))}
         />
       {:else}
         <p class="field-hint">No installations yet.</p>
       {/each}
-      <div><button type="button" class="btn" onclick={() => draft.installations.push(newInstallation())}>Add installation</button></div>
+      <div><button type="button" class="btn" onclick={() => structural(() => draft.installations.push(newInstallation()))}>Add installation</button></div>
     </fieldset>
 
     <fieldset>
@@ -224,12 +249,12 @@
           index={i}
           {operator}
           {inv}
-          onremove={() => (draft.repositories = draft.repositories.filter((x) => x.key !== repo.key))}
+          onremove={() => structural(() => (draft.repositories = draft.repositories.filter((x) => x.key !== repo.key)))}
         />
       {:else}
         <p class="field-hint">No repositories listed.</p>
       {/each}
-      <div><button type="button" class="btn" onclick={() => draft.repositories.push(newRepository())}>Add repository</button></div>
+      <div><button type="button" class="btn" onclick={() => structural(() => draft.repositories.push(newRepository()))}>Add repository</button></div>
     </fieldset>
   {/if}
 

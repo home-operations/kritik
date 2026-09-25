@@ -24,6 +24,10 @@ export type TriBool = '' | 'true' | 'false';
 
 export interface InstallationDraft {
   key: number;
+  // The name the installation was loaded under, '' for a new one. The
+  // server keeps a secret by the installation's name, so a renamed one
+  // must not keep: it would adopt whatever is stored under the new name.
+  origName: string;
   name: string;
   forge: Forge;
   host: string;
@@ -138,6 +142,7 @@ function installationOf(v: unknown): InstallationDraft {
   const app = obj(o.app);
   return {
     key: ++keys,
+    origName: str(o.name),
     name: str(o.name),
     forge: (str(o.forge) || 'github') as Forge,
     host: str(o.host),
@@ -275,9 +280,30 @@ function nonEmpty(o: Obj): boolean {
   return Object.keys(o).length > 0;
 }
 
+// canKeep reports whether an installation's stored secrets may be kept:
+// only while it still has the name it was loaded under.
+export function canKeep(d: InstallationDraft): boolean {
+  return d.origName !== '' && d.name.trim() === d.origName;
+}
+
+// hasTypedSecret reports whether any secret holds a value typed into the
+// form.
+export function hasTypedSecret(d: TenantDraft): boolean {
+  return d.installations.some((x) =>
+    [x.clientIdFrom, x.privateKey, x.appWebhookSecret, x.token, x.webhookSecret, x.gitToken].some(
+      (sd) => sd.mode === 'replace' && sd.value !== '',
+    ),
+  );
+}
+
 function installationSpec(b: Builder, d: InstallationDraft, i: number): Obj {
   const p = `installations[${i}]`;
   const out: Obj = { ...d.rest };
+  const keep = canKeep(d);
+  const secret = (o: Obj, key: string, sd: SecretDraft, path: string, required: boolean) => {
+    if (!keep && sd.mode === 'keep') b.fail(path, 'the installation was renamed: enter this secret again');
+    b.secret(o, key, sd, path, required);
+  };
   if (d.name.trim() === '') b.fail(`${p}.name`, 'a name is required');
   out.name = d.name.trim();
   out.forge = d.forge;
@@ -288,15 +314,15 @@ function installationSpec(b: Builder, d: InstallationDraft, i: number): Obj {
   if (d.forge === 'github') {
     const app: Obj = { ...d.appRest };
     set(app, 'clientId', d.clientId);
-    b.secret(app, 'clientIdFrom', d.clientIdFrom, `${p}.app.clientIdFrom`, false);
+    secret(app, 'clientIdFrom', d.clientIdFrom, `${p}.app.clientIdFrom`, false);
     if (app.clientId === undefined && app.clientIdFrom === undefined) b.fail(`${p}.app.clientId`, 'set a client ID');
-    b.secret(app, 'privateKey', d.privateKey, `${p}.app.privateKey`, true);
-    b.secret(app, 'webhookSecret', d.appWebhookSecret, `${p}.app.webhookSecret`, true);
+    secret(app, 'privateKey', d.privateKey, `${p}.app.privateKey`, true);
+    secret(app, 'webhookSecret', d.appWebhookSecret, `${p}.app.webhookSecret`, true);
     out.app = app;
   } else {
-    b.secret(out, 'token', d.token, `${p}.token`, true);
-    b.secret(out, 'webhookSecret', d.webhookSecret, `${p}.webhookSecret`, true);
-    b.secret(out, 'gitToken', d.gitToken, `${p}.gitToken`, false);
+    secret(out, 'token', d.token, `${p}.token`, true);
+    secret(out, 'webhookSecret', d.webhookSecret, `${p}.webhookSecret`, true);
+    secret(out, 'gitToken', d.gitToken, `${p}.gitToken`, false);
   }
   return out;
 }
