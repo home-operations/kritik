@@ -12,6 +12,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 
+	"github.com/home-operations/kritik/internal/egress"
 	"github.com/home-operations/kritik/internal/jobtimeout"
 )
 
@@ -53,6 +54,18 @@ type Config struct {
 	// management endpoints are never reachable through the ingress that fronts
 	// the webhooks.
 	MetricsAddr string `env:"KRITIK_METRICS_ADDR" envDefault:":8081"`
+
+	// GatewayAddr is the listen address of the egress gateway the worker
+	// and all roles serve: the forward proxy runner pods reach the outside
+	// through (ADR-0008). Its own port, so the runner network policy can
+	// name it without opening the hook or management surfaces.
+	GatewayAddr string `env:"KRITIK_GATEWAY_ADDR" envDefault:":8082"`
+
+	// GatewayURL is what runner Jobs are handed as HTTPS_PROXY and
+	// HTTP_PROXY: the gateway's in-cluster address, http://host:port. Empty
+	// hands runners no proxy, which leaves them the direct egress an older
+	// network policy allowed.
+	GatewayURL string `env:"KRITIK_GATEWAY_URL"`
 
 	// ConfigFile is the path of the declarative configuration file (tenants,
 	// installations, repositories, models). Every role except runner loads it
@@ -224,6 +237,11 @@ func (c *Config) validate() error {
 	}
 	if c.ConfigReloadInterval <= 0 {
 		return fmt.Errorf("config: KRITIK_CONFIG_RELOAD_INTERVAL must be positive, got %s", c.ConfigReloadInterval)
+	}
+	if c.GatewayURL != "" {
+		if _, err := egress.ProxyURL(c.GatewayURL); err != nil {
+			return fmt.Errorf("config: KRITIK_GATEWAY_URL: %w", err)
+		}
 	}
 	set := 0
 	for _, v := range []bool{c.EmbedBaseURL != "", c.EmbedAPIKey != "", c.EmbedModel != "", c.EmbedDims != 0} {

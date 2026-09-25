@@ -10,8 +10,9 @@ Multi-tenant AI pull request reviewer for GitHub organisations, backed by Postgr
 
 ## Usage
 
-kritik ships as an OCI Helm chart. It needs a pgvector-enabled Postgres with
-three roles, the configuration file, and the secrets the file references:
+kritik ships as an OCI Helm chart. It needs a Postgres with
+[VectorChord](https://github.com/tensorchord/VectorChord) and pgvector, three
+roles, the configuration file, and the secrets the file references:
 
 ```sh
 helm install kritik oci://ghcr.io/home-operations/charts/kritik \
@@ -25,7 +26,7 @@ where `my-values.yaml` carries `config.file` (the declarative configuration:
 providers, defaults, tenants with installations and repositories) and
 `secretMounts` for the GitHub App keys, webhook secrets and provider API
 keys the file references by path. Set `embedding.model` and a key to turn
-on the pgvector index and the similar-code context stage.
+on the vector index and the similar-code context stage.
 
 ### Database
 
@@ -34,10 +35,15 @@ kritik separates three Postgres roles and refuses to start otherwise: the
 be a superuser), the **application** role (`database.app.role`, must not own
 the tables so row-level security applies to it) and the **runner** role
 (`database.runner.role`, handed to runner Jobs, can only write its own run).
-The `vector` extension must exist before the first start.
+The `vchord` (VectorChord) and `vector` (pgvector, whose types it builds on)
+extensions must exist before the first start, and `vchord` must be in
+`shared_preload_libraries`.
 
-On CloudNativePG, the bootstrap owner is `owner`, the other two are declared
-under `spec.managed.roles`, and a `Database` resource creates the extension:
+On CloudNativePG, use TensorChord's image (`ghcr.io/tensorchord/cloudnative-vectorchord`,
+tagged `<postgres>-<vchord>`) or mount `ghcr.io/tensorchord/vchord-scratch` as an
+image-volume extension, load the library, make the bootstrap owner `owner`,
+declare the other two roles under `spec.managed.roles`, and let a `Database`
+resource create the extensions:
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -77,12 +83,52 @@ spec:
   extensions:
     - name: vector
       ensure: present
+    - name: vchord
+      ensure: present
+```
+
+with, on the `Cluster`:
+
+```yaml
+spec:
+  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.6-1.1.1
+  postgresql:
+    shared_preload_libraries:
+      - vchord
 ```
 
 Each `passwordSecret` is a basic-auth Secret; kritik reads a `uri` key from
 the Secrets named in `database.*.existingSecret`, so either use CNPG's
 generated `uri` for the owner or add one for the managed roles (an External
 Secrets `Password` generator plus a templated `uri` works).
+
+### Egress gateway
+
+Worker-capable pods serve a forward proxy on `gateway.port`, and runner Jobs
+are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
+a runner pod can then reach nothing but DNS, Postgres and that port: its git
+fetch, an agentic review's model calls and every command it runs go through
+the gateway, which allows a destination by hostname only. The forges of the
+file's installations and the endpoints of its providers are always allowed;
+`egress.allowHosts` in the configuration file adds the rest (registries,
+release APIs), and `egress.credentials` names hosts the gateway adds a
+bearer token to when a runner sends it a plain `http://` request, so the
+runner never holds the token:
+
+```yaml
+config:
+  file:
+    egress:
+      allowHosts:
+        - api.github.com
+        - "*.githubusercontent.com"
+        - ghcr.io
+      credentials:
+        api.github.com: { file: /var/run/secrets/kritik/github-token }
+```
+
+`gateway.enabled: false` removes the listener and the Service and gives runner
+pods the `networkPolicy.egressPorts` to anywhere instead.
 
 ### Topology
 
@@ -131,7 +177,7 @@ Kubernetes: `>=1.25.0-0`
 | deploymentAnnotations | object | `{}` | Annotations added to every Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
 | embedding.apiKey | string | `""` | API key, rendered into a chart-managed Secret. Prefer `existingSecret`. |
 | embedding.baseUrl | string | `"https://openrouter.ai/api/v1"` | OpenAI-compatible embeddings endpoint (OpenRouter serves Voyage's code models). |
-| embedding.dims | int | `1024` | Vector dimension, at most 4000 (the halfvec index limit). |
+| embedding.dims | int | `1024` | Vector dimension, at most 4000. |
 | embedding.existingSecret | string | `""` | Existing Secret holding the API key. |
 | embedding.existingSecretKey | string | `"api-key"` | Key in that Secret. |
 | embedding.maxBatch | int | `64` | Max inputs per embedding request. |
@@ -140,6 +186,8 @@ Kubernetes: `>=1.25.0-0`
 | embedding.model | string | `""` | Embedding model id; empty disables indexing. |
 | embedding.reindexOnModelChange | bool | `false` | Rebuild the index when the model or dimension changes instead of refusing to start. |
 | fullnameOverride | string | `""` | Override the full release name. |
+| gateway.enabled | bool | `true` | Serve the egress gateway (ADR-0008): a forward proxy on `all` and `worker` pods that runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration file names (forges, model endpoints, `egress.allowHosts`). With it, runner pods need no direct internet egress. |
+| gateway.port | int | `8082` | Gateway port on the pods and its Service. |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
 | httpRoute.enabled | bool | `false` | Expose the webhook listener via a Gateway API HTTPRoute. |
@@ -167,7 +215,7 @@ Kubernetes: `>=1.25.0-0`
 | monitoring.serviceMonitor.scrapeTimeout | string | `"10s"` | Scrape timeout. |
 | nameOverride | string | `""` | Override the chart name used in resource names. |
 | networkPolicy.allowDNS | bool | `true` | Allow DNS egress (UDP/TCP 53). |
-| networkPolicy.egressPorts | list | `[443]` | TCP ports the pods may egress to for forges, model endpoints and git remotes. |
+| networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to for forges and model endpoints. Runner pods get these only when the gateway is disabled; with it, they reach the gateway alone. |
 | networkPolicy.enabled | bool | `false` | Create the NetworkPolicies. |
 | networkPolicy.postgresPort | int | `5432` | Postgres port allowed for egress. |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |

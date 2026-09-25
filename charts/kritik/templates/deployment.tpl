@@ -47,6 +47,10 @@ spec:
         # Selected by the webhook Service.
         kritik.home-operations.com/hooks: "true"
         {{- end }}
+        {{- if and (ne $role "ingest") $.Values.gateway.enabled }}
+        # Selected by the gateway Service and the runner network policy.
+        kritik.home-operations.com/gateway: "true"
+        {{- end }}
         {{- with $.Values.podLabels }}
         {{- tpl (toYaml .) $ | nindent 8 }}
         {{- end }}
@@ -121,6 +125,12 @@ spec:
               value: {{ tpl (toString $.Values.runner.deadline) $ | quote }}
             - name: KRITIK_RUNNER_TTL
               value: {{ tpl (toString $.Values.runner.ttl) $ | quote }}
+            - name: KRITIK_GATEWAY_ADDR
+              value: {{ printf ":%d" (int $.Values.gateway.port) | quote }}
+            {{- with include "kritik.gatewayURL" $ }}
+            - name: KRITIK_GATEWAY_URL
+              value: {{ . | quote }}
+            {{- end }}
             - name: KRITIK_REVIEW_WORKERS
               value: {{ $.Values.config.reviewWorkers | quote }}
             - name: KRITIK_INDEX_WORKERS
@@ -165,6 +175,11 @@ spec:
             - name: metrics
               containerPort: {{ $.Values.service.metricsPort }}
               protocol: TCP
+            {{- if and (ne $role "ingest") $.Values.gateway.enabled }}
+            - name: gateway
+              containerPort: {{ $.Values.gateway.port }}
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             {{- tpl (toYaml $.Values.livenessProbe) $ | nindent 12 }}
           readinessProbe:

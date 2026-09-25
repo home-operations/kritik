@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +41,8 @@ func spec() Spec {
 }
 
 func TestJobSpec(t *testing.T) {
-	k := &Kube{Namespace: "kritik", Image: "ttl.sh/x:1h", ServiceAccount: "kritik-runner", DatabaseSecret: "kritik-postgres-runner", DatabaseSecretKey: "uri", TTL: 10 * time.Minute}
+	k := &Kube{Namespace: "kritik", Image: "ttl.sh/x:1h", ServiceAccount: "kritik-runner", DatabaseSecret: "kritik-postgres-runner", DatabaseSecretKey: "uri",
+		GatewayURL: "http://kritik-gateway:8082", TTL: 10 * time.Minute}
 	j := k.job(spec())
 	if j.Name != "kritik-run-01234567" || j.Namespace != "kritik" {
 		t.Fatalf("name/namespace = %s/%s", j.Name, j.Namespace)
@@ -61,12 +63,30 @@ func TestJobSpec(t *testing.T) {
 		t.Fatalf("container = %+v", c)
 	}
 	checkRunnerEnv(t, c.Env)
+	checkProxyEnv(t, c.Env, "http://kritik-gateway:8082")
 	checkSpecMount(t, pod, c)
+	if env := (&Kube{Namespace: "kritik", Image: "x"}).job(spec()).Spec.Template.Spec.Containers[0].Env; slices.ContainsFunc(env,
+		func(e corev1.EnvVar) bool { return e.Name == "HTTPS_PROXY" }) {
+		t.Fatal("a Kube without a gateway must hand the runner no proxy")
+	}
 	if c.Resources.Limits.Memory().String() != "2Gi" {
 		t.Fatalf("resources = %+v", c.Resources)
 	}
 	if !*c.SecurityContext.ReadOnlyRootFilesystem || !*pod.SecurityContext.RunAsNonRoot {
 		t.Fatal("runner pod must be read-only and non-root")
+	}
+}
+
+// checkProxyEnv asserts the runner is pointed at the gateway for both
+// schemes and excepts only loopback.
+func checkProxyEnv(t *testing.T, vars []corev1.EnvVar, gateway string) {
+	t.Helper()
+	env := map[string]string{}
+	for _, e := range vars {
+		env[e.Name] = e.Value
+	}
+	if env["HTTPS_PROXY"] != gateway || env["HTTP_PROXY"] != gateway || env["NO_PROXY"] != "localhost,127.0.0.1" {
+		t.Fatalf("proxy env = %v", env)
 	}
 }
 

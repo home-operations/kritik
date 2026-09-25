@@ -103,7 +103,7 @@ func TestServeDrainsOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- serve(ctx, addr, http.NotFoundHandler(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+		done <- Serve(ctx, addr, http.NotFoundHandler(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	}()
 
 	deadline := time.Now().Add(5 * time.Second)

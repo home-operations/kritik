@@ -27,6 +27,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/egress"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
@@ -89,6 +90,8 @@ func run() error {
 		"role", role,
 		"addr", cfg.Addr,
 		"metrics_addr", cfg.MetricsAddr,
+		"gateway_addr", cfg.GatewayAddr,
+		"gateway_url", cfg.GatewayURL,
 		"config_file", cfg.ConfigFile,
 		"owner_dsn", cfg.DatabaseOwnerURL != "",
 		"embedding", cfg.EmbeddingEnabled(),
@@ -202,6 +205,13 @@ func run() error {
 				return err
 			}
 		}
+		// The egress gateway: runner pods' one route out, allowed by the
+		// hosts the current configuration names (ADR-0008).
+		proxy := &egress.Proxy{
+			Rules:   func() egress.Rules { return current.Get().EgressRules() },
+			Observe: m.Egress, Logger: logger.With("listener", "gateway"),
+		}
+		g.Go(func() error { return server.Serve(ctx, cfg.GatewayAddr, proxy, logger.With("listener", "gateway")) })
 		embedder := newEmbedder(cfg)
 		forges := &worker.ForgeCache{Build: worker.BuildForge}
 		workers := river.NewWorkers()
@@ -334,7 +344,7 @@ func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (
 	return &executor.Kube{
 		Client: client, Namespace: ns, Image: cfg.RunnerImage, ServiceAccount: cfg.RunnerServiceAccount,
 		DatabaseSecret: cfg.RunnerDatabaseSecret, DatabaseSecretKey: cfg.RunnerDatabaseSecretKey,
-		TTL: cfg.RunnerTTL, Logger: logger,
+		GatewayURL: cfg.GatewayURL, TTL: cfg.RunnerTTL, Logger: logger,
 	}, nil
 }
 

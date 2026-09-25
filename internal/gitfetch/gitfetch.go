@@ -109,11 +109,12 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	// Forgejo do for reachable commits. Both refspecs in one fetch so the
 	// server can send one pack.
 	err = repo.FetchContext(ctx, &git.FetchOptions{
-		RemoteName: remoteName,
-		Auth:       auth,
-		Depth:      1,
-		Tags:       git.NoTags,
-		RefSpecs:   refSpecs(f),
+		RemoteName:   remoteName,
+		Auth:         auth,
+		Depth:        1,
+		Tags:         git.NoTags,
+		RefSpecs:     refSpecs(f),
+		ProxyOptions: proxyFromEnv(),
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return nil, fmt.Errorf("gitfetch: fetch: %w", err)
@@ -150,6 +151,17 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	return res, nil
 }
 
+// proxyFromEnv is the proxy the pod was handed as HTTPS_PROXY, which go-git
+// does not read on its own. Empty means a direct connection.
+func proxyFromEnv() transport.ProxyOptions {
+	for _, name := range []string{"HTTPS_PROXY", "https_proxy"} {
+		if v := os.Getenv(name); v != "" {
+			return transport.ProxyOptions{URL: v}
+		}
+	}
+	return transport.ProxyOptions{}
+}
+
 // fetchPrior fetches the prior head in a fetch of its own, so that an
 // unreachable prior cannot fail the fetch of head and base. The error says
 // why the prior could not be had; the caller decides whether that matters.
@@ -158,11 +170,12 @@ func fetchPrior(ctx context.Context, repo *git.Repository, auth transport.AuthMe
 		return c, nil
 	}
 	err := repo.FetchContext(ctx, &git.FetchOptions{
-		RemoteName: remoteName,
-		Auth:       auth,
-		Depth:      1,
-		Tags:       git.NoTags,
-		RefSpecs:   []config.RefSpec{config.RefSpec(prior + ":" + priorRef)},
+		RemoteName:   remoteName,
+		Auth:         auth,
+		ProxyOptions: proxyFromEnv(),
+		Depth:        1,
+		Tags:         git.NoTags,
+		RefSpecs:     []config.RefSpec{config.RefSpec(prior + ":" + priorRef)},
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return nil, fmt.Errorf("gitfetch: fetch prior %s: %w", prior, err)

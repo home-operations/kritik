@@ -4,29 +4,57 @@ templates:
 values:
   - ../ci/lint-values.yaml
 tests:
-  - it: renders the webhook Service for hook-serving pods and a metrics Service for all pods
+  - it: renders the webhook Service for hook-serving pods, the gateway Service for worker-capable pods and a metrics Service for all pods
     asserts:
       - hasDocuments:
-          count: 2
+          count: 3
       - equal:
           path: spec.selector["kritik.home-operations.com/hooks"]
           value: "true"
         documentIndex: 0
       - equal:
           path: metadata.name
-          value: RELEASE-NAME-kritik-metrics
+          value: RELEASE-NAME-kritik-gateway
         documentIndex: 1
+      - equal:
+          path: spec.selector["kritik.home-operations.com/gateway"]
+          value: "true"
+        documentIndex: 1
+      - equal:
+          path: spec.ports[0].port
+          value: 8082
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-metrics
+        documentIndex: 2
       - notExists:
           path: spec.selector["kritik.home-operations.com/hooks"]
-        documentIndex: 1
+        documentIndex: 2
 
-  - it: renders only the metrics Service for a worker-only topology
+  - it: renders the gateway and metrics Services for a worker-only topology
     set:
       roles.all.enabled: false
       roles.worker.enabled: true
     asserts:
       - hasDocuments:
-          count: 1
+          count: 2
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-gateway
+        documentIndex: 0
       - equal:
           path: metadata.name
           value: RELEASE-NAME-kritik-metrics
+        documentIndex: 1
+
+  - it: leaves the gateway Service out when the gateway is disabled
+    set:
+      gateway.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-metrics
+        documentIndex: 1

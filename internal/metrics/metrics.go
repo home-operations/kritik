@@ -29,6 +29,7 @@ type Metrics struct {
 	modelCalls     *prometheus.CounterVec
 	modelTokens    *prometheus.CounterVec
 	modelCost      *prometheus.CounterVec
+	egress         *prometheus.CounterVec
 }
 
 // Label names shared across series.
@@ -38,6 +39,7 @@ const (
 	lblRole         = "role"
 	lblOutcome      = "outcome"
 	lblInstallation = "installation"
+	lblKind         = "kind"
 )
 
 // New registers the collectors on reg.
@@ -55,6 +57,10 @@ func New(reg prometheus.Registerer) *Metrics {
 		reviews: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_reviews_total", Help: "Reviews finished, by terminal status.",
 		}, []string{lblTenant, "status"}),
+		egress: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritik_egress_requests_total",
+			Help: "Requests runner pods made through the gateway, by kind (connect, http) and outcome (allowed, refused, error).",
+		}, []string{lblKind, lblOutcome}),
 		reviewDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritik_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",
 			Buckets: []float64{5, 10, 20, 30, 60, 120, 300, 600, 900},
@@ -99,7 +105,7 @@ func New(reg prometheus.Registerer) *Metrics {
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,
 		m.contextChunks, m.indexRuns, m.indexChunks,
-		m.runnerRuns, m.runnerDuration, m.leaseWait, m.modelCalls, m.modelTokens, m.modelCost)
+		m.runnerRuns, m.runnerDuration, m.leaseWait, m.modelCalls, m.modelTokens, m.modelCost, m.egress)
 	return m
 }
 
@@ -199,4 +205,12 @@ func (m *Metrics) ModelCall(tenant, model, role, outcome string, inputTokens, ca
 	if costUSD > 0 {
 		m.modelCost.WithLabelValues(tenant, model, role).Add(costUSD)
 	}
+}
+
+// Egress counts one gateway request.
+func (m *Metrics) Egress(kind, outcome string) {
+	if m == nil {
+		return
+	}
+	m.egress.WithLabelValues(kind, outcome).Inc()
 }

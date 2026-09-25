@@ -86,9 +86,14 @@ file under `config.file`, the secrets it references under `secretMounts`, and
 optionally an embedder under `embedding` for the index. `roles.all` runs the
 single-process topology; `roles.ingest` and `roles.worker` split it.
 
-Two security notes. Install kritik into a namespace of its own: runner Jobs
+Three security notes. Install kritik into a namespace of its own: runner Jobs
 run in the release namespace, and the worker's Role can create, patch and
-delete every Secret there, though it can never get or list one. And give a Forgejo
+delete every Secret there, though it can never get or list one. Keep the
+egress gateway on (the chart's default) with a NetworkPolicy: runner pods then
+reach the outside only through the worker's forward proxy, which allows
+destinations by hostname (the forges, the model endpoints and the file's
+`egress.allowHosts`), and never hold the credentials `egress.credentials`
+lets the gateway add. And give a Forgejo
 installation a read-only `gitToken` beside its `token`: runners fetch with
 `gitToken` when it is set, and otherwise with `token`, which can write to
 the forge, inside the pod that reads untrusted pull request content.
