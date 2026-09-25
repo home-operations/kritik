@@ -176,6 +176,7 @@ func (w *Review) agentPrompt(
 		}
 		return nil
 	})
+	p.Trim()
 	return p, err
 }
 

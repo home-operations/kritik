@@ -154,9 +154,11 @@ type Config struct {
 	// executor, which runs the runner inside the worker process.
 	RunnerDatabaseURL string `env:"KRITIK_RUNNER_DATABASE_URL,unset"`
 
-	// RunSpec is the runner role's job document, a versioned JSON runner
-	// spec set on the Job by the worker.
-	RunSpec string `env:"KRITIK_RUN_SPEC"`
+	// RunSpecFile is the path of the runner role's job document, a
+	// versioned JSON runner spec the worker mounts into the Job from the
+	// run's Secret. A file rather than a variable: a spec can outgrow the
+	// kernel's 128 KiB limit on one environment string.
+	RunSpecFile string `env:"KRITIK_RUN_SPEC_FILE"`
 	// GitToken and ModelAPIKey are the runner's credentials, read from the
 	// run's own Secret. The model key is set only for an agentic review.
 	GitToken    string `env:"KRITIK_GIT_TOKEN,unset"`
@@ -184,8 +186,8 @@ func (c *Config) ValidateWorker() error {
 // ValidateRunner checks what a runner pod needs. The job document itself is
 // decoded and validated by the runner package.
 func (c *Config) ValidateRunner() error {
-	if c.RunSpec == "" {
-		return fmt.Errorf("config: KRITIK_RUN_SPEC is required for the runner role")
+	if c.RunSpecFile == "" {
+		return fmt.Errorf("config: KRITIK_RUN_SPEC_FILE is required for the runner role")
 	}
 	return nil
 }

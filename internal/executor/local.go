@@ -3,6 +3,7 @@ package executor
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -28,7 +29,12 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 		ctx, cancel = context.WithTimeout(ctx, spec.Deadline)
 		defer cancel()
 	}
-	err := runner.Run(ctx, l.Store, spec.Job, spec.Secrets, logger)
+	// The spec goes through the same encoding and strict decoding as a
+	// Job's mounted document, size limit included.
+	job, err := specRoundTrip(spec.Job)
+	if err == nil {
+		err = runner.Run(ctx, l.Store, job, spec.Secrets, logger)
+	}
 	logTail := tail(spec.Secrets.Mask(buf.String()), LogTailBytes)
 	res := Result{JobName: "local", PodName: "local", StartedAt: started, LogTail: logTail, Err: err}
 	if err != nil {
@@ -40,6 +46,14 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 		}
 	}
 	return res
+}
+
+func specRoundTrip(s runner.Spec) (runner.Spec, error) {
+	b, err := runner.EncodeSpec(s)
+	if err != nil {
+		return runner.Spec{}, fmt.Errorf("executor: %w", err)
+	}
+	return runner.DecodeSpec(b)
 }
 
 // LogTailBytes is how much of a runner's output is kept: enough to diagnose,

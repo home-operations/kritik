@@ -191,9 +191,21 @@ results reported back.
   strictness, and the last completed review's findings. The runner applies
   the merge-base `.kritik.yaml` with the same code as the worker and does not
   run the agent for a review the worker will skip. It holds no secret.
-  The runner rejects a version it does not know rather than guessing.
-- **Job-scoped secrets.** The git token and, in agentic mode, the model key
-  go into a Secret created for the run and owned by its Job, so Kubernetes
+  The runner rejects a version it does not know, or a field it does not
+  know, rather than guessing.
+- **Transport and size.** The document is a key (`run-spec.json`) of the
+  run's Secret, mounted read-only into the pod at
+  `/var/run/kritik/spec.json`, whose path `KRITIK_RUN_SPEC_FILE` names. An
+  environment variable was ruled out: Linux caps one environment string at
+  128 KiB and JSON escaping can grow a body sixfold, so a large pull request
+  would fail the Job on every retry with `E2BIG`. A Secret is capped at
+  1 MiB with the credentials beside it, so the encoded document is refused
+  above 900 KiB, and the worker cuts what a pull request grows without
+  bound first: the body to 64 KiB at a rune boundary, and the prior
+  findings to 200, halved further while the prompt is still over its
+  share.
+- **Job-scoped secrets.** The git token, in agentic mode the model key,
+  and the job document go into a Secret created for the run and owned by its Job, so Kubernetes
   deletes it with the Job. The worker creates the Secret, then the Job, then
   sets the Secret's owner reference; a failure deletes the Secret. The worker
   masks those values out of the log tail it stores.

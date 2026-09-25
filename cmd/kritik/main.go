@@ -70,7 +70,7 @@ func run() error {
 		err = cfg.ValidateWorker()
 	case config.RoleRunner:
 		if err = cfg.ValidateRunner(); err == nil {
-			runSpec, err = runner.DecodeSpec([]byte(cfg.RunSpec))
+			runSpec, err = runner.ReadSpec(cfg.RunSpecFile)
 		}
 	}
 	if err != nil {
