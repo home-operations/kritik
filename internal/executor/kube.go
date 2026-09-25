@@ -72,8 +72,17 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	for {
 		select {
 		case <-ctx.Done():
+			// The job that owned this run is gone (timeout or shutdown); a
+			// runner left behind would finish work nobody reads. Delete it,
+			// pods included, with a context that outlives the cancelled one.
 			res.Err = ctx.Err()
 			k.finish(&res)
+			dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			policy := metav1.DeletePropagationBackground
+			if err := k.Client.BatchV1().Jobs(k.Namespace).Delete(dctx, created.Name, metav1.DeleteOptions{PropagationPolicy: &policy}); err != nil {
+				k.Logger.Warn("orphaned runner job not deleted", "job", created.Name, "error", err)
+			}
 			return res
 		case <-t.C:
 		}

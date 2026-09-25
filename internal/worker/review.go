@@ -68,6 +68,14 @@ type pullRequest struct {
 	authorIsBot                      bool
 }
 
+// Timeout implements river.Worker. River's default is one minute, far
+// below a review: the runner Job may run to its deadline, then a lease
+// wait and a model call follow. The Kubernetes deadline bounds the runner;
+// this bounds the rest.
+func (w *Review) Timeout(*river.Job[jobs.ReviewArgs]) time.Duration {
+	return w.Deadline + jobTimeoutSlack
+}
+
 // Work implements river.Worker.
 func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) error {
 	args := job.Args

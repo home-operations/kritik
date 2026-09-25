@@ -717,6 +717,16 @@ parsing, writing) as it goes. Nothing about a run is lost when the Job is
 garbage-collected, and the v2 dashboard reads runs from Postgres, never
 from the Kubernetes API.
 
+**A Job never outlives its queue job.** River bounds every job with a
+timeout, one minute by default, and cancels its context past it. Each
+worker sets its own: the runner deadline plus fifteen minutes for a
+review, plus an hour for an index (the embedding pass of a large
+repository is many calls), ten minutes for a follow-up. When the context
+ends while a runner Job is still running, whether by timeout or by a
+worker shutting down, the executor deletes the Job and its pod before
+returning, so no runner finishes work nobody will read; the run row keeps
+what the Job reported up to that point.
+
 **Review fetch, in the runner pod:**
 
 1. The worker asks the forge for the PR's merge-base (§2.7) and passes the
