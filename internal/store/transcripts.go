@@ -122,18 +122,7 @@ func ModelCalls(ctx context.Context, tx pgx.Tx, f ModelCallFilter) ([]transcript
 	if set != 1 {
 		return nil, errors.New("store: a model call filter sets exactly one of review, runner run and follow-up comment")
 	}
-	rows, err := tx.Query(ctx, `SELECT id, kind, step, coalesce(review_id::text, ''), coalesce(runner_run_id::text, ''),
-		coalesce(followup_comment_id, 0), model, upstream, system, tools, messages_from, messages, response,
-		input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd::float8, duration_ms, error, truncated, created_at
-		FROM model_calls WHERE `+where+` ORDER BY created_at, step, id`, arg)
-	if err != nil {
-		return nil, fmt.Errorf("store: list model calls: %w", err)
-	}
-	out, err := pgx.CollectRows(rows, scanModelCall)
-	if err != nil {
-		return nil, fmt.Errorf("store: list model calls: %w", err)
-	}
-	return out, nil
+	return modelCallsWhere(ctx, tx, where, arg)
 }
 
 func scanModelCall(row pgx.CollectableRow) (transcript.StoredRow, error) {

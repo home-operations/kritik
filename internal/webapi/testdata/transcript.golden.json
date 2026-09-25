@@ -1,0 +1,74 @@
+{
+  "system": "You review code.",
+  "tools": [
+    {
+      "name": "grep",
+      "description": "search",
+      "inputSchema": {
+        "type": "object"
+      }
+    }
+  ],
+  "turns": [
+    {
+      "index": 0,
+      "id": "mc-1",
+      "kind": "agent_step",
+      "step": 0,
+      "model": "acme/large",
+      "upstream": "acme",
+      "system": "You review code, again.",
+      "tools": [
+        {
+          "name": "grep",
+          "description": "search",
+          "inputSchema": {
+            "type": "object"
+          }
+        }
+      ],
+      "reset": false,
+      "messagesFrom": 0,
+      "messages": [
+        {
+          "role": "user",
+          "text": "review this",
+          "toolCalls": [
+            {
+              "id": "c1",
+              "name": "grep",
+              "input": {
+                "q": "x"
+              }
+            }
+          ],
+          "toolResults": [
+            {
+              "callId": "c0",
+              "content": "hit",
+              "isError": false,
+              "truncatedBytes": 10
+            }
+          ]
+        }
+      ],
+      "response": {
+        "text": "done",
+        "toolCalls": [],
+        "stop": "end_turn"
+      },
+      "usage": {
+        "input": 10,
+        "cacheRead": 5,
+        "cacheWrite": 1,
+        "output": 2
+      },
+      "costUsd": 0.01,
+      "durationMs": 1500,
+      "error": "",
+      "truncated": false,
+      "createdAt": "2026-09-01T12:00:00Z",
+      "runnerRunId": "run-1"
+    }
+  ]
+}

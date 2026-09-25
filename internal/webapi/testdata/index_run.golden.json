@@ -1,0 +1,14 @@
+{
+  "id": "ix-1",
+  "repository": "alpha/one",
+  "commitSha": "def456",
+  "baseSha": "",
+  "embedModel": "embed",
+  "mode": "full",
+  "status": "completed",
+  "trigger": "push",
+  "chunkCount": 12,
+  "error": "",
+  "createdAt": "2026-09-01T12:00:00Z",
+  "finishedAt": "2026-09-01T12:01:30Z"
+}

@@ -176,8 +176,8 @@ func TestSweepSessions(t *testing.T) {
 			key, account, expires); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.app.Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at)
-			VALUES ($1, 'github', 'n', 'v', $2)`, key, expires); err != nil {
+		if _, err := s.app.Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at, browser_hash)
+			VALUES ($1, 'github', 'n', 'v', $2, $1)`, key, expires); err != nil {
 			t.Fatal(err)
 		}
 	}

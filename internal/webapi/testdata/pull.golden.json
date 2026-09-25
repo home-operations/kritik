@@ -1,0 +1,33 @@
+{
+  "repository": "alpha/one",
+  "number": 7,
+  "title": "Add widgets",
+  "author": "ada",
+  "state": "open",
+  "draft": false,
+  "merged": false,
+  "headSha": "abc123",
+  "headRef": "widgets",
+  "baseRef": "main",
+  "url": "https://git.example/alpha/one/pulls/7",
+  "openedAt": "2026-09-01T12:00:00Z",
+  "updatedAt": "2026-09-01T12:01:30Z",
+  "labels": [
+    {
+      "name": "bug",
+      "color": "ff0000"
+    }
+  ],
+  "lastReview": {
+    "id": "rev-1",
+    "status": "completed",
+    "mode": "single",
+    "scope": "full",
+    "findings": {
+      "blocking": 1,
+      "important": 2,
+      "nit": 3
+    },
+    "createdAt": "2026-09-01T12:00:00Z"
+  }
+}

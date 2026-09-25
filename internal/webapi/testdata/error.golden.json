@@ -1,0 +1,7 @@
+{
+  "code": "not_found",
+  "message": "tenant not found",
+  "details": {
+    "slug": "x"
+  }
+}

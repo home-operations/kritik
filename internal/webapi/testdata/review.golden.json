@@ -1,0 +1,19 @@
+{
+  "id": "rev-1",
+  "status": "completed",
+  "trigger": "push",
+  "mode": "agentic",
+  "scope": "incremental",
+  "model": "acme/large",
+  "headSha": "abc123",
+  "costUsd": 0.42,
+  "tokens": {
+    "input": 1000,
+    "output": 200
+  },
+  "durationMs": 90000,
+  "createdAt": "2026-09-01T12:00:00Z",
+  "finishedAt": "2026-09-01T12:01:30Z",
+  "skipReason": "filtered",
+  "error": ""
+}

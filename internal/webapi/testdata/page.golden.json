@@ -1,0 +1,24 @@
+{
+  "items": [
+    {
+      "id": "repo-1",
+      "fullName": "alpha/one",
+      "installation": "alpha-bot",
+      "enabled": true,
+      "managedBy": "file",
+      "defaultBranch": "main",
+      "index": {
+        "activeCommit": "def456",
+        "activeAt": "2026-09-01T12:00:00Z",
+        "lastRunStatus": "completed",
+        "lastRunAt": "2026-09-01T12:01:30Z"
+      },
+      "lastReview": {
+        "id": "rev-1",
+        "status": "completed",
+        "createdAt": "2026-09-01T12:00:00Z"
+      }
+    }
+  ],
+  "nextCursor": "opaque"
+}

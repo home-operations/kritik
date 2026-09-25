@@ -1,0 +1,39 @@
+{
+  "slug": "alpha",
+  "managedBy": "file",
+  "role": "member",
+  "installations": [
+    {
+      "name": "alpha-bot",
+      "forge": "github",
+      "host": "github.com",
+      "account": "alpha",
+      "credentialKind": "app",
+      "credentials": {
+        "clientId": true,
+        "privateKey": true,
+        "token": false,
+        "gitToken": false,
+        "webhookSecret": true
+      },
+      "hookPath": "/hooks/alpha-bot"
+    }
+  ],
+  "models": {
+    "review": "openrouter/acme-large",
+    "fallback": "openrouter/acme-small"
+  },
+  "limits": {
+    "concurrency": 2,
+    "reviewsPerDay": 50,
+    "tokensPerMonth": 1000000
+  },
+  "filter": "!pr.draft",
+  "usage": {
+    "tokens": 5000,
+    "costUsd": 1.5,
+    "tokensPerMonth": 1000000,
+    "reviewsToday": 2,
+    "reviewsPerDay": 50
+  }
+}
