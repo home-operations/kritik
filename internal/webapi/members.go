@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/mail"
@@ -188,6 +189,38 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request, t *tenantS
 	return s.changeInviteGrant(w, r, t, "")
 }
 
+// checkAdminChange holds a non-operator changing target's invite grant to
+// role to two rules, under the tenant's admin lock so concurrent changes
+// see each other: the caller must still be an admin now, not only when the
+// request was authenticated, and the change must not leave the tenant with
+// no admin but operators. Without the first, two admins demoting each
+// other at once would each succeed.
+func (s *Server) checkAdminChange(
+	ctx context.Context, tx pgx.Tx, tenantID string, p *auth.Principal, target string, grants []store.MemberGrant, role auth.Role,
+) error {
+	if p.Operator {
+		return nil
+	}
+	mine := grants
+	if target != p.Account.ID {
+		var err error
+		if mine, err = store.MemberGrants(ctx, tx, tenantID, p.Account.ID); err != nil {
+			return err
+		}
+	}
+	if (store.Member{Grants: mine}).Role() != store.RoleAdmin {
+		return errForbidden
+	}
+	others, err := store.AdminIdentities(ctx, tx, tenantID, target)
+	if err != nil {
+		return err
+	}
+	if leavesNoAdmin(s.current.Get().Web, grants, role, others) {
+		return errStatus(http.StatusConflict, CodeLastAdmin, "the tenant would be left with no admin", nil)
+	}
+	return nil
+}
+
 // changeInviteGrant sets the {accountId}'s invite-granted role to role, or
 // removes it when role is "". Forge-granted access is never touched: the
 // next sign-in would only derive it again.
@@ -218,14 +251,8 @@ func (s *Server) changeInviteGrant(w http.ResponseWriter, r *http.Request, t *te
 			return errStatus(http.StatusConflict, CodeNotInviteMember,
 				"this member's access comes from the forge, which is checked again at each sign-in; change it there", nil)
 		}
-		if target == p.Account.ID && !p.Operator {
-			others, err := store.AdminIdentities(ctx, tx, tid, target)
-			if err != nil {
-				return err
-			}
-			if leavesNoAdmin(s.current.Get().Web, grants, role, others) {
-				return errStatus(http.StatusConflict, CodeLastAdmin, "the tenant would be left with no admin", nil)
-			}
+		if err := s.checkAdminChange(ctx, tx, tid, p, target, grants, role); err != nil {
+			return err
 		}
 		if role == "" {
 			err = store.DeleteInviteMembership(ctx, tx, tid, target)

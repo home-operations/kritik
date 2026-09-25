@@ -108,6 +108,7 @@ type manageEnv struct {
 	owner   *pgxpool.Pool
 	src     *configsource.Source
 	actions *fakeActions
+	srv     *Server
 	http    *httptest.Server
 	cookie  map[string]*http.Cookie
 	account map[string]string
@@ -165,8 +166,8 @@ func newManageEnv(t *testing.T) *manageEnv {
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
 	}
-	srv := New(Config{Store: st, Current: e.src.Current, Auth: h, Keyring: kr, Actions: e.actions, WebURL: webURL, Logger: logger})
-	e.http = httptest.NewServer(srv.Handler())
+	e.srv = New(Config{Store: st, Current: e.src.Current, Auth: h, Keyring: kr, Actions: e.actions, WebURL: webURL, Logger: logger})
+	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(e.http.Close)
 	e.signIn("operator", "mgr-op", nil)
 	e.signIn("outsider", "mgr-outsider", nil)
@@ -321,6 +322,7 @@ func TestManage(t *testing.T) {
 	t.Run("collisions", func(t *testing.T) { testCollisions(t, e) })
 	t.Run("actions", func(t *testing.T) { testActions(t, e, dashID) })
 	t.Run("invites and members", func(t *testing.T) { testMembers(t, e, dashID) })
+	t.Run("mutual demotion", func(t *testing.T) { testMutualDemotion(t, e, dashID) })
 	t.Run("audit log", func(t *testing.T) { testAuditLog(t, e) })
 	t.Run("operator deletes the tenant", func(t *testing.T) { testDelete(t, e) })
 }
@@ -445,6 +447,13 @@ func testAdminUpdate(t *testing.T, e *manageEnv) {
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeReenterSecret)
 	if !strings.Contains(string(body), `"path":"installations[0].token"`) {
 		t.Errorf("reenter_secret details = %s", body)
+	}
+	plain := dashSpec(map[string]any{"value": "t"}, keep, nil)
+	plain["installations"].([]any)[0].(map[string]any)["host"] = "http://git.example"
+	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, plain)})
+	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
+	if !strings.Contains(string(body), `"path":"installations[0].host"`) {
+		t.Errorf("plain-http host = %s", body)
 	}
 	good := UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, dashSpec(keep, keep, map[string]any{"filter": "true"}))}
 	status, body = e.do("member", "PUT", "/api/v1/tenants/mgr-dash/config", good)
@@ -637,6 +646,53 @@ func testMembers(t *testing.T, e *manageEnv, dashID string) {
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
 	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: "erin@example.com", Role: "member"})
 	e.expect(status, body, http.StatusCreated, "")
+}
+
+// testMutualDemotion has two invite admins demote each other, the second
+// acting on a principal authenticated before the first change landed, as
+// two concurrent requests would.
+func testMutualDemotion(t *testing.T, e *manageEnv, dashID string) {
+	ctx := context.Background()
+	for _, who := range []string{"ann", "ben"} {
+		status, body := e.do("admin", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: who + "@example.com", Role: "admin"})
+		e.expect(status, body, http.StatusCreated, "")
+		e.signIn(who, "mgr-"+who, nil)
+		if n, err := e.st.AcceptInvites(ctx, e.account[who], who+"@example.com", time.Now()); err != nil || n != 1 {
+			t.Fatalf("AcceptInvites(%s) = %d, %v", who, n, err)
+		}
+	}
+	if err := e.st.ReplaceForgeMemberships(ctx, e.account["admin"], nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	stale := func(who string) *auth.Principal {
+		return &auth.Principal{Account: auth.Account{ID: e.account[who]}, Memberships: map[string]auth.Role{dashID: auth.RoleAdmin}}
+	}
+	demote := func(by, target string) *httptest.ResponseRecorder {
+		body := strings.NewReader(`{"role":"member"}`)
+		req := httptest.NewRequest("PATCH", "/api/v1/tenants/mgr-dash/members/"+e.account[target], body)
+		req.Header.Set("Origin", "https://kritik.example")
+		req.Header.Set("X-Kritik", "1")
+		req = req.WithContext(auth.WithPrincipal(req.Context(), stale(by)))
+		w := httptest.NewRecorder()
+		e.srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+	if w := demote("ann", "ben"); w.Code != http.StatusNoContent {
+		t.Fatalf("ann demotes ben = %d %s", w.Code, w.Body)
+	}
+	if w := demote("ben", "ann"); w.Code != http.StatusForbidden {
+		t.Fatalf("ben, no longer an admin, demotes ann = %d %s", w.Code, w.Body)
+	}
+	if w := demote("ben", "ben"); w.Code != http.StatusForbidden {
+		t.Fatalf("ben, no longer an admin, changes his own role = %d %s", w.Code, w.Body)
+	}
+	admins := e.scalar(`SELECT count(DISTINCT account_id)::text FROM memberships WHERE tenant_id = '` + dashID + `' AND role = 'admin'`)
+	if admins != "1" {
+		t.Errorf("admins left = %s, want 1", admins)
+	}
+	if err := e.st.ReplaceForgeMemberships(ctx, e.account["admin"], []store.Grant{{TenantID: dashID, Role: store.RoleAdmin}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func testAuditLog(t *testing.T, e *manageEnv) {

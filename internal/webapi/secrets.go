@@ -227,19 +227,21 @@ type installationIdentity struct {
 	forge, host, account string
 }
 
-// identityOf normalises an installation's forge, host and account: host
-// without scheme, path or case, github.com when a GitHub one names none.
+// identityOf normalises an installation's forge, host and account. The
+// host keeps its scheme (https when it names none) and path, so a secret
+// kept across http and https, or onto another path on the same host, is
+// refused; case and a trailing slash do not count. A GitHub installation
+// that names no host is github.com.
 func identityOf(in map[string]any) installationIdentity {
 	forge, _ := in["forge"].(string)
 	host, _ := in["host"].(string)
 	account, _ := in["account"].(string)
-	host = strings.ToLower(strings.TrimSpace(host))
-	if _, rest, ok := strings.Cut(host, "://"); ok {
-		host = rest
-	}
-	host, _, _ = strings.Cut(host, "/")
+	host = strings.TrimRight(strings.ToLower(strings.TrimSpace(host)), "/")
 	if host == "" && forge == string(configfile.ForgeGitHub) {
 		host = "github.com"
+	}
+	if host != "" && !strings.Contains(host, "://") {
+		host = "https://" + host
 	}
 	return installationIdentity{forge: forge, host: host, account: strings.ToLower(account)}
 }

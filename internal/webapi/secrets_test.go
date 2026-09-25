@@ -64,6 +64,18 @@ func TestSealSpec(t *testing.T) {
 			errPath: "installations[0].token", errCode: CodeReenterSecret,
 		},
 		{
+			name:    "a token is not kept from https onto http",
+			stored:  storedSpec,
+			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"http://git.example","account":"alpha","token":{"keep":true}}]}`,
+			errPath: "installations[0].token", errCode: CodeReenterSecret,
+		},
+		{
+			name:    "a token is not kept onto another path of the host",
+			stored:  storedSpec,
+			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"git.example/other","account":"alpha","token":{"keep":true}}]}`,
+			errPath: "installations[0].token", errCode: CodeReenterSecret,
+		},
+		{
 			name:    "a token is not kept onto another account",
 			stored:  storedSpec,
 			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"git.example","account":"beta","token":{"keep":true}}]}`,
@@ -249,5 +261,29 @@ func TestRenderFileTenantDurations(t *testing.T) {
 	}
 	if !strings.Contains(string(got), `"settle":"1m30s"`) {
 		t.Errorf("render = %s", got)
+	}
+}
+
+func TestCheckDashboardHosts(t *testing.T) {
+	for _, tt := range []struct {
+		host, path string
+	}{
+		{"git.example", ""}, {"https://git.example", ""}, {"", ""},
+		{"http://git.example", "installations[1].host"}, {"HTTP://git.example", "installations[1].host"},
+	} {
+		t.Run(tt.host, func(t *testing.T) {
+			tn := &configfile.Tenant{Installations: []configfile.Installation{{Host: "git.example"}, {Host: tt.host}}}
+			err := checkDashboardHosts(tn)
+			if tt.path == "" {
+				if err != nil {
+					t.Fatalf("err = %v", err)
+				}
+				return
+			}
+			e, ok := errors.AsType[*apiError](err)
+			if !ok || e.status != 422 || !strings.Contains(string(e.details), tt.path) {
+				t.Fatalf("err = %v", err)
+			}
+		})
 	}
 }

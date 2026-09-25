@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -243,6 +244,9 @@ func (s *Server) checkSpec(
 	if err != nil {
 		return nil, sealed, decodeFailure(err)
 	}
+	if err := checkDashboardHosts(&next); err != nil {
+		return nil, sealed, err
+	}
 	if prev != nil && !p.Operator {
 		old, err := configfile.DecodeTenant(*prev)
 		if err != nil {
@@ -258,6 +262,19 @@ func (s *Server) checkSpec(
 		return nil, sealed, mergeFailure(slug, &next, err, func() error { return validateWithout(current, slug, s.keyring) })
 	}
 	return &next, sealed, nil
+}
+
+// checkDashboardHosts refuses a dashboard installation on a plain-http
+// forge: its credentials would cross the network in the clear.
+func checkDashboardHosts(t *configfile.Tenant) error {
+	for i := range t.Installations {
+		if h := strings.ToLower(strings.TrimSpace(t.Installations[i].Host)); strings.HasPrefix(h, "http://") {
+			path := "installations[" + strconv.Itoa(i) + "].host"
+			return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec,
+				path+": a dashboard installation must reach its forge over https", pathDetails{Path: path})
+		}
+	}
+	return nil
 }
 
 // checkTakeover refuses a write that would claim a live tenant or
