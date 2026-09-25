@@ -2,6 +2,9 @@
    app.css; density and patterns follow konflate's list/diff screens. */
 
 /* ---- page frame ---------------------------------------------------------- */
+.route-host {
+  display: contents;
+}
 .page {
   flex: 1 1 auto;
   min-height: 0;

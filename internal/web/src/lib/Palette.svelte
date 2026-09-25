@@ -7,7 +7,9 @@
   import { router, navigate } from './router.svelte';
   import { palette, togglePalette } from './keyboard.svelte';
   import Icon from './Icon.svelte';
-  import type { Me } from './types';
+  import type { Me, Page, Pull } from './types';
+  import { getJSON } from './api.svelte';
+  import { pullRoute } from './links';
   import {
     mdiMagnify,
     mdiViewDashboardOutline,
@@ -47,8 +49,11 @@
     if (!me) {
       entries.push({ label: 'Sign in', route: { name: 'signin' }, icon: mdiLogin });
     }
-    const slug = currentSlug(r);
-    if (slug) {
+    // Every tenant the user can see gets its pages, current tenant first,
+    // so any page of any tenant is a few keystrokes away.
+    const current = currentSlug(r);
+    const slugs = [...new Set([...(current ? [current] : []), ...(me?.tenants.map((t) => t.slug) ?? [])])];
+    for (const slug of slugs) {
       entries.push(
         { label: 'Tenant overview', hint: slug, route: { name: 'tenant', slug }, icon: mdiViewDashboardOutline },
         { label: 'Repos', hint: slug, route: { name: 'repos', slug }, icon: mdiSourceRepository },
@@ -61,8 +66,31 @@
         entries.push({ label: 'Admin', hint: slug, route: { name: 'admin', slug }, icon: mdiCogOutline });
       }
     }
+    for (const p of recent) {
+      entries.push({ label: p.title, hint: `${p.repository}#${p.number}`, route: pullRoute(recentSlug, p), icon: mdiSourcePull });
+    }
     return entries;
   }
+
+  // The current tenant's recently updated pulls, fetched each time the
+  // palette opens so they are jump targets too.
+  let recent = $state<Pull[]>([]);
+  let recentSlug = $state('');
+
+  async function loadRecent(slug: string): Promise<void> {
+    try {
+      const p = await getJSON<Page<Pull>>(`/api/v1/tenants/${encodeURIComponent(slug)}/pulls?state=all&limit=20`);
+      recent = p.items;
+      recentSlug = slug;
+    } catch (err) {
+      console.error('palette recent pulls:', err);
+    }
+  }
+
+  $effect(() => {
+    const slug = currentSlug(router.route) ?? me?.tenants[0]?.slug;
+    if (palette.open && slug) void loadRecent(slug);
+  });
 
   let q = $state('');
   let idx = $state(0);

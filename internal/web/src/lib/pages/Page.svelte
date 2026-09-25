@@ -25,6 +25,8 @@
   const key = $derived(keyOf(route));
 </script>
 
+<!-- data-route exposes the parsed route to the router tests. -->
+<div class="route-host" data-route={JSON.stringify(route)}>
 {#key key}
   {#if route.name === 'overview'}
     <Overview />
@@ -52,3 +54,4 @@
     <Placeholder {route} />
   {/if}
 {/key}
+</div>
