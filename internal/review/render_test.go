@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +57,6 @@ func TestRenderSummaryDefault(t *testing.T) {
 }
 
 func TestRenderSummaryCustom(t *testing.T) {
-	longLoop := `{% for a in range(10000) %}{% for b in range(10000) %}{% if a %}{% endif %}{% endfor %}{% endfor %}`
 	tests := []struct {
 		name     string
 		template string
@@ -77,7 +77,19 @@ func TestRenderSummaryCustom(t *testing.T) {
 		{name: "string repetition", template: `{{ "x" * 1000000000000 }}`, note: "summary template"},
 		{name: "oversized filter width", template: `{{ "x"|center(1000000000000) }}`, note: "summary template"},
 		{name: "oversized output", template: `{% for i in range(10000) %}{{ "0123456789" }}{% endfor %}`, note: "64 KiB"},
-		{name: "deadline", template: longLoop, note: "time"},
+		{name: "deadline", template: "{{ number }}", note: "time"},
+		{name: "loop iteration budget", template: `{% for a in range(10000) %}{% for b in range(10000) %}{% endfor %}{% endfor %}`, note: "summary template"},
+		{name: "numbers still add", template: `{% for f in findings %}{{ loop.index0 + 1 }}{% endfor %}{% set n = counts.blocking + counts.nit %}={{ n }}`,
+			want: []string{"12=2"}},
+		{name: "string +", template: `{{ summary.take + "x" }}`, note: "summary template"},
+		{name: "list +", template: `{{ findings + findings }}`, note: "summary template"},
+		{name: "concatenation ~", template: `{{ model ~ model }}`, note: "summary template"},
+		{name: "block set", template: `{% set x %}a{% endset %}{{ x }}`, note: "summary template"},
+		{name: "filter block", template: `{% filter upper %}a{% endfilter %}`, note: "summary template"},
+		{name: "call block", template: `{% call f() %}a{% endcall %}`, note: "summary template"},
+		{name: "with block", template: `{% with a = 1 %}{{ a }}{% endwith %}`, note: "summary template"},
+		{name: "reserved names", template: `{{ __kritik_step() }}`, note: "summary template"},
+		{name: "large literal", template: "{{ [" + strings.Repeat("1,", 300) + "1] }}", note: "summary template"},
 		{name: "mutating a list", template: `{% set l = [] %}{{ l.append(1) }}`, note: "summary template"},
 	}
 	for _, tt := range tests {
@@ -85,7 +97,7 @@ func TestRenderSummaryCustom(t *testing.T) {
 			ctx := t.Context()
 			if tt.name == "deadline" {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, 200*time.Millisecond)
+				ctx, cancel = context.WithTimeout(ctx, 0)
 				defer cancel()
 			}
 			body, notes := RenderSummary(ctx, Templates{Summary: tt.template}, sampleData())
@@ -147,5 +159,42 @@ func TestRenderInline(t *testing.T) {
 	body, notes = RenderInline(t.Context(), Templates{Inline: "{% include 'x' %}"}, f)
 	if len(notes) != 1 || !strings.Contains(body, "**nil map write**") {
 		t.Fatalf("fallback inline = %q, notes %v", body, notes)
+	}
+}
+
+// TestRenderMemoryIsBounded renders templates that try to build large
+// values in gonja's private buffers or by repeated growth. Each must fall
+// back quickly, and the render must allocate little on the way.
+func TestRenderMemoryIsBounded(t *testing.T) {
+	const maxAlloc = 64 << 20
+	s60k := `{% set s = "a"|center(60000) %}`
+	tests := map[string]string{
+		"block set of a loop":        s60k + `{% set x %}{% for i in range(10000) %}{{ s }}{% endfor %}{% endset %}`,
+		"block set of a nested loop": s60k + `{% set x %}{% for i in range(10000) %}{% for j in range(10000) %}{{ s }}{% endfor %}{% endfor %}{% endset %}`,
+		"chained concatenation":      `{% set a = "aaaaaaaaaaaaaaaa" %}` + strings.Repeat(`{% set a = a ~ a %}`, 12) + `{{ a|length }}`,
+		"chained addition":           `{% set a = "aaaaaaaaaaaaaaaa" %}` + strings.Repeat(`{% set a = a + a %}`, 12) + `{{ a|length }}`,
+		"nested loops over a string": s60k + `{% for c in s %}{% for d in s %}{% endfor %}{% endfor %}`,
+		"chained growth by filter":   `{% set b = "a"|center(40000) %}` + strings.Repeat(`{% set b = b|replace(" ", "  ") %}`, 12),
+		"join of repeated value":     s60k + "{{ [" + strings.Repeat("s,", 200) + "s]|join }}",
+	}
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			var before, after runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			started := time.Now()
+			body, notes := RenderSummary(t.Context(), Templates{Summary: src}, sampleData())
+			elapsed := time.Since(started)
+			runtime.ReadMemStats(&after)
+			if len(notes) != 1 || !strings.Contains(body, notes[0]) {
+				t.Fatalf("want a fallback with a note, got notes %v", notes)
+			}
+			if alloc := after.TotalAlloc - before.TotalAlloc; alloc > maxAlloc {
+				t.Fatalf("render allocated %d MiB", alloc>>20)
+			}
+			if elapsed > time.Second {
+				t.Fatalf("render took %s", elapsed)
+			}
+		})
 	}
 }

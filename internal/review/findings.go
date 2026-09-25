@@ -1,6 +1,33 @@
 // Package review turns a context pack into a prompt, a model answer into
 // findings, and findings into the comments kritik posts. It knows nothing
 // about forges or models beyond their interfaces.
+//
+// # Templates
+//
+// Comments are rendered from Jinja2 templates (gonja) that a repository may
+// replace. Templates run in a bounded subset of the language, and one that
+// steps outside it falls back to kritik's default with a note:
+//
+//   - Statements: if/elif/else, for (with else, break, continue; not
+//     recursive), set in the expression form {% set name = expression %},
+//     raw and autoescape. Not available: block-form set, filter, call,
+//     macro, with, block, do, trans, include, import, from and extends.
+//   - Operators: comparisons, and, or, not, in, is, -, /, //, % and + on
+//     numbers. Not available: + on strings or lists, ~, * and **. Write
+//     parts side by side instead of concatenating them.
+//   - Globals: range (at most 10,000 items), dict, cycler and joiner.
+//     Filters: gonja's built-ins except random and format. Methods: string
+//     methods and the read-only dict (keys, values, items, get, copy) and
+//     list (copy) methods.
+//   - Limits: output of 64 KiB, marker included; 20,000 loop iterations
+//     per render, charged when a loop starts; values kept by set or
+//     returned by a filter or method of at most 64 KiB; literals of at most
+//     256 items; nesting of at most 64; a template source of at most
+//     64 KiB; two seconds per render. Identifiers starting with __kritik_
+//     are reserved.
+//
+// Trim-blocks and lstrip-blocks are on. The context keys are documented on
+// RenderData; see templates/ for the defaults.
 package review
 
 import (
