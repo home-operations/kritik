@@ -10,6 +10,11 @@
   let { transcript }: { transcript: Transcript } = $props();
   let q = $state('');
 
+  function lines(s: string): string {
+    const n = s.split('\n').length;
+    return n === 1 ? '1 line' : `${n} lines`;
+  }
+
   const toolNames = $derived.by(() => {
     const m = new Map<string, string>();
     for (const t of transcript.turns) {
@@ -40,7 +45,7 @@
   <div class="conversation-top">
     {#if transcript.system}
       <Collapsible title="System prompt">
-        {#snippet meta()}<span class="small muted">{transcript.system.split('\n').length} lines</span>{/snippet}
+        {#snippet meta()}<span class="small muted">{lines(transcript.system)}</span>{/snippet}
         <CodeBlock text={transcript.system} plain />
       </Collapsible>
     {/if}

@@ -685,15 +685,24 @@ table.data tbody tr:hover {
 .code-block.plain {
   background: transparent;
   border: none;
+  position: relative;
 }
 .code-block.plain .code-head {
+  position: absolute;
+  top: 0;
+  right: 0;
   border-bottom: none;
   padding: 0;
+  opacity: 0.6;
+}
+.code-block.plain:hover .code-head,
+.code-block.plain:focus-within .code-head {
+  opacity: 1;
 }
 .code-block.plain pre {
   font-family: var(--font-sans);
   font-size: 13px;
-  padding: 2px 0;
+  padding: 2px 72px 2px 0;
 }
 .code-more {
   align-self: flex-start;
@@ -996,5 +1005,9 @@ table.diff td.code {
   }
   .row-text {
     white-space: normal;
+  }
+  .row-meta {
+    flex-wrap: wrap;
+    flex-shrink: 1;
   }
 }
