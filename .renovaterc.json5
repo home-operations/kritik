@@ -2,14 +2,4 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["local>home-operations/renovate-config"],
   postUpdateOptions: ["gomodTidy", "gomodUpdateImportPaths"],
-  customManagers: [
-    {
-      customType: "regex",
-      description: "Digests of the runner tools' release archives in the Dockerfile, moved with their version by the shared annotated manager",
-      managerFilePatterns: ["/(^|/)Dockerfile$/"],
-      matchStrings: [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) digestVersion=(?<currentValue>\\S+)\\nARG [A-Z0-9_]+=(?<currentDigest>[a-f0-9]{64})",
-      ],
-    },
-  ],
 }
