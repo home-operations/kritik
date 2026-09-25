@@ -144,7 +144,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		}()
 	}
 
-	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase)
+	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, settings.Mode)
 	if err != nil {
 		return err
 	}
@@ -405,16 +405,16 @@ func (w *Review) record(ctx context.Context, args jobs.ReviewArgs, pr *pullReque
 // start records the review and its runner run, and reads the last
 // completed review the new one may build on.
 func (w *Review) start(
-	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase string,
+	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase string, mode configfile.ReviewMode,
 ) (reviewID, runID string, prior priorReview, err error) {
 	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		var err error
 		if prior, err = lastCompleted(ctx, tx, pr.id); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO reviews (tenant_id, pull_request_id, head_sha, merge_base_sha, status, trigger)
-			VALUES ($1, $2, $3, $4, 'running', $5) RETURNING id`,
-			args.TenantID, pr.id, args.HeadSHA, mergeBase, args.Trigger).Scan(&reviewID); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO reviews (tenant_id, pull_request_id, head_sha, merge_base_sha, status, trigger, mode)
+			VALUES ($1, $2, $3, $4, 'running', $5, $6) RETURNING id`,
+			args.TenantID, pr.id, args.HeadSHA, mergeBase, args.Trigger, string(mode)).Scan(&reviewID); err != nil {
 			return fmt.Errorf("worker: insert review: %w", err)
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, review_id, kind) VALUES ($1, $2, 'review') RETURNING id`,

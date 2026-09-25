@@ -335,6 +335,12 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	if status != "completed" {
 		t.Fatalf("status = %s (%s)", status, errText)
 	}
+	var mode string
+	if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT mode FROM reviews WHERE id = $1`, reviewID).Scan(&mode)
+	}); err != nil || mode != "agentic" {
+		t.Fatalf("review mode = %q, %v", mode, err)
+	}
 	run := h.agentRow(t, reviewID)
 	var tools map[string]int
 	var timeline []map[string]any
