@@ -34,9 +34,9 @@ kritik is unreleased, so the switch costs no migration of anyone's data.
   halfvec_cosine_ops)` with default options: no partitioning, since the
   table stays far below the size at which VectorChord recommends `lists`,
   and the similarity query is unchanged (`ORDER BY embedding <=> $1
-  LIMIT n`). `EnsureIndexSchema` checks the index's access method on every
-  start and replaces one built with anything else, so a database created
-  by an earlier build converts itself.
+  LIMIT n`). Nothing supports the HNSW index: kritik has no deployment
+  to migrate, and its migrations were flattened into one schema file at
+  the same time.
 - The similarity query runs with `SET LOCAL vchordrq.prefilter = on`: its
   filters, the index generation and the tenant policy, are strict and
   cheap, which is when VectorChord recommends it, and with prefilter the
