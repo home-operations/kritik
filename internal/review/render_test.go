@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nikolalohinski/gonja/v2/config"
+	"github.com/nikolalohinski/gonja/v2/exec"
 )
 
 func sampleData() RenderData {
@@ -169,21 +172,30 @@ func TestRenderMemoryIsBounded(t *testing.T) {
 	const maxAlloc = 64 << 20
 	s60k := `{% set s = "a"|center(60000) %}`
 	tests := map[string]string{
-		"block set of a loop":        s60k + `{% set x %}{% for i in range(10000) %}{{ s }}{% endfor %}{% endset %}`,
-		"block set of a nested loop": s60k + `{% set x %}{% for i in range(10000) %}{% for j in range(10000) %}{{ s }}{% endfor %}{% endfor %}{% endset %}`,
-		"chained concatenation":      `{% set a = "aaaaaaaaaaaaaaaa" %}` + strings.Repeat(`{% set a = a ~ a %}`, 12) + `{{ a|length }}`,
-		"chained addition":           `{% set a = "aaaaaaaaaaaaaaaa" %}` + strings.Repeat(`{% set a = a + a %}`, 12) + `{{ a|length }}`,
-		"nested loops over a string": s60k + `{% for c in s %}{% for d in s %}{% endfor %}{% endfor %}`,
-		"chained growth by filter":   `{% set b = "a"|center(40000) %}` + strings.Repeat(`{% set b = b|replace(" ", "  ") %}`, 12),
-		"join of repeated value":     s60k + "{{ [" + strings.Repeat("s,", 200) + "s]|join }}",
+		"block set of a loop":               s60k + `{% set x %}{% for i in range(10000) %}{{ s }}{% endfor %}{% endset %}`,
+		"block set of a nested loop":        s60k + `{% set x %}{% for i in range(10000) %}{% for j in range(10000) %}{{ s }}{% endfor %}{% endfor %}{% endset %}`,
+		"chained concatenation":             `{% set a = "aaaaaaaaaaaaaaaa" %}` + strings.Repeat(`{% set a = a ~ a %}`, 12) + `{{ a|length }}`,
+		"chained addition":                  `{% set a = "aaaaaaaaaaaaaaaa" %}` + strings.Repeat(`{% set a = a + a %}`, 12) + `{{ a|length }}`,
+		"nested loops over a string":        s60k + `{% for c in s %}{% for d in s %}{% endfor %}{% endfor %}`,
+		"chained growth by filter":          `{% set b = "a"|center(40000) %}` + strings.Repeat(`{% set b = b|replace(" ", "  ") %}`, 12),
+		"join of repeated value":            s60k + "{{ [" + strings.Repeat("s,", 200) + "s]|join }}",
+		"slice with a huge count":           `{{ ([1]|slice(8300000, fill_with=1))|length }}`,
+		"batch with a huge count":           `{{ ([1]|batch(8300000, fill_with=1))|length }}`,
+		"tojson with a huge indent":         `{{ findings|tojson(indent=5500000) }}`,
+		"indent with a huge width":          `{{ summary.take|indent(60000) }}`,
+		"map of an amplifier":               `{{ range(10000)|map("center", 60000)|list|length }}`,
+		"join method with a long separator": s60k + `{{ s.join(range(10000)|map("string")|list) }}`,
+		"tojson of long model text":         `{{ findings|tojson(indent=16) }}{{ findings|tojson(indent=16) }}`,
 	}
+	longData := sampleData()
+	longData.Result.Findings[0].Explanation = strings.Repeat("model text ", 3000)
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
 			var before, after runtime.MemStats
 			runtime.GC()
 			runtime.ReadMemStats(&before)
 			started := time.Now()
-			body, notes := RenderSummary(t.Context(), Templates{Summary: src}, sampleData())
+			body, notes := RenderSummary(t.Context(), Templates{Summary: src}, longData)
 			elapsed := time.Since(started)
 			runtime.ReadMemStats(&after)
 			if len(notes) != 1 || !strings.Contains(body, notes[0]) {
@@ -196,5 +208,65 @@ func TestRenderMemoryIsBounded(t *testing.T) {
 				t.Fatalf("render took %s", elapsed)
 			}
 		})
+	}
+}
+
+func TestMeasureRecursesIntoData(t *testing.T) {
+	d := sampleData()
+	d.Result.Findings[0].Explanation = strings.Repeat("x", 50_000)
+	m := measureValue(exec.AsValue(summaryContext(d)[keyFindings]))
+	if m.bytes < 50_000 || m.nodes < 14 {
+		t.Fatalf("measure = %+v, want the nested explanation counted", m)
+	}
+}
+
+func TestLoopsAndAdditionsAreAllGuarded(t *testing.T) {
+	tests := []struct {
+		name, src, want string
+		fails           bool
+	}{
+		{name: "loops and additions render", src: `{% for i in range(3) %}{% for j in range(2) %}{{ i + j }}{% endfor %}{% endfor %}{{ 1 + 2 }}`, want: "0112233"},
+		{name: "an addition the rewrite cannot see fails", src: `{{ +1 }}`, fails: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := execute(t.Context(), tt.src, map[string]any{}, MaxRenderBytes)
+			if tt.fails {
+				if err == nil {
+					t.Fatalf("rendered %q, want an error", out)
+				}
+				return
+			}
+			if err != nil || out != tt.want {
+				t.Fatalf("out = %q, err = %v", out, err)
+			}
+		})
+	}
+	counts, err := checkTokens(`{% for a in b %}{{ a + 1 + 2 }}{% endfor %}{% raw %}{% for x in y %}{{ 1 + 1 }}{% endraw %}{{ "for + x" }}`, config.New())
+	if err != nil || counts != (guardedCounts{loops: 1, additions: 2}) {
+		t.Fatalf("counts = %+v, err = %v", counts, err)
+	}
+}
+
+// TestLoopStopsAtTheDeadline runs a loop that is within every budget but
+// slow, under a deadline that expires part way through: the render itself,
+// not only the caller, must stop.
+func TestLoopStopsAtTheDeadline(t *testing.T) {
+	src := `{% set s = "a"|center(30000) %}{% for i in range(10000) %}{% set t = s|replace(" ", "  ") %}{% endfor %}done`
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	out, err := execute(ctx, src, map[string]any{}, MaxRenderBytes)
+	elapsed := time.Since(started)
+	if err == nil || ctx.Err() == nil {
+		t.Fatalf("out = %q, err = %v after %s; want the deadline to stop the loop", out, err, elapsed)
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("the loop ran %s past a 30ms deadline", elapsed)
+	}
+
+	g := &guard{ctx: ctx}
+	if v := g.step(nil); !v.IsError() {
+		t.Fatal("step must fail once the deadline has passed")
 	}
 }

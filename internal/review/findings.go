@@ -12,16 +12,19 @@
 //     recursive), set in the expression form {% set name = expression %},
 //     raw and autoescape. Not available: block-form set, filter, call,
 //     macro, with, block, do, trans, include, import, from and extends.
-//   - Operators: comparisons, and, or, not, in, is, -, /, //, % and + on
-//     numbers. Not available: + on strings or lists, ~, * and **. Write
-//     parts side by side instead of concatenating them.
+//   - Operators: comparisons, and, or, not, in, is, -, /, //, % and binary
+//   - on numbers. Not available: + on strings or lists, unary +, ~, * and
+//     **. Write parts side by side instead of concatenating them.
 //   - Globals: range (at most 10,000 items), dict, cycler and joiner.
 //     Filters: gonja's built-ins except random and format. Methods: string
 //     methods and the read-only dict (keys, values, items, get, copy) and
 //     list (copy) methods.
 //   - Limits: output of 64 KiB, marker included; 20,000 loop iterations
 //     per render, charged when a loop starts; values kept by set or
-//     returned by a filter or method of at most 64 KiB; literals of at most
+//     returned by a filter or method of at most 64 KiB; a filter or method
+//     call whose input or estimated allocation exceeds 256 KiB is refused,
+//     widths are at most 65,536, slice and batch counts at most 20,000, and
+//     indent, tojson's indent and expandtabs at most 16; literals of at most
 //     256 items; nesting of at most 64; a template source of at most
 //     64 KiB; two seconds per render. Identifiers starting with __kritik_
 //     are reserved.
