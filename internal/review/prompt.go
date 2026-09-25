@@ -93,9 +93,13 @@ what is not worth a finding is not worth stating. Praise lists at most three spe
 empty when nothing stands out. Each
 finding points at one line in the new version of a changed file and has a severity: blocking for a defect that must
 be fixed before merging, important for something that should be fixed, nit for optional polish. Give it a one-line
-title, an explanation of why it matters, and, when there is a concrete fix, a suggested_fix with the replacement
-code or a precise instruction. Prefer few, precise findings over many vague ones. If nothing is worth flagging,
-return an empty findings list and say so in the take.`
+title and an explanation of why it matters. When the fix is a change to the lines the finding points at, give
+replacement: those lines exactly as they should be committed, raw code without fences, with end_line when more than
+one line is replaced; the forge offers it as a one-click suggestion, so it must be complete and correct as written.
+When the fix is elsewhere or not a code change, describe it in suggested_fix instead. Give every finding with a fix
+an agent_prompt: one plain-text paragraph telling a coding agent what to change, naming the file, lines and symbols.
+Prefer few, precise findings over many vague ones. If nothing is worth flagging, return an empty findings list and
+say so in the take.`
 
 // agenticSystem is System for a reviewer that works through read-only tools
 // over the head commit and answers by calling submit_review.

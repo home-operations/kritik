@@ -235,6 +235,12 @@ func (l *localForge) CreateReview(_ context.Context, _, _ string, _ int, _ strin
 	return nil
 }
 
+func (l *localForge) LineRanges() bool { return true }
+
+func (l *localForge) FileURL(owner, repo, sha, path string, line, _ int) string {
+	return fmt.Sprintf("local://%s/%s/%s/%s#L%d", owner, repo, sha, path, line)
+}
+
 func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.StatusState, desc string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -317,7 +323,8 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 	lf.mu.Unlock()
 	sticky := comments[commentBase+1]
 	if len(comments) != 1 || !strings.HasPrefix(sticky, "<!-- kritik:pr-1 -->\n") ||
-		!strings.Contains(sticky, "- **[important]** `main.go:1` first line") || !strings.Contains(sticky, "- **Important:** 1") ||
+		!strings.Contains(sticky, "- **[important]** [`main.go:1`](local://onedr0p/home-ops/") ||
+		!strings.Contains(sticky, "/main.go#L1) first line") || !strings.Contains(sticky, "**1 finding** · 0 blocking · 1 important · 0 nit") ||
 		!strings.Contains(sticky, "- Small and focused") || !strings.Contains(sticky, "_1 finding(s) were dropped (unanchored: 1)._") {
 		t.Fatalf("comments = %v", comments)
 	}
@@ -1025,7 +1032,7 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 	}
 	lf.mu.Unlock()
 	if !strings.Contains(sticky, "_Incremental review of the changes since `"+prior[:7]+"`._") ||
-		!strings.Contains(sticky, "`main.go:1` first line") {
+		!strings.Contains(sticky, "/main.go#L1) first line") {
 		t.Fatalf("sticky comment = %q", sticky)
 	}
 

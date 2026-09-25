@@ -66,6 +66,19 @@ func (c *Client) CloneURL(owner, repo string) string {
 	return c.webBase + "/" + owner + "/" + repo + ".git"
 }
 
+// LineRanges implements forge.Client: GitHub review comments take a
+// start_line.
+func (c *Client) LineRanges() bool { return true }
+
+// FileURL implements forge.Client.
+func (c *Client) FileURL(owner, repo, sha, path string, line, endLine int) string {
+	u := fmt.Sprintf("%s/%s/%s/blob/%s/%s#L%d", c.webBase, owner, repo, sha, path, line)
+	if endLine > line {
+		u += fmt.Sprintf("-L%d", endLine)
+	}
+	return u
+}
+
 // GitToken implements forge.Client with the installation token.
 func (c *Client) GitToken(ctx context.Context) (string, error) {
 	return c.tokens.Token(ctx)
@@ -152,9 +165,11 @@ func (c *Client) CreateReview(ctx context.Context, owner, repo string, number in
 	}
 	req := &gh.PullRequestReviewRequest{CommitID: new(headSHA), Event: new("COMMENT")}
 	for _, cm := range comments {
-		req.Comments = append(req.Comments, &gh.DraftReviewComment{
-			Path: new(cm.Path), Line: new(cm.Line), Side: new("RIGHT"), Body: new(cm.Body),
-		})
+		c := &gh.DraftReviewComment{Path: new(cm.Path), Line: new(cm.Line), Side: new("RIGHT"), Body: new(cm.Body)}
+		if cm.StartLine > 0 && cm.StartLine < cm.Line {
+			c.StartLine, c.StartSide = new(cm.StartLine), new("RIGHT")
+		}
+		req.Comments = append(req.Comments, c)
 	}
 	if _, _, err := c.api.PullRequests.CreateReview(ctx, owner, repo, number, req); err != nil {
 		return fmt.Errorf("github: review #%d: %w", number, err)

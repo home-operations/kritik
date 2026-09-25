@@ -35,8 +35,8 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 	if err != nil {
 		return priorReview{}, fmt.Errorf("worker: load last completed review: %w", err)
 	}
-	rows, err := tx.Query(ctx, `SELECT path, line, severity, title, explanation, suggested_fix, posted_inline FROM findings
-		WHERE review_id = $1 ORDER BY path, line`, p.id)
+	rows, err := tx.Query(ctx, `SELECT path, line, severity, title, explanation, suggested_fix, posted_inline,
+		end_line, replacement, agent_prompt FROM findings WHERE review_id = $1 ORDER BY path, line`, p.id)
 	if err != nil {
 		return priorReview{}, fmt.Errorf("worker: load findings: %w", err)
 	}
@@ -44,7 +44,8 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 	for rows.Next() {
 		var f priorFinding
 		var sev string
-		if err := rows.Scan(&f.Path, &f.Line, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.postedInline); err != nil {
+		if err := rows.Scan(&f.Path, &f.Line, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.postedInline,
+			&f.EndLine, &f.Replacement, &f.AgentPrompt); err != nil {
 			return priorReview{}, fmt.Errorf("worker: scan finding: %w", err)
 		}
 		f.Severity = review.Severity(sev)

@@ -3,9 +3,9 @@
 {{ if .Incomplete -}}
 **Review incomplete for `{{ trunc 7 .HeadSHA }}`:** {{ .Incomplete }}. Findings posted for earlier heads may no longer apply.
 {{ else -}}
-- **Blocking:** {{ .Counts.Blocking }}
-- **Important:** {{ .Counts.Important }}
-- **Nit:** {{ .Counts.Nit }}
+{{ if .Result.Findings -}}
+**{{ len .Result.Findings }} {{ plural "finding" "findings" (len .Result.Findings) }}** · {{ .Counts.Blocking }} blocking · {{ .Counts.Important }} important · {{ .Counts.Nit }} nit
+{{ end -}}
 {{ if and .Incremental .PriorHeadSHA }}
 _Incremental review of the changes since `{{ trunc 7 .PriorHeadSHA }}`._
 {{ end }}
@@ -21,7 +21,7 @@ _Incremental review of the changes since `{{ trunc 7 .PriorHeadSHA }}`._
 **Findings**
 
 {{ range .Result.Findings -}}
-- **[{{ .Severity }}]** `{{ .Path }}:{{ .Line }}` {{ .Title }}
+- **[{{ .Severity }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ .Title }}
 {{ end -}}
 {{ else }}
 Nothing worth flagging in this diff.

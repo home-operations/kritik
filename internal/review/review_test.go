@@ -118,6 +118,23 @@ func TestParse(t *testing.T) {
 			take:   "t",
 			praise: []string{"a", "b", "c"},
 		},
+		{
+			name: "a replacement is kept only over anchored lines, without fences",
+			raw: `{"summary": {"take": "t"}, "findings": [
+			  {"path": "main.go", "line": 11, "end_line": 12, "severity": "nit", "title": "ranged", "explanation": "e", "replacement": "` + "```go\\na\\nb\\n```" + `"},
+			  {"path": "main.go", "line": 11, "end_line": 99, "severity": "nit", "title": "off range", "explanation": "e", "replacement": "a"},
+			  {"path": "main.go", "line": 12, "end_line": 12, "severity": "nit", "title": "same line", "explanation": "e", "replacement": "a", "agent_prompt": " p "}
+			]}`,
+			take: "t", kept: []string{"main.go:11:ranged", "main.go:11:off range", "main.go:12:same line"},
+		},
+		{
+			name: "RequireSuggestedFix accepts a replacement as the fix",
+			raw: `{"summary": {"take": "t"}, "findings": [
+			  {"path": "main.go", "line": 11, "severity": "important", "title": "replaced", "explanation": "e", "replacement": "x"}
+			]}`,
+			opts: ParseOptions{RequireSuggestedFix: true},
+			take: "t", kept: []string{"main.go:11:replaced"},
+		},
 		{name: "garbage errors", raw: "not json", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -144,6 +161,22 @@ func TestParse(t *testing.T) {
 			}
 			if !slices.Equal(kept, tt.kept) {
 				t.Errorf("kept = %q, want %q", kept, tt.kept)
+			}
+			for _, f := range res.Findings {
+				switch f.Title {
+				case "ranged":
+					if f.EndLine != 12 || f.Replacement != "a\nb" {
+						t.Errorf("ranged = %+v", f)
+					}
+				case "off range":
+					if f.EndLine != 0 || f.Replacement != "" {
+						t.Errorf("off range = %+v", f)
+					}
+				case "same line":
+					if f.EndLine != 0 || f.Replacement != "a" || f.AgentPrompt != "p" {
+						t.Errorf("same line = %+v", f)
+					}
+				}
 			}
 			if len(dropped) != len(tt.dropped) {
 				t.Fatalf("dropped = %+v, want %v", dropped, tt.dropped)
@@ -385,8 +418,9 @@ func TestSchemas(t *testing.T) {
 // schemas declare, at the summary and the finding level.
 func TestSchemaMatchesJSONTags(t *testing.T) {
 	raw, err := json.Marshal(Result{
-		Summary:  Summary{Take: "t", Praise: []string{"p"}},
-		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityNit, Title: "t", Explanation: "e", SuggestedFix: "f"}},
+		Summary: Summary{Take: "t", Praise: []string{"p"}},
+		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityNit, Title: "t", Explanation: "e", SuggestedFix: "f",
+			EndLine: 2, Replacement: "r", AgentPrompt: "p", URL: "ignored"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -422,5 +456,13 @@ func TestBuildDefaultBudget(t *testing.T) {
 	msg, _, _ := Build(in)
 	if len(msg) > DefaultBudgetTokens*charsPerToken {
 		t.Fatalf("message is %d chars, over the default budget of %d tokens", len(msg), DefaultBudgetTokens)
+	}
+}
+
+func TestAgentPromptFence(t *testing.T) {
+	for prompt, want := range map[string]string{"plain": "```", "one `tick`": "```", "a ```fence``` inside": "````"} {
+		if got := (Finding{AgentPrompt: prompt}).AgentPromptFence(); got != want {
+			t.Errorf("fence for %q = %q, want %q", prompt, got, want)
+		}
 	}
 }

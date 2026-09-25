@@ -6,3 +6,18 @@
 
 {{ .SuggestedFix }}
 {{ end -}}
+{{ if .Replacement }}
+```suggestion
+{{ .Replacement }}
+```
+{{ end -}}
+{{ if .AgentPrompt }}
+<details>
+<summary>Prompt for a coding agent</summary>
+
+{{ .AgentPromptFence }}
+{{ .AgentPrompt }}
+{{ .AgentPromptFence }}
+
+</details>
+{{ end -}}
