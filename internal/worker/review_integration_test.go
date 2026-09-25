@@ -798,10 +798,10 @@ skip:
 review:
   instructions: [".kritik/rules.md"]
   templates:
-    summary: ".kritik/summary.md.j2"
+    summary: ".kritik/summary.md.tmpl"
 `,
-		".kritik/rules.md":      "Flag every TODO left in code.\n",
-		".kritik/summary.md.j2": "Custom summary for #{{ number }}: {{ summary.take }}\n",
+		".kritik/rules.md":        "Flag every TODO left in code.\n",
+		".kritik/summary.md.tmpl": "Custom summary for #{{ .Number }}: {{ .Result.Summary.Take }}\n",
 	})
 	docsHead := commit("docs", map[string]string{"docs/guide.md": "# Guide\n"})
 	loosened := commit("drop the skip rule", map[string]string{".kritik.yaml": "review: {}\n"})

@@ -2,781 +2,424 @@ package review
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io"
-	"math"
 	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
+	"text/template"
+	"text/template/parse"
 
-	"github.com/nikolalohinski/gonja/v2/builtins"
-	controlstructures "github.com/nikolalohinski/gonja/v2/builtins/control_structures"
-	"github.com/nikolalohinski/gonja/v2/config"
-	"github.com/nikolalohinski/gonja/v2/exec"
-	"github.com/nikolalohinski/gonja/v2/loaders"
-	"github.com/nikolalohinski/gonja/v2/nodes"
-	"github.com/nikolalohinski/gonja/v2/parser"
-	"github.com/nikolalohinski/gonja/v2/tokens"
+	"github.com/go-sprout/sprout"
+	"github.com/go-sprout/sprout/registry/conversion"
+	"github.com/go-sprout/sprout/registry/encoding"
+	"github.com/go-sprout/sprout/registry/maps"
+	"github.com/go-sprout/sprout/registry/numeric"
+	sproutreflect "github.com/go-sprout/sprout/registry/reflect"
+	"github.com/go-sprout/sprout/registry/regex"
+	"github.com/go-sprout/sprout/registry/semver"
+	"github.com/go-sprout/sprout/registry/slices"
+	"github.com/go-sprout/sprout/registry/std"
+	sproutstrings "github.com/go-sprout/sprout/registry/strings"
+	sprouttime "github.com/go-sprout/sprout/registry/time"
 )
 
 // Sandbox bounds for templates. A repository template is trusted to be
 // written by the repository's maintainers, not to be well behaved: these
 // keep a mistake in one repository's template from stalling or exhausting
-// a worker that serves every tenant. gonja renders several constructs into
-// private, uncapped buffers, so the bounds are enforced on what a template
-// may express rather than only on what it writes.
+// a worker that serves every tenant. text/template has no operators, so
+// every value a template builds passes through a function, and the
+// bounds are enforced there and on loops.
 const (
-	// maxRenderDepth bounds nested control structures.
-	maxRenderDepth = 64
 	// maxIterations is the render-wide budget of loop iterations, charged
 	// in full when a loop starts, so nested loops cannot multiply it.
 	maxIterations = 20_000
-	// maxRangeItems bounds one range() call.
-	maxRangeItems = 10_000
-	// maxLiteralItems bounds a list, tuple or dict literal.
-	maxLiteralItems = 256
-	// maxCallBytes bounds one filter or method call: its input, and an
-	// estimate of what it allocates computed from the input and arguments
-	// before the call runs, so amplifying calls fail before they allocate.
+	// maxCallBytes bounds one function call: its arguments plus an
+	// estimate of what it allocates, computed from them before the call
+	// runs so amplifying functions fail before they allocate, and its
+	// result.
 	maxCallBytes = 4 * MaxRenderBytes
-	// maxIndent bounds an argument repeated on every line or tab (indent,
-	// tojson's indent, expandtabs).
-	maxIndent = 16
-	// maxSliceCount bounds slice and batch counts: each count is a list the
-	// result holds, and the result must stay within maxIterations nodes.
-	maxSliceCount = maxIterations / 2
-	// maxWrapWidth bounds wordwrap's width. gonja builds each line by
-	// repeated concatenation, so a call allocates about input × width / 2.
-	maxWrapWidth = 1000
-	// defaultWrapWidth is wordwrap's width when none is given.
-	defaultWrapWidth = 79
 	// maxMeasureDepth bounds how deep a value is measured; anything deeper
-	// is counted by its length.
-	maxMeasureDepth = 8
+	// counts as one node.
+	maxMeasureDepth = 64
+	// nodeBytes is what a slice element, map entry or struct field is
+	// counted as beyond its contents, so a large shared structure is
+	// refused as if it were copied.
+	nodeBytes = 8
 )
 
 // Names the sandbox adds to every template. Templates may not use
-// identifiers with this prefix, so they cannot rebind them.
+// identifiers with this prefix, so they cannot call the guards themselves.
 const (
 	reservedPrefix = "__kritik_"
-	addendName     = reservedPrefix + "addend"
 	iterName       = reservedPrefix + "iter"
-	stepName       = reservedPrefix + "step"
+	templateName   = "template"
 )
 
-// templateName is the only name the loader knows: the template itself.
-const templateName = "template"
+// baseFuncs are the functions a template may call: sprout's registries
+// less those that reach outside the render (env, filesystem, network),
+// that make a render unrepeatable (random, uniqueid) or that have no use
+// in a comment (checksum, crypto), and less set and unset, which mutate a
+// dict in place and could make it contain itself. printf, print and
+// println are redefined so the guard sees them like any other function.
+var baseFuncs = func() template.FuncMap {
+	h := sprout.New()
+	if err := h.AddRegistries(
+		std.NewRegistry(),
+		sproutstrings.NewRegistry(),
+		conversion.NewRegistry(),
+		encoding.NewRegistry(),
+		numeric.NewRegistry(),
+		slices.NewRegistry(),
+		maps.NewRegistry(),
+		regex.NewRegistry(),
+		sprouttime.NewRegistry(),
+		semver.NewRegistry(),
+		sproutreflect.NewRegistry(),
+	); err != nil {
+		panic("review: sprout registries: " + err.Error())
+	}
+	fm := h.Build()
+	delete(fm, "set")
+	delete(fm, "unset")
+	fm["printf"], fm["print"], fm["println"] = fmt.Sprintf, fmt.Sprint, fmt.Sprintln
+	return fm
+}()
 
-func execute(ctx context.Context, src string, data map[string]any, limit int) (string, error) {
-	if len(src) > MaxRenderBytes {
-		return "", fmt.Errorf("%w: template source over %d bytes", errSandbox, MaxRenderBytes)
-	}
-	cfg := config.New()
-	cfg.TrimBlocks, cfg.LeftStripBlocks, cfg.KeepTrailingNewline = true, true, true
-	counts, err := checkTokens(src, cfg)
-	if err != nil {
-		return "", err
-	}
+// execute parses src, hardens it and renders it against data in a
+// sandbox, writing at most limit bytes.
+func execute(ctx context.Context, src string, data any, limit int) (string, error) {
 	g := &guard{ctx: ctx}
-	env := &exec.Environment{
-		Context:           exec.NewContext(g.globals()),
-		Filters:           g.filters(),
-		Tests:             builtins.Tests,
-		ControlStructures: g.controlStructures(),
-		Methods:           g.methods(),
-	}
-	tpl, err := exec.NewTemplate(templateName, cfg, sourceLoader(src), env)
+	t, err := template.New(templateName).Funcs(g.funcs()).Parse(src)
 	if err != nil {
 		return "", fmt.Errorf("review: parse template: %w", err)
 	}
-	h := &hardener{seen: map[uintptr]bool{}}
-	if err := h.harden(reflect.ValueOf(tpl.Root())); err != nil {
-		return "", err
-	}
-	if h.rewritten != counts {
-		return "", fmt.Errorf("%w: %d loops and %d additions in the source, %d and %d guarded",
-			errSandbox, counts.loops, counts.additions, h.rewritten.loops, h.rewritten.additions)
+	if err := harden(t); err != nil {
+		return "", fmt.Errorf("%w: %w", errSandbox, err)
 	}
 	w := &cappedWriter{ctx: ctx, limit: limit}
-	if err := tpl.Execute(w, exec.NewContext(data)); err != nil {
-		if w.over {
-			return "", errTooLarge
-		}
-		return "", fmt.Errorf("review: execute template: %w", err)
+	if err := t.Execute(w, data); err != nil {
+		return "", fmt.Errorf("review: render: %w", err)
 	}
-	return w.b.String(), nil
+	return w.String(), nil
 }
 
-// guardedCounts is how many loops and additions a template has. The lexer
-// and the rewrite count them independently, so a gonja change that hides
-// either from the rewrite fails the template instead of escaping the guards.
-type guardedCounts struct{ loops, additions int }
-
-// checkTokens rejects operators that build a large value in one step,
-// before any guard can see it: * and ** (string repetition,
-// exponentiation) and ~ (concatenation), and identifiers in the sandbox's
-// reserved namespace. It counts the loops and additions harden must guard.
-func checkTokens(src string, cfg *config.Config) (guardedCounts, error) {
-	var counts guardedCounts
-	prev := tokens.Error
-	for s := tokens.LexAll(src, cfg); !s.End(); s.Next() {
-		t := s.Current()
-		switch {
-		case t.Type == tokens.Multiply || t.Type == tokens.Power || t.Type == tokens.Tilde:
-			return counts, fmt.Errorf("%w: the %s operator is not available (line %d)", errSandbox, t.Val, t.Line)
-		case t.Type == tokens.Name && strings.HasPrefix(t.Val, reservedPrefix):
-			return counts, fmt.Errorf("%w: names starting with %s are reserved (line %d)", errSandbox, reservedPrefix, t.Line)
-		case t.Type == tokens.Addition:
-			counts.additions++
-		case t.Type == tokens.Name && t.Val == "for" && prev == tokens.BlockBegin:
-			counts.loops++
-		}
-		prev = t.Type
+// harden rejects what the guards cannot bound and routes every loop's
+// value through the iteration guard. template and define are refused:
+// a template that invokes others can fan out exponentially with no loop
+// and no output for the guards to see.
+func harden(t *template.Template) error {
+	if len(t.Templates()) > 1 {
+		return errors.New("define is not available")
 	}
-	return counts, nil
+	return walk(t.Tree, t.Root)
 }
 
-// harden walks the parsed template through exported fields only, bounds
-// literals, and rewrites the tree so the guards see every addition and
-// every loop: the operands of + pass through addendName, a loop's iterable
-// through iterName, and each iteration starts with stepName. A node that
-// keeps expressions in unexported fields cannot be rewritten, so any
-// unexported field that is not a plain token or value fails the template.
-type hardener struct {
-	seen      map[uintptr]bool
-	rewritten guardedCounts
-}
-
-func (h *hardener) harden(v reflect.Value) error {
-	switch v.Kind() {
-	case reflect.Interface:
-		if v.IsNil() {
+func walk(tree *parse.Tree, node parse.Node) error {
+	switch n := node.(type) {
+	case *parse.ListNode:
+		if n == nil {
 			return nil
 		}
-		return h.harden(v.Elem())
-	case reflect.Pointer:
-		if v.IsNil() || h.seen[v.Pointer()] {
-			return nil
-		}
-		h.seen[v.Pointer()] = true
-		switch v.Interface().(type) {
-		case *tokens.Token, *guard:
-			return nil
-		}
-		if err := checkLiteral(v.Interface()); err != nil {
-			return err
-		}
-		if err := h.harden(v.Elem()); err != nil {
-			return err
-		}
-		h.rewrite(v.Interface())
-		return nil
-	case reflect.Struct:
-		return h.hardenStruct(v)
-	case reflect.Slice, reflect.Array:
-		for i := range v.Len() {
-			if err := h.harden(v.Index(i)); err != nil {
+		for _, c := range n.Nodes {
+			if err := walk(tree, c); err != nil {
 				return err
 			}
 		}
-	case reflect.Map:
-		for it := v.MapRange(); it.Next(); {
-			if err := h.harden(it.Value()); err != nil {
+	case *parse.ActionNode:
+		return walk(tree, n.Pipe)
+	case *parse.IfNode:
+		return walkBranch(tree, &n.BranchNode)
+	case *parse.WithNode:
+		return walkBranch(tree, &n.BranchNode)
+	case *parse.RangeNode:
+		if err := walkBranch(tree, &n.BranchNode); err != nil {
+			return err
+		}
+		guard := parse.NewIdentifier(iterName).SetTree(tree).SetPos(n.Pipe.Pos)
+		n.Pipe.Cmds = append(n.Pipe.Cmds, &parse.CommandNode{NodeType: parse.NodeCommand, Pos: n.Pipe.Pos, Args: []parse.Node{guard}})
+	case *parse.PipeNode:
+		if n == nil {
+			return nil
+		}
+		for _, c := range n.Cmds {
+			if err := walk(tree, c); err != nil {
 				return err
 			}
 		}
+	case *parse.CommandNode:
+		for _, a := range n.Args {
+			if err := walk(tree, a); err != nil {
+				return err
+			}
+		}
+	case *parse.ChainNode:
+		return walk(tree, n.Node)
+	case *parse.IdentifierNode:
+		if strings.HasPrefix(n.Ident, reservedPrefix) {
+			return fmt.Errorf("%s is reserved", n.Ident)
+		}
+	case *parse.TemplateNode:
+		return errors.New("template is not available")
 	}
 	return nil
 }
 
-func (h *hardener) hardenStruct(v reflect.Value) error {
-	t := v.Type()
-	for i := range t.NumField() {
-		f, fv := t.Field(i), v.Field(i)
-		if !f.IsExported() {
-			switch fv.Kind() {
-			case reflect.Bool, reflect.Int, reflect.String:
-				continue
-			}
-			if fv.IsZero() || f.Type == reflect.TypeFor[*tokens.Token]() || f.Type == reflect.TypeFor[*nodes.Data]() ||
-				f.Type == reflect.TypeFor[*guard]() {
-				continue
-			}
-			return fmt.Errorf("%w: %s is not available", errSandbox, t.Name())
-		}
-		if err := h.harden(fv); err != nil {
+func walkBranch(tree *parse.Tree, b *parse.BranchNode) error {
+	for _, n := range []parse.Node{b.Pipe, b.List, b.ElseList} {
+		if err := walk(tree, n); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func checkLiteral(n any) error {
-	items := 0
-	switch n := n.(type) {
-	case *nodes.List:
-		items = len(n.Val)
-	case *nodes.Tuple:
-		items = len(n.Val)
-	case *nodes.Dict:
-		items = len(n.Pairs)
-	}
-	if items > maxLiteralItems {
-		return fmt.Errorf("%w: literal over %d items", errSandbox, maxLiteralItems)
-	}
-	return nil
-}
-
-// rewrite routes the operands of + and every loop through the guards.
-func (h *hardener) rewrite(n any) {
-	switch n := n.(type) {
-	case *nodes.BinaryExpression:
-		if n.Operator != nil && n.Operator.Token.Type == tokens.Addition {
-			n.Left, n.Right = guardCall(addendName, n.Left), guardCall(addendName, n.Right)
-			h.rewritten.additions++
-		}
-	case *controlstructures.ForControlStructure:
-		h.rewritten.loops++
-		n.ObjectEvaluator = guardCall(iterName, n.ObjectEvaluator)
-		step := &nodes.Output{Start: n.Position(), Expression: guardCall(stepName, nil), End: n.Position()}
-		n.BodyWrapper.Nodes = append([]nodes.Node{step}, n.BodyWrapper.Nodes...)
-	}
-}
-
-// guardCall wraps arg, if any, in a call to the named sandbox function.
-func guardCall(name string, arg nodes.Expression) *nodes.Call {
-	pos := &tokens.Token{Type: tokens.Name, Val: name}
-	if arg != nil && arg.Position() != nil {
-		p := *arg.Position()
-		pos = &tokens.Token{Type: tokens.Name, Val: name, Line: p.Line, Col: p.Col, Pos: p.Pos}
-	}
-	c := &nodes.Call{Location: pos, Func: &nodes.Name{Name: pos}, Kwargs: map[string]nodes.Expression{}}
-	if arg != nil {
-		c.Args = []nodes.Expression{arg}
-	}
-	return c
-}
-
-// sourceLoader serves the template's own source under templateName and
-// nothing else, so include, import and extends cannot read a file even if
-// they were available.
-type sourceLoader string
-
-func (l sourceLoader) Read(path string) (io.Reader, error) {
-	if path != templateName {
-		return nil, fmt.Errorf("review: templates cannot load %q", path)
-	}
-	return strings.NewReader(string(l)), nil
-}
-
-func (l sourceLoader) Resolve(path string) (string, error) {
-	if path != templateName {
-		return "", fmt.Errorf("review: templates cannot load %q", path)
-	}
-	return path, nil
-}
-
-func (sourceLoader) Inherit(from string) (loaders.Loader, error) {
-	return nil, fmt.Errorf("review: templates cannot load %q", from)
-}
-
+// cappedWriter refuses to grow past limit and stops once ctx is done.
 type cappedWriter struct {
 	ctx   context.Context
-	b     strings.Builder
 	limit int
-	over  bool
+	strings.Builder
 }
 
 func (w *cappedWriter) Write(p []byte) (int, error) {
 	if err := w.ctx.Err(); err != nil {
 		return 0, err
 	}
-	if w.b.Len()+len(p) > w.limit {
-		w.over = true
+	if w.Len()+len(p) > w.limit {
 		return 0, errTooLarge
 	}
-	return w.b.Write(p)
+	return w.Builder.Write(p)
 }
 
 // guard is one render's sandbox state. A render runs on one goroutine, so
 // its counters need no synchronisation.
 type guard struct {
 	ctx        context.Context
-	depth      int
 	iterations int
 }
 
-func (g *guard) enter() error {
+// funcs is the template's function map: every base function wrapped by
+// the guard, plus the iteration guard harden inserts.
+func (g *guard) funcs() template.FuncMap {
+	fm := make(template.FuncMap, len(baseFuncs)+1)
+	for name, fn := range baseFuncs {
+		fm[name] = g.wrap(name, reflect.ValueOf(fn))
+	}
+	fm[iterName] = g.iter
+	return fm
+}
+
+// wrap returns fn behind a check of the deadline, of its arguments and of
+// its result. A failed check panics; text/template recovers a panic in a
+// function call into an execution error.
+func (g *guard) wrap(name string, fn reflect.Value) any {
+	t := fn.Type()
+	estimate := estimates[name]
+	return reflect.MakeFunc(t, func(args []reflect.Value) []reflect.Value {
+		if err := g.ctx.Err(); err != nil {
+			panic(err)
+		}
+		size := 0
+		for _, a := range args {
+			size += measure(a, 0, maxCallBytes)
+		}
+		if estimate != nil {
+			size += estimate(args)
+		}
+		if size > maxCallBytes {
+			panic(fmt.Errorf("%w: %s: %d bytes of input and estimated allocation, at most %d", errSandbox, name, size, maxCallBytes))
+		}
+		var out []reflect.Value
+		if t.IsVariadic() {
+			out = fn.CallSlice(args)
+		} else {
+			out = fn.Call(args)
+		}
+		if n := measure(out[0], 0, maxCallBytes); n > maxCallBytes {
+			panic(fmt.Errorf("%w: %s returned more than %d bytes", errSandbox, name, maxCallBytes))
+		}
+		return out
+	}).Interface()
+}
+
+// iter is appended to every range pipeline. It charges the loop's
+// iterations to the render's budget and passes the value through.
+func (g *guard) iter(v any) (any, error) {
 	if err := g.ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
-	if g.depth >= maxRenderDepth {
-		return fmt.Errorf("%w: nesting deeper than %d", errSandbox, maxRenderDepth)
-	}
-	g.depth++
-	return nil
-}
-
-func (g *guard) leave() { g.depth-- }
-
-// allowedControlStructures omits every construct that renders into a
-// private buffer (block-form set, filter, call, macro), that reads another
-// template (extends, from, import, include), whose state the sandbox cannot
-// inspect (with, block, do), or that needs gettext (trans). set is
-// replaced by setStructure, which takes only the expression form.
-var allowedControlStructures = []string{"autoescape", "break", "continue", "for", "if", "raw"}
-
-func (g *guard) controlStructures() *exec.ControlStructureSet {
-	set := make(map[string]parser.ControlStructureParser, len(allowedControlStructures)+1)
-	for _, name := range allowedControlStructures {
-		parse, ok := controlstructures.All.Get(name)
-		if !ok {
-			panic("review: gonja has no control structure " + name)
-		}
-		set[name] = g.guarded(parse)
-	}
-	set["set"] = g.guarded(parseSet)
-	return exec.NewControlStructureSet(set)
-}
-
-func (g *guard) guarded(parse parser.ControlStructureParser) parser.ControlStructureParser {
-	return func(p *parser.Parser, args *parser.Parser) (nodes.ControlStructure, error) {
-		cs, err := parse(p, args)
-		if err != nil {
-			return nil, err
-		}
-		if f, ok := cs.(*controlstructures.ForControlStructure); ok && f.Recursive {
-			return nil, fmt.Errorf("%w: recursive loops are not available", errSandbox)
-		}
-		inner, ok := cs.(exec.ControlStructure)
-		if !ok {
-			return cs, nil
-		}
-		return &guardedStructure{ControlStructure: inner, g: g}, nil
-	}
-}
-
-type guardedStructure struct {
-	exec.ControlStructure
-	g *guard
-}
-
-func (s *guardedStructure) Execute(r *exec.Renderer, tag *nodes.ControlStructureBlock) error {
-	if err := s.g.enter(); err != nil {
-		return err
-	}
-	defer s.g.leave()
-	return s.ControlStructure.Execute(r, tag)
-}
-
-// setStructure is {% set name = expression %}. The value is bounded like
-// any filter result, so repeated assignment cannot grow a value past the
-// output limit.
-type setStructure struct {
-	Location   *tokens.Token
-	Name       string
-	Expression nodes.Expression
-}
-
-func parseSet(p *parser.Parser, args *parser.Parser) (nodes.ControlStructure, error) {
-	name := args.Match(tokens.Name)
-	if name == nil || args.Match(tokens.Assign) == nil {
-		return nil, fmt.Errorf("%w: only {%% set name = expression %%} is available", errSandbox)
-	}
-	expr, err := args.ParseExpression()
+	n, err := iterations(reflect.ValueOf(v))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", errSandbox, err)
 	}
-	if !args.End() {
-		return nil, args.Error("set takes one name and one expression", args.Current())
+	g.iterations += n
+	if g.iterations > maxIterations {
+		return nil, fmt.Errorf("%w: loops over more than %d items per render", errSandbox, maxIterations)
 	}
-	return &setStructure{Location: p.Current(), Name: name.Val, Expression: expr}, nil
+	return v, nil
 }
 
-func (s *setStructure) Position() *tokens.Token { return s.Location }
-
-func (s *setStructure) String() string {
-	return fmt.Sprintf("set(%s, line %d)", s.Name, s.Location.Line)
+func iterations(v reflect.Value) (int, error) {
+	v = indirect(v)
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array, reflect.Map, reflect.String:
+		return v.Len(), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(min(max(v.Int(), 0), maxIterations+1)), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return int(min(v.Uint(), maxIterations+1)), nil
+	case reflect.Func, reflect.Chan:
+		return 0, fmt.Errorf("cannot loop over a %s", v.Kind())
+	}
+	return 0, nil
 }
 
-func (s *setStructure) Execute(r *exec.Renderer, _ *nodes.ControlStructureBlock) error {
-	v := r.Eval(s.Expression)
-	if v.IsError() {
-		return v
-	}
-	if err := checkValue(v); err != nil {
-		return err
-	}
-	r.Environment.Context.Set(s.Name, v.Interface())
-	return nil
-}
-
-func (g *guard) globals() map[string]any {
-	out := map[string]any{
-		"range":    g.rangeFn,
-		addendName: addend,
-		iterName:   g.iter,
-		stepName:   g.step,
-	}
-	for _, name := range []string{"cycler", "dict", "joiner"} {
-		fn, ok := builtins.GlobalFunctions.Get(name)
-		if !ok {
-			panic("review: gonja has no global " + name)
+func indirect(v reflect.Value) reflect.Value {
+	for v.Kind() == reflect.Interface || v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return reflect.Value{}
 		}
-		out[name] = fn
-	}
-	return out
-}
-
-// addend passes numbers to + and refuses strings and lists, whose
-// concatenation grows a value in one expression.
-func addend(params *exec.VarArgs) *exec.Value {
-	v := params.First()
-	if v.IsString() || v.IsList() {
-		return exec.AsValue(fmt.Errorf("%w: + on strings or lists is not available; write the parts side by side", errSandbox))
+		v = v.Elem()
 	}
 	return v
 }
 
-// iter charges a loop's whole length to the render's iteration budget
-// before the loop starts.
-func (g *guard) iter(params *exec.VarArgs) *exec.Value {
-	v := params.First()
-	if err := g.ctx.Err(); err != nil {
-		return exec.AsValue(err)
+// measure is the bytes v holds: every string's length plus nodeBytes per
+// element, entry or field. It stops once past limit, so a structure that
+// shares one large value many times over is refused quickly rather than
+// walked in full.
+func measure(v reflect.Value, depth, limit int) int {
+	v = indirect(v)
+	if !v.IsValid() {
+		return 0
 	}
-	n := 0
-	switch {
-	case v.IsString():
-		n = len(v.String())
-	case v.IsList(), v.IsDict():
-		n = v.Len()
+	if depth >= maxMeasureDepth {
+		return nodeBytes
 	}
-	if g.iterations += n; g.iterations > maxIterations {
-		return exec.AsValue(fmt.Errorf("%w: loops over %d iterations in total", errSandbox, maxIterations))
-	}
-	return v
-}
-
-// step runs at the start of every loop iteration so a loop notices the
-// deadline even when its body has no other guard.
-func (g *guard) step(*exec.VarArgs) *exec.Value {
-	if err := g.ctx.Err(); err != nil {
-		return exec.AsValue(err)
-	}
-	return exec.AsValue("")
-}
-
-func (g *guard) rangeFn(params *exec.VarArgs) ([]int, error) {
-	if err := g.ctx.Err(); err != nil {
-		return nil, err
-	}
-	start, stop, step := 0, 0, 1
-	ints := make([]int, len(params.Args))
-	for i, a := range params.Args {
-		if !a.IsInteger() {
-			return nil, fmt.Errorf("%w: range expects integers", errSandbox)
+	switch v.Kind() {
+	case reflect.String:
+		return v.Len()
+	case reflect.Slice, reflect.Array:
+		n := 0
+		for i := 0; i < v.Len() && n <= limit; i++ {
+			n += nodeBytes + measure(v.Index(i), depth+1, limit-n)
 		}
-		ints[i] = a.Integer()
-	}
-	switch len(ints) {
-	case 1:
-		stop = ints[0]
-	case 2:
-		start, stop = ints[0], ints[1]
-	case 3:
-		start, stop, step = ints[0], ints[1], ints[2]
-	default:
-		return nil, fmt.Errorf("%w: range expects [start, ]stop[, step]", errSandbox)
-	}
-	if step == 0 {
-		return nil, fmt.Errorf("%w: range step cannot be 0", errSandbox)
-	}
-	var out []int
-	for i := start; (step > 0 && i < stop) || (step < 0 && i > stop); i += step {
-		if len(out) == maxRangeItems {
-			return nil, fmt.Errorf("%w: range over %d items", errSandbox, maxRangeItems)
+		return n
+	case reflect.Map:
+		n := 0
+		for it := v.MapRange(); it.Next() && n <= limit; {
+			n += nodeBytes + measure(it.Key(), depth+1, limit-n) + measure(it.Value(), depth+1, limit-n)
 		}
-		out = append(out, i)
+		return n
+	case reflect.Struct:
+		n := 0
+		for i := 0; i < v.NumField() && n <= limit; i++ {
+			n += nodeBytes + measure(v.Field(i), depth+1, limit-n)
+		}
+		return n
 	}
-	return out, nil
+	return 0
 }
 
-// measure is what a value holds: bytes of string content, and nodes, one
-// per value including every element of a collection.
-type measure struct{ bytes, nodes int }
-
-func measureValue(v *exec.Value) measure {
-	var m measure
-	if v != nil {
-		m.add(v.Val, 0)
-	}
-	return m
+// estimates say what a function allocates beyond its arguments, for the
+// functions that can build a value far larger than what they are given.
+// Arguments arrive as the function's parameters, a variadic one as a
+// slice.
+var estimates = map[string]func(args []reflect.Value) int{
+	"repeat": func(a []reflect.Value) int { return product(a[0].Int(), int64(a[1].Len())) },
+	"indent": func(a []reflect.Value) int {
+		return product(a[0].Int(), int64(strings.Count(a[1].String(), "\n")+1))
+	},
+	"nindent": func(a []reflect.Value) int {
+		return product(a[0].Int(), int64(strings.Count(a[1].String(), "\n")+1))
+	},
+	"join": func(a []reflect.Value) int { return product(int64(a[0].Len()), int64(length(a[1]))) },
+	"replace": func(a []reflect.Value) int {
+		return product(int64(a[2].Len()/max(a[0].Len(), 1)+1), int64(a[1].Len()))
+	},
+	"regexReplaceAll":        func(a []reflect.Value) int { return product(int64(a[2].Len()+1), int64(a[1].Len())) },
+	"regexReplaceAllLiteral": func(a []reflect.Value) int { return product(int64(a[2].Len()+1), int64(a[1].Len())) },
+	"until":                  func(a []reflect.Value) int { return product(abs(a[0].Int()), nodeBytes) },
+	"untilStep": func(a []reflect.Value) int {
+		return product(span(a[0].Int(), a[1].Int(), a[2].Int()), nodeBytes)
+	},
+	"seq": func(a []reflect.Value) int {
+		p := a[0]
+		switch p.Len() {
+		case 1:
+			return product(span(1, p.Index(0).Int(), 1)+1, seqItemBytes)
+		case 2:
+			return product(span(p.Index(0).Int(), p.Index(1).Int(), 1)+1, seqItemBytes)
+		case 3:
+			return product(span(p.Index(0).Int(), p.Index(2).Int(), p.Index(1).Int())+1, seqItemBytes)
+		}
+		return 0
+	},
+	"printf": func(a []reflect.Value) int { return printfWidths(a[0].String()) },
 }
 
-// add walks x, recursing into collections and structs down to
-// maxMeasureDepth; it stops once the value is over every bound it is
-// compared against.
-func (m *measure) add(x reflect.Value, depth int) {
-	if m.bytes > maxCallBytes || m.nodes > maxCallBytes {
-		return
+// seqItemBytes is what one number of seq's output is counted as.
+const seqItemBytes = 12
+
+// product is x*y clamped to [0, maxCallBytes+1].
+func product(x, y int64) int {
+	if x <= 0 || y <= 0 {
+		return 0
 	}
-	for x.IsValid() && (x.Kind() == reflect.Interface || x.Kind() == reflect.Pointer) {
-		if x.IsNil() {
-			return
-		}
-		if x.CanInterface() {
-			if ev, ok := reflect.TypeAssert[*exec.Value](x); ok {
-				x = ev.Val
+	if x > (maxCallBytes+1)/y {
+		return maxCallBytes + 1
+	}
+	return int(x * y)
+}
+
+func abs(x int64) int64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// span is how many steps of step lead from start towards stop, zero when
+// step points the wrong way or nowhere.
+func span(start, stop, step int64) int64 {
+	if step == 0 || (stop-start)/step < 0 {
+		return 0
+	}
+	return abs((stop - start) / step)
+}
+
+// length is the elements in v when it is a slice, array, map or string.
+func length(v reflect.Value) int {
+	v = indirect(v)
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array, reflect.Map, reflect.String:
+		return v.Len()
+	}
+	return 0
+}
+
+// printfVerb captures a verb's width and precision; * takes them from an
+// argument, which the estimate cannot see, so it is refused.
+var printfVerb = regexp.MustCompile(`%[-+# 0]*(\*|\d+)?(?:\.(\*|\d+)?)?`)
+
+// printfWidths is the padding a format asks for, summed over its verbs.
+func printfWidths(format string) int {
+	total := 0
+	for _, m := range printfVerb.FindAllStringSubmatch(format, -1) {
+		for _, n := range m[1:] {
+			if n == "" {
 				continue
 			}
-		}
-		x = x.Elem()
-	}
-	if !x.IsValid() {
-		return
-	}
-	m.nodes++
-	switch x.Kind() {
-	case reflect.String:
-		m.bytes += x.Len()
-	case reflect.Slice, reflect.Array, reflect.Map:
-		if depth >= maxMeasureDepth {
-			m.bytes += x.Len()
-			m.nodes += x.Len()
-			return
-		}
-		if x.Kind() == reflect.Map {
-			for it := x.MapRange(); it.Next(); {
-				m.add(it.Key(), depth+1)
-				m.add(it.Value(), depth+1)
+			w, err := strconv.Atoi(n)
+			if err != nil || n == "*" {
+				return maxCallBytes + 1
 			}
-			return
-		}
-		for i := range x.Len() {
-			m.add(x.Index(i), depth+1)
-		}
-	case reflect.Struct:
-		if depth >= maxMeasureDepth {
-			return
-		}
-		for _, field := range x.Fields() {
-			m.add(field, depth+1)
-		}
-	default:
-		m.bytes++
-	}
-}
-
-// checkValue bounds a value a template keeps: by set or as a filter or
-// method result.
-func checkValue(v *exec.Value) error {
-	if m := measureValue(v); m.bytes > MaxRenderBytes || m.nodes > maxIterations {
-		return fmt.Errorf("%w: value over %d bytes or %d items", errSandbox, MaxRenderBytes, maxIterations)
-	}
-	return nil
-}
-
-// filterNames are gonja's filters less random, which would make a render
-// differ between runs, and format, whose width comes from the template
-// string itself where the call guard cannot see it.
-var filterNames = []string{
-	"abs", "attr", "batch", "capitalize", "center", "default", "d", "dictsort", "e", "escape", "filesizeformat",
-	"first", "float", "forceescape", "groupby", "indent", "int", "join", "items", "last", "length", "count",
-	"list", "lower", "map", "max", "min", "pprint", "rejectattr", "reject", "replace", "reverse", "round",
-	"safe", "selectattr", "select", "slice", "sort", "string", "striptags", "sum", "title", "tojson", "trim",
-	"truncate", "unique", "upper", "urlencode", "urlize", "wordcount", "wordwrap", "xmlattr",
-}
-
-func (g *guard) filters() *exec.FilterSet {
-	set := make(map[string]exec.FilterFunction, len(filterNames))
-	for _, name := range filterNames {
-		fn, ok := builtins.Filters.Get(name)
-		if !ok {
-			panic("review: gonja has no filter " + name)
-		}
-		set[name] = func(e *exec.Evaluator, in *exec.Value, params *exec.VarArgs) *exec.Value {
-			if err := g.checkCall(name, in, params); err != nil {
-				return exec.AsValue(err)
+			total += w
+			if total > maxCallBytes {
+				return maxCallBytes + 1
 			}
-			out := fn(e, in, params)
-			if out != nil && !out.IsError() {
-				if err := checkValue(out); err != nil {
-					return exec.AsValue(fmt.Errorf("filter %s: %w", name, err))
-				}
-			}
-			return out
 		}
 	}
-	return exec.NewFilterSet(set)
-}
-
-// Filter and method names the call estimate treats specially.
-const (
-	fnBatch      = "batch"
-	fnExpandTabs = "expandtabs"
-	fnIndent     = "indent"
-	fnJoin       = "join"
-	fnReplace    = "replace"
-	fnSlice      = "slice"
-	fnToJSON     = "tojson"
-	fnWordwrap   = "wordwrap"
-)
-
-// callArgs summarises a call's arguments for the cost estimate.
-type callArgs struct {
-	num     float64 // largest numeric argument
-	str     int     // bytes of the longest string argument
-	strs    int     // bytes of all string arguments
-	strings []string
-	nodes   int // nodes of any collection argument
-}
-
-// checkCall estimates the bytes one filter or method call can allocate
-// from its input and arguments, and refuses it before it runs when that is
-// more than maxCallBytes. Numeric arguments are bounded by what they mean:
-// a width by MaxRenderBytes, a count of items by maxIterations, a
-// per-line indent by maxIndent.
-func (g *guard) checkCall(name string, in *exec.Value, params *exec.VarArgs) error {
-	if err := g.ctx.Err(); err != nil {
-		return err
-	}
-	m := measureValue(in)
-	if m.bytes > maxCallBytes || m.nodes > maxCallBytes {
-		return fmt.Errorf("%w: %s input too large", errSandbox, name)
-	}
-	var a callArgs
-	var values []*exec.Value
-	if params != nil {
-		values = append(values, params.Args...)
-		for _, v := range params.KwArgs {
-			values = append(values, v)
-		}
-	}
-	for _, v := range values {
-		switch {
-		case v == nil:
-		case v.IsInteger(), v.IsFloat():
-			a.num = max(a.num, math.Abs(v.Float()))
-		case v.IsString():
-			n := len(v.String())
-			a.str, a.strs = max(a.str, n), a.strs+n
-			a.strings = append(a.strings, v.String())
-		default:
-			am := measureValue(v)
-			a.strs += am.bytes
-			a.nodes += am.nodes
-		}
-	}
-	numLimit := float64(MaxRenderBytes)
-	switch name {
-	case fnSlice, fnBatch:
-		numLimit = maxSliceCount
-	case fnWordwrap:
-		numLimit = maxWrapWidth
-	case fnIndent, fnToJSON, fnExpandTabs:
-		numLimit = maxIndent
-	}
-	if a.num > numLimit || a.str > MaxRenderBytes {
-		return fmt.Errorf("%w: %s argument too large", errSandbox, name)
-	}
-	if estimate(name, in, m, a) > maxCallBytes {
-		return fmt.Errorf("%w: %s would produce too much", errSandbox, name)
-	}
-	return nil
-}
-
-// estimate is an upper bound, in bytes, on what one call allocates.
-func estimate(name string, in *exec.Value, m measure, a callArgs) float64 {
-	b, n := float64(m.bytes), float64(m.nodes)
-	switch name {
-	case fnIndent, fnExpandTabs:
-		lines := 1.0
-		if in != nil && in.IsString() {
-			lines += float64(strings.Count(in.String(), "\n") + strings.Count(in.String(), "\t"))
-		}
-		return b + lines*(a.num+float64(a.strs))
-	case fnToJSON, "string", "pprint":
-		return 2*b + n*(8+a.num*maxMeasureDepth)
-	case fnReplace:
-		// replace(old, new): each occurrence of old, at most one per byte
-		// when old is empty, grows by new.
-		occurrences := b + 1
-		if len(a.strings) > 0 && len(a.strings[0]) > 0 {
-			occurrences = b/float64(len(a.strings[0])) + 1
-		}
-		return b + occurrences*float64(a.str)
-	case fnJoin:
-		// The filter joins its input with a separator argument; the method
-		// joins its argument with its input as the separator.
-		if a.nodes > 0 {
-			return float64(a.strs) + float64(a.nodes)*b
-		}
-		return b + n*float64(a.str)
-	case "map":
-		return b + n*(1+a.num+float64(a.strs))
-	case fnSlice, fnBatch:
-		return b + (n+a.num)*8
-	case fnWordwrap:
-		width := a.num
-		if width == 0 {
-			width = defaultWrapWidth
-		}
-		return b * min(width, b) / 2
-	case "escape", "e", "forceescape", "urlize", "xmlattr", "urlencode":
-		return 6 * (b + float64(a.strs))
-	default:
-		return b + a.num + float64(a.strs) + float64(a.nodes)
-	}
-}
-
-var strMethodNames = []string{
-	"capitalize", "capwords", "casefold", "center", "count", "endswith", "expandtabs", "find", "isalnum", "isalpha",
-	"isascii", "isdecimal", "isdigit", "islower", "isnumeric", "isprintable", "isspace", "istitle", "isupper", "join",
-	"ljust", "lower", "lstrip", "partition", "removeprefix", "removesuffix", "replace", "rfind", "rjust", "rpartition",
-	"rsplit", "rstrip", "split", "splitlines", "startswith", "strip", "swapcase", "title", "upper", "zfill",
-}
-
-// methods keeps string methods behind the call guard and only the
-// read-only dict and list methods: no template may mutate what it is given.
-func (g *guard) methods() exec.Methods {
-	str := make(map[string]exec.Method[string], len(strMethodNames))
-	for _, name := range strMethodNames {
-		fn, ok := builtins.Methods.Str.Get(name)
-		if !ok {
-			panic("review: gonja has no str method " + name)
-		}
-		str[name] = func(self string, selfValue *exec.Value, args *exec.VarArgs) (any, error) {
-			if err := g.checkCall(name, selfValue, args); err != nil {
-				return nil, err
-			}
-			out, err := fn(self, selfValue, args)
-			if err != nil {
-				return nil, err
-			}
-			if err := checkValue(exec.AsValue(out)); err != nil {
-				return nil, fmt.Errorf("method %s: %w", name, err)
-			}
-			return out, nil
-		}
-	}
-	dict := map[string]exec.Method[map[string]any]{}
-	for _, name := range []string{"keys", "values", "items", "get", "copy"} {
-		fn, ok := builtins.Methods.Dict.Get(name)
-		if !ok {
-			panic("review: gonja has no dict method " + name)
-		}
-		dict[name] = fn
-	}
-	list := map[string]exec.Method[[]any]{}
-	if fn, ok := builtins.Methods.List.Get("copy"); ok {
-		list["copy"] = fn
-	}
-	return exec.Methods{
-		Bool:  builtins.Methods.Bool,
-		Int:   builtins.Methods.Int,
-		Float: builtins.Methods.Float,
-		Str:   exec.NewMethodSet(str),
-		Dict:  exec.NewMethodSet(dict),
-		List:  exec.NewMethodSet(list),
-	}
+	return total
 }

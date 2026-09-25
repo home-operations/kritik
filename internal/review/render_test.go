@@ -2,13 +2,11 @@ package review
 
 import (
 	"context"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/nikolalohinski/gonja/v2/config"
-	"github.com/nikolalohinski/gonja/v2/exec"
 )
 
 func sampleData() RenderData {
@@ -89,32 +87,26 @@ func TestRenderSummaryCustom(t *testing.T) {
 	}{
 		{
 			name:     "fields render",
-			template: "#{{ number }} {{ head_sha }} {{ model }} {{ summary.take }} {{ summary.praise|join(',') }} {{ counts.blocking }}/{{ counts.important }}/{{ counts.nit }} {{ incremental }}\n{% for f in findings %}{{ f.severity }} {{ f.path }}:{{ f.line }} {{ f.title }} {{ f.explanation }} {{ f.suggested_fix }};{% endfor %}{{ notes|length }}",
-			want:     []string{"#42 0123456789abcdef vendor/model-x Solid change with one real bug. Clear tests 1/0/1 False", "blocking main.go:11 nil map write m is nil here. m = map[string]int{};", "nit README.md:2 typo the the ;1"},
+			template: "#{{ .Number }} {{ .HeadSHA }} {{ .Model }} {{ .Result.Summary.Take }} {{ join \",\" .Result.Summary.Praise }} {{ .Counts.Blocking }}/{{ .Counts.Important }}/{{ .Counts.Nit }} {{ .Incremental }}\n{{ range .Result.Findings }}{{ .Severity }} {{ .Path }}:{{ .Line }} {{ .Title }} {{ .Explanation }} {{ .SuggestedFix }};{{ end }}{{ len .Notes }}",
+			want:     []string{"#42 0123456789abcdef vendor/model-x Solid change with one real bug. Clear tests 1/0/1 false", "blocking main.go:11 nil map write m is nil here. m = map[string]int{};", "nit README.md:2 typo the the ;1"},
 		},
-		{name: "include resolves nothing", template: `{% include "secrets.txt" %}`, note: "summary template"},
-		{name: "import resolves nothing", template: `{% import "x.j2" as x %}`, note: "summary template"},
-		{name: "extends resolves nothing", template: `{% extends "/etc/passwd" %}`, note: "summary template"},
-		{name: "syntax error", template: `{% for %}`, note: "summary template"},
-		{name: "recursive macro", template: `{% macro f(n) %}{{ f(n) }}{% endmacro %}{{ f(1) }}`, note: "summary template"},
-		{name: "recursive loop", template: `{% for x in [1] recursive %}{{ loop([1]) }}{% endfor %}`, note: "summary template"},
-		{name: "string repetition", template: `{{ "x" * 1000000000000 }}`, note: "summary template"},
-		{name: "oversized filter width", template: `{{ "x"|center(1000000000000) }}`, note: "summary template"},
-		{name: "oversized output", template: `{% for i in range(10000) %}{{ "0123456789" }}{% endfor %}`, note: "64 KiB"},
-		{name: "deadline", template: "{{ number }}", note: "time"},
-		{name: "loop iteration budget", template: `{% for a in range(10000) %}{% for b in range(10000) %}{% endfor %}{% endfor %}`, note: "summary template"},
-		{name: "numbers still add", template: `{% for f in findings %}{{ loop.index0 + 1 }}{% endfor %}{% set n = counts.blocking + counts.nit %}={{ n }}`,
-			want: []string{"12=2"}},
-		{name: "string +", template: `{{ summary.take + "x" }}`, note: "summary template"},
-		{name: "list +", template: `{{ findings + findings }}`, note: "summary template"},
-		{name: "concatenation ~", template: `{{ model ~ model }}`, note: "summary template"},
-		{name: "block set", template: `{% set x %}a{% endset %}{{ x }}`, note: "summary template"},
-		{name: "filter block", template: `{% filter upper %}a{% endfilter %}`, note: "summary template"},
-		{name: "call block", template: `{% call f() %}a{% endcall %}`, note: "summary template"},
-		{name: "with block", template: `{% with a = 1 %}{{ a }}{% endwith %}`, note: "summary template"},
-		{name: "reserved names", template: `{{ __kritik_step() }}`, note: "summary template"},
-		{name: "large literal", template: "{{ [" + strings.Repeat("1,", 300) + "1] }}", note: "summary template"},
-		{name: "mutating a list", template: `{% set l = [] %}{{ l.append(1) }}`, note: "summary template"},
+		{name: "sprout functions", template: `{{ trunc 7 .HeadSHA }} {{ .Model | toUpper }} {{ printf "%03d" .Number }} {{ range $i, $f := .Result.Findings }}{{ add $i 1 }}.{{ end }}`, want: []string{"0123456 VENDOR/MODEL-X 042 1.2."}},
+		{name: "template resolves nothing", template: `{{ template "secrets" }}`, note: "summary template"},
+		{name: "define is refused", template: `{{ define "x" }}a{{ end }}{{ template "x" }}`, note: "summary template"},
+		{name: "block is refused", template: `{{ block "x" . }}a{{ end }}`, note: "summary template"},
+		{name: "env is not defined", template: `{{ env "HOME" }}`, note: "summary template"},
+		{name: "syntax error", template: `{{ range }}`, note: "summary template"},
+		{name: "unknown field", template: `{{ .Secret }}`, note: "summary template"},
+		{name: "string repetition", template: `{{ repeat 1000000000000 "x" }}`, note: "summary template"},
+		{name: "oversized printf width", template: `{{ printf "%01000000000d" 1 }}`, note: "summary template"},
+		{name: "printf width from an argument", template: `{{ printf "%*d" 10 1 }}`, note: "summary template"},
+		{name: "oversized output", template: `{{ range until 10000 }}0123456789{{ end }}`, note: "64 KiB"},
+		{name: "deadline", template: "{{ .Number }}", note: "time"},
+		{name: "loop iteration budget", template: `{{ range until 10000 }}{{ range until 10000 }}{{ end }}{{ end }}`, note: "summary template"},
+		{name: "integer range", template: `{{ range 1000000000 }}{{ end }}`, note: "summary template"},
+		{name: "reserved names", template: `{{ __kritik_iter 1 }}`, note: "summary template"},
+		{name: "mutating a dict", template: `{{ $d := dict "a" 1 }}{{ set $d "b" $d }}`, note: "summary template"},
+		{name: "random is not defined", template: `{{ randAlpha 8 }}`, note: "summary template"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -153,7 +145,7 @@ func TestRenderSummaryCustom(t *testing.T) {
 }
 
 func TestRenderSummaryMarkerCannotBeRemoved(t *testing.T) {
-	body, notes := RenderSummary(t.Context(), Templates{Summary: "{# nothing #}"}, sampleData())
+	body, notes := RenderSummary(t.Context(), Templates{Summary: "{{/* nothing */}}"}, sampleData())
 	if len(notes) != 0 || body != Marker(42)+"\n" {
 		t.Fatalf("body = %q, notes = %v", body, notes)
 	}
@@ -176,39 +168,40 @@ func TestRenderInline(t *testing.T) {
 		t.Fatalf("no fix should render no fix section:\n%s", body)
 	}
 
-	body, notes = RenderInline(t.Context(), Templates{Inline: "{{ severity }}|{{ path }}:{{ line }}|{{ title }}|{{ explanation }}|{{ suggested_fix }}"}, f)
+	body, notes = RenderInline(t.Context(), Templates{Inline: "{{ .Severity }}|{{ .Path }}:{{ .Line }}|{{ .Title }}|{{ .Explanation }}|{{ .SuggestedFix }}"}, f)
 	if len(notes) != 0 || body != "blocking|main.go:11|nil map write|m is nil here.|m = map[string]int{}" {
 		t.Fatalf("custom inline = %q, notes %v", body, notes)
 	}
-	body, notes = RenderInline(t.Context(), Templates{Inline: "{% include 'x' %}"}, f)
+	body, notes = RenderInline(t.Context(), Templates{Inline: `{{ template "x" }}`}, f)
 	if len(notes) != 1 || !strings.Contains(body, "**nil map write**") {
 		t.Fatalf("fallback inline = %q, notes %v", body, notes)
 	}
 }
 
 // TestRenderMemoryIsBounded renders templates that try to build large
-// values in gonja's private buffers or by repeated growth. Each must fall
-// back quickly, and the render must allocate little on the way.
+// values by amplification or by repeated growth. Each must fall back
+// quickly, and the render must allocate little on the way.
 func TestRenderMemoryIsBounded(t *testing.T) {
 	const maxAlloc = 64 << 20
-	s60k := `{% set s = "a"|center(60000) %}`
+	s60k := `{{ $s := repeat 60000 "a" }}`
 	tests := map[string]string{
-		"block set of a loop":               s60k + `{% set x %}{% for i in range(10000) %}{{ s }}{% endfor %}{% endset %}`,
-		"block set of a nested loop":        s60k + `{% set x %}{% for i in range(10000) %}{% for j in range(10000) %}{{ s }}{% endfor %}{% endfor %}{% endset %}`,
-		"chained concatenation":             `{% set a = "aaaaaaaaaaaaaaaa" %}` + strings.Repeat(`{% set a = a ~ a %}`, 12) + `{{ a|length }}`,
-		"chained addition":                  `{% set a = "aaaaaaaaaaaaaaaa" %}` + strings.Repeat(`{% set a = a + a %}`, 12) + `{{ a|length }}`,
-		"nested loops over a string":        s60k + `{% for c in s %}{% for d in s %}{% endfor %}{% endfor %}`,
-		"chained growth by filter":          `{% set b = "a"|center(40000) %}` + strings.Repeat(`{% set b = b|replace(" ", "  ") %}`, 12),
-		"join of repeated value":            s60k + "{{ [" + strings.Repeat("s,", 200) + "s]|join }}",
-		"slice with a huge count":           `{{ ([1]|slice(8300000, fill_with=1))|length }}`,
-		"batch with a huge count":           `{{ ([1]|batch(8300000, fill_with=1))|length }}`,
-		"tojson with a huge indent":         `{{ findings|tojson(indent=5500000) }}`,
-		"indent with a huge width":          `{{ summary.take|indent(60000) }}`,
-		"map of an amplifier":               `{{ range(10000)|map("center", 60000)|list|length }}`,
-		"join method with a long separator": s60k + `{{ s.join(range(10000)|map("string")|list) }}`,
-		"wordwrap of many short words":      `{% set s = "x"|center(30000)|replace(" ", "a ") %}{{ s|wordwrap(65536)|length }}`,
-		"wordwrap within its width":         `{% set s = "x"|center(30000)|replace(" ", "a ") %}{{ s|wordwrap(1000)|length }}`,
-		"tojson of long model text":         `{{ findings|tojson(indent=16) }}{{ findings|tojson(indent=16) }}`,
+		"chained cat":                     `{{ $a := repeat 16 "a" }}` + strings.Repeat(`{{ $a = cat $a $a }}`, 30) + `{{ len $a }}`,
+		"chained replace":                 `{{ $b := repeat 40000 "a" }}` + strings.Repeat(`{{ $b = replace "a" "aa" $b }}`, 12) + `{{ len $b }}`,
+		"chained list":                    `{{ $l := list 1 }}` + strings.Repeat(`{{ $l = concat $l $l }}`, 30) + `{{ len $l }}`,
+		"shared structure":                s60k + `{{ $a := list $s $s $s $s $s $s $s $s $s $s }}{{ $b := list $a $a $a $a $a $a $a $a $a $a }}{{ $c := list $b $b $b $b $b $b $b $b $b $b }}{{ toJSON $c }}`,
+		"join with a long separator":      s60k + `{{ join $s (until 10000) }}`,
+		"repeat of a long value":          s60k + `{{ repeat 10000 $s }}`,
+		"indent with a huge width":        `{{ $s := repeat 30000 "a\n" }}{{ indent 65536 $s }}`,
+		"nindent with a huge width":       `{{ $s := repeat 30000 "a\n" }}{{ nindent 65536 $s }}`,
+		"regex replace of every position": s60k + `{{ regexReplaceAll "" $s $s }}`,
+		"seq of many numbers":             `{{ seq 1 100000000 }}`,
+		"until of many numbers":           `{{ until 100000000 }}`,
+		"untilStep of many numbers":       `{{ untilStep 0 100000000 1 }}`,
+		"printf with many wide verbs":     `{{ printf (repeat 5000 "%09999d") 1 }}`,
+		"printf of a huge width":          `{{ printf "%0900000d" 1 }}`,
+		"toPrettyJSON of long model text": `{{ toPrettyJSON .Result.Findings }}{{ toPrettyJSON .Result.Findings }}{{ toPrettyJSON .Result.Findings }}`,
+		"nested loops over a long string": s60k + `{{ range until 10000 }}{{ range until 10000 }}{{ end }}{{ end }}`,
+		"deep copy of a shared structure": s60k + `{{ $a := list $s $s $s $s $s $s $s $s $s $s }}{{ $b := list $a $a $a $a $a $a $a $a $a $a }}{{ len (deepCopy (list $b $b $b $b $b $b $b $b $b $b)) }}`,
 	}
 	longData := sampleData()
 	longData.Result.Findings[0].Explanation = strings.Repeat("model text ", 3000)
@@ -237,23 +230,38 @@ func TestRenderMemoryIsBounded(t *testing.T) {
 func TestMeasureRecursesIntoData(t *testing.T) {
 	d := sampleData()
 	d.Result.Findings[0].Explanation = strings.Repeat("x", 50_000)
-	m := measureValue(exec.AsValue(summaryContext(d)[keyFindings]))
-	if m.bytes < 50_000 || m.nodes < 14 {
-		t.Fatalf("measure = %+v, want the nested explanation counted", m)
+	if n := measure(reflect.ValueOf(d), 0, maxCallBytes); n < 50_000 {
+		t.Fatalf("measure = %d, want the nested explanation counted", n)
+	}
+	shared := strings.Repeat("x", 1000)
+	list := []any{shared, shared, shared, shared, shared, shared, shared, shared, shared, shared}
+	nested := []any{list, list, list, list, list, list, list, list, list, list}
+	if n := measure(reflect.ValueOf([]any{nested, nested, nested, nested, nested, nested, nested, nested, nested, nested}), 0, maxCallBytes); n <= maxCallBytes {
+		t.Fatalf("measure = %d, want a shared value counted at every reference", n)
 	}
 }
 
-func TestLoopsAndAdditionsAreAllGuarded(t *testing.T) {
+// TestLoopsAreAllGuarded checks that every range, wherever it sits, is
+// charged to the iteration budget.
+func TestLoopsAreAllGuarded(t *testing.T) {
 	tests := []struct {
 		name, src, want string
 		fails           bool
 	}{
-		{name: "loops and additions render", src: `{% for i in range(3) %}{% for j in range(2) %}{{ i + j }}{% endfor %}{% endfor %}{{ 1 + 2 }}`, want: "0112233"},
-		{name: "an addition the rewrite cannot see fails", src: `{{ +1 }}`, fails: true},
+		{name: "nested loops render", src: `{{ range until 3 }}{{ range until 2 }}x{{ end }}{{ end }}`, want: "xxxxxx"},
+		{name: "loop over a pipeline", src: `{{ range until 3 | reverse }}{{ . }}{{ end }}`, want: "210"},
+		{name: "loop with variables", src: `{{ range $i, $v := list "a" "b" }}{{ $i }}{{ $v }}{{ end }}`, want: "0a1b"},
+		{name: "loop with else", src: `{{ range list }}x{{ else }}none{{ end }}`, want: "none"},
+		{name: "loop in an if", src: `{{ if true }}{{ range until 30000 }}{{ end }}{{ end }}`, fails: true},
+		{name: "loop in an else", src: `{{ if false }}{{ else }}{{ range until 30000 }}{{ end }}{{ end }}`, fails: true},
+		{name: "loop in a with", src: `{{ with .Result }}{{ range until 30000 }}{{ end }}{{ end }}`, fails: true},
+		{name: "loop in a loop", src: `{{ range until 2 }}{{ range until 15000 }}{{ end }}{{ end }}`, fails: true},
+		{name: "loop over a dict", src: `{{ range $k, $v := dict "a" 1 }}{{ $k }}{{ $v }}{{ end }}`, want: "a1"},
+		{name: "loop over a channel-like value", src: `{{ range .Result }}{{ end }}`, fails: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out, err := execute(t.Context(), tt.src, map[string]any{}, MaxRenderBytes)
+			out, err := execute(t.Context(), tt.src, sampleData(), MaxRenderBytes)
 			if tt.fails {
 				if err == nil {
 					t.Fatalf("rendered %q, want an error", out)
@@ -265,21 +273,17 @@ func TestLoopsAndAdditionsAreAllGuarded(t *testing.T) {
 			}
 		})
 	}
-	counts, err := checkTokens(`{% for a in b %}{{ a + 1 + 2 }}{% endfor %}{% raw %}{% for x in y %}{{ 1 + 1 }}{% endraw %}{{ "for + x" }}`, config.New())
-	if err != nil || counts != (guardedCounts{loops: 1, additions: 2}) {
-		t.Fatalf("counts = %+v, err = %v", counts, err)
-	}
 }
 
 // TestLoopStopsAtTheDeadline runs a loop that is within every budget but
 // slow, under a deadline that expires part way through: the render itself,
 // not only the caller, must stop.
 func TestLoopStopsAtTheDeadline(t *testing.T) {
-	src := `{% set s = "a"|center(30000) %}{% for i in range(10000) %}{% set t = s|replace(" ", "  ") %}{% endfor %}done`
+	src := `{{ $s := repeat 30000 "a " }}{{ range until 10000 }}{{ $t := replace " " "  " $s }}{{ end }}done`
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()
 	started := time.Now()
-	out, err := execute(ctx, src, map[string]any{}, MaxRenderBytes)
+	out, err := execute(ctx, src, sampleData(), MaxRenderBytes)
 	elapsed := time.Since(started)
 	if err == nil || ctx.Err() == nil {
 		t.Fatalf("out = %q, err = %v after %s; want the deadline to stop the loop", out, err, elapsed)
@@ -287,35 +291,32 @@ func TestLoopStopsAtTheDeadline(t *testing.T) {
 	if elapsed > 500*time.Millisecond {
 		t.Fatalf("the loop ran %s past a 30ms deadline", elapsed)
 	}
-
-	g := &guard{ctx: ctx}
-	if v := g.step(nil); !v.IsError() {
-		t.Fatal("step must fail once the deadline has passed")
-	}
 }
 
-// TestCallLimitsMatchTheDocs pins the documented per-call limits: the
-// largest documented count or width is accepted, one more is refused.
+// TestCallLimitsMatchTheDocs pins the documented limits: the largest
+// documented size is accepted, one more is refused.
 func TestCallLimitsMatchTheDocs(t *testing.T) {
 	tests := []struct {
 		src  string
 		want string
 		fail bool
 	}{
-		{src: `{{ ([1]|slice(10000))|length }}`, want: "10000"},
-		{src: `{{ ([1]|slice(10001))|length }}`, fail: true},
-		{src: `{{ ([1]|batch(10000, fill_with=1))|first|length }}`, want: "10000"},
-		{src: `{{ ([1]|batch(10001, fill_with=1))|length }}`, fail: true},
-		{src: `{{ "a b c"|wordwrap(1000) }}`, want: "a b c"},
-		{src: `{{ "a b c"|wordwrap(1001) }}`, fail: true},
-		{src: `{{ "a"|indent(16) }}`, want: "a"},
-		{src: `{{ "a"|indent(17) }}`, fail: true},
-		{src: `{{ "a"|center(65536)|length }}`, want: "65536"},
-		{src: `{{ "a"|center(65537)|length }}`, fail: true},
+		{src: `{{ range until 20000 }}{{ end }}ok`, want: "ok"},
+		{src: `{{ range until 20001 }}{{ end }}ok`, fail: true},
+		{src: `{{ len (until 32768) }}`, want: "32768"},
+		{src: `{{ len (until 32769) }}`, fail: true},
+		{src: `{{ len (repeat 262100 "a") }}`, want: "262100"},
+		{src: `{{ len (repeat 262144 "a") }}`, fail: true},
+		{src: `{{ len (printf "%0262100d" 1) }}`, want: "262100"},
+		{src: `{{ len (printf "%0262144d" 1) }}`, fail: true},
+		{src: `{{ $a := repeat 131000 "a" }}{{ $b := repeat 131000 "b" }}{{ len (cat $a $b) }}`, want: "262001"},
+		{src: `{{ $a := repeat 131072 "a" }}{{ $b := repeat 131073 "b" }}{{ len (cat $a $b) }}`, fail: true},
+		{src: `{{ $a := repeat 65000 "a" }}{{ len (join $a (list 1 2 3)) }}`, want: "130003"},
+		{src: `{{ $a := repeat 65000 "a" }}{{ len (join $a (list 1 2 3 4)) }}`, fail: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.src, func(t *testing.T) {
-			out, err := execute(t.Context(), tt.src, map[string]any{}, MaxRenderBytes)
+			out, err := execute(t.Context(), tt.src, sampleData(), MaxRenderBytes)
 			if tt.fail != (err != nil) || (!tt.fail && out != tt.want) {
 				t.Fatalf("out = %q, err = %v", out, err)
 			}

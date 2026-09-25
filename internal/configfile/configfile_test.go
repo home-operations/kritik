@@ -497,7 +497,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
       agent: { maxSteps: 12, maxToolOutputBytes: 4096, maxTokens: 250000, timeout: 3m },
       incremental: { maxDeltaFiles: 5 },
       review: { instructions: [docs/rules.md], requireSuggestedFix: true,
-        templates: { summary: .kritik/summary.md.j2, inline: .kritik/inline.md.j2 } } }`)))
+        templates: { summary: .kritik/summary.md.tmpl, inline: .kritik/inline.md.tmpl } } }`)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -507,10 +507,10 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 			t.Fatalf("mode=%q agent=%+v incremental=%+v", s.Mode, s.Agent, s.Incremental)
 		}
 		if !s.Review.RequireSuggestedFix || len(s.Review.Instructions) != 1 || s.Review.Instructions[0] != "docs/rules.md" ||
-			s.Review.Templates.Summary != ".kritik/summary.md.j2" || s.Review.Templates.Inline != ".kritik/inline.md.j2" {
+			s.Review.Templates.Summary != ".kritik/summary.md.tmpl" || s.Review.Templates.Inline != ".kritik/inline.md.tmpl" {
 			t.Fatalf("review = %+v", s.Review)
 		}
-		if got := s.Review.Referenced(); strings.Join(got, ",") != "docs/rules.md,.kritik/summary.md.j2,.kritik/inline.md.j2" {
+		if got := s.Review.Referenced(); strings.Join(got, ",") != "docs/rules.md,.kritik/summary.md.tmpl,.kritik/inline.md.tmpl" {
 			t.Fatalf("referenced = %v", got)
 		}
 	})
@@ -547,7 +547,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		{"negative delta files", "{ name: acme/x, incremental: { maxDeltaFiles: -3 } }", "incremental.maxDeltaFiles must be positive"},
 		{"unknown agent key", "{ name: acme/x, agent: { steps: 3 } }", "field steps not found"},
 		{"absolute instruction path", "{ name: acme/x, review: { instructions: [/etc/passwd] } }", "must be relative"},
-		{"escaping template path", "{ name: acme/x, review: { templates: { summary: ../x.j2 } } }", "escapes the repository"},
+		{"escaping template path", "{ name: acme/x, review: { templates: { summary: ../x.tmpl } } }", "escapes the repository"},
 		{"empty instruction path", "{ name: acme/x, review: { instructions: [''] } }", "must not be empty"},
 	}
 	for _, tt := range rejects {

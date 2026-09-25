@@ -17,10 +17,10 @@ const MaxRenderBytes = 64 << 10
 // renderTimeout bounds one render, parse included.
 var renderTimeout = 2 * time.Second
 
-//go:embed templates/summary.md.j2
+//go:embed templates/summary.md.tmpl
 var defaultSummary string
 
-//go:embed templates/inline.md.j2
+//go:embed templates/inline.md.tmpl
 var defaultInline string
 
 // Templates are repository-supplied template sources. An empty field means
@@ -29,11 +29,8 @@ type Templates struct {
 	Summary, Inline string
 }
 
-// RenderData is what the summary template sees, under the keys number,
-// head_sha, model, summary.take, summary.praise, findings (each with path,
-// line, severity, title, explanation and suggested_fix), counts.blocking,
-// counts.important, counts.nit, notes, incremental, prior_head_sha and
-// incomplete. The inline template sees one finding's keys at the top level.
+// RenderData is what the summary template sees as its dot; the inline
+// template's dot is one Finding.
 type RenderData struct {
 	Number       int
 	HeadSHA      string
@@ -61,7 +58,7 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 	marker := Marker(d.Number) + "\n"
 	limit := MaxRenderBytes - len(marker)
 	if t.Summary != "" {
-		out, err := render(ctx, t.Summary, summaryContext(d), limit)
+		out, err := render(ctx, t.Summary, d, limit)
 		if err == nil {
 			return marker + out, nil
 		}
@@ -69,7 +66,7 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 		notes = append(notes, note)
 		d.Notes = append(slices.Clone(d.Notes), note)
 	}
-	out, err := render(context.WithoutCancel(ctx), defaultSummary, summaryContext(d), limit)
+	out, err := render(context.WithoutCancel(ctx), defaultSummary, d, limit)
 	if err != nil {
 		// The default renders data kritik bounds itself; failing here is a
 		// bug, but the comment must still carry the marker and the take.
@@ -83,13 +80,13 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 func RenderInline(ctx context.Context, t Templates, f Finding) (string, []string) {
 	var notes []string
 	if t.Inline != "" {
-		out, err := render(ctx, t.Inline, findingContext(f), MaxRenderBytes)
+		out, err := render(ctx, t.Inline, f, MaxRenderBytes)
 		if err == nil {
 			return out, nil
 		}
 		notes = append(notes, fallbackNote("inline", err))
 	}
-	out, err := render(context.WithoutCancel(ctx), defaultInline, findingContext(f), MaxRenderBytes)
+	out, err := render(context.WithoutCancel(ctx), defaultInline, f, MaxRenderBytes)
 	if err != nil {
 		out = truncateUTF8(fmt.Sprintf("**[%s]** **%s**\n\n%s\n", f.Severity, f.Title, f.Explanation), MaxRenderBytes)
 	}
@@ -107,50 +104,10 @@ func fallbackNote(which string, err error) string {
 	return fmt.Sprintf("The repository's %s template %s, so kritik's default was used", which, why)
 }
 
-func summaryContext(d RenderData) map[string]any {
-	praise := make([]any, len(d.Result.Summary.Praise))
-	for i, p := range d.Result.Summary.Praise {
-		praise[i] = p
-	}
-	findings := make([]any, len(d.Result.Findings))
-	for i, f := range d.Result.Findings {
-		findings[i] = findingContext(f)
-	}
-	notes := make([]any, len(d.Notes))
-	for i, n := range d.Notes {
-		notes[i] = n
-	}
-	return map[string]any{
-		"number":    d.Number,
-		"head_sha":  d.HeadSHA,
-		"model":     d.Model,
-		keySummary:  map[string]any{keyTake: d.Result.Summary.Take, keyPraise: praise},
-		keyFindings: findings,
-		"counts": map[string]any{
-			"blocking": d.Counts.Blocking, "important": d.Counts.Important, "nit": d.Counts.Nit,
-		},
-		"notes":          notes,
-		"incremental":    d.Incremental,
-		"prior_head_sha": d.PriorHeadSHA,
-		"incomplete":     d.Incomplete,
-	}
-}
-
-func findingContext(f Finding) map[string]any {
-	return map[string]any{
-		keyPath:         f.Path,
-		keyLine:         f.Line,
-		keySeverity:     string(f.Severity),
-		keyTitle:        f.Title,
-		keyExplanation:  f.Explanation,
-		keySuggestedFix: f.SuggestedFix,
-	}
-}
-
 // render parses and executes src in a sandbox, bounded by ctx and
 // renderTimeout. A render that outlives its deadline is abandoned; the
-// guards make it stop at its next control structure, call or write.
-func render(ctx context.Context, src string, data map[string]any, limit int) (string, error) {
+// guards make it stop at its next loop, call or write.
+func render(ctx context.Context, src string, data any, limit int) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
 	defer cancel()
 	type result struct {

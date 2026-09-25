@@ -21,8 +21,10 @@ The design is recorded in
 amended by [`docs/adr/0003-forgejo-agentic-review.md`](docs/adr/0003-forgejo-agentic-review.md)
 (Forgejo, providers, the contract, `.kritik.yaml`, agentic mode) and
 [`docs/adr/0004-model-gateway.md`](docs/adr/0004-model-gateway.md) (the worker
-as model gateway, no provider key in a runner pod); ADR-0001 is kept as
-historical input.
+as model gateway, no provider key in a runner pod) and
+[`docs/adr/0005-go-templates.md`](docs/adr/0005-go-templates.md) (comment
+templates are Go templates with sprout); ADR-0001 is kept as historical
+input.
 What works today: the configuration file loader with live reload, the
 Postgres store with row-level security and River, the ingest role (a signed
 forge webhook becomes rows and a review job), and the worker role, which
@@ -105,19 +107,23 @@ operator-only — and its keys are:
   tree) appended to the reviewer's system prompt, capped at 32 KiB joined.
 - `review.requireSuggestedFix` — whether findings must include a suggested
   fix.
-- `review.templates.summary` / `review.templates.inline` — paths to
-  [gonja](https://github.com/nikolalohinski/gonja) templates that replace
-  kritik's built-in summary and inline comment templates. Templates run in
-  a sandboxed subset: `if`/`for`/`break`/`continue`/`autoescape`/`raw` and a
-  restricted expression-only `set`; no `block`, `macro`, `include`,
-  `extends`, `import` or `with` (a template cannot read any file but its
-  own). Operators are comparisons, `and`, `or`, `not`, `in`, `is`, `-`,
-  `/`, `//`, `%` and binary `+` on numbers; there is no `+` on strings or
-  lists, no unary `+`, and no `~`, `*` or `**` — parts are written side by
-  side instead of concatenated. Filters and string/dict/list methods are
-  drawn from fixed allowlists, and dict/list methods are read-only.
-  Rendering is bounded (recursion depth, loop iterations, output size) so a
-  template cannot hang or exhaust memory.
+- `review.templates.summary` / `review.templates.inline` — paths to Go
+  [text/template](https://pkg.go.dev/text/template) templates that replace
+  kritik's built-in summary and inline comment templates, with the
+  [sprout](https://github.com/go-sprout/sprout) helpers tuppr and chaski
+  expose (std, strings, conversion, encoding, numeric, slices, maps, regex,
+  time, semver and reflect; not env, filesystem, network, random, uniqueid
+  or checksum, and not `set` or `unset`). The `template`, `define` and
+  `block` actions are refused, so a template cannot read any file or call
+  any other template. The summary template's dot is the review (`.Number`,
+  `.HeadSHA`, `.Model`, `.Result.Summary.Take`, `.Result.Summary.Praise`,
+  `.Result.Findings`, `.Counts.Blocking`/`.Important`/`.Nit`, `.Notes`,
+  `.Incremental`, `.PriorHeadSHA`, `.Incomplete`); the inline template's dot
+  is one finding (`.Path`, `.Line`, `.Severity`, `.Title`, `.Explanation`,
+  `.SuggestedFix`). Rendering is bounded (loop iterations, bytes per
+  function call, output size, a deadline) so a template cannot hang or
+  exhaust memory; one that exceeds a bound falls back to the default with a
+  note in the comment.
 
 Every referenced file, plus `.kritik.yaml` itself, is capped at 256 KiB,
 and 1 MiB in total; a file over either limit is skipped and noted rather
