@@ -15,6 +15,7 @@
   import Queue from './Queue.svelte';
   import Usage from './Usage.svelte';
   import Followups from './Followups.svelte';
+  import Admin from './admin/Admin.svelte';
 
   let { route }: { route: Route } = $props();
 
@@ -50,6 +51,8 @@
     <Usage slug={route.slug} />
   {:else if route.name === 'followups'}
     <Followups slug={route.slug} />
+  {:else if route.name === 'admin'}
+    <Admin slug={route.slug} section={route.section} />
   {:else}
     <Placeholder {route} />
   {/if}

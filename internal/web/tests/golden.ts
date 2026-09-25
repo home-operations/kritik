@@ -30,6 +30,13 @@ export const job = golden<T.Job>('job');
 export const followup = golden<T.Followup>('followup');
 export const usageSeries = golden<T.UsageSeries>('usage_series');
 export const liveEvent = golden<T.LiveEvent>('event');
+export const meta = golden<T.Meta>('meta');
+export const tenantConfig = golden<T.TenantConfig>('tenant_config');
+export const tenantWriteResult = golden<T.TenantWriteResult>('tenant_write_result');
+export const members = golden<T.Members>('members');
+export const memberRemoved = golden<T.MemberRemoved>('member_removed');
+export const auditEvent = golden<T.AuditEvent>('audit_event');
+export const accepted = golden<T.Accepted>('accepted');
 
 export const SLUG = me.tenants[0]!.slug;
 
@@ -69,6 +76,7 @@ const t = `/api/v1/tenants/${SLUG}`;
 // defaultApi is every read endpoint answered from its golden.
 export function defaultApi(): [RegExp, Body][] {
   return [
+    [/\/api\/v1\/meta$/, meta],
     [/\/api\/v1\/me$/, me],
     [/\/api\/v1\/tenants$/, [tenantSummary]],
     [/\/api\/v1\/operator\/tenants$/, [operatorTenant]],
@@ -89,4 +97,41 @@ export function defaultApi(): [RegExp, Body][] {
     [new RegExp(`${t}/queue$`), [job]],
     [new RegExp(`${t}$`), golden<T.TenantDetail>('tenant_detail')],
   ];
+}
+
+// A write the tests answer: status and body (none for 204).
+export interface Reply {
+  status: number;
+  body?: unknown;
+}
+
+export interface Sent {
+  method: string;
+  url: URL;
+  body: unknown;
+}
+
+// mockWrites answers non-GET /api/v1/* requests from [method, pathname
+// pattern, reply] rows (first match wins) and records each with its JSON
+// body. It takes precedence over mockApi, so register it after; GETs and
+// unmatched writes fall through to mockApi.
+export async function mockWrites(page: PWPage, rows: [string, RegExp, Reply | ((s: Sent) => Reply)][]): Promise<Sent[]> {
+  const sent: Sent[] = [];
+  await page.route('**/api/v1/**', (route: Route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const hit = rows.find(([m, re]) => m === req.method() && re.test(url.pathname));
+    if (!hit) return route.fallback();
+    const raw = req.postData();
+    const s: Sent = { method: req.method(), url, body: raw ? (JSON.parse(raw) as unknown) : undefined };
+    sent.push(s);
+    const r = typeof hit[2] === 'function' ? hit[2](s) : hit[2];
+    if (r.body === undefined) return route.fulfill({ status: r.status });
+    return route.fulfill({ status: r.status, contentType: 'application/json', body: JSON.stringify(r.body) });
+  });
+  return sent;
+}
+
+export function apiError(status: number, code: string, message: string, details?: unknown): Reply {
+  return { status, body: { code, message, details } };
 }

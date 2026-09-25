@@ -4,7 +4,9 @@
   import { REVIEW_TABS, type ReviewTab } from '../../routes';
   import { Resource, live } from '../../resource.svelte';
   import { isActive } from '../../format';
-  import { pullRoute } from '../../links';
+  import { pullRoute, rerunPath, cancelPath } from '../../links';
+  import { canAdmin } from '../../session.svelte';
+  import ActionButton from '../../components/ActionButton.svelte';
   import type { ReviewDetail } from '../../types';
   import StateView from '../../components/StateView.svelte';
   import ReviewStatusPill from '../../components/ReviewStatusPill.svelte';
@@ -71,8 +73,29 @@
           {/if}
           {#if r.error}<p class="error-text" role="note">{r.error}</p>{/if}
           {#if r.cancelRequestedAt}<p class="small muted">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}
-          <!-- Re-run and cancel mount here. -->
-          <div class="page-actions" data-slot="review-actions"></div>
+          {#if canAdmin(slug)}
+            <div class="page-actions">
+              <ActionButton
+                label="Re-run"
+                title="Re-run the review?"
+                body={`Queue a fresh review of ${r.pull.repository}#${r.pull.number} at its current head.`}
+                path={rerunPath(slug, r.pull)}
+                done="Re-run queued"
+                ondone={() => res.load()}
+              />
+              {#if isActive(r.status) && !r.cancelRequestedAt}
+                <ActionButton
+                  label="Cancel review"
+                  title="Cancel this review?"
+                  body="The run stops at its next checkpoint and nothing more is posted to the pull request."
+                  path={cancelPath(slug, id)}
+                  danger
+                  done="Cancel requested"
+                  ondone={() => res.load()}
+                />
+              {/if}
+            </div>
+          {/if}
         </header>
 
         <nav class="tabs" aria-label="Review sections">

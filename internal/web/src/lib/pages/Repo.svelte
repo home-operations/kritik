@@ -8,6 +8,9 @@
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
   import PullRows from '../components/PullRows.svelte';
+  import ActionButton from '../components/ActionButton.svelte';
+  import { reindexPath } from '../links';
+  import { canAdmin } from '../session.svelte';
 
   let { slug, owner, repo }: { slug: string; owner: string; repo: string } = $props();
   const fullName = $derived(`${owner}/${repo}`);
@@ -40,6 +43,18 @@
     <header class="page-head">
       <p class="crumbs"><a href={href({ name: 'repos', slug })}>Repositories</a> /</p>
       <h1 class="mono">{fullName}</h1>
+      {#if canAdmin(slug)}
+        <div class="page-actions">
+          <ActionButton
+            label="Reindex"
+            title="Reindex the repository?"
+            body={`Rebuild the code index of ${fullName} from scratch at its default branch.`}
+            path={reindexPath(slug, fullName)}
+            done="Reindex queued"
+            ondone={() => res.load()}
+          />
+        </div>
+      {/if}
     </header>
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}

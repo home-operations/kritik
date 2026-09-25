@@ -15,6 +15,14 @@ import { href, parse, type Route } from './routes';
 
 export const router = $state<{ route: Route }>({ route: parse(location.hash) });
 
+// A page with unsaved edits registers dirty(); while it reports true,
+// leaving asks first, and declining puts the old hash back without a
+// history entry.
+let dirty: (() => boolean) | undefined;
+let currentHash = location.hash;
+
+const LEAVE_PROMPT = 'Leave this page? Unsaved changes, and any secret shown only this once, will be lost.';
+
 export function navigate(to: Route): void {
   const next = href(to);
   if (location.hash === next) {
@@ -27,6 +35,7 @@ export function navigate(to: Route): void {
 // replace updates the route without a history entry.
 export function replace(to: Route): void {
   router.route = to;
+  currentHash = href(to);
   try {
     history.replaceState(null, '', href(to));
   } catch {
@@ -35,8 +44,20 @@ export function replace(to: Route): void {
   }
 }
 
+export function setLeaveGuard(d: (() => boolean) | undefined): void {
+  dirty = d;
+}
+
 export function initRouter(): void {
   window.addEventListener('hashchange', () => {
+    if (dirty?.() && !window.confirm(LEAVE_PROMPT)) {
+      history.replaceState(null, '', currentHash || '#/');
+      return;
+    }
+    currentHash = location.hash;
     router.route = parse(location.hash);
+  });
+  window.addEventListener('beforeunload', (e) => {
+    if (dirty?.()) e.preventDefault();
   });
 }

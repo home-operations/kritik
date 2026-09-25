@@ -29,21 +29,24 @@
   import Palette from './lib/Palette.svelte';
   import SignIn from './lib/SignIn.svelte';
   import Page from './lib/pages/Page.svelte';
+  import Toasts from './lib/components/Toasts.svelte';
+  import { session, loadMeta } from './lib/session.svelte';
   import type { Me } from './lib/types';
 
-  let me = $state<Me | undefined>(undefined);
+  const me = $derived(session.me);
 
   onMount(() => {
     initTheme();
     initRouter();
     initKeyboard();
     initClock();
+    void loadMeta();
     void loadMe();
   });
 
   async function loadMe(): Promise<void> {
     try {
-      me = await getJSON<Me>('/api/v1/me');
+      session.me = await getJSON<Me>('/api/v1/me');
       initEvents();
     } catch (err) {
       // A 401 already redirected to #/signin (see api.svelte.ts); anything
@@ -69,7 +72,7 @@
       console.error('sign out:', err);
     }
     closeEvents();
-    me = undefined;
+    session.me = undefined;
     navigate({ name: 'signin' });
   }
 
@@ -186,7 +189,7 @@
           >
             <Icon path={mdiClipboardTextClockOutline} size={15} /> Follow-ups
           </a>
-          {#if currentTenant?.role === 'admin'}
+          {#if currentTenant?.role === 'admin' || me?.operator}
             <a
               class:active={router.route.name === 'admin'}
               aria-current={router.route.name === 'admin' ? 'page' : undefined}
@@ -236,6 +239,8 @@
     <Page route={router.route} />
 
     <Palette {me} />
+
+    <Toasts />
 
     {#if help.open}
       <div class="help-overlay">

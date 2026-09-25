@@ -2,7 +2,9 @@
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
-  import { repoRoute } from '../links';
+  import { repoRoute, rerunPath } from '../links';
+  import { canAdmin } from '../session.svelte';
+  import ActionButton from '../components/ActionButton.svelte';
   import { shortSha } from '../format';
   import { safeHref } from '../markdown';
   import type { PullDetail } from '../types';
@@ -63,6 +65,18 @@
               <a href={forgeUrl} target="_blank" rel="noopener noreferrer">View on forge <Icon path={mdiOpenInNew} size={12} /></a>
             {/if}
           </p>
+          {#if canAdmin(slug)}
+            <div class="page-actions">
+              <ActionButton
+                label="Re-run"
+                title="Re-run the review?"
+                body={`Queue a fresh review of ${fullName}#${p.number} at its current head.`}
+                path={rerunPath(slug, { repository: fullName, number: p.number })}
+                done="Re-run queued"
+                ondone={() => res.load()}
+              />
+            </div>
+          {/if}
         </header>
 
         <section class="panel" aria-labelledby="pull-reviews">
