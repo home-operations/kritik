@@ -479,8 +479,12 @@ Rules:
   needs the file in memory to resolve webhook secrets, which are
   references and never in Postgres. Worker-capable replicas (`all`,
   `worker`) compete for a session-level advisory lock on a dedicated
-  connection. The holder is the leader and is the only replica that
-  applies the file to Postgres. It runs pending migrations first, ensures
+  connection. Every pool asks Postgres for TCP keepalives on its sessions
+  (idle 30 s, interval 10 s, three probes), so the session of a replica
+  that died without closing it, and the lock with it, is dropped within
+  about a minute rather than the kernel's default of hours; the owner
+  pool also carries a ten-minute statement timeout. The holder is the
+  leader and is the only replica that applies the file to Postgres. It runs pending migrations first, ensures
   the `chunks` table exists at the configured embedding dimension, then
   upserts tenants, installations and repositories as rows with
   `managed_by = file`, and records the applied content hash in a one-row
@@ -717,6 +721,13 @@ parsing, writing) as it goes. Nothing about a run is lost when the Job is
 garbage-collected, and the v2 dashboard reads runs from Postgres, never
 from the Kubernetes API.
 
+**The git token is a Secret per run.** The worker writes the installation
+token into a Secret named after the Job, references it from the Job's
+environment, and makes the Job its owner once created, so the TTL that
+removes the Job removes the Secret. The token never appears in the Job
+spec, which anyone allowed to read Jobs could read. The worker Role may
+create, patch and delete Secrets, never get or list them.
+
 **A Job never outlives its queue job.** River bounds every job with a
 timeout, one minute by default, and cancels its context past it. Each
 worker sets its own: the runner deadline plus fifteen minutes for a
@@ -887,8 +898,9 @@ record. Full call-graph extraction remains a follow-up.
    Filtered PRs enqueue nothing.
 5. **Staleness check.** Discard the job if its head is not the PR's head.
 6. **Tenant limits.** Take a model lease, and check the daily review and
-   monthly token caps when they are set. Deferred jobs snooze. Jobs that
-   hit a cap are marked as such and counted in a metric.
+   monthly token caps when they are set, under the lease so concurrent
+   reviews cannot all pass a cap of one. Jobs that hit a cap are marked
+   as such and counted in a metric.
 7. **Review.** Merge-base from the forge, then a runner Job for fetch,
    diff, patch-id and context stages 1 to 3; the worker skips an unchanged
    bot PR by patch-id (§2.7), runs stage 4, assembles the prompt, calls the

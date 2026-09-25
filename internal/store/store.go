@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,6 +23,27 @@ type Store struct {
 	app    *pgxpool.Pool
 	owner  *pgxpool.Pool
 	logger *slog.Logger
+}
+
+// newPool opens a pool with server-side TCP keepalives, so Postgres drops
+// the session of a client that died without closing it (a node lost, a pod
+// killed) within about a minute, and with it any advisory lock the session
+// held. Postgres's own defaults leave that to the kernel's two hours. A
+// statement timeout, when given, bounds every statement on the pool.
+func newPool(ctx context.Context, url, application string, statementTimeout time.Duration) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	params := cfg.ConnConfig.RuntimeParams
+	params["application_name"] = application
+	params["tcp_keepalives_idle"] = "30"
+	params["tcp_keepalives_interval"] = "10"
+	params["tcp_keepalives_count"] = "3"
+	if statementTimeout > 0 {
+		params["statement_timeout"] = strconv.FormatInt(statementTimeout.Milliseconds(), 10)
+	}
+	return pgxpool.NewWithConfig(ctx, cfg)
 }
 
 // Options configure Open.
@@ -41,7 +64,7 @@ type Options struct {
 // the vector extension is missing, because either would be invisible at
 // runtime and wrong.
 func Open(ctx context.Context, opts Options) (*Store, error) {
-	app, err := pgxpool.New(ctx, opts.AppURL)
+	app, err := newPool(ctx, opts.AppURL, "kritik-app", 0)
 	if err != nil {
 		return nil, fmt.Errorf("store: application pool: %w", err)
 	}
@@ -55,7 +78,9 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		return nil, err
 	}
 	if opts.OwnerURL != "" {
-		owner, err := pgxpool.New(ctx, opts.OwnerURL)
+		// Migrations may build an index for minutes; anything longer on the
+		// owner connection is a hang worth breaking.
+		owner, err := newPool(ctx, opts.OwnerURL, "kritik-owner", 10*time.Minute)
 		if err != nil {
 			app.Close()
 			return nil, fmt.Errorf("store: owner pool: %w", err)
