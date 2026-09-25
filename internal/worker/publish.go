@@ -21,10 +21,11 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// CompleterSource resolves a configured provider name to a Completer. It
-// is a model.Structured so each call can record its steps.
+// CompleterSource resolves a configured provider name to its model
+// adapter; each call wraps it in a model.Structured that records its
+// steps.
 type CompleterSource interface {
-	For(f *configfile.File, name string) (model.Structured, error)
+	Stepper(f *configfile.File, name string) (model.Stepper, error)
 }
 
 // maxOutputTokens bounds one review answer. Findings are short by
@@ -307,11 +308,11 @@ func (p *publishPhase) callModels(
 	if fallback != "" && fallback.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fallback.Model()}
 	}
-	completer, err := p.w.Completers.For(p.file, ref.Provider())
+	stepper, err := p.w.Completers.Stepper(p.file, ref.Provider())
 	if err != nil {
 		return model.CompletionResponse{}, "", err
 	}
-	completer.OnStep = p.onStep(ctx, ref.Provider(), store.ModelCallReview, 0)
+	completer := model.Structured{Stepper: stepper, OnStep: p.onStep(ctx, ref.Provider(), store.ModelCallReview, 0)}
 	resp, err := completer.Complete(ctx, req)
 	p.w.Metrics.ModelCall(p.tenant.Slug, string(ref), roleReview, callOutcome(err),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
@@ -319,12 +320,12 @@ func (p *publishPhase) callModels(
 		return resp, roleReview, err
 	}
 	p.logger.Warn("primary model failed, trying fallback", "model", ref, "fallback", fallback, "error", err)
-	fc, ferr := p.w.Completers.For(p.file, fallback.Provider())
+	fs, ferr := p.w.Completers.Stepper(p.file, fallback.Provider())
 	if ferr != nil {
 		return model.CompletionResponse{}, "", errors.Join(err, ferr)
 	}
 	req.Model, req.Fallbacks = fallback.Model(), nil
-	fc.OnStep = p.onStep(ctx, fallback.Provider(), store.ModelCallFallback, 1)
+	fc := model.Structured{Stepper: fs, OnStep: p.onStep(ctx, fallback.Provider(), store.ModelCallFallback, 1)}
 	resp, ferr = fc.Complete(ctx, req)
 	p.w.Metrics.ModelCall(p.tenant.Slug, string(fallback), roleFallback, callOutcome(ferr),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)

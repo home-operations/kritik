@@ -1,7 +1,9 @@
 package worker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"slices"
 	"strings"
@@ -23,22 +25,49 @@ const transcriptTimeout = 2 * time.Second
 // transcriptMask masks, in text bound for model_calls, the provider's key
 // and URL credentials, every egress credential, and extra (a run token,
 // say), longest first so one secret containing another is masked whole.
+// Tool input and schemas are raw JSON, where a secret appears escaped, so
+// each secret's JSON-escaped forms are masked too.
 func transcriptMask(f *configfile.File, p configfile.Provider, extra ...string) func(string) string {
-	secrets := append(providerSecrets(p), extra...)
+	// Every non-empty secret is masked however short: a very short one
+	// garbles the transcript, which is better than leaking it.
+	plain := append(providerSecrets(p), extra...)
 	for _, cred := range f.EgressRules().Credentials {
-		secrets = append(secrets, cred)
+		plain = append(plain, cred)
 		if _, token, ok := strings.Cut(cred, " "); ok {
-			secrets = append(secrets, token)
+			plain = append(plain, token)
 		}
 	}
-	secrets = slices.DeleteFunc(secrets, func(s string) bool { return s == "" })
+	var secrets []string
+	for _, s := range plain {
+		if s != "" {
+			secrets = append(secrets, s)
+			secrets = append(secrets, jsonEscaped(s)...)
+		}
+	}
 	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
+	secrets = slices.Compact(secrets)
 	return func(text string) string {
 		for _, s := range secrets {
 			text = strings.ReplaceAll(text, s, "***")
 		}
 		return text
 	}
+}
+
+// jsonEscaped are the forms s takes inside a JSON string, with and without
+// HTML escaping, where they differ from s.
+func jsonEscaped(s string) []string {
+	var out []string
+	for _, html := range []bool{true, false} {
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(html)
+		_ = enc.Encode(s) // cannot fail for a string
+		if e := strings.TrimSuffix(strings.TrimSuffix(buf.String(), "\n"), `"`)[1:]; e != s {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // recordModelCall records one model call for the transcript view: c
@@ -68,9 +97,9 @@ func (b *Base) recordModelCall(
 				return err
 			}
 		}
-		row := transcript.Delta(prev, req)
-		row.Response = transcript.NewResponse(resp)
-		c.Row = row.Mask(mask).Encode()
+		row := transcript.Delta(prev, req, mask)
+		row.Response = transcript.NewResponse(resp, mask)
+		c.Row = row.Encode()
 		return store.InsertModelCall(ctx, tx, c)
 	})
 	outcome := "ok"

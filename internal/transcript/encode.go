@@ -21,6 +21,13 @@ const (
 // Placeholder stands in for content a row over RowCap dropped.
 const Placeholder = "[omitted: the row exceeded its size cap]"
 
+// SystemCap bounds a stored system prompt; one over it is cut, on a rune
+// boundary, and ends in SystemTruncated.
+const SystemCap = RowCap
+
+// SystemTruncated ends a system prompt cut to SystemCap.
+const SystemTruncated = "\n[truncated: the system prompt exceeded its size cap]"
+
 // Encoded is a row as the model_calls columns take it. System and Tools
 // are nil when unchanged. State is the run's state after this row.
 type Encoded struct {
@@ -33,32 +40,20 @@ type Encoded struct {
 	State        State
 }
 
-// Mask returns r with fn applied to its system prompt, tool descriptions
-// and schemas, and every text, tool input and tool result, request and
-// response alike. It must run before Encode: a cut made first could leave
-// part of a secret that fn no longer recognises.
-func (r Row) Mask(fn func(string) string) Row {
-	out := r
-	if r.System != nil {
-		s := fn(*r.System)
-		out.System = &s
+func maskMessage(m Message, fn func(string) string) Message {
+	out := Message{Role: m.Role, Text: fn(m.Text), ToolCalls: maskCalls(m.ToolCalls, fn)}
+	for _, res := range m.ToolResults {
+		res.Content = fn(res.Content)
+		out.ToolResults = append(out.ToolResults, res)
 	}
-	if r.Tools != nil {
-		tools := make([]Tool, len(*r.Tools))
-		for i, t := range *r.Tools {
-			tools[i] = Tool{Name: t.Name, Description: fn(t.Description), InputSchema: maskRaw(t.InputSchema, fn)}
-		}
-		out.Tools = &tools
+	return out
+}
+
+func maskTools(tools []Tool, fn func(string) string) []Tool {
+	out := make([]Tool, len(tools))
+	for i, t := range tools {
+		out[i] = Tool{Name: t.Name, Description: fn(t.Description), InputSchema: maskRaw(t.InputSchema, fn)}
 	}
-	out.Messages = make([]Message, len(r.Messages))
-	for i, m := range r.Messages {
-		out.Messages[i] = Message{Role: m.Role, Text: fn(m.Text), ToolCalls: maskCalls(m.ToolCalls, fn)}
-		for _, res := range m.ToolResults {
-			res.Content = fn(res.Content)
-			out.Messages[i].ToolResults = append(out.Messages[i].ToolResults, res)
-		}
-	}
-	out.Response = Response{Text: fn(r.Response.Text), ToolCalls: maskCalls(r.Response.ToolCalls, fn), Stop: r.Response.Stop}
 	return out
 }
 
@@ -77,7 +72,7 @@ func maskRaw(raw json.RawMessage, fn func(string) string) json.RawMessage {
 	return validJSON([]byte(fn(string(raw))))
 }
 
-// Encode applies the caps and encodes r. Call Mask first.
+// Encode applies the caps and encodes r.
 func (r Row) Encode() Encoded {
 	e := Encoded{MessagesFrom: r.MessagesFrom, System: r.System, State: r.next}
 	msgs := r.Messages
@@ -85,6 +80,10 @@ func (r Row) Encode() Encoded {
 		msgs, e.System, e.Truncated = nil, nil, true
 	} else if r.Tools != nil {
 		e.Tools, _ = json.Marshal(*r.Tools) // cannot fail: every RawMessage is valid JSON
+	}
+	if e.System != nil && len(*e.System) > SystemCap {
+		system := cutString(*e.System, SystemCap) + SystemTruncated
+		e.System, e.Truncated = &system, true
 	}
 	msgs, cut := cutResults(msgs)
 	e.Truncated = e.Truncated || cut
@@ -122,13 +121,9 @@ func cutResults(msgs []Message) ([]Message, bool) {
 		out[i].ToolResults = make([]ToolResult, len(m.ToolResults))
 		for j, res := range m.ToolResults {
 			if len(res.Content) > ToolResultCap {
-				n := ToolResultCap
-				for n > 0 && !utf8.RuneStart(res.Content[n]) {
-					n--
-				}
-				res.TruncatedBytes += len(res.Content) - n
-				res.Content = res.Content[:n]
-				cut = true
+				kept := cutString(res.Content, ToolResultCap)
+				res.TruncatedBytes += len(res.Content) - len(kept)
+				res.Content, cut = kept, true
 			}
 			out[i].ToolResults[j] = res
 		}
@@ -155,4 +150,15 @@ func placeholders(msgs []Message) []Message {
 		}
 	}
 	return out
+}
+
+// cutString is s cut to at most n bytes on a rune boundary.
+func cutString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

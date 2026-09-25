@@ -27,10 +27,10 @@ func TestCompletersRebuildOnChange(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &configfile.File{Providers: map[string]configfile.Provider{"p": tt.provider}}
-			if _, err := c.For(f, "p"); err != nil {
+			if _, err := c.Stepper(f, "p"); err != nil {
 				t.Fatal(err)
 			}
-			// The gateway's steppers share the cache.
+			// A second lookup is served from the cache.
 			if _, err := c.Stepper(f, "p"); err != nil {
 				t.Fatal(err)
 			}
@@ -39,7 +39,7 @@ func TestCompletersRebuildOnChange(t *testing.T) {
 			}
 		})
 	}
-	if _, err := c.For(&configfile.File{}, "p"); err == nil {
+	if _, err := c.Stepper(&configfile.File{}, "p"); err == nil {
 		t.Fatal("an undeclared provider must be an error")
 	}
 }

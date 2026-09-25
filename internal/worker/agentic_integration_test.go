@@ -473,7 +473,7 @@ func checkAgentTranscript(t *testing.T, h *agenticHarness, reviewID string) {
 		msgs = append(msgs[:turn.MessagesFrom], turn.Messages...)
 	}
 	got, _ := json.Marshal(msgs)
-	want, _ := json.Marshal(transcript.Delta(transcript.State{}, saw).Messages)
+	want, _ := json.Marshal(transcript.Delta(transcript.State{}, saw, nil).Messages)
 	if string(got) != string(want) {
 		t.Fatalf("rebuilt conversation:\n%s\nthe provider was sent:\n%s", got, want)
 	}

@@ -108,11 +108,21 @@ type Row struct {
 // When req is shorter than what was recorded, or its first MessagesEnd
 // messages hash differently, the row holds every message from 0.
 //
-// The messages hash is SHA-256 over, for each message in order, its JSON
-// encoding as a Message (encoding/json, tool input compacted) followed by
-// a newline. It is computed before masking and caps, so a rotated secret
-// or a cut tool result does not break the chain.
-func Delta(prev State, req model.StepRequest) Row {
+// mask (nil for none) is applied to the system prompt, tool descriptions
+// and schemas, and every text, tool input and tool result first, so
+// nothing stored, hashes included, is a function of a secret. Masking
+// precedes the caps in Encode: a cut made first could leave part of a
+// secret that mask no longer recognises.
+//
+// The messages hash is SHA-256 over, for each masked message in order, its
+// JSON encoding as a Message (encoding/json, tool input compacted)
+// followed by a newline. It is taken before the caps, so a cut tool result
+// does not break the chain; a secret rotated mid-run changes the masked
+// text of earlier messages only if they held it, and then costs one reset.
+func Delta(prev State, req model.StepRequest, mask func(string) string) Row {
+	if mask == nil {
+		mask = func(s string) string { return s }
+	}
 	msgs := make([]Message, len(req.Messages))
 	h := sha256.New()
 	var prefix [32]byte
@@ -120,7 +130,7 @@ func Delta(prev State, req model.StepRequest) Row {
 		if i == prev.MessagesEnd {
 			prefix = sum(h)
 		}
-		msgs[i] = fromMessage(m)
+		msgs[i] = maskMessage(fromMessage(m), mask)
 		writeMessage(h, msgs[i])
 	}
 	all := sum(h)
@@ -135,12 +145,12 @@ func Delta(prev State, req model.StepRequest) Row {
 	}
 	r.Messages = msgs[r.MessagesFrom:]
 
-	r.next.SystemSHA = sha256.Sum256([]byte(req.System))
+	system := mask(req.System)
+	r.next.SystemSHA = sha256.Sum256([]byte(system))
 	if r.next.SystemSHA != prev.SystemSHA {
-		system := req.System
 		r.System = &system
 	}
-	tools := fromTools(req.Tools)
+	tools := maskTools(fromTools(req.Tools), mask)
 	encoded, _ := json.Marshal(tools) // cannot fail: every RawMessage in tools is valid JSON
 	r.next.ToolsSHA = sha256.Sum256(encoded)
 	if r.next.ToolsSHA != prev.ToolsSHA {
@@ -149,9 +159,13 @@ func Delta(prev State, req model.StepRequest) Row {
 	return r
 }
 
-// NewResponse is resp as stored.
-func NewResponse(resp model.StepResponse) Response {
-	return Response{Text: resp.Text, ToolCalls: fromCalls(resp.ToolCalls), Stop: resp.Stop}
+// NewResponse is resp as stored, with mask (nil for none) applied to its
+// text and tool input.
+func NewResponse(resp model.StepResponse, mask func(string) string) Response {
+	if mask == nil {
+		mask = func(s string) string { return s }
+	}
+	return Response{Text: mask(resp.Text), ToolCalls: maskCalls(fromCalls(resp.ToolCalls), mask), Stop: resp.Stop}
 }
 
 func sum(h hash.Hash) [32]byte {

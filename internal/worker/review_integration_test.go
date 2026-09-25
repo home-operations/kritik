@@ -251,7 +251,7 @@ func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.St
 
 // fakeCompleter answers a review with one finding on the first added line
 // of main.go and one that cannot be anchored, and a follow-up with a fixed
-// reply.
+// reply, as the forced tool call a model.Structured makes.
 type fakeCompleter struct {
 	mu      sync.Mutex
 	calls   int
@@ -259,48 +259,30 @@ type fakeCompleter struct {
 	systems []string
 }
 
-func (f *fakeCompleter) Complete(_ context.Context, req model.CompletionRequest) (model.CompletionResponse, error) {
+func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
-	f.users = append(f.users, req.User)
+	f.users = append(f.users, req.Messages[0].Text)
 	f.systems = append(f.systems, req.System)
-	if req.SchemaName == "reply" {
-		return model.CompletionResponse{Raw: `{"reply":"Because b is new."}`, Model: req.Model, InputTokens: 20, OutputTokens: 5}, nil
+	answer := func(raw string, usage model.Usage, upstream string, cost float64) model.StepResponse {
+		return model.StepResponse{
+			ToolCalls: []model.ToolCall{{ID: "call", Name: req.Tools[0].Name, Input: json.RawMessage(raw)}}, Stop: model.StopToolUse,
+			Usage: usage, Model: req.Model, Upstream: upstream, CostUSD: cost,
+		}
 	}
-	return model.CompletionResponse{
-		Raw: `{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
+	if req.Tools[0].Name == "reply" {
+		return answer(`{"reply":"Because b is new."}`, model.Usage{Input: 20, Output: 5}, "", 0), nil
+	}
+	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
 		  {"path":"main.go","line":1,"severity":"important","title":"first line","explanation":"look here","suggested_fix":"do this"},
 		  {"path":"main.go","line":500,"severity":"blocking","title":"off the diff","explanation":"dropped"}]}`,
-		Model: req.Model, Upstream: "test", InputTokens: 10, OutputTokens: 5, CostUSD: 0.001,
-	}, nil
+		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil
 }
 
-type completers struct{ c model.Completer }
+type completers struct{ c model.Stepper }
 
-// For answers through model.Structured, as the real Completers does, so
-// every call is recorded the way production records it.
-func (c *completers) For(*configfile.File, string) (model.Structured, error) {
-	return model.Structured{Stepper: completerStepper{c.c}}, nil
-}
-
-// completerStepper answers Structured's forced tool call with a Completer.
-type completerStepper struct{ c model.Completer }
-
-func (s completerStepper) Step(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
-	resp, err := s.c.Complete(ctx, model.CompletionRequest{
-		System: req.System, User: req.Messages[0].Text, Model: req.Model, Fallbacks: req.Fallbacks,
-		Schema: req.Tools[0].InputSchema, SchemaName: req.Tools[0].Name, MaxTokens: req.MaxTokens,
-	})
-	if err != nil {
-		return model.StepResponse{}, err
-	}
-	return model.StepResponse{
-		ToolCalls: []model.ToolCall{{ID: "call", Name: req.Tools[0].Name, Input: json.RawMessage(resp.Raw)}}, Stop: model.StopToolUse,
-		Usage:   model.Usage{Input: resp.InputTokens - resp.CachedTokens, CacheRead: resp.CachedTokens, Output: resp.OutputTokens},
-		CostUSD: resp.CostUSD, Model: resp.Model, Upstream: resp.Upstream,
-	}, nil
-}
+func (c *completers) Stepper(*configfile.File, string) (model.Stepper, error) { return c.c, nil }
 
 type forges struct{ f forge.Client }
 

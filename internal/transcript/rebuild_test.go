@@ -16,7 +16,7 @@ func store(t *testing.T, run string, reqs ...model.StepRequest) []StoredRow {
 	var prev State
 	rows := make([]StoredRow, 0, len(reqs))
 	for i, req := range reqs {
-		r := Delta(prev, req)
+		r := delta(prev, req)
 		r.Response = Response{Text: "step", Stop: model.StopToolUse}
 		e := r.Encode()
 		prev = e.State
@@ -67,13 +67,13 @@ func TestRebuild(t *testing.T) {
 	c := stepReq("sys", user("review"), user("two"), user("three"))
 	grepTool := []model.ToolDef{{Name: "grep", Description: "search", InputSchema: json.RawMessage(`{"type":"object"}`)}}
 
-	single := Delta(State{}, model.StepRequest{System: "review sys", Messages: []model.Message{user("the diff")},
+	single := delta(State{}, model.StepRequest{System: "review sys", Messages: []model.Message{user("the diff")},
 		Tools: []model.ToolDef{{Name: "findings", InputSchema: json.RawMessage(`{"type":"object"}`)}}})
-	single.Response = NewResponse(model.StepResponse{ToolCalls: []model.ToolCall{{ID: "f", Name: "findings", Input: json.RawMessage(`{"findings":[]}`)}}})
+	single.Response = response(model.StepResponse{ToolCalls: []model.ToolCall{{ID: "f", Name: "findings", Input: json.RawMessage(`{"findings":[]}`)}}})
 	singleRow := decoded(t, single.Encode(), StoredRow{Kind: KindReview, Usage: model.Usage{Input: 10, Output: 5}, CostUSD: 0.01,
 		Duration: time.Second, Model: "m"})
 
-	truncated := Delta(State{}, stepReq("sys", result(string(make([]byte, ToolResultCap+1)))))
+	truncated := delta(State{}, stepReq("sys", result(string(make([]byte, ToolResultCap+1)))))
 	truncatedRow := decoded(t, truncated.Encode(), StoredRow{Kind: KindAgentStep, RunnerRunID: "r"})
 
 	tests := []struct {

@@ -373,13 +373,13 @@ func (f *followUp) complete(ctx context.Context, msg, reviewID string) (model.Co
 	if ref == "" {
 		return model.CompletionResponse{}, errors.New("worker: no review model is configured for this repository")
 	}
-	completer, err := f.w.Completers.For(f.file, ref.Provider())
+	stepper, err := f.w.Completers.Stepper(f.file, ref.Provider())
 	if err != nil {
 		return model.CompletionResponse{}, err
 	}
-	completer.OnStep = f.w.onStep(ctx, f.logger, store.ModelCall{
+	completer := model.Structured{Stepper: stepper, OnStep: f.w.onStep(ctx, f.logger, store.ModelCall{
 		TenantID: f.tenant.ID(), ReviewID: reviewID, FollowupCommentID: f.comment.ID, Kind: store.ModelCallFollowUp,
-	}, transcriptMask(f.file, f.file.Providers[ref.Provider()]))
+	}, transcriptMask(f.file, f.file.Providers[ref.Provider()]))}
 	req := model.CompletionRequest{
 		System: review.FollowUpSystem, User: msg, Model: ref.Model(),
 		Schema: review.FollowUpSchema(), SchemaName: "reply", MaxTokens: maxOutputTokens,

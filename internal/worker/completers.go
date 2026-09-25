@@ -11,8 +11,8 @@ import (
 
 // Completers resolves a configured provider to its model adapter, building
 // each on first use and again whenever its configuration changes. The
-// review and follow-up workers take it as a Completer, the gateway as a
-// Stepper.
+// review and follow-up workers wrap its steppers in a model.Structured,
+// the gateway calls them directly.
 type Completers struct {
 	Build func(p configfile.Provider) (model.Stepper, error)
 
@@ -23,15 +23,6 @@ type Completers struct {
 type stepperEntry struct {
 	spec    configfile.Provider
 	stepper model.Stepper
-}
-
-// For returns the completer for the named provider in f.
-func (c *Completers) For(f *configfile.File, name string) (model.Structured, error) {
-	s, err := c.Stepper(f, name)
-	if err != nil {
-		return model.Structured{}, err
-	}
-	return model.Structured{Stepper: s}, nil
 }
 
 // Stepper returns the adapter for the named provider in f.

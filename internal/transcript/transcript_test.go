@@ -26,9 +26,13 @@ func stepReq(system string, msgs ...model.Message) model.StepRequest {
 // advance records req after prev the way the gateway does and returns the
 // row and the state it leaves.
 func advance(prev State, req model.StepRequest) (Row, Encoded) {
-	r := Delta(prev, req)
+	r := delta(prev, req)
 	return r, r.Encode()
 }
+
+func delta(prev State, req model.StepRequest) Row { return Delta(prev, req, nil) }
+
+func response(resp model.StepResponse) Response { return NewResponse(resp, nil) }
 
 func TestDelta(t *testing.T) {
 	first := stepReq("sys", user("review"))
@@ -60,7 +64,7 @@ func TestDelta(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := Delta(tt.prev, tt.req)
+			r := delta(tt.prev, tt.req)
 			if r.MessagesFrom != tt.from || len(r.Messages) != tt.n || r.Reset != tt.reset ||
 				(r.System != nil) != tt.system || (r.Tools != nil) != tt.tools || r.next.MessagesEnd != tt.messageEnd {
 				t.Fatalf("row = from %d, %d messages, reset %v, system %v, tools %v, end %d",
@@ -71,19 +75,19 @@ func TestDelta(t *testing.T) {
 }
 
 func TestMessagesHashIsCanonical(t *testing.T) {
-	a := Delta(State{}, stepReq("s", call("grep", `{"pattern": "b"}`)))
-	b := Delta(State{}, stepReq("s", call("grep", `{"pattern":"b"}`)))
+	a := delta(State{}, stepReq("s", call("grep", `{"pattern": "b"}`)))
+	b := delta(State{}, stepReq("s", call("grep", `{"pattern":"b"}`)))
 	if a.next.MessagesSHA != b.next.MessagesSHA {
 		t.Fatal("whitespace in a tool call's input changed the hash")
 	}
-	c := Delta(State{}, stepReq("s", call("grep", `{"pattern":"c"}`)))
+	c := delta(State{}, stepReq("s", call("grep", `{"pattern":"c"}`)))
 	if a.next.MessagesSHA == c.next.MessagesSHA {
 		t.Fatal("a different input hashed the same")
 	}
 }
 
 func TestInvalidToolInputIsKeptAsText(t *testing.T) {
-	r := Delta(State{}, stepReq("s", call("grep", `{"pattern":`)))
+	r := delta(State{}, stepReq("s", call("grep", `{"pattern":`)))
 	e := r.Encode()
 	var msgs []Message
 	if err := json.Unmarshal(e.Messages, &msgs); err != nil {
@@ -96,17 +100,28 @@ func TestInvalidToolInputIsKeptAsText(t *testing.T) {
 }
 
 func TestMask(t *testing.T) {
+	mask := func(s string) string { return strings.ReplaceAll(s, "sk-1", "***") }
 	req := stepReq("key sk-1 in system", user("text sk-1"), call("run", `{"arg":"sk-1"}`), result("out sk-1"))
-	r := Delta(State{}, req)
+	r := Delta(State{}, req, mask)
 	r.Response = NewResponse(model.StepResponse{Text: "said sk-1",
-		ToolCalls: []model.ToolCall{{ID: "c2", Name: "x", Input: json.RawMessage(`{"k":"sk-1"}`)}}})
-	e := r.Mask(func(s string) string { return strings.ReplaceAll(s, "sk-1", "***") }).Encode()
+		ToolCalls: []model.ToolCall{{ID: "c2", Name: "x", Input: json.RawMessage(`{"k":"sk-1"}`)}}}, mask)
+	e := r.Encode()
 	all := string(e.Messages) + string(e.Response) + *e.System + string(e.Tools)
 	if strings.Contains(all, "sk-1") || strings.Count(all, "***") != 6 {
 		t.Fatalf("masked row: %s", all)
 	}
 	if strings.Contains(req.Messages[0].Text, "***") {
 		t.Fatal("Mask changed the request it was given")
+	}
+	// The hashes are of the masked text: the same request with another
+	// secret in the same place hashes the same once both are masked.
+	other := stepReq("key sk-2 in system", user("text sk-2"), call("run", `{"arg":"sk-2"}`), result("out sk-2"))
+	o := Delta(State{}, other, func(s string) string { return strings.ReplaceAll(s, "sk-2", "***") })
+	if o.next.MessagesSHA != r.next.MessagesSHA || o.next.SystemSHA != r.next.SystemSHA {
+		t.Fatal("a hash depends on the secret masked out of it")
+	}
+	if u := delta(State{}, req); u.next.MessagesSHA == r.next.MessagesSHA {
+		t.Fatal("masking did not change the hash")
 	}
 }
 
@@ -146,6 +161,12 @@ func TestEncodeCaps(t *testing.T) {
 					t.Fatalf("messages = %+v", msgs)
 				}
 			}},
+		{name: "a system prompt over its cap is cut", req: stepReq(strings.Repeat("s", SystemCap+5), user("hi")), truncated: true,
+			check: func(t *testing.T, msgs []Message) {
+				if len(msgs) != 1 || msgs[0].Text != "hi" {
+					t.Fatalf("messages = %+v", msgs)
+				}
+			}},
 		{name: "a run over its cap keeps no messages", prevBytes: RunCap + 1, req: stepReq("s", user("hi")), truncated: true,
 			check: func(t *testing.T, msgs []Message) {
 				if len(msgs) != 0 {
@@ -155,7 +176,7 @@ func TestEncodeCaps(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := Delta(State{Bytes: tt.prevBytes}, tt.req)
+			r := delta(State{Bytes: tt.prevBytes}, tt.req)
 			r.Response = Response{Text: "answer", Stop: model.StopEndTurn}
 			e := r.Encode()
 			var msgs []Message
@@ -173,6 +194,10 @@ func TestEncodeCaps(t *testing.T) {
 			}
 			if want := tt.prevBytes + int64(len(e.Messages)+len(e.Response)+len(e.Tools)) + int64(len(deref(e.System))); e.State.Bytes != want {
 				t.Fatalf("bytes = %d, want %d", e.State.Bytes, want)
+			}
+			if e.System != nil && len(tt.req.System) > SystemCap &&
+				(len(*e.System) != SystemCap+len(SystemTruncated) || !strings.HasSuffix(*e.System, SystemTruncated)) {
+				t.Fatalf("system prompt of %d bytes kept as %d", len(tt.req.System), len(*e.System))
 			}
 			tt.check(t, msgs)
 		})

@@ -42,7 +42,7 @@ func TestModelCalls(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			r := transcript.Delta(prev, req)
+			r := transcript.Delta(prev, req, nil)
 			r.Response = transcript.Response{Text: "ok", Stop: model.StopToolUse}
 			return InsertModelCall(ctx, tx, ModelCall{TenantID: alpha, ReviewID: reviewID, RunnerRunID: runID, Kind: ModelCallAgentStep,
 				Step: step, Model: "m", Row: r.Encode(), Usage: model.Usage{Input: 10, Output: 2}, CostUSD: 0.25, Duration: 1500 * time.Millisecond})
@@ -82,7 +82,7 @@ func TestModelCalls(t *testing.T) {
 
 	// A follow-up row is found by its comment, and has no run.
 	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
-		r := transcript.Delta(transcript.State{}, model.StepRequest{System: "f", Messages: msgs[:1]})
+		r := transcript.Delta(transcript.State{}, model.StepRequest{System: "f", Messages: msgs[:1]}, nil)
 		return InsertModelCall(ctx, tx, ModelCall{TenantID: alpha, FollowupCommentID: 4242, Kind: ModelCallFollowUp, Row: r.Encode()})
 	}); err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func checkModelCallRefusals(t *testing.T, s *Store, alpha, beta, reviewID, runID
 	// Another tenant cannot write into alpha's transcript either.
 	if err := s.WithTenant(ctx, beta, func(tx pgx.Tx) error {
 		return InsertModelCall(ctx, tx, ModelCall{TenantID: alpha, Kind: ModelCallReview, Row: transcript.Delta(transcript.State{},
-			model.StepRequest{}).Encode()})
+			model.StepRequest{}, nil).Encode()})
 	}); err == nil {
 		t.Fatal("beta inserted a model call for alpha")
 	}

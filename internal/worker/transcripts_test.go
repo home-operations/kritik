@@ -22,12 +22,15 @@ egress:
 	if err != nil {
 		t.Fatal(err)
 	}
-	mask := transcriptMask(f, f.Providers["p"], "krk_run", "")
+	mask := transcriptMask(f, f.Providers["p"], "krk_run", "", `se"cr\et<x`)
 	tests := map[string]string{
 		"key sk-provider":                           "key ***",
 		"https://kritik:url-secret@llm/":            "https://***@llm/",
 		"auth Bearer ghp-egress or bare ghp-egress": "auth *** or bare ***",
 		"token krk_run":                             "token ***",
+		`plain se"cr\et<x`:                          "plain ***",
+		`{"k":"se\"cr\\et\u003cx"}`:                 `{"k":"***"}`,
+		`{"k":"se\"cr\\et<x"}`:                      `{"k":"***"}`,
 		"nothing secret":                            "nothing secret",
 	}
 	for in, want := range tests {
