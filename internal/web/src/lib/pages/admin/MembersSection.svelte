@@ -108,6 +108,7 @@
             </tr>
           </thead>
           <tbody>
+            {#key d}
             {#each d.members as m (m.account.id)}
               {@const inv = inviteGrant(m)}
               <tr>
@@ -145,6 +146,7 @@
                 {/if}
               </tr>
             {/each}
+            {/key}
           </tbody>
         </table>
       </div>
