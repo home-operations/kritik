@@ -316,6 +316,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a review outlives the client's job timeout", func(t *testing.T) { checkAgentOutlivesJobTimeout(t, h) })
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
 	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
+	t.Run("a capped review is capped under the lease and lets it go", func(t *testing.T) { checkAgentCappedUnderLease(t, h) })
 	t.Run("another tenant cannot read the agent runs", func(t *testing.T) {
 		count := func(tenantID string) int {
 			var n int
@@ -598,6 +599,29 @@ func checkAgentOutlivesJobTimeout(t *testing.T, h *agenticHarness) {
 	})
 	if err != nil || reviews != 1 {
 		t.Fatalf("the review was cut off and retried: %d review rows, err=%v", reviews, err)
+	}
+}
+
+// checkAgentCappedUnderLease caps a review on the tenant's daily count,
+// which earlier subtests have already spent, and checks the lease taken to
+// read the caps is released rather than held for the capped review.
+func checkAgentCappedUnderLease(t *testing.T, h *agenticHarness) {
+	capped := *h.file
+	capped.Defaults.Limits.ReviewsPerDay = 1
+	h.review.Current.Set(&capped)
+	t.Cleanup(func() { h.review.Current.Set(h.file) })
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc capped() {}\n")
+	h.dispatch(t, next)
+	_, status, errText := h.waitReview(t, next)
+	if status != statusCapped || !strings.Contains(errText, "reviewsPerDay") {
+		t.Fatalf("status = %s (%s), want capped on reviewsPerDay", status, errText)
+	}
+	var held int
+	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT count(*) FROM model_leases WHERE job_id IS NOT NULL`).Scan(&held)
+	})
+	if err != nil || held != 0 {
+		t.Fatalf("%d leases still held after a capped review, err=%v", held, err)
 	}
 }
 
