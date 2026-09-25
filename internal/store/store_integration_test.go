@@ -443,3 +443,90 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 		t.Fatalf("the application role must be able to set the prefilter: %v", err)
 	}
 }
+
+func TestGatewayTokens(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := tenantID(t, s, "alpha")
+	// A run needs a review, which needs a pull request of a repository.
+	grant := func() GatewayGrant {
+		t.Helper()
+		g := GatewayGrant{TenantID: alpha, Model: "openrouter/acme/large", Fallback: "openrouter/acme/small", Budget: 1000}
+		if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+			if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE name = 'alpha/one'`).Scan(&g.RepositoryID); err != nil {
+				return err
+			}
+			var prID string
+			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (tenant_id, repository_id, number, head_sha)
+				VALUES ($1, $2, (random() * 1e6)::int, 'abc') RETURNING id`, alpha, g.RepositoryID).Scan(&prID); err != nil {
+				return err
+			}
+			if err := tx.QueryRow(ctx, `INSERT INTO reviews (tenant_id, pull_request_id, head_sha, status)
+				VALUES ($1, $2, 'abc', 'running') RETURNING id`, alpha, prID).Scan(&g.ReviewID); err != nil {
+				return err
+			}
+			return tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, kind) VALUES ($1, 'review') RETURNING id`, alpha).Scan(&g.RunID)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+
+	g := grant()
+	token, err := s.MintGatewayToken(ctx, g, time.Now().Add(time.Hour))
+	if err != nil || !strings.HasPrefix(token, "krk_") || len(token) != 4+64 {
+		t.Fatalf("token = %q, %v", token, err)
+	}
+	var stored int
+	if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM gateway_tokens WHERE token_hash = convert_to($1, 'UTF8')`, token).Scan(&stored); err != nil || stored != 0 {
+		t.Fatalf("the token itself is stored: %d, %v", stored, err)
+	}
+	got, err := s.LookupGatewayToken(ctx, token)
+	if err != nil || got != g {
+		t.Fatalf("grant = %+v, %v; want %+v", got, err, g)
+	}
+	for range 2 {
+		if err := s.ChargeGatewayToken(ctx, token, 300); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, err := s.LookupGatewayToken(ctx, token); err != nil || got.Spent != 600 {
+		t.Fatalf("spent = %d, %v", got.Spent, err)
+	}
+	for _, bad := range []string{"", "krk_", token[:len(token)-1] + "0", "sk-" + token[4:]} {
+		if _, err := s.LookupGatewayToken(ctx, bad); !errors.Is(err, ErrGatewayToken) {
+			t.Fatalf("lookup %q = %v, want ErrGatewayToken", bad, err)
+		}
+	}
+
+	expired, err := s.MintGatewayToken(ctx, grant(), time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LookupGatewayToken(ctx, expired); !errors.Is(err, ErrGatewayToken) {
+		t.Fatalf("expired token = %v", err)
+	}
+	other := grant()
+	live, err := s.MintGatewayToken(ctx, other, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Revoking a run takes its tokens and the expired ones, not another
+	// run's live token.
+	if err := s.RevokeGatewayTokens(ctx, g.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LookupGatewayToken(ctx, token); !errors.Is(err, ErrGatewayToken) {
+		t.Fatalf("revoked token = %v", err)
+	}
+	var left int
+	if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM gateway_tokens`).Scan(&left); err != nil || left != 1 {
+		t.Fatalf("tokens left = %d, %v; want the other run's", left, err)
+	}
+	if _, err := s.LookupGatewayToken(ctx, live); err != nil {
+		t.Fatalf("other run's token = %v", err)
+	}
+}

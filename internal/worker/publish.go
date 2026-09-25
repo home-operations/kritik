@@ -74,8 +74,8 @@ type publishPhase struct {
 	// posted again; scope says whether this review builds on it.
 	prior priorReview
 	scope review.Scope
-	// agent is an agentic review's run, whose usage the worker recorded
-	// as soon as the runner ended.
+	// agent is an agentic review's run, whose usage the gateway recorded
+	// step by step.
 	agent *agentRun
 }
 

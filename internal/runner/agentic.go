@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -132,7 +133,7 @@ func reviewAgent(
 	tree := agent.NewTree(head, ignore)
 	timeline := []timelineStep{}
 	res := agent.Run{
-		Stepper: stepper, Model: p.Model.Model, Fallbacks: p.Model.Fallbacks, System: system, User: user,
+		Stepper: stepper, Model: p.Model.Model, System: system, User: user,
 		Tools: append([]agent.Tool{
 			agent.ReadFileTool(tree, limits.MaxToolOutputBytes),
 			agent.GrepTool(tree, limits.MaxToolOutputBytes),
@@ -175,7 +176,9 @@ func runAgentic(
 		rec := agentRecord{stop: AgentSkipped, toolCalls: []byte("{}"), timeline: []byte("[]"), sources: []byte("[]"), err: reason}
 		return writeAgentRun(ctx, st, p, rec, "done")
 	}
-	stepper, err := model.NewStepper(p.Model.Provider, p.Model.BaseURL, secrets.ModelAPIKey, p.Model.Pricing, nil)
+	stepper, err := model.NewOpenAI(model.OpenAIConfig{
+		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true,
+	})
 	if err != nil {
 		return fmt.Errorf("runner: %w", err)
 	}
@@ -239,8 +242,8 @@ type agentRecord struct {
 }
 
 // newAgentRecord encodes a finished Run and the sources its commands
-// fetched. The error text and the sources are masked: a provider may echo
-// the key back in an error, and the worker shows both.
+// fetched. The error text and the sources are masked: an error may carry a
+// token, and the worker shows both.
 func newAgentRecord(res agent.Result, timeline []timelineStep, sources []string, secrets Secrets) (agentRecord, error) {
 	rec := agentRecord{stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, model: res.Model, err: secrets.Mask(res.Err)}
 	masked := make([]string, len(sources))

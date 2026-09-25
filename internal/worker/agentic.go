@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/runner"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 // agentDeadline bounds an agentic runner Job: the tenant's runner deadline,
@@ -63,18 +64,17 @@ func (r agentRun) response() model.CompletionResponse {
 
 // admission is what an agentic review holds before its runner starts.
 type admission struct {
-	lease    *lease
-	endpoint *runner.ModelEndpoint
-	key      string
+	lease *lease
 	// maxTokens is the agent's token budget for this review.
 	maxTokens int64
 }
 
 // agentAdmit settles what an agentic review may spend before its runner
-// starts, since the runner spends against the model itself: a review model
-// must be configured, the tenant's caps must allow a review, and a model
-// lease is taken, renewed until released. A non-empty status ends the
-// review before it runs, for the reason given.
+// starts, since the runner spends against the model through the gateway:
+// the gateway must be configured, a review model must be, the tenant's
+// caps must allow a review, and a model lease is taken, renewed until
+// released. A non-empty status ends the review before it runs, for the
+// reason given.
 func (w *Review) agentAdmit(
 	ctx context.Context, logger *slog.Logger, file *configfile.File, tenant *configfile.Tenant, settings configfile.Settings, jobID int64,
 ) (admission, string, string, error) {
@@ -82,9 +82,11 @@ func (w *Review) agentAdmit(
 	if ref == "" {
 		return admission{}, statusSkipped, "no review model is configured for this repository", nil
 	}
-	endpoint, key, err := modelEndpoint(file, settings.Models)
-	if err != nil {
-		return admission{}, statusFailed, err.Error(), nil
+	if w.GatewayURL == "" {
+		return admission{}, statusFailed, "agentic mode needs the model gateway (KRITIK_GATEWAY_URL)", nil
+	}
+	if _, ok := file.Providers[ref.Provider()]; !ok {
+		return admission{}, statusFailed, fmt.Sprintf("worker: provider %q is not in the configuration", ref.Provider()), nil
 	}
 	waited := time.Now()
 	l, err := acquireLease(ctx, w.Store, tenant.ID(), string(ref), settings.Slots(), jobID)
@@ -102,7 +104,7 @@ func (w *Review) agentAdmit(
 		}
 		return admission{}, statusCapped, capped, nil
 	}
-	return admission{lease: l, endpoint: endpoint, key: key, maxTokens: budget}, "", "", nil
+	return admission{lease: l, maxTokens: budget}, "", "", nil
 }
 
 // agentCaps is the token budget an agentic review may spend, or the cap
@@ -140,24 +142,6 @@ func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) 
 		return 0, fmt.Sprintf("tokensPerMonth (%d) nearly reached: %d tokens left", tokensPerMonth, max(left, 0))
 	}
 	return min(agentMax, left), ""
-}
-
-// modelEndpoint is the review model an agentic runner talks to, and its
-// key. A fallback on another provider is not tried in agentic mode: the
-// runner holds one key.
-func modelEndpoint(file *configfile.File, models configfile.Models) (*runner.ModelEndpoint, string, error) {
-	ref := models.Review
-	provider, ok := file.Providers[ref.Provider()]
-	if !ok {
-		return nil, "", fmt.Errorf("worker: provider %q is not in the configuration", ref.Provider())
-	}
-	var fallbacks []string
-	if fb := models.Fallback; fb != "" && fb.Provider() == ref.Provider() {
-		fallbacks = []string{fb.Model()}
-	}
-	return &runner.ModelEndpoint{
-		Provider: provider.Type, BaseURL: provider.BaseURL, Model: ref.Model(), Fallbacks: fallbacks, Pricing: provider.Pricing,
-	}, provider.APIKeyValue().Value(), nil
 }
 
 // agentPrompt reads what the runner needs to write the prompt and to tell
@@ -210,64 +194,71 @@ func (w *Review) loadAgentRun(ctx context.Context, tenantID, runID string) (run 
 	return run, true, nil
 }
 
-// chargeAgentRun reads the run's agent_runs row, nil when the runner wrote
-// none, and charges what the agent spent to the review whatever becomes of
-// the review after it: the tokens are spent either way, and the caps count
-// them from the usage table. It is the only place an agentic review
-// records usage.
+// readAgentRun reads the run's agent_runs row, nil when the runner wrote
+// none. What the agent spent is already charged: the gateway records usage
+// for every step it serves, whatever becomes of the review.
 //
 // A run that ended in error may still be writing its row: a deleted runner
-// pod records what its agent spent while it terminates. await waits for
+// pod records how its agent stopped while it terminates. await waits for
 // that, until the run settles or agentRowWait passes. ctx's cancellation is
-// not inherited, so a job River cancels still charges its tokens.
-func (w *Review) chargeAgentRun(
-	ctx context.Context, tenant *configfile.Tenant, pr *pullRequest, reviewID, runID string, ref configfile.ModelRef, await bool,
-) (*agentRun, error) {
+// not inherited, so a job River cancels still reads the row.
+func (w *Review) readAgentRun(ctx context.Context, tenantID, runID string, await bool) (*agentRun, error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agentRowWait+10*time.Second)
 	defer cancel()
-	run, found, err := w.loadAgentRun(ctx, tenant.ID(), runID)
+	run, found, err := w.loadAgentRun(ctx, tenantID, runID)
 	if err == nil && !found && await {
-		run, found, err = w.awaitAgentRun(ctx, tenant.ID(), runID)
+		run, found, err = w.awaitAgentRun(ctx, tenantID, runID)
 	}
 	if err != nil || !found {
 		return nil, err
 	}
-	if run.stop == runner.AgentSkipped {
-		return &run, nil
-	}
-	resp := run.response()
-	w.Metrics.ModelCall(tenant.Slug, string(ref), roleReview, callOutcome(run.stopError()),
-		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
-	err = w.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO usage (tenant_id, repository_id, review_id, role, model, input_tokens, output_tokens, cost_usd)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, tenant.ID(), pr.repositoryID, reviewID, roleReview, resp.Model,
-			resp.InputTokens, resp.OutputTokens, resp.CostUSD)
-		return err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("worker: insert agent usage: %w", err)
-	}
 	return &run, nil
 }
 
-// agentSpec makes spec an agentic run: the prompt, the model and its key,
-// and the agent's bounds. It returns the runner Job's deadline, which the
-// agent's timeout may lengthen.
+// gatewayModel is the name an agentic runner calls its model by; the
+// gateway maps it to the provider model the run was granted.
+const gatewayModel = "review"
+
+// agentSpec makes spec an agentic run: the prompt, the gateway and a run
+// token for it, and the agent's bounds. The token is minted last, so an
+// error leaves none behind; the caller revokes it once the run ends. It
+// returns the runner Job's deadline, which the agent's timeout may
+// lengthen.
 func (w *Review) agentSpec(
-	ctx context.Context, tenantID, reviewID string, pr *pullRequest, settings configfile.Settings, prior priorReview,
+	ctx context.Context, tenantID, reviewID, runID string, pr *pullRequest, settings configfile.Settings, prior priorReview,
 	admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
 ) (time.Duration, error) {
 	prompt, err := w.agentPrompt(ctx, tenantID, reviewID, pr, settings, prior)
 	if err != nil {
 		return deadline, err
 	}
-	spec.Prompt, spec.Mode, spec.Model, secrets.ModelAPIKey = prompt, runner.ModeAgentic, admitted.endpoint, admitted.key
+	deadline = agentDeadline(deadline, settings.Agent.Timeout)
+	token, err := w.Store.MintGatewayToken(ctx, store.GatewayGrant{
+		RunID: runID, TenantID: tenantID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
+		Model: string(settings.Models.Review), Fallback: string(settings.Models.Fallback), Budget: admitted.maxTokens,
+	}, time.Now().Add(deadline+w.GatewayTokenTTL))
+	if err != nil {
+		return deadline, err
+	}
+	spec.Prompt, spec.Mode, secrets.GatewayToken = prompt, runner.ModeAgentic, token
+	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gatewayModel}
 	spec.Agent = &runner.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
 		TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
 		Commands:       settings.Agent.Commands, CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second),
 	}
-	return agentDeadline(deadline, settings.Agent.Timeout), nil
+	return deadline, nil
+}
+
+// revokeGatewayTokens ends the run's token once its runner is done, on a
+// context of its own since the job's may have ended. A token not revoked
+// still expires on its own.
+func (w *Review) revokeGatewayTokens(ctx context.Context, logger *slog.Logger, runID string) {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+	if err := w.Store.RevokeGatewayTokens(rctx, runID); err != nil {
+		logger.Warn("gateway token not revoked", "error", err)
+	}
 }
 
 // stopped reports whether a run was stopped from outside, by supervision,

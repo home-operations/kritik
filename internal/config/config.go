@@ -55,17 +55,24 @@ type Config struct {
 	// the webhooks.
 	MetricsAddr string `env:"KRITIK_METRICS_ADDR" envDefault:":8081"`
 
-	// GatewayAddr is the listen address of the egress gateway the worker
-	// and all roles serve: the forward proxy runner pods reach the outside
-	// through (ADR-0008). Its own port, so the runner network policy can
+	// GatewayAddr is the listen address of the gateway the worker and all
+	// roles serve: the forward proxy runner pods reach the outside through
+	// (ADR-0008), and the model endpoint an agentic runner calls with its
+	// run token (ADR-0004). Its own port, so the runner network policy can
 	// name it without opening the hook or management surfaces.
 	GatewayAddr string `env:"KRITIK_GATEWAY_ADDR" envDefault:":8082"`
 
-	// GatewayURL is what runner Jobs are handed as HTTPS_PROXY and
-	// HTTP_PROXY: the gateway's in-cluster address, http://host:port. Empty
+	// GatewayURL is the gateway's in-cluster address, http://host:port:
+	// runner Jobs are handed it as HTTPS_PROXY and HTTP_PROXY, and an
+	// agentic runner's job document names it as its model endpoint. Empty
 	// hands runners no proxy, which leaves them the direct egress an older
-	// network policy allowed.
+	// network policy allowed, and refuses agentic reviews.
 	GatewayURL string `env:"KRITIK_GATEWAY_URL"`
+
+	// GatewayTokenTTL is how long a run token outlives its runner Job's
+	// deadline before it expires on its own, in case the worker that
+	// minted it dies before revoking it.
+	GatewayTokenTTL time.Duration `env:"KRITIK_GATEWAY_TOKEN_TTL" envDefault:"1h"`
 
 	// ConfigFile is the path of the declarative configuration file (tenants,
 	// installations, repositories, models). Every role except runner loads it
@@ -183,10 +190,11 @@ type Config struct {
 	// run's Secret. A file rather than a variable: a spec can outgrow the
 	// kernel's 128 KiB limit on one environment string.
 	RunSpecFile string `env:"KRITIK_RUN_SPEC_FILE"`
-	// GitToken and ModelAPIKey are the runner's credentials, read from the
-	// run's own Secret. The model key is set only for an agentic review.
-	GitToken    string `env:"KRITIK_GIT_TOKEN,unset"`
-	ModelAPIKey string `env:"KRITIK_MODEL_API_KEY,unset"`
+	// GitToken and GatewayToken are the runner's credentials, read from
+	// the run's own Secret. The gateway token is set only for an agentic
+	// review.
+	GitToken     string `env:"KRITIK_GIT_TOKEN,unset"`
+	GatewayToken string `env:"KRITIK_GATEWAY_TOKEN,unset"`
 
 	// LogLevel is the minimum slog level emitted: debug, info, warn or error.
 	LogLevel string `env:"KRITIK_LOG_LEVEL" envDefault:"info"`
@@ -248,6 +256,9 @@ func (c *Config) validate() error {
 		if _, err := egress.ProxyURL(c.GatewayURL); err != nil {
 			return fmt.Errorf("config: KRITIK_GATEWAY_URL: %w", err)
 		}
+	}
+	if c.GatewayTokenTTL <= 0 {
+		return fmt.Errorf("config: KRITIK_GATEWAY_TOKEN_TTL must be positive, got %s", c.GatewayTokenTTL)
 	}
 	set := 0
 	for _, v := range []bool{c.EmbedBaseURL != "", c.EmbedAPIKey != "", c.EmbedModel != "", c.EmbedDims != 0} {

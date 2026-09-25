@@ -34,7 +34,7 @@ func spec() Spec {
 			CloneURL: "https://forge.example.com/acme/widgets.git", Head: headSHA, Base: baseSHA,
 			Ignore: []string{"vendor/**", "**/*.lock"},
 		},
-		Secrets:   runner.Secrets{GitToken: "ghs_secret_token", ModelAPIKey: "sk-model-key"},
+		Secrets:   runner.Secrets{GitToken: "ghs_secret_token", GatewayToken: "krk_run_token"},
 		Deadline:  5 * time.Minute,
 		Resources: map[string]any{"limits": map[string]any{"memory": "2Gi"}},
 	}
@@ -84,14 +84,14 @@ func TestJobSpec(t *testing.T) {
 }
 
 // checkProxyEnv asserts the runner is pointed at the gateway for both
-// schemes and excepts only loopback.
+// schemes and excepts only loopback and the gateway's own model endpoint.
 func checkProxyEnv(t *testing.T, vars []corev1.EnvVar, gateway string) {
 	t.Helper()
 	env := map[string]string{}
 	for _, e := range vars {
 		env[e.Name] = e.Value
 	}
-	if env["HTTPS_PROXY"] != gateway || env["HTTP_PROXY"] != gateway || env["NO_PROXY"] != "localhost,127.0.0.1" {
+	if env["HTTPS_PROXY"] != gateway || env["HTTP_PROXY"] != gateway || env["NO_PROXY"] != "localhost,127.0.0.1,kritik-gateway" {
 		t.Fatalf("proxy env = %v", env)
 	}
 }
@@ -111,14 +111,14 @@ func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
 		t.Fatal("the job document must not travel as a variable")
 	}
 	for _, e := range vars {
-		if strings.Contains(e.Value, "ghs_secret_token") || strings.Contains(e.Value, "sk-model-key") {
+		if strings.Contains(e.Value, "ghs_secret_token") || strings.Contains(e.Value, "krk_run_token") {
 			t.Fatalf("%s carries a secret in plain text", e.Name)
 		}
 	}
 	for name, want := range map[string]struct {
 		key      string
 		optional bool
-	}{"KRITIK_GIT_TOKEN": {"git-token", false}, "KRITIK_MODEL_API_KEY": {"model-api-key", true}} {
+	}{"KRITIK_GIT_TOKEN": {"git-token", false}, "KRITIK_GATEWAY_TOKEN": {"gateway-token", true}} {
 		ref := env[name].ValueFrom
 		if ref == nil || ref.SecretKeyRef == nil || ref.SecretKeyRef.Name != "kritik-run-01234567" || ref.SecretKeyRef.Key != want.key ||
 			(ref.SecretKeyRef.Optional != nil && *ref.SecretKeyRef.Optional) != want.optional {
@@ -299,7 +299,7 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 	if sec == nil {
 		t.Fatal("secret was not given an owner reference")
 	}
-	if string(sec.Data["git-token"]) != "ghs_secret_token" || string(sec.Data["model-api-key"]) != "sk-model-key" {
+	if string(sec.Data["git-token"]) != "ghs_secret_token" || string(sec.Data["gateway-token"]) != "krk_run_token" {
 		t.Fatalf("secret data = %v", sec.Data)
 	}
 	got, err := runner.DecodeSpec(sec.Data["run-spec.json"])
@@ -347,7 +347,7 @@ func TestKubeRunCancelDeletesJobInForeground(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	client.PrependReactor("get", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
 		if a.GetSubresource() == "log" {
-			return true, &runtime.Unknown{Raw: []byte("cloning with ghs_secret_token and sk-model-key\n")}, nil
+			return true, &runtime.Unknown{Raw: []byte("cloning with ghs_secret_token and krk_run_token\n")}, nil
 		}
 		return false, nil, nil
 	})
@@ -381,7 +381,7 @@ func TestKubeRunCancelDeletesJobInForeground(t *testing.T) {
 	if !deleted {
 		t.Fatal("the Job must be deleted with foreground propagation")
 	}
-	if strings.Contains(res.LogTail, "ghs_secret_token") || strings.Contains(res.LogTail, "sk-model-key") || !strings.Contains(res.LogTail, "***") {
+	if strings.Contains(res.LogTail, "ghs_secret_token") || strings.Contains(res.LogTail, "krk_run_token") || !strings.Contains(res.LogTail, "***") {
 		t.Fatalf("log tail not masked: %q", res.LogTail)
 	}
 }
@@ -445,7 +445,7 @@ func TestKubeRunCleansUpWhenOwnerPatchFails(t *testing.T) {
 
 func TestFinishKeepsTheTailOfTheLog(t *testing.T) {
 	const token = "ghs_secret_token"
-	secrets := runner.Secrets{GitToken: token, ModelAPIKey: "sk-model-key"}
+	secrets := runner.Secrets{GitToken: token, GatewayToken: "krk_run_token"}
 	// A secret straddles the point LogTailBytes from the end.
 	straddling := "HEAD " + strings.Repeat("x", 1000) + token + strings.Repeat("y", LogTailBytes-8) + " END\n"
 	tests := []struct {

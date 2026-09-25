@@ -27,17 +27,22 @@ type OpenAIConfig struct {
 	// HTTPClient may be nil.
 	HTTPClient *http.Client
 	// OpenRouter enables OpenRouter's extensions: server-side fallback
-	// through the models list, and usage accounting.
+	// through the models list, and usage accounting. It implies
+	// ReportsModel.
 	OpenRouter bool
-	Pricing    Pricing
+	// ReportsModel trusts the response's model field to name the model
+	// that answered, as kritik's model gateway sets it.
+	ReportsModel bool
+	Pricing      Pricing
 }
 
 // OpenAI is a Stepper over the chat completions API of OpenAI or any server
 // compatible with it.
 type OpenAI struct {
-	client     openai.Client
-	openRouter bool
-	pricing    Pricing
+	client       openai.Client
+	openRouter   bool
+	reportsModel bool
+	pricing      Pricing
 }
 
 // NewOpenAI builds the adapter.
@@ -58,7 +63,9 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}
-	return &OpenAI{client: openai.NewClient(opts...), openRouter: cfg.OpenRouter, pricing: cfg.Pricing}, nil
+	return &OpenAI{
+		client: openai.NewClient(opts...), openRouter: cfg.OpenRouter, reportsModel: cfg.OpenRouter || cfg.ReportsModel, pricing: cfg.Pricing,
+	}, nil
 }
 
 func checkBaseURL(raw string) error {
@@ -102,6 +109,9 @@ func (o *OpenAI) step(
 ) (StepResponse, error) {
 	params.Model = modelID
 	cc, err := o.client.Chat.Completions.New(ctx, params, opts...)
+	if apiErr, ok := errors.AsType[*openai.Error](err); ok && apiErr.StatusCode == http.StatusTooManyRequests && apiErr.Code == BudgetCode {
+		return StepResponse{}, fmt.Errorf("%w: %s", ErrBudget, apiErr.Message)
+	}
 	if err != nil {
 		return StepResponse{}, err
 	}
@@ -110,11 +120,12 @@ func (o *OpenAI) step(
 	}
 	msg := cc.Choices[0].Message
 	out := StepResponse{Text: msg.Content, Stop: openAIStop(cc.Choices[0].FinishReason), Model: modelID}
-	if o.openRouter && cc.Model != "" {
+	if o.reportsModel && cc.Model != "" {
 		// OpenRouter's server-side fallback may answer with another model
-		// in the list; its response says which. Another provider's model
-		// field names a dated snapshot of the one asked for, which is not
-		// what the operator configured, so it is not used.
+		// in the list, and the gateway answers for a model the runner only
+		// names as "review"; both responses say which. Another provider's
+		// model field names a dated snapshot of the one asked for, which is
+		// not what the operator configured, so it is not used.
 		out.Model = cc.Model
 	}
 	for _, tc := range msg.ToolCalls {

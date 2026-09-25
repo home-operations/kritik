@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -170,7 +171,12 @@ func (r Run) Do(ctx context.Context) Result {
 				result.Stop = StopCanceled
 				return result
 			}
+			// The gateway's count is the one the caps see: its refusal ends
+			// the run as the loop's own budget check would.
 			result.Stop = StopError
+			if errors.Is(err, model.ErrBudget) {
+				result.Stop = StopBudget
+			}
 			result.Err = err.Error()
 			return result
 		}

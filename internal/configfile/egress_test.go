@@ -21,14 +21,15 @@ func TestEgressRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The fixture names a GitHub installation, a Forgejo one on a host and
-	// providers with and without a baseUrl; all of them must be allowed
-	// without being listed.
+	// The fixture names a GitHub installation, whose forge must be allowed
+	// without being listed, and an OpenRouter provider, which runners reach
+	// only through the gateway's model endpoint.
 	rules := f.EgressRules()
-	for _, host := range []string{"github.com", "openrouter.ai"} {
-		if !rules.Allows(host) {
-			t.Errorf("implicit host %s not allowed; hosts = %v", host, rules.Hosts)
-		}
+	if !rules.Allows("github.com") {
+		t.Errorf("implicit host github.com not allowed; hosts = %v", rules.Hosts)
+	}
+	if rules.Allows("openrouter.ai") {
+		t.Errorf("a provider's host must not be allowed; hosts = %v", rules.Hosts)
 	}
 	if rules.Allows("ghcr.io") {
 		t.Fatal("ghcr.io must not be allowed until configured")
@@ -49,15 +50,16 @@ func TestEgressRules(t *testing.T) {
 	if rules.Credentials["api.github.com"] != "Bearer ghp_x" {
 		t.Fatalf("credentials = %v", rules.Credentials)
 	}
-	// A Forgejo installation's host and a provider's baseUrl are allowed
-	// implicitly; a credential's value never leaks into the host list.
+	// A Forgejo installation's host is allowed implicitly, a provider's
+	// baseUrl is not, and a credential's value never leaks into the host
+	// list.
 	h, err := Parse([]byte("providers:\n  p:\n    type: openai\n    baseUrl: https://llm.example:8443/v1\n    apiKey: { env: TEST_GH_TOKEN }\n" +
 		strings.Replace(minimal, "account: acme", "host: git.example.org\n        account: acme", 1)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hosts := h.EgressRules().Hosts; !slices.Contains(hosts, "git.example.org") || !slices.Contains(hosts, "llm.example") ||
-		slices.Contains(hosts, "api.openai.com") {
+	if hosts := h.EgressRules().Hosts; !slices.Contains(hosts, "git.example.org") || slices.Contains(hosts, "llm.example") ||
+		slices.Contains(hosts, "api.openai.com") || slices.ContainsFunc(hosts, func(h string) bool { return strings.Contains(h, "ghp_") }) {
 		t.Fatalf("hosts = %v", hosts)
 	}
 }

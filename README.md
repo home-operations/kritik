@@ -52,7 +52,10 @@ Its `agent.commands` can add a `run` tool: the model runs an allowlisted
 binary (`curl`, `fd` and `rg` ship in the `-tools` image) with its own
 arguments, without a shell, over a checkout of the head commit, so it can
 read a dependency bump's release notes and compare view; the sticky
-comment lists every URL it fetched.
+comment lists every URL it fetched. The agent reaches its model through
+the worker's gateway with a token good for its run alone: the provider key
+never enters the runner pod, and the gateway checks the run's token budget
+and the tenant's monthly cap before every step and records its usage.
 `settle` delays a new head's
 review so a burst of force-pushes only costs one; a later push builds on
 the pull request's last completed review, scoped to what changed since,
@@ -96,9 +99,9 @@ run in the release namespace, and the worker's Role can create, patch and
 delete every Secret there, though it can never get or list one. Keep the
 egress gateway on (the chart's default) with a NetworkPolicy: runner pods then
 reach the outside only through the worker's forward proxy, which allows
-destinations by hostname (the forges, the model endpoints and the file's
-`egress.allowHosts`), and never hold the credentials `egress.credentials`
-lets the gateway add. Run runner Jobs under a sandboxed RuntimeClass such as
+destinations by hostname (the forges and the file's `egress.allowHosts`),
+and never hold the credentials `egress.credentials` lets the gateway add;
+agentic reviews need it, since it is also where their model calls go. Run runner Jobs under a sandboxed RuntimeClass such as
 gVisor (`runner.runtimeClassName`) where the cluster has one, since the pod
 parses untrusted content; it is advised, not required. And give a Forgejo
 installation a read-only `gitToken` beside its `token`: runners fetch with

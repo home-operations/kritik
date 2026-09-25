@@ -49,6 +49,11 @@ type Review struct {
 	EmbedModel string
 	// Deadline bounds a runner when the tenant sets none.
 	Deadline time.Duration
+	// GatewayURL is where an agentic runner calls its model, and
+	// GatewayTokenTTL how long its run token outlives the Job's deadline.
+	// Agentic reviews are refused without a gateway.
+	GatewayURL      string
+	GatewayTokenTTL time.Duration
 
 	// superviseEvery overrides superviseInterval.
 	superviseEvery time.Duration
@@ -139,7 +144,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	secrets := runner.Secrets{GitToken: token}
 	if agentic {
-		if deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, pr, settings, prior, admitted, &spec, &secrets, deadline); err != nil {
+		deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, runID, pr, settings, prior, admitted, &spec, &secrets, deadline)
+		if err != nil {
 			return errors.Join(err, w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", err.Error()),
 				failRun(ctx, w.Store, args.TenantID, runID, err.Error()))
 		}
@@ -157,21 +163,22 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		Deadline:    deadline,
 		Resources:   resources,
 	})
-	// The agent's spend is read before recordRun settles the run's phase:
-	// a stopped run's row may still be on its way from the terminating pod.
+	// The agent's row is read before recordRun settles the run's phase: a
+	// stopped run's row may still be on its way from the terminating pod.
 	var agentOutcome *agentRun
-	var chargeErr error
+	var agentErr error
 	if agentic {
-		agentOutcome, chargeErr = w.chargeAgentRun(ctx, tenant, pr, reviewID, runID, settings.Models.Review, stopped(ctx, res, cause))
+		w.revokeGatewayTokens(ctx, logger, runID)
+		agentOutcome, agentErr = w.readAgentRun(ctx, args.TenantID, runID, stopped(ctx, res, cause))
 	}
 	if err := recordRun(ctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err
 	}
-	if chargeErr != nil {
-		logger.Error("agent run not charged", "error", chargeErr)
+	if agentErr != nil {
+		logger.Error("agent run not read", "error", agentErr)
 		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
 		// A retry would run the agent again; the review ends here.
-		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", chargeErr.Error())
+		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", agentErr.Error())
 	}
 	// A run that finished despite a cancel is judged by its result; the
 	// head check after it catches a supersede.

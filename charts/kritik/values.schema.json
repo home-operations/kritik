@@ -238,7 +238,7 @@
       "properties": {
         "enabled": {
           "default": true,
-          "description": "Serve the egress gateway (ADR-0008): a forward proxy on `all` and `worker` pods that runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration file names (forges, model endpoints, `egress.allowHosts`). With it, runner pods need no direct internet egress.",
+          "description": "Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration file names (forges, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews are refused without it.",
           "title": "enabled",
           "type": "boolean"
         },
