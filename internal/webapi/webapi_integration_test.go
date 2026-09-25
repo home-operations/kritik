@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -69,7 +70,12 @@ tenants:
       - name: wb/one
 `
 
-const followupComment = 4242
+// followupComment is answered in both tenants, as comment ids from two
+// forges may collide; onlyBComment is answered only in tenant B.
+const (
+	followupComment = 4242
+	onlyBComment    = 4343
+)
 
 // seeded is what seedTenant wrote for one tenant.
 type seeded struct {
@@ -126,6 +132,8 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(e.http.Close)
 	e.a, e.b = e.seedTenant("webapi-a", "wa/one"), e.seedTenant("webapi-b", "wb/one")
+	e.exec(`INSERT INTO followups (tenant_id, pull_request_id, comment_id, author, status)
+		VALUES ($1, $2, $3, 'carol', 'answered')`, e.b.tenantID, e.b.prID, onlyBComment)
 	e.signIn("member-a", "alice", seededGrant(e.a.tenantID))
 	e.signIn("member-b", "bob", seededGrant(e.b.tenantID))
 	e.signIn("operator", "op-sub", nil)
@@ -190,13 +198,13 @@ func (e *apiEnv) seedTenant(slug, repo string) seeded {
 		"tenant_id": s.tenantID, "repository_id": s.repoID, "number": 7, "head_sha": "head7", "trigger": "push",
 	})
 	e.exec(`INSERT INTO river_job (kind, args, max_attempts, state) VALUES ('review', $1, 5, 'available')`, args)
-	e.seedModelCalls(s)
+	e.seedModelCalls(s, slug)
 	return s
 }
 
 // seedModelCalls records two agent steps of the review and one follow-up
 // answered against it, which the review's transcript must leave out.
-func (e *apiEnv) seedModelCalls(s seeded) {
+func (e *apiEnv) seedModelCalls(s seeded, slug string) {
 	e.t.Helper()
 	ctx := context.Background()
 	tools := []model.ToolDef{{Name: "grep", InputSchema: json.RawMessage(`{"type":"object"}`)}}
@@ -205,7 +213,7 @@ func (e *apiEnv) seedModelCalls(s seeded) {
 		if step == 1 {
 			msgs = append(msgs, model.Message{Role: model.RoleAssistant, Text: "looking"}, model.Message{Role: model.RoleUser, Text: "more"})
 		}
-		req := model.StepRequest{System: "sys", Messages: msgs, Tools: tools}
+		req := model.StepRequest{System: "sys of " + slug, Messages: msgs, Tools: tools}
 		err := e.st.WithTenant(ctx, s.tenantID, func(tx pgx.Tx) error {
 			prev, n, err := store.AgentState(ctx, tx, s.runID)
 			if err != nil {
@@ -224,7 +232,7 @@ func (e *apiEnv) seedModelCalls(s seeded) {
 		}
 	}
 	err := e.st.WithTenant(ctx, s.tenantID, func(tx pgx.Tx) error {
-		row := transcript.Delta(transcript.State{}, model.StepRequest{System: "follow", Messages: msgs[:1]}, nil)
+		row := transcript.Delta(transcript.State{}, model.StepRequest{System: "follow of " + slug, Messages: msgs[:1]}, nil)
 		row.Response = transcript.Response{Text: "reply", Stop: model.StopEndTurn}
 		return store.InsertModelCall(ctx, tx, store.ModelCall{
 			TenantID: s.tenantID, ReviewID: s.reviewID, FollowupCommentID: followupComment, Kind: store.ModelCallFollowUp,
@@ -285,6 +293,7 @@ func (e *apiEnv) getBody(who, path string) (int, []byte) {
 func TestWebAPI(t *testing.T) {
 	e := newAPIEnv(t)
 	t.Run("read endpoints scope to the tenant", func(t *testing.T) { testReadEndpointsScopeToTenant(t, e) })
+	t.Run("tenant B's ids under tenant A", func(t *testing.T) { testCrossTenantIDs(t, e) })
 	t.Run("me and tenant lists", func(t *testing.T) { testMeAndTenantLists(t, e) })
 	t.Run("transcripts equal Rebuild", func(t *testing.T) { testTranscriptsEqualRebuild(t, e) })
 	t.Run("repository pagination", func(t *testing.T) { testRepoPagination(t, e) })
@@ -303,11 +312,11 @@ func testReadEndpointsScopeToTenant(t *testing.T, e *apiEnv) {
 		{a + "/pulls/wa/one/7", `"title":"PR of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID, `"logTail":"tail of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/diff", `"diff":"diff of webapi-a"`},
-		{a + "/reviews/" + e.a.reviewID + "/transcript", `"system":"sys"`},
+		{a + "/reviews/" + e.a.reviewID + "/transcript", `"system":"sys of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/raw", `"logTail":"tail of webapi-a"`},
 		{a + "/index-runs?repo=wa/one", `"commitSha":"commit7"`},
 		{a + "/followups?repo=wa/one", `"commentId":4242`},
-		{a + "/followups/4242/transcript", `"system":"follow"`},
+		{a + "/followups/4242/transcript", `"system":"follow of webapi-a"`},
 		{a + "/usage?group=repo", `"key":"wa/one"`},
 		{a + "/queue", `"repository":"wa/one"`},
 	}
@@ -324,11 +333,45 @@ func testReadEndpointsScopeToTenant(t *testing.T, e *apiEnv) {
 				if status == 200 && !bytes.Contains(body, []byte(ep.marker)) {
 					t.Errorf("%s: body lacks %s: %s", tc.who, ep.marker, body)
 				}
-				if status == 200 && bytes.Contains(body, []byte("webapi-b")) {
-					t.Errorf("%s: body leaks tenant B: %s", tc.who, body)
+				if status != 200 {
+					continue
+				}
+				for _, leak := range e.bMarkers() {
+					if bytes.Contains(body, []byte(leak)) {
+						t.Errorf("%s: body leaks tenant B's %q: %s", tc.who, leak, body)
+					}
 				}
 			}
 		})
+	}
+}
+
+// bMarkers are strings only tenant B's rows contain.
+func (e *apiEnv) bMarkers() []string {
+	return []string{
+		"webapi-b", "wb/one", "PR of webapi-b", "tail of webapi-b", "diff of webapi-b", "sys of webapi-b", "follow of webapi-b",
+		e.b.reviewID, e.b.prID, e.b.runID, e.b.repoID,
+	}
+}
+
+// testCrossTenantIDs asks for tenant B's rows by id under tenant A's slug:
+// even an operator, who may read B, finds nothing, since the query runs
+// scoped to A.
+func testCrossTenantIDs(t *testing.T, e *apiEnv) {
+	a := "/api/v1/tenants/webapi-a"
+	paths := []string{
+		a + "/reviews/" + e.b.reviewID, a + "/reviews/" + e.b.reviewID + "/diff",
+		a + "/reviews/" + e.b.reviewID + "/transcript", a + "/reviews/" + e.b.reviewID + "/raw",
+		a + fmt.Sprintf("/followups/%d/transcript", onlyBComment), a + "/pulls/wb/one/7", a + "/repos/wb/one",
+	}
+	for _, path := range paths {
+		for _, who := range []string{"member-a", "operator"} {
+			t.Run(who+" "+path, func(t *testing.T) {
+				if status, body := e.getBody(who, path); status != 404 {
+					t.Errorf("status = %d, want 404: %s", status, body)
+				}
+			})
+		}
 	}
 }
 
@@ -444,6 +487,7 @@ func (e *apiEnv) stream(ctx context.Context, who string) <-chan Event {
 	}
 	out := make(chan Event, 64)
 	go func() {
+		defer close(out)
 		defer func() { _ = resp.Body.Close() }()
 		for {
 			line, err := br.ReadString('\n')
@@ -464,7 +508,13 @@ func (e *apiEnv) stream(ctx context.Context, who string) <-chan Event {
 func testEventStreamScopesToTenant(t *testing.T, e *apiEnv) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() { _ = e.srv.Run(ctx) }()
+	runCtx, stopRun := context.WithCancel(ctx)
+	defer stopRun()
+	ran := make(chan struct{})
+	go func() {
+		defer close(ran)
+		_ = e.srv.Run(runCtx)
+	}()
 	aEvents, bEvents := e.stream(ctx, "member-a"), e.stream(ctx, "member-b")
 
 	// The listener connects on its own schedule, and a notification sent
@@ -492,5 +542,24 @@ wait:
 	case ev := <-bEvents:
 		t.Errorf("member of B received %+v", ev)
 	case <-time.After(time.Second):
+	}
+
+	// Once Run returns, as on shutdown, the open streams end so the
+	// browsers reconnect elsewhere.
+	stopRun()
+	<-ran
+	end := time.After(5 * time.Second)
+	for _, ch := range []<-chan Event{aEvents, bEvents} {
+	drain:
+		for {
+			select {
+			case _, ok := <-ch:
+				if !ok {
+					break drain
+				}
+			case <-end:
+				t.Fatal("a stream stayed open after Run returned")
+			}
+		}
 	}
 }
