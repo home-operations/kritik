@@ -67,6 +67,8 @@ type admission struct {
 	lease    *lease
 	endpoint *runner.ModelEndpoint
 	key      string
+	// maxTokens is the agent's token budget for this review.
+	maxTokens int64
 }
 
 // agentAdmit settles what an agentic review may spend before its runner
@@ -85,9 +87,15 @@ func (w *Review) agentAdmit(
 	if err != nil {
 		return admission{}, statusFailed, err.Error(), nil
 	}
-	capped, err := capReached(ctx, w.Store, tenant.ID(), settings.Limits)
-	if err != nil {
-		return admission{}, "", "", err
+	budget, capped := settings.Agent.MaxTokens, ""
+	if limits := settings.Limits; limits.ReviewsPerDay > 0 || limits.TokensPerMonth > 0 {
+		u, err := readUsage(ctx, w.Store, tenant.ID())
+		if err != nil {
+			return admission{}, "", "", err
+		}
+		if capped = u.reached(limits); capped == "" {
+			budget, capped = agentBudget(settings.Agent.MaxTokens, limits.TokensPerMonth, u.tokens)
+		}
 	}
 	if capped != "" {
 		return admission{}, statusCapped, capped, nil
@@ -102,7 +110,26 @@ func (w *Review) agentAdmit(
 		return admission{}, "", "", err
 	}
 	w.Metrics.LeaseWait(tenant.Slug, string(ref), time.Since(waited))
-	return admission{lease: l, endpoint: endpoint, key: key}, "", "", nil
+	return admission{lease: l, endpoint: endpoint, key: key, maxTokens: budget}, "", "", nil
+}
+
+// minAgentTokens is the least monthly headroom an agentic review starts
+// with: below it the agent could not read the diff before running out.
+const minAgentTokens = 50_000
+
+// agentBudget is how many tokens one agentic review may spend: the
+// repository's agent budget, cut to what is left of the tenant's monthly
+// cap when one is set. A non-empty reason caps the review instead, when
+// too little is left for an agent to do anything with.
+func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) {
+	if tokensPerMonth <= 0 {
+		return agentMax, ""
+	}
+	left := tokensPerMonth - usedThisMonth
+	if left <= minAgentTokens {
+		return 0, fmt.Sprintf("tokensPerMonth (%d) nearly reached: %d tokens left", tokensPerMonth, max(left, 0))
+	}
+	return min(agentMax, left), ""
 }
 
 // modelEndpoint is the review model an agentic runner talks to, and its
@@ -225,7 +252,7 @@ func (w *Review) agentSpec(
 	}
 	spec.Prompt, spec.Mode, spec.Model, secrets.ModelAPIKey = prompt, runner.ModeAgentic, admitted.endpoint, admitted.key
 	spec.Agent = &runner.AgentLimits{
-		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes,
+		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
 		TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
 	}
 	return agentDeadline(deadline, settings.Agent.Timeout), nil

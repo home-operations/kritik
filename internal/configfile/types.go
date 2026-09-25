@@ -268,20 +268,25 @@ func (m ReviewMode) String() string { return string(m) }
 // Agent bounds an agentic review. A field left unset takes its default from
 // DefaultAgent; one that is set must be positive.
 type Agent struct {
-	MaxSteps           *int           `yaml:"maxSteps,omitempty"`
-	MaxToolOutputBytes *int           `yaml:"maxToolOutputBytes,omitempty"`
-	Timeout            *time.Duration `yaml:"timeout,omitempty"`
+	MaxSteps           *int `yaml:"maxSteps,omitempty"`
+	MaxToolOutputBytes *int `yaml:"maxToolOutputBytes,omitempty"`
+	// MaxTokens bounds the prompt plus output tokens one agentic review
+	// may spend across all its steps.
+	MaxTokens *int64         `yaml:"maxTokens,omitempty"`
+	Timeout   *time.Duration `yaml:"timeout,omitempty"`
 }
 
 // AgentSettings are the resolved agent bounds.
 type AgentSettings struct {
 	MaxSteps           int
 	MaxToolOutputBytes int
+	MaxTokens          int64
 	Timeout            time.Duration
 }
 
-// DefaultAgent applies to every agent bound a repository leaves unset.
-var DefaultAgent = AgentSettings{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, Timeout: 20 * time.Minute}
+// DefaultAgent applies to every agent bound a repository leaves unset. Its
+// MaxTokens is the agent loop's own default budget.
+var DefaultAgent = AgentSettings{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, Timeout: 20 * time.Minute}
 
 // Incremental tunes incremental re-review.
 type Incremental struct {

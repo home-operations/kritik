@@ -255,6 +255,9 @@ func (r Repository) validateReview(where string) error {
 			return fmt.Errorf("configfile: %s.%s must be positive", where, c.name)
 		}
 	}
+	if r.Agent.MaxTokens != nil && *r.Agent.MaxTokens <= 0 {
+		return fmt.Errorf("configfile: %s.agent.maxTokens must be positive", where)
+	}
 	if r.Agent.Timeout != nil && *r.Agent.Timeout <= 0 {
 		return fmt.Errorf("configfile: %s.agent.timeout must be positive", where)
 	}

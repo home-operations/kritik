@@ -105,7 +105,9 @@ config:
   #         # agentic mode gives the model a bounded, read-only tool loop
   #         # over the commit tree instead of one prompt with the diff.
   #         mode: agentic
-  #         agent: { timeout: 15m }
+  #         # maxTokens bounds one review's spend; it is cut further to what
+  #         # is left of the tenant's tokensPerMonth.
+  #         agent: { timeout: 15m, maxTokens: 1000000 }
   #         # Collapse a burst of pushes onto the last head before spending
   #         # anything on a review.
   #         settle: 2m

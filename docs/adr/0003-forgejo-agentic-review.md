@@ -72,7 +72,7 @@ matches) are evaluated after the runner, since only the runner has the tree
 and the changed paths. A skipped review posts a success status saying why.
 
 Operator-only repository keys are `mode` (`single`, the default, or
-`agentic`), `agent` (`maxSteps`, `maxToolOutputBytes`, `timeout`),
+`agentic`), `agent` (`maxSteps`, `maxToolOutputBytes`, `maxTokens`, `timeout`),
 `incremental.maxDeltaFiles` (default 25), `settle` (a duration) and a
 `review` block of defaults the in-repo file may override.
 
@@ -137,7 +137,13 @@ is no path or symlink escape:
 
 Every tool's output is capped. The loop ends on `submit_review`, `maxSteps`,
 the token budget or the Job deadline, and writes an `agent_runs` row with the
-result, the stop reason, steps, a tool histogram and usage.
+result, the stop reason, steps, a tool histogram and usage. A run cancelled
+from outside (superseded, heartbeat lost, deadline) still writes its row, with
+stop `canceled` and the usage so far, and the worker charges it.
+
+The token budget is the repository's `agent.maxTokens` (4M by default), cut
+to what is left of the tenant's `tokensPerMonth` when one is set; with less
+than a small floor left the review ends `capped` before the Job starts.
 
 The worker keeps everything that writes outward or spends against limits: it
 checks caps, takes the model lease and renews it for the Job's lifetime,

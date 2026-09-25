@@ -449,7 +449,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 
 	t.Run("repository values override the defaults", func(t *testing.T) {
 		f, err := Parse([]byte(withRepo(`{ name: acme/x, mode: agentic,
-      agent: { maxSteps: 12, maxToolOutputBytes: 4096, timeout: 3m },
+      agent: { maxSteps: 12, maxToolOutputBytes: 4096, maxTokens: 250000, timeout: 3m },
       incremental: { maxDeltaFiles: 5 },
       review: { instructions: [docs/rules.md], requireSuggestedFix: true,
         templates: { summary: .kritik/summary.md.j2, inline: .kritik/inline.md.j2 } } }`)))
@@ -457,7 +457,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := f.Settings(&f.Tenants[0], "acme/x")
-		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, Timeout: 3 * time.Minute}
+		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, Timeout: 3 * time.Minute}
 		if s.Mode != ReviewAgentic || s.Agent != want || s.Incremental.MaxDeltaFiles != 5 {
 			t.Fatalf("mode=%q agent=%+v incremental=%+v", s.Mode, s.Agent, s.Incremental)
 		}
@@ -495,6 +495,8 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		{"zero max steps", "{ name: acme/x, agent: { maxSteps: 0 } }", "agent.maxSteps must be positive"},
 		{"negative max steps", "{ name: acme/x, agent: { maxSteps: -1 } }", "agent.maxSteps must be positive"},
 		{"zero tool output", "{ name: acme/x, agent: { maxToolOutputBytes: 0 } }", "agent.maxToolOutputBytes must be positive"},
+		{"zero max tokens", "{ name: acme/x, agent: { maxTokens: 0 } }", "agent.maxTokens must be positive"},
+		{"negative max tokens", "{ name: acme/x, agent: { maxTokens: -5 } }", "agent.maxTokens must be positive"},
 		{"zero timeout", "{ name: acme/x, agent: { timeout: 0s } }", "agent.timeout must be positive"},
 		{"zero delta files", "{ name: acme/x, incremental: { maxDeltaFiles: 0 } }", "incremental.maxDeltaFiles must be positive"},
 		{"negative delta files", "{ name: acme/x, incremental: { maxDeltaFiles: -3 } }", "incremental.maxDeltaFiles must be positive"},

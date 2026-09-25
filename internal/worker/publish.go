@@ -171,25 +171,44 @@ func capReached(ctx context.Context, st *store.Store, tenantID string, limits co
 	if limits.ReviewsPerDay <= 0 && limits.TokensPerMonth <= 0 {
 		return "", nil
 	}
-	var reviews, tokens int64
+	u, err := readUsage(ctx, st, tenantID)
+	if err != nil {
+		return "", err
+	}
+	return u.reached(limits), nil
+}
+
+// capUsage is what a tenant's caps count: completed reviews today and
+// tokens this month.
+type capUsage struct {
+	reviews, tokens int64
+}
+
+func readUsage(ctx context.Context, st *store.Store, tenantID string) (capUsage, error) {
+	var u capUsage
 	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM reviews
-			WHERE status = 'completed' AND created_at >= date_trunc('day', now())`).Scan(&reviews); err != nil {
+			WHERE status = 'completed' AND created_at >= date_trunc('day', now())`).Scan(&u.reviews); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `SELECT coalesce(sum(input_tokens + output_tokens), 0) FROM usage
-			WHERE created_at >= date_trunc('month', now())`).Scan(&tokens)
+			WHERE created_at >= date_trunc('month', now())`).Scan(&u.tokens)
 	})
 	if err != nil {
-		return "", fmt.Errorf("worker: read caps: %w", err)
+		return capUsage{}, fmt.Errorf("worker: read caps: %w", err)
 	}
-	if limits.ReviewsPerDay > 0 && reviews >= int64(limits.ReviewsPerDay) {
-		return fmt.Sprintf("reviewsPerDay (%d) reached", limits.ReviewsPerDay), nil
+	return u, nil
+}
+
+// reached says which cap u has reached, or "".
+func (u capUsage) reached(limits configfile.Limits) string {
+	if limits.ReviewsPerDay > 0 && u.reviews >= int64(limits.ReviewsPerDay) {
+		return fmt.Sprintf("reviewsPerDay (%d) reached", limits.ReviewsPerDay)
 	}
-	if limits.TokensPerMonth > 0 && tokens >= limits.TokensPerMonth {
-		return fmt.Sprintf("tokensPerMonth (%d) reached", limits.TokensPerMonth), nil
+	if limits.TokensPerMonth > 0 && u.tokens >= limits.TokensPerMonth {
+		return fmt.Sprintf("tokensPerMonth (%d) reached", limits.TokensPerMonth)
 	}
-	return "", nil
+	return ""
 }
 
 func (p *publishPhase) load(ctx context.Context) (reviewInput, error) {
