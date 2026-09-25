@@ -50,6 +50,12 @@ func withPrincipal(ctx context.Context, p *Principal) context.Context {
 	return context.WithValue(ctx, principalKey{}, p)
 }
 
+// WithPrincipal returns ctx acting as p, for a caller that authenticated
+// the request some other way than Authenticate, such as a handler test.
+func WithPrincipal(ctx context.Context, p *Principal) context.Context {
+	return withPrincipal(ctx, p)
+}
+
 // PrincipalFrom returns the request's principal, nil when it is not signed
 // in.
 func PrincipalFrom(ctx context.Context) *Principal {
