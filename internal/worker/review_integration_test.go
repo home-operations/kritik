@@ -29,6 +29,7 @@ import (
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/webhook"
 )
@@ -605,12 +606,12 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	lf := &localForge{dir: dir, base: base, tip: head, permissions: map[string]string{"onedr0p": "admin"}}
 	fc := &fakeCompleter{}
 	fe := &fakeEmbedder{}
-	exec := &executor.Local{Store: runnerStore}
+	exec := &gateExecutor{inner: &executor.Local{Store: runnerStore}, started: make(chan executor.Spec)}
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &Review{
 		Store: appStore, Current: current, Forges: &forges{f: lf}, Completers: &completers{c: fc},
 		Embedder: fe, EmbedModel: "fake-embed",
-		Executor: exec, Deadline: time.Minute, Logger: logger,
+		Executor: exec, Deadline: time.Minute, Logger: logger, superviseEvery: 50 * time.Millisecond,
 	})
 	river.AddWorker(workers, &FollowUp{
 		Store: appStore, Current: current, Forges: &forges{f: lf}, Completers: &completers{c: fc}, Logger: logger,
@@ -665,12 +666,13 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkReviewRows(ctx, t, appStore, tenant.ID(), head)
 		var diff, phase, logTail, stages string
 		var changed []string
+		var heartbeat bool
 		err := appStore.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages::text, r.phase, r.log_tail FROM context_packs c
-				JOIN runner_runs r ON r.id = c.runner_run_id WHERE c.head_sha = $1`, head).Scan(&diff, &changed, &stages, &phase, &logTail)
+			return tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages::text, r.phase, r.log_tail, r.heartbeat_at IS NOT NULL FROM context_packs c
+				JOIN runner_runs r ON r.id = c.runner_run_id WHERE c.head_sha = $1`, head).Scan(&diff, &changed, &stages, &phase, &logTail, &heartbeat)
 		})
-		if err != nil || phase != "done" || len(changed) != 1 || changed[0] != "main.go" || logTail == "" {
-			t.Fatalf("pack: err=%v phase=%s changed=%v log=%q", err, phase, changed, logTail)
+		if err != nil || phase != "done" || len(changed) != 1 || changed[0] != "main.go" || logTail == "" || !heartbeat {
+			t.Fatalf("pack: err=%v phase=%s changed=%v log=%q heartbeat=%v", err, phase, changed, logTail, heartbeat)
 		}
 		// The whole three-line file is shown by the diff, so the pack is an
 		// empty array rather than the pre-context '{}' default.
@@ -718,6 +720,113 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 			t.Fatalf("status = %s, want superseded", status)
 		}
 	})
+
+	t.Run("supervision ends a running review", func(t *testing.T) {
+		checkSupervision(ctx, t, appStore, exec, dispatch, waitReview, tenant.ID(), repoID)
+	})
+}
+
+// checkSupervision holds review runs open and moves the head, then stales
+// the heartbeat, expecting supervision to cancel each run.
+func checkSupervision(
+	ctx context.Context, t *testing.T, appStore *store.Store, exec *gateExecutor, dispatch func(string, bool),
+	waitReview func(string) (string, string, string), tenantID, repoID string,
+) {
+	exec.setBlock(true)
+	t.Cleanup(func() { exec.setBlock(false) })
+	started := func() executor.Spec {
+		t.Helper()
+		select {
+		case spec := <-exec.started:
+			return spec
+		case <-time.After(20 * time.Second):
+			t.Fatal("the review runner never started")
+			return executor.Spec{}
+		}
+	}
+	reviewError := func(headSHA string) string {
+		t.Helper()
+		var text string
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT error FROM reviews WHERE head_sha = $1 ORDER BY created_at DESC LIMIT 1`, headSHA).Scan(&text)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return text
+	}
+
+	t.Run("superseded when the head moves while the runner works", func(t *testing.T) {
+		const running, newer = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
+		dispatch(running, false)
+		spec := started()
+		if spec.Job.Version != runner.SpecVersion || spec.Job.Kind != runner.KindReview || spec.Job.Head != running || spec.Job.Base == "" {
+			t.Fatalf("job = %+v", spec.Job)
+		}
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE pull_requests SET head_sha = $2 WHERE repository_id = $1 AND number = 1`, repoID, newer)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status, _, _ := waitReview(running); status != "superseded" {
+			t.Fatalf("status = %s, want superseded", status)
+		}
+	})
+
+	t.Run("failed when the runner heartbeat goes stale", func(t *testing.T) {
+		const running = "3333333333333333333333333333333333333333"
+		dispatch(running, false)
+		spec := started()
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() - interval '5 minutes' WHERE id = $1`, spec.RunID)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status, _, _ := waitReview(running); status != "failed" {
+			t.Fatalf("status = %s, want failed", status)
+		}
+		if text := reviewError(running); text != "runner heartbeat lost" {
+			t.Fatalf("error = %q", text)
+		}
+	})
+}
+
+// gateExecutor runs the real runner, or once blocked holds each review run
+// until supervision cancels it, the way a Job runs until it is deleted.
+type gateExecutor struct {
+	inner   executor.Executor
+	started chan executor.Spec
+
+	mu    sync.Mutex
+	block bool
+}
+
+func (g *gateExecutor) setBlock(b bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.block = b
+}
+
+func (g *gateExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
+	if err := spec.Job.Validate(); err != nil {
+		return executor.Result{Err: err}
+	}
+	g.mu.Lock()
+	block := g.block
+	g.mu.Unlock()
+	if !block || spec.Job.Kind != runner.KindReview {
+		return g.inner.Run(ctx, spec)
+	}
+	select {
+	case g.started <- spec:
+	case <-ctx.Done():
+	}
+	<-ctx.Done()
+	return executor.Result{JobName: "kritik-run-blocked", Err: context.Cause(ctx)}
 }
 
 func allowSHAFetch(t *testing.T, r *git.Repository) {

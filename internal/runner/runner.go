@@ -1,7 +1,9 @@
 // Package runner is what a runner pod does: fetch the two commits, diff
 // them, compute the patch id, and write a context pack under its own run
-// id. It holds a git token for one repository and a database role that can
-// only touch its own run. It never sees a model key.
+// id. It works from one versioned job document (Spec); its credentials, a
+// git token for one repository and for an agentic review a model key,
+// arrive apart from it (Secrets). Its database role can only touch its own
+// run.
 package runner
 
 import (
@@ -18,37 +20,34 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// Kinds of run.
-const (
-	KindReview = "review"
-	KindIndex  = "index"
-)
-
-// Params is everything a run needs, passed to the pod as environment.
-type Params struct {
-	// Kind is review or index; empty means review.
-	Kind string
-	// RunID is the runner_runs row this pod owns.
-	RunID string
-	// CloneURL and Token fetch the repository.
-	CloneURL string
-	Token    string
-	// Head and Base are the commits to diff; Base is the merge-base.
-	Head, Base string
-	// Ignore globs are skipped by the context stages.
-	Ignore []string
+// Run executes one run and reports success or failure in the run row,
+// stamping a heartbeat while it works. The store must be opened with the
+// runner role's DSN.
+func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logger *slog.Logger) error {
+	if err := spec.Validate(); err != nil {
+		return err
+	}
+	hctx, stop := context.WithCancel(ctx)
+	beating := make(chan struct{})
+	go func() {
+		defer close(beating)
+		heartbeat(hctx, HeartbeatInterval, func(ctx context.Context) error { return beat(ctx, st, spec.RunID) }, logger)
+	}()
+	defer func() {
+		stop()
+		<-beating
+	}()
+	if spec.Kind == KindIndex {
+		return runIndex(ctx, st, spec, secrets, logger)
+	}
+	return runReview(ctx, st, spec, secrets, logger)
 }
 
-// Run executes one run and reports success or failure in the run row. The
-// store must be opened with the runner role's DSN.
-func Run(ctx context.Context, st *store.Store, p Params, logger *slog.Logger) error {
-	if p.Kind == KindIndex {
-		return runIndex(ctx, st, p, logger)
-	}
+func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, logger *slog.Logger) error {
 	if err := setPhase(ctx, st, p.RunID, "fetching"); err != nil {
 		return err
 	}
-	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: p.Token, Head: p.Head, Base: p.Base})
+	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base})
 	if err != nil {
 		_ = fail(ctx, st, p.RunID, err)
 		return err
@@ -117,6 +116,33 @@ func stages(ctx context.Context, res *gitfetch.Result, ignore []string) ([]conte
 		chunks = []contextpack.Chunk{}
 	}
 	return chunks, stats, nil
+}
+
+// heartbeat calls beat now and then every interval until ctx ends. A failed
+// beat is logged and retried on the next tick: one lost write must not end
+// a run the worker would otherwise see recover.
+func heartbeat(ctx context.Context, interval time.Duration, beat func(context.Context) error, logger *slog.Logger) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		if err := beat(ctx); err != nil && ctx.Err() == nil {
+			logger.Warn("heartbeat failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+func beat(ctx context.Context, st *store.Store, runID string) error {
+	return st.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() WHERE id = $1`, runID); err != nil {
+			return fmt.Errorf("runner: heartbeat: %w", err)
+		}
+		return nil
+	})
 }
 
 func setPhase(ctx context.Context, st *store.Store, runID, phase string) error {

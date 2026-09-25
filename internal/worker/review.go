@@ -52,6 +52,9 @@ type Review struct {
 	// Deadline bounds a runner when the tenant sets none.
 	Deadline time.Duration
 	Logger   *slog.Logger
+
+	// superviseEvery overrides superviseInterval.
+	superviseEvery time.Duration
 }
 
 // Review statuses the worker writes; the table's CHECK lists the same set.
@@ -119,23 +122,37 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	settings := file.Settings(tenant, pr.repository)
 	deadline, resources := runnerSpec(tenant, w.Deadline)
-	res := w.Executor.Run(ctx, executor.Spec{
+	sup := runSupervision(w.Store, args.TenantID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
+	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runID,
 		Labels: map[string]string{
 			"tenant": tenant.Slug, "repository": strings.ReplaceAll(pr.repository, "/", "_"),
 			"pr": strconv.Itoa(args.Number), "kind": jobs.QueueReview,
 		},
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": args.HeadSHA},
-		Params: runner.Params{
-			RunID: runID, CloneURL: client.CloneURL(owner, repo), Token: token, Head: args.HeadSHA, Base: mergeBase, Ignore: settings.Ignore,
+		Job: runner.Spec{
+			Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
+			Head: args.HeadSHA, Base: mergeBase, Ignore: settings.Ignore,
 		},
+		Secrets:   runner.Secrets{GitToken: token},
 		Deadline:  deadline,
 		Resources: resources,
 	})
 	if err := recordRun(ctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err
 	}
-	if res.Err != nil {
+	// A run that finished despite a cancel is judged by its result; the
+	// head check after it catches a supersede.
+	switch {
+	case res.Err != nil && errors.Is(cause, errSuperseded):
+		logger.Info("review superseded while running", "job", res.JobName)
+		w.Metrics.Review(tenant.Slug, statusSuperseded, time.Since(started))
+		return w.finishReview(ctx, args.TenantID, reviewID, statusSuperseded, "", "")
+	case res.Err != nil && errors.Is(cause, errHeartbeatLost):
+		logger.Warn("runner heartbeat lost", "job", res.JobName)
+		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
+		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", "runner heartbeat lost")
+	case res.Err != nil:
 		logger.Warn("runner failed", "error", res.Err, "job", res.JobName, "reason", res.TerminationReason)
 		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
 		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", res.Err.Error())

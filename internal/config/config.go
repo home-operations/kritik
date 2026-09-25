@@ -154,17 +154,13 @@ type Config struct {
 	// executor, which runs the runner inside the worker process.
 	RunnerDatabaseURL string `env:"KRITIK_RUNNER_DATABASE_URL,unset"`
 
-	// The runner role's own inputs, set on the Job by the worker. RunKind
-	// is review (fetch, diff, context stages) or index (chunk a tree).
-	RunKind  string `env:"KRITIK_RUN_KIND" envDefault:"review"`
-	RunID    string `env:"KRITIK_RUN_ID"`
-	CloneURL string `env:"KRITIK_CLONE_URL"`
-	GitToken string `env:"KRITIK_GIT_TOKEN,unset"`
-	HeadSHA  string `env:"KRITIK_HEAD_SHA"`
-	BaseSHA  string `env:"KRITIK_BASE_SHA"`
-	// Ignore is the resolved ignore glob list for the repository, comma
-	// separated, skipped by the context stages.
-	Ignore []string `env:"KRITIK_IGNORE" envSeparator:","`
+	// RunSpec is the runner role's job document, a versioned JSON runner
+	// spec set on the Job by the worker.
+	RunSpec string `env:"KRITIK_RUN_SPEC"`
+	// GitToken and ModelAPIKey are the runner's credentials, read from the
+	// run's own Secret. The model key is set only for an agentic review.
+	GitToken    string `env:"KRITIK_GIT_TOKEN,unset"`
+	ModelAPIKey string `env:"KRITIK_MODEL_API_KEY,unset"`
 
 	// LogLevel is the minimum slog level emitted: debug, info, warn or error.
 	LogLevel string `env:"KRITIK_LOG_LEVEL" envDefault:"info"`
@@ -185,20 +181,11 @@ func (c *Config) ValidateWorker() error {
 	return nil
 }
 
-// ValidateRunner checks what a runner pod needs.
+// ValidateRunner checks what a runner pod needs. The job document itself is
+// decoded and validated by the runner package.
 func (c *Config) ValidateRunner() error {
-	required := map[string]string{"KRITIK_RUN_ID": c.RunID, "KRITIK_CLONE_URL": c.CloneURL, "KRITIK_HEAD_SHA": c.HeadSHA}
-	switch c.RunKind {
-	case "review":
-		required["KRITIK_BASE_SHA"] = c.BaseSHA
-	case "index":
-	default:
-		return fmt.Errorf("config: KRITIK_RUN_KIND must be review or index, got %q", c.RunKind)
-	}
-	for name, v := range required {
-		if v == "" {
-			return fmt.Errorf("config: %s is required for the runner role", name)
-		}
+	if c.RunSpec == "" {
+		return fmt.Errorf("config: KRITIK_RUN_SPEC is required for the runner role")
 	}
 	return nil
 }
