@@ -1,0 +1,142 @@
+{
+  "review": {
+    "id": "rev-1",
+    "status": "completed",
+    "trigger": "push",
+    "mode": "agentic",
+    "scope": "incremental",
+    "model": "acme/large",
+    "headSha": "abc123",
+    "costUsd": 0.42,
+    "tokens": {
+      "input": 1000,
+      "output": 200
+    },
+    "durationMs": 90000,
+    "createdAt": "2026-09-01T12:00:00Z",
+    "finishedAt": "2026-09-01T12:01:30Z",
+    "skipReason": "filtered",
+    "error": "",
+    "pull": {
+      "repository": "alpha/one",
+      "number": 7,
+      "title": "Add widgets"
+    },
+    "scopeReason": "delta",
+    "mergeBaseSha": "base1",
+    "patchId": "patch1",
+    "priorReviewId": "rev-0",
+    "cancelRequestedAt": null
+  },
+  "summary": {
+    "take": "Looks fine.",
+    "praise": ["tests"]
+  },
+  "findings": [
+    {
+      "id": "f-1",
+      "path": "a.go",
+      "line": 3,
+      "endLine": 5,
+      "severity": "blocking",
+      "title": "nil deref",
+      "explanation": "x may be nil",
+      "suggestedFix": "check x",
+      "replacement": "if x != nil {}",
+      "agentPrompt": "fix it",
+      "fingerprint": "fp",
+      "postedInline": true,
+      "forgeCommentId": 55,
+      "createdAt": "2026-09-01T12:00:00Z"
+    }
+  ],
+  "runnerRun": {
+    "id": "run-1",
+    "phase": "done",
+    "jobName": "job",
+    "podName": "pod",
+    "nodeName": "node",
+    "createdAt": "2026-09-01T12:00:00Z",
+    "scheduledAt": "2026-09-01T12:00:00Z",
+    "startedAt": "2026-09-01T12:00:00Z",
+    "finishedAt": "2026-09-01T12:01:30Z",
+    "heartbeatAt": "2026-09-01T12:01:30Z",
+    "exitCode": 0,
+    "terminationReason": "Completed",
+    "deadlineExceeded": false,
+    "error": "",
+    "logTail": "ok\n"
+  },
+  "agentRun": {
+    "stopReason": "submitted",
+    "steps": 3,
+    "toolCalls": {
+      "grep": 2
+    },
+    "timeline": [
+      {
+        "index": 0,
+        "tools": ["grep"],
+        "durationMs": 1200,
+        "outputBytes": 300,
+        "inputTokens": 100,
+        "outputTokens": 20
+      }
+    ],
+    "sources": ["https://docs.example"],
+    "usage": {
+      "input": 100,
+      "cacheRead": 50,
+      "cacheWrite": 10,
+      "output": 20
+    },
+    "costUsd": 0.1,
+    "model": "acme/large",
+    "error": "",
+    "createdAt": "2026-09-01T12:01:30Z",
+    "result": {
+      "findings": []
+    }
+  },
+  "usage": [
+    {
+      "role": "review",
+      "model": "acme/large",
+      "upstream": "acme",
+      "inputTokens": 100,
+      "outputTokens": 20,
+      "costUsd": 0.1,
+      "createdAt": "2026-09-01T12:01:30Z"
+    }
+  ],
+  "contextPack": {
+    "headSha": "abc123",
+    "baseSha": "base1",
+    "patchId": "patch1",
+    "changedPaths": ["a.go"],
+    "deltaPaths": ["a.go"],
+    "priorHeadSha": "abc000",
+    "stages": [
+      {
+        "stage": "definitions",
+        "path": "b.go",
+        "language": "go",
+        "symbol": "F",
+        "kind": "func",
+        "scope": "pkg",
+        "startLine": 1,
+        "endLine": 9,
+        "ref": "F",
+        "bytes": 120
+      }
+    ],
+    "repoNotes": ["docs/missing.md: not found"],
+    "repoFiles": [
+      {
+        "path": ".kritik.yaml",
+        "size": 42
+      }
+    ],
+    "createdAt": "2026-09-01T12:00:00Z"
+  }
+}

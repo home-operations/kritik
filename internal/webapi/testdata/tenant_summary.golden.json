@@ -1,0 +1,15 @@
+{
+  "slug": "alpha",
+  "managedBy": "dashboard",
+  "role": "admin",
+  "installations": 1,
+  "repositories": 3,
+  "reviews7d": 9,
+  "usage": {
+    "tokens": 5000,
+    "costUsd": 1.5,
+    "tokensPerMonth": 1000000,
+    "reviewsToday": 2,
+    "reviewsPerDay": 50
+  }
+}

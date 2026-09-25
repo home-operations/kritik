@@ -1,0 +1,15 @@
+{
+  "id": "fu-1",
+  "commentId": 99,
+  "repository": "alpha/one",
+  "number": 7,
+  "author": "bob",
+  "inline": true,
+  "path": "a.go",
+  "line": 4,
+  "status": "answered",
+  "reason": "",
+  "replyCommentId": 100,
+  "model": "acme/large",
+  "createdAt": "2026-09-01T12:00:00Z"
+}

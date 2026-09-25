@@ -1,0 +1,23 @@
+{
+  "repoFiles": {
+    ".kritik.yaml": "mode: agentic\n"
+  },
+  "stages": [
+    {
+      "stage": "definitions",
+      "path": "b.go",
+      "language": "go",
+      "symbol": "F",
+      "kind": "func",
+      "scope": "pkg",
+      "startLine": 1,
+      "endLine": 9,
+      "ref": "F",
+      "text": "func F() {}"
+    }
+  ],
+  "result": {
+    "findings": []
+  },
+  "logTail": "ok\n"
+}
