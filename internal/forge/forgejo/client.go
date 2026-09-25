@@ -150,6 +150,19 @@ func repoPath(owner, repo string) string {
 	return "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo)
 }
 
+// LineRanges implements forge.Client: a Forgejo review comment sits on one
+// line, so a suggestion can replace only that line.
+func (c *Client) LineRanges() bool { return false }
+
+// FileURL implements forge.Client.
+func (c *Client) FileURL(owner, repo, sha, path string, line, endLine int) string {
+	u := fmt.Sprintf("%s/%s/%s/src/commit/%s/%s#L%d", c.webBase, owner, repo, sha, path, line)
+	if endLine > line {
+		u += fmt.Sprintf("-L%d", endLine)
+	}
+	return u
+}
+
 // MergeBase implements forge.Client. base and head are accepted for
 // interface parity with other forges but unused: Forgejo's pull request
 // resource already reports the merge base it computed against its current

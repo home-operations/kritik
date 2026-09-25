@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -331,6 +332,16 @@ func reviewNotes(omitted []string, dropped []review.Dropped) []string {
 func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, []bool, error) {
 	owner, repo, _ := strings.Cut(p.pr.repository, "/")
 	onForge := alreadyInline(res.Findings, p.prior.findings)
+	ranges := p.client.LineRanges()
+	for i := range res.Findings {
+		f := &res.Findings[i]
+		// A forge whose comments sit on one line would apply a multi-line
+		// replacement to that line alone, so it is shown but not offered.
+		if f.EndLine > 0 && !ranges {
+			f.SuggestedFix, f.Replacement = replacementAsText(f), ""
+		}
+		f.URL = p.client.FileURL(owner, repo, p.pr.headSHA, f.Path, f.Line, f.EndLine)
+	}
 	// Inline comments render first so a failing inline template is noted
 	// in the summary. After one failure the rest use the default, so a
 	// template that times out costs one deadline, not one per finding.
@@ -345,7 +356,11 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 			templates.Inline = ""
 			notes = append(notes, inlineNotes...)
 		}
-		inline = append(inline, forge.InlineComment{Path: f.Path, Line: f.Line, Body: body})
+		c := forge.InlineComment{Path: f.Path, Line: f.Line, Body: body}
+		if f.EndLine > 0 && ranges {
+			c.StartLine, c.Line = f.Line, f.EndLine
+		}
+		inline = append(inline, c)
 	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Result: res, Counts: res.Counts(), Notes: notes,
@@ -375,6 +390,16 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 		p.logger.Warn("commit status not set", "error", err)
 	}
 	return commentID, onForge, nil
+}
+
+// replacementAsText folds a replacement into the suggested fix as a code
+// block, for a forge that cannot offer it.
+func replacementAsText(f *review.Finding) string {
+	block := "Lines " + strconv.Itoa(f.Line) + "-" + strconv.Itoa(f.EndLine) + " should read:\n\n```\n" + f.Replacement + "\n```"
+	if f.SuggestedFix == "" {
+		return block
+	}
+	return f.SuggestedFix + "\n\n" + block
 }
 
 // upsertSticky edits the pull request's sticky comment to body, creating
@@ -411,9 +436,11 @@ func (p *publishPhase) persist(
 	return p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
 		for i, f := range res.Findings {
 			if _, err := tx.Exec(ctx, `INSERT INTO findings
-				(tenant_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint, posted_inline)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, p.tenant.ID(), p.reviewID, f.Path, f.Line, string(f.Severity),
-				f.Title, f.Explanation, f.SuggestedFix, review.Fingerprint(f), inline[i]); err != nil {
+				(tenant_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint, posted_inline,
+				 end_line, replacement, agent_prompt)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`, p.tenant.ID(), p.reviewID, f.Path, f.Line,
+				string(f.Severity), f.Title, f.Explanation, f.SuggestedFix, review.Fingerprint(f), inline[i],
+				f.EndLine, f.Replacement, f.AgentPrompt); err != nil {
 				return fmt.Errorf("worker: insert finding: %w", err)
 			}
 		}

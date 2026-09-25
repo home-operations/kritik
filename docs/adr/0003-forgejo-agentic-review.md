@@ -2,7 +2,9 @@
 
 - **Status:** Proposed
 - **Amended by:** [ADR-0005](0005-go-templates.md), which replaces the
-  Jinja2 templates of §2.4 with Go templates.
+  Jinja2 templates of §2.4 with Go templates, and
+  [ADR-0006](0006-finding-fixes.md), which adds a range, a replacement and
+  an agent prompt to the findings of §2.4.
 - **Date:** 2026-09-24
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6, §2.7, §2.11 and §2.12.
 

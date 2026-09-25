@@ -13,7 +13,8 @@ func sampleData() RenderData {
 	res := Result{
 		Summary: Summary{Take: "Solid change with one real bug.", Praise: []string{"Clear tests"}},
 		Findings: []Finding{
-			{Path: "main.go", Line: 11, Severity: SeverityBlocking, Title: "nil map write", Explanation: "m is nil here.", SuggestedFix: "m = map[string]int{}"},
+			{Path: "main.go", Line: 11, Severity: SeverityBlocking, Title: "nil map write", Explanation: "m is nil here.", SuggestedFix: "m = map[string]int{}",
+				URL: "https://forge.example/o/r/blob/0123456789abcdef/main.go#L11"},
 			{Path: "README.md", Line: 2, Severity: SeverityNit, Title: "typo", Explanation: "the the"},
 		},
 	}
@@ -32,10 +33,10 @@ func TestRenderSummaryDefault(t *testing.T) {
 	}
 	for _, want := range []string{
 		"### kritik review",
-		"- **Blocking:** 1", "- **Important:** 0", "- **Nit:** 1",
+		"**2 findings** · 1 blocking · 0 important · 1 nit",
 		"Solid change with one real bug.",
 		"- Clear tests",
-		"- **[blocking]** `main.go:11` nil map write",
+		"- **[blocking]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write",
 		"- **[nit]** `README.md:2` typo",
 		"_1 file(s) were omitted from the diff to fit the context budget._",
 		"Reviewed `0123456` by kritik with vendor/model-x. Reviews never block a merge.",
@@ -44,7 +45,7 @@ func TestRenderSummaryDefault(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, body)
 		}
 	}
-	if strings.Index(body, "Blocking:") > strings.Index(body, "Solid change") || strings.Index(body, "Solid change") > strings.Index(body, "`main.go:11`") {
+	if strings.Index(body, "2 findings") > strings.Index(body, "Solid change") || strings.Index(body, "Solid change") > strings.Index(body, "`main.go:11`") {
 		t.Fatalf("sections out of order:\n%s", body)
 	}
 
@@ -52,7 +53,8 @@ func TestRenderSummaryDefault(t *testing.T) {
 	empty.Result.Findings, empty.Counts, empty.Notes, empty.Result.Summary.Praise = nil, Counts{}, nil, nil
 	empty.Incremental, empty.PriorHeadSHA = true, "fedcba9876543210"
 	body, _ = RenderSummary(t.Context(), Templates{}, empty)
-	if !strings.Contains(body, "Nothing worth flagging") || strings.Contains(body, "_1 file") || !strings.Contains(body, "`fedcba9`") {
+	if !strings.Contains(body, "Nothing worth flagging") || strings.Contains(body, "_1 file") || !strings.Contains(body, "`fedcba9`") ||
+		strings.Contains(body, "0 findings") {
 		t.Fatalf("empty body:\n%s", body)
 	}
 }
@@ -71,7 +73,7 @@ func TestRenderSummaryIncomplete(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, body)
 		}
 	}
-	for _, unwanted := range []string{"Nothing worth flagging", "**Blocking:**"} {
+	for _, unwanted := range []string{"Nothing worth flagging", "blocking ·"} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("an incomplete review must not claim %q:\n%s", unwanted, body)
 		}
@@ -166,6 +168,19 @@ func TestRenderInline(t *testing.T) {
 	noFix.SuggestedFix = ""
 	if body, _ := RenderInline(t.Context(), Templates{}, noFix); strings.Contains(body, "Suggested fix") {
 		t.Fatalf("no fix should render no fix section:\n%s", body)
+	}
+	for _, unwanted := range []string{"```suggestion", "<details>"} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("no replacement or agent prompt should render %q:\n%s", unwanted, body)
+		}
+	}
+	rich := f
+	rich.SuggestedFix, rich.Replacement, rich.AgentPrompt = "", "m := map[string]int{}\nm[k] = v", "In main.go replace lines 11-12 so `m` is made before `m[k] = v`; use ``x``."
+	body, _ = RenderInline(t.Context(), Templates{}, rich)
+	if !strings.Contains(body, "```suggestion\nm := map[string]int{}\nm[k] = v\n```") ||
+		!strings.Contains(body, "<details>\n<summary>Prompt for a coding agent</summary>\n\n```\nIn main.go replace") ||
+		!strings.HasSuffix(body, "use ``x``.\n```\n\n</details>\n") {
+		t.Fatalf("rich inline:\n%s", body)
 	}
 
 	body, notes = RenderInline(t.Context(), Templates{Inline: "{{ .Severity }}|{{ .Path }}:{{ .Line }}|{{ .Title }}|{{ .Explanation }}|{{ .SuggestedFix }}"}, f)

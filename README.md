@@ -23,8 +23,10 @@ amended by [`docs/adr/0003-forgejo-agentic-review.md`](docs/adr/0003-forgejo-age
 [`docs/adr/0004-model-gateway.md`](docs/adr/0004-model-gateway.md) (the worker
 as model gateway, no provider key in a runner pod) and
 [`docs/adr/0005-go-templates.md`](docs/adr/0005-go-templates.md) (comment
-templates are Go templates with sprout); ADR-0001 is kept as historical
-input.
+templates are Go templates with sprout) and
+[`docs/adr/0006-finding-fixes.md`](docs/adr/0006-finding-fixes.md) (findings
+carry a replacement the forge offers as a suggestion, and an agent prompt);
+ADR-0001 is kept as historical input.
 What works today: the configuration file loader with live reload, the
 Postgres store with row-level security and River, the ingest role (a signed
 forge webhook becomes rows and a review job), and the worker role, which
@@ -32,7 +34,9 @@ takes the merge-base from the forge, runs a Kubernetes Job per review
 that fetches the two commits, diffs them and writes a context pack, then
 holds a per-tenant model lease, asks a configured model for structured
 findings, and writes back a sticky summary comment, inline review comments
-and a commit status. GitHub and Forgejo are both wired forges; a
+and a commit status. A finding whose fix is a change to the lines it points
+at carries the replacement, which the inline comment offers as a one-click
+suggestion, and a prompt a coding agent can apply the fix from. GitHub and Forgejo are both wired forges; a
 `providers` entry picks the `openrouter`, `openai` or `anthropic` adapter
 per tenant, with per-model `pricing` to cost calls a provider itself
 doesn't report a cost for. A repository's `mode` can ask for an agentic
@@ -119,8 +123,9 @@ operator-only — and its keys are:
   `.HeadSHA`, `.Model`, `.Result.Summary.Take`, `.Result.Summary.Praise`,
   `.Result.Findings`, `.Counts.Blocking`/`.Important`/`.Nit`, `.Notes`,
   `.Incremental`, `.PriorHeadSHA`, `.Incomplete`); the inline template's dot
-  is one finding (`.Path`, `.Line`, `.Severity`, `.Title`, `.Explanation`,
-  `.SuggestedFix`). Rendering is bounded (loop iterations, bytes per
+  is one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Title`,
+  `.Explanation`, `.SuggestedFix`, `.Replacement`, `.AgentPrompt`, `.URL`, a
+  link to the lines at the head commit). Rendering is bounded (loop iterations, bytes per
   function call, output size, a deadline) so a template cannot hang or
   exhaust memory; one that exceeds a bound falls back to the default with a
   note in the comment.

@@ -40,8 +40,11 @@ type Comment struct {
 // first.
 type InlineComment struct {
 	Path string
-	Line int
-	Body string
+	// Line is the line the comment is on; with StartLine set, the last
+	// line of a range that starts there.
+	Line      int
+	StartLine int
+	Body      string
 }
 
 // StatusState is the outcome a commit status reports. kritik never reports
@@ -108,6 +111,12 @@ type Client interface {
 	CreateReview(ctx context.Context, owner, repo string, number int, headSHA string, comments []InlineComment) error
 	// SetStatus sets the kritik commit status on sha.
 	SetStatus(ctx context.Context, owner, repo, sha string, state StatusState, description string) error
+	// LineRanges reports whether inline comments may span a range of
+	// lines, so a suggestion can replace more than one.
+	LineRanges() bool
+	// FileURL links lines line through endLine (0 for line alone) of path
+	// at sha in the forge's web UI.
+	FileURL(owner, repo, sha, path string, line, endLine int) string
 
 	// GetComment fetches one comment; inline selects the review-comment
 	// namespace, which the forge keeps apart from conversation comments.

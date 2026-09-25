@@ -70,7 +70,7 @@ type Summary struct {
 const maxPraise = 3
 
 // Finding is one thing the reviewer wants a human to look at, anchored to a
-// line on the head side of the diff.
+// line on the head side of the diff, or to the range Line through EndLine.
 type Finding struct {
 	Path         string   `json:"path"`
 	Line         int      `json:"line"`
@@ -78,6 +78,33 @@ type Finding struct {
 	Title        string   `json:"title"`
 	Explanation  string   `json:"explanation"`
 	SuggestedFix string   `json:"suggested_fix,omitempty"`
+	// EndLine is the last line of the range the finding covers, 0 when it
+	// covers Line alone.
+	EndLine int `json:"end_line,omitempty"`
+	// Replacement is what lines Line through EndLine should read instead,
+	// raw code the forge offers as a one-click suggestion.
+	Replacement string `json:"replacement,omitempty"`
+	// AgentPrompt is one paragraph telling a coding agent how to apply the
+	// fix.
+	AgentPrompt string `json:"agent_prompt,omitempty"`
+	// URL links the finding's lines at the head commit. kritik sets it
+	// when rendering; the model never does.
+	URL string `json:"-"`
+}
+
+// AgentPromptFence is a code fence longer than any backtick run in
+// AgentPrompt, so the prompt renders as one block whatever it contains.
+func (f Finding) AgentPromptFence() string {
+	longest, run := 0, 0
+	for _, r := range f.AgentPrompt {
+		if r == '`' {
+			run++
+			longest = max(longest, run)
+		} else {
+			run = 0
+		}
+	}
+	return strings.Repeat("`", max(3, longest+1))
 }
 
 // Result is the whole answer.
@@ -152,6 +179,9 @@ const (
 	keyTitle        = "title"
 	keyExplanation  = "explanation"
 	keySuggestedFix = "suggested_fix"
+	keyEndLine      = "end_line"
+	keyReplacement  = "replacement"
+	keyAgentPrompt  = "agent_prompt"
 )
 
 // JSON Schema types the answer shapes use more than once.
@@ -175,6 +205,17 @@ func (s jsonSchema) mustMarshal() json.RawMessage {
 	}
 	return b
 }
+
+// Descriptions of the fix fields, which the model must get exactly right
+// for a one-click suggestion to be worth offering.
+const (
+	describeEndLine = "Last line of the range the finding covers, in the new version of the file; " +
+		"omit when it covers line alone."
+	describeReplacement = "What lines line through end_line should read instead, complete and exactly as they " +
+		"should be committed: raw code, no fences, no commentary. Only when the fix is a change to those lines."
+	describeAgentPrompt = "One plain-text paragraph telling a coding agent how to apply the fix: the file, " +
+		"the lines, the symbols and the exact change."
+)
 
 // contractSchema is kept minimal on purpose: every extra field is something
 // a model can get wrong.
@@ -221,6 +262,9 @@ func contractSchema(requireFix bool) json.RawMessage {
 						keyTitle:        {Type: schemaString, Description: "One line, under 80 characters."},
 						keyExplanation:  {Type: schemaString, Description: "Why it matters. Markdown allowed, no headings."},
 						keySuggestedFix: {Type: schemaString, Description: fix},
+						keyEndLine:      {Type: "integer", Description: describeEndLine},
+						keyReplacement:  {Type: schemaString, Description: describeReplacement},
+						keyAgentPrompt:  {Type: schemaString, Description: describeAgentPrompt},
 					},
 					Required: required,
 				},
@@ -245,8 +289,10 @@ func SchemaStrict() json.RawMessage { return slices.Clone(findingsSchemaStrict) 
 // unknown severity, a missing field, a missing fix when opts require one,
 // or a line the diff does not add or keep. Dropped findings are returned
 // with the reason so they can be logged and counted, never silently lost.
-// anchors maps a path to the head-side lines the diff covers. Kept findings
-// are ordered most severe first, then by path and line.
+// anchors maps a path to the head-side lines the diff covers. A range or a
+// replacement the diff does not wholly cover is cleared rather than the
+// finding dropped. Kept findings are ordered most severe first, then by
+// path and line.
 func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Result, []Dropped, error) {
 	var res Result
 	dec := json.NewDecoder(strings.NewReader(strings.TrimSpace(raw)))
@@ -268,13 +314,15 @@ func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Resu
 		f.Title = strings.TrimSpace(f.Title)
 		f.Explanation = strings.TrimSpace(f.Explanation)
 		f.SuggestedFix = strings.TrimSpace(f.SuggestedFix)
+		f.Replacement = stripFences(f.Replacement)
+		f.AgentPrompt = strings.TrimSpace(f.AgentPrompt)
 		var reason DropReason
 		switch {
 		case !f.Severity.Valid():
 			reason = DropBadSeverity
 		case f.Path == "" || f.Line <= 0 || f.Title == "" || f.Explanation == "":
 			reason = DropIncomplete
-		case opts.RequireSuggestedFix && f.SuggestedFix == "":
+		case opts.RequireSuggestedFix && f.SuggestedFix == "" && f.Replacement == "":
 			reason = DropNoFix
 		case !anchors[f.Path][f.Line]:
 			reason = DropUnanchored
@@ -282,6 +330,15 @@ func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Resu
 		if reason != "" {
 			dropped = append(dropped, Dropped{Finding: f, Reason: reason})
 			continue
+		}
+		if f.EndLine <= f.Line {
+			f.EndLine = 0
+		}
+		for l := f.Line + 1; l <= f.EndLine; l++ {
+			if !anchors[f.Path][l] {
+				f.EndLine, f.Replacement = 0, ""
+				break
+			}
 		}
 		kept = append(kept, f)
 	}
@@ -294,6 +351,20 @@ func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Resu
 	})
 	res.Findings = kept
 	return res, dropped, nil
+}
+
+// stripFences drops the fence lines a model wraps replacement code in and
+// any stray fence line inside it, since the template puts the code in a
+// suggestion fence of its own.
+func stripFences(code string) string {
+	lines := strings.Split(strings.Trim(code, "\n"), "\n")
+	kept := lines[:0]
+	for _, l := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(l), "```") {
+			kept = append(kept, l)
+		}
+	}
+	return strings.Trim(strings.Join(kept, "\n"), "\n")
 }
 
 // Fingerprint identifies a finding across reviews of the same pull request:

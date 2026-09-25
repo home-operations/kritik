@@ -374,7 +374,7 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
 	if len(inline) != 1 || !strings.Contains(inline[0], "b is unused") || comments != 1 ||
-		!strings.Contains(sticky, "`main.go:3` b is unused") || forgeStatus != "success: kritik: 1 finding(s)" {
+		!strings.Contains(sticky, "/main.go#L3) b is unused") || forgeStatus != "success: kritik: 1 finding(s)" {
 		t.Fatalf("inline=%v comments=%d status=%q sticky:\n%s", inline, comments, forgeStatus, sticky)
 	}
 	h.sm.mu.Lock()
