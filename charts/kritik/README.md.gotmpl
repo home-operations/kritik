@@ -135,6 +135,39 @@ config:
 `gateway.enabled: false` removes the listener and the Service and gives runner
 pods the `networkPolicy.egressPorts` to anywhere instead.
 
+### Runner tools
+
+An agentic repository's `agent.commands` lets the model run allowlisted
+binaries over a checkout of the head commit: to read a dependency bump's
+release notes and compare view with `curl`, or search with `rg` and `fd`.
+The chart's image has none of them, so no command is offered; point
+`runner.image` at the release's `-tools` tag, an Alpine image with all
+three. Every host `curl` reaches must pass the gateway, so add the
+release APIs and registries to `egress.allowHosts` (a GitHub
+installation already allows `github.com`):
+
+```yaml
+runner:
+  image: ghcr.io/home-operations/kritik:<version>-tools
+config:
+  file:
+    egress:
+      allowHosts: [api.github.com, "*.githubusercontent.com"]
+    tenants:
+      - slug: example
+        repositories:
+          - name: example/home-ops
+            mode: agentic
+            agent: { commands: [curl, fd, rg] }
+```
+
+A command runs without a shell, with an environment of `PATH`, its own
+`HOME` and the gateway, and the runner makes itself unreadable to it first,
+so a command cannot read the runner's credentials from `/proc`. The
+`-tools` image does have one, though, and `fd -x` or `rg --pre` can start
+it, and with it a script from the checkout: another reason to run runner
+Jobs under a sandboxed `runner.runtimeClassName`.
+
 ### Runner sandbox
 
 Runner Jobs parse untrusted repository content and, in agentic mode, run what

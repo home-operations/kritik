@@ -57,6 +57,8 @@ tenants:
         mode: agentic
         agent:
           maxSteps: 6
+          commands: [curl]
+          commandTimeout: 5s
   - slug: globex
     installations:
       - name: globex-bot
@@ -83,6 +85,8 @@ const (
 	scriptReject
 	// scriptStall answers grep, then calls stalled and never answers again.
 	scriptStall
+	// scriptRun has curl fetch a release page, then submits.
+	scriptRun
 )
 
 // scriptedModel is an OpenAI-compatible chat completions endpoint.
@@ -93,6 +97,8 @@ type scriptedModel struct {
 	auth     []string
 	systems  []string
 	requests int
+	// toolResults are the contents of the tool messages the model was sent.
+	toolResults []string
 	// stalled runs once when scriptStall starts holding a request.
 	stalled func()
 }
@@ -118,6 +124,11 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.auth = append(m.auth, r.Header.Get("Authorization"))
 	if len(req.Messages) > 0 && req.Messages[0].Role == "system" {
 		m.systems = append(m.systems, fmt.Sprint(req.Messages[0].Content))
+	}
+	for _, msg := range req.Messages {
+		if msg.Role == "tool" {
+			m.toolResults = append(m.toolResults, fmt.Sprint(msg.Content))
+		}
 	}
 	m.mu.Unlock()
 
@@ -145,6 +156,13 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return fmt.Sprintf(`{"role":"assistant","content":null,"tool_calls":[{"id":"c%d","type":"function","function":{"name":%q,"arguments":%s}}]}`,
 			step, name, b)
 	}
+	if script == scriptRun {
+		finish = "tool_calls"
+		message = tool("run", `{"command":"curl","args":["-sS","https://releases.example.com/b/v2"]}`)
+		if step > 1 {
+			message = tool("submit_review", `{"summary":{"take":"Bumps b to v2.","praise":[]},"findings":[]}`)
+		}
+	}
 	if script == scriptSubmit || script == scriptStall {
 		finish = "tool_calls"
 		switch step {
@@ -164,11 +182,11 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type agentRunRow struct {
-	stop, model, errText string
-	steps                int
-	toolCalls, timeline  string
-	input, output        int64
-	cost                 float64
+	stop, model, errText         string
+	steps                        int
+	toolCalls, timeline, sources string
+	input, output                int64
+	cost                         float64
 }
 
 // agenticHarness drives agentic reviews of acme/widgets#1 through River,
@@ -226,6 +244,12 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	h.in, h.tenant, _ = h.file.Installation("acme-bot")
 	_, h.other, _ = h.file.Installation("globex-bot")
 	h.dir, h.base, h.head = testRepo(t)
+	// The run tool's curl: prints what it was given and fetches nothing.
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "curl"), []byte("#!/bin/sh\necho fetched \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	h.lf = &localForge{dir: h.dir, base: h.base, tip: h.head}
 	h.exec = &hookExecutor{inner: &executor.Local{Store: runnerStore}}
 
@@ -295,9 +319,9 @@ func (h *agenticHarness) agentRow(t *testing.T, reviewID string) agentRunRow {
 	var r agentRunRow
 	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT a.stop_reason, a.model, a.error, a.steps, a.tool_calls::text, a.timeline::text,
-			a.input_tokens, a.output_tokens, a.cost_usd::float8
+			a.sources::text, a.input_tokens, a.output_tokens, a.cost_usd::float8
 			FROM agent_runs a JOIN runner_runs r ON r.id = a.runner_run_id WHERE r.review_id = $1`, reviewID).
-			Scan(&r.stop, &r.model, &r.errText, &r.steps, &r.toolCalls, &r.timeline, &r.input, &r.output, &r.cost)
+			Scan(&r.stop, &r.model, &r.errText, &r.steps, &r.toolCalls, &r.timeline, &r.sources, &r.input, &r.output, &r.cost)
 	})
 	if err != nil {
 		t.Fatalf("agent run for review %s: %v", reviewID, err)
@@ -317,6 +341,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
 	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
 	t.Run("a capped review is capped under the lease and lets it go", func(t *testing.T) { checkAgentCappedUnderLease(t, h) })
+	t.Run("the agent runs curl and the comment lists what it fetched", func(t *testing.T) { checkAgentRunsCommands(t, h) })
 	t.Run("another tenant cannot read the agent runs", func(t *testing.T) {
 		count := func(tenantID string) int {
 			var n int
@@ -327,7 +352,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 8 || foreign != 0 {
+		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 9 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -388,6 +413,37 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	h.fc.mu.Unlock()
 	if calls != 0 {
 		t.Fatalf("the worker's own model was called %d time(s) in agentic mode", calls)
+	}
+}
+
+func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptRun)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc v2() {}\n")
+	h.dispatch(t, next)
+	reviewID, status, errText := h.waitReview(t, next)
+	if status != "completed" {
+		t.Fatalf("status = %s (%s)", status, errText)
+	}
+	run := h.agentRow(t, reviewID)
+	var tools map[string]int
+	_ = json.Unmarshal([]byte(run.toolCalls), &tools)
+	if run.stop != "submitted" || tools["run"] != 1 || run.sources != `["https://releases.example.com/b/v2"]` {
+		t.Fatalf("agent run = %+v", run)
+	}
+	h.sm.mu.Lock()
+	results, system := h.sm.toolResults, h.sm.systems[len(h.sm.systems)-1]
+	h.sm.mu.Unlock()
+	if len(results) == 0 || results[len(results)-1] != "exit code 0\nfetched -sS https://releases.example.com/b/v2\n" {
+		t.Fatalf("tool results = %q", results)
+	}
+	if !strings.Contains(system, "run tool: curl.") {
+		t.Fatalf("system prompt lacks the run tool:\n%s", system)
+	}
+	h.lf.mu.Lock()
+	sticky := h.lf.comments[commentBase+1]
+	h.lf.mu.Unlock()
+	if !strings.Contains(sticky, "<summary>Sources consulted</summary>\n\n- <https://releases.example.com/b/v2>\n") {
+		t.Fatalf("sticky:\n%s", sticky)
 	}
 }
 

@@ -160,5 +160,11 @@ func (a AgentSettings) overlay(o Agent) AgentSettings {
 	if o.Timeout != nil {
 		a.Timeout = *o.Timeout
 	}
+	if o.Commands != nil {
+		a.Commands = o.Commands
+	}
+	if o.CommandTimeout != nil {
+		a.CommandTimeout = *o.CommandTimeout
+	}
 	return a
 }

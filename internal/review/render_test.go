@@ -62,6 +62,25 @@ func TestRenderSummaryDefault(t *testing.T) {
 	}
 }
 
+func TestRenderSummarySources(t *testing.T) {
+	d := sampleData()
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	if strings.Contains(body, "Sources consulted") {
+		t.Fatalf("a review that fetched nothing lists sources:\n%s", body)
+	}
+	d.Sources = []string{"https://api.github.com/repos/a/b/releases/tags/v2", "https://github.com/a/b/compare/v1...v2"}
+	body, _ = RenderSummary(t.Context(), Templates{}, d)
+	want := "<details>\n<summary>Sources consulted</summary>\n\n" +
+		"- <https://api.github.com/repos/a/b/releases/tags/v2>\n- <https://github.com/a/b/compare/v1...v2>\n\n</details>\n"
+	if !strings.Contains(body, want) || strings.Contains(body, "\n\n\n") {
+		t.Fatalf("body:\n%s", body)
+	}
+	if strings.Index(body, "`README.md:2`") > strings.Index(body, "Sources consulted") ||
+		strings.Index(body, "Sources consulted") > strings.Index(body, "_1 file") {
+		t.Fatalf("sections out of order:\n%s", body)
+	}
+}
+
 func TestRenderSummaryIncomplete(t *testing.T) {
 	d := RenderData{Number: 7, HeadSHA: "0123456789abcdef", Model: "vendor/model-x", Incomplete: "agent stopped: max_steps",
 		Notes: []string{"a note"}}

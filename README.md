@@ -48,6 +48,11 @@ review instead of the default single pass: a bounded, read-only tool loop
 (listing, reading and grepping the repository, capped steps and tool
 output, a wall-clock timeout) that lets the model pull more of the
 repository into its own context before submitting structured findings.
+Its `agent.commands` can add a `run` tool: the model runs an allowlisted
+binary (`curl`, `fd` and `rg` ship in the `-tools` image) with its own
+arguments, without a shell, over a checkout of the head commit, so it can
+read a dependency bump's release notes and compare view; the sticky
+comment lists every URL it fetched.
 `settle` delays a new head's
 review so a burst of force-pushes only costs one; a later push builds on
 the pull request's last completed review, scoped to what changed since,

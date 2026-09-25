@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -480,7 +481,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		}
 		for _, repo := range []string{"acme/x", "acme/unlisted"} {
 			s := f.Settings(&f.Tenants[0], repo)
-			if s.Mode != ReviewSingle || s.Agent != DefaultAgent || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
+			if s.Mode != ReviewSingle || !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
 				t.Fatalf("%s: mode=%q agent=%+v incremental=%+v", repo, s.Mode, s.Agent, s.Incremental)
 			}
 			if s.Review.RequireSuggestedFix || len(s.Review.Instructions) != 0 || s.Review.Templates != (ReviewTemplates{}) {
@@ -494,7 +495,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 
 	t.Run("repository values override the defaults", func(t *testing.T) {
 		f, err := Parse([]byte(withRepo(`{ name: acme/x, mode: agentic,
-      agent: { maxSteps: 12, maxToolOutputBytes: 4096, maxTokens: 250000, timeout: 3m },
+      agent: { maxSteps: 12, maxToolOutputBytes: 4096, maxTokens: 250000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
       incremental: { maxDeltaFiles: 5 },
       review: { instructions: [docs/rules.md], requireSuggestedFix: true,
         templates: { summary: .kritik/summary.md.tmpl, inline: .kritik/inline.md.tmpl } } }`)))
@@ -502,8 +503,9 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := f.Settings(&f.Tenants[0], "acme/x")
-		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, Timeout: 3 * time.Minute}
-		if s.Mode != ReviewAgentic || s.Agent != want || s.Incremental.MaxDeltaFiles != 5 {
+		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, Timeout: 3 * time.Minute,
+			Commands: []string{"curl", "rg"}, CommandTimeout: 10 * time.Second}
+		if s.Mode != ReviewAgentic || !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
 			t.Fatalf("mode=%q agent=%+v incremental=%+v", s.Mode, s.Agent, s.Incremental)
 		}
 		if !s.Review.RequireSuggestedFix || len(s.Review.Instructions) != 1 || s.Review.Instructions[0] != "docs/rules.md" ||
@@ -522,7 +524,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		}
 		want := DefaultAgent
 		want.MaxSteps = 7
-		if got := f.Settings(&f.Tenants[0], "acme/x").Agent; got != want {
+		if got := f.Settings(&f.Tenants[0], "acme/x").Agent; !reflect.DeepEqual(got, want) {
 			t.Fatalf("agent = %+v, want %+v", got, want)
 		}
 	})
@@ -546,6 +548,12 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		{"zero delta files", "{ name: acme/x, incremental: { maxDeltaFiles: 0 } }", "incremental.maxDeltaFiles must be positive"},
 		{"negative delta files", "{ name: acme/x, incremental: { maxDeltaFiles: -3 } }", "incremental.maxDeltaFiles must be positive"},
 		{"unknown agent key", "{ name: acme/x, agent: { steps: 3 } }", "field steps not found"},
+		{"zero command timeout", "{ name: acme/x, agent: { commandTimeout: 0s } }", "agent.commandTimeout must be at least 1s"},
+		{"sub-second command timeout", "{ name: acme/x, agent: { commandTimeout: 500ms } }", "agent.commandTimeout must be at least 1s"},
+		{"command path", "{ name: acme/x, agent: { commands: [/usr/bin/curl] } }", "must be a bare command name"},
+		{"relative command path", "{ name: acme/x, agent: { commands: [./tool] } }", "must be a bare command name"},
+		{"empty command", "{ name: acme/x, agent: { commands: [''] } }", "must be a bare command name"},
+		{"duplicate command", "{ name: acme/x, agent: { commands: [rg, rg] } }", "is listed twice"},
 		{"absolute instruction path", "{ name: acme/x, review: { instructions: [/etc/passwd] } }", "must be relative"},
 		{"escaping template path", "{ name: acme/x, review: { templates: { summary: ../x.tmpl } } }", "escapes the repository"},
 		{"empty instruction path", "{ name: acme/x, review: { instructions: [''] } }", "must not be empty"},

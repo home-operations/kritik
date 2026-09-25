@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,6 +25,10 @@ import (
 // nameRe bounds installation and tenant names to what is safe in a URL path
 // segment, a Kubernetes label value and a log line.
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// commandRe is a binary name the run tool looks up on PATH: no path
+// separator, so the allowlist cannot name a file in the checkout.
+var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 
 // Load reads, decodes, resolves and validates the file at name.
 func Load(name string) (*File, error) {
@@ -299,6 +304,18 @@ func (r Repository) validateReview(where string) error {
 	if r.Agent.Timeout != nil && *r.Agent.Timeout > jobtimeout.MaxAgentTimeout {
 		return fmt.Errorf("configfile: %s.agent.timeout must not exceed %s, or River's %s job timeout cap would cut the review short",
 			where, jobtimeout.MaxAgentTimeout, jobtimeout.MaxJobTimeout)
+	}
+	// The job document carries whole seconds.
+	if r.Agent.CommandTimeout != nil && *r.Agent.CommandTimeout < time.Second {
+		return fmt.Errorf("configfile: %s.agent.commandTimeout must be at least 1s", where)
+	}
+	for i, c := range r.Agent.Commands {
+		if !commandRe.MatchString(c) {
+			return fmt.Errorf("configfile: %s.agent.commands[%d] %q must be a bare command name, not a path", where, i, c)
+		}
+		if slices.Contains(r.Agent.Commands[:i], c) {
+			return fmt.Errorf("configfile: %s.agent.commands[%d] %q is listed twice", where, i, c)
+		}
 	}
 	for i, p := range r.Review.Instructions {
 		if err := checkRepoPath(p); err != nil {

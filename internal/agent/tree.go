@@ -1,6 +1,7 @@
-// Package agent is a bounded, read-only tool loop over a git commit's
-// tree: a Stepper reads it through read_file, grep and list_files, then
-// must call submit_review to end the run.
+// Package agent is a bounded tool loop over a git commit's tree: a Stepper
+// reads it through read_file, grep and list_files, and through run executes
+// allowlisted commands over a checkout of it when a repository allows them,
+// then must call submit_review to end the run.
 package agent
 
 import (

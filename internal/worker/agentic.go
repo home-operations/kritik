@@ -36,6 +36,7 @@ type agentRun struct {
 	costUSD float64
 	model   string
 	errText string
+	sources []string
 }
 
 // stopError is nil for a run that submitted a review, and otherwise the
@@ -195,9 +196,9 @@ func (w *Review) loadAgentRun(ctx context.Context, tenantID, runID string) (run 
 	var stop string
 	err = w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT stop_reason, result::text, steps, input_tokens, cache_read_tokens, cache_write_tokens,
-			output_tokens, cost_usd::float8, model, error FROM agent_runs WHERE runner_run_id = $1`, runID).
+			output_tokens, cost_usd::float8, model, error, sources FROM agent_runs WHERE runner_run_id = $1`, runID).
 			Scan(&stop, &run.result, &run.steps, &run.usage.Input, &run.usage.CacheRead, &run.usage.CacheWrite,
-				&run.usage.Output, &run.costUSD, &run.model, &run.errText)
+				&run.usage.Output, &run.costUSD, &run.model, &run.errText, &run.sources)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return agentRun{}, false, nil
@@ -264,6 +265,7 @@ func (w *Review) agentSpec(
 	spec.Agent = &runner.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
 		TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
+		Commands:       settings.Agent.Commands, CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second),
 	}
 	return agentDeadline(deadline, settings.Agent.Timeout), nil
 }

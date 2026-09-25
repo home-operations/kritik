@@ -284,6 +284,12 @@ type Agent struct {
 	// may spend across all its steps.
 	MaxTokens *int64         `yaml:"maxTokens,omitempty"`
 	Timeout   *time.Duration `yaml:"timeout,omitempty"`
+	// Commands name the binaries the agent's run tool may execute (ADR-0008),
+	// such as curl, fd and rg. The tool is offered only for names the
+	// runner image has on its PATH, so the distroless image offers none.
+	Commands []string `yaml:"commands,omitempty"`
+	// CommandTimeout bounds one command the run tool executes.
+	CommandTimeout *time.Duration `yaml:"commandTimeout,omitempty"`
 }
 
 // AgentSettings are the resolved agent bounds.
@@ -292,11 +298,16 @@ type AgentSettings struct {
 	MaxToolOutputBytes int
 	MaxTokens          int64
 	Timeout            time.Duration
+	Commands           []string
+	CommandTimeout     time.Duration
 }
 
 // DefaultAgent applies to every agent bound a repository leaves unset. Its
-// MaxTokens is the agent loop's own default budget.
-var DefaultAgent = AgentSettings{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, Timeout: 20 * time.Minute}
+// MaxTokens is the agent loop's own default budget. No command is allowed
+// by default: a repository is opted into the run tool.
+var DefaultAgent = AgentSettings{
+	MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, Timeout: 20 * time.Minute, CommandTimeout: 30 * time.Second,
+}
 
 // Incremental tunes incremental re-review.
 type Incremental struct {

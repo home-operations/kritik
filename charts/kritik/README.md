@@ -130,6 +130,39 @@ config:
 `gateway.enabled: false` removes the listener and the Service and gives runner
 pods the `networkPolicy.egressPorts` to anywhere instead.
 
+### Runner tools
+
+An agentic repository's `agent.commands` lets the model run allowlisted
+binaries over a checkout of the head commit: to read a dependency bump's
+release notes and compare view with `curl`, or search with `rg` and `fd`.
+The chart's image has none of them, so no command is offered; point
+`runner.image` at the release's `-tools` tag, an Alpine image with all
+three. Every host `curl` reaches must pass the gateway, so add the
+release APIs and registries to `egress.allowHosts` (a GitHub
+installation already allows `github.com`):
+
+```yaml
+runner:
+  image: ghcr.io/home-operations/kritik:<version>-tools
+config:
+  file:
+    egress:
+      allowHosts: [api.github.com, "*.githubusercontent.com"]
+    tenants:
+      - slug: example
+        repositories:
+          - name: example/home-ops
+            mode: agentic
+            agent: { commands: [curl, fd, rg] }
+```
+
+A command runs without a shell, with an environment of `PATH`, its own
+`HOME` and the gateway, and the runner makes itself unreadable to it first,
+so a command cannot read the runner's credentials from `/proc`. The
+`-tools` image does have one, though, and `fd -x` or `rg --pre` can start
+it, and with it a script from the checkout: another reason to run runner
+Jobs under a sandboxed `runner.runtimeClassName`.
+
 ### Runner sandbox
 
 Runner Jobs parse untrusted repository content and, in agentic mode, run what
@@ -249,7 +282,7 @@ Kubernetes: `>=1.25.0-0`
 | roles.worker.replicas | int | `1` | Replicas for the worker Deployment. |
 | roles.worker.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
 | runner.deadline | string | `"15m"` | Default active deadline for a runner Job (Go duration); tenants may lower it in the file. |
-| runner.image | string | `""` | Image for runner Jobs; empty uses the chart's image. |
+| runner.image | string | `""` | Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd and rg for an agentic review's `agent.commands`. |
 | runner.runtimeClassName | string | `""` | RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and, in agentic mode, runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
 | runner.serviceAccount.create | bool | `true` | Create the runner ServiceAccount (no permissions, no token mounted). |
