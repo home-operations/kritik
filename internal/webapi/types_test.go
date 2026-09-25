@@ -197,7 +197,16 @@ func TestDTOGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v (run with -update to create it)", err)
 			}
-			if !bytes.Equal(got, want) {
+			// Compared compacted: the repository's JSON formatter re-wraps
+			// the files, which changes no name, order or value.
+			var gotC, wantC bytes.Buffer
+			if err := json.Compact(&gotC, got); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Compact(&wantC, want); err != nil {
+				t.Fatalf("%s: %v", path, err)
+			}
+			if !bytes.Equal(gotC.Bytes(), wantC.Bytes()) {
 				t.Errorf("%s changed; the UI's types.ts mirrors it. got:\n%s", path, got)
 			}
 		})
