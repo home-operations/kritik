@@ -62,6 +62,9 @@ func NewKubeInCluster() (kubernetes.Interface, string, error) {
 // TTL, and its Secret goes with it. When ctx ends first the Job is deleted,
 // pod included, and the result's error is ctx's cause.
 func (k *Kube) Run(ctx context.Context, spec Spec) Result {
+	if err := spec.Job.Validate(); err != nil {
+		return Result{Err: fmt.Errorf("executor: %w", err)}
+	}
 	name := jobName(spec.RunID)
 	job, err := k.job(spec)
 	if err != nil {
@@ -73,6 +76,10 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	}
 	created, err := k.Client.BatchV1().Jobs(k.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
+		if ctx.Err() != nil {
+			// The server may have persisted the Job before the call gave up.
+			k.deleteJob(name)
+		}
 		k.deleteSecret(name)
 		return Result{Err: fmt.Errorf("executor: create job: %w", err)}
 	}
@@ -202,14 +209,17 @@ func (k *Kube) finish(res *Result, secrets runner.Secrets) {
 			res.DeadlineExceeded = cs.State.Terminated.Reason == "DeadlineExceeded"
 		}
 	}
-	limit := int64(LogTailBytes)
+	// Reading past the kept size by the longest secret lets a secret that
+	// straddles the cut be masked whole before the cut is made.
+	limit := int64(LogTailBytes + max(len(secrets.GitToken), len(secrets.ModelAPIKey)))
 	stream, err := k.Client.CoreV1().Pods(k.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{LimitBytes: &limit}).Stream(fctx)
 	if err != nil {
 		return
 	}
 	defer func() { _ = stream.Close() }()
-	b, _ := io.ReadAll(io.LimitReader(stream, LogTailBytes))
-	res.LogTail = secrets.Mask(string(b))
+	b, _ := io.ReadAll(io.LimitReader(stream, limit))
+	masked := secrets.Mask(string(b))
+	res.LogTail = masked[:min(len(masked), LogTailBytes)]
 }
 
 // Secret keys of a run's job-scoped Secret.

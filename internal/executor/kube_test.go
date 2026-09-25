@@ -295,3 +295,87 @@ func TestKubeRunCancelDeletesJobInForeground(t *testing.T) {
 		t.Fatalf("log tail not masked: %q", res.LogTail)
 	}
 }
+
+func TestKubeRunRejectsInvalidSpecBeforeCreatingAnything(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	s := spec()
+	s.Job.Head = "not-a-sha"
+	res := newKube(client).Run(t.Context(), s)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "head") {
+		t.Fatalf("err = %v", res.Err)
+	}
+	if actions := client.Actions(); len(actions) != 0 {
+		t.Fatalf("an invalid spec must create nothing, got %v", actions)
+	}
+}
+
+func TestKubeRunDeletesJobWhenCreateFailsOnCancel(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	ctx, cancel := context.WithCancel(t.Context())
+	client.PrependReactor("create", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		// The server may have persisted the Job before the caller gave up.
+		cancel()
+		return true, nil, context.Canceled
+	})
+	res := newKube(client).Run(ctx, spec())
+	if res.Err == nil {
+		t.Fatal("a failed create must produce an error")
+	}
+	var jobDeleted, secretDeleted bool
+	for _, a := range client.Actions() {
+		if d, ok := a.(k8stesting.DeleteAction); ok && d.GetName() == "kritik-run-01234567" {
+			switch a.GetResource().Resource {
+			case "jobs":
+				jobDeleted = true
+			case "secrets":
+				secretDeleted = true
+			}
+		}
+	}
+	if !jobDeleted || !secretDeleted {
+		t.Fatalf("job deleted = %v, secret deleted = %v", jobDeleted, secretDeleted)
+	}
+}
+
+func TestKubeRunCleansUpWhenOwnerPatchFails(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("patch", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("conflict")
+	})
+	res := newKube(client).Run(t.Context(), spec())
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "conflict") {
+		t.Fatalf("err = %v", res.Err)
+	}
+	jobs, _ := client.BatchV1().Jobs("kritik").List(t.Context(), metav1.ListOptions{})
+	secrets, _ := client.CoreV1().Secrets("kritik").List(t.Context(), metav1.ListOptions{})
+	if len(jobs.Items) != 0 || len(secrets.Items) != 0 {
+		t.Fatalf("left behind: %d jobs, %d secrets", len(jobs.Items), len(secrets.Items))
+	}
+}
+
+func TestFinishMasksSecretStraddlingTheTailLimit(t *testing.T) {
+	const token = "ghs_secret_token"
+	logs := strings.Repeat("x", LogTailBytes-4) + token + " and more output"
+	client := fake.NewSimpleClientset()
+	var limit int64
+	client.PrependReactor("get", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetSubresource() != "log" {
+			return false, nil, nil
+		}
+		if opts, ok := a.(k8stesting.GenericAction).GetValue().(*corev1.PodLogOptions); ok && opts.LimitBytes != nil {
+			limit = *opts.LimitBytes
+		}
+		return true, &runtime.Unknown{Raw: []byte(logs)}, nil
+	})
+	_, _ = client.CoreV1().Pods("kritik").Create(t.Context(), &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "kritik-run-01234567-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": "kritik-run-01234567"}},
+	}, metav1.CreateOptions{})
+	res := Result{JobName: "kritik-run-01234567"}
+	newKube(client).finish(&res, runner.Secrets{GitToken: token, ModelAPIKey: "sk-model-key"})
+	if limit != int64(LogTailBytes+len(token)) {
+		t.Fatalf("requested %d log bytes, want the tail plus the longest secret", limit)
+	}
+	if len(res.LogTail) != LogTailBytes || strings.Contains(res.LogTail, "ghs_") || !strings.HasSuffix(res.LogTail, "*** ") {
+		t.Fatalf("tail len %d ends %q", len(res.LogTail), res.LogTail[len(res.LogTail)-20:])
+	}
+}

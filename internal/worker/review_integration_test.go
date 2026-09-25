@@ -733,6 +733,7 @@ func checkSupervision(
 	waitReview func(string) (string, string, string), tenantID, repoID string,
 ) {
 	exec.setBlock(true)
+	t.Cleanup(func() { exec.setBlock(false) })
 	started := func() executor.Spec {
 		t.Helper()
 		select {
