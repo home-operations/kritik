@@ -454,7 +454,7 @@ func TestFinishKeepsTheTailOfTheLog(t *testing.T) {
 				Name: "kritik-run-01234567-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": "kritik-run-01234567"},
 			}, metav1.CreateOptions{})
 			res := Result{JobName: "kritik-run-01234567"}
-			newKube(client).finish(&res, secrets)
+			newKube(client).finish(t.Context(), &res, secrets)
 			if opts == nil || opts.TailLines == nil || *opts.TailLines != logTailLines || opts.LimitBytes == nil || *opts.LimitBytes != logReadBytes {
 				t.Fatalf("log options = %+v", opts)
 			}

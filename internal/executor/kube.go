@@ -80,15 +80,15 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	if err != nil {
 		if ctx.Err() != nil {
 			// The server may have persisted the Job before the call gave up.
-			k.deleteJob(name)
+			k.deleteJob(ctx, name)
 		}
-		k.deleteSecret(name)
+		k.deleteSecret(ctx, name)
 		return Result{Err: fmt.Errorf("executor: create job: %w", err)}
 	}
 	res := Result{JobName: created.Name}
 	if err := k.own(ctx, created); err != nil {
-		k.deleteJob(created.Name)
-		k.deleteSecret(name)
+		k.deleteJob(ctx, created.Name)
+		k.deleteSecret(ctx, name)
 		res.Err = err
 		return res
 	}
@@ -115,7 +115,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			return res
 		}
 		if j.Status.Succeeded > 0 || j.Status.Failed > 0 || jobFinished(j) {
-			k.finish(&res, spec.Secrets)
+			k.finish(ctx, &res, spec.Secrets)
 			if j.Status.Succeeded == 0 {
 				res.Err = fmt.Errorf("executor: job %s failed: %s", created.Name, res.TerminationReason)
 			}
@@ -144,14 +144,14 @@ func (k *Kube) own(ctx context.Context, job *batchv1.Job) error {
 // cancel deletes the Job after ctx ended, then records what the pod got to.
 func (k *Kube) cancel(ctx context.Context, res *Result, secrets runner.Secrets) {
 	res.Err = context.Cause(ctx)
-	k.deleteJob(res.JobName)
-	k.finish(res, secrets)
+	k.deleteJob(ctx, res.JobName)
+	k.finish(ctx, res, secrets)
 }
 
 // deleteJob removes a Job and, with foreground propagation, its pod. It
-// runs on its own context because the caller's has usually ended.
-func (k *Kube) deleteJob(name string) {
-	dctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+// runs without ctx's cancellation because ctx has usually ended.
+func (k *Kube) deleteJob(ctx context.Context, name string) {
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	opts := metav1.DeleteOptions{PropagationPolicy: new(metav1.DeletePropagationForeground)}
 	if err := k.Client.BatchV1().Jobs(k.Namespace).Delete(dctx, name, opts); err != nil && !apierrors.IsNotFound(err) {
@@ -160,8 +160,8 @@ func (k *Kube) deleteJob(name string) {
 }
 
 // deleteSecret removes a Secret no Job owns yet.
-func (k *Kube) deleteSecret(name string) {
-	dctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+func (k *Kube) deleteSecret(ctx context.Context, name string) {
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	if err := k.Client.CoreV1().Secrets(k.Namespace).Delete(dctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 		k.logger().Warn("delete runner secret", "secret", name, "error", err)
@@ -187,8 +187,8 @@ func jobFinished(j *batchv1.Job) bool {
 // finish fills the pod-level fields of a result from the Job's pod, with
 // the run's secrets masked out of the log tail. Best effort: a missing pod
 // leaves the fields empty rather than failing the run.
-func (k *Kube) finish(res *Result, secrets runner.Secrets) {
-	fctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+func (k *Kube) finish(ctx context.Context, res *Result, secrets runner.Secrets) {
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	pods, err := k.Client.CoreV1().Pods(k.Namespace).List(fctx, metav1.ListOptions{LabelSelector: "job-name=" + res.JobName})
 	if err != nil || len(pods.Items) == 0 {
