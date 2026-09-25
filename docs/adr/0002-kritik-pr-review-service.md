@@ -3,9 +3,10 @@
 - **Status:** Proposed
 - **Date:** 2026-09-24
 - **Supersedes:** [ADR-0001](0001-kritik-pr-review-service.md), kept unchanged as historical input.
-- **Amended by:** [ADR-0003](0003-agentic-review-loop.md), which moves the
-  model loop into the runner pod and makes the worker the model gateway
-  (§2.3, §2.10, §2.11 step 7, §2.12, §2.14).
+- **Amended by:** [ADR-0003](0003-forgejo-agentic-review.md) (Forgejo,
+  providers, the contract, `.kritik.yaml`, agentic mode, the worker–runner
+  protocol) and [ADR-0004](0004-model-gateway.md) (the worker as model
+  gateway; no provider key in a runner pod).
 - **Authors:** perfectra1n (this ADR, as published at
   [gist 6a67dd03](https://gist.github.com/perfectra1n/6a67dd0362ea9d7afd24a4e917028581));
   rebased onto ADR-0001's final revision by onedr0p. The rebase adds the
