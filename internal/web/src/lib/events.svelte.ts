@@ -59,6 +59,15 @@ export function initEvents(): void {
   if (!source) connect();
 }
 
+// closeEvents tears down the shared connection on sign-out, so a stale
+// session cookie doesn't keep streaming another account's events into a
+// signed-out tab. initEvents() reconnects cleanly on the next sign-in.
+export function closeEvents(): void {
+  source?.close();
+  source = null;
+  attempt = 0;
+}
+
 // subscribe registers fn for events of the given kind, returning an
 // unsubscribe function. Safe to call before initEvents(): the listener is
 // attached to the EventSource once one exists (immediately, or on the next

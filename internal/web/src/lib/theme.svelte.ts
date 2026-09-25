@@ -1,6 +1,6 @@
 // Theme: auto (follow OS), light, or dark. The chosen theme drives a `light`/
-// `dark` class on <html>, which both the design tokens and the scoped chroma
-// stylesheets key off. The preference persists in localStorage.
+// `dark` class on <html>, which the design tokens key off. The preference
+// persists in localStorage.
 
 export type ThemePref = 'auto' | 'light' | 'dark';
 
@@ -32,7 +32,12 @@ export function applyTheme(): void {
 export function cycleTheme(): void {
   const order: ThemePref[] = ['auto', 'light', 'dark'];
   theme.pref = order[(order.indexOf(theme.pref) + 1) % order.length];
-  localStorage.setItem(KEY, theme.pref);
+  try {
+    localStorage.setItem(KEY, theme.pref);
+  } catch {
+    // Private browsing / storage quota -- the in-memory preference still
+    // applies for this session, it just won't survive a reload.
+  }
   applyTheme();
 }
 

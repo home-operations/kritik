@@ -51,7 +51,11 @@ async function handle<T>(res: Response): Promise<T> {
   }
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new ApiError(res.status, 'invalid_response', 'response was not valid JSON');
+  }
 }
 
 export async function getJSON<T>(path: string): Promise<T> {

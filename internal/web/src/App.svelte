@@ -3,7 +3,7 @@
   import { basePath } from './lib/base';
   import { router, initRouter, href, navigate } from './lib/router.svelte';
   import { getJSON, sendJSON, ApiError } from './lib/api.svelte';
-  import { initEvents } from './lib/events.svelte';
+  import { initEvents, closeEvents } from './lib/events.svelte';
   import { theme, cycleTheme, initTheme } from './lib/theme.svelte';
   import { initKeyboard, help, toggleHelp, togglePalette } from './lib/keyboard.svelte';
   import {
@@ -36,13 +36,13 @@
     initTheme();
     initRouter();
     initKeyboard();
-    initEvents();
     void loadMe();
   });
 
   async function loadMe(): Promise<void> {
     try {
       me = await getJSON<Me>('/api/v1/me');
+      initEvents();
     } catch (err) {
       // A 401 already redirected to #/signin (see api.svelte.ts); anything
       // else leaves `me` unset and the shell renders signed-out.
@@ -51,7 +51,12 @@
   }
 
   async function signOut(): Promise<void> {
-    await sendJSON('POST', '/auth/logout');
+    try {
+      await sendJSON('POST', '/auth/logout');
+    } catch (err) {
+      console.error('sign out:', err);
+    }
+    closeEvents();
     me = undefined;
     navigate({ name: 'signin' });
   }
@@ -59,7 +64,7 @@
   // currentSlug reads the tenant slug off whatever route is active, falling
   // back to the first tenant so the nav has somewhere to point before the
   // user has ever picked one explicitly.
-  const currentSlug = $derived('slug' in router.route ? router.route.slug : (me?.tenants[0]?.slug ?? undefined));
+  const currentSlug = $derived('slug' in router.route ? router.route.slug : me?.tenants[0]?.slug);
   const currentTenant = $derived(me?.tenants.find((t) => t.slug === currentSlug));
 
   function switchTenant(slug: string): void {
@@ -70,10 +75,6 @@
     theme.pref === 'auto' ? mdiThemeLightDark : theme.pref === 'dark' ? mdiWeatherNight : mdiWhiteBalanceSunny,
   );
 
-  $effect(() => {
-    document.title = 'kritik';
-  });
-
   // Keep the help dialog's Tab from escaping to the page behind the backdrop;
   // Escape (global handler) and the backdrop close it.
   function trapTab(e: KeyboardEvent): void {
@@ -83,7 +84,28 @@
   function focusOnMount(node: HTMLElement): void {
     node.focus();
   }
+
+  // A native <details> has no built-in Escape handling and stays open on an
+  // outside click, so both are wired up by hand here.
+  let accountMenuEl = $state<HTMLDetailsElement | undefined>(undefined);
+
+  function closeAccountMenu(): void {
+    if (accountMenuEl) accountMenuEl.open = false;
+  }
+
+  function onAccountMenuKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      closeAccountMenu();
+    }
+  }
+
+  function onDocumentClick(e: MouseEvent): void {
+    if (accountMenuEl?.open && !accountMenuEl.contains(e.target as Node)) closeAccountMenu();
+  }
 </script>
+
+<svelte:window onclick={onDocumentClick} />
 
 {#if router.route.name === 'signin'}
   <SignIn />
@@ -110,26 +132,54 @@
 
       {#if currentSlug}
         <nav class="nav">
-          <a class:active={router.route.name === 'tenant'} href={href({ name: 'tenant', slug: currentSlug })}>
+          <a
+            class:active={router.route.name === 'tenant'}
+            aria-current={router.route.name === 'tenant' ? 'page' : undefined}
+            href={href({ name: 'tenant', slug: currentSlug })}
+          >
             <Icon path={mdiViewDashboardOutline} size={15} /> Overview
           </a>
-          <a class:active={router.route.name === 'repos'} href={href({ name: 'repos', slug: currentSlug })}>
+          <a
+            class:active={router.route.name === 'repos'}
+            aria-current={router.route.name === 'repos' ? 'page' : undefined}
+            href={href({ name: 'repos', slug: currentSlug })}
+          >
             <Icon path={mdiSourceRepository} size={15} /> Repos
           </a>
-          <a class:active={router.route.name === 'pulls'} href={href({ name: 'pulls', slug: currentSlug })}>
+          <a
+            class:active={router.route.name === 'pulls'}
+            aria-current={router.route.name === 'pulls' ? 'page' : undefined}
+            href={href({ name: 'pulls', slug: currentSlug })}
+          >
             <Icon path={mdiSourcePull} size={15} /> Pulls
           </a>
-          <a class:active={router.route.name === 'queue'} href={href({ name: 'queue', slug: currentSlug })}>
+          <a
+            class:active={router.route.name === 'queue'}
+            aria-current={router.route.name === 'queue' ? 'page' : undefined}
+            href={href({ name: 'queue', slug: currentSlug })}
+          >
             <Icon path={mdiTrayFull} size={15} /> Queue
           </a>
-          <a class:active={router.route.name === 'usage'} href={href({ name: 'usage', slug: currentSlug })}>
+          <a
+            class:active={router.route.name === 'usage'}
+            aria-current={router.route.name === 'usage' ? 'page' : undefined}
+            href={href({ name: 'usage', slug: currentSlug })}
+          >
             <Icon path={mdiCurrencyUsd} size={15} /> Usage
           </a>
-          <a class:active={router.route.name === 'followups'} href={href({ name: 'followups', slug: currentSlug })}>
+          <a
+            class:active={router.route.name === 'followups'}
+            aria-current={router.route.name === 'followups' ? 'page' : undefined}
+            href={href({ name: 'followups', slug: currentSlug })}
+          >
             <Icon path={mdiClipboardTextClockOutline} size={15} /> Follow-ups
           </a>
           {#if currentTenant?.role === 'admin'}
-            <a class:active={router.route.name === 'admin'} href={href({ name: 'admin', slug: currentSlug })}>
+            <a
+              class:active={router.route.name === 'admin'}
+              aria-current={router.route.name === 'admin' ? 'page' : undefined}
+              href={href({ name: 'admin', slug: currentSlug })}
+            >
               <Icon path={mdiCogOutline} size={15} /> Admin
             </a>
           {/if}
@@ -154,7 +204,7 @@
           <Icon path={themeIconPath} label="Toggle theme" />
         </button>
         {#if me}
-          <details class="account-menu">
+          <details class="account-menu" bind:this={accountMenuEl} onkeydown={onAccountMenuKeydown}>
             <summary class="btn btn-icon" title={me.account.displayName}>
               <Icon path={mdiAccountOutline} label="Account" />
               <Icon path={mdiChevronDown} size={12} />
@@ -173,7 +223,7 @@
 
     <Placeholder route={router.route} />
 
-    <Palette />
+    <Palette {me} />
 
     {#if help.open}
       <div class="help-overlay">

@@ -7,35 +7,14 @@ export {
   mdiThemeLightDark,
   mdiWeatherNight,
   mdiWhiteBalanceSunny,
-  mdiAlert,
-  mdiAlertCircleOutline,
-  mdiCheck,
-  mdiCheckCircle,
-  mdiCheckCircleOutline,
-  mdiCircleOutline,
-  mdiCloseCircleOutline,
-  mdiClose,
-  mdiChevronLeft,
-  mdiChevronRight,
   mdiChevronDown,
-  mdiChevronUp,
   mdiMagnify,
-  mdiRefresh,
   mdiAccountOutline,
-  mdiSourceBranch,
   mdiSourcePull,
-  mdiSourceFork,
   mdiTrayFull,
   mdiKeyboardOutline,
-  mdiLoading,
   mdiLogout,
-  mdiCog,
   mdiConsoleLine,
-  mdiOpenInNew,
-  mdiClockOutline,
-  mdiHistory,
-  mdiPackageVariantClosed,
-  mdiScaleBalance,
   mdiViewDashboardOutline,
   mdiSourceRepository,
   mdiCurrencyUsd,
@@ -44,7 +23,7 @@ export {
   mdiLogin,
 } from '@mdi/js';
 
-import { siDiscord, siForgejo, siGithub, siGitlab } from 'simple-icons';
+import { siForgejo, siGithub, siGitlab } from 'simple-icons';
 
 interface BrandIcon {
   path: string;
@@ -60,10 +39,3 @@ export const forgeIcon: Record<string, BrandIcon> = {
   forgejo: siForgejo,
 };
 
-// The GitHub mark for the "kritik on GitHub" footer link (kritik is hosted
-// there, independent of which forge a reviewed repo lives on).
-export const githubMark: BrandIcon = siGithub;
-export const discordMark: BrandIcon = siDiscord;
-export const KRITIK_REPO_URL = 'https://github.com/home-operations/kritik';
-export const DISCORD_URL = 'https://discord.gg/home-operations';
-export const LICENSE_URL = 'https://github.com/home-operations/kritik/blob/main/LICENSE';

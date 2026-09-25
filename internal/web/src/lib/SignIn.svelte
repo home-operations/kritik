@@ -30,7 +30,7 @@
 
   function loginHref(p: SignInProvider): string {
     const returnTo = signinState.returnTo || '#/';
-    return `${basePath}/auth/login/${p.name}?return_to=${encodeURIComponent(returnTo)}`;
+    return `${basePath}/auth/login/${encodeURIComponent(p.name)}?return_to=${encodeURIComponent(returnTo)}`;
   }
 </script>
 

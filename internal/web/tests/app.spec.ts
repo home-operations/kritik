@@ -2,6 +2,13 @@ import { test, expect, DEFAULT_ME } from './fixtures';
 
 test.describe('signed-out shell', () => {
   test('lands on the overview placeholder with no tenant chrome', async ({ page }) => {
+    await page.route('**/api/v1/me', (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'unauthorized', message: 'no session' }),
+      }),
+    );
     await page.goto('/');
     await expect(page.locator('.placeholder h1')).toHaveText('Overview');
     await expect(page.locator('.wordmark')).toHaveText('kritik');
@@ -10,9 +17,11 @@ test.describe('signed-out shell', () => {
     await expect(page.locator('.account-menu')).toHaveCount(0);
     // palette, help, theme -- no operator link (no `me`), no account menu.
     await expect(page.locator('.actions .btn-icon')).toHaveCount(3);
+    await expect(page.locator('.actions a[title="Operator console"]')).toHaveCount(0);
   });
 
-  test('a 401 from the API bounces to sign-in and remembers the return path', async ({ page }) => {
+  test('a 401 from the API bounces to sign-in and remembers the return path', async ({ page, mockProviders }) => {
+    await mockProviders();
     await page.route('**/api/v1/me', (route) =>
       route.fulfill({
         status: 401,
@@ -23,6 +32,9 @@ test.describe('signed-out shell', () => {
     await page.goto('/#/t/acme/repos');
     await expect(page).toHaveURL(/#\/signin$/);
     await expect(page.locator('.signin-card h1')).toHaveText('kritik');
+
+    const link = page.locator('.signin-provider');
+    await expect(link).toHaveAttribute('href', /return_to=%23%2Ft%2Facme%2Frepos/);
   });
 });
 

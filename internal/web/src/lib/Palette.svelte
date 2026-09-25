@@ -7,6 +7,7 @@
   import { router, navigate } from './router.svelte';
   import { palette, togglePalette } from './keyboard.svelte';
   import Icon from './Icon.svelte';
+  import type { Me } from './types';
   import {
     mdiMagnify,
     mdiViewDashboardOutline,
@@ -19,6 +20,8 @@
     mdiClipboardTextClockOutline,
     mdiCogOutline,
   } from './icons';
+
+  let { me }: { me: Me | undefined } = $props();
 
   interface Entry {
     label: string;
@@ -33,12 +36,17 @@
     return 'slug' in r ? r.slug : undefined;
   }
 
+  // Gated the same way as the top-bar (App.svelte): operator console and
+  // per-tenant admin are role-restricted, and "Sign in" only makes sense
+  // when there's no session yet.
   function buildEntries(r: Route): Entry[] {
-    const entries: Entry[] = [
-      { label: 'Overview', route: { name: 'overview' }, icon: mdiViewDashboardOutline },
-      { label: 'Operator console', route: { name: 'operator' }, icon: mdiConsoleLine },
-      { label: 'Sign in', route: { name: 'signin' }, icon: mdiLogin },
-    ];
+    const entries: Entry[] = [{ label: 'Overview', route: { name: 'overview' }, icon: mdiViewDashboardOutline }];
+    if (me?.operator) {
+      entries.push({ label: 'Operator console', route: { name: 'operator' }, icon: mdiConsoleLine });
+    }
+    if (!me) {
+      entries.push({ label: 'Sign in', route: { name: 'signin' }, icon: mdiLogin });
+    }
     const slug = currentSlug(r);
     if (slug) {
       entries.push(
@@ -48,8 +56,10 @@
         { label: 'Queue', hint: slug, route: { name: 'queue', slug }, icon: mdiTrayFull },
         { label: 'Usage', hint: slug, route: { name: 'usage', slug }, icon: mdiCurrencyUsd },
         { label: 'Follow-ups', hint: slug, route: { name: 'followups', slug }, icon: mdiClipboardTextClockOutline },
-        { label: 'Admin', hint: slug, route: { name: 'admin', slug }, icon: mdiCogOutline },
       );
+      if (me?.tenants.find((t) => t.slug === slug)?.role === 'admin') {
+        entries.push({ label: 'Admin', hint: slug, route: { name: 'admin', slug }, icon: mdiCogOutline });
+      }
     }
     return entries;
   }
