@@ -59,6 +59,11 @@ func (f *File) Settings(t *Tenant, repo string) Settings {
 		Forks:   f.Defaults.Forks != nil && *f.Defaults.Forks,
 		Limits:  f.Defaults.Limits,
 		Ignore:  append([]string(nil), DefaultIgnore...),
+		Settle:  f.Defaults.Settle,
+
+		Mode:        ReviewSingle,
+		Agent:       DefaultAgent,
+		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
 	}
 	s.Models = s.Models.overlay(t.Models)
 	if t.filter != nil {
@@ -66,6 +71,9 @@ func (f *File) Settings(t *Tenant, repo string) Settings {
 	}
 	if t.Forks != nil {
 		s.Forks = *t.Forks
+	}
+	if t.Settle > 0 {
+		s.Settle = t.Settle
 	}
 	s.Limits = s.Limits.overlay(t.Limits)
 	for i := range t.Repositories {
@@ -81,6 +89,17 @@ func (f *File) Settings(t *Tenant, repo string) Settings {
 		}
 		s.Konflate = r.Konflate
 		s.Ignore = append(s.Ignore, r.Ignore...)
+		if r.Settle > 0 {
+			s.Settle = r.Settle
+		}
+		if r.Mode != "" {
+			s.Mode = r.Mode
+		}
+		s.Agent = s.Agent.overlay(r.Agent)
+		if r.Incremental.MaxDeltaFiles != nil {
+			s.Incremental.MaxDeltaFiles = *r.Incremental.MaxDeltaFiles
+		}
+		s.Review = r.Review
 		break
 	}
 	if s.Limits.Concurrency == 0 {
@@ -118,4 +137,17 @@ func (l Limits) overlay(o Limits) Limits {
 		l.TokensPerMonth = o.TokensPerMonth
 	}
 	return l
+}
+
+func (a AgentSettings) overlay(o Agent) AgentSettings {
+	if o.MaxSteps != nil {
+		a.MaxSteps = *o.MaxSteps
+	}
+	if o.MaxToolOutputBytes != nil {
+		a.MaxToolOutputBytes = *o.MaxToolOutputBytes
+	}
+	if o.Timeout != nil {
+		a.Timeout = *o.Timeout
+	}
+	return a
 }

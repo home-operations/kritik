@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -128,20 +130,22 @@ func (f *File) validate() error {
 
 func (f *File) validateProviders() error {
 	for name, p := range f.Providers {
-		switch p.Type {
-		case ProviderOpenRouter:
-			if p.BaseURL != "" {
-				return fmt.Errorf("configfile: providers.%s.baseUrl is not used by type %s", name, ProviderOpenRouter)
+		if !p.Type.Valid() {
+			return fmt.Errorf("configfile: providers.%s.type must be %s, %s or %s, got %q",
+				name, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, p.Type)
+		}
+		if p.BaseURL != "" {
+			if u, err := url.Parse(p.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
+				return fmt.Errorf("configfile: providers.%s.baseUrl %q must be an absolute URL", name, p.BaseURL)
 			}
-		case ProviderOpenAI:
-			if p.BaseURL == "" {
-				return fmt.Errorf("configfile: providers.%s.baseUrl is required for type %s", name, ProviderOpenAI)
-			}
-		default:
-			return fmt.Errorf("configfile: providers.%s.type must be %s or %s, got %q", name, ProviderOpenRouter, ProviderOpenAI, p.Type)
 		}
 		if p.apiKey.Value() == "" {
 			return fmt.Errorf("configfile: providers.%s.apiKey resolved to an empty value", name)
+		}
+		for id, price := range p.Pricing {
+			if price.Input < 0 || price.Output < 0 || price.CacheRead < 0 || price.CacheWrite < 0 {
+				return fmt.Errorf("configfile: providers.%s.pricing.%s: prices must not be negative", name, id)
+			}
 		}
 	}
 	return nil
@@ -153,6 +157,9 @@ func (f *File) validateTenants() error {
 	}
 	if f.Retention.DisabledIndexGrace < 0 {
 		return errors.New("configfile: retention.disabledIndexGrace must not be negative")
+	}
+	if f.Defaults.Settle < 0 {
+		return errors.New("configfile: defaults.settle must not be negative")
 	}
 
 	if len(f.Tenants) == 0 {
@@ -177,6 +184,9 @@ func (f *File) validateTenants() error {
 		}
 		if t.Runner != nil && t.Runner.ActiveDeadlineSeconds < 0 {
 			return fmt.Errorf("configfile: %s.runner.activeDeadlineSeconds must not be negative", where)
+		}
+		if t.Settle < 0 {
+			return fmt.Errorf("configfile: %s.settle must not be negative", where)
 		}
 		if len(t.Installations) == 0 {
 			return fmt.Errorf("configfile: %s (%s) must list at least one installation", where, t.Slug)
@@ -208,6 +218,12 @@ func (f *File) validateTenants() error {
 				return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d]", rwhere, r.Name, prev)
 			}
 			repos[r.Name] = ri
+			if r.Settle < 0 {
+				return fmt.Errorf("configfile: %s.settle must not be negative", rwhere)
+			}
+			if err := r.validateReview(rwhere); err != nil {
+				return err
+			}
 			if f.InstallationFor(&t, r.Name) == nil {
 				owner, _, _ := strings.Cut(r.Name, "/")
 				return fmt.Errorf("configfile: %s.name %q: no installation in tenant %q has account %q", rwhere, r.Name, t.Slug, owner)
@@ -218,6 +234,57 @@ func (f *File) validateTenants() error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// validateReview checks the operator-only review keys of a repository.
+func (r Repository) validateReview(where string) error {
+	if r.Mode != "" && !r.Mode.Valid() {
+		return fmt.Errorf("configfile: %s.mode must be %s or %s, got %q", where, ReviewSingle, ReviewAgentic, r.Mode)
+	}
+	for _, c := range []struct {
+		name string
+		v    *int
+	}{
+		{"agent.maxSteps", r.Agent.MaxSteps},
+		{"agent.maxToolOutputBytes", r.Agent.MaxToolOutputBytes},
+		{"incremental.maxDeltaFiles", r.Incremental.MaxDeltaFiles},
+	} {
+		if c.v != nil && *c.v <= 0 {
+			return fmt.Errorf("configfile: %s.%s must be positive", where, c.name)
+		}
+	}
+	if r.Agent.Timeout != nil && *r.Agent.Timeout <= 0 {
+		return fmt.Errorf("configfile: %s.agent.timeout must be positive", where)
+	}
+	for i, p := range r.Review.Instructions {
+		if err := checkRepoPath(p); err != nil {
+			return fmt.Errorf("configfile: %s.review.instructions[%d]: %w", where, i, err)
+		}
+	}
+	for _, t := range [][2]string{{"summary", r.Review.Templates.Summary}, {"inline", r.Review.Templates.Inline}} {
+		if t[1] == "" {
+			continue
+		}
+		if err := checkRepoPath(t[1]); err != nil {
+			return fmt.Errorf("configfile: %s.review.templates.%s: %w", where, t[0], err)
+		}
+	}
+	return nil
+}
+
+// checkRepoPath rejects a repository path that is empty, absolute or
+// escapes the repository root.
+func checkRepoPath(p string) error {
+	if strings.TrimSpace(p) == "" {
+		return errors.New("path must not be empty")
+	}
+	if path.IsAbs(p) {
+		return fmt.Errorf("path %q must be relative", p)
+	}
+	if c := path.Clean(p); c == ".." || strings.HasPrefix(c, "../") {
+		return fmt.Errorf("path %q escapes the repository", p)
 	}
 	return nil
 }
@@ -319,6 +386,7 @@ func SamplePR() map[string]any {
 		"url":       "https://example.invalid/pull/1",
 		"createdAt": time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		"labels":    []any{map[string]any{"name": "sample", "color": "ffffff"}},
+		"body":      "sample body",
 	}
 }
 

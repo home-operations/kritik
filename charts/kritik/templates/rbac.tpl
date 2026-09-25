@@ -1,5 +1,6 @@
 {{- if and .Values.rbac.create (include "kritik.hasWorker" .) }}
-# The worker creates runner Jobs in its own namespace and reads their pods
+# The worker creates runner Jobs in its own namespace, each with a
+# job-scoped Secret it creates and hands to the Job, and reads their pods
 # and logs; nothing cluster-wide, nothing else.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -18,6 +19,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

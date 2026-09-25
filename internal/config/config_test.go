@@ -107,7 +107,7 @@ func TestRoleValidation(t *testing.T) {
 	if err := cfg.ValidateRunner(); err == nil {
 		t.Fatal("runner without its inputs must fail")
 	}
-	cfg.RunID, cfg.CloneURL, cfg.HeadSHA, cfg.BaseSHA = "r", "u", "h", "b"
+	cfg.RunSpec = `{"version":1}`
 	if err := cfg.ValidateRunner(); err != nil {
 		t.Fatal(err)
 	}

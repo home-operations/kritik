@@ -11,20 +11,23 @@
 package configfile
 
 import (
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/prfilter"
 )
 
 // ProviderType selects the model adapter a provider uses.
-type ProviderType string
+type ProviderType = model.ProviderType
 
-// Provider types kritik implements: OpenRouter itself, or any
-// OpenAI-compatible endpoint reached through its baseUrl.
+// Provider types kritik implements. Each accepts a baseUrl, so any gateway
+// compatible with the OpenAI or Anthropic API is a provider.
 const (
-	ProviderOpenRouter ProviderType = "openrouter"
-	ProviderOpenAI     ProviderType = "openai"
+	ProviderOpenRouter = model.ProviderOpenRouter
+	ProviderOpenAI     = model.ProviderOpenAI
+	ProviderAnthropic  = model.ProviderAnthropic
 )
 
 // Forge identifies which forge an installation talks to.
@@ -68,9 +71,14 @@ func (s Secret) GoString() string { return s.String() }
 // Provider is a model endpoint. Keys are references, never values, so the
 // file can live in git.
 type Provider struct {
-	Type    ProviderType `yaml:"type"`
-	BaseURL string       `yaml:"baseUrl,omitempty"`
-	APIKey  SecretRef    `yaml:"apiKey"`
+	Type ProviderType `yaml:"type"`
+	// BaseURL overrides the type's default endpoint.
+	BaseURL string    `yaml:"baseUrl,omitempty"`
+	APIKey  SecretRef `yaml:"apiKey"`
+	// Pricing, keyed by model id, computes the cost of calls the provider
+	// does not report a cost for; without it such calls cost zero while
+	// their tokens still count against limits.
+	Pricing model.Pricing `yaml:"pricing,omitempty"`
 
 	apiKey Secret
 }
@@ -95,11 +103,11 @@ func (m ModelRef) Provider() string {
 // Model returns the model half of the reference, or "" when the reference
 // has no slash.
 func (m ModelRef) Model() string {
-	_, model, ok := strings.Cut(string(m), "/")
+	_, id, ok := strings.Cut(string(m), "/")
 	if !ok {
 		return ""
 	}
-	return model
+	return id
 }
 
 // Models are the per-tenant completion roles. Empty means "inherit from the
@@ -143,6 +151,9 @@ type Defaults struct {
 	Filter string `yaml:"filter,omitempty"`
 	Forks  *bool  `yaml:"forks,omitempty"`
 	Limits Limits `yaml:"limits,omitempty"`
+	// Settle delays a review job for a new head, so a burst of pushes
+	// collapses onto the last one before anything is spent.
+	Settle time.Duration `yaml:"settle,omitempty"`
 }
 
 // Retention controls what is deleted and when. Reviews, findings and usage
@@ -223,13 +234,95 @@ func (i Installation) WebhookSecretValue() Secret {
 // Repository carries per-repository overrides. Everything an installation
 // grants access to is watched whether or not it is listed here.
 type Repository struct {
-	Name     string   `yaml:"name"`
-	Enabled  *bool    `yaml:"enabled,omitempty"`
-	Filter   string   `yaml:"filter,omitempty"`
-	Konflate string   `yaml:"konflate,omitempty"`
-	Ignore   []string `yaml:"ignore,omitempty"`
+	Name     string        `yaml:"name"`
+	Enabled  *bool         `yaml:"enabled,omitempty"`
+	Filter   string        `yaml:"filter,omitempty"`
+	Konflate string        `yaml:"konflate,omitempty"`
+	Ignore   []string      `yaml:"ignore,omitempty"`
+	Settle   time.Duration `yaml:"settle,omitempty"`
+	// Mode, Agent and Incremental are operator-only: the in-repo file
+	// cannot change how much a review may spend.
+	Mode        ReviewMode  `yaml:"mode,omitempty"`
+	Agent       Agent       `yaml:"agent,omitempty"`
+	Incremental Incremental `yaml:"incremental,omitempty"`
+	// Review holds defaults the in-repo file may override.
+	Review Review `yaml:"review,omitempty"`
 
 	filter *prfilter.Program
+}
+
+// ReviewMode is how a review is carried out.
+type ReviewMode string
+
+// Review modes. An unset mode resolves to single.
+const (
+	ReviewSingle  ReviewMode = "single"
+	ReviewAgentic ReviewMode = "agentic"
+)
+
+// Valid reports whether m is a review mode.
+func (m ReviewMode) Valid() bool { return m == ReviewSingle || m == ReviewAgentic }
+
+func (m ReviewMode) String() string { return string(m) }
+
+// Agent bounds an agentic review. A field left unset takes its default from
+// DefaultAgent; one that is set must be positive.
+type Agent struct {
+	MaxSteps           *int           `yaml:"maxSteps,omitempty"`
+	MaxToolOutputBytes *int           `yaml:"maxToolOutputBytes,omitempty"`
+	Timeout            *time.Duration `yaml:"timeout,omitempty"`
+}
+
+// AgentSettings are the resolved agent bounds.
+type AgentSettings struct {
+	MaxSteps           int
+	MaxToolOutputBytes int
+	Timeout            time.Duration
+}
+
+// DefaultAgent applies to every agent bound a repository leaves unset.
+var DefaultAgent = AgentSettings{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, Timeout: 20 * time.Minute}
+
+// Incremental tunes incremental re-review.
+type Incremental struct {
+	// MaxDeltaFiles is how many files may change since the last review
+	// before a re-review covers the whole pull request again.
+	MaxDeltaFiles *int `yaml:"maxDeltaFiles,omitempty"`
+}
+
+// IncrementalSettings are the resolved incremental settings.
+type IncrementalSettings struct {
+	MaxDeltaFiles int
+}
+
+// DefaultMaxDeltaFiles applies when a repository sets no maxDeltaFiles.
+const DefaultMaxDeltaFiles = 25
+
+// ReviewTemplates name repository files, read from the merge base, that
+// replace the built-in comment templates.
+type ReviewTemplates struct {
+	Summary string `yaml:"summary,omitempty"`
+	Inline  string `yaml:"inline,omitempty"`
+}
+
+// Review is the operator's presentation and strictness defaults for a
+// repository. Paths name files in the repository's merge-base tree.
+type Review struct {
+	Instructions        []string        `yaml:"instructions,omitempty"`
+	RequireSuggestedFix bool            `yaml:"requireSuggestedFix,omitempty"`
+	Templates           ReviewTemplates `yaml:"templates,omitempty"`
+}
+
+// Referenced lists the repository paths the block names: instructions
+// first, then the summary and inline templates, deduplicated.
+func (r Review) Referenced() []string {
+	var out []string
+	for _, p := range append(append([]string(nil), r.Instructions...), r.Templates.Summary, r.Templates.Inline) {
+		if p != "" && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // Tenant is a forge account and the unit of isolation.
@@ -242,6 +335,7 @@ type Tenant struct {
 	Forks         *bool          `yaml:"forks,omitempty"`
 	Limits        Limits         `yaml:"limits,omitempty"`
 	Repositories  []Repository   `yaml:"repositories,omitempty"`
+	Settle        time.Duration  `yaml:"settle,omitempty"`
 
 	filter *prfilter.Program
 }
@@ -274,4 +368,10 @@ type Settings struct {
 	// Ignore is DefaultIgnore plus the repository's own globs. The in-repo
 	// file's globs are unioned in by the caller that has the checkout.
 	Ignore []string
+	// Settle delays a review job for a new head; zero means immediate.
+	Settle      time.Duration
+	Mode        ReviewMode
+	Agent       AgentSettings
+	Incremental IncrementalSettings
+	Review      Review
 }

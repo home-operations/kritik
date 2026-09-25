@@ -12,16 +12,19 @@ import (
 
 // Spec is one runner invocation.
 type Spec struct {
-	// RunID is the runner_runs row; it becomes the Job name suffix and the
-	// runner's KRITIK_RUN_ID.
+	// RunID is the runner_runs row; it becomes the Job and Secret name
+	// suffix.
 	RunID string
 	// Labels are put on the Job for kubectl and Grafana: tenant, repository,
 	// pr, kind.
 	Labels map[string]string
 	// Annotations carry the River job id and head SHA.
 	Annotations map[string]string
-	// Params are handed to the runner as environment.
-	Params runner.Params
+	// Job is the runner's job document, handed over as KRITIK_RUN_SPEC.
+	Job runner.Spec
+	// Secrets reach the runner through a Secret owned by its Job, and are
+	// masked out of the log tail.
+	Secrets runner.Secrets
 	// Deadline bounds the whole run.
 	Deadline time.Duration
 	// Resources overrides the pod's resource requirements, as the tenant's

@@ -11,7 +11,7 @@ const ghPullRequest = `{
   "action": "synchronize",
   "number": 42,
   "pull_request": {
-    "number": 42, "title": "feat: thing", "state": "open", "draft": false, "merged": false,
+    "number": 42, "title": "feat: thing", "body": "a body", "state": "open", "draft": false, "merged": false,
     "html_url": "https://github.com/onedr0p/home-ops/pull/42", "created_at": "2026-09-24T10:00:00Z",
     "user": {"login": "renovate[bot]", "type": "Bot"},
     "head": {"ref": "renovate/x", "sha": "aaa111", "repo": {"full_name": "onedr0p/home-ops"}},
@@ -54,7 +54,7 @@ func TestParseGitHubPullRequest(t *testing.T) {
 		t.Fatalf("repo = %+v", ev.Repository)
 	}
 	vars := pr.FilterVars()
-	if vars["open"] != true || vars["author"] != "renovate[bot]" {
+	if vars["open"] != true || vars["author"] != "renovate[bot]" || vars["body"] != "a body" {
 		t.Fatalf("vars = %v", vars)
 	}
 	labels := vars["labels"].([]any)
@@ -163,13 +163,14 @@ func TestParseRejectsMalformedAndOversized(t *testing.T) {
 func TestParseGitLab(t *testing.T) {
 	mr := `{"object_kind":"merge_request","user":{"username":"devin","bot":false},
 	  "project":{"path_with_namespace":"group/repo","default_branch":"main","git_http_url":"https://gl/group/repo.git"},
-	  "object_attributes":{"iid":5,"title":"t","state":"opened","action":"update","draft":false,"url":"u",
+	  "object_attributes":{"iid":5,"title":"t","description":"mr body","state":"opened","action":"update","draft":false,"url":"u",
 	    "created_at":"2026-09-24 10:00:00 UTC","source_branch":"f","target_branch":"main",
 	    "source_project_id":1,"target_project_id":1,"last_commit":{"id":"abc"}},
 	  "labels":[{"title":"x","color":"#fff"}]}`
 	ev, err := Parse(configfile.ForgeGitLab, hdr("X-Gitlab-Event-UUID", "u-1"), []byte(mr))
 	if err != nil || ev.Kind != KindPullRequest || ev.Account != "group" || ev.PullRequest.Number != 5 ||
-		ev.PullRequest.State != "open" || ev.PullRequest.HeadSHA != "abc" || ev.PullRequest.Fork || len(ev.PullRequest.Labels) != 1 {
+		ev.PullRequest.State != "open" || ev.PullRequest.HeadSHA != "abc" || ev.PullRequest.Fork || len(ev.PullRequest.Labels) != 1 ||
+		ev.PullRequest.Body != "mr body" {
 		t.Fatalf("gitlab mr = %+v %+v %v", ev, ev.PullRequest, err)
 	}
 	//nolint:misspell // GitLab's field is spelled noteable
@@ -190,7 +191,7 @@ func TestParseGitLab(t *testing.T) {
 func TestParseForgejo(t *testing.T) {
 	h := hdr("X-Gitea-Event", "pull_request", "X-Gitea-Delivery", "f-1")
 	ev, err := Parse(configfile.ForgeForgejo, h, []byte(ghPullRequest))
-	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "f-1" || ev.PullRequest.Number != 42 {
+	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "f-1" || ev.PullRequest.Number != 42 || ev.PullRequest.Body != "a body" {
 		t.Fatalf("forgejo pr = %+v %v", ev, err)
 	}
 	h.Set("X-Gitea-Event", "issue_comment")

@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritik/internal/model"
 )
 
 // fixture materialises testdata/full.yaml with its file references pointing
@@ -78,6 +81,7 @@ func TestLoadFull(t *testing.T) {
 			conc     int
 			perDay   int
 			konflate string
+			settle   time.Duration
 			filterOK map[string]any // a PR the effective filter must accept
 			filterNo map[string]any // a PR the effective filter must reject
 		}{
@@ -89,6 +93,7 @@ func TestLoadFull(t *testing.T) {
 			{
 				name: "listed repo adds konflate", tenant: ho, repo: "home-operations/flate",
 				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200, konflate: "https://konflate.example.org",
+				settle:   30 * time.Second,
 				filterOK: SamplePR(),
 			},
 			{
@@ -103,6 +108,7 @@ func TestLoadFull(t *testing.T) {
 			{
 				name: "tenant overrides review model and forks", tenant: od, repo: "onedr0p/home-ops",
 				enabled: true, review: "local/claude-opus-5", forks: true, conc: 3,
+				settle:   2 * time.Minute,
 				filterOK: SamplePR(),
 			},
 		}
@@ -110,7 +116,8 @@ func TestLoadFull(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				s := f.Settings(tt.tenant, tt.repo)
 				if s.Enabled != tt.enabled || s.Models.Review != tt.review || s.Forks != tt.forks ||
-					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay || s.Konflate != tt.konflate {
+					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay || s.Konflate != tt.konflate ||
+					s.Settle != tt.settle {
 					t.Fatalf("Settings = %+v", s)
 				}
 				if s.Models.Fallback != "local/claude-sonnet-5" {
@@ -201,6 +208,20 @@ func TestRetentionAndIgnore(t *testing.T) {
 	}
 }
 
+func TestFilterOnBody(t *testing.T) {
+	prg, err := compileFilter(`pr.body.contains("[skip-review]")`)
+	if err != nil {
+		t.Fatalf("compileFilter: %v", err)
+	}
+	marked := with(SamplePR(), "body", "please review\n\n[skip-review]")
+	if ok, err := prg.Eval(marked); err != nil || !ok {
+		t.Fatalf("filter should accept a body containing the marker: ok=%v err=%v", ok, err)
+	}
+	if ok, err := prg.Eval(SamplePR()); err != nil || ok {
+		t.Fatalf("filter should reject the sample body: ok=%v err=%v", ok, err)
+	}
+}
+
 func with(pr map[string]any, k string, v any) map[string]any {
 	out := make(map[string]any, len(pr))
 	for kk, vv := range pr {
@@ -234,6 +255,55 @@ tenants:
         account: acme
         app: { ` + clientFields + `privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 `
+}
+
+func TestProviders(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	tests := []struct {
+		name    string
+		yaml    string
+		want    Provider
+		pricing model.Pricing
+	}{
+		{
+			name: "anthropic with pricing",
+			yaml: "  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
+				"    pricing:\n      acme-large: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }\n",
+			want:    Provider{Type: ProviderAnthropic},
+			pricing: model.Pricing{"acme-large": {Input: 3, Output: 15, CacheRead: 0.3, CacheWrite: 3.75}},
+		},
+		{
+			name: "anthropic behind a gateway",
+			yaml: "  p:\n    type: anthropic\n    baseUrl: https://gw.example.com/\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n",
+			want: Provider{Type: ProviderAnthropic, BaseURL: "https://gw.example.com/"},
+		},
+		{
+			name: "openai at the SDK default url",
+			yaml: "  p:\n    type: openai\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n",
+			want: Provider{Type: ProviderOpenAI},
+		},
+		{
+			name: "openrouter behind a proxy",
+			yaml: "  p:\n    type: openrouter\n    baseUrl: https://proxy.example.com/api/v1\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n",
+			want: Provider{Type: ProviderOpenRouter, BaseURL: "https://proxy.example.com/api/v1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := Parse([]byte("providers:\n" + tt.yaml + minimal))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			p := f.Providers["p"]
+			if p.Type != tt.want.Type || p.BaseURL != tt.want.BaseURL || p.APIKeyValue().Value() != "whsec" {
+				t.Fatalf("provider = %+v", p)
+			}
+			if !maps.Equal(p.Pricing, tt.pricing) {
+				t.Fatalf("pricing = %v, want %v", p.Pricing, tt.pricing)
+			}
+		})
+	}
 }
 
 func TestParseRejects(t *testing.T) {
@@ -271,12 +341,22 @@ func TestParseRejects(t *testing.T) {
 		{"env and file both set", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{ env: TEST_FORGEJO_TOKEN, file: /x }", 1), "not both"},
 		{"empty reference", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{}", 1), "token is required"},
 		{"unknown provider type", "providers:\n  p:\n    type: cohere\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" + minimal, "type must be"},
+		{"negative pricing", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
+			"    pricing: { acme-large: { input: 3, output: -1 } }\n" + minimal, "providers.p.pricing.acme-large"},
+		{"unknown pricing field", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
+			"    pricing: { acme-large: { prompt: 3 } }\n" + minimal, "field prompt not found"},
+		{"relative base url", "providers:\n  p:\n    type: openai\n    baseUrl: gw.example.com/v1\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" + minimal,
+			"must be an absolute URL"},
+		{"anthropic without key", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_EMPTY }\n" + minimal, "apiKey resolved to an empty value"},
 		{"model without provider", "defaults:\n  models:\n    review: gpt\n" + minimal, "<provider>/<model>"},
 		{"model referencing undeclared provider", "defaults:\n  models:\n    review: nope/gpt\n" + minimal, "not declared under providers"},
 		{"tenant model referencing undeclared provider", strings.Replace(minimal, "slug: acme", "slug: acme\n    models: { review: nope/gpt }", 1), "not declared under providers"},
 		{"negative limit", "defaults:\n  limits:\n    reviewsPerDay: -1\n" + minimal, "must not be negative"},
 		{"negative deadline", strings.Replace(minimal, "slug: acme", "slug: acme\n    runner: { activeDeadlineSeconds: -5 }", 1), "must not be negative"},
 		{"negative retention", "retention:\n  disabledIndexGrace: -1h\n" + minimal, "retention.disabledIndexGrace"},
+		{"negative settle default", "defaults:\n  settle: -1s\n" + minimal, "defaults.settle must not be negative"},
+		{"negative settle tenant", strings.Replace(minimal, "slug: acme", "slug: acme\n    settle: -1s", 1), "must not be negative"},
+		{"negative settle repository", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, settle: -1s }]", 1), "must not be negative"},
 		{"indexing role removed", "defaults:\n  models:\n    indexing: p/m\n" + minimal, "field indexing not found"},
 		{"bad ignore glob", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, ignore: ['['] }]", 1), "not a valid glob"},
 		{"filter syntax error", "defaults:\n  filter: 'pr.draft &&'\n" + minimal, "defaults.filter"},
@@ -343,4 +423,95 @@ func TestWatch(t *testing.T) {
 	expectNone("an invalid file must not be applied")
 	write(strings.Replace(minimal, "slug: acme", "slug: acme-three", 1))
 	expectApply("acme-three")
+}
+
+func TestRepositoryModeAgentReview(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	withRepo := func(repo string) string {
+		return strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: ["+repo+"]", 1)
+	}
+
+	t.Run("defaults resolve when unset", func(t *testing.T) {
+		f, err := Parse([]byte(withRepo("{ name: acme/x }")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, repo := range []string{"acme/x", "acme/unlisted"} {
+			s := f.Settings(&f.Tenants[0], repo)
+			if s.Mode != ReviewSingle || s.Agent != DefaultAgent || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
+				t.Fatalf("%s: mode=%q agent=%+v incremental=%+v", repo, s.Mode, s.Agent, s.Incremental)
+			}
+			if s.Review.RequireSuggestedFix || len(s.Review.Instructions) != 0 || s.Review.Templates != (ReviewTemplates{}) {
+				t.Fatalf("%s: review = %+v", repo, s.Review)
+			}
+		}
+		if DefaultMaxDeltaFiles != 25 {
+			t.Fatalf("DefaultMaxDeltaFiles = %d", DefaultMaxDeltaFiles)
+		}
+	})
+
+	t.Run("repository values override the defaults", func(t *testing.T) {
+		f, err := Parse([]byte(withRepo(`{ name: acme/x, mode: agentic,
+      agent: { maxSteps: 12, maxToolOutputBytes: 4096, timeout: 3m },
+      incremental: { maxDeltaFiles: 5 },
+      review: { instructions: [docs/rules.md], requireSuggestedFix: true,
+        templates: { summary: .kritik/summary.md.j2, inline: .kritik/inline.md.j2 } } }`)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := f.Settings(&f.Tenants[0], "acme/x")
+		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, Timeout: 3 * time.Minute}
+		if s.Mode != ReviewAgentic || s.Agent != want || s.Incremental.MaxDeltaFiles != 5 {
+			t.Fatalf("mode=%q agent=%+v incremental=%+v", s.Mode, s.Agent, s.Incremental)
+		}
+		if !s.Review.RequireSuggestedFix || len(s.Review.Instructions) != 1 || s.Review.Instructions[0] != "docs/rules.md" ||
+			s.Review.Templates.Summary != ".kritik/summary.md.j2" || s.Review.Templates.Inline != ".kritik/inline.md.j2" {
+			t.Fatalf("review = %+v", s.Review)
+		}
+		if got := s.Review.Referenced(); strings.Join(got, ",") != "docs/rules.md,.kritik/summary.md.j2,.kritik/inline.md.j2" {
+			t.Fatalf("referenced = %v", got)
+		}
+	})
+
+	t.Run("a partial agent block keeps the other defaults", func(t *testing.T) {
+		f, err := Parse([]byte(withRepo("{ name: acme/x, agent: { maxSteps: 7 } }")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := DefaultAgent
+		want.MaxSteps = 7
+		if got := f.Settings(&f.Tenants[0], "acme/x").Agent; got != want {
+			t.Fatalf("agent = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("review modes", func(t *testing.T) {
+		for m, valid := range map[ReviewMode]bool{ReviewSingle: true, ReviewAgentic: true, "": false, "loop": false} {
+			if m.Valid() != valid {
+				t.Fatalf("%q.Valid() = %v", m, !valid)
+			}
+		}
+	})
+
+	rejects := []struct{ name, repo, want string }{
+		{"invalid mode", "{ name: acme/x, mode: loop }", "mode must be single or agentic"},
+		{"zero max steps", "{ name: acme/x, agent: { maxSteps: 0 } }", "agent.maxSteps must be positive"},
+		{"negative max steps", "{ name: acme/x, agent: { maxSteps: -1 } }", "agent.maxSteps must be positive"},
+		{"zero tool output", "{ name: acme/x, agent: { maxToolOutputBytes: 0 } }", "agent.maxToolOutputBytes must be positive"},
+		{"zero timeout", "{ name: acme/x, agent: { timeout: 0s } }", "agent.timeout must be positive"},
+		{"zero delta files", "{ name: acme/x, incremental: { maxDeltaFiles: 0 } }", "incremental.maxDeltaFiles must be positive"},
+		{"unknown agent key", "{ name: acme/x, agent: { steps: 3 } }", "field steps not found"},
+		{"absolute instruction path", "{ name: acme/x, review: { instructions: [/etc/passwd] } }", "must be relative"},
+		{"escaping template path", "{ name: acme/x, review: { templates: { summary: ../x.j2 } } }", "escapes the repository"},
+		{"empty instruction path", "{ name: acme/x, review: { instructions: [''] } }", "must not be empty"},
+	}
+	for _, tt := range rejects {
+		t.Run("rejects "+tt.name, func(t *testing.T) {
+			_, err := Parse([]byte(withRepo(tt.repo)))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want it to mention %q", err, tt.want)
+			}
+		})
+	}
 }

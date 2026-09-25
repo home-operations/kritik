@@ -39,6 +39,7 @@ tenants:
         konflate: https://konflate.example.org
         ignore:
           - "**/testdata/**"
+        settle: 30s
       - name: home-operations/kopiur
         filter: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
       - name: home-operations/charts-mirror
@@ -62,3 +63,4 @@ tenants:
     models:
       review: local/claude-opus-5
     forks: true
+    settle: 2m

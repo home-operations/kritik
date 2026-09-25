@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/home-operations/kritik/internal/configfile"
@@ -45,17 +46,15 @@ func (c *Completers) For(f *configfile.File, name string) (model.Completer, erro
 }
 
 func sameProvider(a, b configfile.Provider) bool {
-	return a.Type == b.Type && a.BaseURL == b.BaseURL && a.APIKeyValue().Value() == b.APIKeyValue().Value()
+	return a.Type == b.Type && a.BaseURL == b.BaseURL && a.APIKeyValue().Value() == b.APIKeyValue().Value() &&
+		maps.Equal(a.Pricing, b.Pricing)
 }
 
 // BuildCompleter constructs the adapter a provider's type selects.
 func BuildCompleter(p configfile.Provider) (model.Completer, error) {
-	switch p.Type {
-	case configfile.ProviderOpenRouter:
-		return model.NewOpenRouter(p.APIKeyValue().Value(), nil)
-	case configfile.ProviderOpenAI:
-		return model.NewOpenAICompatible(string(p.Type), p.BaseURL, p.APIKeyValue().Value())
-	default:
-		return nil, fmt.Errorf("worker: provider type %q has no adapter", p.Type)
+	s, err := model.NewStepper(p.Type, p.BaseURL, p.APIKeyValue().Value(), p.Pricing, nil)
+	if err != nil {
+		return nil, fmt.Errorf("worker: %w", err)
 	}
+	return model.Structured{Stepper: s}, nil
 }

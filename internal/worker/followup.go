@@ -185,7 +185,7 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	}
 	msg := review.BuildFollowUp(review.Input{
 		Repository: f.pr.repository, Number: f.pr.number, Title: f.pr.title, Author: f.pr.author, BaseRef: f.pr.baseRef,
-		Changed: rec.changed, Diff: rec.diff, Context: rec.context,
+		Body: rec.body, Changed: rec.changed, Diff: rec.diff, Context: rec.context,
 	}, rec.findings, thread)
 	resp, err := f.complete(ctx, msg)
 	if err != nil {
@@ -331,17 +331,22 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, int64, error) 
 }
 
 type reviewRecord struct {
+	body     string
 	diff     string
 	changed  []string
 	context  []contextpack.Chunk
 	findings []review.Finding
 }
 
-// reviewRecord loads the latest completed review's diff, context pack and
-// findings; without one the thread stands alone.
+// reviewRecord loads the pull request description and the latest completed
+// review's diff, context pack and findings; without a review the thread
+// stands alone.
 func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 	var rec reviewRecord
 	err := f.w.Store.WithTenant(ctx, f.tenant.ID(), func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT body FROM pull_requests WHERE id = $1`, f.pr.id).Scan(&rec.body); err != nil {
+			return fmt.Errorf("worker: load pull request body: %w", err)
+		}
 		var reviewID string
 		var stages []byte
 		err := tx.QueryRow(ctx, `SELECT r.id, c.diff, c.changed_paths, c.stages FROM reviews r
@@ -359,7 +364,8 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 				return fmt.Errorf("worker: decode context pack: %w", err)
 			}
 		}
-		rows, err := tx.Query(ctx, `SELECT path, line, severity, title, body FROM findings WHERE review_id = $1 ORDER BY path, line`, reviewID)
+		rows, err := tx.Query(ctx, `SELECT path, line, severity, title, explanation, suggested_fix FROM findings
+			WHERE review_id = $1 ORDER BY path, line`, reviewID)
 		if err != nil {
 			return fmt.Errorf("worker: load findings: %w", err)
 		}
@@ -367,7 +373,7 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 		for rows.Next() {
 			var fd review.Finding
 			var sev string
-			if err := rows.Scan(&fd.Path, &fd.Line, &sev, &fd.Title, &fd.Body); err != nil {
+			if err := rows.Scan(&fd.Path, &fd.Line, &sev, &fd.Title, &fd.Explanation, &fd.SuggestedFix); err != nil {
 				return err
 			}
 			fd.Severity = review.Severity(sev)

@@ -28,8 +28,9 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 		ctx, cancel = context.WithTimeout(ctx, spec.Deadline)
 		defer cancel()
 	}
-	err := runner.Run(ctx, l.Store, spec.Params, logger)
-	res := Result{JobName: "local", PodName: "local", StartedAt: started, LogTail: tail(buf.String(), LogTailBytes), Err: err}
+	err := runner.Run(ctx, l.Store, spec.Job, spec.Secrets, logger)
+	logTail := tail(spec.Secrets.Mask(buf.String()), LogTailBytes)
+	res := Result{JobName: "local", PodName: "local", StartedAt: started, LogTail: logTail, Err: err}
 	if err != nil {
 		res.ExitCode = 1
 		res.TerminationReason = "Error"
