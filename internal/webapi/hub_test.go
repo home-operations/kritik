@@ -84,20 +84,18 @@ func TestHubOverflowAndReconnectResync(t *testing.T) {
 	}
 }
 
-// sseLines reads the stream's frames until it has n non-empty lines.
-func sseLines(t *testing.T, r *bufio.Reader, n int) []string {
+// sseLine reads the stream's next non-empty line.
+func sseLine(t *testing.T, r *bufio.Reader) string {
 	t.Helper()
-	var out []string
-	for len(out) < n {
+	for {
 		line, err := r.ReadString('\n')
 		if err != nil {
-			t.Fatalf("read stream: %v (got %q)", err, out)
+			t.Fatalf("read stream: %v", err)
 		}
 		if line = strings.TrimRight(line, "\n"); line != "" {
-			out = append(out, line)
+			return line
 		}
 	}
-	return out
 }
 
 func TestHubServe(t *testing.T) {
@@ -120,14 +118,14 @@ func TestHubServe(t *testing.T) {
 		t.Fatalf("headers = %v", resp.Header)
 	}
 	br := bufio.NewReader(resp.Body)
-	if got := sseLines(t, br, 1); got[0] != ": connected" {
+	if got := sseLine(t, br); got != ": connected" {
 		t.Fatalf("first frame = %q", got)
 	}
 
 	h.publish(store.Event{TenantID: alpha, Kind: store.EventIndexRun, ID: "ix-1"})
 	var lines []string
 	for len(lines) < 2 {
-		l := sseLines(t, br, 1)[0]
+		l := sseLine(t, br)
 		if l != ": heartbeat" {
 			lines = append(lines, l)
 		}
@@ -145,7 +143,7 @@ func TestHubServe(t *testing.T) {
 
 	h.resyncAll()
 	for {
-		l := sseLines(t, br, 1)[0]
+		l := sseLine(t, br)
 		if l == "event: resync" {
 			break
 		}
@@ -168,4 +166,37 @@ func TestHubServe(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+func TestHubCloseEndsStreams(t *testing.T) {
+	h, _ := testHub(t)
+	p := &auth.Principal{Operator: true}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.serve(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
+	}))
+	defer srv.Close()
+	resp, err := srv.Client().Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	br := bufio.NewReader(resp.Body)
+	if got := sseLine(t, br); got != ": connected" {
+		t.Fatalf("first frame = %q", got)
+	}
+	h.close()
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.ReadAll(br)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("stream ended with %v, want a clean end", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream still open after the hub closed")
+	}
+	h.close() // idempotent
 }

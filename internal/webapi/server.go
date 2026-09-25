@@ -67,7 +67,11 @@ func New(cfg Config) *Server {
 
 // Run feeds the event stream from the store's notifications until ctx
 // ends. The web process runs exactly one, however many streams it serves.
+// When it returns every open stream ends too, so a browser reconnects to
+// a replica that is still listening instead of waiting on one shutting
+// down.
 func (s *Server) Run(ctx context.Context) error {
+	defer s.hub.close()
 	s.store.Listen(ctx, store.ListenHandlers{OnEvent: s.hub.publish, OnReconnect: s.hub.resyncAll})
 	return nil
 }
@@ -89,7 +93,7 @@ func (s *Server) Handler() http.Handler {
 		outer.Handle(p+"/", http.StripPrefix(p, h))
 		h = outer
 	}
-	return s.recoverer(s.accessLog(securityHeaders(s.auth.Authenticate(h))))
+	return s.accessLog(s.recoverer(securityHeaders(s.auth.Authenticate(h))))
 }
 
 // routes splits the API, the sign-in routes and the UI by prefix by hand:
