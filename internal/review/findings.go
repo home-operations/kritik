@@ -23,8 +23,10 @@
 //     per render, charged when a loop starts; values kept by set or
 //     returned by a filter or method of at most 64 KiB; a filter or method
 //     call whose input or estimated allocation exceeds 256 KiB is refused,
-//     widths are at most 65,536, slice and batch counts at most 20,000, and
-//     indent, tojson's indent and expandtabs at most 16; literals of at most
+//     widths are at most 65,536 (wordwrap's at most 1,000, and wrapping
+//     costs input × width / 2 against that 256 KiB), slice and batch counts
+//     at most 10,000, and indent, tojson's indent and expandtabs at most 16;
+//     literals of at most
 //     256 items; nesting of at most 64; a template source of at most
 //     64 KiB; two seconds per render. Identifiers starting with __kritik_
 //     are reserved.

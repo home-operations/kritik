@@ -41,6 +41,14 @@ const (
 	// maxIndent bounds an argument repeated on every line or tab (indent,
 	// tojson's indent, expandtabs).
 	maxIndent = 16
+	// maxSliceCount bounds slice and batch counts: each count is a list the
+	// result holds, and the result must stay within maxIterations nodes.
+	maxSliceCount = maxIterations / 2
+	// maxWrapWidth bounds wordwrap's width. gonja builds each line by
+	// repeated concatenation, so a call allocates about input × width / 2.
+	maxWrapWidth = 1000
+	// defaultWrapWidth is wordwrap's width when none is given.
+	defaultWrapWidth = 79
 	// maxMeasureDepth bounds how deep a value is measured; anything deeper
 	// is counted by its length.
 	maxMeasureDepth = 8
@@ -611,6 +619,7 @@ const (
 	fnReplace    = "replace"
 	fnSlice      = "slice"
 	fnToJSON     = "tojson"
+	fnWordwrap   = "wordwrap"
 )
 
 // callArgs summarises a call's arguments for the cost estimate.
@@ -661,7 +670,9 @@ func (g *guard) checkCall(name string, in *exec.Value, params *exec.VarArgs) err
 	numLimit := float64(MaxRenderBytes)
 	switch name {
 	case fnSlice, fnBatch:
-		numLimit = maxIterations
+		numLimit = maxSliceCount
+	case fnWordwrap:
+		numLimit = maxWrapWidth
 	case fnIndent, fnToJSON, fnExpandTabs:
 		numLimit = maxIndent
 	}
@@ -704,7 +715,13 @@ func estimate(name string, in *exec.Value, m measure, a callArgs) float64 {
 	case "map":
 		return b + n*(1+a.num+float64(a.strs))
 	case fnSlice, fnBatch:
-		return b + (n+a.num)*16
+		return b + (n+a.num)*8
+	case fnWordwrap:
+		width := a.num
+		if width == 0 {
+			width = defaultWrapWidth
+		}
+		return b * min(width, b) / 2
 	case "escape", "e", "forceescape", "urlize", "xmlattr", "urlencode":
 		return 6 * (b + float64(a.strs))
 	default:

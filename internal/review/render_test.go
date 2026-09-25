@@ -185,6 +185,8 @@ func TestRenderMemoryIsBounded(t *testing.T) {
 		"indent with a huge width":          `{{ summary.take|indent(60000) }}`,
 		"map of an amplifier":               `{{ range(10000)|map("center", 60000)|list|length }}`,
 		"join method with a long separator": s60k + `{{ s.join(range(10000)|map("string")|list) }}`,
+		"wordwrap of many short words":      `{% set s = "x"|center(30000)|replace(" ", "a ") %}{{ s|wordwrap(65536)|length }}`,
+		"wordwrap within its width":         `{% set s = "x"|center(30000)|replace(" ", "a ") %}{{ s|wordwrap(1000)|length }}`,
 		"tojson of long model text":         `{{ findings|tojson(indent=16) }}{{ findings|tojson(indent=16) }}`,
 	}
 	longData := sampleData()
@@ -268,5 +270,34 @@ func TestLoopStopsAtTheDeadline(t *testing.T) {
 	g := &guard{ctx: ctx}
 	if v := g.step(nil); !v.IsError() {
 		t.Fatal("step must fail once the deadline has passed")
+	}
+}
+
+// TestCallLimitsMatchTheDocs pins the documented per-call limits: the
+// largest documented count or width is accepted, one more is refused.
+func TestCallLimitsMatchTheDocs(t *testing.T) {
+	tests := []struct {
+		src  string
+		want string
+		fail bool
+	}{
+		{src: `{{ ([1]|slice(10000))|length }}`, want: "10000"},
+		{src: `{{ ([1]|slice(10001))|length }}`, fail: true},
+		{src: `{{ ([1]|batch(10000, fill_with=1))|first|length }}`, want: "10000"},
+		{src: `{{ ([1]|batch(10001, fill_with=1))|length }}`, fail: true},
+		{src: `{{ "a b c"|wordwrap(1000) }}`, want: "a b c"},
+		{src: `{{ "a b c"|wordwrap(1001) }}`, fail: true},
+		{src: `{{ "a"|indent(16) }}`, want: "a"},
+		{src: `{{ "a"|indent(17) }}`, fail: true},
+		{src: `{{ "a"|center(65536)|length }}`, want: "65536"},
+		{src: `{{ "a"|center(65537)|length }}`, fail: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.src, func(t *testing.T) {
+			out, err := execute(t.Context(), tt.src, map[string]any{}, MaxRenderBytes)
+			if tt.fail != (err != nil) || (!tt.fail && out != tt.want) {
+				t.Fatalf("out = %q, err = %v", out, err)
+			}
+		})
 	}
 }
