@@ -59,6 +59,7 @@ func (f *File) Settings(t *Tenant, repo string) Settings {
 		Forks:   f.Defaults.Forks != nil && *f.Defaults.Forks,
 		Limits:  f.Defaults.Limits,
 		Ignore:  append([]string(nil), DefaultIgnore...),
+		Settle:  f.Defaults.Settle,
 	}
 	s.Models = s.Models.overlay(t.Models)
 	if t.filter != nil {
@@ -66,6 +67,9 @@ func (f *File) Settings(t *Tenant, repo string) Settings {
 	}
 	if t.Forks != nil {
 		s.Forks = *t.Forks
+	}
+	if t.Settle > 0 {
+		s.Settle = t.Settle
 	}
 	s.Limits = s.Limits.overlay(t.Limits)
 	for i := range t.Repositories {
@@ -81,6 +85,9 @@ func (f *File) Settings(t *Tenant, repo string) Settings {
 		}
 		s.Konflate = r.Konflate
 		s.Ignore = append(s.Ignore, r.Ignore...)
+		if r.Settle > 0 {
+			s.Settle = r.Settle
+		}
 		break
 	}
 	if s.Limits.Concurrency == 0 {

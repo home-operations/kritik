@@ -157,6 +157,9 @@ func (f *File) validateTenants() error {
 	if f.Retention.DisabledIndexGrace < 0 {
 		return errors.New("configfile: retention.disabledIndexGrace must not be negative")
 	}
+	if f.Defaults.Settle < 0 {
+		return errors.New("configfile: defaults.settle must not be negative")
+	}
 
 	if len(f.Tenants) == 0 {
 		return errors.New("configfile: tenants must list at least one tenant")
@@ -180,6 +183,9 @@ func (f *File) validateTenants() error {
 		}
 		if t.Runner != nil && t.Runner.ActiveDeadlineSeconds < 0 {
 			return fmt.Errorf("configfile: %s.runner.activeDeadlineSeconds must not be negative", where)
+		}
+		if t.Settle < 0 {
+			return fmt.Errorf("configfile: %s.settle must not be negative", where)
 		}
 		if len(t.Installations) == 0 {
 			return fmt.Errorf("configfile: %s (%s) must list at least one installation", where, t.Slug)
@@ -211,6 +217,9 @@ func (f *File) validateTenants() error {
 				return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d]", rwhere, r.Name, prev)
 			}
 			repos[r.Name] = ri
+			if r.Settle < 0 {
+				return fmt.Errorf("configfile: %s.settle must not be negative", rwhere)
+			}
 			if f.InstallationFor(&t, r.Name) == nil {
 				owner, _, _ := strings.Cut(r.Name, "/")
 				return fmt.Errorf("configfile: %s.name %q: no installation in tenant %q has account %q", rwhere, r.Name, t.Slug, owner)
