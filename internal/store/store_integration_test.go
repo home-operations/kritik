@@ -529,4 +529,8 @@ func TestGatewayTokens(t *testing.T) {
 	if _, err := s.LookupGatewayToken(ctx, live); err != nil {
 		t.Fatalf("other run's token = %v", err)
 	}
+	// The suites share one database: leave no live token behind.
+	if err := s.RevokeGatewayTokens(ctx, other.RunID); err != nil {
+		t.Fatal(err)
+	}
 }

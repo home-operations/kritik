@@ -527,8 +527,10 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	if _, err := step(token, gatewayModel); err == nil || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("a revoked token = %v", err)
 	}
+	// The suites share one database; count only this tenant's tokens.
 	var left int
-	if err := h.st.App().QueryRow(h.ctx, `SELECT count(*) FROM gateway_tokens`).Scan(&left); err != nil || left != 0 {
+	if err := h.st.App().QueryRow(h.ctx, `SELECT count(*) FROM gateway_tokens WHERE tenant_id = $1`, h.tenant.ID()).Scan(&left); err != nil ||
+		left != 0 {
 		t.Fatalf("gateway tokens left after the reviews = %d, %v", left, err)
 	}
 	if err := failRun(h.ctx, h.st, h.tenant.ID(), runID, "test run"); err != nil {
