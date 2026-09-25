@@ -47,7 +47,8 @@ spec:
     {{- end }}
 {{- if include "kritik.hasWorker" . }}
 ---
-# Runner pods: no ingress at all; egress to DNS, the git remote and Postgres.
+# Runner pods: no ingress at all; egress to DNS, Postgres, the git remote and
+# (via the same egressPorts) whatever model endpoint an agentic review calls.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

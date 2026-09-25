@@ -60,6 +60,56 @@ roles:
 config:
   # -- (required unless `existingConfigMap` is set) The configuration file, as YAML. Passed through verbatim, not tpl'd. See the README for the schema.
   file: {}
+  # providers:
+  #   openrouter:
+  #     type: openrouter
+  #     apiKey: { env: OPENROUTER_API_KEY }
+  #   gateway:
+  #     # Any OpenAI- or Anthropic-API-compatible endpoint is a provider via `baseUrl`.
+  #     type: openai
+  #     baseUrl: https://gateway.example.com/v1
+  #     apiKey: { file: /var/run/secrets/kritik/providers/gateway-api-key }
+  #     # Pricing (USD per million tokens) only matters for providers that
+  #     # don't self-report cost; OpenRouter does, so it needs none here.
+  #     pricing:
+  #       gpt-6-sol: { input: 1.25, output: 10 }
+  #   anthropic:
+  #     type: anthropic
+  #     apiKey: { file: /var/run/secrets/kritik/providers/anthropic-api-key }
+  #     pricing:
+  #       claude-sonnet-5: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }
+  # defaults:
+  #   models:
+  #     review: openrouter/openai/gpt-6-sol
+  #   filter: "!pr.draft"
+  # tenants:
+  #   - slug: example
+  #     installations:
+  #       - name: example-github
+  #         forge: github
+  #         account: example
+  #         app:
+  #           clientId: Iv1.example
+  #           privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+  #           webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+  #       # GitLab and Forgejo installations authenticate with a bot token
+  #       # instead of a GitHub App.
+  #       - name: example-forgejo
+  #         forge: forgejo
+  #         host: forge.example.com
+  #         account: example
+  #         token: { file: /var/run/secrets/kritik/bot/forgejo-token }
+  #         webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+  #     repositories:
+  #       - name: example/widgets
+  #         # agentic mode gives the model a bounded, read-only tool loop
+  #         # over the commit tree instead of one prompt with the diff.
+  #         mode: agentic
+  #         agent: { timeout: 15m }
+  #         # Collapse a burst of pushes onto the last head before spending
+  #         # anything on a review.
+  #         settle: 2m
+
   # -- Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`.
   existingConfigMap: ""
   # -- How often each replica re-reads the file (Go duration).
