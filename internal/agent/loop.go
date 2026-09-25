@@ -97,12 +97,11 @@ type Result struct {
 // step the Stepper may call one of Tools or Submit, until it submits, a
 // limit is reached, or ctx ends.
 type Run struct {
-	Stepper   model.Stepper
-	Model     string
-	Fallbacks []string
-	System    string
-	User      string
-	Tools     []Tool
+	Stepper model.Stepper
+	Model   string
+	System  string
+	User    string
+	Tools   []Tool
 	// Submit is the submit_review tool; its schema is the review contract.
 	// The loop never runs it: a call to Submit ends the Run.
 	Submit model.ToolDef
@@ -154,7 +153,6 @@ func (r Run) Do(ctx context.Context) Result {
 
 		req := model.StepRequest{
 			Model:     r.Model,
-			Fallbacks: r.Fallbacks,
 			System:    r.System,
 			Messages:  messages,
 			Tools:     toolDefs,

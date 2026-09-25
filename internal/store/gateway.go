@@ -71,7 +71,22 @@ func (s *Store) LookupGatewayToken(ctx context.Context, token string) (GatewayGr
 	return g, nil
 }
 
-// ChargeGatewayToken adds tokens to what the token's run has spent.
+// ReserveGatewayTokens adds tokens to what the token's run has spent,
+// before a step, if the run has not spent its budget, and reports whether
+// it did. Each step's reservation is visible to the next at once, so
+// concurrent steps overshoot the budget by at most one step, as the
+// agent's own loop may.
+func (s *Store) ReserveGatewayTokens(ctx context.Context, token string, tokens int64) (bool, error) {
+	tag, err := s.app.Exec(ctx, `UPDATE gateway_tokens SET spent_tokens = spent_tokens + $2
+		WHERE token_hash = $1 AND expires_at > now() AND spent_tokens < budget_tokens`, gatewayTokenHash(token), tokens)
+	if err != nil {
+		return false, fmt.Errorf("store: reserve gateway tokens: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// ChargeGatewayToken adds tokens, which may be negative, to what the
+// token's run has spent: a step's actual spend less its reservation.
 func (s *Store) ChargeGatewayToken(ctx context.Context, token string, tokens int64) error {
 	if _, err := s.app.Exec(ctx, `UPDATE gateway_tokens SET spent_tokens = spent_tokens + $2 WHERE token_hash = $1`,
 		gatewayTokenHash(token), tokens); err != nil {

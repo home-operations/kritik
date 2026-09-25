@@ -222,7 +222,9 @@ func run() error {
 			},
 			Steppers: completers,
 		}
-		g.Go(func() error { return server.Serve(ctx, cfg.GatewayAddr, gateway, gatewayLogger) })
+		g.Go(func() error {
+			return server.ServeDrain(ctx, cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
+		})
 		river.AddWorker(workers, &worker.Review{
 			Base: base, Executor: exec, Completers: completers, Embedder: embedder, EmbedModel: cfg.EmbedModel, Deadline: cfg.RunnerDeadline,
 			GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,

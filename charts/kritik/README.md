@@ -305,7 +305,7 @@ Kubernetes: `>=1.25.0-0`
 | serviceAccount.automount | bool | `true` | Automount the API token. The worker needs it to create runner Jobs; a pure ingest topology could turn it off. |
 | serviceAccount.create | bool | `true` | Create the ServiceAccount the roles run as. |
 | serviceAccount.name | string | `""` | ServiceAccount name; generated from the release name if empty. |
-| terminationGracePeriodSeconds | int | `45` | Grace period for a clean shutdown; the worker stops taking jobs and lets running ones finish for up to 30s. |
+| terminationGracePeriodSeconds | int | `150` | Grace period for a clean shutdown: the worker stops taking jobs and lets running ones finish for up to 30s, and its gateway lets model steps in flight finish for up to 2m. |
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
 | volumeMounts | list | `[]` | Additional volume mounts on every container. |
 | volumes | list | `[]` | Additional volumes on every Deployment. |

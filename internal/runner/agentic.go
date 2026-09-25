@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -236,7 +235,8 @@ type agentRecord struct {
 	toolCalls, timeline, sources []byte
 	usage                        model.Usage
 	costUSD                      float64
-	// model answered the run; empty means the one the spec asked for.
+	// model answered the run's last step; empty when no step was answered,
+	// and the worker then names the model the run was granted.
 	model string
 	err   string
 }
@@ -274,7 +274,7 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources)
 			SELECT id, tenant_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14 FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
-			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, cmp.Or(rec.model, p.Model.Model), rec.err,
+			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
 			rec.sources)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)

@@ -169,7 +169,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	var agentErr error
 	if agentic {
 		w.revokeGatewayTokens(ctx, logger, runID)
-		agentOutcome, agentErr = w.readAgentRun(ctx, args.TenantID, runID, stopped(ctx, res, cause))
+		agentOutcome, agentErr = w.readAgentRun(ctx, args.TenantID, runID, settings.Models.Review, stopped(ctx, res, cause))
 	}
 	if err := recordRun(ctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err

@@ -101,6 +101,8 @@ type scriptedModel struct {
 	requests int
 	// toolResults are the contents of the tool messages the model was sent.
 	toolResults []string
+	// maxTokens is each request's answer cap.
+	maxTokens []int64
 	// stalled runs once when scriptStall starts holding a request.
 	stalled func()
 }
@@ -117,6 +119,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Role    string `json:"role"`
 			Content any    `json:"content"`
 		} `json:"messages"`
+		MaxCompletionTokens int64 `json:"max_completion_tokens"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	m.mu.Lock()
@@ -124,6 +127,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.step++
 	step, script := m.step, m.script
 	m.auth = append(m.auth, r.Header.Get("Authorization"))
+	m.maxTokens = append(m.maxTokens, req.MaxCompletionTokens)
 	if len(req.Messages) > 0 && req.Messages[0].Role == "system" {
 		m.systems = append(m.systems, fmt.Sprint(req.Messages[0].Content))
 	}
@@ -240,7 +244,10 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	t.Cleanup(srv.Close)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "model-key")
-	if h.file, err = configfile.Parse([]byte(fmt.Sprintf(agenticConfigYAML, srv.URL))); err != nil {
+	// Credentials in the provider's URL, which the SDK prints in its errors,
+	// must not reach a runner either.
+	providerURL := strings.Replace(srv.URL, "http://", "http://kritik:provider-secret@", 1)
+	if h.file, err = configfile.Parse([]byte(fmt.Sprintf(agenticConfigYAML, providerURL))); err != nil {
 		t.Fatal(err)
 	}
 	if err := appStore.ApplyConfig(ctx, h.file, "test"); err != nil {
@@ -488,11 +495,21 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return c.Step(h.ctx, model.StepRequest{Model: name, Messages: []model.Message{{Role: model.RoleUser, Text: "review"}}})
+		// Far more than one step may answer with.
+		return c.Step(h.ctx, model.StepRequest{Model: name, Messages: []model.Message{{Role: model.RoleUser, Text: "review"}}, MaxTokens: 1 << 20})
 	}
 	resp, err := step(token, gatewayModel)
 	if err != nil || resp.Model != "agent-model" || len(resp.ToolCalls) != 1 || resp.Usage.Prompt() != 100 || resp.CostUSD != 0.01 {
 		t.Fatalf("step = %+v, %v", resp, err)
+	}
+	h.sm.mu.Lock()
+	asked := h.sm.maxTokens[len(h.sm.maxTokens)-1]
+	h.sm.mu.Unlock()
+	if asked != maxStepOutput {
+		t.Fatalf("the provider was asked for %d tokens, want the step cap %d", asked, maxStepOutput)
+	}
+	if grant, err := h.st.LookupGatewayToken(h.ctx, token); err != nil || grant.Spent != 110 {
+		t.Fatalf("spent after a step = %d, %v; want the step's actual spend", grant.Spent, err)
 	}
 	if rows, tokens := h.usageTokens(t, reviewID); rows != 1 || tokens != 110 {
 		t.Fatalf("usage rows=%d tokens=%d", rows, tokens)
@@ -521,6 +538,9 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	if after != before {
 		t.Fatal("a refused step reached the provider")
 	}
+	checkParallelSteps(t, h, store.GatewayGrant{
+		RunID: runID, TenantID: h.tenant.ID(), ReviewID: reviewID, RepositoryID: pr.repositoryID, Model: "gateway/agent-model",
+	}, step)
 	if err := h.st.RevokeGatewayTokens(h.ctx, runID); err != nil {
 		t.Fatal(err)
 	}
@@ -535,6 +555,45 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	}
 	if err := failRun(h.ctx, h.st, h.tenant.ID(), runID, "test run"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// checkParallelSteps sends five steps at once on a token whose budget any
+// one step spends. Each reserves before it runs, so one is served and the
+// rest are refused, however they interleave.
+func checkParallelSteps(t *testing.T, h *agenticHarness, grant store.GatewayGrant, step func(token, name string) (model.StepResponse, error)) {
+	t.Helper()
+	grant.Budget = 100
+	token, err := h.st.MintGatewayToken(h.ctx, grant, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.sm.mu.Lock()
+	before := h.sm.requests
+	h.sm.mu.Unlock()
+	errs := make(chan error, 5)
+	for range 5 {
+		go func() {
+			_, err := step(token, gatewayModel)
+			errs <- err
+		}()
+	}
+	var served, refused int
+	for range 5 {
+		switch err := <-errs; {
+		case err == nil:
+			served++
+		case errors.Is(err, model.ErrBudget):
+			refused++
+		default:
+			t.Fatalf("parallel step = %v", err)
+		}
+	}
+	h.sm.mu.Lock()
+	after := h.sm.requests
+	h.sm.mu.Unlock()
+	if served != 1 || refused != 4 || after-before != 1 {
+		t.Fatalf("served %d, refused %d, provider called %d times", served, refused, after-before)
 	}
 }
 
@@ -691,8 +750,23 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 	reviewID, status, errText := h.waitReview(t, next)
 	run := h.agentRow(t, reviewID)
 	if status != "failed" || run.stop != "error" || !strings.Contains(run.errText, "invalid api key ***") ||
-		strings.Contains(run.errText, "model-key") || strings.Contains(errText, "model-key") || !strings.Contains(errText, "***") {
+		strings.Contains(run.errText, "model-key") || strings.Contains(errText, "model-key") || !strings.Contains(errText, "***") ||
+		strings.Contains(run.errText, "provider-secret") || strings.Contains(errText, "provider-secret") {
 		t.Fatalf("status=%s review error=%q agent error=%q", status, errText, run.errText)
+	}
+	// No step was answered, so the run names no model and the review the
+	// one it was granted, never the gateway's name for it.
+	var reviewModel string
+	if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT model FROM reviews WHERE id = $1`, reviewID).Scan(&reviewModel)
+	}); err != nil || run.model != "" || reviewModel != "agent-model" {
+		t.Fatalf("agent run model = %q, review model = %q, %v", run.model, reviewModel, err)
+	}
+	h.lf.mu.Lock()
+	sticky := h.lf.comments[commentBase+1]
+	h.lf.mu.Unlock()
+	if !strings.Contains(sticky, "by kritik with agent-model.") {
+		t.Fatalf("sticky:\n%s", sticky)
 	}
 	// The provider refused the step, so nothing was spent.
 	if rows, _ := h.usageTokens(t, reviewID); rows != 0 {

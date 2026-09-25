@@ -187,13 +187,42 @@ func readUsage(ctx context.Context, st *store.Store, tenantID string) (capUsage,
 			WHERE status = 'completed' AND created_at >= date_trunc('day', now())`).Scan(&u.reviews); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, `SELECT coalesce(sum(input_tokens + output_tokens), 0) FROM usage
-			WHERE created_at >= date_trunc('month', now())`).Scan(&u.tokens)
+		var err error
+		u.tokens, err = monthTokens(ctx, tx)
+		return err
 	})
 	if err != nil {
 		return capUsage{}, fmt.Errorf("worker: read caps: %w", err)
 	}
 	return u, nil
+}
+
+// monthTokens is what the tenant of tx has spent this month, as the
+// tokensPerMonth cap counts it.
+func monthTokens(ctx context.Context, tx pgx.Tx) (int64, error) {
+	var tokens int64
+	err := tx.QueryRow(ctx, `SELECT coalesce(sum(input_tokens + output_tokens), 0) FROM usage
+		WHERE created_at >= date_trunc('month', now())`).Scan(&tokens)
+	return tokens, err
+}
+
+// reviewUsage is one model call charged to a review: its whole prompt,
+// cached part included, as input.
+type reviewUsage struct {
+	tenantID, repositoryID, reviewID, role, model, upstream string
+	input, output                                           int64
+	costUSD                                                 float64
+}
+
+// insertUsage records u, where the caps count it.
+func insertUsage(ctx context.Context, tx pgx.Tx, u reviewUsage) error {
+	if _, err := tx.Exec(ctx, `INSERT INTO usage
+		(tenant_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		u.tenantID, u.repositoryID, u.reviewID, u.role, u.model, u.upstream, u.input, u.output, u.costUSD); err != nil {
+		return fmt.Errorf("worker: insert usage: %w", err)
+	}
+	return nil
 }
 
 // reached says which cap u has reached, or "".
@@ -454,12 +483,11 @@ func (p *publishPhase) persist(
 			return fmt.Errorf("worker: upsert sticky comment: %w", err)
 		}
 		if p.agent == nil {
-			if _, err := tx.Exec(ctx, `INSERT INTO usage
-				(tenant_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-				p.tenant.ID(), p.pr.repositoryID, p.reviewID, role, resp.Model, resp.Upstream,
-				resp.InputTokens, resp.OutputTokens, resp.CostUSD); err != nil {
-				return fmt.Errorf("worker: insert usage: %w", err)
+			if err := insertUsage(ctx, tx, reviewUsage{
+				tenantID: p.tenant.ID(), repositoryID: p.pr.repositoryID, reviewID: p.reviewID, role: role, model: resp.Model,
+				upstream: resp.Upstream, input: resp.InputTokens, output: resp.OutputTokens, costUSD: resp.CostUSD,
+			}); err != nil {
+				return err
 			}
 		}
 		summary, err := json.Marshal(res.Summary)

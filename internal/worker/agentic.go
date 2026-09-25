@@ -196,13 +196,14 @@ func (w *Review) loadAgentRun(ctx context.Context, tenantID, runID string) (run 
 
 // readAgentRun reads the run's agent_runs row, nil when the runner wrote
 // none. What the agent spent is already charged: the gateway records usage
-// for every step it serves, whatever becomes of the review.
+// for every step it serves, whatever becomes of the review. A run no step
+// of which was answered names ref's model, the one it was granted.
 //
 // A run that ended in error may still be writing its row: a deleted runner
 // pod records how its agent stopped while it terminates. await waits for
 // that, until the run settles or agentRowWait passes. ctx's cancellation is
 // not inherited, so a job River cancels still reads the row.
-func (w *Review) readAgentRun(ctx context.Context, tenantID, runID string, await bool) (*agentRun, error) {
+func (w *Review) readAgentRun(ctx context.Context, tenantID, runID string, ref configfile.ModelRef, await bool) (*agentRun, error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agentRowWait+10*time.Second)
 	defer cancel()
 	run, found, err := w.loadAgentRun(ctx, tenantID, runID)
@@ -211,6 +212,9 @@ func (w *Review) readAgentRun(ctx context.Context, tenantID, runID string, await
 	}
 	if err != nil || !found {
 		return nil, err
+	}
+	if run.model == "" {
+		run.model = ref.Model()
 	}
 	return &run, nil
 }

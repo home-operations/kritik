@@ -998,8 +998,8 @@
       "type": "object"
     },
     "terminationGracePeriodSeconds": {
-      "default": 45,
-      "description": "Grace period for a clean shutdown; the worker stops taking jobs and lets running ones finish for up to 30s.",
+      "default": 150,
+      "description": "Grace period for a clean shutdown: the worker stops taking jobs and lets running ones finish for up to 30s, and its gateway lets model steps in flight finish for up to 2m.",
       "title": "terminationGracePeriodSeconds",
       "type": "integer"
     },
