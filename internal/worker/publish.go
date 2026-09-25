@@ -64,14 +64,6 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	if ref == "" {
 		return statusSkipped, errors.New("no review model is configured for this repository")
 	}
-	capped, err := p.checkCaps(ctx)
-	if err != nil {
-		return statusFailed, err
-	}
-	if capped != "" {
-		p.logger.Warn("review capped", "cap", capped)
-		return statusCapped, errors.New(capped)
-	}
 	in, err := p.load(ctx)
 	if err != nil {
 		return statusFailed, err
@@ -97,6 +89,11 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	}
 
 	resp, role, err := p.complete(ctx, ref, msg)
+	var capped cappedError
+	if errors.As(err, &capped) {
+		p.logger.Warn("review capped", "cap", string(capped))
+		return statusCapped, err
+	}
 	if err != nil {
 		return statusFailed, err
 	}
@@ -185,12 +182,25 @@ func (p *publishPhase) complete(ctx context.Context, ref configfile.ModelRef, ms
 	var resp model.CompletionResponse
 	role := roleReview
 	err := p.w.withLease(ctx, p.tenant, string(ref), p.settings.Slots(), p.jobID, func(ctx context.Context) error {
-		var err error
+		// Under the lease, so concurrent reviews cannot all pass a cap of
+		// one; a review only counts once it has completed.
+		capped, err := p.checkCaps(ctx)
+		if err != nil {
+			return err
+		}
+		if capped != "" {
+			return cappedError(capped)
+		}
 		resp, role, err = p.callModels(ctx, ref, msg)
 		return err
 	})
 	return resp, role, err
 }
+
+// cappedError says which tenant cap stopped a review.
+type cappedError string
+
+func (e cappedError) Error() string { return string(e) }
 
 // callModels asks the primary model and, when configured on another
 // provider, the fallback. The caller holds the lease.

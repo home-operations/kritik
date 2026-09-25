@@ -55,7 +55,11 @@ func TestJobSpec(t *testing.T) {
 	for _, e := range c.Env {
 		env[e.Name] = e
 	}
-	if env["KRITIK_GIT_TOKEN"].Value != "ghs_x" || env["KRITIK_HEAD_SHA"].Value != "aaa" || env["KRITIK_BASE_SHA"].Value != "bbb" ||
+	// The token comes from the per-run Secret, never from the Job spec.
+	if tok := env["KRITIK_GIT_TOKEN"]; tok.Value != "" || tok.ValueFrom == nil || tok.ValueFrom.SecretKeyRef.Name != j.Name || tok.ValueFrom.SecretKeyRef.Key != tokenKey {
+		t.Fatalf("token env = %+v", tok)
+	}
+	if env["KRITIK_HEAD_SHA"].Value != "aaa" || env["KRITIK_BASE_SHA"].Value != "bbb" ||
 		env["KRITIK_IGNORE"].Value != "vendor/**,**/*.lock" {
 		t.Fatalf("env = %v", env)
 	}
@@ -111,6 +115,15 @@ func TestKubeRunWaitsForCompletion(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after the job succeeded")
+	}
+	// The token Secret exists, holds the token, and is owned by the Job so
+	// the TTL takes it along.
+	sec, err := client.CoreV1().Secrets("kritik").Get(ctx, name, metav1.GetOptions{})
+	if err != nil || sec.StringData[tokenKey] != "ghs_x" {
+		t.Fatalf("token secret = %+v, %v", sec, err)
+	}
+	if len(sec.OwnerReferences) != 1 || sec.OwnerReferences[0].Kind != "Job" || sec.OwnerReferences[0].Name != name {
+		t.Fatalf("token secret owners = %+v", sec.OwnerReferences)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -54,13 +55,33 @@ func NewKubeInCluster() (kubernetes.Interface, string, error) {
 	return client, ns, nil
 }
 
-// Run implements Executor: create the Job, wait for it, capture the pod's
-// log tail, delete nothing (the TTL does), and report.
+// Run implements Executor: put the git token in a Secret of its own, create
+// the Job, wait for it, capture the pod's log tail, and report. The Secret
+// is owned by the Job so the TTL that removes the Job removes it too; the
+// token never appears in the Job spec, which anyone who can read Jobs can
+// read.
 func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	job := k.job(spec)
+	secrets := k.Client.CoreV1().Secrets(k.Namespace)
+	if _, err := secrets.Create(ctx, k.tokenSecret(job.Name, spec.Params.Token), metav1.CreateOptions{}); err != nil {
+		return Result{Err: fmt.Errorf("executor: create token secret: %w", err)}
+	}
 	created, err := k.Client.BatchV1().Jobs(k.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
+		_ = secrets.Delete(ctx, job.Name, metav1.DeleteOptions{})
 		return Result{Err: fmt.Errorf("executor: create job: %w", err)}
+	}
+	owner := metav1.NewControllerRef(created, batchv1.SchemeGroupVersion.WithKind("Job"))
+	patch := fmt.Sprintf(
+		`{"metadata":{"ownerReferences":[{"apiVersion":%q,"kind":%q,"name":%q,"uid":%q,"controller":true,"blockOwnerDeletion":false}]}}`,
+		owner.APIVersion, owner.Kind, owner.Name, owner.UID,
+	)
+	if _, err := secrets.Patch(ctx, job.Name, types.MergePatchType, []byte(patch), metav1.PatchOptions{}); err != nil {
+		// Without the owner the Secret would outlive the Job; better to
+		// stop now than to leak a token per run.
+		k.deleteJob(ctx, created.Name)
+		_ = secrets.Delete(ctx, job.Name, metav1.DeleteOptions{})
+		return Result{JobName: created.Name, Err: fmt.Errorf("executor: own token secret: %w", err)}
 	}
 	res := Result{JobName: created.Name}
 	poll := k.Poll
@@ -77,12 +98,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			// pods included, with a context that outlives the cancelled one.
 			res.Err = ctx.Err()
 			k.finish(&res)
-			dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-			defer cancel()
-			policy := metav1.DeletePropagationBackground
-			if err := k.Client.BatchV1().Jobs(k.Namespace).Delete(dctx, created.Name, metav1.DeleteOptions{PropagationPolicy: &policy}); err != nil {
-				k.Logger.Warn("orphaned runner job not deleted", "job", created.Name, "error", err)
-			}
+			k.deleteJob(ctx, created.Name)
 			return res
 		case <-t.C:
 		}
@@ -175,7 +191,8 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 		{Name: "KRITIK_RUN_KIND", Value: runKind(spec.Params.Kind)},
 		{Name: "KRITIK_RUN_ID", Value: spec.Params.RunID},
 		{Name: "KRITIK_CLONE_URL", Value: spec.Params.CloneURL},
-		{Name: "KRITIK_GIT_TOKEN", Value: spec.Params.Token},
+		{Name: "KRITIK_GIT_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: name}, Key: tokenKey}}},
 		{Name: "KRITIK_HEAD_SHA", Value: spec.Params.Head},
 		{Name: "KRITIK_BASE_SHA", Value: spec.Params.Base},
 		{Name: "KRITIK_IGNORE", Value: strings.Join(spec.Params.Ignore, ",")},
@@ -229,4 +246,31 @@ func runKind(kind string) string {
 		return "review"
 	}
 	return kind
+}
+
+// tokenKey is the key of the per-run Secret holding the git token.
+const tokenKey = "git-token"
+
+// tokenSecret is the per-run Secret, named after the Job. The owner
+// reference is added once the Job exists.
+func (k *Kube) tokenSecret(jobName, token string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: jobName, Namespace: k.Namespace,
+			Labels: map[string]string{"app.kubernetes.io/name": "kritik", "app.kubernetes.io/component": runnerRole},
+		},
+		Type:       corev1.SecretTypeOpaque,
+		StringData: map[string]string{tokenKey: token},
+	}
+}
+
+// deleteJob removes a Job and its pod with a context that outlives a
+// cancelled one; the owned token Secret goes with it.
+func (k *Kube) deleteJob(ctx context.Context, name string) {
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	policy := metav1.DeletePropagationBackground
+	if err := k.Client.BatchV1().Jobs(k.Namespace).Delete(dctx, name, metav1.DeleteOptions{PropagationPolicy: &policy}); err != nil {
+		k.Logger.Warn("runner job not deleted", "job", name, "error", err)
+	}
 }
