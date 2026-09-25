@@ -48,13 +48,16 @@ type InlineComment struct {
 }
 
 // StatusState is the outcome a commit status reports. kritik never reports
-// failure: a review informs, it does not block.
+// failure for a review that ran: a review informs, it does not block.
+// StatusError is the one exception, for a review that did not run to a
+// verdict at all (canceled), which is not a finding to weigh.
 type StatusState string
 
 // States kritik reports.
 const (
 	StatusPending StatusState = "pending"
 	StatusSuccess StatusState = "success"
+	StatusError   StatusState = "error"
 )
 
 // Permission is a login's access level to a repository, in ascending order.

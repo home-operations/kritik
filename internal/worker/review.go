@@ -67,6 +67,7 @@ const (
 	statusSkipped    = "skipped"
 	statusCapped     = "capped"
 	statusFailed     = "failed"
+	statusCanceled   = "canceled"
 )
 
 // pullRequest is what the worker reads back before starting.
@@ -133,7 +134,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		defer w.releaseLease(ctx, logger, a.lease, string(settings.Models.Review))
 	}
 
-	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, settings.Mode)
+	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, settings.Mode, job.ID)
 	if err != nil {
 		return err
 	}
@@ -171,6 +172,13 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		w.revokeGatewayTokens(ctx, logger, runID)
 		agentOutcome, agentErr = w.readAgentRun(ctx, args.TenantID, runID, settings.Models.Review, stopped(ctx, res, cause))
 	}
+	// A River cancel (JobCancelTx from a web request) cancels ctx itself,
+	// unlike supervise's own errSuperseded/errHeartbeatLost, which only
+	// cancel the child ctx passed to the executor. Capture it before
+	// detaching ctx from that cancellation so the rest of this cleanup path
+	// (recordRun, SetStatus, finishReview) can still do its writes.
+	canceled := errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely)
+	ctx = context.WithoutCancel(ctx)
 	if err := recordRun(ctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err
 	}
@@ -183,6 +191,15 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	// A run that finished despite a cancel is judged by its result; the
 	// head check after it catches a supersede.
 	switch {
+	case canceled:
+		logger.Info("review canceled", "job", res.JobName)
+		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusError, "kritik: review canceled"); err != nil {
+			logger.Warn("commit status not set", "error", err)
+		}
+		w.Metrics.Review(tenant.Slug, statusCanceled, time.Since(started))
+		// A nil return here, like the superseded case below, tells River the
+		// job succeeded: a cancel must never produce a retry.
+		return w.finishReview(ctx, args.TenantID, reviewID, statusCanceled, "", "")
 	case res.Err != nil && errors.Is(cause, errSuperseded):
 		logger.Info("review superseded while running", "job", res.JobName)
 		w.Metrics.Review(tenant.Slug, statusSuperseded, time.Since(started))
@@ -272,7 +289,9 @@ func (w *Review) afterRun(
 		if vars, err = filterVars(ctx, tx, pr.id); err != nil {
 			return err
 		}
-		if pr.authorIsBot {
+		// A manual re-run bypasses this skip: the human asked for it, so an
+		// identical bot patch is reviewed again rather than deduped away.
+		if pr.authorIsBot && args.Trigger != jobs.TriggerManual {
 			err := tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
 				AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, pr.id, reviewID).Scan(&lastPatch)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -397,16 +416,17 @@ func (w *Review) record(ctx context.Context, args jobs.ReviewArgs, pr *pullReque
 // start records the review and its runner run, and reads the last
 // completed review the new one may build on.
 func (w *Review) start(
-	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase string, mode configfile.ReviewMode,
+	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase string, mode configfile.ReviewMode, jobID int64,
 ) (reviewID, runID string, prior priorReview, err error) {
 	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		var err error
 		if prior, err = lastCompleted(ctx, tx, pr.id); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO reviews (tenant_id, pull_request_id, head_sha, merge_base_sha, status, trigger, mode)
-			VALUES ($1, $2, $3, $4, 'running', $5, $6) RETURNING id`,
-			args.TenantID, pr.id, args.HeadSHA, mergeBase, args.Trigger, string(mode)).Scan(&reviewID); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO reviews
+			(tenant_id, pull_request_id, head_sha, merge_base_sha, status, trigger, mode, river_job_id)
+			VALUES ($1, $2, $3, $4, 'running', $5, $6, $7) RETURNING id`,
+			args.TenantID, pr.id, args.HeadSHA, mergeBase, args.Trigger, string(mode), jobID).Scan(&reviewID); err != nil {
 			return fmt.Errorf("worker: insert review: %w", err)
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, review_id, kind) VALUES ($1, $2, 'review') RETURNING id`,
