@@ -1,6 +1,8 @@
 package review
 
 import (
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -168,4 +170,54 @@ func TestStickyBody(t *testing.T) {
 	if !strings.HasPrefix(InlineBody(res.Findings[0]), "🔴 **boom**") {
 		t.Fatal("inline body should lead with the badge and title")
 	}
+}
+
+func TestSchemas(t *testing.T) {
+	type node struct {
+		Type       string           `json:"type"`
+		Enum       []string         `json:"enum"`
+		Properties map[string]*node `json:"properties"`
+		Items      *node            `json:"items"`
+		Required   []string         `json:"required"`
+	}
+	tests := []struct {
+		name     string
+		raw      json.RawMessage
+		required []string
+		check    func(t *testing.T, n node)
+	}{
+		{"findings", Schema(), []string{"summary", "findings"}, func(t *testing.T, n node) {
+			items := n.Properties["findings"].Items
+			if n.Properties["findings"].Type != "array" || items == nil || items.Type != "object" ||
+				!slices.Equal(items.Required, []string{"path", "line", "severity", "title", "body"}) ||
+				items.Properties["line"].Type != "integer" ||
+				!slices.Equal(items.Properties["severity"].Enum, []string{"error", "warning", "info"}) {
+				t.Fatalf("findings item = %+v", items)
+			}
+		}},
+		{"follow-up", FollowUpSchema(), []string{"reply"}, func(t *testing.T, n node) {
+			if n.Properties["reply"].Type != "string" {
+				t.Fatalf("reply = %+v", n.Properties["reply"])
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var n node
+			if err := json.Unmarshal(tt.raw, &n); err != nil {
+				t.Fatalf("schema is not JSON: %v", err)
+			}
+			if n.Type != "object" || !slices.Equal(n.Required, tt.required) {
+				t.Fatalf("schema = %+v", n)
+			}
+			tt.check(t, n)
+		})
+	}
+	t.Run("callers cannot alter the shared schema", func(t *testing.T) {
+		s := Schema()
+		s[0] = 'x'
+		if Schema()[0] != '{' {
+			t.Fatal("Schema returned the shared slice")
+		}
+	})
 }

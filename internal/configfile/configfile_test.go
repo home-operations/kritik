@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritik/internal/model"
 )
 
 // fixture materialises testdata/full.yaml with its file references pointing
@@ -236,6 +239,55 @@ tenants:
 `
 }
 
+func TestProviders(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	tests := []struct {
+		name    string
+		yaml    string
+		want    Provider
+		pricing model.Pricing
+	}{
+		{
+			name: "anthropic with pricing",
+			yaml: "  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
+				"    pricing:\n      acme-large: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }\n",
+			want:    Provider{Type: ProviderAnthropic},
+			pricing: model.Pricing{"acme-large": {Input: 3, Output: 15, CacheRead: 0.3, CacheWrite: 3.75}},
+		},
+		{
+			name: "anthropic behind a gateway",
+			yaml: "  p:\n    type: anthropic\n    baseUrl: https://gw.example.com/\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n",
+			want: Provider{Type: ProviderAnthropic, BaseURL: "https://gw.example.com/"},
+		},
+		{
+			name: "openai at the SDK default url",
+			yaml: "  p:\n    type: openai\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n",
+			want: Provider{Type: ProviderOpenAI},
+		},
+		{
+			name: "openrouter behind a proxy",
+			yaml: "  p:\n    type: openrouter\n    baseUrl: https://proxy.example.com/api/v1\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n",
+			want: Provider{Type: ProviderOpenRouter, BaseURL: "https://proxy.example.com/api/v1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := Parse([]byte("providers:\n" + tt.yaml + minimal))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			p := f.Providers["p"]
+			if p.Type != tt.want.Type || p.BaseURL != tt.want.BaseURL || p.APIKeyValue().Value() != "whsec" {
+				t.Fatalf("provider = %+v", p)
+			}
+			if !maps.Equal(p.Pricing, tt.pricing) {
+				t.Fatalf("pricing = %v, want %v", p.Pricing, tt.pricing)
+			}
+		})
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -271,6 +323,13 @@ func TestParseRejects(t *testing.T) {
 		{"env and file both set", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{ env: TEST_FORGEJO_TOKEN, file: /x }", 1), "not both"},
 		{"empty reference", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{}", 1), "token is required"},
 		{"unknown provider type", "providers:\n  p:\n    type: cohere\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" + minimal, "type must be"},
+		{"negative pricing", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
+			"    pricing: { acme-large: { input: 3, output: -1 } }\n" + minimal, "providers.p.pricing.acme-large"},
+		{"unknown pricing field", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
+			"    pricing: { acme-large: { prompt: 3 } }\n" + minimal, "field prompt not found"},
+		{"relative base url", "providers:\n  p:\n    type: openai\n    baseUrl: gw.example.com/v1\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" + minimal,
+			"must be an absolute URL"},
+		{"anthropic without key", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_EMPTY }\n" + minimal, "apiKey resolved to an empty value"},
 		{"model without provider", "defaults:\n  models:\n    review: gpt\n" + minimal, "<provider>/<model>"},
 		{"model referencing undeclared provider", "defaults:\n  models:\n    review: nope/gpt\n" + minimal, "not declared under providers"},
 		{"tenant model referencing undeclared provider", strings.Replace(minimal, "slug: acme", "slug: acme\n    models: { review: nope/gpt }", 1), "not declared under providers"},

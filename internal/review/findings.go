@@ -6,10 +6,9 @@ package review
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
-
-	"charm.land/fantasy/schema"
 )
 
 // Severity of a finding, in the order the summary lists them.
@@ -39,32 +38,56 @@ type Result struct {
 	Findings []Finding `json:"findings"`
 }
 
-// Schema is what the model must produce. Kept minimal on purpose: every
-// extra field is something a model can get wrong.
-func Schema() schema.Schema {
-	const object, str = "object", "string"
-	return schema.Schema{
-		Type: object,
-		Properties: map[string]*schema.Schema{
-			"summary": {Type: str, Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings."},
-			"findings": {
-				Type: "array",
-				Items: &schema.Schema{
-					Type: object,
-					Properties: map[string]*schema.Schema{
-						"path":     {Type: str, Description: "Path of the changed file, exactly as it appears in the diff header."},
-						"line":     {Type: "integer", Description: "Line number in the new version of the file (a + or context line inside a hunk)."},
-						"severity": {Type: str, Enum: []any{"error", "warning", "info"}},
-						"title":    {Type: str, Description: "One line, under 80 characters."},
-						"body":     {Type: str, Description: "Why it matters and what to do instead. Markdown allowed, no headings."},
-					},
-					Required: []string{"path", "line", "severity", "title", "body"},
+// JSON Schema types the answer shapes use more than once.
+const schemaObject, schemaString = "object", "string"
+
+// jsonSchema is the subset of JSON Schema kritik's answer shapes use.
+type jsonSchema struct {
+	Type        string                 `json:"type"`
+	Description string                 `json:"description,omitempty"`
+	Enum        []string               `json:"enum,omitempty"`
+	Properties  map[string]*jsonSchema `json:"properties,omitempty"`
+	Items       *jsonSchema            `json:"items,omitempty"`
+	Required    []string               `json:"required,omitempty"`
+}
+
+func (s jsonSchema) mustMarshal() json.RawMessage {
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(fmt.Sprintf("review: schema does not marshal: %v", err))
+	}
+	return b
+}
+
+// findingsSchema is kept minimal on purpose: every extra field is something
+// a model can get wrong.
+var findingsSchema = jsonSchema{
+	Type: schemaObject,
+	Properties: map[string]*jsonSchema{
+		"summary": {
+			Type:        schemaString,
+			Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
+		},
+		"findings": {
+			Type: "array",
+			Items: &jsonSchema{
+				Type: schemaObject,
+				Properties: map[string]*jsonSchema{
+					"path":     {Type: schemaString, Description: "Path of the changed file, exactly as it appears in the diff header."},
+					"line":     {Type: "integer", Description: "Line number in the new version of the file (a + or context line inside a hunk)."},
+					"severity": {Type: schemaString, Enum: []string{string(SeverityError), string(SeverityWarning), string(SeverityInfo)}},
+					"title":    {Type: schemaString, Description: "One line, under 80 characters."},
+					"body":     {Type: schemaString, Description: "Why it matters and what to do instead. Markdown allowed, no headings."},
 				},
+				Required: []string{"path", "line", "severity", "title", "body"},
 			},
 		},
-		Required: []string{"summary", "findings"},
-	}
-}
+	},
+	Required: []string{"summary", "findings"},
+}.mustMarshal()
+
+// Schema is the JSON Schema of the answer the model must produce.
+func Schema() json.RawMessage { return slices.Clone(findingsSchema) }
 
 // Parse decodes the model's JSON and drops findings that cannot be anchored:
 // a path the diff does not touch, or a line the diff does not add or keep.
