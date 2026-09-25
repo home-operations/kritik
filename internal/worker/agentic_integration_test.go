@@ -68,6 +68,9 @@ tenants:
           webhookSecret: { env: TEST_SECRET }
 `
 
+// agentJobTimeout is the harness client's JobTimeout.
+const agentJobTimeout = 2 * time.Second
+
 // modelScript is how scriptedModel answers.
 type modelScript int
 
@@ -223,6 +226,8 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{jobs.QueueReview: {MaxWorkers: 1}}, Workers: workers,
 		FetchCooldown: 50 * time.Millisecond, FetchPollInterval: 100 * time.Millisecond,
+		// Far shorter than any review: the worker's own Timeout must win.
+		JobTimeout: agentJobTimeout,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -290,6 +295,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a run superseded after the Job still charges its tokens", func(t *testing.T) { checkAgentSupersededCharges(t, h) })
 	t.Run("a key the provider echoes back is masked", func(t *testing.T) { checkAgentKeyMasked(t, h) })
 	t.Run("the merge-base filter skips before the agent runs", func(t *testing.T) { checkAgentFiltered(t, h) })
+	t.Run("a review outlives the client's job timeout", func(t *testing.T) { checkAgentOutlivesJobTimeout(t, h) })
 	t.Run("another tenant cannot read the agent runs", func(t *testing.T) {
 		count := func(tenantID string) int {
 			var n int
@@ -300,7 +306,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 5 || foreign != 0 {
+		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 6 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -402,9 +408,20 @@ type hookExecutor struct {
 
 	mu    sync.Mutex
 	after func()
+	// hold delays the next run before it starts, as a slow node would.
+	hold time.Duration
 }
 
 func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
+	e.mu.Lock()
+	hold := e.hold
+	e.hold = 0
+	e.mu.Unlock()
+	select {
+	case <-time.After(hold):
+	case <-ctx.Done():
+		return executor.Result{JobName: "kritik-run-held", Err: context.Cause(ctx)}
+	}
 	res := e.inner.Run(ctx, spec)
 	e.mu.Lock()
 	after := e.after
@@ -512,5 +529,26 @@ func checkAgentFiltered(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Unlock()
 	if rows, _ := h.usageTokens(t, reviewID); after != before || rows != 0 {
 		t.Fatalf("a filtered review called the model %d time(s) and has %d usage row(s)", after-before, rows)
+	}
+}
+
+func checkAgentOutlivesJobTimeout(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc g() {}\n")
+	h.exec.mu.Lock()
+	h.exec.hold = 2 * agentJobTimeout
+	h.exec.mu.Unlock()
+	started := time.Now()
+	h.dispatch(t, next)
+	_, status, errText := h.waitReview(t, next)
+	if status != "completed" || time.Since(started) < 2*agentJobTimeout {
+		t.Fatalf("status = %s (%s) after %s", status, errText, time.Since(started))
+	}
+	var reviews int
+	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1`, next).Scan(&reviews)
+	})
+	if err != nil || reviews != 1 {
+		t.Fatalf("the review was cut off and retried: %d review rows, err=%v", reviews, err)
 	}
 }

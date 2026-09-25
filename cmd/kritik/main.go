@@ -213,6 +213,9 @@ func run() error {
 		})
 		queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
 			Logger: logger,
+			// Review and index workers set their own timeouts from the
+			// runner deadline; rescue must wait out the longest of them.
+			RescueStuckJobsAfter: worker.RescueStuckJobsAfter,
 			Queues: map[string]river.QueueConfig{
 				jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
 				jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
