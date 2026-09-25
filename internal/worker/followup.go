@@ -351,9 +351,19 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 		if err != nil || last.id == "" {
 			return err
 		}
-		rec.diff, rec.changed, rec.findings = last.diff, last.changed, reviewFindings(last.findings)
-		if len(last.stages) > 0 && last.stages[0] == '[' {
-			if err := json.Unmarshal(last.stages, &rec.context); err != nil {
+		rec.findings = reviewFindings(last.findings)
+		var stages []byte
+		err = tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages FROM runner_runs rr
+			JOIN context_packs c ON c.runner_run_id = rr.id WHERE rr.review_id = $1`, last.id).
+			Scan(&rec.diff, &rec.changed, &stages)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("worker: load review record: %w", err)
+		}
+		if len(stages) > 0 && stages[0] == '[' {
+			if err := json.Unmarshal(stages, &rec.context); err != nil {
 				return fmt.Errorf("worker: decode context pack: %w", err)
 			}
 		}

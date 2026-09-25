@@ -41,12 +41,7 @@ func decideScope(hasPrior, priorFetched bool, deltaFiles, maxDeltaFiles int) (re
 // has none.
 type priorReview struct {
 	id, headSHA string
-	diff        string
-	changed     []string
-	// stages is the context pack's raw JSON, decoded only by the callers
-	// that need it.
-	stages   []byte
-	findings []priorFinding
+	findings    []priorFinding
 }
 
 type priorFinding struct {
@@ -54,14 +49,13 @@ type priorFinding struct {
 	postedInline bool
 }
 
-// lastCompleted loads the pull request's last completed review with its
-// context pack and findings.
+// lastCompleted loads the pull request's last completed review and its
+// findings.
 func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, error) {
 	var p priorReview
-	err := tx.QueryRow(ctx, `SELECT r.id, r.head_sha, c.diff, c.changed_paths, c.stages FROM reviews r
-		JOIN runner_runs rr ON rr.review_id = r.id JOIN context_packs c ON c.runner_run_id = rr.id
-		WHERE r.pull_request_id = $1 AND r.status = 'completed' ORDER BY r.created_at DESC LIMIT 1`, prID).
-		Scan(&p.id, &p.headSHA, &p.diff, &p.changed, &p.stages)
+	err := tx.QueryRow(ctx, `SELECT id, head_sha FROM reviews
+		WHERE pull_request_id = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, prID).
+		Scan(&p.id, &p.headSHA)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return priorReview{}, nil
 	}

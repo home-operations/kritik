@@ -11,8 +11,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/contextpack"
@@ -56,15 +58,6 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	}
 	defer func() { _ = res.Close() }()
 	logger.Info("fetched", "head", p.Head[:7], "base", p.Base[:7], "changed_paths", len(res.Changed), "diff_bytes", len(res.Diff))
-	// A nil prior head tells the worker the delta is unknown, not empty.
-	var priorHead *string
-	deltaPaths := []string{}
-	if res.Prior != nil {
-		priorHead, deltaPaths = &p.PriorHead, append(deltaPaths, res.DeltaChanged...)
-		logger.Info("fetched prior head", "prior", p.PriorHead[:7], "delta_paths", len(deltaPaths), "delta_bytes", len(res.DeltaDiff))
-	} else if p.PriorHead != "" {
-		logger.Info("prior head unreachable", "prior", p.PriorHead[:7])
-	}
 
 	if err := setPhase(ctx, st, p.RunID, "parsing"); err != nil {
 		return err
@@ -79,6 +72,17 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err != nil {
 		_ = fail(ctx, st, p.RunID, err)
 		return err
+	}
+	// A nil prior head tells the worker the delta is unknown, not empty.
+	var priorHead *string
+	deltaPaths := []string{}
+	if res.Prior != nil {
+		priorHead, deltaPaths = &p.PriorHead, notIgnored(res.DeltaChanged, ignore)
+		logger.Info("fetched prior head", "prior", p.PriorHead[:7], "delta_paths", len(deltaPaths), "delta_bytes", len(res.DeltaDiff))
+	} else if p.PriorHead != "" {
+		// Best effort: the review goes on in full. A force-push is the
+		// expected cause; the error tells it apart from auth or network.
+		logger.Warn("prior head not fetched", "prior", p.PriorHead[:7], "error", res.PriorErr)
 	}
 	chunks, stats, err := stages(ctx, res, ignore)
 	if err != nil {
@@ -124,6 +128,17 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	}
 	logger.Info("context pack written", "run", p.RunID, "patch_id", res.PatchID[:12])
 	return nil
+}
+
+// notIgnored returns the paths no ignore glob matches, never nil.
+func notIgnored(paths, ignore []string) []string {
+	out := []string{}
+	for _, p := range paths {
+		if !slices.ContainsFunc(ignore, func(g string) bool { ok, _ := doublestar.Match(g, p); return ok }) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // stages runs context stages 1 to 3 over the fetched trees. The chunk list

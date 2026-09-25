@@ -112,3 +112,24 @@ func TestRepoConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestNotIgnored(t *testing.T) {
+	cases := []struct {
+		name          string
+		paths, ignore []string
+		want          []string
+	}{
+		{name: "nothing ignored", paths: []string{"main.go", "a/b.go"}, want: []string{"main.go", "a/b.go"}},
+		{name: "vendored churn drops out", paths: []string{"main.go", "vendor/x/y.go", "vendor/z.go"}, ignore: []string{"vendor/**"},
+			want: []string{"main.go"}},
+		{name: "no paths", ignore: []string{"**"}, want: []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := notIgnored(tc.paths, tc.ignore)
+			if got == nil || strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("notIgnored = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}

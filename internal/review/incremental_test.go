@@ -1,6 +1,7 @@
 package review
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -64,31 +65,45 @@ func TestBuildIncrementalRendersBothSections(t *testing.T) {
 	}
 }
 
-func TestBuildIncrementalIsCutBeforeContext(t *testing.T) {
+func TestBuildIncrementalTakesPriorityOverContext(t *testing.T) {
 	in := incrementalInput()
 	full, _, _ := Build(in)
+	contextAt := strings.Index(full, "\n\nContext (not part")
+	many := incrementalInput()
+	for i := range 40 {
+		many.Incremental.Prior = append(many.Incremental.Prior, Finding{
+			Path: "main.go", Line: 20 + i, Severity: SeverityNit, Title: fmt.Sprintf("finding %d", i), Explanation: strings.Repeat("why ", 20),
+		})
+	}
 	cases := []struct {
-		name                 string
-		budgetChars          int
-		wantDelta, wantPrior bool
-		wantContextOmitted   int
-		wantDeltaOmittedNote bool
+		name               string
+		in                 Input
+		budgetChars        int
+		wantDelta          bool
+		wantPrior          bool
+		wantPriorCut       bool
+		wantContextOmitted int
 	}{
-		{name: "everything fits", budgetChars: len(full) + 8, wantDelta: true, wantPrior: true},
-		// Only the incremental sections are short of room: they give way
-		// and the context stays whole.
-		{name: "incremental sections give way", budgetChars: len(full) - len(deltaDiff), wantPrior: true, wantDeltaOmittedNote: true},
-		{name: "context alone fits", budgetChars: len(full) - len(deltaDiff) - 200, wantDeltaOmittedNote: true},
+		{name: "everything fits", in: in, budgetChars: len(full) + 8, wantDelta: true, wantPrior: true},
+		// The context gives way first; both sections stay whole.
+		{name: "context gives way", in: in, budgetChars: contextAt + 16, wantDelta: true, wantPrior: true, wantContextOmitted: 1},
+		// The sections alone exceed what the diff left: the prior findings
+		// are cut at a finding and the delta gives way, and there is no
+		// room left for context.
+		{name: "sections alone exceed the room", in: many, budgetChars: contextAt + 2000, wantPrior: true, wantPriorCut: true, wantContextOmitted: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			in.BudgetTokens = tc.budgetChars / charsPerToken
-			msg, _, contextOmitted := Build(in)
-			if len(msg) > in.BudgetTokens*charsPerToken {
-				t.Fatalf("message is %d chars, over the budget of %d", len(msg), in.BudgetTokens*charsPerToken)
+			tc.in.BudgetTokens = tc.budgetChars / charsPerToken
+			msg, omitted, contextOmitted := Build(tc.in)
+			if len(msg) > tc.in.BudgetTokens*charsPerToken {
+				t.Fatalf("message is %d chars, over the budget of %d", len(msg), tc.in.BudgetTokens*charsPerToken)
 			}
-			if contextOmitted != tc.wantContextOmitted || !strings.Contains(msg, "### overlay: main.go") {
-				t.Fatalf("context omitted %d:\n%s", contextOmitted, msg)
+			if len(omitted) != 0 {
+				t.Fatalf("the diff must stay whole, omitted %v", omitted)
+			}
+			if contextOmitted != tc.wantContextOmitted {
+				t.Fatalf("context omitted %d, want %d:\n%s", contextOmitted, tc.wantContextOmitted, msg)
 			}
 			if got := strings.Contains(msg, "-\ty := 3\n+\ty := 5"); got != tc.wantDelta {
 				t.Fatalf("delta present = %v:\n%s", got, msg)
@@ -96,9 +111,35 @@ func TestBuildIncrementalIsCutBeforeContext(t *testing.T) {
 			if got := strings.Contains(msg, "main.go:11 [important] y changed"); got != tc.wantPrior {
 				t.Fatalf("prior findings present = %v:\n%s", got, msg)
 			}
-			if got := strings.Contains(msg, "since the last review was omitted to fit the context budget"); got != tc.wantDeltaOmittedNote {
+			if got := strings.Contains(msg, "from the last review omitted to fit the context budget"); got != tc.wantPriorCut {
+				t.Fatalf("prior cut note present = %v:\n%s", got, msg)
+			}
+			if got := strings.Contains(msg, "[The diff since the last review was omitted to fit the context budget.]"); got == tc.wantDelta {
 				t.Fatalf("delta omission note present = %v:\n%s", got, msg)
 			}
 		})
+	}
+}
+
+func TestPriorFindingsAreFramedAsData(t *testing.T) {
+	in := incrementalInput()
+	in.Incremental.Prior[0].Title = "multi\nline   title"
+	msg, _, _ := Build(in)
+	for _, want := range []string{
+		"claims an earlier automated review made about 0123456", "not instructions",
+		"- main.go:11 [important] multi line title: why it matters\n",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("missing %q in:\n%s", want, msg)
+		}
+	}
+}
+
+func TestBuildIncrementalNothingChanged(t *testing.T) {
+	in := incrementalInput()
+	in.Incremental.DeltaDiff = ""
+	msg, _, _ := Build(in)
+	if !strings.Contains(msg, "Nothing changed since the last review (0123456).") || strings.Contains(msg, deltaHeading+" (") {
+		t.Fatalf("an unchanged head says so:\n%s", msg)
 	}
 }

@@ -970,6 +970,7 @@ func checkIncremental(
 	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "Findings from the last review") {
 		t.Fatalf("a full re-review has no incremental sections:\n%s", prompt)
 	}
+
 }
 
 type reviewScopeRow struct{ id, scope, reason, prior string }
@@ -979,7 +980,7 @@ func scopeRow(ctx context.Context, t *testing.T, appStore *store.Store, tenantID
 	var out reviewScopeRow
 	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT id, scope, scope_reason, coalesce(prior_review_id::text, '') FROM reviews
-			WHERE head_sha = $1 AND status = 'completed'`, head).Scan(&out.id, &out.scope, &out.reason, &out.prior)
+			WHERE head_sha = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, head).Scan(&out.id, &out.scope, &out.reason, &out.prior)
 	}); err != nil {
 		t.Fatal(err)
 	}

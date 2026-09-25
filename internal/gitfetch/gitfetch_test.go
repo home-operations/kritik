@@ -149,6 +149,7 @@ func TestRunPriorDelta(t *testing.T) {
 		// README.md, so that is all that changed since head.
 		{name: "reachable prior", prior: r.head, wantPrior: true, wantChanged: []string{"README.md"}, wantInDelta: "+there"},
 		{name: "prior already fetched as the base", prior: r.other, wantPrior: true, wantChanged: []string{"main.go"}, wantInDelta: "+func b() {}"},
+		{name: "prior is the head", prior: r.rebased, wantPrior: true},
 		{name: "unknown prior", prior: "0123456789abcdef0123456789abcdef01234567"},
 		{name: "no prior"},
 	}
@@ -161,6 +162,9 @@ func TestRunPriorDelta(t *testing.T) {
 			defer func() { _ = res.Close() }()
 			if (res.Prior != nil) != tc.wantPrior {
 				t.Fatalf("prior = %v, want present %v", res.Prior, tc.wantPrior)
+			}
+			if wantErr := tc.prior != "" && !tc.wantPrior; (res.PriorErr != nil) != wantErr {
+				t.Fatalf("prior error = %v, want one %v", res.PriorErr, wantErr)
 			}
 			if tc.wantPrior && res.Prior.Hash.String() != tc.prior {
 				t.Fatalf("prior = %s", res.Prior.Hash)

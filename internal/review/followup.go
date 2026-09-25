@@ -63,7 +63,7 @@ func BuildFollowUp(in Input, findings []Finding, thread []Message) string {
 	if len(findings) > 0 {
 		fmt.Fprintf(&tail, "\n\nFindings kritik posted on this pull request (%d):\n", len(findings))
 		for _, f := range findings {
-			fmt.Fprintf(&tail, "- %s:%d [%s] %s: %s\n", f.Path, f.Line, f.Severity, f.Title, oneLine(f.Explanation))
+			tail.WriteString(findingLine(f))
 		}
 	}
 	tail.WriteString("\n\nThread, oldest first:\n")

@@ -61,9 +61,11 @@ type Result struct {
 	// Changed lists the paths the diff touches, head-side names.
 	Changed []string
 	// Prior is the fetched prior head, nil when none was asked for or it
-	// could not be fetched. DeltaDiff and DeltaChanged are the diff from
-	// it to head and the paths that diff touches.
+	// could not be fetched, in which case PriorErr says why. DeltaDiff and
+	// DeltaChanged are the diff from it to head and the paths that diff
+	// touches.
 	Prior        *object.Commit
+	PriorErr     error
 	DeltaDiff    string
 	DeltaChanged []string
 	// Dir is the bare repository on disk; the caller removes it.
@@ -136,8 +138,11 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	if f.Prior == "" {
 		return res, nil
 	}
-	if res.Prior, err = fetchPrior(ctx, repo, auth, f.Prior); err != nil || res.Prior == nil {
-		return res, err
+	if res.Prior, res.PriorErr = fetchPrior(ctx, repo, auth, f.Prior); res.Prior == nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("gitfetch: prior: %w", ctx.Err())
+		}
+		return res, nil
 	}
 	if res.DeltaDiff, res.DeltaChanged, err = diffCommits(ctx, res.Prior, head); err != nil {
 		return nil, err
@@ -146,9 +151,8 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 }
 
 // fetchPrior fetches the prior head in a fetch of its own, so that an
-// unreachable prior cannot fail the fetch of head and base. It returns nil
-// without an error when the prior cannot be had; only a cancelled context
-// is an error.
+// unreachable prior cannot fail the fetch of head and base. The error says
+// why the prior could not be had; the caller decides whether that matters.
 func fetchPrior(ctx context.Context, repo *git.Repository, auth transport.AuthMethod, prior string) (*object.Commit, error) {
 	if c, err := repo.CommitObject(plumbing.NewHash(prior)); err == nil {
 		return c, nil
@@ -160,15 +164,12 @@ func fetchPrior(ctx context.Context, repo *git.Repository, auth transport.AuthMe
 		Tags:       git.NoTags,
 		RefSpecs:   []config.RefSpec{config.RefSpec(prior + ":" + priorRef)},
 	})
-	if ctx.Err() != nil {
-		return nil, fmt.Errorf("gitfetch: prior: %w", ctx.Err())
-	}
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		return nil, nil
+		return nil, fmt.Errorf("gitfetch: fetch prior %s: %w", prior, err)
 	}
 	c, err := repo.CommitObject(plumbing.NewHash(prior))
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("gitfetch: prior %s: %w", prior, err)
 	}
 	return c, nil
 }
