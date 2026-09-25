@@ -17,6 +17,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/prfilter"
 )
 
@@ -156,6 +157,21 @@ func (f *File) validateProviders() error {
 	return nil
 }
 
+// validateRunnerDeadline checks that a tenant's runner.activeDeadlineSeconds is
+// non-negative and, once converted to a job timeout, does not exceed River's cap.
+func validateRunnerDeadline(where string, seconds int64) error {
+	if seconds < 0 {
+		return fmt.Errorf("configfile: %s.runner.activeDeadlineSeconds must not be negative", where)
+	}
+	deadline := time.Duration(seconds) * time.Second
+	if deadline > jobtimeout.MaxRunnerDeadline {
+		return fmt.Errorf("configfile: %s.runner.activeDeadlineSeconds must not exceed %d (%s),"+
+			" or River's %s job timeout cap would cut the runner off early",
+			where, int64(jobtimeout.MaxRunnerDeadline.Seconds()), jobtimeout.MaxRunnerDeadline, jobtimeout.MaxJobTimeout)
+	}
+	return nil
+}
+
 func (f *File) validateTenants() error {
 	if err := checkLimits("defaults.limits", f.Defaults.Limits); err != nil {
 		return err
@@ -187,8 +203,10 @@ func (f *File) validateTenants() error {
 		if err := checkLimits(where+".limits", t.Limits); err != nil {
 			return err
 		}
-		if t.Runner != nil && t.Runner.ActiveDeadlineSeconds < 0 {
-			return fmt.Errorf("configfile: %s.runner.activeDeadlineSeconds must not be negative", where)
+		if t.Runner != nil {
+			if err := validateRunnerDeadline(where, t.Runner.ActiveDeadlineSeconds); err != nil {
+				return err
+			}
 		}
 		if t.Settle < 0 {
 			return fmt.Errorf("configfile: %s.settle must not be negative", where)
@@ -265,6 +283,10 @@ func (r Repository) validateReview(where string) error {
 	}
 	if r.Agent.Timeout != nil && *r.Agent.Timeout <= 0 {
 		return fmt.Errorf("configfile: %s.agent.timeout must be positive", where)
+	}
+	if r.Agent.Timeout != nil && *r.Agent.Timeout > jobtimeout.MaxAgentTimeout {
+		return fmt.Errorf("configfile: %s.agent.timeout must not exceed %s, or River's %s job timeout cap would cut the review short",
+			where, jobtimeout.MaxAgentTimeout, jobtimeout.MaxJobTimeout)
 	}
 	for i, p := range r.Review.Instructions {
 		if err := checkRepoPath(p); err != nil {

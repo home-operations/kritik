@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/model"
 )
 
@@ -375,6 +376,46 @@ func TestParseRejects(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error %q does not mention %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// TestJobTimeoutBounds checks that runner.activeDeadlineSeconds and
+// agent.timeout are accepted up to the point where River's job timeout cap
+// would otherwise cut the runner or the review short, and rejected past it.
+func TestJobTimeoutBounds(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+
+	withRepo := func(repo string) string {
+		return strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: ["+repo+"]", 1)
+	}
+	withDeadline := func(seconds int64) string {
+		return strings.Replace(minimal, "slug: acme", fmt.Sprintf("slug: acme\n    runner: { activeDeadlineSeconds: %d }", seconds), 1)
+	}
+
+	tests := []struct {
+		name string
+		yaml string
+		want string // substring of the error; empty means the config must be accepted
+	}{
+		{"runner deadline at the cap", withDeadline(int64(jobtimeout.MaxRunnerDeadline.Seconds())), ""},
+		{"runner deadline past the cap", withDeadline(int64(jobtimeout.MaxRunnerDeadline.Seconds()) + 1), "runner.activeDeadlineSeconds must not exceed"},
+		{"agent timeout at the cap", withRepo(fmt.Sprintf("{ name: acme/x, agent: { timeout: %ds } }", int64(jobtimeout.MaxAgentTimeout.Seconds()))), ""},
+		{"agent timeout past the cap", withRepo(fmt.Sprintf("{ name: acme/x, agent: { timeout: %ds } }", int64(jobtimeout.MaxAgentTimeout.Seconds())+1)), "agent.timeout must not exceed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse([]byte(tt.yaml))
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want it to mention %q", err, tt.want)
 			}
 		})
 	}
