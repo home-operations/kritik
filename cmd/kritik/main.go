@@ -367,13 +367,14 @@ func openStore(ctx context.Context, opts store.Options, logger *slog.Logger) (*s
 	}
 }
 
+// secretSweepInterval is how often the leader looks for orphaned run
+// Secrets.
+const secretSweepInterval = 5 * time.Minute
+
 // lead runs for as long as this replica holds the leader lock: migrate,
 // apply the current file, then re-apply whenever the file changes. With an
 // embedder configured it also owns the index schema and enqueues an
 // onboarding index job for every repository that has none.
-// secretSweepInterval is how often the leader looks for orphaned run
-// Secrets.
-const secretSweepInterval = 5 * time.Minute
 
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],

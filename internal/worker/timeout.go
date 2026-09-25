@@ -7,30 +7,14 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritik/internal/jobtimeout"
 )
 
-// River cancels a job's context once its timeout passes, and supervise
-// deletes the runner Job when that happens, so a job's timeout must cover
-// everything the worker does around the runner as well as the runner.
+// MaxJobTimeout and RescueStuckJobsAfter are re-exported from jobtimeout for
+// callers that only import worker (e.g. cmd/kritik's river.Config).
 const (
-	// leaseWaitHeadroom is the time a review may spend waiting for a model
-	// lease, before an agentic runner or before the worker's model call.
-	leaseWaitHeadroom = 15 * time.Minute
-	// publishHeadroom covers the worker's side of a review after the
-	// runner: reading the pack, the model call in single mode, embedding
-	// for similar code and the forge write-back.
-	publishHeadroom = 15 * time.Minute
-	// indexWriteHeadroom covers embedding a repository's staged chunks and
-	// swapping the generation after the index runner ends.
-	indexWriteHeadroom = 45 * time.Minute
-	// MaxJobTimeout bounds any review or index job, so a runner deadline
-	// set absurdly high cannot hold a worker slot for longer than the
-	// stuck-job rescuer waits.
-	MaxJobTimeout = 3 * time.Hour
-	// RescueStuckJobsAfter is how long a running job is left alone before
-	// River treats it as abandoned by a dead worker. It must exceed
-	// MaxJobTimeout, or a job still working would be run a second time.
-	RescueStuckJobsAfter = MaxJobTimeout + time.Hour
+	MaxJobTimeout        = jobtimeout.MaxJobTimeout
+	RescueStuckJobsAfter = jobtimeout.RescueStuckJobsAfter
 )
 
 // Timeout implements river.Worker: the runner's deadline, the agent's in
@@ -46,7 +30,7 @@ func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
 			deadline = agentDeadline(deadline, settings.Agent.Timeout)
 		}
 	}
-	return min(deadline+leaseWaitHeadroom+publishHeadroom, MaxJobTimeout)
+	return min(deadline+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom, jobtimeout.MaxJobTimeout)
 }
 
 // Timeout implements river.Worker: the runner's deadline plus embedding
@@ -56,7 +40,13 @@ func (w *Index) Timeout(job *river.Job[jobs.IndexArgs]) time.Duration {
 	if tenant := tenantByID(w.Current.Get(), job.Args.TenantID); tenant != nil {
 		deadline, _ = runnerSpec(tenant, w.Deadline)
 	}
-	return min(deadline+indexWriteHeadroom, MaxJobTimeout)
+	return min(deadline+jobtimeout.IndexWriteHeadroom, jobtimeout.MaxJobTimeout)
+}
+
+// Timeout implements river.Worker: the lease wait, model call and forge
+// write-back a follow-up reply makes, capped like every other job kind.
+func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration {
+	return min(jobtimeout.FollowUpTimeout, jobtimeout.MaxJobTimeout)
 }
 
 // repoSettings resolves a repository's settings from its id, which a job

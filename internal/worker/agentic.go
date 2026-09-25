@@ -13,20 +13,17 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
+	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/runner"
 )
 
-// agentFetchHeadroom is the Job time an agentic run keeps for fetching and
-// the context pack on top of the agent's own timeout.
-const agentFetchHeadroom = 5 * time.Minute
-
 // agentDeadline bounds an agentic runner Job: the tenant's runner deadline,
 // unless the agent's timeout plus the fetch headroom needs longer.
 func agentDeadline(runnerDeadline, agentTimeout time.Duration) time.Duration {
-	return max(runnerDeadline, agentTimeout+agentFetchHeadroom)
+	return max(runnerDeadline, agentTimeout+jobtimeout.AgentFetchHeadroom)
 }
 
 // agentRun is the agent_runs row a runner wrote.
