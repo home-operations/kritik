@@ -119,7 +119,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		return err
 	}
 
-	reviewID, runID, err := w.start(ctx, args, pr, mergeBase)
+	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": args.HeadSHA},
 		Job: runner.Spec{
 			Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
-			Head: args.HeadSHA, Base: mergeBase, Ignore: settings.Ignore, RepoFiles: settings.Review.Referenced(),
+			Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, Ignore: settings.Ignore, RepoFiles: settings.Review.Referenced(),
 		},
 		Secrets:   runner.Secrets{GitToken: token},
 		Deadline:  deadline,
@@ -160,7 +160,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
 		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", res.Err.Error())
 	}
-	prep, status, err := w.afterRun(ctx, args, pr, settings, client, reviewID, runID, logger)
+	prep, status, err := w.afterRun(ctx, args, pr, settings, client, reviewID, runID, prior, logger)
 	if err != nil || prep.patchID == "" {
 		if err == nil {
 			w.Metrics.Review(tenant.Slug, status, time.Since(started))
@@ -172,7 +172,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		w: w, file: file, tenant: tenant, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, jobID: job.ID, logger: logger,
 		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.RequireSuggestedFix}, templates: prep.eff.Templates,
-		instructions: prep.eff.Instructions, repoNotes: prep.notes,
+		instructions: prep.eff.Instructions, repoNotes: prep.notes, prior: prior, scope: prep.scope,
 	}
 	status, perr := phase.run(ctx)
 	if perr != nil && status == statusFailed {
@@ -184,12 +184,14 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 }
 
 // prepared is what afterRun hands the model phase: the patch id, the
-// settings with the repository's .kritik.yaml applied, and the notes the
-// summary states about that file.
+// settings with the repository's .kritik.yaml applied, the notes the
+// summary states about that file, and whether the review builds on the
+// last completed one.
 type prepared struct {
 	patchID string
 	eff     Effective
 	notes   []string
+	scope   reviewScope
 }
 
 // afterRun re-checks the head under the tenant transaction, lifts the patch
@@ -202,14 +204,15 @@ type prepared struct {
 // recorded otherwise.
 func (w *Review) afterRun(
 	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, settings configfile.Settings, client forge.Client,
-	reviewID, runID string, logger *slog.Logger,
+	reviewID, runID string, prior priorReview, logger *slog.Logger,
 ) (prepared, string, error) {
 	var (
-		patchID, lastPatch string
-		superseded         bool
-		changed, repoNotes []string
-		filesJSON          []byte
-		vars               map[string]any
+		patchID, lastPatch             string
+		priorFetched                   *string
+		superseded                     bool
+		changed, repoNotes, deltaPaths []string
+		filesJSON                      []byte
+		vars                           map[string]any
 	)
 	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		var currentHead string
@@ -220,8 +223,9 @@ func (w *Review) afterRun(
 			superseded = true
 			return nil
 		}
-		if err := tx.QueryRow(ctx, `SELECT patch_id, changed_paths, repo_files, repo_notes FROM context_packs WHERE runner_run_id = $1`, runID).
-			Scan(&patchID, &changed, &filesJSON, &repoNotes); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT patch_id, changed_paths, repo_files, repo_notes, prior_head_sha, delta_paths
+			FROM context_packs WHERE runner_run_id = $1`, runID).
+			Scan(&patchID, &changed, &filesJSON, &repoNotes, &priorFetched, &deltaPaths); err != nil {
 			return fmt.Errorf("worker: read context pack: %w", err)
 		}
 		var err error
@@ -271,17 +275,23 @@ func (w *Review) afterRun(
 		return prepared{}, statusSkipped, w.finishReview(ctx, args.TenantID, reviewID, statusSkipped, patchID, "")
 	}
 
+	scope, scopeReason := decideScope(prior.id != "", priorFetched != nil, len(deltaPaths), eff.Incremental.MaxDeltaFiles)
+	var priorID *string
+	if prior.id != "" {
+		priorID = &prior.id
+	}
 	// Prepared is not terminal: the model phase follows, so finished_at
 	// stays NULL until it ends one way or the other.
 	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3 WHERE id = $1`, reviewID, statusPrepared, patchID)
+		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, scope = $4, scope_reason = $5, prior_review_id = $6
+			WHERE id = $1`, reviewID, statusPrepared, patchID, string(scope), scopeReason, priorID)
 		return err
 	})
 	if err != nil {
 		return prepared{}, "", fmt.Errorf("worker: mark review prepared: %w", err)
 	}
-	logger.Info("review prepared", "patch_id", short(patchID))
-	return prepared{patchID: patchID, eff: eff, notes: notes}, statusPrepared, nil
+	logger.Info("review prepared", "patch_id", short(patchID), "scope", scope, "scope_reason", scopeReason, "delta_paths", len(deltaPaths))
+	return prepared{patchID: patchID, eff: eff, notes: notes, scope: scope}, statusPrepared, nil
 }
 
 // filterVars rebuilds the filter's pr variable from the stored pull request
@@ -347,8 +357,16 @@ func (w *Review) record(ctx context.Context, args jobs.ReviewArgs, pr *pullReque
 	})
 }
 
-func (w *Review) start(ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase string) (reviewID, runID string, err error) {
+// start records the review and its runner run, and reads the last
+// completed review the new one may build on.
+func (w *Review) start(
+	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase string,
+) (reviewID, runID string, prior priorReview, err error) {
 	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+		var err error
+		if prior, err = lastCompleted(ctx, tx, pr.id); err != nil {
+			return err
+		}
 		if err := tx.QueryRow(ctx, `INSERT INTO reviews (tenant_id, pull_request_id, head_sha, merge_base_sha, status, trigger)
 			VALUES ($1, $2, $3, $4, 'running', $5) RETURNING id`,
 			args.TenantID, pr.id, args.HeadSHA, mergeBase, args.Trigger).Scan(&reviewID); err != nil {
@@ -360,7 +378,7 @@ func (w *Review) start(ctx context.Context, args jobs.ReviewArgs, pr *pullReques
 		}
 		return nil
 	})
-	return reviewID, runID, err
+	return reviewID, runID, prior, err
 }
 
 func (w *Review) finishReview(ctx context.Context, tenantID, reviewID, status, patchID, errText string) error {

@@ -43,6 +43,8 @@ type reviewInput struct {
 	title   string
 	author  string
 	body    string
+	// deltaDiff is the diff since the last review's head.
+	deltaDiff string
 }
 
 // publishPhase runs the model over a prepared review and writes the answer
@@ -67,6 +69,10 @@ type publishPhase struct {
 	// what the summary states about its configuration files.
 	instructions []string
 	repoNotes    []string
+	// prior is the last completed review, whose inline comments are not
+	// posted again; scope says whether this review builds on it.
+	prior priorReview
+	scope reviewScope
 }
 
 func (p *publishPhase) run(ctx context.Context) (status string, err error) {
@@ -93,9 +99,16 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	}
 	in.context = append(in.context, similar...)
 	system := systemPrompt(p.instructions)
+	var incremental *review.IncrementalInput
+	if p.scope == scopeIncremental {
+		incremental = &review.IncrementalInput{
+			PriorHeadSHA: p.prior.headSHA, DeltaDiff: in.deltaDiff, Prior: reviewFindings(p.prior.findings),
+		}
+	}
 	msg, omitted, contextOmitted := review.Build(review.Input{
 		Repository: p.pr.repository, Number: p.pr.number, Title: in.title, Author: in.author, Body: in.body,
-		BaseRef: p.pr.baseRef, Changed: in.changed, Diff: in.diff, Context: in.context, BudgetTokens: userBudget(system),
+		BaseRef: p.pr.baseRef, Changed: in.changed, Diff: in.diff, Context: in.context, Incremental: incremental,
+		BudgetTokens: userBudget(system),
 	})
 	p.logger.Info("prompt built", "chars", len(msg), "diff_files_omitted", len(omitted),
 		"context_chunks", len(in.context), "context_omitted", contextOmitted)
@@ -122,7 +135,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
 
-	commentID, err := p.writeBack(ctx, res, resp.Model, append(reviewNotes(omitted, dropped), p.repoNotes...))
+	commentID, inline, err := p.writeBack(ctx, res, resp.Model, append(reviewNotes(omitted, dropped), p.repoNotes...))
 	if err != nil {
 		return statusFailed, err
 	}
@@ -133,7 +146,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	for severity, n := range bySeverity {
 		p.w.Metrics.Findings(p.tenant.Slug, severity, n)
 	}
-	if err := p.persist(ctx, res, resp, role, commentID); err != nil {
+	if err := p.persist(ctx, res, inline, resp, role, commentID); err != nil {
 		return statusFailed, err
 	}
 	return statusCompleted, nil
@@ -170,8 +183,8 @@ func (p *publishPhase) load(ctx context.Context) (reviewInput, error) {
 	var in reviewInput
 	err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
 		var stages []byte
-		if err := tx.QueryRow(ctx, `SELECT diff, changed_paths, stages FROM context_packs WHERE runner_run_id = $1`, p.runID).
-			Scan(&in.diff, &in.changed, &stages); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT diff, changed_paths, stages, delta_diff FROM context_packs WHERE runner_run_id = $1`, p.runID).
+			Scan(&in.diff, &in.changed, &stages, &in.deltaDiff); err != nil {
 			return fmt.Errorf("worker: read context pack: %w", err)
 		}
 		// Packs written before the context stages existed hold '{}'.
@@ -274,19 +287,26 @@ func reviewNotes(omitted []string, dropped []review.Dropped) []string {
 // writeBack posts the sticky comment (created once, edited after), the
 // inline review, and the commit status. Only the sticky comment is
 // required: the other two are best effort and logged when they fail, so a
-// forge quirk cannot turn a finished review into a retry storm.
-func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, error) {
+// forge quirk cannot turn a finished review into a retry storm. A finding
+// the last review already posted inline is listed in the summary only.
+// The returned flags say, per finding, whether an inline comment for it is
+// on the forge.
+func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, []bool, error) {
 	owner, repo, _ := strings.Cut(p.pr.repository, "/")
 	login, err := p.client.BotLogin(ctx)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
+	onForge := alreadyInline(res.Findings, p.prior.findings)
 	// Inline comments render first so a failing inline template is noted
 	// in the summary. After one failure the rest use the default, so a
 	// template that times out costs one deadline, not one per finding.
 	templates := p.templates
 	inline := make([]forge.InlineComment, 0, len(res.Findings))
-	for _, f := range res.Findings {
+	for i, f := range res.Findings {
+		if onForge[i] {
+			continue
+		}
 		body, inlineNotes := review.RenderInline(ctx, templates, f)
 		if len(inlineNotes) > 0 {
 			templates.Inline = ""
@@ -297,6 +317,7 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	marker := review.Marker(p.pr.number)
 	body, renderNotes := review.RenderSummary(ctx, p.templates, review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Result: res, Counts: res.Counts(), Notes: notes,
+		Incremental: p.scope == scopeIncremental, PriorHeadSHA: p.prior.headSHA,
 	})
 	for _, n := range renderNotes {
 		p.logger.Warn("template fell back to the default", "note", n)
@@ -308,7 +329,7 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	})
 	if commentID == 0 {
 		if commentID, err = p.client.FindComment(ctx, owner, repo, p.pr.number, login, marker); err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 	}
 	if commentID != 0 {
@@ -317,11 +338,15 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 		commentID, err = p.client.CreateComment(ctx, owner, repo, p.pr.number, body)
 	}
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
 	if err := p.client.CreateReview(ctx, owner, repo, p.pr.number, p.pr.headSHA, inline); err != nil {
 		p.logger.Warn("inline review not posted", "error", err)
+	} else {
+		for i := range onForge {
+			onForge[i] = true
+		}
 	}
 	desc := "no findings"
 	if n := len(res.Findings); n > 0 {
@@ -330,16 +355,18 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: "+desc); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
-	return commentID, nil
+	return commentID, onForge, nil
 }
 
-func (p *publishPhase) persist(ctx context.Context, res review.Result, resp model.CompletionResponse, role string, commentID int64) error {
+func (p *publishPhase) persist(
+	ctx context.Context, res review.Result, inline []bool, resp model.CompletionResponse, role string, commentID int64,
+) error {
 	return p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
-		for _, f := range res.Findings {
+		for i, f := range res.Findings {
 			if _, err := tx.Exec(ctx, `INSERT INTO findings
-				(tenant_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, p.tenant.ID(), p.reviewID, f.Path, f.Line, string(f.Severity),
-				f.Title, f.Explanation, f.SuggestedFix, review.Fingerprint(f)); err != nil {
+				(tenant_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint, posted_inline)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, p.tenant.ID(), p.reviewID, f.Path, f.Line, string(f.Severity),
+				f.Title, f.Explanation, f.SuggestedFix, review.Fingerprint(f), inline[i]); err != nil {
 				return fmt.Errorf("worker: insert finding: %w", err)
 			}
 		}

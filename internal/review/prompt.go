@@ -24,10 +24,24 @@ type Input struct {
 	// Context is the runner's context pack, in stage order. It is spent
 	// after the diff, so a huge diff crowds it out rather than the reverse.
 	Context []contextpack.Chunk
+	// Incremental, when set, makes this a re-review: the diff since the
+	// last review and that review's findings are added after the diff.
+	Incremental *IncrementalInput
 	// BudgetTokens bounds the whole user message. Tokens are approximated
 	// at four characters each, rounded conservatively; the budget is a
 	// ceiling, not a target.
 	BudgetTokens int
+}
+
+// IncrementalInput is what a re-review adds to the prompt. The merge-base
+// diff stays in the prompt and alone decides where findings may anchor.
+type IncrementalInput struct {
+	// PriorHeadSHA is the head the last review saw.
+	PriorHeadSHA string
+	// DeltaDiff is the unified diff from PriorHeadSHA to the head.
+	DeltaDiff string
+	// Prior are the last review's findings, with its line numbers.
+	Prior []Finding
 }
 
 // DefaultBudgetTokens bounds the user message when Input sets no budget.
@@ -69,7 +83,9 @@ return an empty findings list and say so in the take.`
 // fit, it is cut at a file boundary and the message says which files were
 // left out, so the model never sees a truncated hunk as if it were whole.
 // Context chunks follow in stage order until the budget is spent; the
-// number left out is returned with the omitted diff files.
+// number left out is returned with the omitted diff files. A re-review's
+// sections sit between the diff and the context but are fitted last: they
+// give way before any context chunk does.
 func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Repository: %s\nPull request #%d: %s\nAuthor: %s\nBase branch: %s\nChanged files (%d):\n",
@@ -90,8 +106,69 @@ func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 	if len(omitted) > 0 {
 		fmt.Fprintf(&b, "\n\n[%d file(s) omitted to fit the context budget: %s]\n", len(omitted), strings.Join(omitted, ", "))
 	}
-	contextOmitted = writeContext(&b, in.Context, budget)
+	var ctxSections strings.Builder
+	contextOmitted = writeContext(&ctxSections, in.Context, budget-b.Len())
+	b.WriteString(incrementalSections(in.Incremental, budget-b.Len()-ctxSections.Len()))
+	b.WriteString(ctxSections.String())
 	return b.String(), omitted, contextOmitted
+}
+
+// deltaNoteRoom is kept free for the note on delta files that did not fit.
+const deltaNoteRoom = 128
+
+// incrementalSections renders a re-review's delta and prior findings in at
+// most room characters. The prior findings are fitted first: they are
+// small, and verifying them is what a re-review is for, while the delta
+// repeats what the full diff already shows.
+func incrementalSections(inc *IncrementalInput, room int) string {
+	if inc == nil {
+		return ""
+	}
+	var prior strings.Builder
+	if len(inc.Prior) > 0 {
+		fmt.Fprintf(&prior, "\n\nFindings from the last review (verify each; report again only if still present). "+
+			"Their lines are those of %s:\n", shortSHA(inc.PriorHeadSHA))
+		for _, f := range inc.Prior {
+			fmt.Fprintf(&prior, "- %s:%d [%s] %s: %s\n", f.Path, f.Line, f.Severity, f.Title, oneLine(f.Explanation))
+		}
+	}
+	if prior.Len() > room {
+		prior.Reset()
+	}
+	room -= prior.Len()
+
+	var b strings.Builder
+	header := fmt.Sprintf("\n\nChanged since the last review (%s to head, unified; the diff above still decides "+
+		"which lines a finding may point at):\n\n", shortSHA(inc.PriorHeadSHA))
+	delta, omitted := inc.DeltaDiff, []string(nil)
+	if len(header)+len(delta) > room {
+		delta, omitted = fitDiff(inc.DeltaDiff, room-len(header)-deltaNoteRoom)
+	}
+	switch {
+	case inc.DeltaDiff == "":
+		if note := fmt.Sprintf("\n\nNothing changed since the last review (%s).\n", shortSHA(inc.PriorHeadSHA)); len(note) <= room {
+			b.WriteString(note)
+		}
+	case delta != "":
+		b.WriteString(header + delta)
+		if len(omitted) > 0 {
+			fmt.Fprintf(&b, "\n[%d file(s) of the diff since the last review were omitted to fit the context budget]\n", len(omitted))
+		}
+	default:
+		const note = "\n\n[The diff since the last review was omitted to fit the context budget.]\n"
+		if len(note) <= room {
+			b.WriteString(note)
+		}
+	}
+	b.WriteString(prior.String())
+	return b.String()
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 // closingDescription matches every spelling of the closing tag a model

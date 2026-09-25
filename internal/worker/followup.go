@@ -347,39 +347,17 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 		if err := tx.QueryRow(ctx, `SELECT body FROM pull_requests WHERE id = $1`, f.pr.id).Scan(&rec.body); err != nil {
 			return fmt.Errorf("worker: load pull request body: %w", err)
 		}
-		var reviewID string
-		var stages []byte
-		err := tx.QueryRow(ctx, `SELECT r.id, c.diff, c.changed_paths, c.stages FROM reviews r
-			JOIN runner_runs rr ON rr.review_id = r.id JOIN context_packs c ON c.runner_run_id = rr.id
-			WHERE r.pull_request_id = $1 AND r.status = 'completed' ORDER BY r.created_at DESC LIMIT 1`, f.pr.id).
-			Scan(&reviewID, &rec.diff, &rec.changed, &stages)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+		last, err := lastCompleted(ctx, tx, f.pr.id)
+		if err != nil || last.id == "" {
+			return err
 		}
-		if err != nil {
-			return fmt.Errorf("worker: load review record: %w", err)
-		}
-		if len(stages) > 0 && stages[0] == '[' {
-			if err := json.Unmarshal(stages, &rec.context); err != nil {
+		rec.diff, rec.changed, rec.findings = last.diff, last.changed, reviewFindings(last.findings)
+		if len(last.stages) > 0 && last.stages[0] == '[' {
+			if err := json.Unmarshal(last.stages, &rec.context); err != nil {
 				return fmt.Errorf("worker: decode context pack: %w", err)
 			}
 		}
-		rows, err := tx.Query(ctx, `SELECT path, line, severity, title, explanation, suggested_fix FROM findings
-			WHERE review_id = $1 ORDER BY path, line`, reviewID)
-		if err != nil {
-			return fmt.Errorf("worker: load findings: %w", err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var fd review.Finding
-			var sev string
-			if err := rows.Scan(&fd.Path, &fd.Line, &sev, &fd.Title, &fd.Explanation, &fd.SuggestedFix); err != nil {
-				return err
-			}
-			fd.Severity = review.Severity(sev)
-			rec.findings = append(rec.findings, fd)
-		}
-		return rows.Err()
+		return nil
 	})
 	return rec, err
 }
