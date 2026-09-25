@@ -147,9 +147,8 @@ the Job anchors, renders, posts and persists exactly as in single mode.
 This puts a model key into the pod that reads untrusted content. The pod runs
 no repository code, the model's tools are read-only, and its only output is
 findings text the worker validates, so a prompt injection can at worst shape
-that text. The key reaches the pod the way the git token does today, as Job
-environment; moving both to a per-run Secret is follow-up work. Operators
-should give each tenant its own key with a spending limit.
+that text. The key reaches the pod as described in §2.9. Operators should give
+each tenant its own key with a spending limit.
 
 ### 2.7 Incremental re-review
 
@@ -169,6 +168,37 @@ A repository's `settle` delays a review job for a new head. A push inside the
 window supersedes it, and the existing head check at the start of the job
 discards the stale one before anything is spent.
 
+### 2.9 The worker–runner protocol
+
+The relationship between a worker and a runner Job follows the shape of CI
+job runners such as GitHub Actions' runner: one complete job document in,
+job-scoped secrets delivered and masked separately, a heartbeat the
+dispatcher watches, cancellation when the work is superseded, and structured
+results reported back.
+
+- **Job document.** The worker hands the runner one typed, versioned
+  `runner.Spec` (`version: 1`) as JSON: run kind and id, clone URL, head,
+  merge-base and prior head, ignore globs, review mode, agent limits and the
+  model endpoint (provider, base URL, models, pricing). It holds no secret.
+  The runner rejects a version it does not know rather than guessing.
+- **Job-scoped secrets.** The git token and, in agentic mode, the model key
+  go into a Secret created for the run and owned by its Job, so Kubernetes
+  deletes it with the Job. The worker creates the Secret, then the Job, then
+  sets the Secret's owner reference; a failure deletes the Secret. The worker
+  masks those values out of the log tail it stores.
+- **Heartbeat.** The runner stamps `runner_runs.heartbeat_at` while it
+  works. The worker treats a run whose heartbeat is older than 90 seconds
+  after start as dead and ends it, instead of waiting out the Job deadline.
+- **Cancellation.** While it waits, the worker checks the pull request's
+  head. When a newer head arrives it deletes the Job (foreground
+  propagation, so the pod goes too) and records the review as superseded;
+  the newer head has its own job queued. Cancelling the worker's context
+  deletes the Job the same way.
+- **Results.** The runner reports through the runner database role only:
+  the context pack, and in agentic mode an `agent_runs` row with the result,
+  stop reason, usage and a per-step timeline (tool, duration, bytes, tokens).
+  It never writes to the forge.
+
 ## 3. Consequences
 
 - The findings schema, severities and the provider configuration change
@@ -182,5 +212,4 @@ discards the stale one before anything is spent.
 - Retrieval from an external memory service, sub-agent fan-out, and depth
   tiers keyed on pull request size.
 - A follow-up responder that edits code.
-- Delivering runner credentials as per-run Secrets.
 - The GitLab client.
