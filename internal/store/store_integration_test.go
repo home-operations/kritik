@@ -266,8 +266,7 @@ func TestLeaderLockIsExclusive(t *testing.T) {
 
 	second := openStore(t)
 	got := make(chan struct{}, 1)
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
+	ctx2 := t.Context()
 	go func() {
 		_ = second.RunAsLeader(ctx2, 50*time.Millisecond, func(ctx context.Context) error {
 			got <- struct{}{}

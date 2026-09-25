@@ -69,5 +69,5 @@ func effective(settings configfile.Settings, files repoconfig.Files, runnerNotes
 // skip returns why the repository's configuration skips this review, or ""
 // when it does not; see repoconfig.Merged.Check.
 func (e Effective) skip(vars map[string]any, changed []string) (repoconfig.SkipReason, error) {
-	return repoconfig.Merged{Operator: repoconfig.Operator{Enabled: e.Enabled}, Filter: e.InRepoFilter, Skip: e.Skip}.Check(vars, changed)
+	return repoconfig.Merged{Enabled: e.Enabled, Filter: e.InRepoFilter, Skip: e.Skip}.Check(vars, changed)
 }

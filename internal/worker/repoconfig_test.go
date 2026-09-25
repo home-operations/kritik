@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -31,9 +32,7 @@ func TestEffective(t *testing.T) {
 	withFile := func(doc string, extra repoconfig.Files) repoconfig.Files {
 		files := repoconfig.Files{repoconfig.FileName: doc}
 		for _, src := range []repoconfig.Files{operatorFiles, extra} {
-			for k, v := range src {
-				files[k] = v
-			}
+			maps.Copy(files, src)
 		}
 		return files
 	}

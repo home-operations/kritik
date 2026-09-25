@@ -34,8 +34,8 @@ type Merged struct {
 // since they grant nothing. A file that does not parse is ignored as a
 // whole: op stands, and the error says why.
 func Merge(files Files, op Operator) (Merged, error) {
+	op.Ignore = slices.Clone(op.Ignore)
 	m := Merged{Operator: op}
-	m.Ignore = slices.Clone(op.Ignore)
 	doc, ok := files[FileName]
 	if !ok {
 		return m, nil
