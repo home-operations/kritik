@@ -191,7 +191,7 @@ func TestParseGitLab(t *testing.T) {
 func TestParseForgejo(t *testing.T) {
 	h := hdr("X-Gitea-Event", "pull_request", "X-Gitea-Delivery", "f-1")
 	ev, err := Parse(configfile.ForgeForgejo, h, []byte(ghPullRequest))
-	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "f-1" || ev.PullRequest.Number != 42 || ev.PullRequest.Body != "a body" {
+	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "f-1" || ev.PullRequest.Number != 42 || ev.PullRequest.Body != "a body" || ev.Action != "synchronize" {
 		t.Fatalf("forgejo pr = %+v %v", ev, err)
 	}
 	h.Set("X-Gitea-Event", "issue_comment")
@@ -199,5 +199,35 @@ func TestParseForgejo(t *testing.T) {
 	  "comment":{"id":5,"body":"@bot","user":{"login":"x"}},"repository":{"full_name":"a/b","owner":{"login":"a"}}}`))
 	if err != nil || ev.Kind != KindComment || ev.Comment.Number != 3 {
 		t.Fatalf("forgejo comment = %+v %v", ev, err)
+	}
+}
+
+// TestParseForgejoSynchronizedAction covers the past-tense "synchronized"
+// spelling Forgejo sends for this action, which must normalize to GitHub's
+// "synchronize" so callers can match on one action string regardless of
+// forge.
+func TestParseForgejoSynchronizedAction(t *testing.T) {
+	h := hdr("X-Gitea-Event", "pull_request", "X-Gitea-Delivery", "f-2")
+	body := `{
+	  "action": "synchronized",
+	  "number": 7,
+	  "pull_request": {
+	    "number": 7, "title": "feat: thing", "state": "open",
+	    "user": {"login": "alice"},
+	    "head": {"ref": "topic", "sha": "aaa111", "repo": {"full_name": "acme/widgets"}},
+	    "base": {"ref": "main", "sha": "bbb222", "repo": {"full_name": "acme/widgets"}}
+	  },
+	  "repository": {"full_name": "acme/widgets", "owner": {"login": "acme"}}
+	}`
+	ev, err := Parse(configfile.ForgeForgejo, h, []byte(body))
+	if err != nil || ev.Kind != KindPullRequest || ev.Action != "synchronize" {
+		t.Fatalf("forgejo synchronized pr = %+v %v", ev, err)
+	}
+	// The same raw action, parsed as a GitHub payload, must be left alone:
+	// only the Forgejo path normalizes it.
+	gh := hdr("X-GitHub-Event", "pull_request", "X-GitHub-Delivery", "f-3")
+	ev, err = Parse(configfile.ForgeGitHub, gh, []byte(body))
+	if err != nil || ev.Action != "synchronized" {
+		t.Fatalf("github synchronized pr = %+v %v", ev, err)
 	}
 }

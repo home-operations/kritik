@@ -81,7 +81,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		return err
 	}
 	owner, repo, _ := strings.Cut(pr.repository, "/")
-	comment, err := client.GetComment(ctx, owner, repo, args.CommentID, args.Inline)
+	comment, err := client.GetComment(ctx, owner, repo, args.Number, args.CommentID, args.Inline)
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func (f *followUp) disqualified(ctx context.Context) string {
 		return "permission unknown"
 	}
 	if !forge.CanWrite(perm) {
-		return "author has " + perm + " access, write is required"
+		return "author has " + string(perm) + " access, write is required"
 	}
 	return ""
 }

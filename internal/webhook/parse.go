@@ -285,7 +285,14 @@ func parseGitHub(event, delivery string, body []byte) (Event, error) {
 func parseForgejo(event, delivery string, body []byte) (Event, error) {
 	switch event {
 	case evPullRequest:
-		return parsePullRequestEvent(delivery, body)
+		ev, err := parsePullRequestEvent(delivery, body)
+		// Forgejo spells the synchronize action "synchronized" (past
+		// tense), unlike GitHub's "synchronize"; normalize so downstream
+		// action-string matching doesn't need to know which forge sent it.
+		if err == nil && ev.Action == "synchronized" {
+			ev.Action = "synchronize"
+		}
+		return ev, err
 	case evIssueComment, "pull_request_comment":
 		return parseIssueComment(delivery, body)
 	case evReviewComment:
