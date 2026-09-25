@@ -20,8 +20,9 @@ const (
 	// for similar code and the forge write-back.
 	PublishHeadroom = 15 * time.Minute
 	// IndexWriteHeadroom covers embedding a repository's staged chunks and
-	// swapping the generation after the index runner ends.
-	IndexWriteHeadroom = 45 * time.Minute
+	// swapping the generation after the index runner ends; the embedding
+	// pass of a large repository is many model calls.
+	IndexWriteHeadroom = 60 * time.Minute
 	// AgentFetchHeadroom is the job time an agentic run keeps for fetching
 	// and the context pack on top of the agent's own timeout.
 	AgentFetchHeadroom = 5 * time.Minute

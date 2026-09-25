@@ -79,17 +79,17 @@ func TestJobTimeouts(t *testing.T) {
 		index        time.Duration
 		followUp     time.Duration
 	}{
-		// 15m runner + 15m lease wait + 15m publish; 15m + 45m to embed.
-		{name: "single mode", tenantID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: 45 * time.Minute, index: time.Hour, followUp: 30 * time.Minute},
+		// 15m runner + 15m lease wait + 15m publish; 15m + 60m to embed.
+		{name: "single mode", tenantID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: 45 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 		// The agent's 20m plus 5m of fetch headroom outlasts the runner deadline.
-		{name: "agentic mode", tenantID: acme.ID(), repositoryID: acmeRepo("acme/agentic"), review: 55 * time.Minute, index: time.Hour, followUp: 30 * time.Minute},
+		{name: "agentic mode", tenantID: acme.ID(), repositoryID: acmeRepo("acme/agentic"), review: 55 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 		{name: "agentic with a longer agent timeout", tenantID: acme.ID(), repositoryID: acmeRepo("acme/slow-agent"),
-			review: 85 * time.Minute, index: time.Hour, followUp: 30 * time.Minute},
+			review: 85 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 		// The tenant's runner deadline is configfile's max allowed value; index lands exactly on MaxJobTimeout.
 		{name: "tenant runner deadline at the max", tenantID: globex.ID(), repositoryID: globexRepo,
 			review: jobtimeout.MaxRunnerDeadline + jobtimeout.LeaseWaitHeadroom + jobtimeout.PublishHeadroom,
 			index:  jobtimeout.MaxRunnerDeadline + jobtimeout.IndexWriteHeadroom, followUp: 30 * time.Minute},
-		{name: "unknown tenant", tenantID: "missing", repositoryID: "missing", review: 45 * time.Minute, index: time.Hour, followUp: 30 * time.Minute},
+		{name: "unknown tenant", tenantID: "missing", repositoryID: "missing", review: 45 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
