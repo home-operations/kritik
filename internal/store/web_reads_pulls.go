@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/configfile"
@@ -111,8 +112,8 @@ var ErrFilter = errors.New("store: invalid filter")
 
 // ListPulls returns a page of pull requests, most recently updated first.
 func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow, *Cursor, error) {
-	if p.Limit <= 0 {
-		return nil, nil, ErrPageLimit
+	if err := p.check(); err != nil {
+		return nil, nil, err
 	}
 	if f.State == "" {
 		f.State = PullAll
@@ -126,14 +127,14 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 	}
 	like := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(f.Query) + "%"
 	rows, err := tx.Query(ctx, `SELECT `+pullColumns+`
-		WHERE ($1 = '' OR p.repository_id::text = $1)
+		WHERE ($1::uuid IS NULL OR p.repository_id = $1)
 			AND ($2 = 'all' OR p.state = $2)
 			AND ($3 = '' OR lr.status = $3)
 			AND ($4 = '' OR p.title ILIKE $5 OR p.author ILIKE $5 OR p.number = $6)
-			AND ($7 OR (p.updated_at, p.id::text) < ($8, $9))
-		ORDER BY p.updated_at DESC, p.id::text DESC LIMIT $10`,
-		f.RepositoryID, string(f.State), string(f.Outcome), f.Query, like, number,
-		p.After.First(), p.After.T, p.After.ID, p.Limit+1)
+			AND ($7 OR (p.updated_at, p.id) < ($8, $9::uuid))
+		ORDER BY p.updated_at DESC, p.id DESC LIMIT $10`,
+		uuidParam(f.RepositoryID), string(f.State), string(f.Outcome), f.Query, like, number,
+		p.After.First(), p.After.T, p.afterID(), p.Limit+1)
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list pull requests: %w", err)
 	}
@@ -233,7 +234,10 @@ func ListPullReviews(ctx context.Context, tx pgx.Tx, pullRequestID string) ([]Re
 
 // FindReview returns one review, or ErrNotFound.
 func FindReview(ctx context.Context, tx pgx.Tx, id string) (ReviewRow, error) {
-	rows, err := tx.Query(ctx, `SELECT `+reviewColumns+` WHERE v.id::text = $1`, id)
+	if uuid.Validate(id) != nil {
+		return ReviewRow{}, ErrNotFound
+	}
+	rows, err := tx.Query(ctx, `SELECT `+reviewColumns+` WHERE v.id = $1::uuid`, id)
 	if err != nil {
 		return ReviewRow{}, fmt.Errorf("store: find review: %w", err)
 	}
@@ -274,16 +278,16 @@ type FollowupFilter struct {
 
 // ListFollowups returns a page of follow-ups, newest first.
 func ListFollowups(ctx context.Context, tx pgx.Tx, f FollowupFilter, p Page) ([]FollowupRow, *Cursor, error) {
-	if p.Limit <= 0 {
-		return nil, nil, ErrPageLimit
+	if err := p.check(); err != nil {
+		return nil, nil, err
 	}
 	rows, err := tx.Query(ctx, `SELECT f.id, f.pull_request_id, r.name, p.number, f.comment_id, f.author, f.inline, f.path, f.line,
 		f.status, f.reason, f.reply_comment_id, f.model, f.created_at
 		FROM followups f JOIN pull_requests p ON p.id = f.pull_request_id JOIN repositories r ON r.id = p.repository_id
-		WHERE ($1 = '' OR p.repository_id::text = $1) AND ($2 = '' OR f.pull_request_id::text = $2) AND ($3 = 0 OR f.comment_id = $3)
-			AND ($4 OR (f.created_at, f.id::text) < ($5, $6))
-		ORDER BY f.created_at DESC, f.id::text DESC LIMIT $7`,
-		f.RepositoryID, f.PullRequestID, f.CommentID, p.After.First(), p.After.T, p.After.ID, p.Limit+1)
+		WHERE ($1::uuid IS NULL OR p.repository_id = $1) AND ($2::uuid IS NULL OR f.pull_request_id = $2)
+			AND ($3 = 0 OR f.comment_id = $3) AND ($4 OR (f.created_at, f.id) < ($5, $6::uuid))
+		ORDER BY f.created_at DESC, f.id DESC LIMIT $7`,
+		uuidParam(f.RepositoryID), uuidParam(f.PullRequestID), f.CommentID, p.After.First(), p.After.T, p.afterID(), p.Limit+1)
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list follow-ups: %w", err)
 	}

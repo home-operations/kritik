@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -102,6 +103,29 @@ type Page struct {
 
 // ErrPageLimit is a page whose limit is not positive.
 var ErrPageLimit = errors.New("store: page limit must be positive")
+
+// check rejects a page with no room or a cursor whose id is not a row id.
+func (p Page) check() error {
+	if p.Limit <= 0 {
+		return ErrPageLimit
+	}
+	if !p.After.First() && uuid.Validate(p.After.ID) != nil {
+		return ErrFilter
+	}
+	return nil
+}
+
+// afterID is the cursor's id as a uuid parameter, NULL on the first page.
+func (p Page) afterID() any { return uuidParam(p.After.ID) }
+
+// uuidParam passes s as a uuid parameter, NULL when it is empty, so a
+// query can say "($1::uuid IS NULL OR col = $1)" and still use col's index.
+func uuidParam(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
 
 // paged trims a query's limit+1 rows to the page, returning the cursor of
 // the next page or nil at the end of the list.
@@ -220,12 +244,12 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 // ListRepos returns a page of the tenant's repositories ordered by full
 // name.
 func ListRepos(ctx context.Context, tx pgx.Tx, p Page) ([]RepoRow, *Cursor, error) {
-	if p.Limit <= 0 {
-		return nil, nil, ErrPageLimit
+	if err := p.check(); err != nil {
+		return nil, nil, err
 	}
 	rows, err := tx.Query(ctx, `SELECT `+repoColumns+`
-		WHERE $1 OR (r.name, r.id::text) > ($2, $3)
-		ORDER BY r.name, r.id::text LIMIT $4`, p.After.First(), p.After.S, p.After.ID, p.Limit+1)
+		WHERE $1 OR (r.name, r.id) > ($2, $3::uuid)
+		ORDER BY r.name, r.id LIMIT $4`, p.After.First(), p.After.S, p.afterID(), p.Limit+1)
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list repositories: %w", err)
 	}
@@ -277,15 +301,15 @@ type IndexRunRow struct {
 // ListIndexRuns returns a page of index runs, newest first, of one
 // repository when repositoryID is set.
 func ListIndexRuns(ctx context.Context, tx pgx.Tx, repositoryID string, p Page) ([]IndexRunRow, *Cursor, error) {
-	if p.Limit <= 0 {
-		return nil, nil, ErrPageLimit
+	if err := p.check(); err != nil {
+		return nil, nil, err
 	}
 	rows, err := tx.Query(ctx, `SELECT x.id, x.repository_id, r.name, x.commit_sha, x.base_sha, x.embed_model, x.mode, x.status,
 		x.trigger, x.chunk_count, x.error, x.created_at, x.finished_at
 		FROM index_runs x JOIN repositories r ON r.id = x.repository_id
-		WHERE ($1 = '' OR x.repository_id::text = $1) AND ($2 OR (x.created_at, x.id::text) < ($3, $4))
-		ORDER BY x.created_at DESC, x.id::text DESC LIMIT $5`,
-		repositoryID, p.After.First(), p.After.T, p.After.ID, p.Limit+1)
+		WHERE ($1::uuid IS NULL OR x.repository_id = $1) AND ($2 OR (x.created_at, x.id) < ($3, $4::uuid))
+		ORDER BY x.created_at DESC, x.id DESC LIMIT $5`,
+		uuidParam(repositoryID), p.After.First(), p.After.T, p.afterID(), p.Limit+1)
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list index runs: %w", err)
 	}
