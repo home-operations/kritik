@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -510,6 +511,76 @@ func TestSweepDisabledIndexes(t *testing.T) {
 		t.Fatalf("enabled repository: active=%v status=%s chunks=%d, want the index kept", active, status, chunks)
 	}
 	sweep(0)
+}
+
+// TestFindRepoAcrossInstallations checks that a repository name two
+// installations of a tenant hold is ambiguous without an installation,
+// resolves with one, and stops being ambiguous once one installation is
+// gone and only its disabled repository is left.
+func TestFindRepoAcrossInstallations(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t)
+	const twoForges = `
+tenants:
+  - slug: gamma
+    installations:
+      - name: gamma-one
+        forge: forgejo
+        host: one.example.com
+        account: gamma
+        token: { env: KRITIK_TEST_TOKEN }
+        webhookSecret: { env: KRITIK_TEST_TOKEN }
+      - name: gamma-two
+        forge: forgejo
+        host: two.example.com
+        account: gamma
+        token: { env: KRITIK_TEST_TOKEN }
+        webhookSecret: { env: KRITIK_TEST_TOKEN }
+    repositories:
+      - { name: gamma/x, installation: gamma-one }
+      - { name: gamma/x, installation: gamma-two }
+`
+	if err := s.ApplyConfig(ctx, parse(t, twoForges), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	gamma := tenantID(t, s, "gamma")
+	find := func(name, installation string) (RepoRow, error) {
+		t.Helper()
+		var row RepoRow
+		err := s.WithTenant(ctx, gamma, func(tx pgx.Tx) error {
+			var err error
+			row, err = FindRepo(ctx, tx, name, installation)
+			return err
+		})
+		return row, err
+	}
+
+	_, err := find("gamma/x", "")
+	e, ok := errors.AsType[*AmbiguousRepoError](err)
+	if !ok || !slices.Equal(slices.Sorted(slices.Values(e.Installations)), []string{"gamma-one", "gamma-two"}) {
+		t.Fatalf("FindRepo without installation = %v, want ambiguous over gamma-one and gamma-two", err)
+	}
+	if row, err := find("gamma/x", "gamma-two"); err != nil || row.Installation != "gamma-two" {
+		t.Fatalf("FindRepo(gamma-two) = %+v, %v", row, err)
+	}
+	if _, err := find("gamma/nope", ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("FindRepo(unknown) = %v, want ErrNotFound", err)
+	}
+
+	oneLeft := strings.Replace(strings.Replace(twoForges, `      - { name: gamma/x, installation: gamma-two }
+`, "", 1), `      - name: gamma-two
+        forge: forgejo
+        host: two.example.com
+        account: gamma
+        token: { env: KRITIK_TEST_TOKEN }
+        webhookSecret: { env: KRITIK_TEST_TOKEN }
+`, "", 1)
+	if err := s.ApplyConfig(ctx, parse(t, oneLeft), "test"); err != nil {
+		t.Fatalf("ApplyConfig without gamma-two: %v", err)
+	}
+	if row, err := find("gamma/x", ""); err != nil || row.Installation != "gamma-one" || !row.Enabled {
+		t.Fatalf("FindRepo after gamma-two went = %+v, %v; want gamma-one's enabled repository", row, err)
+	}
 }
 
 // changeLast is s with its last character changed to one it cannot

@@ -344,9 +344,12 @@ two forges is two repositories everywhere, not only in the database.
 - **The dashboard refuses to guess.** A repository or pull request route
   whose `owner/repo` matches more than one repository in the tenant, and
   that does not name the installation (`?installation=`), is answered with
-  `409 ambiguous` instead of the first match. The UI's own links always
-  carry the installation when the name is not unique in the tenant, and the
-  repository list shows the installation and forge beside the name.
+  `409 ambiguous`, listing the installations that hold it, instead of the
+  first match. A disabled repository, which a removed or renamed
+  installation leaves behind, never makes a name ambiguous while an enabled
+  one holds it. The UI's routes carry the installation; the repository list
+  links a name several installations hold with its installation, and a page
+  reached without one offers the installations to choose from.
 - **`.kritik.yaml` is unaffected:** each forge's repository has its own file,
   in its own history.
 

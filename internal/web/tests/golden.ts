@@ -84,7 +84,7 @@ export function defaultApi(): [RegExp, Body][] {
     [new RegExp(`${t}/repos/alpha/one$`), repoDetail],
     [
       new RegExp(`${t}/pulls$`),
-      (u: URL) => (u.searchParams.get('cursor') ? pageOf([{ ...pull, number: 8, title: 'More widgets' }]) : pageOf([pull], repoPage.nextCursor)),
+      (u: URL) => (u.searchParams.get('cursor') ? pageOf([{ ...pull, number: 8, title: 'More widgets', url: pull.url.replace(/\d+$/, '8') }]) : pageOf([pull], repoPage.nextCursor)),
     ],
     [new RegExp(`${t}/pulls/alpha/one/7$`), pullDetail],
     [new RegExp(`${t}/followups$`), pageOf([followup])],

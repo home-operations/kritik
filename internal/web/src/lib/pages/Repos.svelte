@@ -1,7 +1,8 @@
 <script lang="ts">
   import { href } from '../router.svelte';
   import { Paged, live } from '../resource.svelte';
-  import { indexTone, splitRepo } from '../format';
+  import { indexTone } from '../format';
+  import { repoRoute } from '../links';
   import type { Repository } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
@@ -23,6 +24,18 @@
     void paged.load();
   });
   $effect(() => live((e) => e.tenant === slug && e.kind === 'index_run', () => void paged.load()));
+
+  // A name several installations hold links with its installation, so the
+  // repository page does not have to ask which one.
+  const shared = $derived.by(() => {
+    const seen = new Set<string>();
+    const out = new Set<string>();
+    for (const r of paged.items) {
+      if (seen.has(r.fullName)) out.add(r.fullName);
+      seen.add(r.fullName);
+    }
+    return out;
+  });
 
   function visible(): Repository[] {
     const needle = filter.trim().toLowerCase();
@@ -60,9 +73,8 @@
               </thead>
               <tbody>
                 {#each rows as repo (repo.id)}
-                  {@const n = splitRepo(repo.fullName)}
                   <tr>
-                    <td class="mono"><a href={href({ name: 'repo', slug, owner: n.owner, repo: n.repo })}>{repo.fullName}</a></td>
+                    <td class="mono"><a href={href(repoRoute(slug, repo.fullName, shared.has(repo.fullName) ? repo.installation : undefined))}>{repo.fullName}</a></td>
                     <td class="mono small">{repo.installation}</td>
                     <td>{#if repo.enabled}<Pill tone="ok" label="on" />{:else}<Pill label="off" />{/if}</td>
                     <td>

@@ -229,9 +229,20 @@ func repository(r store.RepoRow) Repository {
 // findRepo resolves {owner}/{repo}, and ?installation= when a tenant has
 // the same repository under two installations.
 func findRepo(ctx context.Context, tx pgx.Tx, r *http.Request) (store.RepoRow, error) {
-	row, err := store.FindRepo(ctx, tx, r.PathValue("owner")+"/"+r.PathValue("repo"), r.URL.Query().Get("installation"))
+	return lookupRepo(ctx, tx, r.PathValue("owner")+"/"+r.PathValue("repo"), r.URL.Query().Get("installation"))
+}
+
+// lookupRepo resolves a repository by name and, when several installations
+// hold it, by installation: a name that stays ambiguous is a 409 listing
+// them, never a guess.
+func lookupRepo(ctx context.Context, tx pgx.Tx, name, installation string) (store.RepoRow, error) {
+	row, err := store.FindRepo(ctx, tx, name, installation)
 	if errors.Is(err, store.ErrNotFound) {
 		return row, errNotFound("repository")
+	}
+	if e, ok := errors.AsType[*store.AmbiguousRepoError](err); ok {
+		return row, errStatus(http.StatusConflict, CodeAmbiguous, "several installations hold this repository; pass ?installation=",
+			ambiguousRepoDetails{Installations: e.Installations})
 	}
 	return row, err
 }
@@ -287,10 +298,7 @@ func repoFilter(ctx context.Context, tx pgx.Tx, r *http.Request) (string, error)
 	if name == "" {
 		return "", nil
 	}
-	row, err := store.FindRepo(ctx, tx, name, r.URL.Query().Get("installation"))
-	if errors.Is(err, store.ErrNotFound) {
-		return "", errNotFound("repository")
-	}
+	row, err := lookupRepo(ctx, tx, name, r.URL.Query().Get("installation"))
 	return row.ID, err
 }
 
