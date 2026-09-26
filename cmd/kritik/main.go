@@ -447,8 +447,9 @@ func lead(
 		go onboarder.Run(pollCtx)
 	}
 	// And so is retention: model-call transcripts past their configured
-	// window (owner pool, bypassing row-level security) and expired
-	// dashboard sessions (app pool).
+	// window and the indexes of repositories disabled past their grace
+	// (owner pool, bypassing row-level security), and expired dashboard
+	// sessions (app pool).
 	go retentionSweep(pollCtx, st, current, retentionSweepInterval, logger)
 	return applyLoop(ctx, current, func(ctx context.Context, f *configfile.File) error {
 		return st.ApplyConfig(ctx, f, leader)
@@ -461,7 +462,8 @@ func lead(
 }
 
 // retentionSweepInterval is how often the leader deletes model-call
-// transcripts and dashboard sessions past their retention window.
+// transcripts, disabled repositories' indexes and dashboard sessions past
+// their retention window.
 const retentionSweepInterval = time.Hour
 
 // retentionStore is the subset of *store.Store that retentionSweep needs,
@@ -469,13 +471,15 @@ const retentionSweepInterval = time.Hour
 type retentionStore interface {
 	SweepModelCalls(ctx context.Context, olderThan time.Duration) (int64, error)
 	SweepSessions(ctx context.Context, now time.Time) (int64, error)
+	SweepDisabledIndexes(ctx context.Context, grace time.Duration) (int64, error)
 }
 
 // retentionSweep runs once immediately, then every interval until ctx ends,
 // deleting model-call transcripts older than the current file's retention
-// window (owner pool, bypassing row-level security) and expired dashboard
-// sessions (app pool). A sweep failure is logged, never fatal: it just
-// leaves stale rows for the next tick.
+// window and the indexes of repositories disabled for longer than its
+// disabledIndexGrace (owner pool, bypassing row-level security), and
+// expired dashboard sessions (app pool). A sweep failure is logged, never
+// fatal: it just leaves stale rows for the next tick.
 func retentionSweep(ctx context.Context, st retentionStore, current *configfile.Current, interval time.Duration, logger *slog.Logger) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -493,6 +497,13 @@ func retentionSweep(ctx context.Context, st retentionStore, current *configfile.
 			}
 		} else if n > 0 {
 			logger.Info("dashboard sessions swept", "rows", n)
+		}
+		if n, err := st.SweepDisabledIndexes(ctx, current.Get().DisabledIndexGrace()); err != nil {
+			if ctx.Err() == nil {
+				logger.Warn("disabled repositories' indexes not swept", "error", err)
+			}
+		} else if n > 0 {
+			logger.Info("disabled repositories' indexes swept", "repositories", n)
 		}
 		select {
 		case <-ctx.Done():
