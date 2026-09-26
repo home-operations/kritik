@@ -339,7 +339,14 @@ test.describe('actions', () => {
     const running: T.ReviewDetail = { ...g.reviewDetail, review: { ...g.reviewDetail.review, status: 'running' } };
     await setup(page, adminMe, [[new RegExp(`${API}/reviews/rev-1$`), running]]);
     const sent = await g.mockWrites(page, [
-      ['POST', new RegExp(`${API}/pulls/alpha/one/7/rerun$`), { status: 202, body: g.accepted }],
+      [
+        'POST',
+        new RegExp(`${API}/pulls/alpha/one/7/rerun$`),
+        () =>
+          sent.filter((s) => s.url.pathname.endsWith('/rerun')).length <= 1
+            ? { status: 202, body: g.accepted }
+            : g.apiError(409, 'already_queued', 'a review of this head is already queued or running'),
+      ],
       ['POST', new RegExp(`${API}/reviews/rev-1/cancel$`), g.apiError(409, 'not_cancelable', 'the review is not running')],
       ['POST', new RegExp(`${API}/repos/alpha/one/reindex$`), g.apiError(503, 'actions_disabled', 'this process does not queue dashboard actions')],
     ]);
@@ -363,11 +370,12 @@ test.describe('actions', () => {
     await page.getByRole('button', { name: 'Re-run' }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Re-run' }).click();
     await expect.poll(() => sent.filter((s) => s.url.pathname.endsWith('/rerun')).length).toBe(2);
+    await expect(page.getByRole('status')).toContainText('already queued or running');
 
     await page.goto(`/#/t/${S}/repos/alpha/one`);
     await page.getByRole('button', { name: 'Reindex' }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Reindex' }).click();
-    await expect(page.getByRole('status')).toContainText('not available on this server yet');
+    await expect(page.getByRole('status')).toContainText('cannot queue dashboard actions');
   });
 
   test('are hidden from a tenant member', async ({ page }) => {

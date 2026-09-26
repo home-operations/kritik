@@ -39,7 +39,9 @@ export interface Page<T> {
   nextCursor: string | null;
 }
 
-export type ErrorCode = 'not_found' | 'bad_request' | 'invalid_cursor' | 'ambiguous' | 'internal';
+// unauthenticated and csrf come from the auth middleware in front of every
+// API route: no valid session, and a state change that is not same-origin.
+export type ErrorCode = 'not_found' | 'bad_request' | 'invalid_cursor' | 'ambiguous' | 'internal' | 'unauthenticated' | 'csrf';
 
 export interface ErrorBody {
   code: ErrorCode | string;
@@ -587,6 +589,7 @@ export type ManagementErrorCode =
   | 'no_head'
   | 'not_cancelable'
   | 'actions_disabled'
+  | 'already_queued'
   | 'reenter_secret'
   | 'already_member';
 
