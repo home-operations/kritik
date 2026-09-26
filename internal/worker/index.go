@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -119,6 +120,10 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	if err != nil {
 		return err
 	}
+	// embed clears the staged chunks as it swaps them in. Any other way out
+	// would leave them behind for good: a retry stages its own under a new
+	// run.
+	defer w.clearStaging(ctx, logger, args.TenantID, runnerRunID)
 	deadline, resources := runnerSpec(tenant, w.Deadline)
 	sup := runSupervision(w.Store, args.TenantID, runnerRunID, "", "", w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
@@ -226,6 +231,20 @@ func (w *Index) start(ctx context.Context, args jobs.IndexArgs, commit, base, mo
 		return nil
 	})
 	return runID, runnerRunID, err
+}
+
+// clearStaging deletes a run's staged chunks on a context of its own, so a
+// job cut short still does, and logs a failure to logger.
+func (w *Index) clearStaging(ctx context.Context, logger *slog.Logger, tenantID, runnerRunID string) {
+	ctx, cancel := detach(ctx)
+	defer cancel()
+	err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID)
+		return err
+	})
+	if err != nil {
+		logger.Warn("staged chunks not cleared", "run", runnerRunID, "error", err)
+	}
 }
 
 func (w *Index) finish(ctx context.Context, tenantID, runID, status string, chunks int, errText string) error {
