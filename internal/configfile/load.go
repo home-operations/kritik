@@ -26,6 +26,10 @@ import (
 // segment, a Kubernetes label value and a log line.
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
+// toolNameRe bounds a tool name to what fits a pod volume name after its
+// "tool-" prefix: a DNS label of at most 63 characters.
+var toolNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,56}[a-z0-9])?$`)
+
 // commandRe is a binary name the run tool looks up on PATH: no path
 // separator, so the allowlist cannot name a file in the checkout.
 var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
@@ -167,6 +171,9 @@ func (f *File) validate() error {
 	if err := f.validateTuning(); err != nil {
 		return err
 	}
+	if err := f.validateTools(); err != nil {
+		return err
+	}
 	if err := f.Web.validate(); err != nil {
 		return err
 	}
@@ -204,6 +211,39 @@ func (t *Tenant) repositoryInstallation(r *Repository, where string) (*Installat
 			where, r.Name, strings.Join(names, ", "), t.Slug, owner)
 	}
 	return owners[0], nil
+}
+
+// validateTools checks the tool catalog: unique volume-safe names, an
+// image each, a clean absolute path, and bare command names no two tools
+// both provide.
+func (f *File) validateTools() error {
+	names, commands := map[string]bool{}, map[string]string{}
+	for i, t := range f.Tools {
+		where := fmt.Sprintf("tools[%d]", i)
+		if !toolNameRe.MatchString(t.Name) {
+			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 58 characters", where, t.Name)
+		}
+		if names[t.Name] {
+			return fmt.Errorf("configfile: %s.name %q is listed twice", where, t.Name)
+		}
+		names[t.Name] = true
+		if strings.TrimSpace(t.Image) == "" {
+			return fmt.Errorf("configfile: %s.image is required", where)
+		}
+		if t.Path != "" && (!path.IsAbs(t.Path) || path.Clean(t.Path) != t.Path) {
+			return fmt.Errorf("configfile: %s.path %q must be a clean absolute path inside the image", where, t.Path)
+		}
+		for _, c := range t.Provides() {
+			if !commandRe.MatchString(c) {
+				return fmt.Errorf("configfile: %s.commands %q must be a bare command name, not a path", where, c)
+			}
+			if other, dup := commands[c]; dup {
+				return fmt.Errorf("configfile: %s provides %q, which tool %q already provides", where, c, other)
+			}
+			commands[c] = t.Name
+		}
+	}
+	return nil
 }
 
 // validateTuning checks defaults.runner, polling and indexing.

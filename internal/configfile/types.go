@@ -220,6 +220,31 @@ const (
 	DefaultPollLookback = 24 * time.Hour
 )
 
+// Tool is a command-line tool a runner pod mounts from an image, read-only,
+// for the agent's run tool (ADR-0011). The runner image's own tools (curl,
+// fd and rg in the -tools image) need no entry.
+type Tool struct {
+	// Name identifies the tool; it names the pod volume.
+	Name string `yaml:"name"`
+	// Image is the image the tool comes from; pin it by digest.
+	Image string `yaml:"image"`
+	// Path is the directory inside the image that holds the binaries; it
+	// goes first on the runner's PATH. Default "/". The binaries must be
+	// statically linked: the default runner image has no libc.
+	Path string `yaml:"path,omitempty"`
+	// Commands are the binaries the tool provides, the names agent.commands
+	// allows; default the tool's name.
+	Commands []string `yaml:"commands,omitempty"`
+}
+
+// Provides lists the commands the tool puts on the runner's PATH.
+func (t Tool) Provides() []string {
+	if len(t.Commands) == 0 {
+		return []string{t.Name}
+	}
+	return t.Commands
+}
+
 // Indexing tunes how repositories are onboarded into the embedding index.
 type Indexing struct {
 	// OnboardWindow is how many onboarding index jobs the leader keeps
@@ -477,6 +502,7 @@ type File struct {
 	Defaults  Defaults            `yaml:"defaults,omitempty"`
 	Polling   Polling             `yaml:"polling,omitempty"`
 	Indexing  Indexing            `yaml:"indexing,omitempty"`
+	Tools     []Tool              `yaml:"tools,omitempty"`
 	Retention Retention           `yaml:"retention,omitempty"`
 	Egress    Egress              `yaml:"egress,omitempty"`
 	Web       Web                 `yaml:"web,omitempty"`

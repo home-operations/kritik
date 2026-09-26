@@ -697,6 +697,54 @@ defaults:
 	})
 }
 
+// TestTools checks the tool catalog: what a run allowed some commands
+// mounts, and the names, images, paths and commands load refuses.
+func TestTools(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	f, err := Parse([]byte(`
+tools:
+  - { name: helm, image: registry.example/helm:3, path: /usr/bin }
+  - { name: flux-tools, image: registry.example/flux:2, commands: [flux, flate] }
+` + minimal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := func(ts []Tool) []string {
+		out := make([]string, 0, len(ts))
+		for _, x := range ts {
+			out = append(out, x.Name)
+		}
+		return out
+	}
+	if got := names(f.ToolsFor([]string{"curl", "flate"})); !slices.Equal(got, []string{"flux-tools"}) {
+		t.Fatalf("ToolsFor(curl, flate) = %v, want flux-tools", got)
+	}
+	if got := names(f.ToolsFor([]string{"helm", "flux"})); !slices.Equal(got, []string{"helm", "flux-tools"}) {
+		t.Fatalf("ToolsFor(helm, flux) = %v", got)
+	}
+	if got := f.ToolsFor([]string{"curl", "rg"}); got != nil {
+		t.Fatalf("ToolsFor(curl, rg) = %v, want nil: the runner image provides those", got)
+	}
+
+	refused := map[string]string{
+		"{ name: Helm, image: x }":                                              "must be lowercase",
+		"{ name: helm, image: x }, { name: helm, image: y }":                    `"helm" is listed twice`,
+		"{ name: helm }":                                                        "tools[0].image is required",
+		"{ name: helm, image: x, path: usr/bin }":                               "must be a clean absolute path",
+		"{ name: helm, image: x, path: /usr/../etc }":                           "must be a clean absolute path",
+		"{ name: helm, image: x, commands: [bin/helm] }":                        "must be a bare command name",
+		"{ name: helm, image: x }, { name: helm2, image: y, commands: [helm] }": `which tool "helm" already provides`,
+	}
+	for list, want := range refused {
+		t.Run(list, func(t *testing.T) {
+			if _, err := Parse([]byte("tools: [" + list + "]\n" + minimal)); err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("Parse = %v, want an error containing %q", err, want)
+			}
+		})
+	}
+}
+
 func TestRepositoryModeAgentReview(t *testing.T) {
 	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")

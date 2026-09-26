@@ -2,6 +2,8 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-25
+- **Amended by:** [ADR-0011](0011-runner-tool-images.md), which lets the
+  `run` tool's binaries of §2.2 also come from image volumes.
 - **Amends:** [ADR-0003](0003-forgejo-agentic-review.md) §2.6 (the agent's
   tools) and §2.9 (the runner pod's network); builds on
   [ADR-0004](0004-model-gateway.md), whose gateway becomes the runner's
