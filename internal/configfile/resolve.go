@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"reflect"
 	"slices"
 	"time"
 )
@@ -61,24 +62,72 @@ func (f *File) Settings(t *Tenant, installation, repo string) Settings {
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
 	s.apply(&t.Overrides)
 	s.Limits = s.Limits.overlay(t.Limits)
-	for i := range t.Repositories {
-		r := &t.Repositories[i]
-		if r.Name != repo {
-			continue
-		}
-		if in := f.InstallationFor(t, r); in == nil || in.Name != installation {
-			continue
-		}
+	if r := f.repositoryEntry(t, installation, repo); r != nil {
 		if r.Enabled != nil {
 			s.Enabled = *r.Enabled
 		}
 		s.apply(&r.Overrides)
-		break
 	}
 	if s.Limits.Concurrency == 0 {
 		s.Limits.Concurrency = DefaultConcurrency
 	}
 	return s
+}
+
+// repositoryEntry is the tenant's entry for the repository "owner/repo"
+// reached through the named installation, nil when it lists none.
+func (f *File) repositoryEntry(t *Tenant, installation, repo string) *Repository {
+	for i := range t.Repositories {
+		r := &t.Repositories[i]
+		if r.Name != repo {
+			continue
+		}
+		if in := f.InstallationFor(t, r); in != nil && in.Name == installation {
+			return r
+		}
+	}
+	return nil
+}
+
+// Source is the layer a setting's value comes from.
+type Source string
+
+// Sources of a setting.
+const (
+	SourceDefault    Source = "default"
+	SourceFile       Source = "file"
+	SourceDashboard  Source = "dashboard"
+	SourceRepository Source = "repository"
+)
+
+// Sources says, for each setting the policy table lets the operator write,
+// where the settings Settings resolves for the same repository take it
+// from: the author of the narrowest scope that writes it, the file for
+// the defaults, or the built-in default. Ignore globs come from every
+// scope; the narrowest that adds some is given.
+func (f *File) Sources(t *Tenant, installation, repo string) map[string]Source {
+	type scope struct {
+		spec   any
+		source Source
+	}
+	origin := Source(t.Origin())
+	scopes := []scope{{&f.Defaults, SourceFile}, {t, origin}}
+	if r := f.repositoryEntry(t, installation, repo); r != nil {
+		scopes = append(scopes, scope{r, origin})
+	}
+	out := map[string]Source{}
+	for _, p := range Policies {
+		if len(p.Scopes) == 0 {
+			continue
+		}
+		out[p.Key] = SourceDefault
+		for _, sc := range scopes {
+			if v, ok := SpecValue(sc.spec, p.Key); ok && !reflect.ValueOf(v).IsZero() {
+				out[p.Key] = sc.source
+			}
+		}
+	}
+	return out
 }
 
 // apply lays one scope's overrides over s: a field the scope writes

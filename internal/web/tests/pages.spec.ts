@@ -54,6 +54,22 @@ test('repositories filter and repository detail', async ({ page }) => {
   await expect(page.locator('#repo-pulls').locator('../..')).toContainText(g.pull.title);
 });
 
+test('repository settings say where each comes from and what .kritik.yaml chose', async ({ page }) => {
+  await page.goto(`/${T}/repos/alpha/one`);
+  const settings = page.locator('#repo-settings').locator('../..');
+  const rc = g.repoDetail.repoConfig!;
+  // The golden file chose another review model; the operator's is shown beside it.
+  await expect(settings.getByText(rc.settings.models.review, { exact: true })).toBeVisible();
+  await expect(settings).toContainText(`(.kritik.yaml; the operator's is ${g.repoDetail.settings.models.review})`);
+  await expect(settings).toContainText(`${g.repoDetail.settings.mode} (dashboard)`);
+  await expect(settings).toContainText('Settle 30s (default)');
+  const file = page.locator('#repo-file').locator('../..');
+  await expect(file).toContainText(rc.filter);
+  await expect(file).toContainText(rc.dropped[0]!);
+  await expect(file.getByRole('link', { name: 'the last review' })).toHaveAttribute('href', `#/t/${g.SLUG}/reviews/${rc.reviewId}`);
+  await expect(page.locator('#repo-bounds').locator('../..')).toContainText(g.repoDetail.settings.allow.models!.join(', '));
+});
+
 test('a repository several installations hold asks which one, then loads it', async ({ page }) => {
   const detail = new RegExp(`/api/v1/tenants/${g.SLUG}/repos/alpha/one$`);
   await page.route(

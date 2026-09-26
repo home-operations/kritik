@@ -42,6 +42,25 @@ var goldenRepo = Repository{
 	LastReview: &ReviewRef{ID: "rev-1", Status: store.ReviewCompleted, CreatedAt: t0},
 }
 
+var goldenRepoSettings = RepoSettings{
+	Enabled: true, Mode: configfile.ReviewAgentic, Models: Models{Review: "openrouter/acme-large"}, Filter: "true", Forks: false,
+	Ignore: []string{"vendor/**"}, SettleSeconds: 30, MaxDeltaFiles: 40,
+	Review: ReviewBlock{
+		Instructions: []string{"docs/review.md"}, RequireSuggestedFix: true,
+		Templates: configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, MinSeverity: configfile.SeverityImportant, InlineComments: true,
+		Context: []configfile.ContextFile{{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}},
+	},
+	Agent: AgentLimits{
+		MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, TimeoutSeconds: 1200, Commands: []string{"go"},
+		CommandTimeoutSeconds: 30,
+	},
+	Limits: Limits{Concurrency: 2},
+	Allow: AllowBounds{
+		Modes: []configfile.ReviewMode{configfile.ReviewAgentic}, Models: []configfile.ModelRef{"openrouter/acme-large", "openrouter/acme-small"},
+		Agent: AllowAgentBounds{MaxSteps: new(60)}, SettleSeconds: new(int64(600)),
+	},
+}
+
 var goldenIndexRun = IndexRun{
 	ID: "ix-1", Repository: "alpha/one", CommitSHA: "def456", BaseSHA: "", EmbedModel: "embed", Mode: "full",
 	Status: store.IndexCompleted, Trigger: "push", ChunkCount: 12, Error: "", CreatedAt: t0, FinishedAt: &t1,
@@ -87,15 +106,19 @@ var goldens = map[string]any{
 	"repository": goldenRepo,
 	"repo_detail": RepoDetail{
 		Repository: goldenRepo,
-		Settings: RepoSettings{
-			Enabled: true, Mode: configfile.ReviewAgentic, Models: Models{Review: "openrouter/acme-large"}, Filter: "true", Forks: false,
-			Ignore: []string{"vendor/**"}, SettleSeconds: 30, MaxDeltaFiles: 40,
-			Review: ReviewBlock{Instructions: []string{"docs/review.md"}, RequireSuggestedFix: true},
-			Agent: AgentLimits{
-				MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, TimeoutSeconds: 1200, Commands: []string{"go"},
-				CommandTimeoutSeconds: 30,
-			},
-			Limits: Limits{Concurrency: 2},
+		Settings:   goldenRepoSettings,
+		Sources: map[string]configfile.Source{
+			"mode": configfile.SourceDashboard, "models.review": configfile.SourceFile, "settle": configfile.SourceDefault,
+		},
+		RepoConfig: &RepoConfig{
+			ReviewID: "rev-1", Commit: "def456", Found: true,
+			Settings: func() RepoSettings {
+				s := goldenRepoSettings
+				s.Models.Review = "openrouter/acme-small"
+				return s
+			}(),
+			Filter: "!pr.draft", SkipPaths: []string{"docs/**"},
+			Dropped: []string{`.kritik.yaml: mode "single" was dropped; allowed: agentic`},
 		},
 		IndexRuns: []IndexRun{goldenIndexRun},
 	},

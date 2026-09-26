@@ -307,6 +307,7 @@ func testReadEndpointsScopeToTenant(t *testing.T, e *apiEnv) {
 		{a, `"slug":"webapi-a"`},
 		{a + "/repos", `"fullName":"wa/one"`},
 		{a + "/repos/wa/one", `"activeCommit":"commit7"`},
+		{a + "/repos/wa/one", `"commit":"base7","found":true`},
 		{a + "/pulls", `"title":"PR of webapi-a"`},
 		{a + "/pulls?state=all&repo=wa/one&outcome=completed&q=webapi-a", `"title":"PR of webapi-a"`},
 		{a + "/pulls/wa/one/7", `"title":"PR of webapi-a"`},

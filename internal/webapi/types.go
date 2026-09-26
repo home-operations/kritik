@@ -174,12 +174,36 @@ type AgentLimits struct {
 
 // ReviewBlock is a repository's review instructions and options.
 type ReviewBlock struct {
-	Instructions        []string `json:"instructions"`
-	RequireSuggestedFix bool     `json:"requireSuggestedFix"`
+	Instructions        []string                   `json:"instructions"`
+	RequireSuggestedFix bool                       `json:"requireSuggestedFix"`
+	Templates           configfile.ReviewTemplates `json:"templates"`
+	MinSeverity         string                     `json:"minSeverity"`
+	InlineComments      bool                       `json:"inlineComments"`
+	Context             []configfile.ContextFile   `json:"context"`
 }
 
-// RepoSettings are a repository's effective settings as the file and the
-// dashboard resolve them; the in-repo .kritik.yaml is not included.
+// AllowBounds are what a repository's .kritik.yaml may choose; a bound
+// that is null leaves it only the operator's own value, or for a limit or
+// the settle time one at or below it.
+type AllowBounds struct {
+	Modes    []configfile.ReviewMode `json:"modes"`
+	Models   []configfile.ModelRef   `json:"models"`
+	Commands []string                `json:"commands"`
+	Agent    AllowAgentBounds        `json:"agent"`
+	// SettleSeconds is the most settle time a repository may choose.
+	SettleSeconds *int64 `json:"settleSeconds"`
+}
+
+// AllowAgentBounds cap each agent limit a repository may set.
+type AllowAgentBounds struct {
+	MaxSteps           *int   `json:"maxSteps"`
+	MaxToolOutputBytes *int   `json:"maxToolOutputBytes"`
+	MaxTokens          *int64 `json:"maxTokens"`
+	TimeoutSeconds     *int64 `json:"timeoutSeconds"`
+}
+
+// RepoSettings are a repository's settings as they resolve: the
+// operator's, or with the in-repo .kritik.yaml applied (RepoConfig).
 type RepoSettings struct {
 	Enabled       bool                  `json:"enabled"`
 	Mode          configfile.ReviewMode `json:"mode"`
@@ -192,6 +216,28 @@ type RepoSettings struct {
 	Review        ReviewBlock           `json:"review"`
 	Agent         AgentLimits           `json:"agent"`
 	Limits        Limits                `json:"limits"`
+	Allow         AllowBounds           `json:"allow"`
+}
+
+// RepoConfig is the repository's .kritik.yaml as the last review that ran
+// read it, applied to the operator's settings as they are now.
+type RepoConfig struct {
+	ReviewID string `json:"reviewId"`
+	// Commit is the merge base the review read the file at.
+	Commit string `json:"commit"`
+	// Found is false when there was no file there.
+	Found bool `json:"found"`
+	// Settings are the repository's settings with the file applied.
+	Settings RepoSettings `json:"settings"`
+	// Filter is the file's own filter, ANDed with the operator's, and
+	// SkipPaths its skip.onlyPaths.
+	Filter    string   `json:"filter"`
+	SkipPaths []string `json:"skipPaths"`
+	// Dropped are the file's values outside the operator's bounds; the
+	// operator's value applies for each.
+	Dropped []string `json:"dropped"`
+	// Ignored is why the file was ignored as a whole, when it was.
+	Ignored string `json:"ignored,omitempty"`
 }
 
 // IndexRun is one index generation or step.
@@ -211,10 +257,15 @@ type IndexRun struct {
 }
 
 // RepoDetail is one repository, its settings and recent index runs.
+// Sources says, by the policy table's keys, which layer each of the
+// operator's settings comes from: file, dashboard or default. RepoConfig
+// is null until a review has read the repository's .kritik.yaml.
 type RepoDetail struct {
 	Repository
-	Settings  RepoSettings `json:"settings"`
-	IndexRuns []IndexRun   `json:"indexRuns"`
+	Settings   RepoSettings                 `json:"settings"`
+	Sources    map[string]configfile.Source `json:"sources"`
+	RepoConfig *RepoConfig                  `json:"repoConfig"`
+	IndexRuns  []IndexRun                   `json:"indexRuns"`
 }
 
 // Label is a pull request label.

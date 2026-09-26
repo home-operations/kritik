@@ -30,7 +30,20 @@
     "maxDeltaFiles": 40,
     "review": {
       "instructions": ["docs/review.md"],
-      "requireSuggestedFix": true
+      "requireSuggestedFix": true,
+      "templates": {
+        "Summary": "docs/summary.tmpl",
+        "Inline": ""
+      },
+      "minSeverity": "important",
+      "inlineComments": true,
+      "context": [
+        {
+          "path": "db/schema.sql",
+          "description": "the schema",
+          "paths": ["**/*.sql"]
+        }
+      ]
     },
     "agent": {
       "maxSteps": 60,
@@ -44,7 +57,87 @@
       "concurrency": 2,
       "reviewsPerDay": 0,
       "tokensPerMonth": 0
+    },
+    "allow": {
+      "modes": ["agentic"],
+      "models": ["openrouter/acme-large", "openrouter/acme-small"],
+      "commands": null,
+      "agent": {
+        "maxSteps": 60,
+        "maxToolOutputBytes": null,
+        "maxTokens": null,
+        "timeoutSeconds": null
+      },
+      "settleSeconds": 600
     }
+  },
+  "sources": {
+    "mode": "dashboard",
+    "models.review": "file",
+    "settle": "default"
+  },
+  "repoConfig": {
+    "reviewId": "rev-1",
+    "commit": "def456",
+    "found": true,
+    "settings": {
+      "enabled": true,
+      "mode": "agentic",
+      "models": {
+        "review": "openrouter/acme-small",
+        "fallback": ""
+      },
+      "filter": "true",
+      "forks": false,
+      "ignore": ["vendor/**"],
+      "settleSeconds": 30,
+      "maxDeltaFiles": 40,
+      "review": {
+        "instructions": ["docs/review.md"],
+        "requireSuggestedFix": true,
+        "templates": {
+          "Summary": "docs/summary.tmpl",
+          "Inline": ""
+        },
+        "minSeverity": "important",
+        "inlineComments": true,
+        "context": [
+          {
+            "path": "db/schema.sql",
+            "description": "the schema",
+            "paths": ["**/*.sql"]
+          }
+        ]
+      },
+      "agent": {
+        "maxSteps": 60,
+        "maxToolOutputBytes": 32768,
+        "maxTokens": 4000000,
+        "timeoutSeconds": 1200,
+        "commands": ["go"],
+        "commandTimeoutSeconds": 30
+      },
+      "limits": {
+        "concurrency": 2,
+        "reviewsPerDay": 0,
+        "tokensPerMonth": 0
+      },
+      "allow": {
+        "modes": ["agentic"],
+        "models": ["openrouter/acme-large", "openrouter/acme-small"],
+        "commands": null,
+        "agent": {
+          "maxSteps": 60,
+          "maxToolOutputBytes": null,
+          "maxTokens": null,
+          "timeoutSeconds": null
+        },
+        "settleSeconds": 600
+      }
+    },
+    "filter": "!pr.draft",
+    "skipPaths": ["docs/**"],
+    "dropped": [".kritik.yaml: mode \"single\" was dropped; allowed: agentic"]
   },
   "indexRuns": [
     {
