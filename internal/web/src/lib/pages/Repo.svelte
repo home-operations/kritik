@@ -3,7 +3,7 @@
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { duration, indexTone, shortSha, bytes } from '../format';
-  import type { Page, Pull, RepoDetail } from '../types';
+  import type { ConfigSource, Page, Pull, RepoDetail, RepoSettings } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
@@ -44,7 +44,83 @@
   );
 
   const list = (xs: string[]) => (xs.length ? xs.join(', ') : '—');
+  const yes = (b: boolean) => (b ? 'yes' : 'no');
+  const unlimited = (n: number) => (n ? String(n) : 'unlimited');
+
+  // One setting as the page shows it: its label, the policy key its source
+  // is reported under, and how to show its value.
+  interface Row {
+    label: string;
+    key: string;
+    value: (s: RepoSettings) => string;
+    mono?: boolean;
+  }
+  const settingRows: Row[] = [
+    { label: 'Mode', key: 'mode', value: (s) => s.mode },
+    { label: 'Review model', key: 'models.review', value: (s) => s.models.review || '—', mono: true },
+    { label: 'Fallback model', key: 'models.fallback', value: (s) => s.models.fallback || '—', mono: true },
+    { label: 'Filter', key: 'filter', value: (s) => s.filter || '—', mono: true },
+    { label: 'Forks', key: 'forks', value: (s) => (s.forks ? 'reviewed' : 'skipped') },
+    { label: 'Ignore', key: 'ignore', value: (s) => list(s.ignore), mono: true },
+    { label: 'Settle', key: 'settle', value: (s) => duration(s.settleSeconds * 1000) || '0s' },
+    { label: 'Max delta files', key: 'incremental.maxDeltaFiles', value: (s) => String(s.maxDeltaFiles) },
+    { label: 'Instructions', key: 'review.instructions', value: (s) => list(s.review.instructions), mono: true },
+    { label: 'Context files', key: 'review.context', value: (s) => list(s.review.context.map((c) => c.path)), mono: true },
+    { label: 'Require suggested fix', key: 'review.requireSuggestedFix', value: (s) => yes(s.review.requireSuggestedFix) },
+    { label: 'Inline comments', key: 'review.inlineComments', value: (s) => yes(s.review.inlineComments) },
+    { label: 'Inline severity floor', key: 'review.minSeverity', value: (s) => s.review.minSeverity || 'every finding' },
+    { label: 'Concurrency', key: 'limits', value: (s) => unlimited(s.limits.concurrency) },
+    { label: 'Reviews / day', key: 'limits', value: (s) => unlimited(s.limits.reviewsPerDay) },
+    { label: 'Tokens / month', key: 'limits', value: (s) => unlimited(s.limits.tokensPerMonth) },
+  ];
+  const agentRows: Row[] = [
+    { label: 'Max steps', key: 'agent.maxSteps', value: (s) => String(s.agent.maxSteps) },
+    { label: 'Max tool output', key: 'agent.maxToolOutputBytes', value: (s) => bytes(s.agent.maxToolOutputBytes) },
+    { label: 'Max tokens', key: 'agent.maxTokens', value: (s) => String(s.agent.maxTokens) },
+    { label: 'Timeout', key: 'agent.timeout', value: (s) => duration(s.agent.timeoutSeconds * 1000) },
+    { label: 'Commands', key: 'agent.commands', value: (s) => list(s.agent.commands), mono: true },
+    { label: 'Command timeout', key: 'agent.commandTimeout', value: (s) => duration(s.agent.commandTimeoutSeconds * 1000) },
+  ];
+  const sourceLabel: Record<ConfigSource, string> = {
+    default: 'default',
+    file: 'config file',
+    dashboard: 'dashboard',
+    repository: '.kritik.yaml',
+  };
+
+  // The bounds a repository's .kritik.yaml chooses within, each "own" when
+  // the operator set none.
+  function bounds(s: RepoSettings): { label: string; value: string }[] {
+    const a = s.allow;
+    const most = (n: number | null, own: string) => (n === null ? `at most the operator's ${own}` : `at most ${n}`);
+    return [
+      { label: 'Modes', value: a.modes ? list(a.modes) : `the operator's own (${s.mode})` },
+      { label: 'Models', value: a.models ? list(a.models) : "the operator's own" },
+      { label: 'Commands', value: a.commands ? list(a.commands) : `some of the operator's (${list(s.agent.commands)})` },
+      { label: 'Max steps', value: most(a.agent.maxSteps, String(s.agent.maxSteps)) },
+      { label: 'Max tokens', value: most(a.agent.maxTokens, String(s.agent.maxTokens)) },
+      {
+        label: 'Settle',
+        value: a.settleSeconds === null ? `at most the operator's ${duration(s.settleSeconds * 1000) || '0s'}` : `at most ${duration(a.settleSeconds * 1000) || '0s'}`,
+      },
+    ];
+  }
 </script>
+
+{#snippet setting(d: RepoDetail, r: Row)}
+  {@const eff = d.repoConfig?.settings ?? d.settings}
+  {@const value = r.value(eff)}
+  {@const own = r.value(d.settings)}
+  <dt>{r.label}</dt>
+  <dd>
+    <span class:mono={r.mono}>{value}</span>
+    {#if value !== own}
+      <span class="muted small">({sourceLabel.repository}; the operator's is <span class:mono={r.mono}>{own}</span>)</span>
+    {:else}
+      <span class="muted small">({sourceLabel[d.sources[r.key] ?? 'default']})</span>
+    {/if}
+  </dd>
+{/snippet}
 
 <main class="page">
   <div class="page-inner">
@@ -70,37 +146,66 @@
       <StateView {res} retry={() => res.load()}>
         {#snippet children(d)}
           {@const s = d.settings}
+          {@const rc = d.repoConfig}
           <div class="grid-2">
             <section class="panel" aria-labelledby="repo-settings">
               <header class="panel-head"><h2 id="repo-settings">Effective settings</h2></header>
               <dl class="deflist">
-                <dt>Enabled</dt><dd>{s.enabled ? 'yes' : 'no'} <span class="muted small">({d.managedBy})</span></dd>
+                <dt>Enabled</dt><dd>{s.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'} <span class="muted small">({d.managedBy})</span></dd>
                 <dt>Installation</dt><dd class="mono">{d.installation}</dd>
                 <dt>Default branch</dt><dd class="mono">{d.defaultBranch}</dd>
-                <dt>Mode</dt><dd>{s.mode}</dd>
-                <dt>Review model</dt><dd class="mono">{s.models.review || '—'}</dd>
-                <dt>Fallback model</dt><dd class="mono">{s.models.fallback || '—'}</dd>
-                <dt>Filter</dt><dd class="mono">{s.filter || '—'}</dd>
-                <dt>Forks</dt><dd>{s.forks ? 'reviewed' : 'skipped'}</dd>
-                <dt>Ignore</dt><dd class="mono">{list(s.ignore)}</dd>
-                <dt>Settle</dt><dd>{duration(s.settleSeconds * 1000) || '0s'}</dd>
-                <dt>Max delta files</dt><dd>{s.maxDeltaFiles}</dd>
-                <dt>Instructions</dt><dd class="mono">{list(s.review.instructions)}</dd>
-                <dt>Require suggested fix</dt><dd>{s.review.requireSuggestedFix ? 'yes' : 'no'}</dd>
-                <dt>Concurrency</dt><dd>{s.limits.concurrency || 'unlimited'}</dd>
-                <dt>Reviews / day</dt><dd>{s.limits.reviewsPerDay || 'unlimited'}</dd>
-                <dt>Tokens / month</dt><dd>{s.limits.tokensPerMonth || 'unlimited'}</dd>
+                {#each settingRows as r (r.label)}
+                  {@render setting(d, r)}
+                {/each}
               </dl>
             </section>
             <section class="panel" aria-labelledby="repo-agent">
               <header class="panel-head"><h2 id="repo-agent">Agent limits</h2></header>
               <dl class="deflist">
-                <dt>Max steps</dt><dd>{s.agent.maxSteps}</dd>
-                <dt>Max tool output</dt><dd>{bytes(s.agent.maxToolOutputBytes)}</dd>
-                <dt>Max tokens</dt><dd>{s.agent.maxTokens}</dd>
-                <dt>Timeout</dt><dd>{duration(s.agent.timeoutSeconds * 1000)}</dd>
-                <dt>Commands</dt><dd class="mono">{list(s.agent.commands)}</dd>
-                <dt>Command timeout</dt><dd>{duration(s.agent.commandTimeoutSeconds * 1000)}</dd>
+                {#each agentRows as r (r.label)}
+                  {@render setting(d, r)}
+                {/each}
+              </dl>
+            </section>
+          </div>
+
+          <div class="grid-2">
+            <section class="panel" aria-labelledby="repo-file">
+              <header class="panel-head"><h2 id="repo-file" class="mono">.kritik.yaml</h2></header>
+              {#if !rc}
+                <p class="state-msg">No review has read it yet.</p>
+              {:else}
+                <dl class="deflist">
+                  <dt>Read at</dt>
+                  <dd>
+                    <span class="mono" title={rc.commit}>{shortSha(rc.commit)}</span>
+                    <span class="muted small">(merge base of <a href={href({ name: 'review', slug, id: rc.reviewId })}>the last review</a>)</span>
+                  </dd>
+                  {#if rc.found}
+                    <dt>Filter</dt><dd class="mono">{rc.filter || '—'} <span class="muted small">(ANDed with the operator's)</span></dd>
+                    <dt>Skip when only these change</dt><dd class="mono">{list(rc.skipPaths)}</dd>
+                  {/if}
+                </dl>
+                {#if !rc.found}
+                  <p class="state-msg">There was no .kritik.yaml at that commit.</p>
+                {/if}
+                {#if rc.ignored}
+                  <p class="notice" role="note">Ignored as a whole: {rc.ignored}</p>
+                {/if}
+                {#if rc.dropped.length}
+                  <p class="small">Values outside the operator's bounds, where the operator's apply instead:</p>
+                  <ul class="small">
+                    {#each rc.dropped as note (note)}<li>{note}</li>{/each}
+                  </ul>
+                {/if}
+              {/if}
+            </section>
+            <section class="panel" aria-labelledby="repo-bounds">
+              <header class="panel-head"><h2 id="repo-bounds">What .kritik.yaml may choose</h2></header>
+              <dl class="deflist">
+                {#each bounds(s) as b (b.label)}
+                  <dt>{b.label}</dt><dd class="mono">{b.value}</dd>
+                {/each}
               </dl>
             </section>
           </div>

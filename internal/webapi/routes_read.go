@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -254,33 +256,90 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope)
 	ctx := r.Context()
 	var row store.RepoRow
 	var runs []store.IndexRunRow
+	var file *store.RepoFileRow
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		var err error
 		if row, err = findRepo(ctx, tx, r); err != nil {
 			return err
 		}
-		runs, _, err = store.ListIndexRuns(ctx, tx, row.ID, store.Page{Limit: recentIndexRuns})
-		return err
+		if runs, _, err = store.ListIndexRuns(ctx, tx, row.ID, store.Page{Limit: recentIndexRuns}); err != nil {
+			return err
+		}
+		f, err := store.LastRepoFile(ctx, tx, row.ID)
+		switch {
+		case err == nil:
+			file = &f
+		case !errors.Is(err, store.ErrNotFound):
+			return err
+		}
+		return nil
 	}); err != nil {
 		return err
 	}
 	settings := t.file.Settings(t.tenant, row.Installation, row.FullName)
-	d := RepoDetail{Repository: repository(row), Settings: repoSettings(settings), IndexRuns: indexRuns(runs)}
+	d := RepoDetail{
+		Repository: repository(row), Settings: repoSettings(settings), Sources: t.file.Sources(t.tenant, row.Installation, row.FullName),
+		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
+	}
 	writeJSON(w, http.StatusOK, d)
 	return nil
+}
+
+// repoConfig applies the .kritik.yaml a review read to the operator's
+// settings as they are now; nil when no review has read one.
+func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfig {
+	if row == nil {
+		return nil
+	}
+	var doc []byte
+	if row.Doc != nil {
+		doc = []byte(*row.Doc)
+	}
+	m, err := repoconfig.Merge(doc, settings)
+	out := &RepoConfig{
+		ReviewID: row.ReviewID, Commit: row.Commit, Found: row.Doc != nil, Settings: repoSettings(m.Settings),
+		SkipPaths: nonNil(m.Skip.OnlyPaths), Dropped: nonNil(m.Dropped),
+	}
+	if m.InRepoFilter != nil {
+		out.Filter = m.InRepoFilter.Source()
+	}
+	if err != nil {
+		out.Ignored = err.Error()
+	}
+	return out
 }
 
 func repoSettings(s configfile.Settings) RepoSettings {
 	return RepoSettings{
 		Enabled: s.Enabled, Mode: s.Mode, Models: models(s.Models), Filter: filterSource(s), Forks: s.Forks,
 		Ignore: nonNil(slices.Clone(s.Ignore)), SettleSeconds: int64(s.Settle.Seconds()), MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
-		Review: ReviewBlock{Instructions: nonNil(s.Review.Instructions), RequireSuggestedFix: s.Review.RequireSuggestedFix},
+		Review: ReviewBlock{
+			Instructions: nonNil(s.Review.Instructions), RequireSuggestedFix: s.Review.RequireSuggestedFix, Templates: s.Review.Templates,
+			MinSeverity: s.Review.MinSeverity, InlineComments: s.Review.InlineComments, Context: nonNil(s.Review.Context),
+		},
 		Agent: AgentLimits{
 			MaxSteps: s.Agent.MaxSteps, MaxToolOutputBytes: s.Agent.MaxToolOutputBytes, MaxTokens: s.Agent.MaxTokens,
 			TimeoutSeconds: int64(s.Agent.Timeout.Seconds()), Commands: nonNil(s.Agent.Commands),
 			CommandTimeoutSeconds: int64(s.Agent.CommandTimeout.Seconds()),
 		},
 		Limits: limits(s.Limits),
+		Allow:  allowBounds(s.Allow),
+	}
+}
+
+func allowBounds(a configfile.Allow) AllowBounds {
+	seconds := func(d *time.Duration) *int64 {
+		if d == nil {
+			return nil
+		}
+		return new(int64(d.Seconds()))
+	}
+	return AllowBounds{
+		Modes: a.Modes, Models: a.Models, Commands: a.Commands, SettleSeconds: seconds(a.Settle),
+		Agent: AllowAgentBounds{
+			MaxSteps: a.Agent.MaxSteps, MaxToolOutputBytes: a.Agent.MaxToolOutputBytes, MaxTokens: a.Agent.MaxTokens,
+			TimeoutSeconds: seconds(a.Agent.Timeout),
+		},
 	}
 }
 

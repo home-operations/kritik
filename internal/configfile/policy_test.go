@@ -2,6 +2,7 @@ package configfile
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -36,5 +37,34 @@ func TestSpecValue(t *testing.T) {
 	}
 	if _, ok := SpecValue(&Tenant{}, "enabled"); ok {
 		t.Fatal("a tenant has no enabled key")
+	}
+}
+
+func TestSources(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	f, err := Parse([]byte("defaults:\n  settle: 2m\n  agent: { maxSteps: 9 }\n" + strings.Replace(minimal, "slug: acme",
+		"slug: acme\n    mode: agentic\n    repositories: [{ name: acme/x, settle: 0s, enabled: false }]", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := f.Sources(&f.Tenants[0], "acme-bot", "acme/x")
+	for key, want := range map[string]Source{
+		"settle": SourceFile, "mode": SourceFile, "agent.maxSteps": SourceFile, "enabled": SourceFile,
+		"agent.maxTokens": SourceDefault, "models.review": SourceDefault, "ignore": SourceDefault,
+	} {
+		if s[key] != want {
+			t.Errorf("%s from %s, want %s", key, s[key], want)
+		}
+	}
+	if _, ok := s["skip.onlyPaths"]; ok {
+		t.Error("a setting only the repository has has no operator source")
+	}
+	dash, err := DecodeTenant(DashboardTenant{Slug: "beta", Spec: []byte(`{"slug":"beta","filter":"true","installations":[{"name":"b"}]}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := f.Sources(&dash, "b", "beta/x"); s["filter"] != SourceDashboard || s["settle"] != SourceFile {
+		t.Fatalf("dashboard tenant sources = %v", s)
 	}
 }

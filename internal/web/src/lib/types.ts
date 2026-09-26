@@ -180,9 +180,34 @@ export interface AgentLimits {
   commandTimeoutSeconds: number;
 }
 
+export interface ContextFile {
+  path: string;
+  description: string;
+  paths?: string[];
+}
+
 export interface ReviewBlock {
   instructions: string[];
   requireSuggestedFix: boolean;
+  templates: { summary?: string; inline?: string };
+  minSeverity: '' | 'nit' | 'important';
+  inlineComments: boolean;
+  context: ContextFile[];
+}
+
+// What a repository's .kritik.yaml may choose; a null bound leaves it the
+// operator's own value, or a limit or settle time at or below it.
+export interface AllowBounds {
+  modes: ReviewMode[] | null;
+  models: string[] | null;
+  commands: string[] | null;
+  agent: {
+    maxSteps: number | null;
+    maxToolOutputBytes: number | null;
+    maxTokens: number | null;
+    timeoutSeconds: number | null;
+  };
+  settleSeconds: number | null;
 }
 
 export interface RepoSettings {
@@ -197,6 +222,22 @@ export interface RepoSettings {
   review: ReviewBlock;
   agent: AgentLimits;
   limits: Limits;
+  allow: AllowBounds;
+}
+
+export type ConfigSource = 'default' | 'file' | 'dashboard' | 'repository';
+
+// The repository's .kritik.yaml as the last review that ran read it, at
+// its merge base, applied to the operator's settings as they are now.
+export interface RepoConfig {
+  reviewId: string;
+  commit: string;
+  found: boolean;
+  settings: RepoSettings;
+  filter: string;
+  skipPaths: string[];
+  dropped: string[];
+  ignored?: string;
 }
 
 export interface IndexRun {
@@ -216,6 +257,9 @@ export interface IndexRun {
 
 export interface RepoDetail extends Repository {
   settings: RepoSettings;
+  // Where each of the operator's settings comes from, by policy key.
+  sources: Record<string, ConfigSource>;
+  repoConfig: RepoConfig | null;
   indexRuns: IndexRun[];
 }
 
