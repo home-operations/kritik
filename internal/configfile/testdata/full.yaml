@@ -36,7 +36,6 @@ tenants:
       reviewsPerDay: 200
     repositories:
       - name: home-operations/flate
-        konflate: https://konflate.example.org
         ignore:
           - "**/testdata/**"
         settle: 30s

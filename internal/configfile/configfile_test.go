@@ -81,7 +81,6 @@ func TestLoadFull(t *testing.T) {
 			forks    bool
 			conc     int
 			perDay   int
-			konflate string
 			settle   time.Duration
 			filterOK map[string]any // a PR the effective filter must accept
 			filterNo map[string]any // a PR the effective filter must reject
@@ -92,8 +91,8 @@ func TestLoadFull(t *testing.T) {
 				filterOK: SamplePR(), filterNo: with(SamplePR(), "draft", true),
 			},
 			{
-				name: "listed repo adds konflate", tenant: ho, repo: "home-operations/flate",
-				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200, konflate: "https://konflate.example.org",
+				name: "listed repo applies its own settle", tenant: ho, repo: "home-operations/flate",
+				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
 				settle:   30 * time.Second,
 				filterOK: SamplePR(),
 			},
@@ -117,7 +116,7 @@ func TestLoadFull(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				s := f.Settings(tt.tenant, tt.tenant.Installations[0].Name, tt.repo)
 				if s.Enabled != tt.enabled || s.Models.Review != tt.review || s.Forks != tt.forks ||
-					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay || s.Konflate != tt.konflate ||
+					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay ||
 					s.Settle != tt.settle {
 					t.Fatalf("Settings = %+v", s)
 				}

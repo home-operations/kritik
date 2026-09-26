@@ -308,7 +308,6 @@ type Repository struct {
 	Installation string        `yaml:"installation,omitempty"`
 	Enabled      *bool         `yaml:"enabled,omitempty"`
 	Filter       string        `yaml:"filter,omitempty"`
-	Konflate     string        `yaml:"konflate,omitempty"`
 	Ignore       []string      `yaml:"ignore,omitempty"`
 	Settle       time.Duration `yaml:"settle,omitempty"`
 	// Mode, Agent and Incremental are operator-only: the in-repo file
@@ -468,12 +467,11 @@ func (f *File) Hash() string { return f.hash }
 // Settings are the effective settings for one repository after defaults,
 // tenant and repository layers are merged.
 type Settings struct {
-	Enabled  bool
-	Models   Models
-	Filter   *prfilter.Program
-	Forks    bool
-	Limits   Limits
-	Konflate string
+	Enabled bool
+	Models  Models
+	Filter  *prfilter.Program
+	Forks   bool
+	Limits  Limits
 	// Ignore is DefaultIgnore plus the repository's own globs. The in-repo
 	// file's globs are unioned in by the caller that has the checkout.
 	Ignore []string
