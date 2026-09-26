@@ -117,7 +117,11 @@ login against the tenant's installations on the same host: the user is a
 member if they are the tenant's personal account or a member of its
 organization, and an admin if they are an organization owner or admin.
 The result is cached in `memberships` with `source=forge`. OIDC membership
-works by invitation: an invite names a verified email and a role.
+works by invitation: an invite names a verified email and a role; inviting
+an email that already has a membership on the tenant is refused with a
+`409` `already_member` rather than creating a second grant. An account can
+hold a `memberships` row per source (forge and invite) on the same tenant,
+and its effective role is the highest of the two (`Member.Role`).
 Operators are a file allowlist that can see and do everything, and are the
 only way to create a tenant.
 
@@ -252,12 +256,12 @@ branches on instead of adding a parallel condition.
 
 File-managed objects are read-only in the UI, and a dashboard repository
 can only be added under a dashboard-managed tenant. A slug or
-installation-name collision fails the merge: the web write that would
-cause it is rejected with a `422` carrying the path of the error. A
-colliding file edit, instead, is logged, the last good snapshot stays
-live, and the drift gauge rises. `ApplyConfig` (`internal/store/configsync.go`)
-writes `managed_by` from each tenant's origin, and never takes over a row
-with a different `managed_by`.
+installation-name collision with a file-managed tenant is rejected: the
+web write that would cause it gets a `409` `slug_taken` carrying the path
+of the error. A colliding file edit, instead, is logged, the last good
+snapshot stays live, and the drift gauge rises. `ApplyConfig`
+(`internal/store/configsync.go`) writes `managed_by` from each tenant's
+origin, and never takes over a row with a different `managed_by`.
 
 Git is already the source of truth for anything a file declares
 (ADR-0002 §2.6). Letting a dashboard write silently shadow or take over a
@@ -296,28 +300,29 @@ already declared, working with no configuration, while still giving an
 operator who wants a narrower or wider set of reachable hosts a way to say
 so.
 
-### 2.15 Runner, limits, agent and mode stay operator-only on a dashboard tenant
+### 2.15 Runner, limits, agent, mode and incremental stay operator-only on a dashboard tenant
 
 A dashboard tenant's `runner` and `limits` fields, and a dashboard-managed
-repository's `agent` and `mode` fields, can be set only by an instance
-operator, never by a tenant admin, through the web API; a tenant-admin
-request that includes one of them is rejected with a `422`. An operator
-may still set any of them for any tenant.
+repository's `agent`, `mode` and `incremental` fields, can be set only by
+an instance operator, never by a tenant admin, through the web API; a
+tenant-admin request that includes one of them is rejected with a `422`.
+An operator may still set any of them for any tenant.
 
 `limits` bounds what a tenant may spend and `runner` selects the pod a
-review runs in; `agent` chooses which agent reviews the pull request and
-`mode` how much of the result it may act on. Letting a tenant admin change
-any of the four would let one tenant unilaterally raise its own cost or
-its own runner's privilege past whatever the operator sized the instance
-for when the tenant was created.
+review runs in; `agent` chooses which agent reviews the pull request,
+`mode` how much of the result it may act on, and `incremental` how much of
+a pull request a re-review may skip re-covering. Letting a tenant admin
+change any of the five would let one tenant unilaterally raise its own
+cost or its own runner's privilege past whatever the operator sized the
+instance for when the tenant was created.
 
 ## 3. Security model
 
-| Role              | Scope                                                                                                                                        |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Instance operator | File allowlist. Sees and administers every tenant; the only way to create a tenant or set a tenant's `runner`, `limits`, `agent`, `mode`.    |
-| Tenant admin      | State-changing endpoints for their tenant(s), except `runner`, `limits`, and repository `agent`/`mode` (§2.15). Every write is audit-logged. |
-| Tenant member     | Read access to their tenant's own content.                                                                                                   |
+| Role              | Scope                                                                                                                                                      |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Instance operator | File allowlist. Sees and administers every tenant; the only way to create a tenant or set a tenant's `runner`, `limits`, `agent`, `mode`, `incremental`.   |
+| Tenant admin      | State-changing endpoints for their tenant(s), except `runner`, `limits`, and repository `agent`/`mode`/`incremental` (§2.15). Every write is audit-logged. |
+| Tenant member     | Read access to their tenant's own content.                                                                                                                 |
 
 Sessions, cookies and CSRF are as described in §2.7. Credentials are
 sealed with envelope encryption from `internal/sealbox` (§2.5): each
