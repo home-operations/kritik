@@ -88,6 +88,11 @@ test.describe('signed-in shell', () => {
 
     await expect(page.locator('.tenant-switch option')).toHaveText(['acme']);
     await expect(page.locator('.nav a')).toHaveCount(7); // Overview/Repos/Pulls/Queue/Usage/Follow-ups/Admin
+    // The sections are a sidebar left of the page, not part of the topbar.
+    await expect(page.locator('.topbar .nav')).toHaveCount(0);
+    const side = await page.locator('aside.sidebar').boundingBox();
+    const main = await page.locator('main.page').boundingBox();
+    expect(side && main && side.x + side.width <= main.x).toBe(true);
     await expect(page.locator('.account-menu summary')).toHaveAttribute('title', DEFAULT_ME.account.displayName);
 
     await page.locator('.account-menu summary').click();
@@ -104,7 +109,7 @@ test.describe('signed-in shell', () => {
   test('shows the operator console link for an operator account', async ({ page, signIn }) => {
     await signIn({ ...DEFAULT_ME, operator: true });
     await page.goto('/');
-    await expect(page.locator('.actions a[title="Operator console"]')).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Instance' }).getByRole('link', { name: 'Operator console' })).toBeVisible();
   });
 
   test('switching tenants in the dropdown navigates to that tenant', async ({ page, signIn }) => {
