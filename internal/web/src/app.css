@@ -116,6 +116,22 @@ body {
 .spacer {
   flex: 1 1 auto;
 }
+/* Below the topbar: the sidebar's navigation beside the routed page. */
+.shell {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.sidebar {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 10px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
 .actions {
   display: flex;
   gap: 8px;
@@ -334,14 +350,16 @@ kbd {
 }
 .nav {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: auto;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav-instance {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 .nav a {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
@@ -358,7 +376,7 @@ kbd {
 .nav a.active {
   color: var(--text);
   background: var(--panel-alt);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .tenant-switch {
   border: 1px solid var(--border);
@@ -368,7 +386,7 @@ kbd {
   padding: 6px 10px;
   font-size: 13px;
   font: inherit;
-  max-width: 160px;
+  width: 100%;
 }
 .mono {
   font-family: var(--font-mono);
@@ -489,7 +507,29 @@ kbd {
     min-height: 40px;
     justify-content: center;
   }
-  .nav a span {
-    display: none;
+  /* The sidebar folds into a scrolling strip under the topbar. */
+  .shell {
+    flex-direction: column;
+  }
+  .sidebar {
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .nav {
+    flex-direction: row;
+  }
+  .nav-instance {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .tenant-switch {
+    width: auto;
+    max-width: 160px;
   }
 }
