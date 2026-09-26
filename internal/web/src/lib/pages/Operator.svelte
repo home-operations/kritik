@@ -6,7 +6,7 @@
   import { describe, errorPath, isCode } from '../manage';
   import { MANAGEMENT_OFF, management } from '../session.svelte';
   import { toast } from '../toast.svelte';
-  import type { CreateTenantRequest, OperatorTenant, SlugTakenDetails, TenantWriteResult } from '../types';
+  import type { CreateTenantRequest, InstanceSetting, OperatorTenant, SlugTakenDetails, TenantWriteResult } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Dialog from '../components/Dialog.svelte';
@@ -15,9 +15,14 @@
   import GeneratedSecrets from './admin/GeneratedSecrets.svelte';
 
   const res = new Resource(() => getJSON<OperatorTenant[]>('/api/v1/operator/tenants'));
+  const instance = new Resource(() => getJSON<InstanceSetting[]>('/api/v1/operator/instance'));
   $effect(() => {
     void res.load();
   });
+  $effect(() => {
+    void instance.load();
+  });
+  const sourceLabel: Record<string, string> = { env: 'environment', file: 'config file', default: 'default' };
 
   let creating = $state(false);
   let saving = $state(false);
@@ -205,6 +210,34 @@
         </div>
       {/snippet}
     </StateView>
+
+    <section class="panel" aria-labelledby="op-instance">
+      <header class="panel-head"><h2 id="op-instance">Instance settings</h2></header>
+      <p class="muted small">
+        Read-only: the environment is this web process's, and the rest is the configuration file's or kritik's defaults.
+      </p>
+      <StateView res={instance} retry={() => instance.load()} isEmpty={(d) => d.length === 0} empty="No instance settings.">
+        {#snippet children(rows)}
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr><th scope="col">Section</th><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Source</th></tr>
+              </thead>
+              <tbody>
+                {#each rows as row (`${row.section}:${row.key}`)}
+                  <tr>
+                    <td>{row.section}</td>
+                    <td class="mono">{row.key}</td>
+                    <td class="mono">{row.value}</td>
+                    <td>{sourceLabel[row.source] ?? row.source}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/snippet}
+      </StateView>
+    </section>
 
     <section class="panel" aria-labelledby="op-audit">
       <header class="panel-head"><h2 id="op-audit">Operator audit log</h2></header>

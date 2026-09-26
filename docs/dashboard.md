@@ -65,7 +65,10 @@ may sign in and who of them may operate the instance:
   `"email:<address>"`, matched against the address a sign-in reports.
   `email` is reserved and cannot name a `signIn`. An operator creates and
   deletes dashboard tenants from the operator console and is the only one
-  who may set the operator-only fields below.
+  who may set the operator-only fields below. The console also lists the
+  instance settings read-only, each with its source: the web process's
+  environment, the configuration file, or kritik's default. A secret shows
+  only whether it is set, and a URL's credentials are hidden.
 - `sessionTTL` — how long a dashboard session lasts, between 5 minutes and
   30 days; defaults to 12 hours.
 - `dashboardForgeHosts` — the forge hosts a dashboard-managed tenant's

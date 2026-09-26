@@ -225,7 +225,16 @@ export interface RepoSettings {
   allow: AllowBounds;
 }
 
-export type ConfigSource = 'default' | 'file' | 'dashboard' | 'repository';
+export type ConfigSource = 'default' | 'env' | 'file' | 'dashboard' | 'repository';
+
+// One instance-wide setting, read-only in the operator console: a secret
+// shows only whether it is set.
+export interface InstanceSetting {
+  section: string;
+  key: string;
+  value: string;
+  source: ConfigSource;
+}
 
 // The repository's .kritik.yaml as the last review that ran read it, at
 // its merge base, applied to the operator's settings as they are now.

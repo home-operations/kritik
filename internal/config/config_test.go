@@ -250,3 +250,32 @@ func TestDashboardKeyring(t *testing.T) {
 		})
 	}
 }
+
+func TestEnv(t *testing.T) {
+	t.Setenv("KRITIK_DATABASE_URL", "postgres://app:secret@db/kritik")
+	t.Setenv("KRITIK_ADDR", ":9090")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vars := map[string]EnvVar{}
+	for _, e := range cfg.Env() {
+		vars[e.Name] = e
+	}
+	for name, want := range map[string]EnvVar{
+		"KRITIK_ADDR":                   {Name: "KRITIK_ADDR", Value: ":9090", Set: true},
+		"KRITIK_METRICS_ADDR":           {Name: "KRITIK_METRICS_ADDR", Value: ":8081"},
+		"KRITIK_CONFIG_RELOAD_INTERVAL": {Name: "KRITIK_CONFIG_RELOAD_INTERVAL", Value: "10s"},
+		"KRITIK_DATABASE_URL":           {Name: "KRITIK_DATABASE_URL", Value: "set", Secret: true, Set: true},
+		"KRITIK_DASHBOARD_KEY":          {Name: "KRITIK_DASHBOARD_KEY", Value: "not set", Secret: true},
+	} {
+		if vars[name] != want {
+			t.Errorf("%s = %+v, want %+v", name, vars[name], want)
+		}
+	}
+	for _, e := range cfg.Env() {
+		if strings.Contains(e.Value, "secret") {
+			t.Fatalf("%s shows a secret: %q", e.Name, e.Value)
+		}
+	}
+}

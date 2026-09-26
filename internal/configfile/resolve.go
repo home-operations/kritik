@@ -95,6 +95,7 @@ type Source string
 // Sources of a setting.
 const (
 	SourceDefault    Source = "default"
+	SourceEnv        Source = "env"
 	SourceFile       Source = "file"
 	SourceDashboard  Source = "dashboard"
 	SourceRepository Source = "repository"

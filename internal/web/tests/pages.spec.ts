@@ -195,7 +195,7 @@ test('queue, usage, follow-ups and operator pages render their fixtures', async 
   await expect(page.locator('.followup')).toContainText(`${g.followup.repository}#${g.followup.number}`);
 
   await page.goto('/#/operator');
-  await expect(page.locator('tbody tr')).toContainText('not live');
+  await expect(page.getByRole('row').filter({ hasText: g.operatorTenant.slug })).toContainText('not live');
 });
 
 test('a server-sent event for the tenant refetches the page', async ({ page }) => {

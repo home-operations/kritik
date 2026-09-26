@@ -471,6 +471,16 @@ test.describe('operator console', () => {
     expect(sent).toHaveLength(0);
   });
 
+  test('lists the instance settings read-only with their sources', async ({ page }) => {
+    await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    await page.goto('/#/operator');
+    const panel = page.locator('#op-instance').locator('../..');
+    const row = panel.getByRole('row').filter({ hasText: g.instanceSetting.key });
+    await expect(row).toContainText(g.instanceSetting.value);
+    await expect(row).toContainText('config file');
+    await expect(panel.locator('input, select, textarea')).toHaveCount(0);
+  });
+
   test('shows why a file tenant is left out, beside the dashboard tenant holding its slug', async ({ page }) => {
     const conflict = `dashboard tenant "${S}" already holds the slug`;
     await setup(page, operatorMe, [

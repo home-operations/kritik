@@ -3,13 +3,18 @@ package webapi
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
+	"net/url"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/auth"
+	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/store"
@@ -23,6 +28,7 @@ func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me", s.handler(s.getMe))
 	mux.HandleFunc("GET /api/v1/tenants", s.handler(s.listTenants))
 	mux.HandleFunc("GET /api/v1/operator/tenants", s.handler(s.listOperatorTenants))
+	mux.HandleFunc("GET /api/v1/operator/instance", s.handler(s.listInstanceSettings))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}", s.tenant(s.getTenant))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/repos", s.tenant(s.listRepos))
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/repos/{owner}/{repo}", s.tenant(s.getRepo))
@@ -384,4 +390,86 @@ func (s *Server) listIndexRuns(w http.ResponseWriter, r *http.Request, t *tenant
 	}
 	writeJSON(w, http.StatusOK, newPage(indexRuns(rows), next))
 	return nil
+}
+
+func (s *Server) listInstanceSettings(w http.ResponseWriter, r *http.Request) error {
+	if !auth.PrincipalFrom(r.Context()).Operator {
+		return errNotFound("route")
+	}
+	writeJSON(w, http.StatusOK, instanceSettings(s.current.Get(), s.env))
+	return nil
+}
+
+// instanceSettings are the settings no tenant owns: this process's
+// environment, then the file's instance blocks.
+func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting {
+	out := []InstanceSetting{}
+	add := func(section, key, value string, source configfile.Source) {
+		out = append(out, InstanceSetting{Section: section, Key: key, Value: value, Source: source})
+	}
+	from := func(set bool) configfile.Source {
+		if set {
+			return configfile.SourceFile
+		}
+		return configfile.SourceDefault
+	}
+	for _, e := range env {
+		source := configfile.SourceDefault
+		if e.Set {
+			source = configfile.SourceEnv
+		}
+		add("environment", e.Name, withoutCredentials(e.Value), source)
+	}
+	for _, name := range slices.Sorted(maps.Keys(f.Providers)) {
+		p := f.Providers[name]
+		value := string(p.Type)
+		if p.BaseURL != "" {
+			value += " at " + withoutCredentials(p.BaseURL)
+		}
+		if p.APIKeyValue().Value() == "" {
+			value += ", no API key"
+		}
+		add("providers", name, value, configfile.SourceFile)
+	}
+	add("polling", "interval", f.PollInterval().String(), from(f.Polling.Interval != nil))
+	add("polling", "lookback", f.PollLookback().String(), from(f.Polling.Lookback > 0))
+	add("indexing", "onboardWindow", strconv.Itoa(f.OnboardWindow()), from(f.Indexing.OnboardWindow > 0))
+	add("retention", "disabledIndexGrace", f.DisabledIndexGrace().String(), from(f.Retention.DisabledIndexGrace > 0))
+	add("retention", "transcripts", f.Retention.TranscriptsOrDefault().String(), from(f.Retention.Transcripts > 0))
+	deadline, _ := f.RunnerFor(nil)
+	runner := f.Defaults.Runner
+	add("defaults", "runner.activeDeadlineSeconds", deadline.String(), from(runner != nil && runner.ActiveDeadlineSeconds > 0))
+	for _, t := range f.Tools {
+		add("tools", t.Name, t.Image+" ("+strings.Join(t.Provides(), ", ")+")", configfile.SourceFile)
+	}
+	add("egress", "allowHosts", listOrNone(f.Egress.AllowHosts), from(len(f.Egress.AllowHosts) > 0))
+	for _, sp := range f.Web.SignIn {
+		add("web", "signIn."+sp.Name, string(sp.Type), configfile.SourceFile)
+	}
+	add("web", "operators", strconv.Itoa(len(f.Web.Operators)), from(len(f.Web.Operators) > 0))
+	ttl := f.Web.SessionTTL
+	if ttl == 0 {
+		ttl = configfile.DefaultSessionTTL
+	}
+	add("web", "sessionTTL", ttl.String(), from(f.Web.SessionTTL > 0))
+	add("web", "dashboardForgeHosts", strings.Join(f.DashboardForgeHosts(), ", "), from(len(f.Web.DashboardForgeHosts) > 0))
+	return out
+}
+
+// withoutCredentials is s with the credentials of a URL it is removed: an
+// endpoint may carry its password.
+func withoutCredentials(s string) string {
+	u, err := url.Parse(s)
+	if err != nil || u.User == nil {
+		return s
+	}
+	u.User = nil
+	return u.String() + " (credentials hidden)"
+}
+
+func listOrNone(xs []string) string {
+	if len(xs) == 0 {
+		return "none"
+	}
+	return strings.Join(xs, ", ")
 }

@@ -1,0 +1,6 @@
+{
+  "section": "polling",
+  "key": "interval",
+  "value": "2m0s",
+  "source": "file"
+}
