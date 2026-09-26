@@ -48,8 +48,6 @@ type Review struct {
 	// repository's active index); nil Embedder skips it.
 	Embedder   model.Embedder
 	EmbedModel string
-	// Deadline bounds a runner when the tenant sets none.
-	Deadline time.Duration
 	// GatewayURL is where an agentic runner calls its model, and
 	// GatewayTokenTTL how long its run token outlives the Job's deadline.
 	// Agentic reviews are refused without a gateway.
@@ -111,7 +109,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if err != nil {
 		return err
 	}
-	deadline, resources := runnerSpec(tenant, w.Deadline)
+	deadline, resources := file.RunnerFor(tenant)
 	spec := runner.Spec{
 		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
 		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, Ignore: settings.Ignore, RepoFiles: settings.Review.Referenced(),

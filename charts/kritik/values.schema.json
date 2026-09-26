@@ -48,24 +48,6 @@
           "title": "logLevel",
           "type": "string"
         },
-        "onboardWindow": {
-          "default": 4,
-          "description": "Onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW); tenants take turns and the most active repositories go first.",
-          "title": "onboardWindow",
-          "type": "integer"
-        },
-        "pollInterval": {
-          "default": "10m",
-          "description": "How often the leader lists each installation's open pull requests as a backstop for missed webhooks (Go duration); \"0\" disables.",
-          "title": "pollInterval",
-          "type": "string"
-        },
-        "pollLookback": {
-          "default": "24h",
-          "description": "How far back a first or long-idle poll looks (Go duration).",
-          "title": "pollLookback",
-          "type": "string"
-        },
         "reloadInterval": {
           "default": "10s",
           "description": "How often each replica re-reads the file (Go duration).",
@@ -1080,12 +1062,6 @@
     "runner": {
       "description": "Runner Jobs: one pod per review or index run, created by the worker in the\nrelease namespace from the same image, running as a service account with\nno permissions and a database role that can only touch its own run. The\nworker's Role reaches every Secret in the release namespace, so install\nkritik into a namespace of its own.",
       "properties": {
-        "deadline": {
-          "default": "15m",
-          "description": "Default active deadline for a runner Job (Go duration); tenants may lower it in the file.",
-          "title": "deadline",
-          "type": "string"
-        },
         "image": {
           "default": "",
           "description": "Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd and rg for an agentic review's `agent.commands`.",

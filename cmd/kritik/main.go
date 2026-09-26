@@ -223,12 +223,12 @@ func run() error {
 			return server.ServeDrain(ctx, cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
 		})
 		river.AddWorker(workers, &worker.Review{
-			Base: base, Executor: exec, Completers: completers, Embedder: embedder, EmbedModel: cfg.EmbedModel, Deadline: cfg.RunnerDeadline,
+			Base: base, Executor: exec, Completers: completers, Embedder: embedder, EmbedModel: cfg.EmbedModel,
 			GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
 		})
 		river.AddWorker(workers, &worker.FollowUp{Base: base, Completers: completers})
 		river.AddWorker(workers, &worker.Index{
-			Base: base, Executor: exec, Embedder: embedder, EmbedModel: cfg.EmbedModel, EmbedDims: cfg.EmbedDims, Deadline: cfg.RunnerDeadline,
+			Base: base, Executor: exec, Embedder: embedder, EmbedModel: cfg.EmbedModel, EmbedDims: cfg.EmbedDims,
 		})
 		queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
 			Logger: logger,
@@ -424,8 +424,8 @@ func lead(
 	go func() {
 		_ = (&poller.Poller{
 			Store: st, Current: current, Forges: &worker.ForgeCache{Build: worker.BuildForge},
-			Dispatcher: ingest.NewService(st, queue), Interval: cfg.PollInterval, Lookback: cfg.PollLookback,
-			Logger: logger, Metrics: m,
+			Dispatcher: ingest.NewService(st, queue),
+			Logger:     logger, Metrics: m,
 		}).Run(pollCtx)
 	}()
 	// So is deleting, by name, run Secrets a dead worker left without an
@@ -442,7 +442,7 @@ func lead(
 		}, secretSweepInterval)
 	}
 	// So is feeding the index queue its onboarding jobs, a few at a time.
-	onboarder := &worker.Onboarder{Store: st, Queue: queue, Window: cfg.OnboardWindow, Logger: logger}
+	onboarder := &worker.Onboarder{Store: st, Queue: queue, Current: current, Logger: logger}
 	if cfg.EmbeddingEnabled() {
 		go onboarder.Run(pollCtx)
 	}

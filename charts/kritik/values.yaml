@@ -95,9 +95,15 @@ config:
   #     pricing:
   #       claude-sonnet-5: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }
   # defaults:
+  #   # Every tenant's runner Job deadline unless it sets its own.
+  #   runner: { activeDeadlineSeconds: 900 }
   #   models:
   #     review: openrouter/openai/gpt-6-sol
   #   filter: "!pr.draft"
+  # # The leader's backstop for missed webhooks; interval: 0s turns it off.
+  # polling: { interval: 10m, lookback: 24h }
+  # # Onboarding index jobs kept queued or running at once.
+  # indexing: { onboardWindow: 4 }
   # tenants:
   #   - slug: example
   #     installations:
@@ -150,12 +156,6 @@ config:
   reviewWorkers: 2
   # -- Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews.
   indexWorkers: 1
-  # -- Onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW); tenants take turns and the most active repositories go first.
-  onboardWindow: 4
-  # -- How often the leader lists each installation's open pull requests as a backstop for missed webhooks (Go duration); "0" disables.
-  pollInterval: 10m
-  # -- How far back a first or long-idle poll looks (Go duration).
-  pollLookback: 24h
   # -- Extra raw env vars merged into every role's container (advanced).
   extraEnv: []
   # - name: KRITIK_LEADER_RETRY_INTERVAL
@@ -236,8 +236,6 @@ secretMounts: []
 runner:
   # -- Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd and rg for an agentic review's `agent.commands`.
   image: ""
-  # -- Default active deadline for a runner Job (Go duration); tenants may lower it in the file.
-  deadline: 15m
   # -- How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew.
   ttl: 1h
   # -- RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and, in agentic mode, runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default.

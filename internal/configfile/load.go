@@ -171,6 +171,9 @@ func (f *File) validate() error {
 	if err := f.validateRetention(); err != nil {
 		return err
 	}
+	if err := f.validateTuning(); err != nil {
+		return err
+	}
 	if err := f.Web.validate(); err != nil {
 		return err
 	}
@@ -208,6 +211,22 @@ func (t *Tenant) repositoryInstallation(r *Repository, where string) (*Installat
 			where, r.Name, strings.Join(names, ", "), t.Slug, owner)
 	}
 	return owners[0], nil
+}
+
+// validateTuning checks defaults.runner, polling and indexing.
+func (f *File) validateTuning() error {
+	if r := f.Defaults.Runner; r != nil {
+		if err := validateRunnerDeadline("defaults", r.ActiveDeadlineSeconds); err != nil {
+			return err
+		}
+	}
+	if (f.Polling.Interval != nil && *f.Polling.Interval < 0) || f.Polling.Lookback < 0 {
+		return errors.New("configfile: polling.interval and polling.lookback must not be negative")
+	}
+	if f.Indexing.OnboardWindow < 0 {
+		return errors.New("configfile: indexing.onboardWindow must not be negative")
+	}
+	return nil
 }
 
 func (f *File) validateRetention() error {

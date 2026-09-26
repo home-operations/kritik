@@ -37,31 +37,35 @@ type Poller struct {
 	Current    *configfile.Current
 	Forges     Forges
 	Dispatcher ingest.Dispatcher
-	Interval   time.Duration
-	// Lookback bounds the first poll of an installation, or one whose
-	// state is older than this, so a long outage does not list every
-	// open pull request's history at once.
-	Lookback time.Duration
-	Logger   *slog.Logger
+	Logger     *slog.Logger
 	// Metrics may be nil.
 	Metrics *metrics.Metrics
 }
 
-// Run polls until ctx ends. The first poll happens after one interval, so
-// a freshly elected leader does not hammer the forge while ingest is
-// already serving webhooks.
+// pollOffRecheck is how often Run looks again at a file that turns
+// polling off, so turning it back on takes effect without a restart.
+const pollOffRecheck = time.Minute
+
+// Run polls until ctx ends, every polling.interval of the file current at
+// the time. The first poll happens after one interval, so a freshly
+// elected leader does not hammer the forge while ingest is already serving
+// webhooks.
 func (p *Poller) Run(ctx context.Context) error {
-	if p.Interval <= 0 {
-		return nil
-	}
-	t := time.NewTicker(p.Interval)
-	defer t.Stop()
 	for {
+		interval := p.Current.Get().PollInterval()
+		wait := interval
+		if interval <= 0 {
+			wait = pollOffRecheck
+		}
+		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return nil
 		case <-t.C:
-			p.PollAll(ctx)
+			if interval > 0 {
+				p.PollAll(ctx)
+			}
 		}
 	}
 }
@@ -123,7 +127,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *config
 	if err != nil {
 		return 0, fmt.Errorf("poller: read state: %w", err)
 	}
-	since := time.Now().Add(-p.Lookback)
+	since := time.Now().Add(-file.PollLookback())
 	if polled != nil && polled.After(since) {
 		since = *polled
 	}

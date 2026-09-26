@@ -126,7 +126,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	}}}
 	p := &Poller{
 		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: lf}, Dispatcher: ingest.NewService(st, queue),
-		Interval: time.Hour, Lookback: 24 * time.Hour, Logger: logger,
+		Logger: logger,
 	}
 
 	// Start from no poll state and no pull requests 7 or 8, whatever
@@ -269,7 +269,7 @@ func TestPollerEnqueuesOnceAndAdvancesStateForgejo(t *testing.T) {
 	}}}
 	p := &Poller{
 		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: lf}, Dispatcher: ingest.NewService(st, queue),
-		Interval: time.Hour, Lookback: 24 * time.Hour, Logger: logger,
+		Logger: logger,
 	}
 
 	// Start from no poll state and no pull request 9001, whatever earlier

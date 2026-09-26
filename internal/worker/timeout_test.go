@@ -69,8 +69,8 @@ func TestJobTimeouts(t *testing.T) {
 	acmeRepo := func(name string) string { return configfile.RepositoryID(acme.Installations[0].ID(), name) }
 	globexRepo := configfile.RepositoryID(globex.Installations[0].ID(), "globex/app")
 
-	review := &Review{Current: current, Deadline: 15 * time.Minute}
-	index := &Index{Current: current, Deadline: 15 * time.Minute}
+	review := &Review{Current: current}
+	index := &Index{Current: current}
 	followUp := &FollowUp{}
 	tests := []struct {
 		name         string
