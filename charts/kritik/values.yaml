@@ -122,6 +122,10 @@ config:
   #         webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
   #     repositories:
   #       - name: example/widgets
+  #         # Both installations have account "example", so the entry names
+  #         # the one it belongs to; the same name on the other forge is a
+  #         # separate repository.
+  #         installation: example-github
   #         # agentic mode gives the model a bounded, read-only tool loop
   #         # over the commit tree instead of one prompt with the diff.
   #         mode: agentic

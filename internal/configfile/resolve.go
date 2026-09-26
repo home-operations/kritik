@@ -1,7 +1,6 @@
 package configfile
 
 import (
-	"strings"
 	"time"
 )
 
@@ -30,28 +29,25 @@ func (f *File) Installation(name string) (*Installation, *Tenant, bool) {
 	return nil, nil, false
 }
 
-// InstallationFor returns the tenant's installation whose account owns the
-// repository "owner/repo", or nil. A tenant with several installations on
-// different forges may share an account name; the first declared wins,
-// which the operator controls by ordering.
-func (f *File) InstallationFor(t *Tenant, repo string) *Installation {
-	owner, _, ok := strings.Cut(repo, "/")
-	if !ok {
+// InstallationFor returns the tenant's installation a repository entry
+// belongs to: the one it names, or else the only one whose account owns
+// it. It is nil when none matches, or when several do and the entry names
+// none of them.
+func (f *File) InstallationFor(t *Tenant, r *Repository) *Installation {
+	in, err := t.repositoryInstallation(r, "")
+	if err != nil {
 		return nil
 	}
-	for i := range t.Installations {
-		if strings.EqualFold(t.Installations[i].Account, owner) {
-			return &t.Installations[i]
-		}
-	}
-	return nil
+	return in
 }
 
-// Settings resolves the effective settings for a repository of a tenant.
-// Layers apply in one direction: defaults, then the tenant, then the
-// repository entry if one exists. A repository not listed under the tenant
-// gets the tenant's settings and is enabled.
-func (f *File) Settings(t *Tenant, repo string) Settings {
+// Settings resolves the effective settings for the repository "owner/repo"
+// of a tenant, reached through the named installation. Layers apply in one
+// direction: defaults, then the tenant, then the repository entry bound to
+// that installation, if one exists. A repository not listed under the
+// tenant gets the tenant's settings and is enabled; empty installation and
+// repo give the tenant's settings alone.
+func (f *File) Settings(t *Tenant, installation, repo string) Settings {
 	s := Settings{
 		Enabled: true,
 		Models:  f.Defaults.Models,
@@ -79,6 +75,9 @@ func (f *File) Settings(t *Tenant, repo string) Settings {
 	for i := range t.Repositories {
 		r := &t.Repositories[i]
 		if r.Name != repo {
+			continue
+		}
+		if in := f.InstallationFor(t, r); in == nil || in.Name != installation {
 			continue
 		}
 		if r.Enabled != nil {

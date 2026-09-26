@@ -77,7 +77,7 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 		}
 		for j := range t.Repositories {
 			r := &t.Repositories[j]
-			in := f.InstallationFor(t, r.Name)
+			in := f.InstallationFor(t, r)
 			if err := upsertRepository(ctx, tx, tenantID, installationIDs[in.Name], t.Origin(), r); err != nil {
 				return err
 			}
