@@ -10,8 +10,9 @@
 
 > Scope: where each setting lives, who may change it, which value wins when
 > more than one layer speaks to the same repository, how the dashboard shows
-> what it may not change, and what a repository's own `.kritik.yaml` may
-> choose. It does not change how a review, follow-up or index run works once
+> what it may not change, what a repository's own `.kritik.yaml` may
+> choose, and how a repository is identified when its name exists on more
+> than one forge. It does not change how a review, follow-up or index run works once
 > its settings are resolved.
 
 ## 1. Context
@@ -61,6 +62,14 @@ Surveying the code found these problems:
 - **A file edit that collides with a dashboard tenant blocks the whole
   file**, not just the colliding tenant: the last good snapshot stays live for
   every tenant.
+- **Configuration names a repository by `owner/repo` alone**, though storage
+  keys it by installation and name (`RepositoryID`, unique on
+  `(installation_id, name)`). When one tenant has installations with the
+  same account on two forges, a `repositories:` entry binds to whichever of
+  them `File.InstallationFor` finds first, `File.Settings` applies that
+  entry's settings to the repository of that name on both forges, and the
+  dashboard's `store.FindRepo` silently picks one of them unless the request
+  names an installation.
 
 ## 2. Decision
 
@@ -315,6 +324,32 @@ The UI renders from that response, never from its own list:
 The write API enforces the same table and never relies on the UI having
 disabled a field.
 
+### 2.8 A repository is its installation and its name
+
+Storage already identifies a repository by its installation and its
+`owner/repo` name; configuration and lookups now do too, so the same name on
+two forges is two repositories everywhere, not only in the database.
+
+- **A `repositories:` entry may name its `installation`.** It is required
+  when the entry's owner matches the account of more than one installation
+  in the tenant, and load rejects the entry without it. When only one
+  installation matches, it may be left out, as today. Dashboard tenant specs
+  take the same field.
+- **Uniqueness is per installation.** A tenant may list `onedr0p/home-ops`
+  twice, once per installation, but not twice for the same one.
+- **Every settings lookup is by installation and name.** Ingest, the poller,
+  the worker and the dashboard resolve a repository's settings (§2.4) from
+  the installation the event, poll or job came through, never from the name
+  alone.
+- **The dashboard refuses to guess.** A repository or pull request route
+  whose `owner/repo` matches more than one repository in the tenant, and
+  that does not name the installation (`?installation=`), is answered with
+  `409 ambiguous` instead of the first match. The UI's own links always
+  carry the installation when the name is not unique in the tenant, and the
+  repository list shows the installation and forge beside the name.
+- **`.kritik.yaml` is unaffected:** each forge's repository has its own file,
+  in its own history.
+
 ## 3. Consequences
 
 - **Operators can let repositories opt in to more** (agentic mode, a
@@ -336,6 +371,10 @@ disabled a field.
   `config.pollLookback`, `config.onboardWindow` and runner deadline values
   render into the file. `.kritik.yaml` `instructions` now append, and a
   `requireSuggestedFix: false` no longer loosens the operator's `true`.
+- **One tenant can hold the same `owner/repo` on two forges** and configure
+  each separately (§2.8). A file whose tenant has two installations with the
+  same account and a `repositories:` entry that does not name one of them
+  now fails to load.
 - **Documentation:** a configuration reference covering every layer and the
   precedence table, and a corrected `docs/repository-config.md`.
 - A command named in `allow.commands` or `agent.commands` must still be on
