@@ -147,8 +147,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if agentic {
 		deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, runID, args.Trigger, pr, settings, prior, admitted, &spec, &secrets, deadline)
 		if err != nil {
-			return errors.Join(err, w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", err.Error()),
-				failRun(ctx, w.Store, args.TenantID, runID, err.Error()))
+			// Detached so an agentSpec cut short by the job's own timeout
+			// still leaves both rows terminal.
+			dctx := context.WithoutCancel(ctx)
+			return errors.Join(err, w.finishReview(dctx, args.TenantID, reviewID, statusFailed, "", err.Error()),
+				failRun(dctx, w.Store, args.TenantID, runID, err.Error()))
 		}
 	}
 	sup := runSupervision(w.Store, args.TenantID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
@@ -177,22 +180,13 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	// cancel the child ctx passed to the executor. ctx is left live from here
 	// on so a cancel that arrives during afterRun/publish (review status
 	// "prepared") still takes effect there, and a hung model call in publish
-	// still respects RescueStuckJobsAfter instead of running a second time
-	// after a retry. cctx is a detached copy used only for the terminal
-	// writes below (recordRun, SetStatus, finishReview) that must still land
-	// once ctx itself is canceled.
+	// still respects River's job timeout. cctx is a detached copy for the
+	// terminal writes below, which must still land once ctx itself has ended.
 	canceled := errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely)
 	cctx := context.WithoutCancel(ctx)
-	// finishCanceled records a River remote cancel as the review's terminal
-	// state. A nil return tells River the job succeeded, like the superseded
-	// case below: a cancel must never produce a retry.
-	finishCanceled := func() error {
-		logger.Info("review canceled", "job", res.JobName)
-		if err := client.SetStatus(cctx, owner, repo, args.HeadSHA, forge.StatusError, "kritik: review canceled"); err != nil {
-			logger.Warn("commit status not set", "error", err)
-		}
-		w.Metrics.Review(tenant.Slug, statusCanceled, time.Since(started))
-		return w.finishReview(cctx, args.TenantID, reviewID, statusCanceled, "", "")
+	ended := endedReview{
+		tenantID: args.TenantID, tenantSlug: tenant.Slug, reviewID: reviewID, headSHA: args.HeadSHA, jobName: res.JobName,
+		owner: owner, repo: repo, client: client, started: started, logger: logger,
 	}
 	if err := recordRun(cctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err
@@ -204,7 +198,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	// check after that switch still catches a supersede that raced with a
 	// normal finish.
 	if canceled {
-		return finishCanceled()
+		return w.finishEnded(ctx, ended, nil)
 	}
 	if agentErr != nil {
 		logger.Error("agent run not read", "error", agentErr)
@@ -228,13 +222,10 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	prep, status, err := w.afterRun(ctx, args, pr, settings, client, reviewID, runID, prior, logger)
 	if err != nil {
-		// ctx stayed live through afterRun, so a cancel that arrived while it
-		// ran surfaces here as a plain error rather than being silently
-		// ignored; report it as canceled rather than as a failure to retry.
-		if errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely) {
-			return finishCanceled()
-		}
-		return err
+		// ctx stayed live through afterRun, so a cancel or a timeout that
+		// arrived while it ran surfaces here as a plain error; the review
+		// ends rather than staying running while River retries the job.
+		return w.finishEnded(ctx, ended, err)
 	}
 	if prep.patchID == "" {
 		w.Metrics.Review(tenant.Slug, status, time.Since(started))
@@ -252,11 +243,12 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		publish = phase.runAgentic
 	}
 	status, perr := publish(ctx)
-	// A cancel during "prepared" (the model call inside publish) leaves ctx
-	// canceled here even when publish itself returned a normal result;
-	// report it as canceled rather than whatever status publish settled on.
-	if errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely) {
-		return finishCanceled()
+	// Once the model has answered, publish finishes on a detached ctx, so a
+	// clean result stands even if ctx ended meanwhile: the comment and the
+	// commit status already say so. Only a publish that failed while ctx
+	// ended (the model call cut short) ends as canceled or timed out.
+	if perr != nil && ctx.Err() != nil {
+		return w.finishEnded(ctx, ended, perr)
 	}
 	if perr != nil && status == statusFailed {
 		logger.Error("review failed", "error", perr)
@@ -473,6 +465,59 @@ func (w *Review) finishReview(ctx context.Context, tenantID, reviewID, status, p
 		}
 		return nil
 	})
+}
+
+// endedReview is what finishEnded needs to know of the review whose job
+// ended.
+type endedReview struct {
+	tenantID, tenantSlug, reviewID, headSHA, jobName string
+	owner, repo                                      string
+	client                                           forge.Client
+	started                                          time.Time
+	logger                                           *slog.Logger
+}
+
+// finishEnded ends a review whose job ctx ended before the review could: a
+// remote cancel as canceled, anything else (River's job timeout above all)
+// as failed. Either way it returns nil, since an error would have River
+// retry the review and pay for the model again. A review that is already
+// terminal is left as it is. While ctx is still live it returns err as is.
+func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) error {
+	if ctx.Err() == nil {
+		return err
+	}
+	cctx := context.WithoutCancel(ctx)
+	cause := context.Cause(ctx)
+	status, errText, desc := statusCanceled, "", "kritik: review canceled"
+	if !errors.Is(cause, river.ErrJobCancelledRemotely) {
+		status, errText, desc = statusFailed, "review timed out: "+cause.Error(), "kritik: review timed out"
+	}
+	finished, ferr := w.finishUnfinished(cctx, e.tenantID, e.reviewID, status, errText)
+	if ferr != nil || !finished {
+		return ferr
+	}
+	e.logger.Info("review "+status+" as its job ended", "cause", cause, "job", e.jobName)
+	if err := e.client.SetStatus(cctx, e.owner, e.repo, e.headSHA, forge.StatusError, desc); err != nil {
+		e.logger.Warn("commit status not set", "error", err)
+	}
+	w.Metrics.Review(e.tenantSlug, status, time.Since(e.started))
+	return nil
+}
+
+// finishUnfinished ends a review only if nothing has ended it yet, and
+// reports whether it did.
+func (w *Review) finishUnfinished(ctx context.Context, tenantID, reviewID, status, errText string) (bool, error) {
+	var finished bool
+	err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, error = left($3, 2000), finished_at = now()
+			WHERE id = $1 AND finished_at IS NULL`, reviewID, status, errText)
+		if err != nil {
+			return fmt.Errorf("worker: finish review: %w", err)
+		}
+		finished = tag.RowsAffected() == 1
+		return nil
+	})
+	return finished, err
 }
 
 // failRun ends a runner run that never got a Job, so it does not stay
