@@ -28,7 +28,18 @@ instructions, and chooses a few settings within bounds the operator sets:
   changed path matches at least one of them.
 - `review.instructions`: paths to files, read from the same merge-base
   tree, appended after the operator's instructions to the reviewer's system
-  prompt (and a follow-up's), capped at 32 KiB joined.
+  prompt (and a follow-up's), capped at 32 KiB joined. An entry may instead
+  be a `path` with `paths` globs, included only when a changed path matches
+  one of them, so rules for one part of the repository do not spend the cap
+  on changes elsewhere:
+
+  ```yaml
+  review:
+    instructions:
+      - .kritik/rules.md
+      - { path: .kritik/sql.md, paths: ["internal/store/**", "**/*.sql"] }
+  ```
+
 - `review.requireSuggestedFix: true`: findings must include a suggested
   fix. The file can turn the requirement on, never off.
 - `review.minSeverity`: `nit` or `important`, the least severe finding

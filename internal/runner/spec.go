@@ -20,7 +20,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 3
+const SpecVersion = 4
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -88,9 +88,11 @@ type AgentLimits struct {
 type Prompt struct {
 	Repository  string                 `json:"repository"`
 	PullRequest repoconfig.PullRequest `json:"pullRequest"`
-	// Instructions name repository files, as the review settings do.
-	Instructions        []string `json:"instructions,omitempty"`
-	RequireSuggestedFix bool     `json:"requireSuggestedFix,omitempty"`
+	// Instructions name repository files, as the review settings do, and
+	// InstructionScopes the changed-path globs a scoped one applies to.
+	Instructions        []string            `json:"instructions,omitempty"`
+	InstructionScopes   map[string][]string `json:"instructionScopes,omitempty"`
+	RequireSuggestedFix bool                `json:"requireSuggestedFix,omitempty"`
 	// SkipPaths are the .kritik.yaml skip.onlyPaths globs: when every
 	// changed path matches one, the worker will skip the review.
 	SkipPaths []string `json:"skipPaths,omitempty"`

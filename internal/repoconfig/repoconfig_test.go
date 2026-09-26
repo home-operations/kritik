@@ -21,6 +21,10 @@ func TestParse_Invalid(t *testing.T) {
 		{"filter not bool", "filter: \"pr.title\"\n"},
 		{"absolute instruction path", "review:\n  instructions:\n    - /etc/passwd\n"},
 		{"instruction escapes repo", "review:\n  instructions:\n    - ../x\n"},
+		{"scoped instruction escapes repo", "review:\n  instructions:\n    - { path: ../x, paths: [\"**\"] }\n"},
+		{"scoped instruction without a path", "review:\n  instructions:\n    - { paths: [\"**\"] }\n"},
+		{"scoped instruction with a bad glob", "review:\n  instructions:\n    - { path: x.md, paths: [\"[\"] }\n"},
+		{"scoped instruction with an unknown key", "review:\n  instructions:\n    - { path: x.md, glob: \"**\" }\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -61,6 +65,7 @@ skip:
 review:
   instructions:
     - docs/instructions.md
+    - { path: docs/sql.md, paths: ["**/*.sql"] }
   requireSuggestedFix: true
   templates:
     summary: docs/summary.tmpl
@@ -85,7 +90,9 @@ review:
 		if !slices.Equal(f.Skip.OnlyPaths, []string{"**/*.md"}) {
 			t.Fatalf("Skip.OnlyPaths = %v", f.Skip.OnlyPaths)
 		}
-		if !slices.Equal(f.Review.Instructions, []string{"docs/instructions.md"}) {
+		if !reflect.DeepEqual(f.Review.Instructions, []Instruction{
+			{Path: "docs/instructions.md"}, {Path: "docs/sql.md", Paths: []string{"**/*.sql"}},
+		}) {
 			t.Fatalf("Review.Instructions = %v", f.Review.Instructions)
 		}
 		if f.Review.RequireSuggestedFix == nil || !*f.Review.RequireSuggestedFix {
@@ -97,11 +104,35 @@ review:
 	})
 }
 
+func TestActive(t *testing.T) {
+	t.Parallel()
+	paths := []string{"ops.md", "sql.md", "web.md"}
+	scoped := map[string][]string{"sql.md": {"**/*.sql", "internal/store/**"}, "web.md": {"web/**"}}
+	tests := []struct {
+		name    string
+		changed []string
+		want    []string
+	}{
+		{"no scope matches", []string{"main.go"}, []string{"ops.md"}},
+		{"one scope matches", []string{"main.go", "internal/store/pr.go"}, []string{"ops.md", "sql.md"}},
+		{"both scopes match", []string{"a/b.sql", "web/app.ts"}, []string{"ops.md", "sql.md", "web.md"}},
+		{"nothing changed", nil, []string{"ops.md"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := Active(paths, scoped, tt.changed); !slices.Equal(got, tt.want) {
+				t.Fatalf("Active = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFile_Referenced(t *testing.T) {
 	t.Parallel()
 	f := File{
 		Review: Review{
-			Instructions: []string{"docs/a.md", "docs/b.md", "docs/a.md"},
+			Instructions: []Instruction{{Path: "docs/a.md"}, {Path: "docs/b.md", Paths: []string{"b/**"}}, {Path: "docs/a.md"}},
 			Templates: Templates{
 				Summary: "docs/a.md",
 				Inline:  "docs/c.md",
