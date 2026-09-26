@@ -61,6 +61,16 @@ func (c *Client) MergeBase(ctx context.Context, owner, repo string, number int, 
 	return sha, nil
 }
 
+// PullRequestDiff implements forge.Client from the compare of base and
+// head, both commits, so the diff is of exactly those two.
+func (c *Client) PullRequestDiff(ctx context.Context, owner, repo string, _ int, base, head string) (string, error) {
+	diff, _, err := c.api.Repositories.CompareCommitsRaw(ctx, owner, repo, base, head, gh.RawOptions{Type: gh.Diff})
+	if err != nil {
+		return "", fmt.Errorf("github: diff %s...%s: %w", base, head, err)
+	}
+	return diff, nil
+}
+
 // CloneURL implements forge.Client.
 func (c *Client) CloneURL(owner, repo string) string {
 	return c.webBase + "/" + owner + "/" + repo + ".git"

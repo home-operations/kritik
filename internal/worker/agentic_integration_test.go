@@ -574,7 +574,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, configfile.ReviewAgentic, 0)
+	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", configfile.ReviewAgentic, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -985,7 +985,7 @@ func checkFailRun(t *testing.T, h *agenticHarness) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, runID, _, err := h.review.start(h.ctx, args, pr, h.base, configfile.ReviewAgentic, 0)
+	_, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", configfile.ReviewAgentic, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1029,7 +1029,7 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, configfile.ReviewAgentic, 0)
+			reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", configfile.ReviewAgentic, 0)
 			if err != nil {
 				t.Fatal(err)
 			}

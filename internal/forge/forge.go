@@ -88,6 +88,12 @@ type Client interface {
 	// head (a commit) of pull request number, the same way the forge
 	// computes the PR diff.
 	MergeBase(ctx context.Context, owner, repo string, number int, base, head string) (string, error)
+	// PullRequestDiff is the unified diff of pull request number: from
+	// base, its merge-base, to head on a forge that diffs two commits, and
+	// from the pull request's own merge base to its current head on one
+	// whose API diffs only pull requests. A diff too large to read whole is
+	// an error, never a truncated diff.
+	PullRequestDiff(ctx context.Context, owner, repo string, number int, base, head string) (string, error)
 	// CloneURL is the HTTPS clone URL of a repository on this forge.
 	CloneURL(owner, repo string) string
 	// GitToken is the credential a runner fetches with: a short-lived

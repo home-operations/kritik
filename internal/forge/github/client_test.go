@@ -156,6 +156,25 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	}
 }
 
+func TestPullRequestDiff(t *testing.T) {
+	f, c := newFakeAPI(t)
+	const diff = "diff --git a/a.go b/a.go\n+b\n"
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/compare/base123...abc", func(w http.ResponseWriter, r *http.Request) {
+		if accept := r.Header.Get("Accept"); accept != "application/vnd.github.v3.diff" {
+			t.Errorf("Accept = %q, want the diff media type", accept)
+		}
+		_, _ = w.Write([]byte(diff))
+	})
+	got, err := c.PullRequestDiff(t.Context(), "o", "r", 7, "base123", "abc")
+	if err != nil || got != diff {
+		t.Fatalf("PullRequestDiff = %q, %v", got, err)
+	}
+	f.reply("GET /api/v3/repos/o/r/compare/base123...big", 406, `{"message":"diff too large"}`)
+	if _, err := c.PullRequestDiff(t.Context(), "o", "r", 7, "base123", "big"); err == nil {
+		t.Fatal("a diff the forge refuses must be an error")
+	}
+}
+
 func TestFindCommentPaginatesAndMatchesAuthorPlusMarker(t *testing.T) {
 	f, c := newFakeAPI(t)
 	f.mux.HandleFunc("GET /api/v3/repos/o/r/issues/7/comments", func(w http.ResponseWriter, r *http.Request) {

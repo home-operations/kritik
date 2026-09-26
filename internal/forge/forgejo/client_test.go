@@ -1,6 +1,7 @@
 package forgejo
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net/http"
@@ -31,6 +32,34 @@ func newTestServer(t *testing.T, handler func(w http.ResponseWriter, r *http.Req
 		t.Fatalf("NewClient: %v", err)
 	}
 	return srv, c
+}
+
+func TestPullRequestDiff(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		const diff = "diff --git a/a.go b/a.go\n+b\n"
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v1/repos/acme/widgets/pulls/7.diff" {
+				t.Errorf("path = %s", r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_, _ = w.Write([]byte(diff))
+		})
+		defer srv.Close()
+		got, err := c.PullRequestDiff(t.Context(), "acme", "widgets", 7, "base", "head")
+		if err != nil || got != diff {
+			t.Fatalf("PullRequestDiff = %q, %v", got, err)
+		}
+	})
+
+	t.Run("a diff over the cap is an error, not a truncated diff", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write(bytes.Repeat([]byte("x"), maxDiffBytes+1))
+		})
+		defer srv.Close()
+		if got, err := c.PullRequestDiff(t.Context(), "acme", "widgets", 7, "base", "head"); err == nil {
+			t.Fatalf("PullRequestDiff = %d bytes, want an error", len(got))
+		}
+	})
 }
 
 func TestMergeBase(t *testing.T) {

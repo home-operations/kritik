@@ -33,6 +33,9 @@ const maxStatusDescription = 140
 // quotes, so a large HTML error page cannot blow up an error message.
 const maxErrorBody = 512
 
+// maxDiffBytes bounds a pull request diff read whole.
+const maxDiffBytes = 8 << 20
+
 // ErrNotFound wraps any error produced by a 404 response, so callers can
 // branch on a missing resource with errors.Is(err, ErrNotFound).
 var ErrNotFound = errors.New("forgejo: not found")
@@ -140,6 +143,17 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if out == nil {
 		return nil
 	}
+	if text, ok := out.(*string); ok {
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxDiffBytes+1))
+		if err != nil {
+			return fmt.Errorf("forgejo: read response for %s %s: %w", method, path, err)
+		}
+		if len(raw) > maxDiffBytes {
+			return fmt.Errorf("forgejo: %s %s: response is over %d bytes", method, path, maxDiffBytes)
+		}
+		*text = string(raw)
+		return nil
+	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("forgejo: decode response for %s %s: %w", method, path, err)
 	}
@@ -177,6 +191,17 @@ func (c *Client) MergeBase(ctx context.Context, owner, repo string, number int, 
 		return "", fmt.Errorf("forgejo: %s/%s#%d: merge_base is empty", owner, repo, number)
 	}
 	return pr.MergeBase, nil
+}
+
+// PullRequestDiff implements forge.Client. Forgejo's API diffs a pull
+// request, not two commits, so base and head go unused: the diff runs from
+// the pull request's merge base to its current head.
+func (c *Client) PullRequestDiff(ctx context.Context, owner, repo string, number int, _, _ string) (string, error) {
+	var diff string
+	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s/pulls/%d.diff", repoPath(owner, repo), number), nil, &diff); err != nil {
+		return "", fmt.Errorf("forgejo: diff of %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return diff, nil
 }
 
 // CloneURL implements forge.Client.

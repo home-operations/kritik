@@ -21,6 +21,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
+	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
@@ -99,7 +100,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if pr.headSHA != args.HeadSHA {
 		logger.Info("review superseded before start", "current_head", short(pr.headSHA))
 		w.Metrics.Review(tenant.Slug, statusSuperseded, time.Since(started))
-		return w.record(ctx, args, pr, statusSuperseded, "", "", "")
+		return w.record(ctx, args, pr, statusSuperseded, "", "", "", "")
 	}
 	client, err := w.client(ctx, file, pr.installation, pr.externalID, pr.repository)
 	if err != nil {
@@ -114,6 +115,12 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if err != nil {
 		return err
 	}
+	early := earlyEnd{args: args, pr: pr, tenantSlug: tenant.Slug, mergeBase: mergeBase, started: started, logger: logger}
+	forgePatch, done, err := w.skipUnchangedBot(ctx, early, client, owner, repo)
+	if done {
+		return err
+	}
+	early.forgePatch = forgePatch
 
 	settings := file.Settings(tenant, pr.repository)
 	agentic := settings.Mode == configfile.ReviewAgentic
@@ -121,20 +128,15 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	// the model lease come before it rather than after.
 	var admitted admission
 	if agentic {
-		a, status, reason, err := w.agentAdmit(ctx, logger, file, tenant, settings, job.ID)
-		if err != nil {
+		a, done, err := w.admitAgentic(ctx, early, file, tenant, settings, job.ID)
+		if done {
 			return err
-		}
-		if status != "" {
-			logger.Warn("review "+status, "reason", reason)
-			w.Metrics.Review(tenant.Slug, status, time.Since(started))
-			return w.record(ctx, args, pr, status, mergeBase, "", reason)
 		}
 		admitted = a
 		defer w.releaseLease(ctx, logger, a.lease, string(settings.Models.Review))
 	}
 
-	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, settings.Mode, job.ID)
+	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, forgePatch, settings.Mode, job.ID)
 	if err != nil {
 		return err
 	}
@@ -423,20 +425,97 @@ func (w *Review) load(ctx context.Context, args jobs.ReviewArgs) (*pullRequest, 
 }
 
 // record writes a review that never ran: superseded before start.
-func (w *Review) record(ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, status, mergeBase, patchID, errText string) error {
+func (w *Review) record(
+	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, status, mergeBase, patchID, forgePatchID, errText string,
+) error {
 	return w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO reviews
-			(tenant_id, pull_request_id, head_sha, merge_base_sha, patch_id, status, trigger, error, finished_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())`,
-			args.TenantID, pr.id, args.HeadSHA, mergeBase, patchID, status, args.Trigger, errText)
+			(tenant_id, pull_request_id, head_sha, merge_base_sha, patch_id, forge_patch_id, status, trigger, error, finished_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())`,
+			args.TenantID, pr.id, args.HeadSHA, mergeBase, patchID, forgePatchID, status, args.Trigger, errText)
 		return err
 	})
+}
+
+// earlyEnd is what a review ended before its runner is recorded with.
+type earlyEnd struct {
+	args                              jobs.ReviewArgs
+	pr                                *pullRequest
+	tenantSlug, mergeBase, forgePatch string
+	started                           time.Time
+	logger                            *slog.Logger
+}
+
+// end records the review as status, for reason, and counts it.
+func (w *Review) end(ctx context.Context, e earlyEnd, status, reason string) error {
+	w.Metrics.Review(e.tenantSlug, status, time.Since(e.started))
+	return w.record(ctx, e.args, e.pr, status, e.mergeBase, "", e.forgePatch, reason)
+}
+
+// skipUnchangedBot ends a bot's review whose rebase changed nothing,
+// before a lease or a runner is spent on it; the runner's own patch check
+// stays the backstop for what the forge cannot tell. A manual re-run is
+// never skipped. It returns the forge patch id the review records, and
+// whether it ended the review, with the error of recording that.
+func (w *Review) skipUnchangedBot(ctx context.Context, e earlyEnd, client forge.Client, owner, repo string) (string, bool, error) {
+	if !e.pr.authorIsBot || e.args.Trigger == jobs.TriggerManual {
+		return "", false, nil
+	}
+	patch, unchanged := w.botPatch(ctx, e.logger, client, owner, repo, e.args.TenantID, e.pr, e.mergeBase)
+	if !unchanged {
+		return patch, false, nil
+	}
+	e.logger.Info("review "+statusSkipped+" before its runner: bot patch unchanged", "forge_patch_id", short(patch))
+	e.forgePatch = patch
+	return patch, true, w.end(ctx, e, statusSkipped, "")
+}
+
+// admitAgentic admits an agentic review (see agentAdmit), and ends one it
+// refuses. It reports whether it ended the review, with the error of
+// admitting or of recording that.
+func (w *Review) admitAgentic(
+	ctx context.Context, e earlyEnd, file *configfile.File, tenant *configfile.Tenant, settings configfile.Settings, jobID int64,
+) (admission, bool, error) {
+	a, status, reason, err := w.agentAdmit(ctx, e.logger, file, tenant, settings, jobID)
+	if err != nil {
+		return admission{}, true, err
+	}
+	if status == "" {
+		return a, false, nil
+	}
+	e.logger.Warn("review "+status, "reason", reason)
+	return admission{}, true, w.end(ctx, e, status, reason)
+}
+
+// botPatch is the patch id of a bot pull request's diff as its forge
+// reports it, and whether the pull request's last prepared or completed
+// review had the same one. A diff the forge will not give, or a review
+// before it without one, tells nothing: the pull request is then reviewed
+// as usual.
+func (w *Review) botPatch(
+	ctx context.Context, logger *slog.Logger, client forge.Client, owner, repo, tenantID string, pr *pullRequest, mergeBase string,
+) (patch string, unchanged bool) {
+	diff, err := client.PullRequestDiff(ctx, owner, repo, pr.number, mergeBase, pr.headSHA)
+	if err != nil {
+		logger.Warn("forge diff not read; the runner checks the patch", "error", err)
+		return "", false
+	}
+	patch = gitfetch.PatchID(diff)
+	var last string
+	err = w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT forge_patch_id FROM reviews WHERE pull_request_id = $1
+			AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, pr.id).Scan(&last)
+	})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		logger.Warn("last forge patch id not read; the runner checks the patch", "error", err)
+	}
+	return patch, last != "" && last == patch
 }
 
 // start records the review and its runner run, and reads the last
 // completed review the new one may build on.
 func (w *Review) start(
-	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase string, mode configfile.ReviewMode, jobID int64,
+	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase, forgePatchID string, mode configfile.ReviewMode, jobID int64,
 ) (reviewID, runID string, prior priorReview, err error) {
 	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		var err error
@@ -444,9 +523,9 @@ func (w *Review) start(
 			return err
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO reviews
-			(tenant_id, pull_request_id, head_sha, merge_base_sha, status, trigger, mode, river_job_id)
-			VALUES ($1, $2, $3, $4, 'running', $5, $6, $7) RETURNING id`,
-			args.TenantID, pr.id, args.HeadSHA, mergeBase, args.Trigger, string(mode), jobID).Scan(&reviewID); err != nil {
+			(tenant_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, trigger, mode, river_job_id)
+			VALUES ($1, $2, $3, $4, $5, 'running', $6, $7, $8) RETURNING id`,
+			args.TenantID, pr.id, args.HeadSHA, mergeBase, forgePatchID, args.Trigger, string(mode), jobID).Scan(&reviewID); err != nil {
 			return fmt.Errorf("worker: insert review: %w", err)
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, review_id, kind) VALUES ($1, $2, 'review') RETURNING id`,

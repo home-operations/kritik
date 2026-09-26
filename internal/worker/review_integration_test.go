@@ -30,6 +30,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
+	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
@@ -101,6 +102,17 @@ func (l *localForge) MergeBase(context.Context, string, string, int, string, str
 	defer l.mu.Unlock()
 	return l.base, nil
 }
+
+// PullRequestDiff is the diff the runner would make of the same commits.
+func (l *localForge) PullRequestDiff(ctx context.Context, _, _ string, _ int, base, head string) (string, error) {
+	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: l.dir, Head: head, Base: base})
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = res.Close() }()
+	return res.Diff, nil
+}
+
 func (l *localForge) CloneURL(string, string) string           { return l.dir }
 func (l *localForge) GitToken(context.Context) (string, error) { return "", nil }
 func (l *localForge) BotLogin(context.Context) (string, error) { return "kritik[bot]", nil }
@@ -821,7 +833,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("bot PR with the same patch id is skipped", func(t *testing.T) {
-		checkBotPatchIDSkip(ctx, t, dir, base, lf, dispatch, waitReviewCount, insertOnly, tenant.ID(), repoID)
+		checkBotPatchIDSkip(ctx, t, appStore, dir, base, lf, dispatch, waitReviewCount, insertOnly, tenant.ID(), repoID)
 	})
 
 	t.Run("the merge-base .kritik.yaml skips, instructs and templates", func(t *testing.T) {
@@ -870,7 +882,7 @@ func labelled(names []string) []webhook.Label {
 // dispatch, then that a manual re-run of that same unchanged patch bypasses
 // the skip.
 func checkBotPatchIDSkip(
-	ctx context.Context, t *testing.T, dir, base string, lf *localForge,
+	ctx context.Context, t *testing.T, appStore *store.Store, dir, base string, lf *localForge,
 	dispatch func(headSHA string, bot bool), waitReviewCount func(headSHA string, min int) (status, patchID, mergeBase string),
 	insertOnly *river.Client[pgx.Tx], tenantID, repoID string,
 ) {
@@ -891,6 +903,15 @@ func checkBotPatchIDSkip(
 	status, _, _ := waitReviewCount(newHead.String(), 1)
 	if status != "skipped" {
 		t.Fatalf("status = %s, want skipped for an unchanged bot patch", status)
+	}
+	// The forge's diff told it before any runner was made for the head.
+	var runs int
+	var forgePatch string
+	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT forge_patch_id, (SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
+			FROM reviews r WHERE head_sha = $1`, newHead.String()).Scan(&forgePatch, &runs)
+	}); err != nil || runs != 0 || forgePatch == "" {
+		t.Fatalf("skipped review: forge patch %q, %d runner runs, %v; want a forge patch and no runner", forgePatch, runs, err)
 	}
 
 	// A manual re-run of the same unchanged bot patch must bypass the skip:
