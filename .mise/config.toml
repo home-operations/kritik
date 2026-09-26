@@ -187,5 +187,12 @@ description = "Run the dashboard UI's Playwright end-to-end tests"
 dir = "internal/web"
 run = "npm run test:e2e"
 
+[tasks.ui-test-container]
+description = "Run the dashboard UI's Playwright suite inside Microsoft's pinned official Playwright image, for hosts (e.g. NixOS) that lack the system libraries Chromium needs to run outside a container"
+run = """
+version="$(node -p "require('./internal/web/package-lock.json').packages['node_modules/@playwright/test'].version")"
+docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD":/work -w /work/internal/web -e CI=1 "mcr.microsoft.com/playwright:v${version}-noble" npx playwright test
+"""
+
 [hooks]
 postinstall = "lefthook install"
