@@ -2,6 +2,10 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-25
+- **Amended by:** [ADR-0010](0010-configuration-layers.md), which settles
+  §6's question of editing file-managed tenants (it may not), lets a file
+  edit win a collision of §2.12 without blocking the whole reload, and
+  replaces §2.15's list with one policy table.
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.17 and
   [ADR-0001](0001-kritik-pr-review-service.md) §2.14, the deferred v2
   dashboard sketch in both: this ADR is that dashboard, built.
