@@ -37,8 +37,8 @@ var (
 	// longer exists; findRepo already resolves it in the same
 	// transaction, so this is defense in depth rather than an expected path.
 	ErrRepositoryNotFound = errors.New("webapi: the repository was not found")
-	// ErrReindexQueued is returned by Reindex when a forced reindex deduped
-	// onto the repository's existing onboard or push index job.
+	// ErrReindexQueued is returned by Reindex when a forced reindex of the
+	// repository is already queued or running.
 	ErrReindexQueued = errors.New("webapi: a reindex is already queued for this repository")
 )
 

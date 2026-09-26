@@ -109,20 +109,30 @@ func TestReviewArgsKindAndInsertOpts(t *testing.T) {
 	}
 }
 
+// TestIndexArgsUniqueTags pins the key an index job is unique on: the
+// repository, not the commit, so a burst of pushes is one job; and Full, so
+// a forced rebuild is never folded into an update.
 func TestIndexArgsUniqueTags(t *testing.T) {
 	got := uniqueFields(IndexArgs{})
-	want := map[string]bool{"RepositoryID": true, "CommitSHA": true}
+	want := map[string]bool{"RepositoryID": true, "Full": true}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("river:\"unique\" fields = %v, want %v", got, want)
 	}
 }
 
-// TestIndexArgsFullNotUnique pins that Full is deliberately excluded from
-// the uniqueness hash: a forced reindex must dedupe against a concurrent one
-// by RepositoryID+CommitSHA alone, the same as any other reindex.
-func TestIndexArgsFullNotUnique(t *testing.T) {
-	if uniqueFields(IndexArgs{})["Full"] {
-		t.Fatal("Full must not carry a river:\"unique\" tag")
+// TestIndexArgsPriorities pins that updates run before forced rebuilds and
+// both before onboarding, and that every index job is retried a few times.
+func TestIndexArgsPriorities(t *testing.T) {
+	priority := map[string]int{}
+	for _, trigger := range []string{TriggerPush, TriggerReindex, TriggerOnboard} {
+		opts := IndexArgs{Trigger: trigger}.InsertOpts()
+		if opts.MaxAttempts != indexAttempts {
+			t.Fatalf("%s: MaxAttempts = %d, want %d", trigger, opts.MaxAttempts, indexAttempts)
+		}
+		priority[trigger] = opts.Priority
+	}
+	if priority[TriggerPush] >= priority[TriggerReindex] || priority[TriggerReindex] >= priority[TriggerOnboard] {
+		t.Fatalf("priorities = %v, want push before reindex before onboard (lower runs first)", priority)
 	}
 }
 

@@ -67,6 +67,7 @@ func TestLoad(t *testing.T) {
 		{name: "zero leader retry", env: map[string]string{"KRITIK_LEADER_RETRY_INTERVAL": "0"}, wantErr: true},
 		{name: "unknown executor", env: map[string]string{"KRITIK_EXECUTOR": "docker"}, wantErr: true},
 		{name: "zero review workers", env: map[string]string{"KRITIK_REVIEW_WORKERS": "0"}, wantErr: true},
+		{name: "zero onboarding window", env: map[string]string{"KRITIK_ONBOARD_WINDOW": "0"}, wantErr: true},
 		{name: "runner deadline past the cap", env: map[string]string{"KRITIK_RUNNER_DEADLINE": (jobtimeout.MaxRunnerDeadline + time.Second).String()}, wantErr: true},
 		{
 			name: "runner deadline at the cap",

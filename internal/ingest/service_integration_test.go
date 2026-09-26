@@ -239,8 +239,22 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 		}
 	})
 
-	t.Run("push to default branch indexes, other branches do not", func(t *testing.T) {
+	t.Run("push to an indexed default branch indexes, other branches do not", func(t *testing.T) {
 		main := webhook.Event{Kind: webhook.KindPush, Repository: repo("onedr0p/home-ops"), Push: &webhook.Push{Ref: "refs/heads/main", After: "eee"}}
+		if out, err := svc.Dispatch(ctx, request(f, main)); err != nil || out.Reason != "not-indexed" || count("index") != 0 {
+			t.Fatalf("push before an index = %+v, %v; index jobs = %d", out, err, count("index"))
+		}
+		in, _, _ := f.Installation("bot-ross")
+		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `WITH g AS (
+					INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+					VALUES ($1, $2, 'ddd', 'm', 8, 'full', 'completed') RETURNING id, repository_id)
+				UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`,
+				tenant.ID(), configfile.RepositoryID(in.ID(), "onedr0p/home-ops"))
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
 		if out, err := svc.Dispatch(ctx, request(f, main)); err != nil || out.Status != Enqueued || out.Job != "index" {
 			t.Fatalf("main push = %+v, %v", out, err)
 		}

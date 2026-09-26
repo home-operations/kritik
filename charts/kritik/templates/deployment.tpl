@@ -163,6 +163,8 @@ spec:
               value: {{ $.Values.config.reviewWorkers | quote }}
             - name: KRITIK_INDEX_WORKERS
               value: {{ $.Values.config.indexWorkers | quote }}
+            - name: KRITIK_ONBOARD_WINDOW
+              value: {{ $.Values.config.onboardWindow | quote }}
             - name: KRITIK_POLL_INTERVAL
               value: {{ tpl (toString $.Values.config.pollInterval) $ | quote }}
             - name: KRITIK_POLL_LOOKBACK

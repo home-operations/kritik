@@ -214,6 +214,7 @@ Kubernetes: `>=1.25.0-0`
 | config.indexWorkers | int | `1` | Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews. |
 | config.logFormat | string | `"json"` | Log format: json or text. |
 | config.logLevel | string | `"info"` | Log level: debug, info, warn or error. |
+| config.onboardWindow | int | `4` | Onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW); tenants take turns and the most active repositories go first. |
 | config.pollInterval | string | `"10m"` | How often the leader lists each installation's open pull requests as a backstop for missed webhooks (Go duration); "0" disables. |
 | config.pollLookback | string | `"24h"` | How far back a first or long-idle poll looks (Go duration). |
 | config.reloadInterval | string | `"10s"` | How often each replica re-reads the file (Go duration). |

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -126,16 +127,53 @@ func (s *Store) IndexSchema(ctx context.Context) (model string, dims int, ok boo
 // RepoRef names a repository and its tenant.
 type RepoRef struct{ ID, TenantID string }
 
-// RepositoriesWithoutIndex lists enabled repositories that have no active
-// index generation, for the leader to enqueue onboarding index jobs.
+// liveIndexJob is an index job of a repository still queued or running,
+// in River's own table: the states its unique key spans.
+const liveIndexJob = `j.kind = 'index' AND j.state IN ('available', 'pending', 'running', 'scheduled', 'retryable')`
+
+// OnboardingInFlight counts onboarding index jobs queued or running.
 // Owner connection: it spans every tenant.
-func (s *Store) RepositoriesWithoutIndex(ctx context.Context) ([]RepoRef, error) {
+func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 	if s.owner == nil {
-		return nil, errors.New("store: RepositoriesWithoutIndex needs the owner connection")
+		return 0, errors.New("store: OnboardingInFlight needs the owner connection")
 	}
-	rows, err := s.owner.Query(ctx, `SELECT id, tenant_id FROM repositories WHERE enabled AND active_index_run_id IS NULL ORDER BY created_at`)
+	var n int
+	if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM river_job j WHERE `+liveIndexJob+` AND j.args->>'trigger' = 'onboard'`).
+		Scan(&n); err != nil {
+		return 0, fmt.Errorf("store: count onboarding jobs: %w", err)
+	}
+	return n, nil
+}
+
+// OnboardCandidates lists up to limit enabled repositories with no active
+// index generation, no index job queued or running, and no onboarding job
+// that finished within retryAfter without building an index: one that
+// failed or was skipped would fail or be skipped again. Tenants take turns,
+// and within a tenant the repositories whose pull requests moved last come
+// first, as the ones a review is likeliest to need soon. Owner connection:
+// it spans every tenant.
+func (s *Store) OnboardCandidates(ctx context.Context, limit int, retryAfter time.Duration) ([]RepoRef, error) {
+	if s.owner == nil {
+		return nil, errors.New("store: OnboardCandidates needs the owner connection")
+	}
+	rows, err := s.owner.Query(ctx, `WITH candidates AS (
+			SELECT r.id, r.tenant_id, r.created_at,
+				(SELECT max(p.updated_at) FROM pull_requests p WHERE p.repository_id = r.id) AS active
+			FROM repositories r
+			WHERE r.enabled AND r.active_index_run_id IS NULL
+			  AND NOT EXISTS (SELECT 1 FROM river_job j WHERE `+liveIndexJob+` AND j.args->>'repository_id' = r.id::text)
+			  AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
+			                  AND j.args->>'trigger' = 'onboard' AND j.finalized_at > now() - make_interval(secs => $2)
+			                  AND NOT EXISTS (SELECT 1 FROM index_runs ir WHERE ir.repository_id = r.id
+			                                  AND ir.status IN ('completed', 'superseded') AND ir.created_at >= j.created_at))
+		)
+		SELECT id, tenant_id FROM (
+			SELECT c.*, row_number() OVER (PARTITION BY tenant_id ORDER BY active DESC NULLS LAST, created_at, id) AS turn FROM candidates c
+		) ranked
+		ORDER BY turn, active DESC NULLS LAST, created_at, id
+		LIMIT $1`, limit, retryAfter.Seconds())
 	if err != nil {
-		return nil, fmt.Errorf("store: list unindexed repositories: %w", err)
+		return nil, fmt.Errorf("store: list onboarding candidates: %w", err)
 	}
 	refs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RepoRef, error) {
 		var r RepoRef
@@ -143,7 +181,7 @@ func (s *Store) RepositoriesWithoutIndex(ctx context.Context) ([]RepoRef, error)
 		return r, err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("store: list unindexed repositories: %w", err)
+		return nil, fmt.Errorf("store: list onboarding candidates: %w", err)
 	}
 	return refs, nil
 }

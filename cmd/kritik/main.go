@@ -344,35 +344,6 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 	return fmt.Errorf("river: start: %w", err)
 }
 
-// enqueueMissingIndexes gives every enabled repository without an active
-// index generation an onboarding job. Index jobs are unique while queued
-// or running, so repeating this on every configuration change is cheap.
-func enqueueMissingIndexes(ctx context.Context, st *store.Store, queue *river.Client[pgx.Tx], logger *slog.Logger) error {
-	refs, err := st.RepositoriesWithoutIndex(ctx)
-	if err != nil {
-		return err
-	}
-	if len(refs) == 0 {
-		return nil
-	}
-	params := make([]river.InsertManyParams, 0, len(refs))
-	for _, r := range refs {
-		params = append(params, river.InsertManyParams{Args: jobs.IndexArgs{TenantID: r.TenantID, RepositoryID: r.ID, Trigger: "onboard"}})
-	}
-	results, err := queue.InsertMany(ctx, params)
-	if err != nil {
-		return fmt.Errorf("river: enqueue index jobs: %w", err)
-	}
-	enqueued := 0
-	for _, r := range results {
-		if !r.UniqueSkippedAsDuplicate {
-			enqueued++
-		}
-	}
-	logger.Info("onboarding index jobs", "repositories", len(refs), "enqueued", enqueued)
-	return nil
-}
-
 // newEmbedder builds the deployment embedder, or nil when indexing is off.
 func newEmbedder(cfg *config.Config) model.Embedder {
 	if !cfg.EmbeddingEnabled() {
@@ -469,6 +440,11 @@ func lead(
 			return ids
 		}, secretSweepInterval)
 	}
+	// So is feeding the index queue its onboarding jobs, a few at a time.
+	onboarder := &worker.Onboarder{Store: st, Queue: queue, Window: cfg.OnboardWindow, Logger: logger}
+	if cfg.EmbeddingEnabled() {
+		go onboarder.Run(pollCtx)
+	}
 	// And so is retention: model-call transcripts past their configured
 	// window (owner pool, bypassing row-level security) and expired
 	// dashboard sessions (app pool).
@@ -479,7 +455,7 @@ func lead(
 		if !cfg.EmbeddingEnabled() {
 			return nil
 		}
-		return enqueueMissingIndexes(ctx, st, queue, logger)
+		return onboarder.Offer(ctx)
 	}, refusedRetryInterval, configErrors, logger)
 }
 

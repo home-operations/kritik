@@ -171,6 +171,14 @@ type Config struct {
 	// account cannot starve them.
 	IndexWorkers int `env:"KRITIK_INDEX_WORKERS" envDefault:"1"`
 
+	// OnboardWindow is how many onboarding index jobs the leader keeps
+	// queued or running at once. Onboarding runs behind every push update
+	// in any case; the window keeps a thousand repositories from queuing
+	// at once, so tenants take turns and the most active repositories go
+	// first. A window at least the index workers of every replica together
+	// keeps them all busy.
+	OnboardWindow int `env:"KRITIK_ONBOARD_WINDOW" envDefault:"4"`
+
 	// Executor selects how runners run: "kubernetes" creates a Job per run
 	// in the pod's own namespace; "local" runs the runner in-process and is
 	// for development and tests only, because it gives the checkout the
@@ -374,11 +382,19 @@ func (c *Config) validate() error {
 	if c.PollInterval < 0 || c.PollLookback <= 0 {
 		return fmt.Errorf("config: KRITIK_POLL_INTERVAL must not be negative and KRITIK_POLL_LOOKBACK must be positive")
 	}
-	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.RunnerDeadline <= 0 || c.RunnerTTL <= 0 {
-		return fmt.Errorf("config: KRITIK_REVIEW_WORKERS, KRITIK_INDEX_WORKERS, KRITIK_RUNNER_DEADLINE and KRITIK_RUNNER_TTL must be positive")
-	}
-	if err := c.buildKeyring(); err != nil {
+	if err := c.validateWork(); err != nil {
 		return err
+	}
+	return c.buildKeyring()
+}
+
+// validateWork checks the settings that size the queues and the runners.
+func (c *Config) validateWork() error {
+	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.OnboardWindow <= 0 {
+		return fmt.Errorf("config: KRITIK_REVIEW_WORKERS, KRITIK_INDEX_WORKERS and KRITIK_ONBOARD_WINDOW must be positive")
+	}
+	if c.RunnerDeadline <= 0 || c.RunnerTTL <= 0 {
+		return fmt.Errorf("config: KRITIK_RUNNER_DEADLINE and KRITIK_RUNNER_TTL must be positive")
 	}
 	if c.RunnerDeadline > jobtimeout.MaxRunnerDeadline {
 		return fmt.Errorf("config: KRITIK_RUNNER_DEADLINE must not exceed %s (the %s job cap less the review and index headroom), got %s",
