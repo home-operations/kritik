@@ -177,6 +177,39 @@ func (f *File) validate() error {
 	return f.validateTenants()
 }
 
+// repositoryInstallation is the installation a repository entry binds to,
+// or an error saying why it binds to none: the installation it names does
+// not own it, no installation owns it, or several do and it names none.
+func (t *Tenant) repositoryInstallation(r *Repository, where string) (*Installation, error) {
+	owner, _, _ := strings.Cut(r.Name, "/")
+	var owners []*Installation
+	for i := range t.Installations {
+		in := &t.Installations[i]
+		if !strings.EqualFold(in.Account, owner) {
+			continue
+		}
+		if in.Name == r.Installation {
+			return in, nil
+		}
+		owners = append(owners, in)
+	}
+	switch {
+	case r.Installation != "":
+		return nil, fmt.Errorf("configfile: %s.installation %q is not an installation of tenant %q with account %q",
+			where, r.Installation, t.Slug, owner)
+	case len(owners) == 0:
+		return nil, fmt.Errorf("configfile: %s.name %q: no installation in tenant %q has account %q", where, r.Name, t.Slug, owner)
+	case len(owners) > 1:
+		names := make([]string, len(owners))
+		for i, in := range owners {
+			names[i] = in.Name
+		}
+		return nil, fmt.Errorf("configfile: %s.name %q: installations %s of tenant %q all have account %q; set installation to one of them",
+			where, r.Name, strings.Join(names, ", "), t.Slug, owner)
+	}
+	return owners[0], nil
+}
+
 func (f *File) validateRetention() error {
 	if f.Retention.DisabledIndexGrace < 0 {
 		return errors.New("configfile: retention.disabledIndexGrace must not be negative")
@@ -301,19 +334,20 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[
 		if r.Name == "" || !strings.Contains(r.Name, "/") {
 			return fmt.Errorf("configfile: %s.name must be \"owner/repo\", got %q", rwhere, r.Name)
 		}
-		if prev, dup := repos[r.Name]; dup {
-			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d]", rwhere, r.Name, prev)
+		in, err := t.repositoryInstallation(&r, rwhere)
+		if err != nil {
+			return err
 		}
-		repos[r.Name] = ri
+		key := in.Name + "\x00" + r.Name
+		if prev, dup := repos[key]; dup {
+			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d] of installation %q", rwhere, r.Name, prev, in.Name)
+		}
+		repos[key] = ri
 		if r.Settle < 0 {
 			return fmt.Errorf("configfile: %s.settle must not be negative", rwhere)
 		}
 		if err := r.validateReview(rwhere); err != nil {
 			return err
-		}
-		if f.InstallationFor(t, r.Name) == nil {
-			owner, _, _ := strings.Cut(r.Name, "/")
-			return fmt.Errorf("configfile: %s.name %q: no installation in tenant %q has account %q", rwhere, r.Name, t.Slug, owner)
 		}
 		for gi, g := range r.Ignore {
 			if !doublestar.ValidatePattern(g) || strings.TrimSpace(g) == "" {

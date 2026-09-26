@@ -471,7 +471,7 @@ func (w *Review) begin(
 		logger.Info("review superseded before start", "current_head", short(pr.headSHA))
 		return begun{}, true, w.end(ctx, e, statusSuperseded, "")
 	}
-	settings := file.Settings(tenant, pr.repository)
+	settings := file.Settings(tenant, pr.installation, pr.repository)
 	ref := string(settings.Models.Review)
 	if free, err := slotFree(ctx, w.Store, tenant.ID(), ref, settings.Limits.Concurrency); err != nil {
 		logger.Warn("model slots not read; the review goes on", "error", err)
