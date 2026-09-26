@@ -924,7 +924,13 @@ record. Full call-graph extraction remains a follow-up.
    poll) and hands each to the ingest dispatcher as a synthetic `poll`
    event, so the fork gate, filter and upsert are the webhook's. Because
    review jobs are unique on the head SHA, the poll can rediscover an
-   already queued head without creating a duplicate.
+   already queued head without creating a duplicate. An installation's
+   first poll hands over the PRs last updated before kritik knew the
+   installation as `baseline` events instead: they are recorded, so the
+   dashboard lists them and a review can be asked for there, but not
+   reviewed. No webhook for them was missed, and on a large install
+   reviewing them would start kritik with a review of every recently
+   active PR at once.
 4. **Filter gate.** The fork gate, then the resolved CEL expression.
    Filtered PRs enqueue nothing.
 5. **Staleness check.** Discard the job if its head is not the PR's head.

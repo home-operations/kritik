@@ -3,11 +3,14 @@
 // last poll and hands them to the ingest dispatcher as if a webhook had
 // delivered them. Review jobs are unique on the head SHA, so a head the
 // webhook already enqueued is skipped as a duplicate, never reviewed twice.
+// An installation's first poll records the pull requests last updated
+// before kritik knew the installation as a baseline instead of reviewing
+// them: no webhook for them was missed, and on a large install reviewing
+// them all would be one burst of model calls nobody asked for.
 package poller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -99,7 +102,8 @@ type repoRow struct {
 // requests were handed to the dispatcher.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *configfile.Tenant, in *configfile.Installation) (int, error) {
 	var repos []repoRow
-	var since time.Time
+	var known time.Time
+	var polled *time.Time
 	err := p.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT r.name, coalesce(i.external_id, 0) FROM repositories r JOIN installations i ON i.id = r.installation_id
 			WHERE r.installation_id = $1 AND r.enabled ORDER BY r.name`, in.ID())
@@ -113,17 +117,15 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *config
 		}); err != nil {
 			return err
 		}
-		err = tx.QueryRow(ctx, `SELECT last_polled_at FROM poll_state WHERE installation_id = $1`, in.ID()).Scan(&since)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		return err
+		return tx.QueryRow(ctx, `SELECT i.created_at, s.last_polled_at FROM installations i
+			LEFT JOIN poll_state s ON s.installation_id = i.id WHERE i.id = $1`, in.ID()).Scan(&known, &polled)
 	})
 	if err != nil {
 		return 0, fmt.Errorf("poller: read state: %w", err)
 	}
-	if floor := time.Now().Add(-p.Lookback); since.Before(floor) {
-		since = floor
+	since := time.Now().Add(-p.Lookback)
+	if polled != nil && polled.After(since) {
+		since = *polled
 	}
 	started := time.Now()
 	handled := 0
@@ -141,8 +143,12 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *config
 			return handled, err
 		}
 		for _, pr := range prs {
+			action := "poll"
+			if polled == nil && !pr.UpdatedAt.After(known) {
+				action = ingest.ActionBaseline
+			}
 			ev := webhook.Event{
-				Kind: webhook.KindPullRequest, Action: "poll", Delivery: fmt.Sprintf("poll-%s-%d", started.UTC().Format("20060102T150405"), pr.Number),
+				Kind: webhook.KindPullRequest, Action: action, Delivery: fmt.Sprintf("poll-%s-%d", started.UTC().Format("20060102T150405"), pr.Number),
 				Repository: &webhook.Repository{FullName: r.name, DefaultBranch: pr.DefaultBranch}, Account: owner, PullRequest: &pr.PullRequest,
 			}
 			out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Installation: in, Event: ev})

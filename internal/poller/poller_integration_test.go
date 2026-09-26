@@ -110,48 +110,59 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		t.Fatal(err)
 	}
 	in, tenant, _ := file.Installation("bot-ross")
+	var installed time.Time
+	if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT created_at FROM installations WHERE id = $1`, in.ID()).Scan(&installed)
+	}); err != nil {
+		t.Fatal(err)
+	}
 	lf := &listForge{prs: []forge.OpenPullRequest{{
 		Number: 7, Title: "poll me", Author: "onedr0p", State: "open", HeadRef: "f", HeadSHA: "abc123", BaseRef: "main",
 		UpdatedAt: time.Now(), DefaultBranch: "main",
+	}, {
+		// Last touched before kritik knew the installation.
+		Number: 8, Title: "leave me", Author: "onedr0p", State: "open", HeadRef: "g", HeadSHA: "old888", BaseRef: "main",
+		UpdatedAt: installed.Add(-time.Hour), DefaultBranch: "main",
 	}}}
 	p := &Poller{
 		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: lf}, Dispatcher: ingest.NewService(st, queue),
 		Interval: time.Hour, Lookback: 24 * time.Hour, Logger: logger,
 	}
 
-	// Start from no poll state and no pull request 7, whatever earlier
-	// suites left behind.
+	// Start from no poll state and no pull requests 7 or 8, whatever
+	// earlier suites left behind.
 	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE installation_id = $1`, in.ID()); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE number = 7`)
+		_, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE number IN (7, 8)`)
 		return err
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'review' AND args->>'number' = '7'`); err != nil {
+	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'review' AND args->>'number' IN ('7', '8')`); err != nil {
 		t.Fatal(err)
 	}
 	before := time.Now()
 	n, err := p.Poll(ctx, file, tenant, in)
-	if err != nil || n != 1 {
+	if err != nil || n != 2 {
 		t.Fatalf("first poll: n=%d err=%v", n, err)
 	}
-	countJobs := func() (jobs int, trigger string) {
+	countJobs := func(number int) (jobs int, trigger string) {
 		t.Helper()
-		// Only this test's pull request: the ingest suite leaves jobs of its
-		// own on the shared database.
+		// Only this test's pull requests: the ingest suite leaves jobs of
+		// its own on the shared database.
 		if err := st.App().QueryRow(ctx, `SELECT count(*), coalesce(max(args->>'trigger'), '') FROM river_job
-			WHERE kind = 'review' AND args->>'number' = '7'`).Scan(&jobs, &trigger); err != nil {
+			WHERE kind = 'review' AND (args->>'number')::int = $1`, number).Scan(&jobs, &trigger); err != nil {
 			t.Fatal(err)
 		}
 		return jobs, trigger
 	}
-	if jobs, trigger := countJobs(); jobs != 1 || trigger != "poll" {
+	if jobs, trigger := countJobs(7); jobs != 1 || trigger != "poll" {
 		t.Fatalf("after first poll: jobs=%d trigger=%q", jobs, trigger)
 	}
+	checkBaseline(ctx, t, st, tenant.ID(), 8, "old888")
 	var head string
 	var polledAt time.Time
 	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
@@ -164,11 +175,15 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		t.Fatalf("rows: err=%v head=%s polled=%v", err, head, polledAt)
 	}
 
-	// Same head again: ingest sees a duplicate, no second job.
+	// The forge lists only what changed since the first poll. Same head
+	// again: ingest sees a duplicate, no second job.
+	lf.mu.Lock()
+	lf.prs = lf.prs[:1]
+	lf.mu.Unlock()
 	if n, err := p.Poll(ctx, file, tenant, in); err != nil || n != 1 {
 		t.Fatalf("second poll: n=%d err=%v", n, err)
 	}
-	if jobs, _ := countJobs(); jobs != 1 {
+	if jobs, _ := countJobs(7); jobs != 1 {
 		t.Fatalf("after second poll: jobs=%d, want the head deduplicated", jobs)
 	}
 	lf.mu.Lock()
@@ -186,10 +201,28 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	if n, err := p.Poll(ctx, file, tenant, in); err != nil || n != 1 {
 		t.Fatalf("third poll: n=%d err=%v", n, err)
 	}
-	if jobs, _ := countJobs(); jobs != 2 {
+	if jobs, _ := countJobs(7); jobs != 2 {
 		// The poll action reviews whatever the forge lists as open; state is
 		// the forge's word, so a new head is a new job.
 		t.Fatalf("after third poll: jobs=%d", jobs)
+	}
+}
+
+// checkBaseline asserts the pull request numbered number was recorded at
+// head with no review job: the first poll's baseline.
+func checkBaseline(ctx context.Context, t *testing.T, st *store.Store, tenantID string, number int, head string) {
+	t.Helper()
+	var jobs int
+	var got string
+	if err := st.App().QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'review' AND (args->>'number')::int = $1`, number).
+		Scan(&jobs); err != nil {
+		t.Fatal(err)
+	}
+	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE number = $1`, number).Scan(&got)
+	})
+	if err != nil || got != head || jobs != 0 {
+		t.Fatalf("baseline pull request %d: head=%q jobs=%d err=%v; want %s recorded with no review job", number, got, jobs, err, head)
 	}
 }
 
