@@ -568,7 +568,13 @@ follow-up requires all of the following:
 of the last completed review, the job completes without a model call.
 A Renovate rebase moves the merge-base but leaves the patch-id unchanged,
 so it is skipped. A Renovate update that changes the diff gets a new
-review.
+review. As built, the check runs twice: first on the forge's own diff of
+the pull request, before a lease or a runner is spent (merging one
+Renovate PR rebases all its siblings, and each would otherwise cost a
+runner pod to be skipped), comparing only with the forge patch-ids of
+earlier reviews, since the forge's diff is not the runner's byte for byte;
+then on the runner's diff, for whatever the forge could not tell. A manual
+re-run is never skipped.
 
 **Egress guard.** konflate's `RESTRICT_EGRESS` guard (private, loopback,
 link-local and metadata ranges blocked, `https` and `ssh` only) is
