@@ -1276,6 +1276,9 @@ func checkActions(
 	t.Run("EnqueueReindex forces a full generation even when one is active", func(t *testing.T) {
 		checkEnqueueReindex(ctx, t, appStore, insertOnly, tenantID, repoID, head)
 	})
+	t.Run("EnqueueReindex reports the sentinels it branches on", func(t *testing.T) {
+		checkEnqueueReindexSentinels(ctx, t, appStore, insertOnly, tenantID, repoID)
+	})
 	t.Run("EnqueueRerun on a closed pull request is rejected", func(t *testing.T) {
 		checkEnqueueRerunClosed(ctx, t, appStore, insertOnly, tenantID, repoID)
 	})
@@ -1852,4 +1855,34 @@ func (l *localForge) lastStatus() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.status
+}
+
+// checkEnqueueReindexSentinels asserts EnqueueReindex's two sentinels. Each
+// case runs in a transaction it rolls back, so no job it inserts outlives it.
+func checkEnqueueReindexSentinels(
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], tenantID, repoID string,
+) {
+	errRollback := errors.New("roll back")
+	t.Run("ErrRepositoryNotFound for a repository the tenant does not have", func(t *testing.T) {
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			_, err := jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, uuid.NewString())
+			return errors.Join(err, errRollback)
+		})
+		if !errors.Is(err, jobs.ErrRepositoryNotFound) {
+			t.Fatalf("EnqueueReindex = %v, want ErrRepositoryNotFound", err)
+		}
+	})
+	t.Run("ErrReindexQueued when an onboard index job is already queued", func(t *testing.T) {
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			res, err := insertOnly.InsertTx(ctx, tx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: "onboard"}, nil)
+			if err != nil || res.UniqueSkippedAsDuplicate {
+				return fmt.Errorf("insert onboard job = %+v, %w", res, err)
+			}
+			_, err = jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, repoID)
+			return errors.Join(err, errRollback)
+		})
+		if !errors.Is(err, jobs.ErrReindexQueued) {
+			t.Fatalf("EnqueueReindex = %v, want ErrReindexQueued", err)
+		}
+	})
 }
