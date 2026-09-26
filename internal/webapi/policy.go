@@ -15,8 +15,9 @@ import (
 // an untrusted pull request it exposes the instance to, at the tenant and
 // at each repository.
 var operatorOnlyFields = []string{
-	"models", "forks", "runner", "limits", "mode", "agent", "incremental",
+	"models", "forks", "runner", "limits", "mode", "agent", "incremental", "allow",
 	"repositories[].models", "repositories[].forks", "repositories[].mode", "repositories[].agent", "repositories[].incremental",
+	"repositories[].allow",
 }
 
 // operatorOnlyChange is the path of the first operator-only field that
@@ -73,6 +74,8 @@ func operatorOnlyScope(a, b *configfile.Overrides) string {
 		return "agent"
 	case !ptrEqual(a.Incremental.MaxDeltaFiles, b.Incremental.MaxDeltaFiles):
 		return "incremental"
+	case !reflect.DeepEqual(a.Allow, b.Allow):
+		return "allow"
 	}
 	return ""
 }

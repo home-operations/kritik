@@ -17,6 +17,16 @@ func TestSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestFollowUpSystemPrompt(t *testing.T) {
+	if got := FollowUpSystemPrompt(nil); got != FollowUpSystem {
+		t.Fatal("without instructions the follow-up system prompt is the built-in one")
+	}
+	if got := FollowUpSystemPrompt([]string{"Check errors."}); !strings.HasPrefix(got, FollowUpSystem+"\n\n## Repository instructions\n\n") ||
+		!strings.HasSuffix(got, "\n\nCheck errors.") {
+		t.Fatalf("follow-up system prompt:\n%s", got)
+	}
+}
+
 func TestUserBudget(t *testing.T) {
 	for _, system := range []string{System, SystemPrompt([]string{strings.Repeat("x", 32<<10)})} {
 		// The system prompt's tokens, rounded up, plus the user budget stay

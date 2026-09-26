@@ -4,39 +4,41 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/prfilter"
 )
 
-// Operator is the operator's side of the settings the merge-base FileName
-// may change for one repository. Instructions and Templates name files.
-type Operator struct {
-	Enabled             bool
-	Ignore              []string
-	Instructions        []string
-	RequireSuggestedFix bool
-	Templates           Templates
-}
-
 // Merged is the operator's settings with the merge-base FileName applied.
 type Merged struct {
-	Operator
-	// Filter is the file's own filter, ANDed with the operator's, which
-	// ingest has already applied; nil when it sets none.
-	Filter *prfilter.Program
-	Skip   Skip
+	configfile.Settings
+	// InRepoFilter is the file's own filter, ANDed with the operator's,
+	// which ingest has already applied; nil when it sets none.
+	InRepoFilter *prfilter.Program
+	Skip         Skip
+	// Dropped says which of the file's values fell outside the operator's
+	// bounds; the operator's value applies for each.
+	Dropped []string
 }
 
 // Merge applies doc, the merge-base FileName or nil when the repository has
-// none, over op. The file may only narrow what the operator allows
-// (enabled, filter, ignore, skip), but its presentation and strictness
-// values replace the operator's defaults, since they grant nothing. A file
-// that does not parse is ignored as a whole: op stands, and the error says
-// why.
-func Merge(doc []byte, op Operator) (Merged, error) {
+// none, over the operator's settings op (ADR-0010 §2.5). The file narrows
+// what the operator allows (enabled, filter, ignore, skip), appends its
+// instructions to the operator's, may only turn requireSuggestedFix on,
+// and replaces the templates, which grant nothing. It chooses its mode,
+// models, agent limits and commands and settle time within the bounds
+// op.Allow gives it; a bound the operator leaves unset allows only the
+// operator's own mode, models and commands, and limits and a settle time
+// at or below the operator's own. A value outside its bound is dropped,
+// not clamped, and Dropped says so. A file that does not parse is ignored
+// as a whole: op stands, and the error says why.
+func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	op.Ignore = slices.Clone(op.Ignore)
-	m := Merged{Operator: op}
+	op.Review.Instructions = slices.Clone(op.Review.Instructions)
+	m := Merged{Settings: op}
 	if doc == nil {
 		return m, nil
 	}
@@ -47,26 +49,130 @@ func Merge(doc []byte, op Operator) (Merged, error) {
 	if f.Enabled != nil && !*f.Enabled {
 		m.Enabled = false
 	}
-	m.Filter = prg
+	m.InRepoFilter = prg
 	for _, g := range f.Ignore {
 		if !slices.Contains(m.Ignore, g) {
 			m.Ignore = append(m.Ignore, g)
 		}
 	}
 	m.Skip = f.Skip
-	if len(f.Review.Instructions) > 0 {
-		m.Instructions = f.Review.Instructions
+	for _, p := range f.Review.Instructions {
+		if !slices.Contains(m.Review.Instructions, p) {
+			m.Review.Instructions = append(m.Review.Instructions, p)
+		}
 	}
-	if f.Review.RequireSuggestedFix != nil {
-		m.RequireSuggestedFix = *f.Review.RequireSuggestedFix
+	if v := f.Review.RequireSuggestedFix; v != nil && *v {
+		m.Review.RequireSuggestedFix = true
+	} else if v != nil && op.Review.RequireSuggestedFix {
+		m.drop("review.requireSuggestedFix", "false", "true, since the operator requires a suggested fix")
 	}
 	if f.Review.Templates.Summary != "" {
-		m.Templates.Summary = f.Review.Templates.Summary
+		m.Review.Templates.Summary = f.Review.Templates.Summary
 	}
 	if f.Review.Templates.Inline != "" {
-		m.Templates.Inline = f.Review.Templates.Inline
+		m.Review.Templates.Inline = f.Review.Templates.Inline
 	}
+	m.choose(&f, &op)
 	return m, nil
+}
+
+// choose applies the mode, models, agent and settle time f chooses, each
+// only within the bound op gives it.
+func (m *Merged) choose(f *File, op *configfile.Settings) {
+	a := op.Allow
+	if f.Mode != "" {
+		modes := a.Modes
+		if modes == nil {
+			modes = []configfile.ReviewMode{op.Mode}
+		}
+		if slices.Contains(modes, f.Mode) {
+			m.Mode = f.Mode
+		} else {
+			m.drop("mode", strconv.Quote(string(f.Mode)), list(modes))
+		}
+	}
+	for _, c := range []struct {
+		field string
+		want  configfile.ModelRef
+		own   configfile.ModelRef
+		dst   *configfile.ModelRef
+	}{
+		{"models.review", f.Models.Review, op.Models.Review, &m.Models.Review},
+		{"models.fallback", f.Models.Fallback, op.Models.Fallback, &m.Models.Fallback},
+	} {
+		if c.want == "" {
+			continue
+		}
+		models := a.Models
+		if models == nil && c.own != "" {
+			models = []configfile.ModelRef{c.own}
+		}
+		if slices.Contains(models, c.want) {
+			*c.dst = c.want
+		} else {
+			m.drop(c.field, strconv.Quote(string(c.want)), list(models))
+		}
+	}
+	if f.Agent.Commands != nil {
+		commands := a.Commands
+		if commands == nil {
+			commands = op.Agent.Commands
+		}
+		if i := slices.IndexFunc(f.Agent.Commands, func(c string) bool { return !slices.Contains(commands, c) }); i >= 0 {
+			m.drop("agent.commands", strconv.Quote(f.Agent.Commands[i]), list(commands))
+		} else {
+			m.Agent.Commands = f.Agent.Commands
+		}
+	}
+	capped(m, "agent.maxSteps", f.Agent.MaxSteps, a.Agent.MaxSteps, &m.Agent.MaxSteps)
+	capped(m, "agent.maxToolOutputBytes", f.Agent.MaxToolOutputBytes, a.Agent.MaxToolOutputBytes, &m.Agent.MaxToolOutputBytes)
+	capped(m, "agent.maxTokens", f.Agent.MaxTokens, a.Agent.MaxTokens, &m.Agent.MaxTokens)
+	capped(m, "agent.timeout", f.Agent.Timeout, a.Agent.Timeout, &m.Agent.Timeout)
+	if f.Settle != nil {
+		bound := op.Settle
+		if a.Settle != nil {
+			bound = *a.Settle
+		}
+		if *f.Settle >= 0 && *f.Settle <= bound {
+			m.Settle = *f.Settle
+		} else {
+			m.drop("settle", f.Settle.String(), "0s to "+bound.String())
+		}
+	}
+}
+
+// capped sets *dst to the limit the file wants when it is positive and at
+// most bound, or when bound is nil at most the operator's own, *dst.
+func capped[T int | int64 | time.Duration](m *Merged, field string, want, bound, dst *T) {
+	if want == nil {
+		return
+	}
+	limit := *dst
+	if bound != nil {
+		limit = *bound
+	}
+	if *want <= 0 || *want > limit {
+		m.drop(field, fmt.Sprint(*want), fmt.Sprintf("above 0, at most %v", limit))
+		return
+	}
+	*dst = *want
+}
+
+// drop notes a value the file chose outside its bound.
+func (m *Merged) drop(field, value, allowed string) {
+	m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s %s was dropped; allowed: %s", FileName, field, value, allowed))
+}
+
+// list is a bound's values for a note.
+func list[T ~string](values []T) string {
+	if len(values) == 0 {
+		return "none"
+	}
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = string(v)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // SkipReason says why the repository's own configuration skips a review.
@@ -108,8 +214,8 @@ func (m Merged) Check(vars map[string]any, changed []string) (SkipReason, error)
 	if !m.Enabled {
 		return SkipDisabled, nil
 	}
-	if m.Filter != nil {
-		ok, err := m.Filter.Eval(vars)
+	if m.InRepoFilter != nil {
+		ok, err := m.InRepoFilter.Eval(vars)
 		if err != nil || !ok {
 			return SkipFiltered, err
 		}

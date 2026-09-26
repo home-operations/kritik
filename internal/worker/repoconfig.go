@@ -14,7 +14,6 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/prfilter"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 )
@@ -23,11 +22,7 @@ import (
 // Settings.Review names the files the runner reads; Instructions and
 // Templates hold their contents once it has.
 type Effective struct {
-	configfile.Settings
-	// InRepoFilter is ANDed with the operator's filter, which ingest has
-	// already applied.
-	InRepoFilter *prfilter.Program
-	Skip         repoconfig.Skip
+	repoconfig.Merged
 	// Found is whether the repository has a .kritik.yaml.
 	Found        bool
 	Instructions []string
@@ -50,26 +45,16 @@ func readRepoConfig(ctx context.Context, client forge.Client, owner, repo, ref s
 }
 
 // effective applies doc, the merge-base .kritik.yaml or nil when there is
-// none, onto the operator's settings. The file may only narrow what the
-// operator allows (enabled, filter, ignore, skip), but its presentation and
-// strictness values replace the operator's defaults, since they grant
-// nothing. A file that does not parse is ignored as a whole and noted.
+// none, onto the operator's settings (see repoconfig.Merge). The notes say
+// which of the file's values were dropped, or why the whole file was
+// ignored.
 func effective(settings configfile.Settings, doc []byte) (Effective, []string) {
-	var notes []string
-	m, err := repoconfig.Merge(doc, repoconfig.Operator{
-		Enabled: settings.Enabled, Ignore: settings.Ignore, Instructions: settings.Review.Instructions,
-		RequireSuggestedFix: settings.Review.RequireSuggestedFix,
-		Templates:           repoconfig.Templates{Summary: settings.Review.Templates.Summary, Inline: settings.Review.Templates.Inline},
-	})
+	m, err := repoconfig.Merge(doc, settings)
+	notes := m.Dropped
 	if err != nil {
 		notes = append(notes, fmt.Sprintf("%s was ignored: %v", repoconfig.FileName, err))
 	}
-	settings.Enabled, settings.Ignore = m.Enabled, m.Ignore
-	settings.Review = configfile.Review{
-		Instructions: m.Instructions, RequireSuggestedFix: m.RequireSuggestedFix,
-		Templates: configfile.ReviewTemplates{Summary: m.Templates.Summary, Inline: m.Templates.Inline},
-	}
-	return Effective{Settings: settings, InRepoFilter: m.Filter, Skip: m.Skip, Found: doc != nil}, notes
+	return Effective{Merged: m, Found: doc != nil}, notes
 }
 
 // repoFiles are the paths the runner reads from the merge base: the files
@@ -110,13 +95,6 @@ func (e *Effective) fill(files repoconfig.Files, notes []string) []string {
 	return notes
 }
 
-// skip returns why the repository's configuration skips this review, or ""
-// when it does not; see repoconfig.Merged.Check. Before the run, with no
-// changed paths, only enabled and the filter can skip.
-func (e *Effective) skip(vars map[string]any, changed []string) (repoconfig.SkipReason, error) {
-	return repoconfig.Merged{Enabled: e.Enabled, Filter: e.InRepoFilter, Skip: e.Skip}.Check(vars, changed)
-}
-
 // settleLeft is how much longer a review job started by trigger, enqueued
 // at created, waits before it runs: a new head waits until settle has
 // passed since it arrived, so a burst of pushes is reviewed once, at its
@@ -140,7 +118,8 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective, cli
 	}); err != nil {
 		return true, err
 	}
-	reason, err := eff.skip(vars, nil)
+	// With no changed paths yet, only enabled and the filter can skip.
+	reason, err := eff.Check(vars, nil)
 	if err != nil {
 		e.logger.Warn("repository filter failed to evaluate", "error", err)
 	}

@@ -100,6 +100,12 @@ config:
   #   models:
   #     review: openrouter/openai/gpt-6-sol
   #   filter: "!pr.draft"
+  #   # What a repository's .kritik.yaml may choose; with no bound, only
+  #   # the operator's own value, or a limit or settle time at or below it.
+  #   allow:
+  #     modes: [single, agentic]
+  #     models: [openrouter/openai/gpt-6-sol, openrouter/openai/gpt-6-mini]
+  #     settle: 10m
   # # The leader's backstop for missed webhooks; interval: 0s turns it off.
   # polling: { interval: 10m, lookback: 24h }
   # # Onboarding index jobs kept queued or running at once.

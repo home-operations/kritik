@@ -77,6 +77,7 @@ type pullRequest struct {
 	installation     string
 	externalID       int64
 	headSHA, baseRef string
+	title, author    string
 	authorIsBot      bool
 }
 
@@ -308,7 +309,7 @@ func (w *Review) afterRun(
 		return prepared{}, "", fmt.Errorf("worker: decode repository files: %w", err)
 	}
 	notes = eff.fill(files, append(notes, repoNotes...))
-	reason, ferr := eff.skip(vars, changed)
+	reason, ferr := eff.Check(vars, changed)
 	if ferr != nil {
 		logger.Warn("repository filter failed to evaluate", "error", ferr)
 	}
@@ -377,19 +378,21 @@ func loadFilterPR(ctx context.Context, tx pgx.Tx, prID string) (repoconfig.PullR
 	return pr, nil
 }
 
-func (w *Review) load(ctx context.Context, args jobs.ReviewArgs) (*pullRequest, error) {
+// loadPullRequest reads a job's pull request. One the store does not know
+// cancels the job: it will not appear by retrying.
+func loadPullRequest(ctx context.Context, st *store.Store, tenantID, repositoryID string, number int) (*pullRequest, error) {
 	var pr pullRequest
-	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT p.id, p.repository_id, r.name, p.number, i.name, coalesce(i.external_id, 0),
-				p.head_sha, p.base_ref, p.author_is_bot
+				p.head_sha, p.base_ref, p.title, p.author, p.author_is_bot
 			FROM pull_requests p JOIN repositories r ON r.id = p.repository_id JOIN installations i ON i.id = r.installation_id
-			WHERE p.repository_id = $1 AND p.number = $2`, args.RepositoryID, args.Number).
+			WHERE p.repository_id = $1 AND p.number = $2`, repositoryID, number).
 			Scan(&pr.id, &pr.repositoryID, &pr.repository, &pr.number, &pr.installation, &pr.externalID,
-				&pr.headSHA, &pr.baseRef, &pr.authorIsBot)
+				&pr.headSHA, &pr.baseRef, &pr.title, &pr.author, &pr.authorIsBot)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, river.JobCancel(fmt.Errorf("worker: pull request %d of %s is unknown", args.Number, args.RepositoryID))
+		return nil, river.JobCancel(fmt.Errorf("worker: pull request %d of %s is unknown", number, repositoryID))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("worker: load pull request: %w", err)
@@ -455,15 +458,17 @@ type begun struct {
 // begin takes a review job up to its admission, or ends it: superseded,
 // snoozed while every model slot is held or until its settle time is over,
 // or skipped by the merge-base .kritik.yaml or as an unchanged bot rebase.
-// The slot check comes before any forge call, so a job snoozed through a
-// busy spell costs the forge nothing each time it wakes. It reports whether
-// it ended the job, with the error of that or of getting this far.
+// The operator's model's slots are checked before any forge call, so a job
+// snoozed through a busy spell costs the forge nothing each time it wakes;
+// a repository that chooses another model then waits for that model's
+// slots too. It reports whether it ended the job, with the error of that or
+// of getting this far.
 func (w *Review) begin(
 	ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File, tenant *configfile.Tenant,
 	logger *slog.Logger, started time.Time,
 ) (begun, bool, error) {
 	args := job.Args
-	pr, err := w.load(ctx, args)
+	pr, err := loadPullRequest(ctx, w.Store, args.TenantID, args.RepositoryID, args.Number)
 	if err != nil {
 		return begun{}, true, err
 	}
@@ -473,11 +478,8 @@ func (w *Review) begin(
 		return begun{}, true, w.end(ctx, e, statusSuperseded, "")
 	}
 	settings := file.Settings(tenant, pr.installation, pr.repository)
-	ref := string(settings.Models.Review)
-	if free, err := slotFree(ctx, w.Store, tenant.ID(), ref, settings.Limits.Concurrency); err != nil {
-		logger.Warn("model slots not read; the review goes on", "error", err)
-	} else if !free {
-		return begun{}, true, w.snooze(e, job, ref)
+	if held, err := w.slotsHeld(ctx, e, job, tenant.ID(), settings); held {
+		return begun{}, true, err
 	}
 	client, err := w.client(ctx, file, pr.installation, pr.externalID, pr.repository)
 	if err != nil {
@@ -498,6 +500,11 @@ func (w *Review) begin(
 	}
 	if done, err := w.skipByRepo(ctx, e, &eff, client, owner, repo); done {
 		return begun{}, true, err
+	}
+	if eff.Models.Review != settings.Models.Review {
+		if held, err := w.slotsHeld(ctx, e, job, tenant.ID(), eff.Settings); held {
+			return begun{}, true, err
+		}
 	}
 	token, err := client.GitToken(ctx)
 	if err != nil {
@@ -541,6 +548,24 @@ func (w *Review) admit(
 	}
 	e.logger.Warn("review "+status, "reason", reason)
 	return admission{}, true, w.end(ctx, e, status, reason)
+}
+
+// slotsHeld snoozes the job when every one of the tenant's slots on the
+// review model settings name is held, and reports whether it did, with the
+// error that snoozes it. Slots it cannot count let the review go on.
+func (w *Review) slotsHeld(
+	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], tenantID string, settings configfile.Settings,
+) (bool, error) {
+	ref := string(settings.Models.Review)
+	free, err := slotFree(ctx, w.Store, tenantID, ref, settings.Limits.Concurrency)
+	if err != nil {
+		e.logger.Warn("model slots not read; the review goes on", "error", err)
+		return false, nil
+	}
+	if free {
+		return false, nil
+	}
+	return true, w.snooze(e, job, ref)
 }
 
 // snooze puts a review that found every model slot held back on the

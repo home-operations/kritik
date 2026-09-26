@@ -10,11 +10,13 @@
     "mode",
     "agent",
     "incremental",
+    "allow",
     "repositories[].models",
     "repositories[].forks",
     "repositories[].mode",
     "repositories[].agent",
-    "repositories[].incremental"
+    "repositories[].incremental",
+    "repositories[].allow"
   ],
   "spec": {
     "slug": "alpha",

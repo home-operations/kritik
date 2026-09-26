@@ -240,9 +240,11 @@ defaults:
     settle: 30m
 ```
 
-With no `allow`, a repository may only narrow: pick a value at or below the
-operator's own, as today. Load rejects an operator value outside its own
-`allow`. The repository then chooses:
+Each bound resolves on its own. Where none is set, a repository may only
+narrow: pick the operator's own mode and models and a subset of its
+commands, and limits and a settle time at or below the operator's own.
+Load rejects an operator value outside its own `allow`. The repository
+then chooses:
 
 ```yaml
 mode: agentic

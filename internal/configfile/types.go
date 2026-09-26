@@ -199,8 +199,32 @@ type Overrides struct {
 	Agent       Agent          `yaml:"agent,omitempty"`
 	Incremental Incremental    `yaml:"incremental,omitempty"`
 	Review      ReviewSpec     `yaml:"review,omitempty"`
+	// Allow bounds what the repository's own .kritik.yaml may choose.
+	Allow Allow `yaml:"allow,omitempty"`
 
 	filter *prfilter.Program
+}
+
+// Allow bounds what a repository's .kritik.yaml may choose (ADR-0010
+// §2.5), bound by bound: one written at a narrower scope replaces the
+// broader scope's, even when empty. A bound written nowhere leaves a
+// repository only the operator's own mode, model and commands, and limits
+// and a settle time at or below the operator's own.
+type Allow struct {
+	Modes    []ReviewMode `yaml:"modes,omitempty"`
+	Models   []ModelRef   `yaml:"models,omitempty"`
+	Commands []string     `yaml:"commands,omitempty"`
+	// Agent caps each agent limit a repository may set.
+	Agent  AllowAgent     `yaml:"agent,omitempty"`
+	Settle *time.Duration `yaml:"settle,omitempty"`
+}
+
+// AllowAgent caps the agent limits a repository may set.
+type AllowAgent struct {
+	MaxSteps           *int           `yaml:"maxSteps,omitempty"`
+	MaxToolOutputBytes *int           `yaml:"maxToolOutputBytes,omitempty"`
+	MaxTokens          *int64         `yaml:"maxTokens,omitempty"`
+	Timeout            *time.Duration `yaml:"timeout,omitempty"`
 }
 
 // Polling is the leader's backstop for missed webhooks: it lists each
@@ -539,4 +563,7 @@ type Settings struct {
 	Agent       AgentSettings
 	Incremental IncrementalSettings
 	Review      Review
+	// Allow is the bounds as the narrowest scope writing each one set it;
+	// one no scope writes is left unset.
+	Allow Allow
 }

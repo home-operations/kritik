@@ -1,7 +1,9 @@
 // Package repoconfig parses .kritik.yaml, the optional per-repository file
-// that lets a repository narrow how kritik reviews it: a filter ANDed with
-// the operator's own filter, path globs to ignore, a skip-review rule, and
-// review instructions/templates read from the repository itself.
+// that lets a repository narrow how kritik reviews it (a filter ANDed with
+// the operator's own filter, path globs to ignore, a skip-review rule),
+// add review instructions and templates read from the repository itself,
+// and choose its mode, models, agent limits and settle time within the
+// bounds the operator allows.
 //
 // Everything here is read from the merge-base commit (the base branch history
 // a PR cannot rewrite), never the PR's own tree, so a PR cannot use its own
@@ -19,6 +21,7 @@ import (
 	"io/fs"
 	"path"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -64,13 +67,34 @@ type Skip struct {
 	OnlyPaths []string `yaml:"onlyPaths,omitempty"`
 }
 
-// File is the decoded content of .kritik.yaml.
+// Models are the review and fallback models a repository chooses, each a
+// "<provider>/<model>" the operator's bounds list.
+type Models struct {
+	Review   configfile.ModelRef `yaml:"review,omitempty"`
+	Fallback configfile.ModelRef `yaml:"fallback,omitempty"`
+}
+
+// Agent is the agent limits and commands a repository chooses.
+type Agent struct {
+	MaxSteps           *int           `yaml:"maxSteps,omitempty"`
+	MaxToolOutputBytes *int           `yaml:"maxToolOutputBytes,omitempty"`
+	MaxTokens          *int64         `yaml:"maxTokens,omitempty"`
+	Timeout            *time.Duration `yaml:"timeout,omitempty"`
+	Commands           []string       `yaml:"commands,omitempty"`
+}
+
+// File is the decoded content of .kritik.yaml. Nothing in it is a secret or
+// a reference to one: it can only name what the operator configured.
 type File struct {
-	Enabled *bool    `yaml:"enabled,omitempty"`
-	Filter  string   `yaml:"filter,omitempty"`
-	Ignore  []string `yaml:"ignore,omitempty"`
-	Skip    Skip     `yaml:"skip,omitempty"`
-	Review  Review   `yaml:"review,omitempty"`
+	Enabled *bool                 `yaml:"enabled,omitempty"`
+	Mode    configfile.ReviewMode `yaml:"mode,omitempty"`
+	Models  Models                `yaml:"models,omitempty"`
+	Agent   Agent                 `yaml:"agent,omitempty"`
+	Settle  *time.Duration        `yaml:"settle,omitempty"`
+	Filter  string                `yaml:"filter,omitempty"`
+	Ignore  []string              `yaml:"ignore,omitempty"`
+	Skip    Skip                  `yaml:"skip,omitempty"`
+	Review  Review                `yaml:"review,omitempty"`
 }
 
 // Parse decodes data as .kritik.yaml. Unknown fields, invalid glob patterns

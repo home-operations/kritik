@@ -63,6 +63,12 @@ func TestOperatorOnlyChange(t *testing.T) {
 		{name: "tenant mode set", old: `{` + base + `}`, new: `{` + base + `,"mode":"agentic"}`, want: "mode"},
 		{name: "tenant agent set", old: `{` + base + `}`, new: `{` + base + `,"agent":{"maxTokens":9000000}}`, want: "agent"},
 		{name: "tenant incremental set", old: `{` + base + `}`, new: `{` + base + `,"incremental":{"maxDeltaFiles":500}}`, want: "incremental"},
+		{name: "tenant allow set", old: `{` + base + `}`, new: `{` + base + `,"allow":{"settle":"30m"}}`, want: "allow"},
+		{
+			name: "repository allow set",
+			old:  `{` + base + `,"repositories":[{"name":"alpha/x"}]}`, new: `{` + base + `,"repositories":[{"name":"alpha/x","allow":{"modes":["agentic"]}}]}`,
+			want: "repositories[0].allow",
+		},
 		{
 			name: "repository models set",
 			old:  `{` + base + `,"repositories":[{"name":"alpha/x"}]}`, new: `{` + base + `,"repositories":[{"name":"alpha/x","models":{"review":"p/big"}}]}`,
