@@ -333,6 +333,21 @@ func TestRun(t *testing.T) {
 		waitFor(t, "beta-bot gone", func() bool { return !hasInstallation(current(), "beta-bot") })
 	})
 
+	t.Run("a file that does not parse raises the gauge until one that does replaces it", func(t *testing.T) {
+		writeFile(t, path, "tenants: []\n")
+		waitFor(t, "merge gauge", func() bool { return mergeGauge() == 1 })
+		// A dashboard change still merges onto the last good file, and does
+		// not clear the gauge the bad file raised.
+		fs.set("6", dashRow(t, k, "beta", "beta-bot", 4))
+		h.OnConfig("beta")
+		waitFor(t, "beta-bot", func() bool { return hasInstallation(current(), "beta-bot") })
+		if v := mergeGauge(); v != 1 {
+			t.Fatalf("merge error gauge = %v while the file is bad, want 1", v)
+		}
+		writeFile(t, path, fileYAML)
+		waitFor(t, "merge gauge cleared", func() bool { return mergeGauge() == 0 })
+	})
+
 	t.Run("rows without a key are refused at runtime too", func(t *testing.T) {
 		keyless := &Source{Store: newFakeStore(), Current: configfile.NewCurrent(current()), Logger: slog.New(logs)}
 		keyless.Store.(*fakeStore).set("5", dashRow(t, k, "beta", "beta-bot", 1))

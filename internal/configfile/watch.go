@@ -14,9 +14,10 @@ import (
 // Polling rather than inotify: a ConfigMap mount updates by swapping a
 // symlink, which inotify on the file itself misses, and a content hash makes
 // the loop idempotent regardless of how the bytes arrived. A file that fails
-// to load is logged and skipped, so the last good state stays live; the same
-// bad content is not re-logged on every tick.
-func Watch(ctx context.Context, path string, interval time.Duration, logger *slog.Logger, apply func(*File)) {
+// to load is logged, passed to reject (when not nil) and skipped, so the
+// last good state stays live; the same bad content is not reported again on
+// every tick.
+func Watch(ctx context.Context, path string, interval time.Duration, logger *slog.Logger, apply func(*File), reject func(error)) {
 	var applied, rejected [sha256.Size]byte
 	tick := func() {
 		raw, err := os.ReadFile(path)
@@ -32,6 +33,9 @@ func Watch(ctx context.Context, path string, interval time.Duration, logger *slo
 		if err != nil {
 			rejected = sum
 			logger.Error("configfile: rejected, keeping the last good configuration", "path", path, "error", err)
+			if reject != nil {
+				reject(err)
+			}
 			return
 		}
 		applied = sum

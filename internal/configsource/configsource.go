@@ -55,7 +55,7 @@ type Source struct {
 	// Poll defaults to DefaultPoll.
 	Poll time.Duration
 	// Errors, when set, is raised at the merge stage while LastError is
-	// not nil.
+	// not nil or the file's latest content does not parse.
 	Errors *server.ConfigErrorGauge
 
 	mu sync.Mutex
@@ -66,6 +66,10 @@ type Source struct {
 	appliedRows []configfile.DashboardTenant
 	lastErr     error
 	loggedErr   string
+	// fileErr is why the file's latest content failed to parse, nil once
+	// content that parses replaces it; it keeps the merge gauge raised
+	// even while the last good file still merges.
+	fileErr error
 }
 
 // Load reads the file at path and the dashboard tenants, merges them and
@@ -111,9 +115,14 @@ func (s *Source) Run(ctx context.Context, path string, interval time.Duration) e
 	g.Go(func() error {
 		configfile.Watch(ctx, path, interval, s.logger(), func(f *configfile.File) {
 			s.mu.Lock()
-			s.file = f
+			s.file, s.fileErr = f, nil
 			s.mu.Unlock()
 			kick()
+		}, func(err error) {
+			s.mu.Lock()
+			s.fileErr = err
+			s.mu.Unlock()
+			s.Errors.Set(server.ConfigErrorMerge, true)
 		})
 		return nil
 	})
@@ -243,8 +252,9 @@ func (s *Source) fail(err error) {
 func (s *Source) succeed() {
 	s.mu.Lock()
 	s.lastErr, s.loggedErr = nil, ""
+	failing := s.fileErr != nil
 	s.mu.Unlock()
-	s.Errors.Set(server.ConfigErrorMerge, false)
+	s.Errors.Set(server.ConfigErrorMerge, failing)
 }
 
 func (s *Source) logger() *slog.Logger {

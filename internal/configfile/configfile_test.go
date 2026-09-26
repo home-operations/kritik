@@ -435,8 +435,10 @@ func TestWatch(t *testing.T) {
 	write(minimal)
 
 	applied := make(chan *File, 4)
+	rejected := make(chan error, 4)
 	ctx := t.Context()
-	go Watch(ctx, path, 20*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)), func(f *File) { applied <- f })
+	go Watch(ctx, path, 20*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)),
+		func(f *File) { applied <- f }, func(err error) { rejected <- err })
 
 	expectNone := func(why string) {
 		t.Helper()
@@ -463,6 +465,14 @@ func TestWatch(t *testing.T) {
 	expectApply("acme-two")
 	write("tenants: []\n")
 	expectNone("an invalid file must not be applied")
+	select {
+	case <-rejected:
+	default:
+		t.Fatal("an invalid file was not reported rejected")
+	}
+	if len(rejected) != 0 {
+		t.Fatal("the same invalid content was reported more than once")
+	}
 	write(strings.Replace(minimal, "slug: acme", "slug: acme-three", 1))
 	expectApply("acme-three")
 }
