@@ -46,6 +46,26 @@ test('repositories filter and repository detail', async ({ page }) => {
   await expect(page.locator('#repo-pulls').locator('../..')).toContainText(g.pull.title);
 });
 
+test('a repository several installations hold asks which one, then loads it', async ({ page }) => {
+  const detail = new RegExp(`/api/v1/tenants/${g.SLUG}/repos/alpha/one$`);
+  await page.route(
+    (u) => detail.test(u.pathname),
+    (route) => {
+      const installation = new URL(route.request().url()).searchParams.get('installation');
+      if (!installation) {
+        const body = { code: 'ambiguous', message: 'several installations hold this repository', details: { installations: ['alpha-forgejo', 'alpha-github'] } };
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(body) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...g.repoDetail, installation }) });
+    },
+  );
+  await page.goto(`/${T}/repos/alpha/one`);
+  await expect(page.getByRole('heading', { name: 'Which installation?' })).toBeVisible();
+  await page.getByRole('link', { name: 'alpha-github' }).click();
+  await expect(page).toHaveURL(new RegExp(`${T}/repos/alpha/one\\?installation=alpha-github$`));
+  await expect(page.locator('.deflist').first()).toContainText('alpha-github');
+});
+
 test.describe('pulls list', () => {
   test('filters, load more and keyboard navigation', async ({ page }) => {
     const seen = await g.mockApi(page, g.defaultApi());

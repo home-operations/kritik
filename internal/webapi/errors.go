@@ -71,6 +71,13 @@ type pathDetails struct {
 	Path string `json:"path"`
 }
 
+// ambiguousRepoDetails are an ambiguous repository's details: the
+// installations that hold a repository of the name asked for, one of which
+// ?installation= must name.
+type ambiguousRepoDetails struct {
+	Installations []string `json:"installations"`
+}
+
 // slugTakenDetails are a slug_taken error's details. Adoptable is set only
 // when the slug belonged to a tenant that is gone, so creating it again
 // with adopt would succeed; never for a slug a live tenant holds.
