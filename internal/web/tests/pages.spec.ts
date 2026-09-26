@@ -167,6 +167,21 @@ test('a server-sent event for the tenant refetches the page', async ({ page }) =
   await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/queue')).length).toBeGreaterThan(1);
 });
 
+test('a stream that (re)opens refetches the page, event or not', async ({ page }) => {
+  const seen = await g.mockApi(page, g.defaultApi());
+  let opens = 0;
+  await page.route('**/api/events', (route) => {
+    opens++;
+    return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+  });
+  await page.goto(`/${T}/queue`);
+  const queues = () => seen.filter((u) => u.pathname.endsWith('/queue')).length;
+  // The first fetch, then one refetch per open: the reconnect backoff
+  // (at least 500ms) outlasts live()'s 300ms debounce, so none merge.
+  await expect.poll(() => opens).toBeGreaterThan(1);
+  await expect.poll(queues).toBeGreaterThanOrEqual(3);
+});
+
 test('a signed-in user navigating to sign-in is sent back', async ({ page, mockProviders }) => {
   await mockProviders();
   await page.goto(`/${T}/queue`);

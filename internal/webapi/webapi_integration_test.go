@@ -482,7 +482,7 @@ func (e *apiEnv) stream(ctx context.Context, who string) <-chan Event {
 		e.t.Fatalf("%s: /api/events = %d", who, resp.StatusCode)
 	}
 	br := bufio.NewReader(resp.Body)
-	if line, err := br.ReadString('\n'); err != nil || line != ": connected\n" {
+	if line, err := br.ReadString('\n'); err != nil || line != "event: resync\n" {
 		e.t.Fatalf("%s: first line %q, %v", who, line, err)
 	}
 	out := make(chan Event, 64)

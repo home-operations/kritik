@@ -42,8 +42,12 @@ function scheduleReconnect(): void {
 
 function connect(): void {
   source = new EventSource(`${basePath}/api/events`);
+  // Anything published while this stream was down, or before it first
+  // opened, never reached it: every open is a resync. The server also opens
+  // each stream with one; live() debounces the pair into one refetch.
   source.addEventListener('open', () => {
     attempt = 0;
+    for (const fn of listeners.get('resync') ?? []) fn({});
   });
   // EventSource retries on its own after 'error', but only at a fixed
   // interval; close it and drive the reconnect ourselves so the backoff

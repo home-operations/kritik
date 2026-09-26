@@ -145,7 +145,11 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(h.heartbeat)
 	defer ticker.Stop()
 
-	frame := []byte(": connected\n\n")
+	// Every stream opens with a resync: events published while the browser
+	// was reconnecting, or between its first fetch and this stream opening,
+	// were never delivered to it.
+	resync := []byte("event: resync\ndata: {}\n\n")
+	frame := resync
 	for {
 		if !extend() {
 			return
@@ -163,7 +167,7 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-c.resync:
 			c.drain()
-			frame = []byte("event: resync\ndata: {}\n\n")
+			frame = resync
 		case e := <-c.events:
 			var err error
 			if frame, err = eventFrame(e); err != nil {

@@ -98,6 +98,19 @@ func sseLine(t *testing.T, r *bufio.Reader) string {
 	}
 }
 
+// expectResync reads the frame every stream opens with: a resync, since
+// whatever happened before this connection (a previous one dropping, or
+// the page's first fetch racing it) was never delivered.
+func expectResync(t *testing.T, br *bufio.Reader) {
+	t.Helper()
+	if got := sseLine(t, br); got != "event: resync" {
+		t.Fatalf("first frame = %q, want a resync", got)
+	}
+	if got := sseLine(t, br); got != "data: {}" {
+		t.Fatalf("resync data = %q", got)
+	}
+}
+
 func TestHubServe(t *testing.T) {
 	h, f := testHub(t)
 	h.heartbeat = 20 * time.Millisecond
@@ -118,9 +131,7 @@ func TestHubServe(t *testing.T) {
 		t.Fatalf("headers = %v", resp.Header)
 	}
 	br := bufio.NewReader(resp.Body)
-	if got := sseLine(t, br); got != ": connected" {
-		t.Fatalf("first frame = %q", got)
-	}
+	expectResync(t, br)
 
 	h.publish(store.Event{TenantID: alpha, Kind: store.EventIndexRun, ID: "ix-1"})
 	var lines []string
@@ -181,9 +192,7 @@ func TestHubCloseEndsStreams(t *testing.T) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	br := bufio.NewReader(resp.Body)
-	if got := sseLine(t, br); got != ": connected" {
-		t.Fatalf("first frame = %q", got)
-	}
+	expectResync(t, br)
 	h.close()
 	done := make(chan error, 1)
 	go func() {
