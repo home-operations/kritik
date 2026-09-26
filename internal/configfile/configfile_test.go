@@ -481,6 +481,10 @@ func TestWatch(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("an invalid file was not reported rejected")
 	}
+	// Reverting to the content last applied applies it again, so the caller
+	// learns the invalid file is gone.
+	write(strings.Replace(minimal, "slug: acme", "slug: acme-two", 1))
+	expectApply("acme-two")
 	write(strings.Replace(minimal, "slug: acme", "slug: acme-three", 1))
 	expectApply("acme-three")
 }

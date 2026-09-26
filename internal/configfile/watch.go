@@ -16,7 +16,7 @@ import (
 // the loop idempotent regardless of how the bytes arrived. A file that fails
 // to load is logged, passed to reject (when not nil) and skipped, so the
 // last good state stays live; the same bad content is not reported again on
-// every tick.
+// every tick. Reverting to the content last applied applies it again.
 func Watch(ctx context.Context, path string, interval time.Duration, logger *slog.Logger, apply func(*File), reject func(error)) {
 	var applied, rejected [sha256.Size]byte
 	tick := func() {
@@ -26,7 +26,9 @@ func Watch(ctx context.Context, path string, interval time.Duration, logger *slo
 			return
 		}
 		sum := sha256.Sum256(raw)
-		if sum == applied || sum == rejected {
+		// Content reverted to what was last applied is applied again only
+		// after a rejection, so the caller learns the rejected file is gone.
+		if sum == rejected || (sum == applied && rejected == [sha256.Size]byte{}) {
 			return
 		}
 		f, err := Parse(raw)

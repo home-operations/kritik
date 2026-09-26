@@ -334,6 +334,10 @@ func TestRun(t *testing.T) {
 	})
 
 	t.Run("a file that does not parse raises the gauge until one that does replaces it", func(t *testing.T) {
+		good, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
 		writeFile(t, path, "tenants: []\n")
 		waitFor(t, "merge gauge", func() bool { return mergeGauge() == 1 })
 		// A dashboard change still merges onto the last good file, and does
@@ -344,7 +348,8 @@ func TestRun(t *testing.T) {
 		if v := mergeGauge(); v != 1 {
 			t.Fatalf("merge error gauge = %v while the file is bad, want 1", v)
 		}
-		writeFile(t, path, fileYAML)
+		// Reverting to the very content last applied clears it too.
+		writeFile(t, path, string(good))
 		waitFor(t, "merge gauge cleared", func() bool { return mergeGauge() == 0 })
 	})
 
