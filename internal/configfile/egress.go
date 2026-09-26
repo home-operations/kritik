@@ -9,8 +9,8 @@ import (
 	"github.com/home-operations/kritik/internal/egress"
 )
 
-// githubHost is where a GitHub installation without a host lives.
-const githubHost = "github.com"
+// GitHubHost is where a GitHub installation or sign-in without a host lives.
+const GitHubHost = "github.com"
 
 // validateEgress checks the allowlist entries are bare hostnames and each
 // credential names a host that is allowed, explicitly or implicitly.
@@ -60,12 +60,7 @@ func (f *File) EgressRules() egress.Rules {
 	}
 	for _, t := range f.Tenants {
 		for _, i := range t.Installations {
-			switch {
-			case i.Host != "":
-				add(hostOf(i.Host))
-			case i.Forge == ForgeGitHub:
-				add(githubHost)
-			}
+			add(i.forgeHost())
 		}
 	}
 	creds := make(map[string]string, len(f.Egress.credentials))

@@ -124,7 +124,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runnerRunID,
 		Labels: map[string]string{
-			"tenant": tenant.Slug, "repository": strings.ReplaceAll(repo.name, "/", "_"), "kind": jobs.QueueIndex,
+			"tenant": tenant.Slug, "repository": repo.name, "kind": jobs.QueueIndex,
 		},
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": commit},
 		Job: runner.Spec{
@@ -242,7 +242,6 @@ func (w *Index) finish(ctx context.Context, tenantID, runID, status string, chun
 type indexPack struct {
 	mode, base   string
 	changedPaths []string
-	chunkCount   int
 }
 
 type stagedChunk struct {
@@ -261,8 +260,8 @@ func (w *Index) embed(
 ) (int, string, error) {
 	var pack indexPack
 	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT mode, base_sha, changed_paths, chunk_count FROM index_packs WHERE runner_run_id = $1`, runnerRunID).
-			Scan(&pack.mode, &pack.base, &pack.changedPaths, &pack.chunkCount)
+		return tx.QueryRow(ctx, `SELECT mode, base_sha, changed_paths FROM index_packs WHERE runner_run_id = $1`, runnerRunID).
+			Scan(&pack.mode, &pack.base, &pack.changedPaths)
 	})
 	if err != nil {
 		return 0, "", fmt.Errorf("worker: read index pack: %w", err)
@@ -282,7 +281,7 @@ func (w *Index) embed(
 	}
 	var total int
 	var tokens int64
-	err = w.withLease(ctx, tenant, "embed:"+w.EmbedModel, settings.Slots(), jobID, func(ctx context.Context) error {
+	err = w.withLease(ctx, tenant, "embed:"+w.EmbedModel, settings.Limits.Concurrency, jobID, func(ctx context.Context) error {
 		return w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 			if pack.mode == modeIncremental && len(pack.changedPaths) > 0 {
 				if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`,

@@ -168,8 +168,8 @@ func signInOrigin(s configfile.SignIn) string {
 	case configfile.SignInOIDC:
 		return string(s.Type) + ":" + s.Issuer
 	case configfile.SignInGitHub:
-		if forgeHost(string(s.Type), s.Host) == githubHost {
-			return string(s.Type) + ":https://" + githubHost
+		if configfile.ForgeHost(configfile.Forge(s.Type), s.Host) == configfile.GitHubHost {
+			return string(s.Type) + ":https://" + configfile.GitHubHost
 		}
 		return string(s.Type) + ":" + webBase(s.Host)
 	default:
@@ -186,12 +186,12 @@ func redirectURL(webURL *url.URL, name string) string {
 func displayName(s configfile.SignIn) string {
 	switch s.Type {
 	case configfile.SignInGitHub:
-		if h := forgeHost(string(s.Type), s.Host); h != githubHost {
+		if h := configfile.ForgeHost(configfile.Forge(s.Type), s.Host); h != configfile.GitHubHost {
 			return "GitHub (" + h + ")"
 		}
 		return "GitHub"
 	case configfile.SignInForgejo:
-		return "Forgejo (" + forgeHost(string(s.Type), s.Host) + ")"
+		return "Forgejo (" + configfile.ForgeHost(configfile.Forge(s.Type), s.Host) + ")"
 	default:
 		return s.Name
 	}
@@ -208,16 +208,4 @@ func webBase(host string) string {
 		return strings.TrimRight(host, "/")
 	}
 	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + strings.TrimRight(u.Path, "/")
-}
-
-// hostname is the hostname of a URL or bare host, without a port.
-func hostname(s string) string {
-	if !strings.Contains(s, "://") {
-		s = "https://" + s
-	}
-	u, err := url.Parse(s)
-	if err != nil {
-		return ""
-	}
-	return u.Hostname()
 }

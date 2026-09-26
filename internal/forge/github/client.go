@@ -13,9 +13,6 @@ import (
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
-// statusContext is the name of kritik's commit status.
-const statusContext = "kritik/review"
-
 // userTypeBot is how GitHub types App and bot accounts.
 const userTypeBot = "Bot"
 
@@ -132,22 +129,15 @@ func (c *Client) BotLogin(ctx context.Context) (string, error) {
 
 // FindComment implements forge.Client.
 func (c *Client) FindComment(ctx context.Context, owner, repo string, number int, login, marker string) (int64, error) {
-	opts := &gh.IssueListCommentsOptions{PerPage: 100}
-	for {
-		comments, resp, err := c.api.Issues.ListComments(ctx, owner, repo, number, opts)
+	for cm, err := range c.api.Issues.ListCommentsIter(ctx, owner, repo, number, &gh.IssueListCommentsOptions{PerPage: 100}) {
 		if err != nil {
 			return 0, fmt.Errorf("github: list comments on #%d: %w", number, err)
 		}
-		for _, cm := range comments {
-			if cm.GetUser().GetLogin() == login && strings.Contains(cm.GetBody(), marker) {
-				return cm.GetID(), nil
-			}
+		if cm.GetUser().GetLogin() == login && strings.Contains(cm.GetBody(), marker) {
+			return cm.GetID(), nil
 		}
-		if resp.NextPage == 0 {
-			return 0, nil
-		}
-		opts.Page = resp.NextPage
 	}
+	return 0, nil
 }
 
 // CreateComment implements forge.Client.
@@ -208,38 +198,26 @@ func (c *Client) GetComment(ctx context.Context, owner, repo string, _ int, id i
 func (c *Client) ListConversation(ctx context.Context, owner, repo string, number int) ([]forge.Comment, error) {
 	opts := &gh.IssueListCommentsOptions{Sort: new("created"), Direction: new("asc"), PerPage: 100}
 	var out []forge.Comment
-	for {
-		comments, resp, err := c.api.Issues.ListComments(ctx, owner, repo, number, opts)
+	for cm, err := range c.api.Issues.ListCommentsIter(ctx, owner, repo, number, opts) {
 		if err != nil {
 			return nil, fmt.Errorf("github: list comments on #%d: %w", number, err)
 		}
-		for _, cm := range comments {
-			out = append(out, conversationComment(cm))
-		}
-		if resp.NextPage == 0 {
-			return out, nil
-		}
-		opts.Page = resp.NextPage
+		out = append(out, conversationComment(cm))
 	}
+	return out, nil
 }
 
 // ListInline implements forge.Client.
 func (c *Client) ListInline(ctx context.Context, owner, repo string, number int) ([]forge.Comment, error) {
 	opts := &gh.PullRequestListCommentsOptions{Sort: "created", Direction: "asc", PerPage: 100}
 	var out []forge.Comment
-	for {
-		comments, resp, err := c.api.PullRequests.ListComments(ctx, owner, repo, number, opts)
+	for cm, err := range c.api.PullRequests.ListCommentsIter(ctx, owner, repo, number, opts) {
 		if err != nil {
 			return nil, fmt.Errorf("github: list review comments on #%d: %w", number, err)
 		}
-		for _, cm := range comments {
-			out = append(out, inlineComment(cm))
-		}
-		if resp.NextPage == 0 {
-			return out, nil
-		}
-		opts.Page = resp.NextPage
+		out = append(out, inlineComment(cm))
 	}
+	return out, nil
 }
 
 // Permission implements forge.Client.
@@ -290,22 +268,16 @@ func inlineComment(cm *gh.PullRequestComment) forge.Comment {
 func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]forge.OpenPullRequest, error) {
 	opts := &gh.PullRequestListOptions{State: "open", Sort: "updated", Direction: "desc", PerPage: 100}
 	var out []forge.OpenPullRequest
-	for {
-		prs, resp, err := c.api.PullRequests.List(ctx, owner, repo, opts)
+	for pr, err := range c.api.PullRequests.ListIter(ctx, owner, repo, opts) {
 		if err != nil {
 			return nil, fmt.Errorf("github: list open pull requests of %s/%s: %w", owner, repo, err)
 		}
-		for _, pr := range prs {
-			if pr.GetUpdatedAt().Before(since) {
-				return out, nil
-			}
-			out = append(out, openPullRequest(pr))
+		if pr.GetUpdatedAt().Before(since) {
+			break
 		}
-		if resp.NextPage == 0 {
-			return out, nil
-		}
-		opts.Page = resp.NextPage
+		out = append(out, openPullRequest(pr))
 	}
+	return out, nil
 }
 
 func openPullRequest(pr *gh.PullRequest) forge.OpenPullRequest {
@@ -328,7 +300,7 @@ func openPullRequest(pr *gh.PullRequest) forge.OpenPullRequest {
 // SetStatus implements forge.Client.
 func (c *Client) SetStatus(ctx context.Context, owner, repo, sha string, state forge.StatusState, description string) error {
 	status := gh.RepoStatus{
-		State: new(string(state)), Context: new(statusContext), Description: new(truncate(description, 140)),
+		State: new(string(state)), Context: new(forge.StatusContext), Description: new(truncate(description, forge.MaxStatusDescription)),
 	}
 	if _, _, err := c.api.Repositories.CreateStatus(ctx, owner, repo, sha, status); err != nil {
 		return fmt.Errorf("github: status on %s: %w", sha, err)

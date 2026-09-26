@@ -130,7 +130,7 @@ func TestHandler(t *testing.T) {
 
 func TestHandlerRejectsOversizedBody(t *testing.T) {
 	srv := setup(t, &fakeDispatcher{})
-	body := `{"pad":"` + strings.Repeat("x", maxBody) + `"}`
+	body := `{"pad":"` + strings.Repeat("x", webhook.MaxBody) + `"}`
 	if resp := post(t, srv, "/hooks/bot-ross", "push", "s3cret", body); resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}

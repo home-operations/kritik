@@ -21,7 +21,6 @@ import (
 // against one GitHub host.
 type App struct {
 	clientID string
-	key      *rsa.PrivateKey
 	apiBase  string // "" for github.com
 	apps     *gh.Client
 }
@@ -34,7 +33,7 @@ func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("github: parse App private key: %w", err)
 	}
-	a := &App{clientID: clientID, key: key, apiBase: apiBase}
+	a := &App{clientID: clientID, apiBase: apiBase}
 	client, err := newClient(&appJWTTransport{base: http.DefaultTransport, clientID: clientID, key: key}, apiBase)
 	if err != nil {
 		return nil, err
@@ -42,9 +41,6 @@ func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
 	a.apps = client
 	return a, nil
 }
-
-// ClientID returns the App's client id.
-func (a *App) ClientID() string { return a.clientID }
 
 // Slug returns the App's URL slug, which names the bot user its comments
 // are posted as.

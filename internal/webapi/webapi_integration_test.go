@@ -99,7 +99,7 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	st, err := store.Open(ctx, store.Options{
 		AppURL: testEnv(t, "KRITIK_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIK_TEST_OWNER_URL"),
-		AppRole: "kritik_app", RunnerRole: "kritik_runner", Logger: logger,
+		Logger: logger,
 	})
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)

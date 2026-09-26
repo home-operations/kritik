@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 )
@@ -139,14 +140,14 @@ func (s Spec) Validate() error {
 	if s.RunID == "" || s.CloneURL == "" {
 		return errors.New("runner: spec needs runId and cloneUrl")
 	}
-	if !isSHA(s.Head) {
+	if !gitfetch.IsSHA(s.Head) {
 		return fmt.Errorf("runner: spec head %q is not a commit SHA", s.Head)
 	}
 	if s.Kind == KindReview && s.Base == "" {
 		return errors.New("runner: a review spec needs a base")
 	}
 	for name, sha := range map[string]string{"base": s.Base, "priorHead": s.PriorHead} {
-		if sha != "" && !isSHA(sha) {
+		if sha != "" && !gitfetch.IsSHA(sha) {
 			return fmt.Errorf("runner: spec %s %q is not a commit SHA", name, sha)
 		}
 	}
@@ -171,19 +172,6 @@ func (s Spec) Validate() error {
 		}
 	}
 	return nil
-}
-
-// isSHA reports whether s is a full lowercase SHA-1 commit id.
-func isSHA(s string) bool {
-	if len(s) != 40 {
-		return false
-	}
-	for _, c := range s {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
 }
 
 // Spec size bounds. A spec travels as a key of the run's Secret, which

@@ -17,7 +17,7 @@ var githubScopes = []string{"read:user", "user:email", "read:org"}
 // GitHub Enterprise Server host.
 func newGitHubProvider(s configfile.SignIn, redirect string, client *http.Client) *forgeProvider {
 	web, api := "https://github.com", "https://api.github.com"
-	if forgeHost(string(s.Type), s.Host) != githubHost {
+	if configfile.ForgeHost(configfile.Forge(s.Type), s.Host) != configfile.GitHubHost {
 		web = webBase(s.Host)
 		api = web + "/api/v3"
 	}

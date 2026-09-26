@@ -111,19 +111,6 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 	return nil
 }
 
-// IndexSchema reports the model and dimension index_chunks exists for, or
-// ok=false when no embedder has ever been configured.
-func (s *Store) IndexSchema(ctx context.Context) (model string, dims int, ok bool, err error) {
-	err = s.app.QueryRow(ctx, `SELECT embed_model, embed_dims FROM index_schema WHERE id = 1`).Scan(&model, &dims)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", 0, false, nil
-	}
-	if err != nil {
-		return "", 0, false, fmt.Errorf("store: read index schema: %w", err)
-	}
-	return model, dims, true, nil
-}
-
 // RepoRef names a repository and its tenant.
 type RepoRef struct{ ID, TenantID string }
 

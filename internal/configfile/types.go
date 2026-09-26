@@ -223,9 +223,6 @@ func (a GitHubApp) ClientIDValue() string { return a.clientID }
 // PrivateKeyValue returns the resolved private key PEM.
 func (a GitHubApp) PrivateKeyValue() Secret { return a.privateKey }
 
-// WebhookSecretValue returns the resolved webhook secret.
-func (a GitHubApp) WebhookSecretValue() Secret { return a.webhookSecret }
-
 // Installation is one bot on one forge account. Its name is the hook path,
 // /hooks/{name}, and must be unique across the whole file.
 type Installation struct {

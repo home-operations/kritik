@@ -42,7 +42,6 @@ func openStore(t *testing.T) *Store {
 	ctx := context.Background()
 	s, err := Open(ctx, Options{
 		AppURL: testEnv(t, "KRITIK_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIK_TEST_OWNER_URL"),
-		AppRole: "kritik_app", RunnerRole: "kritik_runner",
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
@@ -70,7 +69,7 @@ func TestOpenRefusesUnsafeApplicationDSN(t *testing.T) {
 	openStore(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Open(ctx, Options{AppURL: tt.url, AppRole: "kritik_app", RunnerRole: "kritik_runner", Logger: logger})
+			_, err := Open(ctx, Options{AppURL: tt.url, Logger: logger})
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("Open = %v, want %v", err, tt.want)
 			}

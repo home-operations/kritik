@@ -36,9 +36,8 @@ var ErrRerunQueued = errors.New("jobs: a review of this head is already queued o
 // not exist in tenantID.
 var ErrRepositoryNotFound = errors.New("jobs: repository not found")
 
-// ErrReindexQueued is returned by EnqueueReindex when the forced reindex
-// deduped onto a repository's existing onboard or push index job (both carry
-// the same empty CommitSHA a forced reindex does); no new job was inserted.
+// ErrReindexQueued is returned by EnqueueReindex when a forced reindex of
+// the repository is already queued or running; no new job was inserted.
 var ErrReindexQueued = errors.New("jobs: reindex already queued")
 
 // EnqueueRerun re-queues a review of number's current head, the way a human

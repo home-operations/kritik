@@ -10,13 +10,6 @@ import (
 	"github.com/home-operations/kritik/internal/jobtimeout"
 )
 
-// MaxJobTimeout and RescueStuckJobsAfter are re-exported from jobtimeout for
-// callers that only import worker (e.g. cmd/kritik's river.Config).
-const (
-	MaxJobTimeout        = jobtimeout.MaxJobTimeout
-	RescueStuckJobsAfter = jobtimeout.RescueStuckJobsAfter
-)
-
 // Timeout implements river.Worker: the runner's deadline, the agent's in
 // agentic mode, plus the lease wait and the publish phase around it.
 func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {

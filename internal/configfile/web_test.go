@@ -39,7 +39,7 @@ func TestWeb(t *testing.T) {
 		t.Fatalf("sso = %+v, %v", sso, ok)
 	}
 	gh, _ := f.Web.SignInByName("gh")
-	if gh.Host != githubHost {
+	if gh.Host != GitHubHost {
 		t.Fatalf("github host = %q, want the default", gh.Host)
 	}
 	if _, ok := f.Web.SignInByName("nope"); ok {

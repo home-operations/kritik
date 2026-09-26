@@ -373,23 +373,17 @@ type fileSection struct {
 // splitFiles cuts a unified diff at "diff --git" boundaries.
 func splitFiles(diff string) []fileSection {
 	var out []fileSection
-	var cur *fileSection
+	start, pos, path := 0, 0, "?"
 	for l := range strings.SplitSeq(diff, "\n") {
 		if strings.HasPrefix(l, "diff --git ") {
-			if cur != nil {
-				out = append(out, *cur)
+			if pos > 0 {
+				out = append(out, fileSection{path: path, text: diff[start:pos]})
 			}
-			cur = &fileSection{path: pathFromHeader(l)}
+			start, path = pos, pathFromHeader(l)
 		}
-		if cur == nil {
-			cur = &fileSection{path: "?"}
-		}
-		cur.text += l + "\n"
+		pos += len(l) + 1
 	}
-	if cur != nil {
-		out = append(out, *cur)
-	}
-	return out
+	return append(out, fileSection{path: path, text: diff[start:] + "\n"})
 }
 
 func pathFromHeader(l string) string {

@@ -32,6 +32,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/configsource"
 	"github.com/home-operations/kritik/internal/ingest"
+	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/sealbox"
 	"github.com/home-operations/kritik/internal/store"
 )
@@ -84,7 +85,7 @@ func (f *fakeActions) Rerun(ctx context.Context, tx pgx.Tx, tenantID, repository
 
 func (f *fakeActions) Cancel(ctx context.Context, tx pgx.Tx, reviewID, by string) error {
 	if reviewID == f.notCancelable {
-		return ErrNotCancelable
+		return jobs.ErrNotCancelable
 	}
 	return f.note(ctx, tx, "cancel %s by %s", reviewID, by)
 }
@@ -121,7 +122,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	st, err := store.Open(ctx, store.Options{
 		AppURL: testEnv(t, "KRITIK_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIK_TEST_OWNER_URL"),
-		AppRole: "kritik_app", RunnerRole: "kritik_runner", Logger: logger,
+		Logger: logger,
 	})
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)

@@ -40,7 +40,7 @@ func (s *Server) registerReads(mux *http.ServeMux) {
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	me := Me{
-		Account:  Account{ID: p.Account.ID, DisplayName: p.Account.DisplayName, Email: p.Account.Email, AvatarURL: p.Account.AvatarURL},
+		Account:  account(p.Account),
 		Operator: p.Operator, Tenants: []TenantMembership{},
 	}
 	for _, t := range readable(s.current.Get(), p) {
@@ -256,21 +256,13 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope)
 }
 
 func repoSettings(s configfile.Settings) RepoSettings {
-	instructions := s.Review.Instructions
-	if instructions == nil {
-		instructions = []string{}
-	}
-	commands := s.Agent.Commands
-	if commands == nil {
-		commands = []string{}
-	}
 	return RepoSettings{
 		Enabled: s.Enabled, Mode: s.Mode, Models: models(s.Models), Filter: filterSource(s), Forks: s.Forks,
 		Ignore: nonNil(slices.Clone(s.Ignore)), SettleSeconds: int64(s.Settle.Seconds()), MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
-		Review: ReviewBlock{Instructions: instructions, RequireSuggestedFix: s.Review.RequireSuggestedFix},
+		Review: ReviewBlock{Instructions: nonNil(s.Review.Instructions), RequireSuggestedFix: s.Review.RequireSuggestedFix},
 		Agent: AgentLimits{
 			MaxSteps: s.Agent.MaxSteps, MaxToolOutputBytes: s.Agent.MaxToolOutputBytes, MaxTokens: s.Agent.MaxTokens,
-			TimeoutSeconds: int64(s.Agent.Timeout.Seconds()), Commands: commands,
+			TimeoutSeconds: int64(s.Agent.Timeout.Seconds()), Commands: nonNil(s.Agent.Commands),
 			CommandTimeoutSeconds: int64(s.Agent.CommandTimeout.Seconds()),
 		},
 		Limits: limits(s.Limits),

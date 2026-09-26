@@ -34,6 +34,7 @@ import (
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/metrics"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/poller"
@@ -233,7 +234,7 @@ func run() error {
 			Logger: logger,
 			// Review and index workers set their own timeouts from the
 			// runner deadline; rescue must wait out the longest of them.
-			RescueStuckJobsAfter: worker.RescueStuckJobsAfter,
+			RescueStuckJobsAfter: jobtimeout.RescueStuckJobsAfter,
 			Queues: map[string]river.QueueConfig{
 				jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
 				jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
@@ -274,7 +275,7 @@ func run() error {
 // in particular never is (ADR-0009 §3).
 func storeOptions(role config.Role, cfg *config.Config, logger *slog.Logger) store.Options {
 	opts := store.Options{
-		AppURL: cfg.DatabaseURL, AppRole: cfg.DatabaseAppRole, RunnerRole: cfg.DatabaseRunnerRole, Logger: logger,
+		AppURL: cfg.DatabaseURL, Logger: logger,
 	}
 	if role == config.RoleAll || role == config.RoleWorker {
 		opts.OwnerURL = cfg.DatabaseOwnerURL

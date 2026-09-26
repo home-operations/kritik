@@ -46,14 +46,10 @@ func (p *Principal) CanAdmin(tenantID string) bool {
 
 type principalKey struct{}
 
-func withPrincipal(ctx context.Context, p *Principal) context.Context {
-	return context.WithValue(ctx, principalKey{}, p)
-}
-
 // WithPrincipal returns ctx acting as p, for a caller that authenticated
 // the request some other way than Authenticate, such as a handler test.
 func WithPrincipal(ctx context.Context, p *Principal) context.Context {
-	return withPrincipal(ctx, p)
+	return context.WithValue(ctx, principalKey{}, p)
 }
 
 // PrincipalFrom returns the request's principal, nil when it is not signed
@@ -98,7 +94,7 @@ func (h *Handler) Authenticate(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusInternalServerError, errorBody{Code: codeInternal})
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withPrincipal(ctx, principalFor(file, sess, roles))))
+		next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principalFor(file, sess, roles))))
 	})
 }
 

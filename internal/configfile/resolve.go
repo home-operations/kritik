@@ -116,14 +116,6 @@ func (f *File) DisabledIndexGrace() time.Duration {
 	return DefaultDisabledIndexGrace
 }
 
-// Slots is the tenant's model concurrency, with the default applied.
-func (s Settings) Slots() int {
-	if s.Limits.Concurrency > 0 {
-		return s.Limits.Concurrency
-	}
-	return DefaultConcurrency
-}
-
 func (m Models) overlay(o Models) Models {
 	if o.Review != "" {
 		m.Review = o.Review

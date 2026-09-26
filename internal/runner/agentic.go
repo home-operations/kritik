@@ -35,16 +35,6 @@ type packView struct {
 	Scope     review.Scope
 }
 
-// timelineStep is one agent step as agent_runs.timeline records it.
-type timelineStep struct {
-	Index        int      `json:"index"`
-	Tools        []string `json:"tools"`
-	DurationMS   int64    `json:"duration_ms"`
-	OutputBytes  int      `json:"output_bytes"`
-	InputTokens  int64    `json:"input_tokens"`
-	OutputTokens int64    `json:"output_tokens"`
-}
-
 // AgentSkipped is the stop reason an agent_runs row records when the
 // runner did not run the agent because the worker will skip the review; its
 // error column holds the reason, a repoconfig.SkipReason or
@@ -118,7 +108,7 @@ func (a *AgentLimits) limits() agent.Limits {
 func reviewAgent(
 	ctx context.Context, stepper model.Stepper, p Spec, head *object.Tree, ignore []string, extra []agent.Tool,
 	system, user string, strict bool, timeout time.Duration, logger *slog.Logger,
-) (agent.Result, []timelineStep) {
+) (agent.Result, []store.TimelineStep) {
 	actx, cancel := ctx, context.CancelFunc(func() {})
 	if timeout > 0 {
 		actx, cancel = context.WithTimeout(ctx, timeout)
@@ -130,7 +120,7 @@ func reviewAgent(
 		schema = review.SchemaStrict()
 	}
 	tree := agent.NewTree(head, ignore)
-	timeline := []timelineStep{}
+	timeline := []store.TimelineStep{}
 	res := agent.Run{
 		Stepper: stepper, Model: p.Model.Model, System: system, User: user,
 		Tools: append([]agent.Tool{
@@ -145,7 +135,7 @@ func reviewAgent(
 			if tools == nil {
 				tools = []string{}
 			}
-			timeline = append(timeline, timelineStep{
+			timeline = append(timeline, store.TimelineStep{
 				Index: e.Index, Tools: tools, DurationMS: e.Duration.Milliseconds(), OutputBytes: e.OutputBytes,
 				InputTokens: e.Usage.Prompt(), OutputTokens: e.Usage.Output,
 			})
@@ -244,7 +234,7 @@ type agentRecord struct {
 // newAgentRecord encodes a finished Run and the sources its commands
 // fetched. The error text and the sources are masked: an error may carry a
 // token, and the worker shows both.
-func newAgentRecord(res agent.Result, timeline []timelineStep, sources []string, secrets Secrets) (agentRecord, error) {
+func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []string, secrets Secrets) (agentRecord, error) {
 	rec := agentRecord{stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, model: res.Model, err: secrets.Mask(res.Err)}
 	masked := make([]string, len(sources))
 	for i, s := range sources {

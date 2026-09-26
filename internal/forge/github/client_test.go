@@ -227,7 +227,7 @@ func TestWriteBackCalls(t *testing.T) {
 	}
 	status := f.bodies["POST /api/v3/repos/o/r/statuses/abc"].(map[string]any)
 	// GitHub's limit is 140 characters, not bytes; the ellipsis is 3 bytes.
-	if status["context"] != statusContext || utf8.RuneCountInString(status["description"].(string)) != 140 {
+	if status["context"] != forge.StatusContext || utf8.RuneCountInString(status["description"].(string)) != 140 {
 		t.Fatalf("status body = %v", status)
 	}
 	rid, err := c.ReplyInline(t.Context(), "o", "r", 7, 50, "reply")

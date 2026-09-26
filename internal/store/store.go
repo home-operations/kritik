@@ -54,10 +54,7 @@ type Options struct {
 	// OwnerURL is the owner role's DSN. Optional; without it the process can
 	// never become leader.
 	OwnerURL string
-	// AppRole and RunnerRole are the role names migrations grant to.
-	AppRole    string
-	RunnerRole string
-	Logger     *slog.Logger
+	Logger   *slog.Logger
 }
 
 // Open connects both pools and runs the startup assertions. It fails, rather

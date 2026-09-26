@@ -164,11 +164,6 @@ func (p *publishPhase) countFindings(res review.Result) {
 	}
 }
 
-// checkCaps returns a description of the cap that is exhausted, or "".
-func (p *publishPhase) checkCaps(ctx context.Context) (string, error) {
-	return capReached(ctx, p.w.Store, p.tenant.ID(), p.settings.Limits)
-}
-
 // capReached returns a description of the tenant's cap that is exhausted,
 // or "".
 func capReached(ctx context.Context, st *store.Store, tenantID string, limits configfile.Limits) (string, error) {
@@ -189,29 +184,16 @@ type capUsage struct {
 }
 
 func readUsage(ctx context.Context, st *store.Store, tenantID string) (capUsage, error) {
-	var u capUsage
+	var m store.MonthUsage
 	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM reviews
-			WHERE status = 'completed' AND created_at >= date_trunc('day', now())`).Scan(&u.reviews); err != nil {
-			return err
-		}
 		var err error
-		u.tokens, err = monthTokens(ctx, tx)
+		m, err = store.ReadMonthUsage(ctx, tx)
 		return err
 	})
 	if err != nil {
 		return capUsage{}, fmt.Errorf("worker: read caps: %w", err)
 	}
-	return u, nil
-}
-
-// monthTokens is what the tenant of tx has spent this month, as the
-// tokensPerMonth cap counts it.
-func monthTokens(ctx context.Context, tx pgx.Tx) (int64, error) {
-	var tokens int64
-	err := tx.QueryRow(ctx, `SELECT coalesce(sum(input_tokens + output_tokens), 0) FROM usage
-		WHERE created_at >= date_trunc('month', now())`).Scan(&tokens)
-	return tokens, err
+	return capUsage{reviews: m.ReviewsToday, tokens: m.Tokens}, nil
 }
 
 // reviewUsage is one model call charged to a review: its whole prompt,
@@ -276,10 +258,10 @@ func (p *publishPhase) complete(
 ) (model.CompletionResponse, string, error) {
 	var resp model.CompletionResponse
 	role := roleReview
-	err := p.w.withLease(ctx, p.tenant, string(ref), p.settings.Slots(), p.jobID, func(ctx context.Context) error {
+	err := p.w.withLease(ctx, p.tenant, string(ref), p.settings.Limits.Concurrency, p.jobID, func(ctx context.Context) error {
 		// Under the lease, so concurrent reviews cannot all pass a cap of
 		// one; a review only counts once it has completed.
-		capped, err := p.checkCaps(ctx)
+		capped, err := capReached(ctx, p.w.Store, p.tenant.ID(), p.settings.Limits)
 		if err != nil {
 			return err
 		}
@@ -566,7 +548,7 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 	}
 	var vectors [][]float32
 	var tokens int64
-	err = p.w.withLease(ctx, p.tenant, "embed:"+p.w.EmbedModel, p.settings.Slots(), p.jobID, func(ctx context.Context) error {
+	err = p.w.withLease(ctx, p.tenant, "embed:"+p.w.EmbedModel, p.settings.Limits.Concurrency, p.jobID, func(ctx context.Context) error {
 		var err error
 		vectors, tokens, err = p.w.Embedder.Embed(ctx, texts)
 		p.w.Metrics.ModelCall(p.tenant.Slug, p.w.EmbedModel, roleEmbedding, callOutcome(err), tokens, 0, 0, 0)
@@ -582,9 +564,11 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 	var hits []hit
 	seen := map[string]bool{}
 	err = p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `INSERT INTO usage (tenant_id, repository_id, review_id, role, model, input_tokens)
-			VALUES ($1, $2, $3, 'embedding', $4, $5)`, p.tenant.ID(), p.pr.repositoryID, p.reviewID, p.w.EmbedModel, tokens); err != nil {
-			return fmt.Errorf("worker: record embedding usage: %w", err)
+		if err := insertUsage(ctx, tx, reviewUsage{
+			tenantID: p.tenant.ID(), repositoryID: p.pr.repositoryID, reviewID: p.reviewID,
+			role: roleEmbedding, model: p.w.EmbedModel, input: tokens,
+		}); err != nil {
+			return err
 		}
 		// The generation and tenant filters are strict and cheap, exactly
 		// what VectorChord's prefilter wants: it then skips the distance of

@@ -63,10 +63,6 @@ func NewHandler(current *configfile.Current, disp Dispatcher, logger *slog.Logge
 	return &Handler{current: current, disp: disp, logger: logger}
 }
 
-// maxBody caps a payload before it is read into memory; webhook.Parse
-// enforces the same limit on what it will decode.
-const maxBody = 4 << 20
-
 // ServeHTTP verifies, parses and dispatches. Status codes: 404 for an
 // unknown installation, 401 for a bad signature, 400 for an unparsable
 // payload, 413 for an oversized one, 204 for a ping, 202 for anything
@@ -78,13 +74,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	file := h.current.Get()
 	in, tenant, ok := file.Installation(name)
 	if !ok {
-		h.Metrics.Webhook(name, "unknown_installation")
+		// The name is the caller's, not ours: labelling by it would let any
+		// request mint a new series.
+		h.Metrics.Webhook("", "unknown_installation")
 		http.Error(w, "unknown installation", http.StatusNotFound)
 		return
 	}
 	logger := h.logger.With("installation", name, "tenant", tenant.Slug)
 
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, webhook.MaxBody))
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			h.Metrics.Webhook(name, "too_large")

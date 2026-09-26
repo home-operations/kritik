@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritik/internal/jobs"
 )
 
 // Actions queues the work an admin can ask for from the dashboard, each in
@@ -15,32 +17,19 @@ import (
 // together.
 type Actions interface {
 	// Rerun queues a manual review of the pull request's current head,
-	// ErrNoHead when none is known, ErrRerunQueued when one is already
-	// queued or running.
+	// jobs.ErrNoHead when none is known, jobs.ErrRerunQueued when one is
+	// already queued or running.
 	Rerun(ctx context.Context, tx pgx.Tx, tenantID, repositoryID string, number int) (int64, error)
 	// Cancel asks a running review to stop, recording by as the account
-	// that asked; ErrNotCancelable when it is not running.
+	// that asked; jobs.ErrNotCancelable when it is not running.
 	Cancel(ctx context.Context, tx pgx.Tx, reviewID, by string) error
-	// Reindex queues a full reindex of the repository.
+	// Reindex queues a full reindex of the repository;
+	// jobs.ErrRepositoryNotFound when it no longer exists (findRepo already
+	// resolved it in the same transaction, so this is defense in depth),
+	// jobs.ErrReindexQueued when a forced reindex is already queued or
+	// running.
 	Reindex(ctx context.Context, tx pgx.Tx, tenantID, repositoryID string) (int64, error)
 }
-
-// Errors an Actions implementation returns for a request that cannot be
-// carried out as asked.
-var (
-	ErrNoHead        = errors.New("webapi: the pull request has no known head to review")
-	ErrNotCancelable = errors.New("webapi: the review is not running")
-	// ErrRerunQueued is returned by Rerun when a review of the pull
-	// request's current head is already queued or running.
-	ErrRerunQueued = errors.New("webapi: a review of this head is already queued or running")
-	// ErrRepositoryNotFound is returned by Reindex when repositoryID no
-	// longer exists; findRepo already resolves it in the same
-	// transaction, so this is defense in depth rather than an expected path.
-	ErrRepositoryNotFound = errors.New("webapi: the repository was not found")
-	// ErrReindexQueued is returned by Reindex when a forced reindex of the
-	// repository is already queued or running.
-	ErrReindexQueued = errors.New("webapi: a reindex is already queued for this repository")
-)
 
 var errActionsDisabled = errStatus(http.StatusServiceUnavailable, CodeActionsDisabled, "this process does not queue dashboard actions", nil)
 
@@ -69,9 +58,9 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *tenantScope) e
 		}
 		job, err = s.actions.Rerun(ctx, tx, tid, p.RepositoryID, p.Number)
 		switch {
-		case errors.Is(err, ErrNoHead):
+		case errors.Is(err, jobs.ErrNoHead):
 			return errStatus(http.StatusConflict, CodeNoHead, "the pull request has no known head to review", nil)
-		case errors.Is(err, ErrRerunQueued):
+		case errors.Is(err, jobs.ErrRerunQueued):
 			return errStatus(http.StatusConflict, CodeAlreadyQueued, "a review of this head is already queued or running", nil)
 		case err != nil:
 			return err
@@ -96,7 +85,7 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *tenantScope) 
 	}
 	err := s.read(ctx, t, func(tx pgx.Tx) error {
 		err := s.actions.Cancel(ctx, tx, id, t.principal.Account.ID)
-		if errors.Is(err, ErrNotCancelable) {
+		if errors.Is(err, jobs.ErrNotCancelable) {
 			return errStatus(http.StatusConflict, CodeNotCancelable, "the review is not running", nil)
 		}
 		if err != nil {
@@ -123,10 +112,10 @@ func (s *Server) reindex(w http.ResponseWriter, r *http.Request, t *tenantScope)
 			return err
 		}
 		job, err = s.actions.Reindex(ctx, tx, tid, repo.ID)
-		if errors.Is(err, ErrRepositoryNotFound) {
+		if errors.Is(err, jobs.ErrRepositoryNotFound) {
 			return errNotFound("repository")
 		}
-		if errors.Is(err, ErrReindexQueued) {
+		if errors.Is(err, jobs.ErrReindexQueued) {
 			return errStatus(http.StatusConflict, CodeAlreadyQueued, "a reindex is already queued for this repository", nil)
 		}
 		if err != nil {

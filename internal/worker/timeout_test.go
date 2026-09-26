@@ -111,9 +111,6 @@ func TestJobTimeouts(t *testing.T) {
 			}
 		})
 	}
-	if RescueStuckJobsAfter <= MaxJobTimeout {
-		t.Fatal("rescue must wait out the longest job timeout")
-	}
 }
 
 func TestDetach(t *testing.T) {

@@ -155,7 +155,7 @@ func TestParseRejectsMalformedAndOversized(t *testing.T) {
 	if _, err := Parse(configfile.ForgeGitHub, gh("pull_request"), []byte(`{not json`)); err == nil {
 		t.Fatal("malformed JSON must error")
 	}
-	if _, err := Parse(configfile.ForgeGitHub, gh("push"), make([]byte, maxBody+1)); err == nil {
+	if _, err := Parse(configfile.ForgeGitHub, gh("push"), make([]byte, MaxBody+1)); err == nil {
 		t.Fatal("oversized payload must error")
 	}
 }

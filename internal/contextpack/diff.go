@@ -116,11 +116,14 @@ func Hunks(diff string) []Hunk {
 	var out []Hunk
 	var path string
 	var cur *Hunk
+	var text strings.Builder
 	flush := func() {
-		if cur != nil && strings.TrimSpace(cur.Text) != "" {
+		if cur != nil && strings.TrimSpace(text.String()) != "" {
+			cur.Text = text.String()
 			out = append(out, *cur)
 		}
 		cur = nil
+		text.Reset()
 	}
 	for l := range strings.SplitSeq(diff, "\n") {
 		switch {
@@ -136,7 +139,8 @@ func Hunks(diff string) []Hunk {
 			}
 		case cur == nil:
 		case strings.HasPrefix(l, "+"), strings.HasPrefix(l, " "):
-			cur.Text += l[1:] + "\n"
+			text.WriteString(l[1:])
+			text.WriteByte('\n')
 		}
 	}
 	flush()
