@@ -1379,15 +1379,24 @@ func checkEnqueueRerun(
 	if n := countReviewsByStatus(ctx, t, appStore, tenantID, rerunHead, "completed"); n != 1 {
 		t.Fatalf("completed reviews for %s = %d, want 1 before the rerun", rerunHead[:7], n)
 	}
+	// The review row completes just before River records its job
+	// completed, and a re-run is refused while that job is still running.
+	waitRiverJobCompleted(ctx, t, appStore, tenantID, latestReviewID(ctx, t, appStore, tenantID, rerunHead))
 
-	var jobID int64
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		var err error
-		jobID, err = jobs.EnqueueRerun(ctx, tx, insertOnly, tenantID, repoID, 1)
-		return err
-	})
-	if err != nil || jobID == 0 {
+	rerun := func() (int64, error) {
+		var jobID int64
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			var err error
+			jobID, err = jobs.EnqueueRerun(ctx, tx, insertOnly, tenantID, repoID, 1)
+			return err
+		})
+		return jobID, err
+	}
+	if jobID, err := rerun(); err != nil || jobID == 0 {
 		t.Fatalf("EnqueueRerun: jobID=%d err=%v", jobID, err)
+	}
+	if _, err := rerun(); !errors.Is(err, jobs.ErrRerunQueued) {
+		t.Fatalf("a second EnqueueRerun while the first is queued = %v, want ErrRerunQueued", err)
 	}
 
 	deadline := time.Now().Add(20 * time.Second)
