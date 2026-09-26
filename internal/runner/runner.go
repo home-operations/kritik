@@ -71,10 +71,11 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err != nil {
 		return fmt.Errorf("runner: base tree: %w", err)
 	}
-	repoFiles, repoNotes, ignore, err := repoConfig(baseTree, p.Ignore, p.RepoFiles)
+	files, repoNotes, err := repoFiles(baseTree, p.RepoFiles)
 	if err != nil {
 		return err
 	}
+	ignore := p.Ignore
 	// A nil prior head tells the worker the delta is unknown, not empty.
 	var priorHead *string
 	deltaPaths := []string{}
@@ -97,7 +98,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err != nil {
 		return fmt.Errorf("runner: encode context: %w", err)
 	}
-	filesJSON, err := json.Marshal(repoFiles)
+	filesJSON, err := json.Marshal(files)
 	if err != nil {
 		return fmt.Errorf("runner: encode repository files: %w", err)
 	}
@@ -140,7 +141,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		err = fmt.Errorf("runner: head tree: %w", err)
 	} else {
 		scope, _ := review.DecideScope(p.PriorHead != "", priorHead != nil, len(deltaPaths), p.Prompt.MaxDeltaFiles)
-		err = runAgentic(ctx, st, p, secrets, headTree, repoFiles, packView{
+		err = runAgentic(ctx, st, p, secrets, headTree, files, packView{
 			Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
 		}, ignore, res.PatchID, logger)
 	}

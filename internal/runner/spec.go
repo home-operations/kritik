@@ -20,7 +20,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 2
+const SpecVersion = 3
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -83,16 +83,17 @@ type AgentLimits struct {
 
 // Prompt is what an agentic run needs beyond the checkout to write its
 // review prompt and to tell whether the worker will skip the review: the
-// pull request, the operator's review defaults the merge-base .kritik.yaml
-// may override, and the last completed review's findings.
+// pull request, the review settings with the merge-base .kritik.yaml
+// applied, and the last completed review's findings.
 type Prompt struct {
-	Repository string `json:"repository"`
-	// PullRequest is also what the merge-base .kritik.yaml filter sees.
+	Repository  string                 `json:"repository"`
 	PullRequest repoconfig.PullRequest `json:"pullRequest"`
-	// Instructions name repository files, as the operator's review
-	// settings do.
+	// Instructions name repository files, as the review settings do.
 	Instructions        []string `json:"instructions,omitempty"`
 	RequireSuggestedFix bool     `json:"requireSuggestedFix,omitempty"`
+	// SkipPaths are the .kritik.yaml skip.onlyPaths globs: when every
+	// changed path matches one, the worker will skip the review.
+	SkipPaths []string `json:"skipPaths,omitempty"`
 	// MaxDeltaFiles is the incremental re-review threshold.
 	MaxDeltaFiles int              `json:"maxDeltaFiles"`
 	Prior         []review.Finding `json:"prior,omitempty"`
@@ -115,10 +116,11 @@ type Spec struct {
 	Head      string `json:"head"`
 	Base      string `json:"base,omitempty"`
 	PriorHead string `json:"priorHead,omitempty"`
-	// Ignore globs are skipped by the context stages.
+	// Ignore globs, the operator's and .kritik.yaml's, are skipped by the
+	// context stages.
 	Ignore []string `json:"ignore,omitempty"`
-	// RepoFiles are repository paths the operator's review settings name,
-	// read from the merge base alongside .kritik.yaml.
+	// RepoFiles are repository paths read from the merge base: the files
+	// the review settings name, and .kritik.yaml itself when there is one.
 	RepoFiles []string       `json:"repoFiles,omitempty"`
 	Mode      Mode           `json:"mode,omitempty"`
 	Agent     *AgentLimits   `json:"agent,omitempty"`

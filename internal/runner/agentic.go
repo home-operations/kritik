@@ -37,23 +37,13 @@ type packView struct {
 
 // AgentSkipped is the stop reason an agent_runs row records when the
 // runner did not run the agent because the worker will skip the review; its
-// error column holds the reason, a repoconfig.SkipReason or
+// error column holds the reason, repoconfig.SkipOnlyPaths or
 // SkipUnchangedPatch.
 const AgentSkipped agent.StopReason = "skipped"
 
 // SkipUnchangedPatch is the skip reason for a bot's pull request whose patch
 // id equals its last prepared review's.
 const SkipUnchangedPatch = "unchanged_patch"
-
-// merged applies the merge-base .kritik.yaml over the operator's defaults
-// the prompt carries. A file that does not parse leaves them as they are,
-// as the worker does.
-func merged(p Spec, files repoconfig.Files) repoconfig.Merged {
-	m, _ := repoconfig.Merge(files, repoconfig.Operator{
-		Enabled: true, Instructions: p.Prompt.Instructions, RequireSuggestedFix: p.Prompt.RequireSuggestedFix,
-	})
-	return m
-}
 
 // agentPrompt composes the system prompt and user message the way a
 // single-mode review does, from the same repository files and pack, with
@@ -62,8 +52,7 @@ func merged(p Spec, files repoconfig.Files) repoconfig.Merged {
 // runner has no index, and the agent can grep instead. strict says whether
 // the contract requires a suggested fix.
 func agentPrompt(p Spec, files repoconfig.Files, pack packView, commands []string) (system, user string, strict bool) {
-	m := merged(p, files)
-	instructions, _ := repoconfig.Instructions(files, m.Instructions)
+	instructions, _ := repoconfig.Instructions(files, p.Prompt.Instructions)
 	system = review.AgenticSystemPrompt(instructions, commands)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
@@ -75,26 +64,20 @@ func agentPrompt(p Spec, files repoconfig.Files, pack packView, commands []strin
 		BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
 		Incremental: incremental, BudgetTokens: review.UserBudget(system),
 	})
-	return system, user, m.RequireSuggestedFix
+	return system, user, p.Prompt.RequireSuggestedFix
 }
 
 // agentSkip returns why the worker will skip this review whatever the
 // agent finds, or "": the checks the worker makes after the run, made
-// before it so a skipped review spends nothing. A filter that fails to
-// evaluate skips, as in the worker; its error is logged.
-func agentSkip(p Spec, files repoconfig.Files, changed []string, patchID string, logger *slog.Logger) (string, error) {
-	if p.Prompt.UnchangedPatchID != "" && patchID == p.Prompt.UnchangedPatchID {
-		return SkipUnchangedPatch, nil
+// before it so a skipped review spends nothing.
+func agentSkip(p Spec, changed []string, patchID string) string {
+	switch {
+	case p.Prompt.UnchangedPatchID != "" && patchID == p.Prompt.UnchangedPatchID:
+		return SkipUnchangedPatch
+	case repoconfig.Skip{OnlyPaths: p.Prompt.SkipPaths}.All(changed):
+		return string(repoconfig.SkipOnlyPaths)
 	}
-	vars, err := p.Prompt.PullRequest.Vars()
-	if err != nil {
-		return "", fmt.Errorf("runner: %w", err)
-	}
-	reason, err := merged(p, files).Check(vars, changed)
-	if err != nil {
-		logger.Warn("repository filter failed to evaluate", "error", err)
-	}
-	return string(reason), nil
+	return ""
 }
 
 // limits are the agent loop's bounds, defaults filled in.
@@ -156,11 +139,7 @@ func runAgentic(
 	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, files repoconfig.Files,
 	pack packView, ignore []string, patchID string, logger *slog.Logger,
 ) error {
-	reason, err := agentSkip(p, files, pack.Changed, patchID, logger)
-	if err != nil {
-		return err
-	}
-	if reason != "" {
+	if reason := agentSkip(p, pack.Changed, patchID); reason != "" {
 		logger.Info("agent not run", "reason", reason)
 		rec := agentRecord{stop: AgentSkipped, toolCalls: []byte("{}"), timeline: []byte("[]"), sources: []byte("[]"), err: reason}
 		return writeAgentRun(ctx, st, p, rec, "done")

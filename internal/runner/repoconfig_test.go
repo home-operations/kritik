@@ -55,49 +55,32 @@ func tree(t *testing.T, files map[string]string) *object.Tree {
 	return tr
 }
 
-func TestRepoConfig(t *testing.T) {
+func TestRepoFiles(t *testing.T) {
 	big := strings.Repeat("x", repoconfig.MaxFileBytes+1)
 	tests := []struct {
-		name       string
-		files      map[string]string
-		extra      []string
-		wantFiles  []string
-		wantIgnore []string
-		wantNotes  int
+		name      string
+		files     map[string]string
+		paths     []string
+		wantFiles []string
+		wantNotes int
 	}{
+		{name: "nothing named", files: map[string]string{"main.go": "package main\n"}},
 		{
-			name:       "no file keeps the operator's ignore",
-			files:      map[string]string{"main.go": "package main\n"},
-			wantIgnore: []string{"vendor/**"},
+			name:      "the named files are read, and nothing else",
+			files:     map[string]string{repoconfig.FileName: "review: {}\n", "docs/rules.md": "rules", "docs/other.md": "other"},
+			paths:     []string{repoconfig.FileName, "docs/rules.md"},
+			wantFiles: []string{repoconfig.FileName, "docs/rules.md"},
 		},
 		{
-			name: "in-repo ignore is unioned and referenced files are read",
-			files: map[string]string{
-				repoconfig.FileName: "ignore: [gen/**, vendor/**]\nreview:\n  instructions: [docs/rules.md]\n",
-				"docs/rules.md":     "rules",
-				"docs/extra.md":     "extra",
-			},
-			extra:      []string{"docs/extra.md"},
-			wantFiles:  []string{repoconfig.FileName, "docs/extra.md", "docs/rules.md"},
-			wantIgnore: []string{"vendor/**", "gen/**"},
-		},
-		{
-			name:       "an invalid file contributes no ignore globs",
-			files:      map[string]string{repoconfig.FileName: "ignore: [gen/**]\nunknown: 1\n"},
-			wantFiles:  []string{repoconfig.FileName},
-			wantIgnore: []string{"vendor/**"},
-		},
-		{
-			name:       "a directory, a missing path and an oversized file are noted",
-			files:      map[string]string{repoconfig.FileName: "review:\n  instructions: [docs, gone.md, big.md]\n", "docs/a.md": "a", "big.md": big},
-			wantFiles:  []string{repoconfig.FileName},
-			wantIgnore: []string{"vendor/**"},
-			wantNotes:  3,
+			name:      "a directory, a missing path and an oversized file are noted",
+			files:     map[string]string{"docs/a.md": "a", "big.md": big},
+			paths:     []string{"docs", "gone.md", "big.md"},
+			wantNotes: 3,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			files, notes, ignore, err := repoConfig(tree(t, tt.files), []string{"vendor/**"}, tt.extra)
+			files, notes, err := repoFiles(tree(t, tt.files), tt.paths)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -106,8 +89,8 @@ func TestRepoConfig(t *testing.T) {
 				got = append(got, p)
 			}
 			slices.Sort(got)
-			if !slices.Equal(got, tt.wantFiles) || !slices.Equal(ignore, tt.wantIgnore) || len(notes) != tt.wantNotes {
-				t.Fatalf("files=%v ignore=%v notes=%q", got, ignore, notes)
+			if !slices.Equal(got, tt.wantFiles) || len(notes) != tt.wantNotes {
+				t.Fatalf("files=%v notes=%q", got, notes)
 			}
 		})
 	}

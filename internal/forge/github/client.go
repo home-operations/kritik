@@ -3,6 +3,8 @@ package github
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -108,6 +110,29 @@ func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (str
 		return "", "", fmt.Errorf("github: branch %s of %s/%s has no commit", branch, owner, repo)
 	}
 	return b.GetCommit().GetSHA(), branch, nil
+}
+
+// FileAt implements forge.Client through the contents API, which inlines
+// a file up to forge.MaxFileBytes. A symlink or submodule is not a file.
+func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]byte, error) {
+	fc, _, resp, err := c.api.Repositories.GetContents(ctx, owner, repo, path, &gh.RepositoryContentGetOptions{Ref: ref})
+	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("github: %s of %s/%s at %s: %w", path, owner, repo, ref, fs.ErrNotExist)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("github: %s of %s/%s at %s: %w", path, owner, repo, ref, err)
+	}
+	if fc == nil || fc.GetType() != "file" {
+		return nil, fmt.Errorf("github: %s of %s/%s at %s is not a file: %w", path, owner, repo, ref, fs.ErrNotExist)
+	}
+	if fc.GetSize() > forge.MaxFileBytes {
+		return nil, fmt.Errorf("github: %s of %s/%s at %s: %w", path, owner, repo, ref, forge.ErrFileTooLarge)
+	}
+	content, err := fc.GetContent()
+	if err != nil {
+		return nil, fmt.Errorf("github: %s of %s/%s at %s: %w", path, owner, repo, ref, err)
+	}
+	return []byte(content), nil
 }
 
 // BotLogin implements forge.Client. An App's comments are authored by the

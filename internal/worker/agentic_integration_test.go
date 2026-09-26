@@ -27,9 +27,11 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
+	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/transcript"
 	"github.com/home-operations/kritik/internal/webhook"
@@ -316,10 +318,17 @@ func (h *agenticHarness) dispatch(t *testing.T, headSHA string) {
 
 func (h *agenticHarness) dispatchBody(t *testing.T, headSHA, body string) {
 	t.Helper()
+	h.dispatchAs(t, headSHA, body, false)
+}
+
+// dispatchAs pushes headSHA to the pull request, authored by a bot when
+// bot is set.
+func (h *agenticHarness) dispatchAs(t *testing.T, headSHA, body string, bot bool) {
+	t.Helper()
 	out, err := h.svc.Dispatch(h.ctx, ingest.Request{File: h.file, Tenant: h.tenant, Installation: h.in, Event: webhook.Event{
 		Kind: webhook.KindPullRequest, Action: "synchronize", Account: "acme",
 		Repository: &webhook.Repository{FullName: "acme/widgets", DefaultBranch: "main"},
-		PullRequest: &webhook.PullRequest{Number: 1, Title: "Add b", Body: body, Author: "octocat", State: "open",
+		PullRequest: &webhook.PullRequest{Number: 1, Title: "Add b", Body: body, Author: "octocat", AuthorIsBot: bot, State: "open",
 			HeadRef: "f", HeadSHA: headSHA, BaseRef: "main"},
 	}})
 	if err != nil || out.Status != ingest.Enqueued {
@@ -365,7 +374,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("an agent that never submits fails the review and says so", func(t *testing.T) { checkAgentNeverSubmits(t, h) })
 	t.Run("a run superseded after the Job still charges its tokens", func(t *testing.T) { checkAgentSupersededCharges(t, h) })
 	t.Run("a key the provider echoes back is masked", func(t *testing.T) { checkAgentKeyMasked(t, h) })
-	t.Run("the merge-base filter skips before the agent runs", func(t *testing.T) { checkAgentFiltered(t, h) })
+	t.Run("the merge-base filter skips before the runner starts", func(t *testing.T) { checkAgentFiltered(t, h) })
 	t.Run("a runner skip the worker does not repeat still sets the status", func(t *testing.T) { checkRunnerOnlySkip(t, h) })
 	t.Run("a review outlives the client's job timeout", func(t *testing.T) { checkAgentOutlivesJobTimeout(t, h) })
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
@@ -385,7 +394,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 10 || foreign != 0 {
+		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 9 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -946,19 +955,34 @@ func checkAgentFiltered(t *testing.T, h *agenticHarness) {
 	base := h.commit(t, ".kritik.yaml", "filter: '!pr.body.contains(\"[skip-review]\")'\n")
 	h.lf.setBase(base)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc f() {}\n")
+	h.lf.mu.Lock()
+	h.lf.status = ""
+	h.lf.mu.Unlock()
 	h.dispatchBody(t, next, "Adds f. [skip-review]")
 	reviewID, status, _ := h.waitReview(t, next)
 	if status != "skipped" {
 		t.Fatalf("status = %s, want skipped", status)
 	}
-	if run := h.agentRow(t, reviewID); run.stop != "skipped" || run.errText != "filtered" || run.steps != 0 {
-		t.Fatalf("agent run = %+v", run)
+	var reason string
+	var runs int
+	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT skip_reason, (SELECT count(*) FROM runner_runs WHERE review_id = $1) FROM reviews WHERE id = $1`,
+			reviewID).Scan(&reason, &runs)
+	})
+	if err != nil || reason != "filtered" || runs != 0 {
+		t.Fatalf("skip reason %q with %d runner run(s), %v; want filtered with none", reason, runs, err)
 	}
 	h.sm.mu.Lock()
 	after := h.sm.requests
 	h.sm.mu.Unlock()
 	if rows, _ := h.usageTokens(t, reviewID); after != before || rows != 0 {
 		t.Fatalf("a filtered review called the model %d time(s) and has %d usage row(s)", after-before, rows)
+	}
+	h.lf.mu.Lock()
+	forgeStatus := h.lf.status
+	h.lf.mu.Unlock()
+	if forgeStatus != "success: kritik: skipped (filtered by .kritik.yaml)" {
+		t.Fatalf("forge status = %q", forgeStatus)
 	}
 }
 
@@ -1111,18 +1135,37 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 	}
 }
 
+// checkRunnerOnlySkip has the runner skip a bot's rebase as unchanged
+// while the worker, reading the last review again after the run, does not:
+// the review the runner matched changes as its Job ends.
 func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc k() {}\n")
+	base, _ := h.lf.MergeBase(h.ctx, "", "", 0, "", "")
+	fetched, err := gitfetch.Run(h.ctx, gitfetch.Fetch{CloneURL: h.dir, Head: next, Base: base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	patch := fetched.PatchID
+	_ = fetched.Close()
+	// The last review had this head's patch, but the forge reported another
+	// patch for it, so the worker's own check before the runner passes.
+	var lastID string
+	err = h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `INSERT INTO reviews (tenant_id, pull_request_id, head_sha, merge_base_sha, patch_id, forge_patch_id,
+			status, trigger, finished_at) SELECT $1, id, $2, $3, $4, 'another', 'completed', 'synchronize', now()
+			FROM pull_requests WHERE number = 1 RETURNING id`, h.tenant.ID(), h.head, base, patch).Scan(&lastID)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.lf.mu.Lock()
 	h.lf.status = ""
 	h.lf.mu.Unlock()
 	h.exec.mu.Lock()
 	h.exec.after = func() {
-		// The body is edited as the Job ends: the runner saw the skip
-		// marker, the worker's own filter check does not.
 		err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
-			_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET body = 'Adds k.' WHERE number = 1`)
+			_, err := tx.Exec(h.ctx, `UPDATE reviews SET patch_id = 'changed' WHERE id = $1`, lastID)
 			return err
 		})
 		if err != nil {
@@ -1130,18 +1173,18 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 		}
 	}
 	h.exec.mu.Unlock()
-	h.dispatchBody(t, next, "Adds k. [skip-review]")
+	h.dispatchAs(t, next, "Adds k.", true)
 	reviewID, status, _ := h.waitReview(t, next)
 	if status != "skipped" {
 		t.Fatalf("status = %s, want skipped", status)
 	}
-	if run := h.agentRow(t, reviewID); run.stop != "skipped" || run.errText != "filtered" {
+	if run := h.agentRow(t, reviewID); run.stop != "skipped" || run.errText != runner.SkipUnchangedPatch {
 		t.Fatalf("agent run = %+v", run)
 	}
 	h.lf.mu.Lock()
 	forgeStatus := h.lf.status
 	h.lf.mu.Unlock()
-	if forgeStatus != "success: kritik: skipped (filtered by .kritik.yaml)" {
+	if forgeStatus != "success: kritik: skipped (patch unchanged since the last review)" {
 		t.Fatalf("forge status = %q", forgeStatus)
 	}
 }

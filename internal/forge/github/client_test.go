@@ -2,6 +2,8 @@ package github
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -153,6 +155,30 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	f.reply("GET /api/v3/repos/o/r/compare/main...none", 200, `{}`)
 	if _, err := c.MergeBase(t.Context(), "o", "r", 7, "main", "none"); err == nil {
 		t.Fatal("a compare without a merge base must error")
+	}
+}
+
+func TestFileAt(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("GET /api/v3/repos/o/r/contents/.kritik.yaml", 200, `{"type":"file","size":8,"encoding":"base64","content":"bW9kZTog\neA=="}`)
+	f.reply("GET /api/v3/repos/o/r/contents/gone.yaml", 404, `{"message":"Not Found"}`)
+	f.reply("GET /api/v3/repos/o/r/contents/docs", 200, `[{"type":"file","name":"a.md"}]`)
+	f.reply("GET /api/v3/repos/o/r/contents/link", 200, `{"type":"symlink","target":"a.md"}`)
+	f.reply("GET /api/v3/repos/o/r/contents/big.bin", 200, `{"type":"file","size":1048577,"encoding":"none","content":""}`)
+	got, err := c.FileAt(t.Context(), "o", "r", "base123", ".kritik.yaml")
+	if err != nil || string(got) != "mode: x" {
+		t.Fatalf("FileAt = %q, %v", got, err)
+	}
+	if !f.saw("GET /api/v3/repos/o/r/contents/.kritik.yaml?ref=base123") {
+		t.Fatalf("requests = %v, want the file at the ref", f.requests)
+	}
+	for _, path := range []string{"gone.yaml", "docs", "link"} {
+		if _, err := c.FileAt(t.Context(), "o", "r", "base123", path); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("FileAt(%s) = %v, want fs.ErrNotExist", path, err)
+		}
+	}
+	if _, err := c.FileAt(t.Context(), "o", "r", "base123", "big.bin"); !errors.Is(err, forge.ErrFileTooLarge) {
+		t.Fatalf("FileAt of a file over the cap = %v, want forge.ErrFileTooLarge", err)
 	}
 }
 

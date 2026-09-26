@@ -28,19 +28,19 @@ type Merged struct {
 	Skip   Skip
 }
 
-// Merge applies the merge-base FileName in files over op. The file may only
-// narrow what the operator allows (enabled, filter, ignore, skip), but its
-// presentation and strictness values replace the operator's defaults,
-// since they grant nothing. A file that does not parse is ignored as a
-// whole: op stands, and the error says why.
-func Merge(files Files, op Operator) (Merged, error) {
+// Merge applies doc, the merge-base FileName or nil when the repository has
+// none, over op. The file may only narrow what the operator allows
+// (enabled, filter, ignore, skip), but its presentation and strictness
+// values replace the operator's defaults, since they grant nothing. A file
+// that does not parse is ignored as a whole: op stands, and the error says
+// why.
+func Merge(doc []byte, op Operator) (Merged, error) {
 	op.Ignore = slices.Clone(op.Ignore)
 	m := Merged{Operator: op}
-	doc, ok := files[FileName]
-	if !ok {
+	if doc == nil {
 		return m, nil
 	}
-	f, prg, err := Parse([]byte(doc))
+	f, prg, err := Parse(doc)
 	if err != nil {
 		return m, err
 	}
@@ -120,9 +120,8 @@ func (m Merged) Check(vars map[string]any, changed []string) (SkipReason, error)
 	return "", nil
 }
 
-// PullRequest is what a filter sees of a pull request. It crosses the
-// runner's job document as JSON, and Vars rebuilds the same pr variable on
-// either side.
+// PullRequest is what a filter sees of a pull request, and what an agentic
+// run's job document carries of it.
 type PullRequest struct {
 	Number    int       `json:"number"`
 	Title     string    `json:"title"`

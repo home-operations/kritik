@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,6 +87,30 @@ func TestMergeBase(t *testing.T) {
 			t.Fatal("expected an error for an empty merge_base")
 		}
 	})
+}
+
+func TestFileAt(t *testing.T) {
+	srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() + "?" + r.URL.RawQuery {
+		case "/api/v1/repos/acme/widgets/raw/.kritik/my%20rules.md?ref=deadbeef":
+			_, _ = w.Write([]byte("rules"))
+		case "/api/v1/repos/acme/widgets/raw/big.bin?ref=deadbeef":
+			_, _ = w.Write(bytes.Repeat([]byte("x"), forge.MaxFileBytes+1))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	defer srv.Close()
+	got, err := c.FileAt(t.Context(), "acme", "widgets", "deadbeef", ".kritik/my rules.md")
+	if err != nil || string(got) != "rules" {
+		t.Fatalf("FileAt = %q, %v", got, err)
+	}
+	if _, err := c.FileAt(t.Context(), "acme", "widgets", "deadbeef", "gone.yaml"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("FileAt of a missing file = %v, want fs.ErrNotExist", err)
+	}
+	if _, err := c.FileAt(t.Context(), "acme", "widgets", "deadbeef", "big.bin"); !errors.Is(err, forge.ErrFileTooLarge) {
+		t.Fatalf("FileAt of a file over the cap = %v, want forge.ErrFileTooLarge", err)
+	}
 }
 
 func TestCloneURL(t *testing.T) {

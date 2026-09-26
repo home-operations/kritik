@@ -165,7 +165,9 @@ func TestDispatchPullRequest(t *testing.T) {
 	})
 }
 
-func TestDispatchPullRequestSettle(t *testing.T) {
+// A new head is enqueued at once even where the repository settles: the
+// worker waits the settle time out, since .kritik.yaml may set it.
+func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
 	tenant, _ := f.Tenant("onedr0p")
@@ -201,10 +203,8 @@ func TestDispatchPullRequestSettle(t *testing.T) {
 	if err != nil || out.Status != Enqueued {
 		t.Fatalf("synchronize dispatch = %+v, %v", out, err)
 	}
-	got := scheduledAt("s2")
-	want := before.Add(60 * time.Second)
-	if got.Before(want.Add(-time.Second)) || got.After(after.Add(60*time.Second).Add(time.Second)) {
-		t.Fatalf("synchronize scheduled_at = %v, want ~%v", got, want)
+	if got := scheduledAt("s2"); got.Before(before.Add(-time.Second)) || got.After(after.Add(time.Second)) {
+		t.Fatalf("synchronize scheduled_at = %v, want within [%v, %v]", got, before, after)
 	}
 }
 

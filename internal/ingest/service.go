@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -44,27 +43,17 @@ const (
 const ActionBaseline = "baseline"
 
 // pullRequestActions are the pull request actions that record the pull
-// request; "poll" and ActionBaseline are the poller's synthetic ones. review
-// is whether one also starts a review. settle is whether that review waits
-// out the repository's settle time: only a new head (synchronize, or poll)
-// does, since an initial open, reopen, or draft transition has no prior
-// head to supersede.
-var pullRequestActions = map[string]struct{ review, settle bool }{
-	"opened":           {review: true},
-	"reopened":         {review: true},
-	"ready_for_review": {review: true},
-	"synchronize":      {review: true, settle: true},
-	"poll":             {review: true, settle: true},
-	ActionBaseline:     {},
-}
-
-// reviewInsertOpts returns the River insert options for a review job, or nil
-// for the default (immediate).
-func reviewInsertOpts(trigger string, settle time.Duration, now time.Time) *river.InsertOpts {
-	if pullRequestActions[trigger].settle && settle > 0 {
-		return &river.InsertOpts{ScheduledAt: now.Add(settle)}
-	}
-	return nil
+// request, each saying whether it also starts a review; "poll" and
+// ActionBaseline are the poller's synthetic ones. The review job starts at
+// once: the worker waits out the repository's settle time (jobs.Settles),
+// since .kritik.yaml may set it.
+var pullRequestActions = map[string]bool{
+	"opened":           true,
+	"reopened":         true,
+	"ready_for_review": true,
+	"synchronize":      true,
+	"poll":             true,
+	ActionBaseline:     false,
 }
 
 // Dispatch implements Dispatcher.
@@ -89,7 +78,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	if ev.Repository == nil || pr == nil {
 		return Outcome{Status: Ignored, Reason: reasonNoRepository}, nil
 	}
-	action, ok := pullRequestActions[ev.Action]
+	review, ok := pullRequestActions[ev.Action]
 	if !ok {
 		if ev.Action == "closed" {
 			err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
@@ -140,13 +129,13 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			pr.HeadRef, pr.HeadSHA, pr.BaseRef, pr.BaseSHA, pr.URL, pr.Body, nullTime(pr), labels, pr.Merged); err != nil {
 			return fmt.Errorf("ingest: upsert pull request: %w", err)
 		}
-		if !action.review {
+		if !review {
 			out = Outcome{Status: Skipped, Reason: ev.Action}
 			return nil
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
 			TenantID: req.Tenant.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: ev.Action,
-		}, reviewInsertOpts(ev.Action, settings.Settle, time.Now()))
+		}, nil)
 		if err != nil {
 			return fmt.Errorf("ingest: enqueue review: %w", err)
 		}
