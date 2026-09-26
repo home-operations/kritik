@@ -250,6 +250,14 @@ func (s *fakeRetentionStore) SweepSessions(_ context.Context, now time.Time) (in
 	return 1, nil
 }
 
+func (s *fakeRetentionStore) SweepDisabledIndexes(_ context.Context, grace time.Duration) (int64, error) {
+	s.calls <- sweepCall{name: "disabledIndexes", swept: grace}
+	if s.fail {
+		return 0, errors.New("db down")
+	}
+	return 1, nil
+}
+
 // warnCounter counts warn-level (or higher) records.
 type warnCounter struct{ n atomic.Int32 }
 
@@ -293,9 +301,16 @@ func TestRetentionSweep(t *testing.T) {
 	if got := next(); got.name != "sessions" {
 		t.Fatalf("second call = %q, want sessions", got.name)
 	}
+	third := next()
+	if third.name != "disabledIndexes" {
+		t.Fatalf("third call = %q, want disabledIndexes", third.name)
+	}
+	if want := current.Get().DisabledIndexGrace(); third.swept != want {
+		t.Fatalf("grace = %s, want %s", third.swept, want)
+	}
 	// A second pass proves the loop actually re-runs after the interval.
 	if got := next(); got.name != "modelCalls" {
-		t.Fatalf("third call = %q, want modelCalls", got.name)
+		t.Fatalf("fourth call = %q, want modelCalls", got.name)
 	}
 
 	cancel()
@@ -317,9 +332,10 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 		close(done)
 	}()
 
-	// Both sweeps fail on every pass; wait for two full passes (4 calls)
-	// to prove a failure doesn't stop the loop.
-	for range 4 {
+	// Every sweep fails on every pass; wait for two full passes (6 calls)
+	// to prove a failure doesn't stop the loop, and one call more, which
+	// the sixth call's warning is logged before.
+	for range 7 {
 		select {
 		case <-st.calls:
 		case <-time.After(5 * time.Second):
@@ -333,7 +349,7 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("retentionSweep did not return once ctx ended")
 	}
-	if n := logs.n.Load(); n < 4 {
-		t.Fatalf("logged %d warnings for two failed passes, want >= 4", n)
+	if n := logs.n.Load(); n < 6 {
+		t.Fatalf("logged %d warnings for two failed passes, want >= 6", n)
 	}
 }

@@ -443,6 +443,75 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	}
 }
 
+// TestSweepDisabledIndexes checks that only a repository disabled for longer
+// than the grace loses its index, that it is left to onboard afresh, and
+// that a second sweep finds nothing.
+func TestSweepDisabledIndexes(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t)
+	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	// The suites share one database: leave no index schema behind.
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
+			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+	})
+	if err := s.EnsureIndexSchema(ctx, "kritik_app", "test-embed", 8, true); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	// Both alpha repositories get an active generation with one chunk;
+	// alpha/two is the disabled one.
+	runs := map[string]string{}
+	for _, name := range []string{"alpha/one", "alpha/two"} {
+		var run string
+		if err := s.owner.QueryRow(ctx, `WITH g AS (
+				INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+				SELECT tenant_id, id, 'abc', 'test-embed', 8, 'full', 'completed' FROM repositories WHERE name = $1
+				RETURNING id, tenant_id, repository_id
+			), c AS (
+				INSERT INTO index_chunks (tenant_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+				SELECT tenant_id, repository_id, id, 'main.go', 1, 1, 'package main', '[1,0,0,0,0,0,0,0]' FROM g
+			)
+			UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id RETURNING g.id`, name).Scan(&run); err != nil {
+			t.Fatalf("index %s: %v", name, err)
+		}
+		runs[name] = run
+	}
+	state := func(name string) (active bool, status string, chunks int) {
+		t.Helper()
+		if err := s.owner.QueryRow(ctx, `SELECT
+				(SELECT active_index_run_id IS NOT NULL FROM repositories WHERE name = $1),
+				(SELECT status FROM index_runs WHERE id = $2),
+				(SELECT count(*) FROM index_chunks WHERE index_run_id = $2)`, name, runs[name]).Scan(&active, &status, &chunks); err != nil {
+			t.Fatal(err)
+		}
+		return active, status, chunks
+	}
+	sweep := func(want int64) {
+		t.Helper()
+		if n, err := s.SweepDisabledIndexes(ctx, time.Hour); err != nil || n != want {
+			t.Fatalf("SweepDisabledIndexes = %d, %v; want %d", n, err, want)
+		}
+	}
+
+	sweep(0)
+	if active, status, chunks := state("alpha/two"); !active || status != "completed" || chunks != 1 {
+		t.Fatalf("within the grace: active=%v status=%s chunks=%d, want the index kept", active, status, chunks)
+	}
+	if _, err := s.owner.Exec(ctx, `UPDATE repositories SET disabled_at = now() - interval '2 hours' WHERE name = 'alpha/two'`); err != nil {
+		t.Fatal(err)
+	}
+	sweep(1)
+	if active, status, chunks := state("alpha/two"); active || status != "superseded" || chunks != 0 {
+		t.Fatalf("past the grace: active=%v status=%s chunks=%d, want the index dropped", active, status, chunks)
+	}
+	if active, status, chunks := state("alpha/one"); !active || status != "completed" || chunks != 1 {
+		t.Fatalf("enabled repository: active=%v status=%s chunks=%d, want the index kept", active, status, chunks)
+	}
+	sweep(0)
+}
+
 // changeLast is s with its last character changed to one it cannot
 // already be.
 func changeLast(s string) string {

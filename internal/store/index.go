@@ -111,6 +111,45 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 	return nil
 }
 
+// SweepDisabledIndexes drops the index of every repository disabled for
+// longer than grace and returns how many it dropped. The repository is left
+// with no active generation, which is marked superseded, so enabling it
+// again onboards a fresh index. It runs on the owner connection, which
+// row-level security does not restrict. Leader only.
+func (s *Store) SweepDisabledIndexes(ctx context.Context, grace time.Duration) (int64, error) {
+	if s.owner == nil {
+		return 0, errors.New("store: SweepDisabledIndexes needs the owner connection")
+	}
+	var runs []string
+	err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+		// Locked, so a repository enabled again meanwhile is either left out
+		// or waits until its index is gone, never swept halfway.
+		rows, err := tx.Query(ctx, `SELECT active_index_run_id::text FROM repositories
+			WHERE NOT enabled AND active_index_run_id IS NOT NULL AND disabled_at < now() - make_interval(secs => $1)
+			FOR UPDATE`, grace.Seconds())
+		if err != nil {
+			return err
+		}
+		if runs, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil || len(runs) == 0 {
+			return err
+		}
+		for _, stmt := range []string{
+			`UPDATE repositories SET active_index_run_id = NULL, updated_at = now() WHERE active_index_run_id = ANY($1::uuid[])`,
+			`UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE id = ANY($1::uuid[])`,
+			`DELETE FROM index_chunks WHERE index_run_id = ANY($1::uuid[])`,
+		} {
+			if _, err := tx.Exec(ctx, stmt, runs); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("store: sweep disabled indexes: %w", err)
+	}
+	return int64(len(runs)), nil
+}
+
 // RepoRef names a repository and its tenant.
 type RepoRef struct{ ID, TenantID string }
 
