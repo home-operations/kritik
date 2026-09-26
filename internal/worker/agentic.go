@@ -14,6 +14,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
+	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
@@ -149,7 +150,7 @@ func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) 
 // sees it and, for a bot author, the patch id of its last prepared review,
 // which afterRun skips as unchanged.
 func (w *Review) agentPrompt(
-	ctx context.Context, tenantID, reviewID string, pr *pullRequest, settings configfile.Settings, prior priorReview,
+	ctx context.Context, tenantID, reviewID, trigger string, pr *pullRequest, settings configfile.Settings, prior priorReview,
 ) (*runner.Prompt, error) {
 	p := &runner.Prompt{
 		Repository: pr.repository, Instructions: settings.Review.Instructions, RequireSuggestedFix: settings.Review.RequireSuggestedFix,
@@ -160,7 +161,7 @@ func (w *Review) agentPrompt(
 		if p.PullRequest, err = loadFilterPR(ctx, tx, pr.id); err != nil {
 			return err
 		}
-		if !pr.authorIsBot {
+		if !pr.authorIsBot || trigger == jobs.TriggerManual {
 			return nil
 		}
 		err = tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
@@ -229,10 +230,10 @@ const gatewayModel = "review"
 // returns the runner Job's deadline, which the agent's timeout may
 // lengthen.
 func (w *Review) agentSpec(
-	ctx context.Context, tenantID, reviewID, runID string, pr *pullRequest, settings configfile.Settings, prior priorReview,
+	ctx context.Context, tenantID, reviewID, runID, trigger string, pr *pullRequest, settings configfile.Settings, prior priorReview,
 	admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
 ) (time.Duration, error) {
-	prompt, err := w.agentPrompt(ctx, tenantID, reviewID, pr, settings, prior)
+	prompt, err := w.agentPrompt(ctx, tenantID, reviewID, trigger, pr, settings, prior)
 	if err != nil {
 		return deadline, err
 	}
