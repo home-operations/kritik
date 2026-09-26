@@ -1874,11 +1874,13 @@ func checkEnqueueReindexSentinels(
 	})
 	t.Run("ErrReindexQueued when an onboard index job is already queued", func(t *testing.T) {
 		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-			res, err := insertOnly.InsertTx(ctx, tx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: "onboard"}, nil)
-			if err != nil || res.UniqueSkippedAsDuplicate {
-				return fmt.Errorf("insert onboard job = %+v, %w", res, err)
+			// The earlier forced reindex's job may itself still be running
+			// under the same unique key, which this insert then dedupes onto;
+			// either way a job with an empty CommitSHA is pending.
+			if _, err := insertOnly.InsertTx(ctx, tx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: "onboard"}, nil); err != nil {
+				return fmt.Errorf("insert onboard job: %w", err)
 			}
-			_, err = jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, repoID)
+			_, err := jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, repoID)
 			return errors.Join(err, errRollback)
 		})
 		if !errors.Is(err, jobs.ErrReindexQueued) {
