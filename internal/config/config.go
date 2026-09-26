@@ -168,7 +168,8 @@ type Config struct {
 	ReviewWorkers int `env:"KRITIK_REVIEW_WORKERS" envDefault:"2"`
 	// IndexWorkers is how many index jobs one worker replica runs at once;
 	// indexing is rate-limited apart from reviews so onboarding a large
-	// account cannot starve them.
+	// account cannot starve them. Each holds a runner pod too, so a replica
+	// runs at most ReviewWorkers + IndexWorkers runner pods.
 	IndexWorkers int `env:"KRITIK_INDEX_WORKERS" envDefault:"1"`
 
 	// OnboardWindow is how many onboarding index jobs the leader keeps

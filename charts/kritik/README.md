@@ -218,7 +218,7 @@ Kubernetes: `>=1.25.0-0`
 | config.pollInterval | string | `"10m"` | How often the leader lists each installation's open pull requests as a backstop for missed webhooks (Go duration); "0" disables. |
 | config.pollLookback | string | `"24h"` | How far back a first or long-idle poll looks (Go duration). |
 | config.reloadInterval | string | `"10s"` | How often each replica re-reads the file (Go duration). |
-| config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. |
+| config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers). |
 | dashboard.keySecret.key | string | `"key"` | Key in that Secret. |
 | dashboard.keySecret.name | string | `""` | Secret holding the key that seals dashboard tenants' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start. |
 | dashboard.oldKeysSecret.key | string | `"old-keys"` | Key in that Secret. |

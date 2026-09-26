@@ -74,7 +74,7 @@
         },
         "reviewWorkers": {
           "default": 2,
-          "description": "Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count.",
+          "description": "Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers).",
           "title": "reviewWorkers",
           "type": "integer"
         }

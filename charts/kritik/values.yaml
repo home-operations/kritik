@@ -142,7 +142,7 @@ config:
   logLevel: info
   # -- Log format: json or text.
   logFormat: json
-  # -- Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count.
+  # -- Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers).
   reviewWorkers: 2
   # -- Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews.
   indexWorkers: 1
