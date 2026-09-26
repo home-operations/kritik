@@ -12,13 +12,21 @@ import (
 
 // operatorOnlyFields are the spec fields only an operator may change on a
 // dashboard tenant (ADR-0009 §2.15).
-var operatorOnlyFields = []string{"runner", "limits", "repositories[].agent", "repositories[].mode", "repositories[].incremental"}
+var operatorOnlyFields = []string{
+	"models", "forks", "runner", "limits", "repositories[].agent", "repositories[].mode", "repositories[].incremental",
+}
 
 // operatorOnlyChange is the path of the first operator-only field that
 // differs between the stored tenant and its replacement, "" when none
 // does. Repositories are matched by name; a removed repository that set
 // any of them changes them too, back to their defaults.
 func operatorOnlyChange(prev, next *configfile.Tenant) string {
+	if prev.Models != next.Models {
+		return "models"
+	}
+	if !ptrEqual(prev.Forks, next.Forks) {
+		return "forks"
+	}
 	if !runnerEqual(prev.Runner, next.Runner) {
 		return "runner"
 	}

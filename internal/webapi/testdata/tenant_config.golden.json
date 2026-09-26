@@ -3,6 +3,8 @@
   "revision": 3,
   "editable": true,
   "operatorOnlyFields": [
+    "models",
+    "forks",
     "runner",
     "limits",
     "repositories[].agent",

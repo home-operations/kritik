@@ -98,12 +98,17 @@ test.describe('tenant configuration', () => {
     await expect(page.locator('[data-path="repositories[0].mode"]')).toBeDisabled();
     await expect(page.locator('[data-path="repositories[0].agent"]')).toBeDisabled();
     await expect(page.locator('[data-path="runner"]')).toBeDisabled();
+    await expect(page.locator('[data-path="models.review"]')).toBeDisabled();
+    await expect(page.locator('[data-path="models.fallback"]')).toBeDisabled();
+    await expect(page.locator('[data-path="forks"]')).toBeDisabled();
     await expect(page.getByText('(operator only)').first()).toBeVisible();
 
     await setup(page, operatorMe, [configRow(dashboardConfig)]);
     await page.reload();
     await expect(page.getByLabel('Concurrency')).toBeEnabled();
     await expect(page.locator('[data-path="repositories[0].mode"]')).toBeEnabled();
+    await expect(page.locator('[data-path="models.review"]')).toBeEnabled();
+    await expect(page.locator('[data-path="forks"]')).toBeEnabled();
   });
 
   test('a 422 highlights and focuses the field its path names', async ({ page }) => {

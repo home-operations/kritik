@@ -178,20 +178,20 @@
           </label>
         {/if}
         <label class="field">
-          <span>Review model</span>
-          <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder="provider/model" />
+          <span>Review model {#if !operator}<span class="field-hint">({opHint})</span>{/if}</span>
+          <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder="provider/model" disabled={!operator} />
         </label>
         <label class="field">
-          <span>Fallback model</span>
-          <input class="mono" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder="provider/model" />
+          <span>Fallback model {#if !operator}<span class="field-hint">({opHint})</span>{/if}</span>
+          <input class="mono" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder="provider/model" disabled={!operator} />
         </label>
         <label class="field">
           <span>Filter</span>
           <input class="mono" data-path="filter" aria-invalid={inv('filter') || undefined} bind:value={draft.filter} />
         </label>
         <label class="field">
-          <span>Forks</span>
-          <select data-path="forks" aria-invalid={inv('forks') || undefined} bind:value={draft.forks}>
+          <span>Forks {#if !operator}<span class="field-hint">({opHint})</span>{/if}</span>
+          <select data-path="forks" aria-invalid={inv('forks') || undefined} bind:value={draft.forks} disabled={!operator}>
             <option value="">default</option>
             <option value="true">review</option>
             <option value="false">skip</option>

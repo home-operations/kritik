@@ -300,29 +300,32 @@ already declared, working with no configuration, while still giving an
 operator who wants a narrower or wider set of reachable hosts a way to say
 so.
 
-### 2.15 Runner, limits, agent, mode and incremental stay operator-only on a dashboard tenant
+### 2.15 Models, forks, runner, limits, agent, mode and incremental stay operator-only on a dashboard tenant
 
-A dashboard tenant's `runner` and `limits` fields, and a dashboard-managed
-repository's `agent`, `mode` and `incremental` fields, can be set only by
-an instance operator, never by a tenant admin, through the web API; a
-tenant-admin request that includes one of them is rejected with a `422`.
-An operator may still set any of them for any tenant.
+A dashboard tenant's `models`, `forks`, `runner` and `limits` fields, and
+a dashboard-managed repository's `agent`, `mode` and `incremental` fields,
+can be set only by an instance operator, never by a tenant admin, through
+the web API; a tenant-admin request that changes one of them is rejected
+with a `422`. An operator may still set any of them for any tenant.
 
-`limits` bounds what a tenant may spend and `runner` selects the pod a
-review runs in; `agent` chooses which agent reviews the pull request,
-`mode` how much of the result it may act on, and `incremental` how much of
-a pull request a re-review may skip re-covering. Letting a tenant admin
-change any of the five would let one tenant unilaterally raise its own
-cost or its own runner's privilege past whatever the operator sized the
-instance for when the tenant was created.
+`models` picks which model, and so which price, every review pays for;
+`forks` whether pull requests from forks, whose authors the tenant does not
+control, are reviewed at all; `limits` bounds what a tenant may spend and
+`runner` selects the pod a review runs in; `agent` chooses which agent
+reviews the pull request, `mode` how much of the result it may act on, and
+`incremental` how much of a pull request a re-review may skip re-covering.
+Letting a tenant admin change any of the seven would let one tenant
+unilaterally raise its own cost, its exposure to untrusted code, or its own
+runner's privilege past whatever the operator sized the instance for when
+the tenant was created.
 
 ## 3. Security model
 
-| Role              | Scope                                                                                                                                                      |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Instance operator | File allowlist. Sees and administers every tenant; the only way to create a tenant or set a tenant's `runner`, `limits`, `agent`, `mode`, `incremental`.   |
-| Tenant admin      | State-changing endpoints for their tenant(s), except `runner`, `limits`, and repository `agent`/`mode`/`incremental` (§2.15). Every write is audit-logged. |
-| Tenant member     | Read access to their tenant's own content.                                                                                                                 |
+| Role              | Scope                                                                                                                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Instance operator | File allowlist. Sees and administers every tenant; the only way to create a tenant or set a tenant's `runner`, `limits`, `agent`, `mode`, `incremental`.                      |
+| Tenant admin      | State-changing endpoints for their tenant(s), except `models`, `forks`, `runner`, `limits`, and repository `agent`/`mode`/`incremental` (§2.15). Every write is audit-logged. |
+| Tenant member     | Read access to their tenant's own content.                                                                                                                                    |
 
 Sessions, cookies and CSRF are as described in §2.7. Credentials are
 sealed with envelope encryption from `internal/sealbox` (§2.5): each

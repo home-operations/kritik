@@ -241,8 +241,8 @@ Three roles share the same `web.signIn` and `web.operators`:
 
 - **Operator** — an identity in `web.operators`. The only one who can edit
   the configuration file, the only way a dashboard tenant is created, and
-  the only one who may set a dashboard tenant's `runner`, `limits`,
-  `repositories[].agent`, `repositories[].mode` or
+  the only one who may set a dashboard tenant's `models`, `forks`,
+  `runner`, `limits`, `repositories[].agent`, `repositories[].mode` or
   `repositories[].incremental`; a tenant admin's write that touches any of
   those is rejected. Membership is checked per source (file and dashboard),
   and a principal who qualifies through more than one gets the highest of

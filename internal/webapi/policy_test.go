@@ -31,6 +31,16 @@ func TestOperatorOnlyChange(t *testing.T) {
 		{name: "limits set", old: `{` + base + `}`, new: `{` + base + `,"limits":{"concurrency":9}}`, want: "limits"},
 		{name: "limits changed", old: `{` + base + `,"limits":{"reviewsPerDay":1}}`, new: `{` + base + `,"limits":{"reviewsPerDay":2}}`, want: "limits"},
 		{name: "limits unchanged", old: `{` + base + `,"limits":{"reviewsPerDay":1}}`, new: `{` + base + `,"limits":{"reviewsPerDay":1}}`},
+		{name: "models set", old: `{` + base + `}`, new: `{` + base + `,"models":{"review":"p/m"}}`, want: "models"},
+		{
+			name: "fallback model changed",
+			old:  `{` + base + `,"models":{"review":"p/m","fallback":"p/a"}}`,
+			new:  `{` + base + `,"models":{"review":"p/m","fallback":"p/b"}}`, want: "models",
+		},
+		{name: "models unchanged", old: `{` + base + `,"models":{"review":"p/m"}}`, new: `{` + base + `,"models":{"review":"p/m"}}`},
+		{name: "forks set", old: `{` + base + `}`, new: `{` + base + `,"forks":true}`, want: "forks"},
+		{name: "forks cleared", old: `{` + base + `,"forks":false}`, new: `{` + base + `}`, want: "forks"},
+		{name: "forks unchanged", old: `{` + base + `,"forks":false}`, new: `{` + base + `,"forks":false}`},
 		{name: "runner added", old: `{` + base + `}`, new: `{` + base + `,"runner":{"activeDeadlineSeconds":60}}`, want: "runner"},
 		{name: "empty runner is no runner", old: `{` + base + `}`, new: `{` + base + `,"runner":{}}`},
 		{
