@@ -101,7 +101,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		}
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
-	settings := req.File.Settings(req.Tenant, ev.Repository.FullName)
+	settings := req.File.Settings(req.Tenant, req.Installation.Name, ev.Repository.FullName)
 	switch {
 	case !settings.Enabled:
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
@@ -173,7 +173,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}
-	settings := req.File.Settings(req.Tenant, ev.Repository.FullName)
+	settings := req.File.Settings(req.Tenant, req.Installation.Name, ev.Repository.FullName)
 	if !settings.Enabled {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	}
@@ -209,7 +209,7 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Push.After == "" || strings.Trim(ev.Push.After, "0") == "" {
 		return Outcome{Status: Skipped, Reason: "branch-deleted"}, nil
 	}
-	settings := req.File.Settings(req.Tenant, ev.Repository.FullName)
+	settings := req.File.Settings(req.Tenant, req.Installation.Name, ev.Repository.FullName)
 	if !settings.Enabled {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	}

@@ -78,7 +78,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	if err != nil {
 		return err
 	}
-	f := &followUp{w: w, file: file, tenant: tenant, settings: file.Settings(tenant, pr.repository), client: client, pr: pr,
+	f := &followUp{w: w, file: file, tenant: tenant, settings: file.Settings(tenant, pr.installation, pr.repository), client: client, pr: pr,
 		comment: comment, owner: owner, repo: repo, botLogin: login, jobID: job.ID, logger: logger}
 	if done, err := f.alreadyAnswered(ctx); err != nil || done {
 		return err

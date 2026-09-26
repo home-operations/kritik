@@ -88,7 +88,7 @@ func (s *Server) tenantSummary(ctx context.Context, file *configfile.File, t *co
 	}
 	return TenantSummary{
 		Slug: t.Slug, ManagedBy: t.Origin(), Role: role, Installations: stats.Installations, Repositories: stats.Repositories,
-		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "").Limits),
+		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "", "").Limits),
 	}, nil
 }
 
@@ -149,7 +149,7 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request, t *tenantScop
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.tenant, "")
+	settings := t.file.Settings(t.tenant, "", "")
 	d := TenantDetail{
 		Slug: t.tenant.Slug, ManagedBy: t.tenant.Origin(), Role: t.role(), Installations: []Installation{},
 		Models: models(settings.Models), Limits: limits(settings.Limits), Filter: filterSource(settings),
@@ -250,7 +250,8 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope)
 	}); err != nil {
 		return err
 	}
-	d := RepoDetail{Repository: repository(row), Settings: repoSettings(t.file.Settings(t.tenant, row.FullName)), IndexRuns: indexRuns(runs)}
+	settings := t.file.Settings(t.tenant, row.Installation, row.FullName)
+	d := RepoDetail{Repository: repository(row), Settings: repoSettings(settings), IndexRuns: indexRuns(runs)}
 	writeJSON(w, http.StatusOK, d)
 	return nil
 }

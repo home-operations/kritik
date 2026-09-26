@@ -86,10 +86,10 @@ func TestMerge(t *testing.T) {
 		if in.WebhookSecretValue().Value() != "wh-beta" || in.TokenValue().Value() != "tok-beta" {
 			t.Fatalf("secrets = %q %q", in.WebhookSecretValue().Value(), in.TokenValue().Value())
 		}
-		if m.InstallationFor(ten, "beta/repo") == nil {
+		if m.InstallationFor(ten, &Repository{Name: "beta/repo"}) == nil {
 			t.Fatal("InstallationFor found nothing")
 		}
-		if got := m.Settings(ten, "beta/repo"); !got.Enabled || got.Limits.Concurrency != DefaultConcurrency {
+		if got := m.Settings(ten, "beta-bot", "beta/repo"); !got.Enabled || got.Limits.Concurrency != DefaultConcurrency {
 			t.Fatalf("settings = %+v", got)
 		}
 	})

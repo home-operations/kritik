@@ -190,7 +190,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 // monthCapped says why the tenant may not take another step this month,
 // or "".
 func (g *Gateway) monthCapped(ctx context.Context, file *configfile.File, tenant *configfile.Tenant) (string, error) {
-	limits := file.Settings(tenant, "").Limits
+	limits := file.Settings(tenant, "", "").Limits
 	if limits.TokensPerMonth <= 0 {
 		return "", nil
 	}

@@ -265,12 +265,17 @@ func (i Installation) WebhookSecretValue() Secret {
 // Repository carries per-repository overrides. Everything an installation
 // grants access to is watched whether or not it is listed here.
 type Repository struct {
-	Name     string        `yaml:"name"`
-	Enabled  *bool         `yaml:"enabled,omitempty"`
-	Filter   string        `yaml:"filter,omitempty"`
-	Konflate string        `yaml:"konflate,omitempty"`
-	Ignore   []string      `yaml:"ignore,omitempty"`
-	Settle   time.Duration `yaml:"settle,omitempty"`
+	Name string `yaml:"name"`
+	// Installation names the tenant's installation the repository belongs
+	// to. It is required only when the owner is the account of more than
+	// one installation, so the same "owner/repo" on two forges is two
+	// entries.
+	Installation string        `yaml:"installation,omitempty"`
+	Enabled      *bool         `yaml:"enabled,omitempty"`
+	Filter       string        `yaml:"filter,omitempty"`
+	Konflate     string        `yaml:"konflate,omitempty"`
+	Ignore       []string      `yaml:"ignore,omitempty"`
+	Settle       time.Duration `yaml:"settle,omitempty"`
 	// Mode, Agent and Incremental are operator-only: the in-repo file
 	// cannot change how much a review may spend.
 	Mode        ReviewMode  `yaml:"mode,omitempty"`

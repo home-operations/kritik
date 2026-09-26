@@ -115,7 +115,7 @@ func TestLoadFull(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				s := f.Settings(tt.tenant, tt.repo)
+				s := f.Settings(tt.tenant, tt.tenant.Installations[0].Name, tt.repo)
 				if s.Enabled != tt.enabled || s.Models.Review != tt.review || s.Forks != tt.forks ||
 					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay || s.Konflate != tt.konflate ||
 					s.Settle != tt.settle {
@@ -140,7 +140,7 @@ func TestLoadFull(t *testing.T) {
 
 	t.Run("concurrency falls back to the default when unset everywhere", func(t *testing.T) {
 		g := &File{Tenants: []Tenant{{Slug: "x"}}}
-		if got := g.Settings(&g.Tenants[0], "x/y").Limits.Concurrency; got != DefaultConcurrency {
+		if got := g.Settings(&g.Tenants[0], "", "x/y").Limits.Concurrency; got != DefaultConcurrency {
 			t.Fatalf("concurrency = %d, want %d", got, DefaultConcurrency)
 		}
 	})
@@ -180,10 +180,10 @@ func TestHashAndInstallationLookup(t *testing.T) {
 		t.Fatalf("hash = %q", f.Hash())
 	}
 	ho, _ := f.Tenant("home-operations")
-	if in := f.InstallationFor(ho, "home-operations/flate"); in == nil || in.Name != "sticky-gecko" {
+	if in := f.InstallationFor(ho, &Repository{Name: "home-operations/flate"}); in == nil || in.Name != "sticky-gecko" {
 		t.Fatalf("InstallationFor = %v", in)
 	}
-	if f.InstallationFor(ho, "someone-else/repo") != nil || f.InstallationFor(ho, "noslash") != nil {
+	if f.InstallationFor(ho, &Repository{Name: "someone-else/repo"}) != nil || f.InstallationFor(ho, &Repository{Name: "noslash"}) != nil {
 		t.Fatal("unknown owner must not resolve")
 	}
 }
@@ -200,11 +200,11 @@ func TestRetentionAndIgnore(t *testing.T) {
 		t.Fatal("unset grace should fall back to the default")
 	}
 	ho, _ := f.Tenant("home-operations")
-	got := f.Settings(ho, "home-operations/flate").Ignore
+	got := f.Settings(ho, "sticky-gecko", "home-operations/flate").Ignore
 	if len(got) != len(DefaultIgnore)+1 || got[len(got)-1] != "**/testdata/**" {
 		t.Fatalf("ignore = %v", got)
 	}
-	if n := len(f.Settings(ho, "home-operations/other").Ignore); n != len(DefaultIgnore) {
+	if n := len(f.Settings(ho, "sticky-gecko", "home-operations/other").Ignore); n != len(DefaultIgnore) {
 		t.Fatalf("unlisted repo ignore = %d globs, want defaults only", n)
 	}
 }
@@ -489,6 +489,70 @@ func TestWatch(t *testing.T) {
 	expectApply("acme-three")
 }
 
+// TestRepositoryInstallation checks that a repository entry binds to one
+// installation when its owner's account has several, and that settings
+// are looked up by installation and name, so the same owner/repo on two
+// forges is two repositories.
+func TestRepositoryInstallation(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	twoForges := func(repos string) string {
+		return strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: ["+repos+"]", 1) + `      - name: acme-other
+        forge: forgejo
+        host: other.example.com
+        account: acme
+        token: { env: TEST_FORGEJO_TOKEN }
+        webhookSecret: { env: TEST_WEBHOOK_SECRET }
+`
+	}
+	refused := []struct {
+		name, repos, want string
+	}{
+		{"an owner with several installations must name one", "{ name: acme/x }", "set installation to one of them"},
+		{"the named installation must exist", "{ name: acme/x, installation: nope }", `installation "nope" is not an installation`},
+		{"one installation may not list a repository twice", "{ name: acme/x, installation: acme-bot }, { name: acme/x, installation: acme-bot }",
+			`duplicates repositories[0] of installation "acme-bot"`},
+	}
+	for _, tt := range refused {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := Parse([]byte(twoForges(tt.repos))); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Parse = %v, want an error containing %q", err, tt.want)
+			}
+		})
+	}
+
+	t.Run("the same name under two installations is two repositories", func(t *testing.T) {
+		f, err := Parse([]byte(twoForges("{ name: acme/x, installation: acme-other, mode: agentic }, { name: acme/x, installation: acme-bot }")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ten := &f.Tenants[0]
+		if in := f.InstallationFor(ten, &ten.Repositories[0]); in == nil || in.Name != "acme-other" {
+			t.Fatalf("InstallationFor = %v, want acme-other", in)
+		}
+		if got := f.Settings(ten, "acme-other", "acme/x").Mode; got != ReviewAgentic {
+			t.Fatalf("acme-other mode = %q, want agentic", got)
+		}
+		if got := f.Settings(ten, "acme-bot", "acme/x").Mode; got != ReviewSingle {
+			t.Fatalf("acme-bot mode = %q, want single", got)
+		}
+	})
+
+	t.Run("an entry for one installation leaves the other forge's repository unlisted", func(t *testing.T) {
+		f, err := Parse([]byte(twoForges("{ name: acme/x, installation: acme-other, enabled: false }")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ten := &f.Tenants[0]
+		if f.Settings(ten, "acme-other", "acme/x").Enabled {
+			t.Fatal("acme-other's acme/x should be disabled")
+		}
+		if !f.Settings(ten, "acme-bot", "acme/x").Enabled {
+			t.Fatal("acme-bot's acme/x should keep the tenant's settings")
+		}
+	})
+}
+
 func TestRepositoryModeAgentReview(t *testing.T) {
 	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -502,7 +566,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, repo := range []string{"acme/x", "acme/unlisted"} {
-			s := f.Settings(&f.Tenants[0], repo)
+			s := f.Settings(&f.Tenants[0], "acme-bot", repo)
 			if s.Mode != ReviewSingle || !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
 				t.Fatalf("%s: mode=%q agent=%+v incremental=%+v", repo, s.Mode, s.Agent, s.Incremental)
 			}
@@ -524,7 +588,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s := f.Settings(&f.Tenants[0], "acme/x")
+		s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x")
 		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, Timeout: 3 * time.Minute,
 			Commands: []string{"curl", "rg"}, CommandTimeout: 10 * time.Second}
 		if s.Mode != ReviewAgentic || !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
@@ -546,7 +610,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		}
 		want := DefaultAgent
 		want.MaxSteps = 7
-		if got := f.Settings(&f.Tenants[0], "acme/x").Agent; !reflect.DeepEqual(got, want) {
+		if got := f.Settings(&f.Tenants[0], "acme-bot", "acme/x").Agent; !reflect.DeepEqual(got, want) {
 			t.Fatalf("agent = %+v, want %+v", got, want)
 		}
 	})
