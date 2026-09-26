@@ -208,12 +208,18 @@ func InstallationsHeldElsewhere(ctx context.Context, tx pgx.Tx, tenantID string,
 	return held, nil
 }
 
-func probeInstallationName(ctx context.Context, tx pgx.Tx, tenantID, name string) (bool, error) {
+func probeInstallationName(ctx context.Context, tx pgx.Tx, tenantID, name string) (taken bool, err error) {
 	sp, err := tx.Begin(ctx)
 	if err != nil {
 		return false, fmt.Errorf("store: probe installation %s: %w", name, err)
 	}
-	defer func() { _ = sp.Rollback(ctx) }() // the probe never keeps its row
+	// The probe never keeps its row; a savepoint that fails to roll back
+	// leaves tx unusable, so that is the probe's error too.
+	defer func() {
+		if rerr := sp.Rollback(ctx); rerr != nil {
+			taken, err = false, errors.Join(err, fmt.Errorf("store: probe installation %s: roll back: %w", name, rerr))
+		}
+	}()
 	var id string
 	err = sp.QueryRow(ctx, `
 		INSERT INTO installations (id, tenant_id, name, forge, account, credential_kind, managed_by)
