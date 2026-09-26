@@ -83,7 +83,9 @@ Three roles share the same `web.signIn` and `web.operators`:
   the only one who may set a dashboard tenant's `runner` and `limits`, or
   its `models`, `forks`, `mode`, `agent`, `incremental` or `allow` at the
   tenant or on any of its `repositories[]`; a tenant admin's write that
-  touches any of those is rejected. Membership is checked per source (the forge, refreshed
+  touches any of those is rejected. The rule is the policy table in
+  `internal/configfile/policy.go`: the tenant configuration read serves it
+  with what the caller may change there, and the form disables the rest. Membership is checked per source (the forge, refreshed
   at sign-in, and accepted invites), and a principal who qualifies through
   more than one gets the highest of the roles it grants.
 - **Tenant admin** — can edit a dashboard-managed tenant's configuration,

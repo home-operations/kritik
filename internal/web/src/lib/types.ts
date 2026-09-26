@@ -620,11 +620,35 @@ export interface SecretState {
 }
 export type SecretInput = { value: string } | { keep: true } | { generate: true };
 
+export type ConfigScope = 'defaults' | 'tenant' | 'repository';
+export type RepoRule =
+  | 'own'
+  | 'turnOff'
+  | 'turnOn'
+  | 'and'
+  | 'union'
+  | 'append'
+  | 'choose'
+  | 'subset'
+  | 'atMost'
+  | 'replace';
+
+// One setting of the policy table: where the operator may write it,
+// whether a tenant admin may too, what a repository's .kritik.yaml may do
+// with it, and whether the caller may change it on this tenant.
+export interface FieldPolicy {
+  key: string;
+  scopes: ConfigScope[];
+  tenantAdmin: boolean;
+  repository?: RepoRule;
+  editable: boolean;
+}
+
 export interface TenantConfig {
   managedBy: TenantManagedBy;
   revision: number | null;
   editable: boolean;
-  operatorOnlyFields: string[];
+  policy: FieldPolicy[];
   // A tenant entry of the configuration file, in JSON, with every secret
   // a SecretState.
   spec: Record<string, unknown>;

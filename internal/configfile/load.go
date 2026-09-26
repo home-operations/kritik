@@ -433,8 +433,8 @@ func (f *File) validateOverrides(where string, r *Overrides) error {
 		name string
 		v    *int
 	}{
-		{"agent.maxSteps", r.Agent.MaxSteps},
-		{"agent.maxToolOutputBytes", r.Agent.MaxToolOutputBytes},
+		{keyMaxSteps, r.Agent.MaxSteps},
+		{keyMaxToolOutputBytes, r.Agent.MaxToolOutputBytes},
 		{"incremental.maxDeltaFiles", r.Incremental.MaxDeltaFiles},
 	} {
 		if c.v != nil && *c.v <= 0 {
@@ -657,13 +657,13 @@ func checkWithinAllow(where string, s Settings) error {
 	var over string
 	switch ag, bound := s.Agent, a.Agent; {
 	case bound.MaxSteps != nil && ag.MaxSteps > *bound.MaxSteps:
-		over = "agent.maxSteps"
+		over = keyMaxSteps
 	case bound.MaxToolOutputBytes != nil && ag.MaxToolOutputBytes > *bound.MaxToolOutputBytes:
-		over = "agent.maxToolOutputBytes"
+		over = keyMaxToolOutputBytes
 	case bound.MaxTokens != nil && ag.MaxTokens > *bound.MaxTokens:
-		over = "agent.maxTokens"
+		over = keyMaxTokens
 	case bound.Timeout != nil && ag.Timeout > *bound.Timeout:
-		over = "agent.timeout"
+		over = keyTimeout
 	case a.Settle != nil && s.Settle > *a.Settle:
 		over = "settle"
 	}

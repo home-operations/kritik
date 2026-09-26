@@ -127,7 +127,7 @@
           <button class="btn btn-small" onclick={cancelCreate}>Cancel</button>
         </header>
         <div class="panel-body">
-          <ConfigEditor initial={{}} creating operator {saving} {errMessage} {errPath} {errSeq} bind:dirty submitLabel="Create tenant" onsave={create} />
+          <ConfigEditor initial={{}} creating editable={() => true} {saving} {errMessage} {errPath} {errSeq} bind:dirty submitLabel="Create tenant" onsave={create} />
           {#if offerAdopt}
             <div class="notice" role="note">
               <label>

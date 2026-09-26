@@ -71,3 +71,41 @@ func yamlKeys[T any]() []string {
 	}
 	return out
 }
+
+// TestFileFollowsPolicies checks the keys .kritik.yaml takes are the
+// settings the policy table gives the repository a rule for.
+func TestFileFollowsPolicies(t *testing.T) {
+	var ruled []string
+	for _, p := range configfile.Policies {
+		if p.Repository == "" {
+			continue
+		}
+		ruled = append(ruled, p.Key)
+		if _, ok := configfile.SpecValue(&File{}, p.Key); !ok {
+			t.Errorf("the table gives %s a repository rule, but the file has no such key", p.Key)
+		}
+	}
+	for _, key := range leafKeys(reflect.TypeFor[File](), "") {
+		if !slices.ContainsFunc(ruled, func(r string) bool { return key == r || strings.HasPrefix(key, r+".") }) {
+			t.Errorf("the file takes %s, but the table gives the repository no rule for it", key)
+		}
+	}
+}
+
+// leafKeys lists the dotted keys of the settings t decodes, not looking
+// into lists.
+func leafKeys(t reflect.Type, prefix string) []string {
+	var out []string
+	for f := range t.Fields() {
+		name, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+		if name == "" || name == "-" {
+			continue
+		}
+		if f.Type.Kind() == reflect.Struct {
+			out = append(out, leafKeys(f.Type, prefix+name+".")...)
+			continue
+		}
+		out = append(out, prefix+name)
+	}
+	return out
+}
