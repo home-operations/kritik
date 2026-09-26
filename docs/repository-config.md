@@ -11,6 +11,14 @@ The file holds nothing secret: no field takes a credential, a URL, a host
 or a secret reference, and it can only name what the operator configured,
 a model by its `<provider>/<model>` reference and a command by its name.
 
+[`kritik.schema.json`](kritik.schema.json) is its JSON Schema. An editor
+using the YAML language server validates the file as it is written when
+its first line names the schema:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/home-operations/kritik/main/docs/kritik.schema.json
+```
+
 ## What it may change
 
 The file narrows what the operator allows, adds to the review's
