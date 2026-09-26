@@ -30,18 +30,19 @@ type Merged struct {
 // Merge applies doc, the merge-base FileName or nil when the repository has
 // none, over the operator's settings op (ADR-0010 §2.5). The file narrows
 // what the operator allows (enabled, filter, ignore, skip), appends its
-// instructions to the operator's, may only turn requireSuggestedFix on,
-// and replaces the templates, the inline severity floor and whether
-// findings go inline, which grant nothing. It chooses its mode,
-// models, agent limits and commands and settle time within the bounds
-// op.Allow gives it; a bound the operator leaves unset allows only the
-// operator's own mode, models and commands, and limits and a settle time
-// at or below the operator's own. A value outside its bound is dropped,
-// not clamped, and Dropped says so. A file that does not parse is ignored
-// as a whole: op stands, and the error says why.
+// instructions and context files to the operator's, may only turn
+// requireSuggestedFix on, and replaces the templates, the inline severity
+// floor and whether findings go inline, which grant nothing. It chooses
+// its mode, models, agent limits and commands and settle time within the
+// bounds op.Allow gives it; a bound the operator leaves unset allows only
+// the operator's own mode, models and commands, and limits and a settle
+// time at or below the operator's own. A value outside its bound is
+// dropped, not clamped, and Dropped says so. A file that does not parse is
+// ignored as a whole: op stands, and the error says why.
 func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	op.Ignore = slices.Clone(op.Ignore)
 	op.Review.Instructions = slices.Clone(op.Review.Instructions)
+	op.Review.Context = slices.Clone(op.Review.Context)
 	m := Merged{Settings: op}
 	if doc == nil {
 		return m, nil
@@ -92,6 +93,11 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	}
 	if f.Review.InlineComments != nil {
 		m.Review.InlineComments = *f.Review.InlineComments
+	}
+	for _, c := range f.Review.Context {
+		if !slices.ContainsFunc(m.Review.Context, func(o configfile.ContextFile) bool { return o.Path == c.Path }) {
+			m.Review.Context = append(m.Review.Context, c)
+		}
 	}
 	m.choose(&f, &op)
 	return m, nil

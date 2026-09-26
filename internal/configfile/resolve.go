@@ -215,6 +215,9 @@ func (r Review) overlay(o ReviewSpec) Review {
 	if o.InlineComments != nil {
 		r.InlineComments = *o.InlineComments
 	}
+	if o.Context != nil {
+		r.Context = o.Context
+	}
 	return r
 }
 

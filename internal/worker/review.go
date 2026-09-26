@@ -214,7 +214,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		w: w, file: file, tenant: tenant, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, jobID: job.ID, logger: logger,
 		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix}, templates: prep.eff.Templates,
-		instructions: prep.eff.Instructions, repoNotes: prep.notes, prior: prior, scope: prep.scope, agent: agentOutcome,
+		instructions: prep.eff.Instructions, references: prep.eff.References, repoNotes: prep.notes, prior: prior, scope: prep.scope,
+		agent: agentOutcome,
 	}
 	publish := phase.run
 	if agentic {

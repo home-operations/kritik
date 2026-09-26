@@ -69,9 +69,11 @@ type publishPhase struct {
 	// values are kritik's defaults.
 	parse     review.ParseOptions
 	templates review.Templates
-	// instructions are the repository's review instructions, and repoNotes
-	// what the summary states about its configuration files.
+	// instructions are the repository's review instructions, references
+	// the files it names as explaining the code, and repoNotes what the
+	// summary states about its configuration files.
 	instructions []string
+	references   []review.Reference
 	repoNotes    []string
 	// prior is the last completed review, whose inline comments are not
 	// posted again; scope says whether this review builds on it.
@@ -107,7 +109,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	msg, omitted, contextOmitted := review.Build(review.Input{
 		Repository: p.pr.repository, Number: p.pr.number, Title: in.title, Author: in.author, Body: in.body,
 		BaseRef: p.pr.baseRef, Changed: in.changed, Diff: in.diff, Context: in.context, Incremental: incremental,
-		BudgetTokens: review.UserBudget(system),
+		References: p.references, BudgetTokens: review.UserBudget(system),
 	})
 	p.logger.Info("prompt built", "chars", len(msg), "diff_files_omitted", len(omitted),
 		"context_chunks", len(in.context), "context_omitted", contextOmitted)

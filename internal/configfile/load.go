@@ -480,6 +480,11 @@ func validateReview(where string, r *ReviewSpec) error {
 	if m := r.MinSeverity; m != nil && !ValidMinSeverity(*m) {
 		return fmt.Errorf("configfile: %s.minSeverity must be %s or %s, got %q", where, SeverityNit, SeverityImportant, *m)
 	}
+	for i, c := range r.Context {
+		if err := c.Check(); err != nil {
+			return fmt.Errorf("configfile: %s.context[%d]: %w", where, i, err)
+		}
+	}
 	for _, t := range []struct {
 		name string
 		path *string
@@ -489,6 +494,23 @@ func validateReview(where string, r *ReviewSpec) error {
 		}
 		if err := checkRepoPath(*t.path); err != nil {
 			return fmt.Errorf("configfile: %s.templates.%s: %w", where, t.name, err)
+		}
+	}
+	return nil
+}
+
+// Check rejects a context file with no description, a path outside the
+// repository, or a glob that is not valid.
+func (c ContextFile) Check() error {
+	if err := checkRepoPath(c.Path); err != nil {
+		return err
+	}
+	if strings.TrimSpace(c.Description) == "" {
+		return errors.New("description is required")
+	}
+	for i, g := range c.Paths {
+		if strings.TrimSpace(g) == "" || !doublestar.ValidatePattern(g) {
+			return fmt.Errorf("paths[%d] %q is not a valid glob", i, g)
 		}
 	}
 	return nil

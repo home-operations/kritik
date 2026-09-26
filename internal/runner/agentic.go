@@ -58,11 +58,16 @@ func agentPrompt(p Spec, files repoconfig.Files, pack packView, commands []strin
 	if pack.Scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior}
 	}
+	active := repoconfig.ActiveContext(p.Prompt.Context, pack.Changed)
+	references := make([]review.Reference, 0, len(active))
+	for _, c := range active {
+		references = append(references, review.Reference{Path: c.Path, Description: c.Description})
+	}
 	pr := p.Prompt.PullRequest
 	user, _, _ = review.Build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
-		Incremental: incremental, BudgetTokens: review.UserBudget(system),
+		Incremental: incremental, References: references, BudgetTokens: review.UserBudget(system),
 	})
 	return system, user, p.Prompt.RequireSuggestedFix
 }

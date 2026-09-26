@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -365,5 +366,24 @@ func TestFillScopesInstructions(t *testing.T) {
 		if !slices.Equal(e.Instructions, tt.want) {
 			t.Fatalf("changed %v: instructions = %q, want %q", tt.changed, e.Instructions, tt.want)
 		}
+	}
+}
+
+func TestFillReferences(t *testing.T) {
+	settings := operatorSettings(t)
+	settings.Review.Context = []configfile.ContextFile{{Path: "docs/arch.md", Description: "how the parts fit"}}
+	e, _ := effective(settings, []byte("review:\n  context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }, "+
+		"{ path: docs/gone.md, description: gone }]\n"))
+	files := repoconfig.Files{
+		"ops/rules.md": "operator rules", "ops/summary.tmpl": "s", "ops/inline.tmpl": "i", "docs/arch.md": "arch", "db/schema.sql": "schema",
+	}
+	notes := e.fill(files, nil, []string{"main.go"})
+	want := []review.Reference{{Path: "docs/arch.md", Description: "how the parts fit", Content: "arch"}}
+	if !reflect.DeepEqual(e.References, want) || !slices.Equal(notes, []string{"docs/gone.md: referenced but not found"}) {
+		t.Fatalf("references = %+v, notes = %q", e.References, notes)
+	}
+	e.fill(files, nil, []string{"db/0002.sql"})
+	if len(e.References) != 2 || e.References[1].Content != "schema" {
+		t.Fatalf("references = %+v, want the schema too", e.References)
 	}
 }
