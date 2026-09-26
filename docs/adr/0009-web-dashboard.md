@@ -270,6 +270,9 @@ of the error. A colliding file edit, instead, is logged, the last good
 snapshot stays live, and the drift gauge rises. `ApplyConfig`
 (`internal/store/configsync.go`) writes `managed_by` from each tenant's
 origin, and never takes over a row with a different `managed_by`.
+A consequence: the refusal tells a tenant admin whether an installation
+name already exists anywhere on the instance, which is accepted because
+installation names are webhook paths, not secrets.
 
 Git is already the source of truth for anything a file declares
 (ADR-0002 §2.6). Letting a dashboard write silently shadow or take over a
