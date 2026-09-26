@@ -131,16 +131,21 @@ func (l *localForge) BranchTip(context.Context, string, string, string) (string,
 }
 
 // fakeEmbedder maps text to an 8-dimensional vector of character-bigram
-// counts, so similar text gets similar vectors without a model.
+// counts, so similar text gets similar vectors without a model. With fail
+// set it errors instead.
 type fakeEmbedder struct {
 	mu    sync.Mutex
 	calls int
+	fail  atomic.Bool
 }
 
 func (f *fakeEmbedder) Embed(_ context.Context, inputs []string) ([][]float32, int64, error) {
 	f.mu.Lock()
 	f.calls++
 	f.mu.Unlock()
+	if f.fail.Load() {
+		return nil, 0, errors.New("embedder down")
+	}
 	out := make([][]float32, len(inputs))
 	var tokens int64
 	for i, s := range inputs {
@@ -667,6 +672,42 @@ func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *
 	}
 }
 
+// checkIndexEmbedFailure fails a forced rebuild's embedding and checks the
+// chunks its runner staged are cleared, not left behind for good.
+func checkIndexEmbedFailure(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], fe *fakeEmbedder, tenantID, repoID string,
+) {
+	t.Helper()
+	fe.fail.Store(true)
+	job, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = queue.JobCancel(context.Background(), job.Job.ID)
+		fe.fail.Store(false)
+	})
+	var packed, staged int
+	waitFor(t, 20*time.Second, "the failed embedding's staged chunks to be cleared", func() bool {
+		err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT p.chunk_count, (SELECT count(*) FROM index_staging s WHERE s.runner_run_id = r.id)
+				FROM index_runs i JOIN runner_runs r ON r.index_run_id = i.id JOIN index_packs p ON p.runner_run_id = r.id
+				WHERE i.repository_id = $1 AND i.status = 'failed' AND i.error LIKE '%embedder down%'
+				ORDER BY i.created_at LIMIT 1`, repoID).Scan(&packed, &staged)
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return staged == 0
+	})
+	if packed == 0 {
+		t.Fatal("the runner staged no chunks, so none were there to clear")
+	}
+}
+
 // checkFollowUps posts mentions as the forge would deliver them and checks
 // qualification, the reply, the thread in the prompt, and the rate limit.
 func checkFollowUps(
@@ -918,6 +959,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	t.Run("a failed index runner is retried", func(t *testing.T) {
 		checkIndexRetry(ctx, t, appStore, insertOnly, exec, tenant.ID(), repoID)
+	})
+
+	t.Run("a failed embedding leaves no staged chunks", func(t *testing.T) {
+		checkIndexEmbedFailure(ctx, t, appStore, insertOnly, fe, tenant.ID(), repoID)
 	})
 
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {
