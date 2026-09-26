@@ -194,16 +194,16 @@ func (g *Gateway) monthCapped(ctx context.Context, file *configfile.File, tenant
 	if limits.TokensPerMonth <= 0 {
 		return "", nil
 	}
-	var spent int64
+	var m store.MonthUsage
 	err := g.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
 		var err error
-		spent, err = monthTokens(ctx, tx)
+		m, err = store.ReadMonthUsage(ctx, tx)
 		return err
 	})
 	if err != nil {
 		return "", fmt.Errorf("worker: read month's tokens: %w", err)
 	}
-	if spent >= limits.TokensPerMonth {
+	if m.Tokens >= limits.TokensPerMonth {
 		return fmt.Sprintf("tokensPerMonth (%d) reached", limits.TokensPerMonth), nil
 	}
 	return "", nil

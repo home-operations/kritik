@@ -175,10 +175,9 @@ func ReadTenantStats(ctx context.Context, tx pgx.Tx) (TenantStats, error) {
 // ReadMonthUsage reads the tenant's month-to-date usage.
 func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	var m MonthUsage
-	err := tx.QueryRow(ctx, `SELECT
-		(SELECT coalesce(sum(input_tokens + output_tokens), 0) FROM usage WHERE created_at >= date_trunc('month', now())),
-		(SELECT coalesce(sum(cost_usd), 0)::float8 FROM usage WHERE created_at >= date_trunc('month', now())),
-		(SELECT count(*) FROM reviews WHERE status = 'completed' AND created_at >= date_trunc('day', now()))`).
+	err := tx.QueryRow(ctx, `SELECT coalesce(sum(input_tokens + output_tokens), 0), coalesce(sum(cost_usd), 0)::float8,
+		(SELECT count(*) FROM reviews WHERE status = 'completed' AND created_at >= date_trunc('day', now()))
+		FROM usage WHERE created_at >= date_trunc('month', now())`).
 		Scan(&m.Tokens, &m.CostUSD, &m.ReviewsToday)
 	if err != nil {
 		return m, fmt.Errorf("store: month usage: %w", err)

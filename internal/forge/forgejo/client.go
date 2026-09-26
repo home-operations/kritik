@@ -22,13 +22,6 @@ import (
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
-// statusContext is the commit status context kritik reports under.
-const statusContext = "kritik/review"
-
-// maxStatusDescription is the length Forgejo (matching GitHub) truncates a
-// commit status description to.
-const maxStatusDescription = 140
-
 // maxErrorBody bounds how much of a non-2xx response body an apiError
 // quotes, so a large HTML error page cannot blow up an error message.
 const maxErrorBody = 512
@@ -386,8 +379,8 @@ func (c *Client) CreateReview(ctx context.Context, owner, repo string, number in
 func (c *Client) SetStatus(ctx context.Context, owner, repo, sha string, state forge.StatusState, description string) error {
 	opts := createStatusOption{
 		State:       string(state),
-		Context:     statusContext,
-		Description: truncate(description, maxStatusDescription),
+		Context:     forge.StatusContext,
+		Description: truncate(description, forge.MaxStatusDescription),
 	}
 	path := fmt.Sprintf("%s/statuses/%s", repoPath(owner, repo), sha)
 	if err := c.do(ctx, http.MethodPost, path, opts, nil); err != nil {

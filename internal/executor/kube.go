@@ -283,13 +283,14 @@ func gatewayHost(raw string) string {
 }
 
 // runnerLabels are shared by a run's Job, pod and Secret. The role label is what
-// a NetworkPolicy selects runner pods by.
+// a NetworkPolicy selects runner pods by. A label value may not hold a
+// slash, which an owner/repo name does.
 func runnerLabels(spec Spec) map[string]string {
 	l := map[string]string{
 		"app.kubernetes.io/name": "kritik", "app.kubernetes.io/component": runnerRole, "kritik.home-operations.com/role": runnerRole,
 	}
 	for key, v := range spec.Labels {
-		l["kritik.home-operations.com/"+key] = v
+		l["kritik.home-operations.com/"+key] = strings.ReplaceAll(v, "/", "_")
 	}
 	return l
 }

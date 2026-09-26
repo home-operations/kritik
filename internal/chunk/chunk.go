@@ -32,9 +32,6 @@ type Decl struct {
 	EndLine   int
 	StartByte int
 	EndByte   int
-	// HasError is set when the parser found syntax errors inside the
-	// declaration; the text is still usable, the structure less so.
-	HasError bool
 }
 
 // Lines is how many lines the declaration spans.
@@ -181,7 +178,6 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 				Symbol: s.Name, Kind: s.Kind, Scope: scope,
 				StartLine: int(s.Range.StartPoint.Row) + 1, EndLine: int(s.Range.EndPoint.Row) + 1,
 				StartByte: int(s.Range.StartByte), EndByte: int(s.Range.EndByte),
-				HasError: nodeAt(root, s.Range.StartByte, s.Range.EndByte).HasError(),
 			})
 			walk(s.Children, s.Name)
 		}
@@ -197,7 +193,6 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 			Kind:      kindFromType(typ),
 			StartLine: int(c.StartPoint().Row) + 1, EndLine: int(c.EndPoint().Row) + 1,
 			StartByte: int(c.StartByte()), EndByte: int(c.EndByte()),
-			HasError: c.HasError(),
 		}
 		d.Symbol, d.Scope = nameOf(c, lp.lang, src)
 		add(d)
@@ -332,10 +327,11 @@ func (f *File) Identifiers(lines []int) []string {
 		want[l] = true
 	}
 	counts := map[string]int{}
+	lo, hi := minKey(want), maxKey(want)
 	var walk func(n *gotreesitter.Node)
 	walk = func(n *gotreesitter.Node) {
 		row := int(n.StartPoint().Row) + 1
-		if int(n.EndPoint().Row)+1 < minKey(want) || row > maxKey(want) {
+		if int(n.EndPoint().Row)+1 < lo || row > hi {
 			return
 		}
 		if n.ChildCount() == 0 {
@@ -387,16 +383,35 @@ func maxKey(m map[int]bool) int {
 // Window returns the fixed-size fallback: the lines from first-radius to
 // last+radius, clamped to the file. Lines are 1-based, inclusive.
 func Window(src []byte, first, last, radius int) (startLine, endLine int, text string) {
-	lines := strings.Split(string(src), "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
 	startLine = max(first-radius, 1)
-	endLine = min(last+radius, len(lines))
+	endLine = min(last+radius, lineCount(src))
 	if startLine > endLine {
 		return 0, 0, ""
 	}
-	return startLine, endLine, strings.Join(lines[startLine-1:endLine], "\n")
+	start := 0
+	for range startLine - 1 {
+		start += bytes.IndexByte(src[start:], '\n') + 1
+	}
+	end := start
+	for range endLine - startLine {
+		end += bytes.IndexByte(src[end:], '\n') + 1
+	}
+	if i := bytes.IndexByte(src[end:], '\n'); i >= 0 {
+		end += i
+	} else {
+		end = len(src)
+	}
+	return startLine, endLine, string(src[start:end])
+}
+
+// lineCount is the number of lines in src, a final newline ending the last
+// line rather than starting an empty one.
+func lineCount(src []byte) int {
+	n := bytes.Count(src, []byte{'\n'})
+	if len(src) > 0 && src[len(src)-1] != '\n' {
+		n++
+	}
+	return n
 }
 
 // Text returns the source of a line range, 1-based and inclusive.
@@ -409,10 +424,7 @@ func Text(src []byte, startLine, endLine int) string {
 // index: size lines each, overlapping by overlap lines so a boundary does
 // not hide a match. Lines are 1-based, inclusive.
 func Windows(src []byte, size, overlap int) []Decl {
-	lines := strings.Count(string(src), "\n")
-	if len(src) > 0 && src[len(src)-1] != '\n' {
-		lines++
-	}
+	lines := lineCount(src)
 	if lines == 0 || size <= 0 {
 		return nil
 	}

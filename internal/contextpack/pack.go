@@ -6,11 +6,10 @@
 package contextpack
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -240,7 +239,8 @@ func subset(start, end int, shown map[int]bool) bool {
 	return true
 }
 
-var word = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
+// wordStart reports whether c can start an identifier: [A-Za-z_].
+func wordStart(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_' }
 
 // scan is stages 2 and 3 in one walk of the head tree: every parseable
 // file is searched for the wanted words, and only files with a hit are
@@ -290,14 +290,21 @@ func (b *builder) scan(ctx context.Context) error {
 		var hits []hit
 		line := 1
 		last := 0
-		for _, loc := range word.FindAllIndex(src, -1) {
-			w := string(src[loc[0]:loc[1]])
-			if !wanted[w] {
+		for i := 0; i < len(src); {
+			if !wordStart(src[i]) {
+				i++
 				continue
 			}
-			line += strings.Count(string(src[last:loc[0]]), "\n")
-			last = loc[0]
-			hits = append(hits, hit{w, line})
+			j := i + 1
+			for j < len(src) && (wordStart(src[j]) || '0' <= src[j] && src[j] <= '9') {
+				j++
+			}
+			if wanted[string(src[i:j])] {
+				line += bytes.Count(src[last:i], []byte{'\n'})
+				last = i
+				hits = append(hits, hit{string(src[i:j]), line})
+			}
+			i = j
 		}
 		if len(hits) == 0 {
 			return nil
@@ -320,14 +327,14 @@ func (b *builder) scan(ctx context.Context) error {
 			seenDecl[key] = true
 			c := Chunk{
 				Path: f.Name, Language: pf.Language, Symbol: decl.Symbol, Kind: decl.Kind, Scope: decl.Scope,
-				StartLine: decl.StartLine, EndLine: decl.EndLine, Ref: h.word, Text: chunk.Text(src, decl.StartLine, decl.EndLine),
+				StartLine: decl.StartLine, EndLine: decl.EndLine, Ref: h.word,
 			}
 			switch {
 			case decl.Symbol == h.word && !changedSet[h.word]:
-				c.Stage = StageDefinition
+				c.Stage, c.Text = StageDefinition, chunk.Text(src, decl.StartLine, decl.EndLine)
 				b.definitions[h.word] = append(b.definitions[h.word], c)
 			case changedSet[h.word] && decl.Symbol != h.word:
-				c.Stage = StageCaller
+				c.Stage, c.Text = StageCaller, chunk.Text(src, decl.StartLine, decl.EndLine)
 				b.callers[h.word] = append(b.callers[h.word], c)
 			}
 		}

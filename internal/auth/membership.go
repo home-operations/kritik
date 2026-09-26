@@ -21,12 +21,6 @@ const (
 // Grant is a role on one tenant.
 type Grant = store.Grant
 
-// githubHost is where a GitHub sign-in or installation without a host lives.
-const githubHost = "github.com"
-
-// operatorEmail prefixes an operator matched by verified email.
-const operatorEmail = "email"
-
 // Membership answers, with the signed-in user's own token, what role the
 // user holds in a forge organization: RoleAdmin, RoleMember, or "" when the
 // user is not an active member.
@@ -39,14 +33,14 @@ type Membership func(ctx context.Context, org string) (Role, error)
 // matching installations gets the highest role among them. An OIDC sign-in
 // matches no installation and resolves nothing.
 func Resolve(ctx context.Context, file *configfile.File, signIn configfile.SignIn, id Identity, m Membership) ([]Grant, error) {
-	host := forgeHost(string(signIn.Type), signIn.Host)
+	host := configfile.ForgeHost(configfile.Forge(signIn.Type), signIn.Host)
 	checked := map[string]Role{}
 	var grants []Grant
 	for ti := range file.Tenants {
 		t := &file.Tenants[ti]
 		var role Role
 		for _, in := range t.Installations {
-			if string(in.Forge) != string(signIn.Type) || forgeHost(string(in.Forge), in.Host) != host || host == "" {
+			if string(in.Forge) != string(signIn.Type) || configfile.ForgeHost(in.Forge, in.Host) != host || host == "" {
 				continue
 			}
 			r, err := accountRole(ctx, id.Login, in.Account, m, checked)
@@ -99,18 +93,6 @@ func maxRole(a, b Role) Role {
 	return ""
 }
 
-// forgeHost is the lowercase hostname a GitHub or Forgejo sign-in or
-// installation talks to, "" when it names none.
-func forgeHost(kind, host string) string {
-	if host == "" {
-		if kind == string(configfile.ForgeGitHub) {
-			return githubHost
-		}
-		return ""
-	}
-	return strings.ToLower(hostname(host))
-}
-
 // IsOperator reports whether id is on the file's operator allowlist:
 // "<sign-in name>:<login>" for a GitHub or Forgejo sign-in, compared
 // without case as forge logins are; "<sign-in name>:<subject>" for OIDC,
@@ -125,7 +107,7 @@ func IsOperator(web configfile.Web, id Identity) bool {
 			continue
 		}
 		switch {
-		case kind == operatorEmail:
+		case kind == configfile.OperatorEmail:
 			if id.EmailVerified && id.Email != "" && strings.EqualFold(subject, id.Email) {
 				return true
 			}

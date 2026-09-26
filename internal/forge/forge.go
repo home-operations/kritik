@@ -60,6 +60,13 @@ const (
 	StatusError   StatusState = "error"
 )
 
+// StatusContext is the commit status context kritik reports under.
+const StatusContext = "kritik/review"
+
+// MaxStatusDescription is the length GitHub, and Forgejo matching it,
+// truncates a commit status description to.
+const MaxStatusDescription = 140
+
 // Permission is a login's access level to a repository, in ascending order.
 type Permission string
 

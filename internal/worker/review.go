@@ -73,13 +73,13 @@ const (
 
 // pullRequest is what the worker reads back before starting.
 type pullRequest struct {
-	id, repositoryID, installationID string
-	repository                       string
-	number                           int
-	installation                     string
-	externalID                       int64
-	headSHA, baseRef                 string
-	authorIsBot                      bool
+	id, repositoryID string
+	repository       string
+	number           int
+	installation     string
+	externalID       int64
+	headSHA, baseRef string
+	authorIsBot      bool
 }
 
 // Work implements river.Worker.
@@ -131,7 +131,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runID,
 		Labels: map[string]string{
-			"tenant": tenant.Slug, "repository": strings.ReplaceAll(pr.repository, "/", "_"),
+			"tenant": tenant.Slug, "repository": pr.repository,
 			"pr": strconv.Itoa(args.Number), "kind": jobs.QueueReview,
 		},
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": args.HeadSHA},
@@ -379,11 +379,11 @@ func (w *Review) load(ctx context.Context, args jobs.ReviewArgs) (*pullRequest, 
 	var pr pullRequest
 	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			SELECT p.id, p.repository_id, r.installation_id, r.name, p.number, i.name, coalesce(i.external_id, 0),
+			SELECT p.id, p.repository_id, r.name, p.number, i.name, coalesce(i.external_id, 0),
 				p.head_sha, p.base_ref, p.author_is_bot
 			FROM pull_requests p JOIN repositories r ON r.id = p.repository_id JOIN installations i ON i.id = r.installation_id
 			WHERE p.repository_id = $1 AND p.number = $2`, args.RepositoryID, args.Number).
-			Scan(&pr.id, &pr.repositoryID, &pr.installationID, &pr.repository, &pr.number, &pr.installation, &pr.externalID,
+			Scan(&pr.id, &pr.repositoryID, &pr.repository, &pr.number, &pr.installation, &pr.externalID,
 				&pr.headSHA, &pr.baseRef, &pr.authorIsBot)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -473,7 +473,7 @@ func (w *Review) begin(
 	}
 	settings := file.Settings(tenant, pr.repository)
 	ref := string(settings.Models.Review)
-	if free, err := slotFree(ctx, w.Store, tenant.ID(), ref, settings.Slots()); err != nil {
+	if free, err := slotFree(ctx, w.Store, tenant.ID(), ref, settings.Limits.Concurrency); err != nil {
 		logger.Warn("model slots not read; the review goes on", "error", err)
 	} else if !free {
 		return begun{}, true, w.snooze(e, job, ref)

@@ -138,7 +138,7 @@ func (f *File) dashboardForgeHosts() []string {
 		}
 		return hosts
 	}
-	hosts := []string{githubHost}
+	hosts := []string{GitHubHost}
 	for _, t := range f.Tenants {
 		for i := range t.Installations {
 			if h := t.Installations[i].forgeHost(); h != "" && !slices.Contains(hosts, h) {
@@ -151,12 +151,16 @@ func (f *File) dashboardForgeHosts() []string {
 
 // forgeHost is the lowercase host the installation talks to, or "" when it
 // names none.
-func (in *Installation) forgeHost() string {
+func (in *Installation) forgeHost() string { return ForgeHost(in.Forge, in.Host) }
+
+// ForgeHost is the lowercase host a GitHub or Forgejo installation or
+// sign-in of kind talks to, "" when it names none.
+func ForgeHost(kind Forge, host string) string {
 	switch {
-	case in.Host != "":
-		return strings.ToLower(hostOf(in.Host))
-	case in.Forge == ForgeGitHub:
-		return githubHost
+	case host != "":
+		return strings.ToLower(hostOf(host))
+	case kind == ForgeGitHub:
+		return GitHubHost
 	default:
 		return ""
 	}

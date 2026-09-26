@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -29,11 +28,6 @@ type GatewayGrant struct {
 	Budget, Spent int64
 }
 
-func gatewayTokenHash(token string) []byte {
-	h := sha256.Sum256([]byte(token))
-	return h[:]
-}
-
 // MintGatewayToken stores a new run token for g, valid until expires, and
 // returns it. Only its SHA-256 is kept.
 func (s *Store) MintGatewayToken(ctx context.Context, g GatewayGrant, expires time.Time) (string, error) {
@@ -45,7 +39,7 @@ func (s *Store) MintGatewayToken(ctx context.Context, g GatewayGrant, expires ti
 	_, err := s.app.Exec(ctx, `INSERT INTO gateway_tokens
 		(token_hash, runner_run_id, tenant_id, review_id, repository_id, model, fallback, budget_tokens, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		gatewayTokenHash(token), g.RunID, g.TenantID, g.ReviewID, g.RepositoryID, g.Model, g.Fallback, g.Budget, expires)
+		tokenHash(token), g.RunID, g.TenantID, g.ReviewID, g.RepositoryID, g.Model, g.Fallback, g.Budget, expires)
 	if err != nil {
 		return "", fmt.Errorf("store: mint gateway token: %w", err)
 	}
@@ -60,7 +54,7 @@ func (s *Store) LookupGatewayToken(ctx context.Context, token string) (GatewayGr
 	}
 	var g GatewayGrant
 	err := s.app.QueryRow(ctx, `SELECT runner_run_id, tenant_id, review_id, repository_id, model, fallback, budget_tokens, spent_tokens
-		FROM gateway_tokens WHERE token_hash = $1 AND expires_at > now()`, gatewayTokenHash(token)).
+		FROM gateway_tokens WHERE token_hash = $1 AND expires_at > now()`, tokenHash(token)).
 		Scan(&g.RunID, &g.TenantID, &g.ReviewID, &g.RepositoryID, &g.Model, &g.Fallback, &g.Budget, &g.Spent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return GatewayGrant{}, ErrGatewayToken
@@ -78,7 +72,7 @@ func (s *Store) LookupGatewayToken(ctx context.Context, token string) (GatewayGr
 // agent's own loop may.
 func (s *Store) ReserveGatewayTokens(ctx context.Context, token string, tokens int64) (bool, error) {
 	tag, err := s.app.Exec(ctx, `UPDATE gateway_tokens SET spent_tokens = spent_tokens + $2
-		WHERE token_hash = $1 AND expires_at > now() AND spent_tokens < budget_tokens`, gatewayTokenHash(token), tokens)
+		WHERE token_hash = $1 AND expires_at > now() AND spent_tokens < budget_tokens`, tokenHash(token), tokens)
 	if err != nil {
 		return false, fmt.Errorf("store: reserve gateway tokens: %w", err)
 	}
@@ -89,7 +83,7 @@ func (s *Store) ReserveGatewayTokens(ctx context.Context, token string, tokens i
 // token's run has spent: a step's actual spend less its reservation.
 func (s *Store) ChargeGatewayToken(ctx context.Context, token string, tokens int64) error {
 	if _, err := s.app.Exec(ctx, `UPDATE gateway_tokens SET spent_tokens = spent_tokens + $2 WHERE token_hash = $1`,
-		gatewayTokenHash(token), tokens); err != nil {
+		tokenHash(token), tokens); err != nil {
 		return fmt.Errorf("store: charge gateway token: %w", err)
 	}
 	return nil

@@ -12,12 +12,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"slices"
 	"time"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritik/internal/chunk"
 	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/review"
@@ -41,10 +40,15 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 		stop()
 		<-beating
 	}()
+	run := runReview
 	if spec.Kind == KindIndex {
-		return runIndex(ctx, st, spec, secrets, logger)
+		run = runIndex
 	}
-	return runReview(ctx, st, spec, secrets, logger)
+	err := run(ctx, st, spec, secrets, logger)
+	if err != nil {
+		_ = fail(ctx, st, spec.RunID, secrets, err)
+	}
+	return err
 }
 
 func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, logger *slog.Logger) error {
@@ -55,7 +59,6 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base, Prior: p.PriorHead,
 	})
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	defer func() { _ = res.Close() }()
@@ -66,13 +69,10 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	}
 	baseTree, err := res.Base.Tree()
 	if err != nil {
-		err = fmt.Errorf("runner: base tree: %w", err)
-		_ = fail(ctx, st, p.RunID, secrets, err)
-		return err
+		return fmt.Errorf("runner: base tree: %w", err)
 	}
 	repoFiles, repoNotes, ignore, err := repoConfig(baseTree, p.Ignore, p.RepoFiles)
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	// A nil prior head tells the worker the delta is unknown, not empty.
@@ -88,7 +88,6 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	}
 	chunks, stats, err := stages(ctx, res, ignore)
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	logger.Info("context built", "overlay", stats.Overlay, "definitions", stats.Definitions, "callers", stats.Callers,
@@ -130,7 +129,6 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		return err
 	})
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	logger.Info("context pack written", "run", p.RunID, "patch_id", res.PatchID[:12])
@@ -146,18 +144,14 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 			Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
 		}, ignore, res.PatchID, logger)
 	}
-	if err != nil {
-		_ = fail(ctx, st, p.RunID, secrets, err)
-		return err
-	}
-	return nil
+	return err
 }
 
 // notIgnored returns the paths no ignore glob matches, never nil.
 func notIgnored(paths, ignore []string) []string {
 	out := []string{}
 	for _, p := range paths {
-		if !slices.ContainsFunc(ignore, func(g string) bool { ok, _ := doublestar.Match(g, p); return ok }) {
+		if !chunk.Ignored(ignore, p) {
 			out = append(out, p)
 		}
 	}

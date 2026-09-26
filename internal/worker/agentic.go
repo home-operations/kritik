@@ -89,7 +89,7 @@ func (w *Review) agentAdmit(
 	if _, ok := file.Providers[ref.Provider()]; !ok {
 		return admission{}, statusFailed, fmt.Sprintf("worker: provider %q is not in the configuration", ref.Provider()), nil
 	}
-	l, err := takeLease(ctx, w.Store, tenant.ID(), string(ref), settings.Slots(), jobID)
+	l, err := takeLease(ctx, w.Store, tenant.ID(), string(ref), settings.Limits.Concurrency, jobID)
 	if err != nil {
 		return admission{}, "", "", err
 	}

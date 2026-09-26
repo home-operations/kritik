@@ -104,7 +104,7 @@ func TestRequirePrincipal(t *testing.T) {
 
 	w = httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/x", nil)
-	r = r.WithContext(withPrincipal(r.Context(), &Principal{}))
+	r = r.WithContext(WithPrincipal(r.Context(), &Principal{}))
 	h.RequirePrincipal(next).ServeHTTP(w, r)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", w.Code)

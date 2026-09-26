@@ -77,8 +77,9 @@ func (s *Server) writeAudit(w http.ResponseWriter, r *http.Request, tenantID str
 		items[i] = AuditEvent{
 			ID: fmt.Sprint(e.ID), At: e.At, Tenant: slugs[e.TenantID], Action: AuditAction(e.Action), Target: e.Target, Detail: e.Detail,
 		}
-		if a := e.Actor; a != nil {
-			items[i].Actor = &Account{ID: a.ID, DisplayName: a.DisplayName, Email: a.Email, AvatarURL: a.AvatarURL}
+		if e.Actor != nil {
+			a := account(*e.Actor)
+			items[i].Actor = &a
 		}
 	}
 	writeJSON(w, http.StatusOK, newPage(items, next))

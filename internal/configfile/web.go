@@ -33,9 +33,9 @@ const (
 	maxSessionTTL = 30 * 24 * time.Hour
 )
 
-// operatorEmail prefixes an operator matched by email address; a sign-in may
+// OperatorEmail prefixes an operator matched by email address; a sign-in may
 // not take it as its name.
-const operatorEmail = "email"
+const OperatorEmail = "email"
 
 // SignInType selects how a sign-in authenticates.
 type SignInType string
@@ -93,7 +93,7 @@ func (w *Web) resolve() error {
 	for i := range w.SignIn {
 		s := &w.SignIn[i]
 		if s.Type == SignInGitHub && s.Host == "" {
-			s.Host = githubHost
+			s.Host = GitHubHost
 		}
 		v, err := s.ClientSecret.resolve(fileRefs)
 		if err != nil {
@@ -111,7 +111,7 @@ func (w Web) validate() error {
 		if !nameRe.MatchString(s.Name) {
 			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", where, s.Name)
 		}
-		if s.Name == operatorEmail {
+		if s.Name == OperatorEmail {
 			return fmt.Errorf("configfile: %s.name %q is reserved for email operators", where, s.Name)
 		}
 		if prev, dup := names[s.Name]; dup {
@@ -125,7 +125,7 @@ func (w Web) validate() error {
 	for i, op := range w.Operators {
 		kind, subject, ok := strings.Cut(op, ":")
 		_, known := names[kind]
-		if !ok || subject == "" || (kind != operatorEmail && !known) {
+		if !ok || subject == "" || (kind != OperatorEmail && !known) {
 			return fmt.Errorf("configfile: web.operators[%d] %q must be \"email:<address>\" or \"<signIn name>:<login or subject>\"", i, op)
 		}
 	}

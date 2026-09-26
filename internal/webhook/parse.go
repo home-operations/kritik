@@ -150,16 +150,16 @@ type Installation struct {
 	Repositories []string
 }
 
-// maxBody bounds a payload before parsing. GitHub caps deliveries at 25 MB;
+// MaxBody bounds a payload before parsing. GitHub caps deliveries at 25 MB;
 // a PR event is a few hundred kilobytes at most.
-const maxBody = 4 << 20
+const MaxBody = 4 << 20
 
 // Parse turns a verified webhook into an Event. Unknown events are
 // KindIgnored rather than an error: forges add event types, and an ignored
 // event must not make a delivery fail.
 func Parse(forge configfile.Forge, header http.Header, body []byte) (Event, error) {
-	if len(body) > maxBody {
-		return Event{}, fmt.Errorf("webhook: payload of %d bytes exceeds %d", len(body), maxBody)
+	if len(body) > MaxBody {
+		return Event{}, fmt.Errorf("webhook: payload of %d bytes exceeds %d", len(body), MaxBody)
 	}
 	body = unwrapFormPayload(header, body)
 	switch forge {

@@ -22,7 +22,7 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	st, err := store.Open(ctx, store.Options{
 		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
-		AppRole: "kritik_app", RunnerRole: "kritik_runner", Logger: logger,
+		Logger: logger,
 	})
 	if err != nil {
 		t.Fatalf("Open: %v", err)

@@ -107,7 +107,6 @@ func newAuthEnv(t *testing.T) *authEnv {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Options{
 		AppURL: testEnv(t, "KRITIK_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIK_TEST_OWNER_URL"),
-		AppRole: "kritik_app", RunnerRole: "kritik_runner",
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {

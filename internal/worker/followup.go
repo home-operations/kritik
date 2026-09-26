@@ -187,9 +187,9 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	body := review.FollowUpBody(reply, resp.Model)
 	var replyID int64
 	if f.comment.Inline {
-		replyID, err = f.client.ReplyInline(ctx, f.owner, f.repo, f.number(), root, body)
+		replyID, err = f.client.ReplyInline(ctx, f.owner, f.repo, f.pr.number, root, body)
 	} else {
-		replyID, err = f.client.CreateComment(ctx, f.owner, f.repo, f.number(), body)
+		replyID, err = f.client.CreateComment(ctx, f.owner, f.repo, f.pr.number, body)
 	}
 	if err != nil {
 		return followUpFailed, err
@@ -212,8 +212,6 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	}
 	return followUpAnswered, nil
 }
-
-func (f *followUp) number() int { return f.pr.number }
 
 var mentionPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)`)
 
@@ -263,7 +261,7 @@ func (f *followUp) rateLimited(ctx context.Context) (bool, error) {
 	}
 	var replyID int64
 	if notices == 0 {
-		if replyID, err = f.client.CreateComment(ctx, f.owner, f.repo, f.number(), review.LimitBody); err != nil {
+		if replyID, err = f.client.CreateComment(ctx, f.owner, f.repo, f.pr.number, review.LimitBody); err != nil {
 			return true, err
 		}
 	}
@@ -281,7 +279,7 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, int64, error) 
 		if f.comment.InReplyTo != 0 {
 			root = f.comment.InReplyTo
 		}
-		all, err := f.client.ListInline(ctx, f.owner, f.repo, f.number())
+		all, err := f.client.ListInline(ctx, f.owner, f.repo, f.pr.number)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -291,7 +289,7 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, int64, error) 
 			}
 		}
 	} else {
-		if comments, err = f.client.ListConversation(ctx, f.owner, f.repo, f.number()); err != nil {
+		if comments, err = f.client.ListConversation(ctx, f.owner, f.repo, f.pr.number); err != nil {
 			return nil, 0, err
 		}
 	}
@@ -388,7 +386,7 @@ func (f *followUp) complete(ctx context.Context, msg, reviewID string) (model.Co
 		req.Fallbacks = []string{fb.Model()}
 	}
 	var resp model.CompletionResponse
-	err = f.w.withLease(ctx, f.tenant, string(ref), f.settings.Slots(), f.jobID, func(ctx context.Context) error {
+	err = f.w.withLease(ctx, f.tenant, string(ref), f.settings.Limits.Concurrency, f.jobID, func(ctx context.Context) error {
 		var err error
 		resp, err = completer.Complete(ctx, req)
 		f.w.Metrics.ModelCall(f.tenant.Slug, string(ref), "followup", callOutcome(err),

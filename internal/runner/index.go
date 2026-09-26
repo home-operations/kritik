@@ -28,7 +28,6 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 	}
 	res, mode, err := fetchForIndex(ctx, p, secrets.GitToken, logger)
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	defer func() { _ = res.Close() }()
@@ -48,7 +47,6 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 	}
 	chunks, changed, stats, err := indexer.Build(ctx, headTree, baseTree, p.Ignore, indexer.DefaultOptions)
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	logger.Info("chunked", "mode", mode, "chunks", len(chunks), "changed_paths", len(changed), "files", stats.Files,
@@ -77,7 +75,6 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 		return err
 	})
 	if err != nil {
-		_ = fail(ctx, st, p.RunID, secrets, err)
 		return err
 	}
 	logger.Info("index pack written", "run", p.RunID, "chunks", len(chunks))
