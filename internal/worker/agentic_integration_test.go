@@ -367,6 +367,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("an agent spec cut short by the job ending is not retried", func(t *testing.T) { checkAgentSpecFailed(t, h) })
 	t.Run("a capped review is capped under the lease and lets it go", func(t *testing.T) { checkAgentCappedUnderLease(t, h) })
 	t.Run("the gateway serves a run token's steps within its budget", func(t *testing.T) { checkGatewayEndpoint(t, h) })
+	t.Run("an agentic review snoozes while every model slot is held", func(t *testing.T) { checkAgentSnoozes(t, h) })
 	t.Run("the agent runs curl and the comment lists what it fetched", func(t *testing.T) { checkAgentRunsCommands(t, h) })
 	t.Run("another tenant cannot read the agent runs", func(t *testing.T) {
 		count := func(tenantID string) int {
@@ -378,7 +379,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 9 || foreign != 0 {
+		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 10 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -692,6 +693,47 @@ func checkParallelSteps(t *testing.T, h *agenticHarness, grant store.GatewayGran
 	h.sm.mu.Unlock()
 	if served != 1 || refused != 4 || after-before != 1 {
 		t.Fatalf("served %d, refused %d, provider called %d times", served, refused, after-before)
+	}
+}
+
+// checkAgentSnoozes holds the tenant's one model slot and dispatches a new
+// head: the agentic review is snoozed without a review row, a lease or a
+// runner until the slot is let go, and then runs to completion.
+func checkAgentSnoozes(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc snoozed() {}\n")
+	hold := func(jobID *int64) {
+		t.Helper()
+		if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(h.ctx, `INSERT INTO model_leases (tenant_id, model_key, slot, job_id, expires_at)
+				VALUES ($1, 'gateway/agent-model', 1, $2, CASE WHEN $2::bigint IS NULL THEN NULL ELSE now() + interval '1 hour' END)
+				ON CONFLICT (tenant_id, model_key, slot) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`,
+				h.tenant.ID(), jobID)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	holder := int64(-1)
+	hold(&holder)
+	h.dispatch(t, next)
+	waitFor(t, 30*time.Second, "the agentic review to snooze", func() bool {
+		var n int
+		if err := h.st.App().QueryRow(h.ctx, `SELECT coalesce(max((metadata->>'snoozes')::int), 0) FROM river_job
+			WHERE kind = 'review' AND args->>'head_sha' = $1`, next).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n >= 1
+	})
+	var reviews int
+	if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1`, next).Scan(&reviews)
+	}); err != nil || reviews != 0 {
+		t.Fatalf("a snoozed agentic review recorded %d reviews, %v", reviews, err)
+	}
+	hold(nil)
+	if _, status, errText := h.waitReview(t, next); status != "completed" {
+		t.Fatalf("status = %s (%s), want completed once the slot was free", status, errText)
 	}
 }
 

@@ -26,6 +26,7 @@ type Metrics struct {
 	runnerRuns     *prometheus.CounterVec
 	runnerDuration *prometheus.HistogramVec
 	leaseWait      *prometheus.HistogramVec
+	reviewSnoozes  *prometheus.CounterVec
 	modelCalls     *prometheus.CounterVec
 	modelTokens    *prometheus.CounterVec
 	modelCost      *prometheus.CounterVec
@@ -96,6 +97,9 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritik_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
 			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300},
 		}, []string{lblTenant, lblModel}),
+		reviewSnoozes: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritik_review_snoozes_total", Help: "Reviews put back on the queue because every model slot was held.",
+		}, []string{lblTenant, lblModel}),
 		modelCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_model_calls_total", Help: "Model calls, by role and outcome.",
 		}, []string{lblTenant, lblModel, lblRole, lblOutcome}),
@@ -110,7 +114,7 @@ func New(reg prometheus.Registerer) *Metrics {
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,
 		m.contextChunks, m.indexRuns, m.indexChunks,
-		m.runnerRuns, m.runnerDuration, m.leaseWait, m.modelCalls, m.modelTokens, m.modelCost, m.egress, m.transcripts)
+		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.modelCalls, m.modelTokens, m.modelCost, m.egress, m.transcripts)
 	return m
 }
 
@@ -184,6 +188,14 @@ func (m *Metrics) RunnerRun(tenant, kind, outcome string, took time.Duration) {
 func (m *Metrics) LeaseWait(tenant, model string, took time.Duration) {
 	if m != nil {
 		m.leaseWait.WithLabelValues(tenant, model).Observe(took.Seconds())
+	}
+}
+
+// ReviewSnoozed counts a review put back on the queue to wait for a model
+// slot.
+func (m *Metrics) ReviewSnoozed(tenant, model string) {
+	if m != nil {
+		m.reviewSnoozes.WithLabelValues(tenant, model).Inc()
 	}
 }
 
