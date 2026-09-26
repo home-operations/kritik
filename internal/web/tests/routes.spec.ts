@@ -25,6 +25,9 @@ const ROUTES: Route[] = [
   // encodeURIComponent/decodeURIComponent (slashes, spaces, '#').
   { name: 'tenant', slug: 'a/b c#d' },
   { name: 'repo', slug: 'acme', owner: 'weird/owner', repo: 're po' },
+  // an installation, naming which of several holding owner/repo is meant.
+  { name: 'repo', slug: 'acme', owner: 'kritik', repo: 'kritik', installation: 'acme-forgejo' },
+  { name: 'pull', slug: 'acme', owner: 'kritik', repo: 'kritik', number: 42, installation: 'a b&c' },
 ];
 
 test.describe('routes: parse(href(r)) === r', () => {
@@ -66,6 +69,11 @@ const MALFORMED: [string, Route][] = [
   ['#/t/acme/reviews/r1/bogus', { name: 'review', slug: 'acme', id: 'r1' }],
   ['#/t/acme/reviews/r1/diff/extra', { name: 'tenant', slug: 'acme' }],
   ['#/t/acme/bogus-section', { name: 'tenant', slug: 'acme' }],
+  // An empty or absent installation names none; only repo and pull routes
+  // take one.
+  ['#/t/acme/repos/o/r?installation=', { name: 'repo', slug: 'acme', owner: 'o', repo: 'r' }],
+  ['#/t/acme/pulls/o/r/7?other=1', { name: 'pull', slug: 'acme', owner: 'o', repo: 'r', number: 7 }],
+  ['#/t/acme/queue?installation=x', { name: 'queue', slug: 'acme' }],
 ];
 
 test.describe('routes: parse() on unknown/malformed hashes', () => {

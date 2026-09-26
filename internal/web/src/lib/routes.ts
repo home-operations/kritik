@@ -11,6 +11,9 @@
 //   #/t/<slug>/repos/<owner>/<repo>           one repo
 //   #/t/<slug>/pulls                          tenant's pull list
 //   #/t/<slug>/pulls/<owner>/<repo>/<n>       one pull request
+//
+// A repo or pull route may end in "?installation=<name>", naming which of
+// several installations holding the same owner/repo it means.
 //   #/t/<slug>/reviews/<id>[/<tab>]           one review, optional tab
 //   #/t/<slug>/queue                          run queue
 //   #/t/<slug>/usage                          usage/cost dashboard
@@ -42,9 +45,9 @@ export type Route =
   | { name: 'operator' }
   | { name: 'tenant'; slug: string }
   | { name: 'repos'; slug: string }
-  | { name: 'repo'; slug: string; owner: string; repo: string }
+  | { name: 'repo'; slug: string; owner: string; repo: string; installation?: string }
   | { name: 'pulls'; slug: string }
-  | { name: 'pull'; slug: string; owner: string; repo: string; number: number }
+  | { name: 'pull'; slug: string; owner: string; repo: string; number: number; installation?: string }
   | { name: 'review'; slug: string; id: string; tab?: ReviewTab }
   | { name: 'queue'; slug: string }
   | { name: 'usage'; slug: string }
@@ -82,19 +85,20 @@ function segments(hash: string): { parts: string[]; ok: boolean } {
 // malformed past the slug -- including an extra trailing segment -- falls
 // back to that tenant's overview rather than the global overview, so a bad
 // deep link still lands the user in-tenant.
-function parseTenantRoute(slug: string, rest: string[]): Route {
+function parseTenantRoute(slug: string, rest: string[], installation: string | undefined): Route {
   const [section, ...tail] = rest;
+  const inst = installation ? { installation } : {};
   switch (section) {
     case undefined:
       return { name: 'tenant', slug };
     case 'repos':
       if (tail.length === 0) return { name: 'repos', slug };
-      if (tail.length === 2) return { name: 'repo', slug, owner: tail[0]!, repo: tail[1]! };
+      if (tail.length === 2) return { name: 'repo', slug, owner: tail[0]!, repo: tail[1]!, ...inst };
       break;
     case 'pulls':
       if (tail.length === 0) return { name: 'pulls', slug };
       if (tail.length === 3 && PULL_NUMBER.test(tail[2]!)) {
-        return { name: 'pull', slug, owner: tail[0]!, repo: tail[1]!, number: Number(tail[2]) };
+        return { name: 'pull', slug, owner: tail[0]!, repo: tail[1]!, number: Number(tail[2]), ...inst };
       }
       break;
     case 'reviews':
@@ -119,7 +123,9 @@ function parseTenantRoute(slug: string, rest: string[]): Route {
 }
 
 export function parse(hash: string): Route {
-  const { parts, ok } = segments(hash);
+  const q = hash.indexOf('?');
+  const installation = q < 0 ? undefined : (new URLSearchParams(hash.slice(q + 1)).get('installation') ?? undefined);
+  const { parts, ok } = segments(q < 0 ? hash : hash.slice(0, q));
   if (!ok) {
     // The malformation struck before a slug could be parsed: nothing to
     // fall back into but the global overview. Once a slug WAS parsed
@@ -132,12 +138,13 @@ export function parse(hash: string): Route {
   if (parts.length === 0) return { name: 'overview' };
   if (parts.length === 1 && parts[0] === 'signin') return { name: 'signin' };
   if (parts.length === 1 && parts[0] === 'operator') return { name: 'operator' };
-  if (parts[0] === 't' && parts[1] !== undefined) return parseTenantRoute(parts[1], parts.slice(2));
+  if (parts[0] === 't' && parts[1] !== undefined) return parseTenantRoute(parts[1], parts.slice(2), installation);
   return { name: 'overview' };
 }
 
 export function href(r: Route): string {
   const s = (v: string) => encodeURIComponent(v);
+  const inst = (v: string | undefined) => (v ? `?installation=${s(v)}` : '');
   switch (r.name) {
     case 'overview':
       return '#/';
@@ -150,11 +157,11 @@ export function href(r: Route): string {
     case 'repos':
       return `#/t/${s(r.slug)}/repos`;
     case 'repo':
-      return `#/t/${s(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}`;
+      return `#/t/${s(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}${inst(r.installation)}`;
     case 'pulls':
       return `#/t/${s(r.slug)}/pulls`;
     case 'pull':
-      return `#/t/${s(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}`;
+      return `#/t/${s(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}${inst(r.installation)}`;
     case 'review':
       return r.tab ? `#/t/${s(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}` : `#/t/${s(r.slug)}/reviews/${s(r.id)}`;
     case 'queue':

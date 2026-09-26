@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -260,24 +261,46 @@ func ListRepos(ctx context.Context, tx pgx.Tx, p Page) ([]RepoRow, *Cursor, erro
 	return items, next, nil
 }
 
-// FindRepo returns the tenant's repository named fullName. When several
-// installations of the tenant hold a repository of that name, installation
-// picks one by installation name, and without it an enabled one wins.
+// AmbiguousRepoError is FindRepo's answer when several installations of
+// the tenant hold a repository of the name asked for and the caller named
+// none of them.
+type AmbiguousRepoError struct {
+	Installations []string
+}
+
+func (e *AmbiguousRepoError) Error() string {
+	return "store: several installations hold this repository: " + strings.Join(e.Installations, ", ")
+}
+
+// FindRepo returns the tenant's repository named fullName, reached through
+// installation when it is set. Without it, a name several installations
+// hold is an *AmbiguousRepoError, except that an enabled repository wins
+// over disabled ones, which a removed or renamed installation leaves
+// behind.
 func FindRepo(ctx context.Context, tx pgx.Tx, fullName, installation string) (RepoRow, error) {
 	rows, err := tx.Query(ctx, `SELECT `+repoColumns+`
 		WHERE r.name = $1 AND ($2 = '' OR i.name = $2)
-		ORDER BY r.enabled DESC, r.created_at, r.id LIMIT 1`, fullName, installation)
+		ORDER BY r.enabled DESC, r.created_at, r.id`, fullName, installation)
 	if err != nil {
 		return RepoRow{}, fmt.Errorf("store: find repository: %w", err)
 	}
-	r, err := pgx.CollectExactlyOneRow(rows, scanRepo)
-	if errors.Is(err, pgx.ErrNoRows) {
+	repos, err := pgx.CollectRows(rows, scanRepo)
+	if err != nil {
+		return RepoRow{}, fmt.Errorf("store: find repository: %w", err)
+	}
+	if len(repos) == 0 {
 		return RepoRow{}, ErrNotFound
 	}
-	if err != nil {
-		return RepoRow{}, fmt.Errorf("store: find repository: %w", err)
+	if len(repos) > 1 && repos[1].Enabled == repos[0].Enabled {
+		e := &AmbiguousRepoError{}
+		for _, r := range repos {
+			if r.Enabled == repos[0].Enabled {
+				e.Installations = append(e.Installations, r.Installation)
+			}
+		}
+		return RepoRow{}, e
 	}
-	return r, nil
+	return repos[0], nil
 }
 
 // IndexRunRow is one index_runs row.
