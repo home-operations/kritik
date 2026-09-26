@@ -155,14 +155,19 @@ for every tenant, whoever owns it, as today; granting access does not change
 how reviews behave.
 
 **Collisions.** A dashboard write that would take a slug or installation
-name the file already holds is refused with `409 slug_taken`, as ADR-0009
-§2.12 decides. A file edit that claims a slug or installation name a
-dashboard tenant already holds now wins instead of blocking the whole
-reload: the dashboard tenant is disabled, kept rather than deleted, and
-marked as conflicting; the operator console, `kritik_config_error` and the
-audit log say so, and every other tenant in the file applies. The file is
-the higher authority, and one conflict must not freeze every tenant's
-configuration at the last good snapshot.
+name the file declares is refused, as ADR-0009 §2.12 decides, unless the
+dashboard tenant being written already holds it. A file edit that claims a
+slug or installation name a dashboard tenant already holds no longer
+blocks the whole reload: that file tenant is left out of the running
+configuration, the dashboard tenant keeps running, and every other tenant
+applies. The operator console lists the file tenant as conflicting, with
+the reason, the log warns once, and `kritik_config_error{stage="merge"}`
+stays at 1 until the operator renames either side or deletes the dashboard
+tenant. One conflict must not freeze every tenant's configuration at the
+last good snapshot, but the file cannot simply win either: tenant and
+installation ids derive from their names, so the file tenant would take
+over the dashboard tenant's rows, and its members, invites and review
+history with them.
 
 ### 2.4 Precedence
 
@@ -442,6 +447,9 @@ filter: '!pr.draft && pr.event != "synchronize"'
   change just by adding it to or removing it from the file.
 - **The dashboard overriding the file.** Git would stop being the source of
   truth for what it declares.
+- **The file winning a collision** by disabling the dashboard tenant that
+  holds the name (§2.3). Ids derive from names, so the file tenant would
+  inherit that tenant's members, invites and review history.
 - **The dashboard managing instance settings, with the file optional.** It
   would need a bootstrap path for the first operator and would put sign-in
   and operators within reach of a dashboard session.

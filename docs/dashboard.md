@@ -148,6 +148,11 @@ visible to every member of the tenant it belongs to, not only admins.
   row or the file. A merge or apply failure after boot instead keeps the
   last good configuration running and raises the `kritik_config_error`
   gauge (labelled `merge` or `apply`) until a later attempt succeeds.
+- A file tenant whose slug or installation name a dashboard tenant already
+  holds is left out of the running configuration, at boot or on reload,
+  while every other tenant runs: the operator console lists it with the
+  reason and `kritik_config_error{stage="merge"}` stays at 1. Rename either
+  side, or delete the dashboard tenant, to bring it back.
 - A secret referenced by `file:` is only re-read when the configuration
   file itself changes, not on the referenced file's own schedule: rotate
   the file, then touch or reapply the configuration to pick it up.

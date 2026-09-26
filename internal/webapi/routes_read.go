@@ -135,6 +135,9 @@ func (s *Server) listOperatorTenants(w http.ResponseWriter, r *http.Request) err
 			})
 		}
 	}
+	for _, sk := range file.Skipped() {
+		out = append(out, OperatorTenant{Slug: sk.Slug, ManagedBy: configfile.OriginFile, Role: auth.RoleAdmin, Conflict: sk.Reason})
+	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

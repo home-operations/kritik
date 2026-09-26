@@ -67,11 +67,15 @@ type TenantSummary struct {
 
 // OperatorTenant is one tenant as an operator sees it: Live is false for
 // a dashboard tenant stored but not part of the running configuration,
-// because it does not validate or has not been merged yet.
+// because it does not validate or has not been merged yet, and for a file
+// tenant the merge left out, which Conflict explains.
 type OperatorTenant struct {
 	TenantSummary
 	Live     bool  `json:"live"`
 	Revision int64 `json:"revision"`
+	// Conflict is why the running configuration leaves out a file tenant:
+	// a dashboard tenant holds its slug or one of its installation names.
+	Conflict string `json:"conflict,omitempty"`
 }
 
 // CredentialKind is how an installation authenticates to its forge.

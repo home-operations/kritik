@@ -124,7 +124,7 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) error {
 	if req.Slug == "" || len(req.Spec) == 0 {
 		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, "slug and spec are required", nil)
 	}
-	if t, ok := s.current.Get().Tenant(req.Slug); ok && t.Origin() == configfile.OriginFile {
+	if s.current.Get().Declares(req.Slug) {
 		return errStatus(http.StatusConflict, CodeSlugTaken, "the configuration file already declares this slug", slugPath)
 	}
 	res, err := s.writeTenant(r.Context(), p, req.Slug, req.Spec, 0, req.Adopt)
@@ -334,7 +334,7 @@ func checkDashboardHosts(t *configfile.Tenant) error {
 // installation row another origin manages (one the file dropped that the
 // leader has not disabled yet, say) or an installation name another
 // tenant holds in any state, which the leader would refuse to hand over.
-// The merge already refuses anything the running file still declares.
+// The merge check already refuses anything the file still declares.
 func (s *Server) checkTakeover(ctx context.Context, tx pgx.Tx, tenantID string, t *configfile.Tenant) error {
 	names := make([]string, len(t.Installations))
 	for i := range t.Installations {

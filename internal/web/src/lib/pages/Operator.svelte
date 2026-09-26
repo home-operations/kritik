@@ -99,7 +99,7 @@
       deleteError = describe(err);
       if (isCode(err, 'revision_conflict')) {
         await res.load();
-        const fresh = res.data?.find((x) => x.slug === t.slug);
+        const fresh = res.data?.find((x) => x.slug === t.slug && x.managedBy === t.managedBy);
         if (fresh) target = fresh;
         deleteError += ' The latest revision is loaded; confirm again to delete it.';
       }
@@ -113,7 +113,10 @@
   <div class="page-inner">
     <header class="page-head">
       <h1>Operator console</h1>
-      <p class="muted">Every tenant in the running configuration, plus dashboard tenants that are stored but not live.</p>
+      <p class="muted">
+        Every tenant in the running configuration, plus dashboard tenants that are stored but not live and file tenants a
+        conflict leaves out.
+      </p>
     </header>
     {#if !management()}
       <p class="notice" role="note">{MANAGEMENT_OFF} Tenants cannot be created or deleted here.</p>
@@ -163,18 +166,23 @@
               </tr>
             </thead>
             <tbody>
-              {#each list as t (t.slug)}
+              {#each list as t (`${t.managedBy}:${t.slug}`)}
                 <tr>
                   <td class="mono">
                     {#if t.live}<a href={href({ name: 'tenant', slug: t.slug })}>{t.slug}</a>{:else}{t.slug}{/if}
                   </td>
                   <td>{t.managedBy}</td>
                   <td>
-                    <Pill
-                      tone={t.live ? 'ok' : 'warn'}
-                      label={t.live ? 'live' : 'not live'}
-                      title={t.live ? undefined : 'Stored but not in the running configuration'}
-                    />
+                    {#if t.conflict}
+                      <Pill tone="danger" label="conflict" />
+                      <span class="small muted">{t.conflict}</span>
+                    {:else}
+                      <Pill
+                        tone={t.live ? 'ok' : 'warn'}
+                        label={t.live ? 'live' : 'not live'}
+                        title={t.live ? undefined : 'Stored but not in the running configuration'}
+                      />
+                    {/if}
                   </td>
                   <td class="num">{t.revision || '—'}</td>
                   <td class="num">{t.installations}</td>

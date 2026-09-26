@@ -175,7 +175,7 @@ func TestDashboardTenantEndToEnd(t *testing.T) {
 
 	t.Run("a colliding row keeps the last good snapshot", func(t *testing.T) {
 		before := s.Current.Get()
-		clash := dashRow(t, k, "clash", "acme-bot", 1)
+		clash := dashRow(t, k, "clash", "dash-bot", 1)
 		withTx(t, st, func(tx pgx.Tx) error {
 			_, err := st.PutDashboardTenant(ctx, tx, clash.Slug, clash.Spec, 0, "")
 			return err

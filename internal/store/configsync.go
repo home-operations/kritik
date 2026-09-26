@@ -15,8 +15,8 @@ import (
 // ErrManagedBy is an ApplyConfig write that would take over a live row
 // another origin manages. ApplyConfig disables every row whose origin no
 // longer declares it before upserting, and merging the dashboard into the
-// file rejects a slug or name both declare, so this guards the database
-// rather than being expected.
+// file leaves out a file tenant whose slug or name a dashboard tenant
+// declares, so this guards the database rather than being expected.
 var ErrManagedBy = errors.New("store: row is managed by another origin")
 
 // IsConfigContentError reports whether an ApplyConfig error was caused by
