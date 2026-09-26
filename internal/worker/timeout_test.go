@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -112,5 +113,19 @@ func TestJobTimeouts(t *testing.T) {
 	}
 	if RescueStuckJobsAfter <= MaxJobTimeout {
 		t.Fatal("rescue must wait out the longest job timeout")
+	}
+}
+
+func TestDetach(t *testing.T) {
+	parent, cancelParent := context.WithCancel(t.Context())
+	ctx, cancel := detach(parent)
+	defer cancel()
+	cancelParent()
+	if ctx.Err() != nil {
+		t.Fatalf("detached ctx ended with its parent: %v", ctx.Err())
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok || time.Until(deadline) > detachTimeout {
+		t.Fatalf("deadline = %v, %v; want one within %v", deadline, ok, detachTimeout)
 	}
 }

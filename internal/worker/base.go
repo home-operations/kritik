@@ -49,6 +49,17 @@ func (b *Base) client(
 // releaseTimeout bounds the lease release after the job's context is gone.
 const releaseTimeout = 10 * time.Second
 
+// detachTimeout bounds work that runs on past the job's ctx once the model
+// has answered: publishing, and ending a review whose job ended. It must
+// still finish then, but a hung forge or database call must not hold the
+// job forever.
+const detachTimeout = 2 * time.Minute
+
+// detach is ctx without its cancellation, bounded by detachTimeout.
+func detach(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), detachTimeout)
+}
+
 // withLease runs fn while holding one of the tenant's slots on key,
 // records the wait, and releases the slot afterwards even when the job's
 // context has been cancelled.

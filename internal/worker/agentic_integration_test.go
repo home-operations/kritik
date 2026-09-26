@@ -364,6 +364,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a review outlives the client's job timeout", func(t *testing.T) { checkAgentOutlivesJobTimeout(t, h) })
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
 	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
+	t.Run("an agent spec cut short by the job ending is not retried", func(t *testing.T) { checkAgentSpecFailed(t, h) })
 	t.Run("a capped review is capped under the lease and lets it go", func(t *testing.T) { checkAgentCappedUnderLease(t, h) })
 	t.Run("the gateway serves a run token's steps within its budget", func(t *testing.T) { checkGatewayEndpoint(t, h) })
 	t.Run("the agent runs curl and the comment lists what it fetched", func(t *testing.T) { checkAgentRunsCommands(t, h) })
@@ -999,6 +1000,54 @@ func checkFailRun(t *testing.T, h *agenticHarness) {
 	})
 	if err != nil || phase != "failed" || !strings.Contains(errText, "boom") || !finished {
 		t.Fatalf("run phase=%q error=%q finished=%v err=%v", phase, errText, finished, err)
+	}
+}
+
+func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
+	boom := errors.New("worker: mint gateway token: boom")
+	remote, cancelRemote := context.WithCancelCause(h.ctx)
+	cancelRemote(river.ErrJobCancelledRemotely)
+	timedOut, cancelTimeout := context.WithCancelCause(h.ctx)
+	cancelTimeout(context.DeadlineExceeded)
+	tests := []struct {
+		name      string
+		ctx       context.Context
+		head      string
+		retried   bool
+		status    string
+		errPrefix string
+	}{
+		{"the job still runs: River retries", h.ctx, strings.Repeat("e", 40), true, statusFailed, boom.Error()},
+		{"a remote cancel ends it canceled", remote, strings.Repeat("f", 40), false, statusCanceled, ""},
+		{"a timeout ends it failed", timedOut, strings.Repeat("9", 40), false, statusFailed, "review timed out"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := jobs.ReviewArgs{TenantID: h.tenant.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"),
+				Number: 1, HeadSHA: tt.head, Trigger: "test"}
+			pr, err := h.review.load(h.ctx, args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, configfile.ReviewAgentic, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e := endedReview{tenantID: h.tenant.ID(), tenantSlug: h.tenant.Slug, reviewID: reviewID, headSHA: tt.head,
+				owner: "acme", repo: "widgets", client: h.lf, started: time.Now(), logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+			err = h.review.agentSpecFailed(tt.ctx, e, runID, boom)
+			if (err != nil) != tt.retried {
+				t.Fatalf("agentSpecFailed = %v, want an error only when River should retry", err)
+			}
+			var status, errText, phase string
+			err = h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+				return tx.QueryRow(h.ctx, `SELECT r.status, coalesce(r.error, ''), rr.phase FROM reviews r, runner_runs rr
+					WHERE r.id = $1 AND rr.id = $2`, reviewID, runID).Scan(&status, &errText, &phase)
+			})
+			if err != nil || status != tt.status || !strings.HasPrefix(errText, tt.errPrefix) || phase != "failed" {
+				t.Fatalf("review %s (%q), run %s, err %v; want review %s (%q...), run failed", status, errText, phase, err, tt.status, tt.errPrefix)
+			}
+		})
 	}
 }
 

@@ -315,7 +315,8 @@ func (w *Review) awaitAgentRun(ctx context.Context, tenantID, runID string) (age
 func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
 	// The agent has already answered, so publishing runs to the end even if
 	// the job's ctx ends meanwhile, as run does once its model answers.
-	ctx = context.WithoutCancel(ctx)
+	ctx, cancel := detach(ctx)
+	defer cancel()
 	if p.agent == nil {
 		return statusFailed, errors.New("worker: the runner wrote no agent run")
 	}

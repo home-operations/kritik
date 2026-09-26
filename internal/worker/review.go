@@ -144,14 +144,14 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, Ignore: settings.Ignore, RepoFiles: settings.Review.Referenced(),
 	}
 	secrets := runner.Secrets{GitToken: token}
+	ended := endedReview{
+		tenantID: args.TenantID, tenantSlug: tenant.Slug, reviewID: reviewID, headSHA: args.HeadSHA,
+		owner: owner, repo: repo, client: client, started: started, logger: logger,
+	}
 	if agentic {
 		deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, runID, args.Trigger, pr, settings, prior, admitted, &spec, &secrets, deadline)
 		if err != nil {
-			// Detached so an agentSpec cut short by the job's own timeout
-			// still leaves both rows terminal.
-			dctx := context.WithoutCancel(ctx)
-			return errors.Join(err, w.finishReview(dctx, args.TenantID, reviewID, statusFailed, "", err.Error()),
-				failRun(dctx, w.Store, args.TenantID, runID, err.Error()))
+			return w.agentSpecFailed(ctx, ended, runID, err)
 		}
 	}
 	sup := runSupervision(w.Store, args.TenantID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
@@ -184,10 +184,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	// terminal writes below, which must still land once ctx itself has ended.
 	canceled := errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely)
 	cctx := context.WithoutCancel(ctx)
-	ended := endedReview{
-		tenantID: args.TenantID, tenantSlug: tenant.Slug, reviewID: reviewID, headSHA: args.HeadSHA, jobName: res.JobName,
-		owner: owner, repo: repo, client: client, started: started, logger: logger,
-	}
+	ended.jobName = res.JobName
 	if err := recordRun(cctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err
 	}
@@ -486,7 +483,8 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 	if ctx.Err() == nil {
 		return err
 	}
-	cctx := context.WithoutCancel(ctx)
+	cctx, cancel := detach(ctx)
+	defer cancel()
 	cause := context.Cause(ctx)
 	status, errText, desc := statusCanceled, "", "kritik: review canceled"
 	if !errors.Is(cause, river.ErrJobCancelledRemotely) {
@@ -502,6 +500,24 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 	}
 	w.Metrics.Review(e.tenantSlug, status, time.Since(e.started))
 	return nil
+}
+
+// agentSpecFailed ends a review whose runner never started because its
+// agent spec could not be built, and the run made for it. When the job's
+// ctx ended meanwhile (a remote cancel, River's timeout), that is why, and
+// the review ends as finishEnded ends it, with no retry; otherwise err is
+// returned for River to retry.
+func (w *Review) agentSpecFailed(ctx context.Context, e endedReview, runID string, err error) error {
+	dctx, cancel := detach(ctx)
+	defer cancel()
+	runErr := failRun(dctx, w.Store, e.tenantID, runID, err.Error())
+	if ctx.Err() != nil {
+		if runErr != nil {
+			e.logger.Warn("runner run not ended", "error", runErr)
+		}
+		return w.finishEnded(ctx, e, err)
+	}
+	return errors.Join(err, w.finishReview(dctx, e.tenantID, e.reviewID, statusFailed, "", err.Error()), runErr)
 }
 
 // finishUnfinished ends a review only if nothing has ended it yet, and

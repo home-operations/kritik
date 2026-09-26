@@ -130,7 +130,8 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	// The model has answered and its tokens are spent: the rest runs to the
 	// end even if the job's ctx ends meanwhile, so the usage row lands and
 	// the comment, commit status and review row agree.
-	ctx = context.WithoutCancel(ctx)
+	ctx, cancel := detach(ctx)
+	defer cancel()
 	res, dropped, err := review.Parse(resp.Raw, review.Anchors(in.diff), p.parse)
 	if err != nil {
 		return statusFailed, err
