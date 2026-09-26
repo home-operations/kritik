@@ -146,6 +146,8 @@ config:
   reviewWorkers: 2
   # -- Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews.
   indexWorkers: 1
+  # -- Onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW); tenants take turns and the most active repositories go first.
+  onboardWindow: 4
   # -- How often the leader lists each installation's open pull requests as a backstop for missed webhooks (Go duration); "0" disables.
   pollInterval: 10m
   # -- How far back a first or long-idle poll looks (Go duration).

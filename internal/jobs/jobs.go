@@ -21,8 +21,28 @@ const (
 const TriggerManual = "manual"
 
 // TriggerReindex is the Trigger EnqueueReindex gives a forced full reindex,
-// as opposed to the worker-internal "onboard"/"push" triggers.
+// as opposed to the worker-internal onboard and push triggers.
 const TriggerReindex = "reindex"
+
+// Index job triggers the service itself sets.
+const (
+	TriggerOnboard = "onboard"
+	TriggerPush    = "push"
+)
+
+// Index job priorities, highest first: River always fetches a higher
+// priority first, so an onboarding wave never delays keeping an indexed
+// repository current.
+const (
+	indexPriorityUpdate  = 1
+	indexPriorityReindex = 2
+	indexPriorityOnboard = 4
+)
+
+// indexAttempts bounds an index job's tries: transient failures (a fetch
+// timeout, a runner killed at its deadline) get River's backoff, and an
+// onboarding that fails every try is offered again later.
+const indexAttempts = 3
 
 // ReviewArgs reviews one head of one pull request.
 type ReviewArgs struct {
@@ -71,35 +91,44 @@ func (FollowUpArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{Queue: QueueFollowUp, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 }
 
-// IndexArgs builds or advances a repository's index to a commit.
+// IndexArgs builds or advances a repository's index to its default branch
+// tip, whatever the tip is when the job runs.
 type IndexArgs struct {
 	TenantID     string `json:"tenant_id"`
 	RepositoryID string `json:"repository_id" river:"unique"`
-	CommitSHA    string `json:"commit_sha"    river:"unique"`
-	// Trigger is why: onboard, push, reindex.
+	// CommitSHA is the commit a push moved the default branch to, for the
+	// record only: a burst of pushes needs one job, not one each, so it is
+	// not part of the unique key.
+	CommitSHA string `json:"commit_sha"`
+	// Trigger is why: TriggerOnboard, TriggerPush or TriggerReindex.
 	Trigger string `json:"trigger"`
-	// Full forces a full reindex even when an active generation already
-	// covers the target commit. It is deliberately not river:"unique": a
-	// forced reindex (CommitSHA empty) still dedupes against a concurrent
-	// one the same way any other reindex does, by RepositoryID+CommitSHA.
-	// That also means it dedupes against a repository's still-pending
-	// onboard job, which likewise carries an empty CommitSHA (a push job
-	// never collides, since it always carries a non-empty CommitSHA):
-	// EnqueueReindex treats that collision as ErrReindexQueued rather than
-	// silently reporting a fresh job that was never actually inserted.
-	Full bool `json:"full,omitempty"`
+	// Full forces a full rebuild even when the active generation already
+	// covers the tip. It is part of the unique key, so a forced rebuild is
+	// queued beside an update rather than folded into it, and dedupes only
+	// onto another forced rebuild.
+	Full bool `json:"full,omitempty" river:"unique"`
 }
 
 // Kind implements river.JobArgs.
 func (IndexArgs) Kind() string { return "index" }
 
-// InsertOpts implements river.JobArgsWithInsertOpts.
-func (IndexArgs) InsertOpts() river.InsertOpts {
-	// Unique while queued or running only: the same commit may be indexed
-	// again later (an onboarding job that could not run, a rebuild), and
-	// the worker skips a commit the active generation already has.
-	return river.InsertOpts{Queue: QueueIndex, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: []rivertype.JobState{
-		rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRetryable,
-		rivertype.JobStateRunning, rivertype.JobStateScheduled,
-	}}}
+// InsertOpts implements river.JobArgsWithInsertOpts. A job is unique per
+// repository while queued or running (River requires running in the set):
+// a push while the repository's job is running is absorbed by it, and the
+// worker indexes the tip again when it finds the branch moved.
+func (a IndexArgs) InsertOpts() river.InsertOpts {
+	priority := indexPriorityUpdate
+	switch a.Trigger {
+	case TriggerReindex:
+		priority = indexPriorityReindex
+	case TriggerOnboard:
+		priority = indexPriorityOnboard
+	}
+	return river.InsertOpts{
+		Queue: QueueIndex, Priority: priority, MaxAttempts: indexAttempts,
+		UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: []rivertype.JobState{
+			rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRetryable,
+			rivertype.JobStateRunning, rivertype.JobStateScheduled,
+		}},
+	}
 }

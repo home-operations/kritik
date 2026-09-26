@@ -141,12 +141,10 @@ func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], revi
 }
 
 // EnqueueReindex forces a full reindex of a repository even when an active
-// generation already covers its current commit. CommitSHA is left empty:
-// unlike a push-triggered index job, a forced reindex is not pinned to one
-// commit the worker must reach before it is stale. Returns ErrRepositoryNotFound
-// if repositoryID does not exist in tenantID, and ErrReindexQueued if the
-// forced reindex deduped onto an existing onboard or push job for the
-// repository rather than inserting a new one.
+// generation already covers its current commit. Returns ErrRepositoryNotFound
+// if repositoryID does not exist in tenantID, and ErrReindexQueued if a
+// forced reindex of the repository is already queued or running: an
+// onboarding or push job does not stand in for one.
 func EnqueueReindex(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], tenantID, repositoryID string) (int64, error) {
 	var exists bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM repositories WHERE tenant_id = $1 AND id = $2)`,

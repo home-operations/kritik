@@ -778,12 +778,26 @@ implementation (§5).
 **Indexing:**
 
 - **The index describes the default branch.** It is built at onboarding
-  and kept current on default-branch pushes. Onboarding is the leader's
-  job: after every configuration apply it enqueues an index job for each
-  enabled repository without an active generation, with no commit named,
-  and the worker asks the forge for the default branch tip. Index jobs
-  are unique per repository and commit only while queued or running, so
-  this is safe to repeat.
+  and kept current on default-branch pushes. An index job indexes the
+  branch tip the worker asks the forge for when it starts, not the commit
+  of the push that queued it. Index jobs are unique per repository while
+  queued or running, with a forced rebuild keyed apart, so a push while
+  one waits or runs joins it rather than queueing another. When a job
+  finishes, the worker asks for the tip again, and if the branch moved it
+  snoozes the job to run again at once, which River does not count as an
+  attempt. A runner failure is an error, which River retries up to three
+  attempts.
+- **The leader paces onboarding.** Every 30 seconds, and after every
+  configuration apply, it tops up to `KRITIK_ONBOARD_WINDOW` onboarding
+  jobs queued or running. It draws them from the enabled repositories
+  with no active generation and no index job: tenants take turns, and a
+  tenant's repositories whose pull requests moved last go first. A
+  repository whose onboarding job ended within the hour without building
+  an index (it failed every attempt, or was skipped) waits out the hour.
+  A push to a repository without an index queues nothing and is left to
+  the feeder, so neither a large install nor a model change queues every
+  repository's full build at once. The index queue works pushes first,
+  then forced rebuilds, then onboarding.
 - **Index generations.** An `IndexRun` is a generation of a repository's
   index: commit SHA, embedding model, dimension and status. A repository
   has at most one active generation. A full build (onboarding, model

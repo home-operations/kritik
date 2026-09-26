@@ -85,18 +85,17 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	owner, name, _ := strings.Cut(repo.name, "/")
-	commit := args.CommitSHA
-	if commit == "" {
-		branch := ""
-		if commit, branch, err = client.BranchTip(ctx, owner, name, repo.defaultBranch); err != nil {
+	// The job indexes the tip, not the commit of the push that queued it:
+	// pushes while it waited were absorbed into it.
+	commit, branch, err := client.BranchTip(ctx, owner, name, repo.defaultBranch)
+	if err != nil {
+		return err
+	}
+	if repo.defaultBranch == "" {
+		_ = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE repositories SET default_branch = $2 WHERE id = $1 AND default_branch = ''`, args.RepositoryID, branch)
 			return err
-		}
-		if repo.defaultBranch == "" {
-			_ = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `UPDATE repositories SET default_branch = $2 WHERE id = $1 AND default_branch = ''`, args.RepositoryID, branch)
-				return err
-			})
-		}
+		})
 	}
 	logger = logger.With("commit", short(commit))
 
@@ -145,7 +144,9 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		}
 		logger.Warn("index runner failed", "error", reason, "job", res.JobName, "reason", res.TerminationReason)
 		w.Metrics.IndexRun(tenant.Slug, mode, "failed", 0)
-		return w.finish(ctx, args.TenantID, runID, "failed", 0, reason)
+		// An error, so River tries again: most runner failures (a fetch
+		// timeout, a node going away) do not repeat.
+		return errors.Join(fmt.Errorf("worker: index runner failed: %s", reason), w.finish(ctx, args.TenantID, runID, "failed", 0, reason))
 	}
 	n, mode, err := w.embed(ctx, args, tenant, commit, runID, runnerRunID, active, settings, job.ID)
 	if err != nil {
@@ -156,7 +157,19 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	logger.Info("index completed", "mode", mode, "chunks", n)
 	w.Metrics.IndexRun(tenant.Slug, mode, "completed", n)
-	return w.finish(ctx, args.TenantID, runID, "completed", n, "")
+	if err := w.finish(ctx, args.TenantID, runID, "completed", n, ""); err != nil {
+		return err
+	}
+	// A push while this ran was absorbed into this job: if the branch has
+	// moved, index again at once, as a snooze that is not an attempt. A
+	// forced rebuild leaves the new tip to the update job the push queued.
+	if !args.Full {
+		if tip, _, err := client.BranchTip(ctx, owner, name, repo.defaultBranch); err == nil && tip != commit {
+			logger.Info("index again: the branch moved while it ran", "tip", short(tip))
+			return river.JobSnooze(0)
+		}
+	}
+	return nil
 }
 
 func (w *Index) loadRepo(ctx context.Context, args jobs.IndexArgs) (*indexRepo, error) {

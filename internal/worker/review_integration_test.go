@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -95,6 +96,12 @@ func (l *localForge) setBase(base string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.base = base
+}
+
+func (l *localForge) setTip(tip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.tip = tip
 }
 
 func (l *localForge) MergeBase(context.Context, string, string, int, string, string) (string, error) {
@@ -486,20 +493,25 @@ func checkContextPack(
 	}
 }
 
-// checkIndexing indexes base in full, then head incrementally, and checks
-// the generation, chunk and staging rows after each step.
-func checkIndexing(ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], tenantID, repoID, base, head string) {
+// checkIndexing onboards the repository with the branch at base, moves the
+// branch to head while the full build runs, and checks that a push then
+// joins the running job, which indexes head incrementally once the build
+// is done; it checks the generation, chunk and staging rows after each.
+func checkIndexing(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, exec *gateExecutor, tenantID, repoID, base, head string,
+) {
 	t.Helper()
 	waitIndex := func(commit string) (status, mode string) {
 		t.Helper()
 		deadline := time.Now().Add(30 * time.Second)
 		for time.Now().Before(deadline) {
 			// An incremental step advances the active generation's commit
-			// before its own row finishes, so only read once nothing is
-			// running; the newest finished row is then the step itself.
+			// before its own row finishes, so only read once no run to the
+			// commit is running; the newest finished row is then the step
+			// itself.
 			err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `SELECT status, mode FROM index_runs WHERE commit_sha = $1 AND finished_at IS NOT NULL
-					AND NOT EXISTS (SELECT 1 FROM index_runs WHERE status = 'running')
+					AND NOT EXISTS (SELECT 1 FROM index_runs WHERE status = 'running' AND commit_sha = $1)
 					ORDER BY created_at DESC LIMIT 1`, commit).Scan(&status, &mode)
 			})
 			if err == nil {
@@ -538,21 +550,22 @@ func checkIndexing(ctx context.Context, t *testing.T, st *store.Store, queue *ri
 		}
 		return active, activeCommit, chunks, mainChunks
 	}
-	// Index base by name first, so the incremental step has somewhere to
-	// go; the second job leaves the commit to the worker, which asks the
-	// fake forge for the branch tip and gets head.
-	if _, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, CommitSHA: base, Trigger: "onboard"}, nil); err != nil {
+	pushed, checked := pushDuringBuild(ctx, t, queue, lf, exec, tenantID, repoID, head)
+	lf.setTip(base)
+	job, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerOnboard}, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if status, mode := waitIndex(base); status != "completed" || mode != "full" {
 		t.Fatalf("base index = %s/%s", status, mode)
 	}
+	if err := <-pushed; err != nil {
+		t.Fatal(err)
+	}
 	active, activeCommit, chunks, mainChunks := indexRows()
+	close(checked)
 	if active == "" || activeCommit != base || chunks < 2 || len(mainChunks) != 1 || strings.Contains(mainChunks[0], "func b") {
 		t.Fatalf("after full build: active=%q commit=%s chunks=%d main=%q", active, activeCommit, chunks, mainChunks)
-	}
-	if _, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: "push"}, nil); err != nil {
-		t.Fatal(err)
 	}
 	if status, mode := waitIndex(head); status != "completed" || mode != "incremental" {
 		t.Fatalf("head index = %s/%s", status, mode)
@@ -572,6 +585,85 @@ func checkIndexing(ctx context.Context, t *testing.T, st *store.Store, queue *ri
 	})
 	if staged != 0 {
 		t.Fatalf("staging rows left behind: %d", staged)
+	}
+	// Both passes were the one onboarding job, and the second was a snooze
+	// rather than an attempt.
+	var attempt, snoozes int
+	waitFor(t, 10*time.Second, "the onboarding job to complete", func() bool {
+		var state string
+		if err := st.App().QueryRow(ctx, `SELECT state, attempt, coalesce((metadata->>'snoozes')::int, 0) FROM river_job WHERE id = $1`, job.Job.ID).
+			Scan(&state, &attempt, &snoozes); err != nil {
+			t.Fatal(err)
+		}
+		return state == "completed"
+	})
+	if attempt != 1 || snoozes != 1 {
+		t.Fatalf("onboarding job: attempt=%d snoozes=%d, want 1 and 1", attempt, snoozes)
+	}
+}
+
+// pushDuringBuild sets the index runners going: the first, the full build
+// at base, moves the branch to head and delivers its push, whose insert
+// result it sends on pushed; the second, the incremental step to head,
+// waits until checked closes, so the full build's rows can be read first.
+func pushDuringBuild(
+	ctx context.Context, t *testing.T, queue *river.Client[pgx.Tx], lf *localForge, exec *gateExecutor, tenantID, repoID, head string,
+) (pushed <-chan error, checked chan struct{}) {
+	t.Helper()
+	var runs atomic.Int32
+	result := make(chan error, 1)
+	checked = make(chan struct{})
+	exec.setBeforeIndex(func() error {
+		switch runs.Add(1) {
+		case 1:
+			lf.setTip(head)
+			res, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, CommitSHA: head, Trigger: jobs.TriggerPush}, nil)
+			if err == nil && !res.UniqueSkippedAsDuplicate {
+				err = errors.New("a push while the repository indexed queued a second job")
+			}
+			result <- err
+		case 2:
+			select {
+			case <-checked:
+			case <-ctx.Done():
+			}
+		}
+		return nil
+	})
+	t.Cleanup(func() { exec.setBeforeIndex(nil) })
+	return result, checked
+}
+
+// checkIndexRetry fails a forced rebuild's runner every time and checks
+// River works the job again: a first retry comes within the scheduler's
+// interval, so the job is retryable only after its second failure. It then
+// cancels the third.
+func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], exec *gateExecutor, tenantID, repoID string) {
+	t.Helper()
+	exec.setBeforeIndex(func() error { return errors.New("node went away") })
+	t.Cleanup(func() { exec.setBeforeIndex(nil) })
+	job, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = queue.JobCancel(context.Background(), job.Job.ID) })
+	var attempt, maxAttempts, failed int
+	waitFor(t, 20*time.Second, "the failed index job to be retryable", func() bool {
+		var state string
+		if err := st.App().QueryRow(ctx, `SELECT state, attempt, max_attempts FROM river_job WHERE id = $1`, job.Job.ID).
+			Scan(&state, &attempt, &maxAttempts); err != nil {
+			t.Fatal(err)
+		}
+		return state == "retryable"
+	})
+	if attempt != 2 || maxAttempts != 3 {
+		t.Fatalf("failed index job: retryable after attempt %d of %d, want 2 of 3", attempt, maxAttempts)
+	}
+	if err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM index_runs WHERE repository_id = $1 AND status = 'failed' AND error LIKE '%node went away%'`, repoID).
+			Scan(&failed)
+	}); err != nil || failed != 2 {
+		t.Fatalf("failed index runs = %d, %v; want one per attempt, with the runner's error", failed, err)
 	}
 }
 
@@ -821,7 +913,11 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	repoID := configfile.RepositoryID(in.ID(), "onedr0p/home-ops")
 	t.Run("index builds in full, then advances incrementally", func(t *testing.T) {
-		checkIndexing(ctx, t, appStore, insertOnly, tenant.ID(), repoID, base, head)
+		checkIndexing(ctx, t, appStore, insertOnly, lf, exec, tenant.ID(), repoID, base, head)
+	})
+
+	t.Run("a failed index runner is retried", func(t *testing.T) {
+		checkIndexRetry(ctx, t, appStore, insertOnly, exec, tenant.ID(), repoID)
 	})
 
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {
@@ -1792,12 +1888,21 @@ type gateExecutor struct {
 	block bool
 	// after, if set, runs once a review runner has finished unblocked.
 	after func()
+	// beforeIndex, if set, runs before each index runner, and fails it
+	// with any error it returns.
+	beforeIndex func() error
 }
 
 func (g *gateExecutor) setAfter(fn func()) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.after = fn
+}
+
+func (g *gateExecutor) setBeforeIndex(fn func() error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.beforeIndex = fn
 }
 
 func (g *gateExecutor) setBlock(b bool) {
@@ -1811,8 +1916,13 @@ func (g *gateExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 		return executor.Result{Err: err}
 	}
 	g.mu.Lock()
-	block, after := g.block, g.after
+	block, after, beforeIndex := g.block, g.after, g.beforeIndex
 	g.mu.Unlock()
+	if spec.Job.Kind == runner.KindIndex && beforeIndex != nil {
+		if err := beforeIndex(); err != nil {
+			return executor.Result{JobName: "kritik-run-failed", Err: err}
+		}
+	}
 	if spec.Job.Kind != runner.KindReview {
 		return g.inner.Run(ctx, spec)
 	}
@@ -1999,19 +2109,35 @@ func checkEnqueueReindexSentinels(
 			t.Fatalf("EnqueueReindex = %v, want ErrRepositoryNotFound", err)
 		}
 	})
-	t.Run("ErrReindexQueued when an onboard index job is already queued", func(t *testing.T) {
+	t.Run("ErrReindexQueued only when a forced reindex is already queued", func(t *testing.T) {
+		// The earlier forced reindex's job may outlive its generation's
+		// swap by a moment, and would hold the key this checks.
+		waitFor(t, 10*time.Second, "the earlier forced reindex's job to finish", func() bool {
+			var live int
+			if err := appStore.App().QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'index' AND args->>'repository_id' = $1
+				AND (args->>'full')::boolean AND finalized_at IS NULL`, repoID).Scan(&live); err != nil {
+				t.Fatal(err)
+			}
+			return live == 0
+		})
+		var first int64
+		var second error
 		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-			// The earlier forced reindex's job may itself still be running
-			// under the same unique key, which this insert then dedupes onto;
-			// either way a job with an empty CommitSHA is pending.
-			if _, err := insertOnly.InsertTx(ctx, tx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: "onboard"}, nil); err != nil {
+			if _, err := insertOnly.InsertTx(ctx, tx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerOnboard}, nil); err != nil {
 				return fmt.Errorf("insert onboard job: %w", err)
 			}
-			_, err := jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, repoID)
-			return errors.Join(err, errRollback)
+			var err error
+			if first, err = jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, repoID); err != nil {
+				return err
+			}
+			_, second = jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, repoID)
+			return errRollback
 		})
-		if !errors.Is(err, jobs.ErrReindexQueued) {
-			t.Fatalf("EnqueueReindex = %v, want ErrReindexQueued", err)
+		if !errors.Is(err, errRollback) || first == 0 {
+			t.Fatalf("EnqueueReindex beside an onboarding job = %d, %v; want a job of its own", first, err)
+		}
+		if !errors.Is(second, jobs.ErrReindexQueued) {
+			t.Fatalf("second EnqueueReindex = %v, want ErrReindexQueued", second)
 		}
 	})
 }

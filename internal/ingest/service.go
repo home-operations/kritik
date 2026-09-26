@@ -36,6 +36,7 @@ const (
 	reasonAction       = "action"
 	reasonDisabled     = "disabled"
 	reasonDuplicate    = "duplicate"
+	reasonNotIndexed   = "not-indexed"
 )
 
 // reviewActions are the pull request actions that produce a review.
@@ -202,8 +203,19 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 		if err != nil {
 			return err
 		}
+		// A repository without an index waits for the leader's onboarding
+		// feeder, which paces full builds; a push would queue its full build
+		// ahead of every other repository's.
+		var indexed bool
+		if err := tx.QueryRow(ctx, `SELECT active_index_run_id IS NOT NULL FROM repositories WHERE id = $1`, rid).Scan(&indexed); err != nil {
+			return fmt.Errorf("ingest: read index state: %w", err)
+		}
+		if !indexed {
+			out = Outcome{Status: Skipped, Reason: reasonNotIndexed}
+			return nil
+		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.IndexArgs{
-			TenantID: req.Tenant.ID(), RepositoryID: rid, CommitSHA: ev.Push.After, Trigger: "push",
+			TenantID: req.Tenant.ID(), RepositoryID: rid, CommitSHA: ev.Push.After, Trigger: jobs.TriggerPush,
 		}, nil)
 		if err != nil {
 			return fmt.Errorf("ingest: enqueue index: %w", err)

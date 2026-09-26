@@ -48,6 +48,12 @@
           "title": "logLevel",
           "type": "string"
         },
+        "onboardWindow": {
+          "default": 4,
+          "description": "Onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW); tenants take turns and the most active repositories go first.",
+          "title": "onboardWindow",
+          "type": "integer"
+        },
         "pollInterval": {
           "default": "10m",
           "description": "How often the leader lists each installation's open pull requests as a backstop for missed webhooks (Go duration); \"0\" disables.",
