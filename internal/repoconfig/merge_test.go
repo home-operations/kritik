@@ -37,11 +37,11 @@ func TestMerge(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			files := Files{}
+			var doc []byte
 			if tt.doc != "" {
-				files[FileName] = tt.doc
+				doc = []byte(tt.doc)
 			}
-			m, err := Merge(files, op)
+			m, err := Merge(doc, op)
 			if (err != nil) != (tt.wantErr != "") || (err != nil && !strings.Contains(err.Error(), tt.wantErr)) {
 				t.Fatalf("err = %v, want %q", err, tt.wantErr)
 			}
@@ -52,7 +52,7 @@ func TestMerge(t *testing.T) {
 			}
 		})
 	}
-	if _, err := Merge(Files{FileName: "ignore: [x/**]\n"}, op); err != nil || len(op.Ignore) != 1 {
+	if _, err := Merge([]byte("ignore: [x/**]\n"), op); err != nil || len(op.Ignore) != 1 {
 		t.Fatalf("Merge must not change the operator's ignore list: %v %v", op.Ignore, err)
 	}
 }
@@ -81,7 +81,7 @@ func TestMergedCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, err := Merge(Files{FileName: tt.doc}, Operator{Enabled: true})
+			m, err := Merge([]byte(tt.doc), Operator{Enabled: true})
 			if err != nil {
 				t.Fatal(err)
 			}

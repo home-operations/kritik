@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"math"
 	"os"
@@ -120,6 +121,28 @@ func (l *localForge) PullRequestDiff(ctx context.Context, _, _ string, _ int, ba
 	}
 	defer func() { _ = res.Close() }()
 	return res.Diff, nil
+}
+
+// FileAt reads path at ref from the test repository, as the forge's API
+// would.
+func (l *localForge) FileAt(_ context.Context, _, _, ref, path string) ([]byte, error) {
+	r, err := git.PlainOpen(l.dir)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.CommitObject(plumbing.NewHash(ref))
+	if err != nil {
+		return nil, err
+	}
+	f, err := c.File(path)
+	if errors.Is(err, object.ErrFileNotFound) {
+		return nil, fmt.Errorf("local forge: %s: %w", path, fs.ErrNotExist)
+	}
+	if err != nil {
+		return nil, err
+	}
+	content, err := f.Contents()
+	return []byte(content), err
 }
 
 func (l *localForge) CloneURL(string, string) string           { return l.dir }

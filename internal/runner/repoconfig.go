@@ -11,17 +11,14 @@ import (
 	"github.com/home-operations/kritik/internal/repoconfig"
 )
 
-// repoConfig reads .kritik.yaml and the files it and the operator (extra)
-// name from the merge-base tree, and returns the ignore globs with the
-// file's own unioned in. A file that does not parse adds no globs; the
-// worker reports why when it reads the same file back.
-func repoConfig(base *object.Tree, ignore, extra []string) (repoconfig.Files, []string, []string, error) {
-	files, notes, err := repoconfig.Collect(treeReader(base), extra...)
+// repoFiles reads the repository files the spec names from the merge-base
+// tree, noting any it could not keep.
+func repoFiles(base *object.Tree, paths []string) (repoconfig.Files, []string, error) {
+	files, notes, err := repoconfig.Collect(treeReader(base), paths...)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("runner: %w", err)
+		return nil, nil, fmt.Errorf("runner: %w", err)
 	}
-	m, _ := repoconfig.Merge(files, repoconfig.Operator{Ignore: ignore})
-	return files, notes, m.Ignore, nil
+	return files, notes, nil
 }
 
 // treeReader reads a blob by path. Anything that is not a file in the tree

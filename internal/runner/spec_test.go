@@ -57,7 +57,7 @@ func TestDecodeSpec(t *testing.T) {
 		{name: "valid review", in: encode(reviewSpec())},
 		{name: "valid index without base", in: encode(Spec{Version: SpecVersion, Kind: KindIndex, RunID: "r", CloneURL: "u", Head: shaA})},
 		{name: "valid agentic", in: encode(agenticSpec())},
-		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":2`, `"version":3`, 1), wantErr: "version"},
+		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":3`, `"version":4`, 1), wantErr: "version"},
 		{name: "unknown field", in: strings.Replace(encode(reviewSpec()), `{`, `{"token":"x",`, 1), wantErr: "unknown field"},
 		{name: "bad head sha", in: strings.Replace(encode(reviewSpec()), shaA, "abc", 1), wantErr: "head"},
 		{name: "uppercase sha", in: strings.Replace(encode(reviewSpec()), shaA, strings.ToUpper(shaA), 1), wantErr: "head"},
@@ -70,7 +70,7 @@ func TestDecodeSpec(t *testing.T) {
 		{name: "agentic without limits", in: func() string { s := agenticSpec(); s.Agent = nil; return encode(s) }(), wantErr: "agent"},
 		{name: "agentic without a prompt", in: func() string { s := agenticSpec(); s.Prompt = nil; return encode(s) }(), wantErr: "prompt"},
 		{name: "agentic without the gateway", in: func() string { s := agenticSpec(); s.Model.GatewayURL = ""; return encode(s) }(), wantErr: "gateway"},
-		{name: "a version 1 document", in: func() string { s := agenticSpec(); s.Version = 1; return encode(s) }(), wantErr: "version 1"},
+		{name: "a version 2 document", in: func() string { s := agenticSpec(); s.Version = 2; return encode(s) }(), wantErr: "version 2"},
 		{name: "valid agentic with commands", in: func() string {
 			s := agenticSpec()
 			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 30

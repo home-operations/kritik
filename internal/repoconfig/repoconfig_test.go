@@ -129,162 +129,80 @@ func mapReader(files map[string][]byte) func(string) ([]byte, error) {
 
 func TestCollect(t *testing.T) {
 	t.Parallel()
-
-	t.Run("no .kritik.yaml", func(t *testing.T) {
-		t.Parallel()
-		files, notes, err := Collect(mapReader(nil))
-		if err != nil {
-			t.Fatalf("Collect: %v", err)
-		}
-		if len(files) != 0 {
-			t.Fatalf("files = %v, want empty", files)
-		}
-		if notes != nil {
-			t.Fatalf("notes = %v, want nil", notes)
-		}
-	})
-
-	t.Run("file plus instructions and template", func(t *testing.T) {
-		t.Parallel()
-		doc := []byte(`review:
-  instructions:
-    - docs/a.md
-    - docs/b.md
-  templates:
-    summary: docs/summary.tmpl
-`)
-		src := map[string][]byte{
-			FileName:            doc,
-			"docs/a.md":         []byte("instruction a"),
-			"docs/b.md":         []byte("instruction b"),
-			"docs/summary.tmpl": []byte("summary template"),
-		}
-		files, notes, err := Collect(mapReader(src))
-		if err != nil {
-			t.Fatalf("Collect: %v", err)
-		}
-		if len(notes) != 0 {
-			t.Fatalf("notes = %v, want none", notes)
-		}
-		want := Files{
-			FileName:            string(doc),
-			"docs/a.md":         "instruction a",
-			"docs/b.md":         "instruction b",
-			"docs/summary.tmpl": "summary template",
-		}
-		if !reflect.DeepEqual(files, want) {
-			t.Fatalf("files = %+v, want %+v", files, want)
-		}
-	})
-
-	t.Run("missing instruction noted, others kept", func(t *testing.T) {
-		t.Parallel()
-		doc := []byte(`review:
-  instructions:
-    - docs/a.md
-    - docs/missing.md
-`)
-		src := map[string][]byte{
-			FileName:    doc,
-			"docs/a.md": []byte("instruction a"),
-		}
-		files, notes, err := Collect(mapReader(src))
-		if err != nil {
-			t.Fatalf("Collect: %v", err)
-		}
-		if _, ok := files["docs/a.md"]; !ok {
-			t.Fatalf("files = %+v, want docs/a.md kept", files)
-		}
-		if _, ok := files["docs/missing.md"]; ok {
-			t.Fatalf("files = %+v, want docs/missing.md absent", files)
-		}
-		if len(notes) != 1 || !strings.Contains(notes[0], "docs/missing.md") {
-			t.Fatalf("notes = %v, want one note about docs/missing.md", notes)
-		}
-	})
-
-	t.Run("oversized file omitted and noted", func(t *testing.T) {
-		t.Parallel()
-		big := strings.Repeat("a", MaxFileBytes+1)
-		doc := []byte(`review:
-  instructions:
-    - docs/big.md
-    - docs/small.md
-`)
-		src := map[string][]byte{
-			FileName:        doc,
-			"docs/big.md":   []byte(big),
-			"docs/small.md": []byte("small"),
-		}
-		files, notes, err := Collect(mapReader(src))
-		if err != nil {
-			t.Fatalf("Collect: %v", err)
-		}
-		if _, ok := files["docs/big.md"]; ok {
-			t.Fatalf("files = %+v, want docs/big.md omitted", files)
-		}
-		if files["docs/small.md"] != "small" {
-			t.Fatalf("files = %+v, want docs/small.md kept", files)
-		}
-		if len(notes) != 1 || !strings.Contains(notes[0], "docs/big.md") {
-			t.Fatalf("notes = %v, want one note about docs/big.md", notes)
-		}
-	})
-
-	t.Run("total budget exceeded, later files omitted", func(t *testing.T) {
-		t.Parallel()
-		const chunk = 220_000 // under MaxFileBytes; four of these plus the doc fit under MaxTotalBytes, a fifth and sixth do not.
-		paths := []string{"docs/inst1.md", "docs/inst2.md", "docs/inst3.md", "docs/inst4.md", "docs/inst5.md", "docs/inst6.md"}
-		doc := []byte(`review:
-  instructions:
-    - docs/inst1.md
-    - docs/inst2.md
-    - docs/inst3.md
-    - docs/inst4.md
-    - docs/inst5.md
-    - docs/inst6.md
-`)
-		src := map[string][]byte{FileName: doc}
-		for _, p := range paths {
-			src[p] = []byte(strings.Repeat("a", chunk))
-		}
-		files, notes, err := Collect(mapReader(src))
-		if err != nil {
-			t.Fatalf("Collect: %v", err)
-		}
-		for _, p := range paths[:4] {
-			if _, ok := files[p]; !ok {
-				t.Fatalf("files missing %s, want kept", p)
+	big := strings.Repeat("a", MaxFileBytes+1)
+	// Four of these fit under MaxTotalBytes; a fifth does not.
+	chunk := strings.Repeat("c", 220_000)
+	tests := []struct {
+		name      string
+		src       map[string]string
+		paths     []string
+		wantFiles []string
+		wantNotes []string
+	}{
+		{name: "nothing to read"},
+		{
+			name:      "each path read once, in order",
+			src:       map[string]string{FileName: "review: {}\n", "docs/a.md": "a", "docs/summary.tmpl": "s"},
+			paths:     []string{FileName, "docs/a.md", "docs/summary.tmpl", "docs/a.md", ""},
+			wantFiles: []string{FileName, "docs/a.md", "docs/summary.tmpl"},
+		},
+		{
+			name:      "a missing path is noted, the others kept",
+			src:       map[string]string{"docs/a.md": "a"},
+			paths:     []string{"docs/a.md", "docs/missing.md"},
+			wantFiles: []string{"docs/a.md"},
+			wantNotes: []string{"docs/missing.md: referenced but not found"},
+		},
+		{
+			name:      "an oversized file is noted",
+			src:       map[string]string{"docs/big.md": big, "docs/small.md": "small"},
+			paths:     []string{"docs/big.md", "docs/small.md"},
+			wantFiles: []string{"docs/small.md"},
+			wantNotes: []string{TooLarge("docs/big.md")},
+		},
+		{
+			name:      "files past the total budget are noted",
+			src:       map[string]string{"1.md": chunk, "2.md": chunk, "3.md": chunk, "4.md": chunk, "5.md": chunk},
+			paths:     []string{"1.md", "2.md", "3.md", "4.md", "5.md"},
+			wantFiles: []string{"1.md", "2.md", "3.md", "4.md"},
+			wantNotes: []string{fmt.Sprintf("5.md: skipped, would exceed the %d byte total limit", MaxTotalBytes)},
+		},
+		{
+			name:      "an escaping path is noted, not read",
+			src:       map[string]string{"../secret": "x"},
+			paths:     []string{"../secret"},
+			wantNotes: []string{`repoconfig: referenced path "../secret" escapes the repository`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			src := map[string][]byte{}
+			for p, content := range tt.src {
+				src[p] = []byte(content)
 			}
-		}
-		for _, p := range paths[4:] {
-			if _, ok := files[p]; ok {
-				t.Fatalf("files contains %s, want omitted", p)
+			files, notes, err := Collect(mapReader(src), tt.paths...)
+			if err != nil {
+				t.Fatalf("Collect: %v", err)
 			}
-		}
-		if len(notes) != 2 {
-			t.Fatalf("notes = %v, want 2 notes about the total budget", notes)
-		}
-	})
+			got := slices.Sorted(maps.Keys(files))
+			want := slices.Sorted(slices.Values(tt.wantFiles))
+			if !slices.Equal(got, want) || !slices.Equal(notes, tt.wantNotes) {
+				t.Fatalf("files = %v notes = %q, want %v %q", got, notes, want, tt.wantNotes)
+			}
+			for p, content := range files {
+				if content != tt.src[p] {
+					t.Errorf("files[%s] is not the file's content", p)
+				}
+			}
+		})
+	}
 
-	t.Run("read error other than not-exist propagates", func(t *testing.T) {
+	t.Run("a read error other than not-exist propagates", func(t *testing.T) {
 		t.Parallel()
-		doc := []byte(`review:
-  instructions:
-    - docs/broken.md
-`)
 		wantErr := errors.New("disk on fire")
-		read := func(p string) ([]byte, error) {
-			switch p {
-			case FileName:
-				return doc, nil
-			case "docs/broken.md":
-				return nil, wantErr
-			default:
-				return nil, fmt.Errorf("repoconfig_test: unexpected read of %s", p)
-			}
-		}
-		if _, _, err := Collect(read); !errors.Is(err, wantErr) {
+		read := func(string) ([]byte, error) { return nil, wantErr }
+		if _, _, err := Collect(read, "docs/broken.md"); !errors.Is(err, wantErr) {
 			t.Fatalf("Collect error = %v, want it to wrap %v", err, wantErr)
 		}
 	})
@@ -308,53 +226,6 @@ func TestSkip_All(t *testing.T) {
 			t.Parallel()
 			if got := c.skip.All(c.changed); got != c.want {
 				t.Fatalf("All(%v) = %v, want %v", c.changed, got, c.want)
-			}
-		})
-	}
-}
-
-func TestCollectExtra(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name      string
-		src       map[string][]byte
-		extra     []string
-		wantFiles []string
-		wantNotes []string
-	}{
-		{
-			name:      "extra paths are read without a .kritik.yaml",
-			src:       map[string][]byte{"docs/rules.md": []byte("rules")},
-			extra:     []string{"docs/rules.md", "docs/gone.md"},
-			wantFiles: []string{"docs/rules.md"},
-			wantNotes: []string{"docs/gone.md: referenced but not found"},
-		},
-		{
-			name: "extra paths follow the file's own, deduplicated",
-			src: map[string][]byte{
-				FileName: []byte("review:\n  instructions: [docs/a.md]\n"), "docs/a.md": []byte("a"), "docs/b.md": []byte("b"),
-			},
-			extra:     []string{"docs/a.md", "docs/b.md"},
-			wantFiles: []string{FileName, "docs/a.md", "docs/b.md"},
-		},
-		{
-			name:      "an escaping extra path is noted, not read",
-			src:       map[string][]byte{"../secret": []byte("x")},
-			extra:     []string{"../secret"},
-			wantNotes: []string{`repoconfig: referenced path "../secret" escapes the repository`},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			files, notes, err := Collect(mapReader(tt.src), tt.extra...)
-			if err != nil {
-				t.Fatalf("Collect: %v", err)
-			}
-			got := slices.Sorted(maps.Keys(files))
-			want := slices.Sorted(slices.Values(tt.wantFiles))
-			if !slices.Equal(got, want) || !slices.Equal(notes, tt.wantNotes) {
-				t.Fatalf("files = %v notes = %q, want %v %q", got, notes, want, tt.wantNotes)
 			}
 		})
 	}

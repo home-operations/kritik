@@ -41,41 +41,30 @@ func TestAgentPrompt(t *testing.T) {
 		Context: []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 1, EndLine: 2, Text: "func u() {}"}},
 		Scope:   review.ScopeFull,
 	}
-	operator := []string{"docs/rules.md"}
+	files := repoconfig.Files{"docs/rules.md": "Operator rules.", ".kritik/rules.md": "Repository rules."}
 	tests := []struct {
 		name         string
-		files        repoconfig.Files
+		paths        []string
 		scope        review.Scope
 		instructions []string
 		strict       bool
 	}{
-		{name: "operator instructions and strictness", files: repoconfig.Files{"docs/rules.md": "Operator rules."},
+		{name: "the named instructions and strictness", paths: []string{"docs/rules.md"},
 			scope: review.ScopeFull, instructions: []string{"Operator rules."}, strict: true},
-		{
-			name: "the merge-base file's instructions and strictness replace the operator's",
-			files: repoconfig.Files{
-				repoconfig.FileName: "review:\n  instructions: [.kritik/rules.md]\n  requireSuggestedFix: false\n",
-				".kritik/rules.md":  "Repository rules.", "docs/rules.md": "Operator rules.",
-			},
-			scope: review.ScopeFull, instructions: []string{"Repository rules."},
-		},
-		{
-			name:  "a file that does not parse leaves the operator's settings",
-			files: repoconfig.Files{repoconfig.FileName: "unknown: 1\n", "docs/rules.md": "Operator rules."},
-			scope: review.ScopeFull, instructions: []string{"Operator rules."}, strict: true,
-		},
-		{name: "incremental adds the delta and the prior findings", files: repoconfig.Files{}, scope: review.ScopeIncremental, strict: true},
+		{name: "instructions in the order named", paths: []string{".kritik/rules.md", "docs/rules.md"},
+			scope: review.ScopeFull, instructions: []string{"Repository rules.", "Operator rules."}, strict: true},
+		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
-			s.Prompt.Instructions, s.Prompt.RequireSuggestedFix = operator, true
+			s.Prompt.Instructions, s.Prompt.RequireSuggestedFix = tt.paths, tt.strict
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {
 				pack.DeltaDiff = agentDiff
 			}
-			system, user, strict := agentPrompt(s, tt.files, pack, nil)
+			system, user, strict := agentPrompt(s, files, pack, nil)
 			if want := review.AgenticSystemPrompt(tt.instructions, nil); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
@@ -101,49 +90,27 @@ func TestAgentPrompt(t *testing.T) {
 }
 
 func TestAgentSkip(t *testing.T) {
-	filter := func(expr string) repoconfig.Files {
-		return repoconfig.Files{repoconfig.FileName: "filter: '" + expr + "'\n"}
-	}
 	tests := []struct {
 		name    string
-		files   repoconfig.Files
+		skip    []string
 		changed []string
 		patchID string
 		want    string
 	}{
-		{name: "reviewed", files: repoconfig.Files{}, changed: []string{"main.go"}, patchID: "p2"},
-		{name: "unchanged bot patch", files: repoconfig.Files{}, changed: []string{"main.go"}, patchID: "p1", want: SkipUnchangedPatch},
-		{name: "disabled", files: repoconfig.Files{repoconfig.FileName: "enabled: false\n"}, changed: []string{"main.go"}, patchID: "p2",
-			want: string(repoconfig.SkipDisabled)},
-		{name: "filtered on the body", files: filter(`!pr.body.contains("[skip-review]")`), changed: []string{"main.go"}, patchID: "p2",
-			want: string(repoconfig.SkipFiltered)},
-		{name: "filtered on labels and merged", files: filter(`!pr.merged && pr.labels.exists(l, l.name == "deps")`),
-			changed: []string{"main.go"}, patchID: "p2"},
-		{name: "a filter that fails to evaluate skips", files: filter(`pr.number == 1 || pr.labels[9].name == "x"`),
-			changed: []string{"main.go"}, patchID: "p2", want: string(repoconfig.SkipFiltered)},
-		{
-			name: "only skipped paths", files: repoconfig.Files{repoconfig.FileName: "skip:\n  onlyPaths: ['**/*.md']\n"},
-			changed: []string{"docs/a.md"}, patchID: "p2", want: string(repoconfig.SkipOnlyPaths),
-		},
-		{name: "a broken file skips nothing", files: repoconfig.Files{repoconfig.FileName: "enabled: [\n"}, changed: []string{"main.go"},
-			patchID: "p2"},
+		{name: "reviewed", changed: []string{"main.go"}, patchID: "p2"},
+		{name: "unchanged bot patch", changed: []string{"main.go"}, patchID: "p1", want: SkipUnchangedPatch},
+		{name: "only skipped paths", skip: []string{"**/*.md"}, changed: []string{"docs/a.md"}, patchID: "p2",
+			want: string(repoconfig.SkipOnlyPaths)},
+		{name: "a path the skip rule does not cover", skip: []string{"**/*.md"}, changed: []string{"docs/a.md", "main.go"}, patchID: "p2"},
 	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
-			s.Prompt.UnchangedPatchID = "p1"
-			s.Prompt.PullRequest.Body = "please [skip-review]"
-			got, err := agentSkip(s, tt.files, tt.changed, tt.patchID, logger)
-			if err != nil || got != tt.want {
-				t.Fatalf("agentSkip = %q, %v; want %q", got, err, tt.want)
+			s.Prompt.UnchangedPatchID, s.Prompt.SkipPaths = "p1", tt.skip
+			if got := agentSkip(s, tt.changed, tt.patchID); got != tt.want {
+				t.Fatalf("agentSkip = %q, want %q", got, tt.want)
 			}
 		})
-	}
-	s := agentPromptSpec()
-	s.Prompt.PullRequest.Labels = []byte("not json")
-	if _, err := agentSkip(s, repoconfig.Files{}, []string{"main.go"}, "p2", logger); err == nil {
-		t.Fatal("undecodable labels must fail the run, not skip it")
 	}
 }
 

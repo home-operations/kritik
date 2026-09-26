@@ -5,9 +5,10 @@
 //
 // Everything here is read from the merge-base commit (the base branch history
 // a PR cannot rewrite), never the PR's own tree, so a PR cannot use its own
-// .kritik.yaml to weaken the review applied to it. Collect's read callback
-// is how the caller enforces that; this package only decides which paths to
-// read and how much of what comes back to keep.
+// .kritik.yaml to weaken the review applied to it. The worker reads the
+// file itself and hands it to Merge; Collect's read callback is how the
+// runner reads the files it names from the same commit. This package only
+// decides which paths to read and how much of what comes back to keep.
 package repoconfig
 
 import (
@@ -17,7 +18,6 @@ import (
 	"io"
 	"io/fs"
 	"path"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -166,72 +166,45 @@ func (f File) Referenced() []string {
 // oversized) is simply absent from the map.
 type Files map[string]string
 
-// Collect reads FileName, every path it references, then every path in
-// extra (the operator's own review files) through read, which must return
-// an error satisfying errors.Is(err, fs.ErrNotExist) for a missing path. A
-// file over MaxFileBytes, or one that would push the total over
-// MaxTotalBytes, is omitted and reported in the returned notes rather than
-// failing the call; so is a missing referenced path and an extra path that
-// escapes the repository. A missing FileName is not an error either, since
-// the file is optional. Any other read error is returned as-is.
-//
-// The .kritik.yaml content itself is decoded best-effort to discover
-// Referenced() paths: a malformed file is Parse's concern (the caller
-// validates separately), not Collect's - Collect still gathers whatever
-// context it can.
-func Collect(read func(name string) ([]byte, error), extra ...string) (Files, []string, error) {
+// Collect reads each of paths through read, which must return an error
+// satisfying errors.Is(err, fs.ErrNotExist) for a missing path. A path
+// that escapes the repository or is missing, and a file over MaxFileBytes
+// or one that would push the total over MaxTotalBytes, is left out and
+// reported in the returned notes rather than failing the call. Any other
+// read error is returned as-is.
+func Collect(read func(name string) ([]byte, error), paths ...string) (Files, []string, error) {
 	files := Files{}
 	var notes []string
 	var total int
-
-	keep := func(p string, b []byte) {
-		if len(b) > MaxFileBytes {
-			notes = append(notes, fmt.Sprintf("%s: skipped, it exceeds the %d byte per-file limit", p, MaxFileBytes))
-			return
-		}
-		if total+len(b) > MaxTotalBytes {
-			notes = append(notes, fmt.Sprintf("%s: skipped, would exceed the %d byte total limit", p, MaxTotalBytes))
-			return
-		}
-		files[p] = string(b)
-		total += len(b)
-	}
-
-	var refs []string
-	data, err := read(FileName)
-	switch {
-	case err == nil:
-		keep(FileName, data)
-		var f File
-		_ = yaml.Unmarshal(data, &f)
-		refs = f.Referenced()
-	case !errors.Is(err, fs.ErrNotExist):
-		return nil, nil, fmt.Errorf("repoconfig: read %s: %w", FileName, err)
-	}
-	for _, p := range extra {
-		if p == "" || slices.Contains(refs, p) {
+	for _, p := range paths {
+		if _, seen := files[p]; seen || p == "" {
 			continue
 		}
 		if err := validateRefPath(p); err != nil {
 			notes = append(notes, err.Error())
 			continue
 		}
-		refs = append(refs, p)
-	}
-
-	for _, p := range refs {
 		b, err := read(p)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				notes = append(notes, fmt.Sprintf("%s: referenced but not found", p))
-				continue
-			}
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			notes = append(notes, fmt.Sprintf("%s: referenced but not found", p))
+		case err != nil:
 			return nil, nil, fmt.Errorf("repoconfig: read %s: %w", p, err)
+		case len(b) > MaxFileBytes:
+			notes = append(notes, TooLarge(p))
+		case total+len(b) > MaxTotalBytes:
+			notes = append(notes, fmt.Sprintf("%s: skipped, would exceed the %d byte total limit", p, MaxTotalBytes))
+		default:
+			files[p] = string(b)
+			total += len(b)
 		}
-		keep(p, b)
 	}
-
 	return files, notes, nil
+}
+
+// TooLarge is the note for a file over MaxFileBytes.
+func TooLarge(name string) string {
+	return fmt.Sprintf("%s: skipped, it exceeds the %d byte per-file limit", name, MaxFileBytes)
 }
 
 // All reports whether every path in changed matches at least one of s's

@@ -20,6 +20,12 @@ const (
 // only trigger the worker lets bypass the bot-author patch-id skip.
 const TriggerManual = "manual"
 
+// Settles reports whether a review started by trigger waits out the
+// repository's settle time first: only a new head (a push, or one the
+// poller found) does, since an open, reopen or draft transition has no
+// earlier head to supersede.
+func Settles(trigger string) bool { return trigger == "synchronize" || trigger == "poll" }
+
 // TriggerReindex is the Trigger EnqueueReindex gives a forced full reindex,
 // as opposed to the worker-internal onboard and push triggers.
 const TriggerReindex = "reindex"

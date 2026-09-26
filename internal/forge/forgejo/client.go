@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"sort"
@@ -229,6 +230,26 @@ func (c *Client) BranchTip(ctx context.Context, owner, repo, ref string) (string
 		return "", "", fmt.Errorf("forgejo: branch tip for %s/%s@%s: %w", owner, repo, resolved, err)
 	}
 	return b.Commit.ID, resolved, nil
+}
+
+// FileAt implements forge.Client through the raw endpoint.
+func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]byte, error) {
+	segments := strings.Split(path, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	var content string
+	err := c.do(ctx, http.MethodGet, repoPath(owner, repo)+"/raw/"+strings.Join(segments, "/")+"?ref="+url.QueryEscape(ref), nil, &content)
+	if errors.Is(err, ErrNotFound) {
+		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref, fs.ErrNotExist)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref, err)
+	}
+	if len(content) > forge.MaxFileBytes {
+		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref, forge.ErrFileTooLarge)
+	}
+	return []byte(content), nil
 }
 
 // BotLogin implements forge.Client, caching the result: the account behind

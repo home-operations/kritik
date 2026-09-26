@@ -5,6 +5,7 @@ package forge
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/home-operations/kritik/internal/webhook"
@@ -89,6 +90,13 @@ func (p Permission) Valid() bool {
 	return false
 }
 
+// MaxFileBytes bounds what FileAt reads of one file: GitHub's contents API
+// inlines a file only up to this size.
+const MaxFileBytes = 1 << 20
+
+// ErrFileTooLarge is FileAt refusing a file over MaxFileBytes.
+var ErrFileTooLarge = errors.New("forge: file is over the size limit")
+
 // Client is one installation's access to its forge.
 type Client interface {
 	// MergeBase asks the forge for the merge-base of base (a branch) and
@@ -111,6 +119,10 @@ type Client interface {
 	// BranchTip returns the commit a branch points at; an empty branch
 	// means the repository's default branch, whose name is also returned.
 	BranchTip(ctx context.Context, owner, repo, branch string) (sha, resolvedBranch string, err error)
+	// FileAt returns the content of the file at path in commit ref. A path
+	// that is not a file there is an error wrapping fs.ErrNotExist, and a
+	// file over MaxFileBytes one wrapping ErrFileTooLarge.
+	FileAt(ctx context.Context, owner, repo, ref, path string) ([]byte, error)
 
 	// BotLogin is the login comments posted through this client carry, so
 	// the sticky comment can be matched by author and marker together.

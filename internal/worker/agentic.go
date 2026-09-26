@@ -151,11 +151,11 @@ func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) 
 // sees it and, for a bot author, the patch id of its last prepared review,
 // which afterRun skips as unchanged.
 func (w *Review) agentPrompt(
-	ctx context.Context, tenantID, reviewID, trigger string, pr *pullRequest, settings configfile.Settings, prior priorReview,
+	ctx context.Context, tenantID, reviewID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
 ) (*runner.Prompt, error) {
 	p := &runner.Prompt{
-		Repository: pr.repository, Instructions: settings.Review.Instructions, RequireSuggestedFix: settings.Review.RequireSuggestedFix,
-		MaxDeltaFiles: settings.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
+		Repository: pr.repository, Instructions: eff.Review.Instructions, RequireSuggestedFix: eff.Review.RequireSuggestedFix,
+		SkipPaths: eff.Skip.OnlyPaths, MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
 	}
 	err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		var err error
@@ -231,10 +231,11 @@ const gatewayModel = "review"
 // returns the runner Job's deadline, which the agent's timeout may
 // lengthen.
 func (w *Review) agentSpec(
-	ctx context.Context, tenantID, reviewID, runID, trigger string, pr *pullRequest, settings configfile.Settings, prior priorReview,
+	ctx context.Context, tenantID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
 	admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
 ) (time.Duration, error) {
-	prompt, err := w.agentPrompt(ctx, tenantID, reviewID, trigger, pr, settings, prior)
+	settings := eff.Settings
+	prompt, err := w.agentPrompt(ctx, tenantID, reviewID, trigger, pr, eff, prior)
 	if err != nil {
 		return deadline, err
 	}

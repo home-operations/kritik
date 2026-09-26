@@ -95,7 +95,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if done {
 		return err
 	}
-	pr, client, owner, repo, mergeBase, settings := b.early.pr, b.client, b.owner, b.repo, b.early.mergeBase, b.settings
+	pr, client, owner, repo, mergeBase, eff := b.early.pr, b.client, b.owner, b.repo, b.early.mergeBase, b.eff
+	settings := eff.Settings
 	agentic := settings.Mode == configfile.ReviewAgentic
 	admitted, done, err := w.admit(ctx, b.early, job, file, tenant, settings)
 	if done {
@@ -112,7 +113,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	deadline, resources := file.RunnerFor(tenant)
 	spec := runner.Spec{
 		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
-		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, Ignore: settings.Ignore, RepoFiles: settings.Review.Referenced(),
+		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, Ignore: settings.Ignore, RepoFiles: eff.repoFiles(),
 	}
 	secrets := runner.Secrets{GitToken: b.token}
 	ended := endedReview{
@@ -121,7 +122,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	var tools []configfile.Tool
 	if agentic {
-		deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, runID, args.Trigger, pr, settings, prior, admitted, &spec, &secrets, deadline)
+		deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, runID, args.Trigger, pr, eff, prior, admitted, &spec, &secrets, deadline)
 		if err != nil {
 			return w.agentSpecFailed(ctx, ended, runID, err)
 		}
@@ -196,7 +197,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
 		return w.finishReview(cctx, args.TenantID, reviewID, statusFailed, "", res.Err.Error())
 	}
-	prep, status, err := w.afterRun(ctx, args, pr, settings, client, reviewID, runID, prior, logger)
+	prep, status, err := w.afterRun(ctx, args, pr, eff, b.notes, client, reviewID, runID, prior, logger)
 	if err != nil {
 		// ctx stayed live through afterRun, so a cancel or a timeout that
 		// arrived while it ran surfaces here as a plain error; the review
@@ -211,7 +212,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	phase := &publishPhase{
 		w: w, file: file, tenant: tenant, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, jobID: job.ID, logger: logger,
-		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.RequireSuggestedFix}, templates: prep.eff.Templates,
+		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix}, templates: prep.eff.Templates,
 		instructions: prep.eff.Instructions, repoNotes: prep.notes, prior: prior, scope: prep.scope, agent: agentOutcome,
 	}
 	publish := phase.run
@@ -247,14 +248,14 @@ type prepared struct {
 
 // afterRun re-checks the head under the tenant transaction, lifts the patch
 // id and the merge-base repository files out of the context pack, and
-// applies .kritik.yaml: a review it disables, filters out or whose changes
-// its skip rule covers ends skipped with a success status saying why. A
-// bot-authored PR whose patch id equals its last prepared review is skipped
-// too: a Renovate rebase changes nothing. It returns a patch id when the
-// review should go on to the model, and "" plus the terminal status it
-// recorded otherwise.
+// finishes applying .kritik.yaml: a review whose changes its skip rule
+// covers ends skipped with a success status saying why. A bot-authored PR
+// whose patch id equals its last prepared review is skipped too: a
+// Renovate rebase changes nothing. notes are the worker's own on the file.
+// It returns a patch id when the review should go on to the model, and ""
+// plus the terminal status it recorded otherwise.
 func (w *Review) afterRun(
-	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, settings configfile.Settings, client forge.Client,
+	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, eff Effective, notes []string, client forge.Client,
 	reviewID, runID string, prior priorReview, logger *slog.Logger,
 ) (prepared, string, error) {
 	var (
@@ -306,7 +307,7 @@ func (w *Review) afterRun(
 	if err := json.Unmarshal(filesJSON, &files); err != nil {
 		return prepared{}, "", fmt.Errorf("worker: decode repository files: %w", err)
 	}
-	eff, notes := effective(settings, files, repoNotes)
+	notes = eff.fill(files, append(notes, repoNotes...))
 	reason, ferr := eff.skip(vars, changed)
 	if ferr != nil {
 		logger.Warn("repository filter failed to evaluate", "error", ferr)
@@ -396,32 +397,28 @@ func (w *Review) load(ctx context.Context, args jobs.ReviewArgs) (*pullRequest, 
 	return &pr, nil
 }
 
-// record writes a review that never ran: superseded before start.
-func (w *Review) record(
-	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, status, mergeBase, patchID, forgePatchID, errText string,
-) error {
-	return w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO reviews
-			(tenant_id, pull_request_id, head_sha, merge_base_sha, patch_id, forge_patch_id, status, trigger, error, finished_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())`,
-			args.TenantID, pr.id, args.HeadSHA, mergeBase, patchID, forgePatchID, status, args.Trigger, errText)
-		return err
-	})
-}
-
 // earlyEnd is what a review ended before its runner is recorded with.
 type earlyEnd struct {
 	args                              jobs.ReviewArgs
 	pr                                *pullRequest
 	tenantSlug, mergeBase, forgePatch string
-	started                           time.Time
-	logger                            *slog.Logger
+	// skip is why the repository's .kritik.yaml skipped the review.
+	skip    repoconfig.SkipReason
+	started time.Time
+	logger  *slog.Logger
 }
 
-// end records the review as status, for reason, and counts it.
+// end records a review that never ran as status, for reason, and counts
+// it.
 func (w *Review) end(ctx context.Context, e earlyEnd, status, reason string) error {
 	w.Metrics.Review(e.tenantSlug, status, time.Since(e.started))
-	return w.record(ctx, e.args, e.pr, status, e.mergeBase, "", e.forgePatch, reason)
+	return w.Store.WithTenant(ctx, e.args.TenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO reviews
+			(tenant_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error, finished_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())`,
+			e.args.TenantID, e.pr.id, e.args.HeadSHA, e.mergeBase, e.forgePatch, status, string(e.skip), e.args.Trigger, reason)
+		return err
+	})
 }
 
 // skipUnchangedBot ends a bot's review whose rebase changed nothing,
@@ -444,20 +441,23 @@ func (w *Review) skipUnchangedBot(ctx context.Context, e earlyEnd, client forge.
 
 // begun is a review job past everything before its admission: its pull
 // request is current, a model slot was free when it looked, the forge
-// answered, and it is not an unchanged bot rebase.
+// answered, the repository's .kritik.yaml is applied and does not skip it,
+// its settle time is over, and it is not an unchanged bot rebase. notes are
+// what the review's summary says about the file.
 type begun struct {
 	early              earlyEnd
-	settings           configfile.Settings
+	eff                Effective
+	notes              []string
 	client             forge.Client
 	owner, repo, token string
 }
 
 // begin takes a review job up to its admission, or ends it: superseded,
-// snoozed while every model slot is held, or skipped as an unchanged bot
-// rebase. The slot check comes before any forge call, so a job snoozed
-// through a busy spell costs the forge nothing each time it wakes. It
-// reports whether it ended the job, with the error of that or of getting
-// this far.
+// snoozed while every model slot is held or until its settle time is over,
+// or skipped by the merge-base .kritik.yaml or as an unchanged bot rebase.
+// The slot check comes before any forge call, so a job snoozed through a
+// busy spell costs the forge nothing each time it wakes. It reports whether
+// it ended the job, with the error of that or of getting this far.
 func (w *Review) begin(
 	ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File, tenant *configfile.Tenant,
 	logger *slog.Logger, started time.Time,
@@ -487,6 +487,18 @@ func (w *Review) begin(
 	if e.mergeBase, err = client.MergeBase(ctx, owner, repo, pr.number, pr.baseRef, pr.headSHA); err != nil {
 		return begun{}, true, err
 	}
+	doc, notes, err := readRepoConfig(ctx, client, owner, repo, e.mergeBase)
+	if err != nil {
+		return begun{}, true, err
+	}
+	eff, parseNotes := effective(settings, doc)
+	if wait := settleLeft(args.Trigger, eff.Settle, job.CreatedAt, time.Now()); wait > 0 {
+		logger.Info("review snoozed until its settle time is over", "for", wait.Round(time.Second))
+		return begun{}, true, river.JobSnooze(wait)
+	}
+	if done, err := w.skipByRepo(ctx, e, &eff, client, owner, repo); done {
+		return begun{}, true, err
+	}
 	token, err := client.GitToken(ctx)
 	if err != nil {
 		return begun{}, true, err
@@ -496,7 +508,7 @@ func (w *Review) begin(
 		return begun{}, true, err
 	}
 	e.forgePatch = forgePatch
-	return begun{early: e, settings: settings, client: client, owner: owner, repo: repo, token: token}, false, nil
+	return begun{early: e, eff: eff, notes: append(notes, parseNotes...), client: client, owner: owner, repo: repo, token: token}, false, nil
 }
 
 // errNoSlot is an agentic review's admission finding every model slot
