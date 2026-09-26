@@ -218,3 +218,16 @@ test('a stream the server refuses for a dead session sends the tab to sign-in', 
   await page.waitForTimeout(2_500);
   expect(streams).toBe(after);
 });
+
+test('a 401 from a page while signed in stays on sign-in', async ({ page, signIn, mockProviders }) => {
+  await signIn();
+  await mockProviders();
+  await page.route('**/api/v1/tenants/acme/repos**', (route) =>
+    route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: 'unauthenticated', message: 'no session' }) }),
+  );
+  await page.goto('/#/t/acme/repos');
+  await expect(page).toHaveURL(/#\/signin$/);
+  await page.waitForTimeout(500);
+  await expect(page).toHaveURL(/#\/signin$/);
+  await expect(page.locator('.tenant-switch')).toHaveCount(0);
+});

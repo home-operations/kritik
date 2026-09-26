@@ -6,6 +6,7 @@
 // entry so "back" doesn't bounce the user right back into the 401.
 import { basePath } from './base';
 import { parse, replace } from './router.svelte';
+import { session } from './session.svelte';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -47,8 +48,10 @@ async function toApiError(res: Response): Promise<ApiError> {
 }
 
 // toSignIn sends the tab to sign-in, remembering where it was, unless it
-// is already there.
+// is already there. The session is forgotten first: the shell sends a
+// signed-in user off the sign-in page, straight back into the 401.
 export function toSignIn(): void {
+  session.me = undefined;
   if (parse(location.hash).name === 'signin') return;
   signinState.returnTo = location.hash || '#/';
   replace({ name: 'signin' });
