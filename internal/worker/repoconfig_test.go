@@ -79,23 +79,24 @@ func TestEffective(t *testing.T) {
 			repoFiles: append(operatorPaths, repoconfig.FileName), instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
 		},
 		{
-			name: "repository strictness wins over the operator's", doc: "review:\n  requireSuggestedFix: false\n", files: operatorFiles,
+			name: "requireSuggestedFix may only turn on", doc: "review:\n  requireSuggestedFix: false\n", files: operatorFiles,
 			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(operatorPaths, repoconfig.FileName),
-			instructions: []string{"operator rules"}, templates: operatorDefaults,
+			instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
+			notes: []string{".kritik.yaml: review.requireSuggestedFix false was dropped; allowed: true, since the operator requires a suggested fix"},
 		},
 		{
-			name:    "repository instructions and summary template replace the operator's",
+			name:    "repository instructions follow the operator's, and its summary template replaces the operator's",
 			doc:     "review:\n  instructions: [.kritik/rules.md]\n  templates:\n    summary: .kritik/summary.tmpl\n",
 			files:   with(repoconfig.Files{".kritik/rules.md": "repo rules", ".kritik/summary.tmpl": "repo summary"}),
 			enabled: true, ignore: []string{"vendor/**"},
-			repoFiles:    []string{".kritik/rules.md", ".kritik/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			instructions: []string{"repo rules"}, templates: review.Templates{Summary: "repo summary", Inline: "op inline"}, strict: true,
+			repoFiles:    []string{"ops/rules.md", ".kritik/rules.md", ".kritik/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
+			instructions: []string{"operator rules", "repo rules"}, templates: review.Templates{Summary: "repo summary", Inline: "op inline"}, strict: true,
 		},
 		{
 			name: "a missing instruction file is noted", doc: "review:\n  instructions: [.kritik/rules.md, .kritik/gone.md]\n",
 			files: with(repoconfig.Files{".kritik/rules.md": "repo rules"}), enabled: true, ignore: []string{"vendor/**"},
-			repoFiles:    []string{".kritik/rules.md", ".kritik/gone.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			instructions: []string{"repo rules"}, templates: operatorDefaults, strict: true,
+			repoFiles:    []string{"ops/rules.md", ".kritik/rules.md", ".kritik/gone.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
+			instructions: []string{"operator rules", "repo rules"}, templates: operatorDefaults, strict: true,
 			notes: []string{".kritik/gone.md: referenced but not found"},
 		},
 		{
@@ -105,19 +106,23 @@ func TestEffective(t *testing.T) {
 				".kritik/big.md: skipped, it exceeds the 262144 byte per-file limit", ".kritik/gone.md: referenced but not found",
 			},
 			enabled: true, ignore: []string{"vendor/**"},
-			repoFiles: []string{".kritik/big.md", ".kritik/gone.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			templates: operatorDefaults, strict: true,
+			repoFiles:    []string{"ops/rules.md", ".kritik/big.md", ".kritik/gone.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
+			instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
 			notes: []string{
 				".kritik/big.md: skipped, it exceeds the 262144 byte per-file limit", ".kritik/gone.md: referenced but not found",
 			},
 		},
 		{
+			// The operator's 14 bytes and a separator leave the repository's
+			// file room for all but its last character, whose first byte
+			// would still fit.
 			name: "instructions are capped at a UTF-8 boundary", doc: "review:\n  instructions: [.kritik/a.md, .kritik/b.md]\n",
-			files:   with(repoconfig.Files{".kritik/a.md": strings.Repeat("a", repoconfig.MaxInstructionBytes-1) + "é", ".kritik/b.md": "never seen"}),
+			files:   with(repoconfig.Files{".kritik/a.md": strings.Repeat("a", repoconfig.MaxInstructionBytes-17) + "é", ".kritik/b.md": "never seen"}),
 			enabled: true, ignore: []string{"vendor/**"},
-			repoFiles: []string{".kritik/a.md", ".kritik/b.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			templates: operatorDefaults, strict: true, instructions: []string{strings.Repeat("a", repoconfig.MaxInstructionBytes-1)},
-			notes: []string{"repository instructions truncated to 32 KiB"},
+			repoFiles: []string{"ops/rules.md", ".kritik/a.md", ".kritik/b.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
+			templates: operatorDefaults, strict: true,
+			instructions: []string{"operator rules", strings.Repeat("a", repoconfig.MaxInstructionBytes-17)},
+			notes:        []string{"repository instructions truncated to 32 KiB"},
 		},
 		{
 			name: "invalid yaml is noted and the operator's settings apply", doc: "enabled: false\nunknown: 1\n", files: operatorFiles,
@@ -179,7 +184,7 @@ func TestEffectiveSkip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e, _ := effective(configfile.Settings{Enabled: true}, []byte(tt.doc))
-			got, _ := e.skip(vars(tt.body), tt.changed)
+			got, _ := e.Check(vars(tt.body), tt.changed)
 			if got != tt.want {
 				t.Fatalf("skip = %q, want %q", got, tt.want)
 			}
@@ -272,6 +277,49 @@ func TestSettleLeft(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := settleLeft(tt.trigger, tt.settle, created, tt.now); got != tt.want {
 				t.Fatalf("settleLeft = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func (f fileForge) MergeBase(context.Context, string, string, int, string, string) (string, error) {
+	return "base", nil
+}
+
+func TestFollowUpRepoConfig(t *testing.T) {
+	files := map[string]string{"ops/rules.md": "operator rules", ".kritik/rules.md": "repo rules"}
+	with := func(doc string) map[string]string {
+		m := maps.Clone(files)
+		m[repoconfig.FileName] = doc
+		return m
+	}
+	tests := []struct {
+		name         string
+		files        map[string]string
+		reason       string
+		model        configfile.ModelRef
+		instructions []string
+	}{
+		{name: "no file", files: files, model: "p/big", instructions: []string{"operator rules"}},
+		{
+			name: "the repository's model and instructions", files: with("models: { review: p/small }\nreview: { instructions: [.kritik/rules.md] }\n"),
+			model: "p/small", instructions: []string{"operator rules", "repo rules"},
+		},
+		{name: "a model outside the bounds is dropped", files: with("models: { review: p/huge }\n"), model: "p/big", instructions: []string{"operator rules"}},
+		{name: "disabled", files: with("enabled: false\n"), reason: "disabled in .kritik.yaml", model: "p/big"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			settings := operatorSettings(t)
+			settings.Models.Review = "p/big"
+			settings.Allow.Models = []configfile.ModelRef{"p/big", "p/small"}
+			f := &followUp{client: fileForge{files: tt.files}, owner: "o", repo: "r", pr: &pullRequest{number: 1}, settings: settings}
+			reason, err := f.repoConfig(t.Context())
+			if err != nil || reason != tt.reason {
+				t.Fatalf("repoConfig = %q, %v; want %q", reason, err, tt.reason)
+			}
+			if f.settings.Models.Review != tt.model || !slices.Equal(f.instructions, tt.instructions) {
+				t.Fatalf("model = %s, instructions = %q", f.settings.Models.Review, f.instructions)
 			}
 		})
 	}

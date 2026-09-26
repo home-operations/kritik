@@ -25,6 +25,12 @@ Answer the last message directly and concisely in plain markdown without heading
 path and line when it helps. If you were wrong in a finding, say so plainly. If the question cannot be answered
 from what you see, say what is missing.`
 
+// FollowUpSystemPrompt is FollowUpSystem with the repository's
+// instructions appended, as SystemPrompt appends them to a review's.
+func FollowUpSystemPrompt(instructions []string) string {
+	return withInstructions(FollowUpSystem, instructions)
+}
+
 var followUpSchema = jsonSchema{
 	Type: schemaObject,
 	Properties: map[string]*jsonSchema{

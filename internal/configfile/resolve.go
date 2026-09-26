@@ -102,6 +102,7 @@ func (s *Settings) apply(o *Overrides) {
 		s.Incremental.MaxDeltaFiles = *o.Incremental.MaxDeltaFiles
 	}
 	s.Review = s.Review.overlay(o.Review)
+	s.Allow = s.Allow.overlay(o.Allow)
 }
 
 // PollInterval is how often the leader polls, 0 when polling is off.
@@ -208,6 +209,34 @@ func (r Review) overlay(o ReviewSpec) Review {
 		r.Templates.Inline = *o.Templates.Inline
 	}
 	return r
+}
+
+func (a Allow) overlay(o Allow) Allow {
+	if o.Modes != nil {
+		a.Modes = o.Modes
+	}
+	if o.Models != nil {
+		a.Models = o.Models
+	}
+	if o.Commands != nil {
+		a.Commands = o.Commands
+	}
+	if o.Agent.MaxSteps != nil {
+		a.Agent.MaxSteps = o.Agent.MaxSteps
+	}
+	if o.Agent.MaxToolOutputBytes != nil {
+		a.Agent.MaxToolOutputBytes = o.Agent.MaxToolOutputBytes
+	}
+	if o.Agent.MaxTokens != nil {
+		a.Agent.MaxTokens = o.Agent.MaxTokens
+	}
+	if o.Agent.Timeout != nil {
+		a.Agent.Timeout = o.Agent.Timeout
+	}
+	if o.Settle != nil {
+		a.Settle = o.Settle
+	}
+	return a
 }
 
 func (a AgentSettings) overlay(o Agent) AgentSettings {

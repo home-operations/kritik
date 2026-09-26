@@ -111,6 +111,17 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		}
 		mode, base = modeIncremental, active.commit
 	}
+	// The repository's own .kritik.yaml, as of the commit indexed, can stop
+	// indexing and add ignore globs.
+	doc, _, err := readRepoConfig(ctx, client, owner, name, commit)
+	if err != nil {
+		return err
+	}
+	eff, _ := effective(settings, doc)
+	if !eff.Enabled {
+		logger.Info("index skipped, disabled in .kritik.yaml")
+		return nil
+	}
 	token, err := client.GitToken(ctx)
 	if err != nil {
 		return err
@@ -133,7 +144,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": commit},
 		Job: runner.Spec{
 			Version: runner.SpecVersion, Kind: runner.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name),
-			Head: commit, Base: base, Ignore: settings.Ignore,
+			Head: commit, Base: base, Ignore: eff.Ignore,
 		},
 		Secrets:  runner.Secrets{GitToken: token},
 		Deadline: deadline, Resources: resources,

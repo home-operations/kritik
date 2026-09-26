@@ -592,7 +592,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
 	args := jobs.ReviewArgs{TenantID: h.tenant.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
 		HeadSHA: strings.Repeat("c", 40), Trigger: "test"}
-	pr, err := h.review.load(h.ctx, args)
+	pr, err := loadPullRequest(h.ctx, h.st, args.TenantID, args.RepositoryID, args.Number)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1065,7 +1065,7 @@ func checkAgentCanceledCharges(t *testing.T, h *agenticHarness) {
 func checkFailRun(t *testing.T, h *agenticHarness) {
 	args := jobs.ReviewArgs{TenantID: h.tenant.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
 		HeadSHA: strings.Repeat("d", 40), Trigger: "test"}
-	pr, err := h.review.load(h.ctx, args)
+	pr, err := loadPullRequest(h.ctx, h.st, args.TenantID, args.RepositoryID, args.Number)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1109,7 +1109,7 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 		t.Run(tt.name, func(t *testing.T) {
 			args := jobs.ReviewArgs{TenantID: h.tenant.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"),
 				Number: 1, HeadSHA: tt.head, Trigger: "test"}
-			pr, err := h.review.load(h.ctx, args)
+			pr, err := loadPullRequest(h.ctx, h.st, args.TenantID, args.RepositoryID, args.Number)
 			if err != nil {
 				t.Fatal(err)
 			}

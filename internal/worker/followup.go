@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"regexp"
 	"sort"
@@ -18,6 +19,7 @@ import (
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/store"
 )
@@ -45,12 +47,6 @@ type FollowUp struct {
 	Completers CompleterSource
 }
 
-type followUpPR struct {
-	id, repositoryID, installation, repository, title, author, baseRef string
-	externalID                                                         int64
-	number                                                             int
-}
-
 // Work implements river.Worker.
 func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) error {
 	args := job.Args
@@ -60,11 +56,10 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		return err
 	}
 	logger := w.Logger.With("tenant", tenant.Slug, "pr", args.Number, "comment", args.CommentID)
-	pr, err := w.loadPR(ctx, args)
+	pr, err := loadPullRequest(ctx, w.Store, args.TenantID, args.RepositoryID, args.Number)
 	if err != nil {
 		return err
 	}
-	pr.number = args.Number
 	client, err := w.client(ctx, file, pr.installation, pr.externalID, pr.repository)
 	if err != nil {
 		return err
@@ -94,37 +89,22 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	return nil
 }
 
-func (w *FollowUp) loadPR(ctx context.Context, args jobs.FollowUpArgs) (*followUpPR, error) {
-	var pr followUpPR
-	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `
-			SELECT p.id, p.repository_id, i.name, r.name, p.title, p.author, p.base_ref, coalesce(i.external_id, 0)
-			FROM pull_requests p JOIN repositories r ON r.id = p.repository_id JOIN installations i ON i.id = r.installation_id
-			WHERE p.repository_id = $1 AND p.number = $2`, args.RepositoryID, args.Number).
-			Scan(&pr.id, &pr.repositoryID, &pr.installation, &pr.repository, &pr.title, &pr.author, &pr.baseRef, &pr.externalID)
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, river.JobCancel(fmt.Errorf("worker: pull request %d of %s is unknown", args.Number, args.RepositoryID))
-	}
-	if err != nil {
-		return nil, fmt.Errorf("worker: load pull request: %w", err)
-	}
-	return &pr, nil
-}
-
 type followUp struct {
 	w        *FollowUp
 	file     *configfile.File
 	tenant   *configfile.Tenant
 	settings configfile.Settings
-	client   forge.Client
-	pr       *followUpPR
-	comment  forge.Comment
-	owner    string
-	repo     string
-	botLogin string
-	jobID    int64
-	logger   *slog.Logger
+	// instructions are the contents of the review instructions settings
+	// name, once repoConfig has read them.
+	instructions []string
+	client       forge.Client
+	pr           *pullRequest
+	comment      forge.Comment
+	owner        string
+	repo         string
+	botLogin     string
+	jobID        int64
+	logger       *slog.Logger
 }
 
 // alreadyAnswered guards a retried job: once a reply is on the forge the
@@ -154,6 +134,14 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 // posted may fail the job: a retry would answer twice.
 func (f *followUp) run(ctx context.Context) (string, error) {
 	if reason := f.disqualified(ctx); reason != "" {
+		f.logger.Info("follow-up ignored", "reason", reason)
+		return followUpIgnored, f.record(ctx, followUpIgnored, reason, 0, "")
+	}
+	reason, err := f.repoConfig(ctx)
+	if err != nil {
+		return followUpFailed, err
+	}
+	if reason != "" {
 		f.logger.Info("follow-up ignored", "reason", reason)
 		return followUpIgnored, f.record(ctx, followUpIgnored, reason, 0, "")
 	}
@@ -364,6 +352,40 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 	return rec, err
 }
 
+// repoConfig applies the .kritik.yaml at the pull request's merge base to
+// the follow-up's settings, so it answers with the repository's model and
+// instructions, which it reads from the same commit. It returns why the
+// file stops the follow-up, or "".
+func (f *followUp) repoConfig(ctx context.Context) (string, error) {
+	base, err := f.client.MergeBase(ctx, f.owner, f.repo, f.pr.number, f.pr.baseRef, f.pr.headSHA)
+	if err != nil {
+		return "", err
+	}
+	doc, _, err := readRepoConfig(ctx, f.client, f.owner, f.repo, base)
+	if err != nil {
+		return "", err
+	}
+	eff, _ := effective(f.settings, doc)
+	if !eff.Enabled {
+		return repoconfig.SkipDisabled.Description(), nil
+	}
+	f.settings = eff.Settings
+	// A follow-up has no summary to note a file it could not use in, so
+	// one over the forge's size limit is left out like a missing one.
+	files, _, err := repoconfig.Collect(func(p string) ([]byte, error) {
+		b, err := f.client.FileAt(ctx, f.owner, f.repo, base, p)
+		if errors.Is(err, forge.ErrFileTooLarge) {
+			return nil, fmt.Errorf("worker: %s: %w", p, fs.ErrNotExist)
+		}
+		return b, err
+	}, eff.Review.Instructions...)
+	if err != nil {
+		return "", err
+	}
+	f.instructions, _ = repoconfig.Instructions(files, eff.Review.Instructions)
+	return "", nil
+}
+
 // complete asks the review model for the reply, recording the call
 // against the comment and, when there is one, reviewID.
 func (f *followUp) complete(ctx context.Context, msg, reviewID string) (model.CompletionResponse, error) {
@@ -379,7 +401,7 @@ func (f *followUp) complete(ctx context.Context, msg, reviewID string) (model.Co
 		TenantID: f.tenant.ID(), ReviewID: reviewID, FollowupCommentID: f.comment.ID, Kind: store.ModelCallFollowUp,
 	}, transcriptMask(f.file, f.file.Providers[ref.Provider()]))}
 	req := model.CompletionRequest{
-		System: review.FollowUpSystem, User: msg, Model: ref.Model(),
+		System: review.FollowUpSystemPrompt(f.instructions), User: msg, Model: ref.Model(),
 		Schema: review.FollowUpSchema(), SchemaName: "reply", MaxTokens: maxOutputTokens,
 	}
 	if fb := f.settings.Models.Fallback; fb != "" && fb.Provider() == ref.Provider() {

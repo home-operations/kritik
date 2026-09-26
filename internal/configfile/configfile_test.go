@@ -697,6 +697,65 @@ defaults:
 	})
 }
 
+// TestAllow checks the allow block resolves bound by bound like any other
+// setting, and that load refuses a bound a repository could not choose
+// and an operator value outside its own bounds.
+func TestAllow(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	const head = `providers:
+  p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }
+defaults:
+  models: { review: p/big }
+  allow:
+    modes: [single, agentic]
+    models: [p/big, p/small]
+    commands: [rg, fd]
+    agent: { maxSteps: 60, timeout: 20m }
+    settle: 30m
+`
+	doc := func(tenantKeys, repos string) string {
+		return head + strings.Replace(minimal, "slug: acme", "slug: acme\n"+tenantKeys+"    repositories: ["+repos+"]", 1)
+	}
+
+	f, err := Parse([]byte(doc("    allow: { models: [p/big] }\n", "{ name: acme/x, allow: { settle: 5m, commands: [] } }")))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x")
+	a := s.Allow
+	if !slices.Equal(a.Modes, []ReviewMode{ReviewSingle, ReviewAgentic}) || !slices.Equal(a.Models, []ModelRef{"p/big"}) ||
+		a.Commands == nil || len(a.Commands) != 0 || *a.Agent.MaxSteps != 60 || *a.Agent.Timeout != 20*time.Minute ||
+		a.Agent.MaxTokens != nil || *a.Settle != 5*time.Minute {
+		t.Fatalf("allow = %+v", a)
+	}
+	if tenant := f.Settings(&f.Tenants[0], "", ""); *tenant.Allow.Settle != 30*time.Minute || !slices.Equal(tenant.Allow.Commands, []string{"rg", "fd"}) {
+		t.Fatalf("tenant allow = %+v", tenant.Allow)
+	}
+
+	tests := []struct {
+		name, yaml, want string
+	}{
+		{"an unknown mode", doc("    allow: { modes: [turbo] }\n", ""), "tenants[0].allow.modes[0] must be single or agentic"},
+		{"a model of an undeclared provider", doc("    allow: { models: [q/big] }\n", ""), "allow.models[0] references provider \"q\""},
+		{"a command path", doc("", "{ name: acme/x, allow: { commands: [/bin/sh] } }"), "allow.commands[0] \"/bin/sh\" must be a bare command name"},
+		{"a bound that is not positive", doc("    allow: { agent: { maxTokens: 0 } }\n", ""), "allow.agent bounds must be positive"},
+		{"a negative settle bound", doc("    allow: { settle: -1s }\n", ""), "allow.settle must not be negative"},
+		{"the operator's mode outside its bounds", doc("    mode: agentic\n    allow: { modes: [single] }\n", ""), "mode agentic is outside allow.modes"},
+		{"the operator's model outside its bounds", doc("    models: { fallback: p/tiny }\n", ""), "models.fallback \"p/tiny\" is outside allow.models"},
+		{"a repository's command outside its bounds", doc("", "{ name: acme/x, agent: { commands: [curl] } }"), "agent.commands \"curl\" is outside allow.commands"},
+		{"a built-in limit above its bound", doc("    allow: { agent: { maxSteps: 10 } }\n", ""), "agent.maxSteps is above allow.agent.maxSteps"},
+		{"the operator's settle above its bound", doc("    settle: 1h\n", ""), "settle is above allow.settle"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := Parse([]byte(tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Parse = %v, want an error mentioning %q", err, tt.want)
+			}
+		})
+	}
+}
+
 // TestTools checks the tool catalog: what a run allowed some commands
 // mounts, and the names, images, paths and commands load refuses.
 func TestTools(t *testing.T) {

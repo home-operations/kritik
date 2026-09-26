@@ -395,8 +395,11 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[
 		if err := f.validateOverrides(rwhere, &r.Overrides); err != nil {
 			return err
 		}
+		if err := checkWithinAllow(rwhere, f.Settings(t, in.Name, r.Name)); err != nil {
+			return err
+		}
 	}
-	return nil
+	return checkWithinAllow(where, f.Settings(t, "", ""))
 }
 
 // compile compiles the filter the scope writes, if any; an empty one
@@ -476,7 +479,7 @@ func (f *File) validateOverrides(where string, r *Overrides) error {
 			return fmt.Errorf("configfile: %s.review.templates.%s: %w", where, t.name, err)
 		}
 	}
-	return nil
+	return f.validateAllow(where+".allow", &r.Allow)
 }
 
 // checkRepoPath rejects a repository path that is empty, absolute or
@@ -539,14 +542,95 @@ func (f *File) checkModels(where string, m ModelsSpec) error {
 		if r == nil || *r == "" {
 			continue
 		}
-		ref := *r
-		p := ref.Provider()
-		if p == "" || ref.Model() == "" {
-			return fmt.Errorf("configfile: %s.%s must be \"<provider>/<model>\", got %q", where, role, ref)
+		if err := f.checkModelRef(where+"."+role, *r); err != nil {
+			return err
 		}
-		if _, ok := f.Providers[p]; !ok {
-			return fmt.Errorf("configfile: %s.%s references provider %q, which is not declared under providers", where, role, p)
+	}
+	return nil
+}
+
+// checkModelRef rejects a model reference that is not
+// "<provider>/<model>" of a declared provider.
+func (f *File) checkModelRef(where string, ref ModelRef) error {
+	p := ref.Provider()
+	if p == "" || ref.Model() == "" {
+		return fmt.Errorf("configfile: %s must be \"<provider>/<model>\", got %q", where, ref)
+	}
+	if _, ok := f.Providers[p]; !ok {
+		return fmt.Errorf("configfile: %s references provider %q, which is not declared under providers", where, p)
+	}
+	return nil
+}
+
+// validateAllow checks one scope's bounds name what a repository could
+// choose: review modes, models of declared providers, bare command names,
+// positive limits and a settle time that is not negative.
+func (f *File) validateAllow(where string, a *Allow) error {
+	for i, m := range a.Modes {
+		if !m.Valid() {
+			return fmt.Errorf("configfile: %s.modes[%d] must be %s or %s, got %q", where, i, ReviewSingle, ReviewAgentic, m)
 		}
+	}
+	for i, ref := range a.Models {
+		if err := f.checkModelRef(fmt.Sprintf("%s.models[%d]", where, i), ref); err != nil {
+			return err
+		}
+	}
+	for i, c := range a.Commands {
+		if !commandRe.MatchString(c) {
+			return fmt.Errorf("configfile: %s.commands[%d] %q must be a bare command name, not a path", where, i, c)
+		}
+	}
+	ag := a.Agent
+	if (ag.MaxSteps != nil && *ag.MaxSteps <= 0) || (ag.MaxToolOutputBytes != nil && *ag.MaxToolOutputBytes <= 0) ||
+		(ag.MaxTokens != nil && *ag.MaxTokens <= 0) || (ag.Timeout != nil && *ag.Timeout <= 0) {
+		return fmt.Errorf("configfile: %s.agent bounds must be positive", where)
+	}
+	if ag.Timeout != nil && *ag.Timeout > jobtimeout.MaxAgentTimeout {
+		return fmt.Errorf("configfile: %s.agent.timeout must not exceed %s", where, jobtimeout.MaxAgentTimeout)
+	}
+	if a.Settle != nil && *a.Settle < 0 {
+		return fmt.Errorf("configfile: %s.settle must not be negative", where)
+	}
+	return nil
+}
+
+// checkWithinAllow rejects resolved settings whose own values lie outside
+// the bounds they give the repository: the repository would be refused
+// the operator's own choice.
+func checkWithinAllow(where string, s Settings) error {
+	a := s.Allow
+	if a.Modes != nil && !slices.Contains(a.Modes, s.Mode) {
+		return fmt.Errorf("configfile: %s: mode %s is outside allow.modes", where, s.Mode)
+	}
+	for _, m := range []struct {
+		role string
+		ref  ModelRef
+	}{{"review", s.Models.Review}, {"fallback", s.Models.Fallback}} {
+		if a.Models != nil && m.ref != "" && !slices.Contains(a.Models, m.ref) {
+			return fmt.Errorf("configfile: %s: models.%s %q is outside allow.models", where, m.role, m.ref)
+		}
+	}
+	for _, c := range s.Agent.Commands {
+		if a.Commands != nil && !slices.Contains(a.Commands, c) {
+			return fmt.Errorf("configfile: %s: agent.commands %q is outside allow.commands", where, c)
+		}
+	}
+	var over string
+	switch ag, bound := s.Agent, a.Agent; {
+	case bound.MaxSteps != nil && ag.MaxSteps > *bound.MaxSteps:
+		over = "agent.maxSteps"
+	case bound.MaxToolOutputBytes != nil && ag.MaxToolOutputBytes > *bound.MaxToolOutputBytes:
+		over = "agent.maxToolOutputBytes"
+	case bound.MaxTokens != nil && ag.MaxTokens > *bound.MaxTokens:
+		over = "agent.maxTokens"
+	case bound.Timeout != nil && ag.Timeout > *bound.Timeout:
+		over = "agent.timeout"
+	case a.Settle != nil && s.Settle > *a.Settle:
+		over = "settle"
+	}
+	if over != "" {
+		return fmt.Errorf("configfile: %s: %s is above allow.%s; set it at or below the bound", where, over, over)
 	}
 	return nil
 }

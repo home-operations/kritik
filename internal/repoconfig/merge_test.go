@@ -2,37 +2,100 @@ package repoconfig
 
 import (
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritik/internal/configfile"
 )
+
+func operator() configfile.Settings {
+	return configfile.Settings{
+		Enabled: true, Ignore: []string{"vendor/**"}, Mode: configfile.ReviewSingle, Settle: 2 * time.Minute,
+		Models: configfile.Models{Review: "p/big"},
+		Agent:  configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute, Commands: []string{"rg"}},
+		Review: configfile.Review{
+			Instructions: []string{"docs/rules.md"}, RequireSuggestedFix: true,
+			Templates: configfile.ReviewTemplates{Summary: "docs/summary.tmpl"},
+		},
+	}
+}
 
 func TestMerge(t *testing.T) {
 	t.Parallel()
-	op := Operator{
-		Enabled: true, Ignore: []string{"vendor/**"}, Instructions: []string{"docs/rules.md"}, RequireSuggestedFix: true,
-		Templates: Templates{Summary: "docs/summary.tmpl"},
-	}
 	tests := []struct {
 		name    string
 		doc     string
-		want    Operator
+		allow   configfile.Allow
+		want    func(*configfile.Settings)
 		filter  bool
 		skip    []string
+		dropped []string
 		wantErr string
 	}{
-		{name: "no file", want: op},
+		{name: "no file"},
 		{
-			name: "the file narrows and replaces presentation",
+			name: "the file narrows, appends instructions and replaces presentation",
 			doc: "enabled: false\nfilter: '!pr.draft'\nignore: [gen/**, vendor/**]\nskip:\n  onlyPaths: [docs/**]\n" +
-				"review:\n  instructions: [.kritik/rules.md]\n  requireSuggestedFix: false\n  templates:\n    inline: .kritik/inline.tmpl\n",
-			want: Operator{Ignore: []string{"vendor/**", "gen/**"}, Instructions: []string{".kritik/rules.md"},
-				Templates: Templates{Summary: "docs/summary.tmpl", Inline: ".kritik/inline.tmpl"}},
+				"review:\n  instructions: [.kritik/rules.md, docs/rules.md]\n  templates:\n    inline: .kritik/inline.tmpl\n",
+			want: func(s *configfile.Settings) {
+				s.Enabled, s.Ignore = false, []string{"vendor/**", "gen/**"}
+				s.Review.Instructions = []string{"docs/rules.md", ".kritik/rules.md"}
+				s.Review.Templates.Inline = ".kritik/inline.tmpl"
+			},
 			filter: true, skip: []string{"docs/**"},
 		},
-		{name: "enabled true cannot widen", doc: "enabled: true\n", want: op},
-		{name: "a file that does not parse leaves the operator's settings", doc: "unknown: 1\n", want: op, wantErr: "unknown"},
+		{name: "enabled true cannot widen", doc: "enabled: true\n"},
+		{
+			name: "requireSuggestedFix may only turn on", doc: "review:\n  requireSuggestedFix: false\n",
+			dropped: []string{".kritik.yaml: review.requireSuggestedFix false was dropped; allowed: true, since the operator requires a suggested fix"},
+		},
+		{
+			name: "with no bounds set, the operator's own values or lower",
+			doc:  "mode: single\nmodels: { review: p/big }\nagent: { maxSteps: 20, maxTokens: 5000, commands: [] }\nsettle: 30s\n",
+			want: func(s *configfile.Settings) {
+				s.Agent.MaxSteps, s.Agent.Commands, s.Settle = 20, []string{}, 30*time.Second
+			},
+		},
+		{
+			name: "with no bounds set, anything else is dropped",
+			doc:  "mode: agentic\nmodels: { review: p/small, fallback: p/big }\nagent: { maxSteps: 31, timeout: 0s, commands: [rg, curl] }\nsettle: 3m\n",
+			dropped: []string{
+				`.kritik.yaml: mode "agentic" was dropped; allowed: single`,
+				`.kritik.yaml: models.review "p/small" was dropped; allowed: p/big`,
+				`.kritik.yaml: models.fallback "p/big" was dropped; allowed: none`,
+				`.kritik.yaml: agent.commands "curl" was dropped; allowed: rg`,
+				".kritik.yaml: agent.maxSteps 31 was dropped; allowed: above 0, at most 30",
+				".kritik.yaml: agent.timeout 0s was dropped; allowed: above 0, at most 10m0s",
+				".kritik.yaml: settle 3m0s was dropped; allowed: 0s to 2m0s",
+			},
+		},
+		{
+			name: "the bounds open choices past the operator's own",
+			doc:  "mode: agentic\nmodels: { review: p/small, fallback: p/big }\nagent: { maxSteps: 60, timeout: 20m, commands: [fd, curl] }\nsettle: 30m\n",
+			allow: configfile.Allow{
+				Modes: []configfile.ReviewMode{configfile.ReviewSingle, configfile.ReviewAgentic}, Models: []configfile.ModelRef{"p/big", "p/small"},
+				Commands: []string{"rg", "fd", "curl"}, Agent: configfile.AllowAgent{MaxSteps: new(60), Timeout: new(20 * time.Minute)},
+				Settle: new(30 * time.Minute),
+			},
+			want: func(s *configfile.Settings) {
+				s.Mode, s.Models = configfile.ReviewAgentic, configfile.Models{Review: "p/small", Fallback: "p/big"}
+				s.Agent.MaxSteps, s.Agent.Timeout, s.Agent.Commands = 60, 20*time.Minute, []string{"fd", "curl"}
+				s.Settle = 30 * time.Minute
+			},
+		},
+		{
+			name: "a value past its bound is dropped, not clamped", doc: "agent: { maxTokens: 9000 }\nsettle: 31m\n",
+			allow: configfile.Allow{Agent: configfile.AllowAgent{MaxTokens: new(int64(8000))}, Settle: new(30 * time.Minute)},
+			dropped: []string{
+				".kritik.yaml: agent.maxTokens 9000 was dropped; allowed: above 0, at most 8000",
+				".kritik.yaml: settle 31m0s was dropped; allowed: 0s to 30m0s",
+			},
+		},
+		{name: "a secret reference does not decode", doc: "models: { review: { env: KEY } }\n", wantErr: "cannot unmarshal"},
+		{name: "a file that does not parse leaves the operator's settings", doc: "unknown: 1\n", wantErr: "unknown"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -41,19 +104,27 @@ func TestMerge(t *testing.T) {
 			if tt.doc != "" {
 				doc = []byte(tt.doc)
 			}
+			op := operator()
+			op.Allow = tt.allow
+			want := operator()
+			want.Allow = tt.allow
+			if tt.want != nil {
+				tt.want(&want)
+			}
 			m, err := Merge(doc, op)
 			if (err != nil) != (tt.wantErr != "") || (err != nil && !strings.Contains(err.Error(), tt.wantErr)) {
 				t.Fatalf("err = %v, want %q", err, tt.wantErr)
 			}
-			if m.Enabled != tt.want.Enabled || !slices.Equal(m.Ignore, tt.want.Ignore) || !slices.Equal(m.Instructions, tt.want.Instructions) ||
-				m.RequireSuggestedFix != tt.want.RequireSuggestedFix || m.Templates != tt.want.Templates ||
-				(m.Filter != nil) != tt.filter || !slices.Equal(m.Skip.OnlyPaths, tt.skip) {
-				t.Fatalf("Merge = %+v", m)
+			if !reflect.DeepEqual(m.Settings, want) {
+				t.Fatalf("settings = %+v\nwant       %+v", m.Settings, want)
+			}
+			if (m.InRepoFilter != nil) != tt.filter || !slices.Equal(m.Skip.OnlyPaths, tt.skip) || !slices.Equal(m.Dropped, tt.dropped) {
+				t.Fatalf("filter=%v skip=%v dropped=%q", m.InRepoFilter != nil, m.Skip.OnlyPaths, m.Dropped)
+			}
+			if !reflect.DeepEqual(op, func() configfile.Settings { o := operator(); o.Allow = tt.allow; return o }()) {
+				t.Fatal("Merge changed the operator's settings")
 			}
 		})
-	}
-	if _, err := Merge([]byte("ignore: [x/**]\n"), op); err != nil || len(op.Ignore) != 1 {
-		t.Fatalf("Merge must not change the operator's ignore list: %v %v", op.Ignore, err)
 	}
 }
 
@@ -81,7 +152,7 @@ func TestMergedCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, err := Merge([]byte(tt.doc), Operator{Enabled: true})
+			m, err := Merge([]byte(tt.doc), configfile.Settings{Enabled: true})
 			if err != nil {
 				t.Fatal(err)
 			}
