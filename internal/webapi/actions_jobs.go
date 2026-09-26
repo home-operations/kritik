@@ -1,5 +1,3 @@
-//go:build ignore
-
 package webapi
 
 import (
@@ -37,5 +35,12 @@ func (a JobActions) Cancel(ctx context.Context, tx pgx.Tx, reviewID, by string) 
 
 // Reindex implements Actions.
 func (a JobActions) Reindex(ctx context.Context, tx pgx.Tx, tenantID, repositoryID string) (int64, error) {
-	return jobs.EnqueueReindex(ctx, tx, a.Queue, tenantID, repositoryID)
+	id, err := jobs.EnqueueReindex(ctx, tx, a.Queue, tenantID, repositoryID)
+	if errors.Is(err, jobs.ErrRepositoryNotFound) {
+		return 0, ErrRepositoryNotFound
+	}
+	if errors.Is(err, jobs.ErrReindexQueued) {
+		return 0, ErrReindexQueued
+	}
+	return id, err
 }
