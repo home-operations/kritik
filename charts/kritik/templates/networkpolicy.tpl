@@ -23,7 +23,7 @@ spec:
         - port: {{ .Values.service.metricsPort }}
           protocol: TCP
         {{- if include "kritik.hasWeb" . }}
-        - port: {{ .Values.service.webPort }}
+        - port: {{ .Values.web.port }}
           protocol: TCP
         {{- end }}
     {{- if .Values.gateway.enabled }}

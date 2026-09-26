@@ -384,18 +384,22 @@ networkPolicy:
   # -- Postgres port allowed for egress.
   postgresPort: 5432
 
-# The dashboard signs and verifies session cookies with an AES-256 key
-# (KRITIK_DASHBOARD_KEY); oldKeysSecret holds keys retired during rotation,
-# accepted for verification only (KRITIK_DASHBOARD_OLD_KEYS), so existing
-# sessions survive a key change. Wired onto every non-runner role.
+# KRITIK_DASHBOARD_KEY is the AES-256 key that seals every dashboard-managed
+# tenant's credentials (installation tokens, App keys, webhook secrets) at
+# rest; it has nothing to do with sessions. Wired onto every non-runner role
+# and required there once a dashboard tenant exists. To rotate it, move the
+# old value into oldKeysSecret (KRITIK_DASHBOARD_OLD_KEYS), which only opens
+# values sealed under it, and keep it there until every value has been
+# written again. Losing a key that still seals a value makes those
+# credentials unreadable, and the pod then fails to start.
 dashboard:
   keySecret:
-    # -- Secret holding the current dashboard session key.
+    # -- Secret holding the key that seals dashboard tenants' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start.
     name: ""
     # -- Key in that Secret.
     key: key
   oldKeysSecret:
-    # -- (optional) Secret holding retired dashboard session keys, for verification only.
+    # -- (optional) Secret holding retired sealing keys, comma-separated, only to open values sealed under them.
     name: ""
     # -- Key in that Secret.
     key: old-keys

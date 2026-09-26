@@ -78,7 +78,7 @@
       "type": "object"
     },
     "dashboard": {
-      "description": "The dashboard signs and verifies session cookies with an AES-256 key\n(KRITIK_DASHBOARD_KEY); oldKeysSecret holds keys retired during rotation,\naccepted for verification only (KRITIK_DASHBOARD_OLD_KEYS), so existing\nsessions survive a key change. Wired onto every non-runner role.",
+      "description": "KRITIK_DASHBOARD_KEY is the AES-256 key that seals every dashboard-managed\ntenant's credentials (installation tokens, App keys, webhook secrets) at\nrest; it has nothing to do with sessions. Wired onto every non-runner role\nand required there once a dashboard tenant exists. To rotate it, move the\nold value into oldKeysSecret (KRITIK_DASHBOARD_OLD_KEYS), which only opens\nvalues sealed under it, and keep it there until every value has been\nwritten again. Losing a key that still seals a value makes those\ncredentials unreadable, and the pod then fails to start.",
       "properties": {
         "keySecret": {
           "properties": {
@@ -90,7 +90,7 @@
             },
             "name": {
               "default": "",
-              "description": "Secret holding the current dashboard session key.",
+              "description": "Secret holding the key that seals dashboard tenants' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start.",
               "title": "name",
               "type": "string"
             }
@@ -109,7 +109,7 @@
             },
             "name": {
               "default": "",
-              "description": "(optional) Secret holding retired dashboard session keys, for verification only.",
+              "description": "(optional) Secret holding retired sealing keys, comma-separated, only to open values sealed under them.",
               "title": "name",
               "type": "string"
             }

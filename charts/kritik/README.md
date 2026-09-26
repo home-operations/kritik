@@ -219,9 +219,9 @@ Kubernetes: `>=1.25.0-0`
 | config.reloadInterval | string | `"10s"` | How often each replica re-reads the file (Go duration). |
 | config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. |
 | dashboard.keySecret.key | string | `"key"` | Key in that Secret. |
-| dashboard.keySecret.name | string | `""` | Secret holding the current dashboard session key. |
+| dashboard.keySecret.name | string | `""` | Secret holding the key that seals dashboard tenants' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start. |
 | dashboard.oldKeysSecret.key | string | `"old-keys"` | Key in that Secret. |
-| dashboard.oldKeysSecret.name | optional | `""` | Secret holding retired dashboard session keys, for verification only. |
+| dashboard.oldKeysSecret.name | optional | `""` | Secret holding retired sealing keys, comma-separated, only to open values sealed under them. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritik_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |
