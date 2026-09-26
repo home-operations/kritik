@@ -92,6 +92,9 @@ type Review struct {
 	Templates           Templates     `yaml:"templates,omitempty"`
 	MinSeverity         string        `yaml:"minSeverity,omitempty"`
 	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
+	// Context names files that explain the code, added after the
+	// operator's.
+	Context []configfile.ContextFile `yaml:"context,omitempty"`
 }
 
 // Skip decides whether a PR should be skipped outright based on the paths it
@@ -155,6 +158,11 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 	for i, g := range f.Skip.OnlyPaths {
 		if !validGlob(g) {
 			return File{}, nil, fmt.Errorf("repoconfig: skip.onlyPaths[%d] %q is not a valid glob", i, g)
+		}
+	}
+	for i, c := range f.Review.Context {
+		if err := c.Check(); err != nil {
+			return File{}, nil, fmt.Errorf("repoconfig: review.context[%d]: %w", i, err)
 		}
 	}
 	for i, in := range f.Review.Instructions {
@@ -225,6 +233,9 @@ func (f File) Referenced() []string {
 	}
 	add(f.Review.Templates.Summary)
 	add(f.Review.Templates.Inline)
+	for _, c := range f.Review.Context {
+		add(c.Path)
+	}
 	return out
 }
 
@@ -309,6 +320,19 @@ func Active(paths []string, scoped map[string][]string, changed []string) []stri
 			continue
 		}
 		out = append(out, p)
+	}
+	return out
+}
+
+// ActiveContext is the context files that apply to a change of the changed
+// paths, in order: each without paths, and each with them when a changed
+// path matches one.
+func ActiveContext(files []configfile.ContextFile, changed []string) []configfile.ContextFile {
+	var out []configfile.ContextFile
+	for _, f := range files {
+		if len(f.Paths) == 0 || slices.ContainsFunc(changed, func(c string) bool { return matchesAny(f.Paths, c) }) {
+			out = append(out, f)
+		}
 	}
 	return out
 }

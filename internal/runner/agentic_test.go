@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritik/internal/agent"
+	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
@@ -92,6 +93,18 @@ func TestAgentPrompt(t *testing.T) {
 				t.Fatalf("incremental prompt lacks the prior findings:\n%s", user)
 			}
 		})
+	}
+}
+
+func TestAgentPromptPointsAtContext(t *testing.T) {
+	s := agentPromptSpec()
+	s.Prompt.Context = []configfile.ContextFile{
+		{Path: "docs/arch.md", Description: "how the parts fit"},
+		{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}},
+	}
+	_, user, _ := agentPrompt(s, repoconfig.Files{"docs/arch.md": "never inlined"}, packView{Diff: agentDiff, Changed: []string{"main.go"}}, nil)
+	if !strings.Contains(user, "### docs/arch.md: how the parts fit\n") || strings.Contains(user, "never inlined") || strings.Contains(user, "schema") {
+		t.Fatalf("user message:\n%s", user)
 	}
 }
 

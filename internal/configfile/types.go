@@ -473,6 +473,17 @@ type Review struct {
 	MinSeverity string
 	// InlineComments is false to post the summary alone.
 	InlineComments bool
+	Context        []ContextFile
+}
+
+// ContextFile is a repository file that explains the code, named to the
+// reviewer with what it is: an agentic review is pointed at it, and a
+// single-shot one is given its content. With Paths it applies only when a
+// changed path matches one of them.
+type ContextFile struct {
+	Path        string   `yaml:"path" json:"path"`
+	Description string   `yaml:"description" json:"description"`
+	Paths       []string `yaml:"paths,omitempty" json:"paths,omitempty"`
 }
 
 // Inline severity floors.
@@ -489,6 +500,7 @@ type ReviewSpec struct {
 	Templates           TemplatesSpec `yaml:"templates,omitempty"`
 	MinSeverity         *string       `yaml:"minSeverity,omitempty"`
 	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
+	Context             []ContextFile `yaml:"context,omitempty"`
 }
 
 // TemplatesSpec sets the comment templates at one scope; an empty path
@@ -499,10 +511,15 @@ type TemplatesSpec struct {
 }
 
 // Referenced lists the repository paths the block names: instructions
-// first, then the summary and inline templates, deduplicated.
+// first, then the summary and inline templates and the context files,
+// deduplicated.
 func (r Review) Referenced() []string {
+	paths := append(append([]string(nil), r.Instructions...), r.Templates.Summary, r.Templates.Inline)
+	for _, c := range r.Context {
+		paths = append(paths, c.Path)
+	}
 	var out []string
-	for _, p := range append(append([]string(nil), r.Instructions...), r.Templates.Summary, r.Templates.Inline) {
+	for _, p := range paths {
 		if p != "" && !slices.Contains(out, p) {
 			out = append(out, p)
 		}

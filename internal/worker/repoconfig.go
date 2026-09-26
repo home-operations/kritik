@@ -19,14 +19,15 @@ import (
 )
 
 // Effective is a repository's settings once its .kritik.yaml is applied.
-// Settings.Review names the files the runner reads; Instructions and
-// Templates hold their contents once it has.
+// Settings.Review names the files the runner reads; Instructions,
+// Templates and References hold their contents once it has.
 type Effective struct {
 	repoconfig.Merged
 	// Found is whether the repository has a .kritik.yaml.
 	Found        bool
 	Instructions []string
 	Templates    review.Templates
+	References   []review.Reference
 }
 
 // readRepoConfig reads .kritik.yaml at ref through the forge: nil when the
@@ -69,9 +70,10 @@ func (e *Effective) repoFiles() []string {
 }
 
 // fill reads the contents of the files e names out of files, what the
-// runner read, into Instructions and Templates, leaving out instructions
-// scoped to paths none of changed matches. notes lead the returned ones; a
-// named file missing from files is noted unless they already say why.
+// runner read, into Instructions, Templates and References, leaving out
+// instructions and context files scoped to paths none of changed matches.
+// notes lead the returned ones; a named file missing from files is noted
+// unless they already say why.
 func (e *Effective) fill(files repoconfig.Files, notes, changed []string) []string {
 	notes = slices.Clone(notes)
 	read := func(p string) string {
@@ -93,6 +95,14 @@ func (e *Effective) fill(files repoconfig.Files, notes, changed []string) []stri
 		notes = append(notes, "repository instructions truncated to 32 KiB")
 	}
 	e.Templates = review.Templates{Summary: read(e.Review.Templates.Summary), Inline: read(e.Review.Templates.Inline)}
+	applies := repoconfig.ActiveContext(e.Review.Context, changed)
+	e.References = nil
+	for _, c := range e.Review.Context {
+		content := read(c.Path)
+		if content != "" && slices.ContainsFunc(applies, func(a configfile.ContextFile) bool { return a.Path == c.Path }) {
+			e.References = append(e.References, review.Reference{Path: c.Path, Description: c.Description, Content: content})
+		}
+	}
 	return notes
 }
 

@@ -40,6 +40,21 @@ instructions, and chooses a few settings within bounds the operator sets:
       - { path: .kritik/sql.md, paths: ["internal/store/**", "**/*.sql"] }
   ```
 
+- `review.context`: files that explain the code, each a `path` with a
+  `description` and optional `paths` globs, added after the operator's. An
+  agentic review is pointed at each file to read it with its own tools; a
+  single-shot review is given its content, after the diff and before the
+  context kritik gathers, as the prompt budget allows. A file with `paths`
+  applies only when a changed path matches one of them:
+
+  ```yaml
+  review:
+    context:
+      - path: internal/store/migrations/0001_init.sql
+        description: the schema; check queries against it
+        paths: ["internal/store/**"]
+  ```
+
 - `review.requireSuggestedFix: true`: findings must include a suggested
   fix. The file can turn the requirement on, never off.
 - `review.minSeverity`: `nit` or `important`, the least severe finding

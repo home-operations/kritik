@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/home-operations/kritik/internal/configfile"
 )
 
 func TestParse_Invalid(t *testing.T) {
@@ -125,6 +127,17 @@ func TestActive(t *testing.T) {
 				t.Fatalf("Active = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestActiveContext(t *testing.T) {
+	t.Parallel()
+	files := []configfile.ContextFile{{Path: "arch.md", Description: "a"}, {Path: "schema.sql", Description: "s", Paths: []string{"**/*.sql"}}}
+	if got := ActiveContext(files, []string{"main.go"}); len(got) != 1 || got[0].Path != "arch.md" {
+		t.Fatalf("ActiveContext = %v", got)
+	}
+	if got := ActiveContext(files, []string{"db/0001.sql"}); len(got) != 2 {
+		t.Fatalf("ActiveContext = %v", got)
 	}
 }
 

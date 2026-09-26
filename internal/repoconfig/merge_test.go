@@ -52,6 +52,13 @@ func TestMerge(t *testing.T) {
 		{
 			name: "an operator's instruction stays unscoped", doc: "review:\n  instructions: [{ path: docs/rules.md, paths: ['**/*.sql'] }]\n",
 		},
+		{
+			name: "context files follow the operator's", doc: "review:\n  context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }]\n",
+			want: func(s *configfile.Settings) {
+				s.Review.Context = append(s.Review.Context, configfile.ContextFile{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}})
+			},
+		},
+		{name: "a context file without a description", doc: "review:\n  context: [{ path: db/schema.sql }]\n", wantErr: "description is required"},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
 			name: "presentation replaces the operator's", doc: "review: { minSeverity: important, inlineComments: false }\n",
