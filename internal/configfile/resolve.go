@@ -86,7 +86,6 @@ func (f *File) Settings(t *Tenant, installation, repo string) Settings {
 		if r.filter != nil {
 			s.Filter = r.filter
 		}
-		s.Konflate = r.Konflate
 		s.Ignore = append(s.Ignore, r.Ignore...)
 		if r.Settle > 0 {
 			s.Settle = r.Settle

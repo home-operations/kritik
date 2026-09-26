@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -156,19 +155,13 @@ func (s *Store) AppliedConfigHash(ctx context.Context) (string, error) {
 }
 
 func upsertTenant(ctx context.Context, tx pgx.Tx, t *configfile.Tenant) (string, error) {
-	settings, err := json.Marshal(map[string]any{
-		"models": t.Models, "filter": t.Filter, "forks": t.Forks, "limits": t.Limits, "runner": t.Runner,
-	})
-	if err != nil {
-		return "", fmt.Errorf("store: encode tenant settings: %w", err)
-	}
 	var id string
-	err = tx.QueryRow(ctx, `
-		INSERT INTO tenants (id, slug, managed_by, settings) VALUES ($1, $2, $3, $4)
+	err := tx.QueryRow(ctx, `
+		INSERT INTO tenants (id, slug, managed_by) VALUES ($1, $2, $3)
 		ON CONFLICT (slug) DO UPDATE SET
-			managed_by = EXCLUDED.managed_by, settings = EXCLUDED.settings, enabled = true, disabled_at = NULL, updated_at = now()
+			managed_by = EXCLUDED.managed_by, enabled = true, disabled_at = NULL, updated_at = now()
 		WHERE tenants.managed_by = EXCLUDED.managed_by OR NOT tenants.enabled
-		RETURNING id`, t.ID(), t.Slug, string(t.Origin()), settings).Scan(&id)
+		RETURNING id`, t.ID(), t.Slug, string(t.Origin())).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", managedByConflict(ctx, tx, "tenant "+t.Slug, t.Origin(), `SELECT managed_by FROM tenants WHERE slug = $1`, t.Slug)
 	}
@@ -214,20 +207,16 @@ func upsertInstallation(
 func upsertRepository(
 	ctx context.Context, tx pgx.Tx, tenantID, installationID string, origin configfile.Origin, r *configfile.Repository,
 ) error {
-	settings, err := json.Marshal(map[string]any{"filter": r.Filter, "konflate": r.Konflate, "ignore": r.Ignore})
-	if err != nil {
-		return fmt.Errorf("store: encode repository settings: %w", err)
-	}
 	enabled := r.Enabled == nil || *r.Enabled
 	tag, err := tx.Exec(ctx, `
-		INSERT INTO repositories (id, tenant_id, installation_id, name, settings, managed_by, enabled, disabled_at)
-		VALUES ($1, $2, $3, $4, $5, $7, $6, CASE WHEN $6 THEN NULL ELSE now() END)
+		INSERT INTO repositories (id, tenant_id, installation_id, name, managed_by, enabled, disabled_at)
+		VALUES ($1, $2, $3, $4, $6, $5, CASE WHEN $5 THEN NULL ELSE now() END)
 		ON CONFLICT (installation_id, name) DO UPDATE SET
-			tenant_id = EXCLUDED.tenant_id, settings = EXCLUDED.settings, managed_by = EXCLUDED.managed_by, enabled = EXCLUDED.enabled,
+			tenant_id = EXCLUDED.tenant_id, managed_by = EXCLUDED.managed_by, enabled = EXCLUDED.enabled,
 			disabled_at = CASE WHEN EXCLUDED.enabled THEN NULL ELSE coalesce(repositories.disabled_at, now()) END,
 			updated_at = now()
 		WHERE repositories.managed_by IN (EXCLUDED.managed_by, 'forge') OR NOT repositories.enabled`,
-		configfile.RepositoryID(installationID, r.Name), tenantID, installationID, r.Name, settings, enabled, string(origin))
+		configfile.RepositoryID(installationID, r.Name), tenantID, installationID, r.Name, enabled, string(origin))
 	if err == nil && tag.RowsAffected() == 0 {
 		return managedByConflict(ctx, tx, "repository "+r.Name, origin,
 			`SELECT managed_by FROM repositories WHERE installation_id = $1 AND name = $2`, installationID, r.Name)

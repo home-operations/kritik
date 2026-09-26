@@ -1892,23 +1892,26 @@ func checkEnqueueReindex(ctx context.Context, t *testing.T, appStore *store.Stor
 		t.Fatalf("EnqueueReindex: jobID=%d err=%v", jobID, err)
 	}
 
+	// The swap makes the new generation active before its run is marked
+	// completed in a transaction of its own, so wait for both.
 	deadline := time.Now().Add(20 * time.Second)
 	after := before
+	var mode, status string
 	for time.Now().Before(deadline) {
 		if after = activeIndexGeneration(ctx, t, appStore, tenantID, repoID); after != "" && after != before {
-			break
+			if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+				return tx.QueryRow(ctx, `SELECT mode, status FROM index_runs WHERE id = $1`, after).Scan(&mode, &status)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if status != "running" {
+				break
+			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	if after == before {
 		t.Fatalf("active index generation for %s = %q, want a new generation distinct from %q", head[:7], after, before)
-	}
-
-	var mode, status string
-	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT mode, status FROM index_runs WHERE id = $1`, after).Scan(&mode, &status)
-	}); err != nil {
-		t.Fatal(err)
 	}
 	if mode != "full" || status != "completed" {
 		t.Fatalf("new active generation %s mode=%s status=%s, want full/completed", after, mode, status)
