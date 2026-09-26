@@ -132,83 +132,9 @@
         <span class="wordmark">kritik</span>
       </a>
 
-      {#if me && me.tenants.length > 0}
-        <select
-          class="tenant-switch"
-          aria-label="Switch tenant"
-          value={currentSlug}
-          onchange={(e) => switchTenant(e.currentTarget.value)}
-        >
-          {#each me.tenants as t (t.slug)}
-            <option value={t.slug}>{t.slug}</option>
-          {/each}
-        </select>
-      {/if}
-
-      {#if currentSlug}
-        <nav class="nav">
-          <a
-            class:active={router.route.name === 'tenant'}
-            aria-current={router.route.name === 'tenant' ? 'page' : undefined}
-            href={href({ name: 'tenant', slug: currentSlug })}
-          >
-            <Icon path={mdiViewDashboardOutline} size={15} /> Overview
-          </a>
-          <a
-            class:active={router.route.name === 'repos'}
-            aria-current={router.route.name === 'repos' ? 'page' : undefined}
-            href={href({ name: 'repos', slug: currentSlug })}
-          >
-            <Icon path={mdiSourceRepository} size={15} /> Repos
-          </a>
-          <a
-            class:active={router.route.name === 'pulls'}
-            aria-current={router.route.name === 'pulls' ? 'page' : undefined}
-            href={href({ name: 'pulls', slug: currentSlug })}
-          >
-            <Icon path={mdiSourcePull} size={15} /> Pulls
-          </a>
-          <a
-            class:active={router.route.name === 'queue'}
-            aria-current={router.route.name === 'queue' ? 'page' : undefined}
-            href={href({ name: 'queue', slug: currentSlug })}
-          >
-            <Icon path={mdiTrayFull} size={15} /> Queue
-          </a>
-          <a
-            class:active={router.route.name === 'usage'}
-            aria-current={router.route.name === 'usage' ? 'page' : undefined}
-            href={href({ name: 'usage', slug: currentSlug })}
-          >
-            <Icon path={mdiCurrencyUsd} size={15} /> Usage
-          </a>
-          <a
-            class:active={router.route.name === 'followups'}
-            aria-current={router.route.name === 'followups' ? 'page' : undefined}
-            href={href({ name: 'followups', slug: currentSlug })}
-          >
-            <Icon path={mdiClipboardTextClockOutline} size={15} /> Follow-ups
-          </a>
-          {#if currentTenant?.role === 'admin' || me?.operator}
-            <a
-              class:active={router.route.name === 'admin'}
-              aria-current={router.route.name === 'admin' ? 'page' : undefined}
-              href={href({ name: 'admin', slug: currentSlug })}
-            >
-              <Icon path={mdiCogOutline} size={15} /> Admin
-            </a>
-          {/if}
-        </nav>
-      {:else}
-        <div class="spacer"></div>
-      {/if}
+      <div class="spacer"></div>
 
       <div class="actions">
-        {#if me?.operator}
-          <a class="btn btn-icon" class:active={router.route.name === 'operator'} href={href({ name: 'operator' })} title="Operator console">
-            <Icon path={mdiConsoleLine} label="Operator console" />
-          </a>
-        {/if}
         <button class="btn btn-icon" onclick={togglePalette} title="Go to (Ctrl/⌘ K)">
           <Icon path={mdiMagnify} label="Go to" />
         </button>
@@ -236,7 +162,93 @@
       </div>
     </header>
 
-    <Page route={router.route} />
+    <div class="shell">
+      {#if me}
+        <aside class="sidebar" aria-label="Navigation">
+          {#if me.tenants.length > 0}
+            <select
+              class="tenant-switch"
+              aria-label="Switch tenant"
+              value={currentSlug}
+              onchange={(e) => switchTenant(e.currentTarget.value)}
+            >
+              {#each me.tenants as t (t.slug)}
+                <option value={t.slug}>{t.slug}</option>
+              {/each}
+            </select>
+          {/if}
+
+          {#if currentSlug}
+            <nav class="nav" aria-label="Tenant">
+              <a
+                class:active={router.route.name === 'tenant'}
+                aria-current={router.route.name === 'tenant' ? 'page' : undefined}
+                href={href({ name: 'tenant', slug: currentSlug })}
+              >
+                <Icon path={mdiViewDashboardOutline} size={15} /> Overview
+              </a>
+              <a
+                class:active={router.route.name === 'repos'}
+                aria-current={router.route.name === 'repos' ? 'page' : undefined}
+                href={href({ name: 'repos', slug: currentSlug })}
+              >
+                <Icon path={mdiSourceRepository} size={15} /> Repos
+              </a>
+              <a
+                class:active={router.route.name === 'pulls'}
+                aria-current={router.route.name === 'pulls' ? 'page' : undefined}
+                href={href({ name: 'pulls', slug: currentSlug })}
+              >
+                <Icon path={mdiSourcePull} size={15} /> Pulls
+              </a>
+              <a
+                class:active={router.route.name === 'queue'}
+                aria-current={router.route.name === 'queue' ? 'page' : undefined}
+                href={href({ name: 'queue', slug: currentSlug })}
+              >
+                <Icon path={mdiTrayFull} size={15} /> Queue
+              </a>
+              <a
+                class:active={router.route.name === 'usage'}
+                aria-current={router.route.name === 'usage' ? 'page' : undefined}
+                href={href({ name: 'usage', slug: currentSlug })}
+              >
+                <Icon path={mdiCurrencyUsd} size={15} /> Usage
+              </a>
+              <a
+                class:active={router.route.name === 'followups'}
+                aria-current={router.route.name === 'followups' ? 'page' : undefined}
+                href={href({ name: 'followups', slug: currentSlug })}
+              >
+                <Icon path={mdiClipboardTextClockOutline} size={15} /> Follow-ups
+              </a>
+              {#if currentTenant?.role === 'admin' || me?.operator}
+                <a
+                  class:active={router.route.name === 'admin'}
+                  aria-current={router.route.name === 'admin' ? 'page' : undefined}
+                  href={href({ name: 'admin', slug: currentSlug })}
+                >
+                  <Icon path={mdiCogOutline} size={15} /> Admin
+                </a>
+              {/if}
+            </nav>
+          {/if}
+          {#if me.operator}
+            <nav class="nav nav-instance" aria-label="Instance">
+              <a
+                class:active={router.route.name === 'operator'}
+                aria-current={router.route.name === 'operator' ? 'page' : undefined}
+                href={href({ name: 'operator' })}
+              >
+                <Icon path={mdiConsoleLine} size={15} /> Operator console
+              </a>
+            </nav>
+          {/if}
+        </aside>
+      {/if}
+
+      <Page route={router.route} />
+    </div>
 
     <Palette {me} />
 
