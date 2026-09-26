@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { getJSON, sendJSON } from '../api.svelte';
+  import { ApiError, getJSON, sendJSON } from '../api.svelte';
   import { href, setLeaveGuard } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { tokens, usd } from '../format';
   import { describe, errorPath, isCode } from '../manage';
   import { MANAGEMENT_OFF, management } from '../session.svelte';
   import { toast } from '../toast.svelte';
-  import type { CreateTenantRequest, OperatorTenant, TenantWriteResult } from '../types';
+  import type { CreateTenantRequest, OperatorTenant, SlugTakenDetails, TenantWriteResult } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Dialog from '../components/Dialog.svelte';
@@ -64,7 +64,7 @@
     } catch (err) {
       errMessage = describe(err);
       errPath = errorPath(err);
-      if (isCode(err, 'slug_taken') && errPath === 'slug') offerAdopt = true;
+      if (err instanceof ApiError && err.code === 'slug_taken' && (err.details as SlugTakenDetails | undefined)?.adoptable) offerAdopt = true;
       errSeq++;
     } finally {
       saving = false;

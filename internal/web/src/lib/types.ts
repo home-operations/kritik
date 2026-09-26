@@ -598,6 +598,12 @@ export interface PathDetails {
   path: string;
 }
 
+// details of a slug_taken error: adoptable only when the slug belonged to
+// a tenant that is gone, so creating it again with adopt succeeds.
+export interface SlugTakenDetails extends PathDetails {
+  adoptable?: boolean;
+}
+
 export interface Meta {
   version: string;
   management: boolean;

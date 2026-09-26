@@ -506,6 +506,9 @@ func testCollisions(t *testing.T, e *manageEnv) {
 	stale["installations"].([]any)[0].(map[string]any)["name"] = "mgr-stale-bot"
 	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-stale", Spec: mustJSON(t, stale)})
 	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
+	if strings.Contains(string(body), "adoptable") {
+		t.Errorf("a slug the file still manages was offered for adoption: %s", body)
+	}
 	if e.totalAudits() != before {
 		t.Errorf("refused creates left %d audit rows", e.totalAudits()-before)
 	}

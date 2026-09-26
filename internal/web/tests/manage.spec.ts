@@ -420,6 +420,37 @@ test.describe('operator console', () => {
     await expect(page.getByRole('dialog', { name: 'Generated webhook secrets' })).toContainText('/hooks/beta-bot');
   });
 
+  test('offers adopt only for a slug a gone tenant used, and sends it', async ({ page }) => {
+    await setup(page, operatorMe);
+    const sent = await g.mockWrites(page, [
+      [
+        'POST',
+        /\/api\/v1\/tenants$/,
+        (s) => {
+          const n = sent.length;
+          if (n === 1) return g.apiError(409, 'slug_taken', 'a dashboard tenant with this slug already exists', { path: 'slug' });
+          if (n === 2) return g.apiError(409, 'slug_taken', 'a tenant used this slug before', { path: 'slug', adoptable: true });
+          return (s.body as T.CreateTenantRequest).adopt ? { status: 201, body: g.tenantWriteResult } : g.apiError(409, 'slug_taken', 'again', { path: 'slug', adoptable: true });
+        },
+      ],
+    ]);
+    await page.goto('/#/operator');
+    await page.getByRole('button', { name: 'New tenant' }).click();
+    await page.getByLabel('Slug').fill('beta');
+    const create = page.getByRole('button', { name: 'Create tenant' });
+    const adopt = page.getByLabel('Adopt this slug');
+    await create.click();
+    await expect(page.locator('.form-alert')).toContainText('already exists');
+    await expect(adopt).toHaveCount(0);
+    await create.click();
+    await expect(adopt).toBeVisible();
+    await adopt.check();
+    await create.click();
+    await expect.poll(() => sent.length).toBe(3);
+    expect((sent[2]!.body as T.CreateTenantRequest).adopt).toBe(true);
+    expect((sent[0]!.body as T.CreateTenantRequest).adopt).toBeUndefined();
+  });
+
   test('refuses a plain-http installation host before sending', async ({ page }) => {
     await setup(page, operatorMe);
     const sent = await g.mockWrites(page, [['POST', /\/api\/v1\/tenants$/, { status: 201, body: g.tenantWriteResult }]]);

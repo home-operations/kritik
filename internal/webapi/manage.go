@@ -53,7 +53,8 @@ var (
 	errFileManaged        = errStatus(http.StatusForbidden, CodeFileManaged, "this tenant is declared in the configuration file", nil)
 	errManagementDisabled = errStatus(http.StatusServiceUnavailable, CodeManagementDisabled,
 		"dashboard tenants cannot be written: KRITIK_DASHBOARD_KEY is not set", nil)
-	errRevisionConflict = errStatus(http.StatusConflict, CodeRevisionConflict,
+	errDashboardSlugTaken = errStatus(http.StatusConflict, CodeSlugTaken, "a dashboard tenant with this slug already exists", slugPath)
+	errRevisionConflict   = errStatus(http.StatusConflict, CodeRevisionConflict,
 		"the tenant was changed by another write; reload it and try again", nil)
 )
 
@@ -196,8 +197,17 @@ func (s *Server) writeTenant(
 				return errRevisionConflict
 			}
 			prev = &d
-		} else if err := s.claimSlug(ctx, tx, p, tid, slug, adopt); err != nil {
-			return err
+		} else {
+			_, _, err := s.store.DashboardTenant(ctx, tx, slug)
+			switch {
+			case err == nil:
+				return errDashboardSlugTaken
+			case !errors.Is(err, store.ErrNotFound):
+				return err
+			}
+			if err := s.claimSlug(ctx, tx, p, tid, slug, adopt); err != nil {
+				return err
+			}
 		}
 		dash, err := store.DashboardTenantsIn(ctx, tx)
 		if err != nil {
@@ -217,7 +227,7 @@ func (s *Server) writeTenant(
 		rev, err := s.store.PutDashboardTenant(ctx, tx, slug, sealed.spec, expected, p.Account.ID)
 		switch {
 		case errors.Is(err, store.ErrDashboardConflict) && expected == 0:
-			return errStatus(http.StatusConflict, CodeSlugTaken, "a dashboard tenant with this slug already exists", slugPath)
+			return errDashboardSlugTaken
 		case errors.Is(err, store.ErrDashboardConflict):
 			return errRevisionConflict
 		case err != nil:
@@ -232,7 +242,9 @@ func (s *Server) writeTenant(
 // claimSlug refuses a create whose slug a tenant held before, enabled or
 // not: tenant ids derive from slugs, so the new tenant would see the old
 // one's reviews, findings and transcripts. adopt accepts that, clearing
-// the old tenant's members and invites.
+// the old tenant's members and invites; only a refusal that adopt would
+// overcome says so (slugTakenDetails.Adoptable), never one for a tenant
+// the file still manages.
 func (s *Server) claimSlug(ctx context.Context, tx pgx.Tx, p *auth.Principal, tid, slug string, adopt bool) error {
 	held, err := store.TenantRowExists(ctx, tx, tid)
 	switch {
@@ -240,9 +252,18 @@ func (s *Server) claimSlug(ctx context.Context, tx pgx.Tx, p *auth.Principal, ti
 		return err
 	case !held:
 		return nil
+	}
+	// A tenant the file still manages is not gone: it cannot be adopted.
+	live, err := store.LiveNonDashboard(ctx, tx, tid, nil)
+	switch {
+	case err != nil:
+		return err
+	case len(live) > 0:
+		return errStatus(http.StatusConflict, CodeSlugTaken, "slug is still in use by a tenant the configuration file manages", slugPath)
 	case !adopt:
 		return errStatus(http.StatusConflict, CodeSlugTaken,
-			"a tenant used this slug before; creating it again with adopt keeps that tenant's review history", slugPath)
+			"a tenant used this slug before; creating it again with adopt keeps that tenant's review history",
+			slugTakenDetails{Path: slugPath.Path, Adoptable: true})
 	}
 	if err := store.DeleteTenantAccess(ctx, tx, tid); err != nil {
 		return err

@@ -105,6 +105,16 @@ func testSlugReuse(t *testing.T, e *manageEnv) {
 	spec := mustJSON(t, claimSpec("clm-b", "clm-b-bot"))
 	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "clm-b", Spec: spec})
 	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
+	if !strings.Contains(string(body), `"adoptable":true`) {
+		t.Errorf("slug used before = %s, want it adoptable", body)
+	}
+	// A live dashboard tenant's slug is taken, not adoptable.
+	status, body = e.do("operator", "POST", "/api/v1/tenants",
+		CreateTenantRequest{Slug: "clm-a", Spec: mustJSON(t, claimSpec("clm-a", "clm-a-bot")), Adopt: true})
+	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
+	if strings.Contains(string(body), "adoptable") || e.audits(AuditTenantAdopt, "clm-a") != 0 {
+		t.Errorf("live dashboard slug = %s, want a plain refusal and no adopt", body)
+	}
 	if e.audits(AuditTenantAdopt, "clm-b") != 0 {
 		t.Fatal("a refused create was audited as an adopt")
 	}

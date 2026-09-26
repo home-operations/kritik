@@ -71,6 +71,14 @@ type pathDetails struct {
 	Path string `json:"path"`
 }
 
+// slugTakenDetails are a slug_taken error's details. Adoptable is set only
+// when the slug belonged to a tenant that is gone, so creating it again
+// with adopt would succeed; never for a slug a live tenant holds.
+type slugTakenDetails struct {
+	Path      string `json:"path"`
+	Adoptable bool   `json:"adoptable,omitempty"`
+}
+
 // writeJSON writes v as the response. Every API response is no-store:
 // it is per-principal and must never be served from a shared cache.
 func writeJSON(w http.ResponseWriter, status int, v any) {
