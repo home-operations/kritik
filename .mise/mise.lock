@@ -155,9 +155,6 @@ version = "24.21.0"
 backend = "core:node"
 specifiers = ["24.21.0"]
 
-[tools.node.options]
-compile = "false"
-
 [tools.node."platforms.linux-arm64"]
 checksum = "sha256:724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5"
 url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-arm64.tar.gz"
