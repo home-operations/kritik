@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/home-operations/kritik/main/docs/kritik.schema.json",
+  "title": ".kritik.yaml",
+  "description": "A repository's kritik configuration, read from the merge base. See docs/repository-config.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "description": "false stops reviews, follow-ups and indexing; true cannot turn a disabled repository on."
+    },
+    "mode": {
+      "enum": ["single", "agentic"],
+      "description": "How the repository is reviewed, one of the operator's allow.modes."
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "review": { "$ref": "#/$defs/model" },
+        "fallback": { "$ref": "#/$defs/model" }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An agentic review's limits, each at most the operator's allow.agent bound.",
+      "properties": {
+        "maxSteps": { "type": "integer", "minimum": 1 },
+        "maxToolOutputBytes": { "type": "integer", "minimum": 1 },
+        "maxTokens": { "type": "integer", "minimum": 1 },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "commands": {
+          "type": "array",
+          "description": "Commands the agent may run, a subset of the operator's allow.commands.",
+          "items": { "type": "string", "pattern": "^[^/]+$" }
+        }
+      }
+    },
+    "settle": {
+      "$ref": "#/$defs/duration",
+      "description": "How long a new head waits before its review starts, at most the operator's allow.settle."
+    },
+    "filter": {
+      "type": "string",
+      "description": "A CEL expression over pr, ANDed with the operator's filter."
+    },
+    "ignore": {
+      "type": "array",
+      "description": "Path globs added to the operator's ignore list.",
+      "items": { "$ref": "#/$defs/glob" }
+    },
+    "skip": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "onlyPaths": {
+          "type": "array",
+          "description": "Skip a pull request only when every changed path matches one of these.",
+          "items": { "$ref": "#/$defs/glob" }
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "instructions": {
+          "type": "array",
+          "description": "Files appended to the reviewer's instructions, after the operator's.",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/path" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path"],
+                "properties": {
+                  "path": { "$ref": "#/$defs/path" },
+                  "paths": {
+                    "type": "array",
+                    "description": "Include the file only when a changed path matches one of these.",
+                    "items": { "$ref": "#/$defs/glob" }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "requireSuggestedFix": {
+          "type": "boolean",
+          "description": "true requires a suggested fix on every finding; false cannot lift the operator's requirement."
+        },
+        "templates": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "summary": { "$ref": "#/$defs/path" },
+            "inline": { "$ref": "#/$defs/path" }
+          }
+        },
+        "minSeverity": {
+          "enum": ["nit", "important"],
+          "description": "The least severe finding posted inline; blocking findings always are."
+        },
+        "inlineComments": {
+          "type": "boolean",
+          "description": "false posts the summary alone."
+        },
+        "context": {
+          "type": "array",
+          "description": "Files that explain the code, added after the operator's.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "description"],
+            "properties": {
+              "path": { "$ref": "#/$defs/path" },
+              "description": { "type": "string", "minLength": 1 },
+              "paths": {
+                "type": "array",
+                "description": "Name the file only when a changed path matches one of these.",
+                "items": { "$ref": "#/$defs/glob" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "duration": {
+      "type": "string",
+      "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)$",
+      "description": "A Go duration, such as 30s, 5m or 1h30m."
+    },
+    "model": {
+      "type": "string",
+      "pattern": "^[^/]+/.+$",
+      "description": "A <provider>/<model> reference the operator allows."
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "not": { "pattern": "^(/|\\.\\.(/|$))" },
+      "description": "A path relative to the repository root."
+    },
+    "glob": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A doublestar glob, such as docs/** or **/*.sql."
+    }
+  }
+}
