@@ -3,6 +3,7 @@ package configfile
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -171,8 +172,6 @@ func TestMergeRejects(t *testing.T) {
 		open Opener
 		want string
 	}{
-		{"slug collides with the file", dash("acme", dashSpec("acme", "other-bot"), 1), fakeOpener{}, "duplicates tenants[0]"},
-		{"installation collides with the file", dash("beta", dashSpec("beta", "acme-bot"), 1), fakeOpener{}, "names are hook paths"},
 		{"slug mismatch", dash("beta", dashSpec("gamma", "gamma-bot"), 1), fakeOpener{}, "does not match"},
 		{"env ref", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `{"sealed":"sealed:tok-beta"}`, `{"env":"TEST_FORGEJO_TOKEN"}`, 1), 1),
 			fakeOpener{}, "installations[0].token: dashboard-managed tenants take sealed values"},
@@ -210,6 +209,66 @@ func TestMergeRejects(t *testing.T) {
 	}
 }
 
+func TestMergeSkipsFileTenantsTheDashboardHolds(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	file, err := Parse([]byte(minimal + `
+  - slug: zeta
+    installations:
+      - name: zeta-bot
+        forge: forgejo
+        account: zeta
+        token: { env: TEST_FORGEJO_TOKEN }
+        webhookSecret: { env: TEST_WEBHOOK_SECRET }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name    string
+		d       DashboardTenant
+		skipped []SkippedTenant
+		running []string
+	}{
+		{"slug", dash("acme", dashSpec("acme", "other-bot"), 1),
+			[]SkippedTenant{{"acme", `dashboard tenant "acme" already holds the slug`}}, []string{"zeta", "acme"}},
+		{"installation name", dash("beta", dashSpec("beta", "acme-bot"), 1),
+			[]SkippedTenant{{"acme", `dashboard tenant "beta" already holds installation name "acme-bot"`}}, []string{"zeta", "beta"}},
+		{"no clash", dash("beta", dashSpec("beta", "beta-bot"), 1), nil, []string{"acme", "zeta", "beta"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := Merge(file, []DashboardTenant{tt.d}, fakeOpener{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(m.Skipped(), tt.skipped) {
+				t.Errorf("Skipped = %v, want %v", m.Skipped(), tt.skipped)
+			}
+			var running []string
+			for i := range m.Tenants {
+				running = append(running, m.Tenants[i].Slug)
+			}
+			if !slices.Equal(running, tt.running) {
+				t.Errorf("running tenants = %v, want %v", running, tt.running)
+			}
+			if !m.Declares("acme") || m.Declares("beta") {
+				t.Error("Declares does not follow the file")
+			}
+			if len(file.Tenants) != 2 {
+				t.Fatal("file mutated")
+			}
+			back, err := Merge(m, nil, fakeOpener{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if acme, ok := back.Tenant("acme"); !ok || acme.Origin() != OriginFile || len(back.Skipped()) != 0 {
+				t.Error("the file tenant does not return once the dashboard tenant is gone")
+			}
+		})
+	}
+}
+
 func TestValidateDashboard(t *testing.T) {
 	file := parseMinimal(t)
 	m, err := Merge(file, []DashboardTenant{dash("beta", dashSpec("beta", "beta-bot"), 1)}, fakeOpener{})
@@ -225,6 +284,38 @@ func TestValidateDashboard(t *testing.T) {
 		{"add another", dash("gamma", dashSpec("gamma", "gamma-bot"), 1), true},
 		{"add one colliding with an existing dashboard tenant", dash("gamma", dashSpec("gamma", "beta-bot"), 1), false},
 		{"add one colliding with the file", dash("acme", dashSpec("acme", "x-bot"), 1), false},
+		{"add one taking a file installation name", dash("gamma", dashSpec("gamma", "acme-bot"), 1), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateDashboard(m, m.Dashboard(), tt.d, fakeOpener{})
+			if (err == nil) != tt.ok {
+				t.Fatalf("err = %v, want ok %v", err, tt.ok)
+			}
+		})
+	}
+}
+
+// A dashboard tenant holding names the file also declares keeps them, and
+// the conflict does not block writes to other tenants.
+func TestValidateDashboardKeepsHeldNames(t *testing.T) {
+	file := parseMinimal(t)
+	m, err := Merge(file, []DashboardTenant{dash("acme", dashSpec("acme", "acme-bot"), 1), dash("beta", dashSpec("beta", "beta-bot"), 1)}, fakeOpener{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Skipped()) != 1 {
+		t.Fatalf("Skipped = %v, want the file's acme", m.Skipped())
+	}
+	tests := []struct {
+		name string
+		d    DashboardTenant
+		ok   bool
+	}{
+		{"keep the slug and installation name", dash("acme", dashSpec("acme", "acme-bot"), 2), true},
+		{"rename the installation", dash("acme", dashSpec("acme", "acme-bot-2"), 2), true},
+		{"update another tenant", dash("beta", dashSpec("beta", "beta-bot-2"), 2), true},
+		{"another tenant takes the held installation name", dash("beta", dashSpec("beta", "acme-bot"), 2), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

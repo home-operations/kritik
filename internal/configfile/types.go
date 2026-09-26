@@ -513,6 +513,7 @@ type File struct {
 	// parsed one; dashboard holds the tenants merged into it.
 	base      *File
 	dashboard []DashboardTenant
+	skipped   []SkippedTenant
 }
 
 // Hash is the hex SHA-256 of the file's bytes as parsed, or for a merged

@@ -326,6 +326,7 @@ func TestManage(t *testing.T) {
 	t.Run("mutual demotion", func(t *testing.T) { testMutualDemotion(t, e, dashID) })
 	t.Run("audit log", func(t *testing.T) { testAuditLog(t, e) })
 	t.Run("operator deletes the tenant", func(t *testing.T) { testDelete(t, e) })
+	t.Run("a file tenant a dashboard row crowds out", func(t *testing.T) { testFileTenantLeftOut(t, e) })
 }
 
 func testCreate(t *testing.T, e *manageEnv) string {
@@ -768,6 +769,58 @@ func testDelete(t *testing.T, e *manageEnv) {
 	if !strings.Contains(string(body), `"management":true`) {
 		t.Errorf("meta = %s", body)
 	}
+}
+
+// testFileTenantLeftOut stores a dashboard tenant on the file tenant's slug
+// directly, as no API write may: the file tenant leaves the running
+// configuration, the operator console says why, and it returns once the
+// row is gone.
+func testFileTenantLeftOut(t *testing.T, e *manageEnv) {
+	ctx := context.Background()
+	seal := func(v string) string {
+		s, err := e.srv.keyring.Seal([]byte(v))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	spec := mustJSON(t, map[string]any{"slug": "mgr-file", "installations": []any{map[string]any{
+		"name": "mgr-held-bot", "forge": "forgejo", "host": "git.example", "account": "mh",
+		"token": map[string]any{"sealed": seal("t")}, "webhookSecret": map[string]any{"sealed": seal("w")},
+	}}})
+	write := func(fn func(pgx.Tx) error) {
+		if err := e.st.WithTenant(ctx, (&configfile.Tenant{Slug: "mgr-file"}).ID(), fn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(func(tx pgx.Tx) error {
+		_, err := e.st.PutDashboardTenant(ctx, tx, "mgr-file", spec, 0, "")
+		return err
+	})
+	e.waitFor("mgr-file to be left out", func(f *configfile.File) bool { return len(f.Skipped()) == 1 })
+	status, body := e.do("operator", "GET", "/api/v1/operator/tenants", nil)
+	e.expect(status, body, http.StatusOK, "")
+	var list []OperatorTenant
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatal(err)
+	}
+	live := map[configfile.Origin]bool{}
+	for _, o := range list {
+		if o.Slug == "mgr-file" {
+			live[o.ManagedBy] = o.Live
+			if o.ManagedBy == configfile.OriginFile && o.Conflict != `dashboard tenant "mgr-file" already holds the slug` {
+				t.Errorf("conflict = %q", o.Conflict)
+			}
+		}
+	}
+	if len(live) != 2 || !live[configfile.OriginDashboard] || live[configfile.OriginFile] {
+		t.Fatalf("operator tenants = %s", body)
+	}
+	write(func(tx pgx.Tx) error { return e.st.DeleteDashboardTenant(ctx, tx, "mgr-file", 1) })
+	e.waitFor("mgr-file to return", func(f *configfile.File) bool {
+		ft, ok := f.Tenant("mgr-file")
+		return ok && ft.Origin() == configfile.OriginFile && len(f.Skipped()) == 0
+	})
 }
 
 func mustJSON(t *testing.T, v any) json.RawMessage {

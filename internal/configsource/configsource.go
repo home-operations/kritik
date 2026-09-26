@@ -55,7 +55,8 @@ type Source struct {
 	// Poll defaults to DefaultPoll.
 	Poll time.Duration
 	// Errors, when set, is raised at the merge stage while LastError is
-	// not nil or the file's latest content does not parse.
+	// not nil, the file's latest content does not parse, or the running
+	// configuration leaves a file tenant out.
 	Errors *server.ConfigErrorGauge
 
 	mu sync.Mutex
@@ -70,6 +71,8 @@ type Source struct {
 	// content that parses replaces it; it keeps the merge gauge raised
 	// even while the last good file still merges.
 	fileErr error
+	// skipped are the file tenants the running configuration leaves out.
+	skipped []configfile.SkippedTenant
 }
 
 // Load reads the file at path and the dashboard tenants, merges them and
@@ -96,6 +99,8 @@ func (s *Source) Load(ctx context.Context, path string) (*configfile.File, error
 	} else {
 		s.Current.Set(merged)
 	}
+	s.noteSkipped(merged.Skipped())
+	s.succeed()
 	return merged, nil
 }
 
@@ -211,6 +216,7 @@ func (s *Source) refresh(ctx context.Context) {
 	s.appliedFile, s.appliedRows = file, rows
 	s.mu.Unlock()
 	s.Current.Set(merged)
+	s.noteSkipped(merged.Skipped())
 	s.succeed()
 	s.logger().Info("configuration reloaded", "hash", merged.Hash(), "tenants", len(merged.Tenants), "dashboard_tenants", len(rows))
 }
@@ -252,9 +258,25 @@ func (s *Source) fail(err error) {
 func (s *Source) succeed() {
 	s.mu.Lock()
 	s.lastErr, s.loggedErr = nil, ""
-	failing := s.fileErr != nil
+	failing := s.fileErr != nil || len(s.skipped) > 0
 	s.mu.Unlock()
 	s.Errors.Set(server.ConfigErrorMerge, failing)
+}
+
+// noteSkipped records the file tenants the latest merge left out, and logs
+// them unless the previous merge left out the same ones, so a clash that
+// persists across refreshes is reported once.
+func (s *Source) noteSkipped(skipped []configfile.SkippedTenant) {
+	s.mu.Lock()
+	repeat := slices.Equal(skipped, s.skipped)
+	s.skipped = skipped
+	s.mu.Unlock()
+	if repeat {
+		return
+	}
+	for _, t := range skipped {
+		s.logger().Warn("configsource: file tenant left out of the running configuration", "tenant", t.Slug, "reason", t.Reason)
+	}
 }
 
 func (s *Source) logger() *slog.Logger {

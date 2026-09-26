@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -115,16 +116,20 @@ func configPath(t *testing.T) string {
 	return path
 }
 
-// countingHandler counts records at error level and reloads.
-type countingHandler struct{ errors, reloads atomic.Int32 }
+// countingHandler counts records at error level, reloads and file tenants
+// left out.
+type countingHandler struct{ errors, reloads, skips atomic.Int32 }
 
 func (h *countingHandler) Enabled(context.Context, slog.Level) bool { return true }
 func (h *countingHandler) Handle(_ context.Context, r slog.Record) error {
 	if r.Level >= slog.LevelError {
 		h.errors.Add(1)
 	}
-	if r.Message == "configuration reloaded" {
+	switch r.Message {
+	case "configuration reloaded":
 		h.reloads.Add(1)
+	case "configsource: file tenant left out of the running configuration":
+		h.skips.Add(1)
 	}
 	return nil
 }
@@ -185,14 +190,39 @@ func TestLoad(t *testing.T) {
 		})
 	}
 
-	t.Run("collision with the file", func(t *testing.T) {
+	t.Run("a dashboard tenant holding the file's slug leaves the file tenant out", func(t *testing.T) {
 		fs := newFakeStore()
 		fs.set("fp", dashRow(t, k, "acme", "other-bot", 1))
-		_, err := (&Source{Store: fs, Keyring: k}).Load(t.Context(), path)
-		if _, ok := errors.AsType[*configfile.MergeError](err); !ok {
-			t.Fatalf("Load = %v, want a *configfile.MergeError", err)
+		reg := prometheus.NewRegistry()
+		f, err := (&Source{Store: fs, Keyring: k, Errors: server.NewConfigErrorGauge(reg)}).Load(t.Context(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if acme, ok := f.Tenant("acme"); !ok || acme.Origin() != configfile.OriginDashboard || len(f.Skipped()) != 1 {
+			t.Fatalf("tenant acme = %+v, skipped %v; want the dashboard's, with the file's left out", acme, f.Skipped())
+		}
+		if v := mergeGauge(t, reg); v != 1 {
+			t.Fatalf("merge error gauge = %v, want 1", v)
 		}
 	})
+}
+
+// mergeGauge is the merge stage of the kritik_config_error gauge on reg.
+func mergeGauge(t *testing.T, reg *prometheus.Registry) float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mf := range families {
+		for _, m := range mf.GetMetric() {
+			if m.GetLabel()[0].GetValue() == "merge" {
+				return m.GetGauge().GetValue()
+			}
+		}
+	}
+	t.Fatal("no merge series")
+	return 0
 }
 
 func waitFor(t *testing.T, what string, cond func() bool) {
@@ -215,22 +245,6 @@ func TestRun(t *testing.T) {
 	s := &Source{Store: fs, Keyring: k, Logger: slog.New(logs), Poll: time.Hour, Errors: server.NewConfigErrorGauge(reg)}
 	if _, err := s.Load(t.Context(), path); err != nil {
 		t.Fatal(err)
-	}
-	mergeGauge := func() float64 {
-		t.Helper()
-		families, err := reg.Gather()
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, mf := range families {
-			for _, m := range mf.GetMetric() {
-				if m.GetLabel()[0].GetValue() == "merge" {
-					return m.GetGauge().GetValue()
-				}
-			}
-		}
-		t.Fatal("no merge series")
-		return 0
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -266,7 +280,7 @@ func TestRun(t *testing.T) {
 
 	t.Run("a collision keeps the last good snapshot and logs once", func(t *testing.T) {
 		before := current()
-		fs.set("3", beta2, dashRow(t, k, "gamma", "acme-bot", 1))
+		fs.set("3", beta2, dashRow(t, k, "gamma", "beta-bot", 1))
 		errsBefore := logs.errors.Load()
 		h.OnConfig("gamma")
 		waitFor(t, "LastError", func() bool { return s.LastError() != nil })
@@ -276,7 +290,7 @@ func TestRun(t *testing.T) {
 		if _, ok := errors.AsType[*configfile.MergeError](s.LastError()); !ok {
 			t.Fatalf("LastError = %v, want a *configfile.MergeError", s.LastError())
 		}
-		if v := mergeGauge(); v != 1 {
+		if v := mergeGauge(t, reg); v != 1 {
 			t.Fatalf("merge error gauge = %v while failing, want 1", v)
 		}
 		h.OnConfig("gamma")
@@ -287,11 +301,36 @@ func TestRun(t *testing.T) {
 		if n := logs.errors.Load() - errsBefore; n != 1 {
 			t.Fatalf("logged %d errors for one distinct failure, want 1", n)
 		}
-		if v := mergeGauge(); v != 0 {
+		if v := mergeGauge(t, reg); v != 0 {
 			t.Fatalf("merge error gauge = %v after recovery, want 0", v)
 		}
-		if !hasInstallation(current(), "acme-bot") || hasInstallation(current(), "gamma-bot") {
+		if _, ok := current().Tenant("gamma"); ok || !hasInstallation(current(), "acme-bot") {
 			t.Fatal("snapshot after recovery is wrong")
+		}
+	})
+
+	t.Run("a dashboard tenant holding a file installation name leaves that tenant out, warning once", func(t *testing.T) {
+		skips := logs.skips.Load()
+		fs.set("5", beta3, dashRow(t, k, "gamma", "acme-bot", 1))
+		h.OnConfig("gamma")
+		waitFor(t, "gamma", func() bool { _, ok := current().Tenant("gamma"); return ok })
+		if _, ok := current().Tenant("acme"); ok || s.LastError() != nil {
+			t.Fatalf("the file tenant still runs, or the merge failed: %v", s.LastError())
+		}
+		want := []configfile.SkippedTenant{{Slug: "acme", Reason: `dashboard tenant "gamma" already holds installation name "acme-bot"`}}
+		if got := current().Skipped(); !slices.Equal(got, want) {
+			t.Fatalf("Skipped = %v, want %v", got, want)
+		}
+		waitFor(t, "merge gauge raised", func() bool { return mergeGauge(t, reg) == 1 })
+		fs.set("6", beta3, dashRow(t, k, "gamma", "acme-bot", 2))
+		h.OnConfig("gamma")
+		waitFor(t, "gamma at revision 2", func() bool { return dashRevision(current(), "gamma") == 2 })
+		fs.set("4", beta3)
+		h.OnConfig("gamma")
+		waitFor(t, "acme back", func() bool { _, ok := current().Tenant("acme"); return ok })
+		waitFor(t, "merge gauge cleared", func() bool { return mergeGauge(t, reg) == 0 })
+		if n := logs.skips.Load() - skips; n != 1 {
+			t.Fatalf("warned %d times for one clash, want 1", n)
 		}
 	})
 
@@ -339,18 +378,18 @@ func TestRun(t *testing.T) {
 			t.Fatal(err)
 		}
 		writeFile(t, path, "tenants: []\n")
-		waitFor(t, "merge gauge", func() bool { return mergeGauge() == 1 })
+		waitFor(t, "merge gauge", func() bool { return mergeGauge(t, reg) == 1 })
 		// A dashboard change still merges onto the last good file, and does
 		// not clear the gauge the bad file raised.
 		fs.set("6", dashRow(t, k, "beta", "beta-bot", 4))
 		h.OnConfig("beta")
 		waitFor(t, "beta-bot", func() bool { return hasInstallation(current(), "beta-bot") })
-		if v := mergeGauge(); v != 1 {
+		if v := mergeGauge(t, reg); v != 1 {
 			t.Fatalf("merge error gauge = %v while the file is bad, want 1", v)
 		}
 		// Reverting to the very content last applied clears it too.
 		writeFile(t, path, string(good))
-		waitFor(t, "merge gauge cleared", func() bool { return mergeGauge() == 0 })
+		waitFor(t, "merge gauge cleared", func() bool { return mergeGauge(t, reg) == 0 })
 	})
 
 	t.Run("rows without a key are refused at runtime too", func(t *testing.T) {

@@ -99,10 +99,12 @@ export interface TenantSummary {
 }
 
 // live is false for a dashboard tenant stored but not in the running
-// configuration (it does not validate, or has not been merged yet).
+// configuration (it does not validate, or has not been merged yet), and for
+// a file tenant the merge left out, which conflict explains.
 export interface OperatorTenant extends TenantSummary {
   live: boolean;
   revision: number;
+  conflict?: string;
 }
 
 export interface CredentialsSet {

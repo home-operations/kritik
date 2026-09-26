@@ -469,6 +469,19 @@ test.describe('operator console', () => {
     expect(sent).toHaveLength(0);
   });
 
+  test('shows why a file tenant is left out, beside the dashboard tenant holding its slug', async ({ page }) => {
+    const conflict = `dashboard tenant "${S}" already holds the slug`;
+    await setup(page, operatorMe, [
+      [/\/api\/v1\/operator\/audit$/, g.pageOf([])],
+      [/\/api\/v1\/operator\/tenants$/, [{ ...g.operatorTenant, live: true }, { ...g.operatorTenant, managedBy: 'file', live: false, revision: 0, conflict }]],
+    ]);
+    await page.goto('/#/operator');
+    const rows = page.getByRole('row').filter({ hasText: S });
+    await expect(rows).toHaveCount(2);
+    await expect(rows.filter({ hasText: conflict })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: `Delete tenant ${S}` })).toHaveCount(1);
+  });
+
   test('deletes a tenant after the slug is typed, reloading the revision on a conflict', async ({ page }) => {
     let lists = 0;
     await setup(page, operatorMe, [
