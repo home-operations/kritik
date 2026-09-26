@@ -14,6 +14,7 @@
     mdiKeyboardOutline,
     mdiMagnify,
     mdiViewDashboardOutline,
+    mdiViewGridOutline,
     mdiSourceRepository,
     mdiSourcePull,
     mdiTrayFull,
@@ -165,6 +166,15 @@
     <div class="shell">
       {#if me}
         <aside class="sidebar" aria-label="Navigation">
+          <nav class="nav" aria-label="Home">
+            <a
+              class:active={router.route.name === 'overview'}
+              aria-current={router.route.name === 'overview' ? 'page' : undefined}
+              href={href({ name: 'overview' })}
+            >
+              <Icon path={mdiViewGridOutline} size={15} /> All tenants
+            </a>
+          </nav>
           {#if me.tenants.length > 0}
             <select
               class="tenant-switch"
