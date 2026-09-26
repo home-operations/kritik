@@ -145,7 +145,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	secrets := runner.Secrets{GitToken: token}
 	if agentic {
-		deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, runID, pr, settings, prior, admitted, &spec, &secrets, deadline)
+		deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, runID, args.Trigger, pr, settings, prior, admitted, &spec, &secrets, deadline)
 		if err != nil {
 			return errors.Join(err, w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", err.Error()),
 				failRun(ctx, w.Store, args.TenantID, runID, err.Error()))
@@ -174,51 +174,71 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	// A River cancel (JobCancelTx from a web request) cancels ctx itself,
 	// unlike supervise's own errSuperseded/errHeartbeatLost, which only
-	// cancel the child ctx passed to the executor. Capture it before
-	// detaching ctx from that cancellation so the rest of this cleanup path
-	// (recordRun, SetStatus, finishReview) can still do its writes.
+	// cancel the child ctx passed to the executor. ctx is left live from here
+	// on so a cancel that arrives during afterRun/publish (review status
+	// "prepared") still takes effect there, and a hung model call in publish
+	// still respects RescueStuckJobsAfter instead of running a second time
+	// after a retry. cctx is a detached copy used only for the terminal
+	// writes below (recordRun, SetStatus, finishReview) that must still land
+	// once ctx itself is canceled.
 	canceled := errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely)
-	ctx = context.WithoutCancel(ctx)
-	if err := recordRun(ctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
+	cctx := context.WithoutCancel(ctx)
+	// finishCanceled records a River remote cancel as the review's terminal
+	// state. A nil return tells River the job succeeded, like the superseded
+	// case below: a cancel must never produce a retry.
+	finishCanceled := func() error {
+		logger.Info("review canceled", "job", res.JobName)
+		if err := client.SetStatus(cctx, owner, repo, args.HeadSHA, forge.StatusError, "kritik: review canceled"); err != nil {
+			logger.Warn("commit status not set", "error", err)
+		}
+		w.Metrics.Review(tenant.Slug, statusCanceled, time.Since(started))
+		return w.finishReview(cctx, args.TenantID, reviewID, statusCanceled, "", "")
+	}
+	if err := recordRun(cctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
 		return err
+	}
+	// canceled takes priority over both agentErr and the run's own result: a
+	// job River canceled must never be reported failed or retried, whether
+	// or not the agent run record could be read. A run that finished without
+	// a cancel is judged below by agentErr, then by its result; the head
+	// check after that switch still catches a supersede that raced with a
+	// normal finish.
+	if canceled {
+		return finishCanceled()
 	}
 	if agentErr != nil {
 		logger.Error("agent run not read", "error", agentErr)
 		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
 		// A retry would run the agent again; the review ends here.
-		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", agentErr.Error())
+		return w.finishReview(cctx, args.TenantID, reviewID, statusFailed, "", agentErr.Error())
 	}
-	// A run that finished despite a cancel is judged by its result; the
-	// head check after it catches a supersede.
 	switch {
-	case canceled:
-		logger.Info("review canceled", "job", res.JobName)
-		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusError, "kritik: review canceled"); err != nil {
-			logger.Warn("commit status not set", "error", err)
-		}
-		w.Metrics.Review(tenant.Slug, statusCanceled, time.Since(started))
-		// A nil return here, like the superseded case below, tells River the
-		// job succeeded: a cancel must never produce a retry.
-		return w.finishReview(ctx, args.TenantID, reviewID, statusCanceled, "", "")
 	case res.Err != nil && errors.Is(cause, errSuperseded):
 		logger.Info("review superseded while running", "job", res.JobName)
 		w.Metrics.Review(tenant.Slug, statusSuperseded, time.Since(started))
-		return w.finishReview(ctx, args.TenantID, reviewID, statusSuperseded, "", "")
+		return w.finishReview(cctx, args.TenantID, reviewID, statusSuperseded, "", "")
 	case res.Err != nil && errors.Is(cause, errHeartbeatLost):
 		logger.Warn("runner heartbeat lost", "job", res.JobName)
 		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
-		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", "runner heartbeat lost")
+		return w.finishReview(cctx, args.TenantID, reviewID, statusFailed, "", "runner heartbeat lost")
 	case res.Err != nil:
 		logger.Warn("runner failed", "error", res.Err, "job", res.JobName, "reason", res.TerminationReason)
 		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
-		return w.finishReview(ctx, args.TenantID, reviewID, statusFailed, "", res.Err.Error())
+		return w.finishReview(cctx, args.TenantID, reviewID, statusFailed, "", res.Err.Error())
 	}
 	prep, status, err := w.afterRun(ctx, args, pr, settings, client, reviewID, runID, prior, logger)
-	if err != nil || prep.patchID == "" {
-		if err == nil {
-			w.Metrics.Review(tenant.Slug, status, time.Since(started))
+	if err != nil {
+		// ctx stayed live through afterRun, so a cancel that arrived while it
+		// ran surfaces here as a plain error rather than being silently
+		// ignored; report it as canceled rather than as a failure to retry.
+		if errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely) {
+			return finishCanceled()
 		}
 		return err
+	}
+	if prep.patchID == "" {
+		w.Metrics.Review(tenant.Slug, status, time.Since(started))
+		return nil
 	}
 	patchID := prep.patchID
 	phase := &publishPhase{
@@ -232,12 +252,18 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		publish = phase.runAgentic
 	}
 	status, perr := publish(ctx)
+	// A cancel during "prepared" (the model call inside publish) leaves ctx
+	// canceled here even when publish itself returned a normal result;
+	// report it as canceled rather than whatever status publish settled on.
+	if errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely) {
+		return finishCanceled()
+	}
 	if perr != nil && status == statusFailed {
 		logger.Error("review failed", "error", perr)
 	}
 	logger.Info("review " + status)
 	w.Metrics.Review(tenant.Slug, status, time.Since(started))
-	return w.finishReview(ctx, args.TenantID, reviewID, status, patchID, errText(perr))
+	return w.finishReview(cctx, args.TenantID, reviewID, status, patchID, errText(perr))
 }
 
 // prepared is what afterRun hands the model phase: the patch id, the
