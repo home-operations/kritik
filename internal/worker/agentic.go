@@ -313,6 +313,9 @@ func (w *Review) awaitAgentRun(ctx context.Context, tenantID, runID string) (age
 // this head was not fully reviewed so an earlier verdict does not stand in
 // for it. A run the runner skipped ends the review skipped.
 func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
+	// The agent has already answered, so publishing runs to the end even if
+	// the job's ctx ends meanwhile, as run does once its model answers.
+	ctx = context.WithoutCancel(ctx)
 	if p.agent == nil {
 		return statusFailed, errors.New("worker: the runner wrote no agent run")
 	}
