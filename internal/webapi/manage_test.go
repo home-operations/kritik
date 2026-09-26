@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -141,7 +142,7 @@ func TestFileTenantConfigIsRedacted(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &c); err != nil {
 		t.Fatal(err)
 	}
-	if c.ManagedBy != "file" || c.Editable || c.Revision != nil || len(c.OperatorOnlyFields) != 7 {
+	if c.ManagedBy != "file" || c.Editable || c.Revision != nil || !slices.Equal(c.OperatorOnlyFields, operatorOnlyFields) {
 		t.Errorf("config = %+v", c)
 	}
 	if body := w.Body.String(); strings.Contains(body, "KRITIK_TEST_TOKEN") || !strings.Contains(body, `"token":{"set":true}`) {

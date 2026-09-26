@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritik/internal/configfile"
 )
@@ -254,7 +255,7 @@ func TestRenderFileTenant(t *testing.T) {
 }
 
 func TestRenderFileTenantDurations(t *testing.T) {
-	tn := configfile.Tenant{Slug: "x", Settle: 90e9}
+	tn := configfile.Tenant{Slug: "x", Settle: new(90 * time.Second)}
 	got, err := renderFileTenant(&tn)
 	if err != nil {
 		t.Fatal(err)
