@@ -80,9 +80,12 @@ full state for whatever the notification named.
 
 A websocket was rejected because updates only ever flow one way, server
 to browser: nothing in the dashboard needs a client-to-server realtime
-channel, since every action is an ordinary POST. `EventSource` reconnects
-on its own without any bespoke heartbeat or reconnect logic on either end,
-and adds no client dependency. Shipping IDs rather than state also keeps a
+channel, since every action is an ordinary POST. `EventSource` adds no
+client dependency; the client only adds a jittered backoff to its
+reconnects, and the server a comment heartbeat so idle proxies keep the
+stream open. Every stream opens with a `resync` event, and the client
+treats every (re)open as one, so nothing published while it was
+disconnected is missed. Shipping IDs rather than state also keeps a
 notification from leaking content ahead of the per-tenant filter and a
 freshly authorized fetch — a guarantee a websocket that pushed whole rows
 would have to reimplement per message.
@@ -172,7 +175,12 @@ way.
 A session cookie holds a random 256-bit value, stored server-side only as
 its SHA-256, never the raw token: the server only ever needs to verify a
 presented value against the hash, so a database read alone can't hand out
-a usable session. Cookies are `HttpOnly; Secure; SameSite=Lax`.
+a usable session. Cookies are `HttpOnly; SameSite=Lax`, and `Secure`
+whenever `KRITIK_WEB_URL` is https (it is dropped only for a plain-http
+URL, such as a local run). Over https their names carry the `__Host-`
+prefix when the dashboard is served at the root, binding them to exactly
+that host so a sibling subdomain cannot plant one, and `__Secure-` under a
+path.
 
 Every mutating request must carry a matching `Origin` or a
 `Sec-Fetch-Site: same-origin` header, plus an `X-Kritik: 1` header. A
@@ -272,9 +280,10 @@ whoever caused it instead of picking a winner silently.
 
 ### 2.13 Credentials are write-only in the UI
 
-The UI shows "set, updated `<t>`," never the value. The webhook secret
-can be generated on the server, and the UI shows the hook URL instead of
-the secret. A sealed value is already opaque once encrypted (§2.5,
+The UI shows whether a secret is set, never its value. The webhook
+secret can be generated on the server; the UI then shows it exactly once,
+with the hook path, for the operator to copy into the forge, and never
+again. A sealed value is already opaque once encrypted (§2.5,
 §3), so never round-tripping a plaintext credential back to the browser
 removes a class of exposure, a browser history entry, a copy-paste into
 the wrong place, for no loss of function: an operator who needs to change

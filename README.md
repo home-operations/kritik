@@ -224,9 +224,9 @@ may sign in and who of them may operate the instance:
 - `operators` — the identities allowed to change configuration, each
   `"<signIn name>:<login or subject>"` (the forge login or OIDC subject) or
   `"email:<address>"`, matched against the address a sign-in reports.
-  `email` is reserved and cannot name a `signIn`. Only an operator may edit
-  the file, and only the file can create a dashboard tenant, its first
-  admin, or set the operator-only fields below.
+  `email` is reserved and cannot name a `signIn`. An operator creates and
+  deletes dashboard tenants from the operator console and is the only one
+  who may set the operator-only fields below.
 - `sessionTTL` — how long a dashboard session lasts, between 5 minutes and
   30 days; defaults to 12 hours.
 - `dashboardForgeHosts` — the forge hosts a dashboard-managed tenant's
@@ -244,9 +244,9 @@ Three roles share the same `web.signIn` and `web.operators`:
   the only one who may set a dashboard tenant's `models`, `forks`,
   `runner`, `limits`, `repositories[].agent`, `repositories[].mode` or
   `repositories[].incremental`; a tenant admin's write that touches any of
-  those is rejected. Membership is checked per source (file and dashboard),
-  and a principal who qualifies through more than one gets the highest of
-  the roles it grants.
+  those is rejected. Membership is checked per source (the forge, refreshed
+  at sign-in, and accepted invites), and a principal who qualifies through
+  more than one gets the highest of the roles it grants.
 - **Tenant admin** — can edit a dashboard-managed tenant's configuration,
   installations and repositories (other than the operator-only fields
   above), invite and remove members, and queue a re-run, cancel or
@@ -256,7 +256,13 @@ Three roles share the same `web.signIn` and `web.operators`:
   admin submits (a client secret, an installation token) is bound to that
   installation's forge, host (scheme and path included) and account —
   change any of them and the secret must be re-entered, since it no longer
-  speaks for the same identity.
+  speaks for the same identity. The form never keeps a renamed
+  installation's secrets. In the advanced JSON editor, as through the API,
+  `{"keep": true}` keeps the secret stored under the name the JSON gives:
+  renaming an installation there does not carry its secrets along (the
+  keep is refused, or takes the secret of a stored installation that
+  already had the new name, when its forge, host and account match), so
+  enter them again when renaming in JSON.
 - **Tenant member** — read access to their tenant's own reviews,
   conversations and transcripts; no write access.
 
