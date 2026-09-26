@@ -196,3 +196,25 @@ test.describe('keyboard shortcuts', () => {
     await expect(page.locator('.palette-empty')).toBeVisible();
   });
 });
+
+test('a stream the server refuses for a dead session sends the tab to sign-in', async ({ page, mockProviders }) => {
+  await mockProviders();
+  let meCalls = 0;
+  await page.route('**/api/v1/me', (route) => {
+    meCalls++;
+    return meCalls === 1
+      ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(DEFAULT_ME) })
+      : route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: 'unauthenticated', message: 'no session' }) });
+  });
+  let streams = 0;
+  await page.route('**/api/events', (route) => {
+    streams++;
+    return route.fulfill({ status: 401, contentType: 'application/json', body: '{"code":"unauthenticated"}' });
+  });
+  await page.goto('/#/t/acme/repos');
+  await expect(page).toHaveURL(/#\/signin$/, { timeout: 10_000 });
+  await expect(page.locator('.signin-provider')).toHaveAttribute('href', /return_to=%23%2Ft%2Facme%2Frepos/);
+  const after = streams;
+  await page.waitForTimeout(2_500);
+  expect(streams).toBe(after);
+});

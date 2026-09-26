@@ -46,6 +46,14 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, body.code ?? 'unknown', body.message ?? res.statusText, body.details);
 }
 
+// toSignIn sends the tab to sign-in, remembering where it was, unless it
+// is already there.
+export function toSignIn(): void {
+  if (parse(location.hash).name === 'signin') return;
+  signinState.returnTo = location.hash || '#/';
+  replace({ name: 'signin' });
+}
+
 async function handle<T>(res: Response): Promise<T> {
   // The dashboard has no public content: a 401 means the session is dead
   // (expired cookie, revoked token, or no session at all) and every route --
@@ -53,10 +61,7 @@ async function handle<T>(res: Response): Promise<T> {
   // only guard is against a redirect loop when already on sign-in, decided
   // by the router's parse so every spelling it accepts (e.g. "#/signin/")
   // counts.
-  if (res.status === 401 && parse(location.hash).name !== 'signin') {
-    signinState.returnTo = location.hash || '#/';
-    replace({ name: 'signin' });
-  }
+  if (res.status === 401) toSignIn();
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return undefined as T;
   try {

@@ -3,13 +3,16 @@
 // page load, reconnected with the same exponential-backoff-with-jitter
 // konflate's websocket uses, so a server restart doesn't reconnect every open
 // tab in lockstep a couple seconds later.
+import { toSignIn } from './api.svelte';
 import { basePath } from './base';
+import { session } from './session.svelte';
 
 type Listener = (data: unknown) => void;
 
 const listeners = new Map<string, Set<Listener>>();
 let source: EventSource | null = null;
 let attempt = 0;
+let timer: ReturnType<typeof setTimeout> | undefined;
 
 function parseData(e: MessageEvent<string>): unknown {
   try {
@@ -37,7 +40,24 @@ function scheduleReconnect(): void {
   // otherwise reconnects in lockstep shortly after a server restart.
   const base = Math.min(30_000, 1_000 * 2 ** attempt);
   attempt++;
-  setTimeout(connect, base / 2 + Math.random() * (base / 2));
+  timer = setTimeout(connect, base / 2 + Math.random() * (base / 2));
+}
+
+// probeSession asks /api/v1/me whether the session outlived the stream: an
+// EventSource cannot see the 401 that refused it, so without this a dead
+// session would reconnect forever. The session is cleared before the
+// redirect, or the shell would bounce a signed-in user straight back.
+async function probeSession(): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${basePath}/api/v1/me`, { headers: { 'X-Kritik': '1' }, credentials: 'same-origin' });
+  } catch {
+    return;
+  }
+  if (res.status !== 401) return;
+  closeEvents();
+  session.me = undefined;
+  toSignIn();
 }
 
 function connect(): void {
@@ -54,6 +74,8 @@ function connect(): void {
   // above actually applies.
   source.addEventListener('error', () => {
     source?.close();
+    // Once the stream has failed twice running, check it is not the session.
+    if (attempt > 0) void probeSession();
     scheduleReconnect();
   });
   for (const kind of listeners.keys()) attachKind(kind);
@@ -67,6 +89,8 @@ export function initEvents(): void {
 // session cookie doesn't keep streaming another account's events into a
 // signed-out tab. initEvents() reconnects cleanly on the next sign-in.
 export function closeEvents(): void {
+  clearTimeout(timer);
+  timer = undefined;
   source?.close();
   source = null;
   attempt = 0;
