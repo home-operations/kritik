@@ -49,28 +49,15 @@ func (f *File) InstallationFor(t *Tenant, r *Repository) *Installation {
 // repo give the tenant's settings alone.
 func (f *File) Settings(t *Tenant, installation, repo string) Settings {
 	s := Settings{
-		Enabled: true,
-		Models:  f.Defaults.Models,
-		Filter:  f.defaultFilter,
-		Forks:   f.Defaults.Forks != nil && *f.Defaults.Forks,
-		Limits:  f.Defaults.Limits,
-		Ignore:  append([]string(nil), DefaultIgnore...),
-		Settle:  f.Defaults.Settle,
-
+		Enabled:     true,
+		Ignore:      append([]string(nil), DefaultIgnore...),
 		Mode:        ReviewSingle,
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
 	}
-	s.Models = s.Models.overlay(t.Models)
-	if t.filter != nil {
-		s.Filter = t.filter
-	}
-	if t.Forks != nil {
-		s.Forks = *t.Forks
-	}
-	if t.Settle > 0 {
-		s.Settle = t.Settle
-	}
+	s.apply(&f.Defaults.Overrides)
+	s.Limits = s.Limits.overlay(f.Defaults.Limits)
+	s.apply(&t.Overrides)
 	s.Limits = s.Limits.overlay(t.Limits)
 	for i := range t.Repositories {
 		r := &t.Repositories[i]
@@ -83,27 +70,37 @@ func (f *File) Settings(t *Tenant, installation, repo string) Settings {
 		if r.Enabled != nil {
 			s.Enabled = *r.Enabled
 		}
-		if r.filter != nil {
-			s.Filter = r.filter
-		}
-		s.Ignore = append(s.Ignore, r.Ignore...)
-		if r.Settle > 0 {
-			s.Settle = r.Settle
-		}
-		if r.Mode != "" {
-			s.Mode = r.Mode
-		}
-		s.Agent = s.Agent.overlay(r.Agent)
-		if r.Incremental.MaxDeltaFiles != nil {
-			s.Incremental.MaxDeltaFiles = *r.Incremental.MaxDeltaFiles
-		}
-		s.Review = r.Review
+		s.apply(&r.Overrides)
 		break
 	}
 	if s.Limits.Concurrency == 0 {
 		s.Limits.Concurrency = DefaultConcurrency
 	}
 	return s
+}
+
+// apply lays one scope's overrides over s: a field the scope writes
+// replaces s's, and its ignore globs are added to s's.
+func (s *Settings) apply(o *Overrides) {
+	s.Models = s.Models.overlay(o.Models)
+	if o.Filter != nil {
+		s.Filter = o.filter
+	}
+	if o.Forks != nil {
+		s.Forks = *o.Forks
+	}
+	s.Ignore = append(s.Ignore, o.Ignore...)
+	if o.Settle != nil {
+		s.Settle = *o.Settle
+	}
+	if o.Mode != "" {
+		s.Mode = o.Mode
+	}
+	s.Agent = s.Agent.overlay(o.Agent)
+	if o.Incremental.MaxDeltaFiles != nil {
+		s.Incremental.MaxDeltaFiles = *o.Incremental.MaxDeltaFiles
+	}
+	s.Review = s.Review.overlay(o.Review)
 }
 
 // PollInterval is how often the leader polls, 0 when polling is off.
@@ -161,27 +158,43 @@ func (f *File) DisabledIndexGrace() time.Duration {
 	return DefaultDisabledIndexGrace
 }
 
-func (m Models) overlay(o Models) Models {
-	if o.Review != "" {
-		m.Review = o.Review
+func (m Models) overlay(o ModelsSpec) Models {
+	if o.Review != nil {
+		m.Review = *o.Review
 	}
-	if o.Fallback != "" {
-		m.Fallback = o.Fallback
+	if o.Fallback != nil {
+		m.Fallback = *o.Fallback
 	}
 	return m
 }
 
-func (l Limits) overlay(o Limits) Limits {
-	if o.Concurrency != 0 {
-		l.Concurrency = o.Concurrency
+func (l Limits) overlay(o LimitsSpec) Limits {
+	if o.Concurrency != nil {
+		l.Concurrency = *o.Concurrency
 	}
-	if o.ReviewsPerDay != 0 {
-		l.ReviewsPerDay = o.ReviewsPerDay
+	if o.ReviewsPerDay != nil {
+		l.ReviewsPerDay = *o.ReviewsPerDay
 	}
-	if o.TokensPerMonth != 0 {
-		l.TokensPerMonth = o.TokensPerMonth
+	if o.TokensPerMonth != nil {
+		l.TokensPerMonth = *o.TokensPerMonth
 	}
 	return l
+}
+
+func (r Review) overlay(o ReviewSpec) Review {
+	if o.Instructions != nil {
+		r.Instructions = o.Instructions
+	}
+	if o.RequireSuggestedFix != nil {
+		r.RequireSuggestedFix = *o.RequireSuggestedFix
+	}
+	if o.Templates.Summary != nil {
+		r.Templates.Summary = *o.Templates.Summary
+	}
+	if o.Templates.Inline != nil {
+		r.Templates.Inline = *o.Templates.Inline
+	}
+	return r
 }
 
 func (a AgentSettings) overlay(o Agent) AgentSettings {

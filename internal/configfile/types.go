@@ -118,27 +118,43 @@ func (m ModelRef) Model() string {
 	return id
 }
 
-// Models are the per-tenant completion roles. Empty means "inherit from the
-// level above"; a role still empty after resolution means the feature is
-// off. The embedding model is not here: it is deployment-wide and lives in
-// the process environment, because changing it reindexes every repository.
+// Models are the resolved completion roles; a role empty after resolution
+// means the feature is off. The embedding model is not here: it is
+// deployment-wide and lives in the process environment, because changing it
+// reindexes every repository.
 type Models struct {
-	Review   ModelRef `yaml:"review,omitempty"`
-	Fallback ModelRef `yaml:"fallback,omitempty"`
+	Review   ModelRef
+	Fallback ModelRef
 }
 
-// Limits bound what a tenant may consume. Zero means "inherit"; a limit
-// still zero after resolution is unset, except Concurrency, which falls back
-// to DefaultConcurrency.
+// ModelsSpec sets the completion roles at one scope. A role written here,
+// even empty, replaces the broader scope's; one left out inherits it.
+type ModelsSpec struct {
+	Review   *ModelRef `yaml:"review,omitempty"`
+	Fallback *ModelRef `yaml:"fallback,omitempty"`
+}
+
+// Limits bound what a tenant may consume, as resolved. A cap of zero is no
+// cap; Concurrency is never zero once resolved.
 type Limits struct {
 	// Concurrency is the number of advisory-lock slots per tenant and model:
 	// how many model calls may run at once.
-	Concurrency int `yaml:"concurrency,omitempty"`
+	Concurrency int
 	// ReviewsPerDay caps review passes per tenant per calendar day.
-	ReviewsPerDay int `yaml:"reviewsPerDay,omitempty"`
+	ReviewsPerDay int
 	// TokensPerMonth caps input plus output tokens per tenant per calendar
 	// month.
-	TokensPerMonth int64 `yaml:"tokensPerMonth,omitempty"`
+	TokensPerMonth int64
+}
+
+// LimitsSpec sets limits at one scope. A limit written here replaces the
+// broader scope's, so an explicit 0 lifts a cap the defaults set; one left
+// out inherits it. Concurrency, when written, must be positive; unset
+// everywhere it is DefaultConcurrency.
+type LimitsSpec struct {
+	Concurrency    *int   `yaml:"concurrency,omitempty"`
+	ReviewsPerDay  *int   `yaml:"reviewsPerDay,omitempty"`
+	TokensPerMonth *int64 `yaml:"tokensPerMonth,omitempty"`
 }
 
 // DefaultConcurrency applies when no level of the file sets one.
@@ -161,14 +177,30 @@ const DefaultRunnerDeadline = 15 * time.Minute
 type Defaults struct {
 	// Runner is every tenant's runner block unless the tenant sets its own
 	// deadline or resources.
-	Runner *Runner `yaml:"runner,omitempty"`
-	Models Models  `yaml:"models,omitempty"`
-	Filter string  `yaml:"filter,omitempty"`
-	Forks  *bool   `yaml:"forks,omitempty"`
-	Limits Limits  `yaml:"limits,omitempty"`
+	Runner    *Runner `yaml:"runner,omitempty"`
+	Overrides `yaml:",inline"`
+	Limits    LimitsSpec `yaml:"limits,omitempty"`
+}
+
+// Overrides are the repository settings every operator scope may set: the
+// defaults, a tenant and a repository entry. A field a narrower scope
+// writes replaces the broader scope's, even when it is empty or zero; a
+// field it leaves out inherits (ADR-0010 §2.4). Ignore globs are unioned
+// instead.
+type Overrides struct {
+	Models ModelsSpec `yaml:"models,omitempty"`
+	Filter *string    `yaml:"filter,omitempty"`
+	Forks  *bool      `yaml:"forks,omitempty"`
+	Ignore []string   `yaml:"ignore,omitempty"`
 	// Settle delays a review job for a new head, so a burst of pushes
 	// collapses onto the last one before anything is spent.
-	Settle time.Duration `yaml:"settle,omitempty"`
+	Settle      *time.Duration `yaml:"settle,omitempty"`
+	Mode        ReviewMode     `yaml:"mode,omitempty"`
+	Agent       Agent          `yaml:"agent,omitempty"`
+	Incremental Incremental    `yaml:"incremental,omitempty"`
+	Review      ReviewSpec     `yaml:"review,omitempty"`
+
+	filter *prfilter.Program
 }
 
 // Polling is the leader's backstop for missed webhooks: it lists each
@@ -305,20 +337,9 @@ type Repository struct {
 	// to. It is required only when the owner is the account of more than
 	// one installation, so the same "owner/repo" on two forges is two
 	// entries.
-	Installation string        `yaml:"installation,omitempty"`
-	Enabled      *bool         `yaml:"enabled,omitempty"`
-	Filter       string        `yaml:"filter,omitempty"`
-	Ignore       []string      `yaml:"ignore,omitempty"`
-	Settle       time.Duration `yaml:"settle,omitempty"`
-	// Mode, Agent and Incremental are operator-only: the in-repo file
-	// cannot change how much a review may spend.
-	Mode        ReviewMode  `yaml:"mode,omitempty"`
-	Agent       Agent       `yaml:"agent,omitempty"`
-	Incremental Incremental `yaml:"incremental,omitempty"`
-	// Review holds defaults the in-repo file may override.
-	Review Review `yaml:"review,omitempty"`
-
-	filter *prfilter.Program
+	Installation string `yaml:"installation,omitempty"`
+	Enabled      *bool  `yaml:"enabled,omitempty"`
+	Overrides    `yaml:",inline"`
 }
 
 // ReviewMode is how a review is carried out.
@@ -391,12 +412,27 @@ type ReviewTemplates struct {
 	Inline  string `yaml:"inline,omitempty"`
 }
 
-// Review is the operator's presentation and strictness defaults for a
+// Review is the operator's resolved presentation and strictness for a
 // repository. Paths name files in the repository's merge-base tree.
 type Review struct {
-	Instructions        []string        `yaml:"instructions,omitempty"`
-	RequireSuggestedFix bool            `yaml:"requireSuggestedFix,omitempty"`
-	Templates           ReviewTemplates `yaml:"templates,omitempty"`
+	Instructions        []string
+	RequireSuggestedFix bool
+	Templates           ReviewTemplates
+}
+
+// ReviewSpec sets the review block at one scope, field by field: a field
+// written here, even empty, replaces the broader scope's.
+type ReviewSpec struct {
+	Instructions        []string      `yaml:"instructions,omitempty"`
+	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
+	Templates           TemplatesSpec `yaml:"templates,omitempty"`
+}
+
+// TemplatesSpec sets the comment templates at one scope; an empty path
+// written here restores the built-in template.
+type TemplatesSpec struct {
+	Summary *string `yaml:"summary,omitempty"`
+	Inline  *string `yaml:"inline,omitempty"`
 }
 
 // Referenced lists the repository paths the block names: instructions
@@ -416,14 +452,10 @@ type Tenant struct {
 	Slug          string         `yaml:"slug"`
 	Runner        *Runner        `yaml:"runner,omitempty"`
 	Installations []Installation `yaml:"installations"`
-	Models        Models         `yaml:"models,omitempty"`
-	Filter        string         `yaml:"filter,omitempty"`
-	Forks         *bool          `yaml:"forks,omitempty"`
-	Limits        Limits         `yaml:"limits,omitempty"`
-	Repositories  []Repository   `yaml:"repositories,omitempty"`
-	Settle        time.Duration  `yaml:"settle,omitempty"`
+	Overrides     `yaml:",inline"`
+	Limits        LimitsSpec   `yaml:"limits,omitempty"`
+	Repositories  []Repository `yaml:"repositories,omitempty"`
 
-	filter *prfilter.Program
 	origin Origin
 }
 
@@ -450,8 +482,7 @@ type File struct {
 	Web       Web                 `yaml:"web,omitempty"`
 	Tenants   []Tenant            `yaml:"tenants"`
 
-	defaultFilter *prfilter.Program
-	hash          string
+	hash string
 	// base is the parsed file a merged File was built from, nil for a
 	// parsed one; dashboard holds the tenants merged into it.
 	base      *File

@@ -257,8 +257,8 @@ func TestDecodeTenantDuration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeTenant: %v", err)
 	}
-	if ten.Settle != 5*time.Minute {
-		t.Fatalf("settle = %s, want 5m", ten.Settle)
+	if ten.Settle == nil || *ten.Settle != 5*time.Minute {
+		t.Fatalf("settle = %v, want 5m", ten.Settle)
 	}
 }
 

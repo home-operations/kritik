@@ -11,64 +11,70 @@ import (
 )
 
 // operatorOnlyFields are the spec fields only an operator may change on a
-// dashboard tenant (ADR-0009 §2.15).
+// dashboard tenant (ADR-0009 §2.15): what a review costs, and how much of
+// an untrusted pull request it exposes the instance to, at the tenant and
+// at each repository.
 var operatorOnlyFields = []string{
-	"models", "forks", "runner", "limits", "repositories[].agent", "repositories[].mode", "repositories[].incremental",
+	"models", "forks", "runner", "limits", "mode", "agent", "incremental",
+	"repositories[].models", "repositories[].forks", "repositories[].mode", "repositories[].agent", "repositories[].incremental",
 }
 
 // operatorOnlyChange is the path of the first operator-only field that
 // differs between the stored tenant and its replacement, "" when none
-// does. Repositories are matched by name; a removed repository that set
-// any of them changes them too, back to their defaults.
+// does. Repositories are matched by installation and name; a removed
+// repository that set any of them changes them too, back to what it
+// inherits.
 func operatorOnlyChange(prev, next *configfile.Tenant) string {
-	if prev.Models != next.Models {
-		return "models"
-	}
-	if !ptrEqual(prev.Forks, next.Forks) {
-		return "forks"
+	if f := operatorOnlyScope(&prev.Overrides, &next.Overrides); f != "" {
+		return f
 	}
 	if !runnerEqual(prev.Runner, next.Runner) {
 		return "runner"
 	}
-	if prev.Limits != next.Limits {
+	if !reflect.DeepEqual(prev.Limits, next.Limits) {
 		return "limits"
 	}
-	byName := map[string]*configfile.Repository{}
+	key := func(r *configfile.Repository) string { return r.Installation + "\x00" + r.Name }
+	byKey := map[string]*configfile.Repository{}
 	for i := range prev.Repositories {
-		byName[prev.Repositories[i].Name] = &prev.Repositories[i]
+		byKey[key(&prev.Repositories[i])] = &prev.Repositories[i]
 	}
-	var zero configfile.Repository
+	var zero configfile.Overrides
 	for i := range next.Repositories {
 		n := &next.Repositories[i]
-		p, ok := byName[n.Name]
-		if !ok {
-			p = &zero
+		p := &zero
+		if r, ok := byKey[key(n)]; ok {
+			p = &r.Overrides
 		}
-		delete(byName, n.Name)
-		if modeOf(p.Mode) != modeOf(n.Mode) {
-			return "repositories[" + strconv.Itoa(i) + "].mode"
-		}
-		if !agentEqual(p.Agent, n.Agent) {
-			return "repositories[" + strconv.Itoa(i) + "].agent"
-		}
-		if !ptrEqual(p.Incremental.MaxDeltaFiles, n.Incremental.MaxDeltaFiles) {
-			return "repositories[" + strconv.Itoa(i) + "].incremental"
+		delete(byKey, key(n))
+		if f := operatorOnlyScope(p, &n.Overrides); f != "" {
+			return "repositories[" + strconv.Itoa(i) + "]." + f
 		}
 	}
-	for _, p := range byName {
-		if modeOf(p.Mode) != modeOf(zero.Mode) || !agentEqual(p.Agent, zero.Agent) || p.Incremental.MaxDeltaFiles != nil {
+	for _, p := range byKey {
+		if operatorOnlyScope(&p.Overrides, &zero) != "" {
 			return "repositories"
 		}
 	}
 	return ""
 }
 
-// modeOf is the mode a repository resolves to.
-func modeOf(m configfile.ReviewMode) configfile.ReviewMode {
-	if m == "" {
-		return configfile.ReviewSingle
+// operatorOnlyScope is the first operator-only field one scope's overrides
+// set differently in a and b, "" when none.
+func operatorOnlyScope(a, b *configfile.Overrides) string {
+	switch {
+	case !reflect.DeepEqual(a.Models, b.Models):
+		return "models"
+	case !ptrEqual(a.Forks, b.Forks):
+		return "forks"
+	case a.Mode != b.Mode:
+		return "mode"
+	case !agentEqual(a.Agent, b.Agent):
+		return "agent"
+	case !ptrEqual(a.Incremental.MaxDeltaFiles, b.Incremental.MaxDeltaFiles):
+		return "incremental"
 	}
-	return m
+	return ""
 }
 
 func runnerEqual(a, b *configfile.Runner) bool {

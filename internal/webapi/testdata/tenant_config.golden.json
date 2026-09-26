@@ -7,8 +7,13 @@
     "forks",
     "runner",
     "limits",
-    "repositories[].agent",
+    "mode",
+    "agent",
+    "incremental",
+    "repositories[].models",
+    "repositories[].forks",
     "repositories[].mode",
+    "repositories[].agent",
     "repositories[].incremental"
   ],
   "spec": {

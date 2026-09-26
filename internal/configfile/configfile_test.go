@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -610,6 +611,90 @@ defaults:
 			}
 		})
 	}
+}
+
+// TestScopePrecedence checks ADR-0010 §2.4: every repository setting can be
+// written at the defaults, a tenant and a repository entry, the narrowest
+// one written wins even when it is empty or zero, and ignore globs add up.
+func TestScopePrecedence(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	const head = `providers:
+  p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }
+defaults:
+  models: { review: p/big, fallback: p/small }
+  filter: "!pr.draft"
+  settle: 2m
+  ignore: ["defaults/**"]
+  mode: agentic
+  agent: { maxSteps: 9 }
+  incremental: { maxDeltaFiles: 3 }
+  review: { instructions: [ops/rules.md], templates: { summary: ops/summary.tmpl } }
+  limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
+`
+	tenant := func(tenantKeys, repos string) string {
+		return head + strings.Replace(minimal, "slug: acme", "slug: acme\n"+tenantKeys+"    repositories: ["+repos+"]", 1)
+	}
+	parse := func(t *testing.T, doc string) *File {
+		t.Helper()
+		f, err := Parse([]byte(doc))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		return f
+	}
+
+	t.Run("a tenant inherits what it leaves out", func(t *testing.T) {
+		f := parse(t, tenant("", "{ name: acme/x }"))
+		s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x")
+		if s.Filter == nil || s.Settle != 2*time.Minute || s.Mode != ReviewAgentic || s.Agent.MaxSteps != 9 ||
+			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
+			!slices.Equal(s.Review.Instructions, []string{"ops/rules.md"}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
+			t.Fatalf("inherited settings = %+v", s)
+		}
+	})
+
+	t.Run("an empty or zero value written at a narrower scope clears", func(t *testing.T) {
+		f := parse(t, tenant(`    filter: ""
+    settle: 0s
+    models: { fallback: "" }
+    limits: { tokensPerMonth: 0 }
+`, `{ name: acme/x, review: { instructions: [], templates: { summary: "" } } }`))
+		s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x")
+		if s.Filter != nil || s.Settle != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
+			s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {
+			t.Fatalf("cleared settings = %+v", s)
+		}
+		if len(s.Review.Instructions) != 0 || s.Review.Templates.Summary != "" {
+			t.Fatalf("cleared review = %+v", s.Review)
+		}
+	})
+
+	t.Run("the narrowest scope written wins, field by field", func(t *testing.T) {
+		f := parse(t, tenant(`    mode: single
+    agent: { maxSteps: 7 }
+    review: { requireSuggestedFix: true }
+    ignore: ["tenant/**"]
+`, `{ name: acme/x, models: { review: p/small }, forks: true, agent: { maxTokens: 500 }, ignore: ["repo/**"] }`))
+		s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x")
+		if s.Mode != ReviewSingle || s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" || !s.Forks {
+			t.Fatalf("settings = %+v", s)
+		}
+		if !s.Review.RequireSuggestedFix || !slices.Equal(s.Review.Instructions, []string{"ops/rules.md"}) {
+			t.Fatalf("review = %+v, want the tenant's strictness over the defaults' instructions", s.Review)
+		}
+		want := append(append([]string(nil), DefaultIgnore...), "defaults/**", "tenant/**", "repo/**")
+		if !slices.Equal(s.Ignore, want) {
+			t.Fatalf("ignore = %v, want %v", s.Ignore, want)
+		}
+	})
+
+	t.Run("an explicit concurrency must be positive", func(t *testing.T) {
+		if _, err := Parse([]byte(tenant("    limits: { concurrency: 0 }\n", "{ name: acme/x }"))); err == nil ||
+			!strings.Contains(err.Error(), "concurrency must be positive") {
+			t.Fatalf("Parse = %v", err)
+		}
+	})
 }
 
 func TestRepositoryModeAgentReview(t *testing.T) {

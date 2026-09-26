@@ -85,11 +85,9 @@ func (f *File) resolve() error {
 		return err
 	}
 
-	prg, err := compileFilter(f.Defaults.Filter)
-	if err != nil {
+	if err := f.Defaults.compile(); err != nil {
 		return fmt.Errorf("configfile: defaults.filter: %w", err)
 	}
-	f.defaultFilter = prg
 
 	for ti := range f.Tenants {
 		if err := f.Tenants[ti].resolve(fmt.Sprintf("tenants[%d]", ti), fileRefs); err != nil {
@@ -102,8 +100,7 @@ func (f *File) resolve() error {
 // resolve reads the tenant's secret references under refs and compiles its
 // filters; where prefixes every error.
 func (t *Tenant) resolve(where string, refs refPolicy) error {
-	var err error
-	if t.filter, err = compileFilter(t.Filter); err != nil {
+	if err := t.compile(); err != nil {
 		return fmt.Errorf("configfile: %s.filter: %w", where, err)
 	}
 	for ii := range t.Installations {
@@ -112,8 +109,7 @@ func (t *Tenant) resolve(where string, refs refPolicy) error {
 		}
 	}
 	for ri := range t.Repositories {
-		r := &t.Repositories[ri]
-		if r.filter, err = compileFilter(r.Filter); err != nil {
+		if err := t.Repositories[ri].compile(); err != nil {
 			return fmt.Errorf("configfile: %s.repositories[%d].filter: %w", where, ri, err)
 		}
 	}
@@ -163,9 +159,6 @@ func (f *File) validate() error {
 		return err
 	}
 	if err := f.validateEgress(); err != nil {
-		return err
-	}
-	if err := f.checkModels("defaults.models", f.Defaults.Models); err != nil {
 		return err
 	}
 	if err := f.validateRetention(); err != nil {
@@ -281,8 +274,8 @@ func (f *File) validateTenants() error {
 	if err := checkLimits("defaults.limits", f.Defaults.Limits); err != nil {
 		return err
 	}
-	if f.Defaults.Settle < 0 {
-		return errors.New("configfile: defaults.settle must not be negative")
+	if err := f.validateOverrides("defaults", &f.Defaults.Overrides); err != nil {
+		return err
 	}
 
 	if len(f.Tenants) == 0 {
@@ -313,19 +306,16 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[
 		return fmt.Errorf("configfile: %s.slug %q duplicates %s", where, t.Slug, prev)
 	}
 	slugs[t.Slug] = where
-	if err := f.checkModels(where+".models", t.Models); err != nil {
+	if err := checkLimits(where+".limits", t.Limits); err != nil {
 		return err
 	}
-	if err := checkLimits(where+".limits", t.Limits); err != nil {
+	if err := f.validateOverrides(where, &t.Overrides); err != nil {
 		return err
 	}
 	if t.Runner != nil {
 		if err := validateRunnerDeadline(where, t.Runner.ActiveDeadlineSeconds); err != nil {
 			return err
 		}
-	}
-	if t.Settle < 0 {
-		return fmt.Errorf("configfile: %s.settle must not be negative", where)
 	}
 	if len(t.Installations) == 0 {
 		return fmt.Errorf("configfile: %s (%s) must list at least one installation", where, t.Slug)
@@ -362,23 +352,37 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[
 			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d] of installation %q", rwhere, r.Name, prev, in.Name)
 		}
 		repos[key] = ri
-		if r.Settle < 0 {
-			return fmt.Errorf("configfile: %s.settle must not be negative", rwhere)
-		}
-		if err := r.validateReview(rwhere); err != nil {
+		if err := f.validateOverrides(rwhere, &r.Overrides); err != nil {
 			return err
-		}
-		for gi, g := range r.Ignore {
-			if !doublestar.ValidatePattern(g) || strings.TrimSpace(g) == "" {
-				return fmt.Errorf("configfile: %s.ignore[%d] %q is not a valid glob", rwhere, gi, g)
-			}
 		}
 	}
 	return nil
 }
 
-// validateReview checks the operator-only review keys of a repository.
-func (r Repository) validateReview(where string) error {
+// compile compiles the filter the scope writes, if any; an empty one
+// compiles to no restriction.
+func (o *Overrides) compile() (err error) {
+	if o.Filter != nil {
+		o.filter, err = compileFilter(*o.Filter)
+	}
+	return err
+}
+
+// validateOverrides checks the settings one scope writes: its models name
+// declared providers, and its settle, ignore globs, mode, agent, incremental
+// and review keys are in range.
+func (f *File) validateOverrides(where string, r *Overrides) error {
+	if err := f.checkModels(where+".models", r.Models); err != nil {
+		return err
+	}
+	if r.Settle != nil && *r.Settle < 0 {
+		return fmt.Errorf("configfile: %s.settle must not be negative", where)
+	}
+	for gi, g := range r.Ignore {
+		if !doublestar.ValidatePattern(g) || strings.TrimSpace(g) == "" {
+			return fmt.Errorf("configfile: %s.ignore[%d] %q is not a valid glob", where, gi, g)
+		}
+	}
 	if r.Mode != "" && !r.Mode.Valid() {
 		return fmt.Errorf("configfile: %s.mode must be %s or %s, got %q", where, ReviewSingle, ReviewAgentic, r.Mode)
 	}
@@ -421,12 +425,15 @@ func (r Repository) validateReview(where string) error {
 			return fmt.Errorf("configfile: %s.review.instructions[%d]: %w", where, i, err)
 		}
 	}
-	for _, t := range [][2]string{{"summary", r.Review.Templates.Summary}, {"inline", r.Review.Templates.Inline}} {
-		if t[1] == "" {
+	for _, t := range []struct {
+		name string
+		path *string
+	}{{"summary", r.Review.Templates.Summary}, {"inline", r.Review.Templates.Inline}} {
+		if t.path == nil || *t.path == "" {
 			continue
 		}
-		if err := checkRepoPath(t[1]); err != nil {
-			return fmt.Errorf("configfile: %s.review.templates.%s: %w", where, t[0], err)
+		if err := checkRepoPath(*t.path); err != nil {
+			return fmt.Errorf("configfile: %s.review.templates.%s: %w", where, t.name, err)
 		}
 	}
 	return nil
@@ -487,11 +494,12 @@ func (in Installation) validate(where string) error {
 	return nil
 }
 
-func (f *File) checkModels(where string, m Models) error {
-	for role, ref := range map[string]ModelRef{"review": m.Review, "fallback": m.Fallback} {
-		if ref == "" {
+func (f *File) checkModels(where string, m ModelsSpec) error {
+	for role, r := range map[string]*ModelRef{"review": m.Review, "fallback": m.Fallback} {
+		if r == nil || *r == "" {
 			continue
 		}
+		ref := *r
 		p := ref.Provider()
 		if p == "" || ref.Model() == "" {
 			return fmt.Errorf("configfile: %s.%s must be \"<provider>/<model>\", got %q", where, role, ref)
@@ -503,9 +511,12 @@ func (f *File) checkModels(where string, m Models) error {
 	return nil
 }
 
-func checkLimits(where string, l Limits) error {
-	if l.Concurrency < 0 || l.ReviewsPerDay < 0 || l.TokensPerMonth < 0 {
+func checkLimits(where string, l LimitsSpec) error {
+	if (l.ReviewsPerDay != nil && *l.ReviewsPerDay < 0) || (l.TokensPerMonth != nil && *l.TokensPerMonth < 0) {
 		return fmt.Errorf("configfile: %s: limits must not be negative", where)
+	}
+	if l.Concurrency != nil && *l.Concurrency <= 0 {
+		return fmt.Errorf("configfile: %s.concurrency must be positive", where)
 	}
 	return nil
 }

@@ -54,8 +54,29 @@ func TestOperatorOnlyChange(t *testing.T) {
 			want: "repositories[0].mode",
 		},
 		{
-			name: "single is the unset mode",
+			// The tenant or the defaults may set a mode, so an explicit single
+			// no longer resolves like an unset one.
+			name: "single pins what an unset mode inherits",
 			old:  `{` + base + `,"repositories":[{"name":"alpha/x"}]}`, new: `{` + base + `,"repositories":[{"name":"alpha/x","mode":"single"}]}`,
+			want: "repositories[0].mode",
+		},
+		{name: "tenant mode set", old: `{` + base + `}`, new: `{` + base + `,"mode":"agentic"}`, want: "mode"},
+		{name: "tenant agent set", old: `{` + base + `}`, new: `{` + base + `,"agent":{"maxTokens":9000000}}`, want: "agent"},
+		{name: "tenant incremental set", old: `{` + base + `}`, new: `{` + base + `,"incremental":{"maxDeltaFiles":500}}`, want: "incremental"},
+		{
+			name: "repository models set",
+			old:  `{` + base + `,"repositories":[{"name":"alpha/x"}]}`, new: `{` + base + `,"repositories":[{"name":"alpha/x","models":{"review":"p/big"}}]}`,
+			want: "repositories[0].models",
+		},
+		{
+			name: "repository forks set",
+			old:  `{` + base + `,"repositories":[{"name":"alpha/x"}]}`, new: `{` + base + `,"repositories":[{"name":"alpha/x","forks":true}]}`,
+			want: "repositories[0].forks",
+		},
+		{
+			name: "tenant review, ignore and settle are the tenant admin's",
+			old:  `{` + base + `}`,
+			new:  `{` + base + `,"review":{"requireSuggestedFix":true},"ignore":["gen/**"],"settle":"2m"}`,
 		},
 		{
 			name: "agent changed on a reordered repository",

@@ -972,7 +972,7 @@ func checkAgentOutlivesJobTimeout(t *testing.T, h *agenticHarness) {
 // read the caps is released rather than held for the capped review.
 func checkAgentCappedUnderLease(t *testing.T, h *agenticHarness) {
 	capped := *h.file
-	capped.Defaults.Limits.ReviewsPerDay = 1
+	capped.Defaults.Limits.ReviewsPerDay = new(1)
 	h.review.Current.Set(&capped)
 	t.Cleanup(func() { h.review.Current.Set(h.file) })
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc capped() {}\n")
