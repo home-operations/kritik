@@ -38,6 +38,10 @@ const (
 	reasonDuplicate    = "duplicate"
 )
 
+// ActionBaseline is the poller's synthetic action for a pull request that
+// predates kritik's knowing its installation: it is recorded, not reviewed.
+const ActionBaseline = "baseline"
+
 // reviewActions are the pull request actions that produce a review.
 // reviewActions are the pull request actions that start a review; "poll"
 // is the poller's synthetic action.
@@ -77,7 +81,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	if ev.Repository == nil || pr == nil {
 		return Outcome{Status: Ignored, Reason: reasonNoRepository}, nil
 	}
-	if !reviewActions[ev.Action] {
+	if !reviewActions[ev.Action] && ev.Action != ActionBaseline {
 		if ev.Action == "closed" {
 			err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', updated_at = now()
@@ -126,6 +130,10 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			req.Tenant.ID(), rid, pr.Number, pr.Title, pr.Author, pr.AuthorIsBot, pr.Draft, pr.Fork,
 			pr.HeadRef, pr.HeadSHA, pr.BaseRef, pr.BaseSHA, pr.URL, pr.Body, nullTime(pr), labels, pr.Merged); err != nil {
 			return fmt.Errorf("ingest: upsert pull request: %w", err)
+		}
+		if ev.Action == ActionBaseline {
+			out = Outcome{Status: Skipped, Reason: ActionBaseline}
+			return nil
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
 			TenantID: req.Tenant.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: ev.Action,
