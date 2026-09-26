@@ -72,6 +72,12 @@ type LoginState struct {
 // provider and coming back.
 const LoginStateTTL = 10 * time.Minute
 
+// MaxLoginStates caps the sign-ins in flight at once. Starting one needs
+// no session, so without a cap anyone could grow login_states without
+// bound for LoginStateTTL; far more than any real dashboard's users start
+// in ten minutes.
+const MaxLoginStates = 10_000
+
 // sessionTouchInterval bounds how often a session's last_seen_at is written,
 // so an active dashboard does not write on every request.
 const sessionTouchInterval = time.Minute
@@ -81,6 +87,9 @@ var (
 	ErrSession = errors.New("store: session is not valid")
 	// ErrLoginState is an OAuth state that is unknown, used or expired.
 	ErrLoginState = errors.New("store: login state is not valid")
+	// ErrLoginStatesFull is a sign-in refused because MaxLoginStates are
+	// already in flight.
+	ErrLoginStatesFull = errors.New("store: too many sign-ins in flight")
 )
 
 func tokenHash(token string) []byte {
@@ -339,10 +348,14 @@ func (s *Store) CreateLoginState(ctx context.Context, ls LoginState, browser str
 	if _, err := s.app.Exec(ctx, `DELETE FROM login_states WHERE expires_at <= $1`, now); err != nil {
 		return "", fmt.Errorf("store: create login state: %w", err)
 	}
-	if _, err := s.app.Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, return_to, expires_at, browser_hash)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		tokenHash(state), ls.Provider, ls.Nonce, ls.PKCEVerifier, ls.ReturnTo, now.Add(LoginStateTTL), tokenHash(browser)); err != nil {
+	tag, err := s.app.Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, return_to, expires_at, browser_hash)
+		SELECT $1, $2, $3, $4, $5, $6, $7 WHERE (SELECT count(*) FROM login_states) < $8`,
+		tokenHash(state), ls.Provider, ls.Nonce, ls.PKCEVerifier, ls.ReturnTo, now.Add(LoginStateTTL), tokenHash(browser), MaxLoginStates)
+	if err != nil {
 		return "", fmt.Errorf("store: create login state: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return "", ErrLoginStatesFull
 	}
 	return state, nil
 }

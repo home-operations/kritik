@@ -159,6 +159,10 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		ReturnTo: returnTo(r.URL.Query().Get("return_to")),
 	}
 	state, err := h.store.CreateLoginState(r.Context(), ls, browser, h.now())
+	if errors.Is(err, store.ErrLoginStatesFull) {
+		h.fail(w, r, http.StatusServiceUnavailable, codeTooManySignIns, err)
+		return
+	}
 	if err != nil {
 		h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
 		return
@@ -404,6 +408,7 @@ const (
 	codeSignInDenied        errorCode = "sign_in_denied"
 	codeExchangeFailed      errorCode = "exchange_failed"
 	codeMembershipFailed    errorCode = "membership_failed"
+	codeTooManySignIns      errorCode = "too_many_sign_ins"
 )
 
 // errorBody is every JSON error the auth middleware returns.
