@@ -26,6 +26,9 @@
   let errPath = $state('');
   let errSeq = $state(0);
   let generated = $state<Record<string, string> | undefined>(undefined);
+  // Offered once a create is refused because the slug was used before.
+  let offerAdopt = $state(false);
+  let adopt = $state(false);
 
   $effect(() => {
     setLeaveGuard(() => (creating && dirty) || generated !== undefined);
@@ -42,6 +45,8 @@
     dirty = false;
     errMessage = '';
     errPath = '';
+    offerAdopt = false;
+    adopt = false;
   }
 
   async function create(spec: Record<string, unknown>): Promise<void> {
@@ -49,6 +54,7 @@
     errMessage = '';
     errPath = '';
     const body: CreateTenantRequest = { slug: typeof spec.slug === 'string' ? spec.slug : '', spec };
+    if (adopt) body.adopt = true;
     try {
       const r = await sendJSON<TenantWriteResult>('POST', '/api/v1/tenants', body);
       toast(`Created tenant ${r.slug}`);
@@ -58,6 +64,7 @@
     } catch (err) {
       errMessage = describe(err);
       errPath = errorPath(err);
+      if (isCode(err, 'slug_taken') && errPath === 'slug') offerAdopt = true;
       errSeq++;
     } finally {
       saving = false;
@@ -118,6 +125,18 @@
         </header>
         <div class="panel-body">
           <ConfigEditor initial={{}} creating operator {saving} {errMessage} {errPath} {errSeq} bind:dirty submitLabel="Create tenant" onsave={create} />
+          {#if offerAdopt}
+            <div class="notice" role="note">
+              <label>
+                <input type="checkbox" bind:checked={adopt} />
+                Adopt this slug
+              </label>
+              <p class="muted">
+                A tenant used this slug before. Adopting it removes that tenant's members and invites, but its reviews, findings
+                and transcripts are kept and become visible to the new tenant's members.
+              </p>
+            </div>
+          {/if}
         </div>
       </section>
     {:else}

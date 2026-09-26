@@ -228,7 +228,7 @@ func TestValidateDashboard(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateDashboard(m, tt.d, fakeOpener{})
+			err := ValidateDashboard(m, m.Dashboard(), tt.d, fakeOpener{})
 			if (err == nil) != tt.ok {
 				t.Fatalf("err = %v, want ok %v", err, tt.ok)
 			}

@@ -126,7 +126,7 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) error {
 	if t, ok := s.current.Get().Tenant(req.Slug); ok && t.Origin() == configfile.OriginFile {
 		return errStatus(http.StatusConflict, CodeSlugTaken, "the configuration file already declares this slug", slugPath)
 	}
-	res, err := s.writeTenant(r.Context(), p, req.Slug, req.Spec, 0)
+	res, err := s.writeTenant(r.Context(), p, req.Slug, req.Spec, 0, req.Adopt)
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func (s *Server) updateTenant(w http.ResponseWriter, r *http.Request) error {
 	if req.Revision <= 0 || len(req.Spec) == 0 {
 		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, "revision and spec are required", nil)
 	}
-	res, err := s.writeTenant(r.Context(), p, slug, req.Spec, req.Revision)
+	res, err := s.writeTenant(r.Context(), p, slug, req.Spec, req.Revision, false)
 	if err != nil {
 		return err
 	}
@@ -172,13 +172,17 @@ type tenantAudit struct {
 
 // writeTenant validates spec as the dashboard tenant slug and stores it,
 // with its audit row, in one transaction. expected is the revision it
-// replaces, 0 to create it.
+// replaces, 0 to create it; adopt lets a create re-use a slug a tenant
+// held before.
 func (s *Server) writeTenant(
-	ctx context.Context, p *auth.Principal, slug string, spec json.RawMessage, expected int64,
+	ctx context.Context, p *auth.Principal, slug string, spec json.RawMessage, expected int64, adopt bool,
 ) (TenantWriteResult, error) {
 	tid := tenantIDFor(slug)
 	res := TenantWriteResult{Slug: slug}
 	err := s.store.WithTenant(ctx, tid, func(tx pgx.Tx) error {
+		if err := store.LockDashboardWrites(ctx, tx); err != nil {
+			return err
+		}
 		var prev *configfile.DashboardTenant
 		if expected > 0 {
 			d, _, err := s.store.DashboardTenant(ctx, tx, slug)
@@ -192,8 +196,14 @@ func (s *Server) writeTenant(
 				return errRevisionConflict
 			}
 			prev = &d
+		} else if err := s.claimSlug(ctx, tx, p, tid, slug, adopt); err != nil {
+			return err
 		}
-		candidate, sealed, err := s.checkSpec(p, slug, spec, prev)
+		dash, err := store.DashboardTenantsIn(ctx, tx)
+		if err != nil {
+			return err
+		}
+		candidate, sealed, err := s.checkSpec(p, slug, spec, prev, dash)
 		if err != nil {
 			return err
 		}
@@ -219,11 +229,33 @@ func (s *Server) writeTenant(
 	return res, err
 }
 
+// claimSlug refuses a create whose slug a tenant held before, enabled or
+// not: tenant ids derive from slugs, so the new tenant would see the old
+// one's reviews, findings and transcripts. adopt accepts that, clearing
+// the old tenant's members and invites.
+func (s *Server) claimSlug(ctx context.Context, tx pgx.Tx, p *auth.Principal, tid, slug string, adopt bool) error {
+	held, err := store.TenantRowExists(ctx, tx, tid)
+	switch {
+	case err != nil:
+		return err
+	case !held:
+		return nil
+	case !adopt:
+		return errStatus(http.StatusConflict, CodeSlugTaken,
+			"a tenant used this slug before; creating it again with adopt keeps that tenant's review history", slugPath)
+	}
+	if err := store.DeleteTenantAccess(ctx, tx, tid); err != nil {
+		return err
+	}
+	return record(ctx, tx, p, &tid, AuditTenantAdopt, slug, struct{}{})
+}
+
 // checkSpec seals spec's secrets against the tenant it replaces (nil on
 // create), holds a non-operator to the fields it may change, and checks
-// the result merges with the running configuration.
+// the result merges with the running file and dash, the dashboard tenants
+// as the write's transaction reads them.
 func (s *Server) checkSpec(
-	p *auth.Principal, slug string, spec json.RawMessage, prev *configfile.DashboardTenant,
+	p *auth.Principal, slug string, spec json.RawMessage, prev *configfile.DashboardTenant, dash []configfile.DashboardTenant,
 ) (*configfile.Tenant, sealedSpec, error) {
 	var stored json.RawMessage
 	if prev != nil {
@@ -258,8 +290,8 @@ func (s *Server) checkSpec(
 		}
 	}
 	current := s.current.Get()
-	if err := configfile.ValidateDashboard(current, candidate, s.keyring); err != nil {
-		return nil, sealed, mergeFailure(slug, &next, err, func() error { return validateWithout(current, slug, s.keyring) })
+	if err := configfile.ValidateDashboard(current, dash, candidate, s.keyring); err != nil {
+		return nil, sealed, mergeFailure(slug, &next, err, func() error { return validateWithout(current, dash, slug, s.keyring) })
 	}
 	return &next, sealed, nil
 }
@@ -278,9 +310,10 @@ func checkDashboardHosts(t *configfile.Tenant) error {
 }
 
 // checkTakeover refuses a write that would claim a live tenant or
-// installation row another origin manages: one the file dropped that the
-// leader has not disabled yet, say. The merge already refuses anything
-// the running file still declares.
+// installation row another origin manages (one the file dropped that the
+// leader has not disabled yet, say) or an installation name another
+// tenant holds in any state, which the leader would refuse to hand over.
+// The merge already refuses anything the running file still declares.
 func (s *Server) checkTakeover(ctx context.Context, tx pgx.Tx, tenantID string, t *configfile.Tenant) error {
 	names := make([]string, len(t.Installations))
 	for i := range t.Installations {
@@ -289,6 +322,13 @@ func (s *Server) checkTakeover(ctx context.Context, tx pgx.Tx, tenantID string, 
 	taken, err := store.LiveNonDashboard(ctx, tx, tenantID, names)
 	if err != nil {
 		return err
+	}
+	msg := " is still in use by a tenant the configuration file manages"
+	if len(taken) == 0 {
+		if taken, err = store.InstallationsHeldElsewhere(ctx, tx, tenantID, names); err != nil {
+			return err
+		}
+		msg = " belongs to another tenant"
 	}
 	if len(taken) == 0 {
 		return nil
@@ -301,8 +341,7 @@ func (s *Server) checkTakeover(ctx context.Context, tx pgx.Tx, tenantID string, 
 			}
 		}
 	}
-	return errStatus(http.StatusConflict, CodeSlugTaken, path+" is still in use by a tenant the configuration file manages",
-		pathDetails{Path: path})
+	return errStatus(http.StatusConflict, CodeSlugTaken, path+msg, pathDetails{Path: path})
 }
 
 func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) error {
@@ -322,6 +361,9 @@ func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) error {
 	}
 	tid := tenantIDFor(slug)
 	err = s.store.WithTenant(ctx, tid, func(tx pgx.Tx) error {
+		if err := store.LockDashboardWrites(ctx, tx); err != nil {
+			return err
+		}
 		err := s.store.DeleteDashboardTenant(ctx, tx, slug, rev)
 		switch {
 		case errors.Is(err, store.ErrNotFound):

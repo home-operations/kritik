@@ -169,6 +169,67 @@ func LiveNonDashboard(ctx context.Context, tx pgx.Tx, tenantID string, names []s
 	return out, nil
 }
 
+// TenantRowExists reports whether the tenant has a tenants row, enabled or
+// not, managed by either origin. tx must be scoped to tenantID.
+func TenantRowExists(ctx context.Context, tx pgx.Tx, tenantID string) (bool, error) {
+	var ok bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE id = $1)`, tenantID).Scan(&ok); err != nil {
+		return false, fmt.Errorf("store: tenant exists: %w", err)
+	}
+	return ok, nil
+}
+
+// InstallationsHeldElsewhere lists each of names that an installation row
+// of a tenant other than the one tx is scoped to holds, in any state.
+// Row-level security hides those rows, but not the unique index on name:
+// each name the tenant cannot see is probed with an insert that stops at
+// that index, inside a savepoint that is always rolled back. A name that is
+// free either inserts or, when the tenant has no tenants row yet, fails its
+// foreign key; both mean no one holds it.
+func InstallationsHeldElsewhere(ctx context.Context, tx pgx.Tx, tenantID string, names []string) ([]string, error) {
+	rows, err := tx.Query(ctx, `SELECT n FROM unnest($1::text[]) n WHERE NOT EXISTS (SELECT 1 FROM installations WHERE name = n)`, names)
+	if err != nil {
+		return nil, fmt.Errorf("store: check installation names: %w", err)
+	}
+	unseen, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("store: check installation names: %w", err)
+	}
+	var held []string
+	for _, name := range unseen {
+		taken, err := probeInstallationName(ctx, tx, tenantID, name)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			held = append(held, name)
+		}
+	}
+	return held, nil
+}
+
+func probeInstallationName(ctx context.Context, tx pgx.Tx, tenantID, name string) (bool, error) {
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("store: probe installation %s: %w", name, err)
+	}
+	defer func() { _ = sp.Rollback(ctx) }() // the probe never keeps its row
+	var id string
+	err = sp.QueryRow(ctx, `
+		INSERT INTO installations (id, tenant_id, name, forge, account, credential_kind, managed_by)
+		VALUES (gen_random_uuid(), $1, $2, 'github', '', 'token', 'dashboard')
+		ON CONFLICT DO NOTHING RETURNING id`, tenantID, name).Scan(&id)
+	switch pgErr, _ := errors.AsType[*pgconn.PgError](err); {
+	case errors.Is(err, pgx.ErrNoRows):
+		return true, nil
+	case pgErr != nil && pgErr.Code == "23503":
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("store: probe installation %s: %w", name, err)
+	}
+	return false, nil
+}
+
 // TenantMembers lists every account with access to the tenant, by display
 // name, with each source of that access.
 func TenantMembers(ctx context.Context, tx pgx.Tx, tenantID string) ([]Member, error) {

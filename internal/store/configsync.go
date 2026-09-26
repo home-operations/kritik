@@ -43,9 +43,10 @@ func IsConfigContentError(err error) bool {
 // dashboard rows the file no longer declares, and records the applied hash.
 // A row declared again by another origin (a file tenant removed and a
 // dashboard tenant of the same slug added, or the reverse) is disabled and
-// then taken over; an enabled row is never taken over (ErrManagedBy). It
-// runs as the owner in one transaction, so a replica reading config_state
-// never sees a half-applied file. Only the leader calls it.
+// then taken over; an enabled row is never taken over, and neither is an
+// installation another tenant holds (both ErrManagedBy). It runs as the
+// owner in one transaction, so a replica reading config_state never sees a
+// half-applied file. Only the leader calls it.
 func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader string) error {
 	if s.owner == nil {
 		return errors.New("store: applying configuration needs the owner DSN")
@@ -192,10 +193,15 @@ func upsertInstallation(
 			tenant_id = EXCLUDED.tenant_id, forge = EXCLUDED.forge, host = EXCLUDED.host, account = EXCLUDED.account,
 			credential_kind = EXCLUDED.credential_kind, managed_by = EXCLUDED.managed_by, enabled = true, disabled_at = NULL,
 			updated_at = now()
-		WHERE installations.managed_by = EXCLUDED.managed_by OR NOT installations.enabled
+		WHERE installations.tenant_id = EXCLUDED.tenant_id AND (installations.managed_by = EXCLUDED.managed_by OR NOT installations.enabled)
 		RETURNING id`, in.ID(), tenantID, in.Name, string(in.Forge), in.Host, in.Account, kind, string(origin)).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", managedByConflict(ctx, tx, "installation "+in.Name, origin, `SELECT managed_by FROM installations WHERE name = $1`, in.Name)
+		// Another tenant's row keeps its history (pull requests, reviews,
+		// repositories) under its own tenant id; handing the name over would
+		// mix the two, so it stays with its tenant, enabled or not.
+		return "", managedByConflict(ctx, tx, "installation "+in.Name, origin,
+			`SELECT CASE WHEN tenant_id = $2 THEN managed_by ELSE 'another tenant' END FROM installations WHERE name = $1`,
+			in.Name, tenantID)
 	}
 	if err != nil {
 		return "", fmt.Errorf("store: upsert installation %s: %w", in.Name, err)

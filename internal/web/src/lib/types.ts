@@ -622,6 +622,9 @@ export interface TenantConfig {
 export interface CreateTenantRequest {
   slug: string;
   spec: Record<string, unknown>;
+  // Re-use a slug a tenant held before: its members and invites are
+  // removed, its review history is kept.
+  adopt?: boolean;
 }
 
 export interface UpdateTenantRequest {
@@ -686,6 +689,7 @@ export type AuditAction =
   | 'tenant.create'
   | 'tenant.update'
   | 'tenant.delete'
+  | 'tenant.adopt'
   | 'invite.create'
   | 'invite.delete'
   | 'member.update'

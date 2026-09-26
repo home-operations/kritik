@@ -44,7 +44,21 @@ func (s *Store) DashboardTenants(ctx context.Context) ([]configfile.DashboardTen
 	if ok, err := s.dashboardExists(ctx); err != nil || !ok {
 		return nil, err
 	}
-	rows, err := s.app.Query(ctx, `SELECT slug, spec, revision FROM dashboard_tenants ORDER BY slug`)
+	return listDashboardTenants(ctx, s.app)
+}
+
+// DashboardTenantsIn returns every dashboard tenant as tx sees it, sorted
+// by slug: under LockDashboardWrites, every committed write.
+func DashboardTenantsIn(ctx context.Context, tx pgx.Tx) ([]configfile.DashboardTenant, error) {
+	return listDashboardTenants(ctx, tx)
+}
+
+func listDashboardTenants(
+	ctx context.Context, q interface {
+		Query(context.Context, string, ...any) (pgx.Rows, error)
+	},
+) ([]configfile.DashboardTenant, error) {
+	rows, err := q.Query(ctx, `SELECT slug, spec, revision FROM dashboard_tenants ORDER BY slug`)
 	if err != nil {
 		return nil, fmt.Errorf("store: list dashboard tenants: %w", err)
 	}
@@ -57,6 +71,17 @@ func (s *Store) DashboardTenants(ctx context.Context) ([]configfile.DashboardTen
 		return nil, fmt.Errorf("store: list dashboard tenants: %w", err)
 	}
 	return out, nil
+}
+
+// LockDashboardWrites serialises, until tx ends, every dashboard tenant
+// write, so each is validated against all the others that committed
+// before it: dashboard_tenants has no constraint across rows, and two
+// tenants claiming one installation name would each merge on their own.
+func LockDashboardWrites(ctx context.Context, tx pgx.Tx) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('kritik:dashboard-tenants', 0))`); err != nil {
+		return fmt.Errorf("store: lock dashboard tenants: %w", err)
+	}
+	return nil
 }
 
 // DashboardFingerprint changes whenever a dashboard tenant is created,

@@ -202,11 +202,11 @@ func mergedHash(fileHash string, sorted []DashboardTenant) string {
 // none for a parsed file.
 func (f *File) Dashboard() []DashboardTenant { return slices.Clone(f.dashboard) }
 
-// ValidateDashboard reports whether d would merge into f: f's dashboard
-// tenants with d added, or replacing the one with d's slug, merged onto the
-// file f was built from.
-func ValidateDashboard(f *File, d DashboardTenant, open Opener) error {
-	dash := slices.DeleteFunc(f.Dashboard(), func(e DashboardTenant) bool { return e.Slug == d.Slug })
-	_, err := Merge(f, append(dash, d), open)
+// ValidateDashboard reports whether d would merge into f: dash with d
+// added, or replacing the one with d's slug, merged onto the file f was
+// built from. dash is not modified.
+func ValidateDashboard(f *File, dash []DashboardTenant, d DashboardTenant, open Opener) error {
+	rest := slices.DeleteFunc(slices.Clone(dash), func(e DashboardTenant) bool { return e.Slug == d.Slug })
+	_, err := Merge(f, append(rest, d), open)
 	return err
 }

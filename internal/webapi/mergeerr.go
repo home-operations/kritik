@@ -22,10 +22,10 @@ var (
 	yamlTypeRe    = regexp.MustCompile(` in type [\w.*\[\]]+`)
 )
 
-// validateWithout merges the running dashboard tenants minus slug: whether
-// the configuration is valid before the write being judged.
-func validateWithout(current *configfile.File, slug string, open configfile.Opener) error {
-	dash := slices.DeleteFunc(current.Dashboard(), func(d configfile.DashboardTenant) bool { return d.Slug == slug })
+// validateWithout merges dash minus slug onto current's file: whether the
+// configuration is valid before the write being judged.
+func validateWithout(current *configfile.File, dash []configfile.DashboardTenant, slug string, open configfile.Opener) error {
+	dash = slices.DeleteFunc(slices.Clone(dash), func(d configfile.DashboardTenant) bool { return d.Slug == slug })
 	_, err := configfile.Merge(current, dash, open)
 	return err
 }

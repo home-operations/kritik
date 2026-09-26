@@ -267,7 +267,14 @@ is not running, is a `409 Conflict`. Inviting an address that is already a
 member of the tenant is refused, `409 already_member`, instead of creating
 a duplicate, and claiming a slug another tenant already holds, file- or
 dashboard-managed, is `409 slug_taken`. Deleting a dashboard tenant removes
-its memberships and invites along with it.
+its memberships and invites along with it, but not its history: its
+reviews, findings, usage and transcripts stay keyed on its slug. Creating a
+tenant under a slug any tenant held before is therefore also `409
+slug_taken`, unless the operator creates it with `adopt` (offered in the
+operator console after that refusal): the new tenant starts with none of
+the old one's members or invites but keeps its review history, visible to
+the new tenant's members. An installation name stays with the tenant that
+first held it, even once that tenant is gone.
 
 ### Sealing key
 

@@ -34,10 +34,13 @@ type TenantConfig struct {
 
 // CreateTenantRequest creates a dashboard tenant. Spec is a tenant entry
 // of the file in JSON; each secret is {"value": "..."} or, for a webhook
-// secret, {"generate": true}.
+// secret, {"generate": true}. Adopt re-uses a slug a tenant held before:
+// the new tenant starts with none of the old one's members or invites but
+// keeps its review history, which is keyed on the slug.
 type CreateTenantRequest struct {
-	Slug string          `json:"slug"`
-	Spec json.RawMessage `json:"spec"`
+	Slug  string          `json:"slug"`
+	Spec  json.RawMessage `json:"spec"`
+	Adopt bool            `json:"adopt,omitempty"`
 }
 
 // UpdateTenantRequest replaces a dashboard tenant's spec while it is still
@@ -119,6 +122,7 @@ const (
 	AuditTenantCreate AuditAction = "tenant.create"
 	AuditTenantUpdate AuditAction = "tenant.update"
 	AuditTenantDelete AuditAction = "tenant.delete"
+	AuditTenantAdopt  AuditAction = "tenant.adopt"
 	AuditInviteCreate AuditAction = "invite.create"
 	AuditInviteDelete AuditAction = "invite.delete"
 	AuditMemberUpdate AuditAction = "member.update"
@@ -131,7 +135,7 @@ const (
 // Valid reports whether a is an audited action.
 func (a AuditAction) Valid() bool {
 	switch a {
-	case AuditTenantCreate, AuditTenantUpdate, AuditTenantDelete, AuditInviteCreate, AuditInviteDelete,
+	case AuditTenantCreate, AuditTenantUpdate, AuditTenantDelete, AuditTenantAdopt, AuditInviteCreate, AuditInviteDelete,
 		AuditMemberUpdate, AuditMemberRemove, AuditReviewRerun, AuditReviewCancel, AuditRepoReindex:
 		return true
 	}
