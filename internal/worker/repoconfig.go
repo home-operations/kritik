@@ -113,7 +113,7 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective, cli
 	var vars map[string]any
 	if err := w.Store.WithTenant(ctx, e.args.TenantID, func(tx pgx.Tx) error {
 		var err error
-		vars, err = filterVars(ctx, tx, e.pr.id)
+		vars, err = filterVars(ctx, tx, e.pr.id, e.args.Trigger)
 		return err
 	}); err != nil {
 		return true, err
@@ -136,4 +136,35 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective, cli
 		e.logger.Warn("commit status not set", "error", err)
 	}
 	return true, nil
+}
+
+// filterVars rebuilds the filter's pr variable for a review started by
+// trigger from the stored pull request row, the same keys
+// webhook.PullRequest.FilterVars gives ingest.
+func filterVars(ctx context.Context, tx pgx.Tx, prID, trigger string) (map[string]any, error) {
+	pr, err := loadFilterPR(ctx, tx, prID)
+	if err != nil {
+		return nil, err
+	}
+	pr.Event = trigger
+	return pr.Vars()
+}
+
+// loadFilterPR reads what the repository filter sees of a pull request.
+func loadFilterPR(ctx context.Context, tx pgx.Tx, prID string) (repoconfig.PullRequest, error) {
+	var (
+		pr       repoconfig.PullRequest
+		openedAt *time.Time
+	)
+	err := tx.QueryRow(ctx, `SELECT number, title, author, state, merged, draft, fork, head_ref, head_sha, base_ref, url, body,
+		opened_at, labels FROM pull_requests WHERE id = $1`, prID).
+		Scan(&pr.Number, &pr.Title, &pr.Author, &pr.State, &pr.Merged, &pr.Draft, &pr.Fork, &pr.HeadRef, &pr.HeadSHA, &pr.BaseRef,
+			&pr.URL, &pr.Body, &openedAt, &pr.Labels)
+	if err != nil {
+		return repoconfig.PullRequest{}, fmt.Errorf("worker: read pull request for the filter: %w", err)
+	}
+	if openedAt != nil {
+		pr.CreatedAt = *openedAt
+	}
+	return pr, nil
 }

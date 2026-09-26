@@ -358,6 +358,7 @@ func TestParseRejects(t *testing.T) {
 		{"negative deadline", strings.Replace(minimal, "slug: acme", "slug: acme\n    runner: { activeDeadlineSeconds: -5 }", 1), "must not be negative"},
 		{"negative retention", "retention:\n  disabledIndexGrace: -1h\n" + minimal, "retention.disabledIndexGrace"},
 		{"negative settle default", "defaults:\n  settle: -1s\n" + minimal, "defaults.settle must not be negative"},
+		{"unknown inline severity floor", "defaults:\n  review: { minSeverity: blocking }\n" + minimal, "defaults.review.minSeverity must be nit or important"},
 		{"negative settle tenant", strings.Replace(minimal, "slug: acme", "slug: acme\n    settle: -1s", 1), "must not be negative"},
 		{"negative settle repository", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, settle: -1s }]", 1), "must not be negative"},
 		{"indexing role removed", "defaults:\n  models:\n    indexing: p/m\n" + minimal, "field indexing not found"},
@@ -695,6 +696,29 @@ defaults:
 			t.Fatalf("Parse = %v", err)
 		}
 	})
+}
+
+// TestReviewPresentation checks every finding goes inline unless a scope
+// sets a severity floor or turns inline comments off.
+func TestReviewPresentation(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	parse := func(t *testing.T, tenantKeys, repos string) *File {
+		t.Helper()
+		f, err := Parse([]byte(strings.Replace(minimal, "slug: acme", "slug: acme\n"+tenantKeys+"    repositories: ["+repos+"]", 1)))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		return f
+	}
+	f := parse(t, "", "{ name: acme/x }")
+	if s := f.Settings(&f.Tenants[0], "", ""); !s.Review.InlineComments || s.Review.MinSeverity != "" {
+		t.Fatalf("review = %+v, want every finding inline", s.Review)
+	}
+	f = parse(t, "    review: { minSeverity: important, inlineComments: false }\n", "{ name: acme/x, review: { inlineComments: true } }")
+	if s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x"); !s.Review.InlineComments || s.Review.MinSeverity != SeverityImportant {
+		t.Fatalf("review = %+v, want the tenant's floor with the repository's inline comments", s.Review)
+	}
 }
 
 // TestAllow checks the allow block resolves bound by bound like any other

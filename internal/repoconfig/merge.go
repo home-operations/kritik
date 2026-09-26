@@ -28,7 +28,8 @@ type Merged struct {
 // none, over the operator's settings op (ADR-0010 §2.5). The file narrows
 // what the operator allows (enabled, filter, ignore, skip), appends its
 // instructions to the operator's, may only turn requireSuggestedFix on,
-// and replaces the templates, which grant nothing. It chooses its mode,
+// and replaces the templates, the inline severity floor and whether
+// findings go inline, which grant nothing. It chooses its mode,
 // models, agent limits and commands and settle time within the bounds
 // op.Allow gives it; a bound the operator leaves unset allows only the
 // operator's own mode, models and commands, and limits and a settle time
@@ -71,6 +72,16 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	}
 	if f.Review.Templates.Inline != "" {
 		m.Review.Templates.Inline = f.Review.Templates.Inline
+	}
+	switch {
+	case f.Review.MinSeverity == "":
+	case configfile.ValidMinSeverity(f.Review.MinSeverity):
+		m.Review.MinSeverity = f.Review.MinSeverity
+	default:
+		m.drop("review.minSeverity", strconv.Quote(f.Review.MinSeverity), configfile.SeverityNit+", "+configfile.SeverityImportant)
+	}
+	if f.Review.InlineComments != nil {
+		m.Review.InlineComments = *f.Review.InlineComments
 	}
 	m.choose(&f, &op)
 	return m, nil
@@ -244,6 +255,9 @@ type PullRequest struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// Labels is the stored labels JSON array.
 	Labels json.RawMessage `json:"labels,omitempty"`
+	// Event is the trigger of the review the filter judges: opened,
+	// reopened, ready_for_review, synchronize, poll or manual.
+	Event string `json:"event,omitempty"`
 }
 
 // Vars is the filter's pr variable, with the keys webhook.PullRequest's
@@ -259,7 +273,7 @@ func (p PullRequest) Vars() (map[string]any, error) {
 		}
 	}
 	return map[string]any{
-		"number": p.Number, "title": p.Title, "author": p.Author, "state": p.State, "open": p.State == "open",
+		"event": p.Event, "number": p.Number, "title": p.Title, "author": p.Author, "state": p.State, "open": p.State == "open",
 		"merged": p.Merged, "draft": p.Draft, "fork": p.Fork, "headRef": p.HeadRef, "headSha": p.HeadSHA,
 		"baseRef": p.BaseRef, "url": p.URL, "body": p.Body, "createdAt": p.CreatedAt, "labels": labels,
 	}, nil

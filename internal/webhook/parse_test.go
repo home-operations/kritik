@@ -53,8 +53,8 @@ func TestParseGitHubPullRequest(t *testing.T) {
 	if ev.Repository.FullName != "onedr0p/home-ops" || ev.Repository.DefaultBranch != "main" {
 		t.Fatalf("repo = %+v", ev.Repository)
 	}
-	vars := pr.FilterVars()
-	if vars["open"] != true || vars["author"] != "renovate[bot]" || vars["body"] != "a body" {
+	vars := pr.FilterVars("opened")
+	if vars["open"] != true || vars["author"] != "renovate[bot]" || vars["body"] != "a body" || vars["event"] != "opened" {
 		t.Fatalf("vars = %v", vars)
 	}
 	labels := vars["labels"].([]any)

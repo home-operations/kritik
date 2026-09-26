@@ -59,6 +59,8 @@ type Review struct {
 	Instructions        []string  `yaml:"instructions,omitempty"`
 	RequireSuggestedFix *bool     `yaml:"requireSuggestedFix,omitempty"`
 	Templates           Templates `yaml:"templates,omitempty"`
+	MinSeverity         string    `yaml:"minSeverity,omitempty"`
+	InlineComments      *bool     `yaml:"inlineComments,omitempty"`
 }
 
 // Skip decides whether a PR should be skipped outright based on the paths it

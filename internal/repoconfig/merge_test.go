@@ -18,7 +18,7 @@ func operator() configfile.Settings {
 		Agent:  configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute, Commands: []string{"rg"}},
 		Review: configfile.Review{
 			Instructions: []string{"docs/rules.md"}, RequireSuggestedFix: true,
-			Templates: configfile.ReviewTemplates{Summary: "docs/summary.tmpl"},
+			Templates: configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
 		},
 	}
 }
@@ -48,6 +48,16 @@ func TestMerge(t *testing.T) {
 			filter: true, skip: []string{"docs/**"},
 		},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
+		{
+			name: "presentation replaces the operator's", doc: "review: { minSeverity: important, inlineComments: false }\n",
+			want: func(s *configfile.Settings) {
+				s.Review.MinSeverity, s.Review.InlineComments = configfile.SeverityImportant, false
+			},
+		},
+		{
+			name: "an unknown severity floor is dropped", doc: "review: { minSeverity: blocking }\n",
+			dropped: []string{`.kritik.yaml: review.minSeverity "blocking" was dropped; allowed: nit, important`},
+		},
 		{
 			name: "requireSuggestedFix may only turn on", doc: "review:\n  requireSuggestedFix: false\n",
 			dropped: []string{".kritik.yaml: review.requireSuggestedFix false was dropped; allowed: true, since the operator requires a suggested fix"},
@@ -179,13 +189,13 @@ func TestPullRequestVars(t *testing.T) {
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	pr := PullRequest{Number: 7, Title: "Add b", Author: "octocat", State: "closed", Merged: true, Draft: true, Fork: true,
 		HeadRef: "f", HeadSHA: "abc", BaseRef: "main", URL: "https://forge.example.com/acme/widgets/pulls/7", Body: "Adds b.",
-		CreatedAt: at, Labels: []byte(`[{"name":"deps","color":"ededed"}]`)}
+		CreatedAt: at, Labels: []byte(`[{"name":"deps","color":"ededed"}]`), Event: "manual"}
 	vars, err := pr.Vars()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if vars["number"] != 7 || vars["open"] != false || vars["merged"] != true || vars["body"] != "Adds b." ||
-		vars["createdAt"] != at || vars["headSha"] != "abc" || len(vars["labels"].([]any)) != 1 || len(vars) != 15 {
+		vars["createdAt"] != at || vars["headSha"] != "abc" || len(vars["labels"].([]any)) != 1 || vars["event"] != "manual" || len(vars) != 16 {
 		t.Fatalf("vars = %v", vars)
 	}
 	// A pull request that crossed a JSON job document keeps its types.
