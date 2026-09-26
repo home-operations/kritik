@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
@@ -260,6 +261,15 @@ type fakeCompleter struct {
 	systems []string
 	block   bool
 	started chan struct{}
+	// answered, if set, runs once a review/findings call has its answer and
+	// before Complete returns it.
+	answered func(ctx context.Context)
+}
+
+func (f *fakeCompleter) setAnswered(fn func(ctx context.Context)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.answered = fn
 }
 
 // setBlock arms or disarms blocking the review/findings model call (never
@@ -279,6 +289,7 @@ func (f *fakeCompleter) Complete(ctx context.Context, req model.CompletionReques
 	f.systems = append(f.systems, req.System)
 	block := f.block && req.SchemaName != "reply"
 	started := f.started
+	answered := f.answered
 	f.mu.Unlock()
 	if block {
 		if started != nil {
@@ -292,6 +303,9 @@ func (f *fakeCompleter) Complete(ctx context.Context, req model.CompletionReques
 	}
 	if req.SchemaName == "reply" {
 		return model.CompletionResponse{Raw: `{"reply":"Because b is new."}`, Model: req.Model, InputTokens: 20, OutputTokens: 5}, nil
+	}
+	if answered != nil {
+		answered(ctx)
 	}
 	return model.CompletionResponse{
 		Raw: `{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
@@ -707,6 +721,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	fc := &fakeCompleter{started: make(chan struct{}, 1)}
 	fe := &fakeEmbedder{}
 	exec := &gateExecutor{inner: &executor.Local{Store: runnerStore}, started: make(chan executor.Spec)}
+	deadline := &jobDeadline{}
 	workers := river.NewWorkers()
 	wb := Base{Store: appStore, Current: current, Forges: &forges{f: lf}, Logger: logger}
 	river.AddWorker(workers, &Review{
@@ -722,6 +737,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 			jobs.QueueReview: {MaxWorkers: 1}, jobs.QueueIndex: {MaxWorkers: 1}, jobs.QueueFollowUp: {MaxWorkers: 1},
 		}, Workers: workers,
 		FetchCooldown: 50 * time.Millisecond, FetchPollInterval: 100 * time.Millisecond,
+		Middleware: []rivertype.Middleware{river.WorkerMiddlewareFunc(deadline.wrap)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -819,6 +835,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	t.Run("supervision ends a running review", func(t *testing.T) {
 		checkSupervision(ctx, t, appStore, exec, dispatch, waitReview, tenant.ID(), repoID)
+	})
+
+	t.Run("a job that ends after the runner still ends its review", func(t *testing.T) {
+		checkJobEnded(ctx, t, appStore, insertOnly, exec, fc, deadline, dispatch, waitReview, dir, base, tenant.ID(), lf)
 	})
 
 	t.Run("worker actions: rerun, cancel and forced reindex", func(t *testing.T) {
@@ -1497,11 +1517,12 @@ func checkRequestCancelRunning(
 	}
 }
 
-// checkRequestCancelPrepared cancels a review before its runner ever starts
-// (the "prepared" queued state RequestCancel also accepts), by blocking the
-// completer's model call instead of the executor: the runner itself finishes
-// and records a successful run before the worker reaches afterRun, so unlike
-// checkRequestCancelRunning this does not assert on runner_runs.
+// checkRequestCancelPrepared cancels a review in its "prepared" state, which
+// RequestCancel also accepts: the runner finishes and records a successful
+// run, afterRun marks the review prepared, and the model call inside publish
+// is what the blocked completer holds open when the cancel arrives. The run
+// itself succeeded, so unlike checkRequestCancelRunning this does not assert
+// on runner_runs.
 func checkRequestCancelPrepared(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], fc *fakeCompleter,
 	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, tenantID string,
@@ -1639,6 +1660,14 @@ type gateExecutor struct {
 
 	mu    sync.Mutex
 	block bool
+	// after, if set, runs once a review runner has finished unblocked.
+	after func()
+}
+
+func (g *gateExecutor) setAfter(fn func()) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.after = fn
 }
 
 func (g *gateExecutor) setBlock(b bool) {
@@ -1652,10 +1681,17 @@ func (g *gateExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 		return executor.Result{Err: err}
 	}
 	g.mu.Lock()
-	block := g.block
+	block, after := g.block, g.after
 	g.mu.Unlock()
-	if !block || spec.Job.Kind != runner.KindReview {
+	if spec.Job.Kind != runner.KindReview {
 		return g.inner.Run(ctx, spec)
+	}
+	if !block {
+		res := g.inner.Run(ctx, spec)
+		if after != nil {
+			after()
+		}
+		return res
 	}
 	select {
 	case g.started <- spec:
@@ -1675,4 +1711,145 @@ func allowSHAFetch(t *testing.T, r *git.Repository) {
 	if err := r.SetConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// jobDeadline stands in for River's job timeout, which cancels a job's ctx
+// with context.DeadlineExceeded as its cause: armed, it ends the running
+// review job's ctx that way the moment fire is called.
+type jobDeadline struct {
+	mu     sync.Mutex
+	armed  bool
+	cancel context.CancelCauseFunc
+}
+
+func (d *jobDeadline) wrap(ctx context.Context, job *rivertype.JobRow, doInner func(context.Context) error) error {
+	if job.Kind != (jobs.ReviewArgs{}).Kind() {
+		return doInner(ctx)
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	d.mu.Lock()
+	d.cancel = cancel
+	d.mu.Unlock()
+	return doInner(ctx)
+}
+
+func (d *jobDeadline) arm() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.armed = true
+}
+
+func (d *jobDeadline) fire() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.armed && d.cancel != nil {
+		d.armed = false
+		d.cancel(context.DeadlineExceeded)
+	}
+}
+
+// checkJobEnded asserts a review job whose ctx ends after its runner has
+// finished leaves a terminal review and no River retry: a timeout during
+// afterRun fails the review, and a cancel after the model answered keeps
+// the published review completed with its usage recorded.
+func checkJobEnded(
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], exec *gateExecutor,
+	fc *fakeCompleter, deadline *jobDeadline, dispatch func(string, bool), waitReview func(string) (string, string, string),
+	dir, base, tenantID string, lf *localForge,
+) {
+	t.Run("a timeout during afterRun fails the review", func(t *testing.T) {
+		head := commitOnBase(t, dir, base, "timed out after the runner", "package main\n\nfunc timedOut() {}\n")
+		exec.setAfter(deadline.fire)
+		t.Cleanup(func() { exec.setAfter(nil) })
+		deadline.arm()
+		dispatch(head, false)
+		if status, _, _ := waitReview(head); status != statusFailed {
+			t.Fatalf("status = %s, want failed", status)
+		}
+		id := latestReviewID(ctx, t, appStore, tenantID, head)
+		var errText string
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT error FROM reviews WHERE id = $1`, id).Scan(&errText)
+		})
+		if err != nil || errText != "review timed out: context deadline exceeded" {
+			t.Fatalf("error = %q, %v; want review timed out: context deadline exceeded", errText, err)
+		}
+		waitRiverJobCompleted(ctx, t, appStore, tenantID, id)
+		if n := countReviewsByStatus(ctx, t, appStore, tenantID, head, "running"); n != 0 {
+			t.Fatalf("running reviews for %s = %d, want 0", head, n)
+		}
+		if got := lf.lastStatus(); got != "error: kritik: review timed out" {
+			t.Fatalf("commit status = %q, want error: kritik: review timed out", got)
+		}
+	})
+
+	t.Run("a cancel after the model answered keeps the review completed", func(t *testing.T) {
+		head := commitOnBase(t, dir, base, "canceled after the answer", "package main\n\nfunc answered() {}\n")
+		by := newTestAccount(ctx, t, appStore, tenantID)
+		fc.setAnswered(func(cctx context.Context) {
+			id := latestReviewID(ctx, t, appStore, tenantID, head)
+			err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+				return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
+			})
+			if err != nil {
+				t.Errorf("RequestCancel: %v", err)
+				return
+			}
+			select {
+			case <-cctx.Done():
+			case <-time.After(10 * time.Second):
+				t.Error("the job's ctx never saw the cancel")
+			}
+		})
+		t.Cleanup(func() { fc.setAnswered(nil) })
+		dispatch(head, false)
+		if status, _, _ := waitReview(head); status != statusCompleted {
+			t.Fatalf("status = %s, want completed", status)
+		}
+		id := latestReviewID(ctx, t, appStore, tenantID, head)
+		var usage int
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM usage WHERE review_id = $1 AND role = 'review'`, id).Scan(&usage)
+		})
+		if err != nil || usage != 1 {
+			t.Fatalf("review usage rows = %d, %v; want 1", usage, err)
+		}
+		waitRiverJobCompleted(ctx, t, appStore, tenantID, id)
+		if got := lf.lastStatus(); !strings.HasPrefix(got, "success: ") {
+			t.Fatalf("commit status = %q, want success", got)
+		}
+	})
+}
+
+// waitRiverJobCompleted waits for the review's River job to settle as
+// completed on its first attempt: River writes its own row only after Work
+// returns, and a job that returned an error would be retryable instead.
+func waitRiverJobCompleted(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, reviewID string) {
+	t.Helper()
+	var state string
+	var attempt int
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT state, attempt FROM river_job WHERE id = (
+				SELECT river_job_id FROM reviews WHERE id = $1)`, reviewID).Scan(&state, &attempt)
+		})
+		if err != nil {
+			t.Fatalf("query river_job: %v", err)
+		}
+		if state == "completed" || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if state != "completed" || attempt != 1 {
+		t.Fatalf("river_job state=%q attempt=%d, want completed/1", state, attempt)
+	}
+}
+
+func (l *localForge) lastStatus() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.status
 }
