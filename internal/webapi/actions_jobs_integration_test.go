@@ -210,6 +210,7 @@ func TestActionsJobs(t *testing.T) {
 	t.Run("rerun refuses while that head is queued or running", func(t *testing.T) { testRerunDedupes(t, e) })
 	t.Run("cancel of a non-running review is 409", func(t *testing.T) { testCancelNotCancelable(t, e) })
 	t.Run("cancel stops a running review's job", func(t *testing.T) { testCancelRunning(t, e) })
+	t.Run("cancel of a review whose job already ended is 409", func(t *testing.T) { testCancelEndedJob(t, e) })
 	t.Run("reindex enqueues a full index job, then dedupes", func(t *testing.T) { testReindexJob(t, e) })
 }
 
@@ -290,6 +291,28 @@ func testCancelRunning(t *testing.T, e *actionsEnv) {
 	}
 	if n := e.audits(AuditReviewCancel, review); n != 1 {
 		t.Errorf("review.cancel audit rows = %d, want 1", n)
+	}
+}
+
+func testCancelEndedJob(t *testing.T, e *actionsEnv) {
+	res, err := e.queue.Insert(context.Background(), jobs.ReviewArgs{
+		TenantID: e.tenantID, RepositoryID: e.repoID, Number: 11, HeadSHA: "headA",
+		Trigger: jobs.TriggerManual, Request: "ended",
+	}, nil)
+	if err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+	e.scalar(`UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1 RETURNING 'done'`, res.Job.ID)
+	review := e.scalar(`INSERT INTO reviews (tenant_id, pull_request_id, head_sha, status, river_job_id)
+		VALUES ($1, $2, 'headA', 'running', $3) RETURNING id::text`, e.tenantID, e.prID, res.Job.ID)
+
+	status, body := e.do("/api/v1/tenants/aj-tenant/reviews/" + review + "/cancel")
+	e.expect(status, body, http.StatusConflict, CodeNotCancelable)
+	if got := e.scalar(`SELECT (cancel_requested_at IS NULL)::text FROM reviews WHERE id = $1`, review); got != "true" {
+		t.Error("a refused cancel still marked the review cancel-requested")
+	}
+	if n := e.audits(AuditReviewCancel, review); n != 0 {
+		t.Errorf("review.cancel audit rows = %d, want 0", n)
 	}
 }
 

@@ -186,7 +186,12 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	cctx := context.WithoutCancel(ctx)
 	ended.jobName = res.JobName
 	if err := recordRun(cctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
-		return err
+		if !canceled {
+			return err
+		}
+		// River will not retry a canceled job, so the review ends here
+		// whether or not its run's record could be written.
+		logger.Error("runner run not recorded", "error", err)
 	}
 	// canceled takes priority over both agentErr and the run's own result: a
 	// job River canceled must never be reported failed or retried, whether

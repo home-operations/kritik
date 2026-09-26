@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 )
 
 // ErrNoHead is returned by EnqueueRerun when the pull request has no open
@@ -88,7 +89,8 @@ func EnqueueRerun(
 
 // RequestCancel asks the worker running reviewID to stop. It only applies
 // when the review is still running or queued (prepared) and recorded the
-// River job it started as; otherwise there is nothing a cancel can reach.
+// River job it started as, and that job has not ended; otherwise there is
+// nothing a cancel can reach.
 // The row update and the JobCancelTx call share tx, so a rollback undoes
 // both together.
 func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], reviewID string, by string) error {
@@ -107,6 +109,20 @@ func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], revi
 	}
 	if err != nil {
 		return fmt.Errorf("jobs: request cancel: %w", err)
+	}
+	// A job that already ended can no longer end its review: JobCancelTx
+	// would return it unchanged, and nothing would ever act on the request.
+	var state string
+	err = tx.QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1`, jobID).Scan(&state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotCancelable
+	}
+	if err != nil {
+		return fmt.Errorf("jobs: read job state: %w", err)
+	}
+	switch rivertype.JobState(state) {
+	case rivertype.JobStateCancelled, rivertype.JobStateCompleted, rivertype.JobStateDiscarded:
+		return ErrNotCancelable
 	}
 	if _, err := c.JobCancelTx(ctx, tx, jobID); err != nil {
 		if errors.Is(err, river.ErrNotFound) {
