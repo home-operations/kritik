@@ -278,37 +278,8 @@ kbd {
   height: 100%;
   background: var(--tone, var(--ok));
 }
-.tenant-cards {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
-}
-.tenant-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-}
-.tenant-card:hover {
-  border-color: var(--accent);
-  text-decoration: none;
-}
-.tenant-card-title {
-  font-weight: 650;
-  font-size: 14px;
-}
-.tenant-card-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  font-size: 12px;
+.tenant-breakdown .meter {
+  margin-top: 4px;
 }
 
 /* ---- definition lists ---------------------------------------------------- */

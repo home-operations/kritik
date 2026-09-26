@@ -16,6 +16,7 @@ export {
   mdiLogout,
   mdiConsoleLine,
   mdiViewDashboardOutline,
+  mdiViewGridOutline,
   mdiSourceRepository,
   mdiCurrencyUsd,
   mdiClipboardTextClockOutline,

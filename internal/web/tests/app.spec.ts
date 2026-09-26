@@ -87,7 +87,7 @@ test.describe('signed-in shell', () => {
     await page.goto('/');
 
     await expect(page.locator('.tenant-switch option')).toHaveText(['acme']);
-    await expect(page.locator('.nav a')).toHaveCount(7); // Overview/Repos/Pulls/Queue/Usage/Follow-ups/Admin
+    await expect(page.locator('.nav a')).toHaveCount(8); // All tenants, then Overview/Repos/Pulls/Queue/Usage/Follow-ups/Admin
     // The sections are a sidebar left of the page, not part of the topbar.
     await expect(page.locator('.topbar .nav')).toHaveCount(0);
     const side = await page.locator('aside.sidebar').boundingBox();
@@ -103,7 +103,7 @@ test.describe('signed-in shell', () => {
   test('hides the admin link for a non-admin member', async ({ page, signIn }) => {
     await signIn({ ...DEFAULT_ME, tenants: [{ slug: 'acme', role: 'member', managedBy: 'file' }] });
     await page.goto('/');
-    await expect(page.locator('.nav a')).toHaveCount(6);
+    await expect(page.locator('.nav a')).toHaveCount(7);
   });
 
   test('shows the operator console link for an operator account', async ({ page, signIn }) => {

@@ -8,17 +8,25 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('overview', () => {
-  test('a single-tenant member goes straight to the tenant', async ({ page }) => {
+  test('a single-tenant member stays on the breakdown instead of leaving for the tenant', async ({ page }) => {
     await page.goto('/#/');
-    await expect(page).toHaveURL(new RegExp(`${T}$`));
-    await expect(page.locator('.page-head h1')).toContainText(g.SLUG);
+    await expect(page.locator('.page-head h1')).toHaveText('All tenants');
+    await expect(page).toHaveURL(/#\/$/);
+    const rows = page.locator('table.tenant-breakdown tbody tr');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText(g.tenantSummary.slug);
+    await rows.first().getByRole('link', { name: g.tenantSummary.slug }).click();
+    await expect(page).toHaveURL(new RegExp(`#/t/${g.tenantSummary.slug}$`));
   });
 
-  test('several tenants show as cards', async ({ page }) => {
+  test('several tenants each get a row, and the tiles add them up', async ({ page }) => {
     await g.mockApi(page, [[/\/api\/v1\/tenants$/, [g.tenantSummary, { ...g.tenantSummary, slug: 'beta' }]], ...g.defaultApi()]);
     await page.goto('/#/');
-    await expect(page.locator('.tenant-card')).toHaveCount(2);
-    await expect(page.locator('.tenant-card').first()).toContainText(`${g.tenantSummary.reviews7d} reviews 7d`);
+    await expect(page.locator('table.tenant-breakdown tbody tr')).toHaveCount(2);
+    const tiles = page.getByRole('region', { name: 'Across all tenants' });
+    await expect(tiles.locator('.tile').filter({ hasText: 'Reviews, last 7 days' })).toContainText(String(2 * g.tenantSummary.reviews7d));
+    await expect(tiles.locator('.tile').filter({ hasText: 'Repositories' })).toContainText(String(2 * g.tenantSummary.repositories));
+    await expect(tiles.locator('.tile').filter({ hasText: 'Spend this month' })).toContainText('$3.00');
   });
 });
 
@@ -207,7 +215,8 @@ test('a signed-in user navigating to sign-in is sent back', async ({ page, mockP
   await page.goto(`/${T}/queue`);
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await page.evaluate(() => (location.hash = '#/signin'));
-  await expect(page).toHaveURL(new RegExp(`${T}$`));
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(page.locator('.page-head h1')).toHaveText('All tenants');
   await expect(page.locator('.signin-card')).toHaveCount(0);
 });
 
