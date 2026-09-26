@@ -7,7 +7,9 @@ ARG GO_VERSION
 ARG NODE_VERSION
 
 # ---- UI build ---------------------------------------------------------------
-FROM node:${NODE_VERSION}-alpine AS ui
+# The built UI is the same bytes on every platform, so it is built once, on
+# the build host, rather than per target under emulation.
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS ui
 WORKDIR /ui
 COPY internal/web/package.json internal/web/package-lock.json ./
 RUN npm ci
