@@ -69,10 +69,10 @@ func (e *Effective) repoFiles() []string {
 }
 
 // fill reads the contents of the files e names out of files, what the
-// runner read, into Instructions and Templates. notes lead the returned
-// ones; a named file missing from files is noted unless they already say
-// why.
-func (e *Effective) fill(files repoconfig.Files, notes []string) []string {
+// runner read, into Instructions and Templates, leaving out instructions
+// scoped to paths none of changed matches. notes lead the returned ones; a
+// named file missing from files is noted unless they already say why.
+func (e *Effective) fill(files repoconfig.Files, notes, changed []string) []string {
 	notes = slices.Clone(notes)
 	read := func(p string) string {
 		if p == "" {
@@ -88,7 +88,8 @@ func (e *Effective) fill(files repoconfig.Files, notes []string) []string {
 		read(p)
 	}
 	var truncated bool
-	if e.Instructions, truncated = repoconfig.Instructions(files, e.Review.Instructions); truncated {
+	active := repoconfig.Active(e.Review.Instructions, e.Scoped, changed)
+	if e.Instructions, truncated = repoconfig.Instructions(files, active); truncated {
 		notes = append(notes, "repository instructions truncated to 32 KiB")
 	}
 	e.Templates = review.Templates{Summary: read(e.Review.Templates.Summary), Inline: read(e.Review.Templates.Inline)}

@@ -94,17 +94,19 @@ type followUp struct {
 	file     *configfile.File
 	tenant   *configfile.Tenant
 	settings configfile.Settings
-	// instructions are the contents of the review instructions settings
-	// name, once repoConfig has read them.
-	instructions []string
-	client       forge.Client
-	pr           *pullRequest
-	comment      forge.Comment
-	owner        string
-	repo         string
-	botLogin     string
-	jobID        int64
-	logger       *slog.Logger
+	// instructionFiles are the instruction files settings name, as
+	// repoConfig read them, and scoped the changed-path globs each scoped
+	// one applies to.
+	instructionFiles repoconfig.Files
+	scoped           map[string][]string
+	client           forge.Client
+	pr               *pullRequest
+	comment          forge.Comment
+	owner            string
+	repo             string
+	botLogin         string
+	jobID            int64
+	logger           *slog.Logger
 }
 
 // alreadyAnswered guards a retried job: once a reply is on the forge the
@@ -164,7 +166,8 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 		Repository: f.pr.repository, Number: f.pr.number, Title: f.pr.title, Author: f.pr.author, BaseRef: f.pr.baseRef,
 		Body: rec.body, Changed: rec.changed, Diff: rec.diff, Context: rec.context,
 	}, rec.findings, thread)
-	resp, err := f.complete(ctx, msg, rec.id)
+	instructions, _ := repoconfig.Instructions(f.instructionFiles, repoconfig.Active(f.settings.Review.Instructions, f.scoped, rec.changed))
+	resp, err := f.complete(ctx, msg, rec.id, instructions)
 	if err != nil {
 		return followUpFailed, err
 	}
@@ -354,8 +357,8 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 
 // repoConfig applies the .kritik.yaml at the pull request's merge base to
 // the follow-up's settings, so it answers with the repository's model and
-// instructions, which it reads from the same commit. It returns why the
-// file stops the follow-up, or "".
+// instructions, and reads the instruction files from the same commit. It
+// returns why the file stops the follow-up, or "".
 func (f *followUp) repoConfig(ctx context.Context) (string, error) {
 	base, err := f.client.MergeBase(ctx, f.owner, f.repo, f.pr.number, f.pr.baseRef, f.pr.headSHA)
 	if err != nil {
@@ -382,13 +385,14 @@ func (f *followUp) repoConfig(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	f.instructions, _ = repoconfig.Instructions(files, eff.Review.Instructions)
+	f.instructionFiles, f.scoped = files, eff.Scoped
 	return "", nil
 }
 
-// complete asks the review model for the reply, recording the call
-// against the comment and, when there is one, reviewID.
-func (f *followUp) complete(ctx context.Context, msg, reviewID string) (model.CompletionResponse, error) {
+// complete asks the review model for the reply, with the repository's
+// instructions, recording the call against the comment and, when there is
+// one, reviewID.
+func (f *followUp) complete(ctx context.Context, msg, reviewID string, instructions []string) (model.CompletionResponse, error) {
 	ref := f.settings.Models.Review
 	if ref == "" {
 		return model.CompletionResponse{}, errors.New("worker: no review model is configured for this repository")
@@ -401,7 +405,7 @@ func (f *followUp) complete(ctx context.Context, msg, reviewID string) (model.Co
 		TenantID: f.tenant.ID(), ReviewID: reviewID, FollowupCommentID: f.comment.ID, Kind: store.ModelCallFollowUp,
 	}, transcriptMask(f.file, f.file.Providers[ref.Provider()]))}
 	req := model.CompletionRequest{
-		System: review.FollowUpSystemPrompt(f.instructions), User: msg, Model: ref.Model(),
+		System: review.FollowUpSystemPrompt(instructions), User: msg, Model: ref.Model(),
 		Schema: review.FollowUpSchema(), SchemaName: "reply", MaxTokens: maxOutputTokens,
 	}
 	if fb := f.settings.Models.Fallback; fb != "" && fb.Provider() == ref.Provider() {

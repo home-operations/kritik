@@ -52,7 +52,7 @@ const SkipUnchangedPatch = "unchanged_patch"
 // runner has no index, and the agent can grep instead. strict says whether
 // the contract requires a suggested fix.
 func agentPrompt(p Spec, files repoconfig.Files, pack packView, commands []string) (system, user string, strict bool) {
-	instructions, _ := repoconfig.Instructions(files, p.Prompt.Instructions)
+	instructions, _ := repoconfig.Instructions(files, repoconfig.Active(p.Prompt.Instructions, p.Prompt.InstructionScopes, pack.Changed))
 	system = review.AgenticSystemPrompt(instructions, commands)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {

@@ -45,6 +45,7 @@ func TestAgentPrompt(t *testing.T) {
 	tests := []struct {
 		name         string
 		paths        []string
+		scoped       map[string][]string
 		scope        review.Scope
 		instructions []string
 		strict       bool
@@ -53,12 +54,17 @@ func TestAgentPrompt(t *testing.T) {
 			scope: review.ScopeFull, instructions: []string{"Operator rules."}, strict: true},
 		{name: "instructions in the order named", paths: []string{".kritik/rules.md", "docs/rules.md"},
 			scope: review.ScopeFull, instructions: []string{"Repository rules.", "Operator rules."}, strict: true},
+		{name: "an instruction scoped to paths the change does not touch is left out", paths: []string{"docs/rules.md", ".kritik/rules.md"},
+			scoped: map[string][]string{".kritik/rules.md": {"web/**"}}, scope: review.ScopeFull, instructions: []string{"Operator rules."}, strict: true},
+		{name: "one scoped to a path it touches is kept", paths: []string{"docs/rules.md", ".kritik/rules.md"},
+			scoped: map[string][]string{".kritik/rules.md": {"*.go"}}, scope: review.ScopeFull,
+			instructions: []string{"Operator rules.", "Repository rules."}, strict: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
-			s.Prompt.Instructions, s.Prompt.RequireSuggestedFix = tt.paths, tt.strict
+			s.Prompt.Instructions, s.Prompt.InstructionScopes, s.Prompt.RequireSuggestedFix = tt.paths, tt.scoped, tt.strict
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {

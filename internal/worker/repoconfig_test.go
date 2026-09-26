@@ -148,7 +148,7 @@ func TestEffective(t *testing.T) {
 			if got := e.repoFiles(); !slices.Equal(got, tt.repoFiles) {
 				t.Fatalf("repoFiles = %v, want %v", got, tt.repoFiles)
 			}
-			notes = e.fill(tt.files, append(notes, tt.runnerNotes...))
+			notes = e.fill(tt.files, append(notes, tt.runnerNotes...), []string{"main.go"})
 			if !slices.Equal(e.Instructions, tt.instructions) || e.Templates != tt.templates || e.Review.RequireSuggestedFix != tt.strict {
 				t.Fatalf("instructions=%q templates=%+v strict=%v", e.Instructions, e.Templates, e.Review.RequireSuggestedFix)
 			}
@@ -318,8 +318,9 @@ func TestFollowUpRepoConfig(t *testing.T) {
 			if err != nil || reason != tt.reason {
 				t.Fatalf("repoConfig = %q, %v; want %q", reason, err, tt.reason)
 			}
-			if f.settings.Models.Review != tt.model || !slices.Equal(f.instructions, tt.instructions) {
-				t.Fatalf("model = %s, instructions = %q", f.settings.Models.Review, f.instructions)
+			instructions, _ := repoconfig.Instructions(f.instructionFiles, f.settings.Review.Instructions)
+			if f.settings.Models.Review != tt.model || !slices.Equal(instructions, tt.instructions) {
+				t.Fatalf("model = %s, instructions = %q", f.settings.Models.Review, instructions)
 			}
 		})
 	}
@@ -347,5 +348,22 @@ func TestPostsInline(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFillScopesInstructions(t *testing.T) {
+	e, _ := effective(operatorSettings(t), []byte("review:\n  instructions: [{ path: .kritik/sql.md, paths: ['**/*.sql'] }]\n"))
+	files := repoconfig.Files{"ops/rules.md": "operator rules", ".kritik/sql.md": "sql rules"}
+	for _, tt := range []struct {
+		changed []string
+		want    []string
+	}{
+		{[]string{"main.go"}, []string{"operator rules"}},
+		{[]string{"main.go", "db/0001.sql"}, []string{"operator rules", "sql rules"}},
+	} {
+		e.fill(files, nil, tt.changed)
+		if !slices.Equal(e.Instructions, tt.want) {
+			t.Fatalf("changed %v: instructions = %q, want %q", tt.changed, e.Instructions, tt.want)
+		}
 	}
 }

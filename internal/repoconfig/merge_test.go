@@ -32,6 +32,7 @@ func TestMerge(t *testing.T) {
 		want    func(*configfile.Settings)
 		filter  bool
 		skip    []string
+		scoped  map[string][]string
 		dropped []string
 		wantErr string
 	}{
@@ -39,13 +40,17 @@ func TestMerge(t *testing.T) {
 		{
 			name: "the file narrows, appends instructions and replaces presentation",
 			doc: "enabled: false\nfilter: '!pr.draft'\nignore: [gen/**, vendor/**]\nskip:\n  onlyPaths: [docs/**]\n" +
-				"review:\n  instructions: [.kritik/rules.md, docs/rules.md]\n  templates:\n    inline: .kritik/inline.tmpl\n",
+				"review:\n  instructions: [.kritik/rules.md, docs/rules.md, { path: .kritik/sql.md, paths: ['**/*.sql'] }]\n" +
+				"  templates:\n    inline: .kritik/inline.tmpl\n",
 			want: func(s *configfile.Settings) {
 				s.Enabled, s.Ignore = false, []string{"vendor/**", "gen/**"}
-				s.Review.Instructions = []string{"docs/rules.md", ".kritik/rules.md"}
+				s.Review.Instructions = []string{"docs/rules.md", ".kritik/rules.md", ".kritik/sql.md"}
 				s.Review.Templates.Inline = ".kritik/inline.tmpl"
 			},
-			filter: true, skip: []string{"docs/**"},
+			filter: true, skip: []string{"docs/**"}, scoped: map[string][]string{".kritik/sql.md": {"**/*.sql"}},
+		},
+		{
+			name: "an operator's instruction stays unscoped", doc: "review:\n  instructions: [{ path: docs/rules.md, paths: ['**/*.sql'] }]\n",
 		},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
@@ -128,8 +133,9 @@ func TestMerge(t *testing.T) {
 			if !reflect.DeepEqual(m.Settings, want) {
 				t.Fatalf("settings = %+v\nwant       %+v", m.Settings, want)
 			}
-			if (m.InRepoFilter != nil) != tt.filter || !slices.Equal(m.Skip.OnlyPaths, tt.skip) || !slices.Equal(m.Dropped, tt.dropped) {
-				t.Fatalf("filter=%v skip=%v dropped=%q", m.InRepoFilter != nil, m.Skip.OnlyPaths, m.Dropped)
+			if (m.InRepoFilter != nil) != tt.filter || !slices.Equal(m.Skip.OnlyPaths, tt.skip) || !slices.Equal(m.Dropped, tt.dropped) ||
+				!reflect.DeepEqual(m.Scoped, tt.scoped) {
+				t.Fatalf("filter=%v skip=%v scoped=%v dropped=%q", m.InRepoFilter != nil, m.Skip.OnlyPaths, m.Scoped, m.Dropped)
 			}
 			if !reflect.DeepEqual(op, func() configfile.Settings { o := operator(); o.Allow = tt.allow; return o }()) {
 				t.Fatal("Merge changed the operator's settings")

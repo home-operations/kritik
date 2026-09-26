@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -54,13 +55,43 @@ type Templates struct {
 	Inline  string `yaml:"inline,omitempty"`
 }
 
+// Instruction is a file of review instructions in the repository: always
+// included, or with Paths only when a changed path matches one of them.
+type Instruction struct {
+	Path  string
+	Paths []string
+}
+
+// UnmarshalYAML takes a bare path, or a mapping of path and paths.
+func (in *Instruction) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode {
+		return n.Decode(&in.Path)
+	}
+	// Node.Decode drops the strictness Parse asked for, so unknown keys are
+	// refused here.
+	for i := 0; n.Kind == yaml.MappingNode && i < len(n.Content); i += 2 {
+		if k := n.Content[i]; k.Value != "path" && k.Value != "paths" {
+			return fmt.Errorf("line %d: field %s not found in type repoconfig.Instruction", k.Line, k.Value)
+		}
+	}
+	var v struct {
+		Path  string   `yaml:"path"`
+		Paths []string `yaml:"paths"`
+	}
+	if err := n.Decode(&v); err != nil {
+		return err
+	}
+	in.Path, in.Paths = v.Path, v.Paths
+	return nil
+}
+
 // Review holds the repository's review customizations.
 type Review struct {
-	Instructions        []string  `yaml:"instructions,omitempty"`
-	RequireSuggestedFix *bool     `yaml:"requireSuggestedFix,omitempty"`
-	Templates           Templates `yaml:"templates,omitempty"`
-	MinSeverity         string    `yaml:"minSeverity,omitempty"`
-	InlineComments      *bool     `yaml:"inlineComments,omitempty"`
+	Instructions        []Instruction `yaml:"instructions,omitempty"`
+	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
+	Templates           Templates     `yaml:"templates,omitempty"`
+	MinSeverity         string        `yaml:"minSeverity,omitempty"`
+	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
 }
 
 // Skip decides whether a PR should be skipped outright based on the paths it
@@ -126,6 +157,16 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 			return File{}, nil, fmt.Errorf("repoconfig: skip.onlyPaths[%d] %q is not a valid glob", i, g)
 		}
 	}
+	for i, in := range f.Review.Instructions {
+		if in.Path == "" {
+			return File{}, nil, fmt.Errorf("repoconfig: review.instructions[%d] needs a path", i)
+		}
+		for j, g := range in.Paths {
+			if !validGlob(g) {
+				return File{}, nil, fmt.Errorf("repoconfig: review.instructions[%d].paths[%d] %q is not a valid glob", i, j, g)
+			}
+		}
+	}
 	for _, p := range f.Referenced() {
 		if err := validateRefPath(p); err != nil {
 			return File{}, nil, err
@@ -179,8 +220,8 @@ func (f File) Referenced() []string {
 		seen[p] = true
 		out = append(out, p)
 	}
-	for _, p := range f.Review.Instructions {
-		add(p)
+	for _, in := range f.Review.Instructions {
+		add(in.Path)
 	}
 	add(f.Review.Templates.Summary)
 	add(f.Review.Templates.Inline)
@@ -256,6 +297,20 @@ func matchesAny(patterns []string, p string) bool {
 		}
 	}
 	return false
+}
+
+// Active is the instruction paths that apply to a change of the changed
+// paths, in order: every path scoped does not name, and each one it does
+// when a changed path matches one of its globs.
+func Active(paths []string, scoped map[string][]string, changed []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if globs, ok := scoped[p]; ok && !slices.ContainsFunc(changed, func(c string) bool { return matchesAny(globs, c) }) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // Instructions returns the contents of the named files, trimmed and in

@@ -154,8 +154,9 @@ func (w *Review) agentPrompt(
 	ctx context.Context, tenantID, reviewID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
 ) (*runner.Prompt, error) {
 	p := &runner.Prompt{
-		Repository: pr.repository, Instructions: eff.Review.Instructions, RequireSuggestedFix: eff.Review.RequireSuggestedFix,
-		SkipPaths: eff.Skip.OnlyPaths, MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
+		Repository: pr.repository, Instructions: eff.Review.Instructions, InstructionScopes: eff.Scoped,
+		RequireSuggestedFix: eff.Review.RequireSuggestedFix,
+		SkipPaths:           eff.Skip.OnlyPaths, MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
 	}
 	err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		var err error

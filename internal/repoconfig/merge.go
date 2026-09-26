@@ -19,6 +19,9 @@ type Merged struct {
 	// which ingest has already applied; nil when it sets none.
 	InRepoFilter *prfilter.Program
 	Skip         Skip
+	// Scoped maps each instruction file the repository scoped to the
+	// globs of the changed paths it applies to; see Active.
+	Scoped map[string][]string
 	// Dropped says which of the file's values fell outside the operator's
 	// bounds; the operator's value applies for each.
 	Dropped []string
@@ -57,9 +60,16 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		}
 	}
 	m.Skip = f.Skip
-	for _, p := range f.Review.Instructions {
-		if !slices.Contains(m.Review.Instructions, p) {
-			m.Review.Instructions = append(m.Review.Instructions, p)
+	for _, in := range f.Review.Instructions {
+		if slices.Contains(m.Review.Instructions, in.Path) {
+			continue
+		}
+		m.Review.Instructions = append(m.Review.Instructions, in.Path)
+		if len(in.Paths) > 0 {
+			if m.Scoped == nil {
+				m.Scoped = map[string][]string{}
+			}
+			m.Scoped[in.Path] = in.Paths
 		}
 	}
 	if v := f.Review.RequireSuggestedFix; v != nil && *v {

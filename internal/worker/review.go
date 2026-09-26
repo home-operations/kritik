@@ -308,7 +308,7 @@ func (w *Review) afterRun(
 	if err := json.Unmarshal(filesJSON, &files); err != nil {
 		return prepared{}, "", fmt.Errorf("worker: decode repository files: %w", err)
 	}
-	notes = eff.fill(files, append(notes, repoNotes...))
+	notes = eff.fill(files, append(notes, repoNotes...), changed)
 	reason, ferr := eff.Check(vars, changed)
 	if ferr != nil {
 		logger.Warn("repository filter failed to evaluate", "error", ferr)
