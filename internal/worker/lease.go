@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -16,8 +17,29 @@ import (
 const (
 	leaseHeartbeat = 30 * time.Second
 	leaseExpiry    = 2 * time.Minute
-	leasePoll      = 5 * time.Second
 )
+
+// Waiting for a slot. A job that has done its expensive work waits in
+// process, between leasePollMin and leasePollMax per try; a review that
+// has not started its runner is snoozed instead, between snoozeMin and
+// snoozeMax, and gives its worker back to the queue meanwhile.
+const (
+	leasePollMin = 2 * time.Second
+	leasePollMax = 30 * time.Second
+	snoozeMin    = 5 * time.Second
+	snoozeMax    = 5 * time.Minute
+)
+
+// backoff is base doubled n times, capped at limit, then jittered into its
+// upper half, so waiters that started together do not try again together.
+func backoff(n int, base, limit time.Duration) time.Duration {
+	d := base
+	for i := 0; i < n && d < limit; i++ {
+		d *= 2
+	}
+	d = min(d, limit)
+	return d/2 + rand.N(d/2+1)
+}
 
 // lease is one held slot of model_leases.
 type lease struct {
@@ -35,24 +57,46 @@ type lease struct {
 // raised limit takes effect on the next review and a lowered one leaves
 // the extra rows unused.
 func acquireLease(ctx context.Context, st *store.Store, tenantID, modelKey string, slots int, jobID int64) (*lease, error) {
-	for {
-		slot, err := tryLease(ctx, st, tenantID, modelKey, slots, jobID)
-		if err != nil {
-			return nil, err
-		}
-		if slot > 0 {
-			l := &lease{st: st, tenantID: tenantID, modelKey: modelKey, slot: slot, jobID: jobID, done: make(chan struct{})}
-			hctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-			l.cancel = cancel
-			go l.heartbeat(hctx)
-			return l, nil
+	for try := 0; ; try++ {
+		l, err := takeLease(ctx, st, tenantID, modelKey, slots, jobID)
+		if err != nil || l != nil {
+			return l, err
 		}
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("worker: waiting for a %s slot: %w", modelKey, ctx.Err())
-		case <-time.After(leasePoll):
+		case <-time.After(backoff(try, leasePollMin, leasePollMax)):
 		}
 	}
+}
+
+// takeLease claims a free slot for (tenant, model) without waiting: nil
+// when every slot is held.
+func takeLease(ctx context.Context, st *store.Store, tenantID, modelKey string, slots int, jobID int64) (*lease, error) {
+	slot, err := tryLease(ctx, st, tenantID, modelKey, slots, jobID)
+	if err != nil || slot == 0 {
+		return nil, err
+	}
+	l := &lease{st: st, tenantID: tenantID, modelKey: modelKey, slot: slot, jobID: jobID, done: make(chan struct{})}
+	hctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	l.cancel = cancel
+	go l.heartbeat(hctx)
+	return l, nil
+}
+
+// slotFree reports whether (tenant, model) has a slot no live lease holds,
+// without claiming it: a slot is only a hint that a review about to start
+// its runner will find one when it needs it.
+func slotFree(ctx context.Context, st *store.Store, tenantID, modelKey string, slots int) (bool, error) {
+	var held int
+	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM model_leases WHERE tenant_id = $1 AND model_key = $2 AND slot <= $3
+			AND job_id IS NOT NULL AND expires_at >= now()`, tenantID, modelKey, slots).Scan(&held)
+	})
+	if err != nil {
+		return false, fmt.Errorf("worker: read lease slots: %w", err)
+	}
+	return held < slots, nil
 }
 
 func tryLease(ctx context.Context, st *store.Store, tenantID, modelKey string, slots int, jobID int64) (int, error) {

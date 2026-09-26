@@ -93,50 +93,21 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	logger := w.Logger.With("tenant", tenant.Slug, "pr", args.Number, "head", short(args.HeadSHA))
 	started := time.Now()
 
-	pr, err := w.load(ctx, args)
-	if err != nil {
-		return err
-	}
-	if pr.headSHA != args.HeadSHA {
-		logger.Info("review superseded before start", "current_head", short(pr.headSHA))
-		w.Metrics.Review(tenant.Slug, statusSuperseded, time.Since(started))
-		return w.record(ctx, args, pr, statusSuperseded, "", "", "", "")
-	}
-	client, err := w.client(ctx, file, pr.installation, pr.externalID, pr.repository)
-	if err != nil {
-		return err
-	}
-	owner, repo, _ := strings.Cut(pr.repository, "/")
-	mergeBase, err := client.MergeBase(ctx, owner, repo, pr.number, pr.baseRef, pr.headSHA)
-	if err != nil {
-		return err
-	}
-	token, err := client.GitToken(ctx)
-	if err != nil {
-		return err
-	}
-	early := earlyEnd{args: args, pr: pr, tenantSlug: tenant.Slug, mergeBase: mergeBase, started: started, logger: logger}
-	forgePatch, done, err := w.skipUnchangedBot(ctx, early, client, owner, repo)
+	b, done, err := w.begin(ctx, job, file, tenant, logger, started)
 	if done {
 		return err
 	}
-	early.forgePatch = forgePatch
-
-	settings := file.Settings(tenant, pr.repository)
+	pr, client, owner, repo, mergeBase, settings := b.early.pr, b.client, b.owner, b.repo, b.early.mergeBase, b.settings
 	agentic := settings.Mode == configfile.ReviewAgentic
-	// An agentic runner spends against the model itself, so the caps and
-	// the model lease come before it rather than after.
-	var admitted admission
-	if agentic {
-		a, done, err := w.admitAgentic(ctx, early, file, tenant, settings, job.ID)
-		if done {
-			return err
-		}
-		admitted = a
-		defer w.releaseLease(ctx, logger, a.lease, string(settings.Models.Review))
+	admitted, done, err := w.admit(ctx, b.early, job, file, tenant, settings)
+	if done {
+		return err
+	}
+	if admitted.lease != nil {
+		defer w.releaseLease(ctx, logger, admitted.lease, string(settings.Models.Review))
 	}
 
-	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, forgePatch, settings.Mode, job.ID)
+	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, b.early.forgePatch, settings.Mode, job.ID)
 	if err != nil {
 		return err
 	}
@@ -145,7 +116,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
 		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, Ignore: settings.Ignore, RepoFiles: settings.Review.Referenced(),
 	}
-	secrets := runner.Secrets{GitToken: token}
+	secrets := runner.Secrets{GitToken: b.token}
 	ended := endedReview{
 		tenantID: args.TenantID, tenantSlug: tenant.Slug, reviewID: reviewID, headSHA: args.HeadSHA,
 		owner: owner, repo: repo, client: client, started: started, logger: logger,
@@ -470,13 +441,85 @@ func (w *Review) skipUnchangedBot(ctx context.Context, e earlyEnd, client forge.
 	return patch, true, w.end(ctx, e, statusSkipped, "")
 }
 
-// admitAgentic admits an agentic review (see agentAdmit), and ends one it
-// refuses. It reports whether it ended the review, with the error of
-// admitting or of recording that.
-func (w *Review) admitAgentic(
-	ctx context.Context, e earlyEnd, file *configfile.File, tenant *configfile.Tenant, settings configfile.Settings, jobID int64,
+// begun is a review job past everything before its admission: its pull
+// request is current, a model slot was free when it looked, the forge
+// answered, and it is not an unchanged bot rebase.
+type begun struct {
+	early              earlyEnd
+	settings           configfile.Settings
+	client             forge.Client
+	owner, repo, token string
+}
+
+// begin takes a review job up to its admission, or ends it: superseded,
+// snoozed while every model slot is held, or skipped as an unchanged bot
+// rebase. The slot check comes before any forge call, so a job snoozed
+// through a busy spell costs the forge nothing each time it wakes. It
+// reports whether it ended the job, with the error of that or of getting
+// this far.
+func (w *Review) begin(
+	ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File, tenant *configfile.Tenant,
+	logger *slog.Logger, started time.Time,
+) (begun, bool, error) {
+	args := job.Args
+	pr, err := w.load(ctx, args)
+	if err != nil {
+		return begun{}, true, err
+	}
+	e := earlyEnd{args: args, pr: pr, tenantSlug: tenant.Slug, started: started, logger: logger}
+	if pr.headSHA != args.HeadSHA {
+		logger.Info("review superseded before start", "current_head", short(pr.headSHA))
+		return begun{}, true, w.end(ctx, e, statusSuperseded, "")
+	}
+	settings := file.Settings(tenant, pr.repository)
+	ref := string(settings.Models.Review)
+	if free, err := slotFree(ctx, w.Store, tenant.ID(), ref, settings.Slots()); err != nil {
+		logger.Warn("model slots not read; the review goes on", "error", err)
+	} else if !free {
+		return begun{}, true, w.snooze(e, job, ref)
+	}
+	client, err := w.client(ctx, file, pr.installation, pr.externalID, pr.repository)
+	if err != nil {
+		return begun{}, true, err
+	}
+	owner, repo, _ := strings.Cut(pr.repository, "/")
+	if e.mergeBase, err = client.MergeBase(ctx, owner, repo, pr.number, pr.baseRef, pr.headSHA); err != nil {
+		return begun{}, true, err
+	}
+	token, err := client.GitToken(ctx)
+	if err != nil {
+		return begun{}, true, err
+	}
+	forgePatch, done, err := w.skipUnchangedBot(ctx, e, client, owner, repo)
+	if done {
+		return begun{}, true, err
+	}
+	e.forgePatch = forgePatch
+	return begun{early: e, settings: settings, client: client, owner: owner, repo: repo, token: token}, false, nil
+}
+
+// errNoSlot is an agentic review's admission finding every model slot
+// held after begin saw one free.
+var errNoSlot = errors.New("worker: every model slot is held")
+
+// admit settles what a review may spend before its runner starts. An
+// agentic review, whose runner spends against the model through the
+// gateway, takes its model lease and passes the tenant's caps (see
+// agentAdmit), and is snoozed if the slot begin saw free has been taken
+// since; a single-mode review takes its lease later, for its model call
+// alone. It reports whether it ended the job, with the error of admitting
+// or of recording that.
+func (w *Review) admit(
+	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], file *configfile.File, tenant *configfile.Tenant,
+	settings configfile.Settings,
 ) (admission, bool, error) {
-	a, status, reason, err := w.agentAdmit(ctx, e.logger, file, tenant, settings, jobID)
+	if settings.Mode != configfile.ReviewAgentic {
+		return admission{}, false, nil
+	}
+	a, status, reason, err := w.agentAdmit(ctx, e.logger, file, tenant, settings, job.ID)
+	if errors.Is(err, errNoSlot) {
+		return admission{}, true, w.snooze(e, job, string(settings.Models.Review))
+	}
 	if err != nil {
 		return admission{}, true, err
 	}
@@ -485,6 +528,23 @@ func (w *Review) admitAgentic(
 	}
 	e.logger.Warn("review "+status, "reason", reason)
 	return admission{}, true, w.end(ctx, e, status, reason)
+}
+
+// snooze puts a review that found every model slot held back on the
+// queue, for longer each time, without counting an attempt: it gives its
+// worker back rather than holding it while it waits. River keeps the
+// count of a job's snoozes in its metadata.
+func (w *Review) snooze(e earlyEnd, job *river.Job[jobs.ReviewArgs], modelKey string) error {
+	var meta struct {
+		Snoozes int `json:"snoozes"`
+	}
+	if err := json.Unmarshal(job.Metadata, &meta); err != nil {
+		e.logger.Warn("job metadata not read; snoozing as if for the first time", "error", err)
+	}
+	d := backoff(meta.Snoozes, snoozeMin, snoozeMax)
+	e.logger.Info("review snoozed: every model slot is held", "model", modelKey, "snoozes", meta.Snoozes+1, "for", d.Round(time.Second))
+	w.Metrics.ReviewSnoozed(e.tenantSlug, modelKey)
+	return river.JobSnooze(d)
 }
 
 // botPatch is the patch id of a bot pull request's diff as its forge

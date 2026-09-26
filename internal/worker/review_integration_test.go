@@ -836,6 +836,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkBotPatchIDSkip(ctx, t, appStore, dir, base, lf, dispatch, waitReviewCount, insertOnly, tenant.ID(), repoID)
 	})
 
+	t.Run("a review snoozes while every model slot is held", func(t *testing.T) {
+		checkSnoozeWhileSlotsHeld(ctx, t, appStore, dir, base, lf, dispatchPR, tenant.ID(), "test/reviewer")
+	})
+
 	t.Run("the merge-base .kritik.yaml skips, instructs and templates", func(t *testing.T) {
 		checkRepoConfig(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, tenant.ID())
 	})
@@ -932,6 +936,88 @@ func checkBotPatchIDSkip(
 	status, _, _ = waitReviewCount(newHead.String(), 2)
 	if status != "completed" {
 		t.Fatalf("status = %s, want completed: a manual trigger must bypass the bot patch-id skip", status)
+	}
+}
+
+// checkSnoozeWhileSlotsHeld holds every model slot of the tenant, commits
+// a new head on a pull request of its own and dispatches it: the review is
+// snoozed, recording nothing and starting no runner, until the slot is let
+// go, and then completes.
+func checkSnoozeWhileSlotsHeld(
+	ctx context.Context, t *testing.T, appStore *store.Store, dir, base string, lf *localForge,
+	dispatchPR func(int, string, bool, ...string), tenantID, modelKey string,
+) {
+	t.Helper()
+	r, _ := git.PlainOpen(dir)
+	wt, _ := r.Worktree()
+	if err := wt.Reset(&git.ResetOptions{Commit: plumbing.NewHash(base), Mode: git.HardReset}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "snooze.go"), []byte("package main\n\nfunc snooze() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = wt.Add("snooze.go")
+	commit, err := wt.Commit("snooze", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := commit.String()
+	lf.setBase(base)
+	setSlots := func(jobID *int64) {
+		t.Helper()
+		if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `INSERT INTO model_leases (tenant_id, model_key, slot, job_id, expires_at)
+				VALUES ($1, $2, 1, $3, CASE WHEN $3::bigint IS NULL THEN NULL ELSE now() + interval '1 hour' END)
+				ON CONFLICT (tenant_id, model_key, slot) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`,
+				tenantID, modelKey, jobID)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	holder := int64(-1)
+	setSlots(&holder)
+	dispatchPR(40, head, false)
+
+	snoozes := func() int {
+		var n int
+		if err := appStore.App().QueryRow(ctx, `SELECT coalesce(max((metadata->>'snoozes')::int), 0) FROM river_job
+			WHERE kind = 'review' AND args->>'head_sha' = $1`, head).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	waitFor(t, 30*time.Second, "the review to snooze", func() bool { return snoozes() >= 1 })
+	var reviews, runs int
+	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*), (SELECT count(*) FROM runner_runs rr JOIN reviews r2 ON r2.id = rr.review_id
+			WHERE r2.head_sha = $1) FROM reviews WHERE head_sha = $1`, head).Scan(&reviews, &runs)
+	}); err != nil || reviews != 0 || runs != 0 {
+		t.Fatalf("a snoozed review recorded %d reviews and %d runner runs, %v", reviews, runs, err)
+	}
+
+	setSlots(nil)
+	var status string
+	waitFor(t, 30*time.Second, "the review to complete once the slot was free", func() bool {
+		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT status FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL`, head).Scan(&status)
+		})
+		return err == nil
+	})
+	if status != "completed" {
+		t.Fatalf("status = %s, want completed", status)
+	}
+}
+
+// waitFor polls cond until it holds or timeout passes.
+func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 

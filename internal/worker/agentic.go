@@ -73,9 +73,9 @@ type admission struct {
 // agentAdmit settles what an agentic review may spend before its runner
 // starts, since the runner spends against the model through the gateway:
 // the gateway must be configured, a review model must be, the tenant's
-// caps must allow a review, and a model lease is taken, renewed until
-// released. A non-empty status ends the review before it runs, for the
-// reason given.
+// caps must allow a review, and a free model lease is taken, renewed until
+// released, or errNoSlot returned. A non-empty status ends the review
+// before it runs, for the reason given.
 func (w *Review) agentAdmit(
 	ctx context.Context, logger *slog.Logger, file *configfile.File, tenant *configfile.Tenant, settings configfile.Settings, jobID int64,
 ) (admission, string, string, error) {
@@ -89,12 +89,13 @@ func (w *Review) agentAdmit(
 	if _, ok := file.Providers[ref.Provider()]; !ok {
 		return admission{}, statusFailed, fmt.Sprintf("worker: provider %q is not in the configuration", ref.Provider()), nil
 	}
-	waited := time.Now()
-	l, err := acquireLease(ctx, w.Store, tenant.ID(), string(ref), settings.Slots(), jobID)
+	l, err := takeLease(ctx, w.Store, tenant.ID(), string(ref), settings.Slots(), jobID)
 	if err != nil {
 		return admission{}, "", "", err
 	}
-	w.Metrics.LeaseWait(tenant.Slug, string(ref), time.Since(waited))
+	if l == nil {
+		return admission{}, "", "", errNoSlot
+	}
 	// The caps are read under the lease, so concurrent reviews cannot all
 	// pass a cap of one.
 	budget, capped, err := w.agentCaps(ctx, tenant, settings)

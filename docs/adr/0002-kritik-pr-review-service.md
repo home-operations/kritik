@@ -1005,8 +1005,14 @@ alternatives (§6).
 - The lease is `model_leases` rows per tenant and model reference, one
   per configured `concurrency` slot, created on demand and claimed with
   `FOR UPDATE SKIP LOCKED`; the holder renews every 30 s and a lease
-  older than 2 min is free to take. A worker that finds no slot polls
-  every 5 s until the job's context ends.
+  older than 2 min is free to take. A review checks for a free slot
+  before any forge call or runner and, finding none, snoozes (5 s
+  doubling to 5 min, jittered, not counted as an attempt), giving its
+  worker back to the queue; an agentic review snoozes too when its lease,
+  taken before its runner, is gone by the time it asks. A job that has
+  already done its expensive work (a single-mode model call, an
+  embedding pass, a follow-up) waits in process instead, 2 s doubling to
+  30 s, jittered, since a snooze would do that work again.
 - Caps (`reviewsPerDay`, `tokensPerMonth`) are checked before the model
   call from `reviews` and `usage`; an exhausted cap ends the review as
   `capped` with the reason in `error` and posts nothing.
