@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -208,6 +210,7 @@ func TestActionsJobs(t *testing.T) {
 
 	t.Run("rerun enqueues a review job", func(t *testing.T) { testRerunJob(t, e) })
 	t.Run("rerun refuses while that head is queued or running", func(t *testing.T) { testRerunDedupes(t, e) })
+	t.Run("concurrent reruns of one pull request queue one job", func(t *testing.T) { testRerunConcurrent(t, e) })
 	t.Run("cancel of a non-running review is 409", func(t *testing.T) { testCancelNotCancelable(t, e) })
 	t.Run("cancel stops a running review's job", func(t *testing.T) { testCancelRunning(t, e) })
 	t.Run("cancel of a review whose job already ended is 409", func(t *testing.T) { testCancelEndedJob(t, e) })
@@ -258,6 +261,24 @@ func testRerunDedupes(t *testing.T, e *actionsEnv) {
 	}
 	e.scalar(`UPDATE river_job SET state = 'completed', finalized_at = now()
 		WHERE kind = 'review' AND args->>'repository_id' = $1 AND finalized_at IS NULL RETURNING 'done'`, e.repoID)
+}
+
+func testRerunConcurrent(t *testing.T, e *actionsEnv) {
+	e.scalar(`INSERT INTO pull_requests (tenant_id, repository_id, number, title, author, head_sha)
+		VALUES ($1, $2, 12, 'race me', 'ada', 'headR') RETURNING id::text`, e.tenantID, e.repoID)
+	for round := range 5 {
+		statuses := make([]int, 2)
+		var wg sync.WaitGroup
+		for i := range statuses {
+			wg.Go(func() { statuses[i], _ = e.do("/api/v1/tenants/aj-tenant/pulls/aj/one/12/rerun") })
+		}
+		wg.Wait()
+		if !slices.Contains(statuses, http.StatusAccepted) || !slices.Contains(statuses, http.StatusConflict) {
+			t.Fatalf("round %d: statuses = %v, want one 202 and one 409", round, statuses)
+		}
+		e.scalar(`UPDATE river_job SET state = 'completed', finalized_at = now()
+			WHERE kind = 'review' AND args->>'head_sha' = 'headR' AND finalized_at IS NULL RETURNING 'done'`)
+	}
 }
 
 func testCancelNotCancelable(t *testing.T, e *actionsEnv) {

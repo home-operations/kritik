@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -59,6 +60,12 @@ func EnqueueRerun(
 	}
 	if err != nil {
 		return 0, fmt.Errorf("jobs: look up pull request head: %w", err)
+	}
+	// Two re-runs of one pull request at once would each see the other's
+	// job not yet committed; the lock makes the second wait and see it.
+	key := "kritik:rerun:" + tenantID + ":" + repositoryID + ":" + strconv.Itoa(number)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
+		return 0, fmt.Errorf("jobs: lock pull request: %w", err)
 	}
 	var busy bool
 	err = tx.QueryRow(ctx, `SELECT EXISTS (
