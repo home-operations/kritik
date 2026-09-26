@@ -200,6 +200,8 @@ Every repository-scoped setting is available at all three operator scopes
 | `review.instructions`                                                     | defaults, tenant, repository                     | appended after the operator's                       |
 | `review.requireSuggestedFix`                                              | defaults, tenant, repository                     | may turn on only                                    |
 | `review.templates`                                                        | defaults, tenant, repository                     | may replace (presentation grants nothing, ADR-0005) |
+| `review.context` (§2.9)                                                   | defaults, tenant, repository                     | appended after the operator's                       |
+| `review.minSeverity`, `review.inlineComments` (§2.9)                      | defaults, tenant, repository                     | may replace (presentation)                          |
 | `limits`, `runner`                                                        | defaults, tenant                                 | none                                                |
 | instance settings (§2.3)                                                  | file only                                        | none                                                |
 
@@ -353,6 +355,54 @@ two forges is two repositories everywhere, not only in the database.
 - **`.kritik.yaml` is unaffected:** each forge's repository has its own file,
   in its own history.
 
+### 2.9 What `.kritik.yaml` can say besides settings
+
+Greptile's per-repository configuration
+([`.greptile/` reference](https://www.greptile.com/docs/code-review/greptile-config-reference.md),
+[`greptile.json` reference](https://www.greptile.com/docs/code-review/greptile-json-reference.md))
+was compared against this design. What it adds that fits §2.5 either narrows
+or only changes presentation, so none of it needs an `allow` bound:
+
+```yaml
+review:
+  instructions:
+    - .kritik/rules.md
+    - { path: .kritik/sql.md, paths: ["internal/store/**", "**/*.sql"] }
+  context:
+    - path: internal/store/migrations/0001_init.sql
+      description: the schema; check queries against it
+      paths: ["internal/store/**"]
+  minSeverity: important
+  inlineComments: true
+filter: '!pr.draft && pr.event != "synchronize"'
+```
+
+- **Path-scoped instructions.** An `instructions` entry is a path, or a
+  `path` with `paths` globs; a scoped file is included only when a changed
+  path matches one of them. Entries are still appended after the operator's
+  and still share the 32 KiB joined cap, which scoped files stop spending on
+  unrelated changes. Only instructions and context are path-scoped;
+  path-scoped settings stay deferred (§5).
+- **Reference context.** `review.context` names repository files that
+  explain the code, each with a description and optional `paths`. An
+  agentic review is given the path and description as a pointer and reads
+  the file with its own tools; a single-shot review inlines it within the
+  existing 1 MiB total. The same path checks and caps as instructions apply.
+- **An inline severity floor.** `review.minSeverity` (`nit` or `important`)
+  posts inline comments only at or above it. A `blocking` finding is always
+  posted, and the summary still counts every finding, so what the floor
+  hides stays visible.
+- **Summary-only output.** `review.inlineComments: false` posts the sticky
+  summary without inline comments.
+- **The trigger in filters.** Filters gain `pr.event`: `opened`,
+  `reopened`, `ready_for_review`, `synchronize`, `poll` or `manual`, so a
+  repository can, for example, review only when a pull request opens.
+  Label, author, branch, keyword and draft conditions are already filter
+  expressions; the documentation gives them as recipes rather than adding
+  a list field for each.
+- **A published JSON Schema** for `.kritik.yaml`, so an editor validates the
+  file before a review has to note that it was ignored.
+
 ## 3. Consequences
 
 - **Operators can let repositories opt in to more** (agentic mode, a
@@ -398,6 +448,21 @@ two forges is two repositories everywhere, not only in the database.
 - **`.kritik.yaml` overriding the operator's tuning.** A repository could
   raise cost and exposure past anything the operator sized the instance for.
 - **Clamping an out-of-bounds value** (§2.5). It runs a value nobody wrote.
+- **Reading `.kritik.yaml` from the pull request's own branch**, as Greptile
+  reads `greptile.json`. A pull request could raise its own cost or switch
+  off its own review; Greptile itself reads its one approval setting from
+  the base branch for that reason.
+- **Nested, per-directory configuration files.** Each would need another
+  forge read before the run (§2.6), and a pull request spanning several
+  would need merge rules between them. Path-scoped instructions and context
+  (§2.9) give most of the value from one file.
+- **Context from other repositories.** Anyone who can push to the base
+  branch could put another repository the installation can read, possibly a
+  private one, into the prompt and so into the posted review.
+- **A repository turning off an operator instruction, auto-approval, and
+  rewriting the pull request's description.** The first overrides policy;
+  approving is a trust decision, not a review output; the description
+  belongs to its author.
 
 ## 5. Deferred
 
@@ -406,5 +471,8 @@ two forges is two repositories everywhere, not only in the database.
   file's providers).
 - Picking up a rotated `file:` secret without a change to the config file's
   own bytes.
-- Path-scoped rules in `.kritik.yaml` (settings that apply only under some
-  paths).
+- Path-scoped settings in `.kritik.yaml`: §2.9 scopes instructions and
+  context, not settings.
+- Per-pull-request escalation, such as a label selecting agentic mode or a
+  larger model. A pull request's author controls its labels and title, so
+  whatever the rule allows, every pull request could claim.
