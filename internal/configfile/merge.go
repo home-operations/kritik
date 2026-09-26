@@ -141,15 +141,15 @@ func Merge(file *File, dash []DashboardTenant, open Opener) (*File, error) {
 	if err := out.validateTenants(); err != nil {
 		return nil, err
 	}
-	if err := out.checkDashboardForgeHosts(file.dashboardForgeHosts()); err != nil {
+	if err := out.checkDashboardForgeHosts(file.DashboardForgeHosts()); err != nil {
 		return nil, err
 	}
 	out.hash = mergedHash(file.hash, out.dashboard)
 	return &out, nil
 }
 
-// dashboardForgeHosts is the effective web.dashboardForgeHosts, lowercased.
-func (f *File) dashboardForgeHosts() []string {
+// DashboardForgeHosts is the effective web.dashboardForgeHosts, lowercased.
+func (f *File) DashboardForgeHosts() []string {
 	if len(f.Web.DashboardForgeHosts) > 0 {
 		hosts := make([]string, len(f.Web.DashboardForgeHosts))
 		for i, h := range f.Web.DashboardForgeHosts {

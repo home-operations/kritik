@@ -103,7 +103,8 @@ var goldens = map[string]any{
 		Limits: Limits{Concurrency: 2, ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filter: "!pr.draft",
 		Usage: goldenSummary.Usage,
 	},
-	"repository": goldenRepo,
+	"repository":       goldenRepo,
+	"instance_setting": InstanceSetting{Section: "polling", Key: "interval", Value: "2m0s", Source: configfile.SourceFile},
 	"repo_detail": RepoDetail{
 		Repository: goldenRepo,
 		Settings:   goldenRepoSettings,

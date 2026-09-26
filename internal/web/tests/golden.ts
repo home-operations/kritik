@@ -18,6 +18,7 @@ export function golden<V>(name: string): V {
 export const me = golden<T.Me>('me');
 export const tenantSummary = golden<T.TenantSummary>('tenant_summary');
 export const operatorTenant = golden<T.OperatorTenant>('operator_tenant');
+export const instanceSetting = golden<T.InstanceSetting>('instance_setting');
 export const repoPage = golden<T.Page<T.Repository>>('page');
 export const repoDetail = golden<T.RepoDetail>('repo_detail');
 export const pull = golden<T.Pull>('pull');
@@ -80,6 +81,7 @@ export function defaultApi(): [RegExp, Body][] {
     [/\/api\/v1\/me$/, me],
     [/\/api\/v1\/tenants$/, [tenantSummary]],
     [/\/api\/v1\/operator\/tenants$/, [operatorTenant]],
+    [/\/api\/v1\/operator\/instance$/, [instanceSetting]],
     [new RegExp(`${t}/repos$`), repoPage],
     [new RegExp(`${t}/repos/alpha/one$`), repoDetail],
     [

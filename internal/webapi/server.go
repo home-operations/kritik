@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritik/internal/auth"
+	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/sealbox"
 	"github.com/home-operations/kritik/internal/store"
@@ -42,6 +43,9 @@ type Config struct {
 	Logger *slog.Logger
 	// Now defaults to time.Now.
 	Now func() time.Time
+	// Env is this process's environment as the configuration read it,
+	// shown to operators; secrets show only whether they are set.
+	Env []config.EnvVar
 }
 
 // Server serves the dashboard.
@@ -58,6 +62,7 @@ type Server struct {
 	logger   *slog.Logger
 	now      func() time.Time
 	hub      *hub
+	env      []config.EnvVar
 }
 
 // New builds a Server from cfg.
@@ -75,7 +80,7 @@ func New(cfg Config) *Server {
 	return &Server{
 		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, keyring: cfg.Keyring, actions: cfg.Actions, version: cfg.Version,
 		webURL: cfg.WebURL, ui: cfg.UI, basePath: base,
-		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger),
+		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger), env: cfg.Env,
 	}
 }
 

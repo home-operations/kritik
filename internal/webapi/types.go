@@ -78,6 +78,17 @@ type OperatorTenant struct {
 	Conflict string `json:"conflict,omitempty"`
 }
 
+// InstanceSetting is one instance-wide setting as the operator console
+// shows it, read-only: its value, and whether it comes from this
+// process's environment, the configuration file or a built-in default. A
+// secret shows only whether it is set.
+type InstanceSetting struct {
+	Section string            `json:"section"`
+	Key     string            `json:"key"`
+	Value   string            `json:"value"`
+	Source  configfile.Source `json:"source"`
+}
+
 // CredentialKind is how an installation authenticates to its forge.
 type CredentialKind string
 

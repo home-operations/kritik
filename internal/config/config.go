@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
+	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -416,4 +419,41 @@ func (c *Config) Level() (slog.Level, error) {
 	default:
 		return 0, fmt.Errorf("config: KRITIK_LOG_LEVEL must be debug, info, warn or error, got %q", c.LogLevel)
 	}
+}
+
+// EnvVar is one environment variable Config reads, as this process has it.
+// A secret, one the process unsets once read, shows only whether it is
+// set. Set says whether the environment gave it, rather than its default.
+type EnvVar struct {
+	Name   string
+	Value  string
+	Secret bool
+	Set    bool
+}
+
+// Env lists the variables Config reads, in the order it declares them. The
+// environment has lost its secrets by the time Load returns, so a secret
+// is set when its field holds a value.
+func (c *Config) Env() []EnvVar {
+	v := reflect.ValueOf(c).Elem()
+	var out []EnvVar
+	for i := range v.NumField() {
+		name, opts, _ := strings.Cut(v.Type().Field(i).Tag.Get("env"), ",")
+		if name == "" {
+			continue
+		}
+		e := EnvVar{Name: name, Secret: slices.Contains(strings.Split(opts, ","), "unset")}
+		field := v.Field(i)
+		if e.Secret {
+			e.Set, e.Value = !field.IsZero(), "not set"
+			if e.Set {
+				e.Value = "set"
+			}
+		} else {
+			_, e.Set = os.LookupEnv(name)
+			e.Value = fmt.Sprint(field.Interface())
+		}
+		out = append(out, e)
+	}
+	return out
 }

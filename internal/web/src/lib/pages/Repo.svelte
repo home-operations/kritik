@@ -83,6 +83,7 @@
   ];
   const sourceLabel: Record<ConfigSource, string> = {
     default: 'default',
+    env: 'environment',
     file: 'config file',
     dashboard: 'dashboard',
     repository: '.kritik.yaml',
