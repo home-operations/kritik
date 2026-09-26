@@ -29,6 +29,13 @@ type Actions interface {
 var (
 	ErrNoHead        = errors.New("webapi: the pull request has no known head to review")
 	ErrNotCancelable = errors.New("webapi: the review is not running")
+	// ErrRepositoryNotFound is returned by Reindex when repositoryID no
+	// longer exists; findRepo already resolves it in the same
+	// transaction, so this is defense in depth rather than an expected path.
+	ErrRepositoryNotFound = errors.New("webapi: the repository was not found")
+	// ErrReindexQueued is returned by Reindex when a forced reindex deduped
+	// onto the repository's existing onboard or push index job.
+	ErrReindexQueued = errors.New("webapi: a reindex is already queued for this repository")
 )
 
 var errActionsDisabled = errStatus(http.StatusServiceUnavailable, CodeActionsDisabled, "this process does not queue dashboard actions", nil)
@@ -109,7 +116,14 @@ func (s *Server) reindex(w http.ResponseWriter, r *http.Request, t *tenantScope)
 		if err != nil {
 			return err
 		}
-		if job, err = s.actions.Reindex(ctx, tx, tid, repo.ID); err != nil {
+		job, err = s.actions.Reindex(ctx, tx, tid, repo.ID)
+		if errors.Is(err, ErrRepositoryNotFound) {
+			return errNotFound("repository")
+		}
+		if errors.Is(err, ErrReindexQueued) {
+			return errStatus(http.StatusConflict, CodeAlreadyQueued, "a reindex is already queued for this repository", nil)
+		}
+		if err != nil {
 			return err
 		}
 		return record(ctx, tx, t.principal, &tid, AuditRepoReindex, repo.FullName, jobAudit{JobID: job})

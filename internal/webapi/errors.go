@@ -34,6 +34,7 @@ const (
 	CodeNoHead             ErrorCode = "no_head"
 	CodeNotCancelable      ErrorCode = "not_cancelable"
 	CodeActionsDisabled    ErrorCode = "actions_disabled"
+	CodeAlreadyQueued      ErrorCode = "already_queued"
 	CodeReenterSecret      ErrorCode = "reenter_secret"
 	CodeAlreadyMember      ErrorCode = "already_member"
 )

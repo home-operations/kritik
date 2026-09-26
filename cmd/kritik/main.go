@@ -304,9 +304,15 @@ func startWeb(
 	if err != nil {
 		return err
 	}
+	// Insert-only River client: the dashboard enqueues re-runs, cancels and
+	// reindexes, it never works jobs.
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: webLogger})
+	if err != nil {
+		return fmt.Errorf("river: %w", err)
+	}
 	api := webapi.New(webapi.Config{
 		Store: st, Current: current, Auth: authHandler, Keyring: cfg.DashboardKeyring(), UI: web.FS(),
-		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger,
+		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: queue},
 	})
 	g.Go(func() error { return api.Run(ctx) })
 	g.Go(func() error { return server.ServeDrain(ctx, cfg.WebAddr, api.Handler(), webDrain, webLogger) })
