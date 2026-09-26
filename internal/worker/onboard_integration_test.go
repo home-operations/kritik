@@ -58,7 +58,8 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o := &Onboarder{Store: st, Queue: queue, Window: before + 2, Logger: logger}
+	window := before + 2
+	o := &Onboarder{Store: st, Queue: queue, Current: configfile.NewCurrent(&configfile.File{Indexing: configfile.Indexing{OnboardWindow: window}}), Logger: logger}
 	queued := func() (jobs, repos int) {
 		t.Helper()
 		if err := st.App().QueryRow(ctx, `SELECT count(*), count(DISTINCT args->>'repository_id') FROM river_job
@@ -71,8 +72,8 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 		if err := o.Offer(ctx); err != nil {
 			t.Fatalf("Offer: %v", err)
 		}
-		if n, err := st.OnboardingInFlight(ctx); err != nil || n != o.Window {
-			t.Fatalf("in flight = %d, %v; want the window, %d", n, err, o.Window)
+		if n, err := st.OnboardingInFlight(ctx); err != nil || n != window {
+			t.Fatalf("in flight = %d, %v; want the window, %d", n, err, window)
 		}
 	}
 	if jobs, repos := queued(); jobs != 2 || repos != 2 {

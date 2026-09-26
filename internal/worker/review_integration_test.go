@@ -57,6 +57,8 @@ providers:
     baseUrl: http://unused.invalid/v1
     apiKey: { env: TEST_SECRET }
 defaults:
+  runner:
+    activeDeadlineSeconds: 60
   models:
     review: test/reviewer
   limits:
@@ -881,12 +883,12 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	workers := river.NewWorkers()
 	wb := Base{Store: appStore, Current: current, Forges: &forges{f: lf}, Logger: logger}
 	river.AddWorker(workers, &Review{
-		Base: wb, Completers: &completers{c: fc}, Embedder: fe, EmbedModel: "fake-embed", Executor: exec, Deadline: time.Minute,
+		Base: wb, Completers: &completers{c: fc}, Embedder: fe, EmbedModel: "fake-embed", Executor: exec,
 		superviseEvery: 50 * time.Millisecond,
 	})
 	river.AddWorker(workers, &FollowUp{Base: wb, Completers: &completers{c: fc}})
 	river.AddWorker(workers, &Index{
-		Base: wb, Executor: exec, Embedder: fe, EmbedModel: "fake-embed", EmbedDims: 8, Deadline: time.Minute,
+		Base: wb, Executor: exec, Embedder: fe, EmbedModel: "fake-embed", EmbedDims: 8,
 	})
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{

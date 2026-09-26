@@ -145,8 +145,6 @@ spec:
               value: {{ tpl $.Values.database.runner.existingSecret $ | quote }}
             - name: KRITIK_RUNNER_DATABASE_SECRET_KEY
               value: {{ $.Values.database.runner.key | quote }}
-            - name: KRITIK_RUNNER_DEADLINE
-              value: {{ tpl (toString $.Values.runner.deadline) $ | quote }}
             - name: KRITIK_RUNNER_TTL
               value: {{ tpl (toString $.Values.runner.ttl) $ | quote }}
             {{- with $.Values.runner.runtimeClassName }}
@@ -163,12 +161,6 @@ spec:
               value: {{ $.Values.config.reviewWorkers | quote }}
             - name: KRITIK_INDEX_WORKERS
               value: {{ $.Values.config.indexWorkers | quote }}
-            - name: KRITIK_ONBOARD_WINDOW
-              value: {{ $.Values.config.onboardWindow | quote }}
-            - name: KRITIK_POLL_INTERVAL
-              value: {{ tpl (toString $.Values.config.pollInterval) $ | quote }}
-            - name: KRITIK_POLL_LOOKBACK
-              value: {{ tpl (toString $.Values.config.pollLookback) $ | quote }}
             {{- if include "kritik.embeddingEnabled" $ }}
             - name: KRITIK_EMBED_BASE_URL
               value: {{ tpl $.Values.embedding.baseUrl $ | quote }}

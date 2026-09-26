@@ -14,7 +14,6 @@ import (
 	"github.com/caarlos0/env/v11"
 
 	"github.com/home-operations/kritik/internal/egress"
-	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/sealbox"
 )
 
@@ -156,12 +155,6 @@ type Config struct {
 	// cannot trigger a fleet-wide re-embed.
 	ReindexOnModelChange bool `env:"KRITIK_REINDEX_ON_MODEL_CHANGE" envDefault:"false"`
 
-	// PollInterval is how often the leader lists each installation's open
-	// pull requests to catch missed webhooks; 0 disables the poll.
-	// PollLookback bounds how far back a first or long-idle poll looks.
-	PollInterval time.Duration `env:"KRITIK_POLL_INTERVAL" envDefault:"10m"`
-	PollLookback time.Duration `env:"KRITIK_POLL_LOOKBACK" envDefault:"24h"`
-
 	// ReviewWorkers is how many review jobs one worker replica runs at once.
 	// Each one holds a runner pod open for the length of a fetch and diff,
 	// so this bounds pods per replica, not model calls.
@@ -171,14 +164,6 @@ type Config struct {
 	// account cannot starve them. Each holds a runner pod too, so a replica
 	// runs at most ReviewWorkers + IndexWorkers runner pods.
 	IndexWorkers int `env:"KRITIK_INDEX_WORKERS" envDefault:"1"`
-
-	// OnboardWindow is how many onboarding index jobs the leader keeps
-	// queued or running at once. Onboarding runs behind every push update
-	// in any case; the window keeps a thousand repositories from queuing
-	// at once, so tenants take turns and the most active repositories go
-	// first. A window at least the index workers of every replica together
-	// keeps them all busy.
-	OnboardWindow int `env:"KRITIK_ONBOARD_WINDOW" envDefault:"4"`
 
 	// Executor selects how runners run: "kubernetes" creates a Job per run
 	// in the pod's own namespace; "local" runs the runner in-process and is
@@ -197,14 +182,9 @@ type Config struct {
 	RunnerDatabaseSecret    string `env:"KRITIK_RUNNER_DATABASE_SECRET" envDefault:"kritik-postgres-runner"`
 	RunnerDatabaseSecretKey string `env:"KRITIK_RUNNER_DATABASE_SECRET_KEY" envDefault:"uri"`
 
-	// RunnerDeadline bounds a runner when the tenant sets none, and like a
-	// tenant's runner.activeDeadlineSeconds must not exceed
-	// jobtimeout.MaxRunnerDeadline, past which River would cut the job off
-	// before the deadline does; RunnerTTL is how long a finished Job stays
-	// for kubectl before Kubernetes removes it. The run row keeps everything
-	// the Job knew.
-	RunnerDeadline time.Duration `env:"KRITIK_RUNNER_DEADLINE" envDefault:"15m"`
-	RunnerTTL      time.Duration `env:"KRITIK_RUNNER_TTL" envDefault:"10m"`
+	// RunnerTTL is how long a finished Job stays for kubectl before
+	// Kubernetes removes it. The run row keeps everything the Job knew.
+	RunnerTTL time.Duration `env:"KRITIK_RUNNER_TTL" envDefault:"10m"`
 
 	// RunnerRuntimeClass is the RuntimeClass runner pods run under, such as
 	// a gVisor or Kata class, so a pod that parses untrusted repository
@@ -380,9 +360,6 @@ func (c *Config) validate() error {
 	default:
 		return fmt.Errorf("config: KRITIK_EXECUTOR must be kubernetes or local, got %q", c.Executor)
 	}
-	if c.PollInterval < 0 || c.PollLookback <= 0 {
-		return fmt.Errorf("config: KRITIK_POLL_INTERVAL must not be negative and KRITIK_POLL_LOOKBACK must be positive")
-	}
 	if err := c.validateWork(); err != nil {
 		return err
 	}
@@ -391,15 +368,11 @@ func (c *Config) validate() error {
 
 // validateWork checks the settings that size the queues and the runners.
 func (c *Config) validateWork() error {
-	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.OnboardWindow <= 0 {
-		return fmt.Errorf("config: KRITIK_REVIEW_WORKERS, KRITIK_INDEX_WORKERS and KRITIK_ONBOARD_WINDOW must be positive")
+	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 {
+		return fmt.Errorf("config: KRITIK_REVIEW_WORKERS and KRITIK_INDEX_WORKERS must be positive")
 	}
-	if c.RunnerDeadline <= 0 || c.RunnerTTL <= 0 {
-		return fmt.Errorf("config: KRITIK_RUNNER_DEADLINE and KRITIK_RUNNER_TTL must be positive")
-	}
-	if c.RunnerDeadline > jobtimeout.MaxRunnerDeadline {
-		return fmt.Errorf("config: KRITIK_RUNNER_DEADLINE must not exceed %s (the %s job cap less the review and index headroom), got %s",
-			jobtimeout.MaxRunnerDeadline, jobtimeout.MaxJobTimeout, c.RunnerDeadline)
+	if c.RunnerTTL <= 0 {
+		return fmt.Errorf("config: KRITIK_RUNNER_TTL must be positive")
 	}
 	return nil
 }

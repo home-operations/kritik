@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/store"
 )
@@ -25,14 +26,15 @@ const (
 // after a first install, or a model change that drops every index, all
 // repositories need one at once, and inserting them all would put the
 // first-declared tenant's hundreds ahead of everyone else's. It keeps at
-// most Window of them queued or running, tenants taking turns and the
+// most indexing.onboardWindow of them queued or running, tenants taking turns and the
 // repositories whose pull requests moved last going first. A leader duty.
 type Onboarder struct {
 	Store *store.Store
 	Queue *river.Client[pgx.Tx]
-	// Window is how many onboarding jobs may be queued or running at once.
-	Window int
-	Logger *slog.Logger
+	// Current's indexing.onboardWindow is how many onboarding jobs may be
+	// queued or running at once.
+	Current *configfile.Current
+	Logger  *slog.Logger
 }
 
 // Run tops the window up every onboardInterval until ctx ends. A failed
@@ -58,7 +60,8 @@ func (o *Onboarder) Offer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	room := o.Window - inFlight
+	window := o.Current.Get().OnboardWindow()
+	room := window - inFlight
 	if room <= 0 {
 		return nil
 	}
@@ -81,6 +84,6 @@ func (o *Onboarder) Offer(ctx context.Context) error {
 			queued++
 		}
 	}
-	o.Logger.Info("onboarding index jobs queued", "queued", queued, "in_flight", inFlight, "window", o.Window)
+	o.Logger.Info("onboarding index jobs queued", "queued", queued, "in_flight", inFlight, "window", window)
 	return nil
 }

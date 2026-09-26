@@ -107,6 +107,53 @@ func (f *File) Settings(t *Tenant, installation, repo string) Settings {
 	return s
 }
 
+// PollInterval is how often the leader polls, 0 when polling is off.
+func (f *File) PollInterval() time.Duration {
+	if f.Polling.Interval != nil {
+		return *f.Polling.Interval
+	}
+	return DefaultPollInterval
+}
+
+// PollLookback bounds how far back a first or long-idle poll looks.
+func (f *File) PollLookback() time.Duration {
+	if f.Polling.Lookback > 0 {
+		return f.Polling.Lookback
+	}
+	return DefaultPollLookback
+}
+
+// OnboardWindow is how many onboarding index jobs may be queued or running.
+func (f *File) OnboardWindow() int {
+	if f.Indexing.OnboardWindow > 0 {
+		return f.Indexing.OnboardWindow
+	}
+	return DefaultOnboardWindow
+}
+
+// RunnerFor resolves a tenant's runner Job deadline and resources: the
+// tenant's runner block, then defaults.runner, then DefaultRunnerDeadline
+// and no resources. t may be nil for a tenant no longer in the file.
+func (f *File) RunnerFor(t *Tenant) (deadline time.Duration, resources map[string]any) {
+	deadline = DefaultRunnerDeadline
+	blocks := []*Runner{f.Defaults.Runner}
+	if t != nil {
+		blocks = append(blocks, t.Runner)
+	}
+	for _, r := range blocks {
+		if r == nil {
+			continue
+		}
+		if r.ActiveDeadlineSeconds > 0 {
+			deadline = time.Duration(r.ActiveDeadlineSeconds) * time.Second
+		}
+		if r.Resources != nil {
+			resources = r.Resources
+		}
+	}
+	return deadline, resources
+}
+
 // DisabledIndexGrace returns the configured grace period or the default.
 func (f *File) DisabledIndexGrace() time.Duration {
 	if f.Retention.DisabledIndexGrace > 0 {

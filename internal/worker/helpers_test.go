@@ -3,9 +3,7 @@ package worker
 import (
 	"errors"
 	"testing"
-	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
 )
 
@@ -24,18 +22,6 @@ func TestSmallHelpers(t *testing.T) {
 	}
 	if embedText(stagedChunk{path: "values.yaml", text: "a: 1"}) != "values.yaml\na: 1" {
 		t.Fatal("embedText without a symbol")
-	}
-}
-
-func TestRunnerSpecAppliesTenantOverrides(t *testing.T) {
-	deadline, res := runnerSpec(&configfile.Tenant{}, 15*time.Minute)
-	if deadline != 15*time.Minute || res != nil {
-		t.Fatalf("defaults = %v %v", deadline, res)
-	}
-	tenant := &configfile.Tenant{Runner: &configfile.Runner{ActiveDeadlineSeconds: 60, Resources: map[string]any{"limits": map[string]any{"memory": "1Gi"}}}}
-	deadline, res = runnerSpec(tenant, 15*time.Minute)
-	if deadline != time.Minute || res["limits"] == nil {
-		t.Fatalf("overrides = %v %v", deadline, res)
 	}
 }
 

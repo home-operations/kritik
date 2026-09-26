@@ -553,6 +553,66 @@ func TestRepositoryInstallation(t *testing.T) {
 	})
 }
 
+// TestPollingIndexingAndRunnerDefaults checks the tuning that lives in the
+// file rather than the environment: its defaults, an explicit zero that
+// turns polling off, and the tenant, defaults.runner, built-in order of a
+// runner's deadline and resources.
+func TestPollingIndexingAndRunnerDefaults(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+
+	t.Run("defaults when unset", func(t *testing.T) {
+		f, err := Parse([]byte(minimal))
+		if err != nil {
+			t.Fatal(err)
+		}
+		deadline, resources := f.RunnerFor(&f.Tenants[0])
+		if f.PollInterval() != DefaultPollInterval || f.PollLookback() != DefaultPollLookback || f.OnboardWindow() != DefaultOnboardWindow ||
+			deadline != DefaultRunnerDeadline || resources != nil {
+			t.Fatalf("interval=%s lookback=%s window=%d deadline=%s resources=%v",
+				f.PollInterval(), f.PollLookback(), f.OnboardWindow(), deadline, resources)
+		}
+		if d, _ := f.RunnerFor(nil); d != DefaultRunnerDeadline {
+			t.Fatalf("RunnerFor(nil) = %s", d)
+		}
+	})
+
+	t.Run("set values, and interval 0 turns polling off", func(t *testing.T) {
+		f, err := Parse([]byte(`
+polling: { interval: 0s, lookback: 1h }
+indexing: { onboardWindow: 8 }
+defaults:
+  runner: { activeDeadlineSeconds: 600, resources: { limits: { memory: 1Gi } } }
+` + strings.Replace(minimal, "slug: acme", "slug: acme\n    runner: { activeDeadlineSeconds: 60 }", 1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.PollInterval() != 0 || f.PollLookback() != time.Hour || f.OnboardWindow() != 8 {
+			t.Fatalf("interval=%s lookback=%s window=%d", f.PollInterval(), f.PollLookback(), f.OnboardWindow())
+		}
+		deadline, resources := f.RunnerFor(&f.Tenants[0])
+		if deadline != time.Minute || resources["limits"] == nil {
+			t.Fatalf("tenant runner = %s %v; want the tenant's deadline over the default's resources", deadline, resources)
+		}
+		if d, _ := f.RunnerFor(nil); d != 10*time.Minute {
+			t.Fatalf("RunnerFor(nil) = %s, want defaults.runner's 10m", d)
+		}
+	})
+
+	refused := map[string]string{
+		"polling: { interval: -1m }":      "polling.interval and polling.lookback must not be negative",
+		"indexing: { onboardWindow: -1 }": "indexing.onboardWindow must not be negative",
+		fmt.Sprintf("defaults: { runner: { activeDeadlineSeconds: %d } }", int64(jobtimeout.MaxRunnerDeadline.Seconds())+1): "defaults.runner.activeDeadlineSeconds must not exceed",
+	}
+	for block, want := range refused {
+		t.Run(block, func(t *testing.T) {
+			if _, err := Parse([]byte(block + "\n" + minimal)); err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("Parse = %v, want an error containing %q", err, want)
+			}
+		})
+	}
+}
+
 func TestRepositoryModeAgentReview(t *testing.T) {
 	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")

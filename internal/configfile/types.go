@@ -153,16 +153,51 @@ type Runner struct {
 	ActiveDeadlineSeconds int64          `yaml:"activeDeadlineSeconds,omitempty"`
 }
 
+// DefaultRunnerDeadline bounds a runner Job when neither the tenant nor
+// defaults.runner sets activeDeadlineSeconds.
+const DefaultRunnerDeadline = 15 * time.Minute
+
 // Defaults apply to every tenant unless overridden.
 type Defaults struct {
-	Models Models `yaml:"models,omitempty"`
-	Filter string `yaml:"filter,omitempty"`
-	Forks  *bool  `yaml:"forks,omitempty"`
-	Limits Limits `yaml:"limits,omitempty"`
+	// Runner is every tenant's runner block unless the tenant sets its own
+	// deadline or resources.
+	Runner *Runner `yaml:"runner,omitempty"`
+	Models Models  `yaml:"models,omitempty"`
+	Filter string  `yaml:"filter,omitempty"`
+	Forks  *bool   `yaml:"forks,omitempty"`
+	Limits Limits  `yaml:"limits,omitempty"`
 	// Settle delays a review job for a new head, so a burst of pushes
 	// collapses onto the last one before anything is spent.
 	Settle time.Duration `yaml:"settle,omitempty"`
 }
+
+// Polling is the leader's backstop for missed webhooks: it lists each
+// installation's open pull requests every Interval.
+type Polling struct {
+	// Interval is how often to poll; an explicit 0 turns polling off, and
+	// unset is DefaultPollInterval.
+	Interval *time.Duration `yaml:"interval,omitempty"`
+	// Lookback bounds how far back a first or long-idle poll looks, so a
+	// long outage does not list every open pull request's history at once.
+	Lookback time.Duration `yaml:"lookback,omitempty"`
+}
+
+// Poll defaults, when the file sets none.
+const (
+	DefaultPollInterval = 10 * time.Minute
+	DefaultPollLookback = 24 * time.Hour
+)
+
+// Indexing tunes how repositories are onboarded into the embedding index.
+type Indexing struct {
+	// OnboardWindow is how many onboarding index jobs the leader keeps
+	// queued or running at once; tenants take turns, and the repositories
+	// whose pull requests moved last go first.
+	OnboardWindow int `yaml:"onboardWindow,omitempty"`
+}
+
+// DefaultOnboardWindow applies when the file sets no onboardWindow.
+const DefaultOnboardWindow = 4
 
 // Retention controls what is deleted and when. Reviews, findings and usage
 // are kept indefinitely; only bulky, reproducible data expires.
@@ -409,6 +444,8 @@ type Egress struct {
 type File struct {
 	Providers map[string]Provider `yaml:"providers,omitempty"`
 	Defaults  Defaults            `yaml:"defaults,omitempty"`
+	Polling   Polling             `yaml:"polling,omitempty"`
+	Indexing  Indexing            `yaml:"indexing,omitempty"`
 	Retention Retention           `yaml:"retention,omitempty"`
 	Egress    Egress              `yaml:"egress,omitempty"`
 	Web       Web                 `yaml:"web,omitempty"`

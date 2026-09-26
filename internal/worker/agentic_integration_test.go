@@ -41,6 +41,8 @@ providers:
     baseUrl: %s/v1
     apiKey: { env: TEST_SECRET }
 defaults:
+  runner:
+    activeDeadlineSeconds: 60
   models:
     review: gateway/agent-model
   limits:
@@ -278,7 +280,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	workers := river.NewWorkers()
 	h.review = &Review{
 		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf}, Completers: &completers{c: h.fc},
-		Executor: h.exec, Deadline: time.Minute, Logger: logger, superviseEvery: 50 * time.Millisecond,
+		Executor: h.exec, Logger: logger, superviseEvery: 50 * time.Millisecond,
 	}
 	gateway := httptest.NewServer(&Gateway{
 		Store: appStore, Current: h.review.Current, Logger: logger,

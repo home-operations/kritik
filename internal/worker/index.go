@@ -42,7 +42,6 @@ type Index struct {
 	// built with anything else is rebuilt in full.
 	EmbedModel string
 	EmbedDims  int
-	Deadline   time.Duration
 
 	// superviseEvery overrides superviseInterval.
 	superviseEvery time.Duration
@@ -124,7 +123,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	// would leave them behind for good: a retry stages its own under a new
 	// run.
 	defer w.clearStaging(ctx, logger, args.TenantID, runnerRunID)
-	deadline, resources := runnerSpec(tenant, w.Deadline)
+	deadline, resources := file.RunnerFor(tenant)
 	sup := runSupervision(w.Store, args.TenantID, runnerRunID, "", "", w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runnerRunID,
@@ -456,16 +455,4 @@ func runOutcome(res executor.Result) string {
 	default:
 		return "success"
 	}
-}
-
-// runnerSpec applies the tenant's runner block over the deployment default.
-func runnerSpec(tenant *configfile.Tenant, deadline time.Duration) (time.Duration, map[string]any) {
-	var resources map[string]any
-	if tenant.Runner != nil {
-		if tenant.Runner.ActiveDeadlineSeconds > 0 {
-			deadline = time.Duration(tenant.Runner.ActiveDeadlineSeconds) * time.Second
-		}
-		resources = tenant.Runner.Resources
-	}
-	return deadline, resources
 }

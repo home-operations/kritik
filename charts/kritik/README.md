@@ -214,9 +214,6 @@ Kubernetes: `>=1.25.0-0`
 | config.indexWorkers | int | `1` | Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews. |
 | config.logFormat | string | `"json"` | Log format: json or text. |
 | config.logLevel | string | `"info"` | Log level: debug, info, warn or error. |
-| config.onboardWindow | int | `4` | Onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW); tenants take turns and the most active repositories go first. |
-| config.pollInterval | string | `"10m"` | How often the leader lists each installation's open pull requests as a backstop for missed webhooks (Go duration); "0" disables. |
-| config.pollLookback | string | `"24h"` | How far back a first or long-idle poll looks (Go duration). |
 | config.reloadInterval | string | `"10s"` | How often each replica re-reads the file (Go duration). |
 | config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers). |
 | dashboard.keySecret.key | string | `"key"` | Key in that Secret. |
@@ -309,7 +306,6 @@ Kubernetes: `>=1.25.0-0`
 | roles.worker.enabled | bool | `false` | Run the worker (queues, runner Jobs, leader duties) as its own Deployment (split topology). |
 | roles.worker.replicas | int | `1` | Replicas for the worker Deployment. |
 | roles.worker.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
-| runner.deadline | string | `"15m"` | Default active deadline for a runner Job (Go duration); tenants may lower it in the file. |
 | runner.image | string | `""` | Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd and rg for an agentic review's `agent.commands`. |
 | runner.runtimeClassName | string | `""` | RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and, in agentic mode, runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
