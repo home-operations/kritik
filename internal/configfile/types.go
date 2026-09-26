@@ -40,12 +40,20 @@ const (
 	ForgeForgejo Forge = "forgejo"
 )
 
-// SecretRef points at where a secret value lives. Exactly one of Env or File
-// is set. Values are resolved at load and never written back to disk or the
-// database.
+// SecretRef points at where a secret value lives. Exactly one of Env, File
+// or Sealed is set. Values are resolved at load and never written back to
+// disk or the database. Sealed is ciphertext only a dashboard-managed tenant
+// may carry; Env and File would read the server's own environment and
+// filesystem, so only the operator's file may use them.
 type SecretRef struct {
-	Env  string `yaml:"env,omitempty"`
-	File string `yaml:"file,omitempty"`
+	Env    string `yaml:"env,omitempty"`
+	File   string `yaml:"file,omitempty"`
+	Sealed string `yaml:"sealed,omitempty"`
+}
+
+// Opener decrypts a sealed secret value.
+type Opener interface {
+	Open(sealed string) ([]byte, error)
 }
 
 // Secret is a resolved secret value. Its String method redacts, so a Secret
@@ -163,10 +171,26 @@ type Retention struct {
 	// kept before deletion, so re-enabling within the window reuses the
 	// index instead of rebuilding it.
 	DisabledIndexGrace time.Duration `yaml:"disabledIndexGrace,omitempty"`
+	// Transcripts is how long an agentic review's transcript is kept.
+	Transcripts time.Duration `yaml:"transcripts,omitempty"`
 }
 
 // DefaultDisabledIndexGrace applies when the file sets no retention.
 const DefaultDisabledIndexGrace = 30 * 24 * time.Hour
+
+// DefaultTranscripts applies when the file sets no transcript retention.
+const DefaultTranscripts = 30 * 24 * time.Hour
+
+// minTranscripts is the shortest transcript retention the file may set.
+const minTranscripts = 24 * time.Hour
+
+// TranscriptsOrDefault returns the transcript retention or its default.
+func (r Retention) TranscriptsOrDefault() time.Duration {
+	if r.Transcripts > 0 {
+		return r.Transcripts
+	}
+	return DefaultTranscripts
+}
 
 // DefaultIgnore is always skipped by chunking and the caller search, on top
 // of whatever the operator's file and the in-repo file add. Vendored and
@@ -364,6 +388,7 @@ type Tenant struct {
 	Settle        time.Duration  `yaml:"settle,omitempty"`
 
 	filter *prfilter.Program
+	origin Origin
 }
 
 // Egress is what runner pods may reach through the worker's gateway beyond
@@ -384,15 +409,21 @@ type File struct {
 	Defaults  Defaults            `yaml:"defaults,omitempty"`
 	Retention Retention           `yaml:"retention,omitempty"`
 	Egress    Egress              `yaml:"egress,omitempty"`
+	Web       Web                 `yaml:"web,omitempty"`
 	Tenants   []Tenant            `yaml:"tenants"`
 
 	defaultFilter *prfilter.Program
 	hash          string
+	// base is the parsed file a merged File was built from, nil for a
+	// parsed one; dashboard holds the tenants merged into it.
+	base      *File
+	dashboard []DashboardTenant
 }
 
-// Hash is the hex SHA-256 of the file's bytes as parsed. The leader records
-// it in the store after applying the file, and followers compare it with
-// their own copy to report drift.
+// Hash is the hex SHA-256 of the file's bytes as parsed, or for a merged
+// File, of the parsed file's hash and each dashboard tenant's revision. The
+// leader records it in the store after applying the file, and followers
+// compare it with their own copy to report drift.
 func (f *File) Hash() string { return f.hash }
 
 // Settings are the effective settings for one repository after defaults,

@@ -218,6 +218,10 @@ Kubernetes: `>=1.25.0-0`
 | config.pollLookback | string | `"24h"` | How far back a first or long-idle poll looks (Go duration). |
 | config.reloadInterval | string | `"10s"` | How often each replica re-reads the file (Go duration). |
 | config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. |
+| dashboard.keySecret.key | string | `"key"` | Key in that Secret. |
+| dashboard.keySecret.name | string | `""` | Secret holding the key that seals dashboard tenants' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start. |
+| dashboard.oldKeysSecret.key | string | `"old-keys"` | Key in that Secret. |
+| dashboard.oldKeysSecret.name | optional | `""` | Secret holding retired sealing keys, comma-separated, only to open values sealed under them. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritik_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |
@@ -247,6 +251,13 @@ Kubernetes: `>=1.25.0-0`
 | httpRoute.labels | object | `{}` | HTTPRoute labels. |
 | httpRoute.matches | list | `[{"path":{"type":"PathPrefix","value":"/hooks"}}]` | Match conditions for the route. |
 | httpRoute.parentRefs | list | `[]` | Gateways (and listeners) this route attaches to. |
+| httpRoute.web.annotations | object | `{}` | HTTPRoute annotations. |
+| httpRoute.web.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
+| httpRoute.web.enabled | bool | `false` | Expose the dashboard via a Gateway API HTTPRoute. |
+| httpRoute.web.hostnames | list | `[]` | Hostnames matched against the Host header (templated). |
+| httpRoute.web.labels | object | `{}` | HTTPRoute labels. |
+| httpRoute.web.matches | list | `[{"path":{"type":"PathPrefix","value":"/"}}]` | Match conditions for the route. |
+| httpRoute.web.parentRefs | list | `[]` | Gateways (and listeners) this route attaches to. |
 | image.digest | string | `""` | Pin the image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published image's digest. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | image.repository | string | `"ghcr.io/home-operations/kritik"` | Image repository. |
@@ -257,6 +268,11 @@ Kubernetes: `>=1.25.0-0`
 | ingress.enabled | bool | `false` | Expose the webhook listener via an Ingress. |
 | ingress.hosts | list | `[{"host":"kritik.example.com","paths":[{"path":"/hooks","pathType":"Prefix"}]}]` | Ingress hosts and their paths. |
 | ingress.tls | list | `[]` | Ingress TLS configuration. |
+| ingress.web.annotations | object | `{}` | Ingress annotations. |
+| ingress.web.className | string | `""` | IngressClass name. |
+| ingress.web.enabled | bool | `false` | Expose the dashboard via an Ingress. |
+| ingress.web.hosts | list | `[{"host":"dash.example.com","paths":[{"path":"/","pathType":"Prefix"}]}]` | Ingress hosts and their paths. |
+| ingress.web.tls | list | `[]` | Ingress TLS configuration. |
 | livenessProbe | object | `{"httpGet":{"path":"/healthz","port":"metrics"},"periodSeconds":20}` | Liveness probe, on the metrics port. |
 | monitoring.serviceMonitor.annotations | object | `{}` | ServiceMonitor annotations. |
 | monitoring.serviceMonitor.enabled | bool | `false` | Create a Prometheus Operator ServiceMonitor for every role's metrics (requires its CRDs). |
@@ -286,6 +302,9 @@ Kubernetes: `>=1.25.0-0`
 | roles.ingest.enabled | bool | `false` | Run webhook ingest as its own Deployment (split topology). |
 | roles.ingest.replicas | int | `2` | Replicas for the ingest Deployment. |
 | roles.ingest.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
+| roles.web.enabled | bool | `false` | Run the dashboard as its own Deployment (split topology). Requires `web.url` to be set. |
+| roles.web.replicas | int | `1` | Replicas for the web Deployment. |
+| roles.web.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
 | roles.worker.enabled | bool | `false` | Run the worker (queues, runner Jobs, leader duties) as its own Deployment (split topology). |
 | roles.worker.replicas | int | `1` | Replicas for the worker Deployment. |
 | roles.worker.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
@@ -301,6 +320,7 @@ Kubernetes: `>=1.25.0-0`
 | service.metricsPort | int | `8081` | Metrics and probe port, served by every pod. |
 | service.port | int | `8080` | Webhook port (`POST /hooks/{installation}`), served by `all` and `ingest` pods. |
 | service.type | string | `"ClusterIP"` | Service type for the webhook listener. |
+| service.webPort | int | `8083` | Dashboard port, served by `all` (once `web.url` is set) and `web` pods. |
 | serviceAccount.annotations | object | `{}` | Annotations for the ServiceAccount. |
 | serviceAccount.automount | bool | `true` | Automount the API token. The worker needs it to create runner Jobs; a pure ingest topology could turn it off. |
 | serviceAccount.create | bool | `true` | Create the ServiceAccount the roles run as. |
@@ -309,6 +329,8 @@ Kubernetes: `>=1.25.0-0`
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
 | volumeMounts | list | `[]` | Additional volume mounts on every container. |
 | volumes | list | `[]` | Additional volumes on every Deployment. |
+| web.port | int | `8083` | Dashboard port, served by `all` (once `web.url` is set) and `web` pods. |
+| web.url | required for roles.web | `""` | Public URL the dashboard is reached at, e.g. https://kritik.example.com. Must be an absolute http(s) URL with no query or fragment. |
 
 ---
 

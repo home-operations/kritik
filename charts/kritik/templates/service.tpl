@@ -41,6 +41,28 @@ spec:
     {{- include "kritik.selectorLabels" . | nindent 4 }}
     kritik.home-operations.com/gateway: "true"
 {{- end }}
+{{- if include "kritik.hasWeb" . }}
+---
+# Dashboard: only pods that serve the web UI/API.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kritik.fullname" . }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kritik.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: web
+      port: {{ .Values.service.webPort }}
+      targetPort: web
+      protocol: TCP
+  selector:
+    {{- include "kritik.selectorLabels" . | nindent 4 }}
+    kritik.home-operations.com/web: "true"
+{{- end }}
 ---
 # Metrics: every role's pods.
 apiVersion: v1

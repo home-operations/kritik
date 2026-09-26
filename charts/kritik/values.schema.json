@@ -77,6 +77,52 @@
       "title": "config",
       "type": "object"
     },
+    "dashboard": {
+      "description": "KRITIK_DASHBOARD_KEY is the AES-256 key that seals every dashboard-managed\ntenant's credentials (installation tokens, App keys, webhook secrets) at\nrest; it has nothing to do with sessions. Wired onto every non-runner role\nand required there once a dashboard tenant exists. To rotate it, move the\nold value into oldKeysSecret (KRITIK_DASHBOARD_OLD_KEYS), which only opens\nvalues sealed under it, and keep it there until every value has been\nwritten again. Losing a key that still seals a value makes those\ncredentials unreadable, and the pod then fails to start.",
+      "properties": {
+        "keySecret": {
+          "properties": {
+            "key": {
+              "default": "key",
+              "description": "Key in that Secret.",
+              "title": "key",
+              "type": "string"
+            },
+            "name": {
+              "default": "",
+              "description": "Secret holding the key that seals dashboard tenants' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start.",
+              "title": "name",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "keySecret",
+          "type": "object"
+        },
+        "oldKeysSecret": {
+          "properties": {
+            "key": {
+              "default": "old-keys",
+              "description": "Key in that Secret.",
+              "title": "key",
+              "type": "string"
+            },
+            "name": {
+              "default": "",
+              "description": "(optional) Secret holding retired sealing keys, comma-separated, only to open values sealed under them.",
+              "title": "name",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "oldKeysSecret",
+          "type": "object"
+        }
+      },
+      "required": [],
+      "title": "dashboard",
+      "type": "object"
+    },
     "database": {
       "description": "Three Postgres connection strings, each from its own Secret. The\napplication role must not own the tables (row-level security), the owner\nrole runs migrations and applies configuration on the leader, and the\nrunner role is handed to runner Jobs and can only write its own run. On\nCloudNativePG, declare `app` and `runner` under `spec.managed.roles` and\nuse the bootstrap owner as `owner`; see the README.",
       "properties": {
@@ -334,6 +380,87 @@
           },
           "title": "parentRefs",
           "type": "array"
+        },
+        "web": {
+          "description": "The dashboard's own HTTPRoute, separate from the webhook listener's above.",
+          "properties": {
+            "annotations": {
+              "description": "HTTPRoute annotations.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "apiVersion": {
+              "default": "",
+              "description": "HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1.",
+              "title": "apiVersion",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Expose the dashboard via a Gateway API HTTPRoute.",
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "hostnames": {
+              "description": "Hostnames matched against the Host header (templated).",
+              "items": {
+                "required": []
+              },
+              "title": "hostnames",
+              "type": "array"
+            },
+            "labels": {
+              "description": "HTTPRoute labels.",
+              "required": [],
+              "title": "labels",
+              "type": "object"
+            },
+            "matches": {
+              "description": "Match conditions for the route.",
+              "items": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "path": {
+                        "properties": {
+                          "type": {
+                            "default": "PathPrefix",
+                            "title": "type",
+                            "type": "string"
+                          },
+                          "value": {
+                            "default": "/",
+                            "title": "value",
+                            "type": "string"
+                          }
+                        },
+                        "required": [],
+                        "title": "path",
+                        "type": "object"
+                      }
+                    },
+                    "required": [],
+                    "type": "object"
+                  }
+                ],
+                "required": []
+              },
+              "title": "matches",
+              "type": "array"
+            },
+            "parentRefs": {
+              "description": "Gateways (and listeners) this route attaches to.",
+              "items": {
+                "required": []
+              },
+              "title": "parentRefs",
+              "type": "array"
+            }
+          },
+          "required": [],
+          "title": "web",
+          "type": "object"
         }
       },
       "required": [],
@@ -453,6 +580,86 @@
           },
           "title": "tls",
           "type": "array"
+        },
+        "web": {
+          "description": "The dashboard's own Ingress, separate from the webhook listener's above.",
+          "properties": {
+            "annotations": {
+              "description": "Ingress annotations.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "className": {
+              "default": "",
+              "description": "IngressClass name.",
+              "title": "className",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Expose the dashboard via an Ingress.",
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "hosts": {
+              "description": "Ingress hosts and their paths.",
+              "items": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "host": {
+                        "default": "dash.example.com",
+                        "title": "host",
+                        "type": "string"
+                      },
+                      "paths": {
+                        "items": {
+                          "anyOf": [
+                            {
+                              "properties": {
+                                "path": {
+                                  "default": "/",
+                                  "title": "path",
+                                  "type": "string"
+                                },
+                                "pathType": {
+                                  "default": "Prefix",
+                                  "title": "pathType",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [],
+                              "type": "object"
+                            }
+                          ],
+                          "required": []
+                        },
+                        "title": "paths",
+                        "type": "array"
+                      }
+                    },
+                    "required": [],
+                    "type": "object"
+                  }
+                ],
+                "required": []
+              },
+              "title": "hosts",
+              "type": "array"
+            },
+            "tls": {
+              "description": "Ingress TLS configuration.",
+              "items": {
+                "required": []
+              },
+              "title": "tls",
+              "type": "array"
+            }
+          },
+          "required": [],
+          "title": "web",
+          "type": "object"
         }
       },
       "required": [],
@@ -809,6 +1016,31 @@
           "title": "ingest",
           "type": "object"
         },
+        "web": {
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Run the dashboard as its own Deployment (split topology). Requires `web.url` to be set.",
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "replicas": {
+              "default": 1,
+              "description": "Replicas for the web Deployment.",
+              "title": "replicas",
+              "type": "integer"
+            },
+            "resources": {
+              "description": "Resources for this role's pods; empty falls back to `resources`.",
+              "required": [],
+              "title": "resources",
+              "type": "object"
+            }
+          },
+          "required": [],
+          "title": "web",
+          "type": "object"
+        },
         "worker": {
           "properties": {
             "enabled": {
@@ -960,6 +1192,12 @@
           "description": "Service type for the webhook listener.",
           "title": "type",
           "type": "string"
+        },
+        "webPort": {
+          "default": 8083,
+          "description": "Dashboard port, served by `all` (once `web.url` is set) and `web` pods.",
+          "title": "webPort",
+          "type": "integer"
         }
       },
       "required": [],
@@ -1026,6 +1264,26 @@
       },
       "title": "volumes",
       "type": "array"
+    },
+    "web": {
+      "description": "The dashboard's public URL and listen address. `web.url` is required for\n`roles.web`; setting it on the `all` topology also serves the dashboard\nfrom the same process.",
+      "properties": {
+        "port": {
+          "default": 8083,
+          "description": "Dashboard port, served by `all` (once `web.url` is set) and `web` pods.",
+          "title": "port",
+          "type": "integer"
+        },
+        "url": {
+          "default": "",
+          "description": "(required for roles.web) Public URL the dashboard is reached at, e.g. https://kritik.example.com. Must be an absolute http(s) URL with no query or fragment.",
+          "title": "url",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "web",
+      "type": "object"
     }
   },
   "required": [],

@@ -105,7 +105,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	mode, base := modeFull, ""
-	if active != nil && active.model == w.EmbedModel && active.dims == w.EmbedDims {
+	if !args.Full && active != nil && active.model == w.EmbedModel && active.dims == w.EmbedDims {
 		if active.commit == commit {
 			logger.Info("index already at this commit")
 			return nil

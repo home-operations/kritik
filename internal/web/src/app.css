@@ -1,0 +1,495 @@
+@import 'tailwindcss';
+
+/* ---- theme tokens ---------------------------------------------------- */
+:root,
+.light {
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+  --panel-alt: #eef1f5;
+  --border: #d4dae2;
+  --text: #1f2328;
+  --muted: #59636e; /* ≥5.4:1 on panel/bg/panel-alt — much of the UI is 11–12px muted text */
+  --accent: #2563d9;
+  --add-bg: #e9f7ee;
+  --add-bar: #1a7f37;
+  --del-bg: #fdeeec;
+  --del-bar: #cf222e;
+  --danger: #cf222e;
+  --caution: #9a6700; /* amber accent, a notch below --danger */
+  --warn: #9a6700; /* amber accent for warnings */
+  --ok: #1a7f37;
+  --merged: #8250df;
+  --warn-bg: #fff8c5;
+}
+.dark {
+  --bg: #0b0e14;
+  --panel: #11151c;
+  --panel-alt: #161b24;
+  --border: #232a36;
+  --text: #e6edf3;
+  --muted: #9198a1; /* ≥5.9:1 on panel/bg — much of the UI is 11–12px muted text */
+  --accent: #5b8cff;
+  --add-bg: #0d1f15;
+  --add-bar: #2ea043;
+  --del-bg: #221015;
+  --del-bar: #f85149;
+  --danger: #f85149;
+  --caution: #d29922; /* amber accent, a notch below --danger */
+  --warn: #d29922; /* amber accent for warnings */
+  --ok: #3fb950;
+  --merged: #a371f7;
+  --warn-bg: #272115;
+}
+
+/* Font families: UI/prose in Geist (sans), code + identifiers in Geist Mono.
+   Both are bundled via @fontsource-variable (imported in main.ts); the system
+   stacks are the fallback until the woff2 loads (or if it fails). Theme-
+   independent, so they live on :root rather than the .light/.dark token blocks. */
+:root {
+  --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  /* Sans (Geist) for the UI chrome and prose; code and identifiers — diffs,
+     SHAs, resource names, image refs — use mono (Geist Mono) where defined. */
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+.icon {
+  vertical-align: -0.15em;
+  flex: 0 0 auto;
+}
+.avatar {
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+  background: var(--panel-alt);
+}
+.add {
+  color: var(--ok);
+}
+.del {
+  color: var(--danger);
+}
+.chg {
+  color: var(--accent);
+}
+
+/* ---- shell + topbar -------------------------------------------------- */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh; /* mobile: exclude the browser chrome (100vh overflows under it) */
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: inherit;
+  text-decoration: none;
+}
+.spacer {
+  flex: 1 1 auto;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.btn {
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn:hover {
+  border-color: var(--accent);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* One focus ring for every interactive element that needs one. Inset so
+   it never clips inside scroll containers. */
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.btn-icon {
+  padding: 6px 9px;
+}
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+/* ---- keyboard-shortcuts help ------------------------------------------ */
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.help-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  cursor: default;
+}
+.help-card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 15%, transparent);
+  min-width: 280px;
+}
+.help-card h2 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.help-keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+.help-keys dt {
+  text-align: right;
+  white-space: nowrap;
+}
+.help-keys dd {
+  margin: 0;
+  color: var(--muted);
+}
+kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: var(--panel-alt);
+}
+
+/* ---- command palette (Ctrl/⌘ K) ---------------------------------------- */
+.palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+.palette {
+  position: relative;
+  width: min(640px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px color-mix(in srgb, var(--text) 25%, transparent);
+  overflow: hidden;
+}
+.palette-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.palette-input input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+.palette-input input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.palette-body {
+  overflow-y: auto;
+  padding: 4px 0 6px;
+}
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 14px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.palette-row.active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.row-title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-title.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.row-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.palette-empty {
+  margin: 0;
+  padding: 16px 14px;
+  color: var(--muted);
+}
+.palette-esc {
+  flex: 0 0 auto;
+}
+.palette-footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+.palette-footer .foot-gap {
+  flex: 1 1 auto;
+}
+
+/* ---- brand + nav (kritik-specific: no konflate equivalent) ------------ */
+.wordmark {
+  font-weight: 700;
+}
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+.nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.nav a:hover {
+  color: var(--text);
+  background: var(--panel-alt);
+}
+.nav a.active {
+  color: var(--text);
+  background: var(--panel-alt);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.tenant-switch {
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font: inherit;
+  max-width: 160px;
+}
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* ---- account menu ------------------------------------------------------ */
+.account-menu {
+  position: relative;
+}
+.account-menu summary {
+  list-style: none;
+}
+.account-menu summary::-webkit-details-marker {
+  display: none;
+}
+.account-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 15%, transparent);
+}
+.account-name {
+  margin: 0;
+  font-weight: 600;
+  font-size: 13px;
+}
+.account-email {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- sign-in ------------------------------------------------------------ */
+.signin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+}
+.signin-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(320px, 90vw);
+  padding: 32px 28px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-align: center;
+}
+.signin-card h1 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+.signin-sub {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.signin-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.signin-provider {
+  justify-content: center;
+  padding: 8px 12px;
+}
+.signin-empty,
+.signin-error {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.signin-error {
+  color: var(--danger);
+}
+
+/* ---- placeholder (stands in for pages later tasks build) --------------- */
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+}
+.placeholder-note {
+  margin: 0;
+  color: var(--muted);
+}
+.placeholder-route {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---- mobile -------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .wordmark {
+    display: none;
+  }
+  .btn-icon {
+    min-width: 40px;
+    min-height: 40px;
+    justify-content: center;
+  }
+  .nav a span {
+    display: none;
+  }
+}

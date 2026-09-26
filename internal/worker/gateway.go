@@ -152,7 +152,9 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusTooManyRequests, model.BudgetCode, reason)
 		return
 	}
+	start := time.Now()
 	resp, err := stepper.Step(ctx, req)
+	took := time.Since(start)
 	g.Metrics.ModelCall(tenant.Slug, grant.Model, roleReview, callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
 		resp.Usage.Output, resp.CostUSD)
 	if cerr := g.charge(ctx, grant, token, reserved, resp, err == nil); cerr != nil {
@@ -160,6 +162,11 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		// gets the answer.
 		logger.Error("gateway: step not charged", "error", cerr)
 	}
+	// Recorded before the runner gets its answer, so the next step's delta
+	// is taken against this one; recordModelCall bounds how long it waits.
+	g.recordModelCall(ctx, logger, store.ModelCall{
+		TenantID: grant.TenantID, ReviewID: grant.ReviewID, RunnerRunID: grant.RunID, Kind: store.ModelCallAgentStep, Duration: took,
+	}, req, resp, err, transcriptMask(file, provider, token))
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;
 		// it must not carry the key, or credentials in the provider's URL,
@@ -227,6 +234,17 @@ func (g *Gateway) charge(
 // maskProvider removes a provider's key, and any credentials in its base
 // URL, from text bound for a runner.
 func maskProvider(text string, p configfile.Provider) string {
+	for _, s := range providerSecrets(p) {
+		if s != "" {
+			text = strings.ReplaceAll(text, s, "***")
+		}
+	}
+	return text
+}
+
+// providerSecrets are a provider's key and the credentials in its base
+// URL, whole and the password alone; some may be empty.
+func providerSecrets(p configfile.Provider) []string {
 	secrets := []string{p.APIKeyValue().Value()}
 	if u, err := url.Parse(p.BaseURL); err == nil && u.User != nil {
 		secrets = append(secrets, u.User.String())
@@ -234,10 +252,5 @@ func maskProvider(text string, p configfile.Provider) string {
 			secrets = append(secrets, pw)
 		}
 	}
-	for _, s := range secrets {
-		if s != "" {
-			text = strings.ReplaceAll(text, s, "***")
-		}
-	}
-	return text
+	return secrets
 }

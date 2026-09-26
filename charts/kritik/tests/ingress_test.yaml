@@ -1,0 +1,84 @@
+suite: ingress
+templates:
+  - ingress.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: is not rendered by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders only the webhook Ingress when enabled without a web role
+    set:
+      ingress.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: RELEASE-NAME-kritik
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: http
+
+  - it: leaves the dashboard Ingress out until ingress.web.enabled is set, even with a web role
+    set:
+      roles.all.enabled: false
+      roles.web.enabled: true
+      web.url: https://dash.example.com
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders the dashboard Ingress when enabled with a web role
+    set:
+      roles.all.enabled: false
+      roles.web.enabled: true
+      web.url: https://dash.example.com
+      ingress.web.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-web
+      - equal:
+          path: spec.rules[0].host
+          value: dash.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: RELEASE-NAME-kritik-web
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: web
+
+  - it: leaves the dashboard Ingress out when ingress.web.enabled is set but no role serves the web UI
+    set:
+      ingress.web.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders both Ingresses when the all role serves the dashboard
+    set:
+      web.url: https://dash.example.com
+      ingress.enabled: true
+      ingress.web.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritik-web
+        documentIndex: 1

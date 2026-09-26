@@ -1,0 +1,25 @@
+{
+  "managedBy": "dashboard",
+  "revision": 3,
+  "editable": true,
+  "operatorOnlyFields": [
+    "models",
+    "forks",
+    "runner",
+    "limits",
+    "repositories[].agent",
+    "repositories[].mode",
+    "repositories[].incremental"
+  ],
+  "spec": {
+    "slug": "alpha",
+    "installations": [
+      {
+        "name": "alpha-bot",
+        "token": {
+          "set": true
+        }
+      }
+    ]
+  }
+}

@@ -6,9 +6,10 @@
 - **Amended by:** [ADR-0003](0003-forgejo-agentic-review.md) (Forgejo,
   providers, the contract, `.kritik.yaml`, agentic mode, the worker–runner
   protocol), [ADR-0004](0004-model-gateway.md) (the worker as model
-  gateway; no provider key in a runner pod) and
+  gateway; no provider key in a runner pod),
   [ADR-0007](0007-vectorchord.md) (the vector index is VectorChord's
-  `vchordrq`, replacing the pgvector HNSW of §2.8 and §2.9).
+  `vchordrq`, replacing the pgvector HNSW of §2.8 and §2.9) and
+  [ADR-0009](0009-web-dashboard.md) (the v2 dashboard of §2.17, built).
 - **Authors:** perfectra1n (this ADR, as published at
   [gist 6a67dd03](https://gist.github.com/perfectra1n/6a67dd0362ea9d7afd24a4e917028581));
   rebased onto ADR-0001's final revision by onedr0p. The rebase adds the
@@ -1181,6 +1182,8 @@ Whether the dashboard may edit file-managed objects stays a v2 question.
 The default answer is no. An instance operator's cross-tenant views run as
 the application role by iterating the tenants the operator may see, one
 tenant setting per query; the owner DSN is never given to `web`.
+
+Amended by [ADR-0009](0009-web-dashboard.md), which builds this dashboard.
 
 ---
 

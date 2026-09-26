@@ -1,0 +1,65 @@
+{
+  "id": "repo-1",
+  "fullName": "alpha/one",
+  "installation": "alpha-bot",
+  "enabled": true,
+  "managedBy": "file",
+  "defaultBranch": "main",
+  "index": {
+    "activeCommit": "def456",
+    "activeAt": "2026-09-01T12:00:00Z",
+    "lastRunStatus": "completed",
+    "lastRunAt": "2026-09-01T12:01:30Z"
+  },
+  "lastReview": {
+    "id": "rev-1",
+    "status": "completed",
+    "createdAt": "2026-09-01T12:00:00Z"
+  },
+  "settings": {
+    "enabled": true,
+    "mode": "agentic",
+    "models": {
+      "review": "openrouter/acme-large",
+      "fallback": ""
+    },
+    "filter": "true",
+    "forks": false,
+    "ignore": ["vendor/**"],
+    "settleSeconds": 30,
+    "maxDeltaFiles": 40,
+    "review": {
+      "instructions": ["docs/review.md"],
+      "requireSuggestedFix": true
+    },
+    "agent": {
+      "maxSteps": 60,
+      "maxToolOutputBytes": 32768,
+      "maxTokens": 4000000,
+      "timeoutSeconds": 1200,
+      "commands": ["go"],
+      "commandTimeoutSeconds": 30
+    },
+    "limits": {
+      "concurrency": 2,
+      "reviewsPerDay": 0,
+      "tokensPerMonth": 0
+    }
+  },
+  "indexRuns": [
+    {
+      "id": "ix-1",
+      "repository": "alpha/one",
+      "commitSha": "def456",
+      "baseSha": "",
+      "embedModel": "embed",
+      "mode": "full",
+      "status": "completed",
+      "trigger": "push",
+      "chunkCount": 12,
+      "error": "",
+      "createdAt": "2026-09-01T12:00:00Z",
+      "finishedAt": "2026-09-01T12:01:30Z"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/egress"
 	"github.com/home-operations/kritik/internal/jobtimeout"
+	"github.com/home-operations/kritik/internal/sealbox"
 )
 
 // Role selects which part of kritik a process runs. One image serves every
@@ -28,15 +30,19 @@ const (
 	RoleIngest Role = "ingest"
 	RoleWorker Role = "worker"
 	RoleRunner Role = "runner"
+	// RoleWeb serves the operator dashboard (ADR-0009): sign-in, sessions
+	// and the tenant/config surfaces a dashboard-managed installation uses.
+	// "all" also serves it once WebURL is configured; see [Config.WebEnabled].
+	RoleWeb Role = "web"
 )
 
 // ParseRole validates a role name from the command line.
 func ParseRole(s string) (Role, error) {
 	switch r := Role(strings.ToLower(strings.TrimSpace(s))); r {
-	case RoleAll, RoleIngest, RoleWorker, RoleRunner:
+	case RoleAll, RoleIngest, RoleWorker, RoleRunner, RoleWeb:
 		return r, nil
 	default:
-		return "", fmt.Errorf("config: unknown role %q (want all, ingest, worker or runner)", s)
+		return "", fmt.Errorf("config: unknown role %q (want all, ingest, worker, runner or web)", s)
 	}
 }
 
@@ -73,6 +79,22 @@ type Config struct {
 	// deadline before it expires on its own, in case the worker that
 	// minted it dies before revoking it.
 	GatewayTokenTTL time.Duration `env:"KRITIK_GATEWAY_TOKEN_TTL" envDefault:"1h"`
+
+	// WebAddr is the listen address for the operator dashboard the web role
+	// serves. Its own port, matching the pattern of Addr/MetricsAddr/
+	// GatewayAddr, so the dashboard can be exposed without opening the
+	// other surfaces.
+	WebAddr string `env:"KRITIK_WEB_ADDR" envDefault:":8083"`
+
+	// WebURL is the dashboard's externally reachable origin: an absolute
+	// http(s) URL with a host and no query or fragment. It is how the
+	// dashboard builds absolute links (OIDC redirect URIs, session cookie
+	// scope) back to itself, so it must be required for the web role and
+	// must match how the ingress/HTTPRoute actually exposes it. A trailing
+	// slash is trimmed. Empty means no role serves the dashboard; see
+	// [Config.WebEnabled]. Parsed once into an unexported *url.URL, read
+	// back with [Config.WebURLParsed].
+	WebURL string `env:"KRITIK_WEB_URL"`
 
 	// ConfigFile is the path of the declarative configuration file (tenants,
 	// installations, repositories, models). Every role except runner loads it
@@ -196,12 +218,27 @@ type Config struct {
 	GitToken     string `env:"KRITIK_GIT_TOKEN,unset"`
 	GatewayToken string `env:"KRITIK_GATEWAY_TOKEN,unset"`
 
+	// DashboardKey is the base64 32-byte key that seals and opens the
+	// credentials a dashboard-managed tenant stores (ADR-0009 §2.5). Empty
+	// is valid while no dashboard tenant exists; startup fails once one
+	// does. Passed like every other secret here, from the environment and
+	// unset once read.
+	DashboardKey string `env:"KRITIK_DASHBOARD_KEY,unset"`
+	// DashboardOldKeys are earlier DashboardKey values, comma-separated,
+	// still able to open what they sealed so a key can be rotated without
+	// resealing every tenant first. Empty by default: there is nothing to
+	// rotate from until a key has been replaced.
+	DashboardOldKeys []string `env:"KRITIK_DASHBOARD_OLD_KEYS,unset" envSeparator:","`
+
 	// LogLevel is the minimum slog level emitted: debug, info, warn or error.
 	LogLevel string `env:"KRITIK_LOG_LEVEL" envDefault:"info"`
 
 	// LogFormat selects the slog handler: "json" (the default, for containers)
 	// or "text" for local runs.
 	LogFormat string `env:"KRITIK_LOG_FORMAT" envDefault:"json"`
+
+	keyring *sealbox.Keyring
+	webURL  *url.URL
 }
 
 // ValidateWorker checks what the worker role needs beyond the common set.
@@ -224,8 +261,53 @@ func (c *Config) ValidateRunner() error {
 	return nil
 }
 
+// ValidateWeb checks what the web role needs beyond the common set.
+func (c *Config) ValidateWeb() error {
+	if c.WebURL == "" {
+		return fmt.Errorf("config: KRITIK_WEB_URL is required for the web role")
+	}
+	return nil
+}
+
+// WebEnabled reports whether role serves the operator dashboard: the web
+// role always does, and all does once WebURL is configured.
+func (c *Config) WebEnabled(role Role) bool {
+	return role == RoleWeb || (role == RoleAll && c.WebURL != "")
+}
+
+// WebURLParsed returns WebURL parsed into a *url.URL, or nil when WebURL is
+// unset.
+func (c *Config) WebURLParsed() *url.URL { return c.webURL }
+
+// parseWebURL trims a trailing slash from WebURL, rejects anything that
+// isn't an absolute http(s) URL with a host and no query or fragment, and
+// caches the result for WebURLParsed. A no-op when WebURL is unset.
+func (c *Config) parseWebURL() error {
+	if c.WebURL == "" {
+		return nil
+	}
+	trimmed := strings.TrimSuffix(c.WebURL, "/")
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("config: KRITIK_WEB_URL: %w", err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("config: KRITIK_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("config: KRITIK_WEB_URL must not have a query or fragment, got %q", c.WebURL)
+	}
+	c.WebURL = trimmed
+	c.webURL = u
+	return nil
+}
+
 // EmbeddingEnabled reports whether a deployment-wide embedder is configured.
 func (c *Config) EmbeddingEnabled() bool { return c.EmbedModel != "" }
+
+// DashboardKeyring returns the keyring built from DashboardKey and
+// DashboardOldKeys, nil when no key is configured.
+func (c *Config) DashboardKeyring() *sealbox.Keyring { return c.keyring }
 
 // Load parses the environment into a Config and validates it. It fails fast
 // on an invalid value so a misconfigured process never starts serving.
@@ -260,6 +342,9 @@ func (c *Config) validate() error {
 	if c.GatewayTokenTTL <= 0 {
 		return fmt.Errorf("config: KRITIK_GATEWAY_TOKEN_TTL must be positive, got %s", c.GatewayTokenTTL)
 	}
+	if err := c.parseWebURL(); err != nil {
+		return err
+	}
 	set := 0
 	for _, v := range []bool{c.EmbedBaseURL != "", c.EmbedAPIKey != "", c.EmbedModel != "", c.EmbedDims != 0} {
 		if v {
@@ -292,9 +377,37 @@ func (c *Config) validate() error {
 	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.RunnerDeadline <= 0 || c.RunnerTTL <= 0 {
 		return fmt.Errorf("config: KRITIK_REVIEW_WORKERS, KRITIK_INDEX_WORKERS, KRITIK_RUNNER_DEADLINE and KRITIK_RUNNER_TTL must be positive")
 	}
+	if err := c.buildKeyring(); err != nil {
+		return err
+	}
 	if c.RunnerDeadline > jobtimeout.MaxRunnerDeadline {
 		return fmt.Errorf("config: KRITIK_RUNNER_DEADLINE must not exceed %s (the %s job cap less the review and index headroom), got %s",
 			jobtimeout.MaxRunnerDeadline, jobtimeout.MaxJobTimeout, c.RunnerDeadline)
+	}
+	return nil
+}
+
+func (c *Config) buildKeyring() error {
+	if c.DashboardKey == "" {
+		if len(c.DashboardOldKeys) > 0 {
+			return fmt.Errorf("config: KRITIK_DASHBOARD_OLD_KEYS needs KRITIK_DASHBOARD_KEY")
+		}
+		return nil
+	}
+	current, err := sealbox.ParseKey(c.DashboardKey)
+	if err != nil {
+		return fmt.Errorf("config: KRITIK_DASHBOARD_KEY: %w", err)
+	}
+	old := make([][]byte, 0, len(c.DashboardOldKeys))
+	for i, s := range c.DashboardOldKeys {
+		k, err := sealbox.ParseKey(s)
+		if err != nil {
+			return fmt.Errorf("config: KRITIK_DASHBOARD_OLD_KEYS[%d]: %w", i, err)
+		}
+		old = append(old, k)
+	}
+	if c.keyring, err = sealbox.NewKeyring(current, old...); err != nil {
+		return fmt.Errorf("config: KRITIK_DASHBOARD_KEY: %w", err)
 	}
 	return nil
 }

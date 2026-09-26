@@ -1,9 +1,20 @@
 # syntax=docker/dockerfile:1
 
 # ARGs used in a FROM must live in the global scope (before the first FROM).
-# GO_VERSION is supplied by the release workflow from mise, the single source
-# of truth for the toolchain (see .mise/config.toml).
+# GO_VERSION and NODE_VERSION are supplied by the release workflow from mise,
+# the single source of truth for the toolchain (see .mise/config.toml).
 ARG GO_VERSION
+ARG NODE_VERSION
+
+# ---- UI build ---------------------------------------------------------------
+# The built UI is the same bytes on every platform, so it is built once, on
+# the build host, rather than per target under emulation.
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS ui
+WORKDIR /ui
+COPY internal/web/package.json internal/web/package-lock.json ./
+RUN npm ci
+COPY internal/web/ ./
+RUN npm run build
 
 # ---- Go build -------------------------------------------------------------
 FROM golang:${GO_VERSION}-alpine AS builder
@@ -19,6 +30,7 @@ RUN go mod download
 
 COPY cmd/ cmd/
 COPY internal/ internal/
+COPY --from=ui /ui/dist/ internal/web/dist/
 
 # Static, stripped, reproducible binary. GOARCH is left to the platform.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \

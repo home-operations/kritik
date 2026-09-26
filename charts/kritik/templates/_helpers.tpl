@@ -145,7 +145,7 @@ render deterministically.
 */}}
 {{- define "kritik.enabledRoles" -}}
 {{- $out := list -}}
-{{- range $r := list "all" "ingest" "worker" -}}
+{{- range $r := list "all" "ingest" "worker" "web" -}}
 {{- if (index $.Values.roles $r).enabled -}}
 {{- $out = append $out $r -}}
 {{- end -}}
@@ -176,4 +176,11 @@ Whether any enabled role serves webhooks.
 */}}
 {{- define "kritik.hasIngest" -}}
 {{- if or .Values.roles.all.enabled .Values.roles.ingest.enabled -}}true{{- end -}}
+{{- end }}
+
+{{/*
+Whether any enabled role serves the dashboard.
+*/}}
+{{- define "kritik.hasWeb" -}}
+{{- if or .Values.roles.web.enabled (and .Values.roles.all.enabled .Values.web.url) -}}true{{- end -}}
 {{- end }}

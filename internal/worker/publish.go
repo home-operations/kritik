@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -20,9 +21,11 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// CompleterSource resolves a configured provider name to a Completer.
+// CompleterSource resolves a configured provider name to its model
+// adapter; each call wraps it in a model.Structured that records its
+// steps.
 type CompleterSource interface {
-	For(f *configfile.File, name string) (model.Completer, error)
+	Stepper(f *configfile.File, name string) (model.Stepper, error)
 }
 
 // maxOutputTokens bounds one review answer. Findings are short by
@@ -124,6 +127,11 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	if err != nil {
 		return statusFailed, err
 	}
+	// The model has answered and its tokens are spent: the rest runs to the
+	// end even if the job's ctx ends meanwhile, so the usage row lands and
+	// the comment, commit status and review row agree.
+	ctx, cancel := detach(ctx)
+	defer cancel()
 	res, dropped, err := review.Parse(resp.Raw, review.Anchors(in.diff), p.parse)
 	if err != nil {
 		return statusFailed, err
@@ -305,10 +313,11 @@ func (p *publishPhase) callModels(
 	if fallback != "" && fallback.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fallback.Model()}
 	}
-	completer, err := p.w.Completers.For(p.file, ref.Provider())
+	stepper, err := p.w.Completers.Stepper(p.file, ref.Provider())
 	if err != nil {
 		return model.CompletionResponse{}, "", err
 	}
+	completer := model.Structured{Stepper: stepper, OnStep: p.onStep(ctx, ref.Provider(), store.ModelCallReview, 0)}
 	resp, err := completer.Complete(ctx, req)
 	p.w.Metrics.ModelCall(p.tenant.Slug, string(ref), roleReview, callOutcome(err),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
@@ -316,11 +325,12 @@ func (p *publishPhase) callModels(
 		return resp, roleReview, err
 	}
 	p.logger.Warn("primary model failed, trying fallback", "model", ref, "fallback", fallback, "error", err)
-	fc, ferr := p.w.Completers.For(p.file, fallback.Provider())
+	fs, ferr := p.w.Completers.Stepper(p.file, fallback.Provider())
 	if ferr != nil {
 		return model.CompletionResponse{}, "", errors.Join(err, ferr)
 	}
 	req.Model, req.Fallbacks = fallback.Model(), nil
+	fc := model.Structured{Stepper: fs, OnStep: p.onStep(ctx, fallback.Provider(), store.ModelCallFallback, 1)}
 	resp, ferr = fc.Complete(ctx, req)
 	p.w.Metrics.ModelCall(p.tenant.Slug, string(fallback), roleFallback, callOutcome(ferr),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
@@ -328,6 +338,15 @@ func (p *publishPhase) callModels(
 		return model.CompletionResponse{}, "", errors.Join(err, ferr)
 	}
 	return resp, roleFallback, nil
+}
+
+// onStep records a single-shot call on the named provider against the
+// review.
+func (p *publishPhase) onStep(
+	ctx context.Context, provider string, kind store.ModelCallKind, step int,
+) func(model.StepRequest, model.StepResponse, error, time.Duration) {
+	c := store.ModelCall{TenantID: p.tenant.ID(), ReviewID: p.reviewID, Kind: kind, Step: step}
+	return p.w.onStep(ctx, p.logger, c, transcriptMask(p.file, p.file.Providers[provider]))
 }
 
 // reviewNotes are the caveats the sticky comment states about a review.

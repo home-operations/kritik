@@ -14,6 +14,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.Webhook("a", "b")
 	none.Review("t", "completed", time.Second)
 	none.ModelCall("t", "m", "review", "ok", 1, 0, 1, 0.1)
+	none.TranscriptWrite("review", "ok")
 
 	reg := prometheus.NewRegistry()
 	m := New(reg)
@@ -44,5 +45,9 @@ kritik_model_tokens_total{direction="output",model="openai/gpt-6-sol",role="revi
 	}
 	if v := testutil.ToFloat64(m.modelCost.WithLabelValues("onedr0p", "openai/gpt-6-sol", "review")); v != 0.005029 {
 		t.Fatalf("cost = %v", v)
+	}
+	m.TranscriptWrite("agent_step", "error")
+	if v := testutil.ToFloat64(m.transcripts.WithLabelValues("agent_step", "error")); v != 1 {
+		t.Fatalf("transcript writes = %v", v)
 	}
 }

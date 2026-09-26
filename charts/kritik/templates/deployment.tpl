@@ -17,6 +17,12 @@
 {{- if and (include "kritik.embeddingEnabled" .) (not (include "kritik.embeddingSecretName" .)) -}}
 {{- fail "embedding.model is set but no key is given: set embedding.apiKey or embedding.existingSecret" -}}
 {{- end -}}
+{{- if and .Values.roles.web.enabled (not .Values.web.url) -}}
+{{- fail "web.url is required when roles.web.enabled is true" -}}
+{{- end -}}
+{{- if and .Values.web.url (not (regexMatch "^https?://" .Values.web.url)) -}}
+{{- fail "web.url must be an http(s) URL" -}}
+{{- end -}}
 {{- range $role := $roles }}
 {{- $spec := index $.Values.roles $role }}
 ---
@@ -43,13 +49,17 @@ spec:
       labels:
         {{- include "kritik.labels" $ | nindent 8 }}
         app.kubernetes.io/component: {{ $role }}
-        {{- if ne $role "worker" }}
+        {{- if and (ne $role "worker") (ne $role "web") }}
         # Selected by the webhook Service.
         kritik.home-operations.com/hooks: "true"
         {{- end }}
-        {{- if and (ne $role "ingest") $.Values.gateway.enabled }}
+        {{- if and (ne $role "ingest") (ne $role "web") $.Values.gateway.enabled }}
         # Selected by the gateway Service and the runner network policy.
         kritik.home-operations.com/gateway: "true"
+        {{- end }}
+        {{- if or (eq $role "web") (and (eq $role "all") $.Values.web.url) }}
+        # Selected by the dashboard Service and the web-ingress network policy rule.
+        kritik.home-operations.com/web: "true"
         {{- end }}
         {{- with $.Values.podLabels }}
         {{- tpl (toYaml .) $ | nindent 8 }}
@@ -105,7 +115,21 @@ spec:
                 secretKeyRef:
                   name: {{ tpl $.Values.database.app.existingSecret $ | quote }}
                   key: {{ $.Values.database.app.key | quote }}
-            {{- if ne $role "ingest" }}
+            {{- with $.Values.dashboard.keySecret.name }}
+            - name: KRITIK_DASHBOARD_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ tpl . $ | quote }}
+                  key: {{ $.Values.dashboard.keySecret.key | quote }}
+            {{- end }}
+            {{- with $.Values.dashboard.oldKeysSecret.name }}
+            - name: KRITIK_DASHBOARD_OLD_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ tpl . $ | quote }}
+                  key: {{ $.Values.dashboard.oldKeysSecret.key | quote }}
+            {{- end }}
+            {{- if and (ne $role "ingest") (ne $role "web") }}
             - name: KRITIK_DATABASE_OWNER_URL
               valueFrom:
                 secretKeyRef:
@@ -167,11 +191,17 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
+            {{- if or (eq $role "web") (and (eq $role "all") $.Values.web.url) }}
+            - name: KRITIK_WEB_URL
+              value: {{ tpl $.Values.web.url $ | quote }}
+            - name: KRITIK_WEB_ADDR
+              value: {{ printf ":%d" (int $.Values.web.port) | quote }}
+            {{- end }}
             {{- with $.Values.config.extraEnv }}
             {{- tpl (toYaml .) $ | nindent 12 }}
             {{- end }}
           ports:
-            {{- if ne $role "worker" }}
+            {{- if and (ne $role "worker") (ne $role "web") }}
             - name: http
               containerPort: {{ $.Values.service.port }}
               protocol: TCP
@@ -179,9 +209,14 @@ spec:
             - name: metrics
               containerPort: {{ $.Values.service.metricsPort }}
               protocol: TCP
-            {{- if and (ne $role "ingest") $.Values.gateway.enabled }}
+            {{- if and (ne $role "ingest") (ne $role "web") $.Values.gateway.enabled }}
             - name: gateway
               containerPort: {{ $.Values.gateway.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if or (eq $role "web") (and (eq $role "all") $.Values.web.url) }}
+            - name: web
+              containerPort: {{ $.Values.web.port }}
               protocol: TCP
             {{- end }}
           livenessProbe:

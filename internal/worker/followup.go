@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 // Follow-up bounds: mentions answered per pull request per hour before a
@@ -175,7 +176,7 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 		Repository: f.pr.repository, Number: f.pr.number, Title: f.pr.title, Author: f.pr.author, BaseRef: f.pr.baseRef,
 		Body: rec.body, Changed: rec.changed, Diff: rec.diff, Context: rec.context,
 	}, rec.findings, thread)
-	resp, err := f.complete(ctx, msg)
+	resp, err := f.complete(ctx, msg, rec.id)
 	if err != nil {
 		return followUpFailed, err
 	}
@@ -322,6 +323,8 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, int64, error) 
 }
 
 type reviewRecord struct {
+	// id is the review's, empty without one.
+	id       string
 	body     string
 	diff     string
 	changed  []string
@@ -342,7 +345,7 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 		if err != nil || last.id == "" {
 			return err
 		}
-		rec.findings = reviewFindings(last.findings)
+		rec.id, rec.findings = last.id, reviewFindings(last.findings)
 		var stages []byte
 		err = tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages FROM runner_runs rr
 			JOIN context_packs c ON c.runner_run_id = rr.id WHERE rr.review_id = $1`, last.id).
@@ -363,15 +366,20 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 	return rec, err
 }
 
-func (f *followUp) complete(ctx context.Context, msg string) (model.CompletionResponse, error) {
+// complete asks the review model for the reply, recording the call
+// against the comment and, when there is one, reviewID.
+func (f *followUp) complete(ctx context.Context, msg, reviewID string) (model.CompletionResponse, error) {
 	ref := f.settings.Models.Review
 	if ref == "" {
 		return model.CompletionResponse{}, errors.New("worker: no review model is configured for this repository")
 	}
-	completer, err := f.w.Completers.For(f.file, ref.Provider())
+	stepper, err := f.w.Completers.Stepper(f.file, ref.Provider())
 	if err != nil {
 		return model.CompletionResponse{}, err
 	}
+	completer := model.Structured{Stepper: stepper, OnStep: f.w.onStep(ctx, f.logger, store.ModelCall{
+		TenantID: f.tenant.ID(), ReviewID: reviewID, FollowupCommentID: f.comment.ID, Kind: store.ModelCallFollowUp,
+	}, transcriptMask(f.file, f.file.Providers[ref.Provider()]))}
 	req := model.CompletionRequest{
 		System: review.FollowUpSystem, User: msg, Model: ref.Model(),
 		Schema: review.FollowUpSchema(), SchemaName: "reply", MaxTokens: maxOutputTokens,

@@ -1,0 +1,16 @@
+{
+  "account": {
+    "id": "acct-1",
+    "displayName": "Ada",
+    "email": "ada@example.com",
+    "avatarUrl": "https://img.example/a.png"
+  },
+  "operator": true,
+  "tenants": [
+    {
+      "slug": "alpha",
+      "role": "member",
+      "managedBy": "file"
+    }
+  ]
+}

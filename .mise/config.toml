@@ -16,6 +16,7 @@ helm-docs = "1.14.2"
 "go:golang.org/x/vuln/cmd/govulncheck" = "v1.8.0"
 golangci-lint = "2.13.2"
 lefthook = "2.1.14"
+node = "24.21.0"
 oxfmt = "0.70.0"
 yq = "4.53.6"
 zizmor = "1.30.1"
@@ -131,7 +132,7 @@ description = "Build the image and push it to ttl.sh under a fresh name (24h TTL
 run = """
 set -e
 image="ttl.sh/kritik-$(id -un)-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n'):24h"
-docker build --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" -t "$image" .
+docker build --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" --build-arg NODE_VERSION="$(mise config get -f .mise/config.toml tools.node)" --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" -t "$image" .
 docker push "$image"
 mkdir -p .private
 echo "$image" > .private/image
@@ -164,6 +165,33 @@ description = "Follow the kritik deployment's logs in the cluster"
 run = """
 : "${KUBECONFIG:?set KUBECONFIG to the target cluster (see .private/mise.local.toml)}"
 kubectl -n kritik logs deployment/kritik --follow
+"""
+
+[tasks.ui-install]
+description = "Install the dashboard UI's npm dependencies from its lockfile"
+dir = "internal/web"
+run = "npm ci"
+
+[tasks.ui-typecheck]
+description = "Type-check the dashboard UI (svelte-check)"
+dir = "internal/web"
+run = "npm run typecheck"
+
+[tasks.ui-build]
+description = "Build the dashboard UI into internal/web/dist for go:embed"
+dir = "internal/web"
+run = "npm run build"
+
+[tasks.ui-test]
+description = "Run the dashboard UI's Playwright end-to-end tests"
+dir = "internal/web"
+run = "npm run test:e2e"
+
+[tasks.ui-test-container]
+description = "Run the dashboard UI's Playwright suite inside Microsoft's pinned official Playwright image, for hosts (e.g. NixOS) that lack the system libraries Chromium needs to run outside a container"
+run = """
+version="$(node -p "require('./internal/web/package-lock.json').packages['node_modules/@playwright/test'].version")"
+docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD":/work -w /work/internal/web -e CI=1 "mcr.microsoft.com/playwright:v${version}-noble" npx playwright test
 """
 
 [hooks]

@@ -1,0 +1,16 @@
+{
+  "group": "day",
+  "from": "2026-09-01T12:00:00Z",
+  "to": "2026-09-01T12:01:30Z",
+  "rows": [
+    {
+      "key": "2026-09-01",
+      "inputTokens": 100,
+      "cacheReadTokens": 50,
+      "cacheWriteTokens": 5,
+      "outputTokens": 20,
+      "costUsd": 0.1,
+      "calls": 2
+    }
+  ]
+}

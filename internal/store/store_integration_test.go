@@ -444,6 +444,15 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	}
 }
 
+// changeLast is s with its last character changed to one it cannot
+// already be.
+func changeLast(s string) string {
+	if strings.HasSuffix(s, "0") {
+		return s[:len(s)-1] + "1"
+	}
+	return s[:len(s)-1] + "0"
+}
+
 func TestGatewayTokens(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
@@ -497,7 +506,7 @@ func TestGatewayTokens(t *testing.T) {
 		t.Fatalf("spent = %d, %v", got.Spent, err)
 	}
 	checkReservations(t, s, token)
-	for _, bad := range []string{"", "krk_", token[:len(token)-1] + "0", "sk-" + token[4:]} {
+	for _, bad := range []string{"", "krk_", changeLast(token), "sk-" + token[4:]} {
 		if _, err := s.LookupGatewayToken(ctx, bad); !errors.Is(err, ErrGatewayToken) {
 			t.Fatalf("lookup %q = %v, want ErrGatewayToken", bad, err)
 		}

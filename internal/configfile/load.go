@@ -64,7 +64,7 @@ func Parse(raw []byte) (*File, error) {
 // resolve reads every secret reference into memory and compiles every filter.
 func (f *File) resolve() error {
 	for name, p := range f.Providers {
-		v, err := p.APIKey.resolve()
+		v, err := p.APIKey.resolve(fileRefs)
 		if err != nil {
 			return fmt.Errorf("configfile: providers.%s.apiKey: %w", name, err)
 		}
@@ -74,11 +74,15 @@ func (f *File) resolve() error {
 
 	f.Egress.credentials = make(map[string]Secret, len(f.Egress.Credentials))
 	for host, ref := range f.Egress.Credentials {
-		v, err := ref.resolve()
+		v, err := ref.resolve(fileRefs)
 		if err != nil {
 			return fmt.Errorf("configfile: egress.credentials.%s: %w", host, err)
 		}
 		f.Egress.credentials[strings.ToLower(host)] = v
+	}
+
+	if err := f.Web.resolve(); err != nil {
+		return err
 	}
 
 	prg, err := compileFilter(f.Defaults.Filter)
@@ -88,50 +92,66 @@ func (f *File) resolve() error {
 	f.defaultFilter = prg
 
 	for ti := range f.Tenants {
-		t := &f.Tenants[ti]
-		if t.filter, err = compileFilter(t.Filter); err != nil {
-			return fmt.Errorf("configfile: tenants[%d].filter: %w", ti, err)
+		if err := f.Tenants[ti].resolve(fmt.Sprintf("tenants[%d]", ti), fileRefs); err != nil {
+			return err
 		}
-		for ii := range t.Installations {
-			in := &t.Installations[ii]
-			where := fmt.Sprintf("tenants[%d].installations[%d]", ti, ii)
-			if in.App != nil {
-				in.App.clientID = in.App.ClientID
-				if !in.App.ClientIDFrom.empty() {
-					v, err := in.App.ClientIDFrom.resolve()
-					if err != nil {
-						return fmt.Errorf("configfile: %s.app.clientIdFrom: %w", where, err)
-					}
-					in.App.clientID = v.Value()
-				}
-				if in.App.privateKey, err = in.App.PrivateKey.resolve(); err != nil {
-					return fmt.Errorf("configfile: %s.app.privateKey: %w", where, err)
-				}
-				if in.App.webhookSecret, err = in.App.WebhookSecret.resolve(); err != nil {
-					return fmt.Errorf("configfile: %s.app.webhookSecret: %w", where, err)
-				}
-			}
-			if !in.Token.empty() {
-				if in.token, err = in.Token.resolve(); err != nil {
-					return fmt.Errorf("configfile: %s.token: %w", where, err)
-				}
-			}
-			if !in.WebhookSecret.empty() {
-				if in.webhookSecret, err = in.WebhookSecret.resolve(); err != nil {
-					return fmt.Errorf("configfile: %s.webhookSecret: %w", where, err)
-				}
-			}
-			if !in.GitToken.empty() {
-				if in.gitToken, err = in.GitToken.resolve(); err != nil {
-					return fmt.Errorf("configfile: %s.gitToken: %w", where, err)
-				}
-			}
+	}
+	return nil
+}
+
+// resolve reads the tenant's secret references under refs and compiles its
+// filters; where prefixes every error.
+func (t *Tenant) resolve(where string, refs refPolicy) error {
+	var err error
+	if t.filter, err = compileFilter(t.Filter); err != nil {
+		return fmt.Errorf("configfile: %s.filter: %w", where, err)
+	}
+	for ii := range t.Installations {
+		if err := t.Installations[ii].resolve(fmt.Sprintf("%s.installations[%d]", where, ii), refs); err != nil {
+			return err
 		}
-		for ri := range t.Repositories {
-			r := &t.Repositories[ri]
-			if r.filter, err = compileFilter(r.Filter); err != nil {
-				return fmt.Errorf("configfile: tenants[%d].repositories[%d].filter: %w", ti, ri, err)
+	}
+	for ri := range t.Repositories {
+		r := &t.Repositories[ri]
+		if r.filter, err = compileFilter(r.Filter); err != nil {
+			return fmt.Errorf("configfile: %s.repositories[%d].filter: %w", where, ri, err)
+		}
+	}
+	return nil
+}
+
+func (in *Installation) resolve(where string, refs refPolicy) error {
+	var err error
+	if in.App != nil {
+		in.App.clientID = in.App.ClientID
+		if !in.App.ClientIDFrom.empty() {
+			v, err := in.App.ClientIDFrom.resolve(refs)
+			if err != nil {
+				return fmt.Errorf("configfile: %s.app.clientIdFrom: %w", where, err)
 			}
+			in.App.clientID = v.Value()
+		}
+		if in.App.privateKey, err = in.App.PrivateKey.resolve(refs); err != nil {
+			return fmt.Errorf("configfile: %s.app.privateKey: %w", where, err)
+		}
+		if in.App.webhookSecret, err = in.App.WebhookSecret.resolve(refs); err != nil {
+			return fmt.Errorf("configfile: %s.app.webhookSecret: %w", where, err)
+		}
+	}
+	for _, s := range []struct {
+		name string
+		ref  SecretRef
+		dst  *Secret
+	}{
+		{"token", in.Token, &in.token},
+		{"webhookSecret", in.WebhookSecret, &in.webhookSecret},
+		{"gitToken", in.GitToken, &in.gitToken},
+	} {
+		if s.ref.empty() {
+			continue
+		}
+		if *s.dst, err = s.ref.resolve(refs); err != nil {
+			return fmt.Errorf("configfile: %s.%s: %w", where, s.name, err)
 		}
 	}
 	return nil
@@ -148,7 +168,23 @@ func (f *File) validate() error {
 	if err := f.checkModels("defaults.models", f.Defaults.Models); err != nil {
 		return err
 	}
+	if err := f.validateRetention(); err != nil {
+		return err
+	}
+	if err := f.Web.validate(); err != nil {
+		return err
+	}
 	return f.validateTenants()
+}
+
+func (f *File) validateRetention() error {
+	if f.Retention.DisabledIndexGrace < 0 {
+		return errors.New("configfile: retention.disabledIndexGrace must not be negative")
+	}
+	if f.Retention.Transcripts != 0 && f.Retention.Transcripts < minTranscripts {
+		return fmt.Errorf("configfile: retention.transcripts must be at least %s", minTranscripts)
+	}
+	return nil
 }
 
 func (f *File) validateProviders() error {
@@ -193,9 +229,6 @@ func (f *File) validateTenants() error {
 	if err := checkLimits("defaults.limits", f.Defaults.Limits); err != nil {
 		return err
 	}
-	if f.Retention.DisabledIndexGrace < 0 {
-		return errors.New("configfile: retention.disabledIndexGrace must not be negative")
-	}
 	if f.Defaults.Settle < 0 {
 		return errors.New("configfile: defaults.settle must not be negative")
 	}
@@ -203,75 +236,88 @@ func (f *File) validateTenants() error {
 	if len(f.Tenants) == 0 {
 		return errors.New("configfile: tenants must list at least one tenant")
 	}
-	slugs := map[string]int{}
+	slugs := map[string]string{}
 	installations := map[string]string{}
-	for ti, t := range f.Tenants {
-		where := fmt.Sprintf("tenants[%d]", ti)
-		if !nameRe.MatchString(t.Slug) {
-			return fmt.Errorf("configfile: %s.slug %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", where, t.Slug)
-		}
-		if prev, dup := slugs[t.Slug]; dup {
-			return fmt.Errorf("configfile: %s.slug %q duplicates tenants[%d]", where, t.Slug, prev)
-		}
-		slugs[t.Slug] = ti
-		if err := f.checkModels(where+".models", t.Models); err != nil {
+	for ti := range f.Tenants {
+		t := &f.Tenants[ti]
+		if err := f.validateTenant(t.where(ti), t, slugs, installations); err != nil {
+			if t.Origin() == OriginDashboard {
+				return &MergeError{Slug: t.Slug, Err: err}
+			}
 			return err
 		}
-		if err := checkLimits(where+".limits", t.Limits); err != nil {
+	}
+	return nil
+}
+
+// validateTenant checks one tenant. slugs and installations record the
+// slugs and installation names already seen, so duplicates across tenants
+// are caught whichever origin each has.
+func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[string]string) error {
+	if !nameRe.MatchString(t.Slug) {
+		return fmt.Errorf("configfile: %s.slug %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", where, t.Slug)
+	}
+	if prev, dup := slugs[t.Slug]; dup {
+		return fmt.Errorf("configfile: %s.slug %q duplicates %s", where, t.Slug, prev)
+	}
+	slugs[t.Slug] = where
+	if err := f.checkModels(where+".models", t.Models); err != nil {
+		return err
+	}
+	if err := checkLimits(where+".limits", t.Limits); err != nil {
+		return err
+	}
+	if t.Runner != nil {
+		if err := validateRunnerDeadline(where, t.Runner.ActiveDeadlineSeconds); err != nil {
 			return err
 		}
-		if t.Runner != nil {
-			if err := validateRunnerDeadline(where, t.Runner.ActiveDeadlineSeconds); err != nil {
-				return err
-			}
+	}
+	if t.Settle < 0 {
+		return fmt.Errorf("configfile: %s.settle must not be negative", where)
+	}
+	if len(t.Installations) == 0 {
+		return fmt.Errorf("configfile: %s (%s) must list at least one installation", where, t.Slug)
+	}
+	for ii, in := range t.Installations {
+		iwhere := fmt.Sprintf("%s.installations[%d]", where, ii)
+		if !nameRe.MatchString(in.Name) {
+			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", iwhere, in.Name)
 		}
-		if t.Settle < 0 {
-			return fmt.Errorf("configfile: %s.settle must not be negative", where)
+		if owner, dup := installations[in.Name]; dup {
+			return fmt.Errorf("configfile: %s.name %q duplicates an installation in tenant %q; names are hook paths and must be unique",
+				iwhere, in.Name, owner)
 		}
-		if len(t.Installations) == 0 {
-			return fmt.Errorf("configfile: %s (%s) must list at least one installation", where, t.Slug)
+		installations[in.Name] = t.Slug
+		if in.Account == "" {
+			return fmt.Errorf("configfile: %s.account is required", iwhere)
 		}
-		for ii, in := range t.Installations {
-			iwhere := fmt.Sprintf("%s.installations[%d]", where, ii)
-			if !nameRe.MatchString(in.Name) {
-				return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", iwhere, in.Name)
-			}
-			if owner, dup := installations[in.Name]; dup {
-				return fmt.Errorf("configfile: %s.name %q duplicates an installation in tenant %q; names are hook paths and must be unique",
-					iwhere, in.Name, owner)
-			}
-			installations[in.Name] = t.Slug
-			if in.Account == "" {
-				return fmt.Errorf("configfile: %s.account is required", iwhere)
-			}
-			if err := in.validate(iwhere); err != nil {
-				return err
-			}
+		if err := in.validate(iwhere); err != nil {
+			return err
 		}
-		repos := map[string]int{}
-		for ri, r := range t.Repositories {
-			rwhere := fmt.Sprintf("%s.repositories[%d]", where, ri)
-			if r.Name == "" || !strings.Contains(r.Name, "/") {
-				return fmt.Errorf("configfile: %s.name must be \"owner/repo\", got %q", rwhere, r.Name)
-			}
-			if prev, dup := repos[r.Name]; dup {
-				return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d]", rwhere, r.Name, prev)
-			}
-			repos[r.Name] = ri
-			if r.Settle < 0 {
-				return fmt.Errorf("configfile: %s.settle must not be negative", rwhere)
-			}
-			if err := r.validateReview(rwhere); err != nil {
-				return err
-			}
-			if f.InstallationFor(&t, r.Name) == nil {
-				owner, _, _ := strings.Cut(r.Name, "/")
-				return fmt.Errorf("configfile: %s.name %q: no installation in tenant %q has account %q", rwhere, r.Name, t.Slug, owner)
-			}
-			for gi, g := range r.Ignore {
-				if !doublestar.ValidatePattern(g) || strings.TrimSpace(g) == "" {
-					return fmt.Errorf("configfile: %s.ignore[%d] %q is not a valid glob", rwhere, gi, g)
-				}
+	}
+	repos := map[string]int{}
+	for ri, r := range t.Repositories {
+		rwhere := fmt.Sprintf("%s.repositories[%d]", where, ri)
+		if r.Name == "" || !strings.Contains(r.Name, "/") {
+			return fmt.Errorf("configfile: %s.name must be \"owner/repo\", got %q", rwhere, r.Name)
+		}
+		if prev, dup := repos[r.Name]; dup {
+			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d]", rwhere, r.Name, prev)
+		}
+		repos[r.Name] = ri
+		if r.Settle < 0 {
+			return fmt.Errorf("configfile: %s.settle must not be negative", rwhere)
+		}
+		if err := r.validateReview(rwhere); err != nil {
+			return err
+		}
+		if f.InstallationFor(t, r.Name) == nil {
+			owner, _, _ := strings.Cut(r.Name, "/")
+			return fmt.Errorf("configfile: %s.name %q: no installation in tenant %q has account %q", rwhere, r.Name, t.Slug, owner)
+		}
+		for gi, g := range r.Ignore {
+			if !doublestar.ValidatePattern(g) || strings.TrimSpace(g) == "" {
+				return fmt.Errorf("configfile: %s.ignore[%d] %q is not a valid glob", rwhere, gi, g)
 			}
 		}
 	}
@@ -452,15 +498,41 @@ func SamplePR() map[string]any {
 	}
 }
 
-func (r SecretRef) empty() bool { return r.Env == "" && r.File == "" }
+func (r SecretRef) empty() bool { return r.Env == "" && r.File == "" && r.Sealed == "" }
 
-// resolve reads the referenced value. Exactly one of env or file must be set;
-// an unset variable or an unreadable file is an error, never an empty value,
-// so a typo cannot silently disable authentication.
-func (r SecretRef) resolve() (Secret, error) {
+// refPolicy is where a SecretRef may come from. The operator's file may read
+// the environment and filesystem but carries no sealed values; a
+// dashboard-managed tenant carries only sealed values, opened with open.
+type refPolicy struct {
+	dashboard bool
+	open      Opener
+}
+
+var fileRefs = refPolicy{}
+
+// resolve reads the referenced value. Exactly one of env, file or sealed
+// must be set; an unset variable, an unreadable file or an unopenable sealed
+// value is an error, never an empty value, so a typo cannot silently disable
+// authentication.
+func (r SecretRef) resolve(refs refPolicy) (Secret, error) {
 	switch {
+	case r.Sealed != "" && (r.Env != "" || r.File != ""):
+		return Secret{}, errors.New("set exactly one of env, file or sealed")
 	case r.Env != "" && r.File != "":
 		return Secret{}, errors.New("set either env or file, not both")
+	case r.Sealed != "" && !refs.dashboard:
+		return Secret{}, errors.New("sealed values are only valid in dashboard-managed tenants")
+	case refs.dashboard && (r.Env != "" || r.File != ""):
+		return Secret{}, errors.New("dashboard-managed tenants take sealed values, not env or file references")
+	case r.Sealed != "":
+		if refs.open == nil {
+			return Secret{}, errors.New("no key to open sealed values is configured")
+		}
+		b, err := refs.open.Open(r.Sealed)
+		if err != nil {
+			return Secret{}, fmt.Errorf("open sealed value: %w", err)
+		}
+		return Secret{value: strings.TrimRight(string(b), "\r\n")}, nil
 	case r.Env != "":
 		v, ok := os.LookupEnv(r.Env)
 		if !ok {
@@ -473,6 +545,8 @@ func (r SecretRef) resolve() (Secret, error) {
 			return Secret{}, err
 		}
 		return Secret{value: strings.TrimRight(string(b), "\r\n")}, nil
+	case refs.dashboard:
+		return Secret{}, errors.New("reference must set sealed")
 	default:
 		return Secret{}, errors.New("reference must set env or file")
 	}

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -25,8 +26,10 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
+	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configsource"
 	"github.com/home-operations/kritik/internal/egress"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/ingest"
@@ -37,6 +40,8 @@ import (
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/server"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/web"
+	"github.com/home-operations/kritik/internal/webapi"
 	"github.com/home-operations/kritik/internal/worker"
 )
 
@@ -54,7 +59,7 @@ func main() {
 }
 
 func run() error {
-	roleFlag := pflag.String("role", string(config.RoleAll), "process role: all, ingest, worker or runner")
+	roleFlag := pflag.String("role", string(config.RoleAll), "process role: all, ingest, worker, runner or web")
 	pflag.Parse()
 	role, err := config.ParseRole(*roleFlag)
 	if err != nil {
@@ -73,6 +78,8 @@ func run() error {
 		if err = cfg.ValidateRunner(); err == nil {
 			runSpec, err = runner.ReadSpec(cfg.RunSpecFile)
 		}
+	case config.RoleWeb:
+		err = cfg.ValidateWeb()
 	}
 	if err != nil {
 		return err
@@ -97,17 +104,6 @@ func run() error {
 		"embedding", cfg.EmbeddingEnabled(),
 	)
 
-	// The runner gets everything it needs from its Job spec; every other role
-	// is driven by the configuration file and must not start without one.
-	var file *configfile.File
-	if role != config.RoleRunner {
-		file, err = configfile.Load(cfg.ConfigFile)
-		if err != nil {
-			return err
-		}
-		logConfig(logger, file, "configuration loaded")
-	}
-
 	// Graceful shutdown on the usual termination signals. stop() runs as soon
 	// as the first signal arrives so a second signal restores default handling
 	// and force-terminates instead of being swallowed during a slow drain.
@@ -123,6 +119,7 @@ func run() error {
 	// open, so the pod waits rather than being killed by its own probe.
 	mgmt := server.NewManagement(cfg.MetricsAddr, logger)
 	drift := server.NewConfigDriftGauge(mgmt.Registry())
+	configErrors := server.NewConfigErrorGauge(mgmt.Registry())
 	m := metrics.New(mgmt.Registry())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return mgmt.Run(ctx) })
@@ -130,32 +127,28 @@ func run() error {
 	// Every role connects with the application DSN and refuses to start if
 	// that DSN could bypass row-level security or the vector extension is
 	// missing. Leader-eligible roles also open the owner DSN.
-	ownerURL := ""
-	if role == config.RoleAll || role == config.RoleWorker {
-		ownerURL = cfg.DatabaseOwnerURL
-	}
-	st, err := openStore(ctx, store.Options{
-		AppURL: cfg.DatabaseURL, OwnerURL: ownerURL,
-		AppRole: cfg.DatabaseAppRole, RunnerRole: cfg.DatabaseRunnerRole, Logger: logger,
-	}, logger)
+	st, err := openStore(ctx, storeOptions(role, cfg, logger), logger)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
 
+	// The runner gets everything it needs from its Job spec; every other role
+	// is driven by the configuration file, merged with the dashboard's
+	// tenants, and must not start without it.
 	var current *configfile.Current
 	var exec executor.Executor
-	if file != nil {
-		// current is the last good file; the leader applies it on election and
-		// on every reload, followers only compare hashes.
-		current = configfile.NewCurrent(file)
-		g.Go(func() error {
-			configfile.Watch(ctx, cfg.ConfigFile, cfg.ConfigReloadInterval, logger, func(f *configfile.File) {
-				current.Set(f)
-				logConfig(logger, f, "configuration reloaded")
-			})
-			return nil
-		})
+	if role != config.RoleRunner {
+		// current is the last good merged file; the leader applies it on
+		// election and on every reload, followers only compare hashes.
+		src := &configsource.Source{Store: st, Keyring: cfg.DashboardKeyring(), Logger: logger, Errors: configErrors}
+		file, err := src.Load(ctx, cfg.ConfigFile)
+		if err != nil {
+			return err
+		}
+		logConfig(logger, file, "configuration loaded")
+		current = src.Current
+		g.Go(func() error { return src.Run(ctx, cfg.ConfigFile, cfg.ConfigReloadInterval) })
 		g.Go(func() error {
 			return reportDrift(ctx, st, current, drift, cfg.ConfigReloadInterval)
 		})
@@ -175,10 +168,10 @@ func run() error {
 			}
 			g.Go(func() error {
 				return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
-					return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, hostname, logger)
+					return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, configErrors, hostname, logger)
 				})
 			})
-		} else if role != config.RoleIngest {
+		} else if role != config.RoleIngest && role != config.RoleWeb {
 			logger.Warn("no owner DSN configured; this replica can never migrate or apply configuration")
 		}
 	}
@@ -198,6 +191,9 @@ func run() error {
 		handler.Metrics = m
 		hooks := server.NewHooks(cfg.Addr, handler, logger)
 		g.Go(func() error { return hooks.Run(ctx) })
+	}
+	if err := startWeb(ctx, g, role, st, cfg, current, logger); err != nil {
+		return err
 	}
 	if role == config.RoleAll || role == config.RoleWorker {
 		if exec == nil {
@@ -270,6 +266,56 @@ func run() error {
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("%s: %w", role, err)
 	}
+	return nil
+}
+
+// storeOptions is how role connects to the database. Only a
+// leader-eligible role, all or worker, is given the owner DSN; the web role
+// in particular never is (ADR-0009 §3).
+func storeOptions(role config.Role, cfg *config.Config, logger *slog.Logger) store.Options {
+	opts := store.Options{
+		AppURL: cfg.DatabaseURL, AppRole: cfg.DatabaseAppRole, RunnerRole: cfg.DatabaseRunnerRole, Logger: logger,
+	}
+	if role == config.RoleAll || role == config.RoleWorker {
+		opts.OwnerURL = cfg.DatabaseOwnerURL
+	}
+	return opts
+}
+
+// webDrain is how long a stopping web role lets requests finish. Event
+// streams end at once, when the API's Run returns.
+const webDrain = 10 * time.Second
+
+// startWeb serves the dashboard, its sign-in and its API on WebAddr until
+// ctx ends, when role serves it. Without a sealing key the dashboard still
+// serves, but cannot write dashboard tenants.
+func startWeb(
+	ctx context.Context, g *errgroup.Group, role config.Role, st *store.Store, cfg *config.Config, current *configfile.Current,
+	logger *slog.Logger,
+) error {
+	if !cfg.WebEnabled(role) {
+		return nil
+	}
+	if role == config.RoleWeb && st.LeaderEligible() {
+		return errors.New("the web role must never hold the owner DSN")
+	}
+	webLogger := logger.With("listener", "web")
+	authHandler, err := auth.New(auth.Config{Store: st, Current: current, WebURL: cfg.WebURLParsed(), Logger: webLogger})
+	if err != nil {
+		return err
+	}
+	// Insert-only River client: the dashboard enqueues re-runs, cancels and
+	// reindexes, it never works jobs.
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: webLogger})
+	if err != nil {
+		return fmt.Errorf("river: %w", err)
+	}
+	api := webapi.New(webapi.Config{
+		Store: st, Current: current, Auth: authHandler, Keyring: cfg.DashboardKeyring(), UI: web.FS(),
+		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: queue},
+	})
+	g.Go(func() error { return api.Run(ctx) })
+	g.Go(func() error { return server.ServeDrain(ctx, cfg.WebAddr, api.Handler(), webDrain, webLogger) })
 	return nil
 }
 
@@ -390,7 +436,7 @@ const secretSweepInterval = 5 * time.Minute
 // onboarding index job for every repository that has none.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	sweeper *executor.Kube, m *metrics.Metrics, leader string, logger *slog.Logger,
+	sweeper *executor.Kube, m *metrics.Metrics, configErrors *server.ConfigErrorGauge, leader string, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
@@ -423,25 +469,115 @@ func lead(
 			return ids
 		}, secretSweepInterval)
 	}
-	applied := ""
+	// And so is retention: model-call transcripts past their configured
+	// window (owner pool, bypassing row-level security) and expired
+	// dashboard sessions (app pool).
+	go retentionSweep(pollCtx, st, current, retentionSweepInterval, logger)
+	return applyLoop(ctx, current, func(ctx context.Context, f *configfile.File) error {
+		return st.ApplyConfig(ctx, f, leader)
+	}, func(ctx context.Context) error {
+		if !cfg.EmbeddingEnabled() {
+			return nil
+		}
+		return enqueueMissingIndexes(ctx, st, queue, logger)
+	}, refusedRetryInterval, configErrors, logger)
+}
+
+// retentionSweepInterval is how often the leader deletes model-call
+// transcripts and dashboard sessions past their retention window.
+const retentionSweepInterval = time.Hour
+
+// retentionStore is the subset of *store.Store that retentionSweep needs,
+// narrowed so it can be exercised in tests with a fake.
+type retentionStore interface {
+	SweepModelCalls(ctx context.Context, olderThan time.Duration) (int64, error)
+	SweepSessions(ctx context.Context, now time.Time) (int64, error)
+}
+
+// retentionSweep runs once immediately, then every interval until ctx ends,
+// deleting model-call transcripts older than the current file's retention
+// window (owner pool, bypassing row-level security) and expired dashboard
+// sessions (app pool). A sweep failure is logged, never fatal: it just
+// leaves stale rows for the next tick.
+func retentionSweep(ctx context.Context, st retentionStore, current *configfile.Current, interval time.Duration, logger *slog.Logger) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
 	for {
-		f := current.Get()
-		if f.Hash() != applied {
-			if err := st.ApplyConfig(ctx, f, leader); err != nil {
-				return err
+		if n, err := st.SweepModelCalls(ctx, current.Get().Retention.TranscriptsOrDefault()); err != nil {
+			if ctx.Err() == nil {
+				logger.Warn("model call transcripts not swept", "error", err)
 			}
-			applied = f.Hash()
-			logger.Info("configuration applied to the store", "hash", applied[:12])
-			if cfg.EmbeddingEnabled() {
-				if err := enqueueMissingIndexes(ctx, st, queue, logger); err != nil {
+		} else if n > 0 {
+			logger.Info("model call transcripts swept", "rows", n)
+		}
+		if n, err := st.SweepSessions(ctx, time.Now()); err != nil {
+			if ctx.Err() == nil {
+				logger.Warn("dashboard sessions not swept", "error", err)
+			}
+		} else if n > 0 {
+			logger.Info("dashboard sessions swept", "rows", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// refusedRetryInterval is how often the leader re-applies a configuration
+// the store refused. A refusal is expected to need a new configuration, but
+// one misclassified race must not leave the store stale until the next edit.
+const refusedRetryInterval = time.Minute
+
+// applyLoop applies current's snapshot, then each replacement, until ctx
+// ends, calling onApplied after each success. A snapshot the store refuses
+// for its content (store.IsConfigContentError) must not end leadership, or
+// every replica would crash-loop on it in turn: it is logged once per
+// distinct error and raised on the gauge, the last applied state stays, and
+// the loop waits for the next snapshot, retrying the refused one every
+// retry. Any other error is returned, which ends the process for a restart.
+func applyLoop(
+	ctx context.Context, current *configfile.Current, apply func(context.Context, *configfile.File) error,
+	onApplied func(context.Context) error, retry time.Duration, gauge *server.ConfigErrorGauge, logger *slog.Logger,
+) error {
+	applied, refused, logged := "", "", ""
+	for {
+		// Taken before Get, so a replacement that lands while applying still
+		// wakes the loop.
+		changed := current.Changed()
+		f := current.Get()
+		if h := f.Hash(); h != applied && h != refused {
+			err := apply(ctx, f)
+			switch {
+			case err != nil && store.IsConfigContentError(err):
+				refused = h
+				gauge.Set(server.ConfigErrorApply, true)
+				if err.Error() != logged {
+					logged = err.Error()
+					logger.Error("configuration refused by the store, keeping the last applied one", "hash", h[:12], "error", err)
+				}
+			case err != nil:
+				return err
+			default:
+				applied, refused, logged = h, "", ""
+				gauge.Set(server.ConfigErrorApply, false)
+				logger.Info("configuration applied to the store", "hash", h[:12])
+				if err := onApplied(ctx); err != nil {
 					return err
 				}
 			}
 		}
+		var retryC <-chan time.Time
+		if refused != "" {
+			retryC = time.After(retry)
+		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-current.Changed():
+		case <-changed:
+		case <-retryC:
+			refused = ""
 		}
 	}
 }
