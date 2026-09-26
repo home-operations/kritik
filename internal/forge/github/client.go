@@ -325,20 +325,12 @@ func openPullRequest(pr *gh.PullRequest) forge.OpenPullRequest {
 // SetStatus implements forge.Client.
 func (c *Client) SetStatus(ctx context.Context, owner, repo, sha string, state forge.StatusState, description string) error {
 	status := gh.RepoStatus{
-		State: new(string(state)), Context: new(forge.StatusContext), Description: new(truncate(description, forge.MaxStatusDescription)),
+		State: new(string(state)), Context: new(forge.StatusContext), Description: new(forge.StatusDescription(description)),
 	}
 	if _, _, err := c.api.Repositories.CreateStatus(ctx, owner, repo, sha, status); err != nil {
 		return fmt.Errorf("github: status on %s: %w", sha, err)
 	}
 	return nil
-}
-
-// truncate keeps a description within GitHub's 140-character limit.
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-1] + "…"
 }
 
 // APIBase derives the REST base for a host: empty for github.com, the

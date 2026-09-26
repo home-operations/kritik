@@ -307,14 +307,8 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 	}
 }
 
-func TestAPIBaseAndTruncate(t *testing.T) {
+func TestAPIBase(t *testing.T) {
 	if APIBase("") != "" || APIBase("ghe.example.com/") != "https://ghe.example.com/api/v3" {
 		t.Fatal("APIBase")
-	}
-	if got := truncate(strings.Repeat("a", 150), 140); utf8.RuneCountInString(got) != 140 || !strings.HasSuffix(got, "…") {
-		t.Fatalf("truncate = %q", got)
-	}
-	if truncate("short", 140) != "short" {
-		t.Fatal("truncate must leave short text alone")
 	}
 }
