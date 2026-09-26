@@ -20,6 +20,10 @@ const (
 // only trigger the worker lets bypass the bot-author patch-id skip.
 const TriggerManual = "manual"
 
+// TriggerReindex is the Trigger EnqueueReindex gives a forced full reindex,
+// as opposed to the worker-internal "onboard"/"push" triggers.
+const TriggerReindex = "reindex"
+
 // ReviewArgs reviews one head of one pull request.
 type ReviewArgs struct {
 	TenantID     string `json:"tenant_id"     river:"unique"`
@@ -31,10 +35,12 @@ type ReviewArgs struct {
 	Trigger string `json:"trigger"`
 	// Request distinguishes one manual re-run from another. River hashes
 	// only the river:"unique" fields (sorted by key) to dedupe by args, so
-	// leaving Request empty (every trigger but manual) keeps the existing
-	// dedup on tenant+repository+number+head unchanged; a manual re-run
-	// sets a fresh value (a UUID) so it is never deduped against a prior
-	// run of the same head, including another manual one.
+	// the omitempty tag is load-bearing: it must serialize to no "request"
+	// key at all (every trigger but manual) for the hash to match what a job
+	// enqueued before this field existed would have produced, keeping the
+	// existing dedup on tenant+repository+number+head unchanged. A manual
+	// re-run sets a fresh value (a UUID) so it is never deduped against a
+	// prior run of the same head, including another manual one.
 	Request string `json:"request,omitempty" river:"unique"`
 }
 
@@ -75,9 +81,12 @@ type IndexArgs struct {
 	// Full forces a full reindex even when an active generation already
 	// covers the target commit. It is deliberately not river:"unique": a
 	// forced reindex (CommitSHA empty) still dedupes against a concurrent
-	// one the same way any other reindex does, by RepositoryID+CommitSHA,
-	// and never collides with a commit-specific onboard/push job, which
-	// always carries a non-empty CommitSHA.
+	// one the same way any other reindex does, by RepositoryID+CommitSHA.
+	// That also means it dedupes against a repository's still-pending
+	// onboard job, which likewise carries an empty CommitSHA (a push job
+	// never collides, since it always carries a non-empty CommitSHA):
+	// EnqueueReindex treats that collision as ErrReindexQueued rather than
+	// silently reporting a fresh job that was never actually inserted.
 	Full bool `json:"full,omitempty"`
 }
 

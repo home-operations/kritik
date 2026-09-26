@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -27,10 +28,42 @@ func TestReviewArgsUniqueTags(t *testing.T) {
 	}
 }
 
-func TestReviewArgsRequestEmptyByDefault(t *testing.T) {
-	args := ReviewArgs{TenantID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: "push"}
-	if args.Request != "" {
-		t.Fatalf("Request = %q, want empty for a non-manual trigger", args.Request)
+// TestReviewArgsRequestOmittedFromJSONWhenEmpty pins the actual dedup
+// mechanism: River hashes the JSON encoding of the river:"unique" fields, so
+// a non-manual trigger (Request left empty) must serialize with no "request"
+// key at all, not merely an empty string, or it would still perturb the hash
+// relative to jobs enqueued before this field existed.
+func TestReviewArgsRequestOmittedFromJSONWhenEmpty(t *testing.T) {
+	data, err := json.Marshal(ReviewArgs{TenantID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: "push"})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if _, ok := m["request"]; ok {
+		t.Fatalf("json = %s, want no %q key when Request is empty", data, "request")
+	}
+}
+
+// TestReviewArgsRequestPresentInJSONWhenSet is the manual-trigger
+// counterpart: once Request is set, "request" must appear in the hashed
+// JSON, or two manual re-runs of the same head would collide.
+func TestReviewArgsRequestPresentInJSONWhenSet(t *testing.T) {
+	data, err := json.Marshal(ReviewArgs{
+		TenantID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: TriggerManual,
+		Request: "11111111-1111-1111-1111-111111111111",
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if _, ok := m["request"]; !ok {
+		t.Fatalf("json = %s, want a %q key when Request is set", data, "request")
 	}
 }
 
