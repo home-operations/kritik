@@ -119,11 +119,13 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		tenantID: args.TenantID, tenantSlug: tenant.Slug, reviewID: reviewID, headSHA: args.HeadSHA,
 		owner: owner, repo: repo, client: client, started: started, logger: logger,
 	}
+	var tools []configfile.Tool
 	if agentic {
 		deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, runID, args.Trigger, pr, settings, prior, admitted, &spec, &secrets, deadline)
 		if err != nil {
 			return w.agentSpecFailed(ctx, ended, runID, err)
 		}
+		tools = file.ToolsFor(settings.Agent.Commands)
 	}
 	sup := runSupervision(w.Store, args.TenantID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
@@ -137,6 +139,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		Secrets:     secrets,
 		Deadline:    deadline,
 		Resources:   resources,
+		Tools:       tools,
 	})
 	// The agent's row is read before recordRun settles the run's phase: a
 	// stopped run's row may still be on its way from the terminating pod.

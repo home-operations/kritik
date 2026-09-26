@@ -104,6 +104,10 @@ config:
   # polling: { interval: 10m, lookback: 24h }
   # # Onboarding index jobs kept queued or running at once.
   # indexing: { onboardWindow: 4 }
+  # # Tools beyond the -tools image's curl, fd and rg, mounted from their
+  # # images (statically linked) into runs whose agent.commands allow them.
+  # tools:
+  #   - { name: helm, image: ghcr.io/example/helm:3@sha256:..., path: /usr/local/bin }
   # tenants:
   #   - slug: example
   #     installations:

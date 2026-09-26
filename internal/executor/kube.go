@@ -271,6 +271,14 @@ const (
 	specFile = "spec.json"
 )
 
+// Tools mount at toolsDir/<name>. A container's PATH variable replaces the
+// image's rather than extending it, so the tool directories go in front of
+// imagePath, the PATH both runner images set.
+const (
+	toolsDir  = "/opt/kritik/tools"
+	imagePath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+)
+
 func jobName(runID string) string { return "kritik-run-" + runID[:8] }
 
 // gatewayHost is the host of a gateway URL config has already checked.
@@ -370,6 +378,24 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 			_ = json.Unmarshal(b, &container.Resources)
 		}
 	}
+	volumes := []corev1.Volume{
+		{Name: "scratch", EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		{Name: "spec", Secret: &corev1.SecretVolumeSource{
+			SecretName: name, Items: []corev1.KeyToPath{{Key: secretKeyRunSpec, Path: specFile}},
+		}},
+	}
+	if len(spec.Tools) > 0 {
+		dirs := make([]string, 0, len(spec.Tools)+1)
+		for _, t := range spec.Tools {
+			dir := toolsDir + "/" + t.Name
+			volumes = append(volumes, corev1.Volume{Name: "tool-" + t.Name, Image: &corev1.ImageVolumeSource{Reference: t.Image}})
+			container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+				Name: "tool-" + t.Name, MountPath: dir, SubPath: strings.TrimPrefix(t.Path, "/"), ReadOnly: true,
+			})
+			dirs = append(dirs, dir)
+		}
+		container.Env = append(container.Env, corev1.EnvVar{Name: "PATH", Value: strings.Join(append(dirs, imagePath), ":")})
+	}
 	var runtimeClass *string
 	if k.RuntimeClass != "" {
 		runtimeClass = new(k.RuntimeClass)
@@ -392,12 +418,7 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 					},
 					Containers: []corev1.Container{container},
-					Volumes: []corev1.Volume{
-						{Name: "scratch", EmptyDir: &corev1.EmptyDirVolumeSource{}},
-						{Name: "spec", Secret: &corev1.SecretVolumeSource{
-							SecretName: name, Items: []corev1.KeyToPath{{Key: secretKeyRunSpec, Path: specFile}},
-						}},
-					},
+					Volumes:    volumes,
 				},
 			},
 		},

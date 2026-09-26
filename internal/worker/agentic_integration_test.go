@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -47,6 +48,9 @@ defaults:
     review: gateway/agent-model
   limits:
     concurrency: 1
+tools:
+  - { name: helm, image: registry.example/helm:3 }
+  - { name: kurl, image: registry.example/kurl:1, path: /usr/bin, commands: [curl] }
 tenants:
   - slug: acme
     installations:
@@ -405,6 +409,12 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	var timeline []map[string]any
 	_ = json.Unmarshal([]byte(run.toolCalls), &tools)
 	_ = json.Unmarshal([]byte(run.timeline), &timeline)
+	h.exec.mu.Lock()
+	mounted := h.exec.tools
+	h.exec.mu.Unlock()
+	if !slices.Equal(mounted, []string{"kurl"}) {
+		t.Fatalf("tools handed to the executor = %v, want only kurl, which provides the curl acme/widgets allows", mounted)
+	}
 	if run.stop != "submitted" || run.steps != 3 || run.model != "agent-model" || tools["grep"] != 1 || tools["read_file"] != 1 ||
 		tools["submit_review"] != 1 || len(timeline) != 3 || run.input != 300 || run.output != 30 {
 		t.Fatalf("agent run = %+v", run)
@@ -784,12 +794,18 @@ type hookExecutor struct {
 	// returns as soon as ctx ends, and the runner only sees the
 	// cancellation a moment later, as a terminating pod would.
 	detach bool
+	// tools are the names of the tools the last run was handed.
+	tools []string
 }
 
 func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
 	e.mu.Lock()
 	hold, detach := e.hold, e.detach
 	e.hold, e.detach = 0, false
+	e.tools = nil
+	for _, tool := range spec.Tools {
+		e.tools = append(e.tools, tool.Name)
+	}
 	e.mu.Unlock()
 	if detach {
 		return e.runDetached(ctx, spec)

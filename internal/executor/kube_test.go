@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
+	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/runner"
 )
 
@@ -80,6 +81,46 @@ func TestJobSpec(t *testing.T) {
 	}
 	if bare := (&Kube{Namespace: "kritik", Image: "x"}).job(spec()).Spec.Template.Spec; bare.RuntimeClassName != nil {
 		t.Fatal("a Kube without a RuntimeClass must leave the pod on the default runtime")
+	}
+}
+
+// TestJobSpecMountsTools checks each tool becomes a read-only image volume
+// mounted at its own directory, from the path inside its image, with the
+// tool directories first on PATH ahead of the image's own.
+func TestJobSpecMountsTools(t *testing.T) {
+	s := spec()
+	s.Tools = []configfile.Tool{
+		{Name: "helm", Image: "registry.example/helm:3", Path: "/usr/bin"},
+		{Name: "flate", Image: "registry.example/flate@sha256:0123"},
+	}
+	pod := (&Kube{Namespace: "kritik", Image: "x"}).job(s).Spec.Template.Spec
+	images := map[string]string{}
+	for _, v := range pod.Volumes {
+		if v.Image != nil {
+			images[v.Name] = v.Image.Reference
+		}
+	}
+	if images["tool-helm"] != "registry.example/helm:3" || images["tool-flate"] != "registry.example/flate@sha256:0123" || len(images) != 2 {
+		t.Fatalf("image volumes = %v", images)
+	}
+	c := pod.Containers[0]
+	mounts := map[string]corev1.VolumeMount{}
+	for _, m := range c.VolumeMounts {
+		mounts[m.Name] = m
+	}
+	if m := mounts["tool-helm"]; m.MountPath != "/opt/kritik/tools/helm" || m.SubPath != "usr/bin" || !m.ReadOnly {
+		t.Fatalf("helm mount = %+v", m)
+	}
+	if m := mounts["tool-flate"]; m.MountPath != "/opt/kritik/tools/flate" || m.SubPath != "" || !m.ReadOnly {
+		t.Fatalf("flate mount = %+v", m)
+	}
+	want := "/opt/kritik/tools/helm:/opt/kritik/tools/flate:" + imagePath
+	if i := slices.IndexFunc(c.Env, func(e corev1.EnvVar) bool { return e.Name == "PATH" }); i < 0 || c.Env[i].Value != want {
+		t.Fatalf("PATH = %v, want %s", c.Env, want)
+	}
+	bare := (&Kube{Namespace: "kritik", Image: "x"}).job(spec()).Spec.Template.Spec.Containers[0]
+	if slices.ContainsFunc(bare.Env, func(e corev1.EnvVar) bool { return e.Name == "PATH" }) {
+		t.Fatal("a run without tools must keep the image's own PATH")
 	}
 }
 

@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"slices"
 	"time"
 )
 
@@ -117,6 +118,18 @@ func (f *File) PollLookback() time.Duration {
 		return f.Polling.Lookback
 	}
 	return DefaultPollLookback
+}
+
+// ToolsFor returns the tools that provide any of commands, the ones a run
+// whose agent may run commands mounts; nil when none does.
+func (f *File) ToolsFor(commands []string) []Tool {
+	var out []Tool
+	for _, t := range f.Tools {
+		if slices.ContainsFunc(t.Provides(), func(c string) bool { return slices.Contains(commands, c) }) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // OnboardWindow is how many onboarding index jobs may be queued or running.
