@@ -91,7 +91,7 @@ test.describe('tenant configuration', () => {
     await expect(page.locator('input[type=password]')).toHaveCount(0);
   });
 
-  test('operator-only fields are disabled for a tenant admin and enabled for an operator', async ({ page }) => {
+  test('the fields the policy keeps for operators are disabled for a tenant admin and enabled for an operator', async ({ page }) => {
     await setup(page, adminMe, [configRow(dashboardConfig)]);
     await page.goto(`/${ADMIN}/config`);
     await expect(page.getByLabel('Concurrency')).toBeDisabled();
@@ -103,7 +103,9 @@ test.describe('tenant configuration', () => {
     await expect(page.locator('[data-path="forks"]')).toBeDisabled();
     await expect(page.getByText('(operator only)').first()).toBeVisible();
 
-    await setup(page, operatorMe, [configRow(dashboardConfig)]);
+    // The server says what an operator may change; the page renders that.
+    const asOperator: T.TenantConfig = { ...dashboardConfig, policy: dashboardConfig.policy.map((p) => ({ ...p, editable: true })) };
+    await setup(page, operatorMe, [configRow(asOperator)]);
     await page.reload();
     await expect(page.getByLabel('Concurrency')).toBeEnabled();
     await expect(page.locator('[data-path="repositories[0].mode"]')).toBeEnabled();

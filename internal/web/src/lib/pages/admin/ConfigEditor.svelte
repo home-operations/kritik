@@ -1,9 +1,9 @@
 <script lang="ts">
   // The tenant spec form. It edits a draft (see spec.ts) and hands the
   // built spec to onsave; the caller does the request and passes back any
-  // error, whose path highlights and focuses the field it names. Runner,
-  // limits and a repository's mode, incremental and agent stay disabled
-  // for anyone but an operator (ADR-0009 §2.15).
+  // error, whose path highlights and focuses the field it names. A field
+  // editable says the caller may not change, by the server's policy table,
+  // stays disabled (ADR-0010 §2.7).
   import { tick, untrack, type Snippet } from 'svelte';
   import {
     buildSpec,
@@ -23,7 +23,8 @@
   interface Props {
     initial: Obj;
     creating?: boolean;
-    operator: boolean;
+    // editable says whether the caller may change the setting at a key.
+    editable: (key: string) => boolean;
     saving: boolean;
     // The last failed save's message and the spec path it points at.
     errMessage?: string;
@@ -38,7 +39,7 @@
   let {
     initial,
     creating = false,
-    operator,
+    editable,
     saving,
     errMessage = '',
     errPath = '',
@@ -178,20 +179,20 @@
           </label>
         {/if}
         <label class="field">
-          <span>Review model {#if !operator}<span class="field-hint">({opHint})</span>{/if}</span>
-          <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder="provider/model" disabled={!operator} />
+          <span>Review model {#if !editable('models.review')}<span class="field-hint">({opHint})</span>{/if}</span>
+          <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder="provider/model" disabled={!editable('models.review')} />
         </label>
         <label class="field">
-          <span>Fallback model {#if !operator}<span class="field-hint">({opHint})</span>{/if}</span>
-          <input class="mono" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder="provider/model" disabled={!operator} />
+          <span>Fallback model {#if !editable('models.fallback')}<span class="field-hint">({opHint})</span>{/if}</span>
+          <input class="mono" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder="provider/model" disabled={!editable('models.fallback')} />
         </label>
         <label class="field">
           <span>Filter</span>
           <input class="mono" data-path="filter" aria-invalid={inv('filter') || undefined} bind:value={draft.filter} />
         </label>
         <label class="field">
-          <span>Forks {#if !operator}<span class="field-hint">({opHint})</span>{/if}</span>
-          <select data-path="forks" aria-invalid={inv('forks') || undefined} bind:value={draft.forks} disabled={!operator}>
+          <span>Forks {#if !editable('forks')}<span class="field-hint">({opHint})</span>{/if}</span>
+          <select data-path="forks" aria-invalid={inv('forks') || undefined} bind:value={draft.forks} disabled={!editable('forks')}>
             <option value="">default</option>
             <option value="true">review</option>
             <option value="false">skip</option>
@@ -205,23 +206,23 @@
     </fieldset>
 
     <fieldset>
-      <legend>Limits {#if !operator}<span class="field-hint">({opHint})</span>{/if}</legend>
+      <legend>Limits {#if !editable('limits')}<span class="field-hint">({opHint})</span>{/if}</legend>
       <div class="fields">
         <label class="field">
           <span>Concurrency</span>
-          <input inputmode="numeric" data-path="limits.concurrency" aria-invalid={inv('limits.concurrency') || undefined} bind:value={draft.concurrency} disabled={!operator} />
+          <input inputmode="numeric" data-path="limits.concurrency" aria-invalid={inv('limits.concurrency') || undefined} bind:value={draft.concurrency} disabled={!editable('limits')} />
         </label>
         <label class="field">
           <span>Reviews per day</span>
-          <input inputmode="numeric" data-path="limits.reviewsPerDay" aria-invalid={inv('limits.reviewsPerDay') || undefined} bind:value={draft.reviewsPerDay} disabled={!operator} />
+          <input inputmode="numeric" data-path="limits.reviewsPerDay" aria-invalid={inv('limits.reviewsPerDay') || undefined} bind:value={draft.reviewsPerDay} disabled={!editable('limits')} />
         </label>
         <label class="field">
           <span>Tokens per month</span>
-          <input inputmode="numeric" data-path="limits.tokensPerMonth" aria-invalid={inv('limits.tokensPerMonth') || undefined} bind:value={draft.tokensPerMonth} disabled={!operator} />
+          <input inputmode="numeric" data-path="limits.tokensPerMonth" aria-invalid={inv('limits.tokensPerMonth') || undefined} bind:value={draft.tokensPerMonth} disabled={!editable('limits')} />
         </label>
         <label class="field">
-          <span>Runner (JSON) {#if !operator}<span class="field-hint">({opHint})</span>{/if}</span>
-          <textarea rows="3" data-path="runner" aria-invalid={inv('runner') || undefined} bind:value={draft.runner} disabled={!operator}></textarea>
+          <span>Runner (JSON) {#if !editable('runner')}<span class="field-hint">({opHint})</span>{/if}</span>
+          <textarea rows="3" data-path="runner" aria-invalid={inv('runner') || undefined} bind:value={draft.runner} disabled={!editable('runner')}></textarea>
         </label>
       </div>
     </fieldset>
@@ -247,7 +248,7 @@
         <RepositoryFields
           bind:repo={draft.repositories[i]!}
           index={i}
-          {operator}
+          {editable}
           {inv}
           onremove={() => structural(() => (draft.repositories = draft.repositories.filter((x) => x.key !== repo.key)))}
         />

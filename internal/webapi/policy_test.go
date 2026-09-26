@@ -3,6 +3,9 @@ package webapi
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -273,5 +276,40 @@ func TestLeavesAdmin(t *testing.T) {
 				t.Errorf("leavesNoAdmin = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestDocsListOperatorOnlySettings keeps the settings docs/dashboard.md
+// says only an operator may change in step with the policy table.
+func TestDocsListOperatorOnlySettings(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/dashboard.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(raw)
+	start := strings.Index(doc, "- **Operator**")
+	end := strings.Index(doc[start+1:], "\n- **")
+	if start < 0 || end < 0 {
+		t.Fatal("docs/dashboard.md has no Operator role")
+	}
+	keys := map[string]bool{}
+	var want []string
+	for _, p := range configfile.Policies {
+		top, _, _ := strings.Cut(p.Key, ".")
+		keys[top] = true
+		if !p.TenantAdmin && len(p.Scopes) > 0 && !slices.Contains(want, top) {
+			want = append(want, top)
+		}
+	}
+	var got []string
+	for _, m := range regexp.MustCompile("`([a-zA-Z]+)`").FindAllStringSubmatch(doc[start:start+1+end], -1) {
+		if keys[m[1]] && !slices.Contains(got, m[1]) {
+			got = append(got, m[1])
+		}
+	}
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("docs/dashboard.md lists %v as operator-only, the policy table %v", got, want)
 	}
 }

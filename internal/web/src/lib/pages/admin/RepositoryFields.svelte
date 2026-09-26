@@ -4,14 +4,18 @@
   interface Props {
     repo: RepositoryDraft;
     index: number;
-    operator: boolean;
+    editable: (key: string) => boolean;
     inv: (path: string) => boolean;
     onremove: () => void;
   }
-  let { repo = $bindable(), index, operator, inv, onremove }: Props = $props();
+  let { repo = $bindable(), index, editable, inv, onremove }: Props = $props();
   const p = $derived(`repositories[${index}]`);
   const opHint = 'operator only';
-  const opSet = $derived(!operator && (repo.mode !== '' || repo.agent.trim() !== '' || repo.maxDeltaFiles.trim() !== ''));
+  const opSet = $derived(
+    (!editable('mode') && repo.mode !== '') ||
+      (!editable('agent') && repo.agent.trim() !== '') ||
+      (!editable('incremental') && repo.maxDeltaFiles.trim() !== ''),
+  );
 </script>
 
 <div class="item-card">
@@ -55,20 +59,20 @@
   </div>
   <div class="fields">
     <label class="field">
-      <span>Mode {#if !operator}<span class="field-hint">({opHint})</span>{/if}</span>
-      <select data-path="{p}.mode" aria-invalid={inv(`${p}.mode`) || undefined} bind:value={repo.mode} disabled={!operator}>
+      <span>Mode {#if !editable('mode')}<span class="field-hint">({opHint})</span>{/if}</span>
+      <select data-path="{p}.mode" aria-invalid={inv(`${p}.mode`) || undefined} bind:value={repo.mode} disabled={!editable('mode')}>
         <option value="">default</option>
         <option value="single">single</option>
         <option value="agentic">agentic</option>
       </select>
     </label>
     <label class="field">
-      <span>Incremental: max delta files {#if !operator}<span class="field-hint">({opHint})</span>{/if}</span>
-      <input inputmode="numeric" data-path="{p}.incremental" aria-invalid={inv(`${p}.incremental`) || undefined} bind:value={repo.maxDeltaFiles} disabled={!operator} />
+      <span>Incremental: max delta files {#if !editable('incremental')}<span class="field-hint">({opHint})</span>{/if}</span>
+      <input inputmode="numeric" data-path="{p}.incremental" aria-invalid={inv(`${p}.incremental`) || undefined} bind:value={repo.maxDeltaFiles} disabled={!editable('incremental')} />
     </label>
     <label class="field">
-      <span>Agent (JSON) {#if !operator}<span class="field-hint">({opHint})</span>{/if}</span>
-      <textarea rows="3" data-path="{p}.agent" aria-invalid={inv(`${p}.agent`) || undefined} bind:value={repo.agent} disabled={!operator}></textarea>
+      <span>Agent (JSON) {#if !editable('agent')}<span class="field-hint">({opHint})</span>{/if}</span>
+      <textarea rows="3" data-path="{p}.agent" aria-invalid={inv(`${p}.agent`) || undefined} bind:value={repo.agent} disabled={!editable('agent')}></textarea>
     </label>
   </div>
 </div>

@@ -80,9 +80,9 @@ func (s *Server) getTenantConfig(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := TenantConfig{OperatorOnlyFields: operatorOnlyFields}
+	var out TenantConfig
 	if live != nil && live.Origin() == configfile.OriginFile {
-		out.ManagedBy = configfile.OriginFile
+		out.ManagedBy, out.Policy = configfile.OriginFile, fieldPolicies(p, false)
 		if out.Spec, err = renderFileTenant(live); err != nil {
 			return err
 		}
@@ -102,6 +102,7 @@ func (s *Server) getTenantConfig(w http.ResponseWriter, r *http.Request) error {
 	out.ManagedBy = configfile.OriginDashboard
 	out.Revision = &d.Revision
 	out.Editable = s.keyring != nil && p.CanAdmin(tenantIDFor(slug))
+	out.Policy = fieldPolicies(p, out.Editable)
 	if out.Spec, err = redactSpec(d.Spec); err != nil {
 		return err
 	}

@@ -18,7 +18,7 @@ func init() {
 			SignIn: []auth.ProviderInfo{{Name: "corp", Type: configfile.SignInOIDC, DisplayName: "Corp"}},
 		},
 		"tenant_config": TenantConfig{
-			ManagedBy: configfile.OriginDashboard, Revision: new(int64(3)), Editable: true, OperatorOnlyFields: operatorOnlyFields,
+			ManagedBy: configfile.OriginDashboard, Revision: new(int64(3)), Editable: true, Policy: fieldPolicies(&auth.Principal{}, true),
 			Spec: json.RawMessage(`{"slug":"alpha","installations":[{"name":"alpha-bot","token":{"set":true}}]}`),
 		},
 		"create_tenant_request": CreateTenantRequest{Slug: "alpha", Spec: json.RawMessage(`{"slug":"alpha"}`)},

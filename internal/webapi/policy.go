@@ -1,113 +1,96 @@
 package webapi
 
 import (
-	"reflect"
+	"fmt"
 	"slices"
 	"strconv"
+	"strings"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// operatorOnlyFields are the spec fields only an operator may change on a
-// dashboard tenant (ADR-0009 §2.15): what a review costs, and how much of
-// an untrusted pull request it exposes the instance to, at the tenant and
-// at each repository.
-var operatorOnlyFields = []string{
-	"models", "forks", "runner", "limits", "mode", "agent", "incremental", "allow",
-	"repositories[].models", "repositories[].forks", "repositories[].mode", "repositories[].agent", "repositories[].incremental",
-	"repositories[].allow",
+// fieldPolicies is the policy table as p meets it on a tenant whose
+// configuration it may change (editable) or not: a setting the table
+// keeps for operators is editable only by one.
+func fieldPolicies(p *auth.Principal, editable bool) []FieldPolicy {
+	out := make([]FieldPolicy, len(configfile.Policies))
+	for i, pol := range configfile.Policies {
+		out[i] = FieldPolicy{Policy: pol, Editable: editable && (p.Operator || pol.TenantAdmin)}
+	}
+	return out
 }
 
-// operatorOnlyChange is the path of the first operator-only field that
-// differs between the stored tenant and its replacement, "" when none
-// does. Repositories are matched by installation and name; a removed
-// repository that set any of them changes them too, back to what it
-// inherits.
+// operatorOnlyChange is the key of the first setting the policy table
+// keeps for operators that differs between the stored tenant and its
+// replacement, "" when none does. Repositories are matched by
+// installation and name; a removed repository that set any of them
+// changes them too, back to what it inherits.
 func operatorOnlyChange(prev, next *configfile.Tenant) string {
-	if f := operatorOnlyScope(&prev.Overrides, &next.Overrides); f != "" {
-		return f
-	}
-	if !runnerEqual(prev.Runner, next.Runner) {
-		return "runner"
-	}
-	if !reflect.DeepEqual(prev.Limits, next.Limits) {
-		return "limits"
+	if k := operatorOnlyKey(configfile.ScopeTenant, prev, next); k != "" {
+		return k
 	}
 	key := func(r *configfile.Repository) string { return r.Installation + "\x00" + r.Name }
 	byKey := map[string]*configfile.Repository{}
 	for i := range prev.Repositories {
 		byKey[key(&prev.Repositories[i])] = &prev.Repositories[i]
 	}
-	var zero configfile.Overrides
+	var zero configfile.Repository
 	for i := range next.Repositories {
 		n := &next.Repositories[i]
 		p := &zero
 		if r, ok := byKey[key(n)]; ok {
-			p = &r.Overrides
+			p = r
 		}
 		delete(byKey, key(n))
-		if f := operatorOnlyScope(p, &n.Overrides); f != "" {
-			return "repositories[" + strconv.Itoa(i) + "]." + f
+		if k := operatorOnlyKey(configfile.ScopeRepository, p, n); k != "" {
+			return "repositories[" + strconv.Itoa(i) + "]." + k
 		}
 	}
 	for _, p := range byKey {
-		if operatorOnlyScope(&p.Overrides, &zero) != "" {
+		if operatorOnlyKey(configfile.ScopeRepository, p, &zero) != "" {
 			return "repositories"
 		}
 	}
 	return ""
 }
 
-// operatorOnlyScope is the first operator-only field one scope's overrides
-// set differently in a and b, "" when none.
-func operatorOnlyScope(a, b *configfile.Overrides) string {
-	switch {
-	case !reflect.DeepEqual(a.Models, b.Models):
-		return "models"
-	case !ptrEqual(a.Forks, b.Forks):
-		return "forks"
-	case a.Mode != b.Mode:
-		return "mode"
-	case !agentEqual(a.Agent, b.Agent):
-		return "agent"
-	case !ptrEqual(a.Incremental.MaxDeltaFiles, b.Incremental.MaxDeltaFiles):
-		return "incremental"
-	case !reflect.DeepEqual(a.Allow, b.Allow):
-		return "allow"
+// operatorOnlyKey is the top-level key of the first setting only an
+// operator may write at scope that a and b, that scope's specs, write
+// differently; "" when none.
+func operatorOnlyKey(scope configfile.Scope, a, b any) string {
+	for _, p := range configfile.Policies {
+		if p.TenantAdmin || !slices.Contains(p.Scopes, scope) {
+			continue
+		}
+		va, _ := configfile.SpecValue(a, p.Key)
+		vb, _ := configfile.SpecValue(b, p.Key)
+		if !sameSetting(va, vb) {
+			top, _, _ := strings.Cut(p.Key, ".")
+			return top
+		}
 	}
 	return ""
 }
 
-func runnerEqual(a, b *configfile.Runner) bool {
-	var zero configfile.Runner
-	if a == nil {
-		a = &zero
-	}
-	if b == nil {
-		b = &zero
-	}
-	if a.ActiveDeadlineSeconds != b.ActiveDeadlineSeconds {
-		return false
-	}
-	if len(a.Resources) == 0 && len(b.Resources) == 0 {
-		return true
-	}
-	return reflect.DeepEqual(a.Resources, b.Resources)
+// sameSetting reports whether two scopes write a setting alike, compared
+// as the configuration spells them, where an empty block is no block.
+func sameSetting(a, b any) bool {
+	return settingText(a) == settingText(b)
 }
 
-func agentEqual(a, b configfile.Agent) bool {
-	return ptrEqual(a.MaxSteps, b.MaxSteps) && ptrEqual(a.MaxToolOutputBytes, b.MaxToolOutputBytes) &&
-		ptrEqual(a.MaxTokens, b.MaxTokens) && ptrEqual(a.Timeout, b.Timeout) && ptrEqual(a.CommandTimeout, b.CommandTimeout) &&
-		slices.Equal(a.Commands, b.Commands)
-}
-
-func ptrEqual[T comparable](a, b *T) bool {
-	if a == nil || b == nil {
-		return a == b
+func settingText(v any) string {
+	raw, err := yaml.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("%#v", v)
 	}
-	return *a == *b
+	if s := string(raw); s != "{}\n" {
+		return s
+	}
+	return "null\n"
 }
 
 // leavesNoAdmin reports whether changing an admin's own invite grant to

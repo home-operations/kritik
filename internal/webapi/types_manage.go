@@ -23,13 +23,22 @@ type Meta struct {
 }
 
 // TenantConfig is a tenant's spec as the principal may see it: every
-// secret is {"set": bool}. Revision is null for a file tenant.
+// secret is {"set": bool}. Revision is null for a file tenant. Policy is
+// the policy table as the principal meets it here, for the dashboard to
+// render which settings it may change.
 type TenantConfig struct {
-	ManagedBy          configfile.Origin `json:"managedBy"`
-	Revision           *int64            `json:"revision"`
-	Editable           bool              `json:"editable"`
-	OperatorOnlyFields []string          `json:"operatorOnlyFields"`
-	Spec               json.RawMessage   `json:"spec"`
+	ManagedBy configfile.Origin `json:"managedBy"`
+	Revision  *int64            `json:"revision"`
+	Editable  bool              `json:"editable"`
+	Policy    []FieldPolicy     `json:"policy"`
+	Spec      json.RawMessage   `json:"spec"`
+}
+
+// FieldPolicy is one setting of the policy table, and whether the
+// principal may change it on this tenant.
+type FieldPolicy struct {
+	configfile.Policy
+	Editable bool `json:"editable"`
 }
 
 // CreateTenantRequest creates a dashboard tenant. Spec is a tenant entry

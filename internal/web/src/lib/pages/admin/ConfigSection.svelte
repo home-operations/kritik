@@ -2,8 +2,8 @@
   import { getJSON, sendJSON } from '../../api.svelte';
   import { setLeaveGuard } from '../../router.svelte';
   import { Resource } from '../../resource.svelte';
-  import { describe, errorPath, isCode } from '../../manage';
-  import { MANAGEMENT_OFF, isOperator, management } from '../../session.svelte';
+  import { describe, errorPath, fieldEditable, isCode } from '../../manage';
+  import { MANAGEMENT_OFF, management } from '../../session.svelte';
   import { toast } from '../../toast.svelte';
   import type { TenantConfig, TenantWriteResult } from '../../types';
   import StateView from '../../components/StateView.svelte';
@@ -88,7 +88,7 @@
           {#key epoch}
             <ConfigEditor
               initial={cfg.spec}
-              operator={isOperator()}
+              editable={(key) => fieldEditable(cfg.policy, key)}
               {saving}
               {errMessage}
               {errPath}

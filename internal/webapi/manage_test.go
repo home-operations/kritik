@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritik/internal/auth"
+	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/sealbox"
 )
 
@@ -142,7 +143,8 @@ func TestFileTenantConfigIsRedacted(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &c); err != nil {
 		t.Fatal(err)
 	}
-	if c.ManagedBy != "file" || c.Editable || c.Revision != nil || !slices.Equal(c.OperatorOnlyFields, operatorOnlyFields) {
+	if c.ManagedBy != "file" || c.Editable || c.Revision != nil || len(c.Policy) != len(configfile.Policies) ||
+		slices.ContainsFunc(c.Policy, func(p FieldPolicy) bool { return p.Editable }) {
 		t.Errorf("config = %+v", c)
 	}
 	if body := w.Body.String(); strings.Contains(body, "KRITIK_TEST_TOKEN") || !strings.Contains(body, `"token":{"set":true}`) {
