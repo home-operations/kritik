@@ -31,6 +31,11 @@ instructions, and chooses a few settings within bounds the operator sets:
   prompt (and a follow-up's), capped at 32 KiB joined.
 - `review.requireSuggestedFix: true`: findings must include a suggested
   fix. The file can turn the requirement on, never off.
+- `review.minSeverity`: `nit` or `important`, the least severe finding
+  posted as an inline comment. A `blocking` finding is always posted, and
+  the summary still lists every finding.
+- `review.inlineComments: false`: posts the summary alone, without inline
+  comments.
 - `review.templates.summary` / `review.templates.inline`: paths to Go
   [text/template](https://pkg.go.dev/text/template) templates that replace
   kritik's built-in summary and inline comment templates, with the
@@ -85,6 +90,27 @@ was dropped and what was allowed, and the rest of the file still applies.
 `limits`, `forks`, `runner`, `incremental` and `agent.commandTimeout` are
 never the repository's to choose; a file naming one of them, or any other
 unknown key, does not parse.
+
+## Filter recipes
+
+`filter` is a [CEL](https://cel.dev) expression over `pr`, which has the
+pull request's `number`, `title`, `body`, `author`, `state`, `open`,
+`merged`, `draft`, `fork`, `headRef`, `headSha`, `baseRef`, `url`,
+`createdAt` and `labels` (each with a `name` and a `color`), and `event`,
+what started the review: `opened`, `reopened`, `ready_for_review`,
+`synchronize` (a push), `poll` (a push kritik found without its webhook)
+or `manual` (a re-run from the dashboard).
+
+Some filters, each the whole `filter` value:
+
+- Skip drafts: `!pr.draft`
+- Skip anything labelled `skip-review`:
+  `!pr.labels.exists(l, l.name == "skip-review")`
+- Skip Renovate's pull requests: `!pr.author.startsWith("renovate")`
+- Review only pull requests into `main`: `pr.baseRef == "main"`
+- Skip when the description asks to: `!pr.body.contains("[skip-review]")`
+- Review when a pull request opens or is re-run, not on every push:
+  `pr.event != "synchronize" && pr.event != "poll"`
 
 ## Limits
 

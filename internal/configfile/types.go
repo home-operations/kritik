@@ -467,7 +467,19 @@ type Review struct {
 	Instructions        []string
 	RequireSuggestedFix bool
 	Templates           ReviewTemplates
+	// MinSeverity is the least severe finding posted inline, nit or
+	// important; empty posts every one. A blocking finding is always
+	// posted, and the summary counts every finding.
+	MinSeverity string
+	// InlineComments is false to post the summary alone.
+	InlineComments bool
 }
+
+// Inline severity floors.
+const (
+	SeverityNit       = "nit"
+	SeverityImportant = "important"
+)
 
 // ReviewSpec sets the review block at one scope, field by field: a field
 // written here, even empty, replaces the broader scope's.
@@ -475,6 +487,8 @@ type ReviewSpec struct {
 	Instructions        []string      `yaml:"instructions,omitempty"`
 	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
 	Templates           TemplatesSpec `yaml:"templates,omitempty"`
+	MinSeverity         *string       `yaml:"minSeverity,omitempty"`
+	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
 }
 
 // TemplatesSpec sets the comment templates at one scope; an empty path

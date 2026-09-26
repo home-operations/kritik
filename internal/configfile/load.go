@@ -463,24 +463,40 @@ func (f *File) validateOverrides(where string, r *Overrides) error {
 			return fmt.Errorf("configfile: %s.agent.commands[%d] %q is listed twice", where, i, c)
 		}
 	}
-	for i, p := range r.Review.Instructions {
+	if err := validateReview(where+".review", &r.Review); err != nil {
+		return err
+	}
+	return f.validateAllow(where+".allow", &r.Allow)
+}
+
+// validateReview checks the review block one scope writes: its paths stay
+// inside the repository and its severity floor is one of the two.
+func validateReview(where string, r *ReviewSpec) error {
+	for i, p := range r.Instructions {
 		if err := checkRepoPath(p); err != nil {
-			return fmt.Errorf("configfile: %s.review.instructions[%d]: %w", where, i, err)
+			return fmt.Errorf("configfile: %s.instructions[%d]: %w", where, i, err)
 		}
+	}
+	if m := r.MinSeverity; m != nil && !ValidMinSeverity(*m) {
+		return fmt.Errorf("configfile: %s.minSeverity must be %s or %s, got %q", where, SeverityNit, SeverityImportant, *m)
 	}
 	for _, t := range []struct {
 		name string
 		path *string
-	}{{"summary", r.Review.Templates.Summary}, {"inline", r.Review.Templates.Inline}} {
+	}{{"summary", r.Templates.Summary}, {"inline", r.Templates.Inline}} {
 		if t.path == nil || *t.path == "" {
 			continue
 		}
 		if err := checkRepoPath(*t.path); err != nil {
-			return fmt.Errorf("configfile: %s.review.templates.%s: %w", where, t.name, err)
+			return fmt.Errorf("configfile: %s.templates.%s: %w", where, t.name, err)
 		}
 	}
-	return f.validateAllow(where+".allow", &r.Allow)
+	return nil
 }
+
+// ValidMinSeverity reports whether s is an inline severity floor; empty is
+// none.
+func ValidMinSeverity(s string) bool { return s == "" || s == SeverityNit || s == SeverityImportant }
 
 // checkRepoPath rejects a repository path that is empty, absolute or
 // escapes the repository root.
@@ -668,6 +684,7 @@ func compileFilter(expr string) (*prfilter.Program, error) {
 // present at runtime.
 func SamplePR() map[string]any {
 	return map[string]any{
+		"event":     "opened",
 		"number":    1,
 		"title":     "feat: sample",
 		"author":    "octocat",

@@ -55,6 +55,7 @@ func (f *File) Settings(t *Tenant, installation, repo string) Settings {
 		Mode:        ReviewSingle,
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
+		Review:      Review{InlineComments: true},
 	}
 	s.apply(&f.Defaults.Overrides)
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
@@ -207,6 +208,12 @@ func (r Review) overlay(o ReviewSpec) Review {
 	}
 	if o.Templates.Inline != nil {
 		r.Templates.Inline = *o.Templates.Inline
+	}
+	if o.MinSeverity != nil {
+		r.MinSeverity = *o.MinSeverity
+	}
+	if o.InlineComments != nil {
+		r.InlineComments = *o.InlineComments
 	}
 	return r
 }

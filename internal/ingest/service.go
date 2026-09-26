@@ -97,7 +97,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	case pr.Fork && !settings.Forks:
 		return Outcome{Status: Skipped, Reason: "fork"}, nil
 	case settings.Filter != nil:
-		ok, err := settings.Filter.Eval(pr.FilterVars())
+		ok, err := settings.Filter.Eval(pr.FilterVars(ev.Action))
 		if err != nil {
 			return Outcome{}, fmt.Errorf("ingest: filter: %w", err)
 		}
@@ -106,7 +106,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		}
 	}
 
-	labels, err := json.Marshal(pr.FilterVars()["labels"])
+	labels, err := json.Marshal(pr.LabelVars())
 	if err != nil {
 		return Outcome{}, fmt.Errorf("ingest: encode labels: %w", err)
 	}

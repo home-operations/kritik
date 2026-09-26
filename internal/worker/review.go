@@ -282,7 +282,7 @@ func (w *Review) afterRun(
 			return fmt.Errorf("worker: read context pack: %w", err)
 		}
 		var err error
-		if vars, err = filterVars(ctx, tx, pr.id); err != nil {
+		if vars, err = filterVars(ctx, tx, pr.id, args.Trigger); err != nil {
 			return err
 		}
 		// A manual re-run bypasses this skip: the human asked for it, so an
@@ -347,35 +347,6 @@ func (w *Review) afterRun(
 	}
 	logger.Info("review prepared", "patch_id", short(patchID), "scope", scope, "scope_reason", scopeReason, "delta_paths", len(deltaPaths))
 	return prepared{patchID: patchID, eff: eff, notes: notes, scope: scope}, statusPrepared, nil
-}
-
-// filterVars rebuilds the filter's pr variable from the stored pull request
-// row, the same keys webhook.PullRequest.FilterVars gives ingest.
-func filterVars(ctx context.Context, tx pgx.Tx, prID string) (map[string]any, error) {
-	pr, err := loadFilterPR(ctx, tx, prID)
-	if err != nil {
-		return nil, err
-	}
-	return pr.Vars()
-}
-
-// loadFilterPR reads what the repository filter sees of a pull request.
-func loadFilterPR(ctx context.Context, tx pgx.Tx, prID string) (repoconfig.PullRequest, error) {
-	var (
-		pr       repoconfig.PullRequest
-		openedAt *time.Time
-	)
-	err := tx.QueryRow(ctx, `SELECT number, title, author, state, merged, draft, fork, head_ref, head_sha, base_ref, url, body,
-		opened_at, labels FROM pull_requests WHERE id = $1`, prID).
-		Scan(&pr.Number, &pr.Title, &pr.Author, &pr.State, &pr.Merged, &pr.Draft, &pr.Fork, &pr.HeadRef, &pr.HeadSHA, &pr.BaseRef,
-			&pr.URL, &pr.Body, &openedAt, &pr.Labels)
-	if err != nil {
-		return repoconfig.PullRequest{}, fmt.Errorf("worker: read pull request for the filter: %w", err)
-	}
-	if openedAt != nil {
-		pr.CreatedAt = *openedAt
-	}
-	return pr, nil
 }
 
 // loadPullRequest reads a job's pull request. One the store does not know

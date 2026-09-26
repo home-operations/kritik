@@ -94,13 +94,11 @@ type Label struct {
 	Color string
 }
 
-// FilterVars is the map the CEL filter evaluates against.
-func (p *PullRequest) FilterVars() map[string]any {
-	labels := make([]any, len(p.Labels))
-	for i, l := range p.Labels {
-		labels[i] = map[string]any{"name": l.Name, "color": l.Color}
-	}
+// FilterVars is the map the CEL filter evaluates against, for a review
+// the event (the pull request action) starts.
+func (p *PullRequest) FilterVars(event string) map[string]any {
 	return map[string]any{
+		"event":     event,
 		"number":    p.Number,
 		"title":     p.Title,
 		"author":    p.Author,
@@ -115,8 +113,17 @@ func (p *PullRequest) FilterVars() map[string]any {
 		"url":       p.URL,
 		"body":      p.Body,
 		"createdAt": p.CreatedAt,
-		"labels":    labels,
+		"labels":    p.LabelVars(),
 	}
+}
+
+// LabelVars is the pull request's labels as a filter sees them.
+func (p *PullRequest) LabelVars() []any {
+	labels := make([]any, len(p.Labels))
+	for i, l := range p.Labels {
+		labels[i] = map[string]any{"name": l.Name, "color": l.Color}
+	}
+	return labels
 }
 
 // Comment is a comment on a pull request: a top-level conversation comment

@@ -56,6 +56,8 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
         enabled: false
       - name: onedr0p/settle
         settle: 60s
+      - name: onedr0p/opened-only
+        filter: 'pr.event == "opened"'
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -132,17 +134,19 @@ func TestDispatchPullRequest(t *testing.T) {
 		fork.HeadSHA = "ddd"
 		tests := []struct {
 			name   string
+			action string
 			repo   string
 			pr     *webhook.PullRequest
 			reason string
 		}{
-			{"draft filtered", "onedr0p/home-ops", &draft, "filter"},
-			{"fork off by default", "onedr0p/home-ops", &fork, "fork"},
-			{"disabled repository", "onedr0p/disabled", pr, "disabled"},
+			{"draft filtered", "opened", "onedr0p/home-ops", &draft, "filter"},
+			{"fork off by default", "opened", "onedr0p/home-ops", &fork, "fork"},
+			{"disabled repository", "opened", "onedr0p/disabled", pr, "disabled"},
+			{"filtered on the event", "synchronize", "onedr0p/opened-only", pr, "filter"},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo(tt.repo), PullRequest: tt.pr}))
+				out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: tt.action, Repository: repo(tt.repo), PullRequest: tt.pr}))
 				if err != nil || out.Status != Skipped || out.Reason != tt.reason {
 					t.Fatalf("out = %+v, %v; want skipped %s", out, err, tt.reason)
 				}

@@ -356,9 +356,9 @@ func reviewNotes(omitted []string, dropped []review.Dropped) []string {
 // inline review, and the commit status. Only the sticky comment is
 // required: the other two are best effort and logged when they fail, so a
 // forge quirk cannot turn a finished review into a retry storm. A finding
-// the last review already posted inline is listed in the summary only.
-// The returned flags say, per finding, whether an inline comment for it is
-// on the forge.
+// the last review already posted inline, or one the settings keep out of
+// inline comments, is listed in the summary only. The returned flags say,
+// per finding, whether an inline comment for it is on the forge.
 func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, []bool, error) {
 	owner, repo, _ := strings.Cut(p.pr.repository, "/")
 	onForge := alreadyInline(res.Findings, p.prior.findings)
@@ -377,8 +377,9 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	// template that times out costs one deadline, not one per finding.
 	templates := p.templates
 	inline := make([]forge.InlineComment, 0, len(res.Findings))
+	var posted []int
 	for i, f := range res.Findings {
-		if onForge[i] {
+		if onForge[i] || !p.postsInline(f) {
 			continue
 		}
 		body, inlineNotes := review.RenderInline(ctx, templates, f)
@@ -391,6 +392,7 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 			c.StartLine, c.Line = f.Line, f.EndLine
 		}
 		inline = append(inline, c)
+		posted = append(posted, i)
 	}
 	var sources []string
 	if p.agent != nil {
@@ -412,7 +414,7 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	if err := p.client.CreateReview(ctx, owner, repo, p.pr.number, p.pr.headSHA, inline); err != nil {
 		p.logger.Warn("inline review not posted", "error", err)
 	} else {
-		for i := range onForge {
+		for _, i := range posted {
 			onForge[i] = true
 		}
 	}
@@ -424,6 +426,20 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 		p.logger.Warn("commit status not set", "error", err)
 	}
 	return commentID, onForge, nil
+}
+
+// postsInline reports whether the review's settings post f as an inline
+// comment: none when inline comments are off, and otherwise a blocking
+// finding and any at or above the severity floor.
+func (p *publishPhase) postsInline(f review.Finding) bool {
+	r := p.settings.Review
+	switch {
+	case !r.InlineComments:
+		return false
+	case r.MinSeverity == "" || f.Severity == review.SeverityBlocking:
+		return true
+	}
+	return f.Severity.Rank() <= review.Severity(r.MinSeverity).Rank()
 }
 
 // replacementAsText folds a replacement into the suggested fix as a code
