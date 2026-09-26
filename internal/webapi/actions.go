@@ -15,7 +15,8 @@ import (
 // together.
 type Actions interface {
 	// Rerun queues a manual review of the pull request's current head,
-	// ErrNoHead when none is known.
+	// ErrNoHead when none is known, ErrRerunQueued when one is already
+	// queued or running.
 	Rerun(ctx context.Context, tx pgx.Tx, tenantID, repositoryID string, number int) (int64, error)
 	// Cancel asks a running review to stop, recording by as the account
 	// that asked; ErrNotCancelable when it is not running.
@@ -29,6 +30,9 @@ type Actions interface {
 var (
 	ErrNoHead        = errors.New("webapi: the pull request has no known head to review")
 	ErrNotCancelable = errors.New("webapi: the review is not running")
+	// ErrRerunQueued is returned by Rerun when a review of the pull
+	// request's current head is already queued or running.
+	ErrRerunQueued = errors.New("webapi: a review of this head is already queued or running")
 	// ErrRepositoryNotFound is returned by Reindex when repositoryID no
 	// longer exists; findRepo already resolves it in the same
 	// transaction, so this is defense in depth rather than an expected path.
@@ -64,10 +68,12 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *tenantScope) e
 			return err
 		}
 		job, err = s.actions.Rerun(ctx, tx, tid, p.RepositoryID, p.Number)
-		if errors.Is(err, ErrNoHead) {
+		switch {
+		case errors.Is(err, ErrNoHead):
 			return errStatus(http.StatusConflict, CodeNoHead, "the pull request has no known head to review", nil)
-		}
-		if err != nil {
+		case errors.Is(err, ErrRerunQueued):
+			return errStatus(http.StatusConflict, CodeAlreadyQueued, "a review of this head is already queued or running", nil)
+		case err != nil:
 			return err
 		}
 		target := p.Repository + "#" + strconv.Itoa(p.Number)

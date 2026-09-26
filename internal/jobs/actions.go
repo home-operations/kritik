@@ -25,6 +25,11 @@ var ErrNoHead = errors.New("jobs: pull request has no head to re-review")
 // River job it started as, or reviewID/by is not a well-formed UUID.
 var ErrNotCancelable = errors.New("jobs: review is not in a cancelable state")
 
+// ErrRerunQueued is returned by EnqueueRerun when the pull request's
+// current head is already being reviewed, or a review job for it is queued:
+// a second run would pay the model twice and publish its findings twice.
+var ErrRerunQueued = errors.New("jobs: a review of this head is already queued or running")
+
 // ErrRepositoryNotFound is returned by EnqueueReindex when repositoryID does
 // not exist in tenantID.
 var ErrRepositoryNotFound = errors.New("jobs: repository not found")
@@ -36,9 +41,11 @@ var ErrReindexQueued = errors.New("jobs: reindex already queued")
 
 // EnqueueRerun re-queues a review of number's current head, the way a human
 // asks kritik to look again. It gives the job a fresh, random Request value
-// so it always inserts even when a review of the same head is already
-// queued, running, or completed, bypassing the push-triggered dedup that
-// keys on tenant+repository+number+head alone.
+// so it inserts even when a review of the same head already completed,
+// bypassing the push-triggered dedup that keys on
+// tenant+repository+number+head alone; while a review of that head is
+// running or prepared, or a review job for it has yet to finish, it is
+// ErrRerunQueued instead.
 func EnqueueRerun(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], tenantID, repositoryID string, number int,
 ) (int64, error) {
@@ -51,6 +58,23 @@ func EnqueueRerun(
 	}
 	if err != nil {
 		return 0, fmt.Errorf("jobs: look up pull request head: %w", err)
+	}
+	var busy bool
+	err = tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
+			WHERE p.tenant_id = $1::text::uuid AND p.repository_id = $2::text::uuid AND p.number = $3 AND r.head_sha = $4
+				AND r.status IN ('running', 'prepared'))
+		OR EXISTS (
+			SELECT 1 FROM river_job
+			WHERE kind = $5 AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled')
+				AND args->>'tenant_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
+				AND args->>'head_sha' = $4)`,
+		tenantID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&busy)
+	if err != nil {
+		return 0, fmt.Errorf("jobs: look up running reviews: %w", err)
+	}
+	if busy {
+		return 0, ErrRerunQueued
 	}
 	res, err := c.InsertTx(ctx, tx, ReviewArgs{
 		TenantID: tenantID, RepositoryID: repositoryID, Number: number, HeadSHA: headSHA,

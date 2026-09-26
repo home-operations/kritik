@@ -18,8 +18,11 @@ type JobActions struct {
 // Rerun implements Actions.
 func (a JobActions) Rerun(ctx context.Context, tx pgx.Tx, tenantID, repositoryID string, number int) (int64, error) {
 	id, err := jobs.EnqueueRerun(ctx, tx, a.Queue, tenantID, repositoryID, number)
-	if errors.Is(err, jobs.ErrNoHead) {
+	switch {
+	case errors.Is(err, jobs.ErrNoHead):
 		return 0, ErrNoHead
+	case errors.Is(err, jobs.ErrRerunQueued):
+		return 0, ErrRerunQueued
 	}
 	return id, err
 }

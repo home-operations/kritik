@@ -207,6 +207,7 @@ func TestActionsJobs(t *testing.T) {
 	e := newActionsEnv(t)
 
 	t.Run("rerun enqueues a review job", func(t *testing.T) { testRerunJob(t, e) })
+	t.Run("rerun refuses while that head is queued or running", func(t *testing.T) { testRerunDedupes(t, e) })
 	t.Run("cancel of a non-running review is 409", func(t *testing.T) { testCancelNotCancelable(t, e) })
 	t.Run("cancel stops a running review's job", func(t *testing.T) { testCancelRunning(t, e) })
 	t.Run("reindex enqueues a full index job, then dedupes", func(t *testing.T) { testReindexJob(t, e) })
@@ -234,6 +235,28 @@ func testRerunJob(t *testing.T, e *actionsEnv) {
 	if n := e.audits(AuditReviewRerun, "aj/one#11"); n != 1 {
 		t.Errorf("review.rerun audit rows = %d, want 1", n)
 	}
+}
+
+func testRerunDedupes(t *testing.T, e *actionsEnv) {
+	const path = "/api/v1/tenants/aj-tenant/pulls/aj/one/11/rerun"
+	status, body := e.do(path)
+	e.expect(status, body, http.StatusConflict, CodeAlreadyQueued)
+
+	e.scalar(`UPDATE river_job SET state = 'completed', finalized_at = now()
+		WHERE kind = 'review' AND args->>'repository_id' = $1 RETURNING 'done'`, e.repoID)
+	review := e.scalar(`INSERT INTO reviews (tenant_id, pull_request_id, head_sha, status)
+		VALUES ($1, $2, 'headA', 'running') RETURNING id::text`, e.tenantID, e.prID)
+	status, body = e.do(path)
+	e.expect(status, body, http.StatusConflict, CodeAlreadyQueued)
+
+	e.scalar(`UPDATE reviews SET status = 'completed' WHERE id = $1 RETURNING 'done'`, review)
+	status, body = e.do(path)
+	e.expect(status, body, http.StatusAccepted, "")
+	if n := e.audits(AuditReviewRerun, "aj/one#11"); n != 2 {
+		t.Errorf("review.rerun audit rows = %d, want 2: refused re-runs are not audited", n)
+	}
+	e.scalar(`UPDATE river_job SET state = 'completed', finalized_at = now()
+		WHERE kind = 'review' AND args->>'repository_id' = $1 AND finalized_at IS NULL RETURNING 'done'`, e.repoID)
 }
 
 func testCancelNotCancelable(t *testing.T, e *actionsEnv) {
