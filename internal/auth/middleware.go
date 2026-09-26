@@ -70,7 +70,7 @@ func PrincipalFrom(ctx context.Context) *Principal {
 // or issuer.
 func (h *Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie(CookieName)
+		c, err := r.Cookie(SessionCookieName(h.webURL))
 		if err != nil || c.Value == "" {
 			next.ServeHTTP(w, r)
 			return

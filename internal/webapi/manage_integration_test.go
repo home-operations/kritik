@@ -206,7 +206,7 @@ func (e *manageEnv) signIn(name, subject string, grants []store.Grant) {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.cookie[name] = &http.Cookie{Name: auth.CookieName, Value: token}
+	e.cookie[name] = &http.Cookie{Name: auth.SessionCookieName(&url.URL{Scheme: "https", Host: "kritik.example"}), Value: token}
 	e.account[name] = acct.ID
 }
 

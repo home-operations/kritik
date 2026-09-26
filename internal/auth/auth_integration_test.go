@@ -170,7 +170,7 @@ func (e *authEnv) startLogin(provider, returnTo string) login {
 	}
 	l := login{loc: mustParseURL(e.t, w.Header().Get("Location"))}
 	for _, c := range w.Result().Cookies() {
-		if c.Name == loginCookieName {
+		if c.Name == loginCookieName(e.h.webURL) {
 			l.cookie = c
 		}
 	}
@@ -190,7 +190,7 @@ func (e *authEnv) callback(provider string, q url.Values, cookies ...*http.Cooki
 	w := e.do(r)
 	cleared := false
 	for _, c := range w.Result().Cookies() {
-		cleared = cleared || (c.Name == loginCookieName && c.MaxAge < 0)
+		cleared = cleared || (c.Name == loginCookieName(e.h.webURL) && c.MaxAge < 0)
 	}
 	if !cleared {
 		e.t.Fatalf("callback (status %d) did not clear the login cookie", w.Code)
@@ -219,7 +219,7 @@ func (e *authEnv) mustSignIn(provider string, fake *fakeOAuth, user *fakeUser, c
 		e.t.Fatalf("sign in %s as %s: status %d body %s", provider, user.Login, w.Code, w.Body.String())
 	}
 	for _, c := range w.Result().Cookies() {
-		if c.Name == CookieName && c.Value != "" {
+		if c.Name == SessionCookieName(e.h.webURL) && c.Value != "" {
 			return c
 		}
 	}
@@ -275,7 +275,7 @@ func assertFailed(t *testing.T, w *httptest.ResponseRecorder, status int, code s
 		t.Fatalf("status %d body %s; want %d with code %s", w.Code, w.Body.String(), status, code)
 	}
 	for _, c := range w.Result().Cookies() {
-		if c.Name == CookieName {
+		if strings.HasSuffix(c.Name, sessionCookieBase) {
 			t.Fatalf("failed sign-in set a session cookie: %+v", c)
 		}
 	}
@@ -291,7 +291,7 @@ func TestOIDCSignIn(t *testing.T) {
 	}
 	var cookie *http.Cookie
 	for _, c := range w.Result().Cookies() {
-		if c.Name == CookieName {
+		if c.Name == SessionCookieName(e.h.webURL) {
 			cookie = c
 		}
 	}
@@ -322,7 +322,7 @@ func TestOIDCSignIn(t *testing.T) {
 		code := e.oidc.authorize(l.loc.String(), alice, "")
 		q := url.Values{"code": {code}, "state": {l.state()}}
 		assertFailed(t, e.callback("corp", q), http.StatusBadRequest, "invalid_state")
-		assertFailed(t, e.callback("corp", q, &http.Cookie{Name: loginCookieName, Value: "attacker-browser"}), http.StatusBadRequest, "invalid_state")
+		assertFailed(t, e.callback("corp", q, &http.Cookie{Name: loginCookieName(e.h.webURL), Value: "attacker-browser"}), http.StatusBadRequest, "invalid_state")
 		// Neither attempt burned the state: the browser that started the
 		// sign-in can still finish it.
 		if w := e.callback("corp", q, l.cookie); w.Code != http.StatusFound {
@@ -522,7 +522,7 @@ func TestSessionLifecycle(t *testing.T) {
 		}
 	})
 	t.Run("unknown cookie", func(t *testing.T) {
-		if p := e.principal(&http.Cookie{Name: CookieName, Value: "bogus"}); p != nil {
+		if p := e.principal(&http.Cookie{Name: SessionCookieName(e.h.webURL), Value: "bogus"}); p != nil {
 			t.Fatalf("principal = %+v", p)
 		}
 	})
@@ -538,7 +538,7 @@ func TestSessionLifecycle(t *testing.T) {
 		}
 		cleared := false
 		for _, c := range w.Result().Cookies() {
-			cleared = cleared || (c.Name == CookieName && c.MaxAge < 0)
+			cleared = cleared || (c.Name == SessionCookieName(e.h.webURL) && c.MaxAge < 0)
 		}
 		if !cleared || e.principal(other) != nil {
 			t.Fatalf("logout left the session usable (cleared cookie %v)", cleared)

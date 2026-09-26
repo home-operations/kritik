@@ -26,13 +26,14 @@ const (
 	schemeHTTPS = "https"
 )
 
-// CookieName is the dashboard session cookie.
-const CookieName = "kritik_session"
+// sessionCookieBase is the dashboard session cookie's name before its
+// prefix; SessionCookieName is the name a browser sees.
+const sessionCookieBase = "kritik_session"
 
-// loginCookieName binds an in-flight sign-in to the browser that started
-// it, so a callback URL carried into another browser cannot sign that
-// browser in as someone else (login CSRF).
-const loginCookieName = "kritik_login"
+// loginCookieBase names the cookie binding an in-flight sign-in to the
+// browser that started it, so a callback URL carried into another browser
+// cannot sign that browser in as someone else (login CSRF).
+const loginCookieBase = "kritik_login"
 
 // defaultHTTPTimeout bounds each call to a sign-in provider.
 const defaultHTTPTimeout = 15 * time.Second
@@ -178,7 +179,7 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	// Whatever happens, this sign-in attempt is over for the browser.
 	http.SetCookie(w, clearedLoginCookie(h.webURL))
 	var browser string
-	if c, err := r.Cookie(loginCookieName); err == nil {
+	if c, err := r.Cookie(loginCookieName(h.webURL)); err == nil {
 		browser = c.Value
 	}
 	if browser == "" {
@@ -219,7 +220,7 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, http.StatusBadGateway, codeMembershipFailed, err)
 		return
 	}
-	if c, err := r.Cookie(CookieName); err == nil && c.Value != "" {
+	if c, err := r.Cookie(SessionCookieName(h.webURL)); err == nil && c.Value != "" {
 		if err := h.store.DeleteSession(ctx, c.Value); err != nil {
 			h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
 			return
@@ -265,7 +266,7 @@ func (h *Handler) startSession(r *http.Request, id Identity, grants []Grant, ttl
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(CookieName); err == nil && c.Value != "" {
+	if c, err := r.Cookie(SessionCookieName(h.webURL)); err == nil && c.Value != "" {
 		if err := h.store.DeleteSession(r.Context(), c.Value); err != nil {
 			h.logger.ErrorContext(r.Context(), "auth: sign out", "error", err)
 			writeJSON(w, http.StatusInternalServerError, errorBody{Code: codeInternal})
@@ -315,10 +316,38 @@ func cookiePath(webURL *url.URL) string {
 	return "/"
 }
 
-// loginCookiePath limits the login cookie to the callback routes.
+// loginCookiePath limits the login cookie to the callback routes, except
+// under __Host-, which requires Path=/.
 func loginCookiePath(webURL *url.URL) string {
+	if cookiePrefix(webURL) == hostPrefix {
+		return "/"
+	}
 	return strings.TrimSuffix(cookiePath(webURL), "/") + "/auth/callback"
 }
+
+const hostPrefix = "__Host-"
+
+// cookiePrefix is the prefix on every auth cookie's name. Over https at the
+// root it is __Host-: the browser then accepts the cookie only from this
+// exact host, Secure, with no Domain and Path=/, so a sibling subdomain
+// cannot plant a session or login cookie of its own. Under a path only
+// __Secure- is possible; over plain http, none.
+func cookiePrefix(webURL *url.URL) string {
+	switch {
+	case webURL.Scheme == schemeHTTP:
+		return ""
+	case cookiePath(webURL) == "/":
+		return hostPrefix
+	default:
+		return "__Secure-"
+	}
+}
+
+// SessionCookieName is the name of the dashboard session cookie served for
+// webURL.
+func SessionCookieName(webURL *url.URL) string { return cookiePrefix(webURL) + sessionCookieBase }
+
+func loginCookieName(webURL *url.URL) string { return cookiePrefix(webURL) + loginCookieBase }
 
 // newCookie is a cookie with the attributes every auth cookie shares:
 // HttpOnly, SameSite=Lax, and Secure unless the dashboard is served over
@@ -331,25 +360,25 @@ func newCookie(webURL *url.URL, name, value, path string) *http.Cookie {
 }
 
 func sessionCookie(webURL *url.URL, token string, expires time.Time) *http.Cookie {
-	c := newCookie(webURL, CookieName, token, cookiePath(webURL))
+	c := newCookie(webURL, SessionCookieName(webURL), token, cookiePath(webURL))
 	c.Expires = expires
 	return c
 }
 
 func clearedCookie(webURL *url.URL) *http.Cookie {
-	c := newCookie(webURL, CookieName, "", cookiePath(webURL))
+	c := newCookie(webURL, SessionCookieName(webURL), "", cookiePath(webURL))
 	c.MaxAge = -1
 	return c
 }
 
 func loginCookie(webURL *url.URL, value string) *http.Cookie {
-	c := newCookie(webURL, loginCookieName, value, loginCookiePath(webURL))
+	c := newCookie(webURL, loginCookieName(webURL), value, loginCookiePath(webURL))
 	c.MaxAge = int(store.LoginStateTTL / time.Second)
 	return c
 }
 
 func clearedLoginCookie(webURL *url.URL) *http.Cookie {
-	c := newCookie(webURL, loginCookieName, "", loginCookiePath(webURL))
+	c := newCookie(webURL, loginCookieName(webURL), "", loginCookiePath(webURL))
 	c.MaxAge = -1
 	return c
 }

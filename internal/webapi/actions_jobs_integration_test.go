@@ -140,7 +140,7 @@ func (e *actionsEnv) signIn(name, subject string, grants []store.Grant) {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.cookie = &http.Cookie{Name: auth.CookieName, Value: token}
+	e.cookie = &http.Cookie{Name: auth.SessionCookieName(&url.URL{Scheme: "https", Host: "kritik.example"}), Value: token}
 }
 
 func (e *actionsEnv) do(path string) (int, []byte) {

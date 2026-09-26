@@ -260,7 +260,7 @@ func (e *apiEnv) signIn(name, subject string, grants []store.Grant) {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.cookie[name] = &http.Cookie{Name: auth.CookieName, Value: token}
+	e.cookie[name] = &http.Cookie{Name: auth.SessionCookieName(&url.URL{Scheme: "https", Host: "kritik.example"}), Value: token}
 }
 
 func (e *apiEnv) get(ctx context.Context, who, path string) (*http.Response, error) {

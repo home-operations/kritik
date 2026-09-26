@@ -38,34 +38,40 @@ func TestReturnTo(t *testing.T) {
 
 func TestSessionCookie(t *testing.T) {
 	expires := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	// __Host- (https at the root) binds a cookie to this host alone, with
+	// Path=/, so a sibling subdomain can neither set nor shadow it; under a
+	// path only __Secure- is possible.
 	tests := []struct {
-		web, path, loginPath string
-		secure               bool
+		web, path, loginPath, session, login string
+		secure                               bool
 	}{
-		{"https://kritik.example.com", "/", "/auth/callback", true},
-		{"https://kritik.example.com/", "/", "/auth/callback", true},
-		{"https://example.com/kritik/", "/kritik", "/kritik/auth/callback", true},
-		{"http://localhost:8080", "/", "/auth/callback", false},
-		{"http://localhost:8080/dash", "/dash", "/dash/auth/callback", false},
+		{"https://kritik.example.com", "/", "/", "__Host-kritik_session", "__Host-kritik_login", true},
+		{"https://kritik.example.com/", "/", "/", "__Host-kritik_session", "__Host-kritik_login", true},
+		{"https://example.com/kritik/", "/kritik", "/kritik/auth/callback", "__Secure-kritik_session", "__Secure-kritik_login", true},
+		{"http://localhost:8080", "/", "/auth/callback", "kritik_session", "kritik_login", false},
+		{"http://localhost:8080/dash", "/dash", "/dash/auth/callback", "kritik_session", "kritik_login", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.web, func(t *testing.T) {
 			u, _ := url.Parse(tt.web)
+			if got := SessionCookieName(u); got != tt.session {
+				t.Fatalf("SessionCookieName = %q, want %q", got, tt.session)
+			}
 			c := sessionCookie(u, "tok", expires)
-			if c.Name != CookieName || c.Value != "tok" || c.Path != tt.path || c.Secure != tt.secure ||
+			if c.Name != tt.session || c.Value != "tok" || c.Path != tt.path || c.Secure != tt.secure || c.Domain != "" ||
 				!c.HttpOnly || c.SameSite != http.SameSiteLaxMode || !c.Expires.Equal(expires) {
 				t.Fatalf("cookie = %+v", c)
 			}
 			gone := clearedCookie(u)
-			if gone.Name != CookieName || gone.Value != "" || gone.MaxAge >= 0 || gone.Path != tt.path || gone.Secure != tt.secure || !gone.HttpOnly {
+			if gone.Name != tt.session || gone.Value != "" || gone.MaxAge >= 0 || gone.Path != tt.path || gone.Secure != tt.secure || !gone.HttpOnly {
 				t.Fatalf("cleared cookie = %+v", gone)
 			}
 			lc := loginCookie(u, "browser")
-			if lc.Name != "kritik_login" || lc.Value != "browser" || lc.Path != tt.loginPath || lc.Secure != tt.secure ||
+			if lc.Name != tt.login || lc.Value != "browser" || lc.Path != tt.loginPath || lc.Secure != tt.secure ||
 				!lc.HttpOnly || lc.SameSite != http.SameSiteLaxMode || lc.MaxAge != 600 {
 				t.Fatalf("login cookie = %+v", lc)
 			}
-			if lg := clearedLoginCookie(u); lg.Name != "kritik_login" || lg.MaxAge >= 0 || lg.Path != tt.loginPath {
+			if lg := clearedLoginCookie(u); lg.Name != tt.login || lg.MaxAge >= 0 || lg.Path != tt.loginPath {
 				t.Fatalf("cleared login cookie = %+v", lg)
 			}
 		})
