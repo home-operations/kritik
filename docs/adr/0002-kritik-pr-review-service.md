@@ -8,8 +8,10 @@
   protocol), [ADR-0004](0004-model-gateway.md) (the worker as model
   gateway; no provider key in a runner pod),
   [ADR-0007](0007-vectorchord.md) (the vector index is VectorChord's
-  `vchordrq`, replacing the pgvector HNSW of §2.8 and §2.9) and
-  [ADR-0009](0009-web-dashboard.md) (the v2 dashboard of §2.17, built).
+  `vchordrq`, replacing the pgvector HNSW of §2.8 and §2.9),
+  [ADR-0009](0009-web-dashboard.md) (the v2 dashboard of §2.17, built) and
+  [ADR-0010](0010-configuration-layers.md) (the configuration layers and
+  their precedence, replacing §2.6's two sources).
 - **Authors:** perfectra1n (this ADR, as published at
   [gist 6a67dd03](https://gist.github.com/perfectra1n/6a67dd0362ea9d7afd24a4e917028581));
   rebased onto ADR-0001's final revision by onedr0p. The rebase adds the
