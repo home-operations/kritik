@@ -334,6 +334,38 @@ func TestUICaching(t *testing.T) {
 	}
 }
 
+func TestUIServesFilesOnly(t *testing.T) {
+	for _, web := range []string{"https://kritik.example", "https://example.com/kritik/"} {
+		ts := newTestServer(t, web)
+		base := strings.TrimSuffix(ts.srv.basePath, "/")
+		tests := []struct {
+			name, path string
+			status     int
+		}{
+			{"the root serves index.html", base + "/", http.StatusOK},
+			{"a file", base + "/assets/app-1.js", http.StatusOK},
+			{"a directory is not listed", base + "/assets/", http.StatusNotFound},
+			{"nor redirected to its listing", base + "/assets", http.StatusNotFound},
+		}
+		for _, tt := range tests {
+			t.Run(web+" "+tt.name, func(t *testing.T) {
+				if w := ts.as(nil, httptest.NewRequest("GET", tt.path, nil)); w.Code != tt.status {
+					t.Errorf("GET %s = %d, want %d: %s", tt.path, w.Code, tt.status, w.Body)
+				}
+			})
+		}
+		// The test server's auth has no store: resolving the cookie would fail
+		// the request, so an asset served with one never looked it up.
+		t.Run(web+" an asset skips the session lookup", func(t *testing.T) {
+			r := httptest.NewRequest("GET", base+"/assets/app-1.css", nil)
+			r.AddCookie(&http.Cookie{Name: auth.SessionCookieName(ts.srv.webURL), Value: "tok"})
+			if w := ts.as(nil, r); w.Code != http.StatusOK {
+				t.Errorf("asset with a session cookie = %d, want 200", w.Code)
+			}
+		})
+	}
+}
+
 func TestBasePath(t *testing.T) {
 	ts := newTestServer(t, "https://example.com/kritik/")
 	p := &auth.Principal{Operator: true}

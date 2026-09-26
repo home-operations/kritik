@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -106,7 +107,17 @@ func (s *Server) Handler() http.Handler {
 		outer.Handle(p+"/", http.StripPrefix(p, h))
 		h = outer
 	}
-	return s.accessLog(s.recoverer(securityHeaders(s.auth.Authenticate(h))))
+	authed := s.auth.Authenticate(h)
+	assets := s.basePath + "/assets/"
+	// A fingerprinted asset is the same for everyone; resolving the session
+	// cookie every one of them carries would only cost database round trips.
+	return s.accessLog(s.recoverer(securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, assets) {
+			h.ServeHTTP(w, r)
+			return
+		}
+		authed.ServeHTTP(w, r)
+	}))))
 }
 
 // routes splits the API, the sign-in routes and the UI by prefix by hand:
@@ -173,6 +184,10 @@ func (s *Server) uiHandler() http.Handler {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if isBareDir(s.ui, r.URL.Path) {
+			http.NotFound(w, r)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
@@ -180,6 +195,21 @@ func (s *Server) uiHandler() http.Handler {
 		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+// isBareDir reports whether urlPath names a directory of ui with no
+// index.html, which http.FileServerFS would otherwise list.
+func isBareDir(ui fs.FS, urlPath string) bool {
+	name := strings.TrimPrefix(path.Clean("/"+urlPath), "/")
+	if name == "" {
+		name = "."
+	}
+	st, err := fs.Stat(ui, name)
+	if err != nil || !st.IsDir() {
+		return false
+	}
+	_, err = fs.Stat(ui, path.Join(name, "index.html"))
+	return err != nil
 }
 
 // contentSecurityPolicy allows only the dashboard's own scripts, styles
