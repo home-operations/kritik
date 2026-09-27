@@ -333,6 +333,120 @@ func (c *Client) SetStatus(ctx context.Context, owner, repo, sha string, state f
 	return nil
 }
 
+// Issue implements forge.Client.
+func (c *Client) Issue(ctx context.Context, owner, repo string, number int) (forge.Issue, error) {
+	iss, _, err := c.api.Issues.Get(ctx, owner, repo, number)
+	if err != nil {
+		return forge.Issue{}, fmt.Errorf("github: issue %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return issueFrom(iss), nil
+}
+
+// RepoLabels implements forge.Client.
+func (c *Client) RepoLabels(ctx context.Context, owner, repo string) ([]string, error) {
+	var out []string
+	for l, err := range c.api.Issues.ListLabelsIter(ctx, owner, repo, &gh.ListOptions{PerPage: 100}) {
+		if err != nil {
+			return nil, fmt.Errorf("github: list labels of %s/%s: %w", owner, repo, err)
+		}
+		out = append(out, l.GetName())
+	}
+	return out, nil
+}
+
+// AddLabels implements forge.Client.
+func (c *Client) AddLabels(ctx context.Context, owner, repo string, number int, labels []string) error {
+	if len(labels) == 0 {
+		return nil
+	}
+	if _, _, err := c.api.Issues.AddLabelsToIssue(ctx, owner, repo, number, labels); err != nil {
+		return fmt.Errorf("github: add labels to %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return nil
+}
+
+// RemoveLabel implements forge.Client. A label not currently applied is not
+// an error.
+func (c *Client) RemoveLabel(ctx context.Context, owner, repo string, number int, label string) error {
+	resp, err := c.api.Issues.RemoveLabelForIssue(ctx, owner, repo, number, label)
+	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("github: remove label %q from %s/%s#%d: %w", label, owner, repo, number, err)
+	}
+	return nil
+}
+
+// SetState implements forge.Client.
+func (c *Client) SetState(ctx context.Context, owner, repo string, number int, open bool) error {
+	state := "closed"
+	if open {
+		state = "open"
+	}
+	if _, _, err := c.api.Issues.Update(ctx, owner, repo, number, gh.UpdateIssueRequest{State: new(state)}); err != nil {
+		return fmt.Errorf("github: set state of %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return nil
+}
+
+// AddAssignees implements forge.Client.
+func (c *Client) AddAssignees(ctx context.Context, owner, repo string, number int, logins []string) error {
+	if len(logins) == 0 {
+		return nil
+	}
+	if _, _, err := c.api.Issues.AddAssignees(ctx, owner, repo, number, logins); err != nil {
+		return fmt.Errorf("github: add assignees to %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return nil
+}
+
+// RequestReviewers implements forge.Client.
+func (c *Client) RequestReviewers(ctx context.Context, owner, repo string, number int, logins []string) error {
+	if len(logins) == 0 {
+		return nil
+	}
+	if _, _, err := c.api.PullRequests.RequestReviewers(ctx, owner, repo, number, gh.ReviewersRequest{Reviewers: logins}); err != nil {
+		return fmt.Errorf("github: request reviewers on %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return nil
+}
+
+// SearchIssues implements forge.Client, scoping the search query to the
+// repository so callers write a bare query like Search would after "repo:".
+func (c *Client) SearchIssues(ctx context.Context, owner, repo, query string, limit int) ([]forge.Issue, error) {
+	q := fmt.Sprintf("repo:%s/%s %s", owner, repo, query)
+	//nolint:modernize // embedlit's elision is array/slice/map-only per the spec; it doesn't compile for a struct field
+	opts := &gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: limit}}
+	result, _, err := c.api.Search.Issues(ctx, q, opts)
+	if err != nil {
+		return nil, fmt.Errorf("github: search %q in %s/%s: %w", query, owner, repo, err)
+	}
+	out := make([]forge.Issue, 0, len(result.Issues))
+	for _, iss := range result.Issues {
+		if len(out) == limit {
+			break
+		}
+		out = append(out, issueFrom(iss))
+	}
+	return out, nil
+}
+
+func issueFrom(iss *gh.Issue) forge.Issue {
+	out := forge.Issue{
+		Number: iss.GetNumber(), Title: iss.GetTitle(), Body: iss.GetBody(),
+		State: iss.GetState(), Author: iss.GetUser().GetLogin(),
+		IsPull: iss.IsPullRequest(), URL: iss.GetHTMLURL(),
+	}
+	for _, l := range iss.Labels {
+		out.Labels = append(out.Labels, l.GetName())
+	}
+	for _, a := range iss.Assignees {
+		out.Assignees = append(out.Assignees, a.GetLogin())
+	}
+	return out
+}
+
 // truncate keeps a description within GitHub's 140-character limit.
 func truncate(s string, n int) string {
 	if len(s) <= n {

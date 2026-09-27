@@ -301,6 +301,42 @@ func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.St
 	return nil
 }
 
+// Issue, RepoLabels, AddLabels, RemoveLabel, SetState, AddAssignees,
+// RequestReviewers, and SearchIssues below are unused, no-op stubs: the
+// review-integration tests in this file never exercise issue triage, but
+// localForge must still satisfy forge.Client.
+func (l *localForge) Issue(context.Context, string, string, int) (forge.Issue, error) {
+	return forge.Issue{}, nil
+}
+
+func (l *localForge) RepoLabels(context.Context, string, string) ([]string, error) {
+	return nil, nil
+}
+
+func (l *localForge) AddLabels(context.Context, string, string, int, []string) error {
+	return nil
+}
+
+func (l *localForge) RemoveLabel(context.Context, string, string, int, string) error {
+	return nil
+}
+
+func (l *localForge) SetState(context.Context, string, string, int, bool) error {
+	return nil
+}
+
+func (l *localForge) AddAssignees(context.Context, string, string, int, []string) error {
+	return nil
+}
+
+func (l *localForge) RequestReviewers(context.Context, string, string, int, []string) error {
+	return nil
+}
+
+func (l *localForge) SearchIssues(context.Context, string, string, string, int) ([]forge.Issue, error) {
+	return nil, nil
+}
+
 // fakeCompleter answers a review with one finding on the first added line
 // of main.go and one that cannot be anchored, and a follow-up with a fixed
 // reply, as the forced tool call a model.Structured makes.

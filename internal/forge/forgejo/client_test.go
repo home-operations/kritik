@@ -3,10 +3,12 @@ package forgejo
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -569,6 +571,277 @@ func TestOpenPullRequestForkDetection(t *testing.T) {
 			t.Fatalf("Fork = true, want false when head.repo == base.repo")
 		}
 	})
+}
+
+func TestIssue(t *testing.T) {
+	t.Run("issue", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v1/repos/acme/widgets/issues/5" {
+				t.Errorf("path = %s", r.URL.Path)
+			}
+			_, _ = w.Write([]byte(`{"number":5,"title":"bug report","body":"it broke","state":"open",
+				"user":{"login":"alice"},"labels":[{"name":"bug","color":"f00"}],
+				"assignees":[{"login":"bob"}],"pull_request":null,
+				"html_url":"https://forge.example.com/acme/widgets/issues/5"}`))
+		})
+		defer srv.Close()
+		got, err := c.Issue(t.Context(), "acme", "widgets", 5)
+		if err != nil {
+			t.Fatalf("Issue: %v", err)
+		}
+		want := forge.Issue{
+			Number: 5, Title: "bug report", Body: "it broke", State: "open",
+			Author: "alice", Labels: []string{"bug"}, Assignees: []string{"bob"},
+			IsPull: false, URL: "https://forge.example.com/acme/widgets/issues/5",
+		}
+		if !issueEqual(got, want) {
+			t.Fatalf("Issue = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("pull request is distinguished by a non-null pull_request field", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"number":6,"title":"a pr","state":"open","user":{"login":"alice"},
+				"pull_request":{},"html_url":"https://forge.example.com/acme/widgets/pulls/6"}`))
+		})
+		defer srv.Close()
+		got, err := c.Issue(t.Context(), "acme", "widgets", 6)
+		if err != nil || !got.IsPull {
+			t.Fatalf("Issue.IsPull = %v, %v; want true", got.IsPull, err)
+		}
+	})
+
+	t.Run("wraps ErrNotFound", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"not found"}`))
+		})
+		defer srv.Close()
+		if _, err := c.Issue(t.Context(), "acme", "widgets", 9); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("error = %v, want errors.Is(err, ErrNotFound)", err)
+		}
+	})
+}
+
+// issueEqual compares two forge.Issue values field by field since it
+// contains slices, which == cannot compare.
+func issueEqual(a, b forge.Issue) bool {
+	if a.Number != b.Number || a.Title != b.Title || a.Body != b.Body || a.State != b.State ||
+		a.Author != b.Author || a.IsPull != b.IsPull || a.URL != b.URL {
+		return false
+	}
+	return slices.Equal(a.Labels, b.Labels) && slices.Equal(a.Assignees, b.Assignees)
+}
+
+func TestRepoLabels(t *testing.T) {
+	srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/acme/widgets/labels" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("limit") != "50" {
+			t.Errorf("limit = %q, want 50", q.Get("limit"))
+		}
+		switch q.Get("page") {
+		case "1":
+			labels := make([]string, repoLabelsPageSize)
+			for i := range labels {
+				labels[i] = fmt.Sprintf(`{"name":"l%d","color":"f00"}`, i)
+			}
+			_, _ = w.Write([]byte("[" + strings.Join(labels, ",") + "]"))
+		case "2":
+			_, _ = w.Write([]byte(`[{"name":"last","color":"0f0"}]`))
+		default:
+			t.Errorf("unexpected page %q", q.Get("page"))
+		}
+	})
+	defer srv.Close()
+
+	got, err := c.RepoLabels(t.Context(), "acme", "widgets")
+	if err != nil {
+		t.Fatalf("RepoLabels: %v", err)
+	}
+	if len(got) != repoLabelsPageSize+1 || got[len(got)-1] != "last" {
+		t.Fatalf("RepoLabels returned %d labels, last %q; want %d labels ending in %q", len(got), got[len(got)-1], repoLabelsPageSize+1, "last")
+	}
+}
+
+func TestAddLabels(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		var gotBody string
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v1/repos/acme/widgets/issues/5/labels" {
+				t.Errorf("path = %s", r.URL.Path)
+			}
+			b, _ := io.ReadAll(r.Body)
+			gotBody = string(b)
+		})
+		defer srv.Close()
+		if err := c.AddLabels(t.Context(), "acme", "widgets", 5, []string{"bug", "triage"}); err != nil {
+			t.Fatalf("AddLabels: %v", err)
+		}
+		if !strings.Contains(gotBody, `"labels":["bug","triage"]`) {
+			t.Fatalf("request body = %q", gotBody)
+		}
+	})
+
+	t.Run("no labels sends no request", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			t.Error("unexpected request for an empty label list")
+		})
+		defer srv.Close()
+		if err := c.AddLabels(t.Context(), "acme", "widgets", 5, nil); err != nil {
+			t.Fatalf("AddLabels(nil): %v", err)
+		}
+	})
+}
+
+func TestRemoveLabel(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/repos/acme/widgets/issues/5/labels/bug" {
+				t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})
+		defer srv.Close()
+		if err := c.RemoveLabel(t.Context(), "acme", "widgets", 5, "bug"); err != nil {
+			t.Fatalf("RemoveLabel: %v", err)
+		}
+	})
+
+	t.Run("a label not currently applied is not an error", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"not found"}`))
+		})
+		defer srv.Close()
+		if err := c.RemoveLabel(t.Context(), "acme", "widgets", 5, "bug"); err != nil {
+			t.Fatalf("RemoveLabel of an absent label: %v", err)
+		}
+	})
+}
+
+func TestSetState(t *testing.T) {
+	cases := []struct {
+		name string
+		open bool
+		want string
+	}{
+		{"open", true, `"state":"open"`},
+		{"closed", false, `"state":"closed"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotBody string
+			srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/repos/acme/widgets/issues/5" {
+					t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+				}
+				b, _ := io.ReadAll(r.Body)
+				gotBody = string(b)
+			})
+			defer srv.Close()
+			if err := c.SetState(t.Context(), "acme", "widgets", 5, tc.open); err != nil {
+				t.Fatalf("SetState: %v", err)
+			}
+			if !strings.Contains(gotBody, tc.want) {
+				t.Fatalf("request body = %q, want it to contain %q", gotBody, tc.want)
+			}
+		})
+	}
+}
+
+func TestAddAssignees(t *testing.T) {
+	t.Run("merges with, rather than replaces, current assignees", func(t *testing.T) {
+		var gotBody string
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				_, _ = w.Write([]byte(`{"number":5,"title":"t","state":"open","user":{"login":"alice"},
+					"assignees":[{"login":"alice"}],"html_url":"https://forge.example.com/acme/widgets/issues/5"}`))
+			case http.MethodPatch:
+				b, _ := io.ReadAll(r.Body)
+				gotBody = string(b)
+			default:
+				t.Errorf("unexpected method %s", r.Method)
+			}
+		})
+		defer srv.Close()
+		// alice is already assigned, so requesting alice again must not
+		// duplicate her in the merged list sent back to the API.
+		if err := c.AddAssignees(t.Context(), "acme", "widgets", 5, []string{"alice", "bob"}); err != nil {
+			t.Fatalf("AddAssignees: %v", err)
+		}
+		if !strings.Contains(gotBody, `"assignees":["alice","bob"]`) {
+			t.Fatalf("request body = %q, want assignees [alice bob] with no duplicate", gotBody)
+		}
+	})
+
+	t.Run("no logins sends no request", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			t.Error("unexpected request for an empty login list")
+		})
+		defer srv.Close()
+		if err := c.AddAssignees(t.Context(), "acme", "widgets", 5, nil); err != nil {
+			t.Fatalf("AddAssignees(nil): %v", err)
+		}
+	})
+}
+
+func TestRequestReviewers(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		var gotBody string
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v1/repos/acme/widgets/pulls/5/requested_reviewers" {
+				t.Errorf("path = %s", r.URL.Path)
+			}
+			b, _ := io.ReadAll(r.Body)
+			gotBody = string(b)
+		})
+		defer srv.Close()
+		if err := c.RequestReviewers(t.Context(), "acme", "widgets", 5, []string{"carol"}); err != nil {
+			t.Fatalf("RequestReviewers: %v", err)
+		}
+		if !strings.Contains(gotBody, `"reviewers":["carol"]`) {
+			t.Fatalf("request body = %q", gotBody)
+		}
+	})
+
+	t.Run("no logins sends no request", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			t.Error("unexpected request for an empty login list")
+		})
+		defer srv.Close()
+		if err := c.RequestReviewers(t.Context(), "acme", "widgets", 5, nil); err != nil {
+			t.Fatalf("RequestReviewers(nil): %v", err)
+		}
+	})
+}
+
+func TestSearchIssues(t *testing.T) {
+	srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/acme/widgets/issues" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("q") != "crash on start" || q.Get("limit") != "1" {
+			t.Errorf("query = %q, want q=crash+on+start&limit=1", r.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`[
+			{"number":10,"title":"crash on startup","state":"open","user":{"login":"alice"},"html_url":"https://forge.example.com/acme/widgets/issues/10"},
+			{"number":11,"title":"another crash","state":"open","user":{"login":"bob"},"html_url":"https://forge.example.com/acme/widgets/issues/11"}
+		]`))
+	})
+	defer srv.Close()
+
+	got, err := c.SearchIssues(t.Context(), "acme", "widgets", "crash on start", 1)
+	if err != nil {
+		t.Fatalf("SearchIssues: %v", err)
+	}
+	if len(got) != 1 || got[0].Number != 10 {
+		t.Fatalf("SearchIssues = %+v, want 1 result truncated to the limit", got)
+	}
 }
 
 func TestIsBot(t *testing.T) {
