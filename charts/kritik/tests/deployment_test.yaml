@@ -32,6 +32,22 @@ tests:
           path: spec.template.spec.containers[0].image
           pattern: ^ghcr\.io/home-operations/kritik:\d+\.\d+\.\d+$
 
+  - it: gates the liveness and readiness probes on a startup probe, which can be turned off
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.failureThreshold
+          value: 30
+
+  - it: renders no startup probe when it is set to null
+    set:
+      startupProbe: null
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].startupProbe
+
   - it: wires the three database secrets and the runner settings for a worker-capable role
     asserts:
       - contains:
