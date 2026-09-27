@@ -188,8 +188,10 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("river: %w", err)
 		}
-		handler := ingest.NewHandler(current, ingest.NewService(st, queue), logger)
+		svc := ingest.NewService(st, queue)
+		handler := ingest.NewHandler(current, svc, logger)
 		handler.Metrics = m
+		handler.Deliveries = svc
 		hooks := server.NewHooks(cfg.Addr, handler, logger)
 		g.Go(func() error { return hooks.Run(ctx) })
 	}

@@ -4,7 +4,7 @@
   import { href } from '../router.svelte';
   import { Resource, live, type Dirty } from '../resource.svelte';
   import { tokens, usd, wholeNumber, indexTone, jobTone, splitRepo } from '../format';
-  import type { Job, JobState, Page, Pull, Repository, TenantSummary } from '../types';
+  import type { Job, JobState, Page, Pull, Repository, TenantDetail, TenantSummary } from '../types';
   import StateView from '../components/StateView.svelte';
   import Meter from '../components/Meter.svelte';
   import Pill from '../components/Pill.svelte';
@@ -16,6 +16,7 @@
 
   interface Data {
     summary: TenantSummary | undefined;
+    detail: TenantDetail;
     repos: Page<Repository>;
     open: Page<Pull>;
     recent: Pull[];
@@ -45,8 +46,9 @@
     const prev: Data | undefined = untrack(() => res.data);
     const want = prev ? stale : new Set(ALL);
     stale = new Set();
-    const [tenants, repos, pulls, queue] = await Promise.all([
+    const [tenants, detail, repos, pulls, queue] = await Promise.all([
       want.has('summary') || !prev ? getJSON<TenantSummary[]>('/api/v1/tenants') : undefined,
+      want.has('summary') || !prev ? getJSON<TenantDetail>(b) : prev.detail,
       want.has('repos') || !prev ? getJSON<Page<Repository>>(`${b}/repos?limit=100`) : prev.repos,
       want.has('pulls') || !prev
         ? Promise.all([getJSON<Page<Pull>>(`${b}/pulls?state=open&limit=100`), getJSON<Page<Pull>>(`${b}/pulls?state=all&limit=50`)])
@@ -61,6 +63,7 @@
       : prev!.recent;
     return {
       summary: tenants ? tenants.find((t) => t.slug === slug) : prev?.summary,
+      detail,
       repos,
       open: pulls ? pulls[0] : prev!.open,
       recent,
@@ -208,6 +211,44 @@
               </table>
             </div>
           {/if}
+        </section>
+
+        <section class="panel" aria-labelledby="ov-installations">
+          <header class="panel-head"><h2 id="ov-installations">Installations</h2></header>
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr><th scope="col">Installation</th><th scope="col">Account</th><th scope="col">Webhooks</th></tr>
+              </thead>
+              <tbody>
+                {#each d.detail.installations as inst (inst.name)}
+                  <tr>
+                    <td class="mono">{inst.name}</td>
+                    <td><span class="mono">{inst.account}</span> <span class="small muted">on {inst.host || inst.forge}</span></td>
+                    <td>
+                      {#if inst.lastWebhookAt}
+                        <Pill tone="ok" label="receiving" /> <span class="small muted">last <Time iso={inst.lastWebhookAt} /></span>
+                      {:else}
+                        <Pill tone="warn" label="none yet" />
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+          {#each d.detail.installations.filter((i) => !i.lastWebhookAt) as inst (inst.name)}
+            <p class="notice" role="note">
+              No webhook has reached <span class="mono">{inst.name}</span>, so kritik only polls it for new pull requests and
+              cannot answer mentions.
+              {#if inst.forge === 'github'}
+                Point the GitHub App's webhook at <span class="mono">{inst.hookPath}</span> on kritik's webhook listener.
+              {:else}
+                Add a webhook for <span class="mono">{inst.hookPath}</span> on kritik's webhook listener to the
+                <span class="mono">{inst.account}</span> user or organization.
+              {/if}
+            </p>
+          {/each}
         </section>
       {/snippet}
     </StateView>

@@ -49,6 +49,12 @@ type Dispatcher interface {
 	Dispatch(ctx context.Context, req Request) (Outcome, error)
 }
 
+// DeliveryRecorder notes that an installation's webhook delivered a request
+// kritik verified. The store-backed implementation is Service.
+type DeliveryRecorder interface {
+	RecordDelivery(ctx context.Context, tenantID, installationID string) error
+}
+
 // Handler serves POST /hooks/{installation}.
 type Handler struct {
 	current *configfile.Current
@@ -56,6 +62,8 @@ type Handler struct {
 	logger  *slog.Logger
 	// Metrics may be nil.
 	Metrics *metrics.Metrics
+	// Deliveries may be nil.
+	Deliveries DeliveryRecorder
 }
 
 // NewHandler builds the hook handler over the current configuration.
@@ -98,6 +106,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Metrics.Webhook(name, "unauthorized")
 		http.Error(w, "signature verification failed", http.StatusUnauthorized)
 		return
+	}
+	// Any verified delivery shows the forge's webhook is set up, whatever
+	// becomes of the event.
+	if h.Deliveries != nil {
+		if err := h.Deliveries.RecordDelivery(r.Context(), tenant.ID(), in.ID()); err != nil {
+			logger.Warn("webhook delivery not recorded", "error", err)
+		}
 	}
 	ev, err := webhook.Parse(in.Forge, r.Header, body)
 	if err != nil {

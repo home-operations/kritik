@@ -123,6 +123,9 @@ export interface Installation {
   credentialKind: CredentialKind;
   credentials: CredentialsSet;
   hookPath: string;
+  // lastWebhookAt is null until a webhook for the installation reaches
+  // kritik; until then kritik only polls it.
+  lastWebhookAt: string | null;
 }
 
 export interface Models {

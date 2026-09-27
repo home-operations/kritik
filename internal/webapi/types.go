@@ -118,6 +118,10 @@ type Installation struct {
 	CredentialKind CredentialKind   `json:"credentialKind"`
 	Credentials    CredentialsSet   `json:"credentials"`
 	HookPath       string           `json:"hookPath"`
+	// LastWebhookAt is when a webhook for the installation last passed
+	// signature verification, to the minute; null when none ever has, and
+	// kritik only polls it.
+	LastWebhookAt *time.Time `json:"lastWebhookAt"`
 }
 
 // Models names the review and fallback models, "provider/model".

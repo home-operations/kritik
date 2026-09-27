@@ -56,6 +56,21 @@ var pullRequestActions = map[string]bool{
 	ActionBaseline:     false,
 }
 
+// RecordDelivery implements DeliveryRecorder. It writes at most once a
+// minute per installation: the dashboard needs to know deliveries arrive,
+// not to count them.
+func (s *Service) RecordDelivery(ctx context.Context, tenantID, installationID string) error {
+	err := s.store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE installations SET last_webhook_at = now()
+			WHERE id = $1 AND (last_webhook_at IS NULL OR last_webhook_at < now() - interval '1 minute')`, installationID)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("ingest: record delivery: %w", err)
+	}
+	return nil
+}
+
 // Dispatch implements Dispatcher.
 func (s *Service) Dispatch(ctx context.Context, req Request) (Outcome, error) {
 	switch req.Event.Kind {
