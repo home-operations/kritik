@@ -258,16 +258,19 @@ func TestWriteBackCalls(t *testing.T) {
 	if status["context"] != forge.StatusContext || utf8.RuneCountInString(status["description"].(string)) != 140 {
 		t.Fatalf("status body = %v", status)
 	}
-	rid, err := c.ReplyInline(t.Context(), "o", "r", 7, 50, "reply")
-	if err != nil || rid != 200 || f.bodies["POST /api/v3/repos/o/r/pulls/7/comments"].(map[string]any)["in_reply_to"] != float64(50) {
-		t.Fatalf("ReplyInline = %d, %v, body %v", rid, err, f.bodies["POST /api/v3/repos/o/r/pulls/7/comments"])
+	// A reply to a reply goes under the thread's root, as a reply to the root does.
+	for _, to := range []forge.Comment{{ID: 50, Inline: true}, {ID: 51, Inline: true, InReplyTo: 50}} {
+		rid, err := c.ReplyInline(t.Context(), "o", "r", 7, to, "reply")
+		if err != nil || rid != 200 || f.bodies["POST /api/v3/repos/o/r/pulls/7/comments"].(map[string]any)["in_reply_to"] != float64(50) {
+			t.Fatalf("ReplyInline(%+v) = %d, %v, body %v", to, rid, err, f.bodies["POST /api/v3/repos/o/r/pulls/7/comments"])
+		}
 	}
 }
 
 func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 	f, c := newFakeAPI(t)
 	f.reply("GET /api/v3/repos/o/r/issues/comments/1", 200, `{"id":1,"body":"hi","user":{"login":"u","type":"User"},"created_at":"2026-09-24T20:00:00Z"}`)
-	f.reply("GET /api/v3/repos/o/r/pulls/comments/2", 200, `{"id":2,"body":"inline","path":"a.go","line":4,"in_reply_to_id":1,"user":{"login":"b[bot]","type":"Bot"}}`)
+	f.reply("GET /api/v3/repos/o/r/pulls/comments/2", 200, `{"id":2,"body":"inline","path":"a.go","line":4,"commit_id":"c1","in_reply_to_id":1,"user":{"login":"b[bot]","type":"Bot"}}`)
 	f.reply("GET /api/v3/repos/o/r/issues/7/comments", 200, `[{"id":1,"body":"a","user":{"login":"u"}},{"id":2,"body":"b","user":{"login":"v"}}]`)
 	f.reply("GET /api/v3/repos/o/r/pulls/7/comments", 200, `[{"id":3,"body":"c","path":"a.go","line":1,"user":{"login":"u"}}]`)
 	f.reply("GET /api/v3/repos/o/r/collaborators/u/permission", 200, `{"permission":"write","role_name":"maintain"}`)
@@ -283,7 +286,7 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 		t.Fatalf("GetComment = %+v, %v", cm, err)
 	}
 	inline, err := c.GetComment(t.Context(), "o", "r", 7, 2, true)
-	if err != nil || !inline.Inline || inline.Path != "a.go" || inline.Line != 4 || inline.InReplyTo != 1 || !inline.AuthorIsBot {
+	if err != nil || !inline.Inline || inline.Path != "a.go" || inline.Line != 4 || inline.CommitID != "c1" || inline.InReplyTo != 1 || !inline.AuthorIsBot {
 		t.Fatalf("inline GetComment = %+v, %v", inline, err)
 	}
 	conv, err := c.ListConversation(t.Context(), "o", "r", 7)

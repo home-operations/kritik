@@ -263,11 +263,16 @@ func (c *Client) Permission(ctx context.Context, owner, repo, login string) (for
 	return p, nil
 }
 
-// ReplyInline implements forge.Client.
-func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, rootID int64, body string) (int64, error) {
-	cm, _, err := c.api.PullRequests.CreateCommentInReplyTo(ctx, owner, repo, number, body, rootID)
+// ReplyInline implements forge.Client. The reply goes under the thread's
+// top-level comment: GitHub takes no replies to replies.
+func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, to forge.Comment, body string) (int64, error) {
+	root := to.ID
+	if to.InReplyTo != 0 {
+		root = to.InReplyTo
+	}
+	cm, _, err := c.api.PullRequests.CreateCommentInReplyTo(ctx, owner, repo, number, body, root)
 	if err != nil {
-		return 0, fmt.Errorf("github: reply to review comment %d: %w", rootID, err)
+		return 0, fmt.Errorf("github: reply to review comment %d: %w", root, err)
 	}
 	return cm.GetID(), nil
 }
@@ -283,7 +288,7 @@ func inlineComment(cm *gh.PullRequestComment) forge.Comment {
 	return forge.Comment{
 		ID: cm.GetID(), Author: cm.GetUser().GetLogin(), AuthorIsBot: cm.GetUser().GetType() == userTypeBot,
 		Body: cm.GetBody(), CreatedAt: cm.GetCreatedAt().Time,
-		Inline: true, Path: cm.GetPath(), Line: cm.GetLine(), InReplyTo: cm.GetInReplyTo(),
+		Inline: true, Path: cm.GetPath(), Line: cm.GetLine(), CommitID: cm.GetCommitID(), InReplyTo: cm.GetInReplyTo(),
 	}
 }
 
