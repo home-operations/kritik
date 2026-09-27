@@ -150,4 +150,8 @@ func TestFileTenantConfigIsRedacted(t *testing.T) {
 	if body := w.Body.String(); strings.Contains(body, "KRITIK_TEST_TOKEN") || !strings.Contains(body, `"token":{"set":true}`) {
 		t.Errorf("spec is not redacted: %s", body)
 	}
+	if in := c.Inherited; in.Tenant.Mode != configfile.ReviewSingle || in.TenantSources["mode"] != configfile.SourceDefault ||
+		in.Repository.Limits.Concurrency != configfile.DefaultConcurrency || in.RepositorySources["limits"] != configfile.SourceDefault {
+		t.Errorf("inherited = %+v", in)
+	}
 }

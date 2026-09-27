@@ -15,6 +15,9 @@
     type SpecError,
     type TenantDraft,
   } from '../../spec';
+  import { duration } from '../../format';
+  import { inheritsHint } from '../../manage';
+  import type { Inherited } from '../../types';
   import InstallationFields from './InstallationFields.svelte';
   import RepositoryFields from './RepositoryFields.svelte';
 
@@ -25,6 +28,8 @@
     creating?: boolean;
     // editable says whether the caller may change the setting at a key.
     editable: (key: string) => boolean;
+    // inherited is what fields left empty take; none when creating.
+    inherited?: Inherited;
     saving: boolean;
     // The last failed save's message and the spec path it points at.
     errMessage?: string;
@@ -40,6 +45,7 @@
     initial,
     creating = false,
     editable,
+    inherited,
     saving,
     errMessage = '',
     errPath = '',
@@ -79,6 +85,9 @@
   }
   const inv = (path: string) => pathMatches(path, activePath);
   const opHint = 'operator only';
+  const own = $derived(inherited?.tenant);
+  const hint = (key: string, value: string, fallback = '') =>
+    inherited ? inheritsHint(value, inherited.tenantSources[key]) : fallback;
 
   function focusPath(path: string): void {
     if (!path || !formEl) return;
@@ -180,27 +189,27 @@
         {/if}
         <label class="field">
           <span>Review model {#if !editable('models.review')}<span class="field-hint">({opHint})</span>{/if}</span>
-          <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder="provider/model" disabled={!editable('models.review')} />
+          <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder={hint('models.review', own?.models.review || 'no model', 'provider/model')} disabled={!editable('models.review')} />
         </label>
         <label class="field">
           <span>Fallback model {#if !editable('models.fallback')}<span class="field-hint">({opHint})</span>{/if}</span>
-          <input class="mono" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder="provider/model" disabled={!editable('models.fallback')} />
+          <input class="mono" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder={hint('models.fallback', own?.models.fallback || 'no fallback', 'provider/model')} disabled={!editable('models.fallback')} />
         </label>
         <label class="field">
           <span>Filter</span>
-          <input class="mono" data-path="filter" aria-invalid={inv('filter') || undefined} bind:value={draft.filter} />
+          <input class="mono" data-path="filter" aria-invalid={inv('filter') || undefined} bind:value={draft.filter} placeholder={hint('filter', own?.filter || 'no filter')} />
         </label>
         <label class="field">
           <span>Forks {#if !editable('forks')}<span class="field-hint">({opHint})</span>{/if}</span>
           <select data-path="forks" aria-invalid={inv('forks') || undefined} bind:value={draft.forks} disabled={!editable('forks')}>
-            <option value="">default</option>
+            <option value="">{own ? `default: ${own.forks ? 'review' : 'skip'}` : 'default'}</option>
             <option value="true">review</option>
             <option value="false">skip</option>
           </select>
         </label>
         <label class="field">
           <span>Settle</span>
-          <input data-path="settle" aria-invalid={inv('settle') || undefined} bind:value={draft.settle} placeholder="e.g. 2m" />
+          <input data-path="settle" aria-invalid={inv('settle') || undefined} bind:value={draft.settle} placeholder={hint('settle', duration((own?.settleSeconds ?? 0) * 1000) || '0s', 'e.g. 2m')} />
         </label>
       </div>
     </fieldset>
@@ -210,15 +219,15 @@
       <div class="fields">
         <label class="field">
           <span>Concurrency</span>
-          <input inputmode="numeric" data-path="limits.concurrency" aria-invalid={inv('limits.concurrency') || undefined} bind:value={draft.concurrency} disabled={!editable('limits')} />
+          <input inputmode="numeric" data-path="limits.concurrency" aria-invalid={inv('limits.concurrency') || undefined} bind:value={draft.concurrency} placeholder={hint('limits', String(own?.limits.concurrency))} disabled={!editable('limits')} />
         </label>
         <label class="field">
           <span>Reviews per day</span>
-          <input inputmode="numeric" data-path="limits.reviewsPerDay" aria-invalid={inv('limits.reviewsPerDay') || undefined} bind:value={draft.reviewsPerDay} disabled={!editable('limits')} />
+          <input inputmode="numeric" data-path="limits.reviewsPerDay" aria-invalid={inv('limits.reviewsPerDay') || undefined} bind:value={draft.reviewsPerDay} placeholder={hint('limits', own?.limits.reviewsPerDay ? String(own.limits.reviewsPerDay) : 'unlimited')} disabled={!editable('limits')} />
         </label>
         <label class="field">
           <span>Tokens per month</span>
-          <input inputmode="numeric" data-path="limits.tokensPerMonth" aria-invalid={inv('limits.tokensPerMonth') || undefined} bind:value={draft.tokensPerMonth} disabled={!editable('limits')} />
+          <input inputmode="numeric" data-path="limits.tokensPerMonth" aria-invalid={inv('limits.tokensPerMonth') || undefined} bind:value={draft.tokensPerMonth} placeholder={hint('limits', own?.limits.tokensPerMonth ? String(own.limits.tokensPerMonth) : 'unlimited')} disabled={!editable('limits')} />
         </label>
         <label class="field">
           <span>Runner (JSON) {#if !editable('runner')}<span class="field-hint">({opHint})</span>{/if}</span>
@@ -249,6 +258,7 @@
           bind:repo={draft.repositories[i]!}
           index={i}
           {editable}
+          inherited={inherited && { settings: inherited.repository, sources: inherited.repositorySources }}
           {inv}
           onremove={() => structural(() => (draft.repositories = draft.repositories.filter((x) => x.key !== repo.key)))}
         />

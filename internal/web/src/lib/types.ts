@@ -697,11 +697,21 @@ export interface FieldPolicy {
   editable: boolean;
 }
 
+// What a tenant's fields, and its repository entries' fields, resolve to
+// where the spec leaves them out, and where each value comes from.
+export interface Inherited {
+  tenant: RepoSettings;
+  tenantSources: Record<string, ConfigSource>;
+  repository: RepoSettings;
+  repositorySources: Record<string, ConfigSource>;
+}
+
 export interface TenantConfig {
   managedBy: TenantManagedBy;
   revision: number | null;
   editable: boolean;
   policy: FieldPolicy[];
+  inherited: Inherited;
   // A tenant entry of the configuration file, in JSON, with every secret
   // a SecretState.
   spec: Record<string, unknown>;

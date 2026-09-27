@@ -173,6 +173,125 @@
       "editable": false
     }
   ],
+  "inherited": {
+    "tenant": {
+      "enabled": true,
+      "mode": "agentic",
+      "models": {
+        "review": "openrouter/acme-large",
+        "fallback": ""
+      },
+      "filter": "true",
+      "forks": false,
+      "ignore": ["vendor/**"],
+      "settleSeconds": 30,
+      "maxDeltaFiles": 40,
+      "review": {
+        "instructions": ["docs/review.md"],
+        "requireSuggestedFix": true,
+        "templates": {
+          "Summary": "docs/summary.tmpl",
+          "Inline": ""
+        },
+        "minSeverity": "important",
+        "inlineComments": true,
+        "context": [
+          {
+            "path": "db/schema.sql",
+            "description": "the schema",
+            "paths": ["**/*.sql"]
+          }
+        ]
+      },
+      "agent": {
+        "maxSteps": 60,
+        "maxToolOutputBytes": 32768,
+        "maxTokens": 4000000,
+        "timeoutSeconds": 1200,
+        "commands": ["go"],
+        "commandTimeoutSeconds": 30
+      },
+      "limits": {
+        "concurrency": 2,
+        "reviewsPerDay": 0,
+        "tokensPerMonth": 0
+      },
+      "allow": {
+        "modes": ["agentic"],
+        "models": ["openrouter/acme-large", "openrouter/acme-small"],
+        "commands": null,
+        "agent": {
+          "maxSteps": 60,
+          "maxToolOutputBytes": null,
+          "maxTokens": null,
+          "timeoutSeconds": null
+        },
+        "settleSeconds": 600
+      }
+    },
+    "tenantSources": {
+      "models.review": "file"
+    },
+    "repository": {
+      "enabled": true,
+      "mode": "agentic",
+      "models": {
+        "review": "openrouter/acme-large",
+        "fallback": ""
+      },
+      "filter": "true",
+      "forks": false,
+      "ignore": ["vendor/**"],
+      "settleSeconds": 30,
+      "maxDeltaFiles": 40,
+      "review": {
+        "instructions": ["docs/review.md"],
+        "requireSuggestedFix": true,
+        "templates": {
+          "Summary": "docs/summary.tmpl",
+          "Inline": ""
+        },
+        "minSeverity": "important",
+        "inlineComments": true,
+        "context": [
+          {
+            "path": "db/schema.sql",
+            "description": "the schema",
+            "paths": ["**/*.sql"]
+          }
+        ]
+      },
+      "agent": {
+        "maxSteps": 60,
+        "maxToolOutputBytes": 32768,
+        "maxTokens": 4000000,
+        "timeoutSeconds": 1200,
+        "commands": ["go"],
+        "commandTimeoutSeconds": 30
+      },
+      "limits": {
+        "concurrency": 2,
+        "reviewsPerDay": 0,
+        "tokensPerMonth": 0
+      },
+      "allow": {
+        "modes": ["agentic"],
+        "models": ["openrouter/acme-large", "openrouter/acme-small"],
+        "commands": null,
+        "agent": {
+          "maxSteps": 60,
+          "maxToolOutputBytes": null,
+          "maxTokens": null,
+          "timeoutSeconds": null
+        },
+        "settleSeconds": 600
+      }
+    },
+    "repositorySources": {
+      "mode": "dashboard",
+      "models.review": "file"
+    }
+  },
   "spec": {
     "slug": "alpha",
     "installations": [

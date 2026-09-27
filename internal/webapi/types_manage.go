@@ -31,7 +31,19 @@ type TenantConfig struct {
 	Revision  *int64            `json:"revision"`
 	Editable  bool              `json:"editable"`
 	Policy    []FieldPolicy     `json:"policy"`
+	Inherited Inherited         `json:"inherited"`
 	Spec      json.RawMessage   `json:"spec"`
+}
+
+// Inherited is what a tenant's settings resolve to where its spec leaves a
+// field out: Tenant for the tenant's own fields, from the defaults, and
+// Repository for its repository entries, which inherit the tenant's. The
+// sources say where each value comes from, by the policy table's keys.
+type Inherited struct {
+	Tenant            RepoSettings                 `json:"tenant"`
+	TenantSources     map[string]configfile.Source `json:"tenantSources"`
+	Repository        RepoSettings                 `json:"repository"`
+	RepositorySources map[string]configfile.Source `json:"repositorySources"`
 }
 
 // FieldPolicy is one setting of the policy table, and whether the
