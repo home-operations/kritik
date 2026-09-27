@@ -65,6 +65,11 @@ tenants:
         accounts: [onedr0p]
         token: { env: TEST_GITEA_TOKEN }
         webhookSecret: { env: TEST_WEBHOOK_SECRET }
+      - name: onedr0p-gitlab
+        forge: gitlab
+        accounts: [onedr0p]
+        token: { env: TEST_GITLAB_TOKEN }
+        webhookSecret: { env: TEST_WEBHOOK_SECRET }
     models:
       review: local/claude-opus-5
     forks: true

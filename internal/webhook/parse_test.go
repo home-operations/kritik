@@ -2,7 +2,10 @@ package webhook
 
 import (
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritik/internal/configfile"
 )
@@ -161,26 +164,82 @@ func TestParseRejectsMalformedAndOversized(t *testing.T) {
 }
 
 func TestParseGitLab(t *testing.T) {
-	mr := `{"object_kind":"merge_request","user":{"username":"devin","bot":false},
-	  "project":{"path_with_namespace":"group/repo","default_branch":"main","git_http_url":"https://gl/group/repo.git"},
-	  "object_attributes":{"iid":5,"title":"t","description":"mr body","state":"opened","action":"update","draft":false,"url":"u",
-	    "created_at":"2026-09-24 10:00:00 UTC","source_branch":"f","target_branch":"main",
-	    "source_project_id":1,"target_project_id":1,"last_commit":{"id":"abc"}},
-	  "labels":[{"title":"x","color":"#fff"}]}`
-	ev, err := Parse(configfile.ForgeGitLab, hdr("X-Gitlab-Event-UUID", "u-1"), []byte(mr))
-	if err != nil || ev.Kind != KindPullRequest || ev.Account != "group" || ev.PullRequest.Number != 5 ||
-		ev.PullRequest.State != "open" || ev.PullRequest.HeadSHA != "abc" || ev.PullRequest.Fork || len(ev.PullRequest.Labels) != 1 ||
-		ev.PullRequest.Body != "mr body" {
+	mr := func(user, attrs, changes string) []byte {
+		return []byte(`{"object_kind":"merge_request","user":` + user + `,
+		  "project":{"path_with_namespace":"group/sub/repo","default_branch":"main","git_http_url":"https://gl/group/sub/repo.git"},
+		  "object_attributes":{"iid":5,"title":"t","description":"mr body","state":"opened","draft":false,"url":"u","author_id":8,
+		    "created_at":"2026-09-24T10:00:00.000Z","source_branch":"f","target_branch":"main",
+		    "source_project_id":1,"target_project_id":1,"last_commit":{"id":"abc"},` + attrs + `},
+		  "changes":` + changes + `,"labels":[{"title":"x","color":"#fff"}]}`)
+	}
+	const author = `{"id":8,"username":"devin","bot":false}`
+	ev, err := Parse(configfile.ForgeGitLab, hdr("X-Gitlab-Event-UUID", "u-1"), mr(author, `"action":"open"`, `{}`))
+	want := &PullRequest{
+		Number: 5, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "abc", BaseRef: "main", URL: "u",
+		Body: "mr body", CreatedAt: time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC), Labels: []Label{{Name: "x", Color: "fff"}},
+	}
+	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "u-1" || ev.Account != "group" || ev.Action != "opened" ||
+		ev.Repository.FullName != "group/sub/repo" || !reflect.DeepEqual(ev.PullRequest, want) {
 		t.Fatalf("gitlab mr = %+v %+v %v", ev, ev.PullRequest, err)
 	}
+
+	for _, tt := range []struct{ name, attrs, changes, want string }{
+		{"reopened", `"action":"reopen"`, `{}`, "reopened"},
+		{"closed", `"action":"close"`, `{}`, "closed"},
+		{"merged is closed", `"action":"merge"`, `{}`, "closed"},
+		{"a push synchronizes", `"action":"update","oldrev":"old"`, `{}`, "synchronize"},
+		{"out of draft", `"action":"update"`, `{"draft":{"previous":true,"current":false}}`, "ready_for_review"},
+		{"into draft", `"action":"update"`, `{"draft":{"previous":false,"current":true}}`, "update"},
+		{"an edit", `"action":"update"`, `{"title":{"previous":"a","current":"t"}}`, "update"},
+		{"an approval", `"action":"approved"`, `{}`, "approved"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ev, err := Parse(configfile.ForgeGitLab, http.Header{}, mr(author, tt.attrs, tt.changes))
+			if err != nil || ev.Action != tt.want {
+				t.Fatalf("action = %q, %v; want %q", ev.Action, err, tt.want)
+			}
+		})
+	}
+
+	t.Run("someone else acting leaves the author unknown", func(t *testing.T) {
+		ev, err := Parse(configfile.ForgeGitLab, http.Header{}, mr(`{"id":9,"username":"maintainer","bot":true}`, `"action":"update","oldrev":"old"`, `{}`))
+		if err != nil || ev.PullRequest.Author != "" || ev.PullRequest.AuthorIsBot {
+			t.Fatalf("author = %q (bot %v), %v; want none", ev.PullRequest.Author, ev.PullRequest.AuthorIsBot, err)
+		}
+	})
+
+	t.Run("an older release's timestamp", func(t *testing.T) {
+		body := strings.Replace(string(mr(author, `"action":"open"`, `{}`)), "2026-09-24T10:00:00.000Z", "2026-09-24 10:00:00 UTC", 1)
+		ev, err := Parse(configfile.ForgeGitLab, http.Header{}, []byte(body))
+		if err != nil || !ev.PullRequest.CreatedAt.Equal(time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)) {
+			t.Fatalf("created = %v, %v", ev.PullRequest.CreatedAt, err)
+		}
+	})
+
 	//nolint:misspell // GitLab's field is spelled noteable
-	note := `{"object_kind":"note","user":{"username":"devin"},"project":{"path_with_namespace":"group/repo"},
-	  "merge_request":{"iid":5},"object_attributes":{"id":77,"note":"@bot","noteable_type":"MergeRequest",
-	  "position":{"new_path":"a.go","new_line":3}}}`
-	ev, err = Parse(configfile.ForgeGitLab, http.Header{}, []byte(note))
-	if err != nil || ev.Kind != KindComment || !ev.Comment.Inline || ev.Comment.Number != 5 || ev.Comment.Path != "a.go" {
+	note := func(attrs string) []byte {
+		return []byte(`{"object_kind":"note","user":{"id":3,"username":"alice"},"project":{"path_with_namespace":"group/repo"},
+		  "merge_request":{"iid":5},"object_attributes":{"id":77,"note":"@bot why","noteable_type":"MergeRequest",` + attrs + `}}`)
+	}
+	ev, err = Parse(configfile.ForgeGitLab, http.Header{}, note(`"action":"create","position":{"new_path":"a.go","new_line":3}`))
+	wantComment := &Comment{ID: 77, Number: 5, Author: "alice", Body: "@bot why", Inline: true, Path: "a.go", Line: 3}
+	if err != nil || ev.Kind != KindComment || ev.Action != "created" || !reflect.DeepEqual(ev.Comment, wantComment) {
 		t.Fatalf("gitlab note = %+v %+v %v", ev, ev.Comment, err)
 	}
+	if ev, err := Parse(configfile.ForgeGitLab, http.Header{}, note(`"action":"update"`)); err != nil || ev.Kind != KindComment || ev.Action != "edited" {
+		t.Fatalf("gitlab note edit = %+v %v", ev, err)
+	}
+	//nolint:misspell // GitLab's field is spelled noteable
+	for name, attrs := range map[string]string{
+		"a system note":      `"action":"create","system":true`,
+		"an internal note":   `"action":"create","internal":true`,
+		"an issue's comment": `"action":"create","noteable_type":"Issue"`,
+	} {
+		if ev, err := Parse(configfile.ForgeGitLab, http.Header{}, note(attrs)); err != nil || ev.Kind != KindIgnored {
+			t.Errorf("%s = %+v %v, want ignored", name, ev, err)
+		}
+	}
+
 	push := `{"object_kind":"push","ref":"refs/heads/main","after":"9","project":{"path_with_namespace":"group/repo","default_branch":"main"}}`
 	ev, err = Parse(configfile.ForgeGitLab, http.Header{}, []byte(push))
 	if err != nil || ev.Kind != KindPush || ev.Push.After != "9" {

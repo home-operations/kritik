@@ -136,7 +136,10 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 				head_ref, head_sha, base_ref, base_sha, url, body, opened_at, labels, merged)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11, $12, $13, $14, $15, $16, $17)
 			ON CONFLICT (repository_id, number) DO UPDATE SET
-				title = EXCLUDED.title, author = EXCLUDED.author, author_is_bot = EXCLUDED.author_is_bot, draft = EXCLUDED.draft,
+				title = EXCLUDED.title, draft = EXCLUDED.draft,
+				-- A GitLab hook names the author only when the author acted.
+				author = CASE WHEN EXCLUDED.author = '' THEN pull_requests.author ELSE EXCLUDED.author END,
+				author_is_bot = CASE WHEN EXCLUDED.author = '' THEN pull_requests.author_is_bot ELSE EXCLUDED.author_is_bot END,
 				fork = EXCLUDED.fork, state = 'open', head_ref = EXCLUDED.head_ref, head_sha = EXCLUDED.head_sha,
 				base_ref = EXCLUDED.base_ref, base_sha = EXCLUDED.base_sha, url = EXCLUDED.url, body = EXCLUDED.body,
 				labels = EXCLUDED.labels, merged = EXCLUDED.merged, updated_at = now()`,

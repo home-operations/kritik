@@ -62,6 +62,14 @@ func TestEgressRules(t *testing.T) {
 		slices.Contains(hosts, "api.openai.com") || slices.ContainsFunc(hosts, func(h string) bool { return strings.Contains(h, "ghp_") }) {
 		t.Fatalf("hosts = %v", hosts)
 	}
+	// A GitLab installation that names no host talks to gitlab.com.
+	gl, err := Parse([]byte(strings.Replace(minimal, "forge: forgejo", "forge: gitlab", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hosts := gl.EgressRules().Hosts; !slices.Contains(hosts, GitLabHost) {
+		t.Fatalf("hosts = %v, want %s among them", hosts, GitLabHost)
+	}
 }
 
 func TestEgressRejects(t *testing.T) {

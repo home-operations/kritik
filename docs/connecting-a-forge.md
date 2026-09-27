@@ -1,9 +1,9 @@
 # Connecting a forge
 
 kritik reviews pull requests on GitHub, through a GitHub App, and on
-Forgejo and Gitea, through a bot account. Events reach kritik through the
-GitHub App's own webhook, or one webhook on each Forgejo or Gitea user or
-organization served. No repository needs a webhook of its own, and none
+GitLab, Forgejo and Gitea, through a bot account. Events reach kritik
+through the GitHub App's own webhook, one webhook on each GitLab group or
+project, or one on each Forgejo or Gitea user or organization served. None
 needs a file: a [`.kritik.yaml`](repository-config.md) is optional.
 
 An installation is one entry under a tenant's `installations` in the
@@ -79,6 +79,70 @@ Install the App on each account in `accounts`, for all repositories or
 selected ones. Each pull request in them is reviewed when it opens and
 after each push, under the tenant's settings.
 
+## GitLab
+
+GitLab calls a pull request a merge request; kritik reviews them as it
+does pull requests elsewhere.
+
+### The bot account
+
+kritik posts reviews, comments and statuses as the user behind its token:
+
+- a group or project access token, whose bot user GitLab creates. On
+  GitLab.com these need Premium or Ultimate; on GitLab Self-Managed, any
+  license.
+- a personal access token of a user made for kritik, on any tier.
+
+People mention the bot by that user's username. A group or project access
+token's bot user is named like `group_<id>_bot_<random>`, which is harder
+to type than a user named for kritik.
+
+The token needs the `api` scope, and its user the Developer role on the
+projects it reviews, since GitLab lets only Developers and above set a
+commit status. A group access token, or membership of the group, covers
+every project in it. Before answering a mention, kritik checks that the
+commenter has at least the Developer role, which any member can read, so
+no higher role is needed.
+
+A second token with `read_repository` alone, given as `gitToken`, is what
+runner pods fetch with, so the token that can write never enters the pod
+that reads untrusted merge request content.
+
+### Configure the installation
+
+```yaml
+tenants:
+  - slug: example
+    installations:
+      - name: example-gitlab
+        forge: gitlab
+        # host: gitlab.example.com on GitLab Self-Managed; gitlab.com when unset.
+        accounts: [example]
+        token: { file: /var/run/secrets/kritik/bot/gitlab-token }
+        gitToken: { file: /var/run/secrets/kritik/bot/gitlab-read-token }
+        webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+```
+
+`accounts` lists top-level groups and users: a project in a subgroup
+belongs to its top-level group.
+
+### Add the webhook
+
+Add one webhook to each group in the installation's `accounts`, which
+covers every project in the group and its subgroups, including ones added
+later. Group webhooks need Premium or Ultimate and the Owner role; without
+them, add the webhook to each project instead, which needs the Maintainer
+role.
+
+- **URL:** `https://<listener host>/hooks/<installation name>`.
+- **Secret token:** the installation's `webhookSecret`.
+- **Trigger:** push, comment and merge request events.
+
+kritik answers a mention in a merge request's overview or in a thread on
+its diff. It never answers an internal note, since its answer would be
+public. Anything it posts has its quick actions escaped, so a line such as
+`/merge` in a review is shown, never run.
+
 ## Forgejo
 
 ### The bot account
@@ -143,7 +207,7 @@ Request Comment.
 
 ## Check that it works
 
-Both forges keep each webhook's recent deliveries with kritik's response:
+Every forge keeps each webhook's recent deliveries with kritik's response:
 204 for GitHub's ping, 202 for anything accepted, 401 when the secrets
 differ, and 404 when the path names no installation. The tenant overview's
 Installations panel shows when each installation last had a delivery, and

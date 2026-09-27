@@ -175,14 +175,16 @@ func (f *File) DashboardForgeHosts() []string {
 // names none.
 func (in *Installation) forgeHost() string { return ForgeHost(in.Forge, in.Host) }
 
-// ForgeHost is the lowercase host a GitHub or Forgejo installation or
-// sign-in of kind talks to, "" when it names none.
+// ForgeHost is the lowercase host an installation or sign-in of kind
+// talks to, "" when it names none.
 func ForgeHost(kind Forge, host string) string {
 	switch {
 	case host != "":
 		return strings.ToLower(hostOf(host))
 	case kind == ForgeGitHub:
 		return GitHubHost
+	case kind == ForgeGitLab:
+		return GitLabHost
 	default:
 		return ""
 	}
