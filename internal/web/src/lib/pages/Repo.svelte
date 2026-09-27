@@ -211,6 +211,42 @@
             </section>
           </div>
 
+          <section class="panel" aria-labelledby="repo-tasks">
+            <header class="panel-head"><h2 id="repo-tasks">Tasks</h2></header>
+            {#if d.tasks.length === 0}
+              <p class="state-msg">No tasks are defined for this repository.</p>
+            {:else}
+              <div class="table-wrap">
+                <table class="data">
+                  <thead>
+                    <tr>
+                      <th scope="col">Task</th><th scope="col">Defined in</th><th scope="col">Runs on</th>
+                      <th scope="col">If</th><th scope="col">Mode</th><th scope="col">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each d.tasks as task (task.name)}
+                      <tr>
+                        <td class="mono">{task.name}</td>
+                        <td>{sourceLabel[task.source]}</td>
+                        <td class="mono small">{list(task.triggers)}</td>
+                        <td class="mono small">{task.if || '—'}</td>
+                        <td>{task.mode}</td>
+                        <td class="mono small">{task.actions.length ? list(task.actions) : 'report only'}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {/if}
+            {#if d.taskNotes.length}
+              <p class="small">Left out by the operator's task bounds:</p>
+              <ul class="small">
+                {#each d.taskNotes as note, i (i)}<li><span class="mono">{note.task}</span>: {note.what}: {note.reason}</li>{/each}
+              </ul>
+            {/if}
+          </section>
+
           <section class="panel" aria-labelledby="repo-index">
             <header class="panel-head"><h2 id="repo-index">Index runs</h2></header>
             {#if d.indexRuns.length === 0}

@@ -278,6 +278,9 @@ func checkAgenticTaskRecords(t *testing.T, h *taskHarness, runnerRunID string) {
 	if n := h.count(`SELECT count(*) FROM agent_runs WHERE stop_reason = 'submitted' AND runner_run_id = '` + runnerRunID + `'`); n != 1 {
 		t.Fatalf("agent runs = %d", n)
 	}
+	if n := h.count(`SELECT count(*) FROM task_runs WHERE task = 'agentic-triage' AND answered_at IS NOT NULL`); n != 1 {
+		t.Fatalf("answered agentic runs = %d", n)
+	}
 	if n := h.count(`SELECT count(*) FROM runner_runs WHERE kind = 'task' AND phase = 'done' AND id = '` + runnerRunID + `'`); n != 1 {
 		t.Fatalf("done task runner runs = %d", n)
 	}

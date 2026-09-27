@@ -46,6 +46,9 @@ func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration {
 // does not know its task's mode until it reads the task's definition, so
 // the longer bound applies to every task there.
 func (w *Task) Timeout(job *river.Job[jobs.TaskArgs]) time.Duration {
+	if w.timeout > 0 {
+		return w.timeout
+	}
 	timeout := jobtimeout.FollowUpTimeout
 	file := w.Current.Get()
 	if tenant := tenantByID(file, job.Args.TenantID); tenant != nil && w.GatewayURL != "" {

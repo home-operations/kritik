@@ -53,26 +53,71 @@ type Task struct {
 	Embedder   model.Embedder
 	EmbedModel string
 	configs    repoConfigs
+	// timeout, when set, replaces the job timeout, for tests.
+	timeout time.Duration
 
 	// superviseEvery overrides superviseInterval.
 	superviseEvery time.Duration
 }
 
-// Work implements river.Worker. An error before the model is asked is
+// Work implements river.Worker. An error before the model has answered is
 // retried, and recorded as the run's failure once the job is out of
-// attempts; after it, the run ends whatever happens, since a retry would
-// spend the model again and write to the forge twice.
+// attempts or cancelled, so a run never stays queued. Once the model has
+// answered the run is marked so (see store.ChargeTaskRun), and a job that
+// finds it marked but unfinished (a crash, or its record failing to land)
+// ends it as failed rather than run it again: its model call and some of
+// its forge writes, which are not idempotent, may already have been made.
 func (w *Task) Work(ctx context.Context, job *river.Job[jobs.TaskArgs]) error {
-	args := job.Args
-	file := w.Current.Get()
-	tenant, err := w.tenant(file, args.TenantID)
-	if err != nil {
+	runID, res, err := w.attempt(ctx, job)
+	if runID == "" {
 		return err
 	}
+	if err != nil && !attemptEnds(ctx, err, job.Attempt, job.MaxAttempts) {
+		return err
+	}
+	if err != nil {
+		res = store.TaskRunResult{Status: store.TaskFailed, Error: err.Error()}
+	}
+	if res.Status == "" {
+		return nil
+	}
+	dctx, cancel := detach(ctx)
+	defer cancel()
+	w.Logger.Info("task "+string(res.Status), "task", job.Args.Task, "run", runID, "reason", res.Reason, "model", res.Model,
+		"error", res.Error)
+	if ferr := w.finish(dctx, job.Args.TenantID, runID, res); ferr != nil {
+		return errors.Join(err, ferr)
+	}
+	return err
+}
+
+// attemptEnds reports whether an attempt that failed with err ends its run:
+// when the job cancelled itself, was cancelled from outside, or is out of
+// attempts. Any other error, a shutdown's or a timeout's cancelled context
+// included, leaves the run for River to retry.
+func attemptEnds(ctx context.Context, err error, attempt, maxAttempts int) bool {
+	if _, ok := errors.AsType[*river.JobCancelError](err); ok {
+		return true
+	}
+	if errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely) {
+		return true
+	}
+	return attempt >= maxAttempts
+}
+
+// taskInterrupted is why a run found past its model's answer is not run
+// again.
+const taskInterrupted = "interrupted after the model answered; not run again, since its writes may have been made"
+
+// attempt runs the job once. It returns the run's id once known, and how
+// the run ended, a zero status for a run already over, or an error.
+func (w *Task) attempt(ctx context.Context, job *river.Job[jobs.TaskArgs]) (string, store.TaskRunResult, error) {
+	args := job.Args
 	var run store.TaskRun
 	var ev store.TaskEvent
 	var repo taskRepo
-	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+		var err error
 		if run, err = store.LoadTaskRun(ctx, tx, args.EventID, args.Task); err != nil {
 			return err
 		}
@@ -84,36 +129,35 @@ func (w *Task) Work(ctx context.Context, job *river.Job[jobs.TaskArgs]) error {
 	})
 	switch {
 	case errors.Is(err, store.ErrTaskRunGone):
-		return river.JobCancel(err)
+		return "", store.TaskRunResult{}, river.JobCancel(err)
 	case errors.Is(err, store.ErrTaskEventGone):
-		return w.finish(ctx, args.TenantID, run.ID, store.TaskRunResult{Status: store.TaskSkipped, Reason: "the event has expired"})
+		return run.ID, skipped("the event has expired"), nil
 	case err != nil:
-		return err
+		return run.ID, store.TaskRunResult{}, err
 	}
-	if run.Status.Terminal() {
-		return nil
+	switch {
+	case run.Status.Terminal():
+		return run.ID, store.TaskRunResult{}, nil
+	case run.AnsweredAt != nil:
+		return run.ID, store.TaskRunResult{Status: store.TaskFailed, Error: taskInterrupted}, nil
+	}
+	file := w.Current.Get()
+	tenant, err := w.tenant(file, args.TenantID)
+	if err != nil {
+		return run.ID, store.TaskRunResult{}, err
 	}
 	logger := w.Logger.With("tenant", tenant.Slug, "repository", repo.name, "task", args.Task, "run", run.ID,
 		"subject", ev.SubjectNumber)
 	client, err := w.client(ctx, file, repo.installation, repo.externalID, repo.name)
 	if err != nil {
-		return err
+		return run.ID, store.TaskRunResult{}, err
 	}
 	r := &taskRunner{
 		w: w, file: file, tenant: tenant, client: client, args: args, run: run, ev: ev, repo: repo, jobID: job.ID, logger: logger,
 	}
 	res, err := r.do(ctx)
-	if err != nil {
-		if job.Attempt < job.MaxAttempts && ctx.Err() == nil {
-			return err
-		}
-		res = store.TaskRunResult{Status: store.TaskFailed, Error: err.Error()}
-	}
 	res.Notes = append(r.notes, res.Notes...)
-	ctx, cancel := detach(ctx)
-	defer cancel()
-	logger.Info("task "+string(res.Status), "reason", res.Reason, "model", res.Model, "error", res.Error)
-	return w.finish(ctx, args.TenantID, run.ID, res)
+	return run.ID, res, err
 }
 
 func (w *Task) finish(ctx context.Context, tenantID, runID string, res store.TaskRunResult) error {
@@ -143,6 +187,8 @@ type taskRunner struct {
 	task        *tasks.Task
 	prepared    *tasks.Prepared
 	in          tasks.Input
+	// spent is what the run's model steps cost so far.
+	spent []store.TaskUsage
 	// headSHA and baseRef are a pull request subject's, as kritik last
 	// recorded it; empty for an issue or a pull request it never saw.
 	headSHA, baseRef string
@@ -180,8 +226,12 @@ func (r *taskRunner) do(ctx context.Context) (store.TaskRunResult, error) {
 	if r.task == nil {
 		return skipped("the task is no longer defined"), nil
 	}
-	if reason, err := r.rateLimited(ctx); err != nil || reason != "" {
-		return skipped(reason), err
+	// A run a previous attempt started was admitted then; checking again
+	// would count the runs that started since against it.
+	if r.run.StartedAt == nil {
+		if reason, err := r.rateLimited(ctx); err != nil || reason != "" {
+			return skipped(reason), err
+		}
 	}
 	agentic := r.task.RunMode() == tasks.ModeAgentic
 	if agentic && (r.w.GatewayURL == "" || r.w.Executor == nil) {
@@ -210,7 +260,7 @@ func (r *taskRunner) do(ctx context.Context) (store.TaskRunResult, error) {
 	if agentic {
 		return r.agentic(ctx, data, labels)
 	}
-	return r.answer(ctx, data, labels), nil
+	return r.answer(ctx, data, labels)
 }
 
 // rateLimited says why the run is skipped when the task has run on its
@@ -407,37 +457,51 @@ const noModel = "no review model is configured for this repository"
 // answer asks the model, plans its answer and applies the plan. The model's
 // tokens are spent once it answers, so from then on the run ends here
 // whatever the job's ctx does.
-func (r *taskRunner) answer(ctx context.Context, data tasks.PromptData, labels []string) store.TaskRunResult {
+func (r *taskRunner) answer(ctx context.Context, data tasks.PromptData, labels []string) (store.TaskRunResult, error) {
 	ref, fallback := r.models()
 	if ref == "" {
-		return skipped(noModel)
+		return skipped(noModel), nil
 	}
 	system, user, err := r.prepared.RenderPrompt(data)
 	if err != nil {
-		return failed("", err)
+		return failed("", err), nil
 	}
 	schema, err := json.Marshal(r.prepared.AnswerSchema(labels))
 	if err != nil {
-		return failed("", fmt.Errorf("worker: encode answer schema: %w", err))
+		return failed("", fmt.Errorf("worker: encode answer schema: %w", err)), nil
 	}
 	req := model.CompletionRequest{
 		System: system, User: user, Model: ref.Model(), Schema: schema, SchemaName: "task_answer", MaxTokens: maxOutputTokens,
 	}
 	resp, err := r.complete(ctx, ref, fallback, req)
+	dctx, cancel := detach(ctx)
+	defer cancel()
 	if capped, ok := errors.AsType[cappedError](err); ok {
-		return skipped(string(capped))
+		return skipped(string(capped)), nil
 	}
 	if err != nil {
-		return failed(string(ref), err)
+		// Whatever the model spent is charged; a call cut short by the
+		// job's end, a lease wait's included, is retried.
+		if cerr := r.charge(dctx, false); cerr != nil {
+			r.logger.Error("task usage not recorded", "error", cerr)
+		}
+		if ctx.Err() != nil {
+			return store.TaskRunResult{}, err
+		}
+		return failed(string(ref), err), nil
 	}
-	ctx, cancel := detach(ctx)
-	defer cancel()
-	r.recordUsage(ctx, resp)
-	return r.conclude(ctx, []byte(resp.Raw), resp.Model, labels)
+	ctx = dctx
+	if err := r.charge(ctx, true); err != nil {
+		// Unmarked, a retry would ask the model again: end the run here,
+		// before any write.
+		return failed(resp.Model, err), nil
+	}
+	return r.conclude(ctx, []byte(resp.Raw), resp.Model, labels), nil
 }
 
 // conclude parses the model's answer, plans it and applies the plan, the
-// same whichever mode produced the answer.
+// same whichever mode produced the answer. The run must already be marked
+// answered.
 func (r *taskRunner) conclude(ctx context.Context, raw []byte, modelName string, labels []string) store.TaskRunResult {
 	answer, err := r.prepared.ParseAnswer(raw)
 	if err != nil {
@@ -496,26 +560,42 @@ func (r *taskRunner) call(
 	}
 	c := store.ModelCall{TenantID: r.tenant.ID(), TaskRunID: r.run.ID, Kind: store.ModelCallTask, Step: step}
 	mask := transcriptMask(r.file, r.file.Providers[ref.Provider()])
-	completer := model.Structured{Stepper: stepper, OnStep: r.w.onStep(ctx, r.logger, c, mask)}
+	record := r.w.onStep(ctx, r.logger, c, mask)
+	onStep := func(sreq model.StepRequest, sresp model.StepResponse, err error, d time.Duration) {
+		record(sreq, sresp, err, d)
+		r.spend(sreq, sresp)
+	}
+	completer := model.Structured{Stepper: stepper, OnStep: onStep}
 	resp, err := completer.Complete(ctx, req)
 	r.w.Metrics.ModelCall(r.tenant.Slug, string(ref), roleTask, callOutcome(err), resp.InputTokens, resp.CachedTokens, resp.OutputTokens,
 		resp.CostUSD)
 	return resp, err
 }
 
-// recordUsage charges the call to the tenant, where its caps count it.
-func (r *taskRunner) recordUsage(ctx context.Context, resp model.CompletionResponse) {
-	err := r.w.Store.WithTenant(ctx, r.tenant.ID(), func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `INSERT INTO usage (tenant_id, repository_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
-			VALUES ($1, $2, 'task', $3, $4, $5, $6, $7)`,
-			r.tenant.ID(), r.args.RepositoryID, resp.Model, resp.Upstream, resp.InputTokens, resp.OutputTokens, resp.CostUSD); err != nil {
-			return fmt.Errorf("worker: record task usage: %w", err)
-		}
-		return nil
-	})
-	if err != nil {
-		r.logger.Error("task usage not recorded", "error", err)
+// spend notes what one model step cost, charged with the run's others by
+// charge: a primary model's spend counts when its fallback answers.
+func (r *taskRunner) spend(req model.StepRequest, resp model.StepResponse) {
+	if resp.Usage.Prompt() == 0 && resp.Usage.Output == 0 && resp.CostUSD == 0 {
+		return
 	}
+	name := resp.Model
+	if name == "" {
+		name = req.Model
+	}
+	r.spent = append(r.spent, store.TaskUsage{
+		Model: name, Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
+	})
+}
+
+// charge records the run's model spend, and when answered marks the run
+// answered in the same transaction.
+func (r *taskRunner) charge(ctx context.Context, answered bool) error {
+	if len(r.spent) == 0 && !answered {
+		return nil
+	}
+	return r.w.Store.WithTenant(ctx, r.tenant.ID(), func(tx pgx.Tx) error {
+		return store.ChargeTaskRun(ctx, tx, r.tenant.ID(), r.args.RepositoryID, r.run.ID, r.spent, answered)
+	})
 }
 
 // userAllowed lets a login be assigned or asked for a review when it has at

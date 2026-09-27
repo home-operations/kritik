@@ -218,6 +218,11 @@ func (r *taskRunner) runAgent(
 	if err := run.stopError(); err != nil {
 		return failed(run.model, err), nil
 	}
+	// The gateway charged every step as it served it; marking the run
+	// answered before any write keeps a retry from running it again.
+	if err := r.charge(ctx, true); err != nil {
+		return failed(run.model, err), nil
+	}
 	return r.conclude(ctx, run.result, run.model, labels), nil
 }
 

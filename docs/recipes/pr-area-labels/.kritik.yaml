@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/home-operations/kritik/main/docs/kritik.schema.json
+tasks:
+  - name: pr-area
+    on:
+      - pull_request: [opened, ready_for_review]
+    if: "!subject.draft"
+    mode: single
+    promptInline: |
+      Pick the areas of the project pull request #{{ .Subject.Number }} of {{ .Repo.Owner }}/{{ .Repo.Name }}
+      changes, from its title and description, and add the matching area/ labels. Say how sure you are in confidence.
+    fields:
+      confidence: { type: string, enum: [low, high] }
+    actions:
+      labels:
+        # Every area/ label the repository has is on offer, but none is
+        # added unless the model is sure.
+        propose: { add: ["area/*"] }
+        if: answer.fields.confidence == "high"

@@ -122,6 +122,14 @@ var goldens = map[string]any{
 			Dropped: []string{`.kritik.yaml: mode "single" was dropped; allowed: agentic`},
 		},
 		IndexRuns: []IndexRun{goldenIndexRun},
+		Tasks: []TaskDef{
+			{Name: "welcome", Source: configfile.SourceFile, Triggers: []string{"pull_request.opened"}, Mode: "single", Actions: []string{"comment"}},
+			{
+				Name: "triage", Source: configfile.SourceRepository, Triggers: []string{"issue.opened", "issue.reopened"},
+				If: `!("triaged" in subject.labels)`, Mode: "agentic", Actions: []string{"comment", "labels"},
+			},
+		},
+		TaskNotes: []TaskNote{{Task: "triage", What: "actions.state", Reason: "the action is not allowed"}},
 	},
 	"index_run": goldenIndexRun,
 	"pull":      goldenPull,

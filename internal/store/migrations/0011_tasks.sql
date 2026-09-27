@@ -49,6 +49,9 @@ CREATE TABLE task_runs (
     error          text        NOT NULL DEFAULT '',
     created_at     timestamptz NOT NULL DEFAULT now(),
     started_at     timestamptz,
+    -- answered_at is when the model's answer was charged: a run past it is
+    -- never run again, since its forge writes may already have been made.
+    answered_at    timestamptz,
     finished_at    timestamptz,
     UNIQUE (event_id, task)
 );

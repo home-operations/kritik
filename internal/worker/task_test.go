@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"reflect"
@@ -8,11 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/riverqueue/river"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/tasks"
@@ -193,5 +197,47 @@ func TestRelatedIssues(t *testing.T) {
 	got := relatedIssues([]forge.Issue{{Number: 7, Title: "self"}, {Number: 3, Title: "other", State: "open", IsPull: true}}, 7)
 	if want := []relatedIssue{{Number: 3, Title: "other", State: "open", Pull: true}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("relatedIssues = %+v", got)
+	}
+}
+
+func TestAttemptEnds(t *testing.T) {
+	boom := errors.New("forge down")
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	remote, cancelRemote := context.WithCancelCause(context.Background())
+	cancelRemote(river.ErrJobCancelledRemotely)
+	tests := []struct {
+		name              string
+		ctx               context.Context
+		err               error
+		attempt, attempts int
+		ends              bool
+	}{
+		{"an error with attempts left is retried", context.Background(), boom, 1, 5, false},
+		{"the last attempt ends the run", context.Background(), boom, 5, 5, true},
+		{"a job that cancels itself ends the run", context.Background(), river.JobCancel(boom), 1, 5, true},
+		{"a shutdown or timeout is retried", canceled, context.Canceled, 1, 5, false},
+		{"a cancel from outside ends the run", remote, context.Canceled, 1, 5, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := attemptEnds(tt.ctx, tt.err, tt.attempt, tt.attempts); got != tt.ends {
+				t.Fatalf("attemptEnds = %v, want %v", got, tt.ends)
+			}
+		})
+	}
+}
+
+func TestSpend(t *testing.T) {
+	r := &taskRunner{}
+	r.spend(model.StepRequest{Model: "primary"}, model.StepResponse{Usage: model.Usage{Input: 40, Output: 2}, CostUSD: 0.01})
+	r.spend(model.StepRequest{Model: "primary"}, model.StepResponse{})
+	r.spend(model.StepRequest{Model: "fallback"}, model.StepResponse{Model: "fallback-1", Upstream: "up", Usage: model.Usage{Input: 30, Output: 10}})
+	want := []store.TaskUsage{
+		{Model: "primary", Input: 40, Output: 2, CostUSD: 0.01},
+		{Model: "fallback-1", Upstream: "up", Input: 30, Output: 10},
+	}
+	if !reflect.DeepEqual(r.spent, want) {
+		t.Fatalf("spent = %+v, want %+v", r.spent, want)
 	}
 }

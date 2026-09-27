@@ -18,6 +18,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/tasks"
 )
 
 // recentIndexRuns is how many index runs a repository's detail lists.
@@ -287,6 +288,7 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope)
 		Repository: repository(row), Settings: repoSettings(settings), Sources: t.file.Sources(t.tenant, row.Installation, row.FullName),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
 	}
+	d.Tasks, d.TaskNotes = repoTasks(settings, file)
 	writeJSON(w, http.StatusOK, d)
 	return nil
 }
@@ -313,6 +315,58 @@ func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfi
 		out.Ignored = err.Error()
 	}
 	return out
+}
+
+// repoTasks resolves the tasks that run for the repository from the
+// operator's settings and the .kritik.yaml a review last read, if any. A
+// file that does not parse leaves the operator's tasks, as it does for a
+// run.
+func repoTasks(settings configfile.Settings, row *store.RepoFileRow) ([]TaskDef, []TaskNote) {
+	var doc []byte
+	if row != nil && row.Doc != nil {
+		doc = []byte(*row.Doc)
+	}
+	m, _ := repoconfig.Merge(doc, settings) // the error is RepoConfig.Ignored's to report
+	named := func(ts []tasks.Task, name string) bool {
+		return slices.ContainsFunc(ts, func(t tasks.Task) bool { return t.Name == name })
+	}
+	defs := make([]TaskDef, len(m.Tasks))
+	for i, t := range m.Tasks {
+		d := TaskDef{
+			Name: t.Name, Source: configfile.SourceRepository, If: t.If, Mode: string(t.RunMode()), Triggers: []string{}, Actions: []string{},
+		}
+		switch {
+		case named(settings.Tasks, t.Name):
+			d.Source = configfile.SourceFile
+		case named(settings.DashboardTasks, t.Name):
+			d.Source = configfile.SourceDashboard
+		}
+		for _, tr := range t.On {
+			d.Triggers = append(d.Triggers, tr.Names()...)
+		}
+		a := t.Actions
+		for _, k := range []struct {
+			kind string
+			set  bool
+		}{
+			{tasks.ActionComment, a.Comment != nil && a.Comment.PostMode() != tasks.CommentNone},
+			{tasks.ActionLabels, a.Labels != nil},
+			{tasks.ActionState, a.State != nil},
+			{tasks.ActionAssign, a.Assign != nil},
+			{tasks.ActionReviewers, a.Reviewers != nil},
+			{tasks.ActionInlineComments, a.InlineComments != nil},
+		} {
+			if k.set {
+				d.Actions = append(d.Actions, k.kind)
+			}
+		}
+		defs[i] = d
+	}
+	notes := make([]TaskNote, len(m.TaskNotes))
+	for i, n := range m.TaskNotes {
+		notes[i] = TaskNote{Task: n.Task, What: n.What, Reason: n.Reason}
+	}
+	return defs, notes
 }
 
 func repoSettings(s configfile.Settings) RepoSettings {
