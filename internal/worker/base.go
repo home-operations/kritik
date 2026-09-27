@@ -35,15 +35,13 @@ func (b *Base) tenant(file *configfile.File, id string) (*configfile.Tenant, err
 	return nil, river.JobCancel(fmt.Errorf("worker: tenant %s is not in the configuration", id))
 }
 
-// client resolves an installation by name to its forge client.
-func (b *Base) client(
-	ctx context.Context, file *configfile.File, installation string, externalID int64, repo string,
-) (forge.Client, error) {
+// client resolves an installation by name to its forge client for repo.
+func (b *Base) client(ctx context.Context, file *configfile.File, installation, repo string) (forge.Client, error) {
 	in, _, ok := file.Installation(installation)
 	if !ok {
 		return nil, river.JobCancel(fmt.Errorf("worker: installation %s is not in the configuration", installation))
 	}
-	return b.Forges.For(ctx, in, externalID, repo)
+	return b.Forges.For(ctx, in, repo)
 }
 
 // releaseTimeout bounds the lease release after the job's context is gone.

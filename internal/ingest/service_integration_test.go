@@ -277,26 +277,22 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 
 	t.Run("installation adds and removes forge-managed repositories", func(t *testing.T) {
 		added := webhook.Event{Kind: webhook.KindInstallation, Action: "added", Account: "onedr0p",
-			Installation: &webhook.Installation{ID: 4242, Repositories: []string{"onedr0p/new-repo", "onedr0p/disabled"}}}
+			Installation: &webhook.Installation{Repositories: []string{"onedr0p/new-repo", "onedr0p/disabled"}}}
 		if _, err := svc.Dispatch(ctx, request(f, added)); err != nil {
 			t.Fatal(err)
 		}
 		var newEnabled, disabledEnabled bool
-		var extID int64
 		_ = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
 			if err := tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'onedr0p/new-repo'`).Scan(&newEnabled); err != nil {
 				return err
 			}
-			if err := tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'onedr0p/disabled'`).Scan(&disabledEnabled); err != nil {
-				return err
-			}
-			return tx.QueryRow(ctx, `SELECT external_id FROM installations WHERE name = 'bot-ross'`).Scan(&extID)
+			return tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'onedr0p/disabled'`).Scan(&disabledEnabled)
 		})
-		if !newEnabled || disabledEnabled || extID != 4242 {
-			t.Fatalf("new=%v file-disabled=%v external_id=%d; a file-managed row must keep its flag", newEnabled, disabledEnabled, extID)
+		if !newEnabled || disabledEnabled {
+			t.Fatalf("new=%v file-disabled=%v; a file-managed row must keep its flag", newEnabled, disabledEnabled)
 		}
 		removed := webhook.Event{Kind: webhook.KindInstallation, Action: "removed", Account: "onedr0p",
-			Installation: &webhook.Installation{ID: 4242, Repositories: []string{"onedr0p/new-repo"}}}
+			Installation: &webhook.Installation{Repositories: []string{"onedr0p/new-repo"}}}
 		if _, err := svc.Dispatch(ctx, request(f, removed)); err != nil {
 			t.Fatal(err)
 		}

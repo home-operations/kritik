@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -36,9 +37,9 @@ func TestBuildForgeReturnsForgejoClient(t *testing.T) {
 		t.Fatal("installation not found")
 	}
 
-	// externalID and repo are GitHub-only concerns (installation discovery);
-	// Forgejo's client construction needs neither.
-	client, err := BuildForge(t.Context(), in, 0, "acme/widgets")
+	// repo is a GitHub-only concern (installation discovery); Forgejo's
+	// client construction does not need it.
+	client, err := BuildForge(t.Context(), in, "acme/widgets")
 	if err != nil {
 		t.Fatalf("BuildForge: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestBuildForgeReturnsForgejoClientForGitea(t *testing.T) {
 		t.Fatal("installation not found")
 	}
 
-	client, err := BuildForge(t.Context(), in, 0, "acme/widgets")
+	client, err := BuildForge(t.Context(), in, "acme/widgets")
 	if err != nil {
 		t.Fatalf("BuildForge: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestBuildForgeGitToken(t *testing.T) {
 				t.Fatal(err)
 			}
 			in, _, _ := file.Installation("acme-forgejo")
-			client, err := BuildForge(t.Context(), in, 0, "acme/widgets")
+			client, err := BuildForge(t.Context(), in, "acme/widgets")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -128,7 +129,7 @@ func TestForgeCacheRebuildsOnRotatedCredentials(t *testing.T) {
 		return in
 	}
 	builds := 0
-	cache := &ForgeCache{Build: func(context.Context, *configfile.Installation, int64, string) (forge.Client, error) {
+	cache := &ForgeCache{Build: func(context.Context, *configfile.Installation, string) (forge.Client, error) {
 		builds++
 		return nil, nil
 	}}
@@ -146,7 +147,7 @@ func TestForgeCacheRebuildsOnRotatedCredentials(t *testing.T) {
 	}
 	for _, st := range steps {
 		t.Run(st.name, func(t *testing.T) {
-			if _, err := cache.For(t.Context(), load(t, st.token, st.git), 0, "acme/widgets"); err != nil {
+			if _, err := cache.For(t.Context(), load(t, st.token, st.git), "acme/widgets"); err != nil {
 				t.Fatal(err)
 			}
 			if builds != st.wantBuilds {
@@ -155,7 +156,33 @@ func TestForgeCacheRebuildsOnRotatedCredentials(t *testing.T) {
 		})
 	}
 	if n := len(cache.clients); n != 1 {
-		t.Fatalf("cache holds %d clients, want 1 per installation", n)
+		t.Fatalf("cache holds %d clients, want 1 per installation and owner", n)
+	}
+}
+
+// TestForgeCacheBuildsPerOwner: a GitHub App has an installation, and a
+// token, per account, so repositories of different owners get their own
+// client and repositories of one owner share one.
+func TestForgeCacheBuildsPerOwner(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_BUILD_TOKEN", "tok")
+	t.Setenv("TEST_FORGEJO_BUILD_SECRET", "s")
+	file, err := configfile.Parse([]byte(forgejoConfigYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _, _ := file.Installation("acme-forgejo")
+	var built []string
+	cache := &ForgeCache{Build: func(_ context.Context, _ *configfile.Installation, repo string) (forge.Client, error) {
+		built = append(built, repo)
+		return nil, nil
+	}}
+	for _, repo := range []string{"acme/widgets", "acme/gadgets", "Other/tools", "other/more"} {
+		if _, err := cache.For(t.Context(), in, repo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if want := []string{"acme/widgets", "Other/tools"}; !slices.Equal(built, want) {
+		t.Fatalf("built for %q, want %q", built, want)
 	}
 }
 

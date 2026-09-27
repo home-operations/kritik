@@ -248,8 +248,8 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 	return out, err
 }
 
-// installation records the forge's installation id and the repositories
-// the App now sees. Repositories the App loses are disabled, not deleted.
+// installation records the repositories the App now sees. Repositories the
+// App loses are disabled, not deleted.
 func (s *Service) installation(ctx context.Context, req Request) (Outcome, error) {
 	ev := req.Event
 	inst := ev.Installation
@@ -262,12 +262,6 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
 	err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
-		if inst.ID != 0 {
-			if _, err := tx.Exec(ctx, `UPDATE installations SET external_id = $1, updated_at = now() WHERE id = $2`,
-				inst.ID, req.Installation.ID()); err != nil {
-				return fmt.Errorf("ingest: record installation id: %w", err)
-			}
-		}
 		if disable && len(inst.Repositories) == 0 {
 			// The whole installation went away.
 			_, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()

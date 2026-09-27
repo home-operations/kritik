@@ -55,15 +55,14 @@ func (a *App) Slug(ctx context.Context) (string, error) {
 	return app.GetSlug(), nil
 }
 
-// InstallationTokens returns a token source for one installation. The
-// installation id is known from the installation webhook; when it is not
-// yet known, DiscoverInstallation finds it from a repository the App can see.
+// InstallationTokens returns a token source for one installation, as
+// DiscoverInstallation finds it.
 func (a *App) InstallationTokens(installationID int64) *InstallationTokens {
 	return &InstallationTokens{apps: a.apps, instID: installationID}
 }
 
 // DiscoverInstallation returns the id of the App's installation on the
-// repository, for installations declared before their webhook arrived.
+// account that owns the repository.
 func (a *App) DiscoverInstallation(ctx context.Context, owner, repo string) (int64, error) {
 	inst, _, err := a.apps.Apps.GetRepositoryInstallation(ctx, owner, repo)
 	if err != nil {

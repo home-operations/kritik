@@ -379,7 +379,7 @@ func (c *completers) Stepper(*configfile.File, string) (model.Stepper, error) { 
 
 type forges struct{ f forge.Client }
 
-func (f *forges) For(context.Context, *configfile.Installation, int64, string) (forge.Client, error) {
+func (f *forges) For(context.Context, *configfile.Installation, string) (forge.Client, error) {
 	return f.f, nil
 }
 

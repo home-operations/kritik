@@ -26,9 +26,10 @@ import (
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
-// Forges builds a forge client per installation, as the worker does.
+// Forges builds a forge client per installation and repository owner, as
+// the worker does.
 type Forges interface {
-	For(ctx context.Context, in *configfile.Installation, externalID int64, repo string) (forge.Client, error)
+	For(ctx context.Context, in *configfile.Installation, repo string) (forge.Client, error)
 }
 
 // Poller lists open pull requests on a schedule.
@@ -93,28 +94,18 @@ func (p *Poller) PollAll(ctx context.Context) {
 	}
 }
 
-type repoRow struct {
-	name       string
-	externalID int64
-}
-
 // Poll lists one installation's repositories and returns how many pull
 // requests were handed to the dispatcher.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *configfile.Tenant, in *configfile.Installation) (int, error) {
-	var repos []repoRow
+	var repos []string
 	var known time.Time
 	var polled *time.Time
 	err := p.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT r.name, coalesce(i.external_id, 0) FROM repositories r JOIN installations i ON i.id = r.installation_id
-			WHERE r.installation_id = $1 AND r.enabled ORDER BY r.name`, in.ID())
+		rows, err := tx.Query(ctx, `SELECT name FROM repositories WHERE installation_id = $1 AND enabled ORDER BY name`, in.ID())
 		if err != nil {
 			return err
 		}
-		if repos, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (repoRow, error) {
-			var r repoRow
-			err := row.Scan(&r.name, &r.externalID)
-			return r, err
-		}); err != nil {
+		if repos, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `SELECT i.created_at, s.last_polled_at FROM installations i
@@ -129,15 +120,15 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *config
 	}
 	started := time.Now()
 	handled := 0
-	for _, r := range repos {
+	for _, repo := range repos {
 		if ctx.Err() != nil {
 			return handled, ctx.Err()
 		}
-		client, err := p.Forges.For(ctx, in, r.externalID, r.name)
+		client, err := p.Forges.For(ctx, in, repo)
 		if err != nil {
 			return handled, err
 		}
-		owner, name, _ := strings.Cut(r.name, "/")
+		owner, name, _ := strings.Cut(repo, "/")
 		prs, err := client.ListOpenPullRequests(ctx, owner, name, since)
 		if err != nil {
 			return handled, err
@@ -149,14 +140,14 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *config
 			}
 			ev := webhook.Event{
 				Kind: webhook.KindPullRequest, Action: action, Delivery: fmt.Sprintf("poll-%s-%d", started.UTC().Format("20060102T150405"), pr.Number),
-				Repository: &webhook.Repository{FullName: r.name, DefaultBranch: pr.DefaultBranch}, Account: owner, PullRequest: &pr.PullRequest,
+				Repository: &webhook.Repository{FullName: repo, DefaultBranch: pr.DefaultBranch}, Account: owner, PullRequest: &pr.PullRequest,
 			}
 			out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Installation: in, Event: ev})
 			if err != nil {
 				return handled, err
 			}
 			handled++
-			p.Logger.Info("polled pull request "+out.Status, "installation", in.Name, "repository", r.name, "pr", pr.Number, "reason", out.Reason)
+			p.Logger.Info("polled pull request "+out.Status, "installation", in.Name, "repository", repo, "pr", pr.Number, "reason", out.Reason)
 		}
 	}
 	err = p.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
