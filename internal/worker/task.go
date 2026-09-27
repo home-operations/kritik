@@ -377,13 +377,19 @@ func (r *taskRunner) promptData(ctx context.Context) (tasks.PromptData, error) {
 		case tasks.ContextRelated:
 			found, err := r.client.SearchIssues(ctx, r.owner, r.name, q.Query, min(max(q.K, 1), taskRelatedMax))
 			if err != nil {
-				return d, err
+				if err := r.sourceFailed(ctx, q.Name, err); err != nil {
+					return d, err
+				}
+				continue
 			}
 			v = tasks.TakeList(budget, q.Name, relatedIssues(found, r.ev.SubjectNumber))
 		case tasks.ContextSearch:
 			found, ok, err := r.searchIndex(ctx, q)
 			if err != nil {
-				return d, err
+				if err := r.sourceFailed(ctx, q.Name, err); err != nil {
+					return d, err
+				}
+				continue
 			}
 			if !ok {
 				continue
@@ -393,6 +399,18 @@ func (r *taskRunner) promptData(ctx context.Context) (tasks.PromptData, error) {
 		d.Context[q.Name] = v
 	}
 	return d, nil
+}
+
+// sourceFailed notes that the context source name failed with err and
+// lets the run go on without it, since a search is a hint the task can do
+// without; a canceled ctx still ends the run.
+func (r *taskRunner) sourceFailed(ctx context.Context, name string, err error) error {
+	if ctx.Err() != nil {
+		return err
+	}
+	r.logger.Warn("task context source failed", "source", name, "error", err)
+	r.notes = append(r.notes, fmt.Sprintf("context %s left out: the search failed", name))
+	return nil
 }
 
 // pullHead reads the head and base a pull request subject was last

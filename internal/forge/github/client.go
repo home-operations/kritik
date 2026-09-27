@@ -412,24 +412,53 @@ func (c *Client) RequestReviewers(ctx context.Context, owner, repo string, numbe
 	return nil
 }
 
-// SearchIssues implements forge.Client, scoping the search query to the
-// repository so callers write a bare query like Search would after "repo:".
+// SearchIssues implements forge.Client. The query is free text, often
+// rendered from an issue's title, so every qualifier-shaped term (one with
+// a colon) is dropped before the search is scoped to the repository: a
+// planted "repo:" would otherwise widen it, since GitHub ORs repo
+// qualifiers. GitHub requires one of is:issue and is:pull-request, so
+// issues and pull requests are searched apart and interleaved, and a
+// result from another repository is dropped all the same.
 func (c *Client) SearchIssues(ctx context.Context, owner, repo, query string, limit int) ([]forge.Issue, error) {
-	q := fmt.Sprintf("repo:%s/%s %s", owner, repo, query)
-	//nolint:modernize // embedlit's elision is array/slice/map-only per the spec; it doesn't compile for a struct field
-	opts := &gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: limit}}
-	result, _, err := c.api.Search.Issues(ctx, q, opts)
-	if err != nil {
-		return nil, fmt.Errorf("github: search %q in %s/%s: %w", query, owner, repo, err)
-	}
-	out := make([]forge.Issue, 0, len(result.Issues))
-	for _, iss := range result.Issues {
-		if len(out) == limit {
-			break
+	var terms []string
+	for t := range strings.FieldsSeq(query) {
+		if !strings.Contains(t, ":") {
+			terms = append(terms, t)
 		}
-		out = append(out, issueFrom(iss))
+	}
+	if len(terms) == 0 || limit <= 0 {
+		return nil, nil
+	}
+	var found [2][]forge.Issue
+	for i, kind := range []string{"is:issue", "is:pull-request"} {
+		q := fmt.Sprintf("repo:%s/%s %s %s", owner, repo, kind, strings.Join(terms, " "))
+		//nolint:modernize // embedlit's elision is array/slice/map-only per the spec; it doesn't compile for a struct field
+		opts := &gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: limit}}
+		result, _, err := c.api.Search.Issues(ctx, q, opts)
+		if err != nil {
+			return nil, fmt.Errorf("github: search %q in %s/%s: %w", query, owner, repo, err)
+		}
+		for _, iss := range result.Issues {
+			if inRepository(iss, owner, repo) {
+				found[i] = append(found[i], issueFrom(iss))
+			}
+		}
+	}
+	out := make([]forge.Issue, 0, limit)
+	for i := 0; len(out) < limit && i < max(len(found[0]), len(found[1])); i++ {
+		for _, f := range found {
+			if i < len(f) && len(out) < limit {
+				out = append(out, f[i])
+			}
+		}
 	}
 	return out, nil
+}
+
+// inRepository reports whether iss, a search result, is in owner/repo.
+func inRepository(iss *gh.Issue, owner, repo string) bool {
+	u := iss.GetRepositoryURL()
+	return strings.HasSuffix(strings.ToLower(u), strings.ToLower("/repos/"+owner+"/"+repo))
 }
 
 func issueFrom(iss *gh.Issue) forge.Issue {

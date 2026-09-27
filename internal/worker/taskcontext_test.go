@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -20,9 +21,10 @@ import (
 // contextForge serves an issue, its thread, files by path and a search.
 type contextForge struct {
 	forge.Client
-	files    map[string]string
-	found    []forge.Issue
-	searched []string
+	files     map[string]string
+	found     []forge.Issue
+	searchErr error
+	searched  []string
 }
 
 func (f *contextForge) Issue(_ context.Context, _, _ string, number int) (forge.Issue, error) {
@@ -45,7 +47,7 @@ func (f *contextForge) FileAt(_ context.Context, _, _, ref, path string) ([]byte
 
 func (f *contextForge) SearchIssues(_ context.Context, _, _, query string, _ int) ([]forge.Issue, error) {
 	f.searched = append(f.searched, query)
-	return f.found, nil
+	return f.found, f.searchErr
 }
 
 func contextRunner(t *testing.T, doc string, f *contextForge) *taskRunner {
@@ -145,5 +147,38 @@ func TestPromptDataContext(t *testing.T) {
 	}
 	if !slices.Contains(f.searched, "is:open It crashes") {
 		t.Fatalf("searched = %q", f.searched)
+	}
+}
+
+func TestPromptDataRelatedFails(t *testing.T) {
+	f := &contextForge{searchErr: errors.New("github: search: 422 Validation Failed")}
+	r := contextRunner(t, `
+- name: triage
+  mode: single
+  on: [{issue: []}]
+  context:
+    related: [{name: dupes, query: "{{ .Subject.Title }}"}]
+`, f)
+	d, err := r.promptData(t.Context())
+	if err != nil {
+		t.Fatalf("promptData: %v; a failed search must not fail the run", err)
+	}
+	if _, ok := d.Context["dupes"]; ok {
+		t.Fatalf("context = %#v, want dupes left out", d.Context)
+	}
+	if want := []string{"context dupes left out: the search failed"}; !slices.Equal(r.notes, want) {
+		t.Fatalf("notes = %q, want %q", r.notes, want)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := contextRunner(t, `
+- name: triage
+  mode: single
+  on: [{issue: []}]
+  context:
+    related: [{name: dupes, query: "{{ .Subject.Title }}"}]
+`, f).promptData(ctx); err == nil {
+		t.Fatal("promptData on a canceled context succeeded")
 	}
 }

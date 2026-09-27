@@ -314,7 +314,12 @@ operator allows in `allow.tasks.context`:
   repository's index most like `query`, as `.Context.<name>`.
 - `related`: `[{ name, query, k }]`, the forge's issues and pull requests
   matching `query`, such as likely duplicates, as `.Context.<name>`: a list
-  of `{number, title, state, url, isPull, labels}`.
+  of `{number, title, state, url, isPull, labels}`. The query is free text:
+  on GitHub every word with a colon (a qualifier such as `repo:` or
+  `is:open`) is dropped, since the query usually holds an issue author's
+  title, and issues and pull requests are searched apart and interleaved.
+  A `search` or `related` source that fails is left out with a note; the
+  run goes on without it.
 - `commands`: `[{ name, run }]`, agentic tasks only: a command line run in
   the runner pod without a shell, split on whitespace, whose first word must
   be in `allow.commands` (or the operator's own `agent.commands` when it

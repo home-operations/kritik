@@ -3,10 +3,13 @@ package github
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -462,22 +465,58 @@ func TestRequestReviewers(t *testing.T) {
 }
 
 func TestSearchIssues(t *testing.T) {
+	item := func(repo string, n int) string {
+		return fmt.Sprintf(`{"number":%d,"title":"t%d","state":"open","user":{"login":"u"},"html_url":"https://x/%d",
+			"repository_url":"https://api.github.com/repos/%s"}`, n, n, n, repo)
+	}
+	tests := []struct {
+		name, query string
+		limit       int
+		wantQ       []string
+		want        []int
+	}{
+		{"issues and pull requests interleaved to the limit", "crash on start", 3,
+			[]string{"repo:o/r is:issue crash on start", "repo:o/r is:pull-request crash on start"}, []int{1, 10, 2}},
+		{"qualifiers are dropped", "crash repo:other/x is:closed -repo:o/r", 5,
+			[]string{"repo:o/r is:issue crash", "repo:o/r is:pull-request crash"}, []int{1, 10, 2, 11}},
+		{"nothing left to search for", "repo:other/x", 5, nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, c := newFakeAPI(t)
+			var gotQ []string
+			f.mux.HandleFunc("GET /api/v3/search/issues", func(w http.ResponseWriter, r *http.Request) {
+				q := r.URL.Query().Get("q")
+				gotQ = append(gotQ, q)
+				if got := r.URL.Query().Get("per_page"); got != strconv.Itoa(tt.limit) {
+					t.Errorf("per_page = %q", got)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if strings.Contains(q, "is:issue") {
+					_, _ = fmt.Fprintf(w, `{"items":[%s,%s,%s]}`, item("o/r", 1), item("other/x", 99), item("O/R", 2))
+					return
+				}
+				_, _ = fmt.Fprintf(w, `{"items":[%s,%s]}`, item("o/r", 10), item("o/r", 11))
+			})
+			iss, err := c.SearchIssues(t.Context(), "o", "r", tt.query, tt.limit)
+			if err != nil {
+				t.Fatalf("SearchIssues: %v", err)
+			}
+			var got []int
+			for _, i := range iss {
+				got = append(got, i.Number)
+			}
+			if !slices.Equal(gotQ, tt.wantQ) || !slices.Equal(got, tt.want) {
+				t.Fatalf("SearchIssues searched %q and found %v; want %q and %v", gotQ, got, tt.wantQ, tt.want)
+			}
+		})
+	}
+}
+
+func TestSearchIssuesRejected(t *testing.T) {
 	f, c := newFakeAPI(t)
-	f.mux.HandleFunc("GET /api/v3/search/issues", func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("q"); got != "repo:o/r is:open" {
-			t.Errorf("q = %q", got)
-		}
-		if got := r.URL.Query().Get("per_page"); got != "1" {
-			t.Errorf("per_page = %q", got)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"items":[
-			{"number":1,"title":"a","state":"open","user":{"login":"u"},"html_url":"https://x/1"},
-			{"number":2,"title":"b","state":"open","user":{"login":"u"},"html_url":"https://x/2"}
-		]}`))
-	})
-	iss, err := c.SearchIssues(t.Context(), "o", "r", "is:open", 1)
-	if err != nil || len(iss) != 1 || iss[0].Number != 1 {
-		t.Fatalf("SearchIssues = %+v, %v; must truncate to limit", iss, err)
+	f.reply("GET /api/v3/search/issues", 422, `{"message":"Validation Failed"}`)
+	if _, err := c.SearchIssues(t.Context(), "o", "r", "crash", 5); err == nil {
+		t.Fatal("SearchIssues succeeded on a 422")
 	}
 }
