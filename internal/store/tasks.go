@@ -135,6 +135,10 @@ type TaskRun struct {
 	Reason        string
 	ConfigSHA     string
 	CreatedAt     time.Time
+	// StartedAt is when a job first ran the run, nil before; AnsweredAt
+	// when its model's answer was charged, nil before.
+	StartedAt  *time.Time
+	AnsweredAt *time.Time
 }
 
 // QueueTaskRun records r as queued in tx, once per event and task, and
@@ -158,9 +162,9 @@ var ErrTaskRunGone = errors.New("store: task run is gone")
 func LoadTaskRun(ctx context.Context, tx pgx.Tx, eventID, task string) (TaskRun, error) {
 	r := TaskRun{EventID: eventID, Task: task}
 	err := tx.QueryRow(ctx, `SELECT id, tenant_id, repository_id, subject_kind, subject_number, trigger, mode, status, reason,
-		config_sha, created_at FROM task_runs WHERE event_id = $1 AND task = $2`, eventID, task).
+		config_sha, created_at, started_at, answered_at FROM task_runs WHERE event_id = $1 AND task = $2`, eventID, task).
 		Scan(&r.ID, &r.TenantID, &r.RepositoryID, &r.SubjectKind, &r.SubjectNumber, &r.Trigger, &r.Mode, &r.Status, &r.Reason,
-			&r.ConfigSHA, &r.CreatedAt)
+			&r.ConfigSHA, &r.CreatedAt, &r.StartedAt, &r.AnsweredAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, ErrTaskRunGone
 	}
@@ -175,6 +179,32 @@ func StartTaskRun(ctx context.Context, tx pgx.Tx, id string) error {
 	_, err := tx.Exec(ctx, `UPDATE task_runs SET status = 'running', started_at = coalesce(started_at, now()) WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("store: start task run: %w", err)
+	}
+	return nil
+}
+
+// TaskUsage is one model call charged to a task run.
+type TaskUsage struct {
+	Model, Upstream string
+	Input, Output   int64
+	CostUSD         float64
+}
+
+// ChargeTaskRun records the usage of the run id's model calls in tx, which
+// must be scoped to tenantID, where the tenant's caps count it, and, when
+// answered, marks the run answered: from then on it is never run again.
+func ChargeTaskRun(ctx context.Context, tx pgx.Tx, tenantID, repositoryID, id string, usage []TaskUsage, answered bool) error {
+	for _, u := range usage {
+		if _, err := tx.Exec(ctx, `INSERT INTO usage (tenant_id, repository_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
+			VALUES ($1, $2, 'task', $3, $4, $5, $6, $7)`, tenantID, repositoryID, u.Model, u.Upstream, u.Input, u.Output, u.CostUSD); err != nil {
+			return fmt.Errorf("store: charge task run: %w", err)
+		}
+	}
+	if !answered {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `UPDATE task_runs SET answered_at = now() WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("store: mark task run answered: %w", err)
 	}
 	return nil
 }

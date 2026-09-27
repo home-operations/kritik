@@ -42,6 +42,9 @@ func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration {
 // Timeout implements river.Worker: a task waits for a lease, calls the
 // model and writes back like a follow-up.
 func (w *Task) Timeout(*river.Job[jobs.TaskArgs]) time.Duration {
+	if w.timeout > 0 {
+		return w.timeout
+	}
 	return min(jobtimeout.FollowUpTimeout, jobtimeout.MaxJobTimeout)
 }
 

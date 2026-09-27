@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -79,9 +80,19 @@ func (s *Service) Dispatch(ctx context.Context, req Request) (Outcome, error) {
 	if err != nil {
 		return out, err
 	}
+	// Tasks persist in a transaction of their own, after the review
+	// pipeline's has committed. When that one enqueued nothing, what it
+	// wrote is idempotent, so a failure here is the forge's to redeliver
+	// (the delivery id keeps a redelivery from running tasks twice); when
+	// it enqueued a job, a 500 would redeliver a delivery already acted
+	// on, so tasks miss this one instead.
 	queued, err := s.tasks(ctx, req)
 	if err != nil {
-		return out, err
+		if out.Status != Enqueued {
+			return out, err
+		}
+		slog.Error("ingest: delivery not offered to tasks", "delivery", req.Event.Delivery, "error", err)
+		return out, nil
 	}
 	if queued && out.Status != Enqueued {
 		out = Outcome{Status: Enqueued, Job: jobTaskDispatch}
@@ -103,7 +114,12 @@ func (s *Service) tasks(ctx context.Context, req Request) (bool, error) {
 		return false, nil
 	}
 	settings := req.File.Settings(req.Tenant, req.Installation.Name, ev.Repository.FullName)
-	operator, _ := repoconfig.Merge(nil, settings)
+	operator, err := repoconfig.Merge(nil, settings)
+	if err != nil {
+		// Without a file Merge has nothing to parse; the operator's tasks
+		// are still in operator.
+		slog.Warn("ingest: operator tasks not merged", "error", err)
+	}
 	in := taskrun.Input(ev)
 	if !taskrun.Candidate(in, operator.Tasks, settings.TaskBounds) {
 		return false, nil
@@ -118,7 +134,7 @@ func (s *Service) tasks(ctx context.Context, req Request) (bool, error) {
 		subjectKind, subjectNumber = in.Subject.Kind, in.Subject.Number
 	}
 	queued := false
-	err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
+	err = s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
 		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
 		if err != nil {
 			return err
