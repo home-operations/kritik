@@ -238,6 +238,13 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 		if out, _ := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindComment, Action: "created", Repository: repo("onedr0p/home-ops"), Comment: &bot})); out.Reason != "no-mention" {
 			t.Fatalf("bot comment = %+v", out)
 		}
+		issue := *c
+		issue.ID = 503
+		ev = webhook.Event{Kind: webhook.KindComment, Action: "created", Repository: repo("onedr0p/home-ops"), Comment: &issue,
+			Subject: &webhook.Subject{Kind: webhook.SubjectIssue, Number: 7}}
+		if out, _ := svc.Dispatch(ctx, request(f, ev)); out.Status != Ignored {
+			t.Fatalf("issue comment = %+v", out)
+		}
 		if count("followup") != 1 {
 			t.Fatalf("followup jobs = %d", count("followup"))
 		}
