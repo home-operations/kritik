@@ -1,0 +1,20 @@
+{
+  "id": "tr-1",
+  "repository": "alpha/one",
+  "task": "triage",
+  "subjectKind": "issue",
+  "subjectNumber": 12,
+  "trigger": "issue.opened",
+  "mode": "single",
+  "status": "succeeded",
+  "reason": "",
+  "model": "acme/large",
+  "configSha": "def456",
+  "commentId": 77,
+  "error": "",
+  "droppedCount": 1,
+  "createdAt": "2026-09-01T12:00:00Z",
+  "startedAt": "2026-09-01T12:00:00Z",
+  "finishedAt": "2026-09-01T12:01:30Z",
+  "durationMs": 90000
+}

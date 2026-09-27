@@ -20,12 +20,13 @@ const (
 	EventIndexRun  EventKind = "index_run"
 	EventFollowup  EventKind = "followup"
 	EventModelCall EventKind = "model_call"
+	EventTaskRun   EventKind = "task_run"
 )
 
 // Valid reports whether k is one of the known event kinds.
 func (k EventKind) Valid() bool {
 	switch k {
-	case EventReview, EventRunnerRun, EventIndexRun, EventFollowup, EventModelCall:
+	case EventReview, EventRunnerRun, EventIndexRun, EventFollowup, EventModelCall, EventTaskRun:
 		return true
 	}
 	return false
@@ -34,7 +35,8 @@ func (k EventKind) Valid() bool {
 func (k EventKind) String() string { return string(k) }
 
 // Event is one row change published on the kritik_events channel: a new or
-// changed reviews, runner_runs, index_runs, followups or model_calls row.
+// changed reviews, runner_runs, index_runs, followups, model_calls or
+// task_runs row.
 // ReviewID is nil for a row whose table has no review_id column, or whose
 // review_id is NULL.
 type Event struct {

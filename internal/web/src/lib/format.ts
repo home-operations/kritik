@@ -1,6 +1,6 @@
 // Pure display formatting shared by every page. No runes, so tests and
 // tooling can import it directly.
-import type { JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus } from './types';
+import type { JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus, TaskRunStatus } from './types';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 const whole = new Intl.NumberFormat('en');
@@ -91,6 +91,14 @@ export const followupTone: Record<FollowupStatus, Tone> = {
   limited: 'warn',
   ignored: 'muted',
   failed: 'danger',
+};
+
+export const taskTone: Record<TaskRunStatus, Tone> = {
+  queued: 'muted',
+  running: 'accent',
+  succeeded: 'ok',
+  failed: 'danger',
+  skipped: 'warn',
 };
 
 export const SEVERITIES: readonly Severity[] = ['blocking', 'important', 'nit'];

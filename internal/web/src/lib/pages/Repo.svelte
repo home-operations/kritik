@@ -128,6 +128,7 @@
     <header class="page-head">
       <p class="crumbs"><a href={href({ name: 'repos', slug })}>Repositories</a> /</p>
       <h1 class="mono">{fullName}</h1>
+      <p class="meta-line"><a href={href({ name: 'taskRuns', slug, owner, repo, ...(installation ? { installation } : {}) })}>Task runs</a></p>
       {#if canAdmin(slug) && !choices}
         <div class="page-actions">
           <ActionButton

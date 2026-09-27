@@ -76,8 +76,8 @@ export type JobState =
   | 'completed'
   | 'cancelled'
   | 'discarded';
-export type EventKind = 'review' | 'runner_run' | 'index_run' | 'followup' | 'model_call';
-export type TranscriptKind = 'agent_step' | 'review' | 'fallback' | 'followup';
+export type EventKind = 'review' | 'runner_run' | 'index_run' | 'followup' | 'model_call' | 'task_run';
+export type TranscriptKind = 'agent_step' | 'review' | 'fallback' | 'followup' | 'task';
 export type MessageRole = 'user' | 'assistant';
 
 export interface MonthUsage {
@@ -817,4 +817,87 @@ export interface AuditEvent {
   action: AuditAction;
   target: string;
   detail: Record<string, unknown>;
+}
+
+// Task runs (internal/webapi/types_tasks.go).
+export type TaskRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped';
+
+export interface TaskRun {
+  id: string;
+  repository: string;
+  task: string;
+  subjectKind: '' | 'issue' | 'pull';
+  subjectNumber: number;
+  trigger: string;
+  mode: string;
+  status: TaskRunStatus;
+  reason: string;
+  model: string;
+  configSha: string;
+  commentId: number | null;
+  error: string;
+  droppedCount: number;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+}
+
+export interface TaskEvent {
+  forge: string;
+  event: string;
+  rawEvent: string;
+  action: string;
+  sender: string;
+  delivery: string;
+  receivedAt: string;
+}
+
+export interface TaskInline {
+  path: string;
+  line: number;
+  endLine: number;
+  body: string;
+}
+
+// What the model proposed.
+export interface TaskAnswer {
+  summary: string;
+  comment: string;
+  addLabels: string[];
+  removeLabels: string[];
+  state: string;
+  assignees: string[];
+  reviewers: string[];
+  inline: TaskInline[];
+}
+
+// What the forge accepted; comment is the report comment's mode, '' when
+// none was posted.
+export interface TaskApplied {
+  addLabels: string[];
+  removeLabels: string[];
+  state: string;
+  assignees: string[];
+  reviewers: string[];
+  inline: TaskInline[];
+  comment: string;
+}
+
+export interface TaskDrop {
+  action: string;
+  value: string;
+  reason: string;
+}
+
+export interface TaskRunDetail {
+  run: TaskRun;
+  event: TaskEvent | null;
+  fields: Record<string, unknown>;
+  proposed: TaskAnswer | null;
+  applied: TaskApplied | null;
+  dropped: TaskDrop[];
+  modelCalls: number;
+  costUsd: number;
+  tokens: TokenCounts;
 }

@@ -20,6 +20,7 @@
     mdiTrayFull,
     mdiCurrencyUsd,
     mdiClipboardTextClockOutline,
+    mdiCheckboxMarkedCircleAutoOutline,
     mdiCogOutline,
     mdiConsoleLine,
     mdiAccountOutline,
@@ -231,6 +232,13 @@
                 href={href({ name: 'followups', slug: currentSlug })}
               >
                 <Icon path={mdiClipboardTextClockOutline} size={15} /> Follow-ups
+              </a>
+              <a
+                class:active={router.route.name === 'taskRuns' || router.route.name === 'taskRun'}
+                aria-current={router.route.name === 'taskRuns' ? 'page' : undefined}
+                href={href({ name: 'taskRuns', slug: currentSlug })}
+              >
+                <Icon path={mdiCheckboxMarkedCircleAutoOutline} size={15} /> Task runs
               </a>
               {#if currentTenant?.role === 'admin' || me?.operator}
                 <a

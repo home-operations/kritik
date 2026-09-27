@@ -19,6 +19,10 @@ const ROUTES: Route[] = [
   { name: 'queue', slug: 'acme' },
   { name: 'usage', slug: 'acme' },
   { name: 'followups', slug: 'acme' },
+  { name: 'taskRuns', slug: 'acme' },
+  { name: 'taskRuns', slug: 'acme', owner: 'kritik', repo: 'kritik' },
+  { name: 'taskRuns', slug: 'acme', owner: 'kritik', repo: 'kritik', installation: 'acme-forgejo' },
+  { name: 'taskRun', slug: 'acme', id: 'tr-1' },
   { name: 'admin', slug: 'acme' },
   { name: 'admin', slug: 'acme', section: 'tokens' },
   // segments containing characters that must round-trip through
@@ -74,6 +78,9 @@ const MALFORMED: [string, Route][] = [
   ['#/t/acme/repos/o/r?installation=', { name: 'repo', slug: 'acme', owner: 'o', repo: 'r' }],
   ['#/t/acme/pulls/o/r/7?other=1', { name: 'pull', slug: 'acme', owner: 'o', repo: 'r', number: 7 }],
   ['#/t/acme/queue?installation=x', { name: 'queue', slug: 'acme' }],
+  ['#/t/acme/task-runs/tr-1/extra', { name: 'tenant', slug: 'acme' }],
+  ['#/t/acme/repos/o/r/runs', { name: 'tenant', slug: 'acme' }],
+  ['#/t/acme/task-runs?installation=x', { name: 'taskRuns', slug: 'acme' }],
 ];
 
 test.describe('routes: parse() on unknown/malformed hashes', () => {

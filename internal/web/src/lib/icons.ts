@@ -20,6 +20,7 @@ export {
   mdiSourceRepository,
   mdiCurrencyUsd,
   mdiClipboardTextClockOutline,
+  mdiCheckboxMarkedCircleAutoOutline,
   mdiCogOutline,
   mdiLogin,
   mdiContentCopy,

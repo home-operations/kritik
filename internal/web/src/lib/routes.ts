@@ -12,12 +12,15 @@
 //   #/t/<slug>/pulls                          tenant's pull list
 //   #/t/<slug>/pulls/<owner>/<repo>/<n>       one pull request
 //
-// A repo or pull route may end in "?installation=<name>", naming which of
+// A repo, pull or repository task-runs route may end in "?installation=<name>", naming which of
 // several installations holding the same owner/repo it means.
 //   #/t/<slug>/reviews/<id>[/<tab>]           one review, optional tab
 //   #/t/<slug>/queue                          run queue
 //   #/t/<slug>/usage                          usage/cost dashboard
 //   #/t/<slug>/followups                      follow-up tracker
+//   #/t/<slug>/task-runs                      task runs of every repository
+//   #/t/<slug>/repos/<owner>/<repo>/task-runs one repository's task runs
+//   #/t/<slug>/task-runs/<id>                 one task run
 //   #/t/<slug>/admin[/<section>]              tenant admin, optional section
 //
 // Segments round-trip through encodeURIComponent/decodeURIComponent, so a
@@ -52,6 +55,8 @@ export type Route =
   | { name: 'queue'; slug: string }
   | { name: 'usage'; slug: string }
   | { name: 'followups'; slug: string }
+  | { name: 'taskRuns'; slug: string; owner?: string; repo?: string; installation?: string }
+  | { name: 'taskRun'; slug: string; id: string }
   | { name: 'admin'; slug: string; section?: string };
 
 const PULL_NUMBER = /^\d+$/;
@@ -94,6 +99,7 @@ function parseTenantRoute(slug: string, rest: string[], installation: string | u
     case 'repos':
       if (tail.length === 0) return { name: 'repos', slug };
       if (tail.length === 2) return { name: 'repo', slug, owner: tail[0]!, repo: tail[1]!, ...inst };
+      if (tail.length === 3 && tail[2] === 'task-runs') return { name: 'taskRuns', slug, owner: tail[0]!, repo: tail[1]!, ...inst };
       break;
     case 'pulls':
       if (tail.length === 0) return { name: 'pulls', slug };
@@ -113,6 +119,10 @@ function parseTenantRoute(slug: string, rest: string[], installation: string | u
       break;
     case 'followups':
       if (tail.length === 0) return { name: 'followups', slug };
+      break;
+    case 'task-runs':
+      if (tail.length === 0) return { name: 'taskRuns', slug };
+      if (tail.length === 1) return { name: 'taskRun', slug, id: tail[0]! };
       break;
     case 'admin':
       if (tail.length === 0) return { name: 'admin', slug };
@@ -170,6 +180,12 @@ export function href(r: Route): string {
       return `#/t/${s(r.slug)}/usage`;
     case 'followups':
       return `#/t/${s(r.slug)}/followups`;
+    case 'taskRuns':
+      return r.owner !== undefined && r.repo !== undefined
+        ? `#/t/${s(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}/task-runs${inst(r.installation)}`
+        : `#/t/${s(r.slug)}/task-runs`;
+    case 'taskRun':
+      return `#/t/${s(r.slug)}/task-runs/${s(r.id)}`;
     case 'admin':
       return r.section ? `#/t/${s(r.slug)}/admin/${s(r.section)}` : `#/t/${s(r.slug)}/admin`;
   }

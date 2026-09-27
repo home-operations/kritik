@@ -15,6 +15,8 @@
   import Queue from './Queue.svelte';
   import Usage from './Usage.svelte';
   import Followups from './Followups.svelte';
+  import TaskRuns from './TaskRuns.svelte';
+  import TaskRun from './TaskRun.svelte';
   import Admin from './admin/Admin.svelte';
 
   let { route }: { route: Route } = $props();
@@ -51,6 +53,10 @@
     <Usage slug={route.slug} />
   {:else if route.name === 'followups'}
     <Followups slug={route.slug} />
+  {:else if route.name === 'taskRuns'}
+    <TaskRuns slug={route.slug} owner={route.owner} repo={route.repo} installation={route.installation} />
+  {:else if route.name === 'taskRun'}
+    <TaskRun slug={route.slug} id={route.id} />
   {:else if route.name === 'admin'}
     <Admin slug={route.slug} section={route.section} />
   {:else}

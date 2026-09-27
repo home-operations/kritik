@@ -251,3 +251,68 @@ func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 		})
 	}
 }
+
+// TestListenPublishesTaskRunEvents checks 0012_task_run_events.sql: a new
+// task run and each status change notify, while an update that leaves the
+// status alone does not.
+func TestListenPublishesTaskRunEvents(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := tenantID(t, s, "alpha")
+	events := make(chan Event, 10)
+	go s.Listen(t.Context(), ListenHandlers{OnEvent: func(e Event) { events <- e }})
+	time.Sleep(250 * time.Millisecond)
+
+	var runID string
+	write := func(sql string) {
+		t.Helper()
+		if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+			if runID != "" {
+				_, err := tx.Exec(ctx, sql, runID)
+				return err
+			}
+			return tx.QueryRow(ctx, sql, alpha).Scan(&runID)
+		}); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	steps := []struct {
+		name   string
+		sql    string
+		notify bool
+	}{
+		{"insert", `INSERT INTO task_runs (tenant_id, repository_id, task, mode, status)
+			SELECT $1, id, 'triage', 'single', 'queued' FROM repositories WHERE tenant_id = $1 LIMIT 1 RETURNING id`, true},
+		{"status change", `UPDATE task_runs SET status = 'running' WHERE id = $1`, true},
+		{"same status", `UPDATE task_runs SET model = 'acme/large' WHERE id = $1`, false},
+		{"finish", `UPDATE task_runs SET status = 'succeeded', finished_at = now() WHERE id = $1`, true},
+	}
+	t.Cleanup(func() {
+		if _, err := s.owner.Exec(context.Background(), `DELETE FROM task_runs WHERE id = $1`, runID); err != nil {
+			t.Errorf("delete task run: %v", err)
+		}
+	})
+	for _, st := range steps {
+		write(st.sql)
+		wait := 500 * time.Millisecond
+		if st.notify {
+			wait = 5 * time.Second
+		}
+		select {
+		case e := <-events:
+			if !st.notify {
+				t.Fatalf("%s: unexpected event %+v", st.name, e)
+			}
+			if e.Kind != EventTaskRun || e.ID != runID || e.TenantID != alpha || e.ReviewID != nil {
+				t.Fatalf("%s: event = %+v, want kind=task_run id=%s tenant=%s", st.name, e, runID, alpha)
+			}
+		case <-time.After(wait):
+			if st.notify {
+				t.Fatalf("%s: no task_run event", st.name)
+			}
+		}
+	}
+}
