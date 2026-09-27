@@ -153,9 +153,13 @@ func (s *Server) listOperatorTenants(w http.ResponseWriter, r *http.Request) err
 func (s *Server) getTenant(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
 	ctx := r.Context()
 	var month store.MonthUsage
+	var webhooks map[string]time.Time
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		var err error
-		month, err = store.ReadMonthUsage(ctx, tx)
+		if month, err = store.ReadMonthUsage(ctx, tx); err != nil {
+			return err
+		}
+		webhooks, err = store.ReadWebhookDeliveries(ctx, tx)
 		return err
 	}); err != nil {
 		return err
@@ -167,7 +171,11 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request, t *tenantScop
 		Usage: monthUsage(month, settings.Limits),
 	}
 	for i := range t.tenant.Installations {
-		d.Installations = append(d.Installations, installation(&t.tenant.Installations[i]))
+		in := installation(&t.tenant.Installations[i])
+		if at, ok := webhooks[t.tenant.Installations[i].ID()]; ok {
+			in.LastWebhookAt = &at
+		}
+		d.Installations = append(d.Installations, in)
 	}
 	writeJSON(w, http.StatusOK, d)
 	return nil

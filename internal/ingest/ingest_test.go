@@ -31,14 +31,21 @@ tenants:
 `
 
 type fakeDispatcher struct {
-	got []Request
-	out Outcome
-	err error
+	got       []Request
+	out       Outcome
+	err       error
+	delivered []string
+	recordErr error
 }
 
 func (f *fakeDispatcher) Dispatch(_ context.Context, req Request) (Outcome, error) {
 	f.got = append(f.got, req)
 	return f.out, f.err
+}
+
+func (f *fakeDispatcher) RecordDelivery(_ context.Context, _, installationID string) error {
+	f.delivered = append(f.delivered, installationID)
+	return f.recordErr
 }
 
 func sign(secret string, body []byte) string {
@@ -60,8 +67,12 @@ func setup(t *testing.T, disp Dispatcher) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	h := NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if r, ok := disp.(DeliveryRecorder); ok {
+		h.Deliveries = r
+	}
 	mux := http.NewServeMux()
-	mux.Handle("POST /hooks/{installation}", NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	mux.Handle("POST /hooks/{installation}", h)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -95,17 +106,19 @@ func TestHandler(t *testing.T) {
 		err        error
 		want       int
 		dispatched bool
+		// recorded: any delivery that passes the signature check counts.
+		recorded bool
 	}{
-		{"unknown installation", "/hooks/nope", "pull_request", "s3cret", prBody, Outcome{}, nil, http.StatusNotFound, false},
-		{"bad signature", "/hooks/bot-ross", "pull_request", "wrong", prBody, Outcome{}, nil, http.StatusUnauthorized, false},
-		{"missing signature", "/hooks/bot-ross", "pull_request", "", prBody, Outcome{}, nil, http.StatusUnauthorized, false},
-		{"unparsable", "/hooks/bot-ross", "pull_request", "s3cret", "{nope", Outcome{}, nil, http.StatusBadRequest, false},
-		{"ping", "/hooks/bot-ross", "ping", "s3cret", `{"zen":"x"}`, Outcome{}, nil, http.StatusNoContent, false},
-		{"unknown event ignored", "/hooks/bot-ross", "workflow_run", "s3cret", `{}`, Outcome{}, nil, http.StatusAccepted, false},
+		{"unknown installation", "/hooks/nope", "pull_request", "s3cret", prBody, Outcome{}, nil, http.StatusNotFound, false, false},
+		{"bad signature", "/hooks/bot-ross", "pull_request", "wrong", prBody, Outcome{}, nil, http.StatusUnauthorized, false, false},
+		{"missing signature", "/hooks/bot-ross", "pull_request", "", prBody, Outcome{}, nil, http.StatusUnauthorized, false, false},
+		{"unparsable", "/hooks/bot-ross", "pull_request", "s3cret", "{nope", Outcome{}, nil, http.StatusBadRequest, false, true},
+		{"ping", "/hooks/bot-ross", "ping", "s3cret", `{"zen":"x"}`, Outcome{}, nil, http.StatusNoContent, false, true},
+		{"unknown event ignored", "/hooks/bot-ross", "workflow_run", "s3cret", `{}`, Outcome{}, nil, http.StatusAccepted, false, true},
 		{"undeclared account ignored", "/hooks/bot-ross", "pull_request", "s3cret",
-			strings.ReplaceAll(prBody, `"owner":{"login":"onedr0p"}`, `"owner":{"login":"stranger"}`), Outcome{}, nil, http.StatusAccepted, false},
-		{"dispatched", "/hooks/bot-ross", "pull_request", "s3cret", prBody, Outcome{Status: Enqueued}, nil, http.StatusAccepted, true},
-		{"dispatcher error", "/hooks/bot-ross", "pull_request", "s3cret", prBody, Outcome{}, errors.New("db down"), http.StatusInternalServerError, true},
+			strings.ReplaceAll(prBody, `"owner":{"login":"onedr0p"}`, `"owner":{"login":"stranger"}`), Outcome{}, nil, http.StatusAccepted, false, true},
+		{"dispatched", "/hooks/bot-ross", "pull_request", "s3cret", prBody, Outcome{Status: Enqueued}, nil, http.StatusAccepted, true, true},
+		{"dispatcher error", "/hooks/bot-ross", "pull_request", "s3cret", prBody, Outcome{}, errors.New("db down"), http.StatusInternalServerError, true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -118,6 +131,9 @@ func TestHandler(t *testing.T) {
 			if (len(disp.got) > 0) != tt.dispatched {
 				t.Fatalf("dispatched = %v, want %v", len(disp.got) > 0, tt.dispatched)
 			}
+			if (len(disp.delivered) > 0) != tt.recorded {
+				t.Fatalf("recorded = %v, want %v", len(disp.delivered) > 0, tt.recorded)
+			}
 			if tt.dispatched {
 				req := disp.got[0]
 				if req.Tenant.Slug != "onedr0p" || req.Installation.Name != "bot-ross" || req.Event.Kind != webhook.KindPullRequest {
@@ -125,6 +141,14 @@ func TestHandler(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHandlerServesWhenTheDeliveryIsNotRecorded(t *testing.T) {
+	disp := &fakeDispatcher{out: Outcome{Status: Enqueued}, recordErr: errors.New("db down")}
+	srv := setup(t, disp)
+	if resp := post(t, srv, "/hooks/bot-ross", "pull_request", "s3cret", prBody); resp.StatusCode != http.StatusAccepted || len(disp.got) != 1 {
+		t.Fatalf("status = %d, dispatched %d times; want 202 and once", resp.StatusCode, len(disp.got))
 	}
 }
 

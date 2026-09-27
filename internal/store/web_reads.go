@@ -186,6 +186,26 @@ func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	return m, nil
 }
 
+// ReadWebhookDeliveries reads when each of the tenant's installations last
+// received a verified webhook, keyed by installation id; one that never has
+// is absent.
+func ReadWebhookDeliveries(ctx context.Context, tx pgx.Tx) (map[string]time.Time, error) {
+	rows, err := tx.Query(ctx, `SELECT id::text, last_webhook_at FROM installations WHERE last_webhook_at IS NOT NULL`)
+	if err != nil {
+		return nil, fmt.Errorf("store: webhook deliveries: %w", err)
+	}
+	out := map[string]time.Time{}
+	var id string
+	var at time.Time
+	if _, err := pgx.ForEachRow(rows, []any{&id, &at}, func() error {
+		out[id] = at
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("store: webhook deliveries: %w", err)
+	}
+	return out, nil
+}
+
 // RepoRow is one repository as the repository list shows it.
 type RepoRow struct {
 	ID             string

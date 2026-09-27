@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import * as g from './golden';
+import type { TenantDetail } from '../src/lib/types';
 
 const T = `#/t/${g.SLUG}`;
 
@@ -37,7 +38,20 @@ test('tenant overview shows tiles, recent reviews, queue and repositories', asyn
   await expect(page.getByRole('meter', { name: 'Monthly tokens used' })).toHaveAttribute('aria-valuemax', String(g.tenantSummary.usage.tokensPerMonth));
   await expect(page.locator('#ov-recent').locator('..').locator('..')).toContainText(g.pull.title);
   await expect(page.locator('.chips')).toContainText(`1 ${g.job.state}`);
-  await expect(page.locator('table.data')).toContainText(g.repoPage.items[0]!.fullName);
+  await expect(page.getByRole('region', { name: 'Repositories', exact: true }).locator('table.data')).toContainText(g.repoPage.items[0]!.fullName);
+});
+
+test('tenant overview says whether each installation receives webhooks', async ({ page }) => {
+  const detail = g.golden<TenantDetail>('tenant_detail');
+  const quiet = { ...detail.installations[0]!, name: 'alpha-quiet', hookPath: '/hooks/alpha-quiet', lastWebhookAt: null };
+  await g.mockApi(page, [[new RegExp(`/api/v1/tenants/${g.SLUG}$`), { ...detail, installations: [...detail.installations, quiet] }], ...g.defaultApi()]);
+  await page.goto(`/${T}`);
+  const panel = page.getByRole('region', { name: 'Installations' });
+  await expect(panel.getByRole('row').filter({ hasText: detail.installations[0]!.name })).toContainText('receiving');
+  await expect(panel.getByRole('row').filter({ hasText: 'alpha-quiet' })).toContainText('none yet');
+  const note = panel.getByRole('note');
+  await expect(note).toHaveCount(1);
+  await expect(note).toContainText("GitHub App's webhook at /hooks/alpha-quiet");
 });
 
 test('repositories filter and repository detail', async ({ page }) => {

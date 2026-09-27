@@ -308,3 +308,50 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 		}
 	})
 }
+
+func TestRecordDelivery(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	in, tenant, _ := f.Installation("bot-ross")
+	exec := func(sql string) {
+		t.Helper()
+		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, sql, in.ID())
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	last := func() time.Time {
+		t.Helper()
+		var at *time.Time
+		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT last_webhook_at FROM installations WHERE id = $1`, in.ID()).Scan(&at)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if at == nil {
+			t.Fatal("no delivery recorded")
+		}
+		return *at
+	}
+	record := func() {
+		t.Helper()
+		if err := svc.RecordDelivery(ctx, tenant.ID(), in.ID()); err != nil {
+			t.Fatalf("RecordDelivery: %v", err)
+		}
+	}
+	exec(`UPDATE installations SET last_webhook_at = NULL WHERE id = $1`)
+	record()
+	first := last()
+	record()
+	if again := last(); !again.Equal(first) {
+		t.Fatalf("a delivery within the minute moved the time from %s to %s", first, again)
+	}
+	exec(`UPDATE installations SET last_webhook_at = now() - interval '2 minutes' WHERE id = $1`)
+	stale := last()
+	record()
+	if now := last(); !now.After(stale.Add(time.Minute)) {
+		t.Fatalf("a delivery after the minute left the time at %s", now)
+	}
+}

@@ -295,6 +295,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("read endpoints scope to the tenant", func(t *testing.T) { testReadEndpointsScopeToTenant(t, e) })
 	t.Run("tenant B's ids under tenant A", func(t *testing.T) { testCrossTenantIDs(t, e) })
 	t.Run("me and tenant lists", func(t *testing.T) { testMeAndTenantLists(t, e) })
+	t.Run("tenant detail shows each installation's last webhook", func(t *testing.T) { testLastWebhook(t, e) })
 	t.Run("transcripts equal Rebuild", func(t *testing.T) { testTranscriptsEqualRebuild(t, e) })
 	t.Run("repository pagination", func(t *testing.T) { testRepoPagination(t, e) })
 	t.Run("event stream scopes to the tenant", func(t *testing.T) { testEventStreamScopesToTenant(t, e) })
@@ -408,6 +409,35 @@ func testMeAndTenantLists(t *testing.T, e *apiEnv) {
 				}
 			}
 		})
+	}
+}
+
+func testLastWebhook(t *testing.T, e *apiEnv) {
+	ctx := context.Background()
+	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	in, _, _ := e.file.Installation("webapi-a-bot")
+	if err := e.st.WithTenant(ctx, e.a.tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE installations SET last_webhook_at = $2 WHERE id = $1`, in.ID(), at)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		who, slug string
+		want      *time.Time
+	}{
+		{"member-a", "webapi-a", &at},
+		{"member-b", "webapi-b", nil},
+	} {
+		status, body := e.getBody(tt.who, "/api/v1/tenants/"+tt.slug)
+		var d TenantDetail
+		if status != 200 || json.Unmarshal(body, &d) != nil || len(d.Installations) != 1 {
+			t.Fatalf("%s: status %d: %s", tt.who, status, body)
+		}
+		got := d.Installations[0].LastWebhookAt
+		if (got == nil) != (tt.want == nil) || got != nil && !got.Equal(*tt.want) {
+			t.Errorf("%s: lastWebhookAt = %v, want %v", tt.who, got, tt.want)
+		}
 	}
 }
 

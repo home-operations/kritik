@@ -97,7 +97,7 @@ var goldens = map[string]any{
 		Installations: []Installation{{
 			Name: "alpha-bot", Forge: configfile.ForgeGitHub, Host: "github.com", Account: "alpha", CredentialKind: CredentialApp,
 			Credentials: CredentialsSet{ClientID: true, PrivateKey: true, Token: false, GitToken: false, WebhookSecret: true},
-			HookPath:    "/hooks/alpha-bot",
+			HookPath:    "/hooks/alpha-bot", LastWebhookAt: &t0,
 		}},
 		Models: Models{Review: "openrouter/acme-large", Fallback: "openrouter/acme-small"},
 		Limits: Limits{Concurrency: 2, ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filter: "!pr.draft",
