@@ -94,22 +94,36 @@ func (p *Poller) PollAll(ctx context.Context) {
 	}
 }
 
+// pollRepo is one enabled repository as a poll sees it. indexed is the
+// commit its active index generation covers, "" when it has none.
+type pollRepo struct {
+	name, defaultBranch, indexed string
+}
+
 // Poll lists one installation's repositories and returns how many pull
-// requests were handed to the dispatcher.
+// requests were handed to the dispatcher. For an installation no webhook
+// has reached lately, it also checks each indexed repository's default
+// branch, since no push webhook will say it moved.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *configfile.Tenant, in *configfile.Installation) (int, error) {
-	var repos []string
+	var repos []pollRepo
 	var known time.Time
-	var polled *time.Time
+	var polled, delivered *time.Time
 	err := p.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT name FROM repositories WHERE installation_id = $1 AND enabled ORDER BY name`, in.ID())
+		rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, '')
+			FROM repositories r LEFT JOIN index_runs g ON g.id = r.active_index_run_id
+			WHERE r.installation_id = $1 AND r.enabled ORDER BY r.name`, in.ID())
 		if err != nil {
 			return err
 		}
-		if repos, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+		if repos, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (pollRepo, error) {
+			var r pollRepo
+			err := row.Scan(&r.name, &r.defaultBranch, &r.indexed)
+			return r, err
+		}); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, `SELECT i.created_at, s.last_polled_at FROM installations i
-			LEFT JOIN poll_state s ON s.installation_id = i.id WHERE i.id = $1`, in.ID()).Scan(&known, &polled)
+		return tx.QueryRow(ctx, `SELECT i.created_at, s.last_polled_at, i.last_webhook_at FROM installations i
+			LEFT JOIN poll_state s ON s.installation_id = i.id WHERE i.id = $1`, in.ID()).Scan(&known, &polled, &delivered)
 	})
 	if err != nil {
 		return 0, fmt.Errorf("poller: read state: %w", err)
@@ -118,17 +132,24 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *config
 	if polled != nil && polled.After(since) {
 		since = *polled
 	}
+	checkTips := delivered == nil || delivered.Before(time.Now().Add(-file.PollLookback()))
 	started := time.Now()
 	handled := 0
-	for _, repo := range repos {
+	for _, r := range repos {
 		if ctx.Err() != nil {
 			return handled, ctx.Err()
 		}
+		repo := r.name
 		client, err := p.Forges.For(ctx, in, repo)
 		if err != nil {
 			return handled, err
 		}
 		owner, name, _ := strings.Cut(repo, "/")
+		if checkTips && r.indexed != "" {
+			if err := p.pollTip(ctx, file, tenant, in, client, r, started); err != nil {
+				return handled, err
+			}
+		}
 		prs, err := client.ListOpenPullRequests(ctx, owner, name, since)
 		if err != nil {
 			return handled, err
@@ -159,4 +180,32 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *config
 		return handled, fmt.Errorf("poller: write state: %w", err)
 	}
 	return handled, nil
+}
+
+// pollTip hands the dispatcher a push to r's default branch when its tip is
+// not the commit r's index covers, so the index follows the branch as a
+// push webhook would have made it.
+func (p *Poller) pollTip(
+	ctx context.Context, file *configfile.File, tenant *configfile.Tenant, in *configfile.Installation, client forge.Client, r pollRepo,
+	started time.Time,
+) error {
+	owner, name, _ := strings.Cut(r.name, "/")
+	tip, branch, err := client.BranchTip(ctx, owner, name, r.defaultBranch)
+	if err != nil {
+		return err
+	}
+	if tip == r.indexed {
+		return nil
+	}
+	ev := webhook.Event{
+		Kind: webhook.KindPush, Delivery: fmt.Sprintf("poll-%s-push", started.UTC().Format("20060102T150405")),
+		Repository: &webhook.Repository{FullName: r.name, DefaultBranch: branch}, Account: owner,
+		Push: &webhook.Push{Ref: "refs/heads/" + branch, After: tip},
+	}
+	out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Installation: in, Event: ev})
+	if err != nil {
+		return err
+	}
+	p.Logger.Info("polled default branch "+out.Status, "installation", in.Name, "repository", r.name, "tip", tip, "reason", out.Reason)
+	return nil
 }

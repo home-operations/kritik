@@ -323,3 +323,122 @@ func TestPollerEnqueuesOnceAndAdvancesStateForgejo(t *testing.T) {
 		t.Fatalf("after second poll: jobs=%d, want the head deduplicated", jobs)
 	}
 }
+
+// tipForge answers the listing with nothing and the branch tip with tip,
+// counting the tip calls.
+type tipForge struct {
+	forge.Client
+	tip   string
+	calls int
+}
+
+func (f *tipForge) ListOpenPullRequests(context.Context, string, string, time.Time) ([]forge.OpenPullRequest, error) {
+	return nil, nil
+}
+
+func (f *tipForge) BranchTip(context.Context, string, string, string) (string, string, error) {
+	f.calls++
+	return f.tip, "main", nil
+}
+
+// TestPollerIndexesAMovedDefaultBranch: an installation no webhook reaches
+// has its indexed repositories' default branches checked, and an index job
+// queued when one moved; one that webhooks reach does not.
+func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	st, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"), Logger: logger})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(st.Close)
+	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	file, err := configfile.Parse([]byte(configYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ApplyConfig(ctx, file, "test"); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, tenant, _ := file.Installation("bot-ross")
+	repoID := configfile.RepositoryID(in.ID(), "onedr0p/home-ops")
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, sql, args...)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var runID string
+	if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			VALUES ($1, $2, 'indexed', 'fake-embed', 8, 'full', 'completed') RETURNING id`, tenant.ID(), repoID).Scan(&runID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	exec(`UPDATE repositories SET active_index_run_id = $1 WHERE id = $2`, runID, repoID)
+	// The worker's tests share the database and index this repository from
+	// nothing.
+	t.Cleanup(func() {
+		exec(`UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repoID)
+		exec(`DELETE FROM index_runs WHERE id = $1`, runID)
+		_, _ = st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`)
+	})
+	indexJobs := func() []string {
+		t.Helper()
+		rows, err := st.App().Query(ctx, `SELECT args->>'commit_sha' FROM river_job WHERE kind = 'index' AND args->>'repository_id' = $1`, repoID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		commits, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return commits
+	}
+	tf := &tipForge{tip: "moved"}
+	p := &Poller{Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: tf}, Dispatcher: ingest.NewService(st, queue), Logger: logger}
+	poll := func() {
+		t.Helper()
+		if _, err := p.Poll(ctx, file, tenant, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Earlier suites leave index jobs of this repository behind.
+	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
+		t.Fatal(err)
+	}
+	exec(`UPDATE installations SET last_webhook_at = NULL WHERE id = $1`, in.ID())
+	poll()
+	if got := indexJobs(); len(got) != 1 || got[0] != "moved" {
+		t.Fatalf("index jobs = %v, want one at the moved tip", got)
+	}
+
+	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
+		t.Fatal(err)
+	}
+	exec(`UPDATE installations SET last_webhook_at = now() WHERE id = $1`, in.ID())
+	calls := tf.calls
+	poll()
+	if tf.calls != calls || len(indexJobs()) != 0 {
+		t.Fatalf("with webhooks arriving: %d tip checks and index jobs %v, want none", tf.calls-calls, indexJobs())
+	}
+
+	exec(`UPDATE installations SET last_webhook_at = NULL WHERE id = $1`, in.ID())
+	tf.tip = "indexed"
+	poll()
+	if got := indexJobs(); len(got) != 0 {
+		t.Fatalf("index jobs = %v, want none for a tip the index covers", got)
+	}
+}

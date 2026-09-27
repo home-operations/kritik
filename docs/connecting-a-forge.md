@@ -149,6 +149,9 @@ backstop, not a substitute:
 
 - a review waits for the next poll;
 - no mention is answered, since the poller does not read comments;
-- the index is not updated on pushes to the default branch;
+- the index catches up with the default branch at the next poll, not on
+  each push: while no webhook has reached an installation within
+  `polling.lookback`, each poll also checks its indexed repositories'
+  default branches;
 - only repositories kritik already knows, from the configuration or an
   earlier event, are polled.
