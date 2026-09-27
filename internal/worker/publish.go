@@ -473,7 +473,7 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 		}
 	}
 	if commentID != 0 {
-		err = p.client.UpdateComment(ctx, owner, repo, commentID, body)
+		err = p.client.UpdateComment(ctx, owner, repo, p.pr.number, commentID, body)
 	} else {
 		commentID, err = p.client.CreateComment(ctx, owner, repo, p.pr.number, body)
 	}

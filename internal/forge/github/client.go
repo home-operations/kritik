@@ -175,7 +175,7 @@ func (c *Client) CreateComment(ctx context.Context, owner, repo string, number i
 }
 
 // UpdateComment implements forge.Client.
-func (c *Client) UpdateComment(ctx context.Context, owner, repo string, id int64, body string) error {
+func (c *Client) UpdateComment(ctx context.Context, owner, repo string, _ int, id int64, body string) error {
 	if _, _, err := c.api.Issues.UpdateComment(ctx, owner, repo, id, gh.IssueCommentRequest{Body: body}); err != nil {
 		return fmt.Errorf("github: edit comment %d: %w", id, err)
 	}

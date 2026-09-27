@@ -234,7 +234,7 @@ func TestCreateUpdateGetComment(t *testing.T) {
 	if err != nil || id != 42 {
 		t.Fatalf("CreateComment = %d, %v", id, err)
 	}
-	if err := c.UpdateComment(t.Context(), "acme", "widgets", 42, "updated"); err != nil {
+	if err := c.UpdateComment(t.Context(), "acme", "widgets", 9, 42, "updated"); err != nil {
 		t.Fatalf("UpdateComment: %v", err)
 	}
 	cm, err := c.GetComment(t.Context(), "acme", "widgets", 9, 42, false)

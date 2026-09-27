@@ -233,7 +233,7 @@ func TestWriteBackCalls(t *testing.T) {
 	if err != nil || id != 100 {
 		t.Fatalf("CreateComment = %d, %v", id, err)
 	}
-	if err := c.UpdateComment(t.Context(), "o", "r", 100, "edited"); err != nil {
+	if err := c.UpdateComment(t.Context(), "o", "r", 7, 100, "edited"); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.CreateReview(t.Context(), "o", "r", 7, "abc", nil); err != nil || f.saw("POST /api/v3/repos/o/r/pulls/7/reviews") {

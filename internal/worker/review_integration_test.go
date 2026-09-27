@@ -273,7 +273,7 @@ func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, _ forge.
 	return int64(len(l.replies)), nil
 }
 
-func (l *localForge) UpdateComment(_ context.Context, _, _ string, id int64, body string) error {
+func (l *localForge) UpdateComment(_ context.Context, _, _ string, _ int, id int64, body string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if _, ok := l.comments[id]; !ok {
