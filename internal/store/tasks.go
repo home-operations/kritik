@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritik/internal/tasks"
 )
 
 // TaskRunStatus is where a task run is, as task_runs.status spells it.
@@ -207,6 +209,20 @@ func ChargeTaskRun(ctx context.Context, tx pgx.Tx, tenantID, repositoryID, id st
 		return fmt.Errorf("store: mark task run answered: %w", err)
 	}
 	return nil
+}
+
+// TaskRunApplied is what a task run did, as task_runs.applied records it.
+// Its JSON keys are the column's stored shape; renaming one strands the
+// rows already written.
+type TaskRunApplied struct {
+	AddLabels    []string       `json:"add_labels,omitempty"`
+	RemoveLabels []string       `json:"remove_labels,omitempty"`
+	Assignees    []string       `json:"assignees,omitempty"`
+	Reviewers    []string       `json:"reviewers,omitempty"`
+	State        string         `json:"state,omitempty"`
+	Inline       []tasks.Inline `json:"inline,omitempty"`
+	// Comment is the report comment's mode, when it was posted.
+	Comment string `json:"comment,omitempty"`
 }
 
 // TaskRunResult is how a task run ended. The JSON fields are stored as

@@ -658,18 +658,6 @@ func (r *taskRunner) anchor(ctx context.Context, pl *tasks.Plan) {
 	pl.Inline, pl.Dropped = kept, append(pl.Dropped, dropped...)
 }
 
-// taskApplied is what a run did, as task_runs.applied records it.
-type taskApplied struct {
-	AddLabels    []string       `json:"add_labels,omitempty"`
-	RemoveLabels []string       `json:"remove_labels,omitempty"`
-	Assignees    []string       `json:"assignees,omitempty"`
-	Reviewers    []string       `json:"reviewers,omitempty"`
-	State        string         `json:"state,omitempty"`
-	Inline       []tasks.Inline `json:"inline,omitempty"`
-	// Comment is the report comment's mode, when it was posted.
-	Comment string `json:"comment,omitempty"`
-}
-
 // taskDrop is an action a run left out, as task_runs.dropped records it.
 type taskDrop struct {
 	Action string `json:"action"`
@@ -693,7 +681,7 @@ func (r *taskRunner) apply(ctx context.Context, answer tasks.Answer, pl tasks.Pl
 	res := taskrun.Apply(ctx, r.client, t, pl)
 	dropped := append(pl.Dropped, res.Dropped...)
 	a := res.Applied
-	applied := taskApplied{
+	applied := store.TaskRunApplied{
 		AddLabels: a.AddLabels, RemoveLabels: a.RemoveLabels, Assignees: a.Assignees, Reviewers: a.Reviewers, State: a.State, Inline: a.Inline,
 	}
 	attempted, refused := res.Attempted, len(res.Dropped)

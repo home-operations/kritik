@@ -84,18 +84,6 @@ func (s *Server) getTaskRun(w http.ResponseWriter, r *http.Request, t *tenantSco
 	return nil
 }
 
-// storedApplied mirrors the task_runs.applied record the task worker
-// writes.
-type storedApplied struct {
-	AddLabels    []string       `json:"add_labels"`
-	RemoveLabels []string       `json:"remove_labels"`
-	Assignees    []string       `json:"assignees"`
-	Reviewers    []string       `json:"reviewers"`
-	State        string         `json:"state"`
-	Inline       []tasks.Inline `json:"inline"`
-	Comment      string         `json:"comment"`
-}
-
 func taskRunDetail(d store.TaskRunDetail) (TaskRunDetail, error) {
 	out := TaskRunDetail{
 		Run: taskRun(d.TaskRunRow), Fields: map[string]json.RawMessage{}, Dropped: []TaskDrop{}, ModelCalls: d.ModelCalls,
@@ -121,7 +109,7 @@ func taskRunDetail(d store.TaskRunDetail) (TaskRunDetail, error) {
 		}
 	}
 	if d.Applied != nil {
-		var a storedApplied
+		var a store.TaskRunApplied
 		if err := decodeRecord("applied", d.Applied, &a); err != nil {
 			return out, err
 		}
