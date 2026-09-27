@@ -19,6 +19,7 @@
   const keepable = $derived(canKeep(inst));
   const re = (s: SecretDraft) =>
     moved && s.wasSet && keepable ? 'The forge, host or accounts changed: enter this secret again rather than keeping it.' : undefined;
+  const defaultHost: Partial<Record<InstallationDraft['forge'], string>> = { github: 'github.com', gitlab: 'gitlab.com' };
 </script>
 
 <div class="item-card">
@@ -38,14 +39,15 @@
       <span>Forge</span>
       <select data-path="{p}.forge" aria-invalid={inv(`${p}.forge`) || undefined} bind:value={inst.forge}>
         <option value="github">GitHub</option>
+        <option value="gitlab">GitLab</option>
         <option value="forgejo">Forgejo</option>
         <option value="gitea">Gitea</option>
       </select>
     </label>
     <label class="field">
       <span>Host</span>
-      <input data-path="{p}.host" aria-invalid={inv(`${p}.host`) || undefined} bind:value={inst.host} placeholder={inst.forge === 'github' ? 'github.com' : 'https://forge.example'} />
-      <span class="field-hint">https only; blank means github.com for GitHub.</span>
+      <input data-path="{p}.host" aria-invalid={inv(`${p}.host`) || undefined} bind:value={inst.host} placeholder={defaultHost[inst.forge] ?? 'https://forge.example'} />
+      <span class="field-hint">https only; blank means github.com for GitHub and gitlab.com for GitLab.</span>
     </label>
     <label class="field">
       <span>Accounts (one per line)</span>
@@ -76,6 +78,9 @@
     {#if inst.forge === 'github'}
       Webhook: set the GitHub App's webhook URL to <span class="mono">/hooks/{inst.name || '<name>'}</span> on kritik's webhook
       listener, with this webhook secret. It covers every repository the App is installed on.
+    {:else if inst.forge === 'gitlab'}
+      Webhook: add <span class="mono">/hooks/{inst.name || '<name>'}</span> on kritik's webhook listener, with this webhook secret as
+      its secret token, to each project, or once to a group that owns them (group webhooks need GitLab Premium).
     {:else}
       Webhook: add <span class="mono">/hooks/{inst.name || '<name>'}</span> on kritik's webhook listener, with this webhook secret, as
       one webhook on the user or organization that owns the repositories.

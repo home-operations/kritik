@@ -124,9 +124,10 @@ config:
   #           clientId: Iv1.example
   #           privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
   #           webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
-  #       # Forgejo and Gitea installations authenticate with a bot token
-  #       # instead of a GitHub App. Gitea speaks the same API as Forgejo,
-  #       # so forge: gitea works identically here.
+  #       # GitLab, Forgejo and Gitea installations authenticate with a bot
+  #       # token instead of a GitHub App. Gitea speaks the same API as
+  #       # Forgejo, so forge: gitea works identically here; forge: gitlab
+  #       # talks to gitlab.com unless it names a host.
   #       - name: example-forgejo
   #         forge: forgejo
   #         host: forge.example.com

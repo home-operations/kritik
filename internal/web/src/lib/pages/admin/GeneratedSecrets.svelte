@@ -13,7 +13,7 @@
 </script>
 
 <Dialog bind:open title="Generated webhook secrets" {fallback} onclose={() => (generated = undefined)}>
-  <p class="form-alert" role="note"><strong>This is the only time these are shown.</strong> Copy each into its webhook now: a GitHub installation's into its GitHub App's webhook settings, a Forgejo or Gitea installation's into the webhook on each user or organization it serves.</p>
+  <p class="form-alert" role="note"><strong>This is the only time these are shown.</strong> Copy each into its webhook now: a GitHub installation's into its GitHub App's webhook settings, a GitLab installation's into the webhook on each project or group it serves, and a Forgejo or Gitea installation's into the webhook on each user or organization it serves.</p>
   {#each Object.entries(generated ?? {}) as [key, value] (key)}
     <div class="item-card">
       <div class="item-head"><span class="mono">{key}</span></div>

@@ -2,7 +2,7 @@
 
 # kritik
 
-**Repository-aware AI pull request review for GitHub, Forgejo and Gitea.**
+**Repository-aware AI pull request review for GitHub, GitLab, Forgejo and Gitea.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/home-operations/kritik/ci.yaml?branch=main&label=ci)](https://github.com/home-operations/kritik/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/actions/workflow/status/home-operations/kritik/release.yaml?branch=main&label=release)](https://github.com/home-operations/kritik/actions/workflows/release.yaml)
@@ -46,9 +46,6 @@ Kubernetes Job pod that holds no secrets.
 - **Dashboard.** Sign-in, dashboard-managed tenants, live review state, full
   model transcripts and an audit log.
 
-GitLab is planned: its webhooks parse, but there is no GitLab client yet,
-so the configuration refuses a `gitlab` installation until there is.
-
 ## Installing
 
 kritik ships as an OCI Helm chart, `oci://ghcr.io/home-operations/charts/kritik`.
@@ -61,9 +58,10 @@ configuration file under `config.file`, the secrets it references under
 `roles.all` runs the single-process topology; `roles.ingest` and
 `roles.worker` split it.
 
-Then [connect a forge](docs/connecting-a-forge.md): a GitHub App or a
-Forgejo or Gitea bot account, with one webhook for the App or each owner
-rather than one per repository.
+Then [connect a forge](docs/connecting-a-forge.md): a GitHub App, or a
+GitLab, Forgejo or Gitea bot account, with one webhook for the App or each
+owner rather than one per repository (on GitLab, per project unless a
+group webhook is available).
 
 Security notes:
 
@@ -79,14 +77,14 @@ Security notes:
 - Run runner Jobs under a sandboxed RuntimeClass such as gVisor
   (`runner.runtimeClassName`) where the cluster has one, since the pod parses
   untrusted content.
-- Give a Forgejo or Gitea installation a read-only `gitToken` beside its
-  `token`: runners fetch with `gitToken` when it is set, and otherwise with
-  `token`, which can write to the forge.
+- Give a GitLab, Forgejo or Gitea installation a read-only `gitToken`
+  beside its `token`: runners fetch with `gitToken` when it is set, and
+  otherwise with `token`, which can write to the forge.
 
 ## Documentation
 
 - [Connecting a forge](docs/connecting-a-forge.md): the GitHub App or
-  Forgejo or Gitea bot, its permissions, and its webhooks
+  GitLab, Forgejo or Gitea bot, its permissions, and its webhooks
 - [Chart values](charts/kritik/README.md)
 - [`.kritik.yaml` reference](docs/repository-config.md)
 - [Dashboard](docs/dashboard.md): sign-in, roles, the sealing key and

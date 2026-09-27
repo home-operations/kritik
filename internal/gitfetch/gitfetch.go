@@ -37,7 +37,8 @@ type Fetch struct {
 	// CloneURL is the HTTPS clone URL, or a local path for tests.
 	CloneURL string
 	// Token, when set, authenticates as x-access-token, which is what a GitHub
-	// App installation token and a Forgejo token both expect.
+	// App installation token and a Forgejo token both expect; GitLab takes an
+	// access token under any username.
 	Token string
 	// Head and Base are full commit SHAs.
 	Head, Base string

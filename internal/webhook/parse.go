@@ -453,6 +453,7 @@ func parseGitLab(delivery string, body []byte) (Event, error) {
 			Namespace         string `json:"namespace"`
 		} `json:"project"`
 		User struct {
+			ID       int64  `json:"id"`
 			Username string `json:"username"`
 			Bot      bool   `json:"bot"`
 		} `json:"user"`
@@ -470,9 +471,11 @@ func parseGitLab(delivery string, body []byte) (Event, error) {
 				IID          int    `json:"iid"`
 				Title        string `json:"title"`
 				Description  string `json:"description"`
-				State        string `json:"state"` // opened, closed, merged
+				State        string `json:"state"` // opened, closed, merged, locked
 				Action       string `json:"action"`
+				OldRev       string `json:"oldrev"`
 				Draft        bool   `json:"draft"`
+				AuthorID     int64  `json:"author_id"`
 				URL          string `json:"url"`
 				CreatedAt    string `json:"created_at"`
 				SourceBranch string `json:"source_branch"`
@@ -483,6 +486,9 @@ func parseGitLab(delivery string, body []byte) (Event, error) {
 					ID string `json:"id"`
 				} `json:"last_commit"`
 			} `json:"object_attributes"`
+			Changes struct {
+				Draft *gitLabChange `json:"draft"`
+			} `json:"changes"`
 			Labels []struct {
 				Title string `json:"title"`
 				Color string `json:"color"`
@@ -492,17 +498,22 @@ func parseGitLab(delivery string, body []byte) (Event, error) {
 			return Event{}, fmt.Errorf("webhook: merge_request payload: %w", err)
 		}
 		a := p.ObjectAttributes
-		created, _ := time.Parse("2006-01-02 15:04:05 MST", a.CreatedAt)
 		pr := &PullRequest{
-			Number: a.IID, Title: a.Title, Author: probe.User.Username, AuthorIsBot: probe.User.Bot,
+			Number: a.IID, Title: a.Title,
 			State: map[bool]string{true: stateOpen, false: "closed"}[a.State == "opened"], Merged: a.State == "merged",
 			Draft: a.Draft, Fork: a.SourceProjID != a.TargetProjID,
-			HeadRef: a.SourceBranch, HeadSHA: a.LastCommit.ID, BaseRef: a.TargetBranch, URL: a.URL, Body: a.Description, CreatedAt: created,
+			HeadRef: a.SourceBranch, HeadSHA: a.LastCommit.ID, BaseRef: a.TargetBranch, URL: a.URL, Body: a.Description,
+			CreatedAt: gitLabTime(a.CreatedAt),
+		}
+		// The payload names the author by id alone, and user is whoever
+		// acted: the author is known only when the two are the same.
+		if probe.User.ID == a.AuthorID {
+			pr.Author, pr.AuthorIsBot = probe.User.Username, probe.User.Bot
 		}
 		for _, l := range p.Labels {
-			pr.Labels = append(pr.Labels, Label{Name: l.Title, Color: l.Color})
+			pr.Labels = append(pr.Labels, Label{Name: l.Title, Color: strings.TrimPrefix(l.Color, "#")})
 		}
-		base.Kind, base.Action, base.PullRequest = KindPullRequest, a.Action, pr
+		base.Kind, base.Action, base.PullRequest = KindPullRequest, gitLabAction(a.Action, a.OldRev, p.Changes.Draft), pr
 		return base, nil
 	case "note":
 		var p struct {
@@ -510,6 +521,9 @@ func parseGitLab(delivery string, body []byte) (Event, error) {
 				ID           int64  `json:"id"`
 				Note         string `json:"note"`
 				NoteableType string `json:"noteable_type"` //nolint:misspell // GitLab's field is spelled noteable
+				Action       string `json:"action"`
+				System       bool   `json:"system"`
+				Internal     bool   `json:"internal"`
 				Position     *struct {
 					NewPath string `json:"new_path"`
 					NewLine int    `json:"new_line"`
@@ -522,18 +536,22 @@ func parseGitLab(delivery string, body []byte) (Event, error) {
 		if err := json.Unmarshal(body, &p); err != nil {
 			return Event{}, fmt.Errorf("webhook: note payload: %w", err)
 		}
-		if p.ObjectAttributes.NoteableType != "MergeRequest" {
+		a := p.ObjectAttributes
+		// An internal note is for project members only, and an answer to
+		// it would be public.
+		if a.NoteableType != "MergeRequest" || a.System || a.Internal {
 			base.Kind, base.Action = KindIgnored, "note"
 			return base, nil
 		}
 		c := &Comment{
-			ID: p.ObjectAttributes.ID, Number: p.MergeRequest.IID, Author: probe.User.Username,
-			AuthorIsBot: probe.User.Bot, Body: p.ObjectAttributes.Note,
+			ID: a.ID, Number: p.MergeRequest.IID, Author: probe.User.Username,
+			AuthorIsBot: probe.User.Bot, Body: a.Note,
 		}
-		if pos := p.ObjectAttributes.Position; pos != nil {
+		if pos := a.Position; pos != nil {
 			c.Inline, c.Path, c.Line = true, pos.NewPath, pos.NewLine
 		}
-		base.Kind, base.Action, base.Comment = KindComment, "created", c
+		base.Kind, base.Comment = KindComment, c
+		base.Action = map[bool]string{true: "edited", false: "created"}[a.Action == "update"]
 		return base, nil
 	case "push":
 		var p struct {
@@ -550,4 +568,43 @@ func parseGitLab(delivery string, body []byte) (Event, error) {
 		base.Kind, base.Action = KindIgnored, probe.Kind
 		return base, nil
 	}
+}
+
+// gitLabChange is one field of a merge request hook's changes.
+type gitLabChange struct {
+	Previous bool `json:"previous"`
+	Current  bool `json:"current"`
+}
+
+// gitLabAction names a merge request hook's action as GitHub does, which
+// is what ingest matches: an update that moved the head synchronizes, and
+// one that took the draft off makes it ready for review. A merge is a
+// close, as on GitHub.
+func gitLabAction(action, oldrev string, draft *gitLabChange) string {
+	switch action {
+	case "open":
+		return "opened"
+	case "reopen":
+		return "reopened"
+	case "close", "merge":
+		return "closed"
+	case "update":
+		switch {
+		case oldrev != "":
+			return "synchronize"
+		case draft != nil && draft.Previous && !draft.Current:
+			return "ready_for_review"
+		}
+	}
+	return action
+}
+
+// gitLabTime reads a hook timestamp: RFC 3339, or "2006-01-02 15:04:05 UTC"
+// from older GitLab releases.
+func gitLabTime(s string) time.Time {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	t, _ := time.Parse("2006-01-02 15:04:05 MST", s)
+	return t
 }

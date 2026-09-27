@@ -471,6 +471,27 @@ test.describe('operator console', () => {
     await expect(page.getByRole('dialog', { name: 'Generated webhook secrets' })).toContainText('/hooks/beta-bot');
   });
 
+  test('creates a GitLab installation on gitlab.com when the host is blank', async ({ page }) => {
+    await setup(page, operatorMe);
+    const sent = await g.mockWrites(page, [['POST', /\/api\/v1\/tenants$/, { status: 201, body: g.tenantWriteResult }]]);
+    await page.goto('/#/operator');
+    await page.getByRole('button', { name: 'New tenant' }).click();
+    await page.getByLabel('Slug').fill('beta');
+    await page.getByRole('button', { name: 'Add installation' }).click();
+    await page.getByLabel('Name', { exact: true }).fill('beta-gitlab');
+    await page.getByLabel('Forge').selectOption('gitlab');
+    await expect(page.getByLabel('Host')).toHaveAttribute('placeholder', 'gitlab.com');
+    await expect(page.locator('.item-card').getByText('secret token, to each project')).toBeVisible();
+    await page.locator('[data-path="installations[0].accounts"]').fill('acme-group');
+    await page.getByLabel('Token: new value').fill('glpat');
+    await page.getByRole('button', { name: 'Create tenant' }).click();
+
+    await expect.poll(() => sent.length).toBe(1);
+    expect((sent[0]!.body as T.CreateTenantRequest).spec.installations).toEqual([
+      { name: 'beta-gitlab', forge: 'gitlab', accounts: ['acme-group'], token: { value: 'glpat' }, webhookSecret: { generate: true } },
+    ]);
+  });
+
   test('offers adopt only for a slug a gone tenant used, and sends it', async ({ page }) => {
     await setup(page, operatorMe);
     const sent = await g.mockWrites(page, [
@@ -510,7 +531,6 @@ test.describe('operator console', () => {
     await page.getByLabel('Slug').fill('beta');
     await page.getByRole('button', { name: 'Add installation' }).click();
     await page.getByLabel('Name', { exact: true }).fill('beta-bot');
-    await expect(page.getByLabel('Forge').locator('option[value="gitlab"]')).toHaveCount(0);
     await page.getByLabel('Forge').selectOption('forgejo');
     await page.getByLabel('Host').fill('http://code.example');
     await page.locator('[data-path="installations[0].accounts"]').fill('bot');

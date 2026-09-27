@@ -40,6 +40,7 @@ func fixture(t *testing.T) string {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	t.Setenv("TEST_FORGEJO_TOKEN", "fj-token")
 	t.Setenv("TEST_GITEA_TOKEN", "gt-token")
+	t.Setenv("TEST_GITLAB_TOKEN", "gl-token")
 	t.Setenv("TEST_CLIENT_ID", "Iv1.fromenv")
 	return path
 }
@@ -170,6 +171,10 @@ func TestInstallationCredentials(t *testing.T) {
 	gt, _, ok := f.Installation("onedr0p-gitea")
 	if !ok || gt.TokenValue().Value() != "gt-token" || gt.WebhookSecretValue().Value() != "whsec" {
 		t.Fatal("gitea credentials not resolved")
+	}
+	gl, _, ok := f.Installation("onedr0p-gitlab")
+	if !ok || gl.TokenValue().Value() != "gl-token" || gl.WebhookSecretValue().Value() != "whsec" {
+		t.Fatal("gitlab credentials not resolved")
 	}
 	if _, _, ok := f.Installation("nope"); ok {
 		t.Fatal("unknown installation should not resolve")
@@ -372,8 +377,8 @@ func TestParseRejects(t *testing.T) {
 		{"missing accounts", strings.Replace(minimal, "        accounts: [acme]\n", "", 1), "accounts must list at least one account"},
 		{"blank account", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ' ']", 1), "accounts[1] is empty"},
 		{"account listed twice", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ACME]", 1), `accounts[1] "ACME" is listed twice`},
-		{"unknown forge", strings.Replace(minimal, "forge: forgejo", "forge: bitbucket", 1), "forge must be github, forgejo or gitea"},
-		{"gitlab until it has a client", strings.Replace(minimal, "forge: forgejo", "forge: gitlab", 1), "forge gitlab is not supported yet"},
+		{"unknown forge", strings.Replace(minimal, "forge: forgejo", "forge: bitbucket", 1), "forge must be github, gitlab, forgejo or gitea"},
+		{"gitlab with app", strings.Replace(strings.Replace(minimal, "forge: forgejo", "forge: gitlab", 1), "token: { env: TEST_FORGEJO_TOKEN }", "app: { clientId: x, privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }", 1), "takes a token, not an app"},
 		{"github without app", strings.Replace(minimal, "forge: forgejo", "forge: github", 1), "needs an app"},
 		{"github app with both client id forms", githubMinimal("clientId: x, clientIdFrom: { env: TEST_WEBHOOK_SECRET }, "), "exactly one of clientId or clientIdFrom"},
 		{"github app with neither client id form", githubMinimal(""), "exactly one of clientId or clientIdFrom"},

@@ -12,12 +12,11 @@ import (
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/forge/forgejo"
 	"github.com/home-operations/kritik/internal/forge/github"
+	"github.com/home-operations/kritik/internal/forge/gitlab"
 )
 
 // BuildForge constructs the forge client for an installation from its
 // credentials in the configuration file, for repositories of repo's owner.
-// GitHub, Forgejo and Gitea are implemented; the configuration refuses
-// GitLab until it is.
 func BuildForge(ctx context.Context, in *configfile.Installation, repo string) (forge.Client, error) {
 	switch in.Forge {
 	case configfile.ForgeGitHub:
@@ -36,6 +35,13 @@ func BuildForge(ctx context.Context, in *configfile.Installation, repo string) (
 	case configfile.ForgeForgejo, configfile.ForgeGitea:
 		// Gitea speaks the same REST API as Forgejo.
 		c, err := forgejo.NewClient(in.Host, in.TokenValue().Value(), nil)
+		if err != nil {
+			return nil, err
+		}
+		c.FetchToken = in.GitTokenValue().Value()
+		return c, nil
+	case configfile.ForgeGitLab:
+		c, err := gitlab.NewClient(in.Host, in.TokenValue().Value(), nil)
 		if err != nil {
 			return nil, err
 		}

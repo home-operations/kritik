@@ -12,6 +12,9 @@ import (
 // GitHubHost is where a GitHub installation or sign-in without a host lives.
 const GitHubHost = "github.com"
 
+// GitLabHost is where a GitLab installation without a host lives.
+const GitLabHost = "gitlab.com"
+
 // validateEgress checks the allowlist entries are bare hostnames and each
 // credential names a host that is allowed, explicitly or implicitly.
 func (f *File) validateEgress() error {
