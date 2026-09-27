@@ -408,24 +408,29 @@ A task that a subject-less event can trigger (a `raw` trigger on anything
 but `issues`, `issue_comment`, `pull_request`, `pull_request_review_comment`
 or `pull_request_comment`) may declare no action at all: there is no issue
 or pull request to write to, so its report is the run on the dashboard.
+A raw `issues` trigger counts as carrying a subject, but a delivery about
+an issue that is a pull request (some forges send one for a pull request's
+labels) has none: the task runs with `subject.kind` empty, and every
+action on the subject is dropped from its plan. Use `pull_request` for
+pull requests.
 
 ### The operator's bounds on tasks
 
 The operator writes `allow.tasks` at `defaults`, a tenant or a repository
 entry, bound by bound like the rest of `allow`:
 
-| Bound                      | Default                                      | What it bounds                                                                       |
-| -------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `enabled`                  | `false`                                      | Whether any task runs, the operator's own included.                                  |
-| `events`                   | `["issue.*", "pull_request.*", "comment.*"]` | Globs over trigger event names; a raw event must be listed, such as `raw:release.*`. |
-| `actions`                  | `[comment, labels, inlineComments]`          | Action kinds; `state`, `assign` and `reviewers` must be listed.                      |
-| `context`                  | `[thread, files, search, related]`           | Context source kinds; `commands` must be listed.                                     |
-| `tools`                    | `[read_file, grep, list_files]`              | Agent tools; `run` is opt-in.                                                        |
-| `systemPrompt`             | `false`                                      | Whether a task may add to the system prompt.                                         |
-| `repositoryTasks`          | `true`                                       | Whether a `.kritik.yaml` may define tasks at all.                                    |
-| `maxTasks`                 | `10`                                         | A repository's tasks.                                                                |
-| `maxRunsPerSubjectPerHour` | `6`                                          | How often one task runs on one issue or pull request; a run past it is skipped.      |
-| `maxFields`                | `16`                                         | A task's fields.                                                                     |
+| Bound                      | Default                                      | What it bounds                                                                                               |
+| -------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `enabled`                  | `false`                                      | Whether any task runs, the operator's own included.                                                          |
+| `events`                   | `["issue.*", "pull_request.*", "comment.*"]` | Globs over trigger event names, with `*` and `**` only; a raw event must be listed, such as `raw:release.*`. |
+| `actions`                  | `[comment, labels, inlineComments]`          | Action kinds; `state`, `assign` and `reviewers` must be listed.                                              |
+| `context`                  | `[thread, files, search, related]`           | Context source kinds; `commands` must be listed.                                                             |
+| `tools`                    | `[read_file, grep, list_files]`              | Agent tools; `run` is opt-in.                                                                                |
+| `systemPrompt`             | `false`                                      | Whether a task may add to the system prompt.                                                                 |
+| `repositoryTasks`          | `true`                                       | Whether a `.kritik.yaml` may define tasks at all.                                                            |
+| `maxTasks`                 | `10`                                         | A repository's tasks.                                                                                        |
+| `maxRunsPerSubjectPerHour` | `6`                                          | How often one task runs on one issue or pull request; a run past it is skipped.                              |
+| `maxFields`                | `16`                                         | A task's fields.                                                                                             |
 
 A task's mode, models, agent limits and commands are bounded by
 `allow.modes`, `allow.models`, `allow.agent` and `allow.commands`, as for
@@ -534,11 +539,14 @@ Answer with:
 - comment: when needsInfo is true, a short, polite request for what is missing, addressed to the author.
   When one of the possible duplicates below is clearly the same issue, say which. Otherwise leave it empty.
 
+{{ with .Context.files }}
 The contributing guide:
-{{ .Context.files }}
-
+{{ . }}
+{{ end }}
+{{- with .Context.dupes }}
 The issues and pull requests most like this one, as possible duplicates:
-{{ .Context.dupes }}
+{{ . }}
+{{ end }}
 ```
 
 [`recipes/issue-triage/.kritik/tasks/triage-comment.md.tmpl`](recipes/issue-triage/.kritik/tasks/triage-comment.md.tmpl):
