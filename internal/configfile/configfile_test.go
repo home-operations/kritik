@@ -148,6 +148,25 @@ func TestLoadFull(t *testing.T) {
 	})
 }
 
+func TestGitLabSigningToken(t *testing.T) {
+	minimalEnv(t)
+	for _, tt := range []struct {
+		forge, secret string
+		ok            bool
+	}{
+		{"gitlab", "whsec_c2VjcmV0", true},
+		{"gitlab", "whsec_!!", false},
+		{"gitlab", "a-secret-token", true},
+		{"forgejo", "whsec_!!", true},
+	} {
+		t.Setenv("TEST_WEBHOOK_SECRET", tt.secret)
+		_, err := Parse([]byte(strings.Replace(minimal, "forge: forgejo", "forge: "+tt.forge, 1)))
+		if (err == nil) != tt.ok {
+			t.Errorf("%s webhookSecret %q: Parse = %v, want ok %v", tt.forge, tt.secret, err, tt.ok)
+		}
+	}
+}
+
 func TestInstallationCredentials(t *testing.T) {
 	f, err := Load(fixture(t))
 	if err != nil {

@@ -481,7 +481,7 @@ test.describe('operator console', () => {
     await page.getByLabel('Name', { exact: true }).fill('beta-gitlab');
     await page.getByLabel('Forge').selectOption('gitlab');
     await expect(page.getByLabel('Host')).toHaveAttribute('placeholder', 'gitlab.com');
-    await expect(page.locator('.item-card').getByText('secret token, to each project')).toBeVisible();
+    await expect(page.locator('.item-card').getByText('the signing token GitLab generates')).toBeVisible();
     await page.locator('[data-path="installations[0].accounts"]').fill('acme-group');
     await page.getByLabel('Token: new value').fill('glpat');
     await page.getByRole('button', { name: 'Create tenant' }).click();

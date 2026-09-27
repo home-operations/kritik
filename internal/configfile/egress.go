@@ -15,6 +15,11 @@ const GitHubHost = "github.com"
 // GitLabHost is where a GitLab installation without a host lives.
 const GitLabHost = "gitlab.com"
 
+// GitLabSigningTokenPrefix starts a GitLab webhook signing token, which
+// GitLab generates; a GitLab installation's webhookSecret with it is one,
+// and any other is a secret token.
+const GitLabSigningTokenPrefix = "whsec_"
+
 // validateEgress checks the allowlist entries are bare hostnames and each
 // credential names a host that is allowed, explicitly or implicitly.
 func (f *File) validateEgress() error {
