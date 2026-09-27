@@ -42,6 +42,9 @@ var ErrNotFound = errors.New("forgejo: not found")
 // comment under each.
 var ErrCommentUnknown = errors.New("forgejo: inline comment unknown")
 
+// errNoContent is a 204 answering a request that expected a body.
+var errNoContent = errors.New("forgejo: no content")
+
 // apiError is returned for any non-2xx response.
 type apiError struct {
 	method     string
@@ -136,6 +139,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 	if out == nil {
 		return nil
+	}
+	if resp.StatusCode == http.StatusNoContent {
+		return fmt.Errorf("forgejo: %s %s: %w", method, path, errNoContent)
 	}
 	if text, ok := out.(*string); ok {
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxDiffBytes+1))
@@ -331,17 +337,22 @@ func (c *Client) UpdateComment(ctx context.Context, owner, repo string, id int64
 }
 
 // GetComment implements forge.Client. inline=false uses the id-only
-// conversation-comment endpoint. inline=true has no such endpoint on
-// Forgejo: it lists every review on number and every review's comments
-// until id turns up.
+// conversation-comment endpoint. Forgejo delivers a reply in a code
+// conversation as a conversation comment, but that endpoint answers a code
+// comment with 204, so a 204 is looked up inline instead. inline=true has no
+// id-only endpoint on Forgejo: it lists every review on number and every
+// review's comments until id turns up.
 func (c *Client) GetComment(ctx context.Context, owner, repo string, number int, id int64, inline bool) (forge.Comment, error) {
 	if !inline {
 		var cm comment
 		path := fmt.Sprintf("%s/issues/comments/%d", repoPath(owner, repo), id)
-		if err := c.do(ctx, http.MethodGet, path, nil, &cm); err != nil {
+		err := c.do(ctx, http.MethodGet, path, nil, &cm)
+		if err == nil {
+			return conversationComment(cm), nil
+		}
+		if !errors.Is(err, errNoContent) {
 			return forge.Comment{}, fmt.Errorf("forgejo: get comment %d on %s/%s: %w", id, owner, repo, err)
 		}
-		return conversationComment(cm), nil
 	}
 	raw, err := c.findInlineComment(ctx, owner, repo, number, id)
 	if err != nil {

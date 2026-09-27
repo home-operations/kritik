@@ -478,6 +478,40 @@ func TestListInlineAndReplyAndGetComment(t *testing.T) {
 	}
 }
 
+// TestGetCommentInCodeConversation covers a mention in a code conversation:
+// Forgejo's webhook calls it a conversation comment, but the conversation
+// endpoint answers it with 204, so it is found under its review instead.
+func TestGetCommentInCodeConversation(t *testing.T) {
+	srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/acme/widgets/issues/comments/"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/acme/widgets/pulls/9/reviews":
+			_, _ = w.Write([]byte(`[{"id":100,"commit_id":"sha1","submitted_at":"2026-01-01T00:00:00Z"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/acme/widgets/pulls/9/reviews/100/comments":
+			_, _ = w.Write([]byte(`[{"id":200,"body":"@kritik why?","path":"a.go","position":5,"commit_id":"sha1","user":{"login":"alice"},"created_at":"2026-01-01T00:00:01Z"}]`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+	defer srv.Close()
+
+	t.Run("found under its review", func(t *testing.T) {
+		cm, err := c.GetComment(t.Context(), "acme", "widgets", 9, 200, false)
+		if err != nil {
+			t.Fatalf("GetComment: %v", err)
+		}
+		if cm.ID != 200 || !cm.Inline || cm.Path != "a.go" || cm.Line != 5 || cm.Author != "alice" {
+			t.Fatalf("GetComment = %+v, want the inline comment", cm)
+		}
+	})
+	t.Run("under no review", func(t *testing.T) {
+		if _, err := c.GetComment(t.Context(), "acme", "widgets", 9, 999, false); !errors.Is(err, ErrCommentUnknown) {
+			t.Fatalf("GetComment error = %v, want ErrCommentUnknown", err)
+		}
+	})
+}
+
 func TestNotFoundWrapsSentinel(t *testing.T) {
 	srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
