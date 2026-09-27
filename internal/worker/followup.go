@@ -154,7 +154,7 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	if limited {
 		return followUpLimited, nil
 	}
-	thread, root, err := f.thread(ctx)
+	thread, err := f.thread(ctx)
 	if err != nil {
 		return followUpFailed, err
 	}
@@ -178,7 +178,7 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	body := review.FollowUpBody(reply, resp.Model)
 	var replyID int64
 	if f.comment.Inline {
-		replyID, err = f.client.ReplyInline(ctx, f.owner, f.repo, f.pr.number, root, body)
+		replyID, err = f.client.ReplyInline(ctx, f.owner, f.repo, f.pr.number, f.comment, body)
 	} else {
 		replyID, err = f.client.CreateComment(ctx, f.owner, f.repo, f.pr.number, body)
 	}
@@ -260,28 +260,28 @@ func (f *followUp) rateLimited(ctx context.Context) (bool, error) {
 	return true, f.record(ctx, followUpLimited, "", replyID, "")
 }
 
-// thread returns the messages the model sees and, for an inline comment,
-// the root comment replies attach to. The asking comment is always last.
-func (f *followUp) thread(ctx context.Context) ([]review.Message, int64, error) {
+// thread returns the messages the model sees. The asking comment is always
+// last.
+func (f *followUp) thread(ctx context.Context) ([]review.Message, error) {
 	var comments []forge.Comment
 	var err error
-	root := f.comment.ID
-	if f.comment.Inline {
-		if f.comment.InReplyTo != 0 {
-			root = f.comment.InReplyTo
+	switch {
+	case !f.comment.Inline:
+		if comments, err = f.client.ListConversation(ctx, f.owner, f.repo, f.pr.number); err != nil {
+			return nil, err
 		}
+	// Only a reply has a thread to gather: a comment that replies to none
+	// starts its thread, as every Forgejo inline comment does.
+	case f.comment.InReplyTo != 0:
+		root := f.comment.InReplyTo
 		all, err := f.client.ListInline(ctx, f.owner, f.repo, f.pr.number)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		for _, c := range all {
 			if c.ID == root || c.InReplyTo == root {
 				comments = append(comments, c)
 			}
-		}
-	} else {
-		if comments, err = f.client.ListConversation(ctx, f.owner, f.repo, f.pr.number); err != nil {
-			return nil, 0, err
 		}
 	}
 	found := false
@@ -308,7 +308,7 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, int64, error) 
 	for _, c := range comments {
 		msgs = append(msgs, review.Message{Author: c.Author, Body: c.Body, When: c.CreatedAt})
 	}
-	return msgs, root, nil
+	return msgs, nil
 }
 
 type reviewRecord struct {

@@ -47,6 +47,9 @@ var ErrNotFound = errors.New("forgejo: not found")
 // comment under each.
 var ErrCommentUnknown = errors.New("forgejo: inline comment unknown")
 
+// errNoContent is a 204 answering a request that expected a body.
+var errNoContent = errors.New("forgejo: no content")
+
 // apiError is returned for any non-2xx response.
 type apiError struct {
 	method     string
@@ -141,6 +144,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 	if out == nil {
 		return nil
+	}
+	if resp.StatusCode == http.StatusNoContent {
+		return fmt.Errorf("forgejo: %s %s: %w", method, path, errNoContent)
 	}
 	if text, ok := out.(*string); ok {
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxDiffBytes+1))
@@ -273,21 +279,20 @@ func (c *Client) BotLogin(ctx context.Context) (string, error) {
 	return c.login, nil
 }
 
-// FindComment implements forge.Client, returning the id of the newest
-// conversation comment by login whose body contains marker, or 0 if none
-// matches.
+// FindComment implements forge.Client, returning the id of the first
+// (oldest) conversation comment by login whose body contains marker, as
+// GitHub's does, or 0 if none matches.
 func (c *Client) FindComment(ctx context.Context, owner, repo string, number int, login, marker string) (int64, error) {
 	comments, err := c.ListConversation(ctx, owner, repo, number)
 	if err != nil {
 		return 0, err
 	}
-	var found int64
 	for _, cm := range comments {
 		if cm.Author == login && strings.Contains(cm.Body, marker) {
-			found = cm.ID
+			return cm.ID, nil
 		}
 	}
-	return found, nil
+	return 0, nil
 }
 
 // ListConversation implements forge.Client.
@@ -301,7 +306,9 @@ func (c *Client) ListConversation(ctx context.Context, owner, repo string, numbe
 	for _, cm := range raw {
 		out = append(out, conversationComment(cm))
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	// Stable: Forgejo's times are whole seconds, and it lists comments
+	// made in the same second in the order they were made.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
 	return out, nil
 }
 
@@ -335,17 +342,22 @@ func (c *Client) UpdateComment(ctx context.Context, owner, repo string, id int64
 }
 
 // GetComment implements forge.Client. inline=false uses the id-only
-// conversation-comment endpoint. inline=true has no such endpoint on
-// Forgejo: it lists every review on number and every review's comments
-// until id turns up.
+// conversation-comment endpoint. Forgejo delivers a reply in a code
+// conversation as a conversation comment, but that endpoint answers a code
+// comment with 204, so a 204 is looked up inline instead. inline=true has no
+// id-only endpoint on Forgejo: it lists every review on number and every
+// review's comments until id turns up.
 func (c *Client) GetComment(ctx context.Context, owner, repo string, number int, id int64, inline bool) (forge.Comment, error) {
 	if !inline {
 		var cm comment
 		path := fmt.Sprintf("%s/issues/comments/%d", repoPath(owner, repo), id)
-		if err := c.do(ctx, http.MethodGet, path, nil, &cm); err != nil {
+		err := c.do(ctx, http.MethodGet, path, nil, &cm)
+		if err == nil {
+			return conversationComment(cm), nil
+		}
+		if !errors.Is(err, errNoContent) {
 			return forge.Comment{}, fmt.Errorf("forgejo: get comment %d on %s/%s: %w", id, owner, repo, err)
 		}
-		return conversationComment(cm), nil
 	}
 	raw, err := c.findInlineComment(ctx, owner, repo, number, id)
 	if err != nil {
@@ -406,7 +418,7 @@ func (c *Client) SetStatus(ctx context.Context, owner, repo, sha string, state f
 	opts := createStatusOption{
 		State:       string(state),
 		Context:     forge.StatusContext,
-		Description: truncate(description, forge.MaxStatusDescription),
+		Description: forge.StatusDescription(description),
 	}
 	path := fmt.Sprintf("%s/statuses/%s", repoPath(owner, repo), sha)
 	if err := c.do(ctx, http.MethodPost, path, opts, nil); err != nil {
@@ -437,26 +449,19 @@ func (c *Client) Permission(ctx context.Context, owner, repo, login string) (for
 
 // ReplyInline implements forge.Client. Forgejo carries no reply-linkage
 // field on an inline comment, so a "reply" is a new single-comment review
-// on the same line, reusing the original comment's commit and path. A
-// single findInlineComment fetch supplies everything the new review needs
-// (path, line, and commit id), unlike forge.Comment which carries no commit
-// id of its own. Forgejo's review-creation response carries no per-comment
-// id, so this always returns 0.
-func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, rootID int64, body string) (int64, error) {
-	root, err := c.findInlineComment(ctx, owner, repo, number, rootID)
-	if err != nil {
-		return 0, fmt.Errorf("forgejo: reply to inline comment %d on %s/%s#%d: %w", rootID, owner, repo, number, err)
-	}
+// on to's commit, path and line. Forgejo's review-creation response carries
+// no per-comment id, so this always returns 0.
+func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, to forge.Comment, body string) (int64, error) {
 	opts := createPullReviewOptions{
-		CommitID: root.CommitID,
+		CommitID: to.CommitID,
 		Event:    "COMMENT",
 		Comments: []createPullReviewComment{
-			{Path: root.Path, Body: body, NewLineNum: int64(root.LineNum)},
+			{Path: to.Path, Body: body, NewLineNum: int64(to.Line)},
 		},
 	}
 	path := fmt.Sprintf("%s/pulls/%d/reviews", repoPath(owner, repo), number)
 	if err := c.do(ctx, http.MethodPost, path, opts, nil); err != nil {
-		return 0, fmt.Errorf("forgejo: reply to inline comment %d on %s/%s#%d: %w", rootID, owner, repo, number, err)
+		return 0, fmt.Errorf("forgejo: reply to inline comment %d on %s/%s#%d: %w", to.ID, owner, repo, number, err)
 	}
 	return 0, nil
 }
@@ -511,9 +516,7 @@ func (c *Client) listReviews(ctx context.Context, owner, repo string, number int
 }
 
 // rawReviewComments fetches GET /pulls/{n}/reviews/{id}/comments, which is
-// not paginated. It returns the raw API shape (unlike listReviewComments'
-// former mapped form) so callers that need fields forge.Comment drops
-// (commit id) can still get at them.
+// not paginated.
 func (c *Client) rawReviewComments(ctx context.Context, owner, repo string, number int, reviewID int64) ([]pullReviewComment, error) {
 	var raw []pullReviewComment
 	path := fmt.Sprintf("%s/pulls/%d/reviews/%d/comments", repoPath(owner, repo), number, reviewID)
@@ -535,6 +538,7 @@ func inlineComment(cm pullReviewComment) forge.Comment {
 		Inline:      true,
 		Path:        cm.Path,
 		Line:        int(cm.LineNum),
+		CommitID:    cm.CommitID,
 	}
 }
 
@@ -614,13 +618,4 @@ func openPullRequest(pr pullRequest) forge.OpenPullRequest {
 // applies here.
 func isBot(login string) bool {
 	return strings.HasSuffix(login, "[bot]")
-}
-
-// truncate shortens s to at most n bytes, matching the cap Forgejo (like
-// GitHub) enforces on a commit status description.
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
 }

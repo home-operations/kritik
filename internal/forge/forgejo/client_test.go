@@ -2,11 +2,13 @@ package forgejo
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -196,7 +198,8 @@ func TestFindComment(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`[
 			{"id":1,"body":"unrelated","user":{"login":"someone"},"created_at":"2026-01-01T00:00:00Z"},
-			{"id":2,"body":"kritik-marker: v1","user":{"login":"kritik-bot"},"created_at":"2026-01-02T00:00:00Z"}
+			{"id":2,"body":"kritik-marker: v1","user":{"login":"kritik-bot"},"created_at":"2026-01-02T00:00:00Z"},
+			{"id":3,"body":"kritik-marker: v2","user":{"login":"kritik-bot"},"created_at":"2026-01-03T00:00:00Z"}
 		]`))
 	})
 	defer srv.Close()
@@ -459,7 +462,7 @@ func TestListInlineAndReplyAndGetComment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetComment(inline=true): %v", err)
 	}
-	if cm.ID != 200 || cm.Path != "a.go" {
+	if cm.ID != 200 || cm.Path != "a.go" || cm.CommitID != "sha1" {
 		t.Fatalf("GetComment(inline=true) = %+v", cm)
 	}
 
@@ -468,13 +471,47 @@ func TestListInlineAndReplyAndGetComment(t *testing.T) {
 		t.Fatalf("GetComment unknown id error = %v, want ErrCommentUnknown", err)
 	}
 
-	id, err := c.ReplyInline(t.Context(), "acme", "widgets", 9, 200, "reply body")
+	id, err := c.ReplyInline(t.Context(), "acme", "widgets", 9, cm, "reply body")
 	if err != nil {
 		t.Fatalf("ReplyInline: %v", err)
 	}
 	if id != 0 {
 		t.Fatalf("ReplyInline id = %d, want 0 (Forgejo reviews carry no per-comment id)", id)
 	}
+}
+
+// TestGetCommentInCodeConversation covers a mention in a code conversation:
+// Forgejo's webhook calls it a conversation comment, but the conversation
+// endpoint answers it with 204, so it is found under its review instead.
+func TestGetCommentInCodeConversation(t *testing.T) {
+	srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/repos/acme/widgets/issues/comments/"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/acme/widgets/pulls/9/reviews":
+			_, _ = w.Write([]byte(`[{"id":100,"commit_id":"sha1","submitted_at":"2026-01-01T00:00:00Z"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/acme/widgets/pulls/9/reviews/100/comments":
+			_, _ = w.Write([]byte(`[{"id":200,"body":"@kritik why?","path":"a.go","position":5,"commit_id":"sha1","user":{"login":"alice"},"created_at":"2026-01-01T00:00:01Z"}]`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+	defer srv.Close()
+
+	t.Run("found under its review", func(t *testing.T) {
+		cm, err := c.GetComment(t.Context(), "acme", "widgets", 9, 200, false)
+		if err != nil {
+			t.Fatalf("GetComment: %v", err)
+		}
+		if cm.ID != 200 || !cm.Inline || cm.Path != "a.go" || cm.Line != 5 || cm.Author != "alice" {
+			t.Fatalf("GetComment = %+v, want the inline comment", cm)
+		}
+	})
+	t.Run("under no review", func(t *testing.T) {
+		if _, err := c.GetComment(t.Context(), "acme", "widgets", 9, 999, false); !errors.Is(err, ErrCommentUnknown) {
+			t.Fatalf("GetComment error = %v, want ErrCommentUnknown", err)
+		}
+	})
 }
 
 func TestNotFoundWrapsSentinel(t *testing.T) {
@@ -507,21 +544,17 @@ func TestNewClientAcceptsHostWithOrWithoutScheme(t *testing.T) {
 	}
 }
 
-// TestGetCommentAndReplyInlineWithoutPriorListInline is the critical-fix
-// regression test: an inline reply can arrive as the very first request
-// this process makes for a PR (e.g. right after a restart), so
-// GetComment(inline=true) and ReplyInline must resolve the comment by
-// traversing reviews directly, not depend on an earlier ListInline call
-// having populated some cache.
-func TestGetCommentAndReplyInlineWithoutPriorListInline(t *testing.T) {
+// TestGetCommentWithoutPriorListInline: an inline reply can arrive as the
+// very first request this process makes for a PR (e.g. right after a
+// restart), so GetComment(inline=true) must resolve the comment by
+// traversing reviews directly, not depend on an earlier ListInline call.
+func TestGetCommentWithoutPriorListInline(t *testing.T) {
 	srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/acme/widgets/pulls/9/reviews":
 			_, _ = w.Write([]byte(`[{"id":100,"commit_id":"sha1","submitted_at":"2026-01-01T00:00:00Z"}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/acme/widgets/pulls/9/reviews/100/comments":
 			_, _ = w.Write([]byte(`[{"id":200,"body":"first","path":"a.go","position":5,"commit_id":"sha1","user":{"login":"kritik-bot"},"created_at":"2026-01-01T00:00:01Z"}]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos/acme/widgets/pulls/9/reviews":
-			_, _ = w.Write([]byte(`{"id":101}`))
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -537,9 +570,32 @@ func TestGetCommentAndReplyInlineWithoutPriorListInline(t *testing.T) {
 	if cm.ID != 200 || cm.Path != "a.go" {
 		t.Fatalf("GetComment(inline=true) = %+v", cm)
 	}
+}
 
-	if _, err := c.ReplyInline(t.Context(), "acme", "widgets", 9, 200, "reply body"); err != nil {
-		t.Fatalf("ReplyInline on a fresh client: %v", err)
+// TestReplyInline: the reply is a review on the answered comment's commit,
+// path and line, which the comment carries, so nothing is looked up first.
+func TestReplyInline(t *testing.T) {
+	var got createPullReviewOptions
+	srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/repos/acme/widgets/pulls/9/reviews" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode review: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"id":101}`))
+	})
+	defer srv.Close()
+
+	to := forge.Comment{ID: 200, Inline: true, Path: "a.go", Line: 5, CommitID: "sha1"}
+	if _, err := c.ReplyInline(t.Context(), "acme", "widgets", 9, to, "reply body"); err != nil {
+		t.Fatalf("ReplyInline: %v", err)
+	}
+	want := createPullReviewOptions{CommitID: "sha1", Event: "COMMENT",
+		Comments: []createPullReviewComment{{Path: "a.go", Body: "reply body", NewLineNum: 5}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("review = %+v, want %+v", got, want)
 	}
 }
 

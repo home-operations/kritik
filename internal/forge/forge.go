@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"time"
+	"unicode/utf8"
 
 	"github.com/home-operations/kritik/internal/webhook"
 )
@@ -31,6 +32,8 @@ type Comment struct {
 	Inline      bool
 	Path        string
 	Line        int
+	// CommitID is the commit an inline comment is on.
+	CommitID string
 	// InReplyTo is the root inline comment this one replies to, 0 for a
 	// root or a conversation comment.
 	InReplyTo int64
@@ -64,9 +67,19 @@ const (
 // StatusContext is the commit status context kritik reports under.
 const StatusContext = "kritik/review"
 
-// MaxStatusDescription is the length GitHub, and Forgejo matching it,
-// truncates a commit status description to.
+// MaxStatusDescription is the length, in characters, GitHub, and Forgejo
+// matching it, truncates a commit status description to.
 const MaxStatusDescription = 140
+
+// StatusDescription is s cut to MaxStatusDescription characters, the last
+// an ellipsis when it had to be cut. It counts characters, not bytes, so it
+// never splits one.
+func StatusDescription(s string) string {
+	if utf8.RuneCountInString(s) <= MaxStatusDescription {
+		return s
+	}
+	return string([]rune(s)[:MaxStatusDescription-1]) + "…"
+}
 
 // Permission is a login's access level to a repository, in ascending order.
 type Permission string
@@ -158,8 +171,9 @@ type Client interface {
 	// Permission is the login's access to the repository: admin, maintain,
 	// write, triage, read or none.
 	Permission(ctx context.Context, owner, repo, login string) (Permission, error)
-	// ReplyInline posts a reply under a root inline comment.
-	ReplyInline(ctx context.Context, owner, repo string, number int, rootID int64, body string) (int64, error)
+	// ReplyInline posts a reply in inline comment to's thread and returns
+	// its id, 0 when the forge does not say.
+	ReplyInline(ctx context.Context, owner, repo string, number int, to Comment, body string) (int64, error)
 	// ListOpenPullRequests returns the open pull requests updated since a
 	// time, most recently updated first.
 	ListOpenPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]OpenPullRequest, error)
