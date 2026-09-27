@@ -702,23 +702,43 @@ func TestRepoLabels(t *testing.T) {
 }
 
 func TestAddLabels(t *testing.T) {
-	t.Run("ok", func(t *testing.T) {
-		var gotBody string
-		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/v1/repos/acme/widgets/issues/5/labels" {
-				t.Errorf("path = %s", r.URL.Path)
+	serve := func(t *testing.T, posted *string) (*httptest.Server, *Client) {
+		return newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method + " " + r.URL.Path {
+			case "GET /api/v1/repos/acme/widgets/labels":
+				_, _ = w.Write([]byte(`[{"id":42,"name":"bug"},{"id":7,"name":"triage"},{"id":9,"name":"docs"}]`))
+			case "POST /api/v1/repos/acme/widgets/issues/5/labels":
+				b, _ := io.ReadAll(r.Body)
+				*posted = string(b)
+			default:
+				t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 			}
-			b, _ := io.ReadAll(r.Body)
-			gotBody = string(b)
 		})
-		defer srv.Close()
-		if err := c.AddLabels(t.Context(), "acme", "widgets", 5, []string{"bug", "triage"}); err != nil {
-			t.Fatalf("AddLabels: %v", err)
-		}
-		if !strings.Contains(gotBody, `"labels":["bug","triage"]`) {
-			t.Fatalf("request body = %q", gotBody)
-		}
-	})
+	}
+	tests := []struct {
+		name, wantBody, wantErr string
+		labels                  []string
+	}{
+		{name: "names are sent as ids", labels: []string{"bug", "triage"}, wantBody: `{"labels":[42,7]}`},
+		{name: "an unknown name adds nothing", labels: []string{"bug", "nope"}, wantErr: `the repository has no label "nope"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var posted string
+			srv, c := serve(t, &posted)
+			defer srv.Close()
+			err := c.AddLabels(t.Context(), "acme", "widgets", 5, tt.labels)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || posted != "" {
+					t.Fatalf("AddLabels = %v, posted %q; want %q and nothing posted", err, posted, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || strings.TrimSpace(posted) != tt.wantBody {
+				t.Fatalf("AddLabels = %v, posted %q; want %s", err, posted, tt.wantBody)
+			}
+		})
+	}
 
 	t.Run("no labels sends no request", func(t *testing.T) {
 		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {

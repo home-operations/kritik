@@ -157,11 +157,10 @@ type pullRequestMeta struct {
 }
 
 // issueLabelsOption is the request body for POST
-// /repos/{owner}/{repo}/issues/{index}/labels. The upstream field is
-// []any (either label names or numeric ids are accepted); this package
-// always sends names, so a plain string slice covers everything it needs.
+// /repos/{owner}/{repo}/issues/{index}/labels. The upstream field takes
+// label names or ids; ids work on every release.
 type issueLabelsOption struct {
-	Labels []string `json:"labels"`
+	Labels []int64 `json:"labels"`
 }
 
 // editIssueOption is the request body for PATCH
