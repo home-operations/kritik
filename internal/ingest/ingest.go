@@ -113,7 +113,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Metrics.Webhook(name, "ping")
 		w.WriteHeader(http.StatusNoContent)
 		return
-	case ev.Kind == webhook.KindIgnored:
+	case ev.Kind == webhook.KindIgnored && ev.Repository == nil:
+		// A kind the review pipeline ignores still reaches the dispatcher
+		// when it concerns a repository, whose tasks may run on it.
 		logger.Debug("webhook ignored")
 		h.Metrics.Webhook(name, Ignored)
 		w.WriteHeader(http.StatusAccepted)

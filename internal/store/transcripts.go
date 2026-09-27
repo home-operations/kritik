@@ -21,16 +21,19 @@ const (
 	ModelCallReview    = transcript.KindReview
 	ModelCallFallback  = transcript.KindFallback
 	ModelCallFollowUp  = transcript.KindFollowUp
+	ModelCallTask      = transcript.KindTask
 )
 
-// ModelCall is one row of model_calls. ReviewID, RunnerRunID and
-// FollowupCommentID are left empty (zero) when the call has none. Row's
+// ModelCall is one row of model_calls. ReviewID, RunnerRunID,
+// FollowupCommentID and TaskRunID are left empty (zero) when the call has
+// none. Row's
 // State is what the next agent step of RunnerRunID is a delta against.
 type ModelCall struct {
 	TenantID          string
 	ReviewID          string
 	RunnerRunID       string
 	FollowupCommentID int64
+	TaskRunID         string
 	Kind              ModelCallKind
 	Step              int
 	Model             string
@@ -57,13 +60,13 @@ func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
 	_, err := tx.Exec(ctx, `INSERT INTO model_calls
 		(tenant_id, review_id, runner_run_id, followup_comment_id, kind, step, model, upstream, system, tools,
 		 messages_from, messages, response, stop_reason, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,
-		 cost_usd, duration_ms, error, truncated, messages_end, messages_sha, system_sha, tools_sha, run_bytes)
+		 cost_usd, duration_ms, error, truncated, messages_end, messages_sha, system_sha, tools_sha, run_bytes, task_run_id)
 		VALUES ($1, nullif($2, '')::uuid, nullif($3, '')::uuid, nullif($4::bigint, 0), $5, $6, $7, $8, $9, $10::jsonb,
-		 $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
+		 $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, nullif($28, '')::uuid)`,
 		c.TenantID, c.ReviewID, c.RunnerRunID, c.FollowupCommentID, string(c.Kind), c.Step, c.Model, c.Upstream, c.Row.System, tools,
 		c.Row.MessagesFrom, string(c.Row.Messages), string(c.Row.Response), string(c.Stop),
 		c.Usage.Input, c.Usage.CacheRead, c.Usage.CacheWrite, c.Usage.Output, c.CostUSD, c.Duration.Milliseconds(), c.Error,
-		c.Row.Truncated, st.MessagesEnd, st.MessagesSHA[:], st.SystemSHA[:], st.ToolsSHA[:], st.Bytes)
+		c.Row.Truncated, st.MessagesEnd, st.MessagesSHA[:], st.SystemSHA[:], st.ToolsSHA[:], st.Bytes, c.TaskRunID)
 	if err != nil {
 		return fmt.Errorf("store: insert model call: %w", err)
 	}

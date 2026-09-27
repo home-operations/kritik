@@ -242,6 +242,14 @@ func (s *fakeRetentionStore) SweepModelCalls(_ context.Context, olderThan time.D
 	return 1, nil
 }
 
+func (s *fakeRetentionStore) SweepTaskEvents(_ context.Context, olderThan time.Duration) (int64, error) {
+	s.calls <- sweepCall{name: "taskEvents", swept: olderThan}
+	if s.fail {
+		return 0, errors.New("db down")
+	}
+	return 1, nil
+}
+
 func (s *fakeRetentionStore) SweepSessions(_ context.Context, now time.Time) (int64, error) {
 	s.calls <- sweepCall{name: "sessions", sweptAt: now}
 	if s.fail {
@@ -298,19 +306,22 @@ func TestRetentionSweep(t *testing.T) {
 	if want := current.Get().Retention.TranscriptsOrDefault(); first.swept != want {
 		t.Fatalf("olderThan = %s, want %s", first.swept, want)
 	}
+	if got := next(); got.name != "taskEvents" || got.swept != first.swept {
+		t.Fatalf("second call = %+v, want taskEvents with the transcript retention", got)
+	}
 	if got := next(); got.name != "sessions" {
-		t.Fatalf("second call = %q, want sessions", got.name)
+		t.Fatalf("third call = %q, want sessions", got.name)
 	}
-	third := next()
-	if third.name != "disabledIndexes" {
-		t.Fatalf("third call = %q, want disabledIndexes", third.name)
+	fourth := next()
+	if fourth.name != "disabledIndexes" {
+		t.Fatalf("fourth call = %q, want disabledIndexes", fourth.name)
 	}
-	if want := current.Get().DisabledIndexGrace(); third.swept != want {
-		t.Fatalf("grace = %s, want %s", third.swept, want)
+	if want := current.Get().DisabledIndexGrace(); fourth.swept != want {
+		t.Fatalf("grace = %s, want %s", fourth.swept, want)
 	}
 	// A second pass proves the loop actually re-runs after the interval.
 	if got := next(); got.name != "modelCalls" {
-		t.Fatalf("fourth call = %q, want modelCalls", got.name)
+		t.Fatalf("fifth call = %q, want modelCalls", got.name)
 	}
 
 	cancel()
@@ -332,10 +343,10 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 		close(done)
 	}()
 
-	// Every sweep fails on every pass; wait for two full passes (6 calls)
+	// Every sweep fails on every pass; wait for two full passes (8 calls)
 	// to prove a failure doesn't stop the loop, and one call more, which
-	// the sixth call's warning is logged before.
-	for range 7 {
+	// the eighth call's warning is logged before.
+	for range 9 {
 		select {
 		case <-st.calls:
 		case <-time.After(5 * time.Second):
@@ -349,7 +360,7 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("retentionSweep did not return once ctx ended")
 	}
-	if n := logs.n.Load(); n < 6 {
-		t.Fatalf("logged %d warnings for two failed passes, want >= 6", n)
+	if n := logs.n.Load(); n < 8 {
+		t.Fatalf("logged %d warnings for two failed passes, want >= 8", n)
 	}
 }

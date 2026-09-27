@@ -39,6 +39,15 @@ func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration {
 	return min(jobtimeout.FollowUpTimeout, jobtimeout.MaxJobTimeout)
 }
 
+// Timeout implements river.Worker: a task waits for a lease, calls the
+// model and writes back like a follow-up.
+func (w *Task) Timeout(*river.Job[jobs.TaskArgs]) time.Duration {
+	if w.timeout > 0 {
+		return w.timeout
+	}
+	return min(jobtimeout.FollowUpTimeout, jobtimeout.MaxJobTimeout)
+}
+
 // repoSettings resolves a repository's settings from its id, which a job
 // carries instead of the installation and name the configuration is keyed
 // by. A repository the tenant does not list gets the tenant's settings, as
