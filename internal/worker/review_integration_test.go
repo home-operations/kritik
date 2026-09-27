@@ -157,18 +157,19 @@ func (l *localForge) BranchTip(context.Context, string, string, string) (string,
 
 // fakeEmbedder maps text to an 8-dimensional vector of character-bigram
 // counts, so similar text gets similar vectors without a model. With fail
-// set it errors instead.
+// set it errors instead, once passes more calls have succeeded.
 type fakeEmbedder struct {
-	mu    sync.Mutex
-	calls int
-	fail  atomic.Bool
+	mu     sync.Mutex
+	calls  int
+	fail   atomic.Bool
+	passes atomic.Int32
 }
 
 func (f *fakeEmbedder) Embed(_ context.Context, inputs []string) ([][]float32, int64, error) {
 	f.mu.Lock()
 	f.calls++
 	f.mu.Unlock()
-	if f.fail.Load() {
+	if f.fail.Load() && f.passes.Add(-1) < 0 {
 		return nil, 0, errors.New("embedder down")
 	}
 	out := make([][]float32, len(inputs))
@@ -558,14 +559,16 @@ func checkIndexing(
 		t.Fatalf("index of %s never finished; job errors: %s; runs: %s", commit[:7], errs, runs)
 		return "", ""
 	}
-	indexRows := func() (active, activeCommit string, chunks int, mainChunks []string) {
+	// stray counts the chunks outside the active generation.
+	indexRows := func() (active, activeCommit string, chunks, stray int, mainChunks []string) {
 		t.Helper()
 		err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 			if err := tx.QueryRow(ctx, `SELECT coalesce(r.active_index_run_id::text, ''), coalesce(g.commit_sha, '') FROM repositories r
 				LEFT JOIN index_runs g ON g.id = r.active_index_run_id WHERE r.id = $1`, repoID).Scan(&active, &activeCommit); err != nil {
 				return err
 			}
-			if err := tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE repository_id = $1`, repoID).Scan(&chunks); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE index_run_id::text <> $2) FROM index_chunks WHERE repository_id = $1`,
+				repoID, active).Scan(&chunks, &stray); err != nil {
 				return err
 			}
 			rows, err := tx.Query(ctx, `SELECT text FROM index_chunks WHERE repository_id = $1 AND path = 'main.go' ORDER BY start_line`, repoID)
@@ -578,7 +581,7 @@ func checkIndexing(
 		if err != nil {
 			t.Fatal(err)
 		}
-		return active, activeCommit, chunks, mainChunks
+		return active, activeCommit, chunks, stray, mainChunks
 	}
 	pushed, checked := pushDuringBuild(ctx, t, queue, lf, exec, tenantID, repoID, head)
 	lf.setTip(base)
@@ -592,22 +595,23 @@ func checkIndexing(
 	if err := <-pushed; err != nil {
 		t.Fatal(err)
 	}
-	active, activeCommit, chunks, mainChunks := indexRows()
+	active, activeCommit, chunks, stray, mainChunks := indexRows()
 	close(checked)
-	if active == "" || activeCommit != base || chunks < 2 || len(mainChunks) != 1 || strings.Contains(mainChunks[0], "func b") {
-		t.Fatalf("after full build: active=%q commit=%s chunks=%d main=%q", active, activeCommit, chunks, mainChunks)
+	if active == "" || activeCommit != base || chunks < 2 || stray != 0 || len(mainChunks) != 1 || strings.Contains(mainChunks[0], "func b") {
+		t.Fatalf("after full build: active=%q commit=%s chunks=%d stray=%d main=%q", active, activeCommit, chunks, stray, mainChunks)
 	}
 	if status, mode := waitIndex(head); status != "completed" || mode != "incremental" {
 		t.Fatalf("head index = %s/%s", status, mode)
 	}
-	active2, activeCommit, chunks, mainChunks := indexRows()
-	if active2 != active || activeCommit != head || chunks < 2 || !strings.Contains(strings.Join(mainChunks, ""), "func b") {
+	active2, activeCommit, chunks, stray, mainChunks := indexRows()
+	if active2 != active || activeCommit != head || chunks < 2 || stray != 0 || !strings.Contains(strings.Join(mainChunks, ""), "func b") {
 		var packs, logs string
 		_ = st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 			_ = tx.QueryRow(ctx, `SELECT string_agg(mode || ':' || array_to_string(changed_paths, ','), ' | ') FROM index_packs`).Scan(&packs)
 			return tx.QueryRow(ctx, `SELECT string_agg(right(log_tail, 600), ' || ') FROM runner_runs WHERE kind = 'index'`).Scan(&logs)
 		})
-		t.Fatalf("after incremental: active=%q (was %q) commit=%s chunks=%d main=%q\npacks: %s\nlogs: %s", active2, active, activeCommit, chunks, mainChunks, packs, logs)
+		t.Fatalf("after incremental: active=%q (was %q) commit=%s chunks=%d stray=%d main=%q\npacks: %s\nlogs: %s",
+			active2, active, activeCommit, chunks, stray, mainChunks, packs, logs)
 	}
 	var staged int
 	_ = st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
@@ -667,9 +671,11 @@ func pushDuringBuild(
 // checkIndexRetry fails a forced rebuild's runner every time and checks
 // River works the job again: a first retry comes within the scheduler's
 // interval, so the job is retryable only after its second failure. It then
-// cancels the third.
+// cancels the third. It also checks the job drops the chunks a build killed
+// before it left behind.
 func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], exec *gateExecutor, tenantID, repoID string) {
 	t.Helper()
+	killed := plantKilledBuild(ctx, t, st, tenantID, repoID)
 	exec.setBeforeIndex(func() error { return errors.New("node went away") })
 	t.Cleanup(func() { exec.setBeforeIndex(nil) })
 	job, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)
@@ -695,14 +701,56 @@ func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *
 	}); err != nil || failed != 2 {
 		t.Fatalf("failed index runs = %d, %v; want one per attempt, with the runner's error", failed, err)
 	}
+	if n := runChunks(ctx, t, st, tenantID, killed); n != 0 {
+		t.Fatalf("a killed build's %d chunks were left behind", n)
+	}
 }
 
-// checkIndexEmbedFailure fails a forced rebuild's embedding and checks the
-// chunks its runner staged are cleared, not left behind for good.
+// plantKilledBuild leaves chunks under an index run that never finished,
+// as a job killed mid-build would, and returns the run's id.
+func plantKilledBuild(ctx context.Context, t *testing.T, st *store.Store, tenantID, repoID string) string {
+	t.Helper()
+	var runID string
+	var planted int64
+	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			VALUES ($1, $2, 'killed', 'fake-embed', 8, 'full', 'running') RETURNING id`, tenantID, repoID).Scan(&runID); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `INSERT INTO index_chunks (tenant_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+			SELECT tenant_id, repository_id, $2, path, start_line, end_line, text, embedding FROM index_chunks
+			WHERE index_run_id = (SELECT active_index_run_id FROM repositories WHERE id = $1)`, repoID, runID)
+		planted = tag.RowsAffected()
+		return err
+	})
+	if err != nil || planted == 0 {
+		t.Fatalf("plant a killed build's chunks: %d, %v", planted, err)
+	}
+	return runID
+}
+
+// runChunks counts the chunks under an index run.
+func runChunks(ctx context.Context, t *testing.T, st *store.Store, tenantID, runID string) int {
+	t.Helper()
+	var n int
+	if err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1`, runID).Scan(&n)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// checkIndexEmbedFailure fails a forced rebuild's embedding after its first
+// batch and checks neither the chunks its runner staged nor the ones it
+// embedded are left behind for good, and the live index is untouched.
 func checkIndexEmbedFailure(
 	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], fe *fakeEmbedder, tenantID, repoID string,
 ) {
 	t.Helper()
+	active := activeIndexGeneration(ctx, t, st, tenantID, repoID)
+	live := runChunks(ctx, t, st, tenantID, active)
+	fe.passes.Store(1)
 	fe.fail.Store(true)
 	job, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)
 	if err != nil {
@@ -712,13 +760,14 @@ func checkIndexEmbedFailure(
 		_, _ = queue.JobCancel(context.Background(), job.Job.ID)
 		fe.fail.Store(false)
 	})
-	var packed, staged int
-	waitFor(t, 20*time.Second, "the failed embedding's staged chunks to be cleared", func() bool {
+	var packed, staged, embedded int
+	waitFor(t, 20*time.Second, "the failed embedding's staged and embedded chunks to be cleared", func() bool {
 		err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT p.chunk_count, (SELECT count(*) FROM index_staging s WHERE s.runner_run_id = r.id)
+			return tx.QueryRow(ctx, `SELECT p.chunk_count, (SELECT count(*) FROM index_staging s WHERE s.runner_run_id = r.id),
+				(SELECT count(*) FROM index_chunks c WHERE c.index_run_id = i.id)
 				FROM index_runs i JOIN runner_runs r ON r.index_run_id = i.id JOIN index_packs p ON p.runner_run_id = r.id
 				WHERE i.repository_id = $1 AND i.status = 'failed' AND i.error LIKE '%embedder down%'
-				ORDER BY i.created_at LIMIT 1`, repoID).Scan(&packed, &staged)
+				ORDER BY i.created_at LIMIT 1`, repoID).Scan(&packed, &staged, &embedded)
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false
@@ -726,10 +775,15 @@ func checkIndexEmbedFailure(
 		if err != nil {
 			t.Fatal(err)
 		}
-		return staged == 0
+		return staged == 0 && embedded == 0
 	})
-	if packed == 0 {
-		t.Fatal("the runner staged no chunks, so none were there to clear")
+	// A chunk a batch: with two staged, the first was embedded and written
+	// before the embedder failed.
+	if packed < 2 {
+		t.Fatalf("the runner staged %d chunks, too few for a batch to be written before the failure", packed)
+	}
+	if now := activeIndexGeneration(ctx, t, st, tenantID, repoID); now != active || runChunks(ctx, t, st, tenantID, active) != live {
+		t.Fatalf("the failed rebuild changed the live index: generation %s, was %s", now, active)
 	}
 }
 
@@ -912,6 +966,8 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	river.AddWorker(workers, &FollowUp{Base: wb, Completers: &completers{c: fc}})
 	river.AddWorker(workers, &Index{
 		Base: wb, Executor: exec, Embedder: fe, EmbedModel: "fake-embed", EmbedDims: 8,
+		// A chunk a batch, so a build commits several.
+		batch: 1,
 	})
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{

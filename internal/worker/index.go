@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -45,6 +46,8 @@ type Index struct {
 
 	// superviseEvery overrides superviseInterval.
 	superviseEvery time.Duration
+	// batch overrides embedBatch.
+	batch int
 }
 
 type indexRepo struct {
@@ -131,9 +134,9 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	// embed clears the staged chunks as it swaps them in. Any other way out
-	// would leave them behind for good: a retry stages its own under a new
-	// run.
-	defer w.clearStaging(ctx, logger, args.TenantID, runnerRunID)
+	// would leave them behind for good, and the chunks embedded under the
+	// run with them: a retry stages and embeds its own under a new run.
+	defer w.clearStaging(ctx, logger, args.TenantID, runID, runnerRunID)
 	deadline, resources := file.RunnerFor(tenant)
 	sup := runSupervision(w.Store, args.TenantID, runnerRunID, "", "", w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
@@ -228,6 +231,14 @@ func (w *Index) activeGeneration(ctx context.Context, tenantID, runID string) (*
 
 func (w *Index) start(ctx context.Context, args jobs.IndexArgs, commit, base, mode string) (runID, runnerRunID string, err error) {
 	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+		// Only the active generation keeps its chunks: any other run's were
+		// left by a job that could not clear them, such as one killed
+		// mid-build.
+		if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id IN (
+			SELECT x.id FROM index_runs x JOIN repositories r ON r.id = x.repository_id
+			WHERE r.id = $1 AND x.id IS DISTINCT FROM r.active_index_run_id)`, args.RepositoryID); err != nil {
+			return fmt.Errorf("worker: drop stray chunks: %w", err)
+		}
 		if err := tx.QueryRow(ctx, `INSERT INTO index_runs
 			(tenant_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, mode, status, trigger)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8) RETURNING id`,
@@ -243,13 +254,18 @@ func (w *Index) start(ctx context.Context, args jobs.IndexArgs, commit, base, mo
 	return runID, runnerRunID, err
 }
 
-// clearStaging deletes a run's staged chunks on a context of its own, so a
+// clearStaging deletes a run's staged chunks, and the chunks it embedded
+// unless they became the active generation, on a context of its own, so a
 // job cut short still does, and logs a failure to logger.
-func (w *Index) clearStaging(ctx context.Context, logger *slog.Logger, tenantID, runnerRunID string) {
+func (w *Index) clearStaging(ctx context.Context, logger *slog.Logger, tenantID, runID, runnerRunID string) {
 	ctx, cancel := detach(ctx)
 	defer cancel()
 	err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID)
+		if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1
+			AND NOT EXISTS (SELECT 1 FROM repositories WHERE active_index_run_id = $1)`, runID)
 		return err
 	})
 	if err != nil {
@@ -279,10 +295,12 @@ type stagedChunk struct {
 	startLine, endLine                        int
 }
 
-// embed turns the staged chunks into index_chunks rows. A full build fills
-// the new generation and then makes it active; an incremental step
-// replaces the changed paths inside the active generation. Either way the
-// swap is one transaction, so a review never sees a half-built index.
+// embed turns the staged chunks into index_chunks rows under the run, a
+// batch at a time with no transaction open while the embedder works, then
+// swaps them in with one short transaction, so a review never sees a
+// half-built index: a full build makes its run the active generation, and
+// an incremental step moves its chunks into the active generation, in place
+// of the changed paths' chunks.
 func (w *Index) embed(
 	ctx context.Context, args jobs.IndexArgs, tenant *configfile.Tenant, commit, runID, runnerRunID string, active *activeGeneration,
 	settings configfile.Settings, jobID int64,
@@ -294,10 +312,6 @@ func (w *Index) embed(
 	})
 	if err != nil {
 		return 0, "", fmt.Errorf("worker: read index pack: %w", err)
-	}
-	target := runID
-	if pack.mode == modeIncremental && active != nil {
-		target = active.id
 	}
 	// The runner may have fallen back to a full build; the run row says
 	// what actually happened.
@@ -311,66 +325,75 @@ func (w *Index) embed(
 	var total int
 	var tokens int64
 	err = w.withLease(ctx, tenant, "embed:"+w.EmbedModel, settings.Limits.Concurrency, jobID, func(ctx context.Context) error {
-		return w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
-			if pack.mode == modeIncremental && len(pack.changedPaths) > 0 {
-				if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`,
-					target, pack.changedPaths); err != nil {
-					return fmt.Errorf("worker: drop stale chunks: %w", err)
+		var last int64
+		for {
+			var batch []stagedChunk
+			err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+				var err error
+				batch, err = readStaged(ctx, tx, runnerRunID, last, cmp.Or(w.batch, embedBatch))
+				return err
+			})
+			if err != nil || len(batch) == 0 {
+				return err
+			}
+			texts := make([]string, len(batch))
+			for i, c := range batch {
+				texts[i] = embedText(c)
+			}
+			vectors, used, err := w.Embedder.Embed(ctx, texts)
+			if err != nil {
+				w.Metrics.ModelCall(tenant.Slug, w.EmbedModel, roleEmbedding, "error", 0, 0, 0, 0)
+				return err
+			}
+			w.Metrics.ModelCall(tenant.Slug, w.EmbedModel, roleEmbedding, "ok", used, 0, 0, 0)
+			tokens += used
+			err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+				return insertChunks(ctx, tx, args.TenantID, args.RepositoryID, runID, batch, vectors)
+			})
+			if err != nil {
+				return err
+			}
+			total += len(batch)
+			last = batch[len(batch)-1].id
+		}
+	})
+	if err != nil {
+		return total, pack.mode, err
+	}
+	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+		if pack.mode == modeIncremental && active != nil {
+			if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`,
+				active.id, pack.changedPaths); err != nil {
+				return fmt.Errorf("worker: drop stale chunks: %w", err)
+			}
+			if _, err := tx.Exec(ctx, `UPDATE index_chunks SET index_run_id = $2 WHERE index_run_id = $1`, runID, active.id); err != nil {
+				return fmt.Errorf("worker: move chunks into the generation: %w", err)
+			}
+			if _, err := tx.Exec(ctx, `UPDATE index_runs SET commit_sha = $2 WHERE id = $1`, active.id, commit); err != nil {
+				return fmt.Errorf("worker: advance generation: %w", err)
+			}
+		} else {
+			if _, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, args.RepositoryID, runID); err != nil {
+				return fmt.Errorf("worker: activate generation: %w", err)
+			}
+			if active != nil {
+				if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now())
+				WHERE id = $1`, active.id); err != nil {
+					return fmt.Errorf("worker: supersede generation: %w", err)
+				}
+				if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1`, active.id); err != nil {
+					return fmt.Errorf("worker: drop superseded chunks: %w", err)
 				}
 			}
-			var last int64
-			for {
-				batch, err := readStaged(ctx, tx, runnerRunID, last, embedBatch)
-				if err != nil {
-					return err
-				}
-				if len(batch) == 0 {
-					break
-				}
-				texts := make([]string, len(batch))
-				for i, c := range batch {
-					texts[i] = embedText(c)
-				}
-				vectors, used, err := w.Embedder.Embed(ctx, texts)
-				if err != nil {
-					w.Metrics.ModelCall(tenant.Slug, w.EmbedModel, roleEmbedding, "error", 0, 0, 0, 0)
-					return err
-				}
-				w.Metrics.ModelCall(tenant.Slug, w.EmbedModel, roleEmbedding, "ok", used, 0, 0, 0)
-				tokens += used
-				if err := insertChunks(ctx, tx, args.TenantID, args.RepositoryID, target, batch, vectors); err != nil {
-					return err
-				}
-				total += len(batch)
-				last = batch[len(batch)-1].id
-			}
-			if pack.mode == modeIncremental && active != nil {
-				if _, err := tx.Exec(ctx, `UPDATE index_runs SET commit_sha = $2 WHERE id = $1`, active.id, commit); err != nil {
-					return fmt.Errorf("worker: advance generation: %w", err)
-				}
-			} else {
-				if _, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, args.RepositoryID, runID); err != nil {
-					return fmt.Errorf("worker: activate generation: %w", err)
-				}
-				if active != nil {
-					if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now())
-					WHERE id = $1`, active.id); err != nil {
-						return fmt.Errorf("worker: supersede generation: %w", err)
-					}
-					if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1`, active.id); err != nil {
-						return fmt.Errorf("worker: drop superseded chunks: %w", err)
-					}
-				}
-			}
-			if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID); err != nil {
-				return fmt.Errorf("worker: clear staging: %w", err)
-			}
-			if _, err := tx.Exec(ctx, `INSERT INTO usage (tenant_id, repository_id, role, model, input_tokens) VALUES ($1, $2, 'embedding', $3, $4)`,
-				args.TenantID, args.RepositoryID, w.EmbedModel, tokens); err != nil {
-				return fmt.Errorf("worker: record embedding usage: %w", err)
-			}
-			return nil
-		})
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID); err != nil {
+			return fmt.Errorf("worker: clear staging: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO usage (tenant_id, repository_id, role, model, input_tokens) VALUES ($1, $2, 'embedding', $3, $4)`,
+			args.TenantID, args.RepositoryID, w.EmbedModel, tokens); err != nil {
+			return fmt.Errorf("worker: record embedding usage: %w", err)
+		}
+		return nil
 	})
 	return total, pack.mode, err
 }
