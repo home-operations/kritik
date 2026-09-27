@@ -1,8 +1,8 @@
 # Connecting a forge
 
 kritik reviews pull requests on GitHub, through a GitHub App, and on
-Forgejo, through a bot account. On both, events reach kritik through the
-GitHub App's own webhook, or one webhook on each Forgejo user or
+Forgejo and Gitea, through a bot account. Events reach kritik through the
+GitHub App's own webhook, or one webhook on each Forgejo or Gitea user or
 organization served. No repository needs a webhook of its own, and none
 needs a file: a [`.kritik.yaml`](repository-config.md) is optional.
 
@@ -130,6 +130,16 @@ On Forgejo, kritik answers a mention in a pull request's conversation or
 in a reply inside an existing code conversation. Forgejo sends no event for
 a review's body or for code comments submitted with a review, so a mention
 there goes unanswered.
+
+## Gitea
+
+A Gitea installation is set up as a Forgejo one is, with `forge: gitea`:
+kritik talks to both through the same client. The bot account, the token
+scopes and the admin access that answering a mention needs are the same,
+and so is one webhook on each account in `accounts`. Gitea's webhook form
+names the events differently: under custom events, choose Push, and under
+pull request events, Pull Request, Pull Request Synchronized and Pull
+Request Comment.
 
 ## Check that it works
 
