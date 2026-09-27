@@ -33,3 +33,24 @@ func TestDispatchIgnoresNonPullComments(t *testing.T) {
 		})
 	}
 }
+
+// TestDispatchLabelActionsNeverReview covers the actions GitHub sends and
+// Forgejo's label changes normalize to: neither records nor reviews the pull
+// request, so no store is needed.
+func TestDispatchLabelActionsNeverReview(t *testing.T) {
+	svc := NewService(nil, nil)
+	for _, action := range []string{"labeled", "unlabeled"} {
+		t.Run(action, func(t *testing.T) {
+			ev := webhook.Event{
+				Kind: webhook.KindPullRequest, Action: action,
+				Subject:     &webhook.Subject{Kind: webhook.SubjectPull, Number: 7},
+				Repository:  &webhook.Repository{FullName: "onedr0p/home-ops"},
+				PullRequest: &webhook.PullRequest{Number: 7, State: "open", HeadSHA: "aaa"},
+			}
+			out, err := svc.Dispatch(context.Background(), Request{Event: ev})
+			if err != nil || out.Status != Ignored || out.Reason != reasonAction {
+				t.Fatalf("out = %+v, %v", out, err)
+			}
+		})
+	}
+}

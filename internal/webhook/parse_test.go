@@ -263,7 +263,7 @@ func TestParseIssues(t *testing.T) {
 		{"forgejo opened", configfile.ForgeForgejo, hdr("X-Gitea-Event", "issues"),
 			`{"action":"opened","number":12,` + issue(`,"pull_request":null`) + `,` + repo + `}`, KindIssue, "opened"},
 		{"forgejo label change", configfile.ForgeForgejo, hdr("X-Gitea-Event", "issues", "X-Gitea-Event-Type", "issue_label"),
-			`{"action":"label_updated","number":12,` + issue(`,"pull_request":null`) + `,` + repo + `}`, KindIssue, "label_updated"},
+			`{"action":"label_updated","number":12,` + issue(`,"pull_request":null`) + `,` + repo + `}`, KindIssue, "labeled"},
 		{"forgejo labels cleared", configfile.ForgeForgejo, hdr("X-Gitea-Event", "issues", "X-Gitea-Event-Type", "issue_label"),
 			`{"action":"label_cleared","number":12,` + issue(`,"pull_request":null`) + `,` + repo + `}`, KindIssue, "unlabeled"},
 		{"forgejo assigned", configfile.ForgeForgejo, hdr("X-Gitea-Event", "issues", "X-Gitea-Event-Type", "issue_assign"),
@@ -325,12 +325,24 @@ func TestParseForgejoComments(t *testing.T) {
 }
 
 func TestParseForgejoPullRequestLabels(t *testing.T) {
-	body := `{"action":"label_cleared","number":7,"pull_request":{"number":7,"state":"open","user":{"login":"alice"},
-	  "head":{"ref":"t","sha":"1","repo":{"full_name":"acme/widgets"}},"base":{"ref":"main","sha":"2","repo":{"full_name":"acme/widgets"}}},
-	  "repository":{"full_name":"acme/widgets","owner":{"login":"acme"}},"sender":{"login":"alice"}}`
-	ev, err := Parse(configfile.ForgeForgejo, hdr("X-Gitea-Event", "pull_request", "X-Gitea-Event-Type", "pull_request_label"), []byte(body))
-	if err != nil || ev.Kind != KindPullRequest || ev.Action != "unlabeled" || *ev.Subject != (Subject{Kind: SubjectPull, Number: 7}) {
-		t.Fatalf("forgejo pr label = %+v %v", ev, err)
+	tests := []struct {
+		action string
+		want   string
+	}{
+		{"label_updated", "labeled"},
+		{"label_cleared", "unlabeled"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.action, func(t *testing.T) {
+			body := `{"action":"` + tt.action + `","number":7,"pull_request":{"number":7,"state":"open","user":{"login":"alice"},
+			  "head":{"ref":"t","sha":"1","repo":{"full_name":"acme/widgets"}},"base":{"ref":"main","sha":"2","repo":{"full_name":"acme/widgets"}}},
+			  "repository":{"full_name":"acme/widgets","owner":{"login":"acme"}},"sender":{"login":"alice"}}`
+			h := hdr("X-Gitea-Event", "pull_request", "X-Gitea-Event-Type", "pull_request_label")
+			ev, err := Parse(configfile.ForgeForgejo, h, []byte(body))
+			if err != nil || ev.Kind != KindPullRequest || ev.Action != tt.want || *ev.Subject != (Subject{Kind: SubjectPull, Number: 7}) {
+				t.Fatalf("forgejo pr label = %+v %v", ev, err)
+			}
+		})
 	}
 }
 

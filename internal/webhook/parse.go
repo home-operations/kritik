@@ -392,10 +392,12 @@ func parseGitHub(event, delivery string, body []byte) (Event, error) {
 
 // forgejoActions maps Forgejo's action spellings to GitHub's, so downstream
 // action matching does not need to know which forge sent the event.
-// "label_updated" stays as is: Forgejo sends it for any label change and the
-// payload does not say whether a label was added or removed.
+// Forgejo sends "label_updated" for a label added or removed alike, with no
+// delta in the payload, so "labeled" here means "labels changed"; only
+// "label_cleared" is known to be a removal.
 var forgejoActions = map[string]string{
 	"synchronized":  "synchronize",
+	"label_updated": "labeled",
 	"label_cleared": "unlabeled",
 }
 
