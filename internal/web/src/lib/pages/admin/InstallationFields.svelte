@@ -40,6 +40,7 @@
         <option value="github">GitHub</option>
         <option value="gitlab">GitLab</option>
         <option value="forgejo">Forgejo</option>
+        <option value="gitea">Gitea</option>
       </select>
     </label>
     <label class="field">

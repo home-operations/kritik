@@ -47,6 +47,41 @@ func TestBuildForgeReturnsForgejoClient(t *testing.T) {
 	}
 }
 
+// giteaConfigYAML mirrors forgejoConfigYAML: Gitea installations route
+// through the same forgejo.Client (see BuildForge).
+const giteaConfigYAML = `
+tenants:
+  - slug: acme
+    installations:
+      - name: acme-gitea
+        forge: gitea
+        host: https://gitea.example.com
+        account: acme
+        token: { env: TEST_GITEA_BUILD_TOKEN }
+        webhookSecret: { env: TEST_GITEA_BUILD_SECRET }
+`
+
+func TestBuildForgeReturnsForgejoClientForGitea(t *testing.T) {
+	t.Setenv("TEST_GITEA_BUILD_TOKEN", "tok")
+	t.Setenv("TEST_GITEA_BUILD_SECRET", "s")
+	file, err := configfile.Parse([]byte(giteaConfigYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _, ok := file.Installation("acme-gitea")
+	if !ok {
+		t.Fatal("installation not found")
+	}
+
+	client, err := BuildForge(t.Context(), in, 0, "acme/widgets")
+	if err != nil {
+		t.Fatalf("BuildForge: %v", err)
+	}
+	if _, ok := client.(*forgejo.Client); !ok {
+		t.Fatalf("BuildForge returned %T, want *forgejo.Client", client)
+	}
+}
+
 func TestBuildForgeGitToken(t *testing.T) {
 	t.Setenv("TEST_FORGEJO_BUILD_TOKEN", "api-token")
 	t.Setenv("TEST_FORGEJO_BUILD_SECRET", "s")

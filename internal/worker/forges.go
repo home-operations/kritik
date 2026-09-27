@@ -15,7 +15,7 @@ import (
 )
 
 // BuildForge constructs the forge client for an installation from its
-// credentials in the configuration file. GitHub and Forgejo are
+// credentials in the configuration file. GitHub, Forgejo and Gitea are
 // implemented; GitLab follows the rollout order in the ADR.
 func BuildForge(ctx context.Context, in *configfile.Installation, externalID int64, repo string) (forge.Client, error) {
 	switch in.Forge {
@@ -36,7 +36,8 @@ func BuildForge(ctx context.Context, in *configfile.Installation, externalID int
 			externalID = id
 		}
 		return github.NewClient(app, externalID, in.Host)
-	case configfile.ForgeForgejo:
+	case configfile.ForgeForgejo, configfile.ForgeGitea:
+		// Gitea speaks the same REST API as Forgejo.
 		c, err := forgejo.NewClient(in.Host, in.TokenValue().Value(), nil)
 		if err != nil {
 			return nil, err

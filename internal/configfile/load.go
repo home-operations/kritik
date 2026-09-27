@@ -556,7 +556,7 @@ func (in Installation) validate(where string) error {
 		if in.App.webhookSecret.Value() == "" {
 			return fmt.Errorf("configfile: %s.app.webhookSecret is required", where)
 		}
-	case ForgeGitLab, ForgeForgejo:
+	case ForgeGitLab, ForgeForgejo, ForgeGitea:
 		if in.App != nil {
 			return fmt.Errorf("configfile: %s: a %s installation takes a token, not an app", where, in.Forge)
 		}
@@ -570,7 +570,8 @@ func (in Installation) validate(where string) error {
 			return fmt.Errorf("configfile: %s.gitToken resolved to an empty value", where)
 		}
 	default:
-		return fmt.Errorf("configfile: %s.forge must be %s, %s or %s, got %q", where, ForgeGitHub, ForgeGitLab, ForgeForgejo, in.Forge)
+		return fmt.Errorf("configfile: %s.forge must be %s, %s, %s or %s, got %q",
+			where, ForgeGitHub, ForgeGitLab, ForgeForgejo, ForgeGitea, in.Forge)
 	}
 	return nil
 }

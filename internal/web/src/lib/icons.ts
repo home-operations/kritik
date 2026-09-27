@@ -29,7 +29,7 @@ export {
   mdiRefresh,
 } from '@mdi/js';
 
-import { siForgejo, siGithub, siGitlab } from 'simple-icons';
+import { siForgejo, siGitea, siGithub, siGitlab } from 'simple-icons';
 
 interface BrandIcon {
   path: string;
@@ -38,10 +38,11 @@ interface BrandIcon {
 }
 
 // Forge brand logos, keyed by the forge kind a tenant/repo is configured
-// with (github | gitlab | forgejo).
+// with (github | gitlab | forgejo | gitea).
 export const forgeIcon: Record<string, BrandIcon> = {
   github: siGithub,
   gitlab: siGitlab,
   forgejo: siForgejo,
+  gitea: siGitea,
 };
 
