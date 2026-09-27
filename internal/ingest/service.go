@@ -156,6 +156,11 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Action != "created" {
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
+	// Only pull request comments are review follow-ups. An event without a
+	// subject (the poller's, a test's) is a pull request comment.
+	if ev.Subject != nil && ev.Subject.Kind != webhook.SubjectPull {
+		return Outcome{Status: Ignored, Reason: ev.Subject.Kind}, nil
+	}
 	// The cheap gate: a bot never triggers a follow-up, and a comment with
 	// no mention at all is not one. The worker checks the mention against
 	// the installation's resolved bot identity and the author's access.

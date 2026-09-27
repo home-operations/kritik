@@ -106,7 +106,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unparsable payload", http.StatusBadRequest)
 		return
 	}
-	logger = logger.With("delivery", ev.Delivery, "kind", ev.Kind, "action", ev.Action)
+	logger = logger.With("delivery", ev.Delivery, "event", ev.RawEvent, "kind", ev.Kind, "action", ev.Action)
 
 	switch {
 	case ev.Kind == webhook.KindPing:
