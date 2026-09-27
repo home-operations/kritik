@@ -135,7 +135,10 @@ them, add the webhook to each project instead, which needs the Maintainer
 role.
 
 - **URL:** `https://<listener host>/hooks/<installation name>`.
-- **Secret token:** the installation's `webhookSecret`.
+- **Signing token:** generate one and give it to kritik as the
+  installation's `webhookSecret`; kritik then checks each delivery's
+  signature. GitLab before 19.0 has no signing token: put the installation's
+  `webhookSecret` in the secret token field instead.
 - **Trigger:** push, comment and merge request events.
 
 kritik answers a mention in a merge request's overview or in a thread on

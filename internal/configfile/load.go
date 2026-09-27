@@ -3,6 +3,7 @@ package configfile
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -561,6 +562,11 @@ func (in Installation) validate(where string) error {
 		}
 		if in.webhookSecret.Value() == "" {
 			return fmt.Errorf("configfile: %s.webhookSecret is required", where)
+		}
+		if key, ok := strings.CutPrefix(in.webhookSecret.Value(), GitLabSigningTokenPrefix); ok && in.Forge == ForgeGitLab {
+			if _, err := base64.StdEncoding.DecodeString(key); err != nil {
+				return fmt.Errorf("configfile: %s.webhookSecret is not a GitLab signing token: base64 must follow %s", where, GitLabSigningTokenPrefix)
+			}
 		}
 		if !in.GitToken.empty() && in.gitToken.Value() == "" {
 			return fmt.Errorf("configfile: %s.gitToken resolved to an empty value", where)

@@ -79,8 +79,9 @@
       Webhook: set the GitHub App's webhook URL to <span class="mono">/hooks/{inst.name || '<name>'}</span> on kritik's webhook
       listener, with this webhook secret. It covers every repository the App is installed on.
     {:else if inst.forge === 'gitlab'}
-      Webhook: add <span class="mono">/hooks/{inst.name || '<name>'}</span> on kritik's webhook listener, with this webhook secret as
-      its secret token, to each project, or once to a group that owns them (group webhooks need GitLab Premium).
+      Webhook: add <span class="mono">/hooks/{inst.name || '<name>'}</span> on kritik's webhook listener to each project, or once to a
+      group that owns them (group webhooks need GitLab Premium). Enter the signing token GitLab generates for it as this webhook
+      secret, or give it this webhook secret as its secret token.
     {:else}
       Webhook: add <span class="mono">/hooks/{inst.name || '<name>'}</span> on kritik's webhook listener, with this webhook secret, as
       one webhook on the user or organization that owns the repositories.

@@ -31,6 +31,41 @@ func TestKnownVector(t *testing.T) {
 	}
 }
 
+// TestVerifyGitLabSignature checks GitLab's signing-token scheme against
+// the Standard Webhooks reference vector, which GitLab's documented
+// algorithm reproduces.
+func TestVerifyGitLabSignature(t *testing.T) {
+	const (
+		secret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"
+		sig    = "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE="
+	)
+	body := []byte(`{"test": 2432232314}`)
+	signed := func(signature string) http.Header {
+		return http.Header{"Webhook-Id": {"msg_p5jXN8AQM9LWM0D4loKWxJek"}, "Webhook-Timestamp": {"1614265330"}, "Webhook-Signature": {signature}}
+	}
+	for _, tt := range []struct {
+		name    string
+		secret  string
+		header  http.Header
+		body    []byte
+		wantErr error
+	}{
+		{"valid", secret, signed(sig), body, nil},
+		{"one of several", secret, signed("v1,bm9wZQ== " + sig), body, nil},
+		{"tampered body", secret, signed(sig), []byte(`{"test": 1}`), ErrSignatureMismatch},
+		{"another delivery's id", secret, func() http.Header { h := signed(sig); h.Set("Webhook-Id", "msg_other"); return h }(), body, ErrSignatureMismatch},
+		{"another key", "whsec_" + "c2VjcmV0", signed(sig), body, ErrSignatureMismatch},
+		{"only the secret token", secret, http.Header{"X-Gitlab-Token": {secret}}, body, ErrMissingSignature},
+		{"a key that is not base64", "whsec_!!", signed(sig), body, ErrSignatureMismatch},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := Verify(configfile.ForgeGitLab, tt.secret, tt.header, tt.body); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Verify = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestVerify(t *testing.T) {
 	const secret = "It's a Secret to Everybody"
 	sig := hmacSHA256Hex(secret)
