@@ -21,6 +21,8 @@
     queue: 'Queue',
     usage: 'Usage',
     followups: 'Follow-ups',
+    taskRuns: 'Task runs',
+    taskRun: 'Task run',
     admin: 'Admin',
   };
 </script>

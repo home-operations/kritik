@@ -20,6 +20,7 @@
     mdiTrayFull,
     mdiCurrencyUsd,
     mdiClipboardTextClockOutline,
+    mdiCheckboxMarkedCircleAutoOutline,
     mdiCogOutline,
   } from './icons';
 
@@ -61,6 +62,7 @@
         { label: 'Queue', hint: slug, route: { name: 'queue', slug }, icon: mdiTrayFull },
         { label: 'Usage', hint: slug, route: { name: 'usage', slug }, icon: mdiCurrencyUsd },
         { label: 'Follow-ups', hint: slug, route: { name: 'followups', slug }, icon: mdiClipboardTextClockOutline },
+        { label: 'Task runs', hint: slug, route: { name: 'taskRuns', slug }, icon: mdiCheckboxMarkedCircleAutoOutline },
       );
       if (me?.tenants.find((t) => t.slug === slug)?.role === 'admin') {
         entries.push({ label: 'Admin', hint: slug, route: { name: 'admin', slug }, icon: mdiCogOutline });

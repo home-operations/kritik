@@ -38,7 +38,7 @@ export function errorMessage(err: Error): string {
   return err instanceof ApiError ? `${err.message} (${err.status})` : err.message;
 }
 
-const KINDS: readonly EventKind[] = ['review', 'runner_run', 'index_run', 'followup', 'model_call'];
+const KINDS: readonly EventKind[] = ['review', 'runner_run', 'index_run', 'followup', 'model_call', 'task_run'];
 
 // What a debounced refetch was woken by: the event kinds seen since the last
 // refetch, plus 'resync' when the server asked for everything.
