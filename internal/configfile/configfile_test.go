@@ -310,6 +310,43 @@ func TestProviders(t *testing.T) {
 	}
 }
 
+// TestTenantProviders: a tenant's own provider serves its models, and only
+// its; a file tenant, the operator's, may point one anywhere.
+func TestTenantProviders(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	own := "    providers:\n      own: { type: openai, baseUrl: http://llm.internal:4000/v1, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" +
+		"    models: { review: own/big }\n"
+	withOwn := func(extra string) string {
+		return strings.Replace(minimal, "  - slug: acme\n", "  - slug: acme\n"+own+extra, 1)
+	}
+	f, err := Parse([]byte(withOwn("")))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ten := &f.Tenants[0]
+	if p, ok := f.Provider(ten, "own"); !ok || p.Type != ProviderOpenAI || p.APIKeyValue().Value() != "whsec" {
+		t.Fatalf("Provider(acme, own) = %+v, %v", p, ok)
+	}
+	if _, ok := f.Provider(nil, "own"); ok {
+		t.Fatal("a tenant's provider must not be the file's")
+	}
+	refused := []struct{ name, yaml, want string }{
+		{"a name a model reference cannot carry", strings.Replace(withOwn(""), "      own:", "      Own:", 1), "a provider name must be lowercase"},
+		{"a name the file already uses", "providers:\n  own: { type: anthropic, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" + withOwn(""),
+			"the file declares a provider by that name"},
+		{"the defaults naming a tenant's provider", "defaults:\n  models: { review: own/big }\n" + withOwn(""), "not declared under providers"},
+		{"an invalid provider", strings.Replace(withOwn(""), "type: openai", "type: gemini", 1), "providers.own.type must be"},
+	}
+	for _, tt := range refused {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := Parse([]byte(tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Parse = %v, want an error containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")

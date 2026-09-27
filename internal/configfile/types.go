@@ -99,7 +99,8 @@ type Provider struct {
 func (p Provider) APIKeyValue() Secret { return p.apiKey }
 
 // ModelRef names a model as "<provider>/<model>", where provider is a key of
-// the file's providers map and model is whatever the provider accepts.
+// the tenant's or the file's providers map and model is whatever the
+// provider accepts.
 type ModelRef string
 
 // Provider returns the provider half of the reference, or "" when the
@@ -545,6 +546,10 @@ type Tenant struct {
 	Overrides     `yaml:",inline"`
 	Limits        LimitsSpec   `yaml:"limits,omitempty"`
 	Repositories  []Repository `yaml:"repositories,omitempty"`
+	// Providers are the tenant's own model providers: its keys, for the
+	// models it pays for. A model reference in the tenant names one of them
+	// or one of the file's, and a name may not be both.
+	Providers map[string]Provider `yaml:"providers,omitempty"`
 
 	origin Origin
 }

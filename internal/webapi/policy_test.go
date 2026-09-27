@@ -41,6 +41,22 @@ func TestOperatorOnlyChange(t *testing.T) {
 			new:  `{` + base + `,"models":{"review":"p/m","fallback":"p/b"}}`, want: "models",
 		},
 		{name: "models unchanged", old: `{` + base + `,"models":{"review":"p/m"}}`, new: `{` + base + `,"models":{"review":"p/m"}}`},
+		{
+			name: "a model on the tenant's own provider",
+			old:  `{` + base + `,"models":{"review":"p/m"}}`,
+			new:  `{` + base + `,"providers":{"own":{"type":"openai"}},"models":{"review":"own/m","fallback":"own/n"}}`,
+		},
+		{name: "a model cleared", old: `{` + base + `,"models":{"review":"p/m"}}`, new: `{` + base + `}`},
+		{
+			name: "a model on a provider the tenant does not own",
+			old:  `{` + base + `,"providers":{"own":{"type":"openai"}}}`,
+			new:  `{` + base + `,"providers":{"own":{"type":"openai"}},"models":{"review":"p/m"}}`, want: "models",
+		},
+		{
+			name: "a repository model on the tenant's own provider",
+			old:  `{` + base + `,"repositories":[{"name":"alpha/x"}]}`,
+			new:  `{` + base + `,"providers":{"own":{"type":"openai"}},"repositories":[{"name":"alpha/x","models":{"review":"own/m"}}]}`,
+		},
 		{name: "forks set", old: `{` + base + `}`, new: `{` + base + `,"forks":true}`, want: "forks"},
 		{name: "forks cleared", old: `{` + base + `,"forks":false}`, new: `{` + base + `}`, want: "forks"},
 		{name: "forks unchanged", old: `{` + base + `,"forks":false}`, new: `{` + base + `,"forks":false}`},

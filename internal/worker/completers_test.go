@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/home-operations/kritik/internal/configfile"
@@ -27,11 +28,11 @@ func TestCompletersRebuildOnChange(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &configfile.File{Providers: map[string]configfile.Provider{"p": tt.provider}}
-			if _, err := c.Stepper(f, "p"); err != nil {
+			if _, err := c.Stepper(f, nil, "p"); err != nil {
 				t.Fatal(err)
 			}
 			// A second lookup is served from the cache.
-			if _, err := c.Stepper(f, "p"); err != nil {
+			if _, err := c.Stepper(f, nil, "p"); err != nil {
 				t.Fatal(err)
 			}
 			if builds != tt.wantBuilds {
@@ -39,7 +40,36 @@ func TestCompletersRebuildOnChange(t *testing.T) {
 			}
 		})
 	}
-	if _, err := c.Stepper(&configfile.File{}, "p"); err == nil {
+	if _, err := c.Stepper(&configfile.File{}, nil, "p"); err == nil {
+		t.Fatal("an undeclared provider must be an error")
+	}
+}
+
+// TestCompletersTenantProviders: a tenant's own provider is its, even when
+// another tenant's has the same name, and the file's providers stay
+// shared.
+func TestCompletersTenantProviders(t *testing.T) {
+	var built []configfile.ProviderType
+	c := &Completers{Build: func(p configfile.Provider) (model.Stepper, error) {
+		built = append(built, p.Type)
+		return &model.OpenAI{}, nil
+	}}
+	f := &configfile.File{Providers: map[string]configfile.Provider{"shared": {Type: configfile.ProviderOpenRouter}}}
+	alpha := &configfile.Tenant{Slug: "alpha", Providers: map[string]configfile.Provider{"own": {Type: configfile.ProviderOpenAI}}}
+	beta := &configfile.Tenant{Slug: "beta", Providers: map[string]configfile.Provider{"own": {Type: configfile.ProviderAnthropic}}}
+	for _, call := range []struct {
+		t    *configfile.Tenant
+		name string
+	}{{alpha, "own"}, {beta, "own"}, {alpha, "shared"}, {beta, "shared"}, {alpha, "own"}} {
+		if _, err := c.Stepper(f, call.t, call.name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []configfile.ProviderType{configfile.ProviderOpenAI, configfile.ProviderAnthropic, configfile.ProviderOpenRouter}
+	if !slices.Equal(built, want) {
+		t.Fatalf("built %v, want %v: one per tenant's own provider and one shared", built, want)
+	}
+	if _, err := c.Stepper(f, beta, "missing"); err == nil {
 		t.Fatal("an undeclared provider must be an error")
 	}
 }

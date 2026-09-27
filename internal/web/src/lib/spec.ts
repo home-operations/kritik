@@ -46,6 +46,23 @@ export interface InstallationDraft {
   rest: Obj;
 }
 
+export type ProviderType = 'openrouter' | 'openai' | 'anthropic';
+
+// A model provider of the tenant's own: its key, for models it pays for.
+export interface ProviderDraft {
+  key: number;
+  // The name and endpoint the provider was loaded under: the server keeps
+  // a key by the provider's name, and only while its endpoint is the same.
+  origName: string;
+  origEndpoint: string;
+  name: string;
+  type: ProviderType;
+  // '' is the type's own endpoint.
+  baseUrl: string;
+  apiKey: SecretDraft;
+  rest: Obj;
+}
+
 export interface RepositoryDraft {
   key: number;
   name: string;
@@ -80,6 +97,7 @@ export interface TenantDraft {
   limitsRest: Obj;
   // JSON text of the runner block, '' for none.
   runner: string;
+  providers: ProviderDraft[];
   installations: InstallationDraft[];
   repositories: RepositoryDraft[];
   rest: Obj;
@@ -136,6 +154,39 @@ export function newSecret(mode: SecretMode): SecretDraft {
 
 export function newInstallation(): InstallationDraft {
   return installationOf({});
+}
+
+function providerOf(name: string, v: unknown): ProviderDraft {
+  const o = obj(v);
+  const type = (str(o.type) || 'openrouter') as ProviderType;
+  const baseUrl = str(o.baseUrl);
+  return {
+    key: ++keys,
+    origName: name,
+    origEndpoint: providerEndpoint({ type, baseUrl }),
+    name,
+    type,
+    baseUrl,
+    apiKey: secretOf(o.apiKey, 'replace'),
+    rest: take(o, 'type', 'baseUrl', 'apiKey'),
+  };
+}
+
+// canKeepKey says whether the provider may keep its stored key: it has its
+// name and endpoint still.
+export function canKeepKey(d: ProviderDraft): boolean {
+  return d.origName !== '' && d.name.trim() === d.origName && providerEndpoint(d) === d.origEndpoint;
+}
+
+export function newProvider(): ProviderDraft {
+  return providerOf('', {});
+}
+
+// providerEndpoint is where a provider's key goes, as the server compares
+// it when keeping the key: its type and base URL, in any case, without a
+// trailing slash.
+export function providerEndpoint(d: Pick<ProviderDraft, 'type' | 'baseUrl'>): string {
+  return `${d.type} ${d.baseUrl.trim().toLowerCase().replace(/\/+$/, '')}`;
 }
 
 function installationOf(v: unknown): InstallationDraft {
@@ -203,9 +254,10 @@ export function draftOf(spec: Obj): TenantDraft {
     tokensPerMonth: str(limits.tokensPerMonth),
     limitsRest: take(limits, 'concurrency', 'reviewsPerDay', 'tokensPerMonth'),
     runner: json(o.runner),
+    providers: Object.entries(obj(o.providers)).map(([name, v]) => providerOf(name, v)),
     installations: Array.isArray(o.installations) ? o.installations.map(installationOf) : [],
     repositories: Array.isArray(o.repositories) ? o.repositories.map(repositoryOf) : [],
-    rest: take(o, 'slug', 'models', 'filter', 'forks', 'settle', 'limits', 'runner', 'installations', 'repositories'),
+    rest: take(o, 'slug', 'models', 'filter', 'forks', 'settle', 'limits', 'runner', 'providers', 'installations', 'repositories'),
   };
 }
 
@@ -296,11 +348,35 @@ export function canKeep(d: InstallationDraft): boolean {
 // hasTypedSecret reports whether any secret holds a value typed into the
 // form.
 export function hasTypedSecret(d: TenantDraft): boolean {
-  return d.installations.some((x) =>
-    [x.clientIdFrom, x.privateKey, x.appWebhookSecret, x.token, x.webhookSecret, x.gitToken].some(
-      (sd) => sd.mode === 'replace' && sd.value !== '',
-    ),
+  const typed = (sd: SecretDraft) => sd.mode === 'replace' && sd.value !== '';
+  return (
+    d.installations.some((x) => [x.clientIdFrom, x.privateKey, x.appWebhookSecret, x.token, x.webhookSecret, x.gitToken].some(typed)) ||
+    d.providers.some((x) => typed(x.apiKey))
   );
+}
+
+const providerName = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+// providerPath is where a provider's fields are, as the server names them.
+export function providerPath(d: ProviderDraft): string {
+  return `providers.${d.name.trim()}`;
+}
+
+function providersSpec(b: Builder, list: ProviderDraft[]): Obj {
+  const out: Obj = {};
+  for (const d of list) {
+    const name = d.name.trim();
+    const p = providerPath(d);
+    if (!providerName.test(name)) b.fail(`${p}.name`, 'a name is lowercase letters, digits and hyphens');
+    else if (name in out) b.fail(`${p}.name`, 'another provider key has this name');
+    if (d.baseUrl.trim() !== '' && !/^https:\/\//i.test(d.baseUrl.trim())) b.fail(`${p}.baseUrl`, 'a provider endpoint must be https');
+    if (d.apiKey.mode === 'keep' && !canKeepKey(d)) b.fail(`${p}.apiKey`, 'the name, type or endpoint changed: enter the key again');
+    const o: Obj = { ...d.rest, type: d.type };
+    set(o, 'baseUrl', d.baseUrl);
+    b.secret(o, 'apiKey', d.apiKey, `${p}.apiKey`, true);
+    out[name] = o;
+  }
+  return out;
 }
 
 function installationSpec(b: Builder, d: InstallationDraft, i: number): Obj {
@@ -369,6 +445,7 @@ export function buildSpec(d: TenantDraft, redact = false): Built {
   if (d.slug.trim() === '') b.fail('slug', 'a slug is required');
   out.slug = d.slug.trim();
   b.object(out, 'runner', d.runner, 'runner');
+  if (d.providers.length) out.providers = providersSpec(b, d.providers);
   out.installations = d.installations.map((x, i) => installationSpec(b, x, i));
   const models: Obj = { ...d.modelsRest };
   set(models, 'review', d.reviewModel);

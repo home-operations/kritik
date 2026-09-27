@@ -375,7 +375,9 @@ func (f *fakeCompleter) Step(ctx context.Context, req model.StepRequest) (model.
 
 type completers struct{ c model.Stepper }
 
-func (c *completers) Stepper(*configfile.File, string) (model.Stepper, error) { return c.c, nil }
+func (c *completers) Stepper(*configfile.File, *configfile.Tenant, string) (model.Stepper, error) {
+	return c.c, nil
+}
 
 type forges struct{ f forge.Client }
 

@@ -22,6 +22,11 @@ type Web struct {
 	// egress host, so this bounds what the dashboard can open. Empty means
 	// github.com plus the hosts of the file's own installations.
 	DashboardForgeHosts []string `yaml:"dashboardForgeHosts,omitempty"`
+	// DashboardProviderHosts are the hosts a dashboard-managed tenant's own
+	// providers may name in baseUrl. The worker calls a provider from inside
+	// the cluster with its key, so this bounds what a tenant admin can aim it
+	// at. Empty allows only each provider type's own endpoint.
+	DashboardProviderHosts []string `yaml:"dashboardProviderHosts,omitempty"`
 }
 
 // DefaultSessionTTL applies when the file sets no sessionTTL.
@@ -138,6 +143,11 @@ func (w Web) validate() error {
 	for i, h := range w.DashboardForgeHosts {
 		if err := checkHost(strings.ToLower(h)); err != nil || strings.HasPrefix(h, "*.") {
 			return fmt.Errorf("configfile: web.dashboardForgeHosts[%d] %q must be a hostname", i, h)
+		}
+	}
+	for i, h := range w.DashboardProviderHosts {
+		if err := checkHost(strings.ToLower(h)); err != nil || strings.HasPrefix(h, "*.") {
+			return fmt.Errorf("configfile: web.dashboardProviderHosts[%d] %q must be a hostname", i, h)
 		}
 	}
 	if w.SessionTTL != 0 && (w.SessionTTL < minSessionTTL || w.SessionTTL > maxSessionTTL) {

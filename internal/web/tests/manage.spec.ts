@@ -98,8 +98,9 @@ test.describe('tenant configuration', () => {
     await expect(page.locator('[data-path="repositories[0].mode"]')).toBeDisabled();
     await expect(page.locator('[data-path="repositories[0].agent"]')).toBeDisabled();
     await expect(page.locator('[data-path="runner"]')).toBeDisabled();
-    await expect(page.locator('[data-path="models.review"]')).toBeDisabled();
-    await expect(page.locator('[data-path="models.fallback"]')).toBeDisabled();
+    // An admin may set a model on the tenant's own provider key.
+    await expect(page.locator('[data-path="models.review"]')).toBeEnabled();
+    await expect(page.locator('[data-path="models.fallback"]')).toBeEnabled();
     await expect(page.locator('[data-path="forks"]')).toBeDisabled();
     await expect(page.getByText('(operator only)').first()).toBeVisible();
 
@@ -156,6 +157,37 @@ test.describe('tenant configuration', () => {
     await page.getByRole('button', { name: 'Add repository' }).click();
     await expect(page.locator('[data-path="installations[0].token"]')).not.toHaveClass(/invalid/);
     await expect(page.locator('.form-alert')).toHaveCount(0);
+  });
+
+  test('an admin adds a provider key and sets the review model on it', async ({ page }) => {
+    await setup(page, adminMe, [configRow(dashboardConfig)]);
+    const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { slug: S, revision: 4 } }]]);
+    await page.goto(`/${ADMIN}/config`);
+    await page.getByRole('button', { name: 'Add provider key' }).click();
+    await page.locator('[data-path="providers..name"]').fill('mine');
+    await page.locator('[data-path="providers.mine.type"]').selectOption('anthropic');
+    await page.locator('[data-path="providers.mine.apiKey"]').getByLabel('API key: new value').fill('sk-test');
+    await page.locator('[data-path="models.review"]').fill('mine/claude');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await expect.poll(() => sent.length).toBe(1);
+    const spec = (sent[0]!.body as T.UpdateTenantRequest).spec;
+    expect(spec.providers).toEqual({ mine: { type: 'anthropic', apiKey: { value: 'sk-test' } } });
+    expect((spec.models as Record<string, unknown>).review).toBe('mine/claude');
+  });
+
+  test('a provider key is not kept once its endpoint changes', async ({ page }) => {
+    const withKey: T.TenantConfig = {
+      ...dashboardConfig,
+      spec: { ...dashboardConfig.spec, providers: { mine: { type: 'openai', apiKey: { set: true } } } },
+    };
+    await setup(page, adminMe, [configRow(withKey)]);
+    await page.goto(`/${ADMIN}/config`);
+    const key = page.locator('[data-path="providers.mine.apiKey"]');
+    await expect(key.getByLabel('Keep current')).toBeChecked();
+    await page.locator('[data-path="providers.mine.baseUrl"]').fill('https://llm.example/v1');
+    await expect(key.getByLabel('Keep current')).toHaveCount(0);
+    await expect(page.getByRole('note').filter({ hasText: 'cannot be kept' })).toBeVisible();
   });
 
   test('a renamed installation cannot keep the secrets stored under its new name', async ({ page }) => {

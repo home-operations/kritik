@@ -25,15 +25,23 @@ type stepperEntry struct {
 	stepper model.Stepper
 }
 
-// Stepper returns the adapter for the named provider in f.
-func (c *Completers) Stepper(f *configfile.File, name string) (model.Stepper, error) {
-	spec, ok := f.Providers[name]
+// Stepper returns the adapter for the named provider of tenant t in f: the
+// tenant's own when it declares one by that name, else the file's.
+func (c *Completers) Stepper(f *configfile.File, t *configfile.Tenant, name string) (model.Stepper, error) {
+	spec, ok := f.Provider(t, name)
 	if !ok {
 		return nil, fmt.Errorf("worker: provider %q is not in the configuration", name)
 	}
+	// Two tenants may each name a provider of their own alike.
+	key := name
+	if t != nil {
+		if _, own := t.Providers[name]; own {
+			key = t.Slug + "\x00" + name
+		}
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if e, ok := c.entries[name]; ok && sameProvider(e.spec, spec) {
+	if e, ok := c.entries[key]; ok && sameProvider(e.spec, spec) {
 		return e.stepper, nil
 	}
 	stepper, err := c.Build(spec)
@@ -43,7 +51,7 @@ func (c *Completers) Stepper(f *configfile.File, name string) (model.Stepper, er
 	if c.entries == nil {
 		c.entries = map[string]stepperEntry{}
 	}
-	c.entries[name] = stepperEntry{spec: spec, stepper: stepper}
+	c.entries[key] = stepperEntry{spec: spec, stepper: stepper}
 	return stepper, nil
 }
 

@@ -191,6 +191,14 @@ func TestMergeRejects(t *testing.T) {
 		{"empty spec", dash("beta", "", 1), fakeOpener{}, "empty"},
 		{"undeclared provider", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `"installations"`, `"models":{"review":"x/y"},"installations"`, 1), 1),
 			fakeOpener{}, "not declared under providers"},
+		{"a provider over plain http", dash("beta", withProvider(dashSpec("beta", "beta-bot"), `"baseUrl":"http://llm.example/v1",`), 1), fakeOpener{},
+			"dashboard[beta].providers.own.baseUrl: a dashboard provider's endpoint must be https on port 443"},
+		{"a provider on another port", dash("beta", withProvider(dashSpec("beta", "beta-bot"), `"baseUrl":"https://llm.example:8443/v1",`), 1), fakeOpener{},
+			"must be https on port 443"},
+		{"a provider host the operator has not allowed", dash("beta", withProvider(dashSpec("beta", "beta-bot"), `"baseUrl":"https://llm.example/v1",`), 1),
+			fakeOpener{}, `dashboard[beta].providers.own.baseUrl: "llm.example" is not an allowed dashboard provider host`},
+		{"a provider key from the environment", dash("beta", strings.Replace(withProvider(dashSpec("beta", "beta-bot"), ""),
+			`{"sealed":"sealed:sk-own"}`, `{"env":"TEST_WEBHOOK_SECRET"}`, 1), 1), fakeOpener{}, "dashboard-managed tenants take sealed values"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -206,6 +214,36 @@ func TestMergeRejects(t *testing.T) {
 				t.Fatal("file mutated")
 			}
 		})
+	}
+}
+
+// withProvider adds a provider named own, with fields spliced in, to a
+// dashboard spec.
+func withProvider(spec, fields string) string {
+	return strings.Replace(spec, `"installations"`,
+		`"providers":{"own":{"type":"openai",`+fields+`"apiKey":{"sealed":"sealed:sk-own"}}},"installations"`, 1)
+}
+
+// TestMergeTenantProviders: a dashboard tenant's own provider, on its
+// type's endpoint or a host the operator allows, serves its models with
+// the key the keyring opens.
+func TestMergeTenantProviders(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	file, err := Parse([]byte("web:\n  dashboardProviderHosts: [LLM.example]\n" + minimal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fields := range []string{"", `"baseUrl":"https://llm.example/v1",`} {
+		spec := strings.Replace(withProvider(dashSpec("beta", "beta-bot"), fields), `"installations"`, `"models":{"review":"own/big"},"installations"`, 1)
+		m, err := Merge(file, []DashboardTenant{dash("beta", spec, 1)}, fakeOpener{})
+		if err != nil {
+			t.Fatalf("Merge with %q: %v", fields, err)
+		}
+		beta, _ := m.Tenant("beta")
+		if p, ok := m.Provider(beta, "own"); !ok || p.APIKeyValue().Value() != "sk-own" {
+			t.Fatalf("Provider(beta, own) = %+v, %v", p, ok)
+		}
 	}
 }
 

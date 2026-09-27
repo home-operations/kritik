@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -111,6 +110,14 @@ func (t *Tenant) resolve(where string, refs refPolicy) error {
 		if err := t.Installations[ii].resolve(fmt.Sprintf("%s.installations[%d]", where, ii), refs); err != nil {
 			return err
 		}
+	}
+	for name, p := range t.Providers {
+		v, err := p.APIKey.resolve(refs)
+		if err != nil {
+			return fmt.Errorf("configfile: %s.providers.%s.apiKey: %w", where, name, err)
+		}
+		p.apiKey = v
+		t.Providers[name] = p
 	}
 	for ri := range t.Repositories {
 		if err := t.Repositories[ri].compile(); err != nil {
@@ -274,22 +281,8 @@ func (f *File) validateRetention() error {
 
 func (f *File) validateProviders() error {
 	for name, p := range f.Providers {
-		if !p.Type.Valid() {
-			return fmt.Errorf("configfile: providers.%s.type must be %s, %s or %s, got %q",
-				name, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, p.Type)
-		}
-		if p.BaseURL != "" {
-			if u, err := url.Parse(p.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
-				return fmt.Errorf("configfile: providers.%s.baseUrl %q must be an absolute URL", name, p.BaseURL)
-			}
-		}
-		if p.apiKey.Value() == "" {
-			return fmt.Errorf("configfile: providers.%s.apiKey resolved to an empty value", name)
-		}
-		for id, price := range p.Pricing {
-			if price.Input < 0 || price.Output < 0 || price.CacheRead < 0 || price.CacheWrite < 0 {
-				return fmt.Errorf("configfile: providers.%s.pricing.%s: prices must not be negative", name, id)
-			}
+		if err := p.validate("providers." + name); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -314,7 +307,7 @@ func (f *File) validateTenants() error {
 	if err := checkLimits("defaults.limits", f.Defaults.Limits); err != nil {
 		return err
 	}
-	if err := f.validateOverrides("defaults", &f.Defaults.Overrides); err != nil {
+	if err := f.validateOverrides("defaults", nil, &f.Defaults.Overrides); err != nil {
 		return err
 	}
 
@@ -349,7 +342,10 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[
 	if err := checkLimits(where+".limits", t.Limits); err != nil {
 		return err
 	}
-	if err := f.validateOverrides(where, &t.Overrides); err != nil {
+	if err := f.validateTenantProviders(where, t); err != nil {
+		return err
+	}
+	if err := f.validateOverrides(where, t, &t.Overrides); err != nil {
 		return err
 	}
 	if t.Runner != nil {
@@ -392,7 +388,7 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[
 			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d] of installation %q", rwhere, r.Name, prev, in.Name)
 		}
 		repos[key] = ri
-		if err := f.validateOverrides(rwhere, &r.Overrides); err != nil {
+		if err := f.validateOverrides(rwhere, t, &r.Overrides); err != nil {
 			return err
 		}
 		if err := checkWithinAllow(rwhere, f.Settings(t, in.Name, r.Name)); err != nil {
@@ -412,10 +408,10 @@ func (o *Overrides) compile() (err error) {
 }
 
 // validateOverrides checks the settings one scope writes: its models name
-// declared providers, and its settle, ignore globs, mode, agent, incremental
-// and review keys are in range.
-func (f *File) validateOverrides(where string, r *Overrides) error {
-	if err := f.checkModels(where+".models", r.Models); err != nil {
+// providers declared for tenant t (nil for the defaults), and its settle,
+// ignore globs, mode, agent, incremental and review keys are in range.
+func (f *File) validateOverrides(where string, t *Tenant, r *Overrides) error {
+	if err := f.checkModels(where+".models", t, r.Models); err != nil {
 		return err
 	}
 	if r.Settle != nil && *r.Settle < 0 {
@@ -466,7 +462,7 @@ func (f *File) validateOverrides(where string, r *Overrides) error {
 	if err := validateReview(where+".review", &r.Review); err != nil {
 		return err
 	}
-	return f.validateAllow(where+".allow", &r.Allow)
+	return f.validateAllow(where+".allow", t, &r.Allow)
 }
 
 // validateReview checks the review block one scope writes: its paths stay
@@ -577,12 +573,12 @@ func (in Installation) validate(where string) error {
 	return nil
 }
 
-func (f *File) checkModels(where string, m ModelsSpec) error {
+func (f *File) checkModels(where string, t *Tenant, m ModelsSpec) error {
 	for role, r := range map[string]*ModelRef{"review": m.Review, "fallback": m.Fallback} {
 		if r == nil || *r == "" {
 			continue
 		}
-		if err := f.checkModelRef(where+"."+role, *r); err != nil {
+		if err := f.checkModelRef(where+"."+role, t, *r); err != nil {
 			return err
 		}
 	}
@@ -590,13 +586,13 @@ func (f *File) checkModels(where string, m ModelsSpec) error {
 }
 
 // checkModelRef rejects a model reference that is not
-// "<provider>/<model>" of a declared provider.
-func (f *File) checkModelRef(where string, ref ModelRef) error {
+// "<provider>/<model>" of a provider declared for tenant t or in the file.
+func (f *File) checkModelRef(where string, t *Tenant, ref ModelRef) error {
 	p := ref.Provider()
 	if p == "" || ref.Model() == "" {
 		return fmt.Errorf("configfile: %s must be \"<provider>/<model>\", got %q", where, ref)
 	}
-	if _, ok := f.Providers[p]; !ok {
+	if _, ok := f.Provider(t, p); !ok {
 		return fmt.Errorf("configfile: %s references provider %q, which is not declared under providers", where, p)
 	}
 	return nil
@@ -605,14 +601,14 @@ func (f *File) checkModelRef(where string, ref ModelRef) error {
 // validateAllow checks one scope's bounds name what a repository could
 // choose: review modes, models of declared providers, bare command names,
 // positive limits and a settle time that is not negative.
-func (f *File) validateAllow(where string, a *Allow) error {
+func (f *File) validateAllow(where string, t *Tenant, a *Allow) error {
 	for i, m := range a.Modes {
 		if !m.Valid() {
 			return fmt.Errorf("configfile: %s.modes[%d] must be %s or %s, got %q", where, i, ReviewSingle, ReviewAgentic, m)
 		}
 	}
 	for i, ref := range a.Models {
-		if err := f.checkModelRef(fmt.Sprintf("%s.models[%d]", where, i), ref); err != nil {
+		if err := f.checkModelRef(fmt.Sprintf("%s.models[%d]", where, i), t, ref); err != nil {
 			return err
 		}
 	}

@@ -41,15 +41,17 @@
       "key": "models.review",
       "scopes": ["defaults", "tenant", "repository"],
       "tenantAdmin": false,
+      "ownProviders": true,
       "repository": "choose",
-      "editable": false
+      "editable": true
     },
     {
       "key": "models.fallback",
       "scopes": ["defaults", "tenant", "repository"],
       "tenantAdmin": false,
+      "ownProviders": true,
       "repository": "choose",
-      "editable": false
+      "editable": true
     },
     {
       "key": "mode",
