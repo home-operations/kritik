@@ -61,6 +61,10 @@ configuration file under `config.file`, the secrets it references under
 `roles.all` runs the single-process topology; `roles.ingest` and
 `roles.worker` split it.
 
+Then [connect a forge](docs/connecting-a-forge.md): a GitHub App or a
+Forgejo bot account, with one webhook for the App or the Forgejo owner
+rather than one per repository.
+
 Security notes:
 
 - Install kritik into a namespace of its own: runner Jobs run in the release
@@ -81,6 +85,8 @@ Security notes:
 
 ## Documentation
 
+- [Connecting a forge](docs/connecting-a-forge.md): the GitHub App or
+  Forgejo bot, its permissions, and its one webhook
 - [Chart values](charts/kritik/README.md)
 - [`.kritik.yaml` reference](docs/repository-config.md)
 - [Dashboard](docs/dashboard.md): sign-in, roles, the sealing key and
