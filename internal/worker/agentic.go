@@ -39,6 +39,8 @@ type agentRun struct {
 	model   string
 	errText string
 	sources []string
+	// notes say what a task run's context left out in the runner.
+	notes []string
 }
 
 // stopError is nil for a run that submitted a review, and otherwise the
@@ -183,9 +185,9 @@ func (b *Base) loadAgentRun(ctx context.Context, tenantID, runID string) (run ag
 	var stop string
 	err = b.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT stop_reason, result::text, steps, input_tokens, cache_read_tokens, cache_write_tokens,
-			output_tokens, cost_usd::float8, model, error, sources FROM agent_runs WHERE runner_run_id = $1`, runID).
+			output_tokens, cost_usd::float8, model, error, sources, notes FROM agent_runs WHERE runner_run_id = $1`, runID).
 			Scan(&stop, &run.result, &run.steps, &run.usage.Input, &run.usage.CacheRead, &run.usage.CacheWrite,
-				&run.usage.Output, &run.costUSD, &run.model, &run.errText, &run.sources)
+				&run.usage.Output, &run.costUSD, &run.model, &run.errText, &run.sources, &run.notes)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return agentRun{}, false, nil

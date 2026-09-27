@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
@@ -47,23 +48,35 @@ func (r *taskRunner) agentic(ctx context.Context, data tasks.PromptData, labels 
 	if err != nil {
 		return store.TaskRunResult{}, err
 	}
-	var out store.TaskRunResult
-	err = r.w.withLease(ctx, r.tenant, string(ref), r.settings.Limits.Concurrency, r.jobID, func(ctx context.Context) error {
-		// The caps are read under the lease, so concurrent runs cannot all
-		// pass a cap of one.
-		budget, capped, err := r.agentBudget(ctx)
-		if err != nil {
-			return err
-		}
-		if capped != "" {
-			out = skipped(capped)
-			return nil
-		}
-		prompt := r.taskPrompt(system, user, schema)
-		out, err = r.runAgent(ctx, ref, fallback, budget, prompt, gitToken, labels)
-		return err
-	})
-	return out, err
+	// A free slot is taken without waiting, as an agentic review takes
+	// one, so a busy model snoozes the job instead of holding a worker for
+	// a runner's lifetime.
+	l, err := takeLease(ctx, r.w.Store, r.tenant.ID(), string(ref), r.settings.Limits.Concurrency, r.jobID)
+	if err != nil {
+		return store.TaskRunResult{}, err
+	}
+	if l == nil {
+		return store.TaskRunResult{}, r.snooze(string(ref))
+	}
+	defer r.w.releaseLease(ctx, r.logger, l, string(ref))
+	// The caps are read under the lease, so concurrent runs cannot all
+	// pass a cap of one.
+	budget, capped, err := r.agentBudget(ctx)
+	if err != nil {
+		return store.TaskRunResult{}, err
+	}
+	if capped != "" {
+		return skipped(capped), nil
+	}
+	return r.runAgent(ctx, ref, fallback, budget, r.taskPrompt(system, user, schema), gitToken, labels)
+}
+
+// snooze puts the job back for later, backing off with each snooze, when
+// every slot of the task's model is held.
+func (r *taskRunner) snooze(modelKey string) error {
+	d := backoff(r.snoozes, snoozeMin, snoozeMax)
+	r.logger.Info("task snoozed: every model slot is held", "model", modelKey, "snoozes", r.snoozes+1, "for", d.Round(time.Second))
+	return river.JobSnooze(d)
 }
 
 // agentBudget is the tokens the task's agent may spend, cut to what is
@@ -92,8 +105,7 @@ func (r *taskRunner) agentBudget(ctx context.Context) (int64, string, error) {
 func (r *taskRunner) taskPrompt(system, user string, schema []byte) *runner.TaskPrompt {
 	t := r.task
 	p := &runner.TaskPrompt{
-		Name: t.Name, System: system, User: user, Schema: schema, Run: t.Agent.Commands,
-		SourceBytes: taskSourceBytes, ContextBytes: r.contextLeft,
+		Name: t.Name, System: system, User: user, Schema: schema, SourceBytes: taskSourceBytes, ContextBytes: r.contextLeft,
 	}
 	tools := t.Agent.Tools
 	if tools == nil {
@@ -103,6 +115,12 @@ func (r *taskRunner) taskPrompt(system, user string, schema []byte) *runner.Task
 		if slices.Contains(runner.TaskTools, tool) {
 			p.Tools = append(p.Tools, tool)
 		}
+	}
+	// The run tool takes both the tool and commands for it. A nil
+	// agent.commands, which chooseTask also leaves when it drops a list
+	// out of bounds, offers no command rather than the operator's own.
+	if slices.Contains(tools, runTool) {
+		p.Run = t.Agent.Commands
 	}
 	for _, f := range t.Context.Files {
 		if f.Glob != "" {
@@ -114,6 +132,9 @@ func (r *taskRunner) taskPrompt(system, user string, schema []byte) *runner.Task
 	}
 	return p
 }
+
+// runTool is the agent tool that runs the task's agent.commands.
+const runTool = "run"
 
 // taskCommands are the binaries a task's runner may execute: those its
 // agent's run tool offers and those its context commands run.
@@ -201,6 +222,9 @@ func (r *taskRunner) runAgent(
 	defer cancel()
 	if err := recordRun(ctx, r.w.Store, r.w.Metrics, r.tenant.Slug, tenantID, runID, jobs.QueueTask, res); err != nil {
 		logger.Error("runner run not recorded", "error", err)
+	}
+	if run != nil {
+		r.notes = append(r.notes, run.notes...)
 	}
 	switch {
 	case agentErr != nil:

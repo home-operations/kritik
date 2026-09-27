@@ -192,13 +192,14 @@ func runAgentic(
 	if run != nil {
 		sources = run.Sources()
 	}
-	return recordAgent(ctx, st, p, secrets, res, timeline, sources, logger)
+	return recordAgent(ctx, st, p, secrets, res, timeline, sources, nil, logger)
 }
 
-// recordAgent writes the agent's agent_runs row and marks the run done,
-// or failed when ctx ended it.
+// recordAgent writes the agent's agent_runs row, with notes on what the
+// run's context left out, and marks the run done, or failed when ctx ended
+// it.
 func recordAgent(
-	ctx context.Context, st *store.Store, p Spec, secrets Secrets, res agent.Result, timeline []store.TimelineStep, sources []string,
+	ctx context.Context, st *store.Store, p Spec, secrets Secrets, res agent.Result, timeline []store.TimelineStep, sources, notes []string,
 	logger *slog.Logger,
 ) error {
 	if cerr := ctx.Err(); cerr != nil {
@@ -211,7 +212,7 @@ func recordAgent(
 		}
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), canceledWriteTimeout)
 		defer cancel()
-		rec, err := newAgentRecord(res, timeline, sources, secrets)
+		rec, err := newAgentRecord(res, timeline, sources, notes, secrets)
 		if err == nil {
 			err = writeAgentRun(wctx, st, p, rec, "failed")
 		}
@@ -219,7 +220,7 @@ func recordAgent(
 			"cost_usd", res.CostUSD, "error", err)
 		return errors.Join(fmt.Errorf("runner: agent: %w", cerr), err)
 	}
-	rec, err := newAgentRecord(res, timeline, sources, secrets)
+	rec, err := newAgentRecord(res, timeline, sources, notes, secrets)
 	if err != nil {
 		return err
 	}
@@ -244,13 +245,20 @@ type agentRecord struct {
 	// and the worker then names the model the run was granted.
 	model string
 	err   string
+	// notes say what a task run's context left out.
+	notes []string
 }
 
 // newAgentRecord encodes a finished Run and the sources its commands
 // fetched. The error text and the sources are masked: an error may carry a
 // token, and the worker shows both.
-func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []string, secrets Secrets) (agentRecord, error) {
-	rec := agentRecord{stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, model: res.Model, err: secrets.Mask(res.Err)}
+func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources, notes []string, secrets Secrets) (agentRecord, error) {
+	rec := agentRecord{
+		stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, model: res.Model, err: secrets.Mask(res.Err), notes: []string{},
+	}
+	for _, n := range notes {
+		rec.notes = append(rec.notes, secrets.Mask(n))
+	}
 	masked := make([]string, len(sources))
 	for i, s := range sources {
 		masked[i] = secrets.Mask(s)
@@ -276,11 +284,12 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 	return st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, tenant_id, stop_reason, result, steps, tool_calls, timeline,
-				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources)
-			SELECT id, tenant_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14 FROM runner_runs WHERE id = $1`,
+				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources, notes)
+			SELECT id, tenant_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, coalesce($15, '{}'::text[])
+			FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
 			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
-			rec.sources)
+			rec.sources, rec.notes)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}

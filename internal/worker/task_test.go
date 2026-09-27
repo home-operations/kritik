@@ -110,6 +110,7 @@ func TestTaskPrompt(t *testing.T) {
     files: [{path: README.md}, {glob: "docs/*.md", max: 3}]
     commands: [{name: owners, run: "cat  .github/CODEOWNERS"}, {name: search, run: "rg -n TODO"}]
 - {name: defaults, on: [{issue: []}]}
+- {name: commands-without-run, on: [{issue: []}], agent: {tools: [grep], commands: [rg]}}
 `)
 	bounds := configfile.Settings{TaskBounds: tasks.Bounds{Tools: []string{"read_file", "list_files", "shell"}}}
 	tests := []struct {
@@ -127,6 +128,10 @@ func TestTaskPrompt(t *testing.T) {
 		}, []string{"cat", "rg"}},
 		{&ts[1], runner.TaskPrompt{
 			Name: "defaults", System: "sys", User: "user", Schema: []byte(`{}`), Tools: []string{"read_file", "list_files"},
+			SourceBytes: taskSourceBytes, ContextBytes: 100,
+		}, nil},
+		{&ts[2], runner.TaskPrompt{
+			Name: "commands-without-run", System: "sys", User: "user", Schema: []byte(`{}`), Tools: []string{"grep"},
 			SourceBytes: taskSourceBytes, ContextBytes: 100,
 		}, nil},
 	}

@@ -45,7 +45,12 @@ func TakeList[T any](b *Budget, name string, items []T) []T {
 	kept, used := []T{}, len("[")
 	for _, it := range items {
 		raw, err := json.Marshal(it)
-		if err != nil || used+len(raw)+1 > n {
+		if err != nil {
+			b.Notes = append(b.Notes,
+				fmt.Sprintf("context %s kept %d of %d results: a result could not be encoded: %v", name, len(kept), len(items), err))
+			break
+		}
+		if used+len(raw)+1 > n {
 			b.Notes = append(b.Notes, fmt.Sprintf("context %s kept %d of %d results within the context budget", name, len(kept), len(items)))
 			break
 		}

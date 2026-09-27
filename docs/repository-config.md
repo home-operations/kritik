@@ -181,7 +181,7 @@ an agentic task holds only the installation's read-only credential.
 | `mode`                                                                           | `agentic` (the default) runs the task in a runner pod with a checkout of the default branch and the read-only agent tools; `single` is one structured model call in the worker. It must be one of the operator's `allow.modes`, or the task is dropped. |
 | `models.review`, `models.fallback`                                               | `<provider>/<model>` references from `allow.models`; one outside it is dropped and the operator's model applies.                                                                                                                                        |
 | `agent.maxSteps`, `agent.maxToolOutputBytes`, `agent.maxTokens`, `agent.timeout` | Each at most its `allow.agent` bound, or the operator's own value; one over it is dropped.                                                                                                                                                              |
-| `agent.tools`                                                                    | The agent tools an agentic run gets, from `allow.tasks.tools`. Unset is every tool the operator allows; `[]` is none.                                                                                                                                   |
+| `agent.tools`                                                                    | The agent tools an agentic run gets, from `allow.tasks.tools`. Unset is every tool the operator allows; `[]` is none; `run` needs `agent.commands`.                                                                                                     |
 | `agent.commands`                                                                 | Command names the agent may run, a subset of `allow.commands`, or of the operator's own `agent.commands` when it sets none.                                                                                                                             |
 | `context`                                                                        | The [context sources](#context-sources) a run gathers.                                                                                                                                                                                                  |
 | `system`                                                                         | A path to a template added after kritik's fixed system preamble, only when the operator sets `allow.tasks.systemPrompt`.                                                                                                                                |
@@ -317,7 +317,8 @@ operator allows in `allow.tasks.context`:
 - `commands`: `[{ name, run }]`, agentic tasks only: a command line run in
   the runner pod without a shell, split on whitespace, whose first word must
   be in `allow.commands` (or the operator's own `agent.commands` when it
-  sets none), as `.Context.<name>`. Shell characters (`| ; & $ < > ( ) { } * ? ~`,
+  sets none), appended to the prompt in its own block under its `name`
+  (not in a template's `.Context`, see below). Shell characters (`| ; & $ < > ( ) { } * ? ~`,
   quotes and backslashes) are refused. Off unless the operator lists
   `commands` in `allow.tasks.context`.
 
@@ -335,7 +336,10 @@ gets them: its runner gathers them after the templates have rendered and
 appends each to the prompt in its own `<untrusted>` block, so they are not
 in a template's `.Context`, and `.Context.files` holds the `path` files
 alone. A single-mode task leaves a glob out. Each source is cut to 32 KiB
-and all of them to 128 KiB; what a run left out is listed in its notes.
+and all of them to 128 KiB; what a run left out, in the worker or the
+runner, is listed in its notes. An agentic task's agent gets the `run`
+tool only when `agent.tools` lists `run` (which `allow.tasks.tools` must
+allow for a repository's task) and `agent.commands` names commands for it.
 
 ### Fields
 
@@ -410,7 +414,7 @@ entry, bound by bound like the rest of `allow`:
 | `events`                   | `["issue.*", "pull_request.*", "comment.*"]` | Globs over trigger event names; a raw event must be listed, such as `raw:release.*`. |
 | `actions`                  | `[comment, labels, inlineComments]`          | Action kinds; `state`, `assign` and `reviewers` must be listed.                      |
 | `context`                  | `[thread, files, search, related]`           | Context source kinds; `commands` must be listed.                                     |
-| `tools`                    | `[read_file, grep, list_files]`              | Agent tools.                                                                         |
+| `tools`                    | `[read_file, grep, list_files]`              | Agent tools; `run` is opt-in.                                                        |
 | `systemPrompt`             | `false`                                      | Whether a task may add to the system prompt.                                         |
 | `repositoryTasks`          | `true`                                       | Whether a `.kritik.yaml` may define tasks at all.                                    |
 | `maxTasks`                 | `10`                                         | A repository's tasks.                                                                |

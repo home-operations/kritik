@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/tasks"
 )
 
 func taskSpec() Spec {
@@ -37,9 +39,10 @@ func TestTaskAgent(t *testing.T) {
 	}}
 	p := taskSpec()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	res, timeline, sources := taskAgent(t.Context(), st, p, head, logger)
-	if res.Stop != agent.StopSubmitted || string(res.Submitted) != answer || len(timeline) != 2 || len(sources) != 0 {
-		t.Fatalf("result = %+v, timeline %d, sources %q", res, len(timeline), sources)
+	res, timeline, sources, notes := taskAgent(t.Context(), st, p, head, logger)
+	if res.Stop != agent.StopSubmitted || string(res.Submitted) != answer || len(timeline) != 2 || len(sources) != 0 ||
+		!slices.Equal(notes, []string{"context files docs/*.md kept 1 of 2 matches"}) {
+		t.Fatalf("result = %+v, timeline %d, sources %q, notes %q", res, len(timeline), sources, notes)
 	}
 	req := st.reqs[0]
 	names := make([]string, 0, len(req.Tools))
@@ -106,6 +109,25 @@ func TestGatherTask(t *testing.T) {
 				t.Fatalf("sources = %q, notes = %q", sources, notes)
 			}
 		})
+	}
+}
+
+func TestGatherTaskStopsWhenCanceled(t *testing.T) {
+	head := tree(t, map[string]string{"docs/a.md": "a"})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	task := TaskPrompt{
+		Files: []TaskFiles{{Glob: "docs/*.md"}}, Commands: []TaskCommand{{Name: "owners", Argv: []string{"cat", "x"}}},
+		SourceBytes: 100, ContextBytes: 1000,
+	}
+	_, notes := gatherTask(ctx, &task, head, nil, nil)
+	if !slices.Equal(notes, []string{"context owners not gathered: context canceled"}) {
+		t.Fatalf("notes = %q", notes)
+	}
+	b := &tasks.Budget{PerSource: 100, Left: 1000}
+	if got := globFiles(ctx, head, nil, TaskFiles{Glob: "docs/*.md"}, b); len(got) != 0 ||
+		!slices.Equal(b.Notes, []string{"context files docs/*.md: the tree walk stopped: context canceled"}) {
+		t.Fatalf("globFiles = %v, notes %q", got, b.Notes)
 	}
 }
 

@@ -72,6 +72,10 @@ func (w *Task) Work(ctx context.Context, job *river.Job[jobs.TaskArgs]) error {
 	if runID == "" {
 		return err
 	}
+	// A snooze spends no attempt and leaves the run to its next one.
+	if _, ok := errors.AsType[*river.JobSnoozeError](err); ok {
+		return err
+	}
 	if err != nil && !attemptEnds(ctx, err, job.Attempt, job.MaxAttempts) {
 		return err
 	}
@@ -154,6 +158,7 @@ func (w *Task) attempt(ctx context.Context, job *river.Job[jobs.TaskArgs]) (stri
 	}
 	r := &taskRunner{
 		w: w, file: file, tenant: tenant, client: client, args: args, run: run, ev: ev, repo: repo, jobID: job.ID, logger: logger,
+		snoozes: jobSnoozes(logger, job.Metadata),
 	}
 	res, err := r.do(ctx)
 	res.Notes = append(r.notes, res.Notes...)
@@ -196,6 +201,21 @@ type taskRunner struct {
 	// its sources left of the context budget, for an agentic run's runner.
 	notes       []string
 	contextLeft int
+	// snoozes is how often the job has waited for a model slot.
+	snoozes int
+}
+
+// jobSnoozes is how often River has snoozed a job, from its metadata.
+func jobSnoozes(logger *slog.Logger, metadata []byte) int {
+	var meta struct {
+		Snoozes int `json:"snoozes"`
+	}
+	if len(metadata) > 0 {
+		if err := json.Unmarshal(metadata, &meta); err != nil {
+			logger.Warn("job metadata not read; snoozing as if for the first time", "error", err)
+		}
+	}
+	return meta.Snoozes
 }
 
 // skipped ends the run without running it, for reason.

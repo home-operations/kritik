@@ -24,6 +24,7 @@ import (
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/tasks"
 	"github.com/home-operations/kritik/internal/webhook"
@@ -49,7 +50,7 @@ defaults:
       mode: agentic
       on: [{ issue: [opened] }]
       promptInline: "Triage issue #{{ .Subject.Number }}: {{ .Subject.Title }}\n{{ .Context.files }}"
-      agent: { maxSteps: 4, tools: [grep], commands: [cat] }
+      agent: { maxSteps: 4, tools: [grep, run], commands: [cat] }
       context:
         files: [{ path: main.go }, { glob: "*.go", max: 1 }]
         commands: [{ name: other, run: "cat other.go" }]
@@ -215,11 +216,15 @@ func TestAgenticTaskEndToEnd(t *testing.T) {
 	}
 	var run taskRunRow
 	var runnerRunID *string
+	var taskRunID string
+	var notes []string
 	waitFor(t, 30*time.Second, "the agentic task run", func() bool {
 		err := st.WithTenant(ctx, h.tenant.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT status, reason, model, error, coalesce(fields, 'null'), coalesce(applied, 'null'),
-				coalesce(dropped, 'null'), comment_id, runner_run_id::text FROM task_runs WHERE task = 'agentic-triage'`).
-				Scan(&run.status, &run.reason, &run.model, &run.errText, &run.fields, &run.applied, &run.dropped, &run.commentID, &runnerRunID)
+				coalesce(dropped, 'null'), comment_id, runner_run_id::text, id::text, notes FROM task_runs
+				WHERE tenant_id = $1 AND task = 'agentic-triage'`, h.tenant.ID()).
+				Scan(&run.status, &run.reason, &run.model, &run.errText, &run.fields, &run.applied, &run.dropped, &run.commentID, &runnerRunID,
+					&taskRunID, &notes)
 		})
 		return err == nil && store.TaskRunStatus(run.status).Terminal()
 	})
@@ -233,7 +238,11 @@ func TestAgenticTaskEndToEnd(t *testing.T) {
 		t.Fatalf("forge after the run: labels %q, comments %v", labels, comments)
 	}
 	checkAgenticTaskPrompt(t, sm)
-	checkAgenticTaskRecords(t, h, *runnerRunID)
+	// The runner's note on the glob it cut reached the task run.
+	if !slices.Equal(notes, []string{"context files *.go kept 1 of 2 matches"}) {
+		t.Fatalf("task run notes = %q", notes)
+	}
+	checkAgenticTaskRecords(t, h, taskRunID, *runnerRunID)
 	// Retention sweeps across tenants; the event is not left for the next
 	// test's count.
 	if _, err := st.SweepTaskEvents(ctx, time.Nanosecond); err != nil {
@@ -273,27 +282,116 @@ func checkAgenticTaskPrompt(t *testing.T, sm *taskAgentModel) {
 // checkAgenticTaskRecords checks what the run left in the database: the
 // agent's row, the gateway's usage and transcript charged to the task
 // run, and no live gateway token.
-func checkAgenticTaskRecords(t *testing.T, h *taskHarness, runnerRunID string) {
+func checkAgenticTaskRecords(t *testing.T, h *taskHarness, taskRunID, runnerRunID string) {
 	t.Helper()
-	if n := h.count(`SELECT count(*) FROM agent_runs WHERE stop_reason = 'submitted' AND runner_run_id = '` + runnerRunID + `'`); n != 1 {
-		t.Fatalf("agent runs = %d", n)
-	}
-	if n := h.count(`SELECT count(*) FROM task_runs WHERE task = 'agentic-triage' AND answered_at IS NOT NULL`); n != 1 {
-		t.Fatalf("answered agentic runs = %d", n)
-	}
-	if n := h.count(`SELECT count(*) FROM runner_runs WHERE kind = 'task' AND phase = 'done' AND id = '` + runnerRunID + `'`); n != 1 {
-		t.Fatalf("done task runner runs = %d", n)
-	}
-	if n := h.count(`SELECT count(*) FROM usage WHERE role = 'task' AND review_id IS NULL`); n != 2 {
-		t.Fatalf("task usage rows = %d, want one per step", n)
-	}
-	if n := h.count(`SELECT count(*) FROM model_calls m JOIN task_runs r ON r.id = m.task_run_id
-		WHERE m.kind = 'agent_step' AND r.task = 'agentic-triage'`); n != 2 {
-		t.Fatalf("agent step transcripts = %d", n)
+	for _, c := range []struct {
+		what, query string
+		want        int
+	}{
+		{"submitted agent runs", `SELECT count(*) FROM agent_runs WHERE stop_reason = 'submitted' AND runner_run_id = '` + runnerRunID + `'`, 1},
+		{"answered runs", `SELECT count(*) FROM task_runs WHERE id = '` + taskRunID + `' AND answered_at IS NOT NULL`, 1},
+		{"done task runner runs", `SELECT count(*) FROM runner_runs WHERE kind = 'task' AND phase = 'done' AND id = '` + runnerRunID + `'`, 1},
+		// usage has no task run column; this test's tenant runs only this task.
+		{"task usage rows, one per step", `SELECT count(*) FROM usage WHERE tenant_id = '` + h.tenant.ID() +
+			`' AND role = 'task' AND review_id IS NULL`, 2},
+		{"agent step transcripts", `SELECT count(*) FROM model_calls WHERE kind = 'agent_step' AND task_run_id = '` + taskRunID + `'`, 2},
+	} {
+		if n := h.count(c.query); n != c.want {
+			t.Fatalf("%s = %d, want %d", c.what, n, c.want)
+		}
 	}
 	var tokens int
 	if err := h.st.App().QueryRow(context.Background(), `SELECT count(*) FROM gateway_tokens WHERE runner_run_id = $1`, runnerRunID).
 		Scan(&tokens); err != nil || tokens != 0 {
 		t.Fatalf("gateway tokens left = %d, %v", tokens, err)
 	}
+}
+
+// TestSearchIndexHits checks a search source finds the chunks of the
+// repository's completed index nearest its query, nearest first, k of
+// them, and charges the query's embedding.
+func TestSearchIndexHits(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	st, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"), Logger: logger})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(st.Close)
+	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	if err := st.EnsureIndexSchema(ctx, "kritik_app", "fake-embed", 8, false); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "model-key")
+	file, err := configfile.Parse([]byte(fmt.Sprintf(agenticTaskConfigYAML, "http://unused.invalid")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ApplyConfig(ctx, file, "test"); err != nil {
+		t.Fatal(err)
+	}
+	in, tenant, _ := file.Installation("initech-bot")
+	repoID := configfile.RepositoryID(in.ID(), "initech/widgets")
+	fe := &fakeEmbedder{}
+	chunks := []struct{ path, text string }{
+		{"crash.go", "func crashOnStart() { panic(\"crashes on start\") }"},
+		{"boot.go", "func boot() { start() }"},
+		{"docs.md", "zzzz qqqq xxxx"},
+	}
+	texts := make([]string, len(chunks))
+	for i, c := range chunks {
+		texts[i] = c.text
+	}
+	vectors, _, _ := fe.Embed(ctx, texts)
+	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		var runID string
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			VALUES ($1, $2, 'c0ffee', 'fake-embed', 8, 'full', 'completed') RETURNING id`, tenant.ID(), repoID).Scan(&runID); err != nil {
+			return err
+		}
+		for i, c := range chunks {
+			if _, err := tx.Exec(ctx, `INSERT INTO index_chunks (tenant_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+				VALUES ($1, $2, $3, $4, 1, 1, $5, $6::halfvec)`, tenant.ID(), repoID, runID, c.path, c.text, model.VectorLiteral(vectors[i])); err != nil {
+				return err
+			}
+		}
+		_, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, repoID, runID)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &taskRunner{
+		w:      &Task{Store: st, Logger: logger, Embedder: fe, EmbedModel: "fake-embed"},
+		tenant: tenant, args: jobs.TaskArgs{RepositoryID: repoID}, settings: configfile.Settings{Limits: configfile.Limits{Concurrency: 1}},
+		logger: logger,
+	}
+	hits, ok, err := r.searchIndex(ctx, tasks.NamedQuery{Name: "code", Query: "crashes on start", K: 2})
+	if err != nil || !ok || len(hits) != 2 || hits[0].Path != "crash.go" || hits[0].Text != chunks[0].text {
+		t.Fatalf("searchIndex = %+v, %v, %v", hits, ok, err)
+	}
+	// The source's budget keeps the nearest hit alone.
+	b := &tasks.Budget{PerSource: len(mustMarshal(t, hits[0])) + 2, Left: 1 << 20}
+	if kept := tasks.TakeList(b, "code", hits); len(kept) != 1 || kept[0].Path != "crash.go" || len(b.Notes) != 1 {
+		t.Fatalf("TakeList = %+v, notes %q", kept, b.Notes)
+	}
+	var embedded int
+	if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM usage WHERE tenant_id = $1 AND role = 'embedding' AND review_id IS NULL`, tenant.ID()).
+			Scan(&embedded)
+	}); err != nil || embedded != 1 {
+		t.Fatalf("embedding usage rows = %d, %v", embedded, err)
+	}
+}
+
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

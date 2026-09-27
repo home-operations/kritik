@@ -470,6 +470,15 @@ func TestTakeList(t *testing.T) {
 	}
 }
 
+func TestTakeListEncodingFailure(t *testing.T) {
+	t.Parallel()
+	b := &Budget{PerSource: 100, Left: 100}
+	got := TakeList(b, "odd", []any{"a", make(chan int)})
+	if len(got) != 1 || len(b.Notes) != 1 || !strings.Contains(b.Notes[0], "could not be encoded") {
+		t.Fatalf("TakeList = %v, notes %q", got, b.Notes)
+	}
+}
+
 func TestFenceContext(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

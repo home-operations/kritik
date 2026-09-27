@@ -126,3 +126,76 @@ func TestDetach(t *testing.T) {
 		t.Fatalf("deadline = %v, %v; want one within %v", deadline, ok, detachTimeout)
 	}
 }
+
+const taskTimeoutConfigYAML = `
+providers:
+  p: { type: openai, baseUrl: http://x/v1, apiKey: { env: TEST_SECRET } }
+defaults:
+  models: { review: p/m }
+  allow:
+    tasks: { enabled: true }
+  tasks:
+    - name: slow
+      mode: agentic
+      on: [{ issue: [opened] }]
+      agent: { timeout: 90m }
+tenants:
+  - slug: acme
+    installations:
+      - name: acme-bot
+        forge: github
+        account: acme
+        app: { clientId: Iv1.x, privateKey: { env: TEST_PEM }, webhookSecret: { env: TEST_SECRET } }
+  - slug: globex
+    installations:
+      - name: globex-bot
+        forge: github
+        account: globex
+        app: { clientId: Iv1.y, privateKey: { env: TEST_PEM }, webhookSecret: { env: TEST_SECRET } }
+    tasks:
+      - { name: slow, enabled: false, on: [{ issue: [opened] }] }
+    repositories:
+      - name: globex/agentic
+        mode: agentic
+`
+
+// TestTaskTimeout checks a task job outlasts the runner of any agentic
+// task its repository may run, an operator file's included, whatever the
+// repository's review mode.
+func TestTaskTimeout(t *testing.T) {
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	file, err := configfile.Parse([]byte(taskTimeoutConfigYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	acme, _ := file.Tenant("acme")
+	globex, _ := file.Tenant("globex")
+	current := configfile.NewCurrent(file)
+	tests := []struct {
+		name     string
+		worker   *Task
+		tenantID string
+		repoID   string
+		want     time.Duration
+	}{
+		// An operator's agentic task on a single-mode repository: its 90m
+		// agent plus fetch headroom, lease wait and publish.
+		{"operator agentic task", &Task{Current: current, GatewayURL: "http://gw"}, acme.ID(), "any",
+			90*time.Minute + jobtimeout.AgentFetchHeadroom + jobtimeout.LeaseWaitHeadroom + jobtimeout.PublishHeadroom},
+		// The task switched off; the repository's agentic mode admits the
+		// default 20m agent.
+		{"agentic repository", &Task{Current: current, GatewayURL: "http://gw"}, globex.ID(),
+			configfile.RepositoryID(globex.Installations[0].ID(), "globex/agentic"), 55 * time.Minute},
+		{"no gateway", &Task{Current: current}, acme.ID(), "any", jobtimeout.FollowUpTimeout},
+		{"override", &Task{Current: current, GatewayURL: "http://gw", timeout: time.Second}, acme.ID(), "any", time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.worker.Timeout(&river.Job[jobs.TaskArgs]{Args: jobs.TaskArgs{TenantID: tt.tenantID, RepositoryID: tt.repoID}})
+			if got != tt.want {
+				t.Fatalf("Timeout = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}

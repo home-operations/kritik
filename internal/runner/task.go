@@ -56,17 +56,17 @@ func runTask(ctx context.Context, st *store.Store, p Spec, secrets Secrets, logg
 	if err != nil {
 		return err
 	}
-	out, timeline, sources := taskAgent(ctx, stepper, p, head, logger)
-	return recordAgent(ctx, st, p, secrets, out, timeline, sources, logger)
+	out, timeline, sources, notes := taskAgent(ctx, stepper, p, head, logger)
+	return recordAgent(ctx, st, p, secrets, out, timeline, sources, notes, logger)
 }
 
 // taskAgent runs the task's agent over head: the worker's user prompt
 // followed by the context gathered here, the tools the task names, and
 // its answer schema as the submit tool's. It returns the sources the
-// commands fetched.
+// commands fetched and notes on what the context left out.
 func taskAgent(
 	ctx context.Context, stepper model.Stepper, p Spec, head *object.Tree, logger *slog.Logger,
-) (agent.Result, []store.TimelineStep, []string) {
+) (res agent.Result, timeline []store.TimelineStep, sources, notes []string) {
 	tree := agent.NewTree(head, p.Ignore)
 	maxOutput := p.Agent.limits().MaxToolOutputBytes
 	run, cleanup := commandTool(ctx, p, tree, maxOutput, logger)
@@ -84,8 +84,8 @@ func taskAgent(
 	logger.Info("agent started", "task", p.Task.Name, "model", p.Model.Model, "prompt_chars", len(p.Task.System)+len(user),
 		"tools", len(tools))
 	submit := model.ToolDef{Name: taskSubmit, Description: taskSubmitDescription, InputSchema: p.Task.Schema}
-	out, timeline := agentLoop(ctx, stepper, p, tools, submit, p.Task.System, user, time.Duration(p.Agent.TimeoutSeconds)*time.Second, logger)
-	sources := []string{}
+	res, timeline = agentLoop(ctx, stepper, p, tools, submit, p.Task.System, user, time.Duration(p.Agent.TimeoutSeconds)*time.Second, logger)
+	sources = []string{}
 	if run != nil {
 		sources = run.Sources()
 	}
@@ -96,7 +96,7 @@ func taskAgent(
 			}
 		}
 	}
-	return out, timeline, sources
+	return res, timeline, sources, notes
 }
 
 // taskTools are the read-only tools the task names and, when it offers
@@ -134,6 +134,9 @@ func gatherTask(ctx context.Context, t *TaskPrompt, head *object.Tree, ignore []
 	b := &tasks.Budget{PerSource: t.SourceBytes, Left: t.ContextBytes}
 	files := make([]taskFile, 0, len(t.Files))
 	for _, f := range t.Files {
+		if ctx.Err() != nil {
+			break
+		}
 		files = append(files, globFiles(ctx, head, ignore, f, b)...)
 	}
 	add := func(name string, v any) {
@@ -148,6 +151,10 @@ func gatherTask(ctx context.Context, t *TaskPrompt, head *object.Tree, ignore []
 		add(taskFilesSource, files)
 	}
 	for _, c := range t.Commands {
+		if err := ctx.Err(); err != nil {
+			b.Notes = append(b.Notes, fmt.Sprintf("context %s not gathered: %v", c.Name, err))
+			continue
+		}
 		out, err := contextCommand(ctx, run, c)
 		if err != nil {
 			b.Notes = append(b.Notes, fmt.Sprintf("context %s not gathered: %v", c.Name, err))
@@ -170,15 +177,19 @@ func globFiles(ctx context.Context, head *object.Tree, ignore []string, f TaskFi
 		limit = maxGlobFiles
 	}
 	var matched []*object.File
-	_ = head.Files().ForEach(func(file *object.File) error {
-		if ctx.Err() != nil {
-			return ctx.Err()
+	err := head.Files().ForEach(func(file *object.File) error {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		if ok, _ := doublestar.Match(f.Glob, file.Name); ok && !chunk.Ignored(ignore, file.Name) && file.Size <= repoconfig.MaxFileBytes {
 			matched = append(matched, file)
 		}
 		return nil
 	})
+	if err != nil {
+		// What the walk found before it stopped is still kept.
+		b.Notes = append(b.Notes, fmt.Sprintf("context files %s: the tree walk stopped: %v", f.Glob, err))
+	}
 	slices.SortFunc(matched, func(a, b *object.File) int { return strings.Compare(a.Name, b.Name) })
 	if len(matched) > limit {
 		b.Notes = append(b.Notes, fmt.Sprintf("context files %s kept %d of %d matches", f.Glob, limit, len(matched)))
@@ -186,6 +197,9 @@ func globFiles(ctx context.Context, head *object.Tree, ignore []string, f TaskFi
 	}
 	var out []taskFile
 	for _, file := range matched {
+		if ctx.Err() != nil {
+			break
+		}
 		content, err := readText(file)
 		if err != nil {
 			b.Notes = append(b.Notes, fmt.Sprintf("context files %s: %v", file.Name, err))
