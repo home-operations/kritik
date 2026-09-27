@@ -203,6 +203,8 @@ type taskRunner struct {
 	contextLeft int
 	// snoozes is how often the job has waited for a model slot.
 	snoozes int
+	// gitToken is an agentic run's read-only credential for its runner.
+	gitToken string
 }
 
 // jobSnoozes is how often River has snoozed a job, from its metadata.

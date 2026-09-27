@@ -132,8 +132,10 @@ type agenticTaskForge struct {
 	lf *localForge
 }
 
-func (f *agenticTaskForge) CloneURL(owner, repo string) string           { return f.lf.CloneURL(owner, repo) }
-func (f *agenticTaskForge) GitToken(ctx context.Context) (string, error) { return f.lf.GitToken(ctx) }
+func (f *agenticTaskForge) CloneURL(owner, repo string) string { return f.lf.CloneURL(owner, repo) }
+func (f *agenticTaskForge) ReadGitToken(ctx context.Context, owner, repo string) (string, error) {
+	return f.lf.ReadGitToken(ctx, owner, repo)
+}
 
 func (f *agenticTaskForge) BranchTip(ctx context.Context, owner, repo, branch string) (string, string, error) {
 	return f.lf.BranchTip(ctx, owner, repo, branch)

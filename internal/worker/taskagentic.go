@@ -15,6 +15,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
+	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
@@ -24,8 +25,8 @@ import (
 // agentic runs the task's agent in a runner over the commit the task was
 // defined at, with the prompts and answer schema rendered here, and
 // concludes on what it submitted as a single-mode run does on its answer.
-// The runner reaches its model only through the gateway, holds only the
-// read-only git token, and writes nothing to the forge: every write is the
+// The runner reaches its model only through the gateway, holds only a
+// read-only git token (see agenticSlot), and writes nothing to the forge: every write is the
 // plan's, made here. An error before the runner starts is retried; once it
 // has started, the run ends here.
 func (r *taskRunner) agentic(ctx context.Context, data tasks.PromptData, labels []string) (store.TaskRunResult, error) {
@@ -38,10 +39,6 @@ func (r *taskRunner) agentic(ctx context.Context, data tasks.PromptData, labels 
 	if err != nil {
 		return failed("", fmt.Errorf("worker: encode answer schema: %w", err)), nil
 	}
-	gitToken, err := r.client.GitToken(ctx)
-	if err != nil {
-		return store.TaskRunResult{}, err
-	}
 	// The caps are read under the model slot agenticSlot took, so
 	// concurrent runs cannot all pass a cap of one.
 	budget, capped, err := r.agentBudget(ctx)
@@ -51,7 +48,7 @@ func (r *taskRunner) agentic(ctx context.Context, data tasks.PromptData, labels 
 	if capped != "" {
 		return skipped(capped), nil
 	}
-	return r.runAgent(ctx, ref, fallback, budget, r.taskPrompt(system, user, schema), gitToken, labels)
+	return r.runAgent(ctx, ref, fallback, budget, r.taskPrompt(system, user, schema), r.gitToken, labels)
 }
 
 // agenticSlot settles whether an agentic run can start and takes a slot on
@@ -71,6 +68,14 @@ func (r *taskRunner) agenticSlot(ctx context.Context) (store.TaskRunResult, func
 	if _, ok := r.file.Providers[ref.Provider()]; !ok {
 		return failed("", fmt.Errorf("worker: provider %q is not in the configuration", ref.Provider())), nil, nil
 	}
+	tok, err := r.client.ReadGitToken(ctx, r.owner, r.name)
+	if errors.Is(err, forge.ErrNoReadToken) {
+		return skipped(noReadToken), nil, nil
+	}
+	if err != nil {
+		return store.TaskRunResult{}, nil, err
+	}
+	r.gitToken = tok
 	l, err := takeLease(ctx, r.w.Store, r.tenant.ID(), string(ref), r.settings.Limits.Concurrency, r.jobID)
 	if err != nil {
 		return store.TaskRunResult{}, nil, err
@@ -80,6 +85,10 @@ func (r *taskRunner) agenticSlot(ctx context.Context) (store.TaskRunResult, func
 	}
 	return store.TaskRunResult{}, func() { r.w.releaseLease(ctx, r.logger, l, string(ref)) }, nil
 }
+
+// noReadToken is why an agentic task is skipped on a forge that has no
+// read-only credential for its runner, whose agent reads untrusted input.
+const noReadToken = "agentic tasks need a read-only gitToken"
 
 // snooze puts the job back for later, backing off with each snooze, when
 // every slot of the task's model is held.

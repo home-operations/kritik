@@ -136,6 +136,29 @@ func TestGitToken(t *testing.T) {
 	}
 }
 
+func TestReadGitToken(t *testing.T) {
+	tests := []struct {
+		name, fetch, want string
+		wantErr           error
+	}{
+		{"the gitToken", "ro", "ro", nil},
+		{"never the API token", "", "", forge.ErrNoReadToken},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := NewClient("forge.example.com", "tok", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.FetchToken = tt.fetch
+			got, err := c.ReadGitToken(t.Context(), "acme", "widgets")
+			if got != tt.want || !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ReadGitToken = %q, %v; want %q, %v", got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestBranchTip(t *testing.T) {
 	t.Run("default branch", func(t *testing.T) {
 		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {

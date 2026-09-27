@@ -82,7 +82,10 @@ Security notes:
   untrusted content.
 - Give a Forgejo or Gitea installation a read-only `gitToken` beside its
   `token`: runners fetch with `gitToken` when it is set, and otherwise with
-  `token`, which can write to the forge.
+  `token`, which can write to the forge. Agentic tasks never fall back to
+  `token`: without a `gitToken` they are skipped. On GitHub, an agentic
+  task's runner gets an installation token minted for its repository with
+  `contents: read` alone.
 
 Tasks are off until `allow.tasks.enabled` turns them on. They write to
 issues as well as pull requests, so a GitHub App needs the **Issues** and

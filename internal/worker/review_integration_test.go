@@ -147,7 +147,9 @@ func (l *localForge) FileAt(_ context.Context, _, _, ref, path string) ([]byte, 
 
 func (l *localForge) CloneURL(string, string) string           { return l.dir }
 func (l *localForge) GitToken(context.Context) (string, error) { return "", nil }
-func (l *localForge) BotLogin(context.Context) (string, error) { return "kritik[bot]", nil }
+
+func (l *localForge) ReadGitToken(context.Context, string, string) (string, error) { return "", nil }
+func (l *localForge) BotLogin(context.Context) (string, error)                     { return "kritik[bot]", nil }
 
 func (l *localForge) BranchTip(context.Context, string, string, string) (string, string, error) {
 	l.mu.Lock()

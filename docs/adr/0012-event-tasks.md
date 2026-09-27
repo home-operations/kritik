@@ -2,8 +2,9 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-26
-- **Amends:** [ADR-0003](0003-forgejo-agentic-review.md) §2.1 (the
-  read-only `gitToken` now also covers task runs) and §2.3 (`.kritik.yaml`
+- **Amends:** [ADR-0003](0003-forgejo-agentic-review.md) §2.1 (an
+  agentic task's runner requires the read-only `gitToken` on Forgejo and
+  Gitea, and gets a down-scoped installation token on GitHub) and §2.3 (`.kritik.yaml`
   gains `tasks`), and [ADR-0010](0010-configuration-layers.md) §2.5 (`allow`
   gains `tasks`) and §2.3 (the operator's scopes gain `tasks`).
 - **Authors:** perfectra1n.
@@ -265,10 +266,18 @@ The design keeps each of those in its lane:
   the task, the repository and the operator's bounds before it writes
   (§2.3). A prompt injection can at most pick among the options a
   maintainer already offered.
-- **Only the worker writes.** Runner pods of agentic tasks get the
-  installation's read-only `gitToken` (ADR-0003 §2.1) and reach the model
-  through the gateway, never a provider key or a forge write credential;
-  their tools are read-only.
+- **Only the worker writes.** Runner pods of agentic tasks get a git
+  credential that can only read, and reach the model through the gateway,
+  never a provider key or a forge write credential; their tools are
+  read-only. On GitHub the worker mints an installation token for each run,
+  scoped to the task's repository with `contents: read` alone, although the
+  App itself holds Issues and Pull requests write for tasks. On Forgejo
+  and Gitea the credential is the installation's `gitToken` (ADR-0003
+  §2.1), which the operator vouches is read-only; an installation without
+  one never falls back to its API token for a task, and its agentic tasks
+  are skipped with "agentic tasks need a read-only gitToken". Single-mode
+  tasks start no runner and need neither. Agentic reviews keep ADR-0003's
+  token as before.
 - **A fixed preamble and fenced data.** Every task's system prompt starts
   with kritik's preamble, which states that text inside `<untrusted>`
   blocks is data, never instructions, and that only what the answer schema

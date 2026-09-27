@@ -219,6 +219,15 @@ func (c *Client) GitToken(_ context.Context) (string, error) {
 	return c.token, nil
 }
 
+// ReadGitToken implements forge.Client with FetchToken alone: the API
+// token can write.
+func (c *Client) ReadGitToken(context.Context, string, string) (string, error) {
+	if c.FetchToken == "" {
+		return "", forge.ErrNoReadToken
+	}
+	return c.FetchToken, nil
+}
+
 // BranchTip implements forge.Client. An empty branch resolves the
 // repository's default branch first.
 func (c *Client) BranchTip(ctx context.Context, owner, repo, ref string) (string, string, error) {
@@ -761,10 +770,7 @@ func issueFrom(iss issue) forge.Issue {
 	out := forge.Issue{
 		Number: iss.Number, Title: iss.Title, Body: iss.Body,
 		State: iss.State, Author: iss.User.Login,
-		IsPull: iss.PullRequest != nil, URL: iss.HTMLURL,
-	}
-	if iss.PullRequest != nil {
-		out.Draft = iss.PullRequest.Draft
+		IsPull: iss.PullRequest != nil, Draft: iss.PullRequest != nil && iss.PullRequest.Draft, URL: iss.HTMLURL,
 	}
 	for _, l := range iss.Labels {
 		out.Labels = append(out.Labels, l.Name)

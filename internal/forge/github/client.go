@@ -93,6 +93,12 @@ func (c *Client) GitToken(ctx context.Context) (string, error) {
 	return c.tokens.Token(ctx)
 }
 
+// ReadGitToken implements forge.Client with an installation token minted
+// for repo alone that can only read its contents.
+func (c *Client) ReadGitToken(ctx context.Context, _, repo string) (string, error) {
+	return c.tokens.ReadOnly(ctx, repo)
+}
+
 // BranchTip implements forge.Client.
 func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (string, string, error) {
 	if branch == "" {

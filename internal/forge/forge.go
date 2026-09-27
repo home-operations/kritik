@@ -116,6 +116,10 @@ const MaxFileBytes = 1 << 20
 // ErrFileTooLarge is FileAt refusing a file over MaxFileBytes.
 var ErrFileTooLarge = errors.New("forge: file is over the size limit")
 
+// ErrNoReadToken means the forge has no read-only credential to hand a
+// runner.
+var ErrNoReadToken = errors.New("forge: no read-only git token")
+
 // Client is one installation's access to its forge.
 type Client interface {
 	// MergeBase asks the forge for the merge-base of base (a branch) and
@@ -135,6 +139,12 @@ type Client interface {
 	// installation's gitToken when configured and its API token otherwise.
 	// It reaches a pod that reads untrusted content.
 	GitToken(ctx context.Context) (string, error)
+	// ReadGitToken is a credential that can only read owner/repo, for a
+	// runner whose agent a task drives over untrusted input: on GitHub an
+	// installation token minted for that repository alone with contents
+	// read, and on Forgejo the installation's gitToken, which the operator
+	// vouches is read-only. ErrNoReadToken when the forge has none.
+	ReadGitToken(ctx context.Context, owner, repo string) (string, error)
 	// BranchTip returns the commit a branch points at; an empty branch
 	// means the repository's default branch, whose name is also returned.
 	BranchTip(ctx context.Context, owner, repo, branch string) (sha, resolvedBranch string, err error)

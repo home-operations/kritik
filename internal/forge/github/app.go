@@ -164,6 +164,19 @@ func (t *InstallationTokens) Token(ctx context.Context) (string, error) {
 	return t.tok, nil
 }
 
+// ReadOnly mints a token for repo, a repository name without its owner,
+// that can only read its contents (and the metadata every token reads).
+// It is not cached: each is minted for one runner.
+func (t *InstallationTokens) ReadOnly(ctx context.Context, repo string) (string, error) {
+	it, _, err := t.apps.Apps.CreateInstallationToken(ctx, t.instID, &gh.InstallationTokenOptions{
+		Repositories: []string{repo}, Permissions: &gh.InstallationPermissions{Contents: new("read")},
+	})
+	if err != nil {
+		return "", fmt.Errorf("github: mint read-only token for %s in %d: %w", repo, t.instID, err)
+	}
+	return it.GetToken(), nil
+}
+
 // installTransport injects the installation token as the bearer.
 type installTransport struct {
 	base   http.RoundTripper

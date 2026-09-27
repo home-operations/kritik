@@ -4,9 +4,14 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
+	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -89,5 +94,48 @@ func TestInstallationTokensMintOnceAndRefresh(t *testing.T) {
 	third, _ := tokens.Token(ctx)
 	if second != "ghs_test2" || third != "ghs_test2" || mints != 2 {
 		t.Fatalf("tokens = %q, %q with %d mints; want a refresh then a cache hit", second, third, mints)
+	}
+}
+
+func TestReadGitToken(t *testing.T) {
+	_, pemKey := testKeyPEM(t)
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		w.Header().Set("Content-Type", "application/json")
+		exp := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+		_, _ = w.Write([]byte(`{"token":"ghs_` + strconv.Itoa(len(bodies)) + `","expires_at":"` + exp + `"}`))
+	}))
+	defer srv.Close()
+	app, err := NewApp("Iv1.abc", pemKey, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := NewClient(app, 42, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := c.ReadGitToken(t.Context(), "o", "r")
+	if err != nil || first != "ghs_1" {
+		t.Fatalf("ReadGitToken = %q, %v", first, err)
+	}
+	if second, _ := c.ReadGitToken(t.Context(), "o", "r"); second != "ghs_2" {
+		t.Fatalf("second ReadGitToken = %q; want a fresh mint", second)
+	}
+	var got struct {
+		Repositories  []string          `json:"repositories"`
+		RepositoryIDs []int64           `json:"repository_ids"`
+		Permissions   map[string]string `json:"permissions"`
+	}
+	if err := json.Unmarshal([]byte(bodies[0]), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.Repositories, []string{"r"}) || got.RepositoryIDs != nil ||
+		!maps.Equal(got.Permissions, map[string]string{"contents": "read"}) {
+		t.Fatalf("mint request = %s; want repository r with contents read alone", bodies[0])
+	}
+	if full, _ := c.GitToken(t.Context()); full != "ghs_3" {
+		t.Fatalf("GitToken = %q; the read-only token must not be cached as the installation's", full)
 	}
 }

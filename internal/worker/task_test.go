@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
@@ -279,6 +281,47 @@ func TestDraftGuard(t *testing.T) {
 			in.Subject = taskrun.Subject(tt.issue, in.Raw)
 			if got := matchTasks(f.Tasks, in, logger); len(got) != tt.want {
 				t.Fatalf("matched %d tasks, want %d", len(got), tt.want)
+			}
+		})
+	}
+}
+
+// readTokenForge serves ReadGitToken alone.
+type readTokenForge struct {
+	forge.Client
+	err error
+}
+
+func (f readTokenForge) ReadGitToken(context.Context, string, string) (string, error) {
+	return "", f.err
+}
+
+type noExecutor struct{}
+
+func (noExecutor) Run(context.Context, executor.Spec) executor.Result { return executor.Result{} }
+
+func TestAgenticSlotNeedsReadToken(t *testing.T) {
+	boom := errors.New("github: mint read-only token: 500")
+	tests := []struct {
+		name    string
+		err     error
+		want    store.TaskRunResult
+		wantErr error
+	}{
+		{"no read-only token skips", fmt.Errorf("wrapped: %w", forge.ErrNoReadToken), skipped(noReadToken), nil},
+		{"a failed mint is retried", boom, store.TaskRunResult{}, boom},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &taskRunner{
+				w:      &Task{GatewayURL: "http://gateway", Executor: noExecutor{}},
+				file:   &configfile.File{Providers: map[string]configfile.Provider{"openrouter": {}}},
+				task:   &tasks.Task{Models: tasks.Models{Review: "openrouter/m"}},
+				client: readTokenForge{err: tt.err}, owner: "acme", name: "widgets",
+			}
+			res, release, err := r.agenticSlot(t.Context())
+			if release != nil || !errors.Is(err, tt.wantErr) || !reflect.DeepEqual(res, tt.want) {
+				t.Fatalf("agenticSlot = %+v, release %v, %v; want %+v, %v", res, release != nil, err, tt.want, tt.wantErr)
 			}
 		})
 	}

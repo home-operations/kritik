@@ -366,7 +366,7 @@ type Installation struct {
 	// GitToken, optional for GitLab and Forgejo, is the token runner pods
 	// fetch with in place of Token. Token can write to the forge and would
 	// otherwise reach the pod that reads untrusted content, so a read-only
-	// token belongs here.
+	// token belongs here. Forgejo's agentic tasks run only with one.
 	GitToken SecretRef `yaml:"gitToken,omitempty"`
 
 	token         Secret
