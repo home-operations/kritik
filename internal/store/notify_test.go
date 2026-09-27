@@ -18,6 +18,7 @@ func TestEventKindValid(t *testing.T) {
 		{"index_run", EventIndexRun, true},
 		{"followup", EventFollowup, true},
 		{"model_call", EventModelCall, true},
+		{"task_run", EventTaskRun, true},
 		{"empty", EventKind(""), false},
 		{"unknown", EventKind("bogus"), false},
 	}
