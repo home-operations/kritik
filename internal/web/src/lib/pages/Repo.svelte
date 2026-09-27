@@ -225,6 +225,9 @@
                 No task event has been handled yet, and no review has read a <span class="mono">.kritik.yaml</span>.
               {/if}
             </p>
+            {#if d.tasksIgnored}
+              <p class="notice" role="note" data-testid="tasks-ignored">Ignored as a whole: {d.tasksIgnored}</p>
+            {/if}
             {#if d.tasks.length === 0}
               <p class="state-msg">No tasks are defined for this repository.</p>
             {:else}

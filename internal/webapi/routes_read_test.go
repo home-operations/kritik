@@ -46,6 +46,7 @@ func TestRepoTasks(t *testing.T) {
 		file      *string
 		wantTasks []TaskDef
 		wantNotes []TaskNote
+		ignored   bool
 	}{
 		{
 			name:      "no file",
@@ -66,12 +67,16 @@ func TestRepoTasks(t *testing.T) {
 			file:      &bad,
 			wantTasks: []TaskDef{welcome, stale},
 			wantNotes: []TaskNote{{Task: "close-stale", What: "actions.state", Reason: "the action is not allowed"}},
+			ignored:   true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			gotTasks, gotNotes := repoTasks(settings, tt.file)
+			gotTasks, gotNotes, ignored := repoTasks(settings, tt.file)
+			if (ignored != "") != tt.ignored {
+				t.Errorf("ignored = %q, want ignored %v", ignored, tt.ignored)
+			}
 			if !reflect.DeepEqual(gotTasks, tt.wantTasks) {
 				t.Errorf("tasks = %+v, want %+v", gotTasks, tt.wantTasks)
 			}

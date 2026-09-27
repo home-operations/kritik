@@ -305,7 +305,7 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope)
 	default:
 		d.TasksSource = TasksSourceLastReview
 	}
-	d.Tasks, d.TaskNotes = repoTasks(settings, taskDoc)
+	d.Tasks, d.TaskNotes, d.TasksIgnored = repoTasks(settings, taskDoc)
 	writeJSON(w, http.StatusOK, d)
 	return nil
 }
@@ -337,17 +337,20 @@ func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfi
 // repoTasks resolves the tasks that run for the repository from the
 // operator's settings and the repository's .kritik.yaml, nil when there is
 // none. A file that does not parse leaves the operator's tasks, as it does
-// for a run.
-func repoTasks(settings configfile.Settings, file *string) ([]TaskDef, []TaskNote) {
+// for a run, and ignored says why.
+func repoTasks(settings configfile.Settings, file *string) (defs []TaskDef, notes []TaskNote, ignored string) {
 	var doc []byte
 	if file != nil {
 		doc = []byte(*file)
 	}
-	m, _ := repoconfig.Merge(doc, settings) // a dispatch drops a file that does not parse the same way
+	m, err := repoconfig.Merge(doc, settings)
+	if err != nil {
+		ignored = err.Error()
+	}
 	named := func(ts []tasks.Task, name string) bool {
 		return slices.ContainsFunc(ts, func(t tasks.Task) bool { return t.Name == name })
 	}
-	defs := make([]TaskDef, len(m.Tasks))
+	defs = make([]TaskDef, len(m.Tasks))
 	for i, t := range m.Tasks {
 		d := TaskDef{
 			Name: t.Name, Source: configfile.SourceRepository, If: t.If, Mode: string(t.RunMode()), Triggers: []string{}, Actions: []string{},
@@ -379,11 +382,11 @@ func repoTasks(settings configfile.Settings, file *string) ([]TaskDef, []TaskNot
 		}
 		defs[i] = d
 	}
-	notes := make([]TaskNote, len(m.TaskNotes))
+	notes = make([]TaskNote, len(m.TaskNotes))
 	for i, n := range m.TaskNotes {
 		notes[i] = TaskNote{Task: n.Task, What: n.What, Reason: n.Reason}
 	}
-	return defs, notes
+	return defs, notes, ignored
 }
 
 func repoSettings(s configfile.Settings) RepoSettings {

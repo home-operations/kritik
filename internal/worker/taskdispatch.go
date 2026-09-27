@@ -13,6 +13,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/taskrun"
 	"github.com/home-operations/kritik/internal/tasks"
@@ -180,8 +181,11 @@ func (w *TaskDispatch) Work(ctx context.Context, job *river.Job[jobs.TaskDispatc
 			logger.Warn("repository task config not recorded", "error", err)
 		}
 	}
-	eff, notes := effective(file.Settings(tenant, repo.installation, repo.name), doc)
-	for _, n := range notes {
+	eff, err := repoconfig.Merge(doc, file.Settings(tenant, repo.installation, repo.name))
+	if err != nil {
+		logger.Warn("repository .kritik.yaml ignored; only the operator's tasks run", "config_sha", short(sha), "error", err)
+	}
+	for _, n := range eff.Dropped {
 		logger.Debug("repository configuration note", "note", n)
 	}
 	for _, n := range eff.TaskNotes {

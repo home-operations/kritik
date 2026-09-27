@@ -181,5 +181,6 @@
     }
   ],
   "tasksSource": "defaultBranch",
-  "tasksCommit": "c0ffee"
+  "tasksCommit": "c0ffee",
+  "tasksIgnored": "repoconfig: tasks[1]: name \"Bad\" must be lowercase letters, digits and dashes, at most 63, starting with a letter or digit"
 }

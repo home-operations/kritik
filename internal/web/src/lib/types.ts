@@ -298,6 +298,9 @@ export interface RepoDetail extends Repository {
   // last review read at its merge base.
   tasksSource: 'defaultBranch' | 'lastReview';
   tasksCommit: string;
+  // Why that file was ignored as a whole, when it does not parse; its
+  // tasks are left out.
+  tasksIgnored?: string;
 }
 
 export interface Label {

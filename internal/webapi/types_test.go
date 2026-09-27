@@ -137,6 +137,7 @@ var goldens = map[string]any{
 		},
 		TaskNotes:   []TaskNote{{Task: "triage", What: "actions.state", Reason: "the action is not allowed"}},
 		TasksSource: TasksSourceDefaultBranch, TasksCommit: "c0ffee",
+		TasksIgnored: "repoconfig: tasks[1]: name \"Bad\" must be lowercase letters, digits and dashes, at most 63, starting with a letter or digit",
 	},
 	"index_run": goldenIndexRun,
 	"pull":      goldenPull,

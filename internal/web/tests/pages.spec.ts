@@ -85,6 +85,7 @@ test('repository tasks list each definition, where it comes from, and what the b
   const note = g.repoDetail.taskNotes[0]!;
   await expect(tasks).toContainText(`${note.task}: ${note.what}: ${note.reason}`);
   await expect(tasks.getByTestId('tasks-source')).toContainText('default branch tip');
+  await expect(tasks.getByTestId('tasks-ignored')).toContainText(`Ignored as a whole: ${g.repoDetail.tasksIgnored}`);
 });
 
 test('repository tasks say when they come from the last review, before any task event', async ({ page }) => {
@@ -108,11 +109,12 @@ test('a repository with no tasks says so', async ({ page }) => {
   const detail = new RegExp(`/api/v1/tenants/${g.SLUG}/repos/alpha/one$`);
   await page.route(
     (u) => detail.test(u.pathname),
-    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...g.repoDetail, tasks: [], taskNotes: [] }) }),
+    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...g.repoDetail, tasks: [], taskNotes: [], tasksIgnored: undefined }) }),
   );
   await page.goto(`/${T}/repos/alpha/one`);
   const tasks = page.locator('#repo-tasks').locator('../..');
   await expect(tasks.locator('.state-msg')).toHaveText('No tasks are defined for this repository.');
+  await expect(tasks.getByTestId('tasks-ignored')).toHaveCount(0);
   await expect(tasks.locator('ul')).toHaveCount(0);
 });
 

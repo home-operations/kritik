@@ -288,6 +288,9 @@ type RepoDetail struct {
 	// merge base. TasksCommit is that file's commit, "" when neither exists.
 	TasksSource string `json:"tasksSource"`
 	TasksCommit string `json:"tasksCommit"`
+	// TasksIgnored is why that file was ignored as a whole, when it does
+	// not parse: its tasks are left out, as a dispatch leaves them out.
+	TasksIgnored string `json:"tasksIgnored,omitempty"`
 }
 
 // Values of RepoDetail.TasksSource.
