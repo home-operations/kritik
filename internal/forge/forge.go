@@ -145,8 +145,10 @@ type Client interface {
 	FindComment(ctx context.Context, owner, repo string, number int, login, marker string) (int64, error)
 	// CreateComment posts a PR conversation comment and returns its id.
 	CreateComment(ctx context.Context, owner, repo string, number int, body string) (int64, error)
-	// UpdateComment replaces the body of a PR conversation comment.
-	UpdateComment(ctx context.Context, owner, repo string, id int64, body string) error
+	// UpdateComment replaces the body of conversation comment id on pull
+	// request number; forges that address a comment by id alone ignore
+	// number.
+	UpdateComment(ctx context.Context, owner, repo string, number int, id int64, body string) error
 	// CreateReview posts a non-blocking review with inline comments pinned
 	// to headSHA.
 	CreateReview(ctx context.Context, owner, repo string, number int, headSHA string, comments []InlineComment) error

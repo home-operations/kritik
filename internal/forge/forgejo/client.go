@@ -333,7 +333,7 @@ func (c *Client) CreateComment(ctx context.Context, owner, repo string, number i
 }
 
 // UpdateComment implements forge.Client.
-func (c *Client) UpdateComment(ctx context.Context, owner, repo string, id int64, body string) error {
+func (c *Client) UpdateComment(ctx context.Context, owner, repo string, _ int, id int64, body string) error {
 	path := fmt.Sprintf("%s/issues/comments/%d", repoPath(owner, repo), id)
 	if err := c.do(ctx, http.MethodPatch, path, createCommentOption{Body: body}, nil); err != nil {
 		return fmt.Errorf("forgejo: update comment %d on %s/%s: %w", id, owner, repo, err)
