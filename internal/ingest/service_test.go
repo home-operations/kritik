@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
@@ -52,5 +53,36 @@ func TestDispatchLabelActionsNeverReview(t *testing.T) {
 				t.Fatalf("out = %+v, %v", out, err)
 			}
 		})
+	}
+}
+
+// TestDispatchTasksNeedNoStoreWithoutACandidate: with tasks off, or no
+// task that could run on the event, a delivery never reaches the store.
+func TestDispatchTasksNeedNoStoreWithoutACandidate(t *testing.T) {
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s3cret")
+	off, err := configfile.Parse([]byte(configYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	onlyReleases, err := configfile.Parse([]byte(`defaults:
+  allow: { tasks: { enabled: true, repositoryTasks: false } }
+  tasks: [{ name: notes, on: [{ raw: { event: release } }] }]
+` + configYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(nil, nil)
+	for _, f := range []*configfile.File{off, onlyReleases} {
+		in, tenant, _ := f.Installation("bot-ross")
+		ev := webhook.Event{
+			Kind: webhook.KindIssue, Action: "opened", RawEvent: "issues", Sender: "devin",
+			Repository: &webhook.Repository{FullName: "onedr0p/home-ops"}, Subject: &webhook.Subject{Kind: webhook.SubjectIssue, Number: 7},
+			Issue: &webhook.Issue{Number: 7},
+		}
+		out, err := svc.Dispatch(context.Background(), Request{File: f, Tenant: tenant, Installation: in, Event: ev})
+		if err != nil || out.Status != Ignored {
+			t.Fatalf("out = %+v, %v", out, err)
+		}
 	}
 }

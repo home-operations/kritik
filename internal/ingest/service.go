@@ -11,7 +11,9 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/taskrun"
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
@@ -56,20 +58,87 @@ var pullRequestActions = map[string]bool{
 	ActionBaseline:     false,
 }
 
-// Dispatch implements Dispatcher.
+// Dispatch implements Dispatcher. A delivery is offered to tasks too,
+// whatever the review pipeline made of it; the outcome is the review
+// pipeline's unless it did nothing and tasks did.
 func (s *Service) Dispatch(ctx context.Context, req Request) (Outcome, error) {
+	var out Outcome
+	var err error
 	switch req.Event.Kind {
 	case webhook.KindPullRequest:
-		return s.pullRequest(ctx, req)
+		out, err = s.pullRequest(ctx, req)
 	case webhook.KindComment:
-		return s.comment(ctx, req)
+		out, err = s.comment(ctx, req)
 	case webhook.KindPush:
-		return s.push(ctx, req)
+		out, err = s.push(ctx, req)
 	case webhook.KindInstallation:
-		return s.installation(ctx, req)
+		out, err = s.installation(ctx, req)
 	default:
-		return Outcome{Status: Ignored, Reason: string(req.Event.Kind)}, nil
+		out = Outcome{Status: Ignored, Reason: string(req.Event.Kind)}
 	}
+	if err != nil {
+		return out, err
+	}
+	queued, err := s.tasks(ctx, req)
+	if err != nil {
+		return out, err
+	}
+	if queued && out.Status != Enqueued {
+		out = Outcome{Status: Enqueued, Job: jobTaskDispatch}
+	}
+	return out, nil
+}
+
+const jobTaskDispatch = "task_dispatch"
+
+// tasks stores a delivery some task could run on and enqueues the job that
+// resolves which do. Only a forge's own delivery is offered: the poller's
+// synthetic events carry no event name. Resolving the repository's tasks
+// reads its .kritik.yaml through the forge, so it is the job's to do, as
+// is the loop guard, which needs the installation's bot login; here only
+// the operator's settings are consulted (see taskrun.Candidate).
+func (s *Service) tasks(ctx context.Context, req Request) (bool, error) {
+	ev := req.Event
+	if ev.Repository == nil || ev.RawEvent == "" {
+		return false, nil
+	}
+	settings := req.File.Settings(req.Tenant, req.Installation.Name, ev.Repository.FullName)
+	operator, _ := repoconfig.Merge(nil, settings)
+	in := taskrun.Input(ev)
+	if !taskrun.Candidate(in, operator.Tasks, settings.TaskBounds) {
+		return false, nil
+	}
+	var payload json.RawMessage
+	if in.Raw != nil {
+		payload = ev.Raw
+	}
+	var subjectKind string
+	var subjectNumber int
+	if in.Subject != nil {
+		subjectKind, subjectNumber = in.Subject.Kind, in.Subject.Number
+	}
+	queued := false
+	err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
+		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
+		if err != nil {
+			return err
+		}
+		id, err := store.InsertTaskEvent(ctx, tx, store.TaskEvent{
+			TenantID: req.Tenant.ID(), InstallationID: req.Installation.ID(), RepositoryID: rid, Forge: in.Forge, Event: in.Event,
+			RawEvent: ev.RawEvent, Action: ev.Action, Sender: ev.Sender, Delivery: ev.Delivery, SubjectKind: subjectKind,
+			SubjectNumber: subjectNumber, Payload: payload,
+		})
+		if err != nil || id == "" {
+			return err
+		}
+		dispatch := jobs.TaskDispatchArgs{TenantID: req.Tenant.ID(), RepositoryID: rid, EventID: id}
+		if _, err := s.queue.InsertTx(ctx, tx, dispatch, nil); err != nil {
+			return fmt.Errorf("ingest: enqueue task dispatch: %w", err)
+		}
+		queued = true
+		return nil
+	})
+	return queued, err
 }
 
 func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error) {

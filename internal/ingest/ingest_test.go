@@ -135,3 +135,37 @@ func TestHandlerRejectsOversizedBody(t *testing.T) {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
 }
+
+// TestHandlerOffersIgnoredKindsToTasks: a delivery the review pipeline
+// ignores still reaches the dispatcher when it concerns a repository, since
+// a task may run on it, and never when it does not.
+func TestHandlerOffersIgnoredKindsToTasks(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		dispatched bool
+	}{
+		{"about a repository", `{"action":"published","sender":{"login":"devin"},
+  "repository":{"full_name":"onedr0p/home-ops","default_branch":"main","owner":{"login":"onedr0p"}}}`, true},
+		{"about no repository", `{"action":"published"}`, false},
+		{"about an undeclared account", `{"action":"published",
+  "repository":{"full_name":"stranger/x","default_branch":"main","owner":{"login":"stranger"}}}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			disp := &fakeDispatcher{out: Outcome{Status: Ignored}}
+			srv := setup(t, disp)
+			if resp := post(t, srv, "/hooks/bot-ross", "release", "s3cret", tt.body); resp.StatusCode != http.StatusAccepted {
+				t.Fatalf("status = %d", resp.StatusCode)
+			}
+			if (len(disp.got) > 0) != tt.dispatched {
+				t.Fatalf("dispatched = %v, want %v", len(disp.got) > 0, tt.dispatched)
+			}
+			if tt.dispatched {
+				if ev := disp.got[0].Event; ev.Kind != webhook.KindIgnored || ev.RawEvent != "release" || ev.Action != "published" {
+					t.Fatalf("event = %+v", ev)
+				}
+			}
+		})
+	}
+}
