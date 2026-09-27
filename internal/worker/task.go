@@ -13,6 +13,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
@@ -33,9 +34,6 @@ const (
 	taskRelatedMax     = 10
 )
 
-// taskSkipAgentic is why an agentic task does not run yet.
-const taskSkipAgentic = "agentic tasks arrive in a later release"
-
 // roleTask is the usage role and metric label of a task's model call.
 const roleTask = "task"
 
@@ -44,9 +42,22 @@ type Task struct {
 	river.WorkerDefaults[jobs.TaskArgs]
 	Base
 	Completers CompleterSource
+	// Executor runs an agentic task's runner, which calls its model through
+	// the gateway at GatewayURL with a token that outlives the Job's
+	// deadline by GatewayTokenTTL. Agentic tasks fail without a gateway.
+	Executor        executor.Executor
+	GatewayURL      string
+	GatewayTokenTTL time.Duration
+	// Embedder and EmbedModel search the repository's index for the search
+	// context source; nil Embedder leaves it out.
+	Embedder   model.Embedder
+	EmbedModel string
 	configs    repoConfigs
 	// timeout, when set, replaces the job timeout, for tests.
 	timeout time.Duration
+
+	// superviseEvery overrides superviseInterval.
+	superviseEvery time.Duration
 }
 
 // Work implements river.Worker. An error before the model has answered is
@@ -59,6 +70,10 @@ type Task struct {
 func (w *Task) Work(ctx context.Context, job *river.Job[jobs.TaskArgs]) error {
 	runID, res, err := w.attempt(ctx, job)
 	if runID == "" {
+		return err
+	}
+	// A snooze spends no attempt and leaves the run to its next one.
+	if _, ok := errors.AsType[*river.JobSnoozeError](err); ok {
 		return err
 	}
 	if err != nil && !attemptEnds(ctx, err, job.Attempt, job.MaxAttempts) {
@@ -143,8 +158,10 @@ func (w *Task) attempt(ctx context.Context, job *river.Job[jobs.TaskArgs]) (stri
 	}
 	r := &taskRunner{
 		w: w, file: file, tenant: tenant, client: client, args: args, run: run, ev: ev, repo: repo, jobID: job.ID, logger: logger,
+		snoozes: jobSnoozes(logger, job.Metadata),
 	}
 	res, err := r.do(ctx)
+	res.Notes = append(r.notes, res.Notes...)
 	return run.ID, res, err
 }
 
@@ -180,6 +197,25 @@ type taskRunner struct {
 	// headSHA and baseRef are a pull request subject's, as kritik last
 	// recorded it; empty for an issue or a pull request it never saw.
 	headSHA, baseRef string
+	// notes say what the run's context left out, and contextLeft is what
+	// its sources left of the context budget, for an agentic run's runner.
+	notes       []string
+	contextLeft int
+	// snoozes is how often the job has waited for a model slot.
+	snoozes int
+}
+
+// jobSnoozes is how often River has snoozed a job, from its metadata.
+func jobSnoozes(logger *slog.Logger, metadata []byte) int {
+	var meta struct {
+		Snoozes int `json:"snoozes"`
+	}
+	if len(metadata) > 0 {
+		if err := json.Unmarshal(metadata, &meta); err != nil {
+			logger.Warn("job metadata not read; snoozing as if for the first time", "error", err)
+		}
+	}
+	return meta.Snoozes
 }
 
 // skipped ends the run without running it, for reason.
@@ -217,8 +253,13 @@ func (r *taskRunner) do(ctx context.Context) (store.TaskRunResult, error) {
 			return skipped(reason), err
 		}
 	}
-	if reason := unsupportedMode(r.task); reason != "" {
-		return skipped(reason), nil
+	agentic := r.task.RunMode() == tasks.ModeAgentic
+	if agentic {
+		res, release, err := r.agenticSlot(ctx)
+		if release == nil {
+			return res, err
+		}
+		defer release()
 	}
 	if err := r.w.Store.WithTenant(ctx, r.args.TenantID, func(tx pgx.Tx) error {
 		return store.StartTaskRun(ctx, tx, r.run.ID)
@@ -240,15 +281,10 @@ func (r *taskRunner) do(ctx context.Context) (store.TaskRunResult, error) {
 	if err != nil {
 		return store.TaskRunResult{}, err
 	}
-	return r.answer(ctx, data, labels)
-}
-
-// unsupportedMode says why t does not run in this release, or "".
-func unsupportedMode(t *tasks.Task) string {
-	if t.RunMode() != tasks.ModeSingle {
-		return taskSkipAgentic
+	if agentic {
+		return r.agentic(ctx, data, labels)
 	}
-	return ""
+	return r.answer(ctx, data, labels)
 }
 
 // rateLimited says why the run is skipped when the task has run on its
@@ -322,44 +358,39 @@ func (r *taskRunner) promptData(ctx context.Context) (tasks.PromptData, error) {
 		}
 	}
 	d.Input = r.in
-	budget := taskContextBytes
-	add := func(name, value string) {
-		value = clipBytes(value, min(taskSourceBytes, budget))
-		budget -= len(value)
-		d.Context[name] = value
+	budget := &tasks.Budget{PerSource: taskSourceBytes, Left: taskContextBytes}
+	defer func() { r.notes, r.contextLeft = append(r.notes, budget.Notes...), budget.Left }()
+	files, err := r.contextFiles(ctx, budget)
+	if err != nil {
+		return d, err
 	}
-	for _, f := range r.task.Context.Files {
-		if f.Path == "" {
-			r.logger.Debug("task context glob not gathered in single mode", "glob", f.Glob)
-			continue
-		}
-		b, err := r.client.FileAt(ctx, r.owner, r.name, r.args.ConfigSHA, f.Path)
-		switch {
-		case errors.Is(err, fs.ErrNotExist) || errors.Is(err, forge.ErrFileTooLarge):
-			continue
-		case err != nil:
-			return d, err
-		}
-		add(f.Path, string(b))
+	if len(files) > 0 {
+		d.Context[tasks.ContextFiles] = files
 	}
 	queries, err := r.prepared.Queries(r.in)
 	if err != nil {
 		return d, err
 	}
 	for _, q := range queries {
-		if q.Kind != tasks.ContextRelated {
-			r.logger.Debug("task index search not gathered in single mode", "query", q.Name)
-			continue
+		var v any
+		switch q.Kind {
+		case tasks.ContextRelated:
+			found, err := r.client.SearchIssues(ctx, r.owner, r.name, q.Query, min(max(q.K, 1), taskRelatedMax))
+			if err != nil {
+				return d, err
+			}
+			v = tasks.TakeList(budget, q.Name, relatedIssues(found, r.ev.SubjectNumber))
+		case tasks.ContextSearch:
+			found, ok, err := r.searchIndex(ctx, q)
+			if err != nil {
+				return d, err
+			}
+			if !ok {
+				continue
+			}
+			v = tasks.TakeList(budget, q.Name, found)
 		}
-		found, err := r.client.SearchIssues(ctx, r.owner, r.name, q.Query, min(max(q.K, 1), taskRelatedMax))
-		if err != nil {
-			return d, err
-		}
-		related, err := json.Marshal(relatedIssues(found, r.ev.SubjectNumber))
-		if err != nil {
-			return d, fmt.Errorf("worker: encode related issues: %w", err)
-		}
-		add(q.Name, string(related))
+		d.Context[q.Name] = v
 	}
 	return d, nil
 }
@@ -385,7 +416,7 @@ type relatedIssue struct {
 	Number int      `json:"number"`
 	Title  string   `json:"title"`
 	State  string   `json:"state"`
-	Pull   bool     `json:"pull"`
+	Pull   bool     `json:"isPull"`
 	Labels []string `json:"labels,omitempty"`
 	URL    string   `json:"url"`
 }
@@ -431,20 +462,29 @@ func clipBytes(s string, n int) string {
 	return s[:n]
 }
 
+// models are the task's model and fallback, else the repository's.
+func (r *taskRunner) models() (ref, fallback configfile.ModelRef) {
+	ref = configfile.ModelRef(r.task.Models.Review)
+	if ref == "" {
+		ref = r.settings.Models.Review
+	}
+	fallback = configfile.ModelRef(r.task.Models.Fallback)
+	if fallback == "" {
+		fallback = r.settings.Models.Fallback
+	}
+	return ref, fallback
+}
+
+// noModel is why a task without a model is skipped.
+const noModel = "no review model is configured for this repository"
+
 // answer asks the model, plans its answer and applies the plan. The model's
 // tokens are spent once it answers, so from then on the run ends here
 // whatever the job's ctx does.
 func (r *taskRunner) answer(ctx context.Context, data tasks.PromptData, labels []string) (store.TaskRunResult, error) {
-	ref := configfile.ModelRef(r.task.Models.Review)
+	ref, fallback := r.models()
 	if ref == "" {
-		ref = r.settings.Models.Review
-	}
-	if ref == "" {
-		return skipped("no review model is configured for this repository"), nil
-	}
-	fallback := configfile.ModelRef(r.task.Models.Fallback)
-	if fallback == "" {
-		fallback = r.settings.Models.Fallback
+		return skipped(noModel), nil
 	}
 	system, user, err := r.prepared.RenderPrompt(data)
 	if err != nil {
@@ -480,16 +520,23 @@ func (r *taskRunner) answer(ctx context.Context, data tasks.PromptData, labels [
 		// before any write.
 		return failed(resp.Model, err), nil
 	}
-	answer, err := r.prepared.ParseAnswer([]byte(resp.Raw))
+	return r.conclude(ctx, []byte(resp.Raw), resp.Model, labels), nil
+}
+
+// conclude parses the model's answer, plans it and applies the plan, the
+// same whichever mode produced the answer. The run must already be marked
+// answered.
+func (r *taskRunner) conclude(ctx context.Context, raw []byte, modelName string, labels []string) store.TaskRunResult {
+	answer, err := r.prepared.ParseAnswer(raw)
 	if err != nil {
-		return failed(resp.Model, err), nil
+		return failed(modelName, err)
 	}
 	pl, err := r.prepared.Plan(r.in, answer, tasks.Facts{RepoLabels: labels, Subject: r.in.Subject, UserAllowed: r.userAllowed(ctx)})
 	if err != nil {
-		return failed(resp.Model, err), nil
+		return failed(modelName, err)
 	}
 	r.anchor(ctx, &pl)
-	return r.apply(ctx, answer, pl, resp.Model), nil
+	return r.apply(ctx, answer, pl, modelName)
 }
 
 // complete asks the model under a lease on it, once the tenant's monthly

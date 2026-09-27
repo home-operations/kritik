@@ -187,7 +187,9 @@ func (t *Task) checkContext() error {
 			}
 		}
 	}
-	var names []string
+	// .Context.files holds the files, and the runner reports what it left
+	// out as notes.
+	names := []string{ContextFiles, "notes"}
 	for _, q := range []struct {
 		kind string
 		qs   []Query
@@ -233,7 +235,7 @@ func checkName(where, name string, names *[]string) error {
 		return fmt.Errorf("%s: name %q must start with a lowercase letter and hold only letters, digits and _", where, name)
 	}
 	if slices.Contains(*names, name) {
-		return fmt.Errorf("%s: name %q is used twice", where, name)
+		return fmt.Errorf("%s: name %q is used twice or reserved", where, name)
 	}
 	*names = append(*names, name)
 	return nil

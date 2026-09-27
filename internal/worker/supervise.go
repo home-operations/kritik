@@ -27,6 +27,15 @@ const (
 	heartbeatStale = 90 * time.Second
 )
 
+// Runner Job labels and annotations every kind of run sets.
+const (
+	labelTenant     = "tenant"
+	labelRepository = "repository"
+	labelKind       = "kind"
+	annotationJob   = "river-job-id"
+	annotationHead  = "head-sha"
+)
+
 // supervision is what the worker watches while a runner works.
 type supervision struct {
 	every, stale time.Duration

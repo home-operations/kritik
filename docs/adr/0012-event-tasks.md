@@ -161,9 +161,14 @@ tasks:
   a source cap, and renders bounded in output, loop iterations and bytes
   handed to functions. Prompt templates see the event, the subject, the
   thread (`.Thread`), the context sources and the task. The context
-  sources are `.Context.files`, a list of `{path, content}`, and each
-  `search`, `related` and `commands` source under its `name`; a `related`
-  source is a list of `{number, title, state, url, isPull, labels}`. The
+  sources are `.Context.files`, a list of `{path, content}` of the files
+  named by path, and each `search` and `related` source under its `name`;
+  a `related` source is a list of `{number, title, state, url, isPull,
+labels}`. Glob files and `commands` output need a checkout, so only an
+  agentic task's runner gathers them, after the templates have rendered:
+  it appends each to the prompt in its own `<untrusted>` block, and a
+  template never sees them in `.Context`. The names `files` and `notes`
+  are reserved. The
   comment and rule templates see the event, the answer and its fields,
   and the comment also what was applied and dropped.
 - **Subject-less events write nothing.** A task a raw event without an
@@ -211,8 +216,10 @@ Execution is chosen per task:
 - `mode: single` is one structured model call in the worker.
 - `mode: agentic`, the default, runs a runner pod with a checkout of the
   default branch and the task's subset of the read-only agent tools, plus
-  its allowlisted commands (which is where `context.commands` run, argv
-  split on whitespace, never through a shell). The model is reached
+  its allowlisted commands (which is where `context.commands` and glob
+  files are gathered, argv split on whitespace, never through a shell).
+  The agent gets the `run` tool only when the task lists `run` among its
+  tools and names commands for it. The model is reached
   through the gateway (ADR-0004), and the final answer comes back through
   the agent run, as a review's does.
 
@@ -269,7 +276,9 @@ The design keeps each of those in its lane:
   ingest resolved it at.
 - **Operator bounds, and who is trusted.** The operator's configuration
   file is trusted: its own tasks are not clipped, only switched on or off
-  by `allow.tasks.enabled`. Tasks a tenant admin writes on the dashboard
+  by `allow.tasks.enabled`; they pick their own mode and agent limits,
+  outside `allow.modes` and `allow.agent`, and a task job's timeout is
+  sized to cover their agent timeouts too. Tasks a tenant admin writes on the dashboard
   are clipped exactly like a repository's (§2.6), since `allow` is the
   operator's alone and a tenant admin must not escape it through a task.
 
@@ -351,7 +360,15 @@ recorded, with live updates.
   requests, beyond what reviews need; the GitHub App needs the Issues
   permission and event subscriptions.
 - Templates cannot post-process a context source's text, which stays
-  fenced.
+  fenced, and an agentic task's glob files and command output reach the
+  prompt but not its templates.
+- What a run's context left out, the worker's cuts and the runner's, is
+  recorded in the run's notes.
+- Upgrading mid-flight: while workers of the previous release still run
+  after migration 0013, one of them can refuse an agentic task's gateway
+  step (its token has no review), and a previous release's runner refuses
+  a task spec; either run fails without writing, and reviews are
+  unaffected.
 
 ## 4. Rejected alternatives
 

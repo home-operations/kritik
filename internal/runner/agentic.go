@@ -97,27 +97,39 @@ func reviewAgent(
 	ctx context.Context, stepper model.Stepper, p Spec, head *object.Tree, ignore []string, extra []agent.Tool,
 	system, user string, strict bool, timeout time.Duration, logger *slog.Logger,
 ) (agent.Result, []store.TimelineStep) {
-	actx, cancel := ctx, context.CancelFunc(func() {})
-	if timeout > 0 {
-		actx, cancel = context.WithTimeout(ctx, timeout)
-	}
-	defer cancel()
 	limits := p.Agent.limits()
 	schema := review.Schema()
 	if strict {
 		schema = review.SchemaStrict()
 	}
 	tree := agent.NewTree(head, ignore)
+	tools := append([]agent.Tool{
+		agent.ReadFileTool(tree, limits.MaxToolOutputBytes),
+		agent.GrepTool(tree, limits.MaxToolOutputBytes),
+		agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
+	}, extra...)
+	submit := model.ToolDef{Name: submitReview, Description: submitDescription, InputSchema: schema}
+	return agentLoop(ctx, stepper, p, tools, submit, system, user, timeout, logger)
+}
+
+// agentLoop runs the tool loop until the agent calls submit or a limit
+// ends it. A positive timeout bounds it; running out of time ends it as
+// canceled with the timeout in Err.
+func agentLoop(
+	ctx context.Context, stepper model.Stepper, p Spec, tools []agent.Tool, submit model.ToolDef,
+	system, user string, timeout time.Duration, logger *slog.Logger,
+) (agent.Result, []store.TimelineStep) {
+	actx, cancel := ctx, context.CancelFunc(func() {})
+	if timeout > 0 {
+		actx, cancel = context.WithTimeout(ctx, timeout)
+	}
+	defer cancel()
 	timeline := []store.TimelineStep{}
 	res := agent.Run{
 		Stepper: stepper, Model: p.Model.Model, System: system, User: user,
-		Tools: append([]agent.Tool{
-			agent.ReadFileTool(tree, limits.MaxToolOutputBytes),
-			agent.GrepTool(tree, limits.MaxToolOutputBytes),
-			agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
-		}, extra...),
-		Submit: model.ToolDef{Name: submitReview, Description: submitDescription, InputSchema: schema},
-		Limits: limits,
+		Tools:  tools,
+		Submit: submit,
+		Limits: p.Agent.limits(),
 		OnStep: func(e agent.StepEvent) {
 			tools := e.Tools
 			if tools == nil {
@@ -137,6 +149,18 @@ func reviewAgent(
 	return res, timeline
 }
 
+// gatewayStepper is the agent's model, reached through the worker's gateway
+// with the run's token.
+func gatewayStepper(p Spec, secrets Secrets) (model.Stepper, error) {
+	stepper, err := model.NewOpenAI(model.OpenAIConfig{
+		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("runner: %w", err)
+	}
+	return stepper, nil
+}
+
 // runAgentic runs the agent over the fetched head and writes its
 // agent_runs row, then marks the run done. A review the worker will skip
 // anyway is recorded as skipped without running the agent.
@@ -149,11 +173,9 @@ func runAgentic(
 		rec := agentRecord{stop: AgentSkipped, toolCalls: []byte("{}"), timeline: []byte("[]"), sources: []byte("[]"), err: reason}
 		return writeAgentRun(ctx, st, p, rec, "done")
 	}
-	stepper, err := model.NewOpenAI(model.OpenAIConfig{
-		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true,
-	})
+	stepper, err := gatewayStepper(p, secrets)
 	if err != nil {
-		return fmt.Errorf("runner: %w", err)
+		return err
 	}
 	run, cleanup := commandTool(ctx, p, agent.NewTree(head, ignore), p.Agent.limits().MaxToolOutputBytes, logger)
 	defer cleanup()
@@ -170,6 +192,16 @@ func runAgentic(
 	if run != nil {
 		sources = run.Sources()
 	}
+	return recordAgent(ctx, st, p, secrets, res, timeline, sources, nil, logger)
+}
+
+// recordAgent writes the agent's agent_runs row, with notes on what the
+// run's context left out, and marks the run done, or failed when ctx ended
+// it.
+func recordAgent(
+	ctx context.Context, st *store.Store, p Spec, secrets Secrets, res agent.Result, timeline []store.TimelineStep, sources, notes []string,
+	logger *slog.Logger,
+) error {
 	if cerr := ctx.Err(); cerr != nil {
 		// The run was cancelled, deleted or ran out of Job time: what the
 		// agent spent so far is still spent, so the row is written on a
@@ -180,7 +212,7 @@ func runAgentic(
 		}
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), canceledWriteTimeout)
 		defer cancel()
-		rec, err := newAgentRecord(res, timeline, sources, secrets)
+		rec, err := newAgentRecord(res, timeline, sources, notes, secrets)
 		if err == nil {
 			err = writeAgentRun(wctx, st, p, rec, "failed")
 		}
@@ -188,7 +220,7 @@ func runAgentic(
 			"cost_usd", res.CostUSD, "error", err)
 		return errors.Join(fmt.Errorf("runner: agent: %w", cerr), err)
 	}
-	rec, err := newAgentRecord(res, timeline, sources, secrets)
+	rec, err := newAgentRecord(res, timeline, sources, notes, secrets)
 	if err != nil {
 		return err
 	}
@@ -213,13 +245,20 @@ type agentRecord struct {
 	// and the worker then names the model the run was granted.
 	model string
 	err   string
+	// notes say what a task run's context left out.
+	notes []string
 }
 
 // newAgentRecord encodes a finished Run and the sources its commands
 // fetched. The error text and the sources are masked: an error may carry a
 // token, and the worker shows both.
-func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []string, secrets Secrets) (agentRecord, error) {
-	rec := agentRecord{stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, model: res.Model, err: secrets.Mask(res.Err)}
+func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources, notes []string, secrets Secrets) (agentRecord, error) {
+	rec := agentRecord{
+		stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, model: res.Model, err: secrets.Mask(res.Err), notes: []string{},
+	}
+	for _, n := range notes {
+		rec.notes = append(rec.notes, secrets.Mask(n))
+	}
 	masked := make([]string, len(sources))
 	for i, s := range sources {
 		masked[i] = secrets.Mask(s)
@@ -245,11 +284,12 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 	return st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, tenant_id, stop_reason, result, steps, tool_calls, timeline,
-				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources)
-			SELECT id, tenant_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14 FROM runner_runs WHERE id = $1`,
+				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources, notes)
+			SELECT id, tenant_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, coalesce($15, '{}'::text[])
+			FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
 			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
-			rec.sources)
+			rec.sources, rec.notes)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}

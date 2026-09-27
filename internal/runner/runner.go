@@ -41,8 +41,11 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 		<-beating
 	}()
 	run := runReview
-	if spec.Kind == KindIndex {
+	switch spec.Kind {
+	case KindIndex:
 		run = runIndex
+	case KindTask:
+		run = runTask
 	}
 	err := run(ctx, st, spec, secrets, logger)
 	if err != nil {

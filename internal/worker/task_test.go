@@ -13,9 +13,11 @@ import (
 	"github.com/riverqueue/river"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/tasks"
 )
@@ -99,16 +101,49 @@ func TestMatchTasksAndJobs(t *testing.T) {
 	}
 }
 
-func TestUnsupportedMode(t *testing.T) {
+func TestTaskPrompt(t *testing.T) {
 	ts := taskDefs(t, `
-- {name: single, mode: single, on: [{issue: []}]}
-- {name: agentic, mode: agentic, on: [{issue: []}]}
-- {name: unset, on: [{issue: []}]}
+- name: tools
+  on: [{issue: []}]
+  agent: {tools: [grep, run], commands: [rg]}
+  context:
+    files: [{path: README.md}, {glob: "docs/*.md", max: 3}]
+    commands: [{name: owners, run: "cat  .github/CODEOWNERS"}, {name: search, run: "rg -n TODO"}]
+- {name: defaults, on: [{issue: []}]}
+- {name: commands-without-run, on: [{issue: []}], agent: {tools: [grep], commands: [rg]}}
 `)
-	for i, want := range []string{"", taskSkipAgentic, taskSkipAgentic} {
-		t.Run(ts[i].Name, func(t *testing.T) {
-			if got := unsupportedMode(&ts[i]); got != want {
-				t.Fatalf("unsupportedMode = %q, want %q", got, want)
+	bounds := configfile.Settings{TaskBounds: tasks.Bounds{Tools: []string{"read_file", "list_files", "shell"}}}
+	tests := []struct {
+		task         *tasks.Task
+		want         runner.TaskPrompt
+		wantCommands []string
+	}{
+		{&ts[0], runner.TaskPrompt{
+			Name: "tools", System: "sys", User: "user", Schema: []byte(`{}`), Tools: []string{"grep"}, Run: []string{"rg"},
+			Files: []runner.TaskFiles{{Glob: "docs/*.md", Max: 3}},
+			Commands: []runner.TaskCommand{
+				{Name: "owners", Argv: []string{"cat", ".github/CODEOWNERS"}}, {Name: "search", Argv: []string{"rg", "-n", "TODO"}},
+			},
+			SourceBytes: taskSourceBytes, ContextBytes: 100,
+		}, []string{"cat", "rg"}},
+		{&ts[1], runner.TaskPrompt{
+			Name: "defaults", System: "sys", User: "user", Schema: []byte(`{}`), Tools: []string{"read_file", "list_files"},
+			SourceBytes: taskSourceBytes, ContextBytes: 100,
+		}, nil},
+		{&ts[2], runner.TaskPrompt{
+			Name: "commands-without-run", System: "sys", User: "user", Schema: []byte(`{}`), Tools: []string{"grep"},
+			SourceBytes: taskSourceBytes, ContextBytes: 100,
+		}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.task.Name, func(t *testing.T) {
+			r := &taskRunner{task: tt.task, settings: bounds, contextLeft: 100}
+			got := r.taskPrompt("sys", "user", []byte(`{}`))
+			if !reflect.DeepEqual(*got, tt.want) {
+				t.Fatalf("taskPrompt = %+v\nwant %+v", *got, tt.want)
+			}
+			if cs := taskCommands(got); !reflect.DeepEqual(cs, tt.wantCommands) {
+				t.Fatalf("taskCommands = %q, want %q", cs, tt.wantCommands)
 			}
 		})
 	}

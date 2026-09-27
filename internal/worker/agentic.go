@@ -39,6 +39,8 @@ type agentRun struct {
 	model   string
 	errText string
 	sources []string
+	// notes say what a task run's context left out in the runner.
+	notes []string
 }
 
 // stopError is nil for a run that submitted a review, and otherwise the
@@ -179,13 +181,13 @@ func (w *Review) agentPrompt(
 
 // loadAgentRun reads the agent_runs row of a runner run; found is false
 // when the runner wrote none.
-func (w *Review) loadAgentRun(ctx context.Context, tenantID, runID string) (run agentRun, found bool, err error) {
+func (b *Base) loadAgentRun(ctx context.Context, tenantID, runID string) (run agentRun, found bool, err error) {
 	var stop string
-	err = w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err = b.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT stop_reason, result::text, steps, input_tokens, cache_read_tokens, cache_write_tokens,
-			output_tokens, cost_usd::float8, model, error, sources FROM agent_runs WHERE runner_run_id = $1`, runID).
+			output_tokens, cost_usd::float8, model, error, sources, notes FROM agent_runs WHERE runner_run_id = $1`, runID).
 			Scan(&stop, &run.result, &run.steps, &run.usage.Input, &run.usage.CacheRead, &run.usage.CacheWrite,
-				&run.usage.Output, &run.costUSD, &run.model, &run.errText, &run.sources)
+				&run.usage.Output, &run.costUSD, &run.model, &run.errText, &run.sources, &run.notes)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return agentRun{}, false, nil
@@ -206,12 +208,12 @@ func (w *Review) loadAgentRun(ctx context.Context, tenantID, runID string) (run 
 // pod records how its agent stopped while it terminates. await waits for
 // that, until the run settles or agentRowWait passes. ctx's cancellation is
 // not inherited, so a job River cancels still reads the row.
-func (w *Review) readAgentRun(ctx context.Context, tenantID, runID string, ref configfile.ModelRef, await bool) (*agentRun, error) {
+func (b *Base) readAgentRun(ctx context.Context, tenantID, runID string, ref configfile.ModelRef, await bool) (*agentRun, error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agentRowWait+10*time.Second)
 	defer cancel()
-	run, found, err := w.loadAgentRun(ctx, tenantID, runID)
+	run, found, err := b.loadAgentRun(ctx, tenantID, runID)
 	if err == nil && !found && await {
-		run, found, err = w.awaitAgentRun(ctx, tenantID, runID)
+		run, found, err = b.awaitAgentRun(ctx, tenantID, runID)
 	}
 	if err != nil || !found {
 		return nil, err
@@ -261,10 +263,10 @@ func (w *Review) agentSpec(
 // revokeGatewayTokens ends the run's token once its runner is done, on a
 // context of its own since the job's may have ended. A token not revoked
 // still expires on its own.
-func (w *Review) revokeGatewayTokens(ctx context.Context, logger *slog.Logger, runID string) {
+func (b *Base) revokeGatewayTokens(ctx context.Context, logger *slog.Logger, runID string) {
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
-	if err := w.Store.RevokeGatewayTokens(rctx, runID); err != nil {
+	if err := b.Store.RevokeGatewayTokens(rctx, runID); err != nil {
 		logger.Warn("gateway token not revoked", "error", err)
 	}
 }
@@ -284,11 +286,11 @@ const agentRowPoll = time.Second
 
 // awaitAgentRun polls for a run's agent_runs row until it appears, the
 // run's phase settles without one, or agentRowWait passes.
-func (w *Review) awaitAgentRun(ctx context.Context, tenantID, runID string) (agentRun, bool, error) {
+func (b *Base) awaitAgentRun(ctx context.Context, tenantID, runID string) (agentRun, bool, error) {
 	deadline := time.After(agentRowWait)
 	for {
 		var phase string
-		err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := b.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT phase FROM runner_runs WHERE id = $1`, runID).Scan(&phase)
 		})
 		if err != nil {
@@ -296,7 +298,7 @@ func (w *Review) awaitAgentRun(ctx context.Context, tenantID, runID string) (age
 		}
 		// The runner writes its agent row before it settles the phase.
 		settled := phase == "done" || phase == "failed"
-		run, found, err := w.loadAgentRun(ctx, tenantID, runID)
+		run, found, err := b.loadAgentRun(ctx, tenantID, runID)
 		if err != nil || found || settled {
 			return run, found, err
 		}

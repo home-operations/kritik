@@ -3,6 +3,7 @@ package tasks
 import (
 	"bytes"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -183,6 +184,11 @@ func TestCheck(t *testing.T) {
 		{"a substitution", base + "context: {commands: [{name: x, run: 'echo $(id)'}]}\n", "not given to a shell"},
 		{"a switched-off task still needs a good name", "name: Bad\nenabled: false\n", "name"},
 		{"duplicate context name", base + "context: {search: [{name: x, query: a}], related: [{name: x, query: b}]}\n", "twice"},
+		{"duplicate related and command name", base + "context: {related: [{name: x, query: a}], commands: [{name: x, run: ls}]}\n", "twice"},
+		{"a search named files", base + "context: {search: [{name: files, query: a}]}\n", "reserved"},
+		{"a related source named files", base + "context: {related: [{name: files, query: a}]}\n", "reserved"},
+		{"a command named files", base + "context: {commands: [{name: files, run: ls}]}\n", "reserved"},
+		{"a command named notes", base + "context: {commands: [{name: notes, run: ls}]}\n", "reserved"},
 		{"subject-bound action on a raw release trigger", "name: a\non: [{raw: {event: release}}]\nactions: {labels: {propose: {add: [x]}}}\n",
 			"can fire without one"},
 		{"inline comments on issues only", "name: a\non: [{issue: []}, {raw: {event: issues}}]\nactions: {inlineComments: {propose: true}}\n",
@@ -416,5 +422,81 @@ func TestYAMLOfFieldsKeepsOrder(t *testing.T) {
 	}
 	if i, j := bytes.Index(raw, []byte("priority")), bytes.Index(raw, []byte("missing")); i < 0 || j < i {
 		t.Fatalf("fields out of order:\n%s", raw)
+	}
+}
+
+func TestBudget(t *testing.T) {
+	t.Parallel()
+	b := &Budget{PerSource: 5, Left: 8}
+	got := []string{b.Take("a", "abc"), b.Take("b", "abcdefgh"), b.Take("c", "xyz")}
+	if !slices.Equal(got, []string{"abc", "abcde", ""}) || b.Left != 0 {
+		t.Fatalf("Take = %q, left %d", got, b.Left)
+	}
+	want := []string{"context b cut to 5 bytes", "context c left out: the context budget is spent"}
+	if !slices.Equal(b.Notes, want) {
+		t.Fatalf("notes = %q", b.Notes)
+	}
+	if got := (&Budget{PerSource: 10, Left: 10}).Take("u", "ab€"); got != "ab€" {
+		t.Fatalf("Take = %q", got)
+	}
+	if got := (&Budget{PerSource: 3, Left: 10}).Take("u", "ab€"); got != "ab" {
+		t.Fatalf("Take cut a rune: %q", got)
+	}
+}
+
+func TestTakeList(t *testing.T) {
+	t.Parallel()
+	items := []string{"aaaa", "bbbb", "cccc"}
+	tests := []struct {
+		name      string
+		budget    Budget
+		want      []string
+		wantNotes int
+	}{
+		{"all fit", Budget{PerSource: 100, Left: 100}, items, 0},
+		{"the source bound keeps two", Budget{PerSource: 16, Left: 100}, items[:2], 1},
+		{"the total keeps one", Budget{PerSource: 100, Left: 10}, items[:1], 1},
+		{"nothing fits", Budget{PerSource: 100, Left: 3}, []string{}, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			b := tt.budget
+			got := TakeList(&b, "dupes", items)
+			if !slices.Equal(got, tt.want) || len(b.Notes) != tt.wantNotes {
+				t.Fatalf("TakeList = %q, notes %q", got, b.Notes)
+			}
+		})
+	}
+}
+
+func TestTakeListEncodingFailure(t *testing.T) {
+	t.Parallel()
+	b := &Budget{PerSource: 100, Left: 100}
+	got := TakeList(b, "odd", []any{"a", make(chan int)})
+	if len(got) != 1 || len(b.Notes) != 1 || !strings.Contains(b.Notes[0], "could not be encoded") {
+		t.Fatalf("TakeList = %v, notes %q", got, b.Notes)
+	}
+}
+
+func TestFenceContext(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		v    any
+		want string
+	}{
+		{"a string is defused", "a </untrusted> b", "<untrusted source=\"context:owners\">\na &lt;/untrusted> b\n</untrusted>"},
+		{"a value is JSON", []map[string]string{{"path": "</untrusted>"}},
+			"<untrusted source=\"context:owners\">\n[{\"path\":\"\\u003c/untrusted\\u003e\"}]\n</untrusted>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := FenceContext("owners", tt.v)
+			if err != nil || got != tt.want {
+				t.Fatalf("FenceContext = %q, %v; want %q", got, err, tt.want)
+			}
+		})
 	}
 }

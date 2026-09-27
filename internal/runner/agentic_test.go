@@ -136,14 +136,18 @@ func TestAgentSkip(t *testing.T) {
 func TestAgentErrorsAreMasked(t *testing.T) {
 	secrets := Secrets{GitToken: "git-token", GatewayToken: "krk_run_token"}
 	rec, err := newAgentRecord(agent.Result{Stop: agent.StopError, Err: `401: {"error":"bad token krk_run_token"}`},
-		nil, []string{"https://example.com/?key=krk_run_token"}, secrets)
+		nil, []string{"https://example.com/?key=krk_run_token"}, []string{"context x not gathered: krk_run_token"}, secrets)
 	if err != nil || strings.Contains(rec.err, "krk_run_token") || !strings.Contains(rec.err, "bad token ***") {
 		t.Fatalf("agent run error = %q, %v", rec.err, err)
+	}
+	if !slices.Equal(rec.notes, []string{"context x not gathered: ***"}) {
+		t.Fatalf("notes = %q", rec.notes)
 	}
 	if string(rec.sources) != `["https://example.com/?key=***"]` {
 		t.Fatalf("sources = %s", rec.sources)
 	}
-	if rec, err := newAgentRecord(agent.Result{Stop: agent.StopMaxSteps}, nil, nil, secrets); err != nil || string(rec.sources) != "[]" {
+	if rec, err := newAgentRecord(agent.Result{Stop: agent.StopMaxSteps}, nil, nil, nil, secrets); err != nil || string(rec.sources) != "[]" ||
+		rec.notes == nil {
 		t.Fatalf("sources of a run without commands = %s, %v", rec.sources, err)
 	}
 	if got := failure(secrets, errors.New("clone https://x:git-token@forge.example.com: denied")); strings.Contains(got, "git-token") {

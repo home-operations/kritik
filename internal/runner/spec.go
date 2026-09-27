@@ -12,6 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/repoconfig"
@@ -37,10 +39,12 @@ const (
 	KindReview Kind = "review"
 	// KindIndex chunks a tree into the index staging table.
 	KindIndex Kind = "index"
+	// KindTask runs an agentic task over the tree of one commit.
+	KindTask Kind = "task"
 )
 
 // Valid reports whether k is a kind of run the runner implements.
-func (k Kind) Valid() bool { return k == KindReview || k == KindIndex }
+func (k Kind) Valid() bool { return k == KindReview || k == KindIndex || k == KindTask }
 
 func (k Kind) String() string { return string(k) }
 
@@ -108,6 +112,73 @@ type Prompt struct {
 	UnchangedPatchID string `json:"unchangedPatchId,omitempty"`
 }
 
+// TaskTools are the read-only agent tools a task may use.
+var TaskTools = []string{"read_file", "grep", "list_files"}
+
+// TaskPrompt is what an agentic task's run needs beyond the checkout: the
+// prompts and answer schema the worker rendered, which the runner uses as
+// given, and the context sources only a checkout can gather.
+type TaskPrompt struct {
+	// Name is the task's.
+	Name   string          `json:"name"`
+	System string          `json:"system"`
+	User   string          `json:"user"`
+	Schema json.RawMessage `json:"schema"`
+	// Tools are the TaskTools the agent is offered.
+	Tools []string `json:"tools,omitempty"`
+	// Run are the commands the agent's run tool offers, of Agent.Commands.
+	Run []string `json:"run,omitempty"`
+	// Files are globs whose matching files are gathered before the agent
+	// starts, and Commands commands whose output is.
+	Files    []TaskFiles   `json:"files,omitempty"`
+	Commands []TaskCommand `json:"commands,omitempty"`
+	// SourceBytes caps one gathered source, ContextBytes all of them.
+	SourceBytes  int `json:"sourceBytes"`
+	ContextBytes int `json:"contextBytes"`
+}
+
+// TaskFiles is up to Max files matching Glob.
+type TaskFiles struct {
+	Glob string `json:"glob"`
+	Max  int    `json:"max,omitempty"`
+}
+
+// TaskCommand is a named command line, its binary first, run without a
+// shell.
+type TaskCommand struct {
+	Name string   `json:"name"`
+	Argv []string `json:"argv"`
+}
+
+// validate checks the task's tools and commands are ones its agent limits
+// allow.
+func (t *TaskPrompt) validate(commands []string) error {
+	if t.User == "" || !json.Valid(t.Schema) || !bytes.HasPrefix(bytes.TrimSpace(t.Schema), []byte("{")) {
+		return errors.New("runner: a task spec needs a prompt and an answer schema")
+	}
+	for _, tool := range t.Tools {
+		if !slices.Contains(TaskTools, tool) {
+			return fmt.Errorf("runner: task tool %q is not one of %s", tool, strings.Join(TaskTools, ", "))
+		}
+	}
+	for _, c := range t.Run {
+		if !slices.Contains(commands, c) {
+			return fmt.Errorf("runner: task run command %q is not in the agent's commands", c)
+		}
+	}
+	for _, c := range t.Commands {
+		if len(c.Argv) == 0 || !slices.Contains(commands, c.Argv[0]) {
+			return fmt.Errorf("runner: task command %q does not run one of the agent's commands", c.Name)
+		}
+	}
+	for _, f := range t.Files {
+		if !doublestar.ValidatePattern(f.Glob) {
+			return fmt.Errorf("runner: task file glob %q is not valid", f.Glob)
+		}
+	}
+	return nil
+}
+
 // Spec is the job document a worker hands a runner: everything the run
 // needs except its secrets.
 type Spec struct {
@@ -132,6 +203,8 @@ type Spec struct {
 	Agent     *AgentLimits   `json:"agent,omitempty"`
 	Model     *ModelEndpoint `json:"model,omitempty"`
 	Prompt    *Prompt        `json:"prompt,omitempty"`
+	// Task is a KindTask run's.
+	Task *TaskPrompt `json:"task,omitempty"`
 }
 
 // Validate checks a spec is one this runner can carry out.
@@ -140,7 +213,7 @@ func (s Spec) Validate() error {
 		return fmt.Errorf("runner: spec version %d is not supported (want %d)", s.Version, SpecVersion)
 	}
 	if !s.Kind.Valid() {
-		return fmt.Errorf("runner: spec kind %q is not review or index", s.Kind)
+		return fmt.Errorf("runner: spec kind %q is not review, index or task", s.Kind)
 	}
 	if !s.Mode.Valid() {
 		return fmt.Errorf("runner: spec mode %q is not single or agentic", s.Mode)
@@ -166,7 +239,7 @@ func (s Spec) Validate() error {
 		if s.Model == nil || s.Model.Model == "" || s.Model.GatewayURL == "" {
 			return errors.New("runner: an agentic spec needs a model and the gateway to reach it through")
 		}
-		if s.Prompt == nil {
+		if s.Kind == KindReview && s.Prompt == nil {
 			return errors.New("runner: an agentic spec needs a prompt")
 		}
 		if len(s.Agent.Commands) > 0 && s.Agent.CommandTimeoutSeconds <= 0 {
@@ -178,6 +251,12 @@ func (s Spec) Validate() error {
 				return fmt.Errorf("runner: spec command %q is not a bare command name", c)
 			}
 		}
+	}
+	if s.Kind == KindTask {
+		if s.Mode != ModeAgentic || s.Task == nil {
+			return errors.New("runner: a task spec needs agentic mode and a task")
+		}
+		return s.Task.validate(s.Agent.Commands)
 	}
 	return nil
 }

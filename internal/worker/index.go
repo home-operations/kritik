@@ -139,9 +139,9 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runnerRunID,
 		Labels: map[string]string{
-			"tenant": tenant.Slug, "repository": repo.name, "kind": jobs.QueueIndex,
+			labelTenant: tenant.Slug, labelRepository: repo.name, labelKind: jobs.QueueIndex,
 		},
-		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": commit},
+		Annotations: map[string]string{annotationJob: strconv.FormatInt(job.ID, 10), annotationHead: commit},
 		Job: runner.Spec{
 			Version: runner.SpecVersion, Kind: runner.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name),
 			Head: commit, Base: base, Ignore: eff.Ignore,

@@ -197,6 +197,38 @@ func TestRunToolDef(t *testing.T) {
 	}
 }
 
+func TestRunToolOnly(t *testing.T) {
+	rt, _ := newTestRunTool(t, false)
+	tests := []struct {
+		name  string
+		names []string
+		want  []string
+	}{
+		{"subset", []string{"rg"}, []string{"rg"}},
+		{"unknown names left out", []string{"rg", "fd"}, []string{"rg"}},
+		{"none offered", []string{"fd"}, nil},
+		{"empty", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := rt.Only(tt.names)
+			if tt.want == nil {
+				if got != nil {
+					t.Fatalf("Only(%q) = %q, want nil", tt.names, got.Names())
+				}
+				return
+			}
+			if got == nil || !slices.Equal(got.Names(), tt.want) {
+				t.Fatalf("Only(%q) = %v, want %q", tt.names, got, tt.want)
+			}
+		})
+	}
+	out, err := rt.Only([]string{"rg"}).Run(t.Context(), json.RawMessage(`{"command":"curl"}`))
+	if err == nil {
+		t.Fatalf("a command Only left out ran: %q", out)
+	}
+}
+
 func TestCheckout(t *testing.T) {
 	t.Run("writes what the commands may read", func(t *testing.T) {
 		dir := t.TempDir()

@@ -102,17 +102,19 @@ type Run struct {
 	System  string
 	User    string
 	Tools   []Tool
-	// Submit is the submit_review tool; its schema is the review contract.
-	// The loop never runs it: a call to Submit ends the Run.
+	// Submit is the tool whose input is the Run's answer, such as
+	// submit_review with the review contract as its schema. The loop never
+	// runs it: a call to Submit ends the Run.
 	Submit model.ToolDef
 	Limits Limits
 	// OnStep, if set, is called after each step completes.
 	OnStep func(StepEvent)
 }
 
-// nudgeText is appended once, as a user message, after the first turn with
-// no tool call, before a second such turn ends the Run.
-const nudgeText = "call submit_review"
+// nudgeText, followed by the Submit tool's name, is appended once, as a
+// user message, after the first turn with no tool call, before a second
+// such turn ends the Run.
+const nudgeText = "call "
 
 // noResponseText replaces an empty Text on an appended assistant message, so
 // the conversation never carries a message with neither text nor tool calls.
@@ -203,7 +205,7 @@ func (r Run) Do(ctx context.Context) Result {
 				text = noResponseText
 			}
 			messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
-			messages = append(messages, model.Message{Role: model.RoleUser, Text: nudgeText})
+			messages = append(messages, model.Message{Role: model.RoleUser, Text: nudgeText + r.Submit.Name})
 			continue
 		}
 
@@ -224,7 +226,7 @@ func (r Run) Do(ctx context.Context) Result {
 					}
 					toolResults = append(toolResults, model.ToolResult{
 						CallID: call.ID, IsError: true,
-						Content: truncate(fmt.Sprintf("agent: submit_review: invalid JSON: %s", err), limits.MaxToolOutputBytes),
+						Content: truncate(fmt.Sprintf("agent: %s: invalid JSON: %s", r.Submit.Name, err), limits.MaxToolOutputBytes),
 					})
 					continue
 				}
