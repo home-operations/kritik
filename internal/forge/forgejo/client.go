@@ -268,21 +268,20 @@ func (c *Client) BotLogin(ctx context.Context) (string, error) {
 	return c.login, nil
 }
 
-// FindComment implements forge.Client, returning the id of the newest
-// conversation comment by login whose body contains marker, or 0 if none
-// matches.
+// FindComment implements forge.Client, returning the id of the first
+// (oldest) conversation comment by login whose body contains marker, as
+// GitHub's does, or 0 if none matches.
 func (c *Client) FindComment(ctx context.Context, owner, repo string, number int, login, marker string) (int64, error) {
 	comments, err := c.ListConversation(ctx, owner, repo, number)
 	if err != nil {
 		return 0, err
 	}
-	var found int64
 	for _, cm := range comments {
 		if cm.Author == login && strings.Contains(cm.Body, marker) {
-			found = cm.ID
+			return cm.ID, nil
 		}
 	}
-	return found, nil
+	return 0, nil
 }
 
 // ListConversation implements forge.Client.
@@ -296,7 +295,9 @@ func (c *Client) ListConversation(ctx context.Context, owner, repo string, numbe
 	for _, cm := range raw {
 		out = append(out, conversationComment(cm))
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	// Stable: Forgejo's times are whole seconds, and it lists comments
+	// made in the same second in the order they were made.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
 	return out, nil
 }
 
