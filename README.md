@@ -78,6 +78,13 @@ Security notes:
   `token`: runners fetch with `gitToken` when it is set, and otherwise with
   `token`, which can write to the forge.
 
+Tasks (`allow.tasks.enabled`) write to issues and pull requests: a GitHub App
+running them needs the Issues and Pull requests permissions at read and
+write, and must subscribe to the Issues and Issue comment events, plus any
+other event a task's `raw` trigger names. A Forgejo or Gitea `token` needs
+the same issue and pull request write scopes, and its webhook the same
+events.
+
 ## Documentation
 
 - [Chart values](charts/kritik/README.md)

@@ -227,6 +227,8 @@ func run() error {
 			GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
 		})
 		river.AddWorker(workers, &worker.FollowUp{Base: base, Completers: completers})
+		river.AddWorker(workers, &worker.TaskDispatch{Base: base})
+		river.AddWorker(workers, &worker.Task{Base: base, Completers: completers})
 		river.AddWorker(workers, &worker.Index{
 			Base: base, Executor: exec, Embedder: embedder, EmbedModel: cfg.EmbedModel, EmbedDims: cfg.EmbedDims,
 		})
@@ -238,6 +240,7 @@ func run() error {
 			Queues: map[string]river.QueueConfig{
 				jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
 				jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
+				jobs.QueueTask:     {MaxWorkers: cfg.ReviewWorkers},
 				jobs.QueueIndex:    {MaxWorkers: cfg.IndexWorkers},
 			},
 			Workers: workers,
@@ -446,8 +449,8 @@ func lead(
 	if cfg.EmbeddingEnabled() {
 		go onboarder.Run(pollCtx)
 	}
-	// And so is retention: model-call transcripts past their configured
-	// window and the indexes of repositories disabled past their grace
+	// And so is retention: model-call transcripts and task events past
+	// their configured window and the indexes of repositories disabled past their grace
 	// (owner pool, bypassing row-level security), and expired dashboard
 	// sessions (app pool).
 	go retentionSweep(pollCtx, st, current, retentionSweepInterval, logger)
@@ -462,7 +465,7 @@ func lead(
 }
 
 // retentionSweepInterval is how often the leader deletes model-call
-// transcripts, disabled repositories' indexes and dashboard sessions past
+// transcripts, task events, disabled repositories' indexes and dashboard sessions past
 // their retention window.
 const retentionSweepInterval = time.Hour
 
@@ -470,13 +473,14 @@ const retentionSweepInterval = time.Hour
 // narrowed so it can be exercised in tests with a fake.
 type retentionStore interface {
 	SweepModelCalls(ctx context.Context, olderThan time.Duration) (int64, error)
+	SweepTaskEvents(ctx context.Context, olderThan time.Duration) (int64, error)
 	SweepSessions(ctx context.Context, now time.Time) (int64, error)
 	SweepDisabledIndexes(ctx context.Context, grace time.Duration) (int64, error)
 }
 
 // retentionSweep runs once immediately, then every interval until ctx ends,
-// deleting model-call transcripts older than the current file's retention
-// window and the indexes of repositories disabled for longer than its
+// deleting model-call transcripts and task events older than the current
+// file's transcript retention window and the indexes of repositories disabled for longer than its
 // disabledIndexGrace (owner pool, bypassing row-level security), and
 // expired dashboard sessions (app pool). A sweep failure is logged, never
 // fatal: it just leaves stale rows for the next tick.
@@ -490,6 +494,13 @@ func retentionSweep(ctx context.Context, st retentionStore, current *configfile.
 			}
 		} else if n > 0 {
 			logger.Info("model call transcripts swept", "rows", n)
+		}
+		if n, err := st.SweepTaskEvents(ctx, current.Get().Retention.TranscriptsOrDefault()); err != nil {
+			if ctx.Err() == nil {
+				logger.Warn("task events not swept", "error", err)
+			}
+		} else if n > 0 {
+			logger.Info("task events swept", "rows", n)
 		}
 		if n, err := st.SweepSessions(ctx, time.Now()); err != nil {
 			if ctx.Err() == nil {
