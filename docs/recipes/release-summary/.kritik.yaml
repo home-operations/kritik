@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/home-operations/kritik/main/docs/kritik.schema.json
+tasks:
+  - name: release-summary
+    # A forge-specific event; the operator must allow it, e.g. with
+    # "raw:release.*" in allow.tasks.events.
+    on:
+      - raw: { event: release, actions: [published] }
+    mode: single
+    promptInline: |
+      Summarize release {{ with .Raw.release }}{{ .tag_name }} {{ end }}of {{ .Repo.Owner }}/{{ .Repo.Name }} for its maintainers:
+      what changed, whether anything breaks, and what users must do to upgrade. The release payload follows.
+    fields:
+      breaking: { type: boolean }
+      highlights:
+        type: array
+        items: { type: string, maxLength: 200 }
+        maxItems: 5
+    # No actions: a release has no issue or pull request to write to, so the
+    # summary and fields are the dashboard's report alone.

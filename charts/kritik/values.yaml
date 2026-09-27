@@ -106,6 +106,26 @@ config:
   #     modes: [single, agentic]
   #     models: [openrouter/openai/gpt-6-sol, openrouter/openai/gpt-6-mini]
   #     settle: 10m
+  #     # Event-driven tasks (docs/adr/0012-event-tasks.md): off unless
+  #     # enabled. The rest bounds the tasks a repository's .kritik.yaml
+  #     # or a tenant admin defines; the file's own tasks below are trusted.
+  #     tasks:
+  #       enabled: true
+  #       # Normalized events by default; a raw event must be listed.
+  #       events: ["issue.*", "pull_request.*", "comment.*", "raw:release.*"]
+  #       # comment, labels and inlineComments by default; state, assign
+  #       # and reviewers must be listed.
+  #       actions: [comment, labels, inlineComments, assign]
+  #       maxRunsPerSubjectPerHour: 6
+  #   # The operator's own tasks, merged by name across defaults, tenants
+  #   # and repositories; enabled: false switches one off.
+  #   tasks:
+  #     - name: welcome
+  #       on: [{ pull_request: [opened] }]
+  #       if: 'subject.author != "renovate[bot]"'
+  #       mode: single
+  #       promptInline: Welcome the author and summarize the pull request in two sentences.
+  #       actions: { comment: { mode: sticky } }
   # # The leader's backstop for missed webhooks; interval: 0s turns it off.
   # polling: { interval: 10m, lookback: 24h }
   # # Onboarding index jobs kept queued or running at once.

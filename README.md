@@ -36,6 +36,12 @@ Kubernetes Job pod that holds no secrets.
   the last review, and `settle` folds a burst of force-pushes into one.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
   answer in the thread.
+- **Event tasks.** A repository, or the operator, declares tasks that run a
+  prompt when a forge event fires, such as triaging a new issue, labelling a
+  pull request by area or summarizing a release. The model answers with the
+  fields and actions the task declares; the worker checks each label,
+  comment, assignee or state change against the task and the operator's
+  bounds before applying it. See the [recipes](docs/repository-config.md#task-recipes).
 - **Providers and limits.** OpenRouter, OpenAI and Anthropic adapters, with
   per-tenant concurrency, daily review and monthly token caps. The provider
   key never enters a runner pod: the agent reaches its model through the
@@ -77,6 +83,13 @@ Security notes:
 - Give a Forgejo or Gitea installation a read-only `gitToken` beside its
   `token`: runners fetch with `gitToken` when it is set, and otherwise with
   `token`, which can write to the forge.
+
+Tasks are off until `allow.tasks.enabled` turns them on. They write to
+issues as well as pull requests, so a GitHub App needs the **Issues** and
+**Pull requests** permissions at read and write, and subscriptions to the
+**Issues** and **Issue comment** events (plus **Pull request** and any other
+event a task triggers on). A Forgejo or Gitea `token` needs write access to
+issues and pull requests.
 
 ## Documentation
 
