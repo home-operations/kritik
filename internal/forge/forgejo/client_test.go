@@ -196,7 +196,8 @@ func TestFindComment(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`[
 			{"id":1,"body":"unrelated","user":{"login":"someone"},"created_at":"2026-01-01T00:00:00Z"},
-			{"id":2,"body":"kritik-marker: v1","user":{"login":"kritik-bot"},"created_at":"2026-01-02T00:00:00Z"}
+			{"id":2,"body":"kritik-marker: v1","user":{"login":"kritik-bot"},"created_at":"2026-01-02T00:00:00Z"},
+			{"id":3,"body":"kritik-marker: v2","user":{"login":"kritik-bot"},"created_at":"2026-01-03T00:00:00Z"}
 		]`))
 	})
 	defer srv.Close()
