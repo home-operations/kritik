@@ -131,3 +131,41 @@ type createStatusOption struct {
 	Context     string `json:"context"`
 	Description string `json:"description"`
 }
+
+// issue is the subset of Forgejo's Issue model kritik reads. Forgejo
+// represents a pull request as an issue with a non-nil pull_request field;
+// only that field's presence, never its content, distinguishes the two here.
+type issue struct {
+	Number      int       `json:"number"`
+	Title       string    `json:"title"`
+	Body        string    `json:"body"`
+	State       string    `json:"state"`
+	User        user      `json:"user"`
+	Labels      []label   `json:"labels"`
+	Assignees   []user    `json:"assignees"`
+	PullRequest *struct{} `json:"pull_request"`
+	HTMLURL     string    `json:"html_url"`
+}
+
+// issueLabelsOption is the request body for POST
+// /repos/{owner}/{repo}/issues/{index}/labels: Forgejo accepts label names
+// directly, with no id lookup required.
+type issueLabelsOption struct {
+	Labels []string `json:"labels"`
+}
+
+// editIssueOption is the request body for PATCH
+// /repos/{owner}/{repo}/issues/{index}. State and Assignees are pointer or
+// omitempty so a call touches only the field it means to change; Assignees
+// replaces the whole list at the API level, so a caller that means to add
+// must send the merged set.
+type editIssueOption struct {
+	State     *string  `json:"state,omitempty"`
+	Assignees []string `json:"assignees,omitempty"`
+}
+
+// pullReviewRequestOptions is the request body for POST
+// /repos/{owner}/{repo}/pulls/{index}/requested_reviewers.
+type pullReviewRequestOptions struct {
+	Reviewers []string `json:"reviewers"`
+}

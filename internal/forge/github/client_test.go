@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -316,5 +317,167 @@ func TestAPIBaseAndTruncate(t *testing.T) {
 	}
 	if truncate("short", 140) != "short" {
 		t.Fatal("truncate must leave short text alone")
+	}
+}
+
+func TestIssue(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("GET /api/v3/repos/o/r/issues/7", 200, `{
+		"number":7,"title":"t","body":"b","state":"open",
+		"user":{"login":"u"},"labels":[{"name":"bug"}],"assignees":[{"login":"a"}],
+		"html_url":"https://github.com/o/r/issues/7"
+	}`)
+	f.reply("GET /api/v3/repos/o/r/issues/8", 200, `{
+		"number":8,"title":"pr","state":"open","user":{"login":"u"},
+		"html_url":"https://github.com/o/r/pull/8","pull_request":{}
+	}`)
+	iss, err := c.Issue(t.Context(), "o", "r", 7)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	want := forge.Issue{
+		Number: 7, Title: "t", Body: "b", State: "open", Author: "u",
+		Labels: []string{"bug"}, Assignees: []string{"a"}, IsPull: false,
+		URL: "https://github.com/o/r/issues/7",
+	}
+	if !reflect.DeepEqual(iss, want) {
+		t.Fatalf("Issue = %+v, want %+v", iss, want)
+	}
+	pr, err := c.Issue(t.Context(), "o", "r", 8)
+	if err != nil || !pr.IsPull {
+		t.Fatalf("Issue(pull request) = %+v, %v; want IsPull", pr, err)
+	}
+}
+
+func TestRepoLabelsPaginates(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/labels", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("page") == "2" {
+			_, _ = w.Write([]byte(`[{"name":"c"}]`))
+			return
+		}
+		w.Header().Set("Link", `<`+"http://x"+r.URL.Path+`?page=2>; rel="next"`)
+		_, _ = w.Write([]byte(`[{"name":"a"},{"name":"b"}]`))
+	})
+	labels, err := c.RepoLabels(t.Context(), "o", "r")
+	if err != nil || !reflect.DeepEqual(labels, []string{"a", "b", "c"}) {
+		t.Fatalf("RepoLabels = %v, %v", labels, err)
+	}
+}
+
+func TestAddLabelsAndRemoveLabel(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("POST /api/v3/repos/o/r/issues/7/labels", 200, `[{"name":"bug"}]`)
+	if err := c.AddLabels(t.Context(), "o", "r", 7, []string{"bug"}); err != nil {
+		t.Fatalf("AddLabels: %v", err)
+	}
+	body := f.bodies["POST /api/v3/repos/o/r/issues/7/labels"].([]any)
+	if len(body) != 1 || body[0] != "bug" {
+		t.Fatalf("AddLabels body = %v, want a bare array", body)
+	}
+	before := len(f.requests)
+	if err := c.AddLabels(t.Context(), "o", "r", 7, nil); err != nil || len(f.requests) != before {
+		t.Fatalf("AddLabels with no labels must be a no-op: err=%v, requests before=%d after=%d", err, before, len(f.requests))
+	}
+
+	f.reply("DELETE /api/v3/repos/o/r/issues/7/labels/bug", 200, `[]`)
+	f.reply("DELETE /api/v3/repos/o/r/issues/7/labels/gone", 404, `{"message":"Label does not exist"}`)
+	f.reply("DELETE /api/v3/repos/o/r/issues/7/labels/boom", 500, `{"message":"boom"}`)
+	cases := []struct {
+		name    string
+		label   string
+		wantErr bool
+	}{
+		{"applied label removed", "bug", false},
+		{"label not applied is not an error", "gone", false},
+		{"server error is an error", "boom", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := c.RemoveLabel(t.Context(), "o", "r", 7, tc.label)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("RemoveLabel(%s) = %v, wantErr %v", tc.label, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestSetState(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("PATCH /api/v3/repos/o/r/issues/7", 200, `{"number":7}`)
+	cases := []struct {
+		name  string
+		open  bool
+		state string
+	}{
+		{"open", true, "open"},
+		{"closed", false, "closed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := c.SetState(t.Context(), "o", "r", 7, tc.open); err != nil {
+				t.Fatalf("SetState: %v", err)
+			}
+			body := f.bodies["PATCH /api/v3/repos/o/r/issues/7"].(map[string]any)
+			if body["state"] != tc.state {
+				t.Fatalf("SetState(%v) body = %v, want state %q", tc.open, body, tc.state)
+			}
+		})
+	}
+}
+
+func TestAddAssignees(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("POST /api/v3/repos/o/r/issues/7/assignees", 200, `{"number":7,"assignees":[{"login":"a"}]}`)
+	if err := c.AddAssignees(t.Context(), "o", "r", 7, []string{"a"}); err != nil {
+		t.Fatalf("AddAssignees: %v", err)
+	}
+	body := f.bodies["POST /api/v3/repos/o/r/issues/7/assignees"].(map[string]any)
+	assignees := body["assignees"].([]any)
+	if len(assignees) != 1 || assignees[0] != "a" {
+		t.Fatalf("AddAssignees body = %v", body)
+	}
+	before := len(f.requests)
+	if err := c.AddAssignees(t.Context(), "o", "r", 7, nil); err != nil || len(f.requests) != before {
+		t.Fatalf("AddAssignees with no logins must be a no-op: err=%v", err)
+	}
+}
+
+func TestRequestReviewers(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("POST /api/v3/repos/o/r/pulls/7/requested_reviewers", 200, `{"number":7}`)
+	if err := c.RequestReviewers(t.Context(), "o", "r", 7, []string{"rev"}); err != nil {
+		t.Fatalf("RequestReviewers: %v", err)
+	}
+	body := f.bodies["POST /api/v3/repos/o/r/pulls/7/requested_reviewers"].(map[string]any)
+	reviewers := body["reviewers"].([]any)
+	if len(reviewers) != 1 || reviewers[0] != "rev" {
+		t.Fatalf("RequestReviewers body = %v", body)
+	}
+	before := len(f.requests)
+	if err := c.RequestReviewers(t.Context(), "o", "r", 7, nil); err != nil || len(f.requests) != before {
+		t.Fatalf("RequestReviewers with no logins must be a no-op: err=%v", err)
+	}
+}
+
+func TestSearchIssues(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.mux.HandleFunc("GET /api/v3/search/issues", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("q"); got != "repo:o/r is:open" {
+			t.Errorf("q = %q", got)
+		}
+		if got := r.URL.Query().Get("per_page"); got != "1" {
+			t.Errorf("per_page = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[
+			{"number":1,"title":"a","state":"open","user":{"login":"u"},"html_url":"https://x/1"},
+			{"number":2,"title":"b","state":"open","user":{"login":"u"},"html_url":"https://x/2"}
+		]}`))
+	})
+	iss, err := c.SearchIssues(t.Context(), "o", "r", "is:open", 1)
+	if err != nil || len(iss) != 1 || iss[0].Number != 1 {
+		t.Fatalf("SearchIssues = %+v, %v; must truncate to limit", iss, err)
 	}
 }

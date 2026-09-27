@@ -48,6 +48,22 @@ type InlineComment struct {
 	Body      string
 }
 
+// Issue is an issue or pull request as the forge holds it, in the shape a
+// task needs to read and act on one: it does not carry everything a pull
+// request review does (no diff, no branches), only what triage-style tasks
+// use.
+type Issue struct {
+	Number    int
+	Title     string
+	Body      string
+	State     string // "open" or "closed"
+	Author    string
+	Labels    []string
+	Assignees []string
+	IsPull    bool
+	URL       string
+}
+
 // StatusState is the outcome a commit status reports. kritik never reports
 // failure for a review that ran: a review informs, it does not block.
 // StatusError is the one exception, for a review that did not run to a
@@ -163,6 +179,27 @@ type Client interface {
 	// ListOpenPullRequests returns the open pull requests updated since a
 	// time, most recently updated first.
 	ListOpenPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]OpenPullRequest, error)
+
+	// Issue fetches one issue or pull request by number.
+	Issue(ctx context.Context, owner, repo string, number int) (Issue, error)
+	// RepoLabels lists the names of every label defined on the repository.
+	RepoLabels(ctx context.Context, owner, repo string) ([]string, error)
+	// AddLabels adds labels, by name, to an issue or pull request. A label
+	// already applied is not an error.
+	AddLabels(ctx context.Context, owner, repo string, number int, labels []string) error
+	// RemoveLabel removes one label, by name, from an issue or pull
+	// request. A label not currently applied is not an error.
+	RemoveLabel(ctx context.Context, owner, repo string, number int, label string) error
+	// SetState opens or closes an issue or pull request.
+	SetState(ctx context.Context, owner, repo string, number int, open bool) error
+	// AddAssignees adds logins as assignees of an issue or pull request,
+	// alongside any already assigned.
+	AddAssignees(ctx context.Context, owner, repo string, number int, logins []string) error
+	// RequestReviewers requests review from logins on a pull request.
+	RequestReviewers(ctx context.Context, owner, repo string, number int, logins []string) error
+	// SearchIssues searches issues and pull requests in one repository,
+	// returning at most limit results.
+	SearchIssues(ctx context.Context, owner, repo, query string, limit int) ([]Issue, error)
 }
 
 // CanWrite reports whether a permission level allows pushing.

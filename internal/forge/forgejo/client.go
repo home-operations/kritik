@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -599,6 +600,150 @@ func openPullRequest(pr pullRequest) forge.OpenPullRequest {
 	out.CreatedAt = pr.CreatedAt
 	for _, l := range pr.Labels {
 		out.Labels = append(out.Labels, webhook.Label{Name: l.Name, Color: l.Color})
+	}
+	return out
+}
+
+// Issue implements forge.Client.
+func (c *Client) Issue(ctx context.Context, owner, repo string, number int) (forge.Issue, error) {
+	var iss issue
+	path := fmt.Sprintf("%s/issues/%d", repoPath(owner, repo), number)
+	if err := c.do(ctx, http.MethodGet, path, nil, &iss); err != nil {
+		return forge.Issue{}, fmt.Errorf("forgejo: issue %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return issueFrom(iss), nil
+}
+
+// repoLabelsPageSize bounds each GET /labels page, for the same
+// short-page-means-last-page reasoning as reviewsPageSize.
+const repoLabelsPageSize = 50
+
+// RepoLabels implements forge.Client.
+func (c *Client) RepoLabels(ctx context.Context, owner, repo string) ([]string, error) {
+	var out []string
+	page := 1
+	for {
+		var batch []label
+		path := fmt.Sprintf("%s/labels?page=%d&limit=%d", repoPath(owner, repo), page, repoLabelsPageSize)
+		if err := c.do(ctx, http.MethodGet, path, nil, &batch); err != nil {
+			return nil, fmt.Errorf("forgejo: list labels of %s/%s: %w", owner, repo, err)
+		}
+		for _, l := range batch {
+			out = append(out, l.Name)
+		}
+		if len(batch) < repoLabelsPageSize {
+			return out, nil
+		}
+		page++
+	}
+}
+
+// AddLabels implements forge.Client.
+func (c *Client) AddLabels(ctx context.Context, owner, repo string, number int, labels []string) error {
+	if len(labels) == 0 {
+		return nil
+	}
+	path := fmt.Sprintf("%s/issues/%d/labels", repoPath(owner, repo), number)
+	if err := c.do(ctx, http.MethodPost, path, issueLabelsOption{Labels: labels}, nil); err != nil {
+		return fmt.Errorf("forgejo: add labels to %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return nil
+}
+
+// RemoveLabel implements forge.Client. A label not currently applied is not
+// an error.
+func (c *Client) RemoveLabel(ctx context.Context, owner, repo string, number int, label string) error {
+	path := fmt.Sprintf("%s/issues/%d/labels/%s", repoPath(owner, repo), number, url.PathEscape(label))
+	err := c.do(ctx, http.MethodDelete, path, nil, nil)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("forgejo: remove label %q from %s/%s#%d: %w", label, owner, repo, number, err)
+	}
+	return nil
+}
+
+// SetState implements forge.Client.
+func (c *Client) SetState(ctx context.Context, owner, repo string, number int, open bool) error {
+	state := "closed"
+	if open {
+		state = "open"
+	}
+	path := fmt.Sprintf("%s/issues/%d", repoPath(owner, repo), number)
+	if err := c.do(ctx, http.MethodPatch, path, editIssueOption{State: &state}, nil); err != nil {
+		return fmt.Errorf("forgejo: set state of %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return nil
+}
+
+// AddAssignees implements forge.Client. Forgejo's edit-issue endpoint
+// replaces the assignee list wholesale, so this fetches the issue's current
+// assignees first and merges logins into that set to satisfy the
+// interface's additive contract.
+func (c *Client) AddAssignees(ctx context.Context, owner, repo string, number int, logins []string) error {
+	if len(logins) == 0 {
+		return nil
+	}
+	current, err := c.Issue(ctx, owner, repo, number)
+	if err != nil {
+		return fmt.Errorf("forgejo: add assignees to %s/%s#%d: %w", owner, repo, number, err)
+	}
+	merged := current.Assignees
+	for _, login := range logins {
+		if !slices.Contains(merged, login) {
+			merged = append(merged, login)
+		}
+	}
+	path := fmt.Sprintf("%s/issues/%d", repoPath(owner, repo), number)
+	if err := c.do(ctx, http.MethodPatch, path, editIssueOption{Assignees: merged}, nil); err != nil {
+		return fmt.Errorf("forgejo: add assignees to %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return nil
+}
+
+// RequestReviewers implements forge.Client.
+func (c *Client) RequestReviewers(ctx context.Context, owner, repo string, number int, logins []string) error {
+	if len(logins) == 0 {
+		return nil
+	}
+	path := fmt.Sprintf("%s/pulls/%d/requested_reviewers", repoPath(owner, repo), number)
+	if err := c.do(ctx, http.MethodPost, path, pullReviewRequestOptions{Reviewers: logins}, nil); err != nil {
+		return fmt.Errorf("forgejo: request reviewers on %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return nil
+}
+
+// SearchIssues implements forge.Client, using the repo-scoped issue list
+// endpoint's free-text q parameter. The type filter is left unset so both
+// issues and pull requests come back, matching the interface's contract.
+func (c *Client) SearchIssues(ctx context.Context, owner, repo, query string, limit int) ([]forge.Issue, error) {
+	var batch []issue
+	path := fmt.Sprintf("%s/issues?q=%s&limit=%d&page=1", repoPath(owner, repo), url.QueryEscape(query), limit)
+	if err := c.do(ctx, http.MethodGet, path, nil, &batch); err != nil {
+		return nil, fmt.Errorf("forgejo: search %q in %s/%s: %w", query, owner, repo, err)
+	}
+	out := make([]forge.Issue, 0, len(batch))
+	for _, iss := range batch {
+		if len(out) == limit {
+			break
+		}
+		out = append(out, issueFrom(iss))
+	}
+	return out, nil
+}
+
+func issueFrom(iss issue) forge.Issue {
+	out := forge.Issue{
+		Number: iss.Number, Title: iss.Title, Body: iss.Body,
+		State: iss.State, Author: iss.User.Login,
+		IsPull: iss.PullRequest != nil, URL: iss.HTMLURL,
+	}
+	for _, l := range iss.Labels {
+		out.Labels = append(out.Labels, l.Name)
+	}
+	for _, a := range iss.Assignees {
+		out.Assignees = append(out.Assignees, a.Login)
 	}
 	return out
 }
