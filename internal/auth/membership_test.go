@@ -32,7 +32,7 @@ func tenant(slug string, installs ...configfile.Installation) configfile.Tenant 
 }
 
 func install(forge configfile.Forge, host, account string) configfile.Installation {
-	return configfile.Installation{Name: account + "-bot", Forge: forge, Host: host, Account: account}
+	return configfile.Installation{Name: account + "-bot", Forge: forge, Host: host, Accounts: []string{account}}
 }
 
 func TestResolve(t *testing.T) {
@@ -44,6 +44,7 @@ func TestResolve(t *testing.T) {
 		tenant("fj", install(configfile.ForgeForgejo, "code.example.org", "acme")),
 		tenant("fjuser", install(configfile.ForgeForgejo, "https://Code.Example.org", "alice")),
 		tenant("mixed", install(configfile.ForgeForgejo, "code.example.org", "nobody"), install(configfile.ForgeGitHub, "", "widgets")),
+		tenant("several", configfile.Installation{Name: "several-bot", Forge: configfile.ForgeGitHub, Accounts: []string{"nobody", "Widgets"}}),
 	}}
 	id := func(t *testing.T, slug string) string {
 		t.Helper()
@@ -66,7 +67,7 @@ func TestResolve(t *testing.T) {
 		{
 			name: "personal account is admin, org member and org admin", signIn: github, login: "alice",
 			roles: map[string]Role{"acme": RoleMember, "widgets": RoleAdmin},
-			want:  map[string]Role{"personal": RoleAdmin, "org": RoleMember, "adminorg": RoleAdmin, "mixed": RoleAdmin},
+			want:  map[string]Role{"personal": RoleAdmin, "org": RoleMember, "adminorg": RoleAdmin, "mixed": RoleAdmin, "several": RoleAdmin},
 		},
 		{
 			name: "not a member of anything", signIn: github, login: "bob",

@@ -108,13 +108,14 @@ type CredentialsSet struct {
 	WebhookSecret bool `json:"webhookSecret"`
 }
 
-// Installation is one bot on one forge account. HookPath is relative to
-// the ingest endpoint, whose origin the dashboard does not know.
+// Installation is one bot on one forge and the accounts it serves. HookPath
+// is relative to the ingest endpoint, whose origin the dashboard does not
+// know.
 type Installation struct {
 	Name           string           `json:"name"`
 	Forge          configfile.Forge `json:"forge"`
 	Host           string           `json:"host"`
-	Account        string           `json:"account"`
+	Accounts       []string         `json:"accounts"`
 	CredentialKind CredentialKind   `json:"credentialKind"`
 	Credentials    CredentialsSet   `json:"credentials"`
 	HookPath       string           `json:"hookPath"`

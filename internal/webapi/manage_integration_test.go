@@ -53,7 +53,7 @@ tenants:
       - name: mgr-file-bot
         forge: forgejo
         host: git.example
-        account: mf
+        accounts: [mf]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
     repositories:
@@ -297,7 +297,7 @@ func dashSpec(tokenRef, hookRef map[string]any, extra map[string]any) map[string
 	spec := map[string]any{
 		"slug": "mgr-dash",
 		"installations": []any{map[string]any{
-			"name": "mgr-dash-bot", "forge": "forgejo", "host": "git.example", "account": "md",
+			"name": "mgr-dash-bot", "forge": "forgejo", "host": "git.example", "accounts": []string{"md"},
 			"token": tokenRef, "webhookSecret": hookRef,
 		}},
 		"repositories": []any{map[string]any{"name": "md/one"}},
@@ -518,7 +518,7 @@ func testCollisions(t *testing.T, e *manageEnv) {
 	// mgr-zed sorts after mgr-dash, so the merge reports mgr-dash taking
 	// its installation name against mgr-zed; the blame is still mgr-dash's.
 	zed := map[string]any{"slug": "mgr-zed", "installations": []any{map[string]any{
-		"name": "mgr-zed-bot", "forge": "forgejo", "host": "git.example", "account": "mz",
+		"name": "mgr-zed-bot", "forge": "forgejo", "host": "git.example", "accounts": []string{"mz"},
 		"token": map[string]any{"value": "z"}, "webhookSecret": map[string]any{"value": "z"},
 	}}}
 	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-zed", Spec: mustJSON(t, zed)})
@@ -526,7 +526,7 @@ func testCollisions(t *testing.T, e *manageEnv) {
 	e.waitFor("mgr-zed to merge", func(f *configfile.File) bool { _, ok := f.Tenant("mgr-zed"); return ok })
 	taken := dashSpec(keep, keep, map[string]any{"filter": "true"})
 	taken["installations"] = append(taken["installations"].([]any), map[string]any{
-		"name": "mgr-zed-bot", "forge": "forgejo", "host": "git.example", "account": "mz2",
+		"name": "mgr-zed-bot", "forge": "forgejo", "host": "git.example", "accounts": []string{"mz2"},
 		"token": map[string]any{"value": "t"}, "webhookSecret": map[string]any{"value": "w"},
 	})
 	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, taken)})
@@ -785,7 +785,7 @@ func testFileTenantLeftOut(t *testing.T, e *manageEnv) {
 		return s
 	}
 	spec := mustJSON(t, map[string]any{"slug": "mgr-file", "installations": []any{map[string]any{
-		"name": "mgr-held-bot", "forge": "forgejo", "host": "git.example", "account": "mh",
+		"name": "mgr-held-bot", "forge": "forgejo", "host": "git.example", "accounts": []string{"mh"},
 		"token": map[string]any{"sealed": seal("t")}, "webhookSecret": map[string]any{"sealed": seal("w")},
 	}}})
 	write := func(fn func(pgx.Tx) error) {

@@ -20,7 +20,7 @@ polling: { interval: 2m }
 tenants:
   - slug: acme
     installations:
-      - { name: acme-bot, forge: forgejo, account: acme, token: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } }
+      - { name: acme-bot, forge: forgejo, accounts: [acme], token: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } }
 `))
 	if err != nil {
 		t.Fatal(err)

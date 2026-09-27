@@ -1,15 +1,15 @@
 # Connecting a forge
 
 kritik reviews pull requests on GitHub, through a GitHub App, and on
-Forgejo, through a bot account. On both, events reach kritik through one
-webhook per installation: the GitHub App's own webhook, or one webhook on
-the Forgejo user or organization. No repository needs a webhook of its own,
-and none needs a file: a [`.kritik.yaml`](repository-config.md) is
-optional.
+Forgejo, through a bot account. On both, events reach kritik through the
+GitHub App's own webhook, or one webhook on each Forgejo user or
+organization served. No repository needs a webhook of its own, and none
+needs a file: a [`.kritik.yaml`](repository-config.md) is optional.
 
 An installation is one entry under a tenant's `installations` in the
 configuration file, or one added in the dashboard for a dashboard-managed
-tenant. Its webhook address is kritik's webhook listener followed by
+tenant, serving the users and organizations its `accounts` lists. Its
+webhook address is kritik's webhook listener followed by
 `/hooks/<installation name>`.
 
 ## Expose the webhook listener
@@ -43,9 +43,11 @@ Register a GitHub App under the account whose repositories kritik reviews
   - Commit statuses: read and write, for the `kritik/review` status.
 - **Events:** Pull request, Pull request review comment, Issue comment and
   Push. Installation events arrive without subscribing.
-- **Where it can be installed:** only on this account. kritik serves only
-  the installation's `account`; a delivery for any other account is
-  accepted and ignored.
+- **Where it can be installed:** only on this account, unless it should
+  serve several. A public App can be installed on many organizations: list
+  each one kritik should review in the installation's `accounts`. A
+  delivery for any account not listed is accepted and ignored, so nobody
+  else who installs the App gets reviews.
 
 Then generate a private key and note the App's client ID. Comments mention
 the bot as `@<app slug>`, and only someone with write access gets an
@@ -59,7 +61,7 @@ tenants:
     installations:
       - name: example-github
         forge: github
-        account: example
+        accounts: [example]
         app:
           clientId: Iv1.example
           privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
@@ -73,9 +75,9 @@ App.
 
 ### Install the App
 
-Install the App on the account, for all repositories or selected ones.
-Each pull request in them is reviewed when it opens and after each push,
-under the tenant's settings.
+Install the App on each account in `accounts`, for all repositories or
+selected ones. Each pull request in them is reviewed when it opens and
+after each push, under the tenant's settings.
 
 ## Forgejo
 
@@ -106,17 +108,17 @@ tenants:
       - name: example-forgejo
         forge: forgejo
         host: forge.example.com
-        account: example
+        accounts: [example]
         token: { file: /var/run/secrets/kritik/bot/forgejo-token }
         gitToken: { file: /var/run/secrets/kritik/bot/forgejo-read-token }
         webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
 ```
 
-### Add one webhook
+### Add one webhook per account
 
-Add a Forgejo webhook to the organization that owns the repositories, or
-to the user for repositories a user owns. It covers every repository the
-owner has, including ones added later.
+Add a Forgejo webhook to each organization, or user, in the
+installation's `accounts`. Each covers every repository its owner has,
+including ones added later.
 
 - **Target URL:** `https://<listener host>/hooks/<installation name>`,
   method POST. Either content type works.

@@ -19,7 +19,7 @@ const dashboardConfig: T.TenantConfig = {
     ...g.tenantConfig.spec,
     limits: { concurrency: 2 },
     installations: [
-      { ...inst0[0], forge: 'forgejo', host: 'https://code.example', account: 'bot', webhookSecret: { set: true } },
+      { ...inst0[0], forge: 'forgejo', host: 'https://code.example', accounts: ['bot'], webhookSecret: { set: true } },
     ],
     repositories: [{ name: 'alpha/one', mode: 'agentic', agent: { maxSteps: 10 }, konflate: 'keep-me' }],
   },
@@ -414,7 +414,7 @@ test.describe('operator console', () => {
     await page.getByLabel('Name', { exact: true }).fill('beta-bot');
     await page.getByLabel('Forge').selectOption('forgejo');
     await page.getByLabel('Host').fill('https://code.example');
-    await page.locator('[data-path="installations[0].account"]').fill('bot');
+    await page.locator('[data-path="installations[0].accounts"]').fill('bot\n  other-org \n\n');
     await page.getByLabel('Token: new value').fill('tok');
     await page.getByLabel('Concurrency').fill('3');
     await page.getByRole('button', { name: 'Create tenant' }).click();
@@ -425,7 +425,14 @@ test.describe('operator console', () => {
     expect(body.spec).toEqual({
       slug: 'beta',
       installations: [
-        { name: 'beta-bot', forge: 'forgejo', host: 'https://code.example', account: 'bot', token: { value: 'tok' }, webhookSecret: { generate: true } },
+        {
+          name: 'beta-bot',
+          forge: 'forgejo',
+          host: 'https://code.example',
+          accounts: ['bot', 'other-org'],
+          token: { value: 'tok' },
+          webhookSecret: { generate: true },
+        },
       ],
       limits: { concurrency: 3 },
     });
@@ -474,7 +481,7 @@ test.describe('operator console', () => {
     await expect(page.getByLabel('Forge').locator('option[value="gitlab"]')).toHaveCount(0);
     await page.getByLabel('Forge').selectOption('forgejo');
     await page.getByLabel('Host').fill('http://code.example');
-    await page.locator('[data-path="installations[0].account"]').fill('bot');
+    await page.locator('[data-path="installations[0].accounts"]').fill('bot');
     await page.getByLabel('Token: new value').fill('tok');
     await page.getByRole('button', { name: 'Create tenant' }).click();
     await expect(page.locator('.form-alert')).toContainText('https');

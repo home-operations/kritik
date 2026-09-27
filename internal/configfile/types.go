@@ -343,13 +343,19 @@ func (a GitHubApp) ClientIDValue() string { return a.clientID }
 // PrivateKeyValue returns the resolved private key PEM.
 func (a GitHubApp) PrivateKeyValue() Secret { return a.privateKey }
 
-// Installation is one bot on one forge account. Its name is the hook path,
-// /hooks/{name}, and must be unique across the whole file.
+// Installation is one bot on one forge, serving the accounts it lists. Its
+// name is the hook path, /hooks/{name}, and must be unique across the whole
+// file.
 type Installation struct {
-	Name    string `yaml:"name"`
-	Forge   Forge  `yaml:"forge"`
-	Host    string `yaml:"host,omitempty"`
-	Account string `yaml:"account"`
+	Name  string `yaml:"name"`
+	Forge Forge  `yaml:"forge"`
+	Host  string `yaml:"host,omitempty"`
+	// Accounts are the users and organizations the installation serves: a
+	// webhook for any other account is ignored, and a repository belongs to
+	// the installation serving its owner. A public GitHub App installed on
+	// several organizations lists each one kritik reviews for; nothing is
+	// served that is not listed.
+	Accounts []string `yaml:"accounts"`
 
 	// App is set for GitHub installations.
 	App *GitHubApp `yaml:"app,omitempty"`

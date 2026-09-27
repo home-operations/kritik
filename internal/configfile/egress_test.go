@@ -54,7 +54,7 @@ func TestEgressRules(t *testing.T) {
 	// baseUrl is not, and a credential's value never leaks into the host
 	// list.
 	h, err := Parse([]byte("providers:\n  p:\n    type: openai\n    baseUrl: https://llm.example:8443/v1\n    apiKey: { env: TEST_GH_TOKEN }\n" +
-		strings.Replace(minimal, "account: acme", "host: git.example.org\n        account: acme", 1)))
+		strings.Replace(minimal, "accounts: [acme]", "host: git.example.org\n        accounts: [acme]", 1)))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -29,7 +29,7 @@ tenants:
     installations:
       - name: acme-bot
         forge: forgejo
-        account: acme
+        accounts: [acme]
         token: { env: TEST_CS_TOKEN }
         webhookSecret: { env: TEST_CS_SECRET }
 `
@@ -95,7 +95,7 @@ func dashRow(t *testing.T, k *sealbox.Keyring, slug, inst string, rev int64) con
 		}
 		return s
 	}
-	spec := `{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"forgejo","account":"` + slug + `",` +
+	spec := `{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"forgejo","accounts":["` + slug + `"],` +
 		`"token":{"sealed":"` + seal("tok-"+slug) + `"},"webhookSecret":{"sealed":"` + seal("wh-"+slug) + `"}}]}`
 	return configfile.DashboardTenant{Slug: slug, Spec: json.RawMessage(spec), Revision: rev}
 }
@@ -356,7 +356,7 @@ func TestRun(t *testing.T) {
     installations:
       - name: zeta-bot
         forge: forgejo
-        account: zeta
+        accounts: [zeta]
         token: { env: TEST_CS_TOKEN }
         webhookSecret: { env: TEST_CS_SECRET }
 `)

@@ -23,7 +23,7 @@ config:
         installations:
           - name: example-github
             forge: github
-            account: example
+            accounts: [example]
             app:
               clientId: Iv1.example
               privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }

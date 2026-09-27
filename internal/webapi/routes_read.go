@@ -183,7 +183,7 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request, t *tenantScop
 
 func installation(in *configfile.Installation) Installation {
 	out := Installation{
-		Name: in.Name, Forge: in.Forge, Host: in.Host, Account: in.Account, CredentialKind: CredentialToken,
+		Name: in.Name, Forge: in.Forge, Host: in.Host, Accounts: in.Accounts, CredentialKind: CredentialToken,
 		HookPath: "/hooks/" + in.Name,
 		Credentials: CredentialsSet{
 			Token: in.TokenValue().Value() != "", GitToken: in.GitTokenValue().Value() != "",

@@ -27,7 +27,7 @@ tenants:
     installations:
       - name: bot-ross
         forge: github
-        account: onedr0p
+        accounts: [onedr0p]
         app:
           clientId: Iv1.x
           privateKey: { env: TEST_PEM }
@@ -44,7 +44,7 @@ tenants:
     installations:
       - name: acme-forgejo
         forge: forgejo
-        account: acme
+        accounts: [acme]
         token: { env: TEST_FORGEJO_POLLER_TOKEN }
         webhookSecret: { env: TEST_FORGEJO_POLLER_SECRET }
     repositories:

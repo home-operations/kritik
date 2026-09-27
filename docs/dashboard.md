@@ -107,14 +107,14 @@ Three roles share the same `web.signIn` and `web.operators`:
   transaction as the change it makes. A dashboard installation may only
   reach its forge over `https`; a plain-`http` host is refused. A secret an
   admin submits (a client secret, an installation token) is bound to that
-  installation's forge, host (scheme and path included) and account —
+  installation's forge, host (scheme and path included) and accounts —
   change any of them and the secret must be re-entered, since it no longer
-  speaks for the same identity. The form never keeps a renamed
+  speaks for the same identity or acts for the same accounts. The form never keeps a renamed
   installation's secrets. In the advanced JSON editor, as through the API,
   `{"keep": true}` keeps the secret stored under the name the JSON gives:
   renaming an installation there does not carry its secrets along (the
   keep is refused, or takes the secret of a stored installation that
-  already had the new name, when its forge, host and account match), so
+  already had the new name, when its forge, host and accounts match), so
   enter them again when renaming in JSON.
 - **Tenant member** — read access to their tenant's own reviews,
   conversations and transcripts; no write access.

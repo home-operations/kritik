@@ -7,7 +7,7 @@
       "name": "alpha-bot",
       "forge": "github",
       "host": "github.com",
-      "account": "alpha",
+      "accounts": ["alpha"],
       "credentialKind": "app",
       "credentials": {
         "clientId": true,

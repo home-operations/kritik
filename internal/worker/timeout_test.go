@@ -30,7 +30,7 @@ tenants:
     installations:
       - name: acme-bot
         forge: github
-        account: acme
+        accounts: [acme]
         app:
           clientId: Iv1.x
           privateKey: { env: TEST_PEM }
@@ -48,7 +48,7 @@ tenants:
     installations:
       - name: globex-bot
         forge: github
-        account: globex
+        accounts: [globex]
         app:
           clientId: Iv1.y
           privateKey: { env: TEST_PEM }

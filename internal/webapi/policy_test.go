@@ -24,7 +24,7 @@ func decodeSpec(t *testing.T, spec string) *configfile.Tenant {
 }
 
 func TestOperatorOnlyChange(t *testing.T) {
-	const base = `"slug":"alpha","installations":[{"name":"a","forge":"forgejo","account":"alpha"}]`
+	const base = `"slug":"alpha","installations":[{"name":"a","forge":"forgejo","accounts":["alpha"]}]`
 	tests := []struct {
 		name     string
 		old, new string

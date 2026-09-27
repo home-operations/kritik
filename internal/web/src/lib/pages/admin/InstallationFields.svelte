@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { canKeep, type InstallationDraft, type SecretDraft } from '../../spec';
+  import { accountKey, canKeep, type InstallationDraft, type SecretDraft } from '../../spec';
   import SecretField from './SecretField.svelte';
 
   interface Props {
@@ -12,13 +12,13 @@
   let { inst = $bindable(), index, inv, onremove }: Props = $props();
   const p = $derived(`installations[${index}]`);
 
-  // A kept token only stays valid for the forge, host and account it was
+  // A kept token only stays valid for the forge, host and accounts it was
   // issued for; the server refuses the save otherwise (reenter_secret).
-  const orig = untrack(() => ({ forge: inst.forge, host: inst.host, account: inst.account }));
-  const moved = $derived(inst.forge !== orig.forge || inst.host !== orig.host || inst.account !== orig.account);
+  const orig = untrack(() => ({ forge: inst.forge, host: inst.host, accounts: accountKey(inst.accounts) }));
+  const moved = $derived(inst.forge !== orig.forge || inst.host !== orig.host || accountKey(inst.accounts) !== orig.accounts);
   const keepable = $derived(canKeep(inst));
   const re = (s: SecretDraft) =>
-    moved && s.wasSet && keepable ? 'The forge, host or account changed: enter this secret again rather than keeping it.' : undefined;
+    moved && s.wasSet && keepable ? 'The forge, host or accounts changed: enter this secret again rather than keeping it.' : undefined;
 </script>
 
 <div class="item-card">
@@ -48,8 +48,9 @@
       <span class="field-hint">https only; blank means github.com for GitHub.</span>
     </label>
     <label class="field">
-      <span>Account</span>
-      <input data-path="{p}.account" aria-invalid={inv(`${p}.account`) || undefined} bind:value={inst.account} required />
+      <span>Accounts (one per line)</span>
+      <textarea rows="2" data-path="{p}.accounts" aria-invalid={inv(`${p}.accounts`) || undefined} bind:value={inst.accounts} required></textarea>
+      <span class="field-hint">The users and organizations it serves; a webhook from any other is ignored.</span>
     </label>
   </div>
   {#if inst.forge === 'github'}

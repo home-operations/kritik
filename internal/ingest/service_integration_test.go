@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -301,6 +302,47 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 		})
 		if newEnabled {
 			t.Fatal("removed repository should be disabled")
+		}
+	})
+
+	t.Run("the App leaving one account disables only that account's repositories", func(t *testing.T) {
+		for _, name := range []string{"onedr0p/stays", "home-operations/goes"} {
+			owner, _, _ := strings.Cut(name, "/")
+			added := webhook.Event{Kind: webhook.KindInstallation, Action: "added", Account: owner,
+				Installation: &webhook.Installation{Repositories: []string{name}}}
+			if _, err := svc.Dispatch(ctx, request(f, added)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// The poller's tests share the database and poll every enabled
+		// repository of bot-ross.
+		t.Cleanup(func() {
+			removed := webhook.Event{Kind: webhook.KindInstallation, Action: "removed", Account: "onedr0p",
+				Installation: &webhook.Installation{Repositories: []string{"onedr0p/stays"}}}
+			_, _ = svc.Dispatch(ctx, request(f, removed))
+		})
+		deleted := webhook.Event{Kind: webhook.KindInstallation, Action: "deleted", Account: "Home-Operations", Installation: &webhook.Installation{}}
+		if _, err := svc.Dispatch(ctx, request(f, deleted)); err != nil {
+			t.Fatal(err)
+		}
+		enabled := map[string]bool{}
+		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, `SELECT name, enabled FROM repositories WHERE name IN ('onedr0p/stays', 'home-operations/goes')`)
+			if err != nil {
+				return err
+			}
+			var name string
+			var on bool
+			_, err = pgx.ForEachRow(rows, []any{&name, &on}, func() error {
+				enabled[name] = on
+				return nil
+			})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if !enabled["onedr0p/stays"] || enabled["home-operations/goes"] {
+			t.Fatalf("enabled = %v; only home-operations' repository should go", enabled)
 		}
 	})
 }

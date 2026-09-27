@@ -31,7 +31,8 @@ export interface InstallationDraft {
   name: string;
   forge: Forge;
   host: string;
-  account: string;
+  // accounts: one per line.
+  accounts: string;
   // github: the app's credentials.
   clientId: string;
   clientIdFrom: SecretDraft;
@@ -146,7 +147,7 @@ function installationOf(v: unknown): InstallationDraft {
     name: str(o.name),
     forge: (str(o.forge) || 'github') as Forge,
     host: str(o.host),
-    account: str(o.account),
+    accounts: lines(o.accounts),
     clientId: str(app.clientId),
     clientIdFrom: secretOf(app.clientIdFrom, 'none'),
     privateKey: secretOf(app.privateKey, 'replace'),
@@ -155,7 +156,7 @@ function installationOf(v: unknown): InstallationDraft {
     token: secretOf(o.token, 'replace'),
     webhookSecret: secretOf(o.webhookSecret, 'generate'),
     gitToken: secretOf(o.gitToken, 'none'),
-    rest: take(o, 'name', 'forge', 'host', 'account', 'app', 'token', 'webhookSecret', 'gitToken'),
+    rest: take(o, 'name', 'forge', 'host', 'accounts', 'app', 'token', 'webhookSecret', 'gitToken'),
   };
 }
 
@@ -276,6 +277,12 @@ function list(text: string): string[] {
     .filter((l) => l !== '');
 }
 
+// accountKey is an accounts draft as the server compares it when keeping a
+// secret: a set, in any case.
+export function accountKey(text: string): string {
+  return [...new Set(list(text).map((a) => a.toLowerCase()))].sort().join(',');
+}
+
 function nonEmpty(o: Obj): boolean {
   return Object.keys(o).length > 0;
 }
@@ -309,8 +316,9 @@ function installationSpec(b: Builder, d: InstallationDraft, i: number): Obj {
   out.forge = d.forge;
   set(out, 'host', d.host);
   if (/^http:\/\//i.test(d.host.trim())) b.fail(`${p}.host`, 'a dashboard installation must reach its forge over https');
-  if (d.account.trim() === '') b.fail(`${p}.account`, 'an account is required');
-  out.account = d.account.trim();
+  const accounts = list(d.accounts);
+  if (accounts.length === 0) b.fail(`${p}.accounts`, 'list at least one account');
+  out.accounts = accounts;
   if (d.forge === 'github') {
     const app: Obj = { ...d.appRest };
     set(app, 'clientId', d.clientId);

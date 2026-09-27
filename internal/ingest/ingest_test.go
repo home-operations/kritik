@@ -23,7 +23,7 @@ tenants:
     installations:
       - name: bot-ross
         forge: github
-        account: onedr0p
+        accounts: [onedr0p, home-operations]
         app:
           clientId: Iv1.x
           privateKey: { env: TEST_PEM }
@@ -118,6 +118,8 @@ func TestHandler(t *testing.T) {
 		{"undeclared account ignored", "/hooks/bot-ross", "pull_request", "s3cret",
 			strings.ReplaceAll(prBody, `"owner":{"login":"onedr0p"}`, `"owner":{"login":"stranger"}`), Outcome{}, nil, http.StatusAccepted, false, true},
 		{"dispatched", "/hooks/bot-ross", "pull_request", "s3cret", prBody, Outcome{Status: Enqueued}, nil, http.StatusAccepted, true, true},
+		{"another declared account dispatched", "/hooks/bot-ross", "pull_request", "s3cret",
+			strings.ReplaceAll(prBody, "onedr0p", "Home-Operations"), Outcome{Status: Enqueued}, nil, http.StatusAccepted, true, true},
 		{"dispatcher error", "/hooks/bot-ross", "pull_request", "s3cret", prBody, Outcome{}, errors.New("db down"), http.StatusInternalServerError, true, true},
 	}
 	for _, tt := range tests {

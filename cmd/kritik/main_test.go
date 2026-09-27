@@ -28,7 +28,7 @@ tenants:
     installations:
       - name: ` + slug + `-bot
         forge: forgejo
-        account: ` + slug + `
+        accounts: [` + slug + `]
         token: { env: TEST_MAIN_TOKEN }
         webhookSecret: { env: TEST_MAIN_TOKEN }
 `))
