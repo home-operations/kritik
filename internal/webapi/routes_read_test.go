@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/tasks"
 )
 
@@ -44,24 +43,18 @@ func TestRepoTasks(t *testing.T) {
 	}
 	tests := []struct {
 		name      string
-		row       *store.RepoFileRow
+		file      *string
 		wantTasks []TaskDef
 		wantNotes []TaskNote
 	}{
 		{
-			name:      "no file read yet",
-			wantTasks: []TaskDef{welcome, stale},
-			wantNotes: []TaskNote{{Task: "close-stale", What: "actions.state", Reason: "the action is not allowed"}},
-		},
-		{
-			name:      "no file at the commit",
-			row:       &store.RepoFileRow{},
+			name:      "no file",
 			wantTasks: []TaskDef{welcome, stale},
 			wantNotes: []TaskNote{{Task: "close-stale", What: "actions.state", Reason: "the action is not allowed"}},
 		},
 		{
 			name:      "a file with a task",
-			row:       &store.RepoFileRow{Doc: &doc},
+			file:      &doc,
 			wantTasks: []TaskDef{welcome, stale, triage},
 			wantNotes: []TaskNote{
 				{Task: "close-stale", What: "actions.state", Reason: "the action is not allowed"},
@@ -70,7 +63,7 @@ func TestRepoTasks(t *testing.T) {
 		},
 		{
 			name:      "a file that does not parse",
-			row:       &store.RepoFileRow{Doc: &bad},
+			file:      &bad,
 			wantTasks: []TaskDef{welcome, stale},
 			wantNotes: []TaskNote{{Task: "close-stale", What: "actions.state", Reason: "the action is not allowed"}},
 		},
@@ -78,7 +71,7 @@ func TestRepoTasks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			gotTasks, gotNotes := repoTasks(settings, tt.row)
+			gotTasks, gotNotes := repoTasks(settings, tt.file)
 			if !reflect.DeepEqual(gotTasks, tt.wantTasks) {
 				t.Errorf("tasks = %+v, want %+v", gotTasks, tt.wantTasks)
 			}

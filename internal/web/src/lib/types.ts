@@ -290,9 +290,14 @@ export interface RepoDetail extends Repository {
   repoConfig: RepoConfig | null;
   indexRuns: IndexRun[];
   // The tasks that run: the operator's, then those of the .kritik.yaml
-  // repoConfig read.
+  // tasksSource names, at tasksCommit ('' when there is none).
   tasks: TaskDef[];
   taskNotes: TaskNote[];
+  // defaultBranch: the file a task dispatch last read at the default branch
+  // tip, where tasks run from; lastReview: before any dispatch, the file the
+  // last review read at its merge base.
+  tasksSource: 'defaultBranch' | 'lastReview';
+  tasksCommit: string;
 }
 
 export interface Label {

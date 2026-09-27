@@ -84,6 +84,24 @@ test('repository tasks list each definition, where it comes from, and what the b
   await expect(rows.nth(1)).toContainText(triage!.actions.join(', '));
   const note = g.repoDetail.taskNotes[0]!;
   await expect(tasks).toContainText(`${note.task}: ${note.what}: ${note.reason}`);
+  await expect(tasks.getByTestId('tasks-source')).toContainText('default branch tip');
+});
+
+test('repository tasks say when they come from the last review, before any task event', async ({ page }) => {
+  const detail = new RegExp(`/api/v1/tenants/${g.SLUG}/repos/alpha/one$`);
+  await page.route(
+    (u) => detail.test(u.pathname),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...g.repoDetail, tasksSource: 'lastReview', tasksCommit: 'def4567' }),
+      }),
+  );
+  await page.goto(`/${T}/repos/alpha/one`);
+  const source = page.locator('#repo-tasks').locator('../..').getByTestId('tasks-source');
+  await expect(source).toContainText('the last review read at');
+  await expect(source).toContainText('def4567');
 });
 
 test('a repository with no tasks says so', async ({ page }) => {

@@ -349,6 +349,12 @@ func TestTaskEndToEnd(t *testing.T) {
 	}
 	first := h.waitRuns(1)
 	checkFirstTaskRun(t, h, first)
+	// The dispatch recorded the default branch tip it read, which has no
+	// .kritik.yaml, for the dashboard's task list.
+	if n := h.count(`SELECT count(*) FROM repositories WHERE task_config_sha = 'c0ffee' AND task_config_doc IS NULL
+		AND task_config_at IS NOT NULL`); n != 1 {
+		t.Fatalf("repositories with the dispatch's task config = %d, want 1", n)
+	}
 
 	// A redelivery is not run again.
 	if out := h.dispatch("d-1", "devin"); out.Status == ingest.Enqueued {

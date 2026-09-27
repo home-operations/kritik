@@ -316,3 +316,66 @@ func TestListenPublishesTaskRunEvents(t *testing.T) {
 		}
 	}
 }
+
+// TestRepoTaskConfig checks the default branch tip's .kritik.yaml a task
+// dispatch records: none before the first, then the latest commit's file,
+// nil when the tip has none.
+func TestRepoTaskConfig(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := tenantID(t, s, "alpha")
+	var repoID string
+	if err := s.owner.QueryRow(ctx, `SELECT id FROM repositories WHERE name = 'alpha/one'`).Scan(&repoID); err != nil {
+		t.Fatal(err)
+	}
+	doc := "tasks: []\n"
+	steps := []struct {
+		name    string
+		save    bool
+		commit  string
+		doc     []byte
+		want    string
+		wantDoc *string
+		wantErr error
+	}{
+		{name: "none recorded yet", wantErr: ErrNotFound},
+		{name: "a tip with a file", save: true, commit: "a1", doc: []byte(doc), want: "a1", wantDoc: &doc},
+		{name: "the same tip again", save: true, commit: "a1", doc: nil, want: "a1", wantDoc: &doc},
+		{name: "a tip without one", save: true, commit: "b2", want: "b2"},
+	}
+	for _, st := range steps {
+		t.Run(st.name, func(t *testing.T) {
+			var got TaskConfigRow
+			err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+				if st.save {
+					if err := SaveRepoTaskConfig(ctx, tx, repoID, st.commit, st.doc); err != nil {
+						return err
+					}
+				}
+				var err error
+				got, err = RepoTaskConfig(ctx, tx, repoID)
+				return err
+			})
+			if !errors.Is(err, st.wantErr) {
+				t.Fatalf("err = %v, want %v", err, st.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if got.Commit != st.want || (got.Doc == nil) != (st.wantDoc == nil) || (got.Doc != nil && *got.Doc != *st.wantDoc) ||
+				got.ResolvedAt.IsZero() {
+				t.Errorf("RepoTaskConfig = %+v (doc %v), want commit %s, doc %v", got, got.Doc, st.want, st.wantDoc)
+			}
+		})
+	}
+	// Row-level security keeps it from another tenant.
+	if err := s.WithTenant(ctx, tenantID(t, s, "beta"), func(tx pgx.Tx) error {
+		_, err := RepoTaskConfig(ctx, tx, repoID)
+		return err
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("beta reading alpha's task config: %v", err)
+	}
+}

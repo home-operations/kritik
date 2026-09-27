@@ -282,7 +282,19 @@ type RepoDetail struct {
 	IndexRuns  []IndexRun                   `json:"indexRuns"`
 	Tasks      []TaskDef                    `json:"tasks"`
 	TaskNotes  []TaskNote                   `json:"taskNotes"`
+	// TasksSource says which .kritik.yaml Tasks were resolved from: the one
+	// a task dispatch last read at the default branch tip, where tasks run
+	// from, or, before any dispatch, the one the last review read at its
+	// merge base. TasksCommit is that file's commit, "" when neither exists.
+	TasksSource string `json:"tasksSource"`
+	TasksCommit string `json:"tasksCommit"`
 }
+
+// Values of RepoDetail.TasksSource.
+const (
+	TasksSourceDefaultBranch = "defaultBranch"
+	TasksSourceLastReview    = "lastReview"
+)
 
 // TaskDef is one resolved task. Source is where it is defined: file (the
 // operator's configuration file), dashboard or repository (.kritik.yaml).

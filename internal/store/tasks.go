@@ -302,3 +302,43 @@ func InsertTaskRunner(ctx context.Context, tx pgx.Tx, tenantID, taskRunID string
 	}
 	return runID, nil
 }
+
+// TaskConfigRow is the .kritik.yaml a task dispatch last resolved at the
+// repository's default branch tip: the commit and the file, nil when the
+// tip had none.
+type TaskConfigRow struct {
+	Commit     string
+	Doc        *string
+	ResolvedAt time.Time
+}
+
+// SaveRepoTaskConfig records doc as the repository's .kritik.yaml at the
+// default branch tip commit, nil when it has none; a commit already
+// recorded is left as it is.
+func SaveRepoTaskConfig(ctx context.Context, tx pgx.Tx, repositoryID, commit string, doc []byte) error {
+	var d *string
+	if doc != nil {
+		d = new(string(doc))
+	}
+	_, err := tx.Exec(ctx, `UPDATE repositories SET task_config_sha = $2, task_config_doc = $3, task_config_at = now()
+		WHERE id = $1 AND task_config_sha IS DISTINCT FROM $2`, repositoryID, commit, d)
+	if err != nil {
+		return fmt.Errorf("store: save repository task config: %w", err)
+	}
+	return nil
+}
+
+// RepoTaskConfig reads the .kritik.yaml a task dispatch last resolved for
+// the repository; ErrNotFound when none has yet.
+func RepoTaskConfig(ctx context.Context, tx pgx.Tx, repositoryID string) (TaskConfigRow, error) {
+	var row TaskConfigRow
+	err := tx.QueryRow(ctx, `SELECT task_config_sha, task_config_doc, task_config_at FROM repositories
+		WHERE id = $1 AND task_config_sha <> ''`, repositoryID).Scan(&row.Commit, &row.Doc, &row.ResolvedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TaskConfigRow{}, ErrNotFound
+	}
+	if err != nil {
+		return TaskConfigRow{}, fmt.Errorf("store: repository task config: %w", err)
+	}
+	return row, nil
+}

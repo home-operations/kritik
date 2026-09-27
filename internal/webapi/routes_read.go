@@ -264,6 +264,7 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope)
 	var row store.RepoRow
 	var runs []store.IndexRunRow
 	var file *store.RepoFileRow
+	var taskConfig *store.TaskConfigRow
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		var err error
 		if row, err = findRepo(ctx, tx, r); err != nil {
@@ -279,6 +280,13 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope)
 		case !errors.Is(err, store.ErrNotFound):
 			return err
 		}
+		tc, err := store.RepoTaskConfig(ctx, tx, row.ID)
+		switch {
+		case err == nil:
+			taskConfig = &tc
+		case !errors.Is(err, store.ErrNotFound):
+			return err
+		}
 		return nil
 	}); err != nil {
 		return err
@@ -288,7 +296,16 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope)
 		Repository: repository(row), Settings: repoSettings(settings), Sources: t.file.Sources(t.tenant, row.Installation, row.FullName),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
 	}
-	d.Tasks, d.TaskNotes = repoTasks(settings, file)
+	var taskDoc *string
+	switch {
+	case taskConfig != nil:
+		d.TasksSource, d.TasksCommit, taskDoc = TasksSourceDefaultBranch, taskConfig.Commit, taskConfig.Doc
+	case file != nil:
+		d.TasksSource, d.TasksCommit, taskDoc = TasksSourceLastReview, file.Commit, file.Doc
+	default:
+		d.TasksSource = TasksSourceLastReview
+	}
+	d.Tasks, d.TaskNotes = repoTasks(settings, taskDoc)
 	writeJSON(w, http.StatusOK, d)
 	return nil
 }
@@ -318,15 +335,15 @@ func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfi
 }
 
 // repoTasks resolves the tasks that run for the repository from the
-// operator's settings and the .kritik.yaml a review last read, if any. A
-// file that does not parse leaves the operator's tasks, as it does for a
-// run.
-func repoTasks(settings configfile.Settings, row *store.RepoFileRow) ([]TaskDef, []TaskNote) {
+// operator's settings and the repository's .kritik.yaml, nil when there is
+// none. A file that does not parse leaves the operator's tasks, as it does
+// for a run.
+func repoTasks(settings configfile.Settings, file *string) ([]TaskDef, []TaskNote) {
 	var doc []byte
-	if row != nil && row.Doc != nil {
-		doc = []byte(*row.Doc)
+	if file != nil {
+		doc = []byte(*file)
 	}
-	m, _ := repoconfig.Merge(doc, settings) // the error is RepoConfig.Ignored's to report
+	m, _ := repoconfig.Merge(doc, settings) // a dispatch drops a file that does not parse the same way
 	named := func(ts []tasks.Task, name string) bool {
 		return slices.ContainsFunc(ts, func(t tasks.Task) bool { return t.Name == name })
 	}

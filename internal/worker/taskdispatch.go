@@ -22,6 +22,9 @@ import (
 type taskRepo struct {
 	id, name, defaultBranch, installation string
 	externalID                            int64
+	// configSHA is the default branch tip whose .kritik.yaml a dispatch
+	// last recorded, "" before the first.
+	configSHA string
 }
 
 func (r taskRepo) split() (owner, name string) {
@@ -31,9 +34,9 @@ func (r taskRepo) split() (owner, name string) {
 
 func loadTaskRepo(ctx context.Context, tx pgx.Tx, id string) (taskRepo, error) {
 	r := taskRepo{id: id}
-	err := tx.QueryRow(ctx, `SELECT r.name, r.default_branch, i.name, coalesce(i.external_id, 0)
+	err := tx.QueryRow(ctx, `SELECT r.name, r.default_branch, i.name, coalesce(i.external_id, 0), r.task_config_sha
 		FROM repositories r JOIN installations i ON i.id = r.installation_id WHERE r.id = $1`, id).
-		Scan(&r.name, &r.defaultBranch, &r.installation, &r.externalID)
+		Scan(&r.name, &r.defaultBranch, &r.installation, &r.externalID, &r.configSHA)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, river.JobCancel(fmt.Errorf("worker: repository %s is unknown", id))
 	}
@@ -167,6 +170,15 @@ func (w *TaskDispatch) Work(ctx context.Context, job *river.Job[jobs.TaskDispatc
 	doc, err := w.configs.read(ctx, client, repo.installation, owner, name, sha)
 	if err != nil {
 		return err
+	}
+	if sha != repo.configSHA {
+		if err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+			return store.SaveRepoTaskConfig(ctx, tx, repo.id, sha, doc)
+		}); err != nil {
+			// The record only feeds the dashboard's task list; the
+			// dispatch does not depend on it.
+			logger.Warn("repository task config not recorded", "error", err)
+		}
 	}
 	eff, notes := effective(file.Settings(tenant, repo.installation, repo.name), doc)
 	for _, n := range notes {

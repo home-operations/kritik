@@ -214,6 +214,17 @@
 
           <section class="panel" aria-labelledby="repo-tasks">
             <header class="panel-head"><h2 id="repo-tasks">Tasks</h2></header>
+            <p class="muted small" data-testid="tasks-source">
+              {#if d.tasksSource === 'defaultBranch'}
+                Resolved from the <span class="mono">.kritik.yaml</span> at the default branch tip
+                <span class="mono" title={d.tasksCommit}>{shortSha(d.tasksCommit)}</span>, as the last task event read it.
+              {:else if d.tasksCommit}
+                No task event has been handled yet; resolved from the <span class="mono">.kritik.yaml</span> the last review read at
+                <span class="mono" title={d.tasksCommit}>{shortSha(d.tasksCommit)}</span>. Tasks run from the default branch tip.
+              {:else}
+                No task event has been handled yet, and no review has read a <span class="mono">.kritik.yaml</span>.
+              {/if}
+            </p>
             {#if d.tasks.length === 0}
               <p class="state-msg">No tasks are defined for this repository.</p>
             {:else}

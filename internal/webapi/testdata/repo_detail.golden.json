@@ -179,5 +179,7 @@
       "what": "actions.state",
       "reason": "the action is not allowed"
     }
-  ]
+  ],
+  "tasksSource": "defaultBranch",
+  "tasksCommit": "c0ffee"
 }
