@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -54,6 +55,12 @@ const prBody = `{"action":"opened","pull_request":{"number":1,"user":{"login":"x
 
 func setup(t *testing.T, disp Dispatcher) *httptest.Server {
 	t.Helper()
+	return setupLog(t, disp, io.Discard)
+}
+
+// setupLog is setup with the handler logging to out at debug level.
+func setupLog(t *testing.T, disp Dispatcher, out io.Writer) *httptest.Server {
+	t.Helper()
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
 	f, err := configfile.Parse([]byte(configYAML))
@@ -61,7 +68,8 @@ func setup(t *testing.T, disp Dispatcher) *httptest.Server {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	mux.Handle("POST /hooks/{installation}", NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	mux.Handle("POST /hooks/{installation}", NewHandler(configfile.NewCurrent(f), disp,
+		slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: slog.LevelDebug}))))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -165,6 +173,36 @@ func TestHandlerOffersIgnoredKindsToTasks(t *testing.T) {
 				if ev := disp.got[0].Event; ev.Kind != webhook.KindIgnored || ev.RawEvent != "release" || ev.Action != "published" {
 					t.Fatalf("event = %+v", ev)
 				}
+			}
+		})
+	}
+}
+
+// TestHandlerUndeclaredAccountLogLevel: an undeclared account's delivery of
+// a kind kritik acts on is worth a warning; one it ignores is not.
+func TestHandlerUndeclaredAccountLogLevel(t *testing.T) {
+	stranger := `"repository":{"full_name":"stranger/x","default_branch":"main","owner":{"login":"stranger"}}`
+	tests := []struct {
+		name, event, body, level string
+	}{
+		{"a pull request", "pull_request", strings.ReplaceAll(prBody, `"owner":{"login":"onedr0p"}`, `"owner":{"login":"stranger"}`), "WARN"},
+		{"an ignored kind", "check_suite", `{"action":"completed",` + stranger + `}`, "DEBUG"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			srv := setupLog(t, &fakeDispatcher{}, &logs)
+			if resp := post(t, srv, "/hooks/bot-ross", tt.event, "s3cret", tt.body); resp.StatusCode != http.StatusAccepted {
+				t.Fatalf("status = %d", resp.StatusCode)
+			}
+			var line string
+			for l := range strings.SplitSeq(logs.String(), "\n") {
+				if strings.Contains(l, "undeclared account") {
+					line = l
+				}
+			}
+			if !strings.Contains(line, "level="+tt.level) {
+				t.Fatalf("log line = %q, want level %s", line, tt.level)
 			}
 		})
 	}

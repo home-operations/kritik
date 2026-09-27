@@ -122,8 +122,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case ev.Account != "" && !strings.EqualFold(ev.Account, in.Account):
 		// A public App can be installed by anyone; only the declared
-		// account is served. Accepted, so the forge does not retry.
-		logger.Warn("webhook for an undeclared account ignored", "account", ev.Account)
+		// account is served. Accepted, so the forge does not retry. A
+		// kind kritik would not act on for anyone is noise at Warn.
+		level := slog.LevelWarn
+		if ev.Kind == webhook.KindIgnored {
+			level = slog.LevelDebug
+		}
+		logger.Log(r.Context(), level, "webhook for an undeclared account ignored", "account", ev.Account)
 		h.Metrics.Webhook(name, "undeclared_account")
 		w.WriteHeader(http.StatusAccepted)
 		return
