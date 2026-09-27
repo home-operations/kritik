@@ -51,6 +51,8 @@ func TestVerify(t *testing.T) {
 		{"github bad hex", configfile.ForgeGitHub, secret, http.Header{"X-Hub-Signature-256": {"sha256=zz"}}, body, ErrSignatureMismatch},
 		{"forgejo valid", configfile.ForgeForgejo, secret, http.Header{"X-Gitea-Signature": {sig}}, body, nil},
 		{"forgejo with prefix rejected", configfile.ForgeForgejo, secret, http.Header{"X-Gitea-Signature": {"sha256=" + sig}}, body, ErrSignatureMismatch},
+		{"gitea valid", configfile.ForgeGitea, secret, http.Header{"X-Gitea-Signature": {sig}}, body, nil},
+		{"gitea with prefix rejected", configfile.ForgeGitea, secret, http.Header{"X-Gitea-Signature": {"sha256=" + sig}}, body, ErrSignatureMismatch},
 		{"gitlab valid", configfile.ForgeGitLab, secret, http.Header{"X-Gitlab-Token": {secret}}, body, nil},
 		{"gitlab wrong token", configfile.ForgeGitLab, secret, http.Header{"X-Gitlab-Token": {"nope"}}, body, ErrSignatureMismatch},
 		{"gitlab missing", configfile.ForgeGitLab, secret, http.Header{}, body, ErrMissingSignature},

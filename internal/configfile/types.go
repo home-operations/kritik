@@ -38,6 +38,10 @@ const (
 	ForgeGitHub  Forge = "github"
 	ForgeGitLab  Forge = "gitlab"
 	ForgeForgejo Forge = "forgejo"
+	// ForgeGitea is a Gitea installation. Gitea speaks the same REST API,
+	// webhooks and OAuth as Forgejo, so it is routed to the same client and
+	// provider code rather than getting its own (ADR-0003 amendment).
+	ForgeGitea Forge = "gitea"
 )
 
 // SecretRef points at where a secret value lives. Exactly one of Env, File

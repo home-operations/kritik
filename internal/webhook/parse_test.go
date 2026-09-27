@@ -202,6 +202,16 @@ func TestParseForgejo(t *testing.T) {
 	}
 }
 
+// TestParseGitea confirms Gitea installations route through the same
+// X-Gitea-* headers and payload parsing as Forgejo.
+func TestParseGitea(t *testing.T) {
+	h := hdr("X-Gitea-Event", "pull_request", "X-Gitea-Delivery", "g-1")
+	ev, err := Parse(configfile.ForgeGitea, h, []byte(ghPullRequest))
+	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "g-1" || ev.PullRequest.Number != 42 {
+		t.Fatalf("gitea pr = %+v %v", ev, err)
+	}
+}
+
 // TestParseForgejoSynchronizedAction covers the past-tense "synchronized"
 // spelling Forgejo sends for this action, which must normalize to GitHub's
 // "synchronize" so callers can match on one action string regardless of

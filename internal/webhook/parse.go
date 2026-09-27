@@ -172,7 +172,8 @@ func Parse(forge configfile.Forge, header http.Header, body []byte) (Event, erro
 	switch forge {
 	case configfile.ForgeGitHub:
 		return parseGitHub(header.Get("X-GitHub-Event"), header.Get("X-GitHub-Delivery"), body)
-	case configfile.ForgeForgejo:
+	case configfile.ForgeForgejo, configfile.ForgeGitea:
+		// Gitea uses the same X-Gitea-* headers and payload shapes as Forgejo.
 		return parseForgejo(header.Get("X-Gitea-Event"), header.Get("X-Gitea-Delivery"), body)
 	case configfile.ForgeGitLab:
 		return parseGitLab(header.Get("X-Gitlab-Event-UUID"), body)

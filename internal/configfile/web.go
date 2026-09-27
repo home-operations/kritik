@@ -45,10 +45,16 @@ const (
 	SignInOIDC    SignInType = "oidc"
 	SignInGitHub  SignInType = "github"
 	SignInForgejo SignInType = "forgejo"
+	// SignInGitea reuses the Forgejo sign-in flow: its value must match
+	// Forge's ForgeGitea, since membership resolution compares the two as
+	// strings (see auth.Resolve).
+	SignInGitea SignInType = "gitea"
 )
 
 // Valid reports whether s is a sign-in type.
-func (s SignInType) Valid() bool { return s == SignInOIDC || s == SignInGitHub || s == SignInForgejo }
+func (s SignInType) Valid() bool {
+	return s == SignInOIDC || s == SignInGitHub || s == SignInForgejo || s == SignInGitea
+}
 
 func (s SignInType) String() string { return string(s) }
 
@@ -149,7 +155,7 @@ func (s SignIn) validate(where string) error {
 		if s.Host != "" {
 			return fmt.Errorf("configfile: %s.host is for github and forgejo sign-ins; oidc takes an issuer", where)
 		}
-	case SignInGitHub, SignInForgejo:
+	case SignInGitHub, SignInForgejo, SignInGitea:
 		if s.Issuer != "" {
 			return fmt.Errorf("configfile: %s.issuer is for oidc sign-ins; %s takes a host", where, s.Type)
 		}
@@ -160,7 +166,8 @@ func (s SignIn) validate(where string) error {
 			return fmt.Errorf("configfile: %s.host %q is not a host or URL", where, s.Host)
 		}
 	default:
-		return fmt.Errorf("configfile: %s.type must be %s, %s or %s, got %q", where, SignInOIDC, SignInGitHub, SignInForgejo, s.Type)
+		return fmt.Errorf("configfile: %s.type must be %s, %s, %s or %s, got %q",
+			where, SignInOIDC, SignInGitHub, SignInForgejo, SignInGitea, s.Type)
 	}
 	if s.ClientID == "" {
 		return fmt.Errorf("configfile: %s.clientId is required", where)

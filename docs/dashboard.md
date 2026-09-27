@@ -1,7 +1,7 @@
 # Dashboard
 
-The web role serves a dashboard: sign in with GitHub, Forgejo or any OIDC
-provider, and see the tenants you belong to, their installations and
+The web role serves a dashboard: sign in with GitHub, Forgejo, Gitea or any
+OIDC provider, and see the tenants you belong to, their installations and
 repositories, live review and conversation state as it runs, member and
 invite management, and a per-tenant and (for operators) instance-wide audit
 log. A tenant admin can also queue a re-run of a specific pull request,
@@ -25,9 +25,10 @@ The `web:` block, a sibling of `tenants:` at the file's root, controls who
 may sign in and who of them may operate the instance:
 
 - `signIn` — one entry per identity provider, each with a `name` (used in
-  the callback URL and in `operators`), a `type` of `oidc`, `github` or
-  `forgejo`, a `clientId`, and a `clientSecret` (a secret reference: `env`,
-  `file` or `sealed`). Every provider must allow the callback URL
+  the callback URL and in `operators`), a `type` of `oidc`, `github`,
+  `forgejo` or `gitea`, a `clientId`, and a `clientSecret` (a secret
+  reference: `env`, `file` or `sealed`). Every provider must allow the
+  callback URL
   `<KRITIK_WEB_URL>/auth/callback/<name>`. For example:
 
   ```yaml
@@ -53,12 +54,20 @@ may sign in and who of them may operate the instance:
         host: forgejo.example.com
         clientId: abc123
         clientSecret: { env: FORGEJO_CLIENT_SECRET }
+      - name: gitea
+        type: gitea
+        host: gitea.example.com
+        clientId: abc123
+        clientSecret: { env: GITEA_CLIENT_SECRET }
   ```
 
-  `oidc` takes `issuer` (an `https` URL) and no `host`; `github` and
-  `forgejo` take `host` and no `issuer`. A `github` sign-in with no `host`
+  `oidc` takes `issuer` (an `https` URL) and no `host`; `github`, `forgejo`
+  and `gitea` take `host` and no `issuer`. A `github` sign-in with no `host`
   is `github.com` — a GitHub Enterprise instance is still `type: github`,
-  just naming its own `host`; `forgejo`'s `host` is always required.
+  just naming its own `host`; `forgejo`'s and `gitea`'s `host` is always
+  required. Gitea speaks the same OAuth flow and user API as Forgejo, so
+  `type: gitea` behaves identically to `type: forgejo` against a Gitea
+  instance.
 
 - `operators` — the identities allowed to change configuration, each
   `"<signIn name>:<login or subject>"` (the forge login or OIDC subject) or

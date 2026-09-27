@@ -2,6 +2,11 @@
 // API (https://<host>/api/v1), using only the standard library HTTP client:
 // Forgejo has no first-party Go SDK comparable to go-github, so requests and
 // responses are hand-rolled against the subset of the API kritik needs.
+//
+// This client also serves Gitea installations (configfile.ForgeGitea):
+// Gitea and Forgejo share the same REST API, webhook payloads and headers,
+// and OAuth flow, so Gitea is routed here rather than getting its own
+// client package.
 package forgejo
 
 import (

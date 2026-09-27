@@ -153,7 +153,8 @@ func buildProvider(ctx context.Context, s configfile.SignIn, redirect string, cl
 		return newOIDCProvider(ctx, s, redirect, client, now)
 	case configfile.SignInGitHub:
 		return newGitHubProvider(s, redirect, client), nil
-	case configfile.SignInForgejo:
+	case configfile.SignInForgejo, configfile.SignInGitea:
+		// Gitea speaks the same OAuth flow and user API as Forgejo.
 		return newForgejoProvider(s, redirect, client), nil
 	default:
 		return nil, fmt.Errorf("auth: sign-in %s: unsupported type %q", s.Name, s.Type)
@@ -192,6 +193,8 @@ func displayName(s configfile.SignIn) string {
 		return "GitHub"
 	case configfile.SignInForgejo:
 		return "Forgejo (" + configfile.ForgeHost(configfile.Forge(s.Type), s.Host) + ")"
+	case configfile.SignInGitea:
+		return "Gitea (" + configfile.ForgeHost(configfile.Forge(s.Type), s.Host) + ")"
 	default:
 		return s.Name
 	}

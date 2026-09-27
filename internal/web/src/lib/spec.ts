@@ -38,7 +38,7 @@ export interface InstallationDraft {
   privateKey: SecretDraft;
   appWebhookSecret: SecretDraft;
   appRest: Obj;
-  // gitlab and forgejo: a token.
+  // gitlab, forgejo and gitea: a token.
   token: SecretDraft;
   webhookSecret: SecretDraft;
   gitToken: SecretDraft;
