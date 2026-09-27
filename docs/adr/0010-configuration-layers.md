@@ -1,6 +1,6 @@
 # ADR-0010: configuration layers: environment, file, dashboard and repository
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-26
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6 (the two
   configuration sources), [ADR-0003](0003-forgejo-agentic-review.md) §2.3
