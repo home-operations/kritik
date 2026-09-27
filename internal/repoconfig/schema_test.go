@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/tasks"
 )
 
 // TestSchemaMatchesFile keeps the published JSON Schema's keys in step
@@ -25,6 +26,9 @@ func TestSchemaMatchesFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	review := []string{"properties", "review", "properties"}
+	task := []string{"$defs", "task"}
+	taskContext := []string{"$defs", "task", "properties", "context"}
+	actions := []string{"$defs", "task", "properties", "actions"}
 	tests := []struct {
 		name string
 		path []string
@@ -38,6 +42,27 @@ func TestSchemaMatchesFile(t *testing.T) {
 		{"review.templates", append(review, "templates"), yamlKeys[Templates]()},
 		{"review.context", append(review, "context", "items"), yamlKeys[configfile.ContextFile]()},
 		{"a scoped instruction", append(review, "instructions", "items", "oneOf", "1"), []string{"path", "paths"}},
+		{"a task", task, yamlKeys[tasks.Task]()},
+		{"a raw trigger", []string{"$defs", "trigger", "oneOf", "3", "properties", "raw"}, []string{"event", "actions"}},
+		{"task models", append(task, "properties", "models"), yamlKeys[tasks.Models]()},
+		{"task agent", append(task, "properties", "agent"), yamlKeys[tasks.Agent]()},
+		{"task context", taskContext, yamlKeys[tasks.Context]()},
+		{"task context thread", append(taskContext, "properties", "thread"), yamlKeys[tasks.Thread]()},
+		{"task context command", append(taskContext, "properties", "commands", "items"), yamlKeys[tasks.Command]()},
+		{"a query", []string{"$defs", "query"}, yamlKeys[tasks.Query]()},
+		{"a field", []string{"$defs", "field"}, yamlKeys[tasks.Field]()},
+		{"task actions", actions, yamlKeys[tasks.Actions]()},
+		{"the comment action", append(actions, "properties", "comment"), yamlKeys[tasks.CommentSpec]()},
+		{"the labels action", append(actions, "properties", "labels"), yamlKeys[tasks.LabelsSpec]()},
+		{"labels to propose", append(actions, "properties", "labels", "properties", "propose"), yamlKeys[tasks.LabelSet]()},
+		{"a label rule", append(actions, "properties", "labels", "properties", "rules", "items"), yamlKeys[tasks.LabelRule]()},
+		{"the state action", append(actions, "properties", "state"), yamlKeys[tasks.StateSpec]()},
+		{"states to propose", append(actions, "properties", "state", "properties", "propose"), yamlKeys[tasks.StateSet]()},
+		{"a state rule", append(actions, "properties", "state", "properties", "rules", "items"), yamlKeys[tasks.StateRule]()},
+		{"a users action", []string{"$defs", "users"}, yamlKeys[tasks.UsersSpec]()},
+		{"users to propose", []string{"$defs", "users", "properties", "propose"}, yamlKeys[tasks.UserSet]()},
+		{"a users rule", []string{"$defs", "users", "properties", "rules", "items"}, yamlKeys[tasks.UserRule]()},
+		{"the inline comments action", append(actions, "properties", "inlineComments"), yamlKeys[tasks.InlineSpec]()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

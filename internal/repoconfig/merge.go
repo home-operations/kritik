@@ -10,6 +10,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/prfilter"
+	"github.com/home-operations/kritik/internal/tasks"
 )
 
 // Merged is the operator's settings with the merge-base FileName applied.
@@ -25,12 +26,17 @@ type Merged struct {
 	// Dropped says which of the file's values fell outside the operator's
 	// bounds; the operator's value applies for each.
 	Dropped []string
+	// TaskNotes say what of the operator's and the file's tasks the task
+	// bounds left out. Settings.Tasks holds the tasks that run: the
+	// operator's, then the file's.
+	TaskNotes []tasks.Note
 }
 
 // Merge applies doc, the merge-base FileName or nil when the repository has
 // none, over the operator's settings op (ADR-0010 §2.5). The file narrows
 // what the operator allows (enabled, filter, ignore, skip), appends its
-// instructions and context files to the operator's, may only turn
+// instructions and context files to the operator's, and its tasks, clipped
+// to the operator's task bounds, to the operator's, may only turn
 // requireSuggestedFix on, and replaces the templates, the inline severity
 // floor and whether findings go inline, which grant nothing. It chooses
 // its mode, models, agent limits and commands and settle time within the
@@ -44,6 +50,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	op.Review.Instructions = slices.Clone(op.Review.Instructions)
 	op.Review.Context = slices.Clone(op.Review.Context)
 	m := Merged{Settings: op}
+	m.mergeTasks(&File{}, &op)
 	if doc == nil {
 		return m, nil
 	}
@@ -51,6 +58,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if err != nil {
 		return m, err
 	}
+	m.mergeTasks(&f, &op)
 	if f.Enabled != nil && !*f.Enabled {
 		m.Enabled = false
 	}

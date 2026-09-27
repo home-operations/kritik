@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+
+	"github.com/home-operations/kritik/internal/jobtimeout"
 )
 
 var (
@@ -133,6 +135,9 @@ func (a Agent) check() error {
 	if (a.MaxSteps != nil && *a.MaxSteps <= 0) || (a.MaxToolOutputBytes != nil && *a.MaxToolOutputBytes <= 0) ||
 		(a.MaxTokens != nil && *a.MaxTokens <= 0) || (a.Timeout != nil && *a.Timeout <= 0) {
 		return errors.New("agent limits must be positive")
+	}
+	if a.Timeout != nil && *a.Timeout > jobtimeout.MaxAgentTimeout {
+		return fmt.Errorf("agent.timeout must not exceed %s", jobtimeout.MaxAgentTimeout)
 	}
 	for i, c := range a.Commands {
 		if !commandRe.MatchString(c) {

@@ -127,6 +127,11 @@
           }
         }
       }
+    },
+    "tasks": {
+      "type": "array",
+      "description": "Tasks run on forge events, after the operator's; each is clipped to the operator's allow.tasks. See docs/repository-config.md.",
+      "items": { "$ref": "#/$defs/task" }
     }
   },
   "$defs": {
@@ -150,6 +155,400 @@
       "type": "string",
       "minLength": 1,
       "description": "A doublestar glob, such as docs/** or **/*.sql."
-    }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "on"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+          "description": "Names the task in markers, runs and notes."
+        },
+        "on": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/trigger" }
+        },
+        "if": {
+          "type": "string",
+          "description": "A CEL guard over event, subject and raw; empty always runs."
+        },
+        "mode": {
+          "enum": ["agentic", "single"],
+          "description": "agentic, the default, runs in a runner pod; single is one call."
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "review": { "$ref": "#/$defs/model" },
+            "fallback": { "$ref": "#/$defs/model" }
+          }
+        },
+        "agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "An agentic task's limits, tools and commands, each within the operator's allow bounds.",
+          "properties": {
+            "maxSteps": { "type": "integer", "minimum": 1 },
+            "maxToolOutputBytes": { "type": "integer", "minimum": 1 },
+            "maxTokens": { "type": "integer", "minimum": 1 },
+            "timeout": { "$ref": "#/$defs/duration" },
+            "tools": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+            },
+            "commands": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[^/]+$" }
+            }
+          }
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Named sources gathered for the prompt, each a .Context variable.",
+          "properties": {
+            "thread": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The subject and its last comments.",
+              "properties": {
+                "comments": { "type": "integer", "minimum": 0, "maximum": 200 }
+              }
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["path"],
+                    "properties": {
+                      "path": { "$ref": "#/$defs/path" }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["glob"],
+                    "properties": {
+                      "glob": { "$ref": "#/$defs/glob" },
+                      "max": { "type": "integer", "minimum": 0, "maximum": 50 }
+                    }
+                  }
+                ]
+              }
+            },
+            "search": {
+              "type": "array",
+              "description": "Searches of the repository index.",
+              "items": { "$ref": "#/$defs/query" }
+            },
+            "related": {
+              "type": "array",
+              "description": "Searches of the forge's issues and pull requests.",
+              "items": { "$ref": "#/$defs/query" }
+            },
+            "commands": {
+              "type": "array",
+              "description": "Commands an agentic run executes.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "run"],
+                "properties": {
+                  "name": { "$ref": "#/$defs/identifier" },
+                  "run": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        },
+        "system": {
+          "$ref": "#/$defs/path",
+          "description": "A template added to kritik's fixed system preamble."
+        },
+        "prompt": { "$ref": "#/$defs/path", "description": "The prompt template." },
+        "promptInline": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The prompt template, inline; not with prompt."
+        },
+        "fields": {
+          "type": "object",
+          "description": "Custom answer fields, by name.",
+          "propertyNames": { "pattern": "^[a-z][a-zA-Z0-9_]*$" },
+          "additionalProperties": { "$ref": "#/$defs/field" }
+        },
+        "actions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The report comment.",
+              "properties": {
+                "mode": { "enum": ["sticky", "append", "none"] },
+                "template": { "$ref": "#/$defs/path" },
+                "if": {
+                  "type": "string",
+                  "description": "A CEL expression over event, subject, raw and, in an action, answer."
+                }
+              }
+            },
+            "labels": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "propose": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Globs of labels the model may add and remove.",
+                  "properties": {
+                    "add": {
+                      "type": "array",
+                      "items": { "$ref": "#/$defs/glob" }
+                    },
+                    "remove": {
+                      "type": "array",
+                      "items": { "$ref": "#/$defs/glob" }
+                    }
+                  }
+                },
+                "rules": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "add": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "A Go template over the event and the answer."
+                        }
+                      },
+                      "remove": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "A Go template over the event and the answer."
+                        }
+                      },
+                      "if": {
+                        "type": "string",
+                        "description": "A CEL expression over event, subject, raw and, in an action, answer."
+                      }
+                    }
+                  }
+                },
+                "if": {
+                  "type": "string",
+                  "description": "A CEL expression over event, subject, raw and, in an action, answer."
+                }
+              }
+            },
+            "state": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "propose": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "close": { "type": "boolean" },
+                    "reopen": { "type": "boolean" }
+                  }
+                },
+                "rules": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "close": { "type": "boolean" },
+                      "reopen": { "type": "boolean" },
+                      "if": {
+                        "type": "string",
+                        "description": "A CEL expression over event, subject, raw and, in an action, answer."
+                      }
+                    }
+                  }
+                },
+                "if": {
+                  "type": "string",
+                  "description": "A CEL expression over event, subject, raw and, in an action, answer."
+                }
+              }
+            },
+            "assign": { "$ref": "#/$defs/users" },
+            "reviewers": { "$ref": "#/$defs/users" },
+            "inlineComments": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Comments on a pull request's lines.",
+              "properties": {
+                "propose": { "type": "boolean" },
+                "if": {
+                  "type": "string",
+                  "description": "A CEL expression over event, subject, raw and, in an action, answer."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "trigger": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["issue"],
+          "properties": {
+            "issue": {
+              "type": ["array", "null"],
+              "description": "Actions, as globs; empty is any.",
+              "items": { "$ref": "#/$defs/glob" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pull_request"],
+          "properties": {
+            "pull_request": {
+              "type": ["array", "null"],
+              "description": "Actions, as globs; empty is any.",
+              "items": { "$ref": "#/$defs/glob" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["comment"],
+          "properties": {
+            "comment": {
+              "type": ["array", "null"],
+              "description": "Actions, as globs; empty is any.",
+              "items": { "$ref": "#/$defs/glob" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["raw"],
+          "properties": {
+            "raw": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "A forge-specific event, by its header name.",
+              "required": ["event"],
+              "properties": {
+                "event": { "$ref": "#/$defs/glob" },
+                "actions": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/glob" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An answer field: a restricted JSON Schema.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": ["string", "number", "integer", "boolean", "array", "object"]
+        },
+        "description": { "type": "string" },
+        "enum": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "maxLength": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "pattern": { "type": "string" },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "items": { "$ref": "#/$defs/field" },
+        "maxItems": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "properties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/field" }
+        }
+      }
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "query"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A Go template over the event and the answer."
+        },
+        "k": { "type": "integer", "minimum": 0, "maximum": 50 }
+      }
+    },
+    "users": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "propose": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Logins the model may pick.",
+          "properties": {
+            "users": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" }
+            }
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["users"],
+            "properties": {
+              "users": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "A Go template over the event and the answer."
+                }
+              },
+              "if": {
+                "type": "string",
+                "description": "A CEL expression over event, subject, raw and, in an action, answer."
+              }
+            }
+          }
+        },
+        "if": {
+          "type": "string",
+          "description": "A CEL expression over event, subject, raw and, in an action, answer."
+        }
+      }
+    },
+    "identifier": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9_]*$" }
   }
 }

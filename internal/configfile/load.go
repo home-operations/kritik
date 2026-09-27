@@ -466,6 +466,9 @@ func (f *File) validateOverrides(where string, r *Overrides) error {
 	if err := validateReview(where+".review", &r.Review); err != nil {
 		return err
 	}
+	if err := f.validateTasks(where, r.Tasks); err != nil {
+		return err
+	}
 	return f.validateAllow(where+".allow", &r.Allow)
 }
 
@@ -630,7 +633,7 @@ func (f *File) validateAllow(where string, a *Allow) error {
 	if a.Settle != nil && *a.Settle < 0 {
 		return fmt.Errorf("configfile: %s.settle must not be negative", where)
 	}
-	return nil
+	return validateTaskBounds(where+".tasks", a.Tasks)
 }
 
 // checkWithinAllow rejects resolved settings whose own values lie outside

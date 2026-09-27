@@ -30,6 +30,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/prfilter"
+	"github.com/home-operations/kritik/internal/tasks"
 )
 
 // FileName is the repository-relative path of the per-repository config file.
@@ -131,6 +132,8 @@ type File struct {
 	Ignore  []string              `yaml:"ignore,omitempty"`
 	Skip    Skip                  `yaml:"skip,omitempty"`
 	Review  Review                `yaml:"review,omitempty"`
+	// Tasks are the repository's own tasks, run after the operator's.
+	Tasks []tasks.Task `yaml:"tasks,omitempty"`
 }
 
 // Parse decodes data as .kritik.yaml. Unknown fields, invalid glob patterns
@@ -175,6 +178,14 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 			}
 		}
 	}
+	for i := range f.Tasks {
+		if err := f.Tasks[i].Check(); err != nil {
+			return File{}, nil, fmt.Errorf("repoconfig: tasks[%d]: %w", i, err)
+		}
+		if slices.ContainsFunc(f.Tasks[:i], func(o tasks.Task) bool { return o.Name == f.Tasks[i].Name }) {
+			return File{}, nil, fmt.Errorf("repoconfig: tasks[%d]: name %q is used twice", i, f.Tasks[i].Name)
+		}
+	}
 	for _, p := range f.Referenced() {
 		if err := validateRefPath(p); err != nil {
 			return File{}, nil, err
@@ -216,8 +227,8 @@ func validateRefPath(p string) error {
 }
 
 // Referenced lists the in-repo paths the file names: review instructions
-// first, then the summary and inline templates, deduplicated in the order
-// first seen.
+// first, then the summary and inline templates, the context files and the
+// tasks' templates, deduplicated in the order first seen.
 func (f File) Referenced() []string {
 	seen := make(map[string]bool, len(f.Review.Instructions)+2)
 	var out []string
@@ -235,6 +246,11 @@ func (f File) Referenced() []string {
 	add(f.Review.Templates.Inline)
 	for _, c := range f.Review.Context {
 		add(c.Path)
+	}
+	for _, t := range f.Tasks {
+		for _, p := range t.Files() {
+			add(p)
+		}
 	}
 	return out
 }

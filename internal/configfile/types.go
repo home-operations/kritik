@@ -17,6 +17,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/prfilter"
+	"github.com/home-operations/kritik/internal/tasks"
 )
 
 // ProviderType selects the model adapter a provider uses.
@@ -199,6 +200,9 @@ type Overrides struct {
 	Agent       Agent          `yaml:"agent,omitempty"`
 	Incremental Incremental    `yaml:"incremental,omitempty"`
 	Review      ReviewSpec     `yaml:"review,omitempty"`
+	// Tasks are the operator's own tasks; a scope that writes them
+	// replaces the broader scope's.
+	Tasks []tasks.Task `yaml:"tasks,omitempty"`
 	// Allow bounds what the repository's own .kritik.yaml may choose.
 	Allow Allow `yaml:"allow,omitempty"`
 
@@ -217,6 +221,8 @@ type Allow struct {
 	// Agent caps each agent limit a repository may set.
 	Agent  AllowAgent     `yaml:"agent,omitempty"`
 	Settle *time.Duration `yaml:"settle,omitempty"`
+	// Tasks bound tasks, the repository's and the operator's own.
+	Tasks *TaskBounds `yaml:"tasks,omitempty"`
 }
 
 // AllowAgent caps the agent limits a repository may set.
@@ -597,4 +603,9 @@ type Settings struct {
 	// Allow is the bounds as the narrowest scope writing each one set it;
 	// one no scope writes is left unset.
 	Allow Allow
+	// Tasks are the operator's tasks, as the narrowest scope writing them
+	// set them; repoconfig.Merge clips them and adds the repository's.
+	Tasks []tasks.Task
+	// TaskBounds are Allow.Tasks with every default applied.
+	TaskBounds tasks.Bounds
 }
