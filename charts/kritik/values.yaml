@@ -124,7 +124,7 @@ config:
   #           clientId: Iv1.example
   #           privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
   #           webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
-  #       # GitLab and Forgejo installations authenticate with a bot token
+  #       # Forgejo installations authenticate with a bot token
   #       # instead of a GitHub App.
   #       - name: example-forgejo
   #         forge: forgejo

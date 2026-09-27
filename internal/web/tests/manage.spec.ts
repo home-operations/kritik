@@ -461,7 +461,8 @@ test.describe('operator console', () => {
     await page.getByLabel('Slug').fill('beta');
     await page.getByRole('button', { name: 'Add installation' }).click();
     await page.getByLabel('Name', { exact: true }).fill('beta-bot');
-    await page.getByLabel('Forge').selectOption('gitlab');
+    await expect(page.getByLabel('Forge').locator('option[value="gitlab"]')).toHaveCount(0);
+    await page.getByLabel('Forge').selectOption('forgejo');
     await page.getByLabel('Host').fill('http://code.example');
     await page.locator('[data-path="installations[0].account"]').fill('bot');
     await page.getByLabel('Token: new value').fill('tok');

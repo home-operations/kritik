@@ -38,7 +38,6 @@
       <span>Forge</span>
       <select data-path="{p}.forge" aria-invalid={inv(`${p}.forge`) || undefined} bind:value={inst.forge}>
         <option value="github">GitHub</option>
-        <option value="gitlab">GitLab</option>
         <option value="forgejo">Forgejo</option>
       </select>
     </label>

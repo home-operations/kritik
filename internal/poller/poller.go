@@ -78,10 +78,6 @@ func (p *Poller) PollAll(ctx context.Context) {
 		tenant := &file.Tenants[ti]
 		for ii := range tenant.Installations {
 			in := &tenant.Installations[ii]
-			if in.Forge == configfile.ForgeGitLab {
-				p.Logger.Debug("poll skipped: forge not supported", "installation", in.Name, "forge", in.Forge)
-				continue
-			}
 			if ctx.Err() != nil {
 				return
 			}

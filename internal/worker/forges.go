@@ -16,7 +16,7 @@ import (
 
 // BuildForge constructs the forge client for an installation from its
 // credentials in the configuration file. GitHub and Forgejo are
-// implemented; GitLab follows the rollout order in the ADR.
+// implemented; the configuration refuses GitLab until it is.
 func BuildForge(ctx context.Context, in *configfile.Installation, externalID int64, repo string) (forge.Client, error) {
 	switch in.Forge {
 	case configfile.ForgeGitHub:
