@@ -31,6 +31,12 @@ var goldenReview = Review{
 	CreatedAt: t0, FinishedAt: &t1, SkipReason: repoconfig.SkipFiltered, Error: "",
 }
 
+var goldenTaskRun = TaskRun{
+	ID: "tr-1", Repository: "alpha/one", Task: "triage", SubjectKind: "issue", SubjectNumber: 12, Trigger: "issue.opened",
+	Mode: "single", Status: store.TaskSucceeded, Reason: "", Model: "acme/large", ConfigSHA: "def456", CommentID: new(int64(77)),
+	Error: "", DroppedCount: 1, CreatedAt: t0, StartedAt: &t0, FinishedAt: &t1, DurationMs: new(int64(90000)),
+}
+
 var goldenSummary = TenantSummary{
 	Slug: "alpha", ManagedBy: configfile.OriginDashboard, Role: auth.RoleAdmin, Installations: 1, Repositories: 3, Reviews7d: 9,
 	Usage: MonthUsage{Tokens: 5000, CostUSD: 1.5, TokensPerMonth: 1000000, ReviewsToday: 2, ReviewsPerDay: 50},
@@ -195,6 +201,24 @@ var goldens = map[string]any{
 		ID: 42, Kind: "review", State: store.JobRetryable, Attempt: 2, MaxAttempts: 5, CreatedAt: t0, ScheduledAt: t1,
 		AttemptedAt: &t0, FinalizedAt: nil, LastError: "boom",
 		Args: JobArgs{Repository: "alpha/one", Number: 7, Head: "abc123", Trigger: "push", CommentID: 0},
+	},
+	"task_run": goldenTaskRun,
+	"task_run_detail": TaskRunDetail{
+		Run: goldenTaskRun,
+		Event: &TaskEvent{
+			Forge: "github", Event: "issue", RawEvent: "issues", Action: "opened", Sender: "ada", Delivery: "d-1", ReceivedAt: t0,
+		},
+		Fields: map[string]json.RawMessage{"priority": json.RawMessage(`"high"`)},
+		Proposed: &TaskAnswer{
+			Summary: "A crash report.", Comment: "Thanks!", AddLabels: []string{"bug", "wontfix"}, RemoveLabels: []string{"needs-triage"},
+			State: "", Assignees: []string{}, Reviewers: []string{}, Inline: []TaskInline{},
+		},
+		Applied: &TaskApplied{
+			AddLabels: []string{"bug"}, RemoveLabels: []string{"needs-triage"}, State: "", Assignees: []string{}, Reviewers: []string{},
+			Inline: []TaskInline{{Path: "a.go", Line: 3, EndLine: 5, Body: "here"}}, Comment: "sticky",
+		},
+		Dropped:    []TaskDrop{{Action: "labels.add", Value: "wontfix", Reason: "it is not a label the task lets the model add"}},
+		ModelCalls: 1, CostUSD: 0.02, Tokens: TokenCounts{Input: 300, Output: 40},
 	},
 	"event": Event{Kind: store.EventReview, Tenant: "alpha", ID: "rev-1", ReviewID: new("rev-1")},
 	"error": ErrorBody{Code: CodeNotFound, Message: "tenant not found", Details: json.RawMessage(`{"slug":"x"}`)},

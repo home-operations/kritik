@@ -1,0 +1,73 @@
+{
+  "run": {
+    "id": "tr-1",
+    "repository": "alpha/one",
+    "task": "triage",
+    "subjectKind": "issue",
+    "subjectNumber": 12,
+    "trigger": "issue.opened",
+    "mode": "single",
+    "status": "succeeded",
+    "reason": "",
+    "model": "acme/large",
+    "configSha": "def456",
+    "commentId": 77,
+    "error": "",
+    "droppedCount": 1,
+    "createdAt": "2026-09-01T12:00:00Z",
+    "startedAt": "2026-09-01T12:00:00Z",
+    "finishedAt": "2026-09-01T12:01:30Z",
+    "durationMs": 90000
+  },
+  "event": {
+    "forge": "github",
+    "event": "issue",
+    "rawEvent": "issues",
+    "action": "opened",
+    "sender": "ada",
+    "delivery": "d-1",
+    "receivedAt": "2026-09-01T12:00:00Z"
+  },
+  "fields": {
+    "priority": "high"
+  },
+  "proposed": {
+    "summary": "A crash report.",
+    "comment": "Thanks!",
+    "addLabels": ["bug", "wontfix"],
+    "removeLabels": ["needs-triage"],
+    "state": "",
+    "assignees": [],
+    "reviewers": [],
+    "inline": []
+  },
+  "applied": {
+    "addLabels": ["bug"],
+    "removeLabels": ["needs-triage"],
+    "state": "",
+    "assignees": [],
+    "reviewers": [],
+    "inline": [
+      {
+        "path": "a.go",
+        "line": 3,
+        "endLine": 5,
+        "body": "here"
+      }
+    ],
+    "comment": "sticky"
+  },
+  "dropped": [
+    {
+      "action": "labels.add",
+      "value": "wontfix",
+      "reason": "it is not a label the task lets the model add"
+    }
+  ],
+  "modelCalls": 1,
+  "costUsd": 0.02,
+  "tokens": {
+    "input": 300,
+    "output": 40
+  }
+}
