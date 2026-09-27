@@ -444,26 +444,19 @@ func (c *Client) Permission(ctx context.Context, owner, repo, login string) (for
 
 // ReplyInline implements forge.Client. Forgejo carries no reply-linkage
 // field on an inline comment, so a "reply" is a new single-comment review
-// on the same line, reusing the original comment's commit and path. A
-// single findInlineComment fetch supplies everything the new review needs
-// (path, line, and commit id), unlike forge.Comment which carries no commit
-// id of its own. Forgejo's review-creation response carries no per-comment
-// id, so this always returns 0.
-func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, rootID int64, body string) (int64, error) {
-	root, err := c.findInlineComment(ctx, owner, repo, number, rootID)
-	if err != nil {
-		return 0, fmt.Errorf("forgejo: reply to inline comment %d on %s/%s#%d: %w", rootID, owner, repo, number, err)
-	}
+// on to's commit, path and line. Forgejo's review-creation response carries
+// no per-comment id, so this always returns 0.
+func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, to forge.Comment, body string) (int64, error) {
 	opts := createPullReviewOptions{
-		CommitID: root.CommitID,
+		CommitID: to.CommitID,
 		Event:    "COMMENT",
 		Comments: []createPullReviewComment{
-			{Path: root.Path, Body: body, NewLineNum: int64(root.LineNum)},
+			{Path: to.Path, Body: body, NewLineNum: int64(to.Line)},
 		},
 	}
 	path := fmt.Sprintf("%s/pulls/%d/reviews", repoPath(owner, repo), number)
 	if err := c.do(ctx, http.MethodPost, path, opts, nil); err != nil {
-		return 0, fmt.Errorf("forgejo: reply to inline comment %d on %s/%s#%d: %w", rootID, owner, repo, number, err)
+		return 0, fmt.Errorf("forgejo: reply to inline comment %d on %s/%s#%d: %w", to.ID, owner, repo, number, err)
 	}
 	return 0, nil
 }
@@ -518,9 +511,7 @@ func (c *Client) listReviews(ctx context.Context, owner, repo string, number int
 }
 
 // rawReviewComments fetches GET /pulls/{n}/reviews/{id}/comments, which is
-// not paginated. It returns the raw API shape (unlike listReviewComments'
-// former mapped form) so callers that need fields forge.Comment drops
-// (commit id) can still get at them.
+// not paginated.
 func (c *Client) rawReviewComments(ctx context.Context, owner, repo string, number int, reviewID int64) ([]pullReviewComment, error) {
 	var raw []pullReviewComment
 	path := fmt.Sprintf("%s/pulls/%d/reviews/%d/comments", repoPath(owner, repo), number, reviewID)
@@ -542,6 +533,7 @@ func inlineComment(cm pullReviewComment) forge.Comment {
 		Inline:      true,
 		Path:        cm.Path,
 		Line:        int(cm.LineNum),
+		CommitID:    cm.CommitID,
 	}
 }
 

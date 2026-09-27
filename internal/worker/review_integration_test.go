@@ -264,7 +264,7 @@ func (l *localForge) ListOpenPullRequests(context.Context, string, string, time.
 	return nil, nil
 }
 
-func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, _ int64, body string) (int64, error) {
+func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, _ forge.Comment, body string) (int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.replies = append(l.replies, body)
