@@ -9,8 +9,11 @@ type user struct {
 	Login string `json:"login"`
 }
 
-// label is a repository or PR label.
+// label is a repository or PR label. ID is only populated by endpoints that
+// return the full label object (repo labels, an issue's current labels);
+// Forgejo's DELETE-label endpoint requires this numeric id, not the name.
 type label struct {
+	ID    int64  `json:"id"`
 	Name  string `json:"name"`
 	Color string `json:"color"`
 }
@@ -148,8 +151,9 @@ type issue struct {
 }
 
 // issueLabelsOption is the request body for POST
-// /repos/{owner}/{repo}/issues/{index}/labels: Forgejo accepts label names
-// directly, with no id lookup required.
+// /repos/{owner}/{repo}/issues/{index}/labels. The upstream field is
+// []any (either label names or numeric ids are accepted); this package
+// always sends names, so a plain string slice covers everything it needs.
 type issueLabelsOption struct {
 	Labels []string `json:"labels"`
 }

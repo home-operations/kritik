@@ -656,17 +656,36 @@ func (c *Client) AddLabels(ctx context.Context, owner, repo string, number int, 
 }
 
 // RemoveLabel implements forge.Client. A label not currently applied is not
-// an error.
-func (c *Client) RemoveLabel(ctx context.Context, owner, repo string, number int, label string) error {
-	path := fmt.Sprintf("%s/issues/%d/labels/%s", repoPath(owner, repo), number, url.PathEscape(label))
-	err := c.do(ctx, http.MethodDelete, path, nil, nil)
-	if errors.Is(err, ErrNotFound) {
+// an error. Forgejo's DELETE endpoint addresses a label by numeric id, not
+// name, so this first resolves name against the issue's current labels; a
+// lookup failure is always an error, but the DELETE call itself tolerates a
+// 404 (the label was removed concurrently) as a no-op.
+func (c *Client) RemoveLabel(ctx context.Context, owner, repo string, number int, name string) error {
+	var current []label
+	listPath := fmt.Sprintf("%s/issues/%d/labels", repoPath(owner, repo), number)
+	if err := c.do(ctx, http.MethodGet, listPath, nil, &current); err != nil {
+		return fmt.Errorf("forgejo: remove label %q from %s/%s#%d: %w", name, owner, repo, number, err)
+	}
+	id, ok := findLabelID(current, name)
+	if !ok {
 		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("forgejo: remove label %q from %s/%s#%d: %w", label, owner, repo, number, err)
+	deletePath := fmt.Sprintf("%s/issues/%d/labels/%d", repoPath(owner, repo), number, id)
+	if err := c.do(ctx, http.MethodDelete, deletePath, nil, nil); err != nil && !errors.Is(err, ErrNotFound) {
+		return fmt.Errorf("forgejo: remove label %q from %s/%s#%d: %w", name, owner, repo, number, err)
 	}
 	return nil
+}
+
+// findLabelID returns the numeric id of the label named name within labels,
+// and whether it was found.
+func findLabelID(labels []label, name string) (int64, bool) {
+	for _, l := range labels {
+		if l.Name == name {
+			return l.ID, true
+		}
+	}
+	return 0, false
 }
 
 // SetState implements forge.Client.
