@@ -25,14 +25,16 @@ func (g UsageGroup) Valid() bool {
 }
 
 // usageKeys are the SQL key expressions of each grouping: over usage u
-// joined to its repository ur, and over model_calls m joined through its
-// review to the repository mr. A model call's kind maps to the usage role
-// it is charged as.
+// joined to its repository ur, and over model_calls m joined to the
+// repository mr through its review, or mtr through its task run. A model
+// call's kind maps to the usage role it is charged as: an agent step is a
+// task's when it has a task run.
 var usageKeys = map[UsageGroup][2]string{
 	UsageByDay:   {`to_char(u.created_at, 'YYYY-MM-DD')`, `to_char(m.created_at, 'YYYY-MM-DD')`},
 	UsageByModel: {`u.model`, `m.model`},
-	UsageByRepo:  {`coalesce(ur.name, '')`, `coalesce(mr.name, '')`},
-	UsageByRole:  {`u.role`, `CASE m.kind WHEN 'agent_step' THEN 'review' ELSE m.kind END`},
+	UsageByRepo:  {`coalesce(ur.name, '')`, `coalesce(mr.name, mtr.name, '')`},
+	UsageByRole: {`u.role`, `CASE WHEN m.kind = 'agent_step' AND m.task_run_id IS NOT NULL THEN 'task'
+		WHEN m.kind = 'agent_step' THEN 'review' ELSE m.kind END`},
 }
 
 // UsageSeriesRow is one key of a usage series. Tokens, cost and calls come
@@ -65,6 +67,7 @@ func UsageSeries(ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time
 			SELECT `+keys[1]+` AS key, sum(m.cache_read_tokens) AS cache_read, sum(m.cache_write_tokens) AS cache_write
 			FROM model_calls m LEFT JOIN reviews mv ON mv.id = m.review_id
 				LEFT JOIN pull_requests mp ON mp.id = mv.pull_request_id LEFT JOIN repositories mr ON mr.id = mp.repository_id
+				LEFT JOIN task_runs mt ON mt.id = m.task_run_id LEFT JOIN repositories mtr ON mtr.id = mt.repository_id
 			WHERE m.created_at >= $1 AND m.created_at < $2 GROUP BY 1)
 		SELECT coalesce(b.key, c.key), coalesce(b.input, 0), coalesce(c.cache_read, 0), coalesce(c.cache_write, 0),
 			coalesce(b.output, 0), coalesce(b.cost, 0), coalesce(b.calls, 0)

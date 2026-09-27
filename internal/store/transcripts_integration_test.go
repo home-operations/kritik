@@ -198,3 +198,70 @@ func TestSweepSessions(t *testing.T) {
 		t.Fatalf("expired login states left %d, %v", expired, err)
 	}
 }
+
+// TestUsageSeriesTaskCalls checks a task's model calls count under the
+// task role and its repository.
+func TestUsageSeriesTaskCalls(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := tenantID(t, s, "alpha")
+	// A window of its own, which no other test's rows fall in.
+	from := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+	var repo, runID string
+	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT id, name FROM repositories WHERE tenant_id = $1 ORDER BY name LIMIT 1`, alpha).
+			Scan(new(string), &repo); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO task_runs (tenant_id, repository_id, task, mode, status)
+			SELECT $1, id, 'triage', 'agentic', 'succeeded' FROM repositories WHERE tenant_id = $1 AND name = $2 RETURNING id`,
+			alpha, repo).Scan(&runID); err != nil {
+			return err
+		}
+		for _, kind := range []string{"agent_step", "task"} {
+			if _, err := tx.Exec(ctx, `INSERT INTO model_calls (tenant_id, kind, task_run_id, cache_read_tokens, created_at)
+				VALUES ($1, $2, $3, 5, $4)`, alpha, kind, runID, from.Add(time.Hour)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		deleteModelCalls(t, s, `task_run_id = $1`, runID)
+		if _, err := s.owner.Exec(context.Background(), `DELETE FROM task_runs WHERE id = $1`, runID); err != nil {
+			t.Error(err)
+		}
+	})
+	series := func(g UsageGroup) []UsageSeriesRow {
+		t.Helper()
+		var rows []UsageSeriesRow
+		if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+			var err error
+			rows, err = UsageSeries(ctx, tx, g, from, from.Add(24*time.Hour))
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return rows
+	}
+	tests := []struct {
+		group UsageGroup
+		key   string
+	}{
+		{UsageByRole, "task"},
+		{UsageByRepo, repo},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.group), func(t *testing.T) {
+			rows := series(tt.group)
+			if len(rows) != 1 || rows[0].Key != tt.key || rows[0].CacheReadTokens != 10 {
+				t.Fatalf("series by %s = %+v; want both calls under %q", tt.group, rows, tt.key)
+			}
+		})
+	}
+}
