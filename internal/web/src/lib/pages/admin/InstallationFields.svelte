@@ -70,5 +70,13 @@
       <SecretField label="Git token" path="{p}.gitToken" bind:secret={inst.gitToken} optional {keepable} invalid={inv(`${p}.gitToken`)} hint={re(inst.gitToken) ?? 'Optional: a separate token for git clones.'} />
     </div>
   {/if}
-  <p class="field-hint">Webhook path: <span class="mono">/hooks/{inst.name || '<name>'}</span></p>
+  <p class="field-hint">
+    {#if inst.forge === 'github'}
+      Webhook: set the GitHub App's webhook URL to <span class="mono">/hooks/{inst.name || '<name>'}</span> on kritik's webhook
+      listener, with this webhook secret. It covers every repository the App is installed on.
+    {:else}
+      Webhook: add <span class="mono">/hooks/{inst.name || '<name>'}</span> on kritik's webhook listener, with this webhook secret, as
+      one webhook on the user or organization that owns the repositories.
+    {/if}
+  </p>
 </div>
