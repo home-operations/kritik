@@ -100,6 +100,18 @@ func TestRenderPrompt(t *testing.T) {
 		})
 	}
 
+	t.Run("a declared source that gathered nothing is empty", func(t *testing.T) {
+		t.Parallel()
+		p := prepared(t, "name: a\non: [{issue: []}]\ncontext: {files: [{path: a.md}], related: [{name: dupes, query: x}], "+
+			"search: [{name: code, query: x}]}\npromptInline: '[{{ .Context.files }}][{{ .Context.dupes }}][{{ .Context.code }}]'\n", nil)
+		_, user, err := p.RenderPrompt(PromptData{Input: SampleInput()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(user, "[][][]") || strings.Contains(user, "<no value>") {
+			t.Fatalf("user prompt:\n%s", user)
+		}
+	})
 	t.Run("the raw payload is capped", func(t *testing.T) {
 		t.Parallel()
 		p := prepared(t, "name: a\non: [{issue: []}]\npromptInline: hi\n", nil)

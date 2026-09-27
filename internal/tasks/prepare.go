@@ -83,6 +83,16 @@ func newPromptVars(d PromptData, t *Task) (promptVars, error) {
 		t = d.Task
 	}
 	v := promptVars{Input: defuseInput(d.Input), Task: (*taskView)(t), Context: make(map[string]string, len(d.Context))}
+	// A declared source that gathered nothing reads as empty, not as a
+	// missing key's "<no value>".
+	if t != nil {
+		if len(t.Context.Files) > 0 {
+			v.Context[ContextFiles] = ""
+		}
+		for _, q := range slices.Concat(t.Context.Search, t.Context.Related) {
+			v.Context[q.Name] = ""
+		}
+	}
 	for _, c := range d.Thread {
 		v.Thread = append(v.Thread, Comment{Author: defuse(c.Author), Body: defuse(c.Body), CreatedAt: c.CreatedAt})
 	}

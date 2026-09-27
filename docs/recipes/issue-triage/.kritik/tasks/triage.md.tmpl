@@ -10,8 +10,11 @@ Answer with:
 - comment: when needsInfo is true, a short, polite request for what is missing, addressed to the author.
   When one of the possible duplicates below is clearly the same issue, say which. Otherwise leave it empty.
 
+{{ with .Context.files }}
 The contributing guide:
-{{ .Context.files }}
-
+{{ . }}
+{{ end }}
+{{- with .Context.dupes }}
 The issues and pull requests most like this one, as possible duplicates:
-{{ .Context.dupes }}
+{{ . }}
+{{ end }}
