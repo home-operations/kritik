@@ -323,12 +323,19 @@ operator allows in `allow.tasks.context`:
 
 A `search`, `related` or `commands` source is keyed by its `name`, which
 must start with a lowercase letter and hold only letters, digits and `_`,
-unique across them. A `query` is a template over the event. Every
+unique across them; `files` and `notes` are reserved. A `query` is a template over the event. Every
 `.Context` value reaches a template already inside its own `<untrusted>`
 block, as JSON when it is not text, so `{{ .Context.files }}` inlines the
 whole list and a template cannot pick out its fields.
 `{{ range .Context }}{{ . }}{{ end }}`, as the built-in prompt does, puts
 every gathered source in the prompt.
+
+Glob files and command output need a checkout, so only an agentic task
+gets them: its runner gathers them after the templates have rendered and
+appends each to the prompt in its own `<untrusted>` block, so they are not
+in a template's `.Context`, and `.Context.files` holds the `path` files
+alone. A single-mode task leaves a glob out. Each source is cut to 32 KiB
+and all of them to 128 KiB; what a run left out is listed in its notes.
 
 ### Fields
 

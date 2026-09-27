@@ -196,8 +196,8 @@ func globFiles(ctx context.Context, head *object.Tree, ignore []string, f TaskFi
 	return out
 }
 
-// maxGlobFiles caps the files one glob gathers.
-const maxGlobFiles = 20
+// maxGlobFiles caps the files one glob gathers, as tasks.Check caps max.
+const maxGlobFiles = 50
 
 // readText is file's content, refused when it is binary.
 func readText(file *object.File) (string, error) {
