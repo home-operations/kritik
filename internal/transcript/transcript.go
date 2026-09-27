@@ -24,12 +24,13 @@ const (
 	KindReview    Kind = "review"
 	KindFallback  Kind = "fallback"
 	KindFollowUp  Kind = "followup"
+	KindTask      Kind = "task"
 )
 
 // Valid reports whether k is a model call kind.
 func (k Kind) Valid() bool {
 	switch k {
-	case KindAgentStep, KindReview, KindFallback, KindFollowUp:
+	case KindAgentStep, KindReview, KindFallback, KindFollowUp, KindTask:
 		return true
 	}
 	return false
