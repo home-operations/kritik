@@ -19,6 +19,11 @@ func init() {
 		},
 		"tenant_config": TenantConfig{
 			ManagedBy: configfile.OriginDashboard, Revision: new(int64(3)), Editable: true, Policy: fieldPolicies(&auth.Principal{}, true),
+			Inherited: Inherited{
+				Tenant: goldenRepoSettings, TenantSources: map[string]configfile.Source{"models.review": configfile.SourceFile},
+				Repository:        goldenRepoSettings,
+				RepositorySources: map[string]configfile.Source{"models.review": configfile.SourceFile, "mode": configfile.SourceDashboard},
+			},
 			Spec: json.RawMessage(`{"slug":"alpha","installations":[{"name":"alpha-bot","token":{"set":true}}]}`),
 		},
 		"create_tenant_request": CreateTenantRequest{Slug: "alpha", Spec: json.RawMessage(`{"slug":"alpha"}`)},

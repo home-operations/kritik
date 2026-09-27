@@ -89,6 +89,7 @@
             <ConfigEditor
               initial={cfg.spec}
               editable={(key) => fieldEditable(cfg.policy, key)}
+              inherited={cfg.inherited}
               {saving}
               {errMessage}
               {errPath}

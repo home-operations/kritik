@@ -2,7 +2,7 @@
 // The server's message is already human-readable; these add what to do
 // next where the code alone says more than the message does.
 import { ApiError } from './api.svelte';
-import type { ErrorCode, FieldPolicy, ManagementErrorCode, PathDetails } from './types';
+import type { ConfigSource, ErrorCode, FieldPolicy, ManagementErrorCode, PathDetails } from './types';
 
 const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
   revision_conflict: 'Someone else saved this tenant since you loaded it.',
@@ -26,6 +26,19 @@ const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
 };
 
 // describe is one line for a failed management call.
+const inheritedFrom: Record<ConfigSource, string> = {
+  default: "kritik's default",
+  env: 'the environment',
+  file: 'the config file',
+  dashboard: 'this tenant',
+  repository: '.kritik.yaml',
+};
+
+// inheritsHint is what a field left empty takes, and from where.
+export function inheritsHint(value: string, source: ConfigSource | undefined): string {
+  return `inherits ${value} from ${inheritedFrom[source ?? 'default']}`;
+}
+
 // fieldEditable says whether the policy lets the caller change key: every
 // setting it covers, itself or nested under it, is editable.
 export function fieldEditable(policy: FieldPolicy[], key: string): boolean {

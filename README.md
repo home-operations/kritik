@@ -52,7 +52,8 @@ Kubernetes Job pod that holds no secrets.
 - **Dashboard.** Sign-in, dashboard-managed tenants, live review state, full
   model transcripts and an audit log.
 
-GitLab is planned: its webhooks parse, but there is no GitLab client yet.
+GitLab is planned: its webhooks parse, but there is no GitLab client yet,
+so the configuration refuses a `gitlab` installation until there is.
 
 ## Installing
 

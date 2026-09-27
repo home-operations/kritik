@@ -113,6 +113,16 @@ test.describe('tenant configuration', () => {
     await expect(page.locator('[data-path="forks"]')).toBeEnabled();
   });
 
+  test('fields left empty show what they inherit, and from where', async ({ page }) => {
+    await setup(page, adminMe, [configRow(dashboardConfig)]);
+    await page.goto(`/${ADMIN}/config`);
+    const inh = g.tenantConfig.inherited;
+    await expect(page.locator('[data-path="models.review"]')).toHaveAttribute('placeholder', `inherits ${inh.tenant.models.review} from the config file`);
+    await expect(page.locator('[data-path="settle"]')).toHaveAttribute('placeholder', "inherits 30s from kritik's default");
+    await expect(page.locator('[data-path="repositories[0].mode"] option[value=""]')).toHaveText(`default: ${inh.repository.mode}`);
+    await expect(page.locator('[data-path="repositories[0].filter"]')).toHaveAttribute('placeholder', `inherits ${inh.repository.filter} from kritik's default`);
+  });
+
   test('a 422 highlights and focuses the field its path names', async ({ page }) => {
     await setup(page, adminMe, [configRow(dashboardConfig)]);
     const host = 'installations[0].host';
@@ -461,7 +471,8 @@ test.describe('operator console', () => {
     await page.getByLabel('Slug').fill('beta');
     await page.getByRole('button', { name: 'Add installation' }).click();
     await page.getByLabel('Name', { exact: true }).fill('beta-bot');
-    await page.getByLabel('Forge').selectOption('gitlab');
+    await expect(page.getByLabel('Forge').locator('option[value="gitlab"]')).toHaveCount(0);
+    await page.getByLabel('Forge').selectOption('forgejo');
     await page.getByLabel('Host').fill('http://code.example');
     await page.locator('[data-path="installations[0].account"]').fill('bot');
     await page.getByLabel('Token: new value').fill('tok');

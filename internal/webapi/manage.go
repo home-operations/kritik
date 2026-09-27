@@ -82,7 +82,7 @@ func (s *Server) getTenantConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 	var out TenantConfig
 	if live != nil && live.Origin() == configfile.OriginFile {
-		out.ManagedBy, out.Policy = configfile.OriginFile, fieldPolicies(p, false)
+		out.ManagedBy, out.Policy, out.Inherited = configfile.OriginFile, fieldPolicies(p, false), s.inherited(live)
 		if out.Spec, err = renderFileTenant(live); err != nil {
 			return err
 		}
@@ -103,6 +103,14 @@ func (s *Server) getTenantConfig(w http.ResponseWriter, r *http.Request) error {
 	out.Revision = &d.Revision
 	out.Editable = s.keyring != nil && p.CanAdmin(tenantIDFor(slug))
 	out.Policy = fieldPolicies(p, out.Editable)
+	if live == nil {
+		stored, err := configfile.DecodeTenant(d)
+		if err != nil {
+			return err
+		}
+		live = &stored
+	}
+	out.Inherited = s.inherited(live)
 	if out.Spec, err = redactSpec(d.Spec); err != nil {
 		return err
 	}
@@ -422,4 +430,14 @@ func readBody(r *http.Request, v any) error {
 		return errBadRequest(CodeBadRequest, "request body must hold one JSON document")
 	}
 	return nil
+}
+
+// inherited is what t's fields and its repository entries' fields resolve
+// to where they are left out, in the running configuration.
+func (s *Server) inherited(t *configfile.Tenant) Inherited {
+	file, none := s.current.Get(), &configfile.Tenant{}
+	return Inherited{
+		Tenant: repoSettings(file.Settings(none, "", "")), TenantSources: file.Sources(none, "", ""),
+		Repository: repoSettings(file.Settings(t, "", "")), RepositorySources: file.Sources(t, "", ""),
+	}
 }

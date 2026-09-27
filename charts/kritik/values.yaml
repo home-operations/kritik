@@ -144,9 +144,9 @@ config:
   #           clientId: Iv1.example
   #           privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
   #           webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
-  #       # GitLab, Forgejo and Gitea installations authenticate with a bot
-  #       # token instead of a GitHub App. Gitea speaks the same API as
-  #       # Forgejo, so forge: gitea works identically here.
+  #       # Forgejo and Gitea installations authenticate with a bot token
+  #       # instead of a GitHub App. Gitea speaks the same API as Forgejo,
+  #       # so forge: gitea works identically here.
   #       - name: example-forgejo
   #         forge: forgejo
   #         host: forge.example.com
@@ -459,6 +459,13 @@ readinessProbe:
     path: /readyz
     port: metrics
   periodSeconds: 10
+# -- Startup probe, on the metrics port. The liveness and readiness probes wait until it passes, so a pod still opening its listeners is not reported unready; it allows a minute.
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: metrics
+  periodSeconds: 2
+  failureThreshold: 30
 
 # -- Grace period for a clean shutdown: the worker stops taking jobs and lets running ones finish for up to 30s, and its gateway lets model steps in flight finish for up to 2m.
 terminationGracePeriodSeconds: 150

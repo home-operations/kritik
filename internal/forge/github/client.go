@@ -269,11 +269,16 @@ func (c *Client) Permission(ctx context.Context, owner, repo, login string) (for
 	return p, nil
 }
 
-// ReplyInline implements forge.Client.
-func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, rootID int64, body string) (int64, error) {
-	cm, _, err := c.api.PullRequests.CreateCommentInReplyTo(ctx, owner, repo, number, body, rootID)
+// ReplyInline implements forge.Client. The reply goes under the thread's
+// top-level comment: GitHub takes no replies to replies.
+func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, to forge.Comment, body string) (int64, error) {
+	root := to.ID
+	if to.InReplyTo != 0 {
+		root = to.InReplyTo
+	}
+	cm, _, err := c.api.PullRequests.CreateCommentInReplyTo(ctx, owner, repo, number, body, root)
 	if err != nil {
-		return 0, fmt.Errorf("github: reply to review comment %d: %w", rootID, err)
+		return 0, fmt.Errorf("github: reply to review comment %d: %w", root, err)
 	}
 	return cm.GetID(), nil
 }
@@ -289,7 +294,7 @@ func inlineComment(cm *gh.PullRequestComment) forge.Comment {
 	return forge.Comment{
 		ID: cm.GetID(), Author: cm.GetUser().GetLogin(), AuthorIsBot: cm.GetUser().GetType() == userTypeBot,
 		Body: cm.GetBody(), CreatedAt: cm.GetCreatedAt().Time,
-		Inline: true, Path: cm.GetPath(), Line: cm.GetLine(), InReplyTo: cm.GetInReplyTo(),
+		Inline: true, Path: cm.GetPath(), Line: cm.GetLine(), CommitID: cm.GetCommitID(), InReplyTo: cm.GetInReplyTo(),
 	}
 }
 
@@ -317,7 +322,9 @@ func openPullRequest(pr *gh.PullRequest) forge.OpenPullRequest {
 		Number: pr.GetNumber(), Title: pr.GetTitle(), Author: pr.GetUser().GetLogin(),
 		AuthorIsBot: pr.GetUser().GetType() == userTypeBot || strings.HasSuffix(pr.GetUser().GetLogin(), "[bot]"),
 		State:       pr.GetState(), Merged: pr.GetMerged(), Draft: pr.GetDraft(),
-		Fork:    head.GetRepo().GetFullName() != "" && head.GetRepo().GetFullName() != base.GetRepo().GetFullName(),
+		// A deleted fork leaves head.repo null, which is not the base repo
+		// either, as the webhook parser rules.
+		Fork:    head.GetRepo() == nil || head.GetRepo().GetFullName() != base.GetRepo().GetFullName(),
 		HeadRef: head.GetRef(), HeadSHA: head.GetSHA(), BaseRef: base.GetRef(), BaseSHA: base.GetSHA(),
 		URL: pr.GetHTMLURL(), Body: pr.GetBody(), CreatedAt: pr.GetCreatedAt().Time,
 		UpdatedAt: pr.GetUpdatedAt().Time, DefaultBranch: base.GetRepo().GetDefaultBranch(),
@@ -331,7 +338,7 @@ func openPullRequest(pr *gh.PullRequest) forge.OpenPullRequest {
 // SetStatus implements forge.Client.
 func (c *Client) SetStatus(ctx context.Context, owner, repo, sha string, state forge.StatusState, description string) error {
 	status := gh.RepoStatus{
-		State: new(string(state)), Context: new(forge.StatusContext), Description: new(truncate(description, forge.MaxStatusDescription)),
+		State: new(string(state)), Context: new(forge.StatusContext), Description: new(forge.StatusDescription(description)),
 	}
 	if _, _, err := c.api.Repositories.CreateStatus(ctx, owner, repo, sha, status); err != nil {
 		return fmt.Errorf("github: status on %s: %w", sha, err)
@@ -480,14 +487,6 @@ func issueFrom(iss *gh.Issue) forge.Issue {
 		out.Assignees = append(out.Assignees, a.GetLogin())
 	}
 	return out
-}
-
-// truncate keeps a description within GitHub's 140-character limit.
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-1] + "…"
 }
 
 // APIBase derives the REST base for a host: empty for github.com, the
