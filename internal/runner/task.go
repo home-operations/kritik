@@ -134,8 +134,9 @@ func gatherTask(ctx context.Context, t *TaskPrompt, head *object.Tree, ignore []
 	b := &tasks.Budget{PerSource: t.SourceBytes, Left: t.ContextBytes}
 	files := make([]taskFile, 0, len(t.Files))
 	for _, f := range t.Files {
-		if ctx.Err() != nil {
-			break
+		if err := ctx.Err(); err != nil {
+			b.Notes = append(b.Notes, fmt.Sprintf("context files %s not gathered: %v", f.Glob, err))
+			continue
 		}
 		files = append(files, globFiles(ctx, head, ignore, f, b)...)
 	}
@@ -196,8 +197,9 @@ func globFiles(ctx context.Context, head *object.Tree, ignore []string, f TaskFi
 		matched = matched[:limit]
 	}
 	var out []taskFile
-	for _, file := range matched {
-		if ctx.Err() != nil {
+	for i, file := range matched {
+		if err := ctx.Err(); err != nil {
+			b.Notes = append(b.Notes, fmt.Sprintf("context files %s: %d matches not read: %v", f.Glob, len(matched)-i, err))
 			break
 		}
 		content, err := readText(file)

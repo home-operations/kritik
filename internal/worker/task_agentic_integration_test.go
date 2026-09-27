@@ -49,7 +49,7 @@ defaults:
     - name: agentic-triage
       mode: agentic
       on: [{ issue: [opened] }]
-      promptInline: "Triage issue #{{ .Subject.Number }}: {{ .Subject.Title }}\n{{ .Context.files }}"
+      promptInline: "Triage issue #{{ .Subject.Number }}: {{ .Subject.Title }}\n{{ range .Context }}{{ . }}\n{{ end }}"
       agent: { maxSteps: 4, tools: [grep, run], commands: [cat] }
       context:
         files: [{ path: main.go }, { glob: "*.go", max: 1 }]
@@ -143,7 +143,20 @@ func (f *agenticTaskForge) FileAt(ctx context.Context, owner, repo, ref, path st
 	return f.lf.FileAt(ctx, owner, repo, ref, path)
 }
 
-func TestAgenticTaskEndToEnd(t *testing.T) {
+// agenticTaskHarness runs agentic tasks through the real ingest service,
+// River, the local executor, the real runner and the gateway, over a
+// taskForge on a real repository and a scripted model.
+type agenticTaskHarness struct {
+	*taskHarness
+	ctx context.Context
+	sm  *taskAgentModel
+	// slug is the harness's tenant's, and the account and owner of its
+	// repository, widgets.
+	slug string
+}
+
+func newAgenticTaskHarness(t *testing.T, slug, extraContext string, embedder model.Embedder) *agenticTaskHarness {
+	t.Helper()
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	st, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"), Logger: logger})
@@ -164,7 +177,10 @@ func TestAgenticTaskEndToEnd(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "model-key")
-	file, err := configfile.Parse([]byte(fmt.Sprintf(agenticTaskConfigYAML, srv.URL)))
+	doc := strings.ReplaceAll(fmt.Sprintf(agenticTaskConfigYAML, srv.URL), "initech", slug)
+	doc = strings.Replace(doc, `        commands: [{ name: other, run: "cat other.go" }]`,
+		`        commands: [{ name: other, run: "cat other.go" }]`+extraContext, 1)
+	file, err := configfile.Parse([]byte(doc))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +195,7 @@ func TestAgenticTaskEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := &taskHarness{t: t, st: st, file: file, svc: ingest.NewService(st, insertOnly), tf: tf}
-	h.in, h.tenant, _ = file.Installation("initech-bot")
+	h.in, h.tenant, _ = file.Installation(slug + "-bot")
 	current := configfile.NewCurrent(file)
 	gateway := httptest.NewServer(&Gateway{
 		Store: st, Current: current, Logger: logger, Proxy: http.NotFoundHandler(), Steppers: &Completers{Build: BuildStepper},
@@ -191,6 +207,7 @@ func TestAgenticTaskEndToEnd(t *testing.T) {
 	river.AddWorker(workers, &Task{
 		Base: base0, Completers: &completers{c: &taskModel{}}, Executor: &executor.Local{Store: runnerStore},
 		GatewayURL: gateway.URL, GatewayTokenTTL: time.Hour, superviseEvery: 50 * time.Millisecond,
+		Embedder: embedder, EmbedModel: "fake-embed",
 	})
 	client, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{jobs.QueueTask: {MaxWorkers: 2}}, Workers: workers,
@@ -203,17 +220,28 @@ func TestAgenticTaskEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Stop(context.Background()) })
+	return &agenticTaskHarness{taskHarness: h, ctx: ctx, sm: sm, slug: slug}
+}
 
-	out, err := h.svc.Dispatch(ctx, ingest.Request{File: file, Tenant: h.tenant, Installation: h.in, Event: webhook.Event{
-		Kind: webhook.KindIssue, Action: "opened", Delivery: "agentic-d-1", Account: "initech", Forge: configfile.ForgeGitHub,
+// dispatch delivers the opening of issue #7.
+func (h *agenticTaskHarness) dispatch(delivery string) {
+	h.t.Helper()
+	out, err := h.svc.Dispatch(h.ctx, ingest.Request{File: h.file, Tenant: h.tenant, Installation: h.in, Event: webhook.Event{
+		Kind: webhook.KindIssue, Action: "opened", Delivery: delivery, Account: h.slug, Forge: configfile.ForgeGitHub,
 		RawEvent: "issues", Sender: "devin", Raw: json.RawMessage(`{"action":"opened","issue":{"number":7}}`),
-		Repository: &webhook.Repository{FullName: "initech/widgets", DefaultBranch: "main"},
+		Repository: &webhook.Repository{FullName: h.slug + "/widgets", DefaultBranch: "main"},
 		Subject:    &webhook.Subject{Kind: webhook.SubjectIssue, Number: 7},
 		Issue:      &webhook.Issue{Number: 7, Title: "It crashes", State: "open", Author: "devin"},
 	}})
 	if err != nil || out.Status != ingest.Enqueued {
-		t.Fatalf("an issue an agentic task runs on = %+v, %v", out, err)
+		h.t.Fatalf("an issue an agentic task runs on = %+v, %v", out, err)
 	}
+}
+
+func TestAgenticTaskEndToEnd(t *testing.T) {
+	h := newAgenticTaskHarness(t, "initech", "", nil)
+	ctx, st, sm, tf := h.ctx, h.st, h.sm, h.tf
+	h.dispatch("agentic-d-1")
 	var run taskRunRow
 	var runnerRunID *string
 	var taskRunID string
@@ -242,7 +270,7 @@ func TestAgenticTaskEndToEnd(t *testing.T) {
 	if !slices.Equal(notes, []string{"context files *.go kept 1 of 2 matches"}) {
 		t.Fatalf("task run notes = %q", notes)
 	}
-	checkAgenticTaskRecords(t, h, taskRunID, *runnerRunID)
+	checkAgenticTaskRecords(t, h.taskHarness, taskRunID, *runnerRunID)
 	// Retention sweeps across tenants; the event is not left for the next
 	// test's count.
 	if _, err := st.SweepTaskEvents(ctx, time.Nanosecond); err != nil {
@@ -336,34 +364,7 @@ func TestSearchIndexHits(t *testing.T) {
 	in, tenant, _ := file.Installation("initech-bot")
 	repoID := configfile.RepositoryID(in.ID(), "initech/widgets")
 	fe := &fakeEmbedder{}
-	chunks := []struct{ path, text string }{
-		{"crash.go", "func crashOnStart() { panic(\"crashes on start\") }"},
-		{"boot.go", "func boot() { start() }"},
-		{"docs.md", "zzzz qqqq xxxx"},
-	}
-	texts := make([]string, len(chunks))
-	for i, c := range chunks {
-		texts[i] = c.text
-	}
-	vectors, _, _ := fe.Embed(ctx, texts)
-	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		var runID string
-		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-			VALUES ($1, $2, 'c0ffee', 'fake-embed', 8, 'full', 'completed') RETURNING id`, tenant.ID(), repoID).Scan(&runID); err != nil {
-			return err
-		}
-		for i, c := range chunks {
-			if _, err := tx.Exec(ctx, `INSERT INTO index_chunks (tenant_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
-				VALUES ($1, $2, $3, $4, 1, 1, $5, $6::halfvec)`, tenant.ID(), repoID, runID, c.path, c.text, model.VectorLiteral(vectors[i])); err != nil {
-				return err
-			}
-		}
-		_, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, repoID, runID)
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	chunks := seedIndex(t, st, tenant.ID(), repoID)
 	r := &taskRunner{
 		w:      &Task{Store: st, Logger: logger, Embedder: fe, EmbedModel: "fake-embed"},
 		tenant: tenant, args: jobs.TaskArgs{RepositoryID: repoID}, settings: configfile.Settings{Limits: configfile.Limits{Concurrency: 1}},
@@ -384,6 +385,109 @@ func TestSearchIndexHits(t *testing.T) {
 			Scan(&embedded)
 	}); err != nil || embedded != 1 {
 		t.Fatalf("embedding usage rows = %d, %v", embedded, err)
+	}
+}
+
+// indexChunk is a chunk seedIndex writes.
+type indexChunk struct{ path, text string }
+
+// seedIndex makes a completed fake-embed index generation of three chunks
+// the repository's active one, and returns the chunks.
+func seedIndex(t *testing.T, st *store.Store, tenantID, repoID string) []indexChunk {
+	t.Helper()
+	ctx := context.Background()
+	if err := st.EnsureIndexSchema(ctx, "kritik_app", "fake-embed", 8, false); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	chunks := []indexChunk{
+		{"crash.go", "func crashOnStart() { panic(\"crashes on start\") }"},
+		{"boot.go", "func boot() { start() }"},
+		{"docs.md", "zzzz qqqq xxxx"},
+	}
+	texts := make([]string, len(chunks))
+	for i, c := range chunks {
+		texts[i] = c.text
+	}
+	// Its own embedder, so a test's counts only the searches.
+	vectors, _, err := (&fakeEmbedder{}).Embed(ctx, texts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var runID string
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			VALUES ($1, $2, 'c0ffee', 'fake-embed', 8, 'full', 'completed') RETURNING id`, tenantID, repoID).Scan(&runID); err != nil {
+			return err
+		}
+		for i, c := range chunks {
+			if _, err := tx.Exec(ctx, `INSERT INTO index_chunks (tenant_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+				VALUES ($1, $2, $3, $4, 1, 1, $5, $6::halfvec)`, tenantID, repoID, runID, c.path, c.text, model.VectorLiteral(vectors[i])); err != nil {
+				return err
+			}
+		}
+		_, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, repoID, runID)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return chunks
+}
+
+// TestAgenticTaskSnoozesBeforeBilling checks an agentic task whose model
+// has no free slot snoozes before it spends anything, its index search's
+// embedding included, and charges that embedding once when it runs.
+func TestAgenticTaskSnoozesBeforeBilling(t *testing.T) {
+	fe := &fakeEmbedder{}
+	h := newAgenticTaskHarness(t, "hooli", `
+        search: [{ name: code, query: "{{ .Subject.Title }}", k: 2 }]`, fe)
+	ctx := h.ctx
+	seedIndex(t, h.st, h.tenant.ID(), configfile.RepositoryID(h.in.ID(), "hooli/widgets"))
+	// Another job holds the tenant's one slot on the task's model.
+	held, err := takeLease(ctx, h.st, h.tenant.ID(), "gateway/agent-model", 1, -1)
+	if err != nil || held == nil {
+		t.Fatalf("takeLease = %v, %v", held, err)
+	}
+	h.dispatch("snooze-d-1")
+	waitFor(t, 20*time.Second, "the task job to snooze", func() bool {
+		var n int
+		err := h.st.App().QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = $1 AND (metadata->>'snoozes')::int >= 1`,
+			jobs.TaskArgs{}.Kind()).Scan(&n)
+		return err == nil && n == 1
+	})
+	usage := func(role string) int {
+		return h.count(`SELECT count(*) FROM usage WHERE tenant_id = '` + h.tenant.ID() + `' AND role LIKE '` + role + `'`)
+	}
+	fe.mu.Lock()
+	calls := fe.calls
+	fe.mu.Unlock()
+	if n := usage("%"); n != 0 || calls != 0 {
+		t.Fatalf("a snoozed task spent: %d usage rows, %d embedding calls", n, calls)
+	}
+	if err := held.release(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	waitFor(t, 30*time.Second, "the snoozed task to run", func() bool {
+		err := h.st.WithTenant(ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT status FROM task_runs WHERE tenant_id = $1 AND task = 'agentic-triage'`, h.tenant.ID()).Scan(&status)
+		})
+		return err == nil && store.TaskRunStatus(status).Terminal()
+	})
+	if status != "succeeded" {
+		t.Fatalf("status = %q", status)
+	}
+	if n := usage("embedding"); n != 1 {
+		t.Fatalf("embedding usage rows = %d, want 1", n)
+	}
+	h.sm.mu.Lock()
+	prompt := h.sm.users[0]
+	h.sm.mu.Unlock()
+	if !strings.Contains(prompt, `<untrusted source="context:code">`) || !strings.Contains(prompt, "crash.go") {
+		t.Fatalf("the prompt lacks the index search: %s", prompt)
+	}
+	if _, err := h.st.SweepTaskEvents(ctx, time.Nanosecond); err != nil {
+		t.Fatal(err)
 	}
 }
 

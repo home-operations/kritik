@@ -254,8 +254,12 @@ func (r *taskRunner) do(ctx context.Context) (store.TaskRunResult, error) {
 		}
 	}
 	agentic := r.task.RunMode() == tasks.ModeAgentic
-	if agentic && (r.w.GatewayURL == "" || r.w.Executor == nil) {
-		return failed("", errors.New("worker: agentic tasks need the model gateway (KRITIK_GATEWAY_URL)")), nil
+	if agentic {
+		res, release, err := r.agenticSlot(ctx)
+		if release == nil {
+			return res, err
+		}
+		defer release()
 	}
 	if err := r.w.Store.WithTenant(ctx, r.args.TenantID, func(tx pgx.Tx) error {
 		return store.StartTaskRun(ctx, tx, r.run.ID)

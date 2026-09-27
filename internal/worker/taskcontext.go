@@ -103,10 +103,14 @@ func (r *taskRunner) searchIndex(ctx context.Context, q tasks.NamedQuery) (hits 
 		k = taskSearchK
 	}
 	err = w.Store.WithTenant(ctx, r.tenant.ID(), func(tx pgx.Tx) error {
-		if err := insertUsage(ctx, tx, reviewUsage{
-			tenantID: r.tenant.ID(), repositoryID: r.args.RepositoryID, role: roleEmbedding, model: w.EmbedModel, input: tokens,
-		}); err != nil {
-			return err
+		// A run past its answer never gathers context again; should one,
+		// its embedding is not charged twice.
+		if r.run.AnsweredAt == nil {
+			if err := insertUsage(ctx, tx, reviewUsage{
+				tenantID: r.tenant.ID(), repositoryID: r.args.RepositoryID, role: roleEmbedding, model: w.EmbedModel, input: tokens,
+			}); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.Exec(ctx, `SET LOCAL vchordrq.prefilter = on`); err != nil {
 			return fmt.Errorf("worker: enable prefilter: %w", err)

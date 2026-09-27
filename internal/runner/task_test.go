@@ -121,7 +121,7 @@ func TestGatherTaskStopsWhenCanceled(t *testing.T) {
 		SourceBytes: 100, ContextBytes: 1000,
 	}
 	_, notes := gatherTask(ctx, &task, head, nil, nil)
-	if !slices.Equal(notes, []string{"context owners not gathered: context canceled"}) {
+	if !slices.Equal(notes, []string{"context files docs/*.md not gathered: context canceled", "context owners not gathered: context canceled"}) {
 		t.Fatalf("notes = %q", notes)
 	}
 	b := &tasks.Budget{PerSource: 100, Left: 1000}

@@ -30,12 +30,6 @@ import (
 // has started, the run ends here.
 func (r *taskRunner) agentic(ctx context.Context, data tasks.PromptData, labels []string) (store.TaskRunResult, error) {
 	ref, fallback := r.models()
-	if ref == "" {
-		return skipped(noModel), nil
-	}
-	if _, ok := r.file.Providers[ref.Provider()]; !ok {
-		return failed("", fmt.Errorf("worker: provider %q is not in the configuration", ref.Provider())), nil
-	}
 	system, user, err := r.prepared.RenderPrompt(data)
 	if err != nil {
 		return failed("", err), nil
@@ -48,19 +42,8 @@ func (r *taskRunner) agentic(ctx context.Context, data tasks.PromptData, labels 
 	if err != nil {
 		return store.TaskRunResult{}, err
 	}
-	// A free slot is taken without waiting, as an agentic review takes
-	// one, so a busy model snoozes the job instead of holding a worker for
-	// a runner's lifetime.
-	l, err := takeLease(ctx, r.w.Store, r.tenant.ID(), string(ref), r.settings.Limits.Concurrency, r.jobID)
-	if err != nil {
-		return store.TaskRunResult{}, err
-	}
-	if l == nil {
-		return store.TaskRunResult{}, r.snooze(string(ref))
-	}
-	defer r.w.releaseLease(ctx, r.logger, l, string(ref))
-	// The caps are read under the lease, so concurrent runs cannot all
-	// pass a cap of one.
+	// The caps are read under the model slot agenticSlot took, so
+	// concurrent runs cannot all pass a cap of one.
 	budget, capped, err := r.agentBudget(ctx)
 	if err != nil {
 		return store.TaskRunResult{}, err
@@ -69,6 +52,33 @@ func (r *taskRunner) agentic(ctx context.Context, data tasks.PromptData, labels 
 		return skipped(capped), nil
 	}
 	return r.runAgent(ctx, ref, fallback, budget, r.taskPrompt(system, user, schema), gitToken, labels)
+}
+
+// agenticSlot settles whether an agentic run can start and takes a slot on
+// its model without waiting, as an agentic review does, before the run does
+// anything billable: a busy model snoozes the job, and a snoozed job has
+// spent nothing, not even an index search's embedding, when it comes back.
+// release is nil when the run does not go on, for the result or error
+// given; otherwise the caller holds the slot until the run ends.
+func (r *taskRunner) agenticSlot(ctx context.Context) (store.TaskRunResult, func(), error) {
+	if r.w.GatewayURL == "" || r.w.Executor == nil {
+		return failed("", errors.New("worker: agentic tasks need the model gateway (KRITIK_GATEWAY_URL)")), nil, nil
+	}
+	ref, _ := r.models()
+	if ref == "" {
+		return skipped(noModel), nil, nil
+	}
+	if _, ok := r.file.Providers[ref.Provider()]; !ok {
+		return failed("", fmt.Errorf("worker: provider %q is not in the configuration", ref.Provider())), nil, nil
+	}
+	l, err := takeLease(ctx, r.w.Store, r.tenant.ID(), string(ref), r.settings.Limits.Concurrency, r.jobID)
+	if err != nil {
+		return store.TaskRunResult{}, nil, err
+	}
+	if l == nil {
+		return store.TaskRunResult{}, nil, r.snooze(string(ref))
+	}
+	return store.TaskRunResult{}, func() { r.w.releaseLease(ctx, r.logger, l, string(ref)) }, nil
 }
 
 // snooze puts the job back for later, backing off with each snooze, when
