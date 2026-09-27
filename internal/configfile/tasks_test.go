@@ -60,6 +60,8 @@ defaults:
 		{"an unknown action kind", doc("    allow: { tasks: { actions: [delete] } }\n", ""), "allow.tasks.actions[0] must be one of"},
 		{"an unknown context kind", doc("    allow: { tasks: { context: [web] } }\n", ""), "allow.tasks.context[0] must be one of"},
 		{"a bad event glob", doc("    allow: { tasks: { events: ['['] } }\n", ""), "allow.tasks.events[0]"},
+		{"an event glob with ?", doc("    allow: { tasks: { events: ['raw:issue?.opened'] } }\n", ""), "allow.tasks.events[0] \"raw:issue?.opened\" may use * and ** only"},
+		{"an event glob with a class", doc("    allow: { tasks: { events: ['issue.*', 'raw:issue[s].*'] } }\n", ""), "allow.tasks.events[1]"},
 		{"a bad tool name", doc("    allow: { tasks: { tools: [Read-File] } }\n", ""), "allow.tasks.tools[0]"},
 		{"a cap that is not positive", doc("    allow: { tasks: { maxFields: 0 } }\n", ""), "allow.tasks.maxFields must be positive"},
 	}

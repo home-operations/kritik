@@ -19,7 +19,9 @@ type TaskBounds struct {
 	Enabled *bool `yaml:"enabled,omitempty"`
 	// Events are globs over the event names a repository's task may
 	// trigger on, such as "issue.*" or "raw:release.*"; default the
-	// normalized events, so a raw event must be listed.
+	// normalized events, so a raw event must be listed. Only * and **
+	// wildcards are accepted, since a trigger's own glob is matched
+	// against them.
 	Events []string `yaml:"events,omitempty"`
 	// Actions are the action kinds a repository's task may declare;
 	// default comment, labels and inlineComments, so state, assign and
@@ -139,6 +141,12 @@ func validateTaskBounds(where string, b *TaskBounds) error {
 	for i, g := range b.Events {
 		if strings.TrimSpace(g) == "" || !doublestar.ValidatePattern(g) {
 			return fmt.Errorf("configfile: %s.events[%d] %q is not a valid glob", where, i, g)
+		}
+		// A bound is matched against a trigger's own glob text, which
+		// proves the trigger is inside it only for * and **: "?" or a
+		// class also matches a trigger's "*".
+		if strings.ContainsAny(g, "?[") {
+			return fmt.Errorf("configfile: %s.events[%d] %q may use * and ** only", where, i, g)
 		}
 	}
 	for _, c := range []struct {
