@@ -121,8 +121,8 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ref := configfile.ModelRef(grant.Model)
-	provider := file.Providers[ref.Provider()]
-	stepper, err := g.Steppers.Stepper(file, ref.Provider())
+	provider, _ := file.Provider(tenant, ref.Provider())
+	stepper, err := g.Steppers.Stepper(file, tenant, ref.Provider())
 	if err != nil {
 		logger.Error("gateway: no model adapter", "error", err)
 		refuse(w, http.StatusInternalServerError, "server_error", "the run's model is not configured")

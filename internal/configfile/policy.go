@@ -53,10 +53,13 @@ const (
 type Policy struct {
 	// Key is the setting as the configuration spells it; a dotted key is
 	// nested.
-	Key         string   `json:"key"`
-	Scopes      []Scope  `json:"scopes"`
-	TenantAdmin bool     `json:"tenantAdmin"`
-	Repository  RepoRule `json:"repository,omitempty"`
+	Key         string  `json:"key"`
+	Scopes      []Scope `json:"scopes"`
+	TenantAdmin bool    `json:"tenantAdmin"`
+	// OwnProviders lets a tenant admin write the setting too, but only to
+	// a model on one of the tenant's own providers, or to nothing.
+	OwnProviders bool     `json:"ownProviders,omitempty"`
+	Repository   RepoRule `json:"repository,omitempty"`
 }
 
 var (
@@ -73,15 +76,17 @@ const (
 )
 
 // Policies is the table. What a review costs, and how much of an untrusted
-// pull request it exposes the instance to, is the operator's alone.
+// pull request it exposes the instance to, is the operator's alone, except
+// that a tenant paying with its own provider key picks the model it pays
+// for.
 var Policies = []Policy{
 	{Key: "enabled", Scopes: []Scope{ScopeRepository}, TenantAdmin: true, Repository: RepoTurnOff},
 	{Key: "filter", Scopes: everyScope, TenantAdmin: true, Repository: RepoAnd},
 	{Key: "ignore", Scopes: everyScope, TenantAdmin: true, Repository: RepoUnion},
 	{Key: "skip.onlyPaths", Scopes: []Scope{}, Repository: RepoOwn},
 	{Key: "forks", Scopes: everyScope},
-	{Key: "models.review", Scopes: everyScope, Repository: RepoChoose},
-	{Key: "models.fallback", Scopes: everyScope, Repository: RepoChoose},
+	{Key: "models.review", Scopes: everyScope, OwnProviders: true, Repository: RepoChoose},
+	{Key: "models.fallback", Scopes: everyScope, OwnProviders: true, Repository: RepoChoose},
 	{Key: "mode", Scopes: everyScope, Repository: RepoChoose},
 	{Key: keyMaxSteps, Scopes: everyScope, Repository: RepoAtMost},
 	{Key: keyMaxToolOutputBytes, Scopes: everyScope, Repository: RepoAtMost},

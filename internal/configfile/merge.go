@@ -144,6 +144,9 @@ func Merge(file *File, dash []DashboardTenant, open Opener) (*File, error) {
 	if err := out.checkDashboardForgeHosts(file.DashboardForgeHosts()); err != nil {
 		return nil, err
 	}
+	if err := out.checkDashboardProviderHosts(file.Web.DashboardProviderHosts); err != nil {
+		return nil, err
+	}
 	out.hash = mergedHash(file.hash, out.dashboard)
 	return &out, nil
 }

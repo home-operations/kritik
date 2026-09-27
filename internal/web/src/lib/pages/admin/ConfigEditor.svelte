@@ -10,6 +10,7 @@
     draftOf,
     hasTypedSecret,
     newInstallation,
+    newProvider,
     newRepository,
     pathMatches,
     type SpecError,
@@ -19,6 +20,7 @@
   import { inheritsHint } from '../../manage';
   import type { Inherited } from '../../types';
   import InstallationFields from './InstallationFields.svelte';
+  import ProviderFields from './ProviderFields.svelte';
   import RepositoryFields from './RepositoryFields.svelte';
 
   type Obj = Record<string, unknown>;
@@ -234,6 +236,22 @@
           <textarea rows="3" data-path="runner" aria-invalid={inv('runner') || undefined} bind:value={draft.runner} disabled={!editable('runner')}></textarea>
         </label>
       </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Provider keys</legend>
+      <p class="field-hint">
+        The tenant's own model keys. A model named <span class="mono">&lt;key name&gt;/&lt;model&gt;</span> runs on its key, and a
+        tenant admin may set the review and fallback models to one; a model on the operator's providers stays the operator's to set.
+      </p>
+      {#each draft.providers as prov, i (prov.key)}
+        <ProviderFields
+          bind:prov={draft.providers[i]!}
+          {inv}
+          onremove={() => structural(() => (draft.providers = draft.providers.filter((x) => x.key !== prov.key)))}
+        />
+      {/each}
+      <div><button type="button" class="btn" onclick={() => structural(() => draft.providers.push(newProvider()))}>Add provider key</button></div>
     </fieldset>
 
     <fieldset>

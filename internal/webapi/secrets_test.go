@@ -166,6 +166,29 @@ func TestSealSpec(t *testing.T) {
 			errPath: "installations[0].token",
 		},
 		{
+			name:    "a provider key is sealed",
+			spec:    `{"slug":"alpha","providers":{"mine":{"type":"openai","apiKey":{"value":"sk-1"}}}}`,
+			want:    `{"providers":{"mine":{"apiKey":{"sealed":"sealed:sk-1"},"type":"openai"}},"slug":"alpha"}`,
+			changed: []string{"providers.mine.apiKey"},
+		},
+		{
+			name:   "a provider key is kept while its type and endpoint are",
+			stored: `{"slug":"alpha","providers":{"mine":{"type":"openai","baseUrl":"https://llm.example/v1/","apiKey":{"sealed":"old-sk"}}}}`,
+			spec:   `{"slug":"alpha","providers":{"mine":{"type":"openai","baseUrl":"https://LLM.example/v1","apiKey":{"keep":true}}}}`,
+			want:   `{"providers":{"mine":{"apiKey":{"sealed":"old-sk"},"baseUrl":"https://LLM.example/v1","type":"openai"}},"slug":"alpha"}`,
+		},
+		{
+			name:    "a provider key is not kept onto another endpoint",
+			stored:  `{"slug":"alpha","providers":{"mine":{"type":"openai","apiKey":{"sealed":"old-sk"}}}}`,
+			spec:    `{"slug":"alpha","providers":{"mine":{"type":"openai","baseUrl":"https://elsewhere.example","apiKey":{"keep":true}}}}`,
+			errPath: "providers.mine.apiKey", errCode: CodeReenterSecret,
+		},
+		{
+			name:    "a provider key is not generated",
+			spec:    `{"slug":"alpha","providers":{"mine":{"type":"openai","apiKey":{"generate":true}}}}`,
+			errPath: "providers.mine.apiKey",
+		},
+		{
 			name:    "a plain string is not a secret form",
 			spec:    `{"slug":"alpha","installations":[{"name":"a","token":"t0k"}]}`,
 			errPath: "installations[0].token",
@@ -217,16 +240,18 @@ func TestSealSpec(t *testing.T) {
 func TestRedactSpec(t *testing.T) {
 	got, err := redactSpec(json.RawMessage(`{"slug":"alpha","installations":[
 		{"name":"a","token":{"sealed":"s"},"webhookSecret":{},"gitToken":{"env":"X"}},
-		{"name":"b","app":{"clientId":"cid","clientIdFrom":{"file":"/x"},"privateKey":{"sealed":"k"},"webhookSecret":{"sealed":""}}}]}`))
+		{"name":"b","app":{"clientId":"cid","clientIdFrom":{"file":"/x"},"privateKey":{"sealed":"k"},"webhookSecret":{"sealed":""}}}],
+		"providers":{"mine":{"type":"openai","apiKey":{"sealed":"sk"}}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := `{"installations":[{"gitToken":{"set":true},"name":"a","token":{"set":true},"webhookSecret":{"set":false}},` +
-		`{"app":{"clientId":"cid","clientIdFrom":{"set":true},"privateKey":{"set":true},"webhookSecret":{"set":false}},"name":"b"}],"slug":"alpha"}`
+		`{"app":{"clientId":"cid","clientIdFrom":{"set":true},"privateKey":{"set":true},"webhookSecret":{"set":false}},"name":"b"}],` +
+		`"providers":{"mine":{"apiKey":{"set":true},"type":"openai"}},"slug":"alpha"}`
 	if string(got) != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
-	for _, leak := range []string{`"s"`, `"k"`, "/x", `"X"`, "sealed", "env"} {
+	for _, leak := range []string{`"s"`, `"k"`, `"sk"`, "/x", `"X"`, "sealed", "env"} {
 		if strings.Contains(string(got), leak) {
 			t.Errorf("redacted spec contains %s", leak)
 		}

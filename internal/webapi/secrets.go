@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -36,6 +37,10 @@ type secretKey struct {
 
 // sealedKey is SecretRef.Sealed's spec key.
 const sealedKey = "sealed"
+
+// providerKey is a tenant provider's apiKey, bound to the provider's type
+// and endpoint by keepProviderRef.
+var providerKey = secretKey{path: "apiKey", bound: true}
 
 var secretKeys = []secretKey{
 	{path: "token", bound: true},
@@ -75,15 +80,16 @@ type sealedSpec struct {
 	// generated maps "installations[<name>].<key>" to each secret the
 	// server generated, returned to the client exactly once.
 	generated map[string]string
-	// changed lists the same logical paths for every secret given a new
-	// value, for the audit log.
+	// changed lists the same logical paths, and "providers.<name>.apiKey"
+	// for a provider key, for every secret given a new value, for the audit
+	// log.
 	changed []string
 }
 
 // sealSpec turns a client's spec into the stored form: each secret given
 // a value or generated is sealed with seal, and each kept one is copied
 // from stored, the spec it replaces (nil on create), matching
-// installations by name.
+// installations and providers by name.
 func sealSpec(spec, stored json.RawMessage, seal func([]byte) (string, error), generate func() (string, error)) (sealedSpec, error) {
 	var out sealedSpec
 	root, err := decodeObject(spec)
@@ -96,41 +102,57 @@ func sealSpec(spec, stored json.RawMessage, seal func([]byte) (string, error), g
 			return out, fmt.Errorf("webapi: stored spec: %w", err)
 		}
 	}
+	// at seals or keeps the secret at parent[leaf], if there is one.
+	at := func(parent map[string]any, leaf string, k secretKey, where, logical string, keep func() (any, *specError)) error {
+		v, ok := parent[leaf]
+		if !ok || v == nil {
+			return nil
+		}
+		ref, err := sealRef(v, k, where, keep)
+		if err != nil {
+			return err
+		}
+		switch {
+		case ref.generate:
+			plain, err := generate()
+			if err != nil {
+				return fmt.Errorf("webapi: generate secret: %w", err)
+			}
+			ref.value = plain
+			if out.generated == nil {
+				out.generated = map[string]string{}
+			}
+			out.generated[logical] = plain
+		case ref.kept != nil:
+			parent[leaf] = ref.kept
+			return nil
+		}
+		sealed, err := seal([]byte(ref.value))
+		if err != nil {
+			return fmt.Errorf("webapi: seal %s: %w", logical, err)
+		}
+		parent[leaf] = map[string]any{sealedKey: sealed}
+		out.changed = append(out.changed, logical)
+		return nil
+	}
 	for i, in := range objects(root["installations"]) {
 		name, _ := in["name"].(string)
 		for _, k := range secretKeys {
 			parent, leaf := lookupParent(in, k.path)
-			v, ok := parent[leaf]
-			if !ok || v == nil {
-				continue
-			}
 			where := fmt.Sprintf("installations[%d].%s", i, k.path)
 			logical := fmt.Sprintf("installations[%s].%s", name, k.path)
-			ref, err := sealRef(v, k, where, func() (any, *specError) { return keepRef(prev, in, k, where) })
-			if err != nil {
+			if err := at(parent, leaf, k, where, logical, func() (any, *specError) { return keepRef(prev, in, k, where) }); err != nil {
 				return out, err
 			}
-			switch {
-			case ref.generate:
-				plain, err := generate()
-				if err != nil {
-					return out, fmt.Errorf("webapi: generate secret: %w", err)
-				}
-				ref.value = plain
-				if out.generated == nil {
-					out.generated = map[string]string{}
-				}
-				out.generated[logical] = plain
-			case ref.kept != nil:
-				parent[leaf] = ref.kept
-				continue
-			}
-			sealed, err := seal([]byte(ref.value))
-			if err != nil {
-				return out, fmt.Errorf("webapi: seal %s: %w", logical, err)
-			}
-			parent[leaf] = map[string]any{sealedKey: sealed}
-			out.changed = append(out.changed, logical)
+		}
+	}
+	providers := objectMap(root["providers"])
+	for _, name := range slices.Sorted(maps.Keys(providers)) {
+		p := objectMap(providers[name])
+		where := "providers." + name + ".apiKey"
+		keep := func() (any, *specError) { return keepProviderRef(prev, name, p, where) }
+		if err := at(p, "apiKey", providerKey, where, where, keep); err != nil {
+			return out, err
 		}
 	}
 	if out.spec, err = json.Marshal(root); err != nil {
@@ -204,6 +226,30 @@ func keepRef(stored, next map[string]any, k secretKey, where string) (any, *spec
 	return ref, nil
 }
 
+// keepProviderRef is the sealed key stored for the provider named name,
+// kept only while the provider keeps its type and endpoint: kept under
+// others, the key would be sent where it was never meant to go.
+func keepProviderRef(stored map[string]any, name string, next map[string]any, where string) (any, *specError) {
+	prev := objectMap(objectMap(stored["providers"])[name])
+	ref := objectMap(prev["apiKey"])
+	sealed, _ := ref[sealedKey].(string)
+	if sealed == "" {
+		return nil, &specError{path: where, msg: "has no stored value to keep"}
+	}
+	if providerEndpoint(prev) != providerEndpoint(next) {
+		return nil, &specError{path: where, code: CodeReenterSecret, msg: "the provider's type or endpoint changed; enter this key again"}
+	}
+	return map[string]any{sealedKey: sealed}, nil
+}
+
+// providerEndpoint is where a provider's key is sent: its type, and its
+// baseUrl where case and a trailing slash do not count.
+func providerEndpoint(p map[string]any) string {
+	typ, _ := p["type"].(string)
+	base, _ := p["baseUrl"].(string)
+	return typ + " " + strings.TrimRight(strings.ToLower(strings.TrimSpace(base)), "/")
+}
+
 // storedRef is the sealed ref stored at path under the installation named
 // name, and that installation, if there is one.
 func storedRef(stored map[string]any, name, path string) (any, map[string]any) {
@@ -273,6 +319,12 @@ func redactSpec(spec json.RawMessage) (json.RawMessage, error) {
 			parent[leaf] = map[string]any{"set": refSet(v)}
 		}
 	}
+	for _, p := range objectMap(root["providers"]) {
+		pm := objectMap(p)
+		if v, ok := pm["apiKey"]; ok {
+			pm["apiKey"] = map[string]any{"set": refSet(v)}
+		}
+	}
 	out, err := json.Marshal(root)
 	if err != nil {
 		return nil, fmt.Errorf("webapi: redact spec: %w", err)
@@ -321,6 +373,12 @@ func decodeObject(raw json.RawMessage) (map[string]any, error) {
 		return nil, fmt.Errorf("not an object")
 	}
 	return m, nil
+}
+
+// objectMap is v when it is an object, else nil.
+func objectMap(v any) map[string]any {
+	m, _ := v.(map[string]any)
+	return m
 }
 
 // objects is v's elements that are objects, when v is an array.

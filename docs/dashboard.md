@@ -85,6 +85,11 @@ may sign in and who of them may operate the instance:
   egress host, so this bounds what a tenant admin, who did not write the
   operator's file, can point kritik at; empty means `github.com` plus
   whatever hosts the file's own installations already use. No wildcards.
+- `dashboardProviderHosts` — the hosts a dashboard-managed tenant's own
+  provider keys may name in `baseUrl`. The worker calls a provider from
+  inside the cluster with its key, so this bounds where a tenant admin can
+  aim it; empty allows only each provider type's own endpoint (no
+  `baseUrl`). A `baseUrl` must be `https` on port 443. No wildcards.
 
 ## Roles
 
@@ -93,16 +98,18 @@ Three roles share the same `web.signIn` and `web.operators`:
 - **Operator** — an identity in `web.operators`. The only one who can edit
   the configuration file, the only way a dashboard tenant is created, and
   the only one who may set a dashboard tenant's `runner` and `limits`, or
-  its `models`, `forks`, `mode`, `agent`, `incremental` or `allow` at the
-  tenant or on any of its `repositories[]`; a tenant admin's write that
-  touches any of those is rejected. The rule is the policy table in
+  its `models` (on the operator's providers), `forks`, `mode`, `agent`,
+  `incremental` or `allow` at the tenant or on any of its
+  `repositories[]`; a tenant admin's write that touches any of those is
+  rejected. The rule is the policy table in
   `internal/configfile/policy.go`: the tenant configuration read serves it
   with what the caller may change there, and the form disables the rest. Membership is checked per source (the forge, refreshed
   at sign-in, and accepted invites), and a principal who qualifies through
   more than one gets the highest of the roles it grants.
 - **Tenant admin** — can edit a dashboard-managed tenant's configuration,
-  installations and repositories (other than the operator-only fields
-  above), invite and remove members, and queue a re-run, cancel or
+  installations, repositories and provider keys (other than the
+  operator-only fields above), set its review and fallback models to one
+  on its own provider keys, invite and remove members, and queue a re-run, cancel or
   reindex; every one of those writes is audit-logged in the same
   transaction as the change it makes. A dashboard installation may only
   reach its forge over `https`; a plain-`http` host is refused. A secret an
@@ -134,6 +141,20 @@ operator console after that refusal): the new tenant starts with none of
 the old one's members or invites but keeps its review history, visible to
 the new tenant's members. An installation name stays with the tenant that
 first held it, even once that tenant is gone.
+
+## Provider keys
+
+A tenant can bring its own model keys: `providers` in its spec, the same
+shape as the file's top-level `providers`, edited in the dashboard's
+"Provider keys" section. A model named `<key name>/<model>` then runs on
+that key, and the tenant pays for it; a key's name may not be one the
+file's providers already use. A tenant admin may set the tenant's review
+and fallback models, and a repository entry's, to a model on one of these
+keys or clear them; a model on the operator's providers stays the
+operator's to set. The keys are sealed at rest like installation secrets
+and never shown again. A saved key is kept only while its name, type and
+endpoint stay the same, so a key cannot be sent anywhere it was not
+entered for. Tenant limits still apply to runs on a tenant's own key.
 
 ## Sealing key
 

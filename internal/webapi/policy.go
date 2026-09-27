@@ -15,11 +15,12 @@ import (
 
 // fieldPolicies is the policy table as p meets it on a tenant whose
 // configuration it may change (editable) or not: a setting the table
-// keeps for operators is editable only by one.
+// keeps for operators is editable only by one, and one on the tenant's own
+// providers by its admin too, within those providers.
 func fieldPolicies(p *auth.Principal, editable bool) []FieldPolicy {
 	out := make([]FieldPolicy, len(configfile.Policies))
 	for i, pol := range configfile.Policies {
-		out[i] = FieldPolicy{Policy: pol, Editable: editable && (p.Operator || pol.TenantAdmin)}
+		out[i] = FieldPolicy{Policy: pol, Editable: editable && (p.Operator || pol.TenantAdmin || pol.OwnProviders)}
 	}
 	return out
 }
@@ -28,9 +29,11 @@ func fieldPolicies(p *auth.Principal, editable bool) []FieldPolicy {
 // keeps for operators that differs between the stored tenant and its
 // replacement, "" when none does. Repositories are matched by
 // installation and name; a removed repository that set any of them
-// changes them too, back to what it inherits.
+// changes them too, back to what it inherits. A model the replacement sets
+// on one of its own providers, or clears, is the tenant's to change.
 func operatorOnlyChange(prev, next *configfile.Tenant) string {
-	if k := operatorOnlyKey(configfile.ScopeTenant, prev, next); k != "" {
+	own := next.Providers
+	if k := operatorOnlyKey(configfile.ScopeTenant, prev, next, own); k != "" {
 		return k
 	}
 	key := func(r *configfile.Repository) string { return r.Installation + "\x00" + r.Name }
@@ -46,12 +49,12 @@ func operatorOnlyChange(prev, next *configfile.Tenant) string {
 			p = r
 		}
 		delete(byKey, key(n))
-		if k := operatorOnlyKey(configfile.ScopeRepository, p, n); k != "" {
+		if k := operatorOnlyKey(configfile.ScopeRepository, p, n, own); k != "" {
 			return "repositories[" + strconv.Itoa(i) + "]." + k
 		}
 	}
 	for _, p := range byKey {
-		if operatorOnlyKey(configfile.ScopeRepository, p, &zero) != "" {
+		if operatorOnlyKey(configfile.ScopeRepository, p, &zero, own) != "" {
 			return "repositories"
 		}
 	}
@@ -60,20 +63,35 @@ func operatorOnlyChange(prev, next *configfile.Tenant) string {
 
 // operatorOnlyKey is the top-level key of the first setting only an
 // operator may write at scope that a and b, that scope's specs, write
-// differently; "" when none.
-func operatorOnlyKey(scope configfile.Scope, a, b any) string {
+// differently; "" when none. A setting the table lets a tenant pay for is
+// b's to write when it names one of own, or nothing.
+func operatorOnlyKey(scope configfile.Scope, a, b any, own map[string]configfile.Provider) string {
 	for _, p := range configfile.Policies {
 		if p.TenantAdmin || !slices.Contains(p.Scopes, scope) {
 			continue
 		}
 		va, _ := configfile.SpecValue(a, p.Key)
 		vb, _ := configfile.SpecValue(b, p.Key)
+		if p.OwnProviders && onOwnProvider(vb, own) {
+			continue
+		}
 		if !sameSetting(va, vb) {
 			top, _, _ := strings.Cut(p.Key, ".")
 			return top
 		}
 	}
 	return ""
+}
+
+// onOwnProvider reports whether v, a model setting, is unset or names one
+// of own.
+func onOwnProvider(v any, own map[string]configfile.Provider) bool {
+	ref, _ := v.(*configfile.ModelRef)
+	if ref == nil || *ref == "" {
+		return true
+	}
+	_, ok := own[ref.Provider()]
+	return ok
 }
 
 // sameSetting reports whether two scopes write a setting alike, compared

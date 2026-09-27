@@ -461,6 +461,7 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 	}
 	add("web", "sessionTTL", ttl.String(), from(f.Web.SessionTTL > 0))
 	add("web", "dashboardForgeHosts", strings.Join(f.DashboardForgeHosts(), ", "), from(len(f.Web.DashboardForgeHosts) > 0))
+	add("web", "dashboardProviderHosts", strings.Join(f.Web.DashboardProviderHosts, ", "), from(len(f.Web.DashboardProviderHosts) > 0))
 	return out
 }
 

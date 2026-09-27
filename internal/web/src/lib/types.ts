@@ -696,6 +696,9 @@ export interface FieldPolicy {
   key: string;
   scopes: ConfigScope[];
   tenantAdmin: boolean;
+  // A tenant admin may write it too, but only to a model on one of the
+  // tenant's own provider keys, or to nothing.
+  ownProviders?: boolean;
   repository?: RepoRule;
   editable: boolean;
 }

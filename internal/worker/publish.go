@@ -21,11 +21,11 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// CompleterSource resolves a configured provider name to its model
-// adapter; each call wraps it in a model.Structured that records its
-// steps.
+// CompleterSource resolves a provider name, the tenant's own or the
+// file's, to its model adapter; each call wraps it in a model.Structured
+// that records its steps.
 type CompleterSource interface {
-	Stepper(f *configfile.File, name string) (model.Stepper, error)
+	Stepper(f *configfile.File, t *configfile.Tenant, name string) (model.Stepper, error)
 }
 
 // maxOutputTokens bounds one review answer. Findings are short by
@@ -297,7 +297,7 @@ func (p *publishPhase) callModels(
 	if fallback != "" && fallback.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fallback.Model()}
 	}
-	stepper, err := p.w.Completers.Stepper(p.file, ref.Provider())
+	stepper, err := p.w.Completers.Stepper(p.file, p.tenant, ref.Provider())
 	if err != nil {
 		return model.CompletionResponse{}, "", err
 	}
@@ -309,7 +309,7 @@ func (p *publishPhase) callModels(
 		return resp, roleReview, err
 	}
 	p.logger.Warn("primary model failed, trying fallback", "model", ref, "fallback", fallback, "error", err)
-	fs, ferr := p.w.Completers.Stepper(p.file, fallback.Provider())
+	fs, ferr := p.w.Completers.Stepper(p.file, p.tenant, fallback.Provider())
 	if ferr != nil {
 		return model.CompletionResponse{}, "", errors.Join(err, ferr)
 	}
@@ -330,7 +330,8 @@ func (p *publishPhase) onStep(
 	ctx context.Context, provider string, kind store.ModelCallKind, step int,
 ) func(model.StepRequest, model.StepResponse, error, time.Duration) {
 	c := store.ModelCall{TenantID: p.tenant.ID(), ReviewID: p.reviewID, Kind: kind, Step: step}
-	return p.w.onStep(ctx, p.logger, c, transcriptMask(p.file, p.file.Providers[provider]))
+	spec, _ := p.file.Provider(p.tenant, provider)
+	return p.w.onStep(ctx, p.logger, c, transcriptMask(p.file, spec))
 }
 
 // reviewNotes are the caveats the sticky comment states about a review.

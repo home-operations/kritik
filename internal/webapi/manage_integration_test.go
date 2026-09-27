@@ -38,6 +38,8 @@ import (
 )
 
 const manageConfig = `
+providers:
+  shared: { type: openrouter, apiKey: { env: KRITIK_TEST_TOKEN } }
 web:
   signIn:
     - name: corp
@@ -321,6 +323,7 @@ func TestManage(t *testing.T) {
 	t.Run("config reads are redacted", func(t *testing.T) { testConfigRedacted(t, e) })
 	t.Run("tenant admin updates", func(t *testing.T) { testAdminUpdate(t, e) })
 	t.Run("collisions", func(t *testing.T) { testCollisions(t, e) })
+	t.Run("tenant admin brings a provider key", func(t *testing.T) { testAdminProviderKey(t, e) })
 	t.Run("actions", func(t *testing.T) { testActions(t, e, dashID) })
 	t.Run("invites and members", func(t *testing.T) { testMembers(t, e, dashID) })
 	t.Run("mutual demotion", func(t *testing.T) { testMutualDemotion(t, e, dashID) })
@@ -536,6 +539,37 @@ func testCollisions(t *testing.T, e *manageEnv) {
 	}
 }
 
+// testAdminProviderKey: a tenant admin brings the tenant's own model key
+// and points its review model at it, sealed at rest and opened in the
+// merged configuration; a model on the operator's providers stays the
+// operator's to set.
+func testAdminProviderKey(t *testing.T, e *manageEnv) {
+	mine := map[string]any{"mine": map[string]any{"type": "openai", "apiKey": map[string]any{"value": "sk-mine"}}}
+	shared := dashSpec(keep, keep, map[string]any{"filter": "true", "providers": mine, "models": map[string]any{"review": "shared/big"}})
+	status, body := e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, shared)})
+	e.expect(status, body, http.StatusUnprocessableEntity, CodeOperatorOnly)
+
+	own := dashSpec(keep, keep, map[string]any{"filter": "true", "providers": mine, "models": map[string]any{"review": "mine/gpt"}})
+	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, own)})
+	e.expect(status, body, http.StatusOK, "")
+	if sealed := e.scalar(`SELECT spec->'providers'->'mine'->'apiKey'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`); sealed == "" ||
+		strings.Contains(sealed, "sk-mine") {
+		t.Errorf("stored provider key = %q, want it sealed", sealed)
+	}
+	e.waitFor("the provider key to merge", func(f *configfile.File) bool {
+		tn, ok := f.Tenant("mgr-dash")
+		if !ok {
+			return false
+		}
+		p, ok := f.Provider(tn, "mine")
+		return ok && p.APIKeyValue().Value() == "sk-mine"
+	})
+	status, body = e.do("admin", "GET", "/api/v1/tenants/mgr-dash/config", nil)
+	if status != http.StatusOK || strings.Contains(string(body), "sk-mine") || !strings.Contains(string(body), `"apiKey":{"set":true}`) {
+		t.Errorf("config read = %d %s", status, body)
+	}
+}
+
 func testActions(t *testing.T, e *manageEnv, dashID string) {
 	in, _, _ := e.src.Current.Get().Installation("mgr-dash-bot")
 	repoID := configfile.RepositoryID(in.ID(), "md/one")
@@ -745,13 +779,13 @@ func testAuditLog(t *testing.T, e *manageEnv) {
 }
 
 func testDelete(t *testing.T, e *manageEnv) {
-	status, body := e.do("admin", "DELETE", "/api/v1/tenants/mgr-dash?revision=2", nil)
+	status, body := e.do("admin", "DELETE", "/api/v1/tenants/mgr-dash?revision=3", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
 	status, body = e.do("operator", "DELETE", "/api/v1/tenants/mgr-dash?revision=1", nil)
 	e.expect(status, body, http.StatusConflict, CodeRevisionConflict)
 	status, body = e.do("operator", "DELETE", "/api/v1/tenants/mgr-file?revision=1", nil)
 	e.expect(status, body, http.StatusForbidden, CodeFileManaged)
-	status, body = e.do("operator", "DELETE", "/api/v1/tenants/mgr-dash?revision=2", nil)
+	status, body = e.do("operator", "DELETE", "/api/v1/tenants/mgr-dash?revision=3", nil)
 	e.expect(status, body, http.StatusNoContent, "")
 	if e.audits(AuditTenantDelete, "mgr-dash") != 1 {
 		t.Errorf("tenant.delete audit rows are wrong")
