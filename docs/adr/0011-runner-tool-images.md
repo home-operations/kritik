@@ -1,6 +1,6 @@
 # ADR-0011: the agent's commands may come from image volumes
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-26
 - **Amends:** [ADR-0008](0008-runner-tools.md) §2.2 (where the `run`
   tool's binaries come from).
