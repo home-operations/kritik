@@ -56,6 +56,7 @@ var baseFuncs = template.FuncMap{
 	"contains":  contains,
 	"hasPrefix": func(prefix, s string) bool { return strings.HasPrefix(s, prefix) },
 	"quote":     func(v any) string { return strconv.Quote(fmt.Sprint(v)) },
+	"fence":     fenceValue,
 	"printf":    printf,
 	"print":     fmt.Sprint,
 	"println":   fmt.Sprintln,
@@ -78,6 +79,77 @@ func join(sep string, v any) (string, error) {
 		return strings.Join(parts, sep), nil
 	}
 	return "", fmt.Errorf("join: want a list, got %T", v)
+}
+
+// untrustedRe finds what could open or close an untrusted block.
+var untrustedRe = regexp.MustCompile(`(?i)<(/?)(\s*)untrusted`)
+
+// defuse escapes what in s could open or close an untrusted block.
+func defuse(s string) string { return untrustedRe.ReplaceAllString(s, "&lt;${1}${2}untrusted") }
+
+// defuseValue is v with every string in it defused.
+func defuseValue(v any) any {
+	switch x := v.(type) {
+	case string:
+		return defuse(x)
+	case []string:
+		out := make([]string, len(x))
+		for i, s := range x {
+			out[i] = defuse(s)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = defuseValue(e)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, e := range x {
+			out[defuse(k)] = defuseValue(e)
+		}
+		return out
+	}
+	return v
+}
+
+// defuseInput is in with every string defused.
+func defuseInput(in Input) Input {
+	in.Forge, in.Event, in.RawEvent = defuse(in.Forge), defuse(in.Event), defuse(in.RawEvent)
+	in.Action, in.Sender = defuse(in.Action), defuse(in.Sender)
+	if s := in.Subject; s != nil {
+		c := *s
+		c.Kind, c.Title, c.Body = defuse(c.Kind), defuse(c.Title), defuse(c.Body)
+		c.State, c.Author, c.URL = defuse(c.State), defuse(c.Author), defuse(c.URL)
+		c.Labels, _ = defuseValue(c.Labels).([]string)
+		c.Assignees, _ = defuseValue(c.Assignees).([]string)
+		in.Subject = &c
+	}
+	if in.Raw != nil {
+		in.Raw, _ = defuseValue(in.Raw).(map[string]any)
+	}
+	in.Repo = Repo{Owner: defuse(in.Repo.Owner), Name: defuse(in.Repo.Name), DefaultBranch: defuse(in.Repo.DefaultBranch)}
+	return in
+}
+
+// sourceRe keeps a fence's source to a plain label.
+var sourceRe = regexp.MustCompile(`[^A-Za-z0-9:._/-]`)
+
+// fenceValue is v in an untrusted block: a string as it is, defused, and
+// anything else as JSON, which escapes '<'.
+func fenceValue(source string, v any) (string, error) {
+	body, ok := v.(string)
+	if ok {
+		body = defuse(body)
+	} else {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("tasks: fence %s: %w", source, err)
+		}
+		body = string(raw)
+	}
+	return fmt.Sprintf("<untrusted source=%q>\n%s\n</untrusted>", sourceRe.ReplaceAllString(source, ""), body), nil
 }
 
 // truncate shortens s to at most n runes.

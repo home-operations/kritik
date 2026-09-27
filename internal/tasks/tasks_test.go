@@ -178,6 +178,10 @@ func TestCheck(t *testing.T) {
 		{"state rule both", base + "actions: {state: {rules: [{close: true, reopen: true}]}}\n", "exactly one"},
 		{"bad propose login", base + "actions: {assign: {propose: {users: ['a b']}}}\n", "not a login"},
 		{"commands in single mode", base + "mode: single\ncontext: {commands: [{name: x, run: ls}]}\n", "agentic"},
+		{"a command path", base + "context: {commands: [{name: x, run: /bin/sh -c id}]}\n", "bare command name"},
+		{"a shell line", base + "context: {commands: [{name: x, run: 'cat a | sh'}]}\n", "not given to a shell"},
+		{"a substitution", base + "context: {commands: [{name: x, run: 'echo $(id)'}]}\n", "not given to a shell"},
+		{"a switched-off task still needs a good name", "name: Bad\nenabled: false\n", "name"},
 		{"duplicate context name", base + "context: {search: [{name: x, query: a}], related: [{name: x, query: b}]}\n", "twice"},
 		{"subject-bound action on a raw release trigger", "name: a\non: [{raw: {event: release}}]\nactions: {labels: {propose: {add: [x]}}}\n",
 			"can fire without one"},
@@ -204,6 +208,7 @@ func TestCheck(t *testing.T) {
 		"inline comments with a comment trigger":     "name: a\non: [{issue: []}, {comment: []}]\nactions: {inlineComments: {propose: true}}\n",
 		"answer in an action's if":                   base + "actions: {labels: {propose: {add: [x]}, if: 'answer.fields.x == 1'}}\n",
 		"single mode":                                base + "mode: single\n",
+		"a switched-off task needs only its name":    "name: a\nenabled: false\n",
 	} {
 		t.Run("valid: "+name, func(t *testing.T) {
 			t.Parallel()
@@ -263,7 +268,7 @@ func TestMatches(t *testing.T) {
 func TestClip(t *testing.T) {
 	t.Parallel()
 	full := Bounds{
-		Enabled: true, Events: DefaultEvents, Actions: DefaultActions, Context: DefaultContext, RepositoryTasks: true,
+		Enabled: true, Events: DefaultEvents, Actions: DefaultActions, Context: DefaultContext, Tools: DefaultTools, RepositoryTasks: true,
 		MaxTasks: DefaultMaxTasks, MaxFields: DefaultMaxFields,
 	}
 	task := *mustTask(t, triage)
@@ -316,6 +321,25 @@ func TestClip(t *testing.T) {
 			t.Fatalf("kept %+v", kept)
 		}
 	})
+	t.Run("a switched-off task", func(t *testing.T) {
+		t.Parallel()
+		kept, notes := Clip([]Task{*mustTask(t, "name: a\nenabled: false\n")}, full, false)
+		if len(kept) != 0 || notes[0].Reason != "the task is switched off" {
+			t.Fatalf("kept %v, notes %v", names(kept), notes)
+		}
+	})
+	t.Run("tools outside the bounds", func(t *testing.T) {
+		t.Parallel()
+		kept, notes := Clip([]Task{*mustTask(t, "name: a\non: [{issue: []}]\nagent: {tools: [grep, run, read_file]}\n")}, full, true)
+		if len(kept) != 1 || !reflect.DeepEqual(kept[0].Agent.Tools, []string{"grep", "read_file"}) ||
+			len(notes) != 1 || notes[0].What != "agent.tools run" {
+			t.Fatalf("kept %+v, notes %v", kept, notes)
+		}
+		kept, _ = Clip([]Task{*mustTask(t, "name: a\non: [{issue: []}]\nagent: {tools: [run]}\n")}, full, true)
+		if kept[0].Agent.Tools == nil || len(kept[0].Agent.Tools) != 0 {
+			t.Fatalf("no allowed tool left must be none, not every tool: %#v", kept[0].Agent.Tools)
+		}
+	})
 	t.Run("no trigger left", func(t *testing.T) {
 		t.Parallel()
 		kept, notes := Clip([]Task{*mustTask(t, "name: a\non: [{raw: {event: release}}]\n")}, full, true)
@@ -337,7 +361,7 @@ func TestClip_Defaults(t *testing.T) {
 	t.Parallel()
 	task := *mustTask(t, triage)
 	b := Bounds{
-		Enabled: true, Events: DefaultEvents, Actions: DefaultActions, Context: DefaultContext, RepositoryTasks: true,
+		Enabled: true, Events: DefaultEvents, Actions: DefaultActions, Context: DefaultContext, Tools: DefaultTools, RepositoryTasks: true,
 		MaxTasks: DefaultMaxTasks, MaxFields: 2,
 	}
 	kept, notes := Clip([]Task{task}, b, true)

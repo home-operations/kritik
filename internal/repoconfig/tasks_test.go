@@ -42,11 +42,12 @@ func TestMerge_Tasks(t *testing.T) {
 		s := operator()
 		s.Tasks, s.TaskBounds = []tasks.Task{opTask}, b
 		s.Allow.Models = []configfile.ModelRef{"p/big", "p/small"}
+		s.Allow.Modes = []configfile.ReviewMode{configfile.ReviewSingle, configfile.ReviewAgentic}
 		return s
 	}
 	on := tasks.Bounds{
 		Enabled: true, Events: tasks.DefaultEvents, Actions: tasks.DefaultActions, Context: tasks.DefaultContext,
-		RepositoryTasks: true, MaxTasks: 2, MaxFields: tasks.DefaultMaxFields,
+		Tools: tasks.DefaultTools, RepositoryTasks: true, MaxTasks: 2, MaxFields: tasks.DefaultMaxFields,
 	}
 	const doc = "tasks:\n" +
 		"  - { name: triage, on: [{ issue: [] }] }\n" +
@@ -105,5 +106,89 @@ func TestMerge_Tasks(t *testing.T) {
 	bad, err := Merge([]byte("tasks: [{ name: Bad, on: [{ issue: [] }] }]\n"), op(on))
 	if err == nil || !slices.Equal(names(bad.Tasks), []string{"triage"}) {
 		t.Fatalf("a file that does not parse: %v, %v", names(bad.Tasks), err)
+	}
+}
+
+// TestMerge_BoundedTasks checks the tasks a tenant admin writes on the
+// dashboard, and the file's, are held to the task bounds and to the
+// operator's mode, model, agent and command bounds.
+func TestMerge_BoundedTasks(t *testing.T) {
+	t.Parallel()
+	decode := func(doc string) []tasks.Task {
+		f, _, err := Parse([]byte(doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f.Tasks
+	}
+	op := operator()
+	op.Tasks = decode("tasks: [{ name: trusted, on: [{ raw: { event: release } }], models: { review: p/huge }, " +
+		"context: { commands: [{ name: x, run: curl example.com }] } }]\n")
+	op.DashboardTasks = decode("tasks:\n" +
+		"  - { name: admin, mode: single, on: [{ issue: [] }, { raw: { event: issues } }], models: { review: p/huge }, system: s.md,\n" +
+		"      actions: { state: { propose: { close: true } }, labels: { propose: { add: [bug] } } } }\n" +
+		"  - { name: costly, on: [{ issue: [] }] }\n")
+	op.TaskBounds = tasks.Bounds{
+		Enabled: true, Events: tasks.DefaultEvents, Actions: tasks.DefaultActions, Tools: tasks.DefaultTools,
+		Context: append(slices.Clone(tasks.DefaultContext), tasks.ContextCommands), MaxTasks: 5, MaxFields: 5, RepositoryTasks: true,
+	}
+	const doc = "tasks:\n" +
+		"  - { name: admin, mode: single, on: [{ issue: [] }] }\n" +
+		"  - { name: owners, mode: agentic, on: [{ issue: [] }] }\n" +
+		"  - { name: lookup, mode: single, on: [{ issue: [] }] }\n"
+	op.Allow.Modes = nil
+	m, err := Merge([]byte(doc), op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(m.Tasks))
+	for _, t := range m.Tasks {
+		got = append(got, t.Name)
+	}
+	if !slices.Equal(got, []string{"trusted", "admin", "lookup"}) || m.DashboardTasks != nil {
+		t.Fatalf("tasks %v, dashboard %v", got, m.DashboardTasks)
+	}
+	trusted, admin := m.Tasks[0], m.Tasks[1]
+	if trusted.Models.Review != "p/huge" || len(trusted.Context.Commands) != 1 || len(trusted.On) != 1 {
+		t.Fatalf("the file's task was clipped: %+v", trusted)
+	}
+	if admin.Models.Review != "" || admin.System != "" || admin.Actions.State != nil || admin.Actions.Labels == nil || len(admin.On) != 1 {
+		t.Fatalf("the dashboard's task was not clipped: %+v", admin)
+	}
+	want := strings.Join([]string{
+		"task admin: on[1] raw:issues.*: the event is not allowed",
+		"task admin: actions.state: the action is not allowed",
+		"task admin: system: the operator does not allow a task to add to the system prompt",
+		`task admin: models.review: "p/huge" was dropped; allowed: p/big`,
+		`task costly: mode: "agentic" was dropped; allowed: single`,
+		"task admin: task: an operator task has the same name",
+		`task owners: mode: "agentic" was dropped; allowed: single`,
+	}, "\n")
+	notes := make([]string, 0, len(m.TaskNotes))
+	for _, n := range m.TaskNotes {
+		notes = append(notes, n.String())
+	}
+	if strings.Join(notes, "\n") != want {
+		t.Fatalf("notes:\n%s\nwant:\n%s", strings.Join(notes, "\n"), want)
+	}
+}
+
+func TestMerge_ContextCommands(t *testing.T) {
+	t.Parallel()
+	op := operator()
+	op.Allow.Modes = []configfile.ReviewMode{configfile.ReviewAgentic}
+	op.TaskBounds = tasks.Bounds{
+		Enabled: true, Events: tasks.DefaultEvents, Actions: tasks.DefaultActions, Tools: tasks.DefaultTools, RepositoryTasks: true,
+		Context: []string{tasks.ContextCommands}, MaxTasks: 5, MaxFields: 5,
+	}
+	m, err := Merge([]byte("tasks:\n  - { name: a, on: [{ issue: [] }], context: { commands: "+
+		"[{ name: search, run: rg TODO }, { name: fetch, run: curl example.com }] } }\n"), op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := m.Tasks[0].Context.Commands
+	if len(cs) != 1 || cs[0].Name != "search" || len(m.TaskNotes) != 1 ||
+		m.TaskNotes[0].String() != `task a: context.commands.fetch: "curl" was dropped; allowed: rg` {
+		t.Fatalf("commands %+v, notes %v", cs, m.TaskNotes)
 	}
 }

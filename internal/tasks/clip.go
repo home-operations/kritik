@@ -17,6 +17,8 @@ type Bounds struct {
 	Actions []string
 	// Context are the context source kinds a repository's task may use.
 	Context []string
+	// Tools are the agent tools a repository's task may use.
+	Tools []string
 	// SystemPrompt lets a repository's task add to the system prompt.
 	SystemPrompt bool
 	// RepositoryTasks lets a repository define tasks at all.
@@ -36,6 +38,8 @@ var (
 	DefaultEvents  = []string{"issue.*", "pull_request.*", "comment.*"}
 	DefaultActions = []string{ActionComment, ActionLabels, ActionInlineComments}
 	DefaultContext = []string{ContextThread, ContextFiles, ContextSearch, ContextRelated}
+	// DefaultTools are the agent's read-only tools.
+	DefaultTools = []string{"read_file", "grep", "list_files"}
 )
 
 // Bounds defaults.
@@ -58,11 +62,12 @@ type Note struct {
 func (n Note) String() string { return fmt.Sprintf("task %s: %s: %s", n.Task, n.What, n.Reason) }
 
 // Clip returns the tasks of ts b lets run, and a note for everything it
-// left out. With tasks disabled none runs. The operator's own tasks are
-// otherwise trusted; for a repository's (fromRepository), b decides
-// whether it may define tasks, how many, the events they trigger on, the
-// actions and context sources they use, whether they add to the system
-// prompt and how many fields they declare. A trigger with no action b
+// left out. With tasks disabled none runs, and a task switched off with
+// enabled false never does. The operator's own tasks are otherwise
+// trusted; for a repository's (fromRepository), b decides whether it may
+// define tasks, how many, the events they trigger on, the actions,
+// context sources and agent tools they use, whether they add to the
+// system prompt and how many fields they declare. A trigger with no action b
 // allows is dropped, and a task with no trigger left with it. ts is not
 // modified.
 func Clip(ts []Task, b Bounds, fromRepository bool) (kept []Task, notes []Note) {
@@ -70,6 +75,9 @@ func Clip(ts []Task, b Bounds, fromRepository bool) (kept []Task, notes []Note) 
 		switch {
 		case !b.Enabled:
 			notes = append(notes, Note{t.Name, noteTask, "tasks are disabled"})
+			continue
+		case !t.IsEnabled():
+			notes = append(notes, Note{t.Name, noteTask, "the task is switched off"})
 			continue
 		case !fromRepository:
 			kept = append(kept, t)
@@ -154,6 +162,17 @@ func clipTask(t Task, b Bounds) (Task, []Note) {
 		}
 	}
 
+	if i := slices.IndexFunc(t.Agent.Tools, func(tool string) bool { return !slices.Contains(b.Tools, tool) }); i >= 0 {
+		tools := []string{}
+		for _, tool := range t.Agent.Tools {
+			if slices.Contains(b.Tools, tool) {
+				tools = append(tools, tool)
+			} else {
+				note("agent.tools "+tool, "the tool is not allowed")
+			}
+		}
+		t.Agent.Tools = tools
+	}
 	if t.System != "" && !b.SystemPrompt {
 		note("system", "the operator does not allow a task to add to the system prompt")
 		t.System = ""

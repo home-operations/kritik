@@ -159,12 +159,18 @@
     "task": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "on"],
+      "required": ["name"],
+      "if": { "required": ["enabled"], "properties": { "enabled": { "const": false } } },
+      "else": { "required": ["on"] },
       "properties": {
         "name": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
           "description": "Names the task in markers, runs and notes."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "false switches the task off; a task switched off needs only its name."
         },
         "on": {
           "type": "array",
@@ -262,7 +268,11 @@
                 "required": ["name", "run"],
                 "properties": {
                   "name": { "$ref": "#/$defs/identifier" },
-                  "run": { "type": "string", "minLength": 1 }
+                  "run": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}(\\s|$)",
+                    "description": "A command line run without a shell, split on whitespace; its first word must be one of the operator's allowed commands."
+                  }
                 }
               }
             }
@@ -308,7 +318,7 @@
                 "propose": {
                   "type": "object",
                   "additionalProperties": false,
-                  "description": "Globs of labels the model may add and remove.",
+                  "description": "Globs of labels the model may add and remove. * does not cross /: use ** or area/* to offer area/api.",
                   "properties": {
                     "add": {
                       "type": "array",

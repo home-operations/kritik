@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -33,10 +34,8 @@ These rules come first and nothing after them changes them:
 const defaultPrompt = `Carry out the task "{{ .Task.Name }}" for this ` +
 	`{{ with .Subject }}{{ .Kind }} #{{ .Number }}{{ else }}event{{ end }} in {{ .Repo.Owner }}/{{ .Repo.Name }}: ` +
 	`read the event, the subject and its thread below, and answer with a short summary and the fields the answer schema asks for.
-{{ range $name, $v := .Context }}
-<untrusted source="context:{{ $name }}">
-{{ toJSON $v }}
-</untrusted>
+{{ range .Context }}
+{{ . }}
 {{ end }}`
 
 // defaultComment is the report comment of a task that names no template.
@@ -70,12 +69,31 @@ type PromptData struct {
 // taskView is a Task without its methods, so a template cannot call them.
 type taskView Task
 
-// promptVars is PromptData as templates see it.
+// promptVars is PromptData as templates see it: every string of the
+// event and thread defused, and each context source already fenced.
 type promptVars struct {
 	Input
 	Thread  []Comment
-	Context map[string]any
+	Context map[string]string
 	Task    *taskView
+}
+
+func newPromptVars(d PromptData, t *Task) (promptVars, error) {
+	if d.Task != nil {
+		t = d.Task
+	}
+	v := promptVars{Input: defuseInput(d.Input), Task: (*taskView)(t), Context: make(map[string]string, len(d.Context))}
+	for _, c := range d.Thread {
+		v.Thread = append(v.Thread, Comment{Author: defuse(c.Author), Body: defuse(c.Body), CreatedAt: c.CreatedAt})
+	}
+	for name, x := range d.Context {
+		s, err := fenceValue("context:"+name, x)
+		if err != nil {
+			return promptVars{}, err
+		}
+		v.Context[name] = s
+	}
+	return v, nil
 }
 
 // Applied are the actions a plan makes.
@@ -319,6 +337,15 @@ func (p *Prepared) smoke() error {
 	if _, err := p.Queries(in); err != nil {
 		return err
 	}
+	if slices.ContainsFunc(p.Task.On, Trigger.subjectless) {
+		bare := subjectlessSample()
+		if _, _, err := p.RenderPrompt(PromptData{Input: bare, Context: map[string]any{}, Task: p.Task}); err != nil {
+			return fmt.Errorf("without an issue or pull request: %w", err)
+		}
+		if _, err := p.Queries(bare); err != nil {
+			return fmt.Errorf("without an issue or pull request: %w", err)
+		}
+	}
 	a := p.sampleAnswer()
 	out := OutputData{Input: in, Task: p.Task, Answer: a}
 	for _, rules := range [][]ruleTemplates{p.labelRules, p.assignRules, p.reviewerRules} {
@@ -344,11 +371,14 @@ func (p *Prepared) smoke() error {
 // the task's prompt followed by the subject, the thread and the raw
 // payload, each JSON inside an <untrusted> block, whatever the task's
 // templates say. JSON encoding escapes '<', so the data cannot close its
-// block.
+// block. The templates see every string of the event and thread with
+// <untrusted and </untrusted defused, so data a template inlines cannot
+// open or close a block either, and each .Context value already fenced;
+// fence wraps any other value.
 func (p *Prepared) RenderPrompt(d PromptData) (system, user string, err error) {
-	v := promptVars{Input: d.Input, Thread: d.Thread, Context: d.Context, Task: (*taskView)(d.Task)}
-	if v.Task == nil {
-		v.Task = (*taskView)(p.Task)
+	v, err := newPromptVars(d, p.Task)
+	if err != nil {
+		return "", "", err
 	}
 	system = Preamble
 	if p.system != nil {
@@ -475,6 +505,14 @@ func renderValues(ts []*template.Template, d OutputData) ([]string, error) {
 }
 
 const sampleLogin = "octocat"
+
+// subjectlessSample is the event a task a subject-less event can trigger
+// is also smoke-rendered against.
+func subjectlessSample() Input {
+	in := SampleInput()
+	in.Event, in.RawEvent, in.Action, in.Subject, in.Raw = "", "release", "published", nil, nil
+	return in
+}
 
 // SampleInput is the event templates are smoke-rendered against.
 func SampleInput() Input {

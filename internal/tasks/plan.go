@@ -106,23 +106,29 @@ func (pb *planner) drop(action, value, reason string) {
 	pb.plan.Dropped = append(pb.plan.Dropped, Drop{Action: action, Value: value, Reason: reason})
 }
 
+// blocked says why g does not hold, "" when it does. A guard that fails
+// is noted under action, since no value may carry the reason.
+func (pb *planner) blocked(g *guard, action string) string {
+	ok, err := g.eval(pb.vars)
+	switch {
+	case err != nil:
+		reason := "its if failed: " + err.Error()
+		pb.drop(action, g.src, reason)
+		return reason
+	case !ok:
+		return "its if is false"
+	}
+	return ""
+}
+
 // holds evaluates g, dropping values under action when it does not hold.
 func (pb *planner) holds(g *guard, action string, values []string) bool {
-	ok, err := g.eval(pb.vars)
-	reason := "its if is false"
-	if err != nil {
-		reason = "its if failed: " + err.Error()
+	reason := pb.blocked(g, action)
+	if reason == "" {
+		return true
 	}
-	if err != nil && len(values) == 0 {
-		pb.drop(action, g.src, reason)
-	}
-	if err != nil || !ok {
-		for _, v := range values {
-			pb.drop(action, v, reason)
-		}
-		return false
-	}
-	return true
+	pb.dropAll(action, values, reason)
+	return false
 }
 
 // output is the data a rule template renders.
@@ -149,7 +155,19 @@ func (pb *planner) labels() {
 		return
 	}
 	proposed := append(slices.Clone(pb.a.Labels.Add), pb.a.Labels.Remove...)
-	if pb.subjectless(ActionLabels, proposed) || !pb.holds(pb.p.guards.labels, ActionLabels, proposed) {
+	if pb.subjectless(ActionLabels, proposed) {
+		return
+	}
+	var ruleAdd, ruleRemove []string
+	for i, r := range pb.p.labelRules {
+		if pb.holds(pb.p.guards.labelRules[i], ActionLabels, nil) {
+			ruleAdd = append(ruleAdd, pb.ruleValues(dropAddLabel, i, r.add)...)
+			ruleRemove = append(ruleRemove, pb.ruleValues(dropRemoveLabel, i, r.remove)...)
+		}
+	}
+	if reason := pb.blocked(pb.p.guards.labels, ActionLabels); reason != "" {
+		pb.dropAll(dropAddLabel, dedupe(slices.Concat(pb.a.Labels.Add, ruleAdd)), reason)
+		pb.dropAll(dropRemoveLabel, dedupe(slices.Concat(pb.a.Labels.Remove, ruleRemove)), reason)
 		return
 	}
 	var add, remove []string
@@ -167,13 +185,7 @@ func (pb *planner) labels() {
 		}
 		remove = append(remove, l)
 	}
-	for i, r := range pb.p.labelRules {
-		if pb.holds(pb.p.guards.labelRules[i], ActionLabels, nil) {
-			add = append(add, pb.ruleValues(dropAddLabel, i, r.add)...)
-			remove = append(remove, pb.ruleValues(dropRemoveLabel, i, r.remove)...)
-		}
-	}
-	add, remove = dedupe(add), dedupe(remove)
+	add, remove = dedupe(append(add, ruleAdd...)), dedupe(append(remove, ruleRemove...))
 	for _, l := range add {
 		if pb.checkLabel(dropAddLabel, l) {
 			pb.plan.AddLabels = append(pb.plan.AddLabels, l)
@@ -224,7 +236,20 @@ func (pb *planner) state() {
 		pb.dropAll(ActionState, proposed, "the task declares no state action")
 		return
 	}
-	if pb.subjectless(ActionState, proposed) || !pb.holds(pb.p.guards.state, ActionState, proposed) {
+	if pb.subjectless(ActionState, proposed) {
+		return
+	}
+	var ruled []string
+	for i, r := range spec.Rules {
+		if pb.holds(pb.p.guards.stateRules[i], ActionState, nil) {
+			s := StateClose
+			if r.Reopen {
+				s = StateReopen
+			}
+			ruled = append(ruled, s)
+		}
+	}
+	if !pb.holds(pb.p.guards.state, ActionState, dedupe(slices.Concat(proposed, ruled))) {
 		return
 	}
 	want := ""
@@ -236,18 +261,11 @@ func (pb *planner) state() {
 			pb.drop(ActionState, pb.a.State, "the task does not let the model "+pb.a.State+" the subject")
 		}
 	}
-	for i, r := range spec.Rules {
-		if !pb.holds(pb.p.guards.stateRules[i], ActionState, nil) {
-			continue
+	for _, r := range ruled {
+		if want != "" && want != r {
+			pb.drop(ActionState, want, "a rule changes the state to "+r)
 		}
-		ruled := StateClose
-		if r.Reopen {
-			ruled = StateReopen
-		}
-		if want != "" && want != ruled {
-			pb.drop(ActionState, want, "a rule changes the state to "+ruled)
-		}
-		want = ruled
+		want = r
 	}
 	switch {
 	case want == "":
@@ -286,7 +304,16 @@ func (pb *planner) users(action string, spec *UsersSpec, proposed []string, g *g
 		pb.dropAll(action, proposed, "the task declares no "+action+" action")
 		return nil
 	}
-	if pb.subjectless(action, proposed) || !pb.holds(g, action, proposed) {
+	if pb.subjectless(action, proposed) {
+		return nil
+	}
+	var ruled []string
+	for i, r := range rules {
+		if pb.holds(ruleGuards[i], action, nil) {
+			ruled = append(ruled, pb.ruleValues(action, i, r.add)...)
+		}
+	}
+	if !pb.holds(g, action, dedupe(slices.Concat(proposed, ruled))) {
 		return nil
 	}
 	var want []string
@@ -297,12 +324,7 @@ func (pb *planner) users(action string, spec *UsersSpec, proposed []string, g *g
 		}
 		want = append(want, u)
 	}
-	for i, r := range rules {
-		if !pb.holds(ruleGuards[i], action, nil) {
-			continue
-		}
-		want = append(want, pb.ruleValues(action, i, r.add)...)
-	}
+	want = append(want, ruled...)
 	var out []string
 	for _, u := range dedupe(want) {
 		switch {

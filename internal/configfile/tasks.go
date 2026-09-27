@@ -2,6 +2,7 @@ package configfile
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -27,6 +28,9 @@ type TaskBounds struct {
 	// Context are the context source kinds a repository's task may use;
 	// default all but commands.
 	Context []string `yaml:"context,omitempty"`
+	// Tools are the agent tools a repository's task may use; default the
+	// read-only read_file, grep and list_files.
+	Tools []string `yaml:"tools,omitempty"`
 	// SystemPrompt lets a repository's task add to the system prompt;
 	// default false.
 	SystemPrompt *bool `yaml:"systemPrompt,omitempty"`
@@ -62,20 +66,24 @@ func (b *TaskBounds) Resolve() tasks.Bounds {
 		return def
 	}
 	out := tasks.Bounds{
-		Enabled: b.Enabled != nil && *b.Enabled, Events: b.Events, Actions: b.Actions, Context: b.Context,
+		Enabled: b.Enabled != nil && *b.Enabled, Events: slices.Clone(b.Events), Actions: slices.Clone(b.Actions),
+		Context: slices.Clone(b.Context), Tools: slices.Clone(b.Tools),
 		SystemPrompt: b.SystemPrompt != nil && *b.SystemPrompt, RepositoryTasks: b.RepositoryTasks == nil || *b.RepositoryTasks,
 		MaxTasks:                 pick(b.MaxTasks, tasks.DefaultMaxTasks),
 		MaxRunsPerSubjectPerHour: pick(b.MaxRunsPerSubjectPerHour, tasks.DefaultMaxRunsPerSubjectPerHour),
 		MaxFields:                pick(b.MaxFields, tasks.DefaultMaxFields),
 	}
 	if out.Events == nil {
-		out.Events = tasks.DefaultEvents
+		out.Events = slices.Clone(tasks.DefaultEvents)
 	}
 	if out.Actions == nil {
-		out.Actions = tasks.DefaultActions
+		out.Actions = slices.Clone(tasks.DefaultActions)
 	}
 	if out.Context == nil {
-		out.Context = tasks.DefaultContext
+		out.Context = slices.Clone(tasks.DefaultContext)
+	}
+	if out.Tools == nil {
+		out.Tools = slices.Clone(tasks.DefaultTools)
 	}
 	return out
 }
@@ -100,6 +108,9 @@ func (b *TaskBounds) overlay(o *TaskBounds) *TaskBounds {
 	}
 	if o.Context != nil {
 		out.Context = o.Context
+	}
+	if o.Tools != nil {
+		out.Tools = o.Tools
 	}
 	if o.SystemPrompt != nil {
 		out.SystemPrompt = o.SystemPrompt
@@ -141,6 +152,11 @@ func validateTaskBounds(where string, b *TaskBounds) error {
 			}
 		}
 	}
+	for i, tool := range b.Tools {
+		if !toolRe.MatchString(tool) {
+			return fmt.Errorf("configfile: %s.tools[%d] %q is not a tool name", where, i, tool)
+		}
+	}
 	for _, c := range []struct {
 		key string
 		v   *int
@@ -150,6 +166,43 @@ func validateTaskBounds(where string, b *TaskBounds) error {
 		}
 	}
 	return nil
+}
+
+// toolRe is an agent tool's name.
+var toolRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
+// scopedTask is an operator task and whether the operator's file, rather
+// than the dashboard, wrote it.
+type scopedTask struct {
+	task tasks.Task
+	file bool
+}
+
+// mergeTasks lays the tasks one scope writes over ts by name: one with a
+// name ts has replaces it where it stands, any other is added.
+func mergeTasks(ts []scopedTask, scope []tasks.Task, file bool) []scopedTask {
+	for _, t := range scope {
+		if i := slices.IndexFunc(ts, func(x scopedTask) bool { return x.task.Name == t.Name }); i >= 0 {
+			ts[i] = scopedTask{t, file}
+		} else {
+			ts = append(ts, scopedTask{t, file})
+		}
+	}
+	return ts
+}
+
+// setTasks splits the merged tasks into the file's and the dashboard's,
+// leaving out those switched off.
+func (s *Settings) setTasks(ts []scopedTask) {
+	for _, t := range ts {
+		switch {
+		case !t.task.IsEnabled():
+		case t.file:
+			s.Tasks = append(s.Tasks, t.task)
+		default:
+			s.DashboardTasks = append(s.DashboardTasks, t.task)
+		}
+	}
 }
 
 // validateTasks checks each task one scope writes, that its models name

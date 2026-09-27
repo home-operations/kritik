@@ -14,6 +14,7 @@ package tasks
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"go.yaml.in/yaml/v3"
@@ -84,8 +85,11 @@ const (
 // Task is one task definition.
 type Task struct {
 	// Name identifies the task in markers, run ids and notes.
-	Name string    `yaml:"name"`
-	On   []Trigger `yaml:"on"`
+	Name string `yaml:"name"`
+	// Enabled false switches the task off; a narrower operator scope uses
+	// it to turn off a task a broader one declares. Unset is on.
+	Enabled *bool     `yaml:"enabled,omitempty"`
+	On      []Trigger `yaml:"on"`
 	// If is a CEL guard over event, subject and raw; empty always runs.
 	If           string  `yaml:"if,omitempty"`
 	Mode         Mode    `yaml:"mode,omitempty"`
@@ -98,6 +102,9 @@ type Task struct {
 	Fields       Fields  `yaml:"fields,omitempty"`
 	Actions      Actions `yaml:"actions,omitempty"`
 }
+
+// IsEnabled reports whether the task is on.
+func (t *Task) IsEnabled() bool { return t.Enabled == nil || *t.Enabled }
 
 // RunMode is the task's mode, agentic when it sets none.
 func (t *Task) RunMode() Mode {
@@ -122,8 +129,10 @@ type Agent struct {
 	MaxToolOutputBytes *int           `yaml:"maxToolOutputBytes,omitempty"`
 	MaxTokens          *int64         `yaml:"maxTokens,omitempty"`
 	Timeout            *time.Duration `yaml:"timeout,omitempty"`
-	Tools              []string       `yaml:"tools,omitempty"`
-	Commands           []string       `yaml:"commands,omitempty"`
+	// Tools are the agent tools the task uses; unset is every tool the
+	// operator allows, and empty is none.
+	Tools    []string `yaml:"tools,omitempty"`
+	Commands []string `yaml:"commands,omitempty"`
 }
 
 // Trigger is one event a task runs on. Actions empty is any action.
@@ -221,7 +230,17 @@ type Query struct {
 // operator's allowed commands.
 type Command struct {
 	Name string `yaml:"name"`
-	Run  string `yaml:"run"`
+	// Run is the command line, split on whitespace and run without a
+	// shell; its first word is the binary.
+	Run string `yaml:"run"`
+}
+
+// Binary is the command's binary, the first word of Run.
+func (c Command) Binary() string {
+	if f := strings.Fields(c.Run); len(f) > 0 {
+		return f[0]
+	}
+	return ""
 }
 
 // Field is a custom answer field, a restricted JSON Schema: a string with

@@ -121,6 +121,23 @@ func TestPlan(t *testing.T) {
 			},
 		},
 		{
+			name: "a false labels if drops the rules' labels too", p: prepared(t, "name: a\non: [{issue: []}]\nactions:\n"+
+				"  labels: {propose: {add: [bug]}, rules: [{add: ['priority/{{ .Answer.Summary }}'], remove: [needs-triage]}], "+
+				"if: 'answer.summary == \"go\"'}\n", nil), in: issue,
+			a: Answer{Summary: "p1", Labels: LabelChanges{Add: []string{"bug"}}},
+			dropped: []Drop{
+				{dropAddLabel, "bug", "its if is false"},
+				{dropAddLabel, "priority/p1", "its if is false"},
+				{dropRemoveLabel, "needs-triage", "its if is false"},
+			},
+		},
+		{
+			name: "a false assign if drops the rules' users too", p: prepared(t, "name: a\non: [{issue: []}]\nactions:\n"+
+				"  assign: {rules: [{users: [bob]}], if: 'false'}\n", nil), in: issue,
+			a:       Answer{},
+			dropped: []Drop{{ActionAssign, "bob", "its if is false"}},
+		},
+		{
 			name: "a rule whose if fails", p: prepared(t, "name: a\non: [{issue: []}]\nactions:\n"+
 				"  labels: {rules: [{add: [bug], if: 'answer.fields.nope'}]}\n", nil), in: issue, a: Answer{},
 			dropped: []Drop{{ActionLabels, "answer.fields.nope", "its if failed: tasks: eval \"answer.fields.nope\": no such key: nope"}},

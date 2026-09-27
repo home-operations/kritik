@@ -21,6 +21,10 @@ var (
 	toolRe    = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 )
 
+// shellChars are refused in a context command: it runs without a shell,
+// and a line that looks like shell would not do what it says.
+const shellChars = "|;&$`<>(){}\\\"'*?~\n"
+
 // Definition bounds.
 const (
 	maxThreadComments = 200
@@ -42,10 +46,15 @@ const rawIssues = "issues"
 // context, templates and paths, and that its actions fit its triggers.
 // Actions that write to an issue or pull request are refused on a task a
 // subject-less event can trigger, and inline comments on one only issues
-// can. Errors name the offending key; the caller adds where the task is.
+// can. A task with enabled false only switches off a task of the same
+// name, so only its name is checked. Errors name the offending key; the
+// caller adds where the task is.
 func (t *Task) Check() error {
 	if !nameRe.MatchString(t.Name) {
 		return fmt.Errorf("name %q must be lowercase letters, digits and dashes, at most 63, starting with a letter or digit", t.Name)
+	}
+	if !t.IsEnabled() {
+		return nil
 	}
 	if len(t.On) == 0 {
 		return errors.New("on needs at least one trigger")
@@ -66,9 +75,9 @@ func (t *Task) Check() error {
 	default:
 		return fmt.Errorf("mode must be %s or %s, got %q", ModeAgentic, ModeSingle, t.Mode)
 	}
-	for role, m := range map[string]string{"review": t.Models.Review, "fallback": t.Models.Fallback} {
-		if p, id, ok := strings.Cut(m, "/"); m != "" && (!ok || p == "" || id == "") {
-			return fmt.Errorf("models.%s must be \"<provider>/<model>\", got %q", role, m)
+	for _, m := range []struct{ role, ref string }{{"review", t.Models.Review}, {"fallback", t.Models.Fallback}} {
+		if p, id, ok := strings.Cut(m.ref, "/"); m.ref != "" && (!ok || p == "" || id == "") {
+			return fmt.Errorf("models.%s must be \"<provider>/<model>\", got %q", m.role, m.ref)
 		}
 	}
 	if err := t.Agent.check(); err != nil {
@@ -207,8 +216,11 @@ func (t *Task) checkContext() error {
 		if err := checkName(where, x.Name, &names); err != nil {
 			return err
 		}
-		if strings.TrimSpace(x.Run) == "" {
-			return fmt.Errorf("%s: run is required", where)
+		if !commandRe.MatchString(x.Binary()) {
+			return fmt.Errorf("%s: run must start with a bare command name, not a path", where)
+		}
+		if strings.ContainsAny(x.Run, shellChars) {
+			return fmt.Errorf("%s: run is not given to a shell, so it may not hold any of %q", where, shellChars)
 		}
 	}
 	return nil
