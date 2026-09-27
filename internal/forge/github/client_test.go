@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	gh "github.com/google/go-github/v92/github"
+
 	"github.com/home-operations/kritik/internal/forge"
 )
 
@@ -310,5 +312,26 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 func TestAPIBase(t *testing.T) {
 	if APIBase("") != "" || APIBase("ghe.example.com/") != "https://ghe.example.com/api/v3" {
 		t.Fatal("APIBase")
+	}
+}
+
+func TestOpenPullRequestForkDetection(t *testing.T) {
+	base := &gh.Repository{FullName: new("acme/widgets")}
+	tests := []struct {
+		name string
+		head *gh.Repository
+		want bool
+	}{
+		{"a deleted head repo is a fork", nil, true},
+		{"the base repo is not", &gh.Repository{FullName: new("acme/widgets")}, false},
+		{"another repo is", &gh.Repository{FullName: new("someone/widgets")}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr := &gh.PullRequest{Head: &gh.PullRequestBranch{Repo: tt.head}, Base: &gh.PullRequestBranch{Repo: base}}
+			if got := openPullRequest(pr).Fork; got != tt.want {
+				t.Fatalf("Fork = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
