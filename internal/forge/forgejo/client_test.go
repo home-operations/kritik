@@ -697,12 +697,56 @@ func TestAddLabels(t *testing.T) {
 }
 
 func TestRemoveLabel(t *testing.T) {
-	t.Run("ok", func(t *testing.T) {
+	const labelsPath = "/api/v1/repos/acme/widgets/issues/5/labels"
+
+	t.Run("present label is deleted by its resolved numeric id", func(t *testing.T) {
+		var gotDeletePath string
 		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/repos/acme/widgets/issues/5/labels/bug" {
-				t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+			switch r.Method {
+			case http.MethodGet:
+				if r.URL.Path != labelsPath {
+					t.Errorf("GET path = %s", r.URL.Path)
+				}
+				_, _ = w.Write([]byte(`[{"id":42,"name":"bug","color":"f00"},{"id":7,"name":"triage","color":"0f0"}]`))
+			case http.MethodDelete:
+				gotDeletePath = r.URL.Path
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				t.Errorf("unexpected method %s", r.Method)
 			}
-			w.WriteHeader(http.StatusNoContent)
+		})
+		defer srv.Close()
+		if err := c.RemoveLabel(t.Context(), "acme", "widgets", 5, "bug"); err != nil {
+			t.Fatalf("RemoveLabel: %v", err)
+		}
+		if want := labelsPath + "/42"; gotDeletePath != want {
+			t.Fatalf("DELETE path = %q, want %q (the resolved numeric id, not the name)", gotDeletePath, want)
+		}
+	})
+
+	t.Run("a label not currently applied is not an error and issues no DELETE", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				t.Errorf("unexpected %s request; a label absent from the issue must not be DELETEd", r.Method)
+				return
+			}
+			_, _ = w.Write([]byte(`[{"id":7,"name":"triage","color":"0f0"}]`))
+		})
+		defer srv.Close()
+		if err := c.RemoveLabel(t.Context(), "acme", "widgets", 5, "bug"); err != nil {
+			t.Fatalf("RemoveLabel of an absent label: %v", err)
+		}
+	})
+
+	t.Run("a label removed concurrently is not an error", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				_, _ = w.Write([]byte(`[{"id":42,"name":"bug","color":"f00"}]`))
+			case http.MethodDelete:
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"message":"not found"}`))
+			}
 		})
 		defer srv.Close()
 		if err := c.RemoveLabel(t.Context(), "acme", "widgets", 5, "bug"); err != nil {
@@ -710,14 +754,14 @@ func TestRemoveLabel(t *testing.T) {
 		}
 	})
 
-	t.Run("a label not currently applied is not an error", func(t *testing.T) {
+	t.Run("a label lookup failure is returned, not swallowed", func(t *testing.T) {
 		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"message":"not found"}`))
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"boom"}`))
 		})
 		defer srv.Close()
-		if err := c.RemoveLabel(t.Context(), "acme", "widgets", 5, "bug"); err != nil {
-			t.Fatalf("RemoveLabel of an absent label: %v", err)
+		if err := c.RemoveLabel(t.Context(), "acme", "widgets", 5, "bug"); err == nil {
+			t.Fatal("RemoveLabel: want an error when the label lookup fails, got nil")
 		}
 	})
 }
