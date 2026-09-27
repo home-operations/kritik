@@ -217,6 +217,10 @@ spec:
             {{- tpl (toYaml $.Values.livenessProbe) $ | nindent 12 }}
           readinessProbe:
             {{- tpl (toYaml $.Values.readinessProbe) $ | nindent 12 }}
+          {{- with $.Values.startupProbe }}
+          startupProbe:
+            {{- tpl (toYaml .) $ | nindent 12 }}
+          {{- end }}
           {{- with (default $.Values.resources $spec.resources) }}
           resources:
             {{- tpl (toYaml .) $ | nindent 12 }}
