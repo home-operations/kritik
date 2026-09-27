@@ -278,7 +278,7 @@ What a template sees depends on what it renders:
 | `.Repo` (`.Owner`, `.Name`, `.DefaultBranch`)                                                                                                                      | yes                                | yes               | yes                                     |
 | `.Task`, the task's definition                                                                                                                                     | yes                                | yes               | yes                                     |
 | `.Thread`, the subject's comments (`.Author`, `.Body`, `.CreatedAt`)                                                                                               | yes                                |                   |                                         |
-| `.Context.<name>`, a context source's result                                                                                                                       | yes                                |                   |                                         |
+| `.Context.files` and `.Context.<name>`, context sources' results                                                                                                   | yes                                |                   |                                         |
 | `.Answer` (`.Summary`, `.Comment`, `.Fields`, `.Labels.Add`, `.Labels.Remove`, `.State`, `.Assignees`, `.Reviewers`, `.Inline`) and `.Fields`, the answer's fields |                                    |                   | yes                                     |
 | `.Applied` (`.AddLabels`, `.RemoveLabels`, `.State`, `.Assignees`, `.Reviewers`, `.Inline`) and `.Dropped` (each `.Action`, `.Value`, `.Reason`)                   |                                    |                   | comment only                            |
 
@@ -305,23 +305,28 @@ the prompt keeps it apart from instructions whatever the templates say:
 operator allows in `allow.tasks.context`:
 
 - `thread: { comments: N }`: the subject's last `N` comments (at most 200),
-  as `.Thread`.
+  as `.Thread`, not in `.Context`.
 - `files`: files from the default branch, each a `path`, or a `glob` with
-  a `max` of at most 50 files.
+  a `max` of at most 50 files, as `.Context.files`: a list of
+  `{path, content}`.
 - `search`: `[{ name, query, k }]`, the `k` (at most 50) chunks of the
-  repository's index most like `query`.
+  repository's index most like `query`, as `.Context.<name>`.
 - `related`: `[{ name, query, k }]`, the forge's issues and pull requests
-  matching `query`, such as likely duplicates.
+  matching `query`, such as likely duplicates, as `.Context.<name>`: a list
+  of `{number, title, state, url, isPull, labels}`.
 - `commands`: `[{ name, run }]`, agentic tasks only: a command line run in
   the runner pod without a shell, split on whitespace, whose first word must
   be in `allow.commands` (or the operator's own `agent.commands` when it
-  sets none). Shell characters (`| ; & $ < > ( ) { } * ? ~`,
+  sets none), as `.Context.<name>`. Shell characters (`| ; & $ < > ( ) { } * ? ~`,
   quotes and backslashes) are refused. Off unless the operator lists
   `commands` in `allow.tasks.context`.
 
-A `search`, `related` or `commands` source's result is `.Context.<name>`,
-so `name` must start with a lowercase letter and hold only letters, digits
-and `_`, unique across them. A `query` is a template over the event.
+A `search`, `related` or `commands` source is keyed by its `name`, which
+must start with a lowercase letter and hold only letters, digits and `_`,
+unique across them. A `query` is a template over the event. Every
+`.Context` value reaches a template already inside its own `<untrusted>`
+block, as JSON when it is not text, so `{{ .Context.files }}` inlines the
+whole list and a template cannot pick out its fields.
 `{{ range .Context }}{{ . }}{{ end }}`, as the built-in prompt does, puts
 every gathered source in the prompt.
 
@@ -510,10 +515,11 @@ Answer with:
 - comment: when needsInfo is true, a short, polite request for what is missing, addressed to the author.
   When one of the possible duplicates below is clearly the same issue, say which. Otherwise leave it empty.
 
-The context below holds the contributing guide and the open issues most like this one.
-{{ range .Context }}
-{{ . }}
-{{ end }}
+The contributing guide:
+{{ .Context.files }}
+
+The issues and pull requests most like this one, as possible duplicates:
+{{ .Context.dupes }}
 ```
 
 [`recipes/issue-triage/.kritik/tasks/triage-comment.md.tmpl`](recipes/issue-triage/.kritik/tasks/triage-comment.md.tmpl):

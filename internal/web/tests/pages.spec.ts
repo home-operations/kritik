@@ -94,7 +94,7 @@ test('a repository with no tasks says so', async ({ page }) => {
   );
   await page.goto(`/${T}/repos/alpha/one`);
   const tasks = page.locator('#repo-tasks').locator('../..');
-  await expect(tasks.locator('.state-msg')).toHaveText('No task runs for this repository.');
+  await expect(tasks.locator('.state-msg')).toHaveText('No tasks are defined for this repository.');
   await expect(tasks.locator('ul')).toHaveCount(0);
 });
 

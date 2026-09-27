@@ -214,7 +214,7 @@
           <section class="panel" aria-labelledby="repo-tasks">
             <header class="panel-head"><h2 id="repo-tasks">Tasks</h2></header>
             {#if d.tasks.length === 0}
-              <p class="state-msg">No task runs for this repository.</p>
+              <p class="state-msg">No tasks are defined for this repository.</p>
             {:else}
               <div class="table-wrap">
                 <table class="data">

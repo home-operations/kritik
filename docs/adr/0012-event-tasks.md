@@ -160,9 +160,12 @@ tasks:
   funcmap of their own rather than sprout's: no `define` or `template`,
   a source cap, and renders bounded in output, loop iterations and bytes
   handed to functions. Prompt templates see the event, the subject, the
-  thread, the named context sources and the task; the comment and rule
-  templates see the event, the answer and its fields, and the comment also
-  what was applied and dropped.
+  thread (`.Thread`), the context sources and the task. The context
+  sources are `.Context.files`, a list of `{path, content}`, and each
+  `search`, `related` and `commands` source under its `name`; a `related`
+  source is a list of `{number, title, state, url, isPull, labels}`. The
+  comment and rule templates see the event, the answer and its fields,
+  and the comment also what was applied and dropped.
 - **Subject-less events write nothing.** A task a raw event without an
   issue or pull request can trigger may declare no action at all; its
   report is its run on the dashboard. Inline comments need a trigger that
