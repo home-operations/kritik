@@ -210,12 +210,21 @@ func (r *taskRunner) runAgent(
 		r.runnerNotStarted(ctx, runID, err)
 		return failed("", err), nil
 	}
-	// The token is minted last, so an error leaves none behind.
+	// The token is minted last but for the mark, whose failure revokes it.
 	token, err := r.w.Store.MintGatewayToken(ctx, store.GatewayGrant{
 		RunID: runID, TenantID: tenantID, TaskRunID: r.run.ID, RepositoryID: r.args.RepositoryID,
 		Model: string(ref), Fallback: string(fallback), Budget: budget,
 	}, time.Now().Add(deadline+r.w.GatewayTokenTTL))
 	if err != nil {
+		r.runnerNotStarted(ctx, runID, err)
+		return store.TaskRunResult{}, err
+	}
+	// From here a crash leaves the run to be failed, not to start a
+	// second runner.
+	if err := r.w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return store.StartTaskRunner(ctx, tx, r.run.ID)
+	}); err != nil {
+		r.w.revokeGatewayTokens(ctx, logger, runID)
 		r.runnerNotStarted(ctx, runID, err)
 		return store.TaskRunResult{}, err
 	}

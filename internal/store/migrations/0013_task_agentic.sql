@@ -8,6 +8,9 @@ ALTER TABLE runner_runs DROP CONSTRAINT runner_runs_kind_check;
 ALTER TABLE runner_runs ADD CONSTRAINT runner_runs_kind_check CHECK (kind IN ('review', 'index', 'task'));
 
 ALTER TABLE task_runs ADD COLUMN runner_run_id uuid REFERENCES runner_runs (id);
+-- runner_started_at is when a job handed the run to its runner: a job that
+-- finds it set and no answer was cut off while the agent ran.
+ALTER TABLE task_runs ADD COLUMN runner_started_at timestamptz;
 ALTER TABLE task_runs ADD COLUMN notes text[] NOT NULL DEFAULT '{}';
 
 ALTER TABLE gateway_tokens ALTER COLUMN review_id DROP NOT NULL;

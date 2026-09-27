@@ -138,9 +138,11 @@ type TaskRun struct {
 	ConfigSHA     string
 	CreatedAt     time.Time
 	// StartedAt is when a job first ran the run, nil before; AnsweredAt
-	// when its model's answer was charged, nil before.
-	StartedAt  *time.Time
-	AnsweredAt *time.Time
+	// when its model's answer was charged, nil before; RunnerStartedAt
+	// when a job handed an agentic run to its runner, nil before.
+	StartedAt       *time.Time
+	AnsweredAt      *time.Time
+	RunnerStartedAt *time.Time
 }
 
 // QueueTaskRun records r as queued in tx, once per event and task, and
@@ -164,9 +166,9 @@ var ErrTaskRunGone = errors.New("store: task run is gone")
 func LoadTaskRun(ctx context.Context, tx pgx.Tx, eventID, task string) (TaskRun, error) {
 	r := TaskRun{EventID: eventID, Task: task}
 	err := tx.QueryRow(ctx, `SELECT id, tenant_id, repository_id, subject_kind, subject_number, trigger, mode, status, reason,
-		config_sha, created_at, started_at, answered_at FROM task_runs WHERE event_id = $1 AND task = $2`, eventID, task).
+		config_sha, created_at, started_at, answered_at, runner_started_at FROM task_runs WHERE event_id = $1 AND task = $2`, eventID, task).
 		Scan(&r.ID, &r.TenantID, &r.RepositoryID, &r.SubjectKind, &r.SubjectNumber, &r.Trigger, &r.Mode, &r.Status, &r.Reason,
-			&r.ConfigSHA, &r.CreatedAt, &r.StartedAt, &r.AnsweredAt)
+			&r.ConfigSHA, &r.CreatedAt, &r.StartedAt, &r.AnsweredAt, &r.RunnerStartedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, ErrTaskRunGone
 	}
@@ -301,6 +303,14 @@ func InsertTaskRunner(ctx context.Context, tx pgx.Tx, tenantID, taskRunID string
 		return "", fmt.Errorf("store: link task runner run: %w", err)
 	}
 	return runID, nil
+}
+
+// StartTaskRunner marks in tx that the run id's runner is starting.
+func StartTaskRunner(ctx context.Context, tx pgx.Tx, id string) error {
+	if _, err := tx.Exec(ctx, `UPDATE task_runs SET runner_started_at = now() WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("store: start task runner: %w", err)
+	}
+	return nil
 }
 
 // TaskConfigRow is the .kritik.yaml a task dispatch last resolved at the

@@ -113,6 +113,10 @@ func attemptEnds(ctx context.Context, err error, attempt, maxAttempts int) bool 
 // again.
 const taskInterrupted = "interrupted after the model answered; not run again, since its writes may have been made"
 
+// agentInterrupted is why an agentic run found handed to its runner, with
+// no answer, is not run again: a second runner would spend again.
+const agentInterrupted = "interrupted while the agent ran; not run again, since the agent's spend is not known"
+
 // attempt runs the job once. It returns the run's id once known, and how
 // the run ended, a zero status for a run already over, or an error.
 func (w *Task) attempt(ctx context.Context, job *river.Job[jobs.TaskArgs]) (string, store.TaskRunResult, error) {
@@ -144,6 +148,8 @@ func (w *Task) attempt(ctx context.Context, job *river.Job[jobs.TaskArgs]) (stri
 		return run.ID, store.TaskRunResult{}, nil
 	case run.AnsweredAt != nil:
 		return run.ID, store.TaskRunResult{Status: store.TaskFailed, Error: taskInterrupted}, nil
+	case run.RunnerStartedAt != nil:
+		return run.ID, store.TaskRunResult{Status: store.TaskFailed, Error: agentInterrupted}, nil
 	}
 	file := w.Current.Get()
 	tenant, err := w.tenant(file, args.TenantID)

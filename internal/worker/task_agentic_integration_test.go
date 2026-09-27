@@ -222,6 +222,7 @@ func newAgenticTaskHarness(t *testing.T, slug, extraContext string, embedder mod
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Stop(context.Background()) })
+	h.client = client
 	return &agenticTaskHarness{taskHarness: h, ctx: ctx, sm: sm, slug: slug}
 }
 
@@ -273,10 +274,54 @@ func TestAgenticTaskEndToEnd(t *testing.T) {
 		t.Fatalf("task run notes = %q", notes)
 	}
 	checkAgenticTaskRecords(t, h.taskHarness, taskRunID, *runnerRunID)
+	checkRetryWhileAgentRan(t, h, taskRunID)
 	// Retention sweeps across tenants; the event is not left for the next
 	// test's count.
 	if _, err := st.SweepTaskEvents(ctx, time.Nanosecond); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// checkRetryWhileAgentRan retries the job of a run as if the worker had
+// died while its runner ran, before the answer: the retry fails the run
+// without starting a second runner.
+func checkRetryWhileAgentRan(t *testing.T, h *agenticTaskHarness, taskRunID string) {
+	t.Helper()
+	ctx := context.Background()
+	runners := `SELECT count(*) FROM runner_runs WHERE kind = 'task' AND tenant_id = '` + h.tenant.ID() + `'`
+	before := h.count(runners)
+	h.sm.mu.Lock()
+	steps := len(h.sm.users)
+	h.sm.mu.Unlock()
+	if err := h.st.WithTenant(ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE task_runs SET status = 'running', finished_at = NULL, answered_at = NULL
+			WHERE id = $1 AND runner_started_at IS NOT NULL`, taskRunID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	job := h.latestTaskJob()
+	waitFor(t, 20*time.Second, "the run's job to complete", func() bool {
+		var state string
+		_ = h.st.App().QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1`, job).Scan(&state)
+		return state == "completed"
+	})
+	if _, err := h.client.JobRetry(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	var status, errText string
+	waitFor(t, 20*time.Second, "the retried run to end", func() bool {
+		err := h.st.WithTenant(ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT status, error FROM task_runs WHERE id = $1`, taskRunID).Scan(&status, &errText)
+		})
+		return err == nil && store.TaskRunStatus(status).Terminal()
+	})
+	h.sm.mu.Lock()
+	after := len(h.sm.users)
+	h.sm.mu.Unlock()
+	if status != "failed" || errText != agentInterrupted || h.count(runners) != before || after != steps {
+		t.Fatalf("a retry after the runner started = %s %q, runners %d→%d, model steps %d→%d",
+			status, errText, before, h.count(runners), steps, after)
 	}
 }
 
