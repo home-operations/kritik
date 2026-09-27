@@ -36,8 +36,9 @@ func Verify(forge configfile.Forge, secret string, header http.Header, body []by
 	case configfile.ForgeGitHub:
 		// X-Hub-Signature-256: "sha256=" + hex(HMAC-SHA256(body, secret)).
 		return verifyHMAC(header.Get("X-Hub-Signature-256"), "sha256=", secret, body)
-	case configfile.ForgeForgejo:
-		// X-Gitea-Signature: hex(HMAC-SHA256(body, secret)), no prefix.
+	case configfile.ForgeForgejo, configfile.ForgeGitea:
+		// X-Gitea-Signature: hex(HMAC-SHA256(body, secret)), no prefix. Gitea
+		// uses the same header name as Forgejo.
 		return verifyHMAC(header.Get("X-Gitea-Signature"), "", secret, body)
 	case configfile.ForgeGitLab:
 		// X-Gitlab-Token: the shared secret verbatim (no crypto).

@@ -60,6 +60,17 @@ func TestForgeProviderURLs(t *testing.T) {
 			scope:     "read:user read:organization",
 			display:   "Forgejo (127.0.0.1)",
 		},
+		{
+			// Gitea speaks the same OAuth flow and user API as Forgejo
+			// (buildProvider routes SignInGitea to newForgejoProvider).
+			name:      "gitea",
+			signIn:    configfile.SignIn{Name: "gt", Type: configfile.SignInGitea, Host: "gitea.example.org", ClientID: "cid"},
+			authorize: "https://gitea.example.org/login/oauth/authorize",
+			token:     "https://gitea.example.org/login/oauth/access_token",
+			api:       "https://gitea.example.org/api/v1",
+			scope:     "read:user read:organization",
+			display:   "Gitea (gitea.example.org)",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -147,6 +158,7 @@ func TestSignInOrigin(t *testing.T) {
 		{configfile.SignIn{Type: configfile.SignInGitHub, Host: "GHE.example.com"}, "github:https://ghe.example.com"},
 		{configfile.SignIn{Type: configfile.SignInForgejo, Host: "code.example.org"}, "forgejo:https://code.example.org"},
 		{configfile.SignIn{Type: configfile.SignInForgejo, Host: "http://127.0.0.1:3000/"}, "forgejo:http://127.0.0.1:3000"},
+		{configfile.SignIn{Type: configfile.SignInGitea, Host: "gitea.example.org"}, "gitea:https://gitea.example.org"},
 		{configfile.SignIn{Type: configfile.SignInOIDC, Issuer: "https://id.example.com/realms/a"}, "oidc:https://id.example.com/realms/a"},
 	}
 	for _, tt := range tests {

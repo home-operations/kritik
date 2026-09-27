@@ -24,7 +24,7 @@ export interface Me {
   tenants: TenantMembership[];
 }
 
-export type SignInProviderType = 'oidc' | 'github' | 'forgejo';
+export type SignInProviderType = 'oidc' | 'github' | 'forgejo' | 'gitea';
 
 export interface SignInProvider {
   name: string;
@@ -64,7 +64,7 @@ export type SkipReason = '' | 'disabled' | 'filtered' | 'only_skipped_paths';
 export type Severity = 'blocking' | 'important' | 'nit';
 export type IndexRunStatus = 'running' | 'completed' | 'failed' | 'superseded';
 export type FollowupStatus = 'answered' | 'limited' | 'ignored' | 'failed';
-export type Forge = 'github' | 'gitlab' | 'forgejo';
+export type Forge = 'github' | 'gitlab' | 'forgejo' | 'gitea';
 export type CredentialKind = 'app' | 'token';
 export type UsageGroup = 'day' | 'model' | 'repo' | 'role';
 export type JobState =

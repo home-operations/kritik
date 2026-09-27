@@ -10,6 +10,8 @@
   and [ADR-0010](0010-configuration-layers.md), which lets `.kritik.yaml`
   of §2.3 choose within operator bounds and has the worker read it first.
 - **Date:** 2026-09-24
+- **Amended:** 2026-09-26, to route `forge: gitea` through the Forgejo
+  client of §2.1 rather than a separate implementation.
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6, §2.7, §2.11 and §2.12.
 
 ## 1. Context
@@ -53,6 +55,14 @@ validated like `token`, and runners receive it in place of `token` when it is
 set. `token` must write comments, reviews and statuses; `gitToken` should be a
 separate read-only token, so the pod that reads untrusted content (§2.6)
 cannot write to the forge. Without it the API token reaches the runner.
+
+Gitea is Forgejo's upstream: the two forks keep the same `/api/v1` shape for
+everything this client uses (pulls, reviews, statuses, collaborator
+permissions, the `/user` endpoint and OAuth) and the same
+`X-Gitea-Signature` webhook header, so a `gitea` installation is config-file
+routing, not a second client — `forge: gitea` builds a `forgejo.Client`
+exactly as `forge: forgejo` does, and `type: gitea` sign-in builds the same
+OAuth provider as `type: forgejo`.
 
 ### 2.2 Filter inputs
 

@@ -2,7 +2,7 @@
 
 # kritik
 
-**Repository-aware AI pull request review for GitHub and Forgejo.**
+**Repository-aware AI pull request review for GitHub, Forgejo and Gitea.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/home-operations/kritik/ci.yaml?branch=main&label=ci)](https://github.com/home-operations/kritik/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/actions/workflow/status/home-operations/kritik/release.yaml?branch=main&label=release)](https://github.com/home-operations/kritik/actions/workflows/release.yaml)
@@ -74,9 +74,9 @@ Security notes:
 - Run runner Jobs under a sandboxed RuntimeClass such as gVisor
   (`runner.runtimeClassName`) where the cluster has one, since the pod parses
   untrusted content.
-- Give a Forgejo installation a read-only `gitToken` beside its `token`:
-  runners fetch with `gitToken` when it is set, and otherwise with `token`,
-  which can write to the forge.
+- Give a Forgejo or Gitea installation a read-only `gitToken` beside its
+  `token`: runners fetch with `gitToken` when it is set, and otherwise with
+  `token`, which can write to the forge.
 
 ## Documentation
 

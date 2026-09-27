@@ -39,6 +39,7 @@ func fixture(t *testing.T) string {
 	t.Setenv("TEST_OPENROUTER_API_KEY", "sk-or-test")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	t.Setenv("TEST_FORGEJO_TOKEN", "fj-token")
+	t.Setenv("TEST_GITEA_TOKEN", "gt-token")
 	t.Setenv("TEST_CLIENT_ID", "Iv1.fromenv")
 	return path
 }
@@ -165,6 +166,10 @@ func TestInstallationCredentials(t *testing.T) {
 	fj, _, ok := f.Installation("onedr0p-forgejo")
 	if !ok || fj.TokenValue().Value() != "fj-token" || fj.WebhookSecretValue().Value() != "whsec" {
 		t.Fatal("forgejo credentials not resolved")
+	}
+	gt, _, ok := f.Installation("onedr0p-gitea")
+	if !ok || gt.TokenValue().Value() != "gt-token" || gt.WebhookSecretValue().Value() != "whsec" {
+		t.Fatal("gitea credentials not resolved")
 	}
 	if _, _, ok := f.Installation("nope"); ok {
 		t.Fatal("unknown installation should not resolve")
@@ -333,6 +338,7 @@ func TestParseRejects(t *testing.T) {
 		{"github app with both client id forms", githubMinimal("clientId: x, clientIdFrom: { env: TEST_WEBHOOK_SECRET }, "), "exactly one of clientId or clientIdFrom"},
 		{"github app with neither client id form", githubMinimal(""), "exactly one of clientId or clientIdFrom"},
 		{"forgejo with app", strings.Replace(minimal, "token: { env: TEST_FORGEJO_TOKEN }", "app: { clientId: x, privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }", 1), "takes a token, not an app"},
+		{"gitea with app", strings.Replace(strings.Replace(minimal, "forge: forgejo", "forge: gitea", 1), "token: { env: TEST_FORGEJO_TOKEN }", "app: { clientId: x, privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }", 1), "takes a token, not an app"},
 		{"missing token", strings.Replace(minimal, "        token: { env: TEST_FORGEJO_TOKEN }\n", "", 1), "token is required"},
 		{"unset env reference", strings.Replace(minimal, "TEST_FORGEJO_TOKEN", "TEST_DOES_NOT_EXIST", 1), "is not set"},
 		{"empty env reference", strings.Replace(minimal, "TEST_FORGEJO_TOKEN", "TEST_EMPTY", 1), "token is required"},
