@@ -35,6 +35,7 @@ import (
 	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/runner"
@@ -672,10 +673,12 @@ func pushDuringBuild(
 // River works the job again: a first retry comes within the scheduler's
 // interval, so the job is retryable only after its second failure. It then
 // cancels the third. It also checks the job drops the chunks a build killed
-// before it left behind.
+// long before left behind, but not those of a build that may still be
+// running beside it.
 func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], exec *gateExecutor, tenantID, repoID string) {
 	t.Helper()
-	killed := plantKilledBuild(ctx, t, st, tenantID, repoID)
+	killed := plantBuild(ctx, t, st, tenantID, repoID, jobtimeout.RescueStuckJobsAfter+time.Minute)
+	running := plantBuild(ctx, t, st, tenantID, repoID, 0)
 	exec.setBeforeIndex(func() error { return errors.New("node went away") })
 	t.Cleanup(func() { exec.setBeforeIndex(nil) })
 	job, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)
@@ -704,17 +707,22 @@ func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *
 	if n := runChunks(ctx, t, st, tenantID, killed); n != 0 {
 		t.Fatalf("a killed build's %d chunks were left behind", n)
 	}
+	if runChunks(ctx, t, st, tenantID, running) == 0 {
+		t.Fatal("a build that may still be running lost its chunks")
+	}
 }
 
-// plantKilledBuild leaves chunks under an index run that never finished,
-// as a job killed mid-build would, and returns the run's id.
-func plantKilledBuild(ctx context.Context, t *testing.T, st *store.Store, tenantID, repoID string) string {
+// plantBuild leaves chunks under an unfinished index run started age ago,
+// as a job killed mid-build or one still embedding would, and returns the
+// run's id. The run goes when the test ends.
+func plantBuild(ctx context.Context, t *testing.T, st *store.Store, tenantID, repoID string, age time.Duration) string {
 	t.Helper()
 	var runID string
 	var planted int64
 	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-			VALUES ($1, $2, 'killed', 'fake-embed', 8, 'full', 'running') RETURNING id`, tenantID, repoID).Scan(&runID); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, created_at)
+			VALUES ($1, $2, 'unfinished', 'fake-embed', 8, 'full', 'running', now() - make_interval(secs => $3)) RETURNING id`,
+			tenantID, repoID, age.Seconds()).Scan(&runID); err != nil {
 			return err
 		}
 		tag, err := tx.Exec(ctx, `INSERT INTO index_chunks (tenant_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
@@ -724,8 +732,14 @@ func plantKilledBuild(ctx context.Context, t *testing.T, st *store.Store, tenant
 		return err
 	})
 	if err != nil || planted == 0 {
-		t.Fatalf("plant a killed build's chunks: %d, %v", planted, err)
+		t.Fatalf("plant an unfinished build's chunks: %d, %v", planted, err)
 	}
+	t.Cleanup(func() {
+		_ = st.WithTenant(context.Background(), tenantID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), `DELETE FROM index_runs WHERE id = $1`, runID)
+			return err
+		})
+	})
 	return runID
 }
 
