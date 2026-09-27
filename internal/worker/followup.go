@@ -60,7 +60,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	if err != nil {
 		return err
 	}
-	client, err := w.client(ctx, file, pr.installation, pr.externalID, pr.repository)
+	client, err := w.client(ctx, file, pr.installation, pr.repository)
 	if err != nil {
 		return err
 	}

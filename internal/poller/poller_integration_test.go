@@ -69,7 +69,7 @@ func (f *listForge) ListOpenPullRequests(_ context.Context, _, _ string, since t
 
 type forges struct{ f forge.Client }
 
-func (f *forges) For(context.Context, *configfile.Installation, int64, string) (forge.Client, error) {
+func (f *forges) For(context.Context, *configfile.Installation, string) (forge.Client, error) {
 	return f.f, nil
 }
 

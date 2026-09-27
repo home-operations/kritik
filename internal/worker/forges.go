@@ -15,27 +15,24 @@ import (
 )
 
 // BuildForge constructs the forge client for an installation from its
-// credentials in the configuration file. GitHub, Forgejo and Gitea are
-// implemented; the configuration refuses GitLab until it is.
-func BuildForge(ctx context.Context, in *configfile.Installation, externalID int64, repo string) (forge.Client, error) {
+// credentials in the configuration file, for repositories of repo's owner.
+// GitHub, Forgejo and Gitea are implemented; the configuration refuses
+// GitLab until it is.
+func BuildForge(ctx context.Context, in *configfile.Installation, repo string) (forge.Client, error) {
 	switch in.Forge {
 	case configfile.ForgeGitHub:
 		app, err := github.NewApp(in.App.ClientIDValue(), in.App.PrivateKeyValue().Value(), github.APIBase(in.Host))
 		if err != nil {
 			return nil, err
 		}
-		if externalID == 0 {
-			// Declared before its installation webhook arrived: GitHub's
-			// lookup is per repository, and the one being reviewed is one
-			// the App can see by definition.
-			owner, name, _ := strings.Cut(repo, "/")
-			id, err := app.DiscoverInstallation(ctx, owner, name)
-			if err != nil {
-				return nil, err
-			}
-			externalID = id
+		// An App is installed, and mints tokens, once per account: the
+		// installation that sees repo is its owner's.
+		owner, name, _ := strings.Cut(repo, "/")
+		id, err := app.DiscoverInstallation(ctx, owner, name)
+		if err != nil {
+			return nil, err
 		}
-		return github.NewClient(app, externalID, in.Host)
+		return github.NewClient(app, id, in.Host)
 	case configfile.ForgeForgejo, configfile.ForgeGitea:
 		// Gitea speaks the same REST API as Forgejo.
 		c, err := forgejo.NewClient(in.Host, in.TokenValue().Value(), nil)

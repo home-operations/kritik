@@ -53,7 +53,6 @@ type Index struct {
 
 type indexRepo struct {
 	name, installation, defaultBranch string
-	externalID                        int64
 	enabled                           bool
 	activeRun                         string
 }
@@ -84,7 +83,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		logger.Info("index skipped, repository disabled")
 		return nil
 	}
-	client, err := w.client(ctx, file, repo.installation, repo.externalID, repo.name)
+	client, err := w.client(ctx, file, repo.installation, repo.name)
 	if err != nil {
 		return err
 	}
@@ -196,9 +195,9 @@ func (w *Index) loadRepo(ctx context.Context, args jobs.IndexArgs) (*indexRepo, 
 	var active *string
 	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			SELECT r.name, i.name, coalesce(i.external_id, 0), r.default_branch, r.enabled, r.active_index_run_id::text
+			SELECT r.name, i.name, r.default_branch, r.enabled, r.active_index_run_id::text
 			FROM repositories r JOIN installations i ON i.id = r.installation_id WHERE r.id = $1`, args.RepositoryID).
-			Scan(&r.name, &r.installation, &r.externalID, &r.defaultBranch, &r.enabled, &active)
+			Scan(&r.name, &r.installation, &r.defaultBranch, &r.enabled, &active)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, river.JobCancel(fmt.Errorf("worker: repository %s is unknown", args.RepositoryID))
