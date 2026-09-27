@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"time"
+	"unicode/utf8"
 
 	"github.com/home-operations/kritik/internal/webhook"
 )
@@ -64,9 +65,19 @@ const (
 // StatusContext is the commit status context kritik reports under.
 const StatusContext = "kritik/review"
 
-// MaxStatusDescription is the length GitHub, and Forgejo matching it,
-// truncates a commit status description to.
+// MaxStatusDescription is the length, in characters, GitHub, and Forgejo
+// matching it, truncates a commit status description to.
 const MaxStatusDescription = 140
+
+// StatusDescription is s cut to MaxStatusDescription characters, the last
+// an ellipsis when it had to be cut. It counts characters, not bytes, so it
+// never splits one.
+func StatusDescription(s string) string {
+	if utf8.RuneCountInString(s) <= MaxStatusDescription {
+		return s
+	}
+	return string([]rune(s)[:MaxStatusDescription-1]) + "…"
+}
 
 // Permission is a login's access level to a repository, in ascending order.
 type Permission string

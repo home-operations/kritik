@@ -401,7 +401,7 @@ func (c *Client) SetStatus(ctx context.Context, owner, repo, sha string, state f
 	opts := createStatusOption{
 		State:       string(state),
 		Context:     forge.StatusContext,
-		Description: truncate(description, forge.MaxStatusDescription),
+		Description: forge.StatusDescription(description),
 	}
 	path := fmt.Sprintf("%s/statuses/%s", repoPath(owner, repo), sha)
 	if err := c.do(ctx, http.MethodPost, path, opts, nil); err != nil {
@@ -609,13 +609,4 @@ func openPullRequest(pr pullRequest) forge.OpenPullRequest {
 // applies here.
 func isBot(login string) bool {
 	return strings.HasSuffix(login, "[bot]")
-}
-
-// truncate shortens s to at most n bytes, matching the cap Forgejo (like
-// GitHub) enforces on a commit status description.
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
 }
