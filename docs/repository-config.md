@@ -418,7 +418,7 @@ entry, bound by bound like the rest of `allow`:
 | `systemPrompt`             | `false`                                      | Whether a task may add to the system prompt.                                         |
 | `repositoryTasks`          | `true`                                       | Whether a `.kritik.yaml` may define tasks at all.                                    |
 | `maxTasks`                 | `10`                                         | A repository's tasks.                                                                |
-| `maxRunsPerSubjectPerHour` | `6`                                          | How often one task runs on one issue or pull request.                                |
+| `maxRunsPerSubjectPerHour` | `6`                                          | How often one task runs on one issue or pull request; a run past it is skipped.      |
 | `maxFields`                | `16`                                         | A task's fields.                                                                     |
 
 A task's mode, models, agent limits and commands are bounded by
@@ -437,7 +437,9 @@ drops what is out of bounds, not the whole task where it can: an event, an
 action block, a context source, a tool, the `system` prompt or fields past
 `maxFields`. A task left with no trigger, or with a mode the operator does
 not allow, is dropped. The dashboard lists each repository's tasks, where
-each comes from and a note for everything clipped.
+each comes from and a note for everything clipped, from the `.kritik.yaml`
+the last task event read at the default branch tip (before any event, the
+one the last review read, and the page says which).
 
 ```yaml
 # The operator's configuration file.

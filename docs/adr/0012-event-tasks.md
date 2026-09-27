@@ -77,8 +77,9 @@ cost is that a label removal on Forgejo or Gitea fires `labeled` tasks too.
 The bot-sender guard (§2.5) keeps a task's own label writes from triggering
 it again either way.
 
-The raw payload is stored once per delivery that matches a task, in a
-`task_events` row under row-level security with the existing retention, and
+The raw payload is stored once per delivery some task could match, in a
+`task_events` row under row-level security with the existing retention
+(the dispatch job, §2.4, deletes it again when no task does), and
 jobs reference it by id so the queue's arguments stay small. Tasks see it
 decoded, as `raw` in guards and `.Raw` in templates, and the prompt carries
 it (cut to 32 KiB) whatever the templates say.
@@ -223,17 +224,31 @@ Execution is chosen per task:
   through the gateway (ADR-0004), and the final answer comes back through
   the agent run, as a review's does.
 
-Ingest stores the delivery, skips it if the sender is the installation's
-bot or tasks are off, resolves the repository's tasks (`repoconfig.Merged`,
-§2.6) and enqueues one job per matching task on a `task` queue, unique by
-task and event. The task worker re-resolves the task at the configuration
-commit ingest saw, applies `allow.tasks.maxRunsPerSubjectPerHour`, admits
-the run through the model leases and the tenant's token budget, gathers the
-context sources (each bounded, and bounded in total), renders the prompts,
-runs the model, plans and applies the actions, and posts the report. A
-`task_runs` row records the trigger, status, mode, model, fields, and the
-proposed, applied and dropped actions; usage flows into `usage` and
-`model_calls` like a review's.
+Ingest makes no forge call. It consults only the operator's settings:
+when tasks are on and an operator task, or an event the operator lets
+repository tasks trigger on, could match the delivery, it stores the
+delivery and enqueues one `task_dispatch` job. That job drops the event if
+its sender is the installation's bot, resolves the repository's tasks
+(`repoconfig.Merged`, §2.6) from the `.kritik.yaml` at the default branch's
+tip, records that commit and file on the repository for the dashboard
+(§2.8), and enqueues one job per matching task on a `task` queue, unique by
+task and event, carrying the commit. The task worker re-resolves the task
+at that commit, applies `allow.tasks.maxRunsPerSubjectPerHour` (runs of the
+task on the subject that started in the last hour; past it the run is
+skipped), admits the run through the model leases and the tenant's token
+budget, gathers the context sources (each bounded, and bounded in total),
+renders the prompts, runs the model, plans and applies the actions, and
+posts the report. An agentic run takes a slot on its model before it does
+anything billable; while every slot is held the job is snoozed, which
+spends no attempt, with a growing back-off. A `task_runs` row records the
+trigger, status, mode, model, fields, and the proposed, applied and dropped
+actions; usage flows into `usage` and `model_calls` like a review's.
+
+A failure before the model answers is retried. The answer's charge marks
+the run answered (`task_runs.answered_at`) in the same transaction, and from
+then on the run is never run again: an attempt that finds it answered but
+unfinished ends it as failed, since some of its forge writes, which are not
+idempotent, may already have been made.
 
 The GitHub App needs the Issues and Pull requests write permissions, and
 the Issues and Issue comment event subscriptions, for the tasks that use
@@ -267,13 +282,14 @@ The design keeps each of those in its lane:
   template cannot post-process a context source's raw text.
 - **No echo loops.** An event whose sender is the installation's own bot
   never triggers a task, so the labels and comments a task writes cannot
-  trigger it again.
+  trigger it again. The dispatch job checks it, since it needs the bot's
+  login from the forge.
 - **The configuration comes from the default branch's tip.** A task and
   every file it names are read at the default branch's tip, not at a pull
   request's merge base or head: an issue has no merge base, and only
   someone who can push to the default branch can change what a task does
   or what its templates say. The worker re-reads the task at the commit
-  ingest resolved it at.
+  the dispatch job resolved it at.
 - **Operator bounds, and who is trusted.** The operator's configuration
   file is trusted: its own tasks are not clipped, only switched on or off
   by `allow.tasks.enabled`; they pick their own mode and agent limits,
@@ -339,7 +355,10 @@ permissions, file reads and branch tips reuse what exists.
 
 A repository's page lists its resolved tasks: their names, where each came
 from (the configuration file, the dashboard or `.kritik.yaml`), triggers,
-mode and action kinds, with the clipping notes. Task runs, their fields,
+mode and action kinds, with the clipping notes. They are resolved from the
+`.kritik.yaml` the last dispatch read at the default branch's tip, which
+it records on the repository (migration 0014); before any dispatch, from
+the one the last review read at its merge base, and the page says which. Task runs, their fields,
 the three action lists and a transcript link join it once runs are
 recorded, with live updates.
 
