@@ -210,7 +210,7 @@ type reviewUsage struct {
 func insertUsage(ctx context.Context, tx pgx.Tx, u reviewUsage) error {
 	if _, err := tx.Exec(ctx, `INSERT INTO usage
 		(tenant_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		VALUES ($1, $2, nullif($3, '')::uuid, $4, $5, $6, $7, $8, $9)`,
 		u.tenantID, u.repositoryID, u.reviewID, u.role, u.model, u.upstream, u.input, u.output, u.costUSD); err != nil {
 		return fmt.Errorf("worker: insert usage: %w", err)
 	}

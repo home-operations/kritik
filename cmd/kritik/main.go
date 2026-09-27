@@ -228,7 +228,10 @@ func run() error {
 		})
 		river.AddWorker(workers, &worker.FollowUp{Base: base, Completers: completers})
 		river.AddWorker(workers, &worker.TaskDispatch{Base: base})
-		river.AddWorker(workers, &worker.Task{Base: base, Completers: completers})
+		river.AddWorker(workers, &worker.Task{
+			Base: base, Completers: completers, Executor: exec, GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
+			Embedder: embedder, EmbedModel: cfg.EmbedModel,
+		})
 		river.AddWorker(workers, &worker.Index{
 			Base: base, Executor: exec, Embedder: embedder, EmbedModel: cfg.EmbedModel, EmbedDims: cfg.EmbedDims,
 		})

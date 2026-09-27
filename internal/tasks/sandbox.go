@@ -136,6 +136,13 @@ func defuseInput(in Input) Input {
 // sourceRe keeps a fence's source to a plain label.
 var sourceRe = regexp.MustCompile(`[^A-Za-z0-9:._/-]`)
 
+// FenceContext is the context source name's value v fenced as untrusted,
+// exactly as a template sees .Context.name; the runner appends what it
+// gathers to the prompt this way.
+func FenceContext(name string, v any) (string, error) {
+	return fenceValue("context:"+name, v)
+}
+
 // fenceValue is v in an untrusted block: a string as it is, defused, and
 // anything else as JSON, which escapes '<'.
 func fenceValue(source string, v any) (string, error) {

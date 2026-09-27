@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"slices"
 	"time"
 
 	"github.com/riverqueue/river"
@@ -40,9 +41,29 @@ func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration {
 }
 
 // Timeout implements river.Worker: a task waits for a lease, calls the
-// model and writes back like a follow-up.
-func (w *Task) Timeout(*river.Job[jobs.TaskArgs]) time.Duration {
-	return min(jobtimeout.FollowUpTimeout, jobtimeout.MaxJobTimeout)
+// model and writes back like a follow-up, or, where the repository allows
+// agentic tasks, runs its runner as long as an agentic review may. The job
+// does not know its task's mode until it reads the task's definition, so
+// the longer bound applies to every task there.
+func (w *Task) Timeout(job *river.Job[jobs.TaskArgs]) time.Duration {
+	timeout := jobtimeout.FollowUpTimeout
+	file := w.Current.Get()
+	if tenant := tenantByID(file, job.Args.TenantID); tenant != nil && w.GatewayURL != "" {
+		settings := repoSettings(file, tenant, job.Args.RepositoryID)
+		modes := settings.Allow.Modes
+		if modes == nil {
+			modes = []configfile.ReviewMode{settings.Mode}
+		}
+		if slices.Contains(modes, configfile.ReviewAgentic) {
+			agentTimeout := settings.Agent.Timeout
+			if t := settings.Allow.Agent.Timeout; t != nil {
+				agentTimeout = max(agentTimeout, *t)
+			}
+			deadline, _ := file.RunnerFor(tenant)
+			timeout = max(timeout, agentDeadline(deadline, agentTimeout)+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom)
+		}
+	}
+	return min(timeout, jobtimeout.MaxJobTimeout)
 }
 
 // repoSettings resolves a repository's settings from its id, which a job

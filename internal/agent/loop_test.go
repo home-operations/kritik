@@ -193,7 +193,7 @@ func checkTextOnlyTwiceStopsNoSubmit(t *testing.T, _ Result, events []StepEvent,
 	last := scripted.calls[len(scripted.calls)-1]
 	found := false
 	for _, m := range last.Messages {
-		if m.Role == model.RoleUser && m.Text == nudgeText {
+		if m.Role == model.RoleUser && m.Text == nudgeText+testSubmitDef.Name {
 			found = true
 		}
 	}

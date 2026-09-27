@@ -191,6 +191,8 @@ type TaskRunResult struct {
 	Dropped   json.RawMessage
 	CommentID int64
 	Error     string
+	// Notes say what the run's context left out, and why.
+	Notes []string
 }
 
 // FinishTaskRun records how the run id ended in tx.
@@ -200,13 +202,21 @@ func FinishTaskRun(ctx context.Context, tx pgx.Tx, id string, r TaskRunResult) e
 	}
 	_, err := tx.Exec(ctx, `UPDATE task_runs SET status = $2, reason = left($3, 500), model = $4, fields = $5::jsonb,
 		proposed = $6::jsonb, applied = $7::jsonb, dropped = $8::jsonb, comment_id = nullif($9::bigint, 0), error = left($10, 2000),
-		finished_at = now() WHERE id = $1`,
+		notes = $11, finished_at = now() WHERE id = $1`,
 		id, string(r.Status), r.Reason, r.Model, jsonOrNil(r.Fields), jsonOrNil(r.Proposed), jsonOrNil(r.Applied),
-		jsonOrNil(r.Dropped), r.CommentID, r.Error)
+		jsonOrNil(r.Dropped), r.CommentID, r.Error, notesOrEmpty(r.Notes))
 	if err != nil {
 		return fmt.Errorf("store: finish task run: %w", err)
 	}
 	return nil
+}
+
+// notesOrEmpty is notes for a NOT NULL text[] column.
+func notesOrEmpty(notes []string) []string {
+	if notes == nil {
+		return []string{}
+	}
+	return notes
 }
 
 func jsonOrNil(raw json.RawMessage) any {
@@ -230,4 +240,19 @@ func CountTaskRuns(
 		return 0, fmt.Errorf("store: count task runs: %w", err)
 	}
 	return n, nil
+}
+
+// InsertTaskRunner records a runner run of kind task in tx for the task run
+// id, links the task run to it and returns its id. A retried job links the
+// run it makes last.
+func InsertTaskRunner(ctx context.Context, tx pgx.Tx, tenantID, taskRunID string) (string, error) {
+	var runID string
+	err := tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, kind) VALUES ($1, 'task') RETURNING id`, tenantID).Scan(&runID)
+	if err != nil {
+		return "", fmt.Errorf("store: insert task runner run: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE task_runs SET runner_run_id = $2 WHERE id = $1`, taskRunID, runID); err != nil {
+		return "", fmt.Errorf("store: link task runner run: %w", err)
+	}
+	return runID, nil
 }

@@ -133,10 +133,10 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runID,
 		Labels: map[string]string{
-			"tenant": tenant.Slug, "repository": pr.repository,
-			"pr": strconv.Itoa(args.Number), "kind": jobs.QueueReview,
+			labelTenant: tenant.Slug, labelRepository: pr.repository,
+			"pr": strconv.Itoa(args.Number), labelKind: jobs.QueueReview,
 		},
-		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": args.HeadSHA},
+		Annotations: map[string]string{annotationJob: strconv.FormatInt(job.ID, 10), annotationHead: args.HeadSHA},
 		Job:         spec,
 		Secrets:     secrets,
 		Deadline:    deadline,

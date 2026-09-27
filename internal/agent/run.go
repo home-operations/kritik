@@ -76,6 +76,22 @@ func NewRunTool(c RunConfig) *RunTool {
 	return &RunTool{cfg: c, names: names, schema: json.RawMessage(schema)}
 }
 
+// Only is the run tool over those of names rt offers, in the same checkout
+// with the same bounds, or nil when it offers none of them.
+func (rt *RunTool) Only(names []string) *RunTool {
+	cfg := rt.cfg
+	cfg.Commands = map[string]string{}
+	for _, name := range names {
+		if bin, ok := rt.cfg.Commands[name]; ok {
+			cfg.Commands[name] = bin
+		}
+	}
+	if len(cfg.Commands) == 0 {
+		return nil
+	}
+	return NewRunTool(cfg)
+}
+
 // Names are the commands the tool offers, sorted.
 func (rt *RunTool) Names() []string { return rt.names }
 

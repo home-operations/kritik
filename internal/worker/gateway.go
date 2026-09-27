@@ -155,7 +155,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	resp, err := stepper.Step(ctx, req)
 	took := time.Since(start)
-	g.Metrics.ModelCall(tenant.Slug, grant.Model, roleReview, callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
+	g.Metrics.ModelCall(tenant.Slug, grant.Model, grantRole(grant), callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
 		resp.Usage.Output, resp.CostUSD)
 	if cerr := g.charge(ctx, grant, token, reserved, resp, err == nil); cerr != nil {
 		// A step that was answered is paid for either way; the run still
@@ -165,7 +165,8 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	// Recorded before the runner gets its answer, so the next step's delta
 	// is taken against this one; recordModelCall bounds how long it waits.
 	g.recordModelCall(ctx, logger, store.ModelCall{
-		TenantID: grant.TenantID, ReviewID: grant.ReviewID, RunnerRunID: grant.RunID, Kind: store.ModelCallAgentStep, Duration: took,
+		TenantID: grant.TenantID, ReviewID: grant.ReviewID, TaskRunID: grant.TaskRunID, RunnerRunID: grant.RunID, Kind: store.ModelCallAgentStep,
+		Duration: took,
 	}, req, resp, err, transcriptMask(file, provider, token))
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;
@@ -210,7 +211,7 @@ func (g *Gateway) monthCapped(ctx context.Context, file *configfile.File, tenant
 }
 
 // charge settles a step's reservation: an answered step's actual spend
-// replaces it and is recorded against the run's review, where the caps
+// replaces it and is recorded against the run's review or task, where the caps
 // count it; a failed step is refunded. The two writes are independent, so
 // a failed usage row still leaves the run's budget charged.
 func (g *Gateway) charge(
@@ -224,11 +225,20 @@ func (g *Gateway) charge(
 	budgetErr := g.Store.ChargeGatewayToken(ctx, token, spent-reserved)
 	usageErr := g.Store.WithTenant(ctx, grant.TenantID, func(tx pgx.Tx) error {
 		return insertUsage(ctx, tx, reviewUsage{
-			tenantID: grant.TenantID, repositoryID: grant.RepositoryID, reviewID: grant.ReviewID, role: roleReview, model: resp.Model,
+			tenantID: grant.TenantID, repositoryID: grant.RepositoryID, reviewID: grant.ReviewID, role: grantRole(grant), model: resp.Model,
 			upstream: resp.Upstream, input: resp.Usage.Prompt(), output: resp.Usage.Output, costUSD: resp.CostUSD,
 		})
 	})
 	return errors.Join(budgetErr, usageErr)
+}
+
+// grantRole is the usage role of a run's steps: the task's, for a task
+// run, and a review's otherwise.
+func grantRole(grant store.GatewayGrant) string {
+	if grant.TaskRunID != "" {
+		return roleTask
+	}
+	return roleReview
 }
 
 // maskProvider removes a provider's key, and any credentials in its base
