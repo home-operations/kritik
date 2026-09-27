@@ -16,6 +16,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/metrics"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/runner"
@@ -233,10 +234,12 @@ func (w *Index) start(ctx context.Context, args jobs.IndexArgs, commit, base, mo
 	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		// Only the active generation keeps its chunks: any other run's were
 		// left by a job that could not clear them, such as one killed
-		// mid-build.
+		// mid-build. A forced rebuild can run beside an update, so a run is
+		// swept only once River would have given its job up for dead.
 		if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id IN (
 			SELECT x.id FROM index_runs x JOIN repositories r ON r.id = x.repository_id
-			WHERE r.id = $1 AND x.id IS DISTINCT FROM r.active_index_run_id)`, args.RepositoryID); err != nil {
+			WHERE r.id = $1 AND x.id IS DISTINCT FROM r.active_index_run_id AND x.created_at < now() - make_interval(secs => $2))`,
+			args.RepositoryID, jobtimeout.RescueStuckJobsAfter.Seconds()); err != nil {
 			return fmt.Errorf("worker: drop stray chunks: %w", err)
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO index_runs
