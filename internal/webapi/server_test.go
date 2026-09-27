@@ -22,7 +22,7 @@ tenants:
       - name: alpha-bot
         forge: forgejo
         host: git.example
-        account: alpha
+        accounts: [alpha]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
   - slug: beta
@@ -30,7 +30,7 @@ tenants:
       - name: beta-bot
         forge: forgejo
         host: git.example
-        account: beta
+        accounts: [beta]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
 `

@@ -70,7 +70,7 @@ tenants:
     installations:
       - name: bot-ross
         forge: github
-        account: onedr0p
+        accounts: [onedr0p]
         app:
           clientId: Iv1.x
           privateKey: { env: TEST_PEM }

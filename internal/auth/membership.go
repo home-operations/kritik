@@ -26,12 +26,12 @@ type Grant = store.Grant
 // user is not an active member.
 type Membership func(ctx context.Context, org string) (Role, error)
 
-// Resolve derives the tenants a forge sign-in grants: for every tenant
-// installation on the same forge type and host as signIn, the user is admin
-// when the installation's account is their own, otherwise whatever role m
-// reports for that account as an organization. A tenant with several
-// matching installations gets the highest role among them. An OIDC sign-in
-// matches no installation and resolves nothing.
+// Resolve derives the tenants a forge sign-in grants: for every account a
+// tenant installation on the same forge type and host as signIn serves, the
+// user is admin when the account is their own, otherwise whatever role m
+// reports for that account as an organization. A tenant gets the highest
+// role among its matching installations' accounts. An OIDC sign-in matches
+// no installation and resolves nothing.
 func Resolve(ctx context.Context, file *configfile.File, signIn configfile.SignIn, id Identity, m Membership) ([]Grant, error) {
 	host := configfile.ForgeHost(configfile.Forge(signIn.Type), signIn.Host)
 	checked := map[string]Role{}
@@ -43,11 +43,13 @@ func Resolve(ctx context.Context, file *configfile.File, signIn configfile.SignI
 			if string(in.Forge) != string(signIn.Type) || configfile.ForgeHost(in.Forge, in.Host) != host || host == "" {
 				continue
 			}
-			r, err := accountRole(ctx, id.Login, in.Account, m, checked)
-			if err != nil {
-				return nil, fmt.Errorf("auth: tenant %s: %w", t.Slug, err)
+			for _, account := range in.Accounts {
+				r, err := accountRole(ctx, id.Login, account, m, checked)
+				if err != nil {
+					return nil, fmt.Errorf("auth: tenant %s: %w", t.Slug, err)
+				}
+				role = maxRole(role, r)
 			}
-			role = maxRole(role, r)
 		}
 		if role != "" {
 			grants = append(grants, Grant{TenantID: t.ID(), Role: role})

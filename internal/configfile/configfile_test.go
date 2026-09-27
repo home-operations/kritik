@@ -242,7 +242,7 @@ tenants:
     installations:
       - name: acme-bot
         forge: forgejo
-        account: acme
+        accounts: [acme]
         token: { env: TEST_FORGEJO_TOKEN }
         webhookSecret: { env: TEST_WEBHOOK_SECRET }
 `
@@ -256,7 +256,7 @@ tenants:
     installations:
       - name: acme-bot
         forge: github
-        account: acme
+        accounts: [acme]
         app: { ` + clientFields + `privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 `
 }
@@ -326,13 +326,15 @@ func TestParseRejects(t *testing.T) {
 	}{
 		{"empty file", "", "empty"},
 		{"unknown top-level key", minimal + "tenant: []\n", "field tenant not found"},
-		{"unknown nested key", strings.Replace(minimal, "account: acme", "account: acme\n        owner: acme", 1), "field owner not found"},
+		{"unknown nested key", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme]\n        owner: acme", 1), "field owner not found"},
 		{"no tenants", "tenants: []\n", "at least one tenant"},
 		{"bad slug", strings.Replace(minimal, "slug: acme", "slug: Acme Corp", 1), "lowercase"},
 		{"duplicate slug", minimal + strings.TrimPrefix(strings.Replace(minimal, "acme-bot", "acme-bot-2", 1), "\ntenants:\n"), "duplicates tenants[0]"},
 		{"duplicate installation across tenants", minimal + strings.TrimPrefix(strings.Replace(minimal, "slug: acme", "slug: other", 1), "\ntenants:\n"), "names are hook paths"},
 		{"no installations", "tenants:\n  - slug: acme\n    installations: []\n", "at least one installation"},
-		{"missing account", strings.Replace(minimal, "        account: acme\n", "", 1), "account is required"},
+		{"missing accounts", strings.Replace(minimal, "        accounts: [acme]\n", "", 1), "accounts must list at least one account"},
+		{"blank account", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ' ']", 1), "accounts[1] is empty"},
+		{"account listed twice", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ACME]", 1), `accounts[1] "ACME" is listed twice`},
 		{"unknown forge", strings.Replace(minimal, "forge: forgejo", "forge: bitbucket", 1), "forge must be github, forgejo or gitea"},
 		{"gitlab until it has a client", strings.Replace(minimal, "forge: forgejo", "forge: gitlab", 1), "forge gitlab is not supported yet"},
 		{"github without app", strings.Replace(minimal, "forge: forgejo", "forge: github", 1), "needs an app"},
@@ -511,7 +513,7 @@ func TestRepositoryInstallation(t *testing.T) {
 		return strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: ["+repos+"]", 1) + `      - name: acme-other
         forge: forgejo
         host: other.example.com
-        account: acme
+        accounts: [acme]
         token: { env: TEST_FORGEJO_TOKEN }
         webhookSecret: { env: TEST_WEBHOOK_SECRET }
 `
@@ -546,6 +548,24 @@ func TestRepositoryInstallation(t *testing.T) {
 		}
 		if got := f.Settings(ten, "acme-bot", "acme/x").Mode; got != ReviewSingle {
 			t.Fatalf("acme-bot mode = %q, want single", got)
+		}
+	})
+
+	t.Run("an installation owns the repositories of every account it serves", func(t *testing.T) {
+		several := strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, Globex]", 1)
+		f, err := Parse([]byte(strings.Replace(several, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x }, { name: globex/y }]", 1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ten := &f.Tenants[0]
+		for i := range ten.Repositories {
+			if in := f.InstallationFor(ten, &ten.Repositories[i]); in == nil || in.Name != "acme-bot" {
+				t.Fatalf("InstallationFor(%s) = %v, want acme-bot", ten.Repositories[i].Name, in)
+			}
+		}
+		if _, err := Parse([]byte(strings.Replace(several, "slug: acme", "slug: acme\n    repositories: [{ name: initech/z }]", 1))); err == nil ||
+			!strings.Contains(err.Error(), `serves account "initech"`) {
+			t.Fatalf("Parse = %v, want no installation serving initech", err)
 		}
 	})
 

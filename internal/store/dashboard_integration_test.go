@@ -28,7 +28,7 @@ func (plainOpener) Open(sealed string) ([]byte, error) {
 }
 
 func dashboardSpec(slug, inst string) json.RawMessage {
-	return json.RawMessage(`{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"forgejo","account":"` + slug + `",` +
+	return json.RawMessage(`{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"forgejo","accounts":["` + slug + `"],` +
 		`"token":{"sealed":"sealed:tok"},"webhookSecret":{"sealed":"sealed:wh"}}],"repositories":[{"name":"` + slug + `/one"}]}`)
 }
 
@@ -235,7 +235,7 @@ const swapFileTenant = `
     installations:
       - name: swap-bot
         forge: forgejo
-        account: swap
+        accounts: [swap]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
     repositories:

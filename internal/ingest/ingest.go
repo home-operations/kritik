@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/metrics"
@@ -133,9 +132,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Metrics.Webhook(name, Ignored)
 		w.WriteHeader(http.StatusAccepted)
 		return
-	case ev.Account != "" && !strings.EqualFold(ev.Account, in.Account):
+	case ev.Account != "" && !in.Serves(ev.Account):
 		// A public App can be installed by anyone; only the declared
-		// account is served. Accepted, so the forge does not retry.
+		// accounts are served. Accepted, so the forge does not retry.
 		logger.Warn("webhook for an undeclared account ignored", "account", ev.Account)
 		h.Metrics.Webhook(name, "undeclared_account")
 		w.WriteHeader(http.StatusAccepted)

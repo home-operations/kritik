@@ -188,7 +188,7 @@ func (t *Tenant) repositoryInstallation(r *Repository, where string) (*Installat
 	var owners []*Installation
 	for i := range t.Installations {
 		in := &t.Installations[i]
-		if !strings.EqualFold(in.Account, owner) {
+		if !in.Serves(owner) {
 			continue
 		}
 		if in.Name == r.Installation {
@@ -198,16 +198,16 @@ func (t *Tenant) repositoryInstallation(r *Repository, where string) (*Installat
 	}
 	switch {
 	case r.Installation != "":
-		return nil, fmt.Errorf("configfile: %s.installation %q is not an installation of tenant %q with account %q",
+		return nil, fmt.Errorf("configfile: %s.installation %q is not an installation of tenant %q serving account %q",
 			where, r.Installation, t.Slug, owner)
 	case len(owners) == 0:
-		return nil, fmt.Errorf("configfile: %s.name %q: no installation in tenant %q has account %q", where, r.Name, t.Slug, owner)
+		return nil, fmt.Errorf("configfile: %s.name %q: no installation in tenant %q serves account %q", where, r.Name, t.Slug, owner)
 	case len(owners) > 1:
 		names := make([]string, len(owners))
 		for i, in := range owners {
 			names[i] = in.Name
 		}
-		return nil, fmt.Errorf("configfile: %s.name %q: installations %s of tenant %q all have account %q; set installation to one of them",
+		return nil, fmt.Errorf("configfile: %s.name %q: installations %s of tenant %q all serve account %q; set installation to one of them",
 			where, r.Name, strings.Join(names, ", "), t.Slug, owner)
 	}
 	return owners[0], nil
@@ -370,8 +370,8 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[
 				iwhere, in.Name, owner)
 		}
 		installations[in.Name] = t.Slug
-		if in.Account == "" {
-			return fmt.Errorf("configfile: %s.account is required", iwhere)
+		if err := validateAccounts(in.Accounts, iwhere); err != nil {
+			return err
 		}
 		if err := in.validate(iwhere); err != nil {
 			return err

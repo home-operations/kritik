@@ -263,9 +263,11 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 	}
 	err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
 		if disable && len(inst.Repositories) == 0 {
-			// The whole installation went away.
+			// The App left this account: its repositories go, not those of
+			// the other accounts the installation serves.
 			_, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-				WHERE installation_id = $1 AND managed_by = 'forge'`, req.Installation.ID())
+				WHERE installation_id = $1 AND managed_by = 'forge' AND lower(split_part(name, '/', 1)) = lower($2)`,
+				req.Installation.ID(), ev.Account)
 			return err
 		}
 		for _, name := range inst.Repositories {

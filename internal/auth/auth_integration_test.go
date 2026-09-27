@@ -70,22 +70,22 @@ web:
 tenants:
   - slug: auth-personal
     installations:
-      - {name: auth-personal-bot, forge: github, host: "%[2]s", account: alice-gh, app: &app {clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}}
+      - {name: auth-personal-bot, forge: github, host: "%[2]s", accounts: [alice-gh], app: &app {clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}}
   - slug: auth-acme
     installations:
-      - {name: auth-acme-bot, forge: github, host: "%[2]s", account: acme, app: *app}
+      - {name: auth-acme-bot, forge: github, host: "%[2]s", accounts: [acme], app: *app}
   - slug: auth-widgets
     installations:
-      - {name: auth-widgets-bot, forge: github, host: "%[2]s", account: Widgets, app: *app}
+      - {name: auth-widgets-bot, forge: github, host: "%[2]s", accounts: [Widgets], app: *app}
   - slug: auth-pending
     installations:
-      - {name: auth-pending-bot, forge: github, host: "%[2]s", account: pendco, app: *app}
+      - {name: auth-pending-bot, forge: github, host: "%[2]s", accounts: [pendco], app: *app}
   - slug: auth-fj
     installations:
-      - {name: auth-fj-bot, forge: forgejo, host: "%[3]s", account: fjorg, token: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
+      - {name: auth-fj-bot, forge: forgejo, host: "%[3]s", accounts: [fjorg], token: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
   - slug: auth-invite
     installations:
-      - {name: auth-invite-bot, forge: forgejo, host: "%[3]s", account: nobody, token: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
+      - {name: auth-invite-bot, forge: forgejo, host: "%[3]s", accounts: [nobody], token: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
 `
 
 type authEnv struct {

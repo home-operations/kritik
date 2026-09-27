@@ -41,7 +41,7 @@ tenants:
       - name: aj-bot
         forge: forgejo
         host: git.example
-        account: aj
+        accounts: [aj]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
     repositories:

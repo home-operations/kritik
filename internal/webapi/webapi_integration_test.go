@@ -52,7 +52,7 @@ tenants:
       - name: webapi-a-bot
         forge: forgejo
         host: git.example
-        account: wa
+        accounts: [wa]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
     repositories:
@@ -63,7 +63,7 @@ tenants:
       - name: webapi-b-bot
         forge: forgejo
         host: git.example
-        account: wb
+        accounts: [wb]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
     repositories:

@@ -50,7 +50,7 @@ const minimalGatewayFile = `tenants:
       - name: acme-bot
         forge: forgejo
         host: forge.example.com
-        account: acme
+        accounts: [acme]
         token: { env: TEST_PROVIDER_KEY }
         webhookSecret: { env: TEST_PROVIDER_KEY }
 `

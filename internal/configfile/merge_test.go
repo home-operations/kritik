@@ -23,7 +23,7 @@ func (fakeOpener) Open(sealed string) ([]byte, error) {
 // dashSpec is a valid dashboard tenant spec for slug with one forgejo
 // installation named inst.
 func dashSpec(slug, inst string) string {
-	return `{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"forgejo","account":"` + slug + `",` +
+	return `{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"forgejo","accounts":["` + slug + `"],` +
 		`"token":{"sealed":"sealed:tok-` + slug + `"},"webhookSecret":{"sealed":"sealed:wh-` + slug + `"}}]}`
 }
 
@@ -217,7 +217,7 @@ func TestMergeSkipsFileTenantsTheDashboardHolds(t *testing.T) {
     installations:
       - name: zeta-bot
         forge: forgejo
-        account: zeta
+        accounts: [zeta]
         token: { env: TEST_FORGEJO_TOKEN }
         webhookSecret: { env: TEST_WEBHOOK_SECRET }
 `))
@@ -379,7 +379,7 @@ func TestDashboardForgeHosts(t *testing.T) {
 			}
 			spec := withHost(dashSpec("beta", "beta-bot"), tt.host)
 			if tt.host == "" {
-				spec = `{"slug":"beta","installations":[{"name":"beta-bot","forge":"github","account":"beta",` +
+				spec = `{"slug":"beta","installations":[{"name":"beta-bot","forge":"github","accounts":["beta"],` +
 					`"app":{"clientId":"x","privateKey":{"sealed":"sealed:k"},"webhookSecret":{"sealed":"sealed:w"}}}]}`
 			}
 			_, err = Merge(file, []DashboardTenant{dash("beta", spec, 1)}, fakeOpener{})

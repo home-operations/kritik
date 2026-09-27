@@ -180,14 +180,14 @@ func upsertInstallation(
 	}
 	var id string
 	err := tx.QueryRow(ctx, `
-		INSERT INTO installations (id, tenant_id, name, forge, host, account, credential_kind, managed_by)
+		INSERT INTO installations (id, tenant_id, name, forge, host, accounts, credential_kind, managed_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (name) DO UPDATE SET
-			tenant_id = EXCLUDED.tenant_id, forge = EXCLUDED.forge, host = EXCLUDED.host, account = EXCLUDED.account,
+			tenant_id = EXCLUDED.tenant_id, forge = EXCLUDED.forge, host = EXCLUDED.host, accounts = EXCLUDED.accounts,
 			credential_kind = EXCLUDED.credential_kind, managed_by = EXCLUDED.managed_by, enabled = true, disabled_at = NULL,
 			updated_at = now()
 		WHERE installations.tenant_id = EXCLUDED.tenant_id AND (installations.managed_by = EXCLUDED.managed_by OR NOT installations.enabled)
-		RETURNING id`, in.ID(), tenantID, in.Name, string(in.Forge), in.Host, in.Account, kind, string(origin)).Scan(&id)
+		RETURNING id`, in.ID(), tenantID, in.Name, string(in.Forge), in.Host, in.Accounts, kind, string(origin)).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Another tenant's row keeps its history (pull requests, reviews,
 		// repositories) under its own tenant id; handing the name over would

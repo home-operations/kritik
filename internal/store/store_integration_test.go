@@ -105,7 +105,7 @@ tenants:
     installations:
       - name: alpha-bot
         forge: forgejo
-        account: alpha
+        accounts: [alpha]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
     repositories:
@@ -116,7 +116,7 @@ tenants:
     installations:
       - name: beta-bot
         forge: forgejo
-        account: beta
+        accounts: [beta]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
 `
@@ -527,13 +527,13 @@ tenants:
       - name: gamma-one
         forge: forgejo
         host: one.example.com
-        account: gamma
+        accounts: [gamma]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
       - name: gamma-two
         forge: forgejo
         host: two.example.com
-        account: gamma
+        accounts: [gamma]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
     repositories:
@@ -571,7 +571,7 @@ tenants:
 `, "", 1), `      - name: gamma-two
         forge: forgejo
         host: two.example.com
-        account: gamma
+        accounts: [gamma]
         token: { env: KRITIK_TEST_TOKEN }
         webhookSecret: { env: KRITIK_TEST_TOKEN }
 `, "", 1)

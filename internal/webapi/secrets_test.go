@@ -17,9 +17,9 @@ func fakeSeal(b []byte) (string, error) { return "sealed:" + string(b), nil }
 func fakeGenerate() (string, error) { return "g3n", nil }
 
 const storedSpec = `{"slug":"alpha","installations":[
-	{"name":"alpha-bot","forge":"forgejo","host":"git.example","account":"alpha",
+	{"name":"alpha-bot","forge":"forgejo","host":"git.example","accounts":["alpha"],
 	 "token":{"sealed":"old-token"},"webhookSecret":{"sealed":"old-hook"}},
-	{"name":"alpha-gh","forge":"github","account":"alpha",
+	{"name":"alpha-gh","forge":"github","accounts":["alpha"],
 	 "app":{"clientId":"cid","privateKey":{"sealed":"old-key"},"webhookSecret":{"sealed":"old-app-hook"}}}]}`
 
 func TestSealSpec(t *testing.T) {
@@ -42,50 +42,56 @@ func TestSealSpec(t *testing.T) {
 		{
 			name:   "keep copies the stored sealed value by installation name",
 			stored: storedSpec,
-			spec: `{"slug":"alpha","installations":[{"name":"alpha-gh","forge":"github","host":"GitHub.com","account":"Alpha",` +
+			spec: `{"slug":"alpha","installations":[{"name":"alpha-gh","forge":"github","host":"GitHub.com","accounts":["Alpha"],` +
 				`"app":{"clientId":"cid","privateKey":{"keep":true},"webhookSecret":{"keep":true}}},` +
-				`{"name":"alpha-bot","forge":"forgejo","host":"https://git.example/","account":"alpha","token":{"keep":true},` +
+				`{"name":"alpha-bot","forge":"forgejo","host":"https://git.example/","accounts":["alpha"],"token":{"keep":true},` +
 				`"webhookSecret":{"value":"new"}}]}`,
-			want: `{"installations":[{"account":"Alpha","app":{"clientId":"cid","privateKey":{"sealed":"old-key"},` +
+			want: `{"installations":[{"accounts":["Alpha"],"app":{"clientId":"cid","privateKey":{"sealed":"old-key"},` +
 				`"webhookSecret":{"sealed":"old-app-hook"}},"forge":"github","host":"GitHub.com","name":"alpha-gh"},` +
-				`{"account":"alpha","forge":"forgejo","host":"https://git.example/","name":"alpha-bot","token":{"sealed":"old-token"},` +
+				`{"accounts":["alpha"],"forge":"forgejo","host":"https://git.example/","name":"alpha-bot","token":{"sealed":"old-token"},` +
 				`"webhookSecret":{"sealed":"sealed:new"}}],"slug":"alpha"}`,
 			changed: []string{"installations[alpha-bot].webhookSecret"},
 		},
 		{
 			name:   "a webhook secret stays keepable when the host changes",
 			stored: storedSpec,
-			spec:   `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"other.example","account":"alpha","webhookSecret":{"keep":true}}]}`,
-			want:   `{"installations":[{"account":"alpha","forge":"forgejo","host":"other.example","name":"alpha-bot","webhookSecret":{"sealed":"old-hook"}}],"slug":"alpha"}`,
+			spec:   `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"other.example","accounts":["alpha"],"webhookSecret":{"keep":true}}]}`,
+			want:   `{"installations":[{"accounts":["alpha"],"forge":"forgejo","host":"other.example","name":"alpha-bot","webhookSecret":{"sealed":"old-hook"}}],"slug":"alpha"}`,
 		},
 		{
 			name:    "a token is not kept onto another host",
 			stored:  storedSpec,
-			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"other.example","account":"alpha","token":{"keep":true}}]}`,
+			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"other.example","accounts":["alpha"],"token":{"keep":true}}]}`,
 			errPath: "installations[0].token", errCode: CodeReenterSecret,
 		},
 		{
 			name:    "a token is not kept from https onto http",
 			stored:  storedSpec,
-			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"http://git.example","account":"alpha","token":{"keep":true}}]}`,
+			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"http://git.example","accounts":["alpha"],"token":{"keep":true}}]}`,
 			errPath: "installations[0].token", errCode: CodeReenterSecret,
 		},
 		{
 			name:    "a token is not kept onto another path of the host",
 			stored:  storedSpec,
-			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"git.example/other","account":"alpha","token":{"keep":true}}]}`,
+			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"git.example/other","accounts":["alpha"],"token":{"keep":true}}]}`,
 			errPath: "installations[0].token", errCode: CodeReenterSecret,
 		},
 		{
 			name:    "a token is not kept onto another account",
 			stored:  storedSpec,
-			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"git.example","account":"beta","token":{"keep":true}}]}`,
+			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"git.example","accounts":["beta"],"token":{"keep":true}}]}`,
+			errPath: "installations[0].token", errCode: CodeReenterSecret,
+		},
+		{
+			name:    "a token is not kept onto an added account",
+			stored:  storedSpec,
+			spec:    `{"slug":"alpha","installations":[{"name":"alpha-bot","forge":"forgejo","host":"git.example","accounts":["alpha","beta"],"token":{"keep":true}}]}`,
 			errPath: "installations[0].token", errCode: CodeReenterSecret,
 		},
 		{
 			name:   "a private key is not kept onto another forge",
 			stored: storedSpec,
-			spec: `{"slug":"alpha","installations":[{"name":"alpha-gh","forge":"forgejo","host":"github.com","account":"alpha",` +
+			spec: `{"slug":"alpha","installations":[{"name":"alpha-gh","forge":"forgejo","host":"github.com","accounts":["alpha"],` +
 				`"app":{"privateKey":{"keep":true}}}]}`,
 			errPath: "installations[0].app.privateKey", errCode: CodeReenterSecret,
 		},

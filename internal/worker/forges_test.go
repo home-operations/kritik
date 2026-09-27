@@ -20,7 +20,7 @@ tenants:
       - name: acme-forgejo
         forge: forgejo
         host: https://forge.example.com
-        account: acme
+        accounts: [acme]
         token: { env: TEST_FORGEJO_BUILD_TOKEN }
         webhookSecret: { env: TEST_FORGEJO_BUILD_SECRET }
 `
@@ -57,7 +57,7 @@ tenants:
       - name: acme-gitea
         forge: gitea
         host: https://gitea.example.com
-        account: acme
+        accounts: [acme]
         token: { env: TEST_GITEA_BUILD_TOKEN }
         webhookSecret: { env: TEST_GITEA_BUILD_SECRET }
 `
@@ -197,7 +197,7 @@ tenants:
     installations:
       - name: acme-bot
         forge: github
-        account: acme
+        accounts: [acme]
         app: { clientId: ` + clientID + `, privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 `))
 		if err != nil {

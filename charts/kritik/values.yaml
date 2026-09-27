@@ -119,7 +119,7 @@ config:
   #     installations:
   #       - name: example-github
   #         forge: github
-  #         account: example
+  #         accounts: [example]
   #         app:
   #           clientId: Iv1.example
   #           privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
@@ -130,7 +130,7 @@ config:
   #       - name: example-forgejo
   #         forge: forgejo
   #         host: forge.example.com
-  #         account: example
+  #         accounts: [example]
   #         token: { file: /var/run/secrets/kritik/bot/forgejo-token }
   #         # Runner pods fetch with gitToken instead of token when set; a
   #         # read-only token keeps a write-capable one out of the pod that
@@ -139,7 +139,7 @@ config:
   #         webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
   #     repositories:
   #       - name: example/widgets
-  #         # Both installations have account "example", so the entry names
+  #         # Both installations serve account "example", so the entry names
   #         # the one it belongs to; the same name on the other forge is a
   #         # separate repository.
   #         installation: example-github

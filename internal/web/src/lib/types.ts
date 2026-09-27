@@ -119,7 +119,7 @@ export interface Installation {
   name: string;
   forge: Forge;
   host: string;
-  account: string;
+  accounts: string[];
   credentialKind: CredentialKind;
   credentials: CredentialsSet;
   hookPath: string;

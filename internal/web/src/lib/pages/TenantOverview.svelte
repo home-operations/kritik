@@ -224,7 +224,7 @@
                 {#each d.detail.installations as inst (inst.name)}
                   <tr>
                     <td class="mono">{inst.name}</td>
-                    <td><span class="mono">{inst.account}</span> <span class="small muted">on {inst.host || inst.forge}</span></td>
+                    <td><span class="mono">{inst.accounts.join(', ')}</span> <span class="small muted">on {inst.host || inst.forge}</span></td>
                     <td>
                       {#if inst.lastWebhookAt}
                         <Pill tone="ok" label="receiving" /> <span class="small muted">last <Time iso={inst.lastWebhookAt} /></span>
@@ -244,8 +244,8 @@
               {#if inst.forge === 'github'}
                 Point the GitHub App's webhook at <span class="mono">{inst.hookPath}</span> on kritik's webhook listener.
               {:else}
-                Add a webhook for <span class="mono">{inst.hookPath}</span> on kritik's webhook listener to the
-                <span class="mono">{inst.account}</span> user or organization.
+                Add a webhook for <span class="mono">{inst.hookPath}</span> on kritik's webhook listener to each user or
+                organization it serves: <span class="mono">{inst.accounts.join(', ')}</span>.
               {/if}
             </p>
           {/each}
