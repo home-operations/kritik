@@ -155,6 +155,13 @@
       "editable": true
     },
     {
+      "key": "tasks",
+      "scopes": ["defaults", "tenant", "repository"],
+      "tenantAdmin": true,
+      "repository": "append",
+      "editable": true
+    },
+    {
       "key": "allow",
       "scopes": ["defaults", "tenant", "repository"],
       "tenantAdmin": false,

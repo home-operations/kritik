@@ -97,6 +97,7 @@ var Policies = []Policy{
 	{Key: "review.context", Scopes: everyScope, TenantAdmin: true, Repository: RepoAppend},
 	{Key: "review.minSeverity", Scopes: everyScope, TenantAdmin: true, Repository: RepoReplace},
 	{Key: "review.inlineComments", Scopes: everyScope, TenantAdmin: true, Repository: RepoReplace},
+	{Key: "tasks", Scopes: everyScope, TenantAdmin: true, Repository: RepoAppend},
 	{Key: "allow", Scopes: everyScope},
 	{Key: "limits", Scopes: tenantScopes},
 	{Key: "runner", Scopes: tenantScopes},

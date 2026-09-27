@@ -62,15 +62,20 @@ func (f *File) Settings(t *Tenant, installation, repo string) Settings {
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
 	s.apply(&t.Overrides)
 	s.Limits = s.Limits.overlay(t.Limits)
+	fromFile := t.Origin() == OriginFile
+	ts := mergeTasks(mergeTasks(nil, f.Defaults.Tasks, true), t.Tasks, fromFile)
 	if r := f.repositoryEntry(t, installation, repo); r != nil {
 		if r.Enabled != nil {
 			s.Enabled = *r.Enabled
 		}
 		s.apply(&r.Overrides)
+		ts = mergeTasks(ts, r.Tasks, fromFile)
 	}
+	s.setTasks(ts)
 	if s.Limits.Concurrency == 0 {
 		s.Limits.Concurrency = DefaultConcurrency
 	}
+	s.TaskBounds = s.Allow.Tasks.Resolve()
 	return s
 }
 
@@ -296,6 +301,7 @@ func (a Allow) overlay(o Allow) Allow {
 	if o.Settle != nil {
 		a.Settle = o.Settle
 	}
+	a.Tasks = a.Tasks.overlay(o.Tasks)
 	return a
 }
 

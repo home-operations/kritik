@@ -17,6 +17,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/prfilter"
+	"github.com/home-operations/kritik/internal/tasks"
 )
 
 // ProviderType selects the model adapter a provider uses.
@@ -203,6 +204,10 @@ type Overrides struct {
 	Agent       Agent          `yaml:"agent,omitempty"`
 	Incremental Incremental    `yaml:"incremental,omitempty"`
 	Review      ReviewSpec     `yaml:"review,omitempty"`
+	// Tasks are the operator's own tasks. They merge by name: a task a
+	// narrower scope writes replaces the broader scope's of that name, and
+	// one with enabled false switches it off.
+	Tasks []tasks.Task `yaml:"tasks,omitempty"`
 	// Allow bounds what the repository's own .kritik.yaml may choose.
 	Allow Allow `yaml:"allow,omitempty"`
 
@@ -221,6 +226,8 @@ type Allow struct {
 	// Agent caps each agent limit a repository may set.
 	Agent  AllowAgent     `yaml:"agent,omitempty"`
 	Settle *time.Duration `yaml:"settle,omitempty"`
+	// Tasks bound tasks, the repository's and the operator's own.
+	Tasks *TaskBounds `yaml:"tasks,omitempty"`
 }
 
 // AllowAgent caps the agent limits a repository may set.
@@ -601,4 +608,15 @@ type Settings struct {
 	// Allow is the bounds as the narrowest scope writing each one set it;
 	// one no scope writes is left unset.
 	Allow Allow
+	// Tasks are the operator's tasks the configuration file wrote, merged
+	// by name across scopes and trusted whole. repoconfig.Merge resolves
+	// them, DashboardTasks and the repository's into the tasks that run.
+	Tasks []tasks.Task
+	// DashboardTasks are the operator-scope tasks a dashboard tenant
+	// wrote. A tenant admin may write them, so they are held to the task
+	// bounds and the operator's model, agent, mode and command bounds, as
+	// a repository's are.
+	DashboardTasks []tasks.Task
+	// TaskBounds are Allow.Tasks with every default applied.
+	TaskBounds tasks.Bounds
 }

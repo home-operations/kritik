@@ -1,0 +1,112 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "assignees": {
+      "description": "Users to assign, only from this list.",
+      "items": {
+        "enum": ["alice", "bob"],
+        "type": "string"
+      },
+      "maxItems": 2,
+      "type": "array"
+    },
+    "comment": {
+      "description": "Text for the task's report comment; empty when there is nothing to add to the summary.",
+      "maxLength": 16000,
+      "type": "string"
+    },
+    "fields": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "enum": ["api", "web", "runner", "docs"],
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "missing": {
+          "items": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "type": "array"
+        },
+        "needsInfo": {
+          "type": "boolean"
+        },
+        "priority": {
+          "enum": ["p0", "p1", "p2", "p3"],
+          "maxLength": 1000,
+          "type": "string"
+        }
+      },
+      "required": ["priority", "area", "needsInfo", "missing"],
+      "type": "object"
+    },
+    "inline": {
+      "description": "Comments on lines the pull request changes.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "maxLength": 8000,
+            "type": "string"
+          },
+          "end_line": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "line": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "maxLength": 1024,
+            "type": "string"
+          }
+        },
+        "required": ["path", "line", "body"],
+        "type": "object"
+      },
+      "maxItems": 50,
+      "type": "array"
+    },
+    "labels": {
+      "additionalProperties": false,
+      "properties": {
+        "add": {
+          "description": "Labels to add, only from this list.",
+          "items": {
+            "enum": ["bug", "area/api"],
+            "type": "string"
+          },
+          "maxItems": 2,
+          "type": "array"
+        },
+        "remove": {
+          "description": "Labels to remove, only from this list.",
+          "items": {
+            "enum": ["needs-triage"],
+            "type": "string"
+          },
+          "maxItems": 1,
+          "type": "array"
+        }
+      },
+      "required": ["add", "remove"],
+      "type": "object"
+    },
+    "state": {
+      "description": "Whether to change the subject's state; none leaves it.",
+      "enum": ["none", "close"],
+      "type": "string"
+    },
+    "summary": {
+      "description": "A short, factual summary of what you found, for the task's report.",
+      "maxLength": 2000,
+      "type": "string"
+    }
+  },
+  "required": ["summary", "fields", "labels", "state", "assignees", "inline", "comment"],
+  "type": "object"
+}
