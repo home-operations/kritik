@@ -1,0 +1,9 @@
+Thanks for the report, @{{ .Subject.Author }}.
+{{ with .Answer.Comment }}
+{{ . }}
+{{ end }}{{ if .Fields.needsInfo }}
+To move this forward, please add:
+{{ range .Fields.missing }}
+- {{ . }}{{ end }}
+{{ end }}{{ with .Applied.AddLabels }}
+Labels added: {{ join ", " . }}{{ end }}

@@ -104,7 +104,10 @@ Three roles share the same `web.signIn` and `web.operators`:
   installations and repositories (other than the operator-only fields
   above), invite and remove members, and queue a re-run, cancel or
   reindex; every one of those writes is audit-logged in the same
-  transaction as the change it makes. A dashboard installation may only
+  transaction as the change it makes. The `tasks` a tenant admin writes
+  are held to the operator's `allow.tasks` as a repository's are
+  (see [tasks](repository-config.md#the-operators-bounds-on-tasks)); only
+  the configuration file's tasks are trusted. A dashboard installation may only
   reach its forge over `https`; a plain-`http` host is refused. A secret an
   admin submits (a client secret, an installation token) is bound to that
   installation's forge, host (scheme and path included) and account —

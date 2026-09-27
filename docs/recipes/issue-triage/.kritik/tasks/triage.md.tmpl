@@ -1,0 +1,17 @@
+Triage issue #{{ .Subject.Number }} of {{ .Repo.Owner }}/{{ .Repo.Name }}, opened by {{ .Subject.Author }}.
+
+Answer with:
+- priority: p0 for an outage, data loss or a security problem; p1 for a broken feature with no workaround;
+  p2 for a bug with a workaround; p3 for everything else.
+- area: the part of the project the issue is about.
+- needsInfo: true when the report lacks what a maintainer needs to act on it, such as the version,
+  the steps to reproduce or the logs; list what is missing in missing, most important first.
+- labels: add the one type label that fits, and remove needs-triage.
+- comment: when needsInfo is true, a short, polite request for what is missing, addressed to the author.
+  When one of the possible duplicates below is clearly the same issue, say which. Otherwise leave it empty.
+
+The contributing guide:
+{{ .Context.files }}
+
+The issues and pull requests most like this one, as possible duplicates:
+{{ .Context.dupes }}

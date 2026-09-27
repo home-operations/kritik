@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/home-operations/kritik/main/docs/kritik.schema.json
+tasks:
+  - name: triage
+    on:
+      - issue: [opened, reopened]
+    # Once triaged, an issue is left alone: the rules below add the label.
+    if: '!("triaged" in subject.labels)'
+    mode: single
+    context:
+      thread: { comments: 20 }
+      files:
+        - path: CONTRIBUTING.md
+      related:
+        - { name: dupes, query: "{{ .Subject.Title }}", k: 5 }
+    prompt: .kritik/tasks/triage.md.tmpl
+    fields:
+      priority: { type: string, enum: [p0, p1, p2, p3] }
+      area: { type: string, enum: [api, web, runner, docs] }
+      needsInfo:
+        type: boolean
+        description: The report lacks what a maintainer needs to act on it.
+      missing:
+        type: array
+        items: { type: string, maxLength: 200 }
+        maxItems: 5
+    actions:
+      comment:
+        mode: sticky
+        template: .kritik/tasks/triage-comment.md.tmpl
+        if: 'answer.fields.needsInfo || answer.comment != ""'
+      labels:
+        # The model picks the type label; kritik offers only these, and
+        # only those the repository has.
+        propose:
+          add: [bug, enhancement, question, documentation]
+          remove: [needs-triage]
+        # The rules add labels from the fields, whatever the model proposed.
+        rules:
+          - add:
+              - "priority/{{ .Fields.priority }}"
+              - "area/{{ .Fields.area }}"
+              - triaged
+          - add: [needs-info]
+            if: answer.fields.needsInfo
