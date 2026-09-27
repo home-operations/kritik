@@ -70,6 +70,34 @@ test('repository settings say where each comes from and what .kritik.yaml chose'
   await expect(page.locator('#repo-bounds').locator('../..')).toContainText(g.repoDetail.settings.allow.models!.join(', '));
 });
 
+test('repository tasks list each definition, where it comes from, and what the bounds left out', async ({ page }) => {
+  await page.goto(`/${T}/repos/alpha/one`);
+  const tasks = page.locator('#repo-tasks').locator('../..');
+  const [welcome, triage] = g.repoDetail.tasks;
+  const rows = tasks.locator('tbody tr');
+  await expect(rows).toHaveCount(g.repoDetail.tasks.length);
+  await expect(rows.nth(0)).toContainText(welcome!.name);
+  await expect(rows.nth(0)).toContainText('config file');
+  await expect(rows.nth(1)).toContainText('.kritik.yaml');
+  await expect(rows.nth(1)).toContainText(triage!.triggers.join(', '));
+  await expect(rows.nth(1)).toContainText(triage!.if);
+  await expect(rows.nth(1)).toContainText(triage!.actions.join(', '));
+  const note = g.repoDetail.taskNotes[0]!;
+  await expect(tasks).toContainText(`${note.task}: ${note.what}: ${note.reason}`);
+});
+
+test('a repository with no tasks says so', async ({ page }) => {
+  const detail = new RegExp(`/api/v1/tenants/${g.SLUG}/repos/alpha/one$`);
+  await page.route(
+    (u) => detail.test(u.pathname),
+    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...g.repoDetail, tasks: [], taskNotes: [] }) }),
+  );
+  await page.goto(`/${T}/repos/alpha/one`);
+  const tasks = page.locator('#repo-tasks').locator('../..');
+  await expect(tasks.locator('.state-msg')).toHaveText('No task runs for this repository.');
+  await expect(tasks.locator('ul')).toHaveCount(0);
+});
+
 test('a repository several installations hold asks which one, then loads it', async ({ page }) => {
   const detail = new RegExp(`/api/v1/tenants/${g.SLUG}/repos/alpha/one$`);
   await page.route(

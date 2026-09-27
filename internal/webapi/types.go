@@ -270,13 +270,38 @@ type IndexRun struct {
 // RepoDetail is one repository, its settings and recent index runs.
 // Sources says, by the policy table's keys, which layer each of the
 // operator's settings comes from: file, dashboard or default. RepoConfig
-// is null until a review has read the repository's .kritik.yaml.
+// is null until a review has read the repository's .kritik.yaml. Tasks
+// are the tasks that run for the repository, the operator's and those of
+// the .kritik.yaml RepoConfig read, after the operator's bounds clipped
+// them; TaskNotes say what the bounds left out.
 type RepoDetail struct {
 	Repository
 	Settings   RepoSettings                 `json:"settings"`
 	Sources    map[string]configfile.Source `json:"sources"`
 	RepoConfig *RepoConfig                  `json:"repoConfig"`
 	IndexRuns  []IndexRun                   `json:"indexRuns"`
+	Tasks      []TaskDef                    `json:"tasks"`
+	TaskNotes  []TaskNote                   `json:"taskNotes"`
+}
+
+// TaskDef is one resolved task. Source is where it is defined: file (the
+// operator's configuration file), dashboard or repository (.kritik.yaml).
+// Triggers are the event names it runs on, as allow.tasks.events globs
+// them, and Actions the action kinds it declares.
+type TaskDef struct {
+	Name     string            `json:"name"`
+	Source   configfile.Source `json:"source"`
+	Triggers []string          `json:"triggers"`
+	If       string            `json:"if"`
+	Mode     string            `json:"mode"`
+	Actions  []string          `json:"actions"`
+}
+
+// TaskNote is something the operator's bounds left out of a task, and why.
+type TaskNote struct {
+	Task   string `json:"task"`
+	What   string `json:"what"`
+	Reason string `json:"reason"`
 }
 
 // Label is a pull request label.

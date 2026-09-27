@@ -264,12 +264,35 @@ export interface IndexRun {
   finishedAt: string | null;
 }
 
+// One task that runs for a repository, after the operator's bounds clipped
+// it: where it is defined, the event names it triggers on (as
+// allow.tasks.events globs them) and the action kinds it declares.
+export interface TaskDef {
+  name: string;
+  source: 'file' | 'dashboard' | 'repository';
+  triggers: string[];
+  if: string;
+  mode: ReviewMode;
+  actions: string[];
+}
+
+// Something the operator's bounds left out of a task, and why.
+export interface TaskNote {
+  task: string;
+  what: string;
+  reason: string;
+}
+
 export interface RepoDetail extends Repository {
   settings: RepoSettings;
   // Where each of the operator's settings comes from, by policy key.
   sources: Record<string, ConfigSource>;
   repoConfig: RepoConfig | null;
   indexRuns: IndexRun[];
+  // The tasks that run: the operator's, then those of the .kritik.yaml
+  // repoConfig read.
+  tasks: TaskDef[];
+  taskNotes: TaskNote[];
 }
 
 export interface Label {

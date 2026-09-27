@@ -154,5 +154,30 @@
       "createdAt": "2026-09-01T12:00:00Z",
       "finishedAt": "2026-09-01T12:01:30Z"
     }
+  ],
+  "tasks": [
+    {
+      "name": "welcome",
+      "source": "file",
+      "triggers": ["pull_request.opened"],
+      "if": "",
+      "mode": "single",
+      "actions": ["comment"]
+    },
+    {
+      "name": "triage",
+      "source": "repository",
+      "triggers": ["issue.opened", "issue.reopened"],
+      "if": "!(\"triaged\" in subject.labels)",
+      "mode": "agentic",
+      "actions": ["comment", "labels"]
+    }
+  ],
+  "taskNotes": [
+    {
+      "task": "triage",
+      "what": "actions.state",
+      "reason": "the action is not allowed"
+    }
   ]
 }
