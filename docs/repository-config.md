@@ -235,9 +235,10 @@ expressions that must be boolean. A guard sees:
   `defaultBranch`.
 - `subject`: the issue or pull request: `kind` (`issue` or `pull`),
   `number`, `title`, `body`, `state`, `author`, `url`, `labels`,
-  `assignees` and `draft`. An event with no issue or pull request has every
-  key, with `kind` empty, so `subject.kind == "issue"` is false rather than
-  an error.
+  `assignees` and `draft` (true for a draft pull request, from the forge
+  or, when the forge is too old to report it, from the delivery). An event
+  with no issue or pull request has every key, with `kind` empty, so
+  `subject.kind == "issue"` is false rather than an error.
 - `raw`: the decoded payload, as the forge sent it.
 - `answer`, in an action's `if` only (and a rule's): the model's validated
   answer, with `summary`, `comment`, `fields`, `labels.add`,

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -17,8 +18,10 @@ import (
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/taskrun"
 	"github.com/home-operations/kritik/internal/tasks"
 )
 
@@ -244,5 +247,39 @@ func TestSpend(t *testing.T) {
 	}
 	if !reflect.DeepEqual(r.spent, want) {
 		t.Fatalf("spent = %+v, want %+v", r.spent, want)
+	}
+}
+
+// TestDraftGuard checks the pr-area-labels recipe's draft guard against the
+// subject dispatch builds from the forge.
+func TestDraftGuard(t *testing.T) {
+	doc, err := os.ReadFile("../../docs/recipes/pr-area-labels/.kritik.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _, err := repoconfig.Parse(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	tests := []struct {
+		name  string
+		issue forge.Issue
+		raw   map[string]any
+		want  int
+	}{
+		{"ready", forge.Issue{Number: 2, IsPull: true, State: "open"}, nil, 1},
+		{"draft on the forge", forge.Issue{Number: 2, IsPull: true, State: "open", Draft: true}, nil, 0},
+		{"draft in the delivery", forge.Issue{Number: 2, IsPull: true, State: "open"},
+			map[string]any{"pull_request": map[string]any{"number": float64(2), "draft": true}}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := tasks.Input{Event: tasks.EventPullRequest, RawEvent: "pull_request", Action: "opened", Raw: tt.raw}
+			in.Subject = taskrun.Subject(tt.issue, in.Raw)
+			if got := matchTasks(f.Tasks, in, logger); len(got) != tt.want {
+				t.Fatalf("matched %d tasks, want %d", len(got), tt.want)
+			}
+		})
 	}
 }

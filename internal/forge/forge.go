@@ -61,7 +61,10 @@ type Issue struct {
 	Labels    []string
 	Assignees []string
 	IsPull    bool
-	URL       string
+	// Draft is whether a pull request is a draft, false for an issue and
+	// on a forge too old to report it.
+	Draft bool
+	URL   string
 }
 
 // StatusState is the outcome a commit status reports. kritik never reports

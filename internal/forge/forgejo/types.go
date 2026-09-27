@@ -139,15 +139,21 @@ type createStatusOption struct {
 // represents a pull request as an issue with a non-nil pull_request field;
 // only that field's presence, never its content, distinguishes the two here.
 type issue struct {
-	Number      int       `json:"number"`
-	Title       string    `json:"title"`
-	Body        string    `json:"body"`
-	State       string    `json:"state"`
-	User        user      `json:"user"`
-	Labels      []label   `json:"labels"`
-	Assignees   []user    `json:"assignees"`
-	PullRequest *struct{} `json:"pull_request"`
-	HTMLURL     string    `json:"html_url"`
+	Number      int              `json:"number"`
+	Title       string           `json:"title"`
+	Body        string           `json:"body"`
+	State       string           `json:"state"`
+	User        user             `json:"user"`
+	Labels      []label          `json:"labels"`
+	Assignees   []user           `json:"assignees"`
+	PullRequest *pullRequestMeta `json:"pull_request"`
+	HTMLURL     string           `json:"html_url"`
+}
+
+// pullRequestMeta is the pull request part of an issue that is one. Draft
+// is absent, so false, on Forgejo/Gitea releases that predate it.
+type pullRequestMeta struct {
+	Draft bool `json:"draft"`
 }
 
 // issueLabelsOption is the request body for POST

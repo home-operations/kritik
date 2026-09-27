@@ -343,7 +343,7 @@ func (r *taskRunner) promptData(ctx context.Context) (tasks.PromptData, error) {
 		if err != nil {
 			return d, err
 		}
-		r.in.Subject = taskrun.Subject(issue)
+		r.in.Subject = taskrun.Subject(issue, r.in.Raw)
 		if issue.IsPull {
 			if err := r.pullHead(ctx); err != nil {
 				return d, err

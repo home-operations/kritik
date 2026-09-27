@@ -611,6 +611,18 @@ func TestIssue(t *testing.T) {
 		}
 	})
 
+	t.Run("a draft pull request says so", func(t *testing.T) {
+		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"number":7,"title":"wip","state":"open","user":{"login":"alice"},
+				"pull_request":{"draft":true,"merged":false}}`))
+		})
+		defer srv.Close()
+		got, err := c.Issue(t.Context(), "acme", "widgets", 7)
+		if err != nil || !got.IsPull || !got.Draft {
+			t.Fatalf("Issue = %+v, %v; want a draft pull request", got, err)
+		}
+	})
+
 	t.Run("wraps ErrNotFound", func(t *testing.T) {
 		srv, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)

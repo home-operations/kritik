@@ -763,6 +763,9 @@ func issueFrom(iss issue) forge.Issue {
 		State: iss.State, Author: iss.User.Login,
 		IsPull: iss.PullRequest != nil, URL: iss.HTMLURL,
 	}
+	if iss.PullRequest != nil {
+		out.Draft = iss.PullRequest.Draft
+	}
 	for _, l := range iss.Labels {
 		out.Labels = append(out.Labels, l.Name)
 	}

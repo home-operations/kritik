@@ -81,13 +81,37 @@ func TestDecodeRaw(t *testing.T) {
 }
 
 func TestSubject(t *testing.T) {
-	got := Subject(forge.Issue{Number: 4, Title: "t", State: "closed", Author: "a", Labels: []string{"l"}, Assignees: []string{"b"}, IsPull: true, URL: "u"})
+	got := Subject(forge.Issue{Number: 4, Title: "t", State: "closed", Author: "a", Labels: []string{"l"}, Assignees: []string{"b"}, IsPull: true, URL: "u"}, nil)
 	want := &tasks.Subject{Kind: "pull", Number: 4, Title: "t", State: "closed", Author: "a", URL: "u", Labels: []string{"l"}, Assignees: []string{"b"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Subject = %+v, want %+v", got, want)
 	}
-	if Subject(forge.Issue{Number: 1}).Kind != tasks.SubjectIssue {
+	if Subject(forge.Issue{Number: 1}, nil).Kind != tasks.SubjectIssue {
 		t.Fatal("an issue is not a pull request")
+	}
+
+	raw := func(number int, draft bool) map[string]any {
+		return map[string]any{"pull_request": map[string]any{"number": float64(number), "draft": draft}}
+	}
+	drafts := []struct {
+		name  string
+		issue forge.Issue
+		raw   map[string]any
+		want  bool
+	}{
+		{"forge says draft", forge.Issue{Number: 4, IsPull: true, Draft: true}, nil, true},
+		{"delivery says draft", forge.Issue{Number: 4, IsPull: true}, raw(4, true), true},
+		{"forge draft not clobbered", forge.Issue{Number: 4, IsPull: true, Draft: true}, raw(4, false), true},
+		{"another pull request's draft", forge.Issue{Number: 4, IsPull: true}, raw(5, true), false},
+		{"ready", forge.Issue{Number: 4, IsPull: true}, raw(4, false), false},
+		{"issue", forge.Issue{Number: 4, Draft: true}, raw(4, true), false},
+	}
+	for _, tt := range drafts {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Subject(tt.issue, tt.raw).Draft; got != tt.want {
+				t.Fatalf("Draft = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

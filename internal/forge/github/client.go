@@ -436,7 +436,7 @@ func issueFrom(iss *gh.Issue) forge.Issue {
 	out := forge.Issue{
 		Number: iss.GetNumber(), Title: iss.GetTitle(), Body: iss.GetBody(),
 		State: iss.GetState(), Author: iss.GetUser().GetLogin(),
-		IsPull: iss.IsPullRequest(), URL: iss.GetHTMLURL(),
+		IsPull: iss.IsPullRequest(), Draft: iss.GetDraft(), URL: iss.GetHTMLURL(),
 	}
 	for _, l := range iss.Labels {
 		out.Labels = append(out.Labels, l.GetName())

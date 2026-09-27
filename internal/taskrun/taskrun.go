@@ -90,8 +90,10 @@ func eventSubject(ev webhook.Event) *tasks.Subject {
 	return nil
 }
 
-// Subject is an issue or pull request as the forge holds it now.
-func Subject(i forge.Issue) *tasks.Subject {
+// Subject is an issue or pull request as the forge holds it now. A pull
+// request the delivery raw describes as a draft stays one: a forge that
+// does not report drafts on its issues API would otherwise hide it.
+func Subject(i forge.Issue, raw map[string]any) *tasks.Subject {
 	kind := tasks.SubjectIssue
 	if i.IsPull {
 		kind = tasks.SubjectPull
@@ -99,7 +101,17 @@ func Subject(i forge.Issue) *tasks.Subject {
 	return &tasks.Subject{
 		Kind: kind, Number: i.Number, Title: i.Title, Body: i.Body, State: i.State, Author: i.Author, URL: i.URL,
 		Labels: slices.Clone(i.Labels), Assignees: slices.Clone(i.Assignees),
+		Draft: i.IsPull && (i.Draft || rawDraft(raw, i.Number)),
 	}
+}
+
+// rawDraft reports whether raw, a delivery's payload, describes pull
+// request number as a draft.
+func rawDraft(raw map[string]any, number int) bool {
+	pr, _ := raw["pull_request"].(map[string]any)
+	n, _ := pr["number"].(float64)
+	draft, _ := pr["draft"].(bool)
+	return draft && int(n) == number
 }
 
 // Names are the event names in fires, as triggers and the operator's

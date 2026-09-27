@@ -329,7 +329,7 @@ func TestIssue(t *testing.T) {
 	}`)
 	f.reply("GET /api/v3/repos/o/r/issues/8", 200, `{
 		"number":8,"title":"pr","state":"open","user":{"login":"u"},
-		"html_url":"https://github.com/o/r/pull/8","pull_request":{}
+		"html_url":"https://github.com/o/r/pull/8","pull_request":{},"draft":true
 	}`)
 	iss, err := c.Issue(t.Context(), "o", "r", 7)
 	if err != nil {
@@ -344,8 +344,8 @@ func TestIssue(t *testing.T) {
 		t.Fatalf("Issue = %+v, want %+v", iss, want)
 	}
 	pr, err := c.Issue(t.Context(), "o", "r", 8)
-	if err != nil || !pr.IsPull {
-		t.Fatalf("Issue(pull request) = %+v, %v; want IsPull", pr, err)
+	if err != nil || !pr.IsPull || !pr.Draft {
+		t.Fatalf("Issue(pull request) = %+v, %v; want a draft pull request", pr, err)
 	}
 }
 

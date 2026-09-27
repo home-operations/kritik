@@ -193,7 +193,7 @@ func (w *TaskDispatch) Work(ctx context.Context, job *river.Job[jobs.TaskDispatc
 		if err != nil {
 			return err
 		}
-		in.Subject = taskrun.Subject(issue)
+		in.Subject = taskrun.Subject(issue, in.Raw)
 	}
 	matched := matchTasks(eff.Tasks, in, logger)
 	if len(matched) == 0 {
