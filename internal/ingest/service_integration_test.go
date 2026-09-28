@@ -164,16 +164,21 @@ func TestDispatchPullRequest(t *testing.T) {
 	})
 
 	t.Run("closed updates state", func(t *testing.T) {
-		out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "closed", Repository: repo("onedr0p/home-ops"), PullRequest: pr}))
+		merged := *pr
+		merged.State, merged.Merged = "closed", true
+		out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "closed", Repository: repo("onedr0p/home-ops"), PullRequest: &merged}))
 		if err != nil || out.Status != Ignored || out.Reason != "closed" {
 			t.Fatalf("closed = %+v, %v", out, err)
 		}
 		var state string
-		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT state FROM pull_requests WHERE number = 7`).Scan(&state)
-		})
-		if state != "closed" {
-			t.Fatalf("state = %q", state)
+		var isMerged bool
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT state, merged FROM pull_requests WHERE number = 7`).Scan(&state, &isMerged)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if state != "closed" || !isMerged {
+			t.Fatalf("state = %q, merged = %v; want closed and merged", state, isMerged)
 		}
 	})
 }

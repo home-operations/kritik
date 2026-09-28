@@ -179,10 +179,18 @@ func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
 	}()
 
 	warner := &dropWarner{logger: s.logger}
+	// connectedOnce stays false until an attempt reaches the loop, so a
+	// failed first connection doesn't make the next one look like a
+	// reconnect. attempt counts failures since the last connection that
+	// reached the loop, so a long-lived connection's drop starts the
+	// backoff over.
 	var connectedOnce bool
-	for attempt := 0; ; attempt++ {
+	attempt := 0
+	for {
 		reachedLoop, err := s.listenOnce(ctx, handlers, notifications, warner, connectedOnce)
-		connectedOnce = nextConnectedOnce(connectedOnce, reachedLoop)
+		if reachedLoop {
+			connectedOnce, attempt = true, 0
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -194,26 +202,14 @@ func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
 			return
 		case <-time.After(listenBackoff(attempt)):
 		}
+		attempt++
 	}
-}
-
-// nextConnectedOnce computes Listen's updated "has this listener ever
-// reached its notification loop" state: true once any attempt has gotten
-// as far as a successful LISTEN, and sticky thereafter. It's factored out
-// of Listen's loop so the state transition is unit-testable without a real
-// connection — in particular, that a failed *first* connection attempt
-// (e.g. the database isn't ready yet at startup) must not itself count as
-// having connected, or the next attempt would wrongly fire OnReconnect on
-// what is actually Listen's first successful connection.
-func nextConnectedOnce(was, reachedLoop bool) bool {
-	return was || reachedLoop
 }
 
 // listenOnce opens one dedicated connection off the application pool's
 // config and blocks handling notifications on it until ctx ends or the
 // connection fails. isReconnect is true once a previous attempt has
-// already reached the notification loop successfully (see
-// nextConnectedOnce); it controls whether OnReconnect fires once this
+// already reached the notification loop successfully; it controls whether OnReconnect fires once this
 // attempt does the same. The returned bool reports whether this attempt
 // itself reached the notification loop, regardless of isReconnect and
 // regardless of how the attempt eventually ended.
