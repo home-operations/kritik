@@ -1,6 +1,6 @@
 {
-  "section": "polling",
-  "key": "interval",
-  "value": "2m0s",
+  "section": "connections",
+  "key": "alpha-bot",
+  "value": "alpha, webhook /hooks/alpha-bot",
   "source": "file"
 }

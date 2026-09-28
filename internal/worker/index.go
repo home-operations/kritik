@@ -52,9 +52,9 @@ type Index struct {
 }
 
 type indexRepo struct {
-	name, connection, defaultBranch string
-	enabled                         bool
-	activeRun                       string
+	name, defaultBranch string
+	enabled             bool
+	activeRun           string
 }
 
 type activeGeneration struct {
@@ -77,13 +77,13 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	if err != nil {
 		return err
 	}
-	logger := w.Logger.With("account", account.Slug, "repository", repo.name, "trigger", args.Trigger)
-	settings := file.Settings(account, repo.connection, repo.name)
+	logger := w.Logger.With("account", account.Key(), "repository", repo.name, "trigger", args.Trigger)
+	settings := file.Settings(account, repo.name)
 	if !repo.enabled || !settings.Enabled {
 		logger.Info("index skipped, repository disabled")
 		return nil
 	}
-	client, err := w.client(ctx, file, repo.connection, repo.name)
+	client, err := w.client(ctx, file, account, repo.name)
 	if err != nil {
 		return err
 	}
@@ -142,7 +142,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runnerRunID,
 		Labels: map[string]string{
-			"account": account.Slug, "repository": repo.name, "kind": jobs.QueueIndex,
+			"account": account.Key(), "repository": repo.name, "kind": jobs.QueueIndex,
 		},
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": commit},
 		Job: runner.Spec{
@@ -152,7 +152,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		Secrets:  runner.Secrets{GitToken: token},
 		Deadline: deadline, Resources: resources,
 	})
-	if err := recordRun(ctx, w.Store, w.Metrics, account.Slug, args.AccountID, runnerRunID, jobs.QueueIndex, res); err != nil {
+	if err := recordRun(ctx, w.Store, w.Metrics, account.Key(), args.AccountID, runnerRunID, jobs.QueueIndex, res); err != nil {
 		return err
 	}
 	if res.Err != nil {
@@ -161,7 +161,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 			reason = "runner heartbeat lost"
 		}
 		logger.Warn("index runner failed", "error", reason, "job", res.JobName, "reason", res.TerminationReason)
-		w.Metrics.IndexRun(account.Slug, mode, "failed", 0)
+		w.Metrics.IndexRun(account.Key(), mode, "failed", 0)
 		// An error, so River tries again: most runner failures (a fetch
 		// timeout, a node going away) do not repeat.
 		return errors.Join(fmt.Errorf("worker: index runner failed: %s", reason), w.finish(ctx, args.AccountID, runID, "failed", 0, reason))
@@ -169,12 +169,12 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	n, mode, err := w.embed(ctx, args, account, commit, runID, runnerRunID, active, settings, job.ID)
 	if err != nil {
 		logger.Error("index embedding failed", "error", err)
-		w.Metrics.IndexRun(account.Slug, mode, "failed", 0)
+		w.Metrics.IndexRun(account.Key(), mode, "failed", 0)
 		_ = w.finish(ctx, args.AccountID, runID, "failed", 0, err.Error())
 		return err
 	}
 	logger.Info("index completed", "mode", mode, "chunks", n)
-	w.Metrics.IndexRun(account.Slug, mode, "completed", n)
+	w.Metrics.IndexRun(account.Key(), mode, "completed", n)
 	if err := w.finish(ctx, args.AccountID, runID, "completed", n, ""); err != nil {
 		return err
 	}
@@ -195,9 +195,9 @@ func (w *Index) loadRepo(ctx context.Context, args jobs.IndexArgs) (*indexRepo, 
 	var active *string
 	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			SELECT r.name, i.name, r.default_branch, r.enabled, r.active_index_run_id::text
-			FROM repositories r JOIN connections i ON i.id = r.connection_id WHERE r.id = $1`, args.RepositoryID).
-			Scan(&r.name, &r.connection, &r.defaultBranch, &r.enabled, &active)
+			SELECT name, default_branch, enabled, active_index_run_id::text
+			FROM repositories WHERE id = $1`, args.RepositoryID).
+			Scan(&r.name, &r.defaultBranch, &r.enabled, &active)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, river.JobCancel(fmt.Errorf("worker: repository %s is unknown", args.RepositoryID))
@@ -344,10 +344,10 @@ func (w *Index) embed(
 			}
 			vectors, used, err := w.Embedder.Embed(ctx, texts)
 			if err != nil {
-				w.Metrics.ModelCall(account.Slug, w.EmbedModel, roleEmbedding, "error", 0, 0, 0, 0)
+				w.Metrics.ModelCall(account.Key(), w.EmbedModel, roleEmbedding, "error", 0, 0, 0, 0)
 				return err
 			}
-			w.Metrics.ModelCall(account.Slug, w.EmbedModel, roleEmbedding, "ok", used, 0, 0, 0)
+			w.Metrics.ModelCall(account.Key(), w.EmbedModel, roleEmbedding, "ok", used, 0, 0, 0)
 			tokens += used
 			err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 				return insertChunks(ctx, tx, args.AccountID, args.RepositoryID, runID, batch, vectors)

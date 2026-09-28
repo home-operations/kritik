@@ -10,21 +10,17 @@ import (
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 )
 
 func TestInstanceSettings(t *testing.T) {
 	t.Setenv("TEST_KEY", "sk-secret")
-	f, err := configfile.Parse([]byte(`providers:
+	f := configfiletest.Load(t, `providers:
   gw: { type: openai, baseUrl: "https://kritik:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
 polling: { interval: 2m }
-accounts:
-  - slug: acme
-    connections:
-      - { name: acme-bot, forge: github, accounts: [acme], app: { clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } } }
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
+connections:
+  - { name: acme-bot, forge: github, accounts: [acme, org-1], app: { clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } } }
+`)
 	env := []config.EnvVar{
 		{Name: "KRITIK_ADDR", Value: ":9090", Set: true},
 		{Name: "KRITIK_METRICS_ADDR", Value: ":8081"},
@@ -42,9 +38,7 @@ accounts:
 			"environment", "KRITIK_EMBED_BASE_URL", "https://embed.example (credentials hidden)", configfile.SourceEnv,
 		},
 		"environment KRITIK_DATABASE_URL": {"environment", "KRITIK_DATABASE_URL", "set", configfile.SourceEnv},
-		"providers gw":                    {"providers", "gw", "openai at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
-		"polling interval":                {"polling", "interval", "2m0s", configfile.SourceFile},
-		"polling lookback":                {"polling", "lookback", "24h0m0s", configfile.SourceDefault},
+		"connections acme-bot":            {"connections", "acme-bot", "acme, org-1, webhook /hooks/acme-bot", configfile.SourceFile},
 	} {
 		if rows[key] != want {
 			t.Errorf("%s = %+v, want %+v", key, rows[key], want)

@@ -31,11 +31,11 @@ type User struct {
 	AvatarURL   string `json:"avatarUrl"`
 }
 
-// AccountMembership is an account the principal may read and its role there.
+// AccountMembership is an account the principal may read and its role
+// there. Slug is "<forge>/<name>".
 type AccountMembership struct {
-	Slug      string            `json:"slug"`
-	Role      auth.Role         `json:"role"`
-	ManagedBy configfile.Origin `json:"managedBy"`
+	Slug string    `json:"slug"`
+	Role auth.Role `json:"role"`
 }
 
 // Me is who the session acts as.
@@ -54,27 +54,23 @@ type MonthUsage struct {
 	ReviewsPerDay  int     `json:"reviewsPerDay"`
 }
 
-// AccountSummary is one row of the account list.
+// AccountSummary is one row of the account list. Connection names the
+// connection serving it.
 type AccountSummary struct {
-	Slug         string            `json:"slug"`
-	ManagedBy    configfile.Origin `json:"managedBy"`
-	Role         auth.Role         `json:"role"`
-	Connections  int               `json:"connections"`
-	Repositories int               `json:"repositories"`
-	Reviews7d    int               `json:"reviews7d"`
-	Usage        MonthUsage        `json:"usage"`
+	Slug         string     `json:"slug"`
+	Role         auth.Role  `json:"role"`
+	Connection   string     `json:"connection"`
+	Repositories int        `json:"repositories"`
+	Reviews7d    int        `json:"reviews7d"`
+	Usage        MonthUsage `json:"usage"`
 }
 
-// OperatorAccount is one account as an operator sees it: Live is false for
-// a dashboard account stored but not part of the running configuration,
-// because it does not validate or has not been merged yet, and for a file
-// account the merge left out, which Conflict explains.
+// OperatorAccount is one account as an admin sees it: Live is false for an
+// entry of the instance spec that no connection serves, which Conflict
+// explains.
 type OperatorAccount struct {
 	AccountSummary
-	Live     bool  `json:"live"`
-	Revision int64 `json:"revision"`
-	// Conflict is why the running configuration leaves out a file account:
-	// a dashboard account holds its slug or one of its connection names.
+	Live     bool   `json:"live"`
 	Conflict string `json:"conflict,omitempty"`
 }
 
@@ -99,13 +95,14 @@ type CredentialsSet struct {
 
 // Connection is one GitHub App and the accounts it serves. HookPath
 // is relative to the ingest endpoint, whose origin the dashboard does not
-// know.
+// know. ManagedBy is where it is declared.
 type Connection struct {
-	Name        string           `json:"name"`
-	Forge       configfile.Forge `json:"forge"`
-	Accounts    []string         `json:"accounts"`
-	Credentials CredentialsSet   `json:"credentials"`
-	HookPath    string           `json:"hookPath"`
+	Name        string            `json:"name"`
+	Forge       configfile.Forge  `json:"forge"`
+	ManagedBy   configfile.Origin `json:"managedBy"`
+	Accounts    []string          `json:"accounts"`
+	Credentials CredentialsSet    `json:"credentials"`
+	HookPath    string            `json:"hookPath"`
 	// LastWebhookAt is when a webhook for the connection last passed
 	// signature verification, to the minute; null when none ever has, and
 	// kritik only polls it.
@@ -125,16 +122,16 @@ type Limits struct {
 	TokensPerMonth int64 `json:"tokensPerMonth"`
 }
 
-// AccountDetail is one account's configuration and usage.
+// AccountDetail is one account's configuration and usage, and the
+// connection serving it.
 type AccountDetail struct {
-	Slug        string            `json:"slug"`
-	ManagedBy   configfile.Origin `json:"managedBy"`
-	Role        auth.Role         `json:"role"`
-	Connections []Connection      `json:"connections"`
-	Models      Models            `json:"models"`
-	Limits      Limits            `json:"limits"`
-	Filter      string            `json:"filter"`
-	Usage       MonthUsage        `json:"usage"`
+	Slug       string     `json:"slug"`
+	Role       auth.Role  `json:"role"`
+	Connection Connection `json:"connection"`
+	Models     Models     `json:"models"`
+	Limits     Limits     `json:"limits"`
+	Filter     string     `json:"filter"`
+	Usage      MonthUsage `json:"usage"`
 }
 
 // IndexState is a repository's embedding index: the active generation and
@@ -157,7 +154,6 @@ type ReviewRef struct {
 type Repository struct {
 	ID            string     `json:"id"`
 	FullName      string     `json:"fullName"`
-	Connection    string     `json:"connection"`
 	Enabled       bool       `json:"enabled"`
 	ManagedBy     string     `json:"managedBy"`
 	DefaultBranch string     `json:"defaultBranch"`

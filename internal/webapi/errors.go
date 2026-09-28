@@ -24,8 +24,6 @@ const (
 	CodeInvalidSpec        ErrorCode = "invalid_spec"
 	CodeRevisionConflict   ErrorCode = "revision_conflict"
 	CodeConfigBlocked      ErrorCode = "config_blocked"
-	CodeSlugTaken          ErrorCode = "slug_taken"
-	CodeFileManaged        ErrorCode = "file_managed"
 	CodeManagementDisabled ErrorCode = "management_disabled"
 	CodeNoHead             ErrorCode = "no_head"
 	CodeNotCancelable      ErrorCode = "not_cancelable"
@@ -64,21 +62,6 @@ func errStatus(status int, code ErrorCode, message string, details any) error {
 // pathDetails names where in a request body an error is.
 type pathDetails struct {
 	Path string `json:"path"`
-}
-
-// ambiguousRepoDetails are an ambiguous repository's details: the
-// connections that hold a repository of the name asked for, one of which
-// ?connection= must name.
-type ambiguousRepoDetails struct {
-	Connections []string `json:"connections"`
-}
-
-// slugTakenDetails are a slug_taken error's details. Adoptable is set only
-// when the slug belonged to an account that is gone, so creating it again
-// with adopt would succeed; never for a slug a live account holds.
-type slugTakenDetails struct {
-	Path      string `json:"path"`
-	Adoptable bool   `json:"adoptable,omitempty"`
 }
 
 // writeJSON writes v as the response. Every API response is no-store:

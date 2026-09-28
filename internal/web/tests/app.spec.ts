@@ -30,12 +30,12 @@ test.describe('signed-out shell', () => {
         body: JSON.stringify({ code: 'unauthorized', message: 'no session' }),
       }),
     );
-    await page.goto('/#/a/acme/repos');
+    await page.goto('/#/a/github/acme/repos');
     await expect(page).toHaveURL(/#\/signin$/);
     await expect(page.locator('.signin-card h1')).toHaveText('kritik');
 
     const link = page.locator('.signin-provider');
-    await expect(link).toHaveAttribute('href', /return_to=%23%2Fa%2Facme%2Frepos/);
+    await expect(link).toHaveAttribute('href', /return_to=%23%2Fa%2Fgithub%2Facme%2Frepos/);
   });
 
   // "#/signin/" parses as the sign-in route, so a 401 there must neither
@@ -125,7 +125,7 @@ test.describe('signed-in shell', () => {
     await signIn();
     await page.goto('/');
 
-    await expect(page.locator('.account-switch option')).toHaveText(['acme']);
+    await expect(page.locator('.account-switch option')).toHaveText(['github/acme']);
     await expect(page.locator('.nav a')).toHaveCount(8); // All accounts, then Overview/Repos/Pulls/Queue/Usage/Follow-ups/Admin
     // The sections are a sidebar left of the page, not part of the topbar.
     await expect(page.locator('.topbar .nav')).toHaveCount(0);
@@ -140,7 +140,7 @@ test.describe('signed-in shell', () => {
   });
 
   test('hides the admin link for a non-admin member', async ({ page, signIn }) => {
-    await signIn({ ...DEFAULT_ME, accounts: [{ slug: 'acme', role: 'member', managedBy: 'file' }] });
+    await signIn({ ...DEFAULT_ME, accounts: [{ slug: 'github/acme', role: 'member' }] });
     await page.goto('/');
     await expect(page.locator('.nav a')).toHaveCount(7);
   });
@@ -155,13 +155,13 @@ test.describe('signed-in shell', () => {
     await signIn({
       ...DEFAULT_ME,
       accounts: [
-        { slug: 'acme', role: 'admin', managedBy: 'file' },
-        { slug: 'globex', role: 'member', managedBy: 'file' },
+        { slug: 'github/acme', role: 'admin' },
+        { slug: 'github/globex', role: 'member' },
       ],
     });
     await page.goto('/');
-    await page.locator('.account-switch').selectOption('globex');
-    await expect(page).toHaveURL(/#\/a\/globex$/);
+    await page.locator('.account-switch').selectOption('github/globex');
+    await expect(page).toHaveURL(/#\/a\/github\/globex$/);
   });
 
   test('a signed-in visit to #/signin redirects to the overview', async ({ page, signIn, mockProviders }) => {
@@ -255,9 +255,9 @@ test('a stream the server refuses for a dead session sends the tab to sign-in', 
     streams++;
     return route.fulfill({ status: 401, contentType: 'application/json', body: '{"code":"unauthenticated"}' });
   });
-  await page.goto('/#/a/acme/repos');
+  await page.goto('/#/a/github/acme/repos');
   await expect(page).toHaveURL(/#\/signin$/, { timeout: 10_000 });
-  await expect(page.locator('.signin-provider')).toHaveAttribute('href', /return_to=%23%2Fa%2Facme%2Frepos/);
+  await expect(page.locator('.signin-provider')).toHaveAttribute('href', /return_to=%23%2Fa%2Fgithub%2Facme%2Frepos/);
   const after = streams;
   await page.waitForTimeout(2_500);
   expect(streams).toBe(after);
@@ -266,10 +266,10 @@ test('a stream the server refuses for a dead session sends the tab to sign-in', 
 test('a 401 from a page while signed in stays on sign-in', async ({ page, signIn, mockProviders }) => {
   await signIn();
   await mockProviders();
-  await page.route('**/api/v1/accounts/acme/repos**', (route) =>
+  await page.route('**/api/v1/accounts/github/acme/repos**', (route) =>
     route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: 'unauthenticated', message: 'no session' }) }),
   );
-  await page.goto('/#/a/acme/repos');
+  await page.goto('/#/a/github/acme/repos');
   await expect(page).toHaveURL(/#\/signin$/);
   await page.waitForTimeout(500);
   await expect(page).toHaveURL(/#\/signin$/);

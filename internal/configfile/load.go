@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"regexp"
@@ -33,97 +34,121 @@ var toolNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,56}[a-z0-9])?$`)
 // separator, so the allowlist cannot name a file in the checkout.
 var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 
-// Load reads, decodes, resolves and validates the file at name.
+// fileDoc is the configuration file's schema: sign-in and the connections
+// an admin keeps in git (ADR-0014 §2.2). Everything else is the spec's.
+type fileDoc struct {
+	Auth        Auth         `yaml:"auth,omitempty"`
+	Connections []Connection `yaml:"connections,omitempty"`
+}
+
+// Load reads, decodes, resolves and validates the configuration file at
+// name, overlaid with the environment. The file is optional: name "" loads
+// the environment alone.
 func Load(name string) (*File, error) {
-	raw, err := os.ReadFile(name)
-	if err != nil {
-		return nil, fmt.Errorf("configfile: %w", err)
+	var raw []byte
+	if name != "" {
+		var err error
+		if raw, err = os.ReadFile(name); err != nil {
+			return nil, fmt.Errorf("configfile: %w", err)
+		}
 	}
 	return Parse(raw)
 }
 
-// Parse is Load for bytes already in hand.
+// Parse is Load for bytes already in hand; nil or blank bytes are no file.
 func Parse(raw []byte) (*File, error) {
-	dec := yaml.NewDecoder(bytes.NewReader(raw))
-	dec.KnownFields(true)
-	var f File
-	if err := dec.Decode(&f); err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil, errors.New("configfile: file is empty")
+	var doc fileDoc
+	if len(bytes.TrimSpace(raw)) > 0 {
+		dec := yaml.NewDecoder(bytes.NewReader(raw))
+		dec.KnownFields(true)
+		if err := dec.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("configfile: parse: %w", err)
 		}
-		return nil, fmt.Errorf("configfile: parse: %w", err)
 	}
-	if err := f.Auth.overlayEnv(os.Environ()); err != nil {
+	environ := os.Environ()
+	if err := doc.Auth.overlayEnv(environ); err != nil {
 		return nil, err
 	}
-	if err := f.resolve(); err != nil {
+	envConnection, err := overlayConnectionEnv(&doc.Connections, environ)
+	if err != nil {
 		return nil, err
 	}
-	if err := f.validate(); err != nil {
+	f := &File{Auth: doc.Auth, Connections: doc.Connections, envConnection: envConnection}
+	if err := f.Auth.resolve(); err != nil {
+		return nil, err
+	}
+	for i := range f.Connections {
+		f.Connections[i].origin = OriginFile
+		if err := f.Connections[i].resolve(fmt.Sprintf("connections[%d]", i), fileRefs); err != nil {
+			return nil, err
+		}
+	}
+	if err := f.Auth.validate(); err != nil {
+		return nil, err
+	}
+	if err := validateConnections(f.Connections); err != nil {
 		return nil, err
 	}
 	sum := sha256.Sum256(raw)
 	f.hash = hex.EncodeToString(sum[:])
-	return &f, nil
+	return f, nil
 }
 
-// resolve reads every secret reference into memory and compiles every filter.
-func (f *File) resolve() error {
-	for name, p := range f.Providers {
-		v, err := p.APIKey.resolve(fileRefs)
+// resolve reads the spec's sealed secrets with open and compiles its
+// filters.
+func (s *Spec) resolve(open Opener) error {
+	refs := refPolicy{dashboard: true, open: open}
+	for _, name := range slices.Sorted(maps.Keys(s.Providers)) {
+		p := s.Providers[name]
+		v, err := p.APIKey.resolve(refs)
 		if err != nil {
 			return fmt.Errorf("configfile: providers.%s.apiKey: %w", name, err)
 		}
 		p.apiKey = v
-		f.Providers[name] = p
+		s.Providers[name] = p
 	}
-
-	f.Egress.credentials = make(map[string]Secret, len(f.Egress.Credentials))
-	for host, ref := range f.Egress.Credentials {
-		v, err := ref.resolve(fileRefs)
+	s.Egress.credentials = make(map[string]Secret, len(s.Egress.Credentials))
+	for _, host := range slices.Sorted(maps.Keys(s.Egress.Credentials)) {
+		v, err := s.Egress.Credentials[host].resolve(refs)
 		if err != nil {
 			return fmt.Errorf("configfile: egress.credentials.%s: %w", host, err)
 		}
-		f.Egress.credentials[strings.ToLower(host)] = v
+		s.Egress.credentials[strings.ToLower(host)] = v
 	}
-
-	if err := f.Auth.resolve(); err != nil {
-		return err
-	}
-
-	if err := f.Defaults.compile(); err != nil {
+	if err := s.Defaults.compile(); err != nil {
 		return fmt.Errorf("configfile: defaults.filter: %w", err)
 	}
-
-	for ti := range f.Accounts {
-		if err := f.Accounts[ti].resolve(fmt.Sprintf("accounts[%d]", ti), fileRefs); err != nil {
+	for i := range s.Connections {
+		s.Connections[i].origin = OriginDashboard
+		if err := s.Connections[i].resolve(fmt.Sprintf("connections[%d]", i), refs); err != nil {
+			return err
+		}
+	}
+	for i := range s.Accounts {
+		if err := s.Accounts[i].resolve(fmt.Sprintf("accounts[%d]", i), refs); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// resolve reads the account's secret references under refs and compiles its
-// filters; where prefixes every error.
-func (t *Account) resolve(where string, refs refPolicy) error {
-	if err := t.compile(); err != nil {
+// resolve reads the account's secret references under refs and compiles
+// its filters; where prefixes every error.
+func (a *Account) resolve(where string, refs refPolicy) error {
+	if err := a.compile(); err != nil {
 		return fmt.Errorf("configfile: %s.filter: %w", where, err)
 	}
-	for ii := range t.Connections {
-		if err := t.Connections[ii].resolve(fmt.Sprintf("%s.connections[%d]", where, ii), refs); err != nil {
-			return err
-		}
-	}
-	for name, p := range t.Providers {
+	for _, name := range slices.Sorted(maps.Keys(a.Providers)) {
+		p := a.Providers[name]
 		v, err := p.APIKey.resolve(refs)
 		if err != nil {
 			return fmt.Errorf("configfile: %s.providers.%s.apiKey: %w", where, name, err)
 		}
 		p.apiKey = v
-		t.Providers[name] = p
+		a.Providers[name] = p
 	}
-	for ri := range t.Repositories {
-		if err := t.Repositories[ri].compile(); err != nil {
+	for ri := range a.Repositories {
+		if err := a.Repositories[ri].compile(); err != nil {
 			return fmt.Errorf("configfile: %s.repositories[%d].filter: %w", where, ri, err)
 		}
 	}
@@ -151,8 +176,9 @@ func (in *Connection) resolve(where string, refs refPolicy) error {
 	return nil
 }
 
-// validate checks every invariant the rest of kritik relies on.
-func (f *File) validate() error {
+// validate checks every invariant the rest of kritik relies on in the
+// spec's settings, over the connections and accounts a merge runs.
+func (f *File) validate(spec *Spec) error {
 	if err := f.validateProviders(); err != nil {
 		return err
 	}
@@ -168,43 +194,10 @@ func (f *File) validate() error {
 	if err := f.validateTools(); err != nil {
 		return err
 	}
-	if err := f.Auth.validate(); err != nil {
+	if err := validateConnections(spec.Connections); err != nil {
 		return err
 	}
-	return f.validateAccounts()
-}
-
-// repositoryConnection is the connection a repository entry binds to,
-// or an error saying why it binds to none: the connection it names does
-// not own it, no connection owns it, or several do and it names none.
-func (t *Account) repositoryConnection(r *Repository, where string) (*Connection, error) {
-	owner, _, _ := strings.Cut(r.Name, "/")
-	var owners []*Connection
-	for i := range t.Connections {
-		in := &t.Connections[i]
-		if !in.Serves(owner) {
-			continue
-		}
-		if in.Name == r.Connection {
-			return in, nil
-		}
-		owners = append(owners, in)
-	}
-	switch {
-	case r.Connection != "":
-		return nil, fmt.Errorf("configfile: %s.connection %q is not a connection of account %q serving account %q",
-			where, r.Connection, t.Slug, owner)
-	case len(owners) == 0:
-		return nil, fmt.Errorf("configfile: %s.name %q: no connection in account %q serves account %q", where, r.Name, t.Slug, owner)
-	case len(owners) > 1:
-		names := make([]string, len(owners))
-		for i, in := range owners {
-			names[i] = in.Name
-		}
-		return nil, fmt.Errorf("configfile: %s.name %q: connections %s of account %q all serve account %q; set connection to one of them",
-			where, r.Name, strings.Join(names, ", "), t.Slug, owner)
-	}
-	return owners[0], nil
+	return f.validateAccounts(spec.Accounts)
 }
 
 // validateTools checks the tool catalog: unique volume-safe names, an
@@ -290,99 +283,75 @@ func validateRunnerDeadline(where string, seconds int64) error {
 	return nil
 }
 
-func (f *File) validateAccounts() error {
+// validateAccounts checks the defaults and every account entry of the
+// spec, served or not, so an entry is judged when it is written rather than
+// when a connection first serves it.
+func (f *File) validateAccounts(entries []Account) error {
 	if err := checkLimits("defaults.limits", f.Defaults.Limits); err != nil {
 		return err
 	}
 	if err := f.validateOverrides("defaults", nil, &f.Defaults.Overrides); err != nil {
 		return err
 	}
-
-	if len(f.Accounts) == 0 {
-		return errors.New("configfile: accounts must list at least one account")
+	if err := checkWithinAllow("defaults", f.Settings(&Account{}, "")); err != nil {
+		return err
 	}
-	slugs := map[string]string{}
-	connections := map[string]string{}
-	for ti := range f.Accounts {
-		t := &f.Accounts[ti]
-		if err := f.validateAccount(t.where(ti), t, slugs, connections); err != nil {
-			if t.Origin() == OriginDashboard {
-				return &MergeError{Slug: t.Slug, Err: err}
-			}
+	seen := map[string]string{}
+	for i := range entries {
+		a := &entries[i]
+		where := fmt.Sprintf("accounts[%d]", i)
+		if prev, dup := seen[a.Key()]; dup {
+			return fmt.Errorf("configfile: %s: account %s/%s duplicates %s", where, a.Forge, a.Name, prev)
+		}
+		seen[a.Key()] = where
+		if err := f.validateAccount(where, a); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateAccount checks one account. slugs and connections record the
-// slugs and connection names already seen, so duplicates across accounts
-// are caught whichever origin each has.
-func (f *File) validateAccount(where string, t *Account, slugs, connections map[string]string) error {
-	if !nameRe.MatchString(t.Slug) {
-		return fmt.Errorf("configfile: %s.slug %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", where, t.Slug)
+// validateAccount checks one account entry.
+func (f *File) validateAccount(where string, a *Account) error {
+	if a.Forge != ForgeGitHub {
+		return fmt.Errorf("configfile: %s.forge must be %s, got %q", where, ForgeGitHub, a.Forge)
 	}
-	if prev, dup := slugs[t.Slug]; dup {
-		return fmt.Errorf("configfile: %s.slug %q duplicates %s", where, t.Slug, prev)
+	if strings.TrimSpace(a.Name) == "" || strings.ContainsAny(a.Name, "/ ") {
+		return fmt.Errorf("configfile: %s.name %q must be the account's name on the forge", where, a.Name)
 	}
-	slugs[t.Slug] = where
-	if err := checkLimits(where+".limits", t.Limits); err != nil {
+	if err := checkLimits(where+".limits", a.Limits); err != nil {
 		return err
 	}
-	if err := f.validateAccountProviders(where, t); err != nil {
+	if err := f.validateAccountProviders(where, a); err != nil {
 		return err
 	}
-	if err := f.validateOverrides(where, t, &t.Overrides); err != nil {
+	if err := f.validateOverrides(where, a, &a.Overrides); err != nil {
 		return err
 	}
-	if t.Runner != nil {
-		if err := validateRunnerDeadline(where, t.Runner.ActiveDeadlineSeconds); err != nil {
-			return err
-		}
-	}
-	if len(t.Connections) == 0 {
-		return fmt.Errorf("configfile: %s (%s) must list at least one connection", where, t.Slug)
-	}
-	for ii, in := range t.Connections {
-		iwhere := fmt.Sprintf("%s.connections[%d]", where, ii)
-		if !nameRe.MatchString(in.Name) {
-			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", iwhere, in.Name)
-		}
-		if owner, dup := connections[in.Name]; dup {
-			return fmt.Errorf("configfile: %s.name %q duplicates a connection in account %q; names are hook paths and must be unique",
-				iwhere, in.Name, owner)
-		}
-		connections[in.Name] = t.Slug
-		if err := validateAccountNames(in.Accounts, iwhere); err != nil {
-			return err
-		}
-		if err := in.validate(iwhere); err != nil {
+	if a.Runner != nil {
+		if err := validateRunnerDeadline(where, a.Runner.ActiveDeadlineSeconds); err != nil {
 			return err
 		}
 	}
 	repos := map[string]int{}
-	for ri, r := range t.Repositories {
+	for ri, r := range a.Repositories {
 		rwhere := fmt.Sprintf("%s.repositories[%d]", where, ri)
-		if r.Name == "" || !strings.Contains(r.Name, "/") {
-			return fmt.Errorf("configfile: %s.name must be \"owner/repo\", got %q", rwhere, r.Name)
+		if strings.TrimSpace(r.Name) == "" || strings.ContainsAny(r.Name, "/ ") {
+			return fmt.Errorf("configfile: %s.name %q must be the repository's name without its owner", rwhere, r.Name)
 		}
-		in, err := t.repositoryConnection(&r, rwhere)
-		if err != nil {
-			return err
-		}
-		key := in.Name + "\x00" + r.Name
+		key := strings.ToLower(r.Name)
 		if prev, dup := repos[key]; dup {
-			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d] of connection %q", rwhere, r.Name, prev, in.Name)
+			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d]", rwhere, r.Name, prev)
 		}
 		repos[key] = ri
-		if err := f.validateOverrides(rwhere, t, &r.Overrides); err != nil {
+		if err := f.validateOverrides(rwhere, a, &r.Overrides); err != nil {
 			return err
 		}
-		if err := checkWithinAllow(rwhere, f.Settings(t, in.Name, r.Name)); err != nil {
+		if err := checkWithinAllow(rwhere, f.Settings(a, a.Name+"/"+r.Name)); err != nil {
 			return err
 		}
 	}
-	return checkWithinAllow(where, f.Settings(t, "", ""))
+	return checkWithinAllow(where, f.Settings(a, ""))
 }
 
 // compile compiles the filter the scope writes, if any; an empty one
@@ -694,9 +663,9 @@ func SamplePR() map[string]any {
 
 func (r SecretRef) empty() bool { return r.Env == "" && r.File == "" && r.Sealed == "" }
 
-// refPolicy is where a SecretRef may come from. The operator's file may read
-// the environment and filesystem but carries no sealed values; a
-// dashboard-managed account carries only sealed values, opened with open.
+// refPolicy is where a SecretRef may come from. The configuration file may
+// read the environment and filesystem but carries no sealed values; the
+// spec carries only sealed values, opened with open.
 type refPolicy struct {
 	dashboard bool
 	open      Opener
@@ -715,9 +684,9 @@ func (r SecretRef) resolve(refs refPolicy) (Secret, error) {
 	case r.Env != "" && r.File != "":
 		return Secret{}, errors.New("set either env or file, not both")
 	case r.Sealed != "" && !refs.dashboard:
-		return Secret{}, errors.New("sealed values are only valid in dashboard-managed accounts")
+		return Secret{}, errors.New("sealed values are only valid in the dashboard's configuration")
 	case refs.dashboard && (r.Env != "" || r.File != ""):
-		return Secret{}, errors.New("dashboard-managed accounts take sealed values, not env or file references")
+		return Secret{}, errors.New("the dashboard's configuration takes sealed values, not env or file references")
 	case r.Sealed != "":
 		if refs.open == nil {
 			return Secret{}, errors.New("no key to open sealed values is configured")

@@ -118,7 +118,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 		byStage[c.Stage]++
 	}
 	for stage, n := range byStage {
-		p.w.Metrics.ContextChunks(p.account.Slug, stage, n)
+		p.w.Metrics.ContextChunks(p.account.Key(), stage, n)
 	}
 
 	resp, role, err := p.complete(ctx, ref, system, msg)
@@ -162,7 +162,7 @@ func (p *publishPhase) countFindings(res review.Result) {
 		bySeverity[string(f.Severity)]++
 	}
 	for severity, n := range bySeverity {
-		p.w.Metrics.Findings(p.account.Slug, severity, n)
+		p.w.Metrics.Findings(p.account.Key(), severity, n)
 	}
 }
 
@@ -303,7 +303,7 @@ func (p *publishPhase) callModels(
 	}
 	completer := model.Structured{Stepper: stepper, OnStep: p.onStep(ctx, ref.Provider(), store.ModelCallReview, 0)}
 	resp, err := completer.Complete(ctx, req)
-	p.w.Metrics.ModelCall(p.account.Slug, string(ref), roleReview, callOutcome(err),
+	p.w.Metrics.ModelCall(p.account.Key(), string(ref), roleReview, callOutcome(err),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 	if err == nil || fallback == "" || fallback.Provider() == ref.Provider() || ctx.Err() != nil {
 		return resp, roleReview, err
@@ -316,7 +316,7 @@ func (p *publishPhase) callModels(
 	req.Model, req.Fallbacks = fallback.Model(), nil
 	fc := model.Structured{Stepper: fs, OnStep: p.onStep(ctx, fallback.Provider(), store.ModelCallFallback, 1)}
 	resp, ferr = fc.Complete(ctx, req)
-	p.w.Metrics.ModelCall(p.account.Slug, string(fallback), roleFallback, callOutcome(ferr),
+	p.w.Metrics.ModelCall(p.account.Key(), string(fallback), roleFallback, callOutcome(ferr),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 	if ferr != nil {
 		return model.CompletionResponse{}, "", errors.Join(err, ferr)
@@ -570,7 +570,7 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 	err = p.w.withLease(ctx, p.account, "embed:"+p.w.EmbedModel, p.settings.Limits.Concurrency, p.jobID, func(ctx context.Context) error {
 		var err error
 		vectors, tokens, err = p.w.Embedder.Embed(ctx, texts)
-		p.w.Metrics.ModelCall(p.account.Slug, p.w.EmbedModel, roleEmbedding, callOutcome(err), tokens, 0, 0, 0)
+		p.w.Metrics.ModelCall(p.account.Key(), p.w.EmbedModel, roleEmbedding, callOutcome(err), tokens, 0, 0, 0)
 		return err
 	})
 	if err != nil {

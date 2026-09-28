@@ -34,7 +34,7 @@
   </div>
   <div class="fields">
     <label class="field">
-      <span>Name (owner/repo)</span>
+      <span>Name (without the owner)</span>
       <input data-path="{p}.name" aria-invalid={inv(`${p}.name`) || undefined} bind:value={repo.name} required />
     </label>
     <label class="field">

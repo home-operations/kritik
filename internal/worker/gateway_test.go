@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 )
 
 func TestRefuseRetries(t *testing.T) {
@@ -26,12 +26,12 @@ func TestRefuseRetries(t *testing.T) {
 
 func TestMaskProvider(t *testing.T) {
 	t.Setenv("TEST_PROVIDER_KEY", "sk-provider")
-	f, err := configfile.Parse([]byte(`providers:
+	f, err := configfiletest.Parse(t, `providers:
   p:
     type: openai
     baseUrl: https://kritik:url-secret@llm.example/v1
     apiKey: { env: TEST_PROVIDER_KEY }
-` + minimalGatewayFile))
+`+minimalGatewayFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,11 +44,9 @@ func TestMaskProvider(t *testing.T) {
 
 // minimalGatewayFile is the rest of a configuration file the provider
 // above sits in.
-const minimalGatewayFile = `accounts:
-  - slug: acme
-    connections:
-      - name: acme-bot
-        forge: github
-        accounts: [acme]
-        app: { clientId: Iv1.test, privateKey: { env: TEST_PROVIDER_KEY }, webhookSecret: { env: TEST_PROVIDER_KEY } }
+const minimalGatewayFile = `connections:
+  - name: acme-bot
+    forge: github
+    accounts: [acme]
+    app: { clientId: Iv1.test, privateKey: { env: TEST_PROVIDER_KEY }, webhookSecret: { env: TEST_PROVIDER_KEY } }
 `

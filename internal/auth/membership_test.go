@@ -8,38 +8,28 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 )
 
-// accountsYAML is the accounts the grant tests read forge accounts from.
-const accountsYAML = `
-accounts:
-  - slug: personal
-    connections:
-      - { name: personal-bot, forge: github, accounts: [Alice], app: &app { clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } } }
-  - slug: org
-    connections:
-      - { name: org-bot, forge: github, accounts: [acme], app: *app }
-  - slug: adminorg
-    connections:
-      - { name: adminorg-bot, forge: github, accounts: [widgets], app: *app }
-  - slug: several
-    connections:
-      - { name: several-bot, forge: github, accounts: [nobody, Widgets], app: *app }
+// connectionsYAML is the connections the grant tests read forge accounts
+// from.
+const connectionsYAML = `
+connections:
+  - { name: personal-bot, forge: github, accounts: [Alice], app: &app { clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } } }
+  - { name: org-bot, forge: github, accounts: [acme], app: *app }
+  - { name: adminorg-bot, forge: github, accounts: [widgets], app: *app }
+  - { name: several-bot, forge: github, accounts: [nobody, Initech], app: *app }
 `
 
 // adminPassword is an auth block's local admin, so a file whose sign-ins
 // have no mapping still has a way to an admin.
 const adminPassword = "  admin: { password: { env: TEST_AUTH_SECRET } }\n"
 
-// testFile parses an auth block over accountsYAML.
+// testFile loads an auth block over connectionsYAML.
 func testFile(t *testing.T, auth string) *configfile.File {
 	t.Helper()
 	t.Setenv("TEST_AUTH_SECRET", "s3cret")
-	f, err := configfile.Parse([]byte(auth + accountsYAML))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	return f
+	return configfiletest.Load(t, auth+connectionsYAML)
 }
 
 // orgs is a fake forge membership that remembers what it was asked.
@@ -221,10 +211,7 @@ func TestGrantKey(t *testing.T) {
 		t.Fatal("renaming the admin kept the key")
 	}
 	t.Setenv("TEST_AUTH_SECRET", "rotated")
-	f, err := configfile.Parse([]byte(base + accountsYAML))
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := configfiletest.Load(t, base+connectionsYAML)
 	if k, _ := GrantKey(f.Auth, "local"); k == local {
 		t.Fatal("rotating the password kept the key")
 	}

@@ -34,7 +34,7 @@ func TestHubPublishFiltersByAccount(t *testing.T) {
 	h.publish(store.Event{AccountID: alpha, Kind: store.EventReview, ID: "e-1", ReviewID: &rid})
 	h.publish(store.Event{AccountID: "not-in-the-file", Kind: store.EventReview, ID: "e-2"})
 
-	want := Event{Kind: store.EventReview, Account: "alpha", ID: "e-1", ReviewID: &rid}
+	want := Event{Kind: store.EventReview, Account: "github/alpha", ID: "e-1", ReviewID: &rid}
 	for name, c := range map[string]*client{"member of alpha": a, "operator": op} {
 		select {
 		case got := <-c.events:
@@ -148,7 +148,7 @@ func TestHubServe(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(lines[1], "data: ")), &ev); err != nil {
 		t.Fatalf("data %q: %v", lines[1], err)
 	}
-	if ev.Account != "alpha" || ev.ID != "ix-1" || ev.Kind != store.EventIndexRun || ev.ReviewID != nil {
+	if ev.Account != "github/alpha" || ev.ID != "ix-1" || ev.Kind != store.EventIndexRun || ev.ReviewID != nil {
 		t.Errorf("event = %+v", ev)
 	}
 

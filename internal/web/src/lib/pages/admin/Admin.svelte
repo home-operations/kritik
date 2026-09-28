@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { accountApi } from '../../links';
   import { href } from '../../router.svelte';
   import { canAdmin, session } from '../../session.svelte';
   import AuditTable from '../../components/AuditTable.svelte';
@@ -39,7 +40,7 @@
         {:else}
           <section class="panel" aria-labelledby="admin-audit">
             <header class="panel-head"><h2 id="admin-audit">Audit log</h2></header>
-            <AuditTable path={`/api/v1/accounts/${encodeURIComponent(slug)}/audit`} />
+            <AuditTable path={`${accountApi(slug)}/audit`} />
           </section>
         {/if}
       </section>

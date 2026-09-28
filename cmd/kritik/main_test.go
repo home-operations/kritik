@@ -15,6 +15,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/server"
 	"github.com/home-operations/kritik/internal/store"
 )
@@ -22,25 +23,19 @@ import (
 func parseAccount(t *testing.T, slug string) *configfile.File {
 	t.Helper()
 	t.Setenv("TEST_MAIN_TOKEN", "tok")
-	f, err := configfile.Parse([]byte(`
-accounts:
-  - slug: ` + slug + `
-    connections:
-      - name: ` + slug + `-bot
-        forge: github
-        accounts: [` + slug + `]
-        app: { clientId: Iv1.test, privateKey: { env: TEST_MAIN_TOKEN }, webhookSecret: { env: TEST_MAIN_TOKEN } }
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return f
+	return configfiletest.Load(t, `
+connections:
+  - name: `+slug+`-bot
+    forge: github
+    accounts: [`+slug+`]
+    app: { clientId: Iv1.test, privateKey: { env: TEST_MAIN_TOKEN }, webhookSecret: { env: TEST_MAIN_TOKEN } }
+`)
 }
 
 // recordApplied is an onApplied that reports the applied slug and returns err.
 func recordApplied(current *configfile.Current, ch chan<- string, err error) func(context.Context) error {
 	return func(context.Context) error {
-		ch <- current.Get().Accounts[0].Slug
+		ch <- current.Get().Accounts[0].Name
 		return err
 	}
 }
@@ -78,7 +73,7 @@ func TestApplyLoop(t *testing.T) {
 	appliedCh := make(chan string, 10)
 	attempts := make(chan string, 10)
 	apply := func(_ context.Context, f *configfile.File) error {
-		slug := f.Accounts[0].Slug
+		slug := f.Accounts[0].Name
 		attempts <- slug
 		switch slug {
 		case "refused":

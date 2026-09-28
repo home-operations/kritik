@@ -8,9 +8,8 @@
   "operator": true,
   "accounts": [
     {
-      "slug": "alpha",
-      "role": "member",
-      "managedBy": "file"
+      "slug": "github/alpha",
+      "role": "member"
     }
   ]
 }

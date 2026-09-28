@@ -3,14 +3,14 @@
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { jobTone, shortSha } from '../format';
-  import { pullRoute } from '../links';
+  import { pullRoute, accountApi } from '../links';
   import type { Job } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
 
   let { slug }: { slug: string } = $props();
-  const res = new Resource(() => getJSON<Job[]>(`/api/v1/accounts/${encodeURIComponent(slug)}/queue`));
+  const res = new Resource(() => getJSON<Job[]>(`${accountApi(slug)}/queue`));
 
   $effect(() => {
     void res.load();

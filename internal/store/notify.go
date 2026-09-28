@@ -91,10 +91,10 @@ func parseEvent(payload string) (Event, error) {
 // connected is lost, so consumers use OnReconnect to re-fetch whatever
 // state they'd otherwise have learned about incrementally: e.g. the web
 // SSE broadcaster telling browsers to resync, or a config source
-// re-merging account specs.
+// re-merging the instance spec.
 type ListenHandlers struct {
 	OnEvent     func(Event)
-	OnConfig    func(slug string)
+	OnConfig    func(revision string)
 	OnReconnect func()
 }
 
@@ -158,8 +158,8 @@ func (w *dropWarner) drop() {
 // resulting callback contract.
 //
 // A malformed kritik_events payload is logged and skipped rather than
-// ending the listener. kritik_config payloads are raw account slugs, passed
-// to OnConfig unparsed.
+// ending the listener. kritik_config payloads are the instance spec's
+// revision, passed to OnConfig unparsed.
 func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
 	notifications := make(chan func(), listenBufferSize)
 	consumerDone := make(chan struct{})
@@ -279,8 +279,8 @@ func (s *Store) listenOnce(
 			if handlers.OnConfig == nil {
 				continue
 			}
-			slug := n.Payload
-			fn = func() { handlers.OnConfig(slug) }
+			revision := n.Payload
+			fn = func() { handlers.OnConfig(revision) }
 		default:
 			continue
 		}

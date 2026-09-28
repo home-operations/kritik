@@ -1,21 +1,19 @@
 {
-  "slug": "alpha",
-  "managedBy": "file",
+  "slug": "github/alpha",
   "role": "member",
-  "connections": [
-    {
-      "name": "alpha-bot",
-      "forge": "github",
-      "accounts": ["alpha"],
-      "credentials": {
-        "clientId": true,
-        "privateKey": true,
-        "webhookSecret": true
-      },
-      "hookPath": "/hooks/alpha-bot",
-      "lastWebhookAt": "2026-09-01T12:00:00Z"
-    }
-  ],
+  "connection": {
+    "name": "alpha-bot",
+    "forge": "github",
+    "managedBy": "file",
+    "accounts": ["alpha"],
+    "credentials": {
+      "clientId": true,
+      "privateKey": true,
+      "webhookSecret": true
+    },
+    "hookPath": "/hooks/alpha-bot",
+    "lastWebhookAt": "2026-09-01T12:00:00Z"
+  },
   "models": {
     "review": "openrouter/acme-large",
     "fallback": "openrouter/acme-small"

@@ -36,7 +36,7 @@ func authEnv(t *testing.T) {
 
 func TestAuth(t *testing.T) {
 	authEnv(t)
-	f, err := Parse([]byte(authMinimal + minimal))
+	f, err := loadBytes(t, []byte(authMinimal+minimal))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestAuth(t *testing.T) {
 	if !a.Configured() || (Auth{}).Configured() {
 		t.Fatal("Configured")
 	}
-	m, err := Merge(f, nil, nil)
+	m, err := Merge(f, InstanceSpec{}, nil)
 	if err != nil || len(m.Auth.SignIns()) != 2 {
 		t.Fatalf("merge lost the auth section: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestAuthRejects(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Parse([]byte(tt.yaml))
+			_, err := loadBytes(t, []byte(tt.yaml))
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error %v does not mention %q", err, tt.want)
 			}
@@ -130,7 +130,7 @@ func TestAuthEnv(t *testing.T) {
 	} {
 		t.Setenv(k, v)
 	}
-	f, err := Parse([]byte(authMinimal + minimal))
+	f, err := loadBytes(t, []byte(authMinimal+minimal))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestAuthEnv(t *testing.T) {
 	t.Run("without a file block", func(t *testing.T) {
 		t.Setenv("KRITIK_AUTH_OIDC_CLIENT_ID", "kritik")
 		t.Setenv("KRITIK_AUTH_OIDC_CLIENT_SECRET", "oidc-secret")
-		f, err := Parse([]byte(minimal))
+		f, err := loadBytes(t, []byte(minimal))
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -166,7 +166,7 @@ func TestAuthEnv(t *testing.T) {
 	})
 	t.Run("a variable naming nothing", func(t *testing.T) {
 		t.Setenv("KRITIK_AUTH_OIDC_ISUER", "x")
-		if _, err := Parse([]byte(minimal)); err == nil || !strings.Contains(err.Error(), "KRITIK_AUTH_OIDC_ISUER names no auth setting") {
+		if _, err := loadBytes(t, []byte(minimal)); err == nil || !strings.Contains(err.Error(), "KRITIK_AUTH_OIDC_ISUER names no auth setting") {
 			t.Fatalf("Parse = %v", err)
 		}
 	})

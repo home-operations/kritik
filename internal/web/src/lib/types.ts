@@ -3,12 +3,14 @@
 // RFC 3339 strings; null means "none".
 
 export type AccountRole = 'admin' | 'member';
-export type AccountManagedBy = 'file' | 'dashboard';
+// Where a connection is declared: the configuration file (or its
+// environment), or the dashboard.
+export type ConnectionOrigin = 'file' | 'dashboard';
 
+// An account's slug is "<forge>/<name>", as the forge spells the name.
 export interface AccountMembership {
   slug: string;
   role: AccountRole;
-  managedBy: AccountManagedBy;
 }
 
 // A person signed in to the dashboard.
@@ -89,22 +91,20 @@ export interface MonthUsage {
   reviewsPerDay: number;
 }
 
+// connection names the connection serving the account.
 export interface AccountSummary {
   slug: string;
-  managedBy: AccountManagedBy;
   role: AccountRole;
-  connections: number;
+  connection: string;
   repositories: number;
   reviews7d: number;
   usage: MonthUsage;
 }
 
-// live is false for a dashboard account stored but not in the running
-// configuration (it does not validate, or has not been merged yet), and for
-// a file account the merge left out, which conflict explains.
+// live is false for an entry of the instance spec no connection serves,
+// which conflict explains.
 export interface OperatorAccount extends AccountSummary {
   live: boolean;
-  revision: number;
   conflict?: string;
 }
 
@@ -117,6 +117,7 @@ export interface CredentialsSet {
 export interface Connection {
   name: string;
   forge: Forge;
+  managedBy: ConnectionOrigin;
   accounts: string[];
   credentials: CredentialsSet;
   hookPath: string;
@@ -138,9 +139,8 @@ export interface Limits {
 
 export interface AccountDetail {
   slug: string;
-  managedBy: AccountManagedBy;
   role: AccountRole;
-  connections: Connection[];
+  connection: Connection;
   models: Models;
   limits: Limits;
   filter: string;
@@ -163,9 +163,8 @@ export interface ReviewRef {
 export interface Repository {
   id: string;
   fullName: string;
-  connection: string;
   enabled: boolean;
-  managedBy: 'file' | 'dashboard' | 'forge';
+  managedBy: 'dashboard' | 'forge';
   defaultBranch: string;
   index: IndexState;
   lastReview: ReviewRef | null;
@@ -225,7 +224,9 @@ export interface RepoSettings {
   allow: AllowBounds;
 }
 
-export type ConfigSource = 'default' | 'env' | 'file' | 'dashboard' | 'repository';
+// defaults is the instance spec's defaults, account an account's entry in
+// it, dashboard the instance spec itself.
+export type ConfigSource = 'default' | 'env' | 'file' | 'dashboard' | 'defaults' | 'account' | 'repository';
 
 // One instance-wide setting, read-only in the admin console: a secret
 // shows only whether it is set.
@@ -627,15 +628,13 @@ export interface LiveEvent {
   reviewId: string | null;
 }
 
-// The management API: dashboard accounts, actions and the audit log.
+// The management API: the instance configuration, actions and the audit log.
 // ErrorBody.code may also be one of these.
 export type ManagementErrorCode =
   | 'forbidden'
   | 'invalid_spec'
   | 'revision_conflict'
   | 'config_blocked'
-  | 'slug_taken'
-  | 'file_managed'
   | 'management_disabled'
   | 'no_head'
   | 'not_cancelable'
@@ -643,15 +642,9 @@ export type ManagementErrorCode =
   | 'already_queued'
   | 'reenter_secret';
 
-// details of an invalid_spec or slug_taken error.
+// details of an invalid_spec error.
 export interface PathDetails {
   path: string;
-}
-
-// details of a slug_taken error: adoptable only when the slug belonged to
-// an account that is gone, so creating it again with adopt succeeds.
-export interface SlugTakenDetails extends PathDetails {
-  adoptable?: boolean;
 }
 
 export interface Meta {
@@ -700,31 +693,32 @@ export interface Inherited {
   repositorySources: Record<string, ConfigSource>;
 }
 
+// The instance spec as an admin reads it, every secret a SecretState;
+// revision is 0 before the first write.
+export interface InstanceConfig {
+  revision: number;
+  editable: boolean;
+  spec: Record<string, unknown>;
+}
+
+// An account's entry in the instance spec, every secret a SecretState, and
+// the instance spec's revision, which a write of the entry must match.
 export interface AccountConfig {
-  managedBy: AccountManagedBy;
-  revision: number | null;
+  revision: number;
   editable: boolean;
   policy: FieldPolicy[];
   inherited: Inherited;
-  // An account entry of the configuration file, in JSON, with every secret
-  // a SecretState.
   spec: Record<string, unknown>;
 }
 
-export interface CreateAccountRequest {
-  slug: string;
-  spec: Record<string, unknown>;
-  // Re-use a slug an account held before, keeping its review history.
-  adopt?: boolean;
-}
-
-export interface UpdateAccountRequest {
+// Replaces the instance spec, or an account's entry in it, while the
+// instance spec is still at revision.
+export interface UpdateConfigRequest {
   revision: number;
   spec: Record<string, unknown>;
 }
 
-export interface AccountWriteResult {
-  slug: string;
+export interface ConfigWriteResult {
   revision: number;
   // Each server-generated secret, keyed "connections[<name>].<key>";
   // shown once, never again.
@@ -736,10 +730,8 @@ export interface Accepted {
 }
 
 export type AuditAction =
-  | 'account.create'
+  | 'config.update'
   | 'account.update'
-  | 'account.delete'
-  | 'account.adopt'
   | 'review.rerun'
   | 'review.cancel'
   | 'repo.reindex';

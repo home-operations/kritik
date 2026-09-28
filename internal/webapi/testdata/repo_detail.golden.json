@@ -1,9 +1,8 @@
 {
   "id": "repo-1",
   "fullName": "alpha/one",
-  "connection": "alpha-bot",
   "enabled": true,
-  "managedBy": "file",
+  "managedBy": "dashboard",
   "defaultBranch": "main",
   "index": {
     "activeCommit": "def456",
@@ -72,8 +71,8 @@
     }
   },
   "sources": {
-    "mode": "dashboard",
-    "models.review": "file",
+    "mode": "account",
+    "models.review": "defaults",
     "settle": "default"
   },
   "repoConfig": {

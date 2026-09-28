@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 )
 
 // The suite needs a VectorChord-enabled Postgres with three roles, as
@@ -99,41 +99,49 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
-const twoAccounts = `
+const alphaEntry = `
 accounts:
-  - slug: alpha
-    connections:
-      - name: alpha-bot
-        forge: github
-        accounts: [alpha]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+  - forge: github
+    name: alpha
     repositories:
-      - name: alpha/one
-      - name: alpha/two
+      - name: one
+      - name: two
         enabled: false
-  - slug: beta
-    connections:
-      - name: beta-bot
-        forge: github
-        accounts: [beta]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
 `
+
+// twoAccounts serves alpha and beta; alphaAccount, alpha alone.
+const (
+	twoAccounts = `
+connections:
+  - name: alpha-bot
+    forge: github
+    accounts: [alpha]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+  - name: beta-bot
+    forge: github
+    accounts: [beta]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+` + alphaEntry
+	alphaAccount = `
+connections:
+  - name: alpha-bot
+    forge: github
+    accounts: [alpha]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+` + alphaEntry
+)
 
 func parse(t *testing.T, yaml string) *configfile.File {
 	t.Helper()
 	t.Setenv("KRITIK_TEST_TOKEN", "tok")
-	f, err := configfile.Parse([]byte(yaml))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	return f
+	return configfiletest.Load(t, yaml)
 }
 
-func accountID(t *testing.T, s *Store, slug string) string {
+func accountID(t *testing.T, s *Store, name string) string {
 	t.Helper()
 	var id string
-	if err := s.owner.QueryRow(context.Background(), `SELECT id FROM accounts WHERE slug = $1`, slug).Scan(&id); err != nil {
-		t.Fatalf("account %s: %v", slug, err)
+	if err := s.owner.QueryRow(context.Background(), `SELECT id FROM accounts WHERE name = $1`, name).Scan(&id); err != nil {
+		t.Fatalf("account %s: %v", name, err)
 	}
 	return id
 }
@@ -163,16 +171,16 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 	}
 
 	t.Run("each account sees only its own rows", func(t *testing.T) {
-		if count(t, alpha, "accounts") != 1 || count(t, alpha, "connections") != 1 || count(t, alpha, "repositories") != 2 {
-			t.Fatal("alpha should see its own account, connection and two repositories")
+		if count(t, alpha, "accounts") != 1 || count(t, alpha, "repositories") != 2 {
+			t.Fatal("alpha should see its own account and two repositories")
 		}
-		if count(t, beta, "repositories") != 0 || count(t, beta, "connections") != 1 {
-			t.Fatal("beta should see one connection and no repositories")
+		if count(t, beta, "repositories") != 0 || count(t, beta, "connections WHERE name IN ('alpha-bot', 'beta-bot')") != 2 {
+			t.Fatal("beta should see no repositories, and every connection, which belong to no account")
 		}
 	})
 
 	t.Run("no account set sees nothing", func(t *testing.T) {
-		for _, table := range []string{"accounts", "connections", "repositories", "model_leases"} {
+		for _, table := range []string{"accounts", "repositories", "model_leases"} {
 			var n int
 			if err := s.app.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&n); err != nil {
 				t.Fatalf("%s: %v", table, err)
@@ -217,18 +225,17 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 		}
 	})
 
-	t.Run("removing an account from the file disables it and keeps its rows", func(t *testing.T) {
-		f2 := parse(t, strings.SplitN(twoAccounts, "  - slug: beta", 2)[0])
+	t.Run("an account no connection serves any more is disabled and keeps its rows", func(t *testing.T) {
+		f2 := parse(t, alphaAccount)
 		if err := s.ApplyConfig(ctx, f2, "test"); err != nil {
 			t.Fatalf("ApplyConfig: %v", err)
 		}
 		var enabled bool
-		var rows int
-		if err := s.owner.QueryRow(ctx, `SELECT enabled, (SELECT count(*) FROM connections WHERE account_id = accounts.id) FROM accounts WHERE slug = 'beta'`).Scan(&enabled, &rows); err != nil {
+		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM accounts WHERE name = 'beta'`).Scan(&enabled); err != nil {
 			t.Fatal(err)
 		}
-		if enabled || rows != 1 {
-			t.Fatalf("beta enabled=%v connections=%d; want disabled with rows kept", enabled, rows)
+		if enabled {
+			t.Fatal("beta is still enabled")
 		}
 		var instEnabled bool
 		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM connections WHERE name = 'beta-bot'`).Scan(&instEnabled); err != nil || instEnabled {
@@ -237,7 +244,7 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 		if err := s.ApplyConfig(ctx, f, "test"); err != nil {
 			t.Fatalf("re-apply: %v", err)
 		}
-		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM accounts WHERE slug = 'beta'`).Scan(&enabled); err != nil || !enabled {
+		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM accounts WHERE name = 'beta'`).Scan(&enabled); err != nil || !enabled {
 			t.Fatalf("beta re-enabled=%v err=%v", enabled, err)
 		}
 	})
@@ -511,67 +518,29 @@ func TestSweepDisabledIndexes(t *testing.T) {
 	sweep(0)
 }
 
-// TestFindRepoAcrossConnections checks that a repository name two
-// connections of an account hold is ambiguous without a connection,
-// resolves with one, and stops being ambiguous once one connection is
-// gone and only its disabled repository is left.
-func TestFindRepoAcrossConnections(t *testing.T) {
+// TestFindRepo: a repository is found by its full name within the account
+// the transaction reads.
+func TestFindRepo(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
-	const twoApps = `
-accounts:
-  - slug: gamma
-    connections:
-      - name: gamma-one
-        forge: github
-        accounts: [gamma]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
-      - name: gamma-two
-        forge: github
-        accounts: [gamma]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
-    repositories:
-      - { name: gamma/x, connection: gamma-one }
-      - { name: gamma/x, connection: gamma-two }
-`
-	if err := s.ApplyConfig(ctx, parse(t, twoApps), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	gamma := accountID(t, s, "gamma")
-	find := func(name, connection string) (RepoRow, error) {
+	find := func(account, name string) (RepoRow, error) {
 		t.Helper()
 		var row RepoRow
-		err := s.WithAccount(ctx, gamma, func(tx pgx.Tx) error {
+		err := s.WithAccount(ctx, accountID(t, s, account), func(tx pgx.Tx) error {
 			var err error
-			row, err = FindRepo(ctx, tx, name, connection)
+			row, err = FindRepo(ctx, tx, name)
 			return err
 		})
 		return row, err
 	}
-
-	_, err := find("gamma/x", "")
-	e, ok := errors.AsType[*AmbiguousRepoError](err)
-	if !ok || !slices.Equal(slices.Sorted(slices.Values(e.Connections)), []string{"gamma-one", "gamma-two"}) {
-		t.Fatalf("FindRepo without connection = %v, want ambiguous over gamma-one and gamma-two", err)
+	if row, err := find("alpha", "alpha/one"); err != nil || row.FullName != "alpha/one" || !row.Enabled || row.ManagedBy != "dashboard" {
+		t.Fatalf("FindRepo(alpha/one) = %+v, %v", row, err)
 	}
-	if row, err := find("gamma/x", "gamma-two"); err != nil || row.Connection != "gamma-two" {
-		t.Fatalf("FindRepo(gamma-two) = %+v, %v", row, err)
-	}
-	if _, err := find("gamma/nope", ""); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("FindRepo(unknown) = %v, want ErrNotFound", err)
-	}
-
-	oneLeft := strings.Replace(strings.Replace(twoApps, `      - { name: gamma/x, connection: gamma-two }
-`, "", 1), `      - name: gamma-two
-        forge: github
-        accounts: [gamma]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
-`, "", 1)
-	if err := s.ApplyConfig(ctx, parse(t, oneLeft), "test"); err != nil {
-		t.Fatalf("ApplyConfig without gamma-two: %v", err)
-	}
-	if row, err := find("gamma/x", ""); err != nil || row.Connection != "gamma-one" || !row.Enabled {
-		t.Fatalf("FindRepo after gamma-two went = %+v, %v; want gamma-one's enabled repository", row, err)
+	if _, err := find("beta", "alpha/one"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("FindRepo from another account = %v, want ErrNotFound", err)
 	}
 }
 

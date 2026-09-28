@@ -25,7 +25,7 @@ func TestLoad(t *testing.T) {
 				if c.LogFormat != "json" {
 					t.Fatalf("log format default = %q", c.LogFormat)
 				}
-				if c.ConfigFile != "/etc/kritik/config.yaml" || c.ConfigReloadInterval != 10*time.Second {
+				if c.ConfigFile != "" || c.ConfigReloadInterval != 10*time.Second {
 					t.Fatalf("config file defaults = %q, %s", c.ConfigFile, c.ConfigReloadInterval)
 				}
 				if c.EmbeddingEnabled() || c.DatabaseOwnerURL != "" || c.ReindexOnModelChange {

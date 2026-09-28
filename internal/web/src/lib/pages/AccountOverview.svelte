@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { accountApi } from '../links';
   import { untrack } from 'svelte';
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
@@ -23,7 +24,7 @@
     queue: Job[];
   }
 
-  const base = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}`);
+  const base = $derived(`${accountApi(slug)}`);
 
   type Part = 'summary' | 'repos' | 'pulls' | 'queue';
   const ALL: readonly Part[] = ['summary', 'repos', 'pulls', 'queue'];
@@ -213,42 +214,28 @@
           {/if}
         </section>
 
-        <section class="panel" aria-labelledby="ov-connections">
-          <header class="panel-head"><h2 id="ov-connections">Connections</h2></header>
-          <div class="table-wrap">
-            <table class="data">
-              <thead>
-                <tr><th scope="col">Connection</th><th scope="col">Account</th><th scope="col">Webhooks</th></tr>
-              </thead>
-              <tbody>
-                {#each d.detail.connections as inst (inst.name)}
-                  <tr>
-                    <td class="mono">{inst.name}</td>
-                    <td><span class="mono">{inst.accounts.join(', ')}</span> <span class="small muted">on {inst.forge}</span></td>
-                    <td>
-                      {#if inst.lastWebhookAt}
-                        <Pill tone="ok" label="receiving" /> <span class="small muted">last <Time iso={inst.lastWebhookAt} /></span>
-                      {:else}
-                        <Pill tone="warn" label="none yet" />
-                      {/if}
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-          {#each d.detail.connections.filter((i) => !i.lastWebhookAt) as inst (inst.name)}
+        {@const inst = d.detail.connection}
+        <section class="panel" aria-labelledby="ov-connection">
+          <header class="panel-head"><h2 id="ov-connection">Connection</h2></header>
+          <dl class="deflist">
+            <dt>Name</dt><dd class="mono">{inst.name} <span class="small muted">({inst.managedBy})</span></dd>
+            <dt>Serves</dt><dd><span class="mono">{inst.accounts.join(', ')}</span> <span class="small muted">on {inst.forge}</span></dd>
+            <dt>Webhooks</dt>
+            <dd>
+              {#if inst.lastWebhookAt}
+                <Pill tone="ok" label="receiving" /> <span class="small muted">last <Time iso={inst.lastWebhookAt} /></span>
+              {:else}
+                <Pill tone="warn" label="none yet" />
+              {/if}
+            </dd>
+          </dl>
+          {#if !inst.lastWebhookAt}
             <p class="notice" role="note">
               No webhook has reached <span class="mono">{inst.name}</span>, so kritik only polls it for new pull requests and
-              cannot answer mentions.
-              {#if inst.forge === 'github'}
-                Point the GitHub App's webhook at <span class="mono">{inst.hookPath}</span> on kritik's webhook listener.
-              {:else}
-                Add a webhook for <span class="mono">{inst.hookPath}</span> on kritik's webhook listener to each user or
-                organization it serves: <span class="mono">{inst.accounts.join(', ')}</span>.
-              {/if}
+              cannot answer mentions. Point the GitHub App's webhook at <span class="mono">{inst.hookPath}</span> on kritik's
+              webhook listener.
             </p>
-          {/each}
+          {/if}
         </section>
       {/snippet}
     </StateView>

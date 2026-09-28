@@ -2,7 +2,7 @@
   import { href } from '../router.svelte';
   import { Paged, live } from '../resource.svelte';
   import { indexTone } from '../format';
-  import { repoRoute } from '../links';
+  import { repoRoute, accountApi } from '../links';
   import type { Repository } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
@@ -13,7 +13,7 @@
   let { slug }: { slug: string } = $props();
   let filter = $state('');
 
-  const base = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}/repos`);
+  const base = $derived(`${accountApi(slug)}/repos`);
   const paged = new Paged<Repository>(
     (cursor) => `${base}?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
     (r) => r.id,
@@ -25,22 +25,10 @@
   });
   $effect(() => live((e) => e.account === slug && e.kind === 'index_run', () => void paged.load()));
 
-  // A name several connections hold links with its connection, so the
-  // repository page does not have to ask which one.
-  const shared = $derived.by(() => {
-    const seen = new Set<string>();
-    const out = new Set<string>();
-    for (const r of paged.items) {
-      if (seen.has(r.fullName)) out.add(r.fullName);
-      seen.add(r.fullName);
-    }
-    return out;
-  });
-
   function visible(): Repository[] {
     const needle = filter.trim().toLowerCase();
     const all = paged.items;
-    return needle ? all.filter((r) => r.fullName.toLowerCase().includes(needle) || r.connection.toLowerCase().includes(needle)) : all;
+    return needle ? all.filter((r) => r.fullName.toLowerCase().includes(needle)) : all;
   }
 </script>
 
@@ -50,7 +38,7 @@
     <div class="toolbar">
       <label class="search-box">
         <span class="sr-only">Filter repositories</span>
-        <input type="search" placeholder="Filter by name or connection" bind:value={filter} />
+        <input type="search" placeholder="Filter by name" bind:value={filter} />
       </label>
     </div>
     <StateView {res} retry={() => res.load()} isEmpty={(d) => d.items.length === 0} empty="No repositories yet.">
@@ -64,7 +52,6 @@
               <thead>
                 <tr>
                   <th scope="col">Repository</th>
-                  <th scope="col">Connection</th>
                   <th scope="col">Enabled</th>
                   <th scope="col">Index</th>
                   <th scope="col">Indexed commit</th>
@@ -74,8 +61,7 @@
               <tbody>
                 {#each rows as repo (repo.id)}
                   <tr>
-                    <td class="mono"><a href={href(repoRoute(slug, repo.fullName, shared.has(repo.fullName) ? repo.connection : undefined))}>{repo.fullName}</a></td>
-                    <td class="mono small">{repo.connection}</td>
+                    <td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a></td>
                     <td>{#if repo.enabled}<Pill tone="ok" label="on" />{:else}<Pill label="off" />{/if}</td>
                     <td>
                       {#if repo.index.lastRunStatus}

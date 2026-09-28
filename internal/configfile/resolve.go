@@ -3,53 +3,71 @@ package configfile
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 )
 
-// Account returns the account with the given slug.
-func (f *File) Account(slug string) (*Account, bool) {
+// Account returns the running account name on forge.
+func (f *File) Account(forge Forge, name string) (*Account, bool) {
+	key := AccountKey(forge, name)
 	for i := range f.Accounts {
-		if f.Accounts[i].Slug == slug {
+		if f.Accounts[i].Key() == key {
 			return &f.Accounts[i], true
 		}
 	}
 	return nil, false
 }
 
-// Connection returns the connection with the given name and the account
-// that owns it. Names are unique across the file, so this is how the ingest
-// role turns a hook path into a webhook secret.
-func (f *File) Connection(name string) (*Connection, *Account, bool) {
-	for ti := range f.Accounts {
-		t := &f.Accounts[ti]
-		for ii := range t.Connections {
-			if t.Connections[ii].Name == name {
-				return &t.Connections[ii], t, true
-			}
+// AccountByID returns the running account whose id is id.
+func (f *File) AccountByID(id string) (*Account, bool) {
+	for i := range f.Accounts {
+		if f.Accounts[i].ID() == id {
+			return &f.Accounts[i], true
 		}
 	}
-	return nil, nil, false
+	return nil, false
 }
 
-// ConnectionFor returns the account's connection a repository entry
-// belongs to: the one it names, or else the only one whose account owns
-// it. It is nil when none matches, or when several do and the entry names
-// none of them.
-func (f *File) ConnectionFor(t *Account, r *Repository) *Connection {
-	in, err := t.repositoryConnection(r, "")
-	if err != nil {
-		return nil
+// Connection returns the running connection with the given name. Names are
+// unique, so this is how the ingest role turns a hook path into a webhook
+// secret.
+func (f *File) Connection(name string) (*Connection, bool) {
+	for i := range f.Connections {
+		if f.Connections[i].Name == name {
+			return &f.Connections[i], true
+		}
 	}
-	return in
+	return nil, false
 }
 
-// Settings resolves the effective settings for the repository "owner/repo"
-// of an account, reached through the named connection. Layers apply in one
-// direction: defaults, then the account, then the repository entry bound to
-// that connection, if one exists. A repository not listed under the
-// account gets the account's settings and is enabled; empty connection and
-// repo give the account's settings alone.
-func (f *File) Settings(t *Account, connection, repo string) Settings {
+// ConnectionFor returns the running connection serving a, nil when none
+// does.
+func (f *File) ConnectionFor(a *Account) *Connection {
+	for i := range f.Connections {
+		if in := &f.Connections[i]; in.Forge == a.Forge && in.Serves(a.Name) {
+			return in
+		}
+	}
+	return nil
+}
+
+// Repository returns the account's entry for the repository fullName,
+// "owner/repo", nil when it lists none.
+func (a *Account) Repository(fullName string) *Repository {
+	for i := range a.Repositories {
+		if r := &a.Repositories[i]; strings.EqualFold(a.Name+"/"+r.Name, fullName) {
+			return r
+		}
+	}
+	return nil
+}
+
+// Settings resolves the effective settings for the repository fullName,
+// "owner/repo", of account a. Layers apply in one direction: defaults, then
+// the account, then its entry for the repository, if one exists. A
+// repository the account does not list gets the account's settings and is
+// enabled; an empty fullName gives the account's settings alone.
+func (f *File) Settings(a *Account, fullName string) Settings {
 	s := Settings{
 		Enabled:     true,
 		Ignore:      append([]string(nil), DefaultIgnore...),
@@ -60,9 +78,9 @@ func (f *File) Settings(t *Account, connection, repo string) Settings {
 	}
 	s.apply(&f.Defaults.Overrides)
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
-	s.apply(&t.Overrides)
-	s.Limits = s.Limits.overlay(t.Limits)
-	if r := f.repositoryEntry(t, connection, repo); r != nil {
+	s.apply(&a.Overrides)
+	s.Limits = s.Limits.overlay(a.Limits)
+	if r := a.Repository(fullName); r != nil {
 		if r.Enabled != nil {
 			s.Enabled = *r.Enabled
 		}
@@ -74,47 +92,36 @@ func (f *File) Settings(t *Account, connection, repo string) Settings {
 	return s
 }
 
-// repositoryEntry is the account's entry for the repository "owner/repo"
-// reached through the named connection, nil when it lists none.
-func (f *File) repositoryEntry(t *Account, connection, repo string) *Repository {
-	for i := range t.Repositories {
-		r := &t.Repositories[i]
-		if r.Name != repo {
-			continue
-		}
-		if in := f.ConnectionFor(t, r); in != nil && in.Name == connection {
-			return r
-		}
-	}
-	return nil
-}
-
 // Source is the layer a setting's value comes from.
 type Source string
 
 // Sources of a setting.
 const (
-	SourceDefault    Source = "default"
-	SourceEnv        Source = "env"
-	SourceFile       Source = "file"
+	// SourceDefault is kritik's built-in default.
+	SourceDefault Source = "default"
+	SourceEnv     Source = "env"
+	SourceFile    Source = "file"
+	// SourceDashboard is the instance spec, SourceDefaults its defaults and
+	// SourceAccount an account's entry or one of its repository entries.
 	SourceDashboard  Source = "dashboard"
+	SourceDefaults   Source = "defaults"
+	SourceAccount    Source = "account"
 	SourceRepository Source = "repository"
 )
 
-// Sources says, for each setting the policy table lets the operator write,
+// Sources says, for each setting the policy table lets an admin write,
 // where the settings Settings resolves for the same repository take it
-// from: the author of the narrowest scope that writes it, the file for
-// the defaults, or the built-in default. Ignore globs come from every
-// scope; the narrowest that adds some is given.
-func (f *File) Sources(t *Account, connection, repo string) map[string]Source {
+// from: the narrowest scope that writes it, or the built-in default.
+// Ignore globs come from every scope; the narrowest that adds some is
+// given.
+func (f *File) Sources(a *Account, fullName string) map[string]Source {
 	type scope struct {
 		spec   any
 		source Source
 	}
-	origin := Source(t.Origin())
-	scopes := []scope{{&f.Defaults, SourceFile}, {t, origin}}
-	if r := f.repositoryEntry(t, connection, repo); r != nil {
-		scopes = append(scopes, scope{r, origin})
+	scopes := []scope{{&f.Defaults, SourceDefaults}, {a, SourceAccount}}
+	if r := a.Repository(fullName); r != nil {
+		scopes = append(scopes, scope{r, SourceAccount})
 	}
 	out := map[string]Source{}
 	for _, p := range Policies {
@@ -194,7 +201,7 @@ func (f *File) OnboardWindow() int {
 
 // RunnerFor resolves an account's runner Job deadline and resources: the
 // account's runner block, then defaults.runner, then DefaultRunnerDeadline
-// and no resources. t may be nil for an account no longer in the file.
+// and no resources. t may be nil for an account no longer served.
 func (f *File) RunnerFor(t *Account) (deadline time.Duration, resources map[string]any) {
 	deadline = DefaultRunnerDeadline
 	blocks := []*Runner{f.Defaults.Runner}

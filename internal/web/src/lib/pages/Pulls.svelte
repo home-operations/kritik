@@ -3,7 +3,7 @@
   import { getJSON } from '../api.svelte';
   import { navigate } from '../router.svelte';
   import { Paged, Resource, live } from '../resource.svelte';
-  import { pullRoute } from '../links';
+  import { pullRoute, accountApi } from '../links';
   import { listKeys } from '../listkeys';
   import type { Page, Pull, Repository, ReviewStatus } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -22,7 +22,7 @@
   let selected = $state(-1);
   let searchEl = $state<HTMLInputElement | undefined>(undefined);
 
-  const account = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}`);
+  const account = $derived(`${accountApi(slug)}`);
 
   function query(after?: string): string {
     const p = new URLSearchParams({ state: prState, limit: '50' });

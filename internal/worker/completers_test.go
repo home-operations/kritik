@@ -55,8 +55,8 @@ func TestCompletersAccountProviders(t *testing.T) {
 		return &model.OpenAI{}, nil
 	}}
 	f := &configfile.File{Providers: map[string]configfile.Provider{"shared": {Type: configfile.ProviderOpenRouter}}}
-	alpha := &configfile.Account{Slug: "alpha", Providers: map[string]configfile.Provider{"own": {Type: configfile.ProviderOpenAI}}}
-	beta := &configfile.Account{Slug: "beta", Providers: map[string]configfile.Provider{"own": {Type: configfile.ProviderAnthropic}}}
+	alpha := &configfile.Account{Forge: configfile.ForgeGitHub, Name: "alpha", Providers: map[string]configfile.Provider{"own": {Type: configfile.ProviderOpenAI}}}
+	beta := &configfile.Account{Forge: configfile.ForgeGitHub, Name: "beta", Providers: map[string]configfile.Provider{"own": {Type: configfile.ProviderAnthropic}}}
 	for _, call := range []struct {
 		t    *configfile.Account
 		name string

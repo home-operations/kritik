@@ -9,6 +9,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/jobtimeout"
 )
@@ -25,49 +26,47 @@ providers:
 defaults:
   models:
     review: gateway/review-model
+connections:
+  - name: acme-bot
+    forge: github
+    accounts: [acme]
+    app:
+      clientId: Iv1.x
+      privateKey: { env: TEST_PEM }
+      webhookSecret: { env: TEST_SECRET }
+  - name: globex-bot
+    forge: github
+    accounts: [globex]
+    app:
+      clientId: Iv1.y
+      privateKey: { env: TEST_PEM }
+      webhookSecret: { env: TEST_SECRET }
 accounts:
-  - slug: acme
-    connections:
-      - name: acme-bot
-        forge: github
-        accounts: [acme]
-        app:
-          clientId: Iv1.x
-          privateKey: { env: TEST_PEM }
-          webhookSecret: { env: TEST_SECRET }
+  - forge: github
+    name: acme
     repositories:
-      - name: acme/agentic
+      - name: agentic
         mode: agentic
-      - name: acme/slow-agent
+      - name: slow-agent
         mode: agentic
         agent:
           timeout: 50m
-  - slug: globex
+  - forge: github
+    name: globex
     runner:
       activeDeadlineSeconds: %d
-    connections:
-      - name: globex-bot
-        forge: github
-        accounts: [globex]
-        app:
-          clientId: Iv1.y
-          privateKey: { env: TEST_PEM }
-          webhookSecret: { env: TEST_SECRET }
 `
 
 func TestJobTimeouts(t *testing.T) {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
 	timeoutConfigYAML := fmt.Sprintf(timeoutConfigYAMLTemplate, int64(jobtimeout.MaxRunnerDeadline.Seconds()))
-	file, err := configfile.Parse([]byte(timeoutConfigYAML))
-	if err != nil {
-		t.Fatal(err)
-	}
+	file := configfiletest.Load(t, timeoutConfigYAML)
 	current := configfile.NewCurrent(file)
-	acme, _ := file.Account("acme")
-	globex, _ := file.Account("globex")
-	acmeRepo := func(name string) string { return configfile.RepositoryID(acme.Connections[0].ID(), name) }
-	globexRepo := configfile.RepositoryID(globex.Connections[0].ID(), "globex/app")
+	acme, _ := file.Account(configfile.ForgeGitHub, "acme")
+	globex, _ := file.Account(configfile.ForgeGitHub, "globex")
+	acmeRepo := func(name string) string { return configfile.RepositoryID(acme.ID(), name) }
+	globexRepo := configfile.RepositoryID(globex.ID(), "globex/app")
 
 	review := &Review{Current: current}
 	index := &Index{Current: current}

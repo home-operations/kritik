@@ -51,7 +51,7 @@ type Dispatcher interface {
 // DeliveryRecorder notes that a connection's webhook delivered a request
 // kritik verified. The store-backed implementation is Service.
 type DeliveryRecorder interface {
-	RecordDelivery(ctx context.Context, accountID, connectionID string) error
+	RecordDelivery(ctx context.Context, connectionID string) error
 }
 
 // Handler serves POST /hooks/{connection}.
@@ -79,7 +79,7 @@ func NewHandler(current *configfile.Current, disp Dispatcher, logger *slog.Logge
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("connection")
 	file := h.current.Get()
-	in, account, ok := file.Connection(name)
+	in, ok := file.Connection(name)
 	if !ok {
 		// The name is the caller's, not ours: labelling by it would let any
 		// request mint a new series.
@@ -87,7 +87,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown connection", http.StatusNotFound)
 		return
 	}
-	logger := h.logger.With("connection", name, "account", account.Slug)
+	logger := h.logger.With("connection", name)
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, webhook.MaxBody))
 	if err != nil {
@@ -109,7 +109,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Any verified delivery shows the forge's webhook is set up, whatever
 	// becomes of the event.
 	if h.Deliveries != nil {
-		if err := h.Deliveries.RecordDelivery(r.Context(), account.ID(), in.ID()); err != nil {
+		if err := h.Deliveries.RecordDelivery(r.Context(), in.ID()); err != nil {
 			logger.Warn("webhook delivery not recorded", "error", err)
 		}
 	}
@@ -122,6 +122,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	logger = logger.With("delivery", ev.Delivery, "kind", ev.Kind, "action", ev.Action)
 
+	var account *configfile.Account
+	if ev.Account != "" && in.Serves(ev.Account) {
+		account, _ = file.Account(in.Forge, ev.Account)
+	}
 	switch {
 	case ev.Kind == webhook.KindPing:
 		h.Metrics.Webhook(name, "ping")
@@ -132,7 +136,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Metrics.Webhook(name, Ignored)
 		w.WriteHeader(http.StatusAccepted)
 		return
-	case ev.Account != "" && !in.Serves(ev.Account):
+	case account == nil:
 		// A public App can be installed by anyone; only the declared
 		// accounts are served. Accepted, so the forge does not retry.
 		logger.Warn("webhook for an undeclared account ignored", "account", ev.Account)
@@ -141,6 +145,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logger = logger.With("account", account.Key())
 	out, err := h.disp.Dispatch(r.Context(), Request{File: file, Account: account, Connection: in, Event: ev})
 	if err != nil {
 		logger.Error("webhook dispatch failed", "error", err)

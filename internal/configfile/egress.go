@@ -57,10 +57,8 @@ func (f *File) EgressRules() egress.Rules {
 			hosts = append(hosts, h)
 		}
 	}
-	for _, t := range f.Accounts {
-		if len(t.Connections) > 0 {
-			add(GitHubHost)
-		}
+	if len(f.Connections) > 0 {
+		add(GitHubHost)
 	}
 	creds := make(map[string]string, len(f.Egress.credentials))
 	for host, secret := range f.Egress.credentials {

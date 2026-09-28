@@ -1,18 +1,13 @@
 <script lang="ts">
-  import { ApiError, getJSON, sendJSON } from '../api.svelte';
-  import { href, setLeaveGuard } from '../router.svelte';
+  import { getJSON } from '../api.svelte';
+  import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { tokens, usd } from '../format';
-  import { describe, errorPath, isCode } from '../manage';
-  import { MANAGEMENT_OFF, management } from '../session.svelte';
-  import { toast } from '../toast.svelte';
-  import type { CreateAccountRequest, InstanceSetting, OperatorAccount, SlugTakenDetails, AccountWriteResult } from '../types';
+  import type { InstanceSetting, OperatorAccount } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
-  import Dialog from '../components/Dialog.svelte';
   import AuditTable from '../components/AuditTable.svelte';
-  import ConfigEditor from './admin/ConfigEditor.svelte';
-  import GeneratedSecrets from './admin/GeneratedSecrets.svelte';
+  import InstanceSection from './admin/InstanceSection.svelte';
 
   const res = new Resource(() => getJSON<OperatorAccount[]>('/api/v1/operator/accounts'));
   const instance = new Resource(() => getJSON<InstanceSetting[]>('/api/v1/operator/instance'));
@@ -22,95 +17,13 @@
   $effect(() => {
     void instance.load();
   });
-  const sourceLabel: Record<string, string> = { env: 'environment', file: 'config file', default: 'default' };
+  const sourceLabel: Record<string, string> = { env: 'environment', file: 'config file', default: 'default', dashboard: 'dashboard' };
 
-  let creating = $state(false);
-  let saving = $state(false);
-  let dirty = $state(false);
-  let errMessage = $state('');
-  let errPath = $state('');
-  let errSeq = $state(0);
-  let generated = $state<Record<string, string> | undefined>(undefined);
-  // Offered once a create is refused because the slug was used before.
-  let offerAdopt = $state(false);
-  let adopt = $state(false);
-
-  $effect(() => {
-    setLeaveGuard(() => (creating && dirty) || generated !== undefined);
-    return () => setLeaveGuard(undefined);
-  });
-
-  function cancelCreate(): void {
-    if (dirty && !window.confirm('Discard the new account you have started?')) return;
-    closeCreate();
-  }
-
-  function closeCreate(): void {
-    creating = false;
-    dirty = false;
-    errMessage = '';
-    errPath = '';
-    offerAdopt = false;
-    adopt = false;
-  }
-
-  async function create(spec: Record<string, unknown>): Promise<void> {
-    saving = true;
-    errMessage = '';
-    errPath = '';
-    const body: CreateAccountRequest = { slug: typeof spec.slug === 'string' ? spec.slug : '', spec };
-    if (adopt) body.adopt = true;
-    try {
-      const r = await sendJSON<AccountWriteResult>('POST', '/api/v1/accounts', body);
-      toast(`Created account ${r.slug}`);
-      if (r.generated && Object.keys(r.generated).length) generated = r.generated;
-      closeCreate();
-      void res.load();
-    } catch (err) {
-      errMessage = describe(err);
-      errPath = errorPath(err);
-      if (err instanceof ApiError && err.code === 'slug_taken' && (err.details as SlugTakenDetails | undefined)?.adoptable) offerAdopt = true;
-      errSeq++;
-    } finally {
-      saving = false;
-    }
-  }
-
-  let target = $state<OperatorAccount | undefined>(undefined);
-  let deleteOpen = $state(false);
-  let typed = $state('');
-  let deleting = $state(false);
-  let deleteError = $state('');
-
-  function askDelete(t: OperatorAccount): void {
-    target = t;
-    typed = '';
-    deleteError = '';
-    deleteOpen = true;
-  }
-
-  async function remove(e: SubmitEvent): Promise<void> {
-    e.preventDefault();
-    const t = target;
-    if (!t || typed !== t.slug) return;
-    deleting = true;
-    deleteError = '';
-    try {
-      await sendJSON('DELETE', `/api/v1/accounts/${encodeURIComponent(t.slug)}?revision=${t.revision}`);
-      toast(`Deleted account ${t.slug}`);
-      deleteOpen = false;
-      void res.load();
-    } catch (err) {
-      deleteError = describe(err);
-      if (isCode(err, 'revision_conflict')) {
-        await res.load();
-        const fresh = res.data?.find((x) => x.slug === t.slug && x.managedBy === t.managedBy);
-        if (fresh) target = fresh;
-        deleteError += ' The latest revision is loaded; confirm again to delete it.';
-      }
-    } finally {
-      deleting = false;
-    }
+  // A saved spec changes which accounts run and which connections the
+  // settings list.
+  function refresh(): void {
+    void res.load();
+    void instance.load();
   }
 </script>
 
@@ -118,51 +31,17 @@
   <div class="page-inner">
     <header class="page-head">
       <h1>Admin console</h1>
-      <p class="muted">
-        Every account in the running configuration, plus dashboard accounts that are stored but not live and file accounts a
-        conflict leaves out.
-      </p>
+      <p class="muted">Every account a connection serves, and entries of the instance configuration no connection serves.</p>
     </header>
-    {#if !management()}
-      <p class="notice" role="note">{MANAGEMENT_OFF} Accounts cannot be created or deleted here.</p>
-    {:else if creating}
-      <section class="panel" aria-labelledby="op-create">
-        <header class="panel-head">
-          <h2 id="op-create">New dashboard account</h2>
-          <button class="btn btn-small" onclick={cancelCreate}>Cancel</button>
-        </header>
-        <div class="panel-body">
-          <ConfigEditor initial={{}} creating editable={() => true} {saving} {errMessage} {errPath} {errSeq} bind:dirty submitLabel="Create account" onsave={create} />
-          {#if offerAdopt}
-            <div class="notice" role="note">
-              <label>
-                <input type="checkbox" bind:checked={adopt} />
-                Adopt this slug
-              </label>
-              <p class="muted">
-                An account used this slug before. Adopting it keeps that account's reviews, findings and transcripts, which become
-                the new account's.
-              </p>
-            </div>
-          {/if}
-        </div>
-      </section>
-    {:else}
-      <div class="page-actions">
-        <button class="btn btn-primary" onclick={() => (creating = true)}>New account</button>
-      </div>
-    {/if}
-    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="No accounts configured.">
+    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="No accounts yet: add a connection below.">
       {#snippet children(list)}
         <div class="table-wrap">
           <table class="data">
             <thead>
               <tr>
                 <th scope="col">Account</th>
-                <th scope="col">Managed by</th>
+                <th scope="col">Connection</th>
                 <th scope="col">State</th>
-                <th scope="col" class="num">Revision</th>
-                <th scope="col" class="num">Connections</th>
                 <th scope="col" class="num">Repos</th>
                 <th scope="col" class="num">Reviews 7d</th>
                 <th scope="col" class="num">Tokens (month)</th>
@@ -171,36 +50,27 @@
               </tr>
             </thead>
             <tbody>
-              {#each list as t (`${t.managedBy}:${t.slug}`)}
+              {#each list as t (t.slug)}
                 <tr>
                   <td class="mono">
                     {#if t.live}<a href={href({ name: 'account', slug: t.slug })}>{t.slug}</a>{:else}{t.slug}{/if}
                   </td>
-                  <td>{t.managedBy}</td>
+                  <td class="mono small">{t.connection || '—'}</td>
                   <td>
                     {#if t.conflict}
-                      <Pill tone="danger" label="conflict" />
+                      <Pill tone="warn" label="not served" />
                       <span class="small muted">{t.conflict}</span>
                     {:else}
-                      <Pill
-                        tone={t.live ? 'ok' : 'warn'}
-                        label={t.live ? 'live' : 'not live'}
-                        title={t.live ? undefined : 'Stored but not in the running configuration'}
-                      />
+                      <Pill tone="ok" label="live" />
                     {/if}
                   </td>
-                  <td class="num">{t.revision || '—'}</td>
-                  <td class="num">{t.connections}</td>
                   <td class="num">{t.repositories}</td>
                   <td class="num">{t.reviews7d}</td>
                   <td class="num">{tokens(t.usage.tokens)}</td>
                   <td class="num">{usd(t.usage.costUsd)}</td>
                   <td>
-                    {#if t.managedBy === 'dashboard'}
+                    {#if t.live}
                       <a class="btn btn-small" href={href({ name: 'admin', slug: t.slug, section: 'config' })}>Edit</a>
-                      {#if management()}
-                        <button class="btn btn-small btn-danger" onclick={() => askDelete(t)} aria-label={`Delete account ${t.slug}`}>Delete</button>
-                      {/if}
                     {/if}
                   </td>
                 </tr>
@@ -211,10 +81,12 @@
       {/snippet}
     </StateView>
 
+    <InstanceSection onsaved={refresh} />
+
     <section class="panel" aria-labelledby="op-instance">
       <header class="panel-head"><h2 id="op-instance">Instance settings</h2></header>
       <p class="muted small">
-        Read-only: the environment is this web process's, and the rest is the configuration file's or kritik's defaults.
+        Read-only: the environment is this web process's, and sign-in and the file's connections are the configuration file's.
       </p>
       <StateView res={instance} retry={() => instance.load()} isEmpty={(d) => d.length === 0} empty="No instance settings.">
         {#snippet children(rows)}
@@ -245,24 +117,3 @@
     </section>
   </div>
 </main>
-
-<Dialog bind:open={deleteOpen} title={`Delete account ${target?.slug ?? ''}?`}>
-  <form class="form" id="delete-account" onsubmit={remove}>
-    <p>
-      This deletes the dashboard account <span class="mono">{target?.slug}</span> and all access granted to it.
-    </p>
-    <label class="field">
-      <span>Type the slug to confirm</span>
-      <input class="mono" autocomplete="off" bind:value={typed} />
-    </label>
-    <div aria-live="assertive">{#if deleteError}<p class="form-alert" role="alert">{deleteError}</p>{/if}</div>
-  </form>
-  {#snippet footer()}
-    <button class="btn" onclick={() => (deleteOpen = false)}>Keep</button>
-    <button class="btn btn-primary btn-danger" type="submit" form="delete-account" disabled={deleting || typed !== target?.slug}>
-      {deleting ? 'Deleting…' : 'Delete account'}
-    </button>
-  {/snippet}
-</Dialog>
-
-<GeneratedSecrets bind:generated />

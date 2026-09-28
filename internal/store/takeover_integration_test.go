@@ -4,98 +4,59 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"slices"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 )
 
-// A connection name another account held is never handed to a new
-// account, even once its first account is gone: its repositories and
-// history stay with the account that made them.
-func TestApplyConfigKeepsConnectionWithItsAccount(t *testing.T) {
+// A connection the spec declares by the name of a file connection takes
+// its row over only once the leader has disabled the file's, and never
+// while the file's is live.
+func TestApplyConfigTakesOverAConnection(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	base := parse(t, twoAccounts)
-	merge := func(slug string) *configfile.File {
-		t.Helper()
-		f, err := configfile.Merge(base, []configfile.DashboardAccount{
-			{Slug: slug, Spec: dashboardSpec(slug, "held-bot"), Revision: 1},
-		}, plainOpener{})
-		if err != nil {
-			t.Fatalf("Merge: %v", err)
-		}
-		return f
-	}
-	first, second := merge("held-a"), merge("held-b")
-	if err := s.ApplyConfig(ctx, first, "test"); err != nil {
-		t.Fatalf("ApplyConfig: %v", err)
-	}
 	if err := s.ApplyConfig(ctx, base, "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	err := s.ApplyConfig(ctx, second, "test")
-	if !errors.Is(err, ErrManagedBy) || !IsConfigContentError(err) {
-		t.Fatalf("ApplyConfig of another account's connection = %v, want a content ErrManagedBy", err)
+	withSpec, err := configfile.Merge(base, configfile.InstanceSpec{Revision: 1, Spec: json.RawMessage(`{"connections":[{"name":"alpha-bot",` +
+		`"forge":"github","accounts":["alpha"],"app":{"clientId":"Iv1.dash","privateKey":{"sealed":"` + configfiletest.Seal("k") +
+		`"},"webhookSecret":{"sealed":"` + configfiletest.Seal("w") + `"}}}]}`)}, configfiletest.Opener)
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
 	}
-	var owner string
-	if err := s.owner.QueryRow(ctx, `SELECT t.slug FROM connections i JOIN accounts t ON t.id = i.account_id
-		WHERE i.name = 'held-bot'`).Scan(&owner); err != nil {
+	dash, _ := withSpec.Connection("alpha-bot")
+
+	t.Run("not while the file's is live", func(t *testing.T) {
+		tx, err := s.owner.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		err = upsertConnection(ctx, tx, dash)
+		if !errors.Is(err, ErrManagedBy) || !IsConfigContentError(err) {
+			t.Fatalf("upsertConnection over a live file connection = %v, want a content ErrManagedBy", err)
+		}
+	})
+
+	if err := s.ApplyConfig(ctx, withSpec, "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	var origin string
+	var enabled bool
+	if err := s.owner.QueryRow(ctx, `SELECT managed_by, enabled FROM connections WHERE name = 'alpha-bot'`).Scan(&origin, &enabled); err != nil {
 		t.Fatal(err)
 	}
-	if owner != "held-a" {
-		t.Fatalf("held-bot belongs to %s, want held-a", owner)
+	if origin != "dashboard" || !enabled {
+		t.Fatalf("alpha-bot managed_by %s, enabled %v; want the dashboard's, enabled", origin, enabled)
 	}
-
-	t.Run("the web role sees it as held elsewhere", func(t *testing.T) {
-		tests := []struct {
-			name    string
-			account string
-			names   []string
-			want    []string
-		}{
-			{"another account, no accounts row yet", "held-new", []string{"held-bot", "free-bot"}, []string{"held-bot"}},
-			{"another account with a row", "alpha", []string{"held-bot"}, []string{"held-bot"}},
-			{"its own account", "held-a", []string{"held-bot"}, nil},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				id := (&configfile.Account{Slug: tt.account}).ID()
-				var got []string
-				err := s.WithAccount(ctx, id, func(tx pgx.Tx) error {
-					var err error
-					got, err = ConnectionsHeldElsewhere(ctx, tx, id, tt.names)
-					return err
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !slices.Equal(got, tt.want) {
-					t.Fatalf("held = %v, want %v", got, tt.want)
-				}
-			})
-		}
-		var n int
-		if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM connections WHERE name = 'free-bot'`).Scan(&n); err != nil || n != 0 {
-			t.Fatalf("probe left %d free-bot rows (%v)", n, err)
-		}
-	})
-
-	t.Run("an account row outlives its account", func(t *testing.T) {
-		for slug, want := range map[string]bool{"held-a": true, "held-never": false} {
-			id := (&configfile.Account{Slug: slug}).ID()
-			var got bool
-			err := s.WithAccount(ctx, id, func(tx pgx.Tx) error {
-				var err error
-				got, err = AccountRowExists(ctx, tx, id)
-				return err
-			})
-			if err != nil || got != want {
-				t.Errorf("AccountRowExists(%s) = %v, %v; want %v", slug, got, err, want)
-			}
-		}
-	})
+	if err := s.ApplyConfig(ctx, base, "test"); err != nil {
+		t.Fatalf("ApplyConfig back to the file: %v", err)
+	}
+	if err := s.owner.QueryRow(ctx, `SELECT managed_by FROM connections WHERE name = 'alpha-bot'`).Scan(&origin); err != nil || origin != "file" {
+		t.Fatalf("alpha-bot managed_by %s, %v; want the file's again", origin, err)
+	}
 }

@@ -3,11 +3,9 @@ package webapi
 import (
 	"context"
 	"errors"
-	"maps"
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,20 +27,20 @@ func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/accounts", s.handler(s.listAccounts))
 	mux.HandleFunc("GET /api/v1/operator/accounts", s.handler(s.listOperatorAccounts))
 	mux.HandleFunc("GET /api/v1/operator/instance", s.handler(s.listInstanceSettings))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}", s.account(s.getAccount))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/repos", s.account(s.listRepos))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/repos/{owner}/{repo}", s.account(s.getRepo))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/index-runs", s.account(s.listIndexRuns))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/pulls", s.account(s.listPulls))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/pulls/{owner}/{repo}/{number}", s.account(s.getPull))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/followups", s.account(s.listFollowups))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/followups/{commentId}/transcript", s.account(s.getFollowupTranscript))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/reviews/{id}", s.account(s.getReview))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/reviews/{id}/diff", s.account(s.getReviewDiff))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/reviews/{id}/transcript", s.account(s.getReviewTranscript))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/reviews/{id}/raw", s.account(s.getReviewRaw))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/usage", s.account(s.getUsage))
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/queue", s.account(s.listQueue))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}", s.account(s.getAccount))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos", s.account(s.listRepos))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}", s.account(s.getRepo))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/index-runs", s.account(s.listIndexRuns))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/pulls", s.account(s.listPulls))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/pulls/{owner}/{repo}/{number}", s.account(s.getPull))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/followups", s.account(s.listFollowups))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/followups/{commentId}/transcript", s.account(s.getFollowupTranscript))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/reviews/{id}", s.account(s.getReview))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/reviews/{id}/diff", s.account(s.getReviewDiff))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/reviews/{id}/transcript", s.account(s.getReviewTranscript))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/reviews/{id}/raw", s.account(s.getReviewRaw))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/usage", s.account(s.getUsage))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/queue", s.account(s.listQueue))
 }
 
 func toUser(a store.User) User {
@@ -56,13 +54,13 @@ func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
 		Operator: p.Operator, Accounts: []AccountMembership{},
 	}
 	for _, t := range readable(s.current.Get(), p) {
-		me.Accounts = append(me.Accounts, AccountMembership{Slug: t.Slug, Role: roleOn(p), ManagedBy: t.Origin()})
+		me.Accounts = append(me.Accounts, AccountMembership{Slug: t.Slug(), Role: roleOn(p)})
 	}
 	writeJSON(w, http.StatusOK, me)
 	return nil
 }
 
-// readable lists the file's accounts p may read, in file order.
+// readable lists the running accounts p may read, in order.
 func readable(file *configfile.File, p *auth.Principal) []*configfile.Account {
 	var out []*configfile.Account
 	for i := range file.Accounts {
@@ -98,10 +96,14 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 	if err != nil {
 		return AccountSummary{}, err
 	}
-	return AccountSummary{
-		Slug: t.Slug, ManagedBy: t.Origin(), Role: role, Connections: stats.Connections, Repositories: stats.Repositories,
-		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "", "").Limits),
-	}, nil
+	sum := AccountSummary{
+		Slug: t.Slug(), Role: role, Repositories: stats.Repositories,
+		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "").Limits),
+	}
+	if in := file.ConnectionFor(t); in != nil {
+		sum.Connection = in.Name
+	}
+	return sum, nil
 }
 
 func monthUsage(m store.MonthUsage, l configfile.Limits) MonthUsage {
@@ -111,9 +113,9 @@ func monthUsage(m store.MonthUsage, l configfile.Limits) MonthUsage {
 	}
 }
 
-// listOperatorAccounts lists every account of the running configuration and
-// every dashboard account stored but not part of it. It is reported as a
-// missing route to anyone but an operator.
+// listOperatorAccounts lists every running account, and every entry of the
+// instance spec no connection serves. It is reported as a missing route to
+// anyone but an admin.
 func (s *Server) listOperatorAccounts(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	if !p.Operator {
@@ -121,34 +123,19 @@ func (s *Server) listOperatorAccounts(w http.ResponseWriter, r *http.Request) er
 	}
 	ctx := r.Context()
 	file := s.current.Get()
-	stored, err := s.store.DashboardAccounts(ctx)
-	if err != nil {
-		return err
-	}
-	revisions := map[string]int64{}
-	for _, d := range stored {
-		revisions[d.Slug] = d.Revision
-	}
 	out := []OperatorAccount{}
 	for i := range file.Accounts {
-		t := &file.Accounts[i]
-		sum, err := s.accountSummary(ctx, file, t, auth.RoleAdmin)
+		sum, err := s.accountSummary(ctx, file, &file.Accounts[i], auth.RoleAdmin)
 		if err != nil {
 			return err
 		}
-		out = append(out, OperatorAccount{AccountSummary: sum, Live: true, Revision: revisions[t.Slug]})
-		delete(revisions, t.Slug)
+		out = append(out, OperatorAccount{AccountSummary: sum, Live: true})
 	}
-	for _, d := range stored {
-		if rev, ok := revisions[d.Slug]; ok {
-			out = append(out, OperatorAccount{
-				Slug: d.Slug, ManagedBy: configfile.OriginDashboard, Role: auth.RoleAdmin,
-				Revision: rev,
-			})
-		}
-	}
-	for _, sk := range file.Skipped() {
-		out = append(out, OperatorAccount{Slug: sk.Slug, ManagedBy: configfile.OriginFile, Role: auth.RoleAdmin, Conflict: sk.Reason})
+	for _, a := range file.Unserved() {
+		out = append(out, OperatorAccount{
+			Slug: a.Slug(), Role: auth.RoleAdmin,
+			Conflict: "no connection serves this account",
+		})
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
@@ -168,18 +155,17 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.account, "", "")
+	settings := t.file.Settings(t.account, "")
 	d := AccountDetail{
-		Slug: t.account.Slug, ManagedBy: t.account.Origin(), Role: t.role(), Connections: []Connection{},
+		Slug: t.account.Slug(), Role: t.role(),
 		Models: models(settings.Models), Limits: limits(settings.Limits), Filter: filterSource(settings),
 		Usage: monthUsage(month, settings.Limits),
 	}
-	for i := range t.account.Connections {
-		in := connection(&t.account.Connections[i])
-		if at, ok := webhooks[t.account.Connections[i].ID()]; ok {
-			in.LastWebhookAt = &at
+	if in := t.file.ConnectionFor(t.account); in != nil {
+		d.Connection = connection(in)
+		if at, ok := webhooks[in.ID()]; ok {
+			d.Connection.LastWebhookAt = &at
 		}
-		d.Connections = append(d.Connections, in)
 	}
 	writeJSON(w, http.StatusOK, d)
 	return nil
@@ -187,7 +173,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 
 func connection(in *configfile.Connection) Connection {
 	return Connection{
-		Name: in.Name, Forge: in.Forge, Accounts: in.Accounts, HookPath: "/hooks/" + in.Name,
+		Name: in.Name, Forge: in.Forge, ManagedBy: in.Origin(), Accounts: in.Accounts, HookPath: "/hooks/" + in.Name,
 		Credentials: CredentialsSet{
 			ClientID: in.App.ClientIDValue() != "", PrivateKey: in.App.PrivateKeyValue().Value() != "",
 			WebhookSecret: in.WebhookSecretValue().Value() != "",
@@ -232,7 +218,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 
 func repository(r store.RepoRow) Repository {
 	out := Repository{
-		ID: r.ID, FullName: r.FullName, Connection: r.Connection, Enabled: r.Enabled, ManagedBy: r.ManagedBy,
+		ID: r.ID, FullName: r.FullName, Enabled: r.Enabled, ManagedBy: r.ManagedBy,
 		DefaultBranch: r.DefaultBranch,
 		Index:         IndexState{ActiveCommit: r.ActiveCommit, ActiveAt: r.ActiveAt, LastRunStatus: r.LastIndexStatus, LastRunAt: r.LastIndexAt},
 	}
@@ -242,23 +228,16 @@ func repository(r store.RepoRow) Repository {
 	return out
 }
 
-// findRepo resolves {owner}/{repo}, and ?connection= when an account has
-// the same repository under two connections.
+// findRepo resolves {owner}/{repo}.
 func findRepo(ctx context.Context, tx pgx.Tx, r *http.Request) (store.RepoRow, error) {
-	return lookupRepo(ctx, tx, r.PathValue("owner")+"/"+r.PathValue("repo"), r.URL.Query().Get("connection"))
+	return lookupRepo(ctx, tx, r.PathValue("owner")+"/"+r.PathValue("repo"))
 }
 
-// lookupRepo resolves a repository by name and, when several connections
-// hold it, by connection: a name that stays ambiguous is a 409 listing
-// them, never a guess.
-func lookupRepo(ctx context.Context, tx pgx.Tx, name, connection string) (store.RepoRow, error) {
-	row, err := store.FindRepo(ctx, tx, name, connection)
+// lookupRepo resolves a repository of the account by its full name.
+func lookupRepo(ctx context.Context, tx pgx.Tx, name string) (store.RepoRow, error) {
+	row, err := store.FindRepo(ctx, tx, name)
 	if errors.Is(err, store.ErrNotFound) {
 		return row, errNotFound("repository")
-	}
-	if e, ok := errors.AsType[*store.AmbiguousRepoError](err); ok {
-		return row, errStatus(http.StatusConflict, CodeAmbiguous, "several connections hold this repository; pass ?connection=",
-			ambiguousRepoDetails{Connections: e.Connections})
 	}
 	return row, err
 }
@@ -287,9 +266,9 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.account, row.Connection, row.FullName)
+	settings := t.file.Settings(t.account, row.FullName)
 	d := RepoDetail{
-		Repository: repository(row), Settings: repoSettings(settings), Sources: t.file.Sources(t.account, row.Connection, row.FullName),
+		Repository: repository(row), Settings: repoSettings(settings), Sources: t.file.Sources(t.account, row.FullName),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
 	}
 	writeJSON(w, http.StatusOK, d)
@@ -371,7 +350,7 @@ func repoFilter(ctx context.Context, tx pgx.Tx, r *http.Request) (string, error)
 	if name == "" {
 		return "", nil
 	}
-	row, err := lookupRepo(ctx, tx, name, r.URL.Query().Get("connection"))
+	row, err := lookupRepo(ctx, tx, name)
 	return row.ID, err
 }
 
@@ -425,29 +404,23 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		}
 		add("environment", e.Name, withoutCredentials(e.Value), source)
 	}
-	for _, name := range slices.Sorted(maps.Keys(f.Providers)) {
-		p := f.Providers[name]
-		value := string(p.Type)
-		if p.BaseURL != "" {
-			value += " at " + withoutCredentials(p.BaseURL)
+	for _, in := range f.Connections {
+		source := configfile.SourceDashboard
+		switch {
+		case f.ConnectionFromEnv(in.Name):
+			source = configfile.SourceEnv
+		case in.Origin() == configfile.OriginFile:
+			source = configfile.SourceFile
 		}
-		if p.APIKeyValue().Value() == "" {
-			value += ", no API key"
+		add("connections", in.Name, strings.Join(in.Accounts, ", ")+", webhook /hooks/"+in.Name, source)
+	}
+	for _, sk := range f.Skipped() {
+		source := configfile.SourceFile
+		if f.ConnectionFromEnv(sk.Name) {
+			source = configfile.SourceEnv
 		}
-		add("providers", name, value, configfile.SourceFile)
+		add("connections", sk.Name, "left out: "+sk.Reason, source)
 	}
-	add("polling", "interval", f.PollInterval().String(), from(f.Polling.Interval != nil))
-	add("polling", "lookback", f.PollLookback().String(), from(f.Polling.Lookback > 0))
-	add("indexing", "onboardWindow", strconv.Itoa(f.OnboardWindow()), from(f.Indexing.OnboardWindow > 0))
-	add("retention", "disabledIndexGrace", f.DisabledIndexGrace().String(), from(f.Retention.DisabledIndexGrace > 0))
-	add("retention", "transcripts", f.Retention.TranscriptsOrDefault().String(), from(f.Retention.Transcripts > 0))
-	deadline, _ := f.RunnerFor(nil)
-	runner := f.Defaults.Runner
-	add("defaults", "runner.activeDeadlineSeconds", deadline.String(), from(runner != nil && runner.ActiveDeadlineSeconds > 0))
-	for _, t := range f.Tools {
-		add("tools", t.Name, t.Image+" ("+strings.Join(t.Provides(), ", ")+")", configfile.SourceFile)
-	}
-	add("egress", "allowHosts", listOrNone(f.Egress.AllowHosts), from(len(f.Egress.AllowHosts) > 0))
 	a := f.Auth
 	// An auth key an environment variable set shows as coming from it.
 	authFrom := func(path string, set bool) configfile.Source {

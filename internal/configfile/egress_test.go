@@ -18,11 +18,11 @@ func minimalEnv(t *testing.T) {
 func TestEgressRules(t *testing.T) {
 	minimalEnv(t)
 	t.Setenv("TEST_GH_TOKEN", "ghp_x\n")
-	f, err := Load(fixture(t))
+	f, err := load(t, fixture(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The fixture names a GitHub installation, whose forge must be allowed
+	// The fixture names a GitHub connection, whose forge must be allowed
 	// without being listed, and an OpenRouter provider, which runners reach
 	// only through the gateway's model endpoint.
 	rules := f.EgressRules()
@@ -38,7 +38,7 @@ func TestEgressRules(t *testing.T) {
 
 	raw := "egress:\n  allowHosts: [ghcr.io, \"*.githubusercontent.com\", api.github.com]\n" +
 		"  credentials:\n    api.github.com: { env: TEST_GH_TOKEN }\n"
-	g, err := Parse([]byte(raw + minimal))
+	g, err := loadBytes(t, []byte(raw+minimal))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestEgressRules(t *testing.T) {
 	}
 	// A connection's forge is allowed implicitly, a provider's baseUrl
 	// is not, and a credential's value never leaks into the host list.
-	h, err := Parse([]byte("providers:\n  p:\n    type: openai\n    baseUrl: https://llm.example:8443/v1\n    apiKey: { env: TEST_GH_TOKEN }\n" + minimal))
+	h, err := loadBytes(t, []byte("providers:\n  p:\n    type: openai\n    baseUrl: https://llm.example:8443/v1\n    apiKey: { env: TEST_GH_TOKEN }\n"+minimal))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestEgressRejects(t *testing.T) {
 		"empty credential":       {"egress:\n  allowHosts: [api.github.com]\n  credentials:\n    api.github.com: { env: TEST_EMPTY }\n", "empty value"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := Parse([]byte(tt.yaml + minimal))
+			_, err := loadBytes(t, []byte(tt.yaml+minimal))
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}

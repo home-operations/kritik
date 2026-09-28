@@ -1,13 +1,16 @@
-// Package configfile loads the declarative configuration file: the model
-// providers, defaults, accounts, connections and repositories kritik
-// manages. Process configuration (addresses, database, log level) is
-// environment variables and lives in internal/config.
+// Package configfile is kritik's configuration in two layers (ADR-0014
+// §2.2): the configuration file, with its KRITIK_AUTH_* and
+// KRITIK_CONNECTIONS_* environment overlay, declares sign-in and the
+// connections an admin wants fixed at deploy time; the instance spec, which
+// the dashboard keeps in Postgres, holds everything else. Process
+// configuration (addresses, database, log level) is environment variables
+// and lives in internal/config.
 //
-// The file is the operator's source of truth and is applied atomically: the
-// whole document is decoded with unknown keys rejected, every secret
-// reference resolved, every filter compiled and smoke-tested, and every
-// invariant checked before any of it is returned. A bad file is an error and
-// the caller keeps the last good state.
+// Each layer is applied atomically: the whole document is decoded with
+// unknown keys rejected, every secret reference resolved, every filter
+// compiled and smoke-tested, and every invariant checked before any of it
+// is returned. A bad document is an error and the caller keeps the last
+// good state.
 package configfile
 
 import (
@@ -40,8 +43,8 @@ const ForgeGitHub Forge = "github"
 
 // SecretRef points at where a secret value lives. Exactly one of Env, File
 // or Sealed is set. Values are resolved at load and never written back to
-// disk or the database. Sealed is ciphertext only a dashboard-managed account
-// may carry; Env and File would read the server's own environment and
+// disk or the database. Sealed is ciphertext only the instance spec may
+// carry; Env and File would read the server's own environment and
 // filesystem, so only the operator's file may use them.
 type SecretRef struct {
 	Env    string `yaml:"env,omitempty"`
@@ -339,7 +342,7 @@ func (a GitHubApp) ClientIDValue() string { return a.clientID }
 func (a GitHubApp) PrivateKeyValue() Secret { return a.privateKey }
 
 // Connection is one GitHub App serving the accounts it lists. Its name is
-// the hook path, /hooks/{name}, and must be unique across the whole file.
+// the hook path, /hooks/{name}, and is unique across the configuration.
 type Connection struct {
 	Name  string `yaml:"name"`
 	Forge Forge  `yaml:"forge"`
@@ -351,6 +354,8 @@ type Connection struct {
 	Accounts []string `yaml:"accounts"`
 
 	App *GitHubApp `yaml:"app,omitempty"`
+
+	origin Origin
 }
 
 // WebhookSecretValue returns the resolved webhook secret.
@@ -359,14 +364,10 @@ func (i Connection) WebhookSecretValue() Secret { return i.App.webhookSecret }
 // Repository carries per-repository overrides. Everything a connection
 // grants access to is watched whether or not it is listed here.
 type Repository struct {
-	Name string `yaml:"name"`
-	// Connection names the account's connection the repository belongs
-	// to. It is required only when the owner is the account of more than
-	// one connection, so the same "owner/repo" on two forges is two
-	// entries.
-	Connection string `yaml:"connection,omitempty"`
-	Enabled    *bool  `yaml:"enabled,omitempty"`
-	Overrides  `yaml:",inline"`
+	// Name is the repository's name under its account, without the owner.
+	Name      string `yaml:"name"`
+	Enabled   *bool  `yaml:"enabled,omitempty"`
+	Overrides `yaml:",inline"`
 }
 
 // ReviewMode is how a review is carried out.
@@ -505,24 +506,26 @@ func (r Review) Referenced() []string {
 	return out
 }
 
-// Account is a forge account and the unit of isolation.
+// Account is a forge account, github/<name>, and the unit of isolation
+// (ADR-0014 §2.4). It exists because a connection serves it; its entry in
+// the spec, if any, holds its settings, and one the spec does not list
+// inherits the defaults.
 type Account struct {
-	Slug         string       `yaml:"slug"`
-	Runner       *Runner      `yaml:"runner,omitempty"`
-	Connections  []Connection `yaml:"connections"`
+	Forge        Forge   `yaml:"forge"`
+	Name         string  `yaml:"name"`
+	Runner       *Runner `yaml:"runner,omitempty"`
 	Overrides    `yaml:",inline"`
 	Limits       LimitsSpec   `yaml:"limits,omitempty"`
 	Repositories []Repository `yaml:"repositories,omitempty"`
 	// Providers are the account's own model providers: its keys, for the
 	// models it pays for. A model reference in the account names one of them
-	// or one of the file's, and a name may not be both.
+	// or one of the instance's, and a name may not be both.
 	Providers map[string]Provider `yaml:"providers,omitempty"`
-
-	origin Origin
 }
 
 // Egress is what runner pods may reach through the worker's gateway beyond
-// the forges the file itself names, which are always allowed. Hosts are exact, or a suffix with a leading "*."; the gateway
+// the forges the connections talk to, which are always allowed. Hosts are
+// exact, or a suffix with a leading "*."; the gateway
 // tunnels TLS to port 443 only. A credential is the token the gateway adds,
 // as a bearer, to a plain http:// request a runner makes to that host, so
 // the runner can use an API at a token's rate limit without holding it.
@@ -533,30 +536,57 @@ type Egress struct {
 	credentials map[string]Secret
 }
 
-// File is the whole configuration document.
+// Spec is the instance configuration the dashboard keeps in Postgres: every
+// setting but sign-in and the connections the file declares. Its secrets
+// are sealed.
+type Spec struct {
+	Providers   map[string]Provider `yaml:"providers,omitempty"`
+	Defaults    Defaults            `yaml:"defaults,omitempty"`
+	Polling     Polling             `yaml:"polling,omitempty"`
+	Indexing    Indexing            `yaml:"indexing,omitempty"`
+	Tools       []Tool              `yaml:"tools,omitempty"`
+	Retention   Retention           `yaml:"retention,omitempty"`
+	Egress      Egress              `yaml:"egress,omitempty"`
+	Connections []Connection        `yaml:"connections,omitempty"`
+	Accounts    []Account           `yaml:"accounts,omitempty"`
+}
+
+// File is the running configuration: the configuration file's sign-in and
+// connections, and the instance spec merged over them. A File returned by
+// Parse carries only the file's layer; Merge adds the spec.
 type File struct {
-	Providers map[string]Provider `yaml:"providers,omitempty"`
-	Defaults  Defaults            `yaml:"defaults,omitempty"`
-	Polling   Polling             `yaml:"polling,omitempty"`
-	Indexing  Indexing            `yaml:"indexing,omitempty"`
-	Tools     []Tool              `yaml:"tools,omitempty"`
-	Retention Retention           `yaml:"retention,omitempty"`
-	Egress    Egress              `yaml:"egress,omitempty"`
-	Auth      Auth                `yaml:"auth,omitempty"`
-	Accounts  []Account           `yaml:"accounts"`
+	Auth Auth
+	// Connections are the file's and the spec's that run.
+	Connections []Connection
+	Providers   map[string]Provider
+	Defaults    Defaults
+	Polling     Polling
+	Indexing    Indexing
+	Tools       []Tool
+	Retention   Retention
+	Egress      Egress
+	// Accounts are every account a running connection serves, in the order
+	// the connections list them.
+	Accounts []Account
 
 	hash string
 	// base is the parsed file a merged File was built from, nil for a
-	// parsed one; dashboard holds the accounts merged into it.
-	base      *File
-	dashboard []DashboardAccount
-	skipped   []SkippedAccount
+	// parsed one.
+	base *File
+	spec InstanceSpec
+	// skipped are the file's connections the spec's crowd out, and
+	// unserved the spec's accounts no running connection serves.
+	skipped  []SkippedConnection
+	unserved []Account
+	// envConnection names the connection the environment declared, "" for
+	// none.
+	envConnection string
 }
 
 // Hash is the hex SHA-256 of the file's bytes as parsed, or for a merged
-// File, of the parsed file's hash and each dashboard account's revision. The
-// leader records it in the store after applying the file, and followers
-// compare it with their own copy to report drift.
+// File, of the parsed file's hash and the spec's revision and content. The
+// leader records it in the store after applying the configuration, and
+// followers compare it with their own copy to report drift.
 func (f *File) Hash() string { return f.hash }
 
 // Settings are the effective settings for one repository after defaults,

@@ -1,9 +1,8 @@
-// The config editor's model of an account spec: the JSON form of an account
-// entry of the configuration file (see internal/webapi/secrets.go), split
-// into the fields the form edits plus `rest`, every key it does not know,
-// carried through unchanged so a save never drops a setting the form has no
-// control for. Pure, so the form's request body follows from the draft
-// alone.
+// The config editors' model of the instance spec and of an account's entry
+// in it: their JSON (see internal/webapi/secrets.go), split into the fields
+// a form edits plus `rest`, every key it does not know, carried through
+// unchanged so a save never drops a setting the form has no control for.
+// Pure, so a form's request body follows from the draft alone.
 import type { Forge, ReviewMode, SecretInput } from './types';
 
 type Obj = Record<string, unknown>;
@@ -79,7 +78,9 @@ export interface RepositoryDraft {
 }
 
 export interface AccountDraft {
-  slug: string;
+  // The account the entry is for; the form does not change them.
+  forge: Forge;
+  name: string;
   reviewModel: string;
   fallbackModel: string;
   modelsRest: Obj;
@@ -93,8 +94,16 @@ export interface AccountDraft {
   // JSON text of the runner block, '' for none.
   runner: string;
   providers: ProviderDraft[];
-  connections: ConnectionDraft[];
   repositories: RepositoryDraft[];
+  rest: Obj;
+}
+
+// The instance spec as its form edits it: the connections and the
+// instance's provider keys, and everything else, the defaults and the
+// accounts among it, as rest.
+export interface InstanceDraft {
+  connections: ConnectionDraft[];
+  providers: ProviderDraft[];
   rest: Obj;
 }
 
@@ -233,7 +242,8 @@ export function draftOf(spec: Obj): AccountDraft {
   const models = obj(o.models);
   const limits = obj(o.limits);
   return {
-    slug: str(o.slug),
+    forge: (str(o.forge) || 'github') as Forge,
+    name: str(o.name),
     reviewModel: str(models.review),
     fallbackModel: str(models.fallback),
     modelsRest: take(models, 'review', 'fallback'),
@@ -246,9 +256,34 @@ export function draftOf(spec: Obj): AccountDraft {
     limitsRest: take(limits, 'concurrency', 'reviewsPerDay', 'tokensPerMonth'),
     runner: json(o.runner),
     providers: Object.entries(obj(o.providers)).map(([name, v]) => providerOf(name, v)),
-    connections: Array.isArray(o.connections) ? o.connections.map(connectionOf) : [],
     repositories: Array.isArray(o.repositories) ? o.repositories.map(repositoryOf) : [],
-    rest: take(o, 'slug', 'models', 'filter', 'forks', 'settle', 'limits', 'runner', 'providers', 'connections', 'repositories'),
+    rest: take(o, 'forge', 'name', 'models', 'filter', 'forks', 'settle', 'limits', 'runner', 'providers', 'repositories'),
+  };
+}
+
+// keptSecrets is v with every secret a read shows as {"set": true} kept,
+// and every one it shows as {"set": false} left out, so a part of the spec
+// no form edits saves as it is stored.
+function keptSecrets(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(keptSecrets);
+  if (typeof v !== 'object' || v === null) return v;
+  const o = v as Obj;
+  const keys = Object.keys(o);
+  if (keys.length === 1 && keys[0] === 'set' && typeof o.set === 'boolean') return o.set ? { keep: true } : undefined;
+  const out: Obj = {};
+  for (const [k, x] of Object.entries(o)) {
+    const kept = keptSecrets(x);
+    if (kept !== undefined) out[k] = kept;
+  }
+  return out;
+}
+
+export function instanceDraftOf(spec: Obj): InstanceDraft {
+  const o = obj(spec);
+  return {
+    connections: Array.isArray(o.connections) ? o.connections.map(connectionOf) : [],
+    providers: Object.entries(obj(o.providers)).map(([name, v]) => providerOf(name, v)),
+    rest: obj(keptSecrets(take(o, 'connections', 'providers'))),
   };
 }
 
@@ -338,10 +373,10 @@ export function canKeep(d: ConnectionDraft): boolean {
 
 // hasTypedSecret reports whether any secret holds a value typed into the
 // form.
-export function hasTypedSecret(d: AccountDraft): boolean {
+export function hasTypedSecret(d: { providers: ProviderDraft[]; connections?: ConnectionDraft[] }): boolean {
   const typed = (sd: SecretDraft) => sd.mode === 'replace' && sd.value !== '';
   return (
-    d.connections.some((x) => [x.clientIdFrom, x.privateKey, x.appWebhookSecret].some(typed)) ||
+    (d.connections ?? []).some((x) => [x.clientIdFrom, x.privateKey, x.appWebhookSecret].some(typed)) ||
     d.providers.some((x) => typed(x.apiKey))
   );
 }
@@ -424,12 +459,9 @@ export interface Built {
 
 export function buildSpec(d: AccountDraft, redact = false): Built {
   const b = new Builder(redact);
-  const out: Obj = { ...d.rest };
-  if (d.slug.trim() === '') b.fail('slug', 'a slug is required');
-  out.slug = d.slug.trim();
+  const out: Obj = { ...d.rest, forge: d.forge, name: d.name };
   b.object(out, 'runner', d.runner, 'runner');
   if (d.providers.length) out.providers = providersSpec(b, d.providers);
-  out.connections = d.connections.map((x, i) => connectionSpec(b, x, i));
   const models: Obj = { ...d.modelsRest };
   set(models, 'review', d.reviewModel);
   set(models, 'fallback', d.fallbackModel);
@@ -443,6 +475,14 @@ export function buildSpec(d: AccountDraft, redact = false): Built {
   if (nonEmpty(limits)) out.limits = limits;
   if (d.repositories.length) out.repositories = d.repositories.map((x, i) => repositorySpec(b, x, i));
   set(out, 'settle', d.settle);
+  return { spec: out, error: b.error };
+}
+
+export function buildInstanceSpec(d: InstanceDraft, redact = false): Built {
+  const b = new Builder(redact);
+  const out: Obj = { ...d.rest };
+  if (d.providers.length) out.providers = providersSpec(b, d.providers);
+  if (d.connections.length) out.connections = d.connections.map((x, i) => connectionSpec(b, x, i));
   return { spec: out, error: b.error };
 }
 

@@ -9,7 +9,7 @@ import type { Me, SignInProvider } from '../src/lib/types';
 export const DEFAULT_ME: Me = {
   user: { id: 'u1', displayName: 'Ada Lovelace', email: 'ada@example.com', avatarUrl: '' },
   operator: false,
-  accounts: [{ slug: 'acme', role: 'admin', managedBy: 'file' }],
+  accounts: [{ slug: 'github/acme', role: 'admin' }],
 };
 
 export const DEFAULT_PROVIDERS: SignInProvider[] = [{ name: 'github', type: 'github', displayName: 'GitHub' }];

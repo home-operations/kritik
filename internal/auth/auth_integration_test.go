@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -63,22 +64,12 @@ auth:
     clientId: kritik-client
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: 'login == "opgh" ? "admin" : ("mapped-org" in orgs ? dyn({"github/acme": "member"}) : "")'
-accounts:
-  - slug: auth-personal
-    connections:
-      - {name: auth-personal-bot, forge: github, accounts: [alice-gh], app: &app {clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}}
-  - slug: auth-acme
-    connections:
-      - {name: auth-acme-bot, forge: github, accounts: [acme], app: *app}
-  - slug: auth-widgets
-    connections:
-      - {name: auth-widgets-bot, forge: github, accounts: [Widgets], app: *app}
-  - slug: auth-pending
-    connections:
-      - {name: auth-pending-bot, forge: github, accounts: [pendco], app: *app}
-  - slug: auth-invite
-    connections:
-      - {name: auth-invite-bot, forge: github, accounts: [nobody], app: *app}
+connections:
+  - {name: auth-personal-bot, forge: github, accounts: [alice-gh], app: &app {clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}}
+  - {name: auth-acme-bot, forge: github, accounts: [acme], app: *app}
+  - {name: auth-widgets-bot, forge: github, accounts: [Widgets], app: *app}
+  - {name: auth-pending-bot, forge: github, accounts: [pendco], app: *app}
+  - {name: auth-other-bot, forge: github, accounts: [nobody], app: *app}
 `
 
 type authEnv struct {
@@ -115,7 +106,7 @@ func newAuthEnv(t *testing.T) *authEnv {
 	}
 	t.Setenv("KRITIK_TEST_TOKEN", fakeClientSecret)
 	t.Setenv("KRITIK_TEST_ADMIN_PASSWORD", adminTestPassword)
-	e.file, err = configfile.Parse(fmt.Appendf(nil, authConfigYAML, e.oidc.srv.URL))
+	e.file, err = configfiletest.Parse(t, fmt.Sprintf(authConfigYAML, e.oidc.srv.URL))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -123,7 +114,7 @@ func newAuthEnv(t *testing.T) *authEnv {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	for i := range e.file.Accounts {
-		e.accountID[e.file.Accounts[i].Slug] = e.file.Accounts[i].ID()
+		e.accountID[e.file.Accounts[i].Name] = e.file.Accounts[i].ID()
 	}
 	e.current = configfile.NewCurrent(e.file)
 	e.h, err = New(Config{
@@ -236,16 +227,16 @@ func (e *authEnv) principal(c *http.Cookie) *Principal {
 	return got
 }
 
-// accounts lists the slugs of the file's accounts p reads.
+// accounts lists the names of the running accounts p reads.
 func (e *authEnv) accounts(p *Principal) []string {
 	e.t.Helper()
 	if p == nil {
 		e.t.Fatal("no principal")
 	}
 	var out []string
-	for slug, id := range e.accountID {
+	for name, id := range e.accountID {
 		if p.CanRead(id) {
-			out = append(out, slug)
+			out = append(out, name)
 		}
 	}
 	slices.Sort(out)
@@ -378,7 +369,7 @@ func TestGitHubSignInGrants(t *testing.T) {
 		Orgs: map[string]string{"acme": "member", "widgets": "admin", "pendco": "pending"}}
 	firstCookie := e.mustSignIn("github", e.gh, alice)
 	p := e.principal(firstCookie)
-	assertAccounts(t, e.accounts(p), "auth-personal", "auth-acme", "auth-widgets")
+	assertAccounts(t, e.accounts(p), "alice-gh", "acme", "Widgets")
 	if p.Identity.Subject != "1001" || p.Identity.Login != "Alice-GH" || p.User.Email != "alice@gh.example" || !p.User.EmailVerified ||
 		p.Operator || p.AllAccounts {
 		t.Fatalf("principal = %+v", p)
@@ -386,22 +377,22 @@ func TestGitHubSignInGrants(t *testing.T) {
 
 	delete(alice.Orgs, "acme")
 	again := e.principal(e.mustSignIn("github", e.gh, alice))
-	assertAccounts(t, e.accounts(again), "auth-personal", "auth-widgets")
+	assertAccounts(t, e.accounts(again), "alice-gh", "Widgets")
 	if again.User.ID != p.User.ID {
 		t.Fatalf("second sign-in made user %s, want %s", again.User.ID, p.User.ID)
 	}
 	// A session keeps the grant it signed in with.
-	assertAccounts(t, e.accounts(e.principal(firstCookie)), "auth-personal", "auth-acme", "auth-widgets")
+	assertAccounts(t, e.accounts(e.principal(firstCookie)), "alice-gh", "acme", "Widgets")
 
 	t.Run("an admin by login", func(t *testing.T) {
 		op := &fakeUser{ID: 1002, Login: "opgh", Email: "op@gh.example"}
-		if p := e.principal(e.mustSignIn("github", e.gh, op)); !p.Operator || !p.CanRead(e.accountID["auth-acme"]) {
+		if p := e.principal(e.mustSignIn("github", e.gh, op)); !p.Operator || !p.CanRead(e.accountID["acme"]) {
 			t.Fatalf("principal = %+v, want an admin", p)
 		}
 	})
 	t.Run("a mapped account", func(t *testing.T) {
 		bob := &fakeUser{ID: 1003, Login: "bob", Orgs: map[string]string{"mapped-org": "member"}}
-		assertAccounts(t, e.accounts(e.principal(e.mustSignIn("github", e.gh, bob))), "auth-acme")
+		assertAccounts(t, e.accounts(e.principal(e.mustSignIn("github", e.gh, bob))), "acme")
 	})
 	t.Run("a stranger is refused", func(t *testing.T) {
 		assertFailed(t, e.signIn("github", e.gh, &fakeUser{ID: 1004, Login: "mallory"}, ""), http.StatusForbidden, "not_allowed")
@@ -450,7 +441,7 @@ func TestLocalAdminSignIn(t *testing.T) {
 
 	t.Run("rotating the password ends the session", func(t *testing.T) {
 		t.Setenv("KRITIK_TEST_ADMIN_PASSWORD", "rotated")
-		rotated, err := configfile.Parse(fmt.Appendf(nil, authConfigYAML, e.oidc.srv.URL))
+		rotated, err := configfiletest.Parse(t, fmt.Sprintf(authConfigYAML, e.oidc.srv.URL))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -501,7 +492,7 @@ func TestSessionLifecycle(t *testing.T) {
 		}
 	})
 	t.Run("a changed role mapping ends its sessions", func(t *testing.T) {
-		changed, err := configfile.Parse([]byte(strings.Replace(fmt.Sprintf(authConfigYAML, e.oidc.srv.URL), `login == "opgh"`, `login == "someone"`, 1)))
+		changed, err := configfiletest.Parse(t, strings.Replace(fmt.Sprintf(authConfigYAML, e.oidc.srv.URL), `login == "opgh"`, `login == "someone"`, 1))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -564,7 +555,7 @@ func TestSignInMovedToAnotherOrigin(t *testing.T) {
 
 	// The same sign-in, now pointing at another issuer whose subject of the
 	// same name is someone else entirely.
-	moved, err := configfile.Parse(fmt.Appendf(nil, authConfigYAML, e.oidc2.srv.URL))
+	moved, err := configfiletest.Parse(t, fmt.Sprintf(authConfigYAML, e.oidc2.srv.URL))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

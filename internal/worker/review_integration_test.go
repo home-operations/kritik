@@ -30,6 +30,7 @@ import (
 	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/gitfetch"
@@ -65,18 +66,19 @@ defaults:
     review: test/reviewer
   limits:
     concurrency: 1
+connections:
+  - name: bot-ross
+    forge: github
+    accounts: [onedr0p]
+    app:
+      clientId: Iv1.x
+      privateKey: { env: TEST_PEM }
+      webhookSecret: { env: TEST_SECRET }
 accounts:
-  - slug: onedr0p
-    connections:
-      - name: bot-ross
-        forge: github
-        accounts: [onedr0p]
-        app:
-          clientId: Iv1.x
-          privateKey: { env: TEST_PEM }
-          webhookSecret: { env: TEST_SECRET }
+  - forge: github
+    name: onedr0p
     repositories:
-      - name: onedr0p/home-ops
+      - name: home-ops
 `
 
 // localForge stands in for GitHub: the merge-base is known from the test
@@ -937,10 +939,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	// Long enough that masking it out of the transcripts leaves the prompts
 	// they are checked against intact.
 	t.Setenv("TEST_SECRET", "test-provider-key")
-	file, err := configfile.Parse([]byte(configYAML))
-	if err != nil {
-		t.Fatal(err)
-	}
+	file := configfiletest.Load(t, configYAML)
 	if err := appStore.ApplyConfig(ctx, file, "test"); err != nil {
 		t.Fatal(err)
 	}
@@ -954,7 +953,8 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := ingest.NewService(appStore, insertOnly)
-	in, account, _ := file.Connection("bot-ross")
+	in, _ := file.Connection("bot-ross")
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 	dispatchPR := func(number int, headSHA string, bot bool, labels ...string) {
 		t.Helper()
 		out, err := svc.Dispatch(ctx, ingest.Request{File: file, Account: account, Connection: in, Event: webhook.Event{
@@ -1049,7 +1049,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		return "", "", ""
 	}
 
-	repoID := configfile.RepositoryID(in.ID(), "onedr0p/home-ops")
+	repoID := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
 	t.Run("index builds in full, then advances incrementally", func(t *testing.T) {
 		checkIndexing(ctx, t, appStore, insertOnly, lf, exec, account.ID(), repoID, base, head)
 	})
@@ -1088,7 +1088,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	t.Run("superseded when the head moves before the job runs", func(t *testing.T) {
 		// Insert a job for a head that is no longer the PR's head.
-		res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{AccountID: account.ID(), RepositoryID: configfile.RepositoryID(in.ID(), "onedr0p/home-ops"), Number: 1, HeadSHA: "0000000000000000000000000000000000000000", Trigger: "poll"}, nil)
+		res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{AccountID: account.ID(), RepositoryID: configfile.RepositoryID(account.ID(), "onedr0p/home-ops"), Number: 1, HeadSHA: "0000000000000000000000000000000000000000", Trigger: "poll"}, nil)
 		if err != nil || res.UniqueSkippedAsDuplicate {
 			t.Fatalf("insert = %+v, %v", res, err)
 		}

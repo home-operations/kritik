@@ -79,7 +79,7 @@ func (h *hub) slug(accountID string) (string, bool) {
 	file := h.current.Get()
 	for i := range file.Accounts {
 		if file.Accounts[i].ID() == accountID {
-			return file.Accounts[i].Slug, true
+			return file.Accounts[i].Slug(), true
 		}
 	}
 	return "", false

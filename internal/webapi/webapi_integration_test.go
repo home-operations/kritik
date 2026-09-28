@@ -23,6 +23,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/store"
 	"github.com/home-operations/kritik/internal/transcript"
@@ -44,24 +45,25 @@ auth:
     clientId: kritik
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: '"kritik-admin" in roles ? "admin" : ""'
+connections:
+  - name: webapi-a-bot
+    forge: github
+    accounts: [wa]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+  - name: webapi-b-bot
+    forge: github
+    accounts: [wb]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
 accounts:
-  - slug: webapi-a
-    connections:
-      - name: webapi-a-bot
-        forge: github
-        accounts: [wa]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+  - forge: github
+    name: wa
     repositories:
-      - name: wa/one
-      - name: wa/two
-  - slug: webapi-b
-    connections:
-      - name: webapi-b-bot
-        forge: github
-        accounts: [wb]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+      - name: one
+      - name: two
+  - forge: github
+    name: wb
     repositories:
-      - name: wb/one
+      - name: one
 `
 
 // followupComment is answered in both accounts, as comment ids from two
@@ -108,10 +110,7 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	}
 	t.Cleanup(owner.Close)
 	t.Setenv("KRITIK_TEST_TOKEN", "tok")
-	file, err := configfile.Parse([]byte(integrationConfig))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
+	file := configfiletest.Load(t, integrationConfig)
 	if err := st.ApplyConfig(ctx, file, "webapi-test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -161,9 +160,10 @@ func (e *apiEnv) scalar(sql string, args ...any) string {
 // stands in the way.
 func (e *apiEnv) seedAccount(slug, repo string) seeded {
 	e.t.Helper()
-	tn, _ := e.file.Account(slug)
-	s := seeded{accountID: tn.ID()}
-	s.repoID = configfile.RepositoryID(tn.Connections[0].ID(), repo)
+	owner, _, _ := strings.Cut(repo, "/")
+	a, _ := e.file.Account(configfile.ForgeGitHub, owner)
+	s := seeded{accountID: a.ID()}
+	s.repoID = configfile.RepositoryID(a.ID(), repo)
 	e.exec(`UPDATE repositories SET default_branch = 'main' WHERE id = $1`, s.repoID)
 	s.prID = e.scalar(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha, labels)
 		VALUES ($1, $2, 7, $3, 'ada', 'head7', '[{"name":"bug","color":"f00"}]') RETURNING id::text`, s.accountID, s.repoID, "PR of "+slug)
@@ -295,10 +295,10 @@ func TestWebAPI(t *testing.T) {
 }
 
 func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
-	a := "/api/v1/accounts/webapi-a"
+	a := "/api/v1/accounts/github/wa"
 	// Each path of account A and a string only account A's answer contains.
 	endpoints := []struct{ path, marker string }{
-		{a, `"slug":"webapi-a"`},
+		{a, `"slug":"github/wa"`},
 		{a + "/repos", `"fullName":"wa/one"`},
 		{a + "/repos/wa/one", `"activeCommit":"commit7"`},
 		{a + "/repos/wa/one", `"commit":"base7","found":true`},
@@ -353,7 +353,7 @@ func (e *apiEnv) bMarkers() []string {
 // even an operator, who may read B, finds nothing, since the query runs
 // scoped to A.
 func testCrossAccountIDs(t *testing.T, e *apiEnv) {
-	a := "/api/v1/accounts/webapi-a"
+	a := "/api/v1/accounts/github/wa"
 	paths := []string{
 		a + "/reviews/" + e.b.reviewID, a + "/reviews/" + e.b.reviewID + "/diff",
 		a + "/reviews/" + e.b.reviewID + "/transcript", a + "/reviews/" + e.b.reviewID + "/raw",
@@ -377,11 +377,11 @@ func testMeAndAccountLists(t *testing.T, e *apiEnv) {
 		want      []string
 		not       []string
 	}{
-		{"member-a", "/api/v1/me", 200, []string{`"slug":"webapi-a","role":"member"`}, []string{"webapi-b"}},
-		{"operator", "/api/v1/me", 200, []string{`"operator":true`, `"slug":"webapi-a","role":"admin"`, `"slug":"webapi-b"`}, nil},
-		{"member-a", "/api/v1/accounts", 200, []string{`"slug":"webapi-a"`, `"repositories":2`, `"reviews7d":1`}, []string{"webapi-b"}},
-		{"member-b", "/api/v1/accounts", 200, []string{`"slug":"webapi-b"`}, []string{"webapi-a"}},
-		{"operator", "/api/v1/operator/accounts", 200, []string{`"slug":"webapi-a"`, `"slug":"webapi-b"`, `"live":true`}, nil},
+		{"member-a", "/api/v1/me", 200, []string{`"slug":"github/wa","role":"member"`}, []string{"webapi-b"}},
+		{"operator", "/api/v1/me", 200, []string{`"operator":true`, `"slug":"github/wa","role":"admin"`, `"slug":"github/wb"`}, nil},
+		{"member-a", "/api/v1/accounts", 200, []string{`"slug":"github/wa"`, `"repositories":2`, `"reviews7d":1`}, []string{"webapi-b"}},
+		{"member-b", "/api/v1/accounts", 200, []string{`"slug":"github/wb"`}, []string{"webapi-a"}},
+		{"operator", "/api/v1/operator/accounts", 200, []string{`"slug":"github/wa"`, `"slug":"github/wb"`, `"live":true`}, nil},
 		{"member-a", "/api/v1/operator/accounts", 404, nil, nil},
 		{"nobody", "/api/v1/accounts", 401, nil, nil},
 	}
@@ -408,7 +408,7 @@ func testMeAndAccountLists(t *testing.T, e *apiEnv) {
 func testLastWebhook(t *testing.T, e *apiEnv) {
 	ctx := context.Background()
 	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	in, _, _ := e.file.Connection("webapi-a-bot")
+	in, _ := e.file.Connection("webapi-a-bot")
 	if err := e.st.WithAccount(ctx, e.a.accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE connections SET last_webhook_at = $2 WHERE id = $1`, in.ID(), at)
 		return err
@@ -419,15 +419,15 @@ func testLastWebhook(t *testing.T, e *apiEnv) {
 		who, slug string
 		want      *time.Time
 	}{
-		{"member-a", "webapi-a", &at},
-		{"member-b", "webapi-b", nil},
+		{"member-a", "github/wa", &at},
+		{"member-b", "github/wb", nil},
 	} {
 		status, body := e.getBody(tt.who, "/api/v1/accounts/"+tt.slug)
 		var d AccountDetail
-		if status != 200 || json.Unmarshal(body, &d) != nil || len(d.Connections) != 1 {
+		if status != 200 || json.Unmarshal(body, &d) != nil || d.Connection.Name == "" {
 			t.Fatalf("%s: status %d: %s", tt.who, status, body)
 		}
-		got := d.Connections[0].LastWebhookAt
+		got := d.Connection.LastWebhookAt
 		if (got == nil) != (tt.want == nil) || got != nil && !got.Equal(*tt.want) {
 			t.Errorf("%s: lastWebhookAt = %v, want %v", tt.who, got, tt.want)
 		}
@@ -454,8 +454,8 @@ func testTranscriptsEqualRebuild(t *testing.T, e *apiEnv) {
 		path string
 		rows []transcript.StoredRow
 	}{
-		{"/api/v1/accounts/webapi-a/reviews/" + e.a.reviewID + "/transcript", steps},
-		{"/api/v1/accounts/webapi-a/followups/4242/transcript", followups},
+		{"/api/v1/accounts/github/wa/reviews/" + e.a.reviewID + "/transcript", steps},
+		{"/api/v1/accounts/github/wa/followups/4242/transcript", followups},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			status, body := e.getBody("member-a", tc.path)
@@ -472,7 +472,7 @@ func testTranscriptsEqualRebuild(t *testing.T, e *apiEnv) {
 
 func testRepoPagination(t *testing.T, e *apiEnv) {
 	var names []string
-	path := "/api/v1/accounts/webapi-a/repos?limit=1"
+	path := "/api/v1/accounts/github/wa/repos?limit=1"
 	for range 5 {
 		status, body := e.getBody("member-a", path)
 		if status != 200 {
@@ -488,7 +488,7 @@ func testRepoPagination(t *testing.T, e *apiEnv) {
 		if page.NextCursor == nil {
 			break
 		}
-		path = "/api/v1/accounts/webapi-a/repos?limit=1&cursor=" + *page.NextCursor
+		path = "/api/v1/accounts/github/wa/repos?limit=1&cursor=" + *page.NextCursor
 	}
 	if strings.Join(names, ",") != "wa/one,wa/two" {
 		t.Errorf("paged repositories = %v, want wa/one, wa/two", names)
@@ -558,7 +558,7 @@ wait:
 			t.Fatal("member of A received no event")
 		}
 	}
-	if got.Account != "webapi-a" || got.Kind != store.EventRunnerRun {
+	if got.Account != "github/wa" || got.Kind != store.EventRunnerRun {
 		t.Errorf("event = %+v, want a runner_run of webapi-a", got)
 	}
 	e.exec(`INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'index')`, e.a.accountID)

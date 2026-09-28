@@ -3,13 +3,13 @@ package worker
 import (
 	"testing"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 )
 
 func TestTranscriptMask(t *testing.T) {
 	t.Setenv("TEST_PROVIDER_KEY", "sk-provider")
 	t.Setenv("TEST_EGRESS_TOKEN", "ghp-egress")
-	f, err := configfile.Parse([]byte(`providers:
+	f, err := configfiletest.Parse(t, `providers:
   p:
     type: openai
     baseUrl: https://kritik:url-secret@llm.example/v1
@@ -18,7 +18,7 @@ egress:
   allowHosts: [api.example.com]
   credentials:
     api.example.com: { env: TEST_EGRESS_TOKEN }
-` + minimalGatewayFile))
+`+minimalGatewayFile)
 	if err != nil {
 		t.Fatal(err)
 	}

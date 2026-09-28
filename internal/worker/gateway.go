@@ -107,7 +107,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusForbidden, "invalid_token", "the run's account is not in the configuration")
 		return
 	}
-	logger := g.Logger.With("account", account.Slug, "run", short(grant.RunID))
+	logger := g.Logger.With("account", account.Key(), "run", short(grant.RunID))
 	capped, err := g.monthCapped(ctx, file, account)
 	if err != nil {
 		logger.Error("gateway: caps not read", "error", err)
@@ -155,7 +155,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	resp, err := stepper.Step(ctx, req)
 	took := time.Since(start)
-	g.Metrics.ModelCall(account.Slug, grant.Model, roleReview, callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
+	g.Metrics.ModelCall(account.Key(), grant.Model, roleReview, callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
 		resp.Usage.Output, resp.CostUSD)
 	if cerr := g.charge(ctx, grant, token, reserved, resp, err == nil); cerr != nil {
 		// A step that was answered is paid for either way; the run still
@@ -190,7 +190,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 // monthCapped says why the account may not take another step this month,
 // or "".
 func (g *Gateway) monthCapped(ctx context.Context, file *configfile.File, account *configfile.Account) (string, error) {
-	limits := file.Settings(account, "", "").Limits
+	limits := file.Settings(account, "").Limits
 	if limits.TokensPerMonth <= 0 {
 		return "", nil
 	}

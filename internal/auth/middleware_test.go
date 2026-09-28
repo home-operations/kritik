@@ -133,31 +133,31 @@ func TestPrincipalCanRead(t *testing.T) {
 	}
 }
 
-// TestPrincipalFor: a member reads the accounts whose connections serve an
-// account the grant names, among those the file still declares.
+// TestPrincipalFor: a member reads the accounts the grant names, among
+// those a connection still serves.
 func TestPrincipalFor(t *testing.T) {
 	file := testFile(t, "auth:\n"+adminPassword)
-	tid := func(slug string) string {
-		tn, ok := file.Account(slug)
+	tid := func(name string) string {
+		a, ok := file.Account(configfile.ForgeGitHub, name)
 		if !ok {
-			t.Fatalf("no account %s", slug)
+			t.Fatalf("no account %s", name)
 		}
-		return tn.ID()
+		return a.ID()
 	}
 	sess := store.Session{
 		User:     store.User{ID: "acct"},
 		Identity: store.SignInIdentity{Provider: "github", Subject: "1", Login: "Alice"},
-		Grant:    store.SessionGrant{Role: RoleMember, Accounts: []string{"github/widgets", "github/gone"}},
+		Grant:    store.SessionGrant{Role: RoleMember, Accounts: []string{"github/widgets", "github/initech", "github/gone"}},
 	}
 	p := principalFor(file, sess)
 	if p.Operator || p.AllAccounts || p.User.ID != "acct" || p.Identity.Login != "Alice" {
 		t.Fatalf("principal = %+v", p)
 	}
-	if len(p.Accounts) != 2 || !p.Accounts[tid("adminorg")] || !p.Accounts[tid("several")] {
-		t.Fatalf("accounts = %v, want adminorg and several", p.Accounts)
+	if len(p.Accounts) != 2 || !p.Accounts[tid("widgets")] || !p.Accounts[tid("Initech")] {
+		t.Fatalf("accounts = %v, want widgets and initech", p.Accounts)
 	}
 	sess.Grant = store.SessionGrant{Role: RoleAdmin}
-	if p := principalFor(file, sess); !p.Operator || !p.CanRead(tid("org")) {
+	if p := principalFor(file, sess); !p.Operator || !p.CanRead(tid("acme")) {
 		t.Fatalf("admin principal = %+v", p)
 	}
 }

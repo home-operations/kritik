@@ -10,28 +10,21 @@ database:
     existingSecret: kritik-postgres-runner
 config:
   file:
-    providers:
-      openrouter:
-        type: openrouter
-        apiKey: { file: /var/run/secrets/kritik/providers/openrouter-api-key }
-    defaults:
-      models:
-        review: openrouter/openai/gpt-6-sol
-      filter: "!pr.draft"
-    accounts:
-      - slug: example
-        connections:
-          - name: example-github
-            forge: github
-            accounts: [example]
-            app:
-              clientId: Iv1.example
-              privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-              webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+    auth:
+      admin:
+        password: { file: /var/run/secrets/kritik/auth/admin-password }
+    connections:
+      - name: github
+        forge: github
+        accounts: [org-1]
+        app:
+          clientId: Iv1.example
+          privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+          webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
 secretMounts:
   - name: bot
     secretName: kritik-bot
     mountPath: /var/run/secrets/kritik/bot
-  - name: providers
-    secretName: kritik-providers
-    mountPath: /var/run/secrets/kritik/providers
+  - name: auth
+    secretName: kritik-auth
+    mountPath: /var/run/secrets/kritik/auth

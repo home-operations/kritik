@@ -74,7 +74,6 @@ type pullRequest struct {
 	id, repositoryID string
 	repository       string
 	number           int
-	connection       string
 	headSHA, baseRef string
 	title, author    string
 	authorIsBot      bool
@@ -88,7 +87,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if err != nil {
 		return err
 	}
-	logger := w.Logger.With("account", account.Slug, "pr", args.Number, "head", short(args.HeadSHA))
+	logger := w.Logger.With("account", account.Key(), "pr", args.Number, "head", short(args.HeadSHA))
 	started := time.Now()
 
 	b, done, err := w.begin(ctx, job, file, account, logger, started)
@@ -117,7 +116,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	secrets := runner.Secrets{GitToken: b.token}
 	ended := endedReview{
-		accountID: args.AccountID, accountSlug: account.Slug, reviewID: reviewID, headSHA: args.HeadSHA,
+		accountID: args.AccountID, accountKey: account.Key(), reviewID: reviewID, headSHA: args.HeadSHA,
 		owner: owner, repo: repo, client: client, started: started, logger: logger,
 	}
 	var tools []configfile.Tool
@@ -132,7 +131,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runID,
 		Labels: map[string]string{
-			"account": account.Slug, "repository": pr.repository,
+			"account": account.Key(), "repository": pr.repository,
 			"pr": strconv.Itoa(args.Number), "kind": jobs.QueueReview,
 		},
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": args.HeadSHA},
@@ -160,7 +159,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	canceled := errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely)
 	cctx := context.WithoutCancel(ctx)
 	ended.jobName = res.JobName
-	if err := recordRun(cctx, w.Store, w.Metrics, account.Slug, args.AccountID, runID, jobs.QueueReview, res); err != nil {
+	if err := recordRun(cctx, w.Store, w.Metrics, account.Key(), args.AccountID, runID, jobs.QueueReview, res); err != nil {
 		if !canceled {
 			return err
 		}
@@ -179,22 +178,22 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	if agentErr != nil {
 		logger.Error("agent run not read", "error", agentErr)
-		w.Metrics.Review(account.Slug, statusFailed, time.Since(started))
+		w.Metrics.Review(account.Key(), statusFailed, time.Since(started))
 		// A retry would run the agent again; the review ends here.
 		return w.finishReview(cctx, args.AccountID, reviewID, statusFailed, "", agentErr.Error())
 	}
 	switch {
 	case res.Err != nil && errors.Is(cause, errSuperseded):
 		logger.Info("review superseded while running", "job", res.JobName)
-		w.Metrics.Review(account.Slug, statusSuperseded, time.Since(started))
+		w.Metrics.Review(account.Key(), statusSuperseded, time.Since(started))
 		return w.finishReview(cctx, args.AccountID, reviewID, statusSuperseded, "", "")
 	case res.Err != nil && errors.Is(cause, errHeartbeatLost):
 		logger.Warn("runner heartbeat lost", "job", res.JobName)
-		w.Metrics.Review(account.Slug, statusFailed, time.Since(started))
+		w.Metrics.Review(account.Key(), statusFailed, time.Since(started))
 		return w.finishReview(cctx, args.AccountID, reviewID, statusFailed, "", "runner heartbeat lost")
 	case res.Err != nil:
 		logger.Warn("runner failed", "error", res.Err, "job", res.JobName, "reason", res.TerminationReason)
-		w.Metrics.Review(account.Slug, statusFailed, time.Since(started))
+		w.Metrics.Review(account.Key(), statusFailed, time.Since(started))
 		return w.finishReview(cctx, args.AccountID, reviewID, statusFailed, "", res.Err.Error())
 	}
 	prep, status, err := w.afterRun(ctx, args, pr, eff, b.notes, client, reviewID, runID, prior, logger)
@@ -205,7 +204,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		return w.finishEnded(ctx, ended, err)
 	}
 	if prep.patchID == "" {
-		w.Metrics.Review(account.Slug, status, time.Since(started))
+		w.Metrics.Review(account.Key(), status, time.Since(started))
 		return nil
 	}
 	patchID := prep.patchID
@@ -232,7 +231,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		logger.Error("review failed", "error", perr)
 	}
 	logger.Info("review " + status)
-	w.Metrics.Review(account.Slug, status, time.Since(started))
+	w.Metrics.Review(account.Key(), status, time.Since(started))
 	return w.finishReview(cctx, args.AccountID, reviewID, status, patchID, errText(perr))
 }
 
@@ -355,10 +354,10 @@ func loadPullRequest(ctx context.Context, st *store.Store, accountID, repository
 	var pr pullRequest
 	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			SELECT p.id, p.repository_id, r.name, p.number, i.name, p.head_sha, p.base_ref, p.title, p.author, p.author_is_bot
-			FROM pull_requests p JOIN repositories r ON r.id = p.repository_id JOIN connections i ON i.id = r.connection_id
+			SELECT p.id, p.repository_id, r.name, p.number, p.head_sha, p.base_ref, p.title, p.author, p.author_is_bot
+			FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
 			WHERE p.repository_id = $1 AND p.number = $2`, repositoryID, number).
-			Scan(&pr.id, &pr.repositoryID, &pr.repository, &pr.number, &pr.connection,
+			Scan(&pr.id, &pr.repositoryID, &pr.repository, &pr.number,
 				&pr.headSHA, &pr.baseRef, &pr.title, &pr.author, &pr.authorIsBot)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -372,9 +371,9 @@ func loadPullRequest(ctx context.Context, st *store.Store, accountID, repository
 
 // earlyEnd is what a review ended before its runner is recorded with.
 type earlyEnd struct {
-	args                               jobs.ReviewArgs
-	pr                                 *pullRequest
-	accountSlug, mergeBase, forgePatch string
+	args                              jobs.ReviewArgs
+	pr                                *pullRequest
+	accountKey, mergeBase, forgePatch string
 	// skip is why the repository's .kritik.yaml skipped the review.
 	skip    repoconfig.SkipReason
 	started time.Time
@@ -384,7 +383,7 @@ type earlyEnd struct {
 // end records a review that never ran as status, for reason, and counts
 // it.
 func (w *Review) end(ctx context.Context, e earlyEnd, status, reason string) error {
-	w.Metrics.Review(e.accountSlug, status, time.Since(e.started))
+	w.Metrics.Review(e.accountKey, status, time.Since(e.started))
 	return w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO reviews
 			(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error, finished_at)
@@ -442,16 +441,16 @@ func (w *Review) begin(
 	if err != nil {
 		return begun{}, true, err
 	}
-	e := earlyEnd{args: args, pr: pr, accountSlug: account.Slug, started: started, logger: logger}
+	e := earlyEnd{args: args, pr: pr, accountKey: account.Key(), started: started, logger: logger}
 	if pr.headSHA != args.HeadSHA {
 		logger.Info("review superseded before start", "current_head", short(pr.headSHA))
 		return begun{}, true, w.end(ctx, e, statusSuperseded, "")
 	}
-	settings := file.Settings(account, pr.connection, pr.repository)
+	settings := file.Settings(account, pr.repository)
 	if held, err := w.slotsHeld(ctx, e, job, account.ID(), settings); held {
 		return begun{}, true, err
 	}
-	client, err := w.client(ctx, file, pr.connection, pr.repository)
+	client, err := w.client(ctx, file, account, pr.repository)
 	if err != nil {
 		return begun{}, true, err
 	}
@@ -551,7 +550,7 @@ func (w *Review) snooze(e earlyEnd, job *river.Job[jobs.ReviewArgs], modelKey st
 	}
 	d := backoff(meta.Snoozes, snoozeMin, snoozeMax)
 	e.logger.Info("review snoozed: every model slot is held", "model", modelKey, "snoozes", meta.Snoozes+1, "for", d.Round(time.Second))
-	w.Metrics.ReviewSnoozed(e.accountSlug, modelKey)
+	w.Metrics.ReviewSnoozed(e.accountKey, modelKey)
 	return river.JobSnooze(d)
 }
 
@@ -619,11 +618,11 @@ func (w *Review) finishReview(ctx context.Context, accountID, reviewID, status, 
 // endedReview is what finishEnded needs to know of the review whose job
 // ended.
 type endedReview struct {
-	accountID, accountSlug, reviewID, headSHA, jobName string
-	owner, repo                                        string
-	client                                             forge.Client
-	started                                            time.Time
-	logger                                             *slog.Logger
+	accountID, accountKey, reviewID, headSHA, jobName string
+	owner, repo                                       string
+	client                                            forge.Client
+	started                                           time.Time
+	logger                                            *slog.Logger
 }
 
 // finishEnded ends a review whose job ctx ended before the review could: a
@@ -650,7 +649,7 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 	if err := e.client.SetStatus(cctx, e.owner, e.repo, e.headSHA, forge.StatusError, desc); err != nil {
 		e.logger.Warn("commit status not set", "error", err)
 	}
-	w.Metrics.Review(e.accountSlug, status, time.Since(e.started))
+	w.Metrics.Review(e.accountKey, status, time.Since(e.started))
 	return nil
 }
 

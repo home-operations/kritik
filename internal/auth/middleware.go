@@ -109,18 +109,13 @@ func principalFor(file *configfile.File, sess store.Session) *Principal {
 	if p.Operator || p.AllAccounts {
 		return p
 	}
-	accounts := map[string]bool{}
-	for _, a := range g.Accounts {
-		accounts[a] = true
+	granted := map[string]bool{}
+	for _, key := range g.Accounts {
+		granted[key] = true
 	}
 	for i := range file.Accounts {
-		t := &file.Accounts[i]
-		for _, in := range t.Connections {
-			for _, a := range in.Accounts {
-				if accounts[AccountKey(in.Forge, a)] {
-					p.Accounts[t.ID()] = true
-				}
-			}
+		if a := &file.Accounts[i]; granted[a.Key()] {
+			p.Accounts[a.ID()] = true
 		}
 	}
 	return p

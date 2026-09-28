@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The account spec form. It edits a draft (see spec.ts) and hands the
-  // built spec to onsave; the caller does the request and passes back any
+  // The form for an account's entry in the instance spec. It edits a draft
+  // (see spec.ts) and hands the built entry to onsave; the caller does the request and passes back any
   // error, whose path highlights and focuses the field it names. A field
   // editable says the caller may not change, by the server's policy table,
   // stays disabled (ADR-0010 §2.7).
@@ -9,7 +9,6 @@
     buildSpec,
     draftOf,
     hasTypedSecret,
-    newConnection,
     newProvider,
     newRepository,
     pathMatches,
@@ -19,7 +18,6 @@
   import { duration } from '../../format';
   import { inheritsHint } from '../../manage';
   import type { Inherited } from '../../types';
-  import ConnectionFields from './ConnectionFields.svelte';
   import ProviderFields from './ProviderFields.svelte';
   import RepositoryFields from './RepositoryFields.svelte';
 
@@ -27,10 +25,9 @@
 
   interface Props {
     initial: Obj;
-    creating?: boolean;
     // editable says whether the caller may change the setting at a key.
     editable: (key: string) => boolean;
-    // inherited is what fields left empty take; none when creating.
+    // inherited is what fields left empty take.
     inherited?: Inherited;
     saving: boolean;
     // The last failed save's message and the spec path it points at.
@@ -45,7 +42,6 @@
   }
   let {
     initial,
-    creating = false,
     editable,
     inherited,
     saving,
@@ -181,14 +177,8 @@
     </label>
   {:else}
     <fieldset>
-      <legend>Account</legend>
+      <legend>Account <span class="mono">{draft.forge}/{draft.name}</span></legend>
       <div class="fields">
-        {#if creating}
-          <label class="field">
-            <span>Slug</span>
-            <input class="mono" data-path="slug" aria-invalid={inv('slug') || undefined} bind:value={draft.slug} required />
-          </label>
-        {/if}
         <label class="field">
           <span>Review model {#if !editable('models.review')}<span class="field-hint">({opHint})</span>{/if}</span>
           <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder={hint('models.review', own?.models.review || 'no model', 'provider/model')} disabled={!editable('models.review')} />
@@ -252,21 +242,6 @@
         />
       {/each}
       <div><button type="button" class="btn" onclick={() => structural(() => draft.providers.push(newProvider()))}>Add provider key</button></div>
-    </fieldset>
-
-    <fieldset>
-      <legend>Connections</legend>
-      {#each draft.connections as inst, i (inst.key)}
-        <ConnectionFields
-          bind:inst={draft.connections[i]!}
-          index={i}
-          {inv}
-          onremove={() => structural(() => (draft.connections = draft.connections.filter((x) => x.key !== inst.key)))}
-        />
-      {:else}
-        <p class="field-hint">No connections yet.</p>
-      {/each}
-      <div><button type="button" class="btn" onclick={() => structural(() => draft.connections.push(newConnection()))}>Add connection</button></div>
     </fieldset>
 
     <fieldset>

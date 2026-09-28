@@ -3,9 +3,8 @@
     {
       "id": "repo-1",
       "fullName": "alpha/one",
-      "connection": "alpha-bot",
       "enabled": true,
-      "managedBy": "file",
+      "managedBy": "dashboard",
       "defaultBranch": "main",
       "index": {
         "activeCommit": "def456",

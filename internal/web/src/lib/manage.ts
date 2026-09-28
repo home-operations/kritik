@@ -5,11 +5,9 @@ import { ApiError } from './api.svelte';
 import type { ConfigSource, ErrorCode, FieldPolicy, ManagementErrorCode, PathDetails } from './types';
 
 const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
-  revision_conflict: 'Someone else saved this account since you loaded it.',
-  reenter_secret: "The connection's forge, host or accounts changed, so this secret must be entered again.",
-  slug_taken: 'That name is already in use.',
+  revision_conflict: 'Someone else saved the configuration since you loaded it.',
+  reenter_secret: "What this secret acts for changed, so it must be entered again.",
   config_blocked: 'The running configuration is invalid elsewhere; an admin must fix it before this can be saved.',
-  file_managed: 'This account is declared in the configuration file and cannot be changed here.',
   management_disabled: 'Dashboard management is disabled: no sealing key configured.',
   actions_disabled: 'This server process cannot queue dashboard actions.',
   already_queued: 'That is already queued or running; it will show up here when it finishes.',
@@ -25,7 +23,9 @@ const inheritedFrom: Record<ConfigSource, string> = {
   default: "kritik's default",
   env: 'the environment',
   file: 'the config file',
-  dashboard: 'this account',
+  dashboard: 'the instance settings',
+  defaults: 'the defaults',
+  account: 'this account',
   repository: '.kritik.yaml',
 };
 

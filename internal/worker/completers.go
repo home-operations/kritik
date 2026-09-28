@@ -36,7 +36,7 @@ func (c *Completers) Stepper(f *configfile.File, t *configfile.Account, name str
 	key := name
 	if t != nil {
 		if _, own := t.Providers[name]; own {
-			key = t.Slug + "\x00" + name
+			key = t.Key() + "\x00" + name
 		}
 	}
 	c.mu.Lock()

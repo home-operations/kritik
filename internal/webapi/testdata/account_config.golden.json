@@ -1,5 +1,4 @@
 {
-  "managedBy": "dashboard",
   "revision": 3,
   "editable": true,
   "policy": [
@@ -205,7 +204,7 @@
       }
     },
     "accountSources": {
-      "models.review": "file"
+      "models.review": "defaults"
     },
     "repository": {
       "enabled": true,
@@ -263,21 +262,20 @@
       }
     },
     "repositorySources": {
-      "mode": "dashboard",
-      "models.review": "file"
+      "mode": "account",
+      "models.review": "defaults"
     }
   },
   "spec": {
-    "slug": "alpha",
-    "connections": [
-      {
-        "name": "alpha-bot",
-        "app": {
-          "privateKey": {
-            "set": true
-          }
+    "forge": "github",
+    "name": "alpha",
+    "providers": {
+      "own": {
+        "type": "openai",
+        "apiKey": {
+          "set": true
         }
       }
-    ]
+    }
   }
 }

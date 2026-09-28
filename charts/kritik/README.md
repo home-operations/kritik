@@ -12,7 +12,8 @@ Multi-tenant AI pull request reviewer for GitHub organisations, backed by Postgr
 
 kritik ships as an OCI Helm chart. It needs a Postgres with
 [VectorChord](https://github.com/tensorchord/VectorChord) and pgvector, three
-roles, the configuration file, and the secrets the file references:
+roles, a sealing key, the configuration file, and the secrets the file
+references:
 
 ```sh
 helm install kritik oci://ghcr.io/home-operations/charts/kritik \
@@ -22,11 +23,12 @@ helm install kritik oci://ghcr.io/home-operations/charts/kritik \
   --values my-values.yaml
 ```
 
-where `my-values.yaml` carries `config.file` (the declarative configuration:
-providers, defaults, accounts with connections and repositories) and
-`secretMounts` for the GitHub App keys, webhook secrets and provider API
-keys the file references by path. Set `embedding.model` and a key to turn
-on the vector index and the similar-code context stage.
+where `my-values.yaml` carries `config.file` (sign-in and any GitHub App
+that already exists), `secretMounts` for the keys and secrets the file
+references by path, and `dashboard.keySecret`. Model providers, defaults,
+accounts and their repositories are the instance configuration, set in the
+dashboard's admin console. Set `embedding.model` and a key to turn on the
+vector index and the similar-code context stage.
 
 ### Database
 
@@ -108,22 +110,20 @@ Worker-capable pods serve a forward proxy on `gateway.port`, and runner Jobs
 are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
-destination by hostname only. github.com is always allowed once the file
-declares a connection; `egress.allowHosts` in the configuration file adds
+destination by hostname only. github.com is always allowed once a
+connection exists; `egress.allowHosts` in the instance configuration adds
 the rest (registries, release APIs), and `egress.credentials` names hosts the
 gateway adds a bearer token to when a runner sends it a plain `http://`
-request, so the runner never holds the token:
+request, so the runner never holds the token. Both are set in the admin
+console's JSON editor, the token sealed like every other secret there:
 
-```yaml
-config:
-  file:
-    egress:
-      allowHosts:
-        - api.github.com
-        - "*.githubusercontent.com"
-        - ghcr.io
-      credentials:
-        api.github.com: { file: /var/run/secrets/kritik/github-token }
+```json
+{
+  "egress": {
+    "allowHosts": ["api.github.com", "*.githubusercontent.com", "ghcr.io"],
+    "credentials": { "api.github.com": { "value": "<token>" } }
+  }
+}
 ```
 
 The same port is an agentic runner's model endpoint. The worker mints a
@@ -152,16 +152,21 @@ connection already allows `github.com`):
 ```yaml
 runner:
   image: ghcr.io/home-operations/kritik:<version>-tools
-config:
-  file:
-    egress:
-      allowHosts: [api.github.com, "*.githubusercontent.com"]
-    accounts:
-      - slug: example
-        repositories:
-          - name: example/home-ops
-            mode: agentic
-            agent: { commands: [curl, fd, rg] }
+```
+
+and, in the instance configuration:
+
+```json
+{
+  "egress": { "allowHosts": ["api.github.com", "*.githubusercontent.com"] },
+  "accounts": [
+    {
+      "forge": "github",
+      "name": "org-1",
+      "repositories": [{ "name": "repo-1", "mode": "agentic", "agent": { "commands": ["curl", "fd", "rg"] } }]
+    }
+  ]
+}
 ```
 
 A command runs without a shell, with an environment of `PATH`, its own
@@ -210,14 +215,14 @@ Kubernetes: `>=1.25.0-0`
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
 | config.existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. |
 | config.extraEnv | list | `[]` | Extra raw env vars merged into every role's container (advanced). |
-| config.file | required unless `existingConfigMap` is set | `{}` | The configuration file, as YAML. Passed through verbatim, not tpl'd. See the README for the schema. |
+| config.file | required unless `existingConfigMap` is set | `{}` | The configuration file, as YAML: `auth` and `connections`. Passed through verbatim, not tpl'd. See docs/dashboard.md and docs/connecting-a-forge.md. |
 | config.indexWorkers | int | `1` | Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews. |
 | config.logFormat | string | `"json"` | Log format: json or text. |
 | config.logLevel | string | `"info"` | Log level: debug, info, warn or error. |
 | config.reloadInterval | string | `"10s"` | How often each replica re-reads the file (Go duration). |
 | config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers). |
 | dashboard.keySecret.key | string | `"key"` | Key in that Secret. |
-| dashboard.keySecret.name | string | `""` | Secret holding the key that seals dashboard accounts' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start. |
+| dashboard.keySecret.name | string | `""` | Secret holding the key that seals the instance configuration's credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start. |
 | dashboard.oldKeysSecret.key | string | `"old-keys"` | Key in that Secret. |
 | dashboard.oldKeysSecret.name | optional | `""` | Secret holding retired sealing keys, comma-separated, only to open values sealed under them. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
@@ -240,7 +245,7 @@ Kubernetes: `>=1.25.0-0`
 | embedding.model | string | `""` | Embedding model id; empty disables indexing. |
 | embedding.reindexOnModelChange | bool | `false` | Rebuild the index when the model or dimension changes instead of refusing to start. |
 | fullnameOverride | string | `""` | Override the full release name. |
-| gateway.enabled | bool | `true` | Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration file names (forges, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews are refused without it. |
+| gateway.enabled | bool | `true` | Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once a connection exists, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews are refused without it. |
 | gateway.port | int | `8082` | Gateway port on the pods and its Service. |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
