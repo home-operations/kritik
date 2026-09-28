@@ -49,11 +49,6 @@ const (
 	IndexSuperseded IndexRunStatus = "superseded"
 )
 
-// Valid reports whether s is an index run status.
-func (s IndexRunStatus) Valid() bool {
-	return s == IndexRunning || s == IndexCompleted || s == IndexFailed || s == IndexSuperseded
-}
-
 // FollowupStatus is a followups.status value.
 type FollowupStatus string
 
@@ -64,11 +59,6 @@ const (
 	FollowupIgnored  FollowupStatus = "ignored"
 	FollowupFailed   FollowupStatus = "failed"
 )
-
-// Valid reports whether s is a follow-up status.
-func (s FollowupStatus) Valid() bool {
-	return s == FollowupAnswered || s == FollowupLimited || s == FollowupIgnored || s == FollowupFailed
-}
 
 // PullState filters pull requests by pull_requests.state.
 type PullState string

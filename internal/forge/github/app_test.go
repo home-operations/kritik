@@ -156,7 +156,7 @@ func TestRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := app.Repositories(t.Context(), 7)
-	want := []Repository{{Name: "repo-1", FullName: "org-1/repo-1", DefaultBranch: "main", Private: true}, {Name: "old", FullName: "org-1/old", Archived: true}}
+	want := []Repository{{Name: "repo-1", FullName: "org-1/repo-1", DefaultBranch: "main"}, {Name: "old", FullName: "org-1/old"}}
 	if err != nil || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("Repositories = %+v, %v", got, err)
 	}

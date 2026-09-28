@@ -13,9 +13,6 @@ import (
 
 // Spec is one runner invocation.
 type Spec struct {
-	// RunID is the runner_runs row; it becomes the Job and Secret name
-	// suffix.
-	RunID string
 	// Labels are put on the Job for kubectl and Grafana: account, repository,
 	// pr, kind.
 	Labels map[string]string

@@ -11,7 +11,6 @@ const fresh: T.SetupStatus = {
   connections: [],
   reviewModel: '',
   embedding: false,
-  canReview: false,
 };
 
 async function setup(page: Page, status: T.SetupStatus | (() => T.SetupStatus), rows: [RegExp, unknown][] = []): Promise<void> {
@@ -52,7 +51,7 @@ test.describe('setup wizard', () => {
   test('saves the model key and review model, then registers the repositories', async ({ page }) => {
     let saved = false;
     await flags(page, { listener: true, installed: true });
-    await setup(page, () => ({ ...fresh, connections: ['alpha-bot'], reviewModel: saved ? 'or/acme-large' : '', canReview: saved }), [
+    await setup(page, () => ({ ...fresh, connections: ['alpha-bot'], reviewModel: saved ? 'or/acme-large' : '' }), [
       [/\/api\/v1\/operator\/connections\/alpha-bot\/repositories$/, [g.golden<T.AccountRepositories>('account_repositories')]],
     ]);
     const sent = await g.mockWrites(page, [

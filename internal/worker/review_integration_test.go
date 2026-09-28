@@ -115,14 +115,14 @@ func (l *localForge) setTip(tip string) {
 	l.tip = tip
 }
 
-func (l *localForge) MergeBase(context.Context, string, string, int, string, string) (string, error) {
+func (l *localForge) MergeBase(context.Context, string, string, string, string) (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.base, nil
 }
 
 // PullRequestDiff is the diff the runner would make of the same commits.
-func (l *localForge) PullRequestDiff(ctx context.Context, _, _ string, _ int, base, head string) (string, error) {
+func (l *localForge) PullRequestDiff(ctx context.Context, _, _, base, head string) (string, error) {
 	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: l.dir, Head: head, Base: base})
 	if err != nil {
 		return "", err
@@ -235,7 +235,7 @@ func (l *localForge) addComment(author, body string) int64 {
 	return id
 }
 
-func (l *localForge) GetComment(_ context.Context, _, _ string, _ int, id int64, inline bool) (forge.Comment, error) {
+func (l *localForge) GetComment(_ context.Context, _, _ string, id int64, inline bool) (forge.Comment, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	body, ok := l.comments[id]
@@ -280,7 +280,7 @@ func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, _ forge.
 	return int64(len(l.replies)), nil
 }
 
-func (l *localForge) UpdateComment(_ context.Context, _, _ string, _ int, id int64, body string) error {
+func (l *localForge) UpdateComment(_ context.Context, _, _ string, id int64, body string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if _, ok := l.comments[id]; !ok {
@@ -296,8 +296,6 @@ func (l *localForge) CreateReview(_ context.Context, _, _ string, _ int, _ strin
 	l.inline = append(l.inline, comments...)
 	return nil
 }
-
-func (l *localForge) LineRanges() bool { return true }
 
 func (l *localForge) FileURL(owner, repo, sha, path string, line, _ int) string {
 	return fmt.Sprintf("local://%s/%s/%s/%s#L%d", owner, repo, sha, path, line)
@@ -955,11 +953,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := ingest.NewService(appStore, insertOnly)
-	in, _ := file.Connection("bot-ross")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 	dispatchPR := func(number int, headSHA string, bot bool, labels ...string) {
 		t.Helper()
-		out, err := svc.Dispatch(ctx, ingest.Request{File: file, Account: account, Connection: in, Event: webhook.Event{
+		out, err := svc.Dispatch(ctx, ingest.Request{File: file, Account: account, Event: webhook.Event{
 			Kind: webhook.KindPullRequest, Action: "synchronize", Account: "onedr0p",
 			Repository:  &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
 			PullRequest: &webhook.PullRequest{Number: number, Title: "t", Body: "Adds b.", Author: "renovate[bot]", AuthorIsBot: bot, State: "open", HeadRef: "f", HeadSHA: headSHA, BaseRef: "main", Labels: labelled(labels)},
@@ -1070,7 +1067,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("follow-up answers a qualifying mention and rate-limits the thread", func(t *testing.T) {
-		checkFollowUps(ctx, t, appStore, svc, lf, fc, ingest.Request{File: file, Account: account, Connection: in}, account.ID())
+		checkFollowUps(ctx, t, appStore, svc, lf, fc, ingest.Request{File: file, Account: account}, account.ID())
 	})
 
 	t.Run("bot PR with the same patch id is skipped", func(t *testing.T) {
@@ -1588,7 +1585,7 @@ func checkSupervision(
 		dispatch(running, false)
 		spec := started()
 		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() - interval '5 minutes' WHERE id = $1`, spec.RunID)
+			_, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() - interval '5 minutes' WHERE id = $1`, spec.Job.RunID)
 			return err
 		})
 		if err != nil {
@@ -2313,9 +2310,8 @@ func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in, _ := file.Connection("bot-ross")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
-	out, err := ingest.NewService(st, insertOnly).Dispatch(ctx, ingest.Request{File: file, Account: account, Connection: in, Event: webhook.Event{
+	out, err := ingest.NewService(st, insertOnly).Dispatch(ctx, ingest.Request{File: file, Account: account, Event: webhook.Event{
 		Kind: webhook.KindPullRequest, Action: "opened", Account: "onedr0p",
 		Repository:  &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
 		PullRequest: &webhook.PullRequest{Number: 4242, Title: "t", Author: "a", State: "open", HeadRef: "f", HeadSHA: "abc4242", BaseRef: "main"},

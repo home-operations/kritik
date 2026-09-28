@@ -51,15 +51,6 @@ const (
 	StopError     StopReason = "error"
 )
 
-// Valid reports whether s is a stop reason a Run can end with.
-func (s StopReason) Valid() bool {
-	switch s {
-	case StopSubmitted, StopMaxSteps, StopBudget, StopNoSubmit, StopCanceled, StopError:
-		return true
-	}
-	return false
-}
-
 // Tool is one function the loop offers the model.
 type Tool interface {
 	Def() model.ToolDef

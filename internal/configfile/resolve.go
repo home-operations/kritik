@@ -103,10 +103,9 @@ const (
 	SourceFile    Source = "file"
 	// SourceDashboard is the instance spec, SourceDefaults its defaults and
 	// SourceAccount an account's entry or one of its repository entries.
-	SourceDashboard  Source = "dashboard"
-	SourceDefaults   Source = "defaults"
-	SourceAccount    Source = "account"
-	SourceRepository Source = "repository"
+	SourceDashboard Source = "dashboard"
+	SourceDefaults  Source = "defaults"
+	SourceAccount   Source = "account"
 )
 
 // Sources says, for each setting the policy table lets an admin write,

@@ -41,7 +41,7 @@ func init() {
 		},
 		"setup_status": SetupStatus{
 			WebURL: "https://kritik.example", HooksURL: "https://kritik.example/hooks/",
-			FileConnections: []string{"alpha-bot"}, Connections: []string{"alpha-bot"}, ReviewModel: "openrouter/acme-large", CanReview: true,
+			FileConnections: []string{"alpha-bot"}, Connections: []string{"alpha-bot"}, ReviewModel: "openrouter/acme-large",
 		},
 		"provider_test_request": ProviderTestRequest{
 			Type: configfile.ProviderOpenRouter, APIKey: json.RawMessage(`{"keep":true}`), Name: "own", Account: "github/alpha",
@@ -52,7 +52,7 @@ func init() {
 		"test_result": TestResult{OK: true, Models: []string{"acme-large", "acme-small"}},
 		"account_repositories": AccountRepositories{
 			Account: "alpha", Installed: true,
-			Repositories: []AppRepository{{Name: "one", FullName: "alpha/one", DefaultBranch: "main", Private: true}},
+			Repositories: []AppRepository{{Name: "one", FullName: "alpha/one", DefaultBranch: "main"}},
 		},
 		"register_result":      RegisterResult{Added: 3},
 		"app_manifest_request": AppManifestRequest{Connection: "beta-bot", Organization: "beta", Name: "kritik-beta", Public: true},

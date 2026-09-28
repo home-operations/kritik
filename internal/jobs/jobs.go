@@ -85,8 +85,6 @@ type FollowUpArgs struct {
 	Number       int    `json:"number"`
 	CommentID    int64  `json:"comment_id" river:"unique"`
 	Inline       bool   `json:"inline"`
-	Path         string `json:"path,omitempty"`
-	Line         int    `json:"line,omitempty"`
 }
 
 // Kind implements river.JobArgs.

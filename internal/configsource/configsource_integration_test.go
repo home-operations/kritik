@@ -169,7 +169,7 @@ func TestInstanceSpecEndToEnd(t *testing.T) {
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go func() { _ = s.Run(runCtx, path, time.Hour) }()
+	go s.Run(runCtx, path, time.Hour)
 
 	t.Run("a spec that does not merge keeps the last good snapshot", func(t *testing.T) {
 		before := s.Current.Get()

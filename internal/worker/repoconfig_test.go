@@ -283,7 +283,7 @@ func TestSettleLeft(t *testing.T) {
 	}
 }
 
-func (f fileForge) MergeBase(context.Context, string, string, int, string, string) (string, error) {
+func (f fileForge) MergeBase(context.Context, string, string, string, string) (string, error) {
 	return "base", nil
 }
 

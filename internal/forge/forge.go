@@ -32,8 +32,6 @@ type Comment struct {
 	Inline      bool
 	Path        string
 	Line        int
-	// CommitID is the commit an inline comment is on.
-	CommitID string
 	// InReplyTo is the root inline comment this one replies to, 0 for a
 	// root or a conversation comment.
 	InReplyTo int64
@@ -59,7 +57,6 @@ type StatusState string
 
 // States kritik reports.
 const (
-	StatusPending StatusState = "pending"
 	StatusSuccess StatusState = "success"
 	StatusError   StatusState = "error"
 )
@@ -113,15 +110,13 @@ var ErrFileTooLarge = errors.New("forge: file is over the size limit")
 // Client is one connection's access to its forge.
 type Client interface {
 	// MergeBase asks the forge for the merge-base of base (a branch) and
-	// head (a commit) of pull request number, the same way the forge
-	// computes the PR diff.
-	MergeBase(ctx context.Context, owner, repo string, number int, base, head string) (string, error)
-	// PullRequestDiff is the unified diff of pull request number: from
-	// base, its merge-base, to head on a forge that diffs two commits, and
-	// from the pull request's own merge base to its current head on one
-	// whose API diffs only pull requests. A diff too large to read whole is
-	// an error, never a truncated diff.
-	PullRequestDiff(ctx context.Context, owner, repo string, number int, base, head string) (string, error)
+	// head (a commit), the same way the forge computes a pull request's
+	// diff.
+	MergeBase(ctx context.Context, owner, repo, base, head string) (string, error)
+	// PullRequestDiff is a pull request's unified diff, from base, its
+	// merge-base, to head. A diff too large to read whole is an error,
+	// never a truncated diff.
+	PullRequestDiff(ctx context.Context, owner, repo, base, head string) (string, error)
 	// CloneURL is the HTTPS clone URL of a repository on this forge.
 	CloneURL(owner, repo string) string
 	// GitToken is the credential a runner fetches with, a short-lived
@@ -144,27 +139,20 @@ type Client interface {
 	FindComment(ctx context.Context, owner, repo string, number int, login, marker string) (int64, error)
 	// CreateComment posts a PR conversation comment and returns its id.
 	CreateComment(ctx context.Context, owner, repo string, number int, body string) (int64, error)
-	// UpdateComment replaces the body of conversation comment id on pull
-	// request number; forges that address a comment by id alone ignore
-	// number.
-	UpdateComment(ctx context.Context, owner, repo string, number int, id int64, body string) error
+	// UpdateComment replaces the body of conversation comment id.
+	UpdateComment(ctx context.Context, owner, repo string, id int64, body string) error
 	// CreateReview posts a non-blocking review with inline comments pinned
 	// to headSHA.
 	CreateReview(ctx context.Context, owner, repo string, number int, headSHA string, comments []InlineComment) error
 	// SetStatus sets the kritik commit status on sha.
 	SetStatus(ctx context.Context, owner, repo, sha string, state StatusState, description string) error
-	// LineRanges reports whether inline comments may span a range of
-	// lines, so a suggestion can replace more than one.
-	LineRanges() bool
 	// FileURL links lines line through endLine (0 for line alone) of path
 	// at sha in the forge's web UI.
 	FileURL(owner, repo, sha, path string, line, endLine int) string
 
 	// GetComment fetches one comment; inline selects the review-comment
 	// namespace, which the forge keeps apart from conversation comments.
-	// number is the pull request the comment belongs to; forges that can
-	// resolve a comment by id alone (GitHub) ignore it.
-	GetComment(ctx context.Context, owner, repo string, number int, id int64, inline bool) (Comment, error)
+	GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (Comment, error)
 	// ListConversation returns the PR's conversation comments, oldest first.
 	ListConversation(ctx context.Context, owner, repo string, number int) ([]Comment, error)
 	// ListInline returns the PR's inline review comments, oldest first.

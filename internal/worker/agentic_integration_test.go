@@ -215,7 +215,6 @@ type agenticHarness struct {
 	st      *store.Store
 	svc     *ingest.Service
 	file    *configfile.File
-	in      *configfile.Connection
 	account *configfile.Account
 	other   *configfile.Account
 	lf      *localForge
@@ -266,7 +265,6 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	if err := appStore.ApplyConfig(ctx, h.file, "test"); err != nil {
 		t.Fatal(err)
 	}
-	h.in, _ = h.file.Connection("acme-bot")
 	h.account, _ = h.file.Account(configfile.ForgeGitHub, "acme")
 	h.other, _ = h.file.Account(configfile.ForgeGitHub, "globex")
 	h.dir, h.base, h.head = testRepo(t)
@@ -326,7 +324,7 @@ func (h *agenticHarness) dispatchBody(t *testing.T, headSHA, body string) {
 // bot is set.
 func (h *agenticHarness) dispatchAs(t *testing.T, headSHA, body string, bot bool) {
 	t.Helper()
-	out, err := h.svc.Dispatch(h.ctx, ingest.Request{File: h.file, Account: h.account, Connection: h.in, Event: webhook.Event{
+	out, err := h.svc.Dispatch(h.ctx, ingest.Request{File: h.file, Account: h.account, Event: webhook.Event{
 		Kind: webhook.KindPullRequest, Action: "synchronize", Account: "acme",
 		Repository: &webhook.Repository{FullName: "acme/widgets", DefaultBranch: "main"},
 		PullRequest: &webhook.PullRequest{Number: 1, Title: "Add b", Body: body, Author: "octocat", AuthorIsBot: bot, State: "open",
@@ -1142,7 +1140,7 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc k() {}\n")
-	base, _ := h.lf.MergeBase(h.ctx, "", "", 0, "", "")
+	base, _ := h.lf.MergeBase(h.ctx, "", "", "", "")
 	fetched, err := gitfetch.Run(h.ctx, gitfetch.Fetch{CloneURL: h.dir, Head: next, Base: base})
 	if err != nil {
 		t.Fatal(err)

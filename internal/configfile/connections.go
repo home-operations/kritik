@@ -14,11 +14,6 @@ const (
 	OriginDashboard Origin = "dashboard"
 )
 
-// Valid reports whether o is an origin.
-func (o Origin) Valid() bool { return o == OriginFile || o == OriginDashboard }
-
-func (o Origin) String() string { return string(o) }
-
 // Origin reports where the connection is declared: the configuration file
 // or its environment, or the dashboard.
 func (i *Connection) Origin() Origin {

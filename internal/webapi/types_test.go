@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/riverqueue/river/rivertype"
+
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/model"
@@ -192,7 +194,7 @@ var goldens = map[string]any{
 		Rows: []UsagePoint{{Key: "2026-09-01", InputTokens: 100, CacheReadTokens: 50, CacheWriteTokens: 5, OutputTokens: 20, CostUSD: 0.1, Calls: 2}},
 	},
 	"job": Job{
-		ID: 42, Kind: "review", State: store.JobRetryable, Attempt: 2, MaxAttempts: 5, CreatedAt: t0, ScheduledAt: t1,
+		ID: 42, Kind: "review", State: rivertype.JobStateRetryable, Attempt: 2, MaxAttempts: 5, CreatedAt: t0, ScheduledAt: t1,
 		AttemptedAt: &t0, FinalizedAt: nil, LastError: "boom",
 		Args: JobArgs{Repository: "alpha/one", Number: 7, Head: "abc123", Trigger: "push", CommentID: 0},
 	},

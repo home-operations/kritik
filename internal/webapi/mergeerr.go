@@ -19,18 +19,17 @@ func trimConfigfile(msg string) string {
 	return msg
 }
 
-// splitPath is the spec path a configuration error names, up to the first
-// colon or space, and the message; the path is "" when the message starts
-// with no key of the spec.
-func splitPath(msg string) (path, rest string) {
-	path = msg
+// specPath is the spec path a configuration error names, up to the first
+// colon or space, or "" when the message starts with no key of the spec.
+func specPath(msg string) string {
+	path := msg
 	if i := strings.IndexAny(path, ": "); i >= 0 {
 		path = path[:i]
 	}
 	if !strings.ContainsAny(path, ".[") && !isSpecKey(path) {
-		return "", msg
+		return ""
 	}
-	return path, msg
+	return path
 }
 
 // isSpecKey reports whether key is a top-level key of the spec.

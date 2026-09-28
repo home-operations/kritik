@@ -76,13 +76,11 @@ func (h *hub) unsubscribe(c *client) {
 // slug returns the slug of the account with id accountID in the current
 // file, false for an account the file no longer has.
 func (h *hub) slug(accountID string) (string, bool) {
-	file := h.current.Get()
-	for i := range file.Accounts {
-		if file.Accounts[i].ID() == accountID {
-			return file.Accounts[i].Slug(), true
-		}
+	a, ok := h.current.Get().AccountByID(accountID)
+	if !ok {
+		return "", false
 	}
-	return "", false
+	return a.Slug(), true
 }
 
 // publish delivers e to every client that may read its account, without

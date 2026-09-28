@@ -162,7 +162,7 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	f.reply("GET /api/v3/repos/o/r/compare/main...abc", 200, `{"merge_base_commit":{"sha":"base123"}}`)
 	f.reply("GET /api/v3/repos/o/r", 200, `{"default_branch":"trunk"}`)
 	f.reply("GET /api/v3/repos/o/r/branches/trunk", 200, `{"name":"trunk","commit":{"sha":"tip456"}}`)
-	sha, err := c.MergeBase(t.Context(), "o", "r", 7, "main", "abc")
+	sha, err := c.MergeBase(t.Context(), "o", "r", "main", "abc")
 	if err != nil || sha != "base123" {
 		t.Fatalf("MergeBase = %q, %v", sha, err)
 	}
@@ -174,7 +174,7 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 		t.Fatalf("CloneURL = %s", c.CloneURL("o", "r"))
 	}
 	f.reply("GET /api/v3/repos/o/r/compare/main...none", 200, `{}`)
-	if _, err := c.MergeBase(t.Context(), "o", "r", 7, "main", "none"); err == nil {
+	if _, err := c.MergeBase(t.Context(), "o", "r", "main", "none"); err == nil {
 		t.Fatal("a compare without a merge base must error")
 	}
 }
@@ -212,12 +212,12 @@ func TestPullRequestDiff(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(diff))
 	})
-	got, err := c.PullRequestDiff(t.Context(), "o", "r", 7, "base123", "abc")
+	got, err := c.PullRequestDiff(t.Context(), "o", "r", "base123", "abc")
 	if err != nil || got != diff {
 		t.Fatalf("PullRequestDiff = %q, %v", got, err)
 	}
 	f.reply("GET /api/v3/repos/o/r/compare/base123...big", 406, `{"message":"diff too large"}`)
-	if _, err := c.PullRequestDiff(t.Context(), "o", "r", 7, "base123", "big"); err == nil {
+	if _, err := c.PullRequestDiff(t.Context(), "o", "r", "base123", "big"); err == nil {
 		t.Fatal("a diff the forge refuses must be an error")
 	}
 }
@@ -252,7 +252,7 @@ func TestWriteBackCalls(t *testing.T) {
 	if err != nil || id != 100 {
 		t.Fatalf("CreateComment = %d, %v", id, err)
 	}
-	if err := c.UpdateComment(t.Context(), "o", "r", 7, 100, "edited"); err != nil {
+	if err := c.UpdateComment(t.Context(), "o", "r", 100, "edited"); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.CreateReview(t.Context(), "o", "r", 7, "abc", nil); err != nil || f.saw("POST /api/v3/repos/o/r/pulls/7/reviews") {
@@ -300,12 +300,12 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 		{"number":1,"title":"old","state":"open","updated_at":"2026-09-24T10:00:00Z","user":{"login":"u"},
 		 "head":{"ref":"g","sha":"h1","repo":{"full_name":"o/r"}},"base":{"ref":"main","sha":"b1","repo":{"full_name":"o/r"}}}]`)
 
-	cm, err := c.GetComment(t.Context(), "o", "r", 7, 1, false)
+	cm, err := c.GetComment(t.Context(), "o", "r", 1, false)
 	if err != nil || cm.Author != "u" || cm.AuthorIsBot || cm.CreatedAt.IsZero() {
 		t.Fatalf("GetComment = %+v, %v", cm, err)
 	}
-	inline, err := c.GetComment(t.Context(), "o", "r", 7, 2, true)
-	if err != nil || !inline.Inline || inline.Path != "a.go" || inline.Line != 4 || inline.CommitID != "c1" || inline.InReplyTo != 1 || !inline.AuthorIsBot {
+	inline, err := c.GetComment(t.Context(), "o", "r", 2, true)
+	if err != nil || !inline.Inline || inline.Path != "a.go" || inline.Line != 4 || inline.InReplyTo != 1 || !inline.AuthorIsBot {
 		t.Fatalf("inline GetComment = %+v, %v", inline, err)
 	}
 	conv, err := c.ListConversation(t.Context(), "o", "r", 7)

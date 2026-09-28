@@ -147,15 +147,6 @@ const (
 	DropBadSeverity DropReason = "bad_severity"
 )
 
-// Valid reports whether r is one of the drop reasons.
-func (r DropReason) Valid() bool {
-	switch r {
-	case DropUnanchored, DropIncomplete, DropNoFix, DropBadSeverity:
-		return true
-	}
-	return false
-}
-
 // Dropped is a finding Parse discarded, with the reason.
 type Dropped struct {
 	Finding Finding

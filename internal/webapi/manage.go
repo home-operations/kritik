@@ -33,11 +33,7 @@ func (s *Server) registerManage(mux *http.ServeMux) {
 }
 
 func (s *Server) getMeta(w http.ResponseWriter, _ *http.Request) error {
-	m := Meta{Version: s.version, Management: s.keyring != nil, SignIn: s.auth.Providers()}
-	if s.webURL != nil {
-		m.WebURL = s.webURL.String()
-	}
-	writeJSON(w, http.StatusOK, m)
+	writeJSON(w, http.StatusOK, Meta{Version: s.version, Management: s.keyring != nil, SignIn: s.auth.Providers(), WebURL: s.webURL.String()})
 	return nil
 }
 
@@ -95,7 +91,7 @@ func (s *Server) getAccountConfig(w http.ResponseWriter, r *http.Request, t *acc
 	if err != nil {
 		return err
 	}
-	entry, _, err := accountEntry(specOrEmpty(stored.Spec), t.account)
+	entry, err := accountEntry(specOrEmpty(stored.Spec), t.account)
 	if err != nil {
 		return err
 	}
@@ -199,11 +195,7 @@ func (s *Server) writeSpec(
 			return err
 		}
 		res.Revision, res.Generated = rev, sealed.generated
-		var id *string
-		if accountID != "" {
-			id = &accountID
-		}
-		return record(ctx, tx, p, id, action, target, configAudit{Revision: rev, Secrets: sealed.changed, Reindex: reindex})
+		return record(ctx, tx, p, accountID, action, target, configAudit{Revision: rev, Secrets: sealed.changed, Reindex: reindex})
 	}
 	return res, s.store.WithAccount(ctx, accountID, write)
 }
@@ -249,19 +241,17 @@ func specOrEmpty(spec json.RawMessage) json.RawMessage {
 
 // accountEntry is a's entry in spec, or a new one naming it when the spec
 // lists none, and its index in accounts, -1 for none.
-func accountEntry(spec json.RawMessage, a *configfile.Account) (json.RawMessage, int, error) {
+func accountEntry(spec json.RawMessage, a *configfile.Account) (json.RawMessage, error) {
 	root, err := decodeObject(spec)
 	if err != nil {
-		return nil, -1, err
+		return nil, err
 	}
-	for i, e := range objects(root["accounts"]) {
+	for _, e := range objects(root["accounts"]) {
 		if entryKey(e) == a.Key() {
-			out, err := json.Marshal(e)
-			return out, i, err
+			return json.Marshal(e)
 		}
 	}
-	out, err := json.Marshal(map[string]any{"forge": string(a.Forge), nameKey: a.Name})
-	return out, -1, err
+	return json.Marshal(map[string]any{"forge": string(a.Forge), nameKey: a.Name})
 }
 
 // withAccountEntry is stored with a's entry replaced by entry, or entry
@@ -308,8 +298,8 @@ func specFailure(err error, _ func() error) error {
 	if !ok {
 		return err
 	}
-	path, msg := splitPath(trimConfigfile(me.Err.Error()))
-	return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, msg, pathDetails{Path: path})
+	msg := trimConfigfile(me.Err.Error())
+	return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, msg, pathDetails{Path: specPath(msg)})
 }
 
 // accountSpecFailure is specFailure for an account's entry at index: a path
@@ -322,7 +312,8 @@ func accountSpecFailure(err error, index int, baseline func() error) error {
 	if !ok {
 		return err
 	}
-	path, msg := splitPath(trimConfigfile(me.Err.Error()))
+	msg := trimConfigfile(me.Err.Error())
+	path := specPath(msg)
 	prefix := "accounts[" + strconv.Itoa(index) + "]"
 	if rel, ok := strings.CutPrefix(path, prefix+"."); ok {
 		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, strings.Replace(msg, path, rel, 1), pathDetails{Path: rel})

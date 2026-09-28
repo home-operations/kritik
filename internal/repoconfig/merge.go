@@ -218,8 +218,6 @@ func (r SkipReason) Valid() bool {
 	return r == SkipDisabled || r == SkipFiltered || r == SkipOnlyPaths
 }
 
-func (r SkipReason) String() string { return string(r) }
-
 // Description is the reason as the commit status states it.
 func (r SkipReason) Description() string {
 	switch r {

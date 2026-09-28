@@ -140,9 +140,6 @@ type SetupStatus struct {
 	ReviewModel string `json:"reviewModel"`
 	// Embedding is whether an embedder is set.
 	Embedding bool `json:"embedding"`
-	// CanReview is whether the instance can review: a running connection
-	// and a default review model.
-	CanReview bool `json:"canReview"`
 }
 
 // ProviderTestRequest tests a model provider's key before it is saved.
@@ -188,8 +185,6 @@ type AppRepository struct {
 	Name          string `json:"name"`
 	FullName      string `json:"fullName"`
 	DefaultBranch string `json:"defaultBranch"`
-	Private       bool   `json:"private"`
-	Archived      bool   `json:"archived"`
 }
 
 // RegisterResult is how many repositories a registration added.
@@ -216,17 +211,6 @@ const (
 	AuditReviewCancel  AuditAction = "review.cancel"
 	AuditRepoReindex   AuditAction = "repo.reindex"
 )
-
-// Valid reports whether a is an audited action.
-func (a AuditAction) Valid() bool {
-	switch a {
-	case AuditConfigUpdate, AuditAccountUpdate, AuditAppCreate, AuditAppUninstall, AuditReviewRerun, AuditReviewCancel, AuditRepoReindex:
-		return true
-	}
-	return false
-}
-
-func (a AuditAction) String() string { return string(a) }
 
 // AuditEvent is one audit log entry. Actor is null once the user is
 // deleted; Account is the account's slug, "" when the event names none or

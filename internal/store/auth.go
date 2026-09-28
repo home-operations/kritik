@@ -26,8 +26,6 @@ const (
 // Valid reports whether r is a session role.
 func (r Role) Valid() bool { return r == RoleAdmin || r == RoleMember }
 
-func (r Role) String() string { return string(r) }
-
 // SessionGrant is what a sign-in allowed, fixed for the session's life: the
 // role, and for a member the forge accounts they read, or every account.
 type SessionGrant struct {

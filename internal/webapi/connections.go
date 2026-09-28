@@ -123,7 +123,7 @@ func (s *Server) uninstall(w http.ResponseWriter, r *http.Request) error {
 	}
 	err = s.store.WithAccount(r.Context(), "", func(tx pgx.Tx) error {
 		detail := map[string]any{"installation": id}
-		if err := record(r.Context(), tx, p, nil, AuditAppUninstall, in.Name+"/"+inst.Account, detail); err != nil {
+		if err := record(r.Context(), tx, p, "", AuditAppUninstall, in.Name+"/"+inst.Account, detail); err != nil {
 			return err
 		}
 		if err := app.Uninstall(r.Context(), id); err != nil {

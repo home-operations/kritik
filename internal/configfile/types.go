@@ -425,8 +425,6 @@ const (
 // Valid reports whether m is a review mode.
 func (m ReviewMode) Valid() bool { return m == ReviewSingle || m == ReviewAgentic }
 
-func (m ReviewMode) String() string { return string(m) }
-
 // Agent bounds an agentic review. A field left unset takes its default from
 // DefaultAgent; one that is set must be positive.
 type Agent struct {

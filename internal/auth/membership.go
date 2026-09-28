@@ -94,7 +94,7 @@ func forgeAccounts(ctx context.Context, file *configfile.File, forge configfile.
 	var out []string
 	for i := range file.Accounts {
 		a := &file.Accounts[i]
-		if a.Forge != forge || a.Name == "" {
+		if a.Forge != forge {
 			continue
 		}
 		ok := strings.EqualFold(login, a.Name)

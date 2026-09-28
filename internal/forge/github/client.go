@@ -45,7 +45,7 @@ func NewClient(app *App, installationID int64) (*Client, error) {
 // MergeBase implements forge.Client through the compare API, whose
 // merge_base_commit is exactly what GitHub diffs a PR against. number is
 // unused: GitHub's compare API needs only the two refs.
-func (c *Client) MergeBase(ctx context.Context, owner, repo string, number int, base, head string) (string, error) {
+func (c *Client) MergeBase(ctx context.Context, owner, repo, base, head string) (string, error) {
 	cmp, _, err := c.api.Repositories.CompareCommits(ctx, owner, repo, base, head, &gh.ListOptions{PerPage: 1})
 	if err != nil {
 		return "", fmt.Errorf("github: compare %s...%s: %w", base, head, err)
@@ -59,7 +59,7 @@ func (c *Client) MergeBase(ctx context.Context, owner, repo string, number int, 
 
 // PullRequestDiff implements forge.Client from the compare of base and
 // head, both commits, so the diff is of exactly those two.
-func (c *Client) PullRequestDiff(ctx context.Context, owner, repo string, _ int, base, head string) (string, error) {
+func (c *Client) PullRequestDiff(ctx context.Context, owner, repo, base, head string) (string, error) {
 	diff, _, err := c.api.Repositories.CompareCommitsRaw(ctx, owner, repo, base, head, gh.RawOptions{Type: gh.Diff})
 	if err != nil {
 		return "", fmt.Errorf("github: diff %s...%s: %w", base, head, err)
@@ -71,10 +71,6 @@ func (c *Client) PullRequestDiff(ctx context.Context, owner, repo string, _ int,
 func (c *Client) CloneURL(owner, repo string) string {
 	return webBase + "/" + owner + "/" + repo + ".git"
 }
-
-// LineRanges implements forge.Client: GitHub review comments take a
-// start_line.
-func (c *Client) LineRanges() bool { return true }
 
 // FileURL implements forge.Client.
 func (c *Client) FileURL(owner, repo, sha, path string, line, endLine int) string {
@@ -176,7 +172,7 @@ func (c *Client) CreateComment(ctx context.Context, owner, repo string, number i
 }
 
 // UpdateComment implements forge.Client.
-func (c *Client) UpdateComment(ctx context.Context, owner, repo string, _ int, id int64, body string) error {
+func (c *Client) UpdateComment(ctx context.Context, owner, repo string, id int64, body string) error {
 	if _, _, err := c.api.Issues.UpdateComment(ctx, owner, repo, id, gh.IssueCommentRequest{Body: body}); err != nil {
 		return fmt.Errorf("github: edit comment %d: %w", id, err)
 	}
@@ -205,7 +201,7 @@ func (c *Client) CreateReview(ctx context.Context, owner, repo string, number in
 
 // GetComment implements forge.Client. GitHub resolves a comment by id alone,
 // so number (the pull request it belongs to) is unused.
-func (c *Client) GetComment(ctx context.Context, owner, repo string, _ int, id int64, inline bool) (forge.Comment, error) {
+func (c *Client) GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (forge.Comment, error) {
 	if inline {
 		cm, _, err := c.api.PullRequests.GetComment(ctx, owner, repo, id)
 		if err != nil {
@@ -290,7 +286,7 @@ func inlineComment(cm *gh.PullRequestComment) forge.Comment {
 	return forge.Comment{
 		ID: cm.GetID(), Author: cm.GetUser().GetLogin(), AuthorIsBot: cm.GetUser().GetType() == userTypeBot,
 		Body: cm.GetBody(), CreatedAt: cm.GetCreatedAt().Time,
-		Inline: true, Path: cm.GetPath(), Line: cm.GetLine(), CommitID: cm.GetCommitID(), InReplyTo: cm.GetInReplyTo(),
+		Inline: true, Path: cm.GetPath(), Line: cm.GetLine(), InReplyTo: cm.GetInReplyTo(),
 	}
 }
 

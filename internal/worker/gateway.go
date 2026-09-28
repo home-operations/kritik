@@ -102,8 +102,8 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	file := g.Current.Get()
-	account := accountByID(file, grant.AccountID)
-	if account == nil {
+	account, found := file.AccountByID(grant.AccountID)
+	if !found {
 		refuse(w, http.StatusForbidden, "invalid_token", "the run's account is not in the configuration")
 		return
 	}

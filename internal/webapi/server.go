@@ -36,8 +36,8 @@ type Config struct {
 	// UI is the built dashboard, served under the base path; nil serves
 	// no UI.
 	UI fs.FS
-	// WebURL is the dashboard's external URL; its path is the base path
-	// every route is served under.
+	// WebURL is the dashboard's external URL, required; its path is the
+	// base path every route is served under.
 	WebURL *url.URL
 	// Logger defaults to slog.Default().
 	Logger *slog.Logger
@@ -77,13 +77,9 @@ func New(cfg Config) *Server {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	var base string
-	if cfg.WebURL != nil {
-		base = strings.TrimRight(cfg.WebURL.Path, "/")
-	}
 	return &Server{
 		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, keyring: cfg.Keyring, actions: cfg.Actions, version: cfg.Version,
-		webURL: cfg.WebURL, ui: cfg.UI, basePath: base,
+		webURL: cfg.WebURL, ui: cfg.UI, basePath: strings.TrimRight(cfg.WebURL.Path, "/"),
 		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger), env: cfg.Env, githubAPI: cfg.GitHubAPI,
 	}
 }

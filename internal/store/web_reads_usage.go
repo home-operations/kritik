@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river/rivertype"
 )
 
 // UsageGroup is what a usage series is keyed by.
@@ -83,27 +84,12 @@ func UsageSeries(ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time
 	return out, nil
 }
 
-// JobState is a river_job.state value.
-type JobState string
-
-// River job states.
-const (
-	JobAvailable JobState = "available"
-	JobScheduled JobState = "scheduled"
-	JobRunning   JobState = "running"
-	JobRetryable JobState = "retryable"
-	JobPending   JobState = "pending"
-	JobCompleted JobState = "completed"
-	JobCancelled JobState = "cancelled"
-	JobDiscarded JobState = "discarded"
-)
-
 // JobRow is one River job of the account, with the parts of its arguments
 // the queue view shows.
 type JobRow struct {
 	ID           int64
 	Kind         string
-	State        JobState
+	State        rivertype.JobState
 	Attempt      int
 	MaxAttempts  int
 	CreatedAt    time.Time
@@ -152,7 +138,7 @@ func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
 		var state string
 		err := row.Scan(&j.ID, &j.Kind, &state, &j.Attempt, &j.MaxAttempts, &j.CreatedAt, &j.ScheduledAt, &j.AttemptedAt, &j.FinalizedAt,
 			&j.RepositoryID, &j.Repository, &j.Number, &j.Head, &j.Trigger, &j.CommentID, &j.LastError)
-		j.State = JobState(state)
+		j.State = rivertype.JobState(state)
 		return j, err
 	})
 	if err != nil {

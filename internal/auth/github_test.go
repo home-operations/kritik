@@ -42,7 +42,7 @@ func TestGitHubMember(t *testing.T) {
 				_, _ = w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			got, err := githubAPI{}.member(context.Background(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "alice", "acme")
+			got, err := githubAPI{}.member(context.Background(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "acme")
 			if tt.wantErr != (err != nil) || (err != nil && !errors.Is(err, ErrForgeAPI)) || got != tt.want {
 				t.Fatalf("member = %v, %v; want %v, error %v", got, err, tt.want, tt.wantErr)
 			}

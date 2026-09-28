@@ -4,6 +4,5 @@
   "fileConnections": ["alpha-bot"],
   "connections": ["alpha-bot"],
   "reviewModel": "openrouter/acme-large",
-  "embedding": false,
-  "canReview": true
+  "embedding": false
 }

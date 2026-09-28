@@ -776,7 +776,6 @@ export interface SetupStatus {
   // defaults.models.review, '' when unset.
   reviewModel: string;
   embedding: boolean;
-  canReview: boolean;
 }
 
 // Tests a provider's key before it is saved. apiKey is {value} or
@@ -817,8 +816,6 @@ export interface AppRepository {
   name: string;
   fullName: string;
   defaultBranch: string;
-  private: boolean;
-  archived: boolean;
 }
 
 export interface RegisterResult {

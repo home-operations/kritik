@@ -31,8 +31,6 @@ func (k EventKind) Valid() bool {
 	return false
 }
 
-func (k EventKind) String() string { return string(k) }
-
 // Event is one row change published on the kritik_events channel: a new or
 // changed reviews, runner_runs, index_runs, followups or model_calls row.
 // ReviewID is nil for a row whose table has no review_id column, or whose
