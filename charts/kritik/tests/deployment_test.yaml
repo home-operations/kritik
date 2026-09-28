@@ -99,9 +99,9 @@ tests:
       - contains:
           path: spec.template.spec.volumes
           content:
-            name: providers
+            name: auth
             secret:
-              secretName: kritik-providers
+              secretName: kritik-auth
 
   - it: leaves the embedder out until a model is set
     asserts:

@@ -15,10 +15,10 @@ tests:
           value: RELEASE-NAME-kritik
       - matchRegex:
           path: data["config.yaml"]
-          pattern: "review: openrouter/openai/gpt-6-sol"
+          pattern: "clientId: Iv1.example"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: "filter: "
+          pattern: "file: /var/run/secrets/kritik/auth/admin-password"
 
   - it: renders nothing when an existing ConfigMap is named
     set:
