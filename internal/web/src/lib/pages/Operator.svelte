@@ -22,11 +22,13 @@
   });
   const sourceLabel: Record<string, string> = { env: 'environment', file: 'config file', default: 'default', dashboard: 'dashboard' };
 
-  // A saved spec changes which accounts run and which connections the
-  // settings list.
+  // A saved spec changes which accounts and connections run, and which
+  // connections the settings list.
+  let saves = $state(0);
   function refresh(): void {
     void res.load();
     void instance.load();
+    saves++;
   }
 </script>
 
@@ -86,7 +88,7 @@
 
     <InstanceSection onsaved={refresh} />
 
-    <ConnectionsSection />
+    {#key saves}<ConnectionsSection />{/key}
 
     {#if management()}<AppSetup />{/if}
 

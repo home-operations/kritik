@@ -38,9 +38,9 @@ export function togglePalette(): void {
   else open(() => (palette.open = true));
 }
 
-function isTyping(e: KeyboardEvent): boolean {
+export function isTyping(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement | null;
-  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
 }
 
 export function initKeyboard(): void {

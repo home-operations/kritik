@@ -355,8 +355,9 @@ test.describe('admin console', () => {
     await expect(page.locator('#op-config').locator('..')).toContainText('revision 4');
     await expect(page.locator('[data-path="connections[0].app.privateKey"]').getByLabel('Keep current')).toBeChecked();
     await expect(page.locator('input[type=password]')).toHaveCount(0);
-    // A save changes which accounts run, so the list reloads too.
+    // A save changes which accounts and connections run, so their lists reload too.
     await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/operator/accounts')).length).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/operator/connections')).length).toBeGreaterThanOrEqual(2);
   });
 
   test('adds a connection to a fresh instance', async ({ page }) => {
