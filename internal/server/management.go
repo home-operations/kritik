@@ -96,7 +96,7 @@ func ServeDrain(ctx context.Context, addr string, h http.Handler, drain time.Dur
 		return fmt.Errorf("server: %w", err)
 	case <-ctx.Done():
 	}
-	dctx, cancel := context.WithTimeout(context.Background(), drain)
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), drain)
 	defer cancel()
 	if err := srv.Shutdown(dctx); err != nil {
 		logger.Warn("requests cut at shutdown", "drain", drain, "error", err)

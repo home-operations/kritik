@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	"cmp"
 	"net/http"
 	"time"
 
@@ -26,9 +27,7 @@ func parseTime(s string) (time.Time, bool) {
 func (s *Server) usageQuery(r *http.Request) (store.UsageGroup, time.Time, time.Time, error) {
 	q := r.URL.Query()
 	group := store.UsageGroup(q.Get("group"))
-	if group == "" {
-		group = store.UsageByDay
-	}
+	group = cmp.Or(group, store.UsageByDay)
 	if !group.Valid() {
 		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "group must be day, model, repo or role")
 	}

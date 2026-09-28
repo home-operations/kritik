@@ -250,7 +250,7 @@ func run() error {
 			}
 			logger.Info("working the queues", "review_workers", cfg.ReviewWorkers, "index_workers", cfg.IndexWorkers, "executor", cfg.Executor)
 			<-ctx.Done()
-			stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
 			return queue.Stop(stopCtx)
 		})

@@ -98,12 +98,10 @@ func tokenHash(token string) []byte {
 	return h[:]
 }
 
-func randomToken() (string, error) {
+func randomToken() string {
 	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(raw), nil
+	_, _ = rand.Read(raw) // never fails
+	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 // UpsertIdentity finds or creates the user behind id and refreshes its
@@ -183,10 +181,7 @@ func (s *Store) CreateSession(
 	if g.Accounts == nil {
 		g.Accounts = []string{}
 	}
-	token, err := randomToken()
-	if err != nil {
-		return "", fmt.Errorf("store: create session: %w", err)
-	}
+	token := randomToken()
 	if _, err := s.app.Exec(ctx, `DELETE FROM sessions WHERE expires_at <= $1`, now); err != nil {
 		return "", fmt.Errorf("store: create session: %w", err)
 	}
@@ -266,12 +261,9 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 // state and browser values are kept. Expired states are swept on the way.
 func (s *Store) CreateLoginState(ctx context.Context, ls LoginState, browser string, now time.Time) (string, error) {
 	if browser == "" {
-		return "", fmt.Errorf("store: create login state: no browser binding")
+		return "", errors.New("store: create login state: no browser binding")
 	}
-	state, err := randomToken()
-	if err != nil {
-		return "", fmt.Errorf("store: create login state: %w", err)
-	}
+	state := randomToken()
 	if _, err := s.app.Exec(ctx, `DELETE FROM login_states WHERE expires_at <= $1`, now); err != nil {
 		return "", fmt.Errorf("store: create login state: %w", err)
 	}

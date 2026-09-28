@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -44,7 +45,9 @@ func transcriptMask(f *configfile.File, p configfile.Provider, extra ...string) 
 			secrets = append(secrets, jsonEscaped(s)...)
 		}
 	}
-	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
+	// Longest first, so no secret is cut by masking one it contains; equal
+	// ones adjacent, so Compact drops the repeats.
+	slices.SortFunc(secrets, func(a, b string) int { return cmp.Or(cmp.Compare(len(b), len(a)), cmp.Compare(a, b)) })
 	secrets = slices.Compact(secrets)
 	return func(text string) string {
 		for _, s := range secrets {
@@ -83,9 +86,7 @@ func (b *Base) recordModelCall(
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), transcriptTimeout)
 	defer cancel()
 	c.Model, c.Upstream, c.Stop, c.Usage, c.CostUSD = resp.Model, resp.Upstream, resp.Stop, resp.Usage, resp.CostUSD
-	if c.Model == "" {
-		c.Model = req.Model
-	}
+	c.Model = cmp.Or(c.Model, req.Model)
 	if stepErr != nil {
 		c.Error = mask(stepErr.Error())
 	}

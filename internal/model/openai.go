@@ -1,6 +1,7 @@
 package model
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -133,9 +134,7 @@ func (o *OpenAI) step(
 			continue
 		}
 		args := tc.Function.Arguments
-		if args == "" {
-			args = "{}"
-		}
+		args = cmp.Or(args, "{}")
 		out.ToolCalls = append(out.ToolCalls, ToolCall{ID: tc.ID, Name: tc.Function.Name, Input: json.RawMessage(args)})
 	}
 
@@ -232,9 +231,7 @@ func openAIMessages(m Message) []openai.ChatCompletionMessageParamUnion {
 		}
 		for _, c := range m.ToolCalls {
 			args := string(c.Input)
-			if args == "" {
-				args = "{}"
-			}
+			args = cmp.Or(args, "{}")
 			a.ToolCalls = append(a.ToolCalls, openai.ChatCompletionMessageToolCallUnionParam{
 				OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
 					ID: c.ID, Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{Name: c.Name, Arguments: args},

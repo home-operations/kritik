@@ -151,16 +151,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, http.StatusBadGateway, codeProviderUnavailable, err)
 		return
 	}
-	nonce, err := randomString()
-	if err != nil {
-		h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
-		return
-	}
-	browser, err := randomString()
-	if err != nil {
-		h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
-		return
-	}
+	nonce, browser := randomString(), randomString()
 	ls := store.LoginState{
 		Provider: name, Nonce: nonce, PKCEVerifier: oauth2.GenerateVerifier(),
 		ReturnTo: returnTo(r.URL.Query().Get("return_to")),
@@ -390,12 +381,10 @@ func clearedLoginCookie(webURL *url.URL) *http.Cookie {
 	return c
 }
 
-func randomString() (string, error) {
+func randomString() string {
 	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("auth: random: %w", err)
-	}
-	return base64.RawURLEncoding.EncodeToString(raw), nil
+	_, _ = rand.Read(raw) // never fails
+	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 // errorCode is the only failure detail a client is shown.

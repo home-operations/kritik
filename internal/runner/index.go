@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -65,9 +66,8 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 			p.RunID, baseFor(mode, p.Base), mode, changed, len(chunks)); err != nil {
 			return fmt.Errorf("runner: write index pack: %w", err)
 		}
-		for start := 0; start < len(chunks); start += stagingBatch {
-			end := min(start+stagingBatch, len(chunks))
-			if err := stage(ctx, tx, p.RunID, chunks[start:end]); err != nil {
+		for batch := range slices.Chunk(chunks, stagingBatch) {
+			if err := stage(ctx, tx, p.RunID, batch); err != nil {
 				return err
 			}
 		}

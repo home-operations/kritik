@@ -13,7 +13,7 @@ import (
 	"bytes"
 	"cmp"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -166,9 +166,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 	walk = func(ss []gotreesitter.OutlineSymbol, owner string) {
 		for _, s := range ss {
 			scope := s.Owner
-			if scope == "" {
-				scope = owner
-			}
+			scope = cmp.Or(scope, owner)
 			add(Decl{
 				Symbol: s.Name, Kind: s.Kind, Scope: scope,
 				StartLine: int(s.Range.StartPoint.Row) + 1, EndLine: int(s.Range.EndPoint.Row) + 1,
@@ -200,11 +198,8 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 			}
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].StartByte != out[j].StartByte {
-			return out[i].StartByte < out[j].StartByte
-		}
-		return out[i].EndByte > out[j].EndByte
+	slices.SortFunc(out, func(a, b Decl) int {
+		return cmp.Or(cmp.Compare(a.StartByte, b.StartByte), cmp.Compare(b.EndByte, a.EndByte))
 	})
 	return out
 }
@@ -322,7 +317,7 @@ func (f *File) Identifiers(lines []int) []string {
 		want[l] = true
 	}
 	counts := map[string]int{}
-	lo, hi := minKey(want), maxKey(want)
+	lo, hi := slices.Min(lines), slices.Max(lines)
 	var walk func(n *gotreesitter.Node)
 	walk = func(n *gotreesitter.Node) {
 		row := int(n.StartPoint().Row) + 1
@@ -346,33 +341,8 @@ func (f *File) Identifiers(lines []int) []string {
 	for id := range counts {
 		out = append(out, id)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if counts[out[i]] != counts[out[j]] {
-			return counts[out[i]] > counts[out[j]]
-		}
-		return out[i] < out[j]
-	})
+	slices.SortFunc(out, func(a, b string) int { return cmp.Or(cmp.Compare(counts[b], counts[a]), cmp.Compare(a, b)) })
 	return out
-}
-
-func minKey(m map[int]bool) int {
-	min := 0
-	for k := range m {
-		if min == 0 || k < min {
-			min = k
-		}
-	}
-	return min
-}
-
-func maxKey(m map[int]bool) int {
-	max := 0
-	for k := range m {
-		if k > max {
-			max = k
-		}
-	}
-	return max
 }
 
 // Window returns the fixed-size fallback: the lines from first-radius to

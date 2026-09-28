@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,18 +24,10 @@ type Limits struct {
 // WithDefaults fills every zero-valued field of l with the fleet default,
 // leaving any field the caller already set untouched.
 func (l Limits) WithDefaults() Limits {
-	if l.MaxSteps == 0 {
-		l.MaxSteps = 60
-	}
-	if l.MaxToolOutputBytes == 0 {
-		l.MaxToolOutputBytes = 32 << 10
-	}
-	if l.MaxTokens == 0 {
-		l.MaxTokens = 4_000_000
-	}
-	if l.MaxOutputTokensPerStep == 0 {
-		l.MaxOutputTokensPerStep = 8192
-	}
+	l.MaxSteps = cmp.Or(l.MaxSteps, 60)
+	l.MaxToolOutputBytes = cmp.Or(l.MaxToolOutputBytes, 32<<10)
+	l.MaxTokens = cmp.Or(l.MaxTokens, 4_000_000)
+	l.MaxOutputTokensPerStep = cmp.Or(l.MaxOutputTokensPerStep, 8192)
 	return l
 }
 
@@ -190,9 +183,7 @@ func (r Run) Do(ctx context.Context) Result {
 			}
 			nudged = true
 			text := resp.Text
-			if text == "" {
-				text = noResponseText
-			}
+			text = cmp.Or(text, noResponseText)
 			messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
 			messages = append(messages, model.Message{Role: model.RoleUser, Text: nudgeText})
 			continue

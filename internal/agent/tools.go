@@ -1,11 +1,12 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -105,12 +106,8 @@ func (rt *readFileTool) Run(_ context.Context, input json.RawMessage) (string, e
 	lines := splitLines(content)
 
 	start, end := req.StartLine, req.EndLine
-	if start == 0 {
-		start = 1
-	}
-	if end == 0 {
-		end = len(lines)
-	}
+	start = cmp.Or(start, 1)
+	end = cmp.Or(end, len(lines))
 	if start < 1 {
 		return "", fmt.Errorf("agent: read_file: %s: start_line must be >= 1", cleaned)
 	}
@@ -185,9 +182,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		return "", fmt.Errorf("agent: grep: invalid pattern: %w", err)
 	}
 	glob := req.PathGlob
-	if glob == "" {
-		glob = "**"
-	}
+	glob = cmp.Or(glob, "**")
 	if !doublestar.ValidatePattern(glob) {
 		return "", fmt.Errorf("agent: grep: invalid path_glob %q", glob)
 	}
@@ -237,12 +232,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		return "", fmt.Errorf("agent: grep: %w", err)
 	}
 
-	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].path != matches[j].path {
-			return matches[i].path < matches[j].path
-		}
-		return matches[i].line < matches[j].line
-	})
+	slices.SortFunc(matches, func(a, b grepMatch) int { return cmp.Or(cmp.Compare(a.path, b.path), cmp.Compare(a.line, b.line)) })
 
 	lines := make([]string, len(matches))
 	for i, m := range matches {
@@ -286,9 +276,7 @@ func (lt *listFilesTool) Run(ctx context.Context, input json.RawMessage) (string
 		return "", fmt.Errorf("agent: list_files: %w", err)
 	}
 	glob := req.Glob
-	if glob == "" {
-		glob = "**"
-	}
+	glob = cmp.Or(glob, "**")
 	if !doublestar.ValidatePattern(glob) {
 		return "", fmt.Errorf("agent: list_files: invalid glob %q", glob)
 	}
@@ -312,6 +300,6 @@ func (lt *listFilesTool) Run(ctx context.Context, input json.RawMessage) (string
 		return "", fmt.Errorf("agent: list_files: %w", err)
 	}
 
-	sort.Strings(paths)
+	slices.Sort(paths)
 	return truncate(strings.Join(paths, "\n"), lt.maxBytes), nil
 }

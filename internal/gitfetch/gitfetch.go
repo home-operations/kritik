@@ -6,6 +6,7 @@
 package gitfetch
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -208,9 +209,7 @@ func diffCommits(ctx context.Context, from, to *object.Commit) (string, []string
 	var changed []string
 	for _, c := range changes {
 		name := c.To.Name
-		if name == "" {
-			name = c.From.Name
-		}
+		name = cmp.Or(name, c.From.Name)
 		changed = append(changed, name)
 	}
 	return patch.String(), changed, nil

@@ -32,10 +32,7 @@ type AppManifestResult struct {
 // session whose token is sessionToken, and returns the random state that
 // names it. Expired flows are swept on the way.
 func (s *Store) CreateAppManifest(ctx context.Context, sessionToken, connection string, now time.Time) (string, error) {
-	state, err := randomToken()
-	if err != nil {
-		return "", fmt.Errorf("store: create App manifest: %w", err)
-	}
+	state := randomToken()
 	if _, err := s.app.Exec(ctx, `DELETE FROM app_manifests WHERE expires_at <= $1`, now); err != nil {
 		return "", fmt.Errorf("store: create App manifest: %w", err)
 	}
@@ -87,16 +84,12 @@ func (s *Store) CollectAppManifests(ctx context.Context, sessionToken string) ([
 	if err != nil {
 		return nil, fmt.Errorf("store: collect App manifests: %w", err)
 	}
-	defer rows.Close()
-	var out []AppManifestResult
-	for rows.Next() {
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (AppManifestResult, error) {
 		var r AppManifestResult
-		if err := rows.Scan(&r.Connection, &r.Slug, &r.ClientID, &r.ClientSecret, &r.Error); err != nil {
-			return nil, fmt.Errorf("store: collect App manifests: %w", err)
-		}
-		out = append(out, r)
-	}
-	if err := rows.Err(); err != nil {
+		err := row.Scan(&r.Connection, &r.Slug, &r.ClientID, &r.ClientSecret, &r.Error)
+		return r, err
+	})
+	if err != nil {
 		return nil, fmt.Errorf("store: collect App manifests: %w", err)
 	}
 	return out, nil

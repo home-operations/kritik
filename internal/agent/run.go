@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os/exec"
 	"slices"
@@ -57,11 +58,7 @@ type RunTool struct {
 
 // NewRunTool builds the run tool over c.Commands.
 func NewRunTool(c RunConfig) *RunTool {
-	names := make([]string, 0, len(c.Commands))
-	for name := range c.Commands {
-		names = append(names, name)
-	}
-	slices.Sort(names)
+	names := slices.Sorted(maps.Keys(c.Commands))
 	// A []string always encodes.
 	enum, _ := json.Marshal(names)
 	schema := fmt.Sprintf(`{
@@ -127,7 +124,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	err := cmd.Run()
 	switch {
 	case ctx.Err() != nil:
-		return "", ctx.Err()
+		return "", fmt.Errorf("agent: run: %w", ctx.Err())
 	case cctx.Err() != nil:
 		return fmt.Sprintf("stopped after %s\n%s", rt.cfg.Timeout, out), nil
 	case err != nil:

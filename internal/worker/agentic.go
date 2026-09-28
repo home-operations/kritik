@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -216,9 +217,7 @@ func (w *Review) readAgentRun(ctx context.Context, accountID, runID string, ref 
 	if err != nil || !found {
 		return nil, err
 	}
-	if run.model == "" {
-		run.model = ref.Model()
-	}
+	run.model = cmp.Or(run.model, ref.Model())
 	return &run, nil
 }
 

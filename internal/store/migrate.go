@@ -5,7 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,7 +42,7 @@ func (s *Store) Migrate(ctx context.Context, appRole, runnerRole string) error {
 	if err != nil {
 		return fmt.Errorf("store: list migrations: %w", err)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, name := range names {
 		version := strings.TrimSuffix(strings.TrimPrefix(name, "migrations/"), ".sql")
 		if err := s.applyMigration(ctx, name, version); err != nil {
@@ -181,7 +181,8 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("store: %s: %w", strings.SplitN(stmt, " TO ", 2)[0], err)
+			grant, _, _ := strings.Cut(stmt, " TO ")
+			return fmt.Errorf("store: %s: %w", grant, err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

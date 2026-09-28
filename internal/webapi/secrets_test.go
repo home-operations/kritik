@@ -11,7 +11,7 @@ import (
 
 func fakeSeal(b []byte) (string, error) { return "sealed:" + string(b), nil }
 
-func fakeGenerate() (string, error) { return "g3n", nil }
+func fakeGenerate() string { return "g3n" }
 
 const storedSpec = `{"connections":[
 	{"name":"alpha-bot","forge":"github","accounts":["alpha"],

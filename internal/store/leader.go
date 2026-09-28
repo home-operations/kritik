@@ -95,7 +95,7 @@ loop:
 	}
 
 	// Best effort: the session ends with the connection anyway.
-	unlockCtx, unlockCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	unlockCtx, unlockCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer unlockCancel()
 	_, _ = conn.Exec(unlockCtx, `SELECT pg_advisory_unlock(hashtext($1))`, leaderKey)
 	s.logger.Info("leader lock released")

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -202,7 +203,7 @@ type sealedSpec struct {
 // sealSpec turns a client's spec into the stored form: each secret given
 // a value or generated is sealed with seal, and each kept one is copied
 // from stored, the spec it replaces (empty for none).
-func sealSpec(spec, stored json.RawMessage, seal func([]byte) (string, error), generate func() (string, error)) (sealedSpec, error) {
+func sealSpec(spec, stored json.RawMessage, seal func([]byte) (string, error), generate func() string) (sealedSpec, error) {
 	var out sealedSpec
 	root, err := decodeObject(spec)
 	if err != nil {
@@ -225,10 +226,7 @@ func sealSpec(spec, stored json.RawMessage, seal func([]byte) (string, error), g
 		}
 		switch {
 		case in.generate:
-			plain, err := generate()
-			if err != nil {
-				return out, fmt.Errorf("webapi: generate secret: %w", err)
-			}
+			plain := generate()
 			in.value = plain
 			if out.generated == nil {
 				out.generated = map[string]string{}
@@ -394,10 +392,10 @@ func decodeObject(raw json.RawMessage) (map[string]any, error) {
 	dec.UseNumber()
 	var m map[string]any
 	if err := dec.Decode(&m); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("webapi: decode object: %w", err)
 	}
 	if m == nil {
-		return nil, fmt.Errorf("not an object")
+		return nil, errors.New("webapi: decode object: not an object")
 	}
 	return m, nil
 }
@@ -434,10 +432,8 @@ func lookupParent(m map[string]any, path string) (map[string]any, string) {
 }
 
 // generateWebhookSecret is 32 random bytes, hex.
-func generateWebhookSecret() (string, error) {
+func generateWebhookSecret() string {
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
+	_, _ = rand.Read(b) // never fails
+	return hex.EncodeToString(b)
 }

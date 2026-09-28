@@ -409,16 +409,15 @@ func readStaged(ctx context.Context, tx pgx.Tx, runnerRunID string, after int64,
 	if err != nil {
 		return nil, fmt.Errorf("worker: read staged chunks: %w", err)
 	}
-	defer rows.Close()
-	var out []stagedChunk
-	for rows.Next() {
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (stagedChunk, error) {
 		var c stagedChunk
-		if err := rows.Scan(&c.id, &c.path, &c.startLine, &c.endLine, &c.language, &c.symbol, &c.kind, &c.scope, &c.text); err != nil {
-			return nil, fmt.Errorf("worker: scan staged chunk: %w", err)
-		}
-		out = append(out, c)
+		err := row.Scan(&c.id, &c.path, &c.startLine, &c.endLine, &c.language, &c.symbol, &c.kind, &c.scope, &c.text)
+		return c, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("worker: read staged chunks: %w", err)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // embedText is what the embedder sees: the path and symbol give the

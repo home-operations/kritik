@@ -16,7 +16,7 @@ import (
 const MaxRenderBytes = 64 << 10
 
 // renderTimeout bounds one render, parse included.
-var renderTimeout = 2 * time.Second
+const renderTimeout = 2 * time.Second
 
 //go:embed templates/summary.md.tmpl
 var defaultSummary string
