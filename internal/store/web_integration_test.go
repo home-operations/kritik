@@ -135,40 +135,32 @@ func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 }
 
 // TestListenPublishesConfigEvents checks kritik_notify_config: an insert or
-// update on dashboard_accounts must call onConfig with the row's slug.
+// update of the instance spec must call onConfig with its revision.
 func TestListenPublishesConfigEvents(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
+	resetInstanceSpec(t, s)
 
 	configs := make(chan string, 10)
 	listenCtx := t.Context()
-	go s.Listen(listenCtx, ListenHandlers{OnConfig: func(slug string) { configs <- slug }})
+	go s.Listen(listenCtx, ListenHandlers{OnConfig: func(rev string) { configs <- rev }})
 	time.Sleep(250 * time.Millisecond)
 
-	// dashboard_accounts carries no RLS (read before the account it describes
-	// exists), so the owner pool can write it directly.
-	if _, err := s.owner.Exec(ctx, `INSERT INTO dashboard_accounts (slug, spec) VALUES ('gamma', '{}'::jsonb)`); err != nil {
-		t.Fatalf("insert dashboard_accounts: %v", err)
-	}
-	select {
-	case slug := <-configs:
-		if slug != "gamma" {
-			t.Fatalf("config slug = %q, want gamma", slug)
+	for _, step := range []struct{ sql, want string }{
+		{`INSERT INTO instance_config (id, spec, revision) VALUES (1, '{}'::jsonb, 1)`, "1"},
+		{`UPDATE instance_config SET revision = revision + 1`, "2"},
+	} {
+		if _, err := s.owner.Exec(ctx, step.sql); err != nil {
+			t.Fatalf("%s: %v", step.sql, err)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("no config event received for the insert")
-	}
-
-	if _, err := s.owner.Exec(ctx, `UPDATE dashboard_accounts SET revision = revision + 1 WHERE slug = 'gamma'`); err != nil {
-		t.Fatalf("update dashboard_accounts: %v", err)
-	}
-	select {
-	case slug := <-configs:
-		if slug != "gamma" {
-			t.Fatalf("config slug = %q, want gamma", slug)
+		select {
+		case rev := <-configs:
+			if rev != step.want {
+				t.Fatalf("config event = %q, want %q", rev, step.want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no config event for %s", step.sql)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("no config event received for the update")
 	}
 }
 
@@ -238,7 +230,7 @@ func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 
 	tables := []string{
 		"users", "identities", "sessions", "login_states",
-		"audit_events", "dashboard_accounts", "model_calls",
+		"audit_events", "instance_config", "model_calls",
 	}
 	for _, table := range tables {
 		t.Run(table, func(t *testing.T) {

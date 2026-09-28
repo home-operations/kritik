@@ -26,6 +26,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/ingest"
@@ -53,32 +54,31 @@ defaults:
 tools:
   - { name: helm, image: registry.example/helm:3 }
   - { name: kurl, image: registry.example/kurl:1, path: /usr/bin, commands: [curl] }
+connections:
+  - name: acme-bot
+    forge: github
+    accounts: [acme]
+    app:
+      clientId: Iv1.x
+      privateKey: { env: TEST_PEM }
+      webhookSecret: { env: TEST_SECRET }
+  - name: globex-bot
+    forge: github
+    accounts: [globex]
+    app:
+      clientId: Iv1.y
+      privateKey: { env: TEST_PEM }
+      webhookSecret: { env: TEST_SECRET }
 accounts:
-  - slug: acme
-    connections:
-      - name: acme-bot
-        forge: github
-        accounts: [acme]
-        app:
-          clientId: Iv1.x
-          privateKey: { env: TEST_PEM }
-          webhookSecret: { env: TEST_SECRET }
+  - forge: github
+    name: acme
     repositories:
-      - name: acme/widgets
+      - name: widgets
         mode: agentic
         agent:
           maxSteps: 6
           commands: [curl]
           commandTimeout: 5s
-  - slug: globex
-    connections:
-      - name: globex-bot
-        forge: github
-        accounts: [globex]
-        app:
-          clientId: Iv1.y
-          privateKey: { env: TEST_PEM }
-          webhookSecret: { env: TEST_SECRET }
 `
 
 // agentJobTimeout is the harness client's JobTimeout.
@@ -260,14 +260,15 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	// Credentials in the provider's URL, which the SDK prints in its errors,
 	// must not reach a runner either.
 	providerURL := strings.Replace(srv.URL, "http://", "http://kritik:provider-secret@", 1)
-	if h.file, err = configfile.Parse([]byte(fmt.Sprintf(agenticConfigYAML, providerURL))); err != nil {
+	if h.file, err = configfiletest.Parse(t, fmt.Sprintf(agenticConfigYAML, providerURL)); err != nil {
 		t.Fatal(err)
 	}
 	if err := appStore.ApplyConfig(ctx, h.file, "test"); err != nil {
 		t.Fatal(err)
 	}
-	h.in, h.account, _ = h.file.Connection("acme-bot")
-	_, h.other, _ = h.file.Connection("globex-bot")
+	h.in, _ = h.file.Connection("acme-bot")
+	h.account, _ = h.file.Account(configfile.ForgeGitHub, "acme")
+	h.other, _ = h.file.Account(configfile.ForgeGitHub, "globex")
 	h.dir, h.base, h.head = testRepo(t)
 	// The run tool's curl: prints what it was given and fetches nothing.
 	bin := t.TempDir()
@@ -590,7 +591,7 @@ func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 // a model other than the run's, or without a valid token.
 func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
-	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
+	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.account.ID(), "acme/widgets"), Number: 1,
 		HeadSHA: strings.Repeat("c", 40), Trigger: "test"}
 	pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, args.Number)
 	if err != nil {
@@ -1063,7 +1064,7 @@ func checkAgentCanceledCharges(t *testing.T, h *agenticHarness) {
 }
 
 func checkFailRun(t *testing.T, h *agenticHarness) {
-	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
+	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.account.ID(), "acme/widgets"), Number: 1,
 		HeadSHA: strings.Repeat("d", 40), Trigger: "test"}
 	pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, args.Number)
 	if err != nil {
@@ -1107,7 +1108,7 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"),
+			args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.account.ID(), "acme/widgets"),
 				Number: 1, HeadSHA: tt.head, Trigger: "test"}
 			pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, args.Number)
 			if err != nil {
@@ -1117,7 +1118,7 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			e := endedReview{accountID: h.account.ID(), accountSlug: h.account.Slug, reviewID: reviewID, headSHA: tt.head,
+			e := endedReview{accountID: h.account.ID(), accountKey: h.account.Key(), reviewID: reviewID, headSHA: tt.head,
 				owner: "acme", repo: "widgets", client: h.lf, started: time.Now(), logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 			err = h.review.agentSpecFailed(tt.ctx, e, runID, boom)
 			if (err != nil) != tt.retried {

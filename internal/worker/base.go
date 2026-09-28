@@ -35,11 +35,12 @@ func (b *Base) account(file *configfile.File, id string) (*configfile.Account, e
 	return nil, river.JobCancel(fmt.Errorf("worker: account %s is not in the configuration", id))
 }
 
-// client resolves a connection by name to its forge client for repo.
-func (b *Base) client(ctx context.Context, file *configfile.File, connection, repo string) (forge.Client, error) {
-	in, _, ok := file.Connection(connection)
-	if !ok {
-		return nil, river.JobCancel(fmt.Errorf("worker: connection %s is not in the configuration", connection))
+// client resolves the connection serving account to its forge client for
+// repo.
+func (b *Base) client(ctx context.Context, file *configfile.File, account *configfile.Account, repo string) (forge.Client, error) {
+	in := file.ConnectionFor(account)
+	if in == nil {
+		return nil, river.JobCancel(fmt.Errorf("worker: no connection serves account %s", account.Key()))
 	}
 	return b.Forges.For(ctx, in, repo)
 }
@@ -69,7 +70,7 @@ func (b *Base) withLease(
 	if err != nil {
 		return err
 	}
-	b.Metrics.LeaseWait(account.Slug, key, time.Since(waited))
+	b.Metrics.LeaseWait(account.Key(), key, time.Since(waited))
 	defer b.releaseLease(ctx, b.Logger, l, key)
 	return fn(ctx)
 }

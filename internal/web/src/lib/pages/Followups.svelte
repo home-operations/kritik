@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { accountApi } from '../links';
   import { Paged, live } from '../resource.svelte';
   import type { Followup } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -6,7 +7,7 @@
   import LoadMore from '../components/LoadMore.svelte';
 
   let { slug }: { slug: string } = $props();
-  const base = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}/followups`);
+  const base = $derived(`${accountApi(slug)}/followups`);
   const paged = new Paged<Followup>(
     (cursor) => `${base}?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
     (f) => f.id,

@@ -24,20 +24,18 @@ import (
 )
 
 const fileYAML = `
-accounts:
-  - slug: acme
-    connections:
-      - name: acme-bot
-        forge: github
-        accounts: [acme]
-        app: { clientId: Iv1.acme, privateKey: { env: TEST_CS_KEY }, webhookSecret: { env: TEST_CS_SECRET } }
+connections:
+  - name: acme-bot
+    forge: github
+    accounts: [acme]
+    app: { clientId: Iv1.acme, privateKey: { env: TEST_CS_KEY }, webhookSecret: { env: TEST_CS_SECRET } }
 `
 
-// fakeStore is the dashboard side of a Source: rows and a fingerprint the
+// fakeStore is the dashboard side of a Source: a spec and a fingerprint the
 // test sets, and a Listen that hands the test its handlers.
 type fakeStore struct {
 	mu       sync.Mutex
-	rows     []configfile.DashboardAccount
+	spec     configfile.InstanceSpec
 	fp       string
 	err      error
 	handlers chan store.ListenHandlers
@@ -45,10 +43,10 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore { return &fakeStore{handlers: make(chan store.ListenHandlers, 1)} }
 
-func (f *fakeStore) set(fp string, rows ...configfile.DashboardAccount) {
+func (f *fakeStore) set(fp string, spec configfile.InstanceSpec) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.rows, f.fp, f.err = rows, fp, nil
+	f.spec, f.fp, f.err = spec, fp, nil
 }
 
 func (f *fakeStore) fail(err error) {
@@ -57,13 +55,13 @@ func (f *fakeStore) fail(err error) {
 	f.err = err
 }
 
-func (f *fakeStore) DashboardAccounts(context.Context) ([]configfile.DashboardAccount, error) {
+func (f *fakeStore) InstanceSpec(context.Context) (configfile.InstanceSpec, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.rows, f.err
+	return f.spec, f.err
 }
 
-func (f *fakeStore) DashboardFingerprint(context.Context) (string, error) {
+func (f *fakeStore) InstanceSpecFingerprint(context.Context) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.fp, f.err
@@ -83,9 +81,9 @@ func testKeyring(t *testing.T) *sealbox.Keyring {
 	return k
 }
 
-// dashRow is a dashboard account slug with one connection inst, its App's
-// private key and webhook secret sealed with k.
-func dashRow(t *testing.T, k *sealbox.Keyring, slug, inst string, rev int64) configfile.DashboardAccount {
+// specOf is a spec at rev holding one connection per "name:account" in
+// conns, each App's private key and webhook secret sealed with k.
+func specOf(t *testing.T, k *sealbox.Keyring, rev int64, conns ...string) configfile.InstanceSpec {
 	t.Helper()
 	seal := func(v string) string {
 		s, err := k.Seal([]byte(v))
@@ -94,9 +92,13 @@ func dashRow(t *testing.T, k *sealbox.Keyring, slug, inst string, rev int64) con
 		}
 		return s
 	}
-	spec := `{"slug":"` + slug + `","connections":[{"name":"` + inst + `","forge":"github","accounts":["` + slug + `"],` +
-		`"app":{"clientId":"Iv1.` + slug + `","privateKey":{"sealed":"` + seal("key-"+slug) + `"},"webhookSecret":{"sealed":"` + seal("wh-"+slug) + `"}}}]}`
-	return configfile.DashboardAccount{Slug: slug, Spec: json.RawMessage(spec), Revision: rev}
+	list := make([]string, len(conns))
+	for i, c := range conns {
+		name, account, _ := strings.Cut(c, ":")
+		list[i] = `{"name":"` + name + `","forge":"github","accounts":["` + account + `"],` +
+			`"app":{"clientId":"Iv1.` + name + `","privateKey":{"sealed":"` + seal("key-"+name) + `"},"webhookSecret":{"sealed":"` + seal("wh-"+name) + `"}}}`
+	}
+	return configfile.InstanceSpec{Spec: json.RawMessage(`{"connections":[` + strings.Join(list, ",") + `]}`), Revision: rev}
 }
 
 func writeFile(t *testing.T, path, yaml string) {
@@ -115,8 +117,8 @@ func configPath(t *testing.T) string {
 	return path
 }
 
-// countingHandler counts records at error level, reloads and file accounts
-// left out.
+// countingHandler counts records at error level, reloads and file
+// connections left out.
 type countingHandler struct{ errors, reloads, skips atomic.Int32 }
 
 func (h *countingHandler) Enabled(context.Context, slog.Level) bool { return true }
@@ -127,7 +129,7 @@ func (h *countingHandler) Handle(_ context.Context, r slog.Record) error {
 	switch r.Message {
 	case "configuration reloaded":
 		h.reloads.Add(1)
-	case "configsource: file account left out of the running configuration":
+	case "configsource: file connection left out of the running configuration":
 		h.skips.Add(1)
 	}
 	return nil
@@ -135,17 +137,8 @@ func (h *countingHandler) Handle(_ context.Context, r slog.Record) error {
 func (h *countingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *countingHandler) WithGroup(string) slog.Handler      { return h }
 
-func dashRevision(f *configfile.File, slug string) int64 {
-	for _, d := range f.Dashboard() {
-		if d.Slug == slug {
-			return d.Revision
-		}
-	}
-	return 0
-}
-
 func hasConnection(f *configfile.File, name string) bool {
-	_, _, ok := f.Connection(name)
+	_, ok := f.Connection(name)
 	return ok
 }
 
@@ -155,21 +148,19 @@ func TestLoad(t *testing.T) {
 	tests := []struct {
 		name    string
 		keyring *sealbox.Keyring
-		rows    []configfile.DashboardAccount
+		spec    configfile.InstanceSpec
 		wantErr error
 		want    []string
 	}{
 		{name: "file only", want: []string{"acme-bot"}},
 		{name: "file only, no key needed", keyring: nil, want: []string{"acme-bot"}},
-		{name: "file and dashboard", keyring: k, rows: []configfile.DashboardAccount{dashRow(t, k, "beta", "beta-bot", 1)},
-			want: []string{"acme-bot", "beta-bot"}},
-		{name: "dashboard rows without a key", rows: []configfile.DashboardAccount{dashRow(t, k, "beta", "beta-bot", 1)},
-			wantErr: ErrNoDashboardKey},
+		{name: "file and spec", keyring: k, spec: specOf(t, k, 1, "beta-bot:beta"), want: []string{"acme-bot", "beta-bot"}},
+		{name: "a spec without a key", spec: specOf(t, k, 1, "beta-bot:beta"), wantErr: ErrNoDashboardKey},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := newFakeStore()
-			fs.set("fp", tt.rows...)
+			fs.set("fp", tt.spec)
 			s := &Source{Store: fs, Keyring: tt.keyring}
 			f, err := s.Load(t.Context(), path)
 			if !errors.Is(err, tt.wantErr) {
@@ -189,16 +180,23 @@ func TestLoad(t *testing.T) {
 		})
 	}
 
-	t.Run("a dashboard account holding the file's slug leaves the file account out", func(t *testing.T) {
+	t.Run("no file at all", func(t *testing.T) {
+		f, err := (&Source{Store: newFakeStore()}).Load(t.Context(), "")
+		if err != nil || len(f.Connections) != 0 {
+			t.Fatalf("Load = %+v, %v", f, err)
+		}
+	})
+
+	t.Run("a spec connection holding the file's name leaves the file's out", func(t *testing.T) {
 		fs := newFakeStore()
-		fs.set("fp", dashRow(t, k, "acme", "other-bot", 1))
+		fs.set("fp", specOf(t, k, 1, "acme-bot:other"))
 		reg := prometheus.NewRegistry()
 		f, err := (&Source{Store: fs, Keyring: k, Errors: server.NewConfigErrorGauge(reg)}).Load(t.Context(), path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if acme, ok := f.Account("acme"); !ok || acme.Origin() != configfile.OriginDashboard || len(f.Skipped()) != 1 {
-			t.Fatalf("account acme = %+v, skipped %v; want the dashboard's, with the file's left out", acme, f.Skipped())
+		if in, ok := f.Connection("acme-bot"); !ok || in.Origin() != configfile.OriginDashboard || len(f.Skipped()) != 1 {
+			t.Fatalf("connection acme-bot = %+v, skipped %v; want the spec's, with the file's left out", in, f.Skipped())
 		}
 		if v := mergeGauge(t, reg); v != 1 {
 			t.Fatalf("merge error gauge = %v, want 1", v)
@@ -250,15 +248,16 @@ func TestRun(t *testing.T) {
 	go func() { done <- s.Run(ctx, path, 10*time.Millisecond) }()
 	h := <-fs.handlers
 	current := func() *configfile.File { return s.Current.Get() }
-	// Sealing is randomised, so a row sealed twice is two different specs.
-	beta1, beta2, beta3 := dashRow(t, k, "beta", "beta-bot", 1), dashRow(t, k, "beta", "beta-bot", 2), dashRow(t, k, "beta", "beta-bot", 3)
+	revision := func() int64 { return current().Spec().Revision }
+	// Sealing is randomised, so a spec sealed twice is two different specs.
+	beta1, beta2, beta3 := specOf(t, k, 1, "beta-bot:beta"), specOf(t, k, 2, "beta-bot:beta"), specOf(t, k, 3, "beta-bot:beta")
 
-	t.Run("a config notification merges the new row", func(t *testing.T) {
+	t.Run("a config notification merges the new spec", func(t *testing.T) {
 		fs.set("1", beta1)
-		h.OnConfig("beta")
+		h.OnConfig("1")
 		waitFor(t, "beta-bot", func() bool { return hasConnection(current(), "beta-bot") })
-		in, _, _ := current().Connection("beta-bot")
-		if in.App.PrivateKeyValue().Value() != "key-beta" || in.WebhookSecretValue().Value() != "wh-beta" {
+		in, _ := current().Connection("beta-bot")
+		if in.App.PrivateKeyValue().Value() != "key-beta-bot" || in.WebhookSecretValue().Value() != "wh-beta-bot" {
 			t.Fatal("sealed credentials were not opened")
 		}
 	})
@@ -268,20 +267,20 @@ func TestRun(t *testing.T) {
 	t.Run("a repeat trigger with nothing new keeps the snapshot", func(t *testing.T) {
 		reloads := logs.reloads.Load()
 		h.OnReconnect()
-		h.OnConfig("beta")
+		h.OnConfig("1")
 		fs.set("2", beta2)
-		h.OnConfig("beta")
-		waitFor(t, "beta at revision 2", func() bool { return dashRevision(current(), "beta") == 2 })
+		h.OnConfig("2")
+		waitFor(t, "revision 2", func() bool { return revision() == 2 })
 		if n := logs.reloads.Load() - reloads; n != 1 {
 			t.Fatalf("Current was set %d times for one change, want 1", n)
 		}
 	})
 
-	t.Run("a collision keeps the last good snapshot and logs once", func(t *testing.T) {
+	t.Run("a spec that does not merge keeps the last good snapshot and logs once", func(t *testing.T) {
 		before := current()
-		fs.set("3", beta2, dashRow(t, k, "gamma", "beta-bot", 1))
+		fs.set("3", specOf(t, k, 3, "beta-bot:beta", "beta-bot:gamma"))
 		errsBefore := logs.errors.Load()
-		h.OnConfig("gamma")
+		h.OnConfig("3")
 		waitFor(t, "LastError", func() bool { return s.LastError() != nil })
 		if current() != before {
 			t.Fatal("a failed merge replaced the snapshot")
@@ -292,41 +291,44 @@ func TestRun(t *testing.T) {
 		if v := mergeGauge(t, reg); v != 1 {
 			t.Fatalf("merge error gauge = %v while failing, want 1", v)
 		}
-		h.OnConfig("gamma")
+		h.OnConfig("3")
 		h.OnReconnect()
 		fs.set("4", beta3)
 		h.OnReconnect()
-		waitFor(t, "recovery", func() bool { return s.LastError() == nil && dashRevision(current(), "beta") == 3 })
+		waitFor(t, "recovery", func() bool { return s.LastError() == nil && revision() == 3 })
 		if n := logs.errors.Load() - errsBefore; n != 1 {
 			t.Fatalf("logged %d errors for one distinct failure, want 1", n)
 		}
 		if v := mergeGauge(t, reg); v != 0 {
 			t.Fatalf("merge error gauge = %v after recovery, want 0", v)
 		}
-		if _, ok := current().Account("gamma"); ok || !hasConnection(current(), "acme-bot") {
+		if !hasConnection(current(), "acme-bot") {
 			t.Fatal("snapshot after recovery is wrong")
 		}
 	})
 
-	t.Run("a dashboard account holding a file connection name leaves that account out, warning once", func(t *testing.T) {
+	t.Run("a spec connection holding a file connection's name leaves the file's out, warning once", func(t *testing.T) {
 		skips := logs.skips.Load()
-		fs.set("5", beta3, dashRow(t, k, "gamma", "acme-bot", 1))
-		h.OnConfig("gamma")
-		waitFor(t, "gamma", func() bool { _, ok := current().Account("gamma"); return ok })
-		if _, ok := current().Account("acme"); ok || s.LastError() != nil {
-			t.Fatalf("the file account still runs, or the merge failed: %v", s.LastError())
+		fs.set("5", specOf(t, k, 4, "beta-bot:beta", "acme-bot:gamma"))
+		h.OnConfig("4")
+		waitFor(t, "revision 4", func() bool { return revision() == 4 })
+		if in, _ := current().Connection("acme-bot"); in.Origin() != configfile.OriginDashboard || s.LastError() != nil {
+			t.Fatalf("the file connection still runs, or the merge failed: %v", s.LastError())
 		}
-		want := []configfile.SkippedAccount{{Slug: "acme", Reason: `dashboard account "gamma" already holds connection name "acme-bot"`}}
+		want := []configfile.SkippedConnection{{Name: "acme-bot", Reason: `the dashboard's connection "acme-bot" already holds the name`}}
 		if got := current().Skipped(); !slices.Equal(got, want) {
 			t.Fatalf("Skipped = %v, want %v", got, want)
 		}
 		waitFor(t, "merge gauge raised", func() bool { return mergeGauge(t, reg) == 1 })
-		fs.set("6", beta3, dashRow(t, k, "gamma", "acme-bot", 2))
-		h.OnConfig("gamma")
-		waitFor(t, "gamma at revision 2", func() bool { return dashRevision(current(), "gamma") == 2 })
+		fs.set("6", specOf(t, k, 5, "beta-bot:beta", "acme-bot:gamma"))
+		h.OnConfig("5")
+		waitFor(t, "revision 5", func() bool { return revision() == 5 })
 		fs.set("4", beta3)
-		h.OnConfig("gamma")
-		waitFor(t, "acme back", func() bool { _, ok := current().Account("acme"); return ok })
+		h.OnConfig("3")
+		waitFor(t, "acme-bot back", func() bool {
+			in, ok := current().Connection("acme-bot")
+			return ok && in.Origin() == configfile.OriginFile
+		})
 		waitFor(t, "merge gauge cleared", func() bool { return mergeGauge(t, reg) == 0 })
 		if n := logs.skips.Load() - skips; n != 1 {
 			t.Fatalf("warned %d times for one clash, want 1", n)
@@ -336,37 +338,34 @@ func TestRun(t *testing.T) {
 	t.Run("a store read failure keeps the snapshot", func(t *testing.T) {
 		before := current()
 		fs.fail(errors.New("connection refused"))
-		h.OnConfig("beta")
+		h.OnConfig("3")
 		waitFor(t, "LastError", func() bool { return s.LastError() != nil })
 		if current() != before || !strings.Contains(s.LastError().Error(), "connection refused") {
 			t.Fatalf("snapshot replaced or error %v unexpected", s.LastError())
 		}
 		fs.set("4", beta3)
-		h.OnConfig("beta")
+		h.OnConfig("3")
 		waitFor(t, "recovery", func() bool { return s.LastError() == nil })
 		if current() != before {
 			t.Fatal("recovering with unchanged inputs replaced the snapshot")
 		}
 	})
 
-	t.Run("a file change is merged with the dashboard rows", func(t *testing.T) {
-		writeFile(t, path, fileYAML+`
-  - slug: zeta
-    connections:
-      - name: zeta-bot
-        forge: github
-        accounts: [zeta]
-        app: { clientId: Iv1.zeta, privateKey: { env: TEST_CS_KEY }, webhookSecret: { env: TEST_CS_SECRET } }
+	t.Run("a file change is merged with the spec", func(t *testing.T) {
+		writeFile(t, path, fileYAML+`  - name: zeta-bot
+    forge: github
+    accounts: [zeta]
+    app: { clientId: Iv1.zeta, privateKey: { env: TEST_CS_KEY }, webhookSecret: { env: TEST_CS_SECRET } }
 `)
 		waitFor(t, "zeta-bot", func() bool { return hasConnection(current(), "zeta-bot") })
 		if !hasConnection(current(), "beta-bot") {
-			t.Fatal("dashboard account lost on a file reload")
+			t.Fatal("spec connection lost on a file reload")
 		}
 	})
 
-	t.Run("a deleted row drops the account", func(t *testing.T) {
-		fs.set("4")
-		h.OnConfig("beta")
+	t.Run("a spec emptied drops its connections", func(t *testing.T) {
+		fs.set("7", configfile.InstanceSpec{Spec: json.RawMessage(`{}`), Revision: 6})
+		h.OnConfig("6")
 		waitFor(t, "beta-bot gone", func() bool { return !hasConnection(current(), "beta-bot") })
 	})
 
@@ -377,10 +376,10 @@ func TestRun(t *testing.T) {
 		}
 		writeFile(t, path, "accounts: []\n")
 		waitFor(t, "merge gauge", func() bool { return mergeGauge(t, reg) == 1 })
-		// A dashboard change still merges onto the last good file, and does
-		// not clear the gauge the bad file raised.
-		fs.set("6", dashRow(t, k, "beta", "beta-bot", 4))
-		h.OnConfig("beta")
+		// A spec change still merges onto the last good file, and does not
+		// clear the gauge the bad file raised.
+		fs.set("8", specOf(t, k, 7, "beta-bot:beta"))
+		h.OnConfig("7")
 		waitFor(t, "beta-bot", func() bool { return hasConnection(current(), "beta-bot") })
 		if v := mergeGauge(t, reg); v != 1 {
 			t.Fatalf("merge error gauge = %v while the file is bad, want 1", v)
@@ -390,9 +389,9 @@ func TestRun(t *testing.T) {
 		waitFor(t, "merge gauge cleared", func() bool { return mergeGauge(t, reg) == 0 })
 	})
 
-	t.Run("rows without a key are refused at runtime too", func(t *testing.T) {
+	t.Run("a spec without a key is refused at runtime too", func(t *testing.T) {
 		keyless := &Source{Store: newFakeStore(), Current: configfile.NewCurrent(current()), Logger: slog.New(logs)}
-		keyless.Store.(*fakeStore).set("5", dashRow(t, k, "beta", "beta-bot", 1))
+		keyless.Store.(*fakeStore).set("5", specOf(t, k, 1, "beta-bot:beta"))
 		keyless.refresh(t.Context())
 		if !errors.Is(keyless.LastError(), ErrNoDashboardKey) {
 			t.Fatalf("LastError = %v, want ErrNoDashboardKey", keyless.LastError())
@@ -415,6 +414,6 @@ func TestRunPollsTheFingerprint(t *testing.T) {
 	}
 	go func() { _ = s.Run(t.Context(), path, time.Hour) }()
 	<-fs.handlers
-	fs.set("changed", dashRow(t, k, "beta", "beta-bot", 1))
+	fs.set("changed", specOf(t, k, 1, "beta-bot:beta"))
 	waitFor(t, "beta-bot via poll", func() bool { return hasConnection(s.Current.Get(), "beta-bot") })
 }

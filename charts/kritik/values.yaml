@@ -67,76 +67,34 @@ web:
   # -- Dashboard port, served by `all` (once `web.url` is set) and `web` pods.
   port: 8083
 
-# The declarative configuration file (providers, defaults, accounts with their
-# connections and repositories). Either inline as `file`, rendered into a
-# chart-managed ConfigMap, or an existing ConfigMap with a `config.yaml` key.
-# Secret material never goes in the file: it references files under
-# `secretMounts` or environment variables. Every replica re-reads the file on
-# `reloadInterval`; the leader applies it to the store.
+# The configuration file: sign-in (`auth`) and GitHub Apps that already
+# exist (`connections`), and nothing else. Every key in it also has a
+# `KRITIK_*` environment variable, which wins over the file. Model
+# providers, defaults, accounts and their repositories are the instance
+# configuration, set in the dashboard's admin console and kept in
+# Postgres. The file is either inline as `file`, rendered into a
+# chart-managed ConfigMap, or an existing ConfigMap with a `config.yaml`
+# key. Secret material never goes in the file: it references files under
+# `secretMounts` or environment variables. Every replica re-reads the file
+# on `reloadInterval`; the leader applies it to the store.
 config:
-  # -- (required unless `existingConfigMap` is set) The configuration file, as YAML. Passed through verbatim, not tpl'd. See the README for the schema.
+  # -- (required unless `existingConfigMap` is set) The configuration file, as YAML: `auth` and `connections`. Passed through verbatim, not tpl'd. See docs/dashboard.md and docs/connecting-a-forge.md.
   file: {}
-  # providers:
-  #   openrouter:
-  #     type: openrouter
-  #     apiKey: { env: OPENROUTER_API_KEY }
-  #   gateway:
-  #     # Any OpenAI- or Anthropic-API-compatible endpoint is a provider via `baseUrl`.
-  #     type: openai
-  #     baseUrl: https://gateway.example.com/v1
-  #     apiKey: { file: /var/run/secrets/kritik/providers/gateway-api-key }
-  #     # Pricing (USD per million tokens) only matters for providers that
-  #     # don't self-report cost; OpenRouter does, so it needs none here.
-  #     pricing:
-  #       gpt-6-sol: { input: 1.25, output: 10 }
-  #   anthropic:
-  #     type: anthropic
-  #     apiKey: { file: /var/run/secrets/kritik/providers/anthropic-api-key }
-  #     pricing:
-  #       claude-sonnet-5: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }
-  # defaults:
-  #   # Every account's runner Job deadline unless it sets its own.
-  #   runner: { activeDeadlineSeconds: 900 }
-  #   models:
-  #     review: openrouter/openai/gpt-6-sol
-  #   filter: "!pr.draft"
-  #   # What a repository's .kritik.yaml may choose; with no bound, only
-  #   # the operator's own value, or a limit or settle time at or below it.
-  #   allow:
-  #     modes: [single, agentic]
-  #     models: [openrouter/openai/gpt-6-sol, openrouter/openai/gpt-6-mini]
-  #     settle: 10m
-  # # The leader's backstop for missed webhooks; interval: 0s turns it off.
-  # polling: { interval: 10m, lookback: 24h }
-  # # Onboarding index jobs kept queued or running at once.
-  # indexing: { onboardWindow: 4 }
-  # # Tools beyond the -tools image's curl, fd and rg, mounted from their
-  # # images (statically linked) into runs whose agent.commands allow them.
-  # tools:
-  #   - { name: helm, image: ghcr.io/example/helm:3@sha256:..., path: /usr/local/bin }
-  # accounts:
-  #   - slug: example
-  #     connections:
-  #       - name: example-github
-  #         forge: github
-  #         accounts: [example]
-  #         app:
-  #           clientId: Iv1.example
-  #           privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-  #           webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
-  #     repositories:
-  #       - name: example/widgets
-  #         # agentic mode gives the model a bounded, read-only tool loop
-  #         # over the commit tree instead of one prompt with the diff.
-  #         mode: agentic
-  #         # maxTokens bounds one review's spend; it is cut further to what
-  #         # is left of the account's tokensPerMonth. commands lets the agent
-  #         # run these binaries, found on the runner image's PATH (the -tools
-  #         # image ships curl, fd and rg), each for at most commandTimeout.
-  #         agent: { timeout: 15m, maxTokens: 1000000, commands: [curl, fd, rg], commandTimeout: 30s }
-  #         # Collapse a burst of pushes onto the last head before spending
-  #         # anything on a review.
-  #         settle: 2m
+  # auth:
+  #   admin:
+  #     password: { file: /var/run/secrets/kritik/auth/admin-password }
+  #   github:
+  #     clientId: Iv1.example
+  #     clientSecret: { file: /var/run/secrets/kritik/auth/github-client-secret }
+  #     roleMapping: 'login == "user-1" ? "admin" : ""'
+  # connections:
+  #   - name: github
+  #     forge: github
+  #     accounts: [org-1, user-1]
+  #     app:
+  #       clientId: Iv1.example
+  #       privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+  #       webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
 
   # -- Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`.
   existingConfigMap: ""
@@ -210,7 +168,7 @@ embedding:
   maxItemChars: 16000
 
 # Secrets the configuration file references by path (GitHub App private keys
-# and webhook secrets, provider API keys). Each entry mounts one Secret,
+# and webhook secrets, sign-in secrets). Each entry mounts one Secret,
 # read-only, at `mountPath` in every role's pods; the file then points at
 # `<mountPath>/<key>`.
 # -- Secrets mounted as files for the configuration file to reference.
@@ -218,9 +176,9 @@ secretMounts: []
 # - name: bot
 #   secretName: kritik-bot
 #   mountPath: /var/run/secrets/kritik/bot
-# - name: providers
-#   secretName: kritik-providers
-#   mountPath: /var/run/secrets/kritik/providers
+# - name: auth
+#   secretName: kritik-auth
+#   mountPath: /var/run/secrets/kritik/auth
 
 # Runner Jobs: one pod per review or index run, created by the worker in the
 # release namespace from the same image, running as a service account with
@@ -243,7 +201,7 @@ runner:
     annotations: {}
 
 gateway:
-  # -- Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration file names (forges, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews are refused without it.
+  # -- Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once a connection exists, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews are refused without it.
   enabled: true
   # -- Gateway port on the pods and its Service.
   port: 8082
@@ -382,17 +340,17 @@ networkPolicy:
   # -- Postgres port allowed for egress.
   postgresPort: 5432
 
-# KRITIK_DASHBOARD_KEY is the AES-256 key that seals every dashboard-managed
-# account's credentials (installation tokens, App keys, webhook secrets) at
+# KRITIK_DASHBOARD_KEY is the AES-256 key that seals the instance
+# configuration's credentials (App keys, webhook secrets, provider keys) at
 # rest; it has nothing to do with sessions. Wired onto every non-runner role
-# and required there once a dashboard account exists. To rotate it, move the
-# old value into oldKeysSecret (KRITIK_DASHBOARD_OLD_KEYS), which only opens
-# values sealed under it, and keep it there until every value has been
-# written again. Losing a key that still seals a value makes those
+# and required there once an instance configuration is stored. To rotate
+# it, move the old value into oldKeysSecret (KRITIK_DASHBOARD_OLD_KEYS),
+# which only opens values sealed under it, and keep it there until every
+# value has been written again. Losing a key that still seals a value makes those
 # credentials unreadable, and the pod then fails to start.
 dashboard:
   keySecret:
-    # -- Secret holding the key that seals dashboard accounts' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start.
+    # -- Secret holding the key that seals the instance configuration's credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start.
     name: ""
     # -- Key in that Secret.
     key: key

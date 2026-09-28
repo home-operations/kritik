@@ -5,13 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/home-operations/kritik/internal/auth"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/sealbox"
 )
 
 // mutate builds a state-changing request that passes the same-origin
@@ -49,7 +46,7 @@ func TestManagementRefusals(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
 	operator := &auth.Principal{Operator: true}
 	member := memberOf(t, ts.file, "alpha")
-	const spec = `{"slug":"gamma","spec":{"slug":"gamma"}}`
+	const body = `{"revision":1,"spec":{}}`
 	tests := []struct {
 		name   string
 		p      *auth.Principal
@@ -57,21 +54,19 @@ func TestManagementRefusals(t *testing.T) {
 		status int
 		code   ErrorCode
 	}{
-		{"create needs an operator", member, mutate("POST", "/api/v1/accounts", spec), 403, CodeForbidden},
-		{"create needs the sealing key", operator, mutate("POST", "/api/v1/accounts", spec), 503, CodeManagementDisabled},
-		{"update of a file account", member, mutate("PUT", "/api/v1/accounts/alpha/config", `{"revision":1,"spec":{}}`), 403, CodeFileManaged},
-		{"update of a file account by an operator", operator, mutate("PUT", "/api/v1/accounts/alpha/config", `{}`), 403, CodeFileManaged},
-		{"update of an unreadable account", member, mutate("PUT", "/api/v1/accounts/beta/config", `{}`), 404, CodeNotFound},
-		{"update of an unknown account", member, mutate("PUT", "/api/v1/accounts/gamma/config", `{}`), 404, CodeNotFound},
-		{"update needs the sealing key", operator, mutate("PUT", "/api/v1/accounts/gamma/config", `{}`), 503, CodeManagementDisabled},
-		{"delete needs an operator", member, mutate("DELETE", "/api/v1/accounts/gamma?revision=1", ""), 403, CodeForbidden},
-		{"delete of a file account", operator, mutate("DELETE", "/api/v1/accounts/alpha?revision=1", ""), 403, CodeFileManaged},
-		{"config of an unreadable account", member, httptest.NewRequest("GET", "/api/v1/accounts/beta/config", nil), 404, CodeNotFound},
-		{"rerun as a member", member, mutate("POST", "/api/v1/accounts/alpha/pulls/o/r/1/rerun", ""), 403, CodeForbidden},
-		{"cancel as a member", member, mutate("POST", "/api/v1/accounts/alpha/reviews/x/cancel", ""), 403, CodeForbidden},
-		{"reindex as a member", member, mutate("POST", "/api/v1/accounts/alpha/repos/o/r/reindex", ""), 403, CodeForbidden},
-		{"rerun without actions", operator, mutate("POST", "/api/v1/accounts/alpha/pulls/o/r/1/rerun", ""), 503, CodeActionsDisabled},
-		{"account audit as a member", member, httptest.NewRequest("GET", "/api/v1/accounts/alpha/audit", nil), 403, CodeForbidden},
+		{"the instance spec needs an admin", member, httptest.NewRequest("GET", "/api/v1/config", nil), 403, CodeForbidden},
+		{"a spec write needs an admin", member, mutate("PUT", "/api/v1/config", body), 403, CodeForbidden},
+		{"a spec write needs the sealing key", operator, mutate("PUT", "/api/v1/config", body), 503, CodeManagementDisabled},
+		{"an account write needs an admin", member, mutate("PUT", "/api/v1/accounts/github/alpha/config", body), 403, CodeForbidden},
+		{"an account write needs the sealing key", operator, mutate("PUT", "/api/v1/accounts/github/alpha/config", body), 503, CodeManagementDisabled},
+		{"a write to an unreadable account", member, mutate("PUT", "/api/v1/accounts/github/beta/config", body), 404, CodeNotFound},
+		{"a write to an unknown account", operator, mutate("PUT", "/api/v1/accounts/github/gamma/config", body), 404, CodeNotFound},
+		{"config of an unreadable account", member, httptest.NewRequest("GET", "/api/v1/accounts/github/beta/config", nil), 404, CodeNotFound},
+		{"rerun as a member", member, mutate("POST", "/api/v1/accounts/github/alpha/pulls/o/r/1/rerun", ""), 403, CodeForbidden},
+		{"cancel as a member", member, mutate("POST", "/api/v1/accounts/github/alpha/reviews/x/cancel", ""), 403, CodeForbidden},
+		{"reindex as a member", member, mutate("POST", "/api/v1/accounts/github/alpha/repos/o/r/reindex", ""), 403, CodeForbidden},
+		{"rerun without actions", operator, mutate("POST", "/api/v1/accounts/github/alpha/pulls/o/r/1/rerun", ""), 503, CodeActionsDisabled},
+		{"account audit as a member", member, httptest.NewRequest("GET", "/api/v1/accounts/github/alpha/audit", nil), 403, CodeForbidden},
 		{"admin audit as a member", member, httptest.NewRequest("GET", "/api/v1/operator/audit", nil), 403, CodeForbidden},
 	}
 	for _, tt := range tests {
@@ -87,27 +82,13 @@ func TestManagementRefusals(t *testing.T) {
 	}
 }
 
-func TestCreateRefusesAFileSlug(t *testing.T) {
-	ts := newTestServer(t, "https://kritik.example")
-	key := make([]byte, 32)
-	kr, err := sealbox.NewKeyring(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ts.srv.keyring = kr
-	w := ts.as(&auth.Principal{Operator: true}, mutate("POST", "/api/v1/accounts", `{"slug":"alpha","spec":{"slug":"alpha"}}`))
-	if w.Code != http.StatusConflict || decodeError(t, w).Code != CodeSlugTaken {
-		t.Fatalf("status = %d: %s, want 409 slug_taken", w.Code, w.Body)
-	}
-}
-
 func TestManagementNeedsSameOrigin(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
 	operator := &auth.Principal{Operator: true}
 	for _, route := range []struct{ method, path string }{
-		{"POST", "/api/v1/accounts"}, {"PUT", "/api/v1/accounts/alpha/config"}, {"DELETE", "/api/v1/accounts/alpha"},
-		{"POST", "/api/v1/accounts/alpha/pulls/o/r/1/rerun"}, {"POST", "/api/v1/accounts/alpha/reviews/x/cancel"},
-		{"POST", "/api/v1/accounts/alpha/repos/o/r/reindex"},
+		{"PUT", "/api/v1/config"}, {"PUT", "/api/v1/accounts/github/alpha/config"},
+		{"POST", "/api/v1/accounts/github/alpha/pulls/o/r/1/rerun"}, {"POST", "/api/v1/accounts/github/alpha/reviews/x/cancel"},
+		{"POST", "/api/v1/accounts/github/alpha/repos/o/r/reindex"},
 	} {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
 			req := httptest.NewRequest(route.method, route.path, strings.NewReader("{}"))
@@ -116,28 +97,5 @@ func TestManagementNeedsSameOrigin(t *testing.T) {
 				t.Errorf("without X-Kritik: %d %s, want 403 csrf", w.Code, w.Body)
 			}
 		})
-	}
-}
-
-func TestFileAccountConfigIsRedacted(t *testing.T) {
-	ts := newTestServer(t, "https://kritik.example")
-	w := ts.as(memberOf(t, ts.file, "alpha"), httptest.NewRequest("GET", "/api/v1/accounts/alpha/config", nil))
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", w.Code, w.Body)
-	}
-	var c AccountConfig
-	if err := json.Unmarshal(w.Body.Bytes(), &c); err != nil {
-		t.Fatal(err)
-	}
-	if c.ManagedBy != "file" || c.Editable || c.Revision != nil || len(c.Policy) != len(configfile.Policies) ||
-		slices.ContainsFunc(c.Policy, func(p FieldPolicy) bool { return p.Editable }) {
-		t.Errorf("config = %+v", c)
-	}
-	if body := w.Body.String(); strings.Contains(body, "KRITIK_TEST_TOKEN") || !strings.Contains(body, `"privateKey":{"set":true}`) {
-		t.Errorf("spec is not redacted: %s", body)
-	}
-	if in := c.Inherited; in.Account.Mode != configfile.ReviewSingle || in.AccountSources["mode"] != configfile.SourceDefault ||
-		in.Repository.Limits.Concurrency != configfile.DefaultConcurrency || in.RepositorySources["limits"] != configfile.SourceDefault {
-		t.Errorf("inherited = %+v", in)
 	}
 }

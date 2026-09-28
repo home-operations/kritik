@@ -1,40 +1,33 @@
 // Route builders for DTOs that carry a repository full name rather than
-// separate owner/repo fields.
-import type { Route } from './routes';
+// separate owner/repo fields, and the API paths of an account.
+import { slugPath, type Route } from './routes';
 import { splitRepo } from './format';
 
-// connection names which connection holding the repository a route or
-// action means; it is needed only where several hold the same owner/repo.
-export function pullRoute(slug: string, p: { repository: string; number: number }, connection?: string): Route {
+export function pullRoute(slug: string, p: { repository: string; number: number }): Route {
   const n = splitRepo(p.repository);
-  return { name: 'pull', slug, owner: n.owner, repo: n.repo, number: p.number, ...(connection ? { connection } : {}) };
+  return { name: 'pull', slug, owner: n.owner, repo: n.repo, number: p.number };
 }
 
-export function repoRoute(slug: string, fullName: string, connection?: string): Route {
+export function repoRoute(slug: string, fullName: string): Route {
   const n = splitRepo(fullName);
-  return { name: 'repo', slug, owner: n.owner, repo: n.repo, ...(connection ? { connection } : {}) };
+  return { name: 'repo', slug, owner: n.owner, repo: n.repo };
 }
 
-// connectionQuery is the ?connection= an API path carries, or ''.
-export function connectionQuery(connection?: string): string {
-  return connection ? `?connection=${encodeURIComponent(connection)}` : '';
+// accountApi is the API path of the account slug.
+export function accountApi(slug: string): string {
+  return `/api/v1/accounts/${slugPath(slug)}`;
 }
 
-// API paths for the dashboard actions.
-function accountApi(slug: string): string {
-  return `/api/v1/accounts/${encodeURIComponent(slug)}`;
-}
-
-export function rerunPath(slug: string, p: { repository: string; number: number }, connection?: string): string {
+export function rerunPath(slug: string, p: { repository: string; number: number }): string {
   const n = splitRepo(p.repository);
-  return `${accountApi(slug)}/pulls/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/${p.number}/rerun${connectionQuery(connection)}`;
+  return `${accountApi(slug)}/pulls/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/${p.number}/rerun`;
 }
 
 export function cancelPath(slug: string, reviewId: string): string {
   return `${accountApi(slug)}/reviews/${encodeURIComponent(reviewId)}/cancel`;
 }
 
-export function reindexPath(slug: string, fullName: string, connection?: string): string {
+export function reindexPath(slug: string, fullName: string): string {
   const n = splitRepo(fullName);
-  return `${accountApi(slug)}/repos/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/reindex${connectionQuery(connection)}`;
+  return `${accountApi(slug)}/repos/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/reindex`;
 }

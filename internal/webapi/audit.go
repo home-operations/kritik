@@ -14,7 +14,7 @@ import (
 
 // registerAudit mounts the audit log reads.
 func (s *Server) registerAudit(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/audit", s.admin(s.listAccountAudit))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/audit", s.admin(s.listAccountAudit))
 	mux.HandleFunc("GET /api/v1/operator/audit", s.handler(s.listOperatorAudit))
 }
 
@@ -70,7 +70,7 @@ func (s *Server) writeAudit(w http.ResponseWriter, r *http.Request, accountID st
 	slugs := map[string]string{}
 	file := s.current.Get()
 	for i := range file.Accounts {
-		slugs[file.Accounts[i].ID()] = file.Accounts[i].Slug
+		slugs[file.Accounts[i].ID()] = file.Accounts[i].Slug()
 	}
 	items := make([]AuditEvent, len(events))
 	for i, e := range events {

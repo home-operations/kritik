@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ambiguousConnections, getJSON } from '../api.svelte';
+  import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { duration, indexTone, shortSha, bytes } from '../format';
@@ -9,23 +9,21 @@
   import Time from '../components/Time.svelte';
   import PullRows from '../components/PullRows.svelte';
   import ActionButton from '../components/ActionButton.svelte';
-  import ConnectionChoice from '../components/ConnectionChoice.svelte';
-  import { connectionQuery, reindexPath, repoRoute } from '../links';
+  import { reindexPath, accountApi } from '../links';
   import { canAdmin } from '../session.svelte';
 
-  let { slug, owner, repo, connection }: { slug: string; owner: string; repo: string; connection?: string } = $props();
+  let { slug, owner, repo }: { slug: string; owner: string; repo: string } = $props();
   const fullName = $derived(`${owner}/${repo}`);
-  const account = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}`);
+  const account = $derived(`${accountApi(slug)}`);
 
   const res = new Resource(() =>
-    getJSON<RepoDetail>(`${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${connectionQuery(connection)}`),
+    getJSON<RepoDetail>(`${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
   );
   const pulls = new Resource(() =>
     getJSON<Page<Pull>>(
-      `${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}${connection ? `&connection=${encodeURIComponent(connection)}` : ''}`,
+      `${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}`,
     ),
   );
-  const choices = $derived(ambiguousConnections(res.error));
 
   $effect(() => {
     void res.load();
@@ -85,7 +83,9 @@
     default: 'default',
     env: 'environment',
     file: 'config file',
-    dashboard: 'dashboard',
+    dashboard: 'instance settings',
+    defaults: 'defaults',
+    account: 'account',
     repository: '.kritik.yaml',
   };
 
@@ -128,23 +128,20 @@
     <header class="page-head">
       <p class="crumbs"><a href={href({ name: 'repos', slug })}>Repositories</a> /</p>
       <h1 class="mono">{fullName}</h1>
-      {#if canAdmin(slug) && !choices}
+      {#if canAdmin(slug)}
         <div class="page-actions">
           <ActionButton
             label="Reindex"
             title="Reindex the repository?"
             body={`Rebuild the code index of ${fullName} from scratch at its default branch.`}
-            path={reindexPath(slug, fullName, connection)}
+            path={reindexPath(slug, fullName)}
             done="Reindex queued"
             ondone={() => res.load()}
           />
         </div>
       {/if}
     </header>
-    {#if choices}
-      <ConnectionChoice name={fullName} connections={choices} route={(i) => repoRoute(slug, fullName, i)} />
-    {:else}
-      <StateView {res} retry={() => res.load()}>
+    <StateView {res} retry={() => res.load()}>
         {#snippet children(d)}
           {@const s = d.settings}
           {@const rc = d.repoConfig}
@@ -153,7 +150,6 @@
               <header class="panel-head"><h2 id="repo-settings">Effective settings</h2></header>
               <dl class="deflist">
                 <dt>Enabled</dt><dd>{s.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'} <span class="muted small">({d.managedBy})</span></dd>
-                <dt>Connection</dt><dd class="mono">{d.connection}</dd>
                 <dt>Default branch</dt><dd class="mono">{d.defaultBranch}</dd>
                 {#each settingRows as r (r.label)}
                   {@render setting(d, r)}
@@ -251,10 +247,9 @@
         <header class="panel-head"><h2 id="repo-pulls">Pull requests</h2></header>
         <StateView res={pulls} retry={() => pulls.load()} isEmpty={(p) => p.items.length === 0} empty="No pull requests seen yet.">
           {#snippet children(p)}
-            <PullRows {slug} items={p.items} {connection} />
+            <PullRows {slug} items={p.items} />
           {/snippet}
         </StateView>
       </section>
-    {/if}
   </div>
 </main>

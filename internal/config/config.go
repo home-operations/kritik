@@ -1,7 +1,9 @@
 // Package config loads kritik's process configuration from environment
-// variables. Everything the service manages (accounts, connections,
-// repositories, models) lives in the declarative configuration file, not
-// here; this package covers only what the process itself needs to start.
+// variables. What the service manages lives elsewhere: sign-in and
+// connections in the configuration file and its KRITIK_AUTH_* and
+// KRITIK_CONNECTIONS_* overlay, and everything else in the instance spec
+// the dashboard edits (internal/configfile). This package covers only what
+// the process itself needs to start.
 package config
 
 import (
@@ -32,8 +34,8 @@ const (
 	RoleIngest Role = "ingest"
 	RoleWorker Role = "worker"
 	RoleRunner Role = "runner"
-	// RoleWeb serves the operator dashboard (ADR-0009): sign-in, sessions
-	// and the account/config surfaces a dashboard-managed connection uses.
+	// RoleWeb serves the operator dashboard (ADR-0009): sign-in, sessions,
+	// the accounts' pages and the instance configuration.
 	// "all" also serves it once WebURL is configured; see [Config.WebEnabled].
 	RoleWeb Role = "web"
 )
@@ -98,11 +100,11 @@ type Config struct {
 	// back with [Config.WebURLParsed].
 	WebURL string `env:"KRITIK_WEB_URL"`
 
-	// ConfigFile is the path of the declarative configuration file (accounts,
-	// connections, repositories, models). Every role except runner loads it
-	// at startup and watches it for changes. The default is where the Helm
-	// chart mounts it.
-	ConfigFile string `env:"KRITIK_CONFIG_FILE" envDefault:"/etc/kritik/config.yaml"`
+	// ConfigFile is the path of the optional configuration file: sign-in
+	// and the connections an admin keeps in git. Every role except runner
+	// loads it at startup and watches it for changes. Empty means no file,
+	// and the environment alone declares them.
+	ConfigFile string `env:"KRITIK_CONFIG_FILE"`
 
 	// ConfigReloadInterval is how often the configuration file is re-read
 	// for changes. Polling, because a ConfigMap mount updates by swapping a
@@ -211,9 +213,8 @@ type Config struct {
 	GatewayToken string `env:"KRITIK_GATEWAY_TOKEN,unset"`
 
 	// DashboardKey is the base64 32-byte key that seals and opens the
-	// credentials a dashboard-managed account stores (ADR-0009 §2.5). Empty
-	// is valid while no dashboard account exists; startup fails once one
-	// does. Passed like every other secret here, from the environment and
+	// credentials the instance spec stores (ADR-0009 §2.5). Empty is valid
+	// while no instance spec is stored; startup fails once one is. Passed like every other secret here, from the environment and
 	// unset once read.
 	DashboardKey string `env:"KRITIK_DASHBOARD_KEY,unset"`
 	// DashboardOldKeys are earlier DashboardKey values, comma-separated,

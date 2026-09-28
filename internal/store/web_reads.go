@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -141,7 +140,6 @@ func paged[T any](rows []T, limit int, key func(T) Cursor) ([]T, *Cursor) {
 
 // AccountStats is what the account list shows of one account.
 type AccountStats struct {
-	Connections  int
 	Repositories int
 	Reviews7d    int
 	Month        MonthUsage
@@ -160,10 +158,9 @@ type MonthUsage struct {
 func ReadAccountStats(ctx context.Context, tx pgx.Tx) (AccountStats, error) {
 	var s AccountStats
 	err := tx.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM connections WHERE enabled),
 		(SELECT count(*) FROM repositories WHERE enabled),
 		(SELECT count(*) FROM reviews WHERE created_at >= now() - interval '7 days')`).
-		Scan(&s.Connections, &s.Repositories, &s.Reviews7d)
+		Scan(&s.Repositories, &s.Reviews7d)
 	if err != nil {
 		return s, fmt.Errorf("store: account stats: %w", err)
 	}
@@ -186,9 +183,8 @@ func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	return m, nil
 }
 
-// ReadWebhookDeliveries reads when each of the account's connections last
-// received a verified webhook, keyed by connection id; one that never has
-// is absent.
+// ReadWebhookDeliveries reads when each connection last received a verified
+// webhook, keyed by connection id; one that never has is absent.
 func ReadWebhookDeliveries(ctx context.Context, tx pgx.Tx) (map[string]time.Time, error) {
 	rows, err := tx.Query(ctx, `SELECT id::text, last_webhook_at FROM connections WHERE last_webhook_at IS NOT NULL`)
 	if err != nil {
@@ -210,8 +206,6 @@ func ReadWebhookDeliveries(ctx context.Context, tx pgx.Tx) (map[string]time.Time
 type RepoRow struct {
 	ID            string
 	FullName      string
-	ConnectionID  string
-	Connection    string
 	Enabled       bool
 	ManagedBy     string
 	DefaultBranch string
@@ -232,12 +226,11 @@ type ReviewRef struct {
 	CreatedAt time.Time
 }
 
-const repoColumns = `r.id, r.name, r.connection_id, i.name, r.enabled, r.managed_by, r.default_branch,
+const repoColumns = `r.id, r.name, r.enabled, r.managed_by, r.default_branch,
 	coalesce(a.commit_sha, ''), coalesce(a.finished_at, a.created_at),
 	coalesce(l.status, ''), l.created_at,
 	lr.id, lr.status, lr.created_at
 	FROM repositories r
-	JOIN connections i ON i.id = r.connection_id
 	LEFT JOIN index_runs a ON a.id = r.active_index_run_id
 	LEFT JOIN LATERAL (SELECT status, created_at FROM index_runs x WHERE x.repository_id = r.id
 		ORDER BY created_at DESC, id DESC LIMIT 1) l ON true
@@ -249,7 +242,7 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 	var status string
 	var lrID, lrStatus *string
 	var lrAt *time.Time
-	err := row.Scan(&r.ID, &r.FullName, &r.ConnectionID, &r.Connection, &r.Enabled, &r.ManagedBy, &r.DefaultBranch,
+	err := row.Scan(&r.ID, &r.FullName, &r.Enabled, &r.ManagedBy, &r.DefaultBranch,
 		&r.ActiveCommit, &r.ActiveAt, &status, &r.LastIndexAt, &lrID, &lrStatus, &lrAt)
 	r.LastIndexStatus = IndexRunStatus(status)
 	if r.ActiveCommit == "" {
@@ -281,26 +274,10 @@ func ListRepos(ctx context.Context, tx pgx.Tx, p Page) ([]RepoRow, *Cursor, erro
 	return items, next, nil
 }
 
-// AmbiguousRepoError is FindRepo's answer when several connections of
-// the account hold a repository of the name asked for and the caller named
-// none of them.
-type AmbiguousRepoError struct {
-	Connections []string
-}
-
-func (e *AmbiguousRepoError) Error() string {
-	return "store: several connections hold this repository: " + strings.Join(e.Connections, ", ")
-}
-
-// FindRepo returns the account's repository named fullName, reached through
-// connection when it is set. Without it, a name several connections
-// hold is an *AmbiguousRepoError, except that an enabled repository wins
-// over disabled ones, which a removed or renamed connection leaves
-// behind.
-func FindRepo(ctx context.Context, tx pgx.Tx, fullName, connection string) (RepoRow, error) {
+// FindRepo returns the account's repository named fullName.
+func FindRepo(ctx context.Context, tx pgx.Tx, fullName string) (RepoRow, error) {
 	rows, err := tx.Query(ctx, `SELECT `+repoColumns+`
-		WHERE r.name = $1 AND ($2 = '' OR i.name = $2)
-		ORDER BY r.enabled DESC, r.created_at, r.id`, fullName, connection)
+		WHERE r.name = $1`, fullName)
 	if err != nil {
 		return RepoRow{}, fmt.Errorf("store: find repository: %w", err)
 	}
@@ -310,15 +287,6 @@ func FindRepo(ctx context.Context, tx pgx.Tx, fullName, connection string) (Repo
 	}
 	if len(repos) == 0 {
 		return RepoRow{}, ErrNotFound
-	}
-	if len(repos) > 1 && repos[1].Enabled == repos[0].Enabled {
-		e := &AmbiguousRepoError{}
-		for _, r := range repos {
-			if r.Enabled == repos[0].Enabled {
-				e.Connections = append(e.Connections, r.Connection)
-			}
-		}
-		return RepoRow{}, e
 	}
 	return repos[0], nil
 }

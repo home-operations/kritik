@@ -38,23 +38,17 @@ import (
 )
 
 const manageConfig = `
-providers:
-  shared: { type: openrouter, apiKey: { env: KRITIK_TEST_TOKEN } }
 auth:
   oidc:
     issuer: https://idp.example
     clientId: kritik
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: '"kritik-admin" in roles ? "admin" : ""'
-accounts:
-  - slug: mgr-file
-    connections:
-      - name: mgr-file-bot
-        forge: github
-        accounts: [mf]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
-    repositories:
-      - name: mf/one
+connections:
+  - name: mgr-file-bot
+    forge: github
+    accounts: [mf]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
 `
 
 // fakeActions records each action with the account its transaction was
@@ -134,9 +128,9 @@ func newManageEnv(t *testing.T) *manageEnv {
 	}
 	t.Cleanup(owner.Close)
 	e := &manageEnv{t: t, st: st, owner: owner, actions: &fakeActions{}, cookie: map[string]*http.Cookie{}, user: map[string]string{}}
-	// Other suites leave dashboard accounts sealed under other keys.
-	e.exec(`DELETE FROM dashboard_accounts`)
-	t.Cleanup(func() { _, _ = owner.Exec(context.Background(), `DELETE FROM dashboard_accounts`) })
+	// Other suites leave a spec sealed under other keys.
+	e.exec(`DELETE FROM instance_config`)
+	t.Cleanup(func() { _, _ = owner.Exec(context.Background(), `DELETE FROM instance_config`) })
 
 	t.Setenv("KRITIK_TEST_TOKEN", "tok")
 	path := filepath.Join(t.TempDir(), "kritik.yaml")
@@ -288,50 +282,67 @@ func (e *manageEnv) waitFor(what string, cond func(*configfile.File) bool) {
 	}
 }
 
-func dashSpec(keyRef, hookRef map[string]any, extra map[string]any) map[string]any {
+// instanceSpec is a spec serving md through mgr-dash-bot, with keyRef and
+// hookRef its App's secrets, and the shared provider's key.
+func instanceSpec(keyRef, hookRef map[string]any, extra map[string]any) map[string]any {
 	spec := map[string]any{
-		"slug": "mgr-dash",
+		"providers": map[string]any{"shared": map[string]any{"type": "openrouter", "apiKey": map[string]any{"value": "sk-shared"}}},
 		"connections": []any{map[string]any{
 			"name": "mgr-dash-bot", "forge": "github", "accounts": []string{"md"},
 			"app": map[string]any{"clientId": "Iv1.test", "privateKey": keyRef, "webhookSecret": hookRef},
 		}},
-		"repositories": []any{map[string]any{"name": "md/one"}},
+		"accounts": []any{map[string]any{"forge": "github", "name": "md", "repositories": []any{map[string]any{"name": "one"}}}},
 	}
 	maps.Copy(spec, extra)
 	return spec
 }
 
+// mdEntry is md's entry with extra keys.
+func mdEntry(extra map[string]any) map[string]any {
+	entry := map[string]any{"forge": "github", "name": "md", "repositories": []any{map[string]any{"name": "one"}}}
+	maps.Copy(entry, extra)
+	return entry
+}
+
 var keep = map[string]any{"keep": true}
 
-// TestManage walks one dashboard account through its life; each step
-// depends on the ones before it.
+const (
+	instancePath = "/api/v1/config"
+	mdPath       = "/api/v1/accounts/github/md"
+)
+
+// TestManage walks the instance spec and one account through their life;
+// each step depends on the ones before it.
 func TestManage(t *testing.T) {
 	e := newManageEnv(t)
 	var generated string
-	t.Run("operator creates a dashboard account", func(t *testing.T) { generated = testCreate(t, e) })
+	t.Run("an admin writes the instance spec", func(t *testing.T) { generated = testWriteSpec(t, e) })
 	t.Run("the generated webhook secret verifies a hook", func(t *testing.T) { testHookVerifies(t, e, generated) })
-	dashID := (&configfile.Account{Slug: "mgr-dash"}).ID()
+	md := configfile.AccountID(configfile.ForgeGitHub, "md")
 	e.signIn("member", "mgr-member", memberOfAccounts("github/md"))
 	t.Run("config reads are redacted", func(t *testing.T) { testConfigRedacted(t, e) })
-	t.Run("updates", func(t *testing.T) { testUpdate(t, e) })
-	t.Run("collisions", func(t *testing.T) { testCollisions(t, e) })
-	t.Run("an account's own provider key", func(t *testing.T) { testAccountProviderKey(t, e) })
-	t.Run("actions", func(t *testing.T) { testActions(t, e, dashID) })
-	t.Run("audit log", func(t *testing.T) { testAuditLog(t, e) })
-	t.Run("operator deletes the account", func(t *testing.T) { testDelete(t, e) })
-	t.Run("a file account a dashboard row crowds out", func(t *testing.T) { testFileAccountLeftOut(t, e) })
+	t.Run("account updates", func(t *testing.T) { testAccountUpdate(t, e) })
+	t.Run("claims on the file's connections", func(t *testing.T) { testFileClaims(t, e) })
+	t.Run("actions", func(t *testing.T) { testActions(t, e, md) })
+	t.Run("audit log", func(t *testing.T) { testAuditLog(t, e, md) })
+	t.Run("a file connection the spec crowds out", func(t *testing.T) { testFileConnectionLeftOut(t, e) })
 }
 
-func testCreate(t *testing.T, e *manageEnv) string {
+func testWriteSpec(t *testing.T, e *manageEnv) string {
 	before := e.totalAudits()
-	spec := dashSpec(map[string]any{"value": "plain-key-xyz"}, map[string]any{"generate": true}, nil)
-	status, body := e.do("anonymous", "POST", "/api/v1/accounts", CreateAccountRequest{Slug: "mgr-dash", Spec: mustJSON(t, spec)})
+	req := UpdateConfigRequest{Spec: mustJSON(t, instanceSpec(map[string]any{"value": "plain-key-xyz"}, map[string]any{"generate": true}, nil))}
+	status, body := e.do("anonymous", "PUT", instancePath, req)
 	e.expect(status, body, http.StatusUnauthorized, "")
-	status, body = e.do("outsider", "POST", "/api/v1/accounts", CreateAccountRequest{Slug: "mgr-dash", Spec: mustJSON(t, spec)})
+	status, body = e.do("outsider", "PUT", instancePath, req)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	status, body = e.do("operator", "POST", "/api/v1/accounts", CreateAccountRequest{Slug: "mgr-dash", Spec: mustJSON(t, spec)})
-	e.expect(status, body, http.StatusCreated, "")
-	var res AccountWriteResult
+	status, body = e.do("operator", "PUT", instancePath, UpdateConfigRequest{Revision: 3, Spec: req.Spec})
+	e.expect(status, body, http.StatusConflict, CodeRevisionConflict)
+	if e.totalAudits() != before {
+		t.Fatal("a refused write left an audit row")
+	}
+	status, body = e.do("operator", "PUT", instancePath, req)
+	e.expect(status, body, http.StatusOK, "")
+	var res ConfigWriteResult
 	if err := json.Unmarshal(body, &res); err != nil {
 		t.Fatal(err)
 	}
@@ -339,29 +350,21 @@ func testCreate(t *testing.T, e *manageEnv) string {
 	if res.Revision != 1 || len(secret) != 64 {
 		t.Fatalf("result = %s", body)
 	}
-	stored := e.scalar(`SELECT spec::text FROM dashboard_accounts WHERE slug = 'mgr-dash'`)
-	if strings.Contains(stored, "plain-key-xyz") || strings.Contains(stored, secret) || !strings.Contains(stored, `"sealed"`) {
-		t.Errorf("stored spec is not sealed: %s", stored)
+	stored := e.scalar(`SELECT spec::text FROM instance_config`)
+	for _, plain := range []string{"plain-key-xyz", secret, "sk-shared"} {
+		if strings.Contains(stored, plain) {
+			t.Errorf("stored spec holds %q: %s", plain, stored)
+		}
 	}
-	if n := e.audits(AuditAccountCreate, "mgr-dash"); n != 1 || e.totalAudits() != before+1 {
-		t.Errorf("account.create audit rows = %d (total +%d), want exactly 1", n, e.totalAudits()-before)
+	if n := e.audits(AuditConfigUpdate, "instance"); n != 1 {
+		t.Errorf("config.update audit rows = %d, want 1", n)
 	}
-	detail := e.scalar(`SELECT detail::text FROM audit_events WHERE action = 'account.create' AND target = 'mgr-dash'`)
-	if strings.Contains(detail, secret) || strings.Contains(detail, "plain-key-xyz") || !strings.Contains(detail, "webhookSecret") {
-		t.Errorf("audit detail = %s", detail)
-	}
-	status, body = e.do("operator", "POST", "/api/v1/accounts", CreateAccountRequest{Slug: "mgr-dash", Spec: mustJSON(t, spec)})
-	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
-
-	e.waitFor("mgr-dash to merge", func(f *configfile.File) bool { _, ok := f.Account("mgr-dash"); return ok })
-	if err := e.st.ApplyConfig(context.Background(), e.src.Current.Get(), "manage-test"); err != nil {
-		t.Fatalf("ApplyConfig: %v", err)
-	}
+	e.waitFor("md to merge", func(f *configfile.File) bool { _, ok := f.Account(configfile.ForgeGitHub, "md"); return ok })
 	return secret
 }
 
 func testHookVerifies(t *testing.T, e *manageEnv, secret string) {
-	in, _, ok := e.src.Current.Get().Connection("mgr-dash-bot")
+	in, ok := e.src.Current.Get().Connection("mgr-dash-bot")
 	if !ok || in.WebhookSecretValue().Value() != secret || in.App.PrivateKeyValue().Value() != "plain-key-xyz" {
 		t.Fatalf("merged connection does not open to the written secrets")
 	}
@@ -389,174 +392,154 @@ func testHookVerifies(t *testing.T, e *manageEnv, secret string) {
 }
 
 func testConfigRedacted(t *testing.T, e *manageEnv) {
+	status, body := e.do("operator", "GET", instancePath, nil)
+	e.expect(status, body, http.StatusOK, "")
+	var ic InstanceConfig
+	if err := json.Unmarshal(body, &ic); err != nil || ic.Revision != 1 || !ic.Editable {
+		t.Fatalf("instance config = %s", body)
+	}
+	if s := string(ic.Spec); strings.Contains(s, "sealed") || !strings.Contains(s, `"privateKey":{"set":true}`) || !strings.Contains(s, `"apiKey":{"set":true}`) {
+		t.Errorf("instance spec is not redacted: %s", s)
+	}
+	status, body = e.do("member", "GET", instancePath, nil)
+	e.expect(status, body, http.StatusForbidden, CodeForbidden)
 	for _, who := range []string{"operator", "member"} {
 		t.Run(who, func(t *testing.T) {
-			status, body := e.do(who, "GET", "/api/v1/accounts/mgr-dash/config", nil)
+			status, body := e.do(who, "GET", mdPath+"/config", nil)
 			e.expect(status, body, http.StatusOK, "")
 			var c AccountConfig
 			if err := json.Unmarshal(body, &c); err != nil {
 				t.Fatal(err)
 			}
-			if c.ManagedBy != configfile.OriginDashboard || c.Revision == nil || *c.Revision != 1 || c.Editable != (who != "member") {
+			if c.Revision != 1 || c.Editable != (who == "operator") || !strings.Contains(string(c.Spec), `"name":"md"`) {
 				t.Errorf("config = %s", body)
-			}
-			if s := string(c.Spec); strings.Contains(s, "sealed") || strings.Contains(s, "plain-key") ||
-				!strings.Contains(s, `"privateKey":{"set":true}`) || !strings.Contains(s, `"webhookSecret":{"set":true}`) {
-				t.Errorf("spec is not redacted: %s", s)
 			}
 		})
 	}
-	status, body := e.do("outsider", "GET", "/api/v1/accounts/mgr-dash/config", nil)
+	status, body = e.do("outsider", "GET", mdPath+"/config", nil)
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
-	status, body = e.do("operator", "GET", "/api/v1/accounts/mgr-file/config", nil)
+	status, body = e.do("operator", "GET", "/api/v1/accounts/github/mf/config", nil)
 	e.expect(status, body, http.StatusOK, "")
-	if !strings.Contains(string(body), `"managedBy":"file"`) || strings.Contains(string(body), "KRITIK_TEST_TOKEN") {
-		t.Errorf("file config = %s", body)
+	if !strings.Contains(string(body), `"spec":{"forge":"github","name":"mf"}`) {
+		t.Errorf("an account without an entry = %s", body)
 	}
 }
 
-func testUpdate(t *testing.T, e *manageEnv) {
+func testAccountUpdate(t *testing.T, e *manageEnv) {
 	before := e.totalAudits()
-	stale := UpdateAccountRequest{Revision: 7, Spec: mustJSON(t, dashSpec(keep, keep, nil))}
-	status, body := e.do("operator", "PUT", "/api/v1/accounts/mgr-dash/config", stale)
+	sealedKey := e.scalar(`SELECT spec->'connections'->0->'app'->'privateKey'->>'sealed' FROM instance_config`)
+	stale := UpdateConfigRequest{Revision: 7, Spec: mustJSON(t, mdEntry(nil))}
+	status, body := e.do("operator", "PUT", mdPath+"/config", stale)
 	e.expect(status, body, http.StatusConflict, CodeRevisionConflict)
-	env := UpdateAccountRequest{Revision: 1, Spec: mustJSON(t, dashSpec(map[string]any{"env": "HOME"}, keep, nil))}
-	status, body = e.do("operator", "PUT", "/api/v1/accounts/mgr-dash/config", env)
+	badModel := UpdateConfigRequest{Revision: 1, Spec: mustJSON(t, mdEntry(map[string]any{"models": map[string]any{"review": "nope/x"}}))}
+	status, body = e.do("operator", "PUT", mdPath+"/config", badModel)
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	badForge := dashSpec(map[string]any{"value": "k"}, keep, nil)
-	badForge["connections"].([]any)[0].(map[string]any)["forge"] = "gitlab"
-	status, body = e.do("operator", "PUT", "/api/v1/accounts/mgr-dash/config", UpdateAccountRequest{Revision: 1, Spec: mustJSON(t, badForge)})
+	if !strings.Contains(string(body), `"path":"models.review"`) {
+		t.Errorf("bad model = %s", body)
+	}
+	envKey := UpdateConfigRequest{Revision: 1, Spec: mustJSON(t, mdEntry(map[string]any{
+		"providers": map[string]any{"mine": map[string]any{"type": "openai", "apiKey": map[string]any{"env": "HOME"}}}}))}
+	status, body = e.do("operator", "PUT", mdPath+"/config", envKey)
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	if !strings.Contains(string(body), `"path":"connections[0].forge"`) || strings.Contains(string(body), "dashboard[") {
-		t.Errorf("merge error = %s", body)
-	}
-	moved := dashSpec(keep, keep, nil)
-	moved["connections"].([]any)[0].(map[string]any)["accounts"] = []string{"md", "other"}
-	status, body = e.do("operator", "PUT", "/api/v1/accounts/mgr-dash/config", UpdateAccountRequest{Revision: 1, Spec: mustJSON(t, moved)})
-	e.expect(status, body, http.StatusUnprocessableEntity, CodeReenterSecret)
-	if !strings.Contains(string(body), `"path":"connections[0].app.privateKey"`) {
-		t.Errorf("reenter_secret details = %s", body)
-	}
-	good := UpdateAccountRequest{Revision: 1, Spec: mustJSON(t, dashSpec(keep, keep, map[string]any{"filter": "true"}))}
-	status, body = e.do("member", "PUT", "/api/v1/accounts/mgr-dash/config", good)
+	other := UpdateConfigRequest{Revision: 1, Spec: mustJSON(t, map[string]any{"forge": "github", "name": "mf"})}
+	status, body = e.do("operator", "PUT", mdPath+"/config", other)
+	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
+	good := UpdateConfigRequest{Revision: 1, Spec: mustJSON(t, mdEntry(map[string]any{
+		"filter":    "true",
+		"providers": map[string]any{"mine": map[string]any{"type": "openai", "apiKey": map[string]any{"value": "sk-mine"}}},
+		"models":    map[string]any{"review": "mine/gpt"},
+	}))}
+	status, body = e.do("member", "PUT", mdPath+"/config", good)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	status, body = e.do("outsider", "PUT", "/api/v1/accounts/mgr-dash/config", good)
+	status, body = e.do("outsider", "PUT", mdPath+"/config", good)
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
-	status, body = e.do("operator", "PUT", "/api/v1/accounts/mgr-dash/config", good, false)
+	status, body = e.do("operator", "PUT", mdPath+"/config", good, false)
 	e.expect(status, body, http.StatusForbidden, "")
 	if e.totalAudits() != before {
 		t.Fatalf("refused writes left %d audit rows", e.totalAudits()-before)
 	}
-	sealedKey := e.scalar(`SELECT spec->'connections'->0->'app'->'privateKey'->>'sealed' FROM dashboard_accounts WHERE slug = 'mgr-dash'`)
-	status, body = e.do("operator", "PUT", "/api/v1/accounts/mgr-dash/config", good)
+	status, body = e.do("operator", "PUT", mdPath+"/config", good)
 	e.expect(status, body, http.StatusOK, "")
 	if !strings.Contains(string(body), `"revision":2`) {
 		t.Errorf("update = %s", body)
 	}
-	if got := e.scalar(`SELECT spec->'connections'->0->'app'->'privateKey'->>'sealed' FROM dashboard_accounts WHERE slug = 'mgr-dash'`); got != sealedKey {
-		t.Errorf("keep replaced the sealed private key")
+	if got := e.scalar(`SELECT spec->'connections'->0->'app'->'privateKey'->>'sealed' FROM instance_config`); got != sealedKey {
+		t.Error("an account write replaced the connection's sealed private key")
 	}
-	if n := e.audits(AuditAccountUpdate, "mgr-dash"); n != 1 || e.totalAudits() != before+1 {
-		t.Errorf("account.update audit rows = %d, want exactly 1", n)
-	}
-	e.waitFor("revision 2 to merge", func(f *configfile.File) bool {
-		d := f.Dashboard()
-		return len(d) == 1 && d[0].Revision == 2
-	})
-}
-
-func testCollisions(t *testing.T, e *manageEnv) {
-	before := e.totalAudits()
-	fileSlug := dashSpec(map[string]any{"value": "x"}, map[string]any{"value": "y"}, map[string]any{"slug": "mgr-file"})
-	status, body := e.do("operator", "POST", "/api/v1/accounts", CreateAccountRequest{Slug: "mgr-file", Spec: mustJSON(t, fileSlug)})
-	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
-	status, body = e.do("operator", "PUT", "/api/v1/accounts/mgr-file/config", UpdateAccountRequest{Revision: 1, Spec: mustJSON(t, fileSlug)})
-	e.expect(status, body, http.StatusForbidden, CodeFileManaged)
-
-	dup := dashSpec(map[string]any{"value": "x"}, map[string]any{"value": "y"}, map[string]any{"slug": "mgr-dup"})
-	dup["connections"].([]any)[0].(map[string]any)["name"] = "mgr-file-bot"
-	status, body = e.do("operator", "POST", "/api/v1/accounts", CreateAccountRequest{Slug: "mgr-dup", Spec: mustJSON(t, dup)})
-	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	if !strings.Contains(string(body), `"path":"connections[0].name"`) {
-		t.Errorf("duplicate connection = %s", body)
-	}
-
-	// An account the file dropped but the leader has not disabled yet.
-	staleID := (&configfile.Account{Slug: "mgr-stale"}).ID()
-	e.exec(`INSERT INTO accounts (id, slug, managed_by) VALUES ($1, 'mgr-stale', 'file') ON CONFLICT (id) DO NOTHING`, staleID)
-	stale := dashSpec(map[string]any{"value": "x"}, map[string]any{"value": "y"}, map[string]any{"slug": "mgr-stale"})
-	stale["connections"].([]any)[0].(map[string]any)["name"] = "mgr-stale-bot"
-	status, body = e.do("operator", "POST", "/api/v1/accounts", CreateAccountRequest{Slug: "mgr-stale", Spec: mustJSON(t, stale)})
-	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
-	if strings.Contains(string(body), "adoptable") {
-		t.Errorf("a slug the file still manages was offered for adoption: %s", body)
-	}
-	if e.totalAudits() != before {
-		t.Errorf("refused creates left %d audit rows", e.totalAudits()-before)
-	}
-
-	// mgr-zed sorts after mgr-dash, so the merge reports mgr-dash taking
-	// its connection name against mgr-zed; the blame is still mgr-dash's.
-	zed := map[string]any{"slug": "mgr-zed", "connections": []any{map[string]any{
-		"name": "mgr-zed-bot", "forge": "github", "accounts": []string{"mz"},
-		"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "z"}, "webhookSecret": map[string]any{"value": "z"}},
-	}}}
-	status, body = e.do("operator", "POST", "/api/v1/accounts", CreateAccountRequest{Slug: "mgr-zed", Spec: mustJSON(t, zed)})
-	e.expect(status, body, http.StatusCreated, "")
-	e.waitFor("mgr-zed to merge", func(f *configfile.File) bool { _, ok := f.Account("mgr-zed"); return ok })
-	taken := dashSpec(keep, keep, map[string]any{"filter": "true"})
-	taken["connections"] = append(taken["connections"].([]any), map[string]any{
-		"name": "mgr-zed-bot", "forge": "github", "accounts": []string{"mz2"},
-		"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "k"}, "webhookSecret": map[string]any{"value": "w"}},
-	})
-	status, body = e.do("operator", "PUT", "/api/v1/accounts/mgr-dash/config", UpdateAccountRequest{Revision: 2, Spec: mustJSON(t, taken)})
-	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	if !strings.Contains(string(body), `"path":"connections[1].name"`) || strings.Contains(string(body), "dashboard[mgr-zed]") || strings.Contains(string(body), `account \"mgr-zed\"`) {
-		t.Errorf("clash against a later account = %s", body)
-	}
-}
-
-// testAccountProviderKey: an account's own model key, which its review model
-// points at, is sealed at rest and opened in the merged configuration.
-func testAccountProviderKey(t *testing.T, e *manageEnv) {
-	mine := map[string]any{"mine": map[string]any{"type": "openai", "apiKey": map[string]any{"value": "sk-mine"}}}
-	own := dashSpec(keep, keep, map[string]any{"filter": "true", "providers": mine, "models": map[string]any{"review": "mine/gpt"}})
-	status, body := e.do("operator", "PUT", "/api/v1/accounts/mgr-dash/config", UpdateAccountRequest{Revision: 2, Spec: mustJSON(t, own)})
-	e.expect(status, body, http.StatusOK, "")
-	if sealed := e.scalar(`SELECT spec->'providers'->'mine'->'apiKey'->>'sealed' FROM dashboard_accounts WHERE slug = 'mgr-dash'`); sealed == "" ||
+	if sealed := e.scalar(`SELECT spec->'accounts'->0->'providers'->'mine'->'apiKey'->>'sealed' FROM instance_config`); sealed == "" ||
 		strings.Contains(sealed, "sk-mine") {
 		t.Errorf("stored provider key = %q, want it sealed", sealed)
 	}
+	if n := e.audits(AuditAccountUpdate, "github/md"); n != 1 || e.totalAudits() != before+1 {
+		t.Errorf("account.update audit rows = %d, want exactly 1", n)
+	}
 	e.waitFor("the provider key to merge", func(f *configfile.File) bool {
-		tn, ok := f.Account("mgr-dash")
+		a, ok := f.Account(configfile.ForgeGitHub, "md")
 		if !ok {
 			return false
 		}
-		p, ok := f.Provider(tn, "mine")
-		return ok && p.APIKeyValue().Value() == "sk-mine"
+		p, ok := f.Provider(a, "mine")
+		return ok && p.APIKeyValue().Value() == "sk-mine" && f.Settings(a, "").Models.Review == "mine/gpt"
 	})
-	status, body = e.do("operator", "GET", "/api/v1/accounts/mgr-dash/config", nil)
+	status, body = e.do("operator", "GET", mdPath+"/config", nil)
 	if status != http.StatusOK || strings.Contains(string(body), "sk-mine") || !strings.Contains(string(body), `"apiKey":{"set":true}`) {
 		t.Errorf("config read = %d %s", status, body)
 	}
+
+	moved := instanceSpec(keep, keep, map[string]any{"providers": map[string]any{"shared": map[string]any{"type": "openrouter", "apiKey": keep}}})
+	moved["connections"].([]any)[0].(map[string]any)["accounts"] = []string{"md", "other"}
+	moved["accounts"] = []any{mdEntry(map[string]any{"filter": "true", "models": map[string]any{"review": "mine/gpt"},
+		"providers": map[string]any{"mine": map[string]any{"type": "openai", "apiKey": keep}}})}
+	status, body = e.do("operator", "PUT", instancePath, UpdateConfigRequest{Revision: 2, Spec: mustJSON(t, moved)})
+	e.expect(status, body, http.StatusUnprocessableEntity, CodeReenterSecret)
+	if !strings.Contains(string(body), `"path":"connections[0].app.privateKey"`) {
+		t.Errorf("reenter_secret details = %s", body)
+	}
 }
 
-func testActions(t *testing.T, e *manageEnv, dashID string) {
-	in, _, _ := e.src.Current.Get().Connection("mgr-dash-bot")
-	repoID := configfile.RepositoryID(in.ID(), "md/one")
-	e.exec(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha)
-		VALUES ($1, $2, 3, 'x', 'ada', 'h3') ON CONFLICT DO NOTHING`, dashID, repoID)
+// testFileClaims: the spec may not take a file connection's name or
+// account.
+func testFileClaims(t *testing.T, e *manageEnv) {
+	for _, tt := range []struct{ name, conn, account, want string }{
+		{"a name", "mgr-file-bot", "other", `"path":"connections[1].name"`},
+		{"an account", "mgr-claim-bot", "MF", `"path":"connections[1].accounts[0]"`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := instanceSpec(keep, keep, map[string]any{"providers": map[string]any{"shared": map[string]any{"type": "openrouter", "apiKey": keep}}})
+			spec["accounts"] = []any{mdEntry(map[string]any{"filter": "true", "models": map[string]any{"review": "mine/gpt"},
+				"providers": map[string]any{"mine": map[string]any{"type": "openai", "apiKey": keep}}})}
+			spec["connections"] = append(spec["connections"].([]any), map[string]any{
+				"name": tt.conn, "forge": "github", "accounts": []string{tt.account},
+				"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "k"}, "webhookSecret": map[string]any{"value": "w"}},
+			})
+			status, body := e.do("operator", "PUT", instancePath, UpdateConfigRequest{Revision: 2, Spec: mustJSON(t, spec)})
+			e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
+			if !strings.Contains(string(body), tt.want) {
+				t.Errorf("claim = %s, want %s", body, tt.want)
+			}
+		})
+	}
+}
 
-	status, body := e.do("member", "POST", "/api/v1/accounts/mgr-dash/pulls/md/one/3/rerun", nil)
+func testActions(t *testing.T, e *manageEnv, md string) {
+	// The leader applies what the dashboard wrote; this test is the leader.
+	if err := e.st.ApplyConfig(context.Background(), e.src.Current.Get(), "manage-test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	repoID := configfile.RepositoryID(md, "md/one")
+	e.exec(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha)
+		VALUES ($1, $2, 3, 'x', 'ada', 'h3') ON CONFLICT DO NOTHING`, md, repoID)
+
+	status, body := e.do("member", "POST", mdPath+"/pulls/md/one/3/rerun", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	status, body = e.do("operator", "POST", "/api/v1/accounts/mgr-dash/pulls/md/one/3/rerun", nil, false)
+	status, body = e.do("operator", "POST", mdPath+"/pulls/md/one/3/rerun", nil, false)
 	e.expect(status, body, http.StatusForbidden, "")
-	status, body = e.do("operator", "POST", "/api/v1/accounts/mgr-dash/pulls/md/one/99/rerun", nil)
+	status, body = e.do("operator", "POST", mdPath+"/pulls/md/one/99/rerun", nil)
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
 
-	status, body = e.do("operator", "POST", "/api/v1/accounts/mgr-dash/pulls/md/one/3/rerun", nil)
+	status, body = e.do("operator", "POST", mdPath+"/pulls/md/one/3/rerun", nil)
 	e.expect(status, body, http.StatusAccepted, "")
-	if string(bytes.TrimSpace(body)) != `{"jobId":101}` || e.actions.last() != fmt.Sprintf("rerun %s %s 3 in %s", dashID, repoID, dashID) {
+	if string(bytes.TrimSpace(body)) != `{"jobId":101}` || e.actions.last() != fmt.Sprintf("rerun %s %s 3 in %s", md, repoID, md) {
 		t.Errorf("rerun = %s, call %q", body, e.actions.last())
 	}
 	if n := e.audits(AuditReviewRerun, "md/one#3"); n != 1 {
@@ -565,32 +548,32 @@ func testActions(t *testing.T, e *manageEnv, dashID string) {
 
 	review := "00000000-0000-4000-8000-000000000001"
 	e.actions.notCancelable = "00000000-0000-4000-8000-000000000002"
-	status, body = e.do("operator", "POST", "/api/v1/accounts/mgr-dash/reviews/"+e.actions.notCancelable+"/cancel", nil)
+	status, body = e.do("operator", "POST", mdPath+"/reviews/"+e.actions.notCancelable+"/cancel", nil)
 	e.expect(status, body, http.StatusConflict, CodeNotCancelable)
-	status, body = e.do("operator", "POST", "/api/v1/accounts/mgr-dash/reviews/"+review+"/cancel", nil)
+	status, body = e.do("operator", "POST", mdPath+"/reviews/"+review+"/cancel", nil)
 	e.expect(status, body, http.StatusAccepted, "")
-	if e.actions.last() != fmt.Sprintf("cancel %s by %s in %s", review, e.user["operator"], dashID) {
+	if e.actions.last() != fmt.Sprintf("cancel %s by %s in %s", review, e.user["operator"], md) {
 		t.Errorf("cancel call %q", e.actions.last())
 	}
 	if e.audits(AuditReviewCancel, review) != 1 || e.audits(AuditReviewCancel, e.actions.notCancelable) != 0 {
 		t.Errorf("review.cancel audit rows are wrong")
 	}
 
-	status, body = e.do("operator", "POST", "/api/v1/accounts/mgr-dash/repos/md/one/reindex", nil)
+	status, body = e.do("operator", "POST", mdPath+"/repos/md/one/reindex", nil)
 	e.expect(status, body, http.StatusAccepted, "")
-	if e.actions.last() != fmt.Sprintf("reindex %s %s in %s", dashID, repoID, dashID) || e.audits(AuditRepoReindex, "md/one") != 1 {
+	if e.actions.last() != fmt.Sprintf("reindex %s %s in %s", md, repoID, md) || e.audits(AuditRepoReindex, "md/one") != 1 {
 		t.Errorf("reindex = %s, call %q", body, e.actions.last())
 	}
 }
 
-func testAuditLog(t *testing.T, e *manageEnv) {
-	status, body := e.do("member", "GET", "/api/v1/accounts/mgr-dash/audit", nil)
+func testAuditLog(t *testing.T, e *manageEnv, md string) {
+	status, body := e.do("member", "GET", mdPath+"/audit", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
 	status, body = e.do("member", "GET", "/api/v1/operator/audit", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
 
 	var seen []AuditEvent
-	path := "/api/v1/accounts/mgr-dash/audit?limit=3"
+	path := mdPath + "/audit?limit=2"
 	for range 20 {
 		status, body = e.do("operator", "GET", path, nil)
 		e.expect(status, body, http.StatusOK, "")
@@ -602,58 +585,35 @@ func testAuditLog(t *testing.T, e *manageEnv) {
 		if page.NextCursor == nil {
 			break
 		}
-		path = "/api/v1/accounts/mgr-dash/audit?limit=3&cursor=" + *page.NextCursor
+		path = mdPath + "/audit?limit=2&cursor=" + *page.NextCursor
 	}
 	var want int
-	if err := e.owner.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE account_id = $1`,
-		(&configfile.Account{Slug: "mgr-dash"}).ID()).Scan(&want); err != nil {
+	if err := e.owner.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE account_id = $1`, md).Scan(&want); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != want || want < 4 {
+	if len(seen) != want || want < 3 {
 		t.Fatalf("paged %d events, want %d", len(seen), want)
 	}
 	var prev int64
 	for i, ev := range seen {
 		id, err := strconv.ParseInt(ev.ID, 10, 64)
-		if err != nil || ev.Account != "mgr-dash" || ev.Actor == nil || (i > 0 && id >= prev) {
+		if err != nil || ev.Account != "github/md" || ev.Actor == nil || (i > 0 && id >= prev) {
 			t.Errorf("event %d = %+v, want newest first", i, ev)
 		}
 		prev = id
 	}
 	status, body = e.do("operator", "GET", "/api/v1/operator/audit?limit=200", nil)
 	e.expect(status, body, http.StatusOK, "")
-	if !strings.Contains(string(body), `"action":"account.create","target":"mgr-dash"`) {
-		t.Errorf("operator audit lacks the create: %s", body)
+	if !strings.Contains(string(body), `"account":"","action":"config.update","target":"instance"`) {
+		t.Errorf("admin audit lacks the instance write: %s", body)
 	}
 }
 
-func testDelete(t *testing.T, e *manageEnv) {
-	status, body := e.do("member", "DELETE", "/api/v1/accounts/mgr-dash?revision=3", nil)
-	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	status, body = e.do("operator", "DELETE", "/api/v1/accounts/mgr-dash?revision=1", nil)
-	e.expect(status, body, http.StatusConflict, CodeRevisionConflict)
-	status, body = e.do("operator", "DELETE", "/api/v1/accounts/mgr-file?revision=1", nil)
-	e.expect(status, body, http.StatusForbidden, CodeFileManaged)
-	status, body = e.do("operator", "DELETE", "/api/v1/accounts/mgr-dash?revision=3", nil)
-	e.expect(status, body, http.StatusNoContent, "")
-	if e.audits(AuditAccountDelete, "mgr-dash") != 1 {
-		t.Errorf("account.delete audit rows are wrong")
-	}
-	e.waitFor("mgr-dash to leave", func(f *configfile.File) bool { _, ok := f.Account("mgr-dash"); return !ok })
-	status, body = e.do("operator", "GET", "/api/v1/accounts/mgr-dash/config", nil)
-	e.expect(status, body, http.StatusNotFound, CodeNotFound)
-	status, body = e.do("outsider", "GET", "/api/v1/meta", nil)
-	e.expect(status, body, http.StatusOK, "")
-	if !strings.Contains(string(body), `"management":true`) {
-		t.Errorf("meta = %s", body)
-	}
-}
-
-// testFileAccountLeftOut stores a dashboard account on the file account's slug
-// directly, as no API write may: the file account leaves the running
-// configuration, the operator console says why, and it returns once the
-// row is gone.
-func testFileAccountLeftOut(t *testing.T, e *manageEnv) {
+// testFileConnectionLeftOut stores a spec connection on the file
+// connection's name directly, as no API write may: the file's leaves the
+// running configuration, the admin console says why, and it returns once
+// the spec lets it go.
+func testFileConnectionLeftOut(t *testing.T, e *manageEnv) {
 	ctx := context.Background()
 	seal := func(v string) string {
 		s, err := e.srv.keyring.Seal([]byte(v))
@@ -662,42 +622,34 @@ func testFileAccountLeftOut(t *testing.T, e *manageEnv) {
 		}
 		return s
 	}
-	spec := mustJSON(t, map[string]any{"slug": "mgr-file", "connections": []any{map[string]any{
-		"name": "mgr-held-bot", "forge": "github", "accounts": []string{"mh"},
+	spec := mustJSON(t, map[string]any{"connections": []any{map[string]any{
+		"name": "mgr-file-bot", "forge": "github", "accounts": []string{"mh"},
 		"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"sealed": seal("k")}, "webhookSecret": map[string]any{"sealed": seal("w")}},
 	}}})
-	write := func(fn func(pgx.Tx) error) {
-		if err := e.st.WithAccount(ctx, (&configfile.Account{Slug: "mgr-file"}).ID(), fn); err != nil {
+	write := func(spec json.RawMessage) {
+		err := e.st.WithAccount(ctx, "", func(tx pgx.Tx) error {
+			stored, _, err := store.InstanceSpecIn(ctx, tx)
+			if err != nil {
+				return err
+			}
+			_, err = e.st.PutInstanceSpec(ctx, tx, spec, stored.Revision, "")
+			return err
+		})
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	write(func(tx pgx.Tx) error {
-		_, err := e.st.PutDashboardAccount(ctx, tx, "mgr-file", spec, 0, "")
-		return err
-	})
-	e.waitFor("mgr-file to be left out", func(f *configfile.File) bool { return len(f.Skipped()) == 1 })
-	status, body := e.do("operator", "GET", "/api/v1/operator/accounts", nil)
+	write(spec)
+	e.waitFor("mgr-file-bot to be left out", func(f *configfile.File) bool { return len(f.Skipped()) == 1 })
+	status, body := e.do("operator", "GET", "/api/v1/operator/instance", nil)
 	e.expect(status, body, http.StatusOK, "")
-	var list []OperatorAccount
-	if err := json.Unmarshal(body, &list); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(string(body), `"key":"mgr-file-bot","value":"left out: the dashboard's connection \"mgr-file-bot\" already holds the name"`) {
+		t.Fatalf("instance settings = %s", body)
 	}
-	live := map[configfile.Origin]bool{}
-	for _, o := range list {
-		if o.Slug == "mgr-file" {
-			live[o.ManagedBy] = o.Live
-			if o.ManagedBy == configfile.OriginFile && o.Conflict != `dashboard account "mgr-file" already holds the slug` {
-				t.Errorf("conflict = %q", o.Conflict)
-			}
-		}
-	}
-	if len(live) != 2 || !live[configfile.OriginDashboard] || live[configfile.OriginFile] {
-		t.Fatalf("operator accounts = %s", body)
-	}
-	write(func(tx pgx.Tx) error { return e.st.DeleteDashboardAccount(ctx, tx, "mgr-file", 1) })
-	e.waitFor("mgr-file to return", func(f *configfile.File) bool {
-		ft, ok := f.Account("mgr-file")
-		return ok && ft.Origin() == configfile.OriginFile && len(f.Skipped()) == 0
+	write(json.RawMessage(`{}`))
+	e.waitFor("mgr-file-bot to return", func(f *configfile.File) bool {
+		in, ok := f.Connection("mgr-file-bot")
+		return ok && in.Origin() == configfile.OriginFile && len(f.Skipped()) == 0
 	})
 }
 
@@ -708,4 +660,28 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+// TestConcurrentSpecWrites: writes at one revision race, and exactly one
+// lands; the rest are told to reload.
+func TestConcurrentSpecWrites(t *testing.T) {
+	e := newManageEnv(t)
+	spec := mustJSON(t, map[string]any{"defaults": map[string]any{"forks": true}})
+	const writers = 6
+	statuses := make([]int, writers)
+	var wg sync.WaitGroup
+	for i := range writers {
+		wg.Go(func() { statuses[i], _ = e.do("operator", "PUT", instancePath, UpdateConfigRequest{Spec: spec}) })
+	}
+	wg.Wait()
+	counts := map[int]int{}
+	for _, s := range statuses {
+		counts[s]++
+	}
+	if counts[http.StatusOK] != 1 || counts[http.StatusConflict] != writers-1 {
+		t.Fatalf("statuses = %v, want one 200 and the rest 409", statuses)
+	}
+	if rev := e.scalar(`SELECT revision::text FROM instance_config`); rev != "1" {
+		t.Fatalf("revision = %s, want 1", rev)
+	}
 }

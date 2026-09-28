@@ -87,43 +87,28 @@ func grant(ctx context.Context, file *configfile.File, s *configfile.SignIn, id 
 	return g, nil
 }
 
-// forgeAccounts lists the accounts the file's connections on forge serve
+// forgeAccounts lists the accounts the running connections on forge serve
 // that the person with login belongs to: their own login, and each
 // organization m reports them an active member of, as account keys.
 func forgeAccounts(ctx context.Context, file *configfile.File, forge configfile.Forge, login string, m Membership) ([]string, error) {
-	checked := map[string]bool{}
 	var out []string
-	for ti := range file.Accounts {
-		for _, in := range file.Accounts[ti].Connections {
-			if in.Forge != forge {
-				continue
+	for i := range file.Accounts {
+		a := &file.Accounts[i]
+		if a.Forge != forge || a.Name == "" {
+			continue
+		}
+		ok := strings.EqualFold(login, a.Name)
+		if !ok {
+			var err error
+			if ok, err = m(ctx, a.Name); err != nil {
+				return nil, err
 			}
-			for _, account := range in.Accounts {
-				key := AccountKey(forge, account)
-				if account == "" || checked[key] {
-					continue
-				}
-				checked[key] = true
-				ok := strings.EqualFold(login, account)
-				if !ok {
-					var err error
-					if ok, err = m(ctx, account); err != nil {
-						return nil, err
-					}
-				}
-				if ok {
-					out = append(out, key)
-				}
-			}
+		}
+		if ok {
+			out = append(out, a.Key())
 		}
 	}
 	return out, nil
-}
-
-// AccountKey is how a grant names a forge account: "<forge>/<account>",
-// lowercased, as a role mapping's map keys spell it.
-func AccountKey(forge configfile.Forge, account string) string {
-	return strings.ToLower(string(forge) + "/" + account)
 }
 
 // GrantKey fingerprints what decides a sign-in's grants, the key a session

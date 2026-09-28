@@ -13,41 +13,34 @@ import (
 
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 )
 
 const testConfig = `
-accounts:
-  - slug: alpha
-    connections:
-      - name: alpha-bot
-        forge: github
-        accounts: [alpha]
-        app: { clientId: Iv1.alpha, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
-  - slug: beta
-    connections:
-      - name: beta-bot
-        forge: github
-        accounts: [beta]
-        app: { clientId: Iv1.beta, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+connections:
+  - name: alpha-bot
+    forge: github
+    accounts: [alpha]
+    app: { clientId: Iv1.alpha, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+  - name: beta-bot
+    forge: github
+    accounts: [beta]
+    app: { clientId: Iv1.beta, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
 `
 
 func testFile(t *testing.T) *configfile.File {
 	t.Helper()
 	t.Setenv("KRITIK_TEST_TOKEN", "tok")
-	f, err := configfile.Parse([]byte(testConfig))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	return f
+	return configfiletest.Load(t, testConfig)
 }
 
-func accountIDOf(t *testing.T, f *configfile.File, slug string) string {
+func accountIDOf(t *testing.T, f *configfile.File, name string) string {
 	t.Helper()
-	tn, ok := f.Account(slug)
+	a, ok := f.Account(configfile.ForgeGitHub, name)
 	if !ok {
-		t.Fatalf("no account %s", slug)
+		t.Fatalf("no account %s", name)
 	}
-	return tn.ID()
+	return a.ID()
 }
 
 type testServer struct {
@@ -88,12 +81,12 @@ func (ts *testServer) as(p *auth.Principal, r *http.Request) *httptest.ResponseR
 	return w
 }
 
-// memberOf is a member who reads the account slug.
-func memberOf(t *testing.T, f *configfile.File, slug string) *auth.Principal {
+// memberOf is a member who reads the account name.
+func memberOf(t *testing.T, f *configfile.File, name string) *auth.Principal {
 	t.Helper()
 	return &auth.Principal{
 		User:     auth.User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com"},
-		Accounts: map[string]bool{accountIDOf(t, f, slug): true},
+		Accounts: map[string]bool{accountIDOf(t, f, name): true},
 	}
 }
 
@@ -108,7 +101,7 @@ func decodeError(t *testing.T, w *httptest.ResponseRecorder) ErrorBody {
 
 func TestAPIRequiresPrincipal(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	for _, path := range []string{"/api/v1/me", "/api/v1/accounts", "/api/v1/accounts/alpha/repos", "/api/events", "/api/nope"} {
+	for _, path := range []string{"/api/v1/me", "/api/v1/accounts", "/api/v1/accounts/github/alpha/repos", "/api/events", "/api/nope"} {
 		t.Run(path, func(t *testing.T) {
 			w := ts.as(nil, httptest.NewRequest("GET", path, nil))
 			if w.Code != http.StatusUnauthorized {
@@ -166,7 +159,7 @@ func TestResolveAccount(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sc, err := resolveAccount(f, tt.p, tt.slug)
+			sc, err := resolveAccount(f, tt.p, "github", tt.slug)
 			if tt.wantErr {
 				e, ok := err.(*apiError)
 				if !ok || e.status != http.StatusNotFound {
@@ -177,8 +170,8 @@ func TestResolveAccount(t *testing.T) {
 			if err != nil {
 				t.Fatalf("resolveAccount: %v", err)
 			}
-			if sc.account.Slug != tt.slug || sc.role() != tt.wantRole {
-				t.Errorf("scope = %s as %q, want %s as %q", sc.account.Slug, sc.role(), tt.slug, tt.wantRole)
+			if sc.account.Name != tt.slug || sc.role() != tt.wantRole {
+				t.Errorf("scope = %s as %q, want %s as %q", sc.account.Name, sc.role(), tt.slug, tt.wantRole)
 			}
 		})
 	}
@@ -193,10 +186,10 @@ func TestMe(t *testing.T) {
 		accounts []AccountMembership
 	}{
 		{"member", memberOf(t, ts.file, "beta"), false,
-			[]AccountMembership{{Slug: "beta", Role: auth.RoleMember, ManagedBy: configfile.OriginFile}}},
+			[]AccountMembership{{Slug: "github/beta", Role: auth.RoleMember}}},
 		{"operator sees every account as admin", &auth.Principal{Operator: true}, true, []AccountMembership{
-			{Slug: "alpha", Role: auth.RoleAdmin, ManagedBy: configfile.OriginFile},
-			{Slug: "beta", Role: auth.RoleAdmin, ManagedBy: configfile.OriginFile},
+			{Slug: "github/alpha", Role: auth.RoleAdmin},
+			{Slug: "github/beta", Role: auth.RoleAdmin},
 		}},
 		{"no accounts", &auth.Principal{}, false, []AccountMembership{}},
 	}
@@ -245,13 +238,13 @@ func TestRequestValidation(t *testing.T) {
 		path string
 		code ErrorCode
 	}{
-		{"/api/v1/accounts/alpha/repos?limit=0", CodeBadRequest},
-		{"/api/v1/accounts/alpha/repos?cursor=@@", CodeInvalidCursor},
-		{"/api/v1/accounts/alpha/pulls?state=merged", CodeBadRequest},
-		{"/api/v1/accounts/alpha/pulls?outcome=great", CodeBadRequest},
-		{"/api/v1/accounts/alpha/usage?group=week", CodeBadRequest},
-		{"/api/v1/accounts/alpha/usage?from=yesterday", CodeBadRequest},
-		{"/api/v1/accounts/alpha/usage?from=2026-02-01&to=2026-01-01", CodeBadRequest},
+		{"/api/v1/accounts/github/alpha/repos?limit=0", CodeBadRequest},
+		{"/api/v1/accounts/github/alpha/repos?cursor=@@", CodeInvalidCursor},
+		{"/api/v1/accounts/github/alpha/pulls?state=merged", CodeBadRequest},
+		{"/api/v1/accounts/github/alpha/pulls?outcome=great", CodeBadRequest},
+		{"/api/v1/accounts/github/alpha/usage?group=week", CodeBadRequest},
+		{"/api/v1/accounts/github/alpha/usage?from=yesterday", CodeBadRequest},
+		{"/api/v1/accounts/github/alpha/usage?from=2026-02-01&to=2026-01-01", CodeBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

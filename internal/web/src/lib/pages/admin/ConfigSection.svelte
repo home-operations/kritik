@@ -1,18 +1,19 @@
 <script lang="ts">
+  import { accountApi } from '../../links';
   import { getJSON, sendJSON } from '../../api.svelte';
   import { setLeaveGuard } from '../../router.svelte';
   import { Resource } from '../../resource.svelte';
   import { describe, errorPath, fieldEditable, isCode } from '../../manage';
   import { MANAGEMENT_OFF, management } from '../../session.svelte';
   import { toast } from '../../toast.svelte';
-  import type { AccountConfig, AccountWriteResult } from '../../types';
+  import type { AccountConfig, ConfigWriteResult } from '../../types';
   import StateView from '../../components/StateView.svelte';
   import ConfigEditor from './ConfigEditor.svelte';
   import SpecView from './SpecView.svelte';
   import GeneratedSecrets from './GeneratedSecrets.svelte';
 
   let { slug }: { slug: string } = $props();
-  const path = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}/config`);
+  const path = $derived(`${accountApi(slug)}/config`);
   const res = new Resource(() => getJSON<AccountConfig>(path));
   $effect(() => {
     void res.load();
@@ -50,7 +51,7 @@
     saving = true;
     resetError();
     try {
-      const r = await sendJSON<AccountWriteResult>('PUT', path, { revision: cfg.revision, spec });
+      const r = await sendJSON<ConfigWriteResult>('PUT', path, { revision: cfg.revision, spec });
       toast(`Saved: revision ${r.revision}`);
       if (r.generated && Object.keys(r.generated).length) generated = r.generated;
       await reload();
@@ -65,7 +66,6 @@
   }
 
   function readOnlyReason(cfg: AccountConfig): string {
-    if (cfg.managedBy === 'file') return 'This account is declared in the configuration file; change it there.';
     if (!management()) return MANAGEMENT_OFF;
     if (!cfg.editable) return 'You can view this configuration but not change it.';
     return '';
@@ -78,7 +78,7 @@
     <section class="panel" aria-labelledby="admin-config">
       <header class="panel-head">
         <h2 id="admin-config">Configuration</h2>
-        <span class="small muted">{cfg.managedBy}{cfg.revision !== null ? ` · revision ${cfg.revision}` : ''}</span>
+        <span class="small muted">revision {cfg.revision}</span>
       </header>
       {#if reason}
         <p class="notice" role="note">{reason}</p>

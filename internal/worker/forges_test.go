@@ -15,18 +15,16 @@ import (
 func appConnection(t *testing.T, clientID string) *configfile.Connection {
 	t.Helper()
 	file, err := configfile.Parse([]byte(`
-accounts:
-  - slug: acme
-    connections:
-      - name: acme-bot
-        forge: github
-        accounts: [acme]
-        app: { clientId: ` + clientID + `, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
+connections:
+  - name: acme-bot
+    forge: github
+    accounts: [acme]
+    app: { clientId: ` + clientID + `, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
-	in, _, _ := file.Connection("acme-bot")
+	in, _ := file.Connection("acme-bot")
 	return in
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -33,10 +34,10 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	}
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
-	file, err := configfile.Parse([]byte(configYAML + `      - name: onedr0p/a
-      - name: onedr0p/b
-      - name: onedr0p/c
-`))
+	file, err := configfiletest.Parse(t, configYAML+`      - name: a
+      - name: b
+      - name: c
+`)
 	if err != nil {
 		t.Fatal(err)
 	}

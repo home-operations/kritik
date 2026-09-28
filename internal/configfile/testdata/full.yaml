@@ -1,3 +1,19 @@
+connections:
+  - name: sticky-gecko
+    forge: github
+    accounts: [home-operations]
+    app:
+      clientId: Iv1.xxxxxxxx
+      privateKey: { file: __DIR__/private-key.pem }
+      webhookSecret: { env: TEST_WEBHOOK_SECRET }
+  - name: bot-ross
+    forge: github
+    accounts: [onedr0p]
+    app:
+      clientIdFrom: { env: TEST_CLIENT_ID }
+      privateKey: { file: __DIR__/private-key.pem }
+      webhookSecret: { env: TEST_WEBHOOK_SECRET }
+
 providers:
   openrouter:
     type: openrouter
@@ -20,39 +36,25 @@ retention:
   disabledIndexGrace: 720h
 
 accounts:
-  - slug: home-operations
+  - forge: github
+    name: home-operations
     runner:
       resources: { limits: { cpu: "2", memory: 4Gi } }
       activeDeadlineSeconds: 900
-    connections:
-      - name: sticky-gecko
-        forge: github
-        accounts: [home-operations]
-        app:
-          clientId: Iv1.xxxxxxxx
-          privateKey: { file: __DIR__/private-key.pem }
-          webhookSecret: { env: TEST_WEBHOOK_SECRET }
     limits:
       reviewsPerDay: 200
     repositories:
-      - name: home-operations/flate
+      - name: flate
         ignore:
           - "**/testdata/**"
         settle: 30s
-      - name: home-operations/kopiur
+      - name: kopiur
         filter: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
-      - name: home-operations/charts-mirror
+      - name: charts-mirror
         enabled: false
 
-  - slug: onedr0p
-    connections:
-      - name: bot-ross
-        forge: github
-        accounts: [onedr0p]
-        app:
-          clientIdFrom: { env: TEST_CLIENT_ID }
-          privateKey: { file: __DIR__/private-key.pem }
-          webhookSecret: { env: TEST_WEBHOOK_SECRET }
+  - forge: github
+    name: onedr0p
     models:
       review: local/claude-opus-5
     forks: true

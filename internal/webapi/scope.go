@@ -28,25 +28,25 @@ func roleOn(p *auth.Principal) auth.Role {
 	return auth.RoleMember
 }
 
-// resolveAccount finds the account named slug in the current file for p. An
-// account p may not read is reported exactly like one that does not exist,
-// so the API never confirms a slug to someone outside it.
-func resolveAccount(file *configfile.File, p *auth.Principal, slug string) (*accountScope, error) {
-	t, ok := file.Account(slug)
+// resolveAccount finds the running account name on forge for p. An account
+// p may not read is reported exactly like one that does not exist, so the
+// API never confirms an account to someone outside it.
+func resolveAccount(file *configfile.File, p *auth.Principal, forge, name string) (*accountScope, error) {
+	t, ok := file.Account(configfile.Forge(forge), name)
 	if !ok || !p.CanRead(t.ID()) {
 		return nil, errNotFound("account")
 	}
 	return &accountScope{file: file, account: t, principal: p}, nil
 }
 
-// accountHandler serves one /api/v1/accounts/{slug}/... route.
+// accountHandler serves one /api/v1/accounts/{forge}/{name}/... route.
 type accountHandler func(w http.ResponseWriter, r *http.Request, t *accountScope) error
 
-// account adapts h: it resolves {slug} for the request's principal and
-// writes any error h returns.
+// account adapts h: it resolves {forge}/{name} for the request's principal
+// and writes any error h returns.
 func (s *Server) account(h accountHandler) http.HandlerFunc {
 	return s.handler(func(w http.ResponseWriter, r *http.Request) error {
-		t, err := resolveAccount(s.current.Get(), auth.PrincipalFrom(r.Context()), r.PathValue("slug"))
+		t, err := resolveAccount(s.current.Get(), auth.PrincipalFrom(r.Context()), r.PathValue("forge"), r.PathValue("name"))
 		if err != nil {
 			return err
 		}

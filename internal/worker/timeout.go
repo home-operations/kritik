@@ -40,15 +40,13 @@ func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration {
 }
 
 // repoSettings resolves a repository's settings from its id, which a job
-// carries instead of the connection and name the configuration is keyed
-// by. A repository the account does not list gets the account's settings, as
-// in Settings.
+// carries instead of the name the configuration is keyed by. A repository
+// the account does not list gets the account's settings, as in Settings.
 func repoSettings(file *configfile.File, account *configfile.Account, repositoryID string) configfile.Settings {
-	for i := range account.Repositories {
-		r := &account.Repositories[i]
-		if in := file.ConnectionFor(account, r); in != nil && configfile.RepositoryID(in.ID(), r.Name) == repositoryID {
-			return file.Settings(account, in.Name, r.Name)
+	for _, r := range account.Repositories {
+		if name := account.Name + "/" + r.Name; configfile.RepositoryID(account.ID(), name) == repositoryID {
+			return file.Settings(account, name)
 		}
 	}
-	return file.Settings(account, "", "")
+	return file.Settings(account, "")
 }

@@ -22,6 +22,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/store"
 )
@@ -33,15 +34,16 @@ auth:
     clientId: kritik
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: '"kritik-admin" in roles ? "admin" : ""'
+connections:
+  - name: aj-bot
+    forge: github
+    accounts: [aj]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
 accounts:
-  - slug: aj-account
-    connections:
-      - name: aj-bot
-        forge: github
-        accounts: [aj]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+  - forge: github
+    name: aj
     repositories:
-      - name: aj/one
+      - name: one
 `
 
 // actionsEnv exercises the dashboard actions (rerun, cancel, reindex)
@@ -81,10 +83,7 @@ func newActionsEnv(t *testing.T) *actionsEnv {
 	}
 	t.Cleanup(owner.Close)
 	t.Setenv("KRITIK_TEST_TOKEN", "tok")
-	file, err := configfile.Parse([]byte(actionsConfig))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
+	file := configfiletest.Load(t, actionsConfig)
 	if err := st.ApplyConfig(ctx, file, "actions-jobs-test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -103,9 +102,9 @@ func newActionsEnv(t *testing.T) *actionsEnv {
 	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(e.http.Close)
 
-	tn, _ := file.Account("aj-account")
-	e.accountID = tn.ID()
-	e.repoID = configfile.RepositoryID(tn.Connections[0].ID(), "aj/one")
+	a, _ := file.Account(configfile.ForgeGitHub, "aj")
+	e.accountID = a.ID()
+	e.repoID = configfile.RepositoryID(a.ID(), "aj/one")
 	e.prID = e.scalar(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha)
 		VALUES ($1, $2, 11, 'rerun me', 'ada', 'headA') RETURNING id::text`, e.accountID, e.repoID)
 
@@ -212,7 +211,7 @@ func TestActionsJobs(t *testing.T) {
 }
 
 func testRerunJob(t *testing.T, e *actionsEnv) {
-	status, body := e.do("/api/v1/accounts/aj-account/pulls/aj/one/11/rerun")
+	status, body := e.do("/api/v1/accounts/github/aj/pulls/aj/one/11/rerun")
 	e.expect(status, body, http.StatusAccepted, "")
 
 	var accepted Accepted
@@ -236,7 +235,7 @@ func testRerunJob(t *testing.T, e *actionsEnv) {
 }
 
 func testRerunDedupes(t *testing.T, e *actionsEnv) {
-	const path = "/api/v1/accounts/aj-account/pulls/aj/one/11/rerun"
+	const path = "/api/v1/accounts/github/aj/pulls/aj/one/11/rerun"
 	status, body := e.do(path)
 	e.expect(status, body, http.StatusConflict, CodeAlreadyQueued)
 
@@ -264,7 +263,7 @@ func testRerunConcurrent(t *testing.T, e *actionsEnv) {
 		statuses := make([]int, 2)
 		var wg sync.WaitGroup
 		for i := range statuses {
-			wg.Go(func() { statuses[i], _ = e.do("/api/v1/accounts/aj-account/pulls/aj/one/12/rerun") })
+			wg.Go(func() { statuses[i], _ = e.do("/api/v1/accounts/github/aj/pulls/aj/one/12/rerun") })
 		}
 		wg.Wait()
 		if !slices.Contains(statuses, http.StatusAccepted) || !slices.Contains(statuses, http.StatusConflict) {
@@ -279,7 +278,7 @@ func testCancelNotCancelable(t *testing.T, e *actionsEnv) {
 	review := e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status)
 		VALUES ($1, $2, 'headA', 'completed') RETURNING id::text`, e.accountID, e.prID)
 
-	status, body := e.do("/api/v1/accounts/aj-account/reviews/" + review + "/cancel")
+	status, body := e.do("/api/v1/accounts/github/aj/reviews/" + review + "/cancel")
 	e.expect(status, body, http.StatusConflict, CodeNotCancelable)
 	if n := e.audits(AuditReviewCancel, review); n != 0 {
 		t.Errorf("review.cancel audit rows = %d, want 0", n)
@@ -298,7 +297,7 @@ func testCancelRunning(t *testing.T, e *actionsEnv) {
 	review := e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status, river_job_id)
 		VALUES ($1, $2, 'headA', 'running', $3) RETURNING id::text`, e.accountID, e.prID, res.Job.ID)
 
-	status, body := e.do("/api/v1/accounts/aj-account/reviews/" + review + "/cancel")
+	status, body := e.do("/api/v1/accounts/github/aj/reviews/" + review + "/cancel")
 	e.expect(status, body, http.StatusAccepted, "")
 
 	if j := e.job(res.Job.ID); j.state != "cancelled" {
@@ -321,7 +320,7 @@ func testCancelEndedJob(t *testing.T, e *actionsEnv) {
 	review := e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status, river_job_id)
 		VALUES ($1, $2, 'headA', 'running', $3) RETURNING id::text`, e.accountID, e.prID, res.Job.ID)
 
-	status, body := e.do("/api/v1/accounts/aj-account/reviews/" + review + "/cancel")
+	status, body := e.do("/api/v1/accounts/github/aj/reviews/" + review + "/cancel")
 	e.expect(status, body, http.StatusConflict, CodeNotCancelable)
 	if got := e.scalar(`SELECT (cancel_requested_at IS NULL)::text FROM reviews WHERE id = $1`, review); got != "true" {
 		t.Error("a refused cancel still marked the review cancel-requested")
@@ -332,7 +331,7 @@ func testCancelEndedJob(t *testing.T, e *actionsEnv) {
 }
 
 func testReindexJob(t *testing.T, e *actionsEnv) {
-	status, body := e.do("/api/v1/accounts/aj-account/repos/aj/one/reindex")
+	status, body := e.do("/api/v1/accounts/github/aj/repos/aj/one/reindex")
 	e.expect(status, body, http.StatusAccepted, "")
 
 	var accepted Accepted
@@ -356,7 +355,7 @@ func testReindexJob(t *testing.T, e *actionsEnv) {
 
 	// The job above is still available (nothing runs it here), so a second
 	// forced reindex of the same repository dedupes onto it.
-	status, body = e.do("/api/v1/accounts/aj-account/repos/aj/one/reindex")
+	status, body = e.do("/api/v1/accounts/github/aj/repos/aj/one/reindex")
 	e.expect(status, body, http.StatusConflict, CodeAlreadyQueued)
 	if n := e.audits(AuditRepoReindex, "aj/one"); n != 1 {
 		t.Errorf("repo.reindex audit rows after dedup = %d, want still 1", n)

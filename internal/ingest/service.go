@@ -56,16 +56,9 @@ var pullRequestActions = map[string]bool{
 	ActionBaseline:     false,
 }
 
-// RecordDelivery implements DeliveryRecorder. It writes at most once a
-// minute per connection: the dashboard needs to know deliveries arrive,
-// not to count them.
-func (s *Service) RecordDelivery(ctx context.Context, accountID, connectionID string) error {
-	err := s.store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE connections SET last_webhook_at = now()
-			WHERE id = $1 AND (last_webhook_at IS NULL OR last_webhook_at < now() - interval '1 minute')`, connectionID)
-		return err
-	})
-	if err != nil {
+// RecordDelivery implements DeliveryRecorder.
+func (s *Service) RecordDelivery(ctx context.Context, connectionID string) error {
+	if err := s.store.RecordWebhookDelivery(ctx, connectionID); err != nil {
 		return fmt.Errorf("ingest: record delivery: %w", err)
 	}
 	return nil
@@ -105,7 +98,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		}
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
-	settings := req.File.Settings(req.Account, req.Connection.Name, ev.Repository.FullName)
+	settings := req.File.Settings(req.Account, ev.Repository.FullName)
 	switch {
 	case !settings.Enabled:
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
@@ -177,7 +170,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}
-	settings := req.File.Settings(req.Account, req.Connection.Name, ev.Repository.FullName)
+	settings := req.File.Settings(req.Account, ev.Repository.FullName)
 	if !settings.Enabled {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	}
@@ -213,7 +206,7 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Push.After == "" || strings.Trim(ev.Push.After, "0") == "" {
 		return Outcome{Status: Skipped, Reason: "branch-deleted"}, nil
 	}
-	settings := req.File.Settings(req.Account, req.Connection.Name, ev.Repository.FullName)
+	settings := req.File.Settings(req.Account, ev.Repository.FullName)
 	if !settings.Enabled {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	}
@@ -266,8 +259,7 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 			// The App left this account: its repositories go, not those of
 			// the other accounts the connection serves.
 			_, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-				WHERE connection_id = $1 AND managed_by = 'forge' AND lower(split_part(name, '/', 1)) = lower($2)`,
-				req.Connection.ID(), ev.Account)
+				WHERE account_id = $1 AND managed_by = 'forge'`, req.Account.ID())
 			return err
 		}
 		for _, name := range inst.Repositories {
@@ -289,19 +281,19 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 
 // ensureRepository makes sure the repository row exists and, for a
 // forge-managed row, that it is enabled: the forge just told us about it. A
-// file-managed row keeps its settings and enabled flag, only learning the
-// default branch.
+// row the spec lists keeps its enabled flag, only learning the default
+// branch.
 func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook.Repository) (string, error) {
 	id := repoID(req, repo.FullName)
 	_, err := tx.Exec(ctx, `
-		INSERT INTO repositories (id, account_id, connection_id, name, default_branch, managed_by, enabled)
-		VALUES ($1, $2, $3, $4, $5, 'forge', true)
-		ON CONFLICT (connection_id, name) DO UPDATE SET
+		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled)
+		VALUES ($1, $2, $3, $4, 'forge', true)
+		ON CONFLICT (account_id, name) DO UPDATE SET
 			default_branch = CASE WHEN EXCLUDED.default_branch <> '' THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
 			enabled = CASE WHEN repositories.managed_by = 'forge' THEN true ELSE repositories.enabled END,
 			disabled_at = CASE WHEN repositories.managed_by = 'forge' THEN NULL ELSE repositories.disabled_at END,
 			updated_at = now()`,
-		id, req.Account.ID(), req.Connection.ID(), repo.FullName, repo.DefaultBranch)
+		id, req.Account.ID(), repo.FullName, repo.DefaultBranch)
 	if err != nil {
 		return "", fmt.Errorf("ingest: ensure repository %s: %w", repo.FullName, err)
 	}
@@ -309,7 +301,7 @@ func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook
 }
 
 func repoID(req Request, fullName string) string {
-	return configfile.RepositoryID(req.Connection.ID(), fullName)
+	return configfile.RepositoryID(req.Account.ID(), fullName)
 }
 
 func nullTime(pr *webhook.PullRequest) any {

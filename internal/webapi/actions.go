@@ -35,9 +35,9 @@ var errActionsDisabled = errStatus(http.StatusServiceUnavailable, CodeActionsDis
 
 // registerActions mounts re-run, cancel and reindex.
 func (s *Server) registerActions(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/accounts/{slug}/pulls/{owner}/{repo}/{number}/rerun", s.admin(s.rerun))
-	mux.HandleFunc("POST /api/v1/accounts/{slug}/reviews/{id}/cancel", s.admin(s.cancel))
-	mux.HandleFunc("POST /api/v1/accounts/{slug}/repos/{owner}/{repo}/reindex", s.admin(s.reindex))
+	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/pulls/{owner}/{repo}/{number}/rerun", s.admin(s.rerun))
+	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/reviews/{id}/cancel", s.admin(s.cancel))
+	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}/reindex", s.admin(s.reindex))
 }
 
 // jobAudit is a queued action's audit detail.

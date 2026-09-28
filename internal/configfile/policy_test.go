@@ -2,7 +2,6 @@ package configfile
 
 import (
 	"slices"
-	"strings"
 	"testing"
 )
 
@@ -43,14 +42,11 @@ func TestSpecValue(t *testing.T) {
 func TestSources(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	f, err := Parse([]byte("defaults:\n  settle: 2m\n  agent: { maxSteps: 9 }\n" + strings.Replace(minimal, "slug: acme",
-		"slug: acme\n    mode: agentic\n    repositories: [{ name: acme/x, settle: 0s, enabled: false }]", 1)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := f.Sources(&f.Accounts[0], "acme-bot", "acme/x")
+	f := mustLoad(t, "defaults:\n  settle: 2m\n  agent: { maxSteps: 9 }\n"+
+		acme("    mode: agentic\n    repositories: [{ name: x, settle: 0s, enabled: false }]\n"))
+	s := f.Sources(&f.Accounts[0], "acme/x")
 	for key, want := range map[string]Source{
-		"settle": SourceFile, "mode": SourceFile, "agent.maxSteps": SourceFile, "enabled": SourceFile,
+		"settle": SourceAccount, "mode": SourceAccount, "agent.maxSteps": SourceDefaults, "enabled": SourceAccount,
 		"agent.maxTokens": SourceDefault, "models.review": SourceDefault, "ignore": SourceDefault,
 	} {
 		if s[key] != want {
@@ -58,13 +54,9 @@ func TestSources(t *testing.T) {
 		}
 	}
 	if _, ok := s["skip.onlyPaths"]; ok {
-		t.Error("a setting only the repository has has no operator source")
+		t.Error("a setting only the repository has has no admin source")
 	}
-	dash, err := DecodeAccount(DashboardAccount{Slug: "beta", Spec: []byte(`{"slug":"beta","filter":"true","connections":[{"name":"b"}]}`)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s := f.Sources(&dash, "b", "beta/x"); s["filter"] != SourceDashboard || s["settle"] != SourceFile {
-		t.Fatalf("dashboard account sources = %v", s)
+	if s := f.Sources(&Account{Forge: ForgeGitHub, Name: "other"}, "other/x"); s["settle"] != SourceDefaults || s["mode"] != SourceDefault {
+		t.Fatalf("an account without an entry = %v", s)
 	}
 }

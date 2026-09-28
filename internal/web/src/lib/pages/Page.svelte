@@ -38,11 +38,11 @@
   {:else if route.name === 'repos'}
     <Repos slug={route.slug} />
   {:else if route.name === 'repo'}
-    <Repo slug={route.slug} owner={route.owner} repo={route.repo} connection={route.connection} />
+    <Repo slug={route.slug} owner={route.owner} repo={route.repo} />
   {:else if route.name === 'pulls'}
     <Pulls slug={route.slug} />
   {:else if route.name === 'pull'}
-    <Pull slug={route.slug} owner={route.owner} repo={route.repo} number={route.number} connection={route.connection} />
+    <Pull slug={route.slug} owner={route.owner} repo={route.repo} number={route.number} />
   {:else if route.name === 'review'}
     <Review slug={route.slug} id={route.id} tab={route.tab} />
   {:else if route.name === 'queue'}

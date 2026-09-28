@@ -55,12 +55,12 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	if err != nil {
 		return err
 	}
-	logger := w.Logger.With("account", account.Slug, "pr", args.Number, "comment", args.CommentID)
+	logger := w.Logger.With("account", account.Key(), "pr", args.Number, "comment", args.CommentID)
 	pr, err := loadPullRequest(ctx, w.Store, args.AccountID, args.RepositoryID, args.Number)
 	if err != nil {
 		return err
 	}
-	client, err := w.client(ctx, file, pr.connection, pr.repository)
+	client, err := w.client(ctx, file, account, pr.repository)
 	if err != nil {
 		return err
 	}
@@ -73,13 +73,13 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	if err != nil {
 		return err
 	}
-	f := &followUp{w: w, file: file, account: account, settings: file.Settings(account, pr.connection, pr.repository), client: client, pr: pr,
+	f := &followUp{w: w, file: file, account: account, settings: file.Settings(account, pr.repository), client: client, pr: pr,
 		comment: comment, owner: owner, repo: repo, botLogin: login, jobID: job.ID, logger: logger}
 	if done, err := f.alreadyAnswered(ctx); err != nil || done {
 		return err
 	}
 	outcome, err := f.run(ctx)
-	w.Metrics.FollowUp(account.Slug, outcome)
+	w.Metrics.FollowUp(account.Key(), outcome)
 	if err != nil {
 		logger.Error("follow-up failed", "error", err)
 		_ = f.record(ctx, followUpFailed, err.Error(), 0, "")
@@ -416,7 +416,7 @@ func (f *followUp) complete(ctx context.Context, msg, reviewID string, instructi
 	err = f.w.withLease(ctx, f.account, string(ref), f.settings.Limits.Concurrency, f.jobID, func(ctx context.Context) error {
 		var err error
 		resp, err = completer.Complete(ctx, req)
-		f.w.Metrics.ModelCall(f.account.Slug, string(ref), "followup", callOutcome(err),
+		f.w.Metrics.ModelCall(f.account.Key(), string(ref), "followup", callOutcome(err),
 			resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 		return err
 	})

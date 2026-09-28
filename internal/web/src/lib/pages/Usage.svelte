@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { accountApi } from '../links';
   import { getJSON } from '../api.svelte';
   import { Resource, live } from '../resource.svelte';
   import { daysAgo, tokens, usd, wholeNumber } from '../format';
@@ -18,7 +19,7 @@
 
   const res = new Resource(() => {
     const p = new URLSearchParams({ group, from: daysAgo(days, Date.now()) });
-    return getJSON<UsageSeries>(`/api/v1/accounts/${encodeURIComponent(slug)}/usage?${p}`);
+    return getJSON<UsageSeries>(`${accountApi(slug)}/usage?${p}`);
   });
   $effect(() => {
     void res.load();

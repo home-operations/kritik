@@ -26,8 +26,8 @@ type Config struct {
 	Store   *store.Store
 	Current *configfile.Current
 	Auth    *auth.Handler
-	// Keyring seals the secrets of dashboard accounts; nil disables writing
-	// them.
+	// Keyring seals the instance spec's secrets; nil disables writing the
+	// spec.
 	Keyring *sealbox.Keyring
 	// Actions queues re-runs, cancels and reindexes; nil disables them.
 	Actions Actions

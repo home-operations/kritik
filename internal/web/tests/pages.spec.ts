@@ -41,17 +41,18 @@ test('account overview shows tiles, recent reviews, queue and repositories', asy
   await expect(page.getByRole('region', { name: 'Repositories', exact: true }).locator('table.data')).toContainText(g.repoPage.items[0]!.fullName);
 });
 
-test('account overview says whether each connection receives webhooks', async ({ page }) => {
+test('account overview says whether its connection receives webhooks', async ({ page }) => {
   const detail = g.golden<AccountDetail>('account_detail');
-  const quiet = { ...detail.connections[0]!, name: 'alpha-quiet', hookPath: '/hooks/alpha-quiet', lastWebhookAt: null };
-  await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connections: [...detail.connections, quiet] }], ...g.defaultApi()]);
+  const panel = page.getByRole('region', { name: 'Connection', exact: true });
   await page.goto(`/${T}`);
-  const panel = page.getByRole('region', { name: 'Connections' });
-  await expect(panel.getByRole('row').filter({ hasText: detail.connections[0]!.name })).toContainText('receiving');
-  await expect(panel.getByRole('row').filter({ hasText: 'alpha-quiet' })).toContainText('none yet');
-  const note = panel.getByRole('note');
-  await expect(note).toHaveCount(1);
-  await expect(note).toContainText("GitHub App's webhook at /hooks/alpha-quiet");
+  await expect(panel).toContainText(detail.connection.name);
+  await expect(panel).toContainText('receiving');
+  await expect(panel.getByRole('note')).toHaveCount(0);
+
+  await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connection: { ...detail.connection, lastWebhookAt: null } }], ...g.defaultApi()]);
+  await page.reload();
+  await expect(panel).toContainText('none yet');
+  await expect(panel.getByRole('note')).toContainText(`GitHub App's webhook at ${detail.connection.hookPath}`);
 });
 
 test('repositories filter and repository detail', async ({ page }) => {
@@ -75,33 +76,13 @@ test('repository settings say where each comes from and what .kritik.yaml chose'
   // The golden file chose another review model; the operator's is shown beside it.
   await expect(settings.getByText(rc.settings.models.review, { exact: true })).toBeVisible();
   await expect(settings).toContainText(`(.kritik.yaml; the operator's is ${g.repoDetail.settings.models.review})`);
-  await expect(settings).toContainText(`${g.repoDetail.settings.mode} (dashboard)`);
+  await expect(settings).toContainText(`${g.repoDetail.settings.mode} (account)`);
   await expect(settings).toContainText('Settle 30s (default)');
   const file = page.locator('#repo-file').locator('../..');
   await expect(file).toContainText(rc.filter);
   await expect(file).toContainText(rc.dropped[0]!);
   await expect(file.getByRole('link', { name: 'the last review' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/${rc.reviewId}`);
   await expect(page.locator('#repo-bounds').locator('../..')).toContainText(g.repoDetail.settings.allow.models!.join(', '));
-});
-
-test('a repository several connections hold asks which one, then loads it', async ({ page }) => {
-  const detail = new RegExp(`/api/v1/accounts/${g.SLUG}/repos/alpha/one$`);
-  await page.route(
-    (u) => detail.test(u.pathname),
-    (route) => {
-      const connection = new URL(route.request().url()).searchParams.get('connection');
-      if (!connection) {
-        const body = { code: 'ambiguous', message: 'several connections hold this repository', details: { connections: ['alpha-other', 'alpha-github'] } };
-        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(body) });
-      }
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...g.repoDetail, connection }) });
-    },
-  );
-  await page.goto(`/${T}/repos/alpha/one`);
-  await expect(page.getByRole('heading', { name: 'Which connection?' })).toBeVisible();
-  await page.getByRole('link', { name: 'alpha-github' }).click();
-  await expect(page).toHaveURL(new RegExp(`${T}/repos/alpha/one\\?connection=alpha-github$`));
-  await expect(page.locator('.deflist').first()).toContainText('alpha-github');
 });
 
 test.describe('pulls list', () => {
@@ -209,7 +190,7 @@ test('queue, usage, follow-ups and operator pages render their fixtures', async 
   await expect(page.locator('.followup')).toContainText(`${g.followup.repository}#${g.followup.number}`);
 
   await page.goto('/#/operator');
-  await expect(page.getByRole('row').filter({ hasText: g.operatorAccount.slug })).toContainText('not live');
+  await expect(page.getByRole('row').filter({ hasText: g.operatorAccount.slug })).toContainText('not served');
 });
 
 test('a server-sent event for the account refetches the page', async ({ page }) => {

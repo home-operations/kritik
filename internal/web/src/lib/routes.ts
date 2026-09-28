@@ -6,14 +6,11 @@
 //   #/                                        overview (account picker / landing)
 //   #/signin                                  sign-in page
 //   #/operator                                admin console (cross-account)
-//   #/a/<slug>                                account overview
+//   #/a/<slug>                                account overview; slug is <forge>/<name>
 //   #/a/<slug>/repos                          account's repo list
 //   #/a/<slug>/repos/<owner>/<repo>           one repo
 //   #/a/<slug>/pulls                          account's pull list
 //   #/a/<slug>/pulls/<owner>/<repo>/<n>       one pull request
-//
-// A repo or pull route may end in "?connection=<name>", naming which of
-// several connections holding the same owner/repo it means.
 //   #/a/<slug>/reviews/<id>[/<tab>]           one review, optional tab
 //   #/a/<slug>/queue                          run queue
 //   #/a/<slug>/usage                          usage/cost dashboard
@@ -45,9 +42,9 @@ export type Route =
   | { name: 'operator' }
   | { name: 'account'; slug: string }
   | { name: 'repos'; slug: string }
-  | { name: 'repo'; slug: string; owner: string; repo: string; connection?: string }
+  | { name: 'repo'; slug: string; owner: string; repo: string }
   | { name: 'pulls'; slug: string }
-  | { name: 'pull'; slug: string; owner: string; repo: string; number: number; connection?: string }
+  | { name: 'pull'; slug: string; owner: string; repo: string; number: number }
   | { name: 'review'; slug: string; id: string; tab?: ReviewTab }
   | { name: 'queue'; slug: string }
   | { name: 'usage'; slug: string }
@@ -81,24 +78,24 @@ function segments(hash: string): { parts: string[]; ok: boolean } {
   return { parts: decoded, ok: true };
 }
 
-// parseAccountRoute handles everything under #/a/<slug>/... . Anything
-// malformed past the slug -- including an extra trailing segment -- falls
-// back to that account's overview rather than the global overview, so a bad
-// deep link still lands the user in-account.
-function parseAccountRoute(slug: string, rest: string[], connection: string | undefined): Route {
+// parseAccountRoute handles everything under #/a/<forge>/<name>/... , the
+// account's slug being "<forge>/<name>". Anything malformed past the slug --
+// including an extra trailing segment -- falls back to that account's
+// overview rather than the global overview, so a bad deep link still lands
+// the user in-account.
+function parseAccountRoute(slug: string, rest: string[]): Route {
   const [section, ...tail] = rest;
-  const inst = connection ? { connection } : {};
   switch (section) {
     case undefined:
       return { name: 'account', slug };
     case 'repos':
       if (tail.length === 0) return { name: 'repos', slug };
-      if (tail.length === 2) return { name: 'repo', slug, owner: tail[0]!, repo: tail[1]!, ...inst };
+      if (tail.length === 2) return { name: 'repo', slug, owner: tail[0]!, repo: tail[1]! };
       break;
     case 'pulls':
       if (tail.length === 0) return { name: 'pulls', slug };
       if (tail.length === 3 && PULL_NUMBER.test(tail[2]!)) {
-        return { name: 'pull', slug, owner: tail[0]!, repo: tail[1]!, number: Number(tail[2]), ...inst };
+        return { name: 'pull', slug, owner: tail[0]!, repo: tail[1]!, number: Number(tail[2]) };
       }
       break;
     case 'reviews':
@@ -124,27 +121,31 @@ function parseAccountRoute(slug: string, rest: string[], connection: string | un
 
 export function parse(hash: string): Route {
   const q = hash.indexOf('?');
-  const connection = q < 0 ? undefined : (new URLSearchParams(hash.slice(q + 1)).get('connection') ?? undefined);
   const { parts, ok } = segments(q < 0 ? hash : hash.slice(0, q));
+  const slug = parts[0] === 'a' && parts[1] !== undefined && parts[2] !== undefined ? `${parts[1]}/${parts[2]}` : undefined;
   if (!ok) {
     // The malformation struck before a slug could be parsed: nothing to
-    // fall back into but the global overview. Once a slug WAS parsed
-    // (parts[0] === 'a' && parts[1]), the malformation is downstream of it
-    // (a bad section, an empty segment, extra segments, ...), so fall back
-    // to that account's own overview instead.
-    if (parts[0] === 'a' && parts[1] !== undefined) return { name: 'account', slug: parts[1] };
-    return { name: 'overview' };
+    // fall back into but the global overview. Once a slug WAS parsed, the
+    // malformation is downstream of it (a bad section, an empty segment,
+    // extra segments, ...), so fall back to that account's own overview
+    // instead.
+    return slug ? { name: 'account', slug } : { name: 'overview' };
   }
   if (parts.length === 0) return { name: 'overview' };
   if (parts.length === 1 && parts[0] === 'signin') return { name: 'signin' };
   if (parts.length === 1 && parts[0] === 'operator') return { name: 'operator' };
-  if (parts[0] === 'a' && parts[1] !== undefined) return parseAccountRoute(parts[1], parts.slice(2), connection);
+  if (slug) return parseAccountRoute(slug, parts.slice(3));
   return { name: 'overview' };
+}
+
+// slugPath is an account slug, "<forge>/<name>", as two path segments.
+export function slugPath(slug: string): string {
+  const i = slug.indexOf('/');
+  return i < 0 ? encodeURIComponent(slug) : `${encodeURIComponent(slug.slice(0, i))}/${encodeURIComponent(slug.slice(i + 1))}`;
 }
 
 export function href(r: Route): string {
   const s = (v: string) => encodeURIComponent(v);
-  const inst = (v: string | undefined) => (v ? `?connection=${s(v)}` : '');
   switch (r.name) {
     case 'overview':
       return '#/';
@@ -153,24 +154,24 @@ export function href(r: Route): string {
     case 'operator':
       return '#/operator';
     case 'account':
-      return `#/a/${s(r.slug)}`;
+      return `#/a/${slugPath(r.slug)}`;
     case 'repos':
-      return `#/a/${s(r.slug)}/repos`;
+      return `#/a/${slugPath(r.slug)}/repos`;
     case 'repo':
-      return `#/a/${s(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}${inst(r.connection)}`;
+      return `#/a/${slugPath(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}`;
     case 'pulls':
-      return `#/a/${s(r.slug)}/pulls`;
+      return `#/a/${slugPath(r.slug)}/pulls`;
     case 'pull':
-      return `#/a/${s(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}${inst(r.connection)}`;
+      return `#/a/${slugPath(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}`;
     case 'review':
-      return r.tab ? `#/a/${s(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}` : `#/a/${s(r.slug)}/reviews/${s(r.id)}`;
+      return r.tab ? `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}` : `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}`;
     case 'queue':
-      return `#/a/${s(r.slug)}/queue`;
+      return `#/a/${slugPath(r.slug)}/queue`;
     case 'usage':
-      return `#/a/${s(r.slug)}/usage`;
+      return `#/a/${slugPath(r.slug)}/usage`;
     case 'followups':
-      return `#/a/${s(r.slug)}/followups`;
+      return `#/a/${slugPath(r.slug)}/followups`;
     case 'admin':
-      return r.section ? `#/a/${s(r.slug)}/admin/${s(r.section)}` : `#/a/${s(r.slug)}/admin`;
+      return r.section ? `#/a/${slugPath(r.slug)}/admin/${s(r.section)}` : `#/a/${slugPath(r.slug)}/admin`;
   }
 }

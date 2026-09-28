@@ -10,33 +10,49 @@ import (
 	"time"
 )
 
-const onboardAccounts = twoAccounts + `
-  - slug: east
-    connections:
-      - name: east-bot
-        forge: github
-        accounts: [east]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+const onboardAccounts = `
+connections:
+  - name: alpha-bot
+    forge: github
+    accounts: [alpha]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+  - name: beta-bot
+    forge: github
+    accounts: [beta]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+  - name: east-bot
+    forge: github
+    accounts: [east]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+  - name: west-bot
+    forge: github
+    accounts: [west]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+accounts:
+  - forge: github
+    name: alpha
     repositories:
-      - name: east/busy
-      - name: east/quiet
-      - name: east/later
-      - name: east/rebuilt
-      - name: east/skipped
-      - name: east/failed
-      - name: east/queued
-      - name: east/indexed
-      - name: east/off
+      - name: one
+      - name: two
         enabled: false
-  - slug: west
-    connections:
-      - name: west-bot
-        forge: github
-        accounts: [west]
-        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+  - forge: github
+    name: east
     repositories:
-      - name: west/one
-      - name: west/old-failure
+      - name: busy
+      - name: quiet
+      - name: later
+      - name: rebuilt
+      - name: skipped
+      - name: failed
+      - name: queued
+      - name: indexed
+      - name: "off"
+        enabled: false
+  - forge: github
+    name: west
+    repositories:
+      - name: one
+      - name: old-failure
 `
 
 // TestOnboardCandidates checks which repositories the onboarding feeder is

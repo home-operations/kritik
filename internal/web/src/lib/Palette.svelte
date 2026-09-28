@@ -9,7 +9,7 @@
   import Icon from './Icon.svelte';
   import type { Me, Page, Pull } from './types';
   import { getJSON } from './api.svelte';
-  import { pullRoute } from './links';
+  import { pullRoute, accountApi } from './links';
   import {
     mdiMagnify,
     mdiViewDashboardOutline,
@@ -82,7 +82,7 @@
   async function loadRecent(slug: string): Promise<void> {
     const seq = ++recentSeq;
     try {
-      const p = await getJSON<Page<Pull>>(`/api/v1/accounts/${encodeURIComponent(slug)}/pulls?state=all&limit=20`);
+      const p = await getJSON<Page<Pull>>(`${accountApi(slug)}/pulls?state=all&limit=20`);
       if (seq !== recentSeq) return;
       recent = p.items;
       recentSlug = slug;

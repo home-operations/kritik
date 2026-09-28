@@ -1,8 +1,8 @@
 # Dashboard
 
 The web role serves a dashboard: sign in with a local admin password,
-GitHub or an OIDC provider, and see the accounts you can read, their
-connections and repositories, live review and conversation state as it
+GitHub or an OIDC provider, and see the accounts you can read, the
+connection serving each and its repositories, live review and conversation state as it
 runs, and, for an admin, the audit log. An admin can also queue a re-run
 of a specific pull request, cancel a review in progress, or reindex a
 repository's embeddings, from the dashboard rather than the forge.
@@ -20,7 +20,7 @@ holding the sealing key (below).
 
 ## Signing in
 
-The `auth:` block, a sibling of `accounts:` at the file's root, sets how
+The `auth:` block, a sibling of `connections:` at the file's root, sets how
 people sign in and what each may do. Every key in it also has a
 `KRITIK_AUTH_*` environment variable, and a variable wins over the file, so
 a deployment can configure sign-in from the environment alone. A secret's
@@ -84,10 +84,9 @@ make an admin: set an admin password, or a `roleMapping` on a provider.
 
 There are two roles:
 
-- **Admin** manages the instance. An admin creates, edits and deletes
-  dashboard accounts with their connections, repositories and provider
-  keys, queues re-runs, cancels and reindexes, and reads every account and
-  the audit log. The admin console also lists the instance settings
+- **Admin** manages the instance. An admin edits the instance
+  configuration, below, queues re-runs, cancels and reindexes, and reads
+  every account and the audit log. The admin console also lists the instance settings
   read-only, each with its source: the environment, the configuration
   file, or kritik's default. A secret shows only whether it is set, and a
   URL's credentials are hidden. Every write is audit-logged in the same
@@ -127,7 +126,46 @@ When the mapping places nobody:
 
 A mapping that fails to evaluate refuses the sign-in.
 
-## Account writes
+## Instance configuration
+
+Everything but sign-in and the file's connections is the instance
+configuration: one document kept in Postgres and edited in the admin
+console. It holds the connections added in the dashboard, the instance's
+provider keys, `defaults`, `polling`, `indexing`, `tools`, `retention`,
+`egress`, and `accounts`, each account's own settings, provider keys and
+repository entries.
+
+- The admin console's form edits the connections and the provider keys.
+  "Advanced: edit JSON" edits the whole document.
+- An account's admin page edits that account's entry alone.
+- A save names the revision it was loaded at. A save over a newer
+  revision is refused with `409 revision_conflict`, and the form offers to
+  reload.
+- A save that would not run is refused with `422`, naming the offending
+  key. Every replica picks up a saved revision through Postgres `NOTIFY`.
+
+An account entry is keyed by forge and name, and a repository entry names
+the repository without its owner:
+
+```json
+{
+  "accounts": [
+    {
+      "forge": "github",
+      "name": "org-1",
+      "models": { "review": "openrouter/openai/gpt-6-sol" },
+      "limits": { "reviewsPerDay": 50 },
+      "repositories": [{ "name": "repo-1", "mode": "agentic" }]
+    }
+  ]
+}
+```
+
+An account runs while a connection serves it. An entry for an account no
+connection serves is kept, but not run, and the admin console lists it as
+not served.
+
+## Secrets
 
 A secret an admin submits, such as an App's private key or client ID, is
 bound to that connection's forge and accounts: change either and the
@@ -142,22 +180,15 @@ accounts match, so enter them again when renaming in JSON.
 Re-run, cancel and reindex all respond `202 Accepted`, with a job ID for
 re-run and reindex, and queue the work rather than running it inline.
 Re-running a pull request with no known head, or cancelling a review that
-is not running, is a `409 Conflict`. Claiming a slug another account already
-holds, file- or dashboard-managed, is `409 slug_taken`. Deleting a
-dashboard account does not delete its history: its reviews, findings, usage
-and transcripts stay keyed on its slug. Creating an account under a slug any
-account held before is therefore also `409 slug_taken`, unless the admin
-creates it with `adopt`, offered in the admin console after that refusal.
-The new account keeps the old one's review history. A connection name
-stays with the account that first held it, even once that account is gone.
+is not running, is a `409 Conflict`.
 
 ## Provider keys
 
-An account can bring its own model keys: `providers` in its spec, the same
-shape as the file's top-level `providers`, edited in the dashboard's
-"Provider keys" section. A model named `<key name>/<model>` then runs on
-that key, and the account pays for it; a key's name may not be one the
-file's providers already use. The account's review and fallback models,
+An account can bring its own model keys: `providers` in its entry, the
+same shape as the instance's `providers`, edited in the "Provider keys"
+section of the account's admin page. A model named `<key name>/<model>`
+then runs on that key, and the account pays for it; a key's name may not
+be one the instance's providers already use. The account's review and fallback models,
 and a repository entry's, may name a model on one of these keys. The keys are sealed at rest like connection secrets
 and never shown again. A saved key is kept only while its name, type and
 endpoint stay the same, so a key cannot be sent anywhere it was not
@@ -165,9 +196,10 @@ entered for. Account limits still apply to runs on an account's own key.
 
 ## Sealing key
 
-A dashboard-managed account's secrets are sealed at rest with an instance
+The instance configuration's secrets are sealed at rest with an instance
 key, `KRITIK_DASHBOARD_KEY` / `dashboard.keySecret`: generate one with
-`openssl rand -base64 32`. To rotate it, move the old value into
+`openssl rand -base64 32`. Without it the admin console is read-only, and
+kritik refuses to start once a configuration is stored. To rotate it, move the old value into
 `KRITIK_DASHBOARD_OLD_KEYS` / `dashboard.oldKeysSecret` (comma-separated,
 accepted only to open values already sealed under it), and set a freshly
 generated value as `KRITIK_DASHBOARD_KEY`. A value sealed under an old key
@@ -177,7 +209,8 @@ has been touched at least once.
 
 ## `retention.transcripts`
 
-A top-level `retention.transcripts` (default 30 days, minimum 24 hours)
+The instance configuration's `retention.transcripts` (default 30 days,
+minimum 24 hours)
 controls how long an agentic review's full model transcript is kept; the
 review itself, its findings and its comments outlive it. A transcript may
 contain repository content the agent read while investigating, and it is
@@ -185,16 +218,17 @@ visible to every member of the account it belongs to, not only admins.
 
 ## Operational notes
 
-- A dashboard account that fails to merge into the configuration at boot
-  fails startup the same as a bad configuration file: fix the offending
-  row or the file. A merge or apply failure after boot instead keeps the
-  last good configuration running and raises the `kritik_config_error`
-  gauge (labelled `merge` or `apply`) until a later attempt succeeds.
-- A file account whose slug or connection name a dashboard account already
+- An instance configuration that fails to merge with the file at boot
+  fails startup the same as a bad configuration file: fix the file, or
+  the stored configuration. A merge or apply failure after boot instead
+  keeps the last good configuration running and raises the
+  `kritik_config_error` gauge (labelled `merge` or `apply`) until a later
+  attempt succeeds.
+- A file connection whose name or account a dashboard connection already
   holds is left out of the running configuration, at boot or on reload,
-  while every other account runs: the admin console lists it with the
-  reason and `kritik_config_error{stage="merge"}` stays at 1. Rename either
-  side, or delete the dashboard account, to bring it back.
+  while everything else runs: the admin console lists it with the reason,
+  and `kritik_config_error{stage="merge"}` stays at 1. Rename either side,
+  or remove the dashboard connection, to bring it back.
 - A secret referenced by `file:` is only re-read when the configuration
   file itself changes, not on the referenced file's own schedule: rotate
   the file, then touch or reapply the configuration to pick it up.

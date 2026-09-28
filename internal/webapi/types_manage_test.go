@@ -16,24 +16,28 @@ func init() {
 			Version: "v1.2.3", Management: true, WebURL: "https://kritik.example",
 			SignIn: []auth.ProviderInfo{{Name: "corp", Type: configfile.SignInOIDC, DisplayName: "Corp"}},
 		},
-		"account_config": AccountConfig{
-			ManagedBy: configfile.OriginDashboard, Revision: new(int64(3)), Editable: true, Policy: fieldPolicies(true),
-			Inherited: Inherited{
-				Account: goldenRepoSettings, AccountSources: map[string]configfile.Source{"models.review": configfile.SourceFile},
-				Repository:        goldenRepoSettings,
-				RepositorySources: map[string]configfile.Source{"models.review": configfile.SourceFile, "mode": configfile.SourceDashboard},
-			},
-			Spec: json.RawMessage(`{"slug":"alpha","connections":[{"name":"alpha-bot","app":{"privateKey":{"set":true}}}]}`),
+		"instance_config": InstanceConfig{
+			Revision: 3, Editable: true,
+			Spec: json.RawMessage(`{"connections":[{"name":"alpha-bot","forge":"github","accounts":["alpha"],` +
+				`"app":{"clientId":"Iv1.alpha","privateKey":{"set":true},"webhookSecret":{"set":true}}}]}`),
 		},
-		"create_account_request": CreateAccountRequest{Slug: "alpha", Spec: json.RawMessage(`{"slug":"alpha"}`)},
-		"update_account_request": UpdateAccountRequest{Revision: 3, Spec: json.RawMessage(`{"slug":"alpha"}`)},
-		"account_write_result": AccountWriteResult{
-			Slug: "alpha", Revision: 1, Generated: map[string]string{"connections[alpha-bot].app.webhookSecret": "00ff"},
+		"account_config": AccountConfig{
+			Revision: 3, Editable: true, Policy: fieldPolicies(true),
+			Inherited: Inherited{
+				Account: goldenRepoSettings, AccountSources: map[string]configfile.Source{"models.review": configfile.SourceDefaults},
+				Repository:        goldenRepoSettings,
+				RepositorySources: map[string]configfile.Source{"models.review": configfile.SourceDefaults, "mode": configfile.SourceAccount},
+			},
+			Spec: json.RawMessage(`{"forge":"github","name":"alpha","providers":{"own":{"type":"openai","apiKey":{"set":true}}}}`),
+		},
+		"update_config_request": UpdateConfigRequest{Revision: 3, Spec: json.RawMessage(`{"forge":"github","name":"alpha"}`)},
+		"config_write_result": ConfigWriteResult{
+			Revision: 4, Generated: map[string]string{"connections[alpha-bot].app.webhookSecret": "00ff"},
 		},
 		"accepted": Accepted{JobID: 42},
 		"audit_event": AuditEvent{
-			ID: "7", At: t0, Actor: &goldenUser, Account: "alpha", Action: AuditAccountUpdate, Target: "alpha",
-			Detail: json.RawMessage(`{"revision":2,"secretsChanged":["connections[alpha-bot].app.privateKey"]}`),
+			ID: "7", At: t0, Actor: &goldenUser, Account: "github/alpha", Action: AuditAccountUpdate, Target: "github/alpha",
+			Detail: json.RawMessage(`{"revision":2,"secretsChanged":["accounts[github/alpha].providers.own.apiKey"]}`),
 		},
 	})
 }

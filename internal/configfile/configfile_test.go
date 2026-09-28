@@ -18,7 +18,7 @@ import (
 )
 
 // fixture materialises testdata/full.yaml with its file references pointing
-// into a temp dir and its env references set, and returns the file's path.
+// into a temp dir and its env references set, and returns its content.
 func fixture(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -32,18 +32,14 @@ func fixture(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(strings.ReplaceAll(string(raw), "__DIR__", dir)), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("TEST_OPENROUTER_API_KEY", "sk-or-test")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	t.Setenv("TEST_CLIENT_ID", "Iv1.fromenv")
-	return path
+	return strings.ReplaceAll(string(raw), "__DIR__", dir)
 }
 
 func TestLoadFull(t *testing.T) {
-	f, err := Load(fixture(t))
+	f, err := load(t, fixture(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -70,8 +66,8 @@ func TestLoadFull(t *testing.T) {
 	})
 
 	t.Run("settings layer defaults, account, repository", func(t *testing.T) {
-		ho, _ := f.Account("home-operations")
-		od, _ := f.Account("onedr0p")
+		ho, _ := f.Account(ForgeGitHub, "home-operations")
+		od, _ := f.Account(ForgeGitHub, "onedr0p")
 		tests := []struct {
 			name     string
 			account  *Account
@@ -114,7 +110,7 @@ func TestLoadFull(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				s := f.Settings(tt.account, tt.account.Connections[0].Name, tt.repo)
+				s := f.Settings(tt.account, tt.repo)
 				if s.Enabled != tt.enabled || s.Models.Review != tt.review || s.Forks != tt.forks ||
 					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay ||
 					s.Settle != tt.settle {
@@ -138,53 +134,59 @@ func TestLoadFull(t *testing.T) {
 	})
 
 	t.Run("concurrency falls back to the default when unset everywhere", func(t *testing.T) {
-		g := &File{Accounts: []Account{{Slug: "x"}}}
-		if got := g.Settings(&g.Accounts[0], "", "x/y").Limits.Concurrency; got != DefaultConcurrency {
+		g := &File{Accounts: []Account{{Forge: ForgeGitHub, Name: "x"}}}
+		if got := g.Settings(&g.Accounts[0], "x/y").Limits.Concurrency; got != DefaultConcurrency {
 			t.Fatalf("concurrency = %d, want %d", got, DefaultConcurrency)
 		}
 	})
 }
 
 func TestConnectionCredentials(t *testing.T) {
-	f, err := Load(fixture(t))
+	f, err := load(t, fixture(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	in, account, ok := f.Connection("sticky-gecko")
-	if !ok || account.Slug != "home-operations" {
-		t.Fatalf("Connection(sticky-gecko) = %v, %v, %v", in, account, ok)
+	in, ok := f.Connection("sticky-gecko")
+	if !ok || !in.Serves("Home-Operations") || in.Origin() != OriginFile {
+		t.Fatalf("Connection(sticky-gecko) = %v, %v", in, ok)
 	}
 	if in.App.PrivateKeyValue().Value() == "" || in.WebhookSecretValue().Value() != "whsec" || in.App.ClientIDValue() != "Iv1.xxxxxxxx" {
 		t.Fatal("github app credentials not resolved")
 	}
-	br, _, _ := f.Connection("bot-ross")
+	br, _ := f.Connection("bot-ross")
 	if br.App.ClientIDValue() != "Iv1.fromenv" {
 		t.Fatalf("clientIdFrom not resolved: %q", br.App.ClientIDValue())
 	}
-	if _, _, ok := f.Connection("nope"); ok {
+	if _, ok := f.Connection("nope"); ok {
 		t.Fatal("unknown connection should not resolve")
 	}
 }
 
 func TestHashAndConnectionLookup(t *testing.T) {
-	f, err := Load(fixture(t))
+	f, err := load(t, fixture(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if len(f.Hash()) != 64 {
 		t.Fatalf("hash = %q", f.Hash())
 	}
-	ho, _ := f.Account("home-operations")
-	if in := f.ConnectionFor(ho, &Repository{Name: "home-operations/flate"}); in == nil || in.Name != "sticky-gecko" {
+	ho, ok := f.Account(ForgeGitHub, "Home-Operations")
+	if !ok || ho.Name != "home-operations" || ho.ID() != AccountID(ForgeGitHub, "home-operations") || ho.Slug() != "github/home-operations" {
+		t.Fatalf("Account = %+v, %v", ho, ok)
+	}
+	if in := f.ConnectionFor(ho); in == nil || in.Name != "sticky-gecko" {
 		t.Fatalf("ConnectionFor = %v", in)
 	}
-	if f.ConnectionFor(ho, &Repository{Name: "someone-else/repo"}) != nil || f.ConnectionFor(ho, &Repository{Name: "noslash"}) != nil {
-		t.Fatal("unknown owner must not resolve")
+	if f.ConnectionFor(&Account{Forge: ForgeGitHub, Name: "someone-else"}) != nil {
+		t.Fatal("an account no connection serves must not resolve")
+	}
+	if _, ok := f.Account(ForgeGitHub, "someone-else"); ok {
+		t.Fatal("an account no connection serves must not run")
 	}
 }
 
 func TestRetentionAndIgnore(t *testing.T) {
-	f, err := Load(fixture(t))
+	f, err := load(t, fixture(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -194,12 +196,12 @@ func TestRetentionAndIgnore(t *testing.T) {
 	if (&File{}).DisabledIndexGrace() != DefaultDisabledIndexGrace {
 		t.Fatal("unset grace should fall back to the default")
 	}
-	ho, _ := f.Account("home-operations")
-	got := f.Settings(ho, "sticky-gecko", "home-operations/flate").Ignore
+	ho, _ := f.Account(ForgeGitHub, "home-operations")
+	got := f.Settings(ho, "home-operations/flate").Ignore
 	if len(got) != len(DefaultIgnore)+1 || got[len(got)-1] != "**/testdata/**" {
 		t.Fatalf("ignore = %v", got)
 	}
-	if n := len(f.Settings(ho, "sticky-gecko", "home-operations/other").Ignore); n != len(DefaultIgnore) {
+	if n := len(f.Settings(ho, "home-operations/other").Ignore); n != len(DefaultIgnore) {
 		t.Fatalf("unlisted repo ignore = %d globs, want defaults only", n)
 	}
 }
@@ -228,18 +230,29 @@ func with(pr map[string]any, k string, v any) map[string]any {
 // minimal is the smallest valid file; cases mutate it.
 var minimal = githubMinimal("clientId: Iv1.acme, ")
 
-// githubMinimal is the smallest connection; clientFields is spliced into
-// the app block.
+// githubMinimal is the smallest configuration: one connection, in the file,
+// serving acme, and acme's entry in the spec last, so a case appends its
+// keys; clientFields is spliced into the app block.
 func githubMinimal(clientFields string) string {
 	return `
+connections:
+  - name: acme-bot
+    forge: github
+    accounts: [acme]
+    app: { ` + clientFields + `privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 accounts:
-  - slug: acme
-    connections:
-      - name: acme-bot
-        forge: github
-        accounts: [acme]
-        app: { ` + clientFields + `privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
+  - forge: github
+    name: acme
 `
+}
+
+// acme is minimal with extra, lines of keys, added to acme's entry.
+func acme(extra string) string { return minimal + extra }
+
+// loadBytes is load for a document in bytes.
+func loadBytes(t *testing.T, raw []byte) (*File, error) {
+	t.Helper()
+	return load(t, string(raw))
 }
 
 func TestProviders(t *testing.T) {
@@ -276,7 +289,7 @@ func TestProviders(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f, err := Parse([]byte("providers:\n" + tt.yaml + minimal))
+			f, err := loadBytes(t, []byte("providers:\n"+tt.yaml+minimal))
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
@@ -292,16 +305,16 @@ func TestProviders(t *testing.T) {
 }
 
 // TestAccountProviders: an account's own provider serves its models, and only
-// its; a file account, the operator's, may point one anywhere.
+// its.
 func TestAccountProviders(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	own := "    providers:\n      own: { type: openai, baseUrl: http://llm.internal:4000/v1, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" +
 		"    models: { review: own/big }\n"
 	withOwn := func(extra string) string {
-		return strings.Replace(minimal, "  - slug: acme\n", "  - slug: acme\n"+own+extra, 1)
+		return acme(own + extra)
 	}
-	f, err := Parse([]byte(withOwn("")))
+	f, err := loadBytes(t, []byte(withOwn("")))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -310,18 +323,18 @@ func TestAccountProviders(t *testing.T) {
 		t.Fatalf("Provider(acme, own) = %+v, %v", p, ok)
 	}
 	if _, ok := f.Provider(nil, "own"); ok {
-		t.Fatal("an account's provider must not be the file's")
+		t.Fatal("an account's provider must not be the instance's")
 	}
 	refused := []struct{ name, yaml, want string }{
 		{"a name a model reference cannot carry", strings.Replace(withOwn(""), "      own:", "      Own:", 1), "a provider name must be lowercase"},
-		{"a name the file already uses", "providers:\n  own: { type: anthropic, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" + withOwn(""),
-			"the file declares a provider by that name"},
+		{"a name the instance already uses", "providers:\n  own: { type: anthropic, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" + withOwn(""),
+			"the instance declares a provider by that name"},
 		{"the defaults naming an account's provider", "defaults:\n  models: { review: own/big }\n" + withOwn(""), "not declared under providers"},
 		{"an invalid provider", strings.Replace(withOwn(""), "type: openai", "type: gemini", 1), "providers.own.type must be"},
 	}
 	for _, tt := range refused {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := Parse([]byte(tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, err := loadBytes(t, []byte(tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Parse = %v, want an error containing %q", err, tt.want)
 			}
 		})
@@ -333,7 +346,7 @@ func TestParseRejects(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	t.Setenv("TEST_EMPTY", "")
 
-	if _, err := Parse([]byte(minimal)); err != nil {
+	if _, err := loadBytes(t, []byte(minimal)); err != nil {
 		t.Fatalf("minimal fixture must parse: %v", err)
 	}
 
@@ -342,19 +355,21 @@ func TestParseRejects(t *testing.T) {
 		yaml string
 		want string // substring of the error
 	}{
-		{"empty file", "", "empty"},
 		{"unknown top-level key", minimal + "account: []\n", "field account not found"},
-		{"unknown nested key", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme]\n        owner: acme", 1), "field owner not found"},
-		{"no accounts", "accounts: []\n", "at least one account"},
-		{"bad slug", strings.Replace(minimal, "slug: acme", "slug: Acme Corp", 1), "lowercase"},
-		{"duplicate slug", minimal + strings.TrimPrefix(strings.Replace(minimal, "acme-bot", "acme-bot-2", 1), "\naccounts:\n"), "duplicates accounts[0]"},
-		{"duplicate connection across accounts", minimal + strings.TrimPrefix(strings.Replace(minimal, "slug: acme", "slug: other", 1), "\naccounts:\n"), "names are hook paths"},
-		{"no connections", "accounts:\n  - slug: acme\n    connections: []\n", "at least one connection"},
-		{"missing accounts", strings.Replace(minimal, "        accounts: [acme]\n", "", 1), "accounts must list at least one account"},
+		{"unknown nested key", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme]\n    owner: acme", 1), "field owner not found"},
+		{"bad connection name", strings.Replace(minimal, "name: acme-bot", "name: Acme Bot", 1), "lowercase"},
+		{"duplicate connection", strings.Replace(minimal, "accounts:\n  - forge", "  - { name: acme-bot, forge: github, accounts: [other], app: { clientId: x, "+
+			"privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } } }\naccounts:\n  - forge", 1), "names are hook paths"},
+		{"an account two connections serve", strings.Replace(minimal, "accounts:\n  - forge", "  - { name: acme-two, forge: github, accounts: [ACME], app: { clientId: x, "+
+			"privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } } }\naccounts:\n  - forge", 1), "an account is served by one connection"},
+		{"duplicate account entry", acme("  - forge: github\n    name: Acme\n"), "duplicates accounts[0]"},
+		{"an account of another forge", strings.Replace(minimal, "  - forge: github\n    name: acme", "  - forge: gitlab\n    name: acme", 1), "accounts[0].forge must be github"},
+		{"an account name with its owner", strings.Replace(minimal, "    name: acme\n", "    name: acme/x\n", 1), "must be the account's name"},
+		{"missing accounts", strings.Replace(minimal, "    accounts: [acme]\n", "", 1), "accounts must list at least one account"},
 		{"blank account", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ' ']", 1), "accounts[1] is empty"},
 		{"account listed twice", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ACME]", 1), `accounts[1] "ACME" is listed twice`},
 		{"unknown forge", strings.Replace(minimal, "forge: github", "forge: gitlab", 1), "forge must be github, got \"gitlab\""},
-		{"github without app", strings.Replace(minimal, "        app: { clientId: Iv1.acme, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n", "", 1), "needs an app"},
+		{"github without app", strings.Replace(minimal, "    app: { clientId: Iv1.acme, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n", "", 1), "needs an app"},
 		{"github app with both client id forms", githubMinimal("clientId: x, clientIdFrom: { env: TEST_WEBHOOK_SECRET }, "), "exactly one of clientId or clientIdFrom"},
 		{"github app with neither client id form", githubMinimal(""), "exactly one of clientId or clientIdFrom"},
 		{"missing private key", strings.Replace(minimal, "privateKey: { env: TEST_PRIVATE_KEY }, ", "", 1), "app.privateKey: reference must set env or file"},
@@ -373,29 +388,28 @@ func TestParseRejects(t *testing.T) {
 		{"anthropic without key", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_EMPTY }\n" + minimal, "apiKey resolved to an empty value"},
 		{"model without provider", "defaults:\n  models:\n    review: gpt\n" + minimal, "<provider>/<model>"},
 		{"model referencing undeclared provider", "defaults:\n  models:\n    review: nope/gpt\n" + minimal, "not declared under providers"},
-		{"account model referencing undeclared provider", strings.Replace(minimal, "slug: acme", "slug: acme\n    models: { review: nope/gpt }", 1), "not declared under providers"},
+		{"account model referencing undeclared provider", acme("    models: { review: nope/gpt }\n"), "not declared under providers"},
 		{"negative limit", "defaults:\n  limits:\n    reviewsPerDay: -1\n" + minimal, "must not be negative"},
-		{"negative deadline", strings.Replace(minimal, "slug: acme", "slug: acme\n    runner: { activeDeadlineSeconds: -5 }", 1), "must not be negative"},
+		{"negative deadline", acme("    runner: { activeDeadlineSeconds: -5 }\n"), "must not be negative"},
 		{"negative retention", "retention:\n  disabledIndexGrace: -1h\n" + minimal, "retention.disabledIndexGrace"},
 		{"negative settle default", "defaults:\n  settle: -1s\n" + minimal, "defaults.settle must not be negative"},
 		{"unknown inline severity floor", "defaults:\n  review: { minSeverity: blocking }\n" + minimal, "defaults.review.minSeverity must be nit or important"},
 		{"context without a description", "defaults:\n  review: { context: [{ path: db/schema.sql }] }\n" + minimal, "defaults.review.context[0]: description is required"},
 		{"context outside the repository", "defaults:\n  review: { context: [{ path: ../x, description: x }] }\n" + minimal, "escapes the repository"},
 		{"context with a bad glob", "defaults:\n  review: { context: [{ path: x, description: x, paths: ['['] }] }\n" + minimal, "paths[0] \"[\" is not a valid glob"},
-		{"negative settle account", strings.Replace(minimal, "slug: acme", "slug: acme\n    settle: -1s", 1), "must not be negative"},
-		{"negative settle repository", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, settle: -1s }]", 1), "must not be negative"},
+		{"negative settle account", acme("    settle: -1s\n"), "must not be negative"},
+		{"negative settle repository", acme("    repositories: [{ name: x, settle: -1s }]\n"), "must not be negative"},
 		{"indexing role removed", "defaults:\n  models:\n    indexing: p/m\n" + minimal, "field indexing not found"},
-		{"bad ignore glob", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, ignore: ['['] }]", 1), "not a valid glob"},
+		{"bad ignore glob", acme("    repositories: [{ name: x, ignore: ['['] }]\n"), "not a valid glob"},
 		{"filter syntax error", "defaults:\n  filter: 'pr.draft &&'\n" + minimal, "defaults.filter"},
 		{"filter fails smoke test", "defaults:\n  filter: 'pr.labels[5].name == \"x\"'\n" + minimal, "smoke test"},
-		{"repository filter error", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, filter: 'pr.title' }]", 1), "repositories[0].filter"},
-		{"repository without owner", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: x }]", 1), "owner/repo"},
-		{"repository owner without connection", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: other/x }]", 1), "no connection in account"},
-		{"duplicate repository", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x }, { name: acme/x }]", 1), "duplicates repositories[0]"},
+		{"repository filter error", acme("    repositories: [{ name: x, filter: 'pr.title' }]\n"), "repositories[0].filter"},
+		{"repository with its owner", acme("    repositories: [{ name: acme/x }]\n"), "without its owner"},
+		{"duplicate repository", acme("    repositories: [{ name: x }, { name: x }]\n"), "duplicates repositories[0]"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Parse([]byte(tt.yaml))
+			_, err := loadBytes(t, []byte(tt.yaml))
 			if err == nil {
 				t.Fatal("expected an error")
 			}
@@ -414,10 +428,10 @@ func TestJobTimeoutBounds(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 
 	withRepo := func(repo string) string {
-		return strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: ["+repo+"]", 1)
+		return acme("    repositories: [" + repo + "]\n")
 	}
 	withDeadline := func(seconds int64) string {
-		return strings.Replace(minimal, "slug: acme", fmt.Sprintf("slug: acme\n    runner: { activeDeadlineSeconds: %d }", seconds), 1)
+		return acme(fmt.Sprintf("    runner: { activeDeadlineSeconds: %d }\n", seconds))
 	}
 
 	tests := []struct {
@@ -427,12 +441,12 @@ func TestJobTimeoutBounds(t *testing.T) {
 	}{
 		{"runner deadline at the cap", withDeadline(int64(jobtimeout.MaxRunnerDeadline.Seconds())), ""},
 		{"runner deadline past the cap", withDeadline(int64(jobtimeout.MaxRunnerDeadline.Seconds()) + 1), "runner.activeDeadlineSeconds must not exceed"},
-		{"agent timeout at the cap", withRepo(fmt.Sprintf("{ name: acme/x, agent: { timeout: %ds } }", int64(jobtimeout.MaxAgentTimeout.Seconds()))), ""},
-		{"agent timeout past the cap", withRepo(fmt.Sprintf("{ name: acme/x, agent: { timeout: %ds } }", int64(jobtimeout.MaxAgentTimeout.Seconds())+1)), "agent.timeout must not exceed"},
+		{"agent timeout at the cap", withRepo(fmt.Sprintf("{ name: x, agent: { timeout: %ds } }", int64(jobtimeout.MaxAgentTimeout.Seconds()))), ""},
+		{"agent timeout past the cap", withRepo(fmt.Sprintf("{ name: x, agent: { timeout: %ds } }", int64(jobtimeout.MaxAgentTimeout.Seconds())+1)), "agent.timeout must not exceed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Parse([]byte(tt.yaml))
+			_, err := loadBytes(t, []byte(tt.yaml))
 			if tt.want == "" {
 				if err != nil {
 					t.Fatalf("expected no error, got %v", err)
@@ -450,13 +464,15 @@ func TestWatch(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	path := filepath.Join(t.TempDir(), "config.yaml")
+	file, _ := split(t, minimal)
+	named := func(name string) string { return strings.Replace(string(file), "name: acme-bot", "name: "+name, 1) }
 	write := func(s string) {
 		t.Helper()
 		if err := os.WriteFile(path, []byte(s), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	write(minimal)
+	write(string(file))
 
 	applied := make(chan *File, 4)
 	rejected := make(chan error, 1)
@@ -473,30 +489,30 @@ func TestWatch(t *testing.T) {
 		t.Helper()
 		select {
 		case f := <-applied:
-			t.Fatalf("%s: unexpected apply of %d accounts", why, len(f.Accounts))
+			t.Fatalf("%s: unexpected apply of %d connections", why, len(f.Connections))
 		case <-time.After(150 * time.Millisecond):
 		}
 	}
-	expectApply := func(slug string) {
+	expectApply := func(name string) {
 		t.Helper()
 		select {
 		case f := <-applied:
-			if f.Accounts[0].Slug != slug {
-				t.Fatalf("applied slug %q, want %q", f.Accounts[0].Slug, slug)
+			if f.Connections[0].Name != name {
+				t.Fatalf("applied connection %q, want %q", f.Connections[0].Name, name)
 			}
 		case <-time.After(2 * time.Second):
-			t.Fatalf("no apply for %q", slug)
+			t.Fatalf("no apply for %q", name)
 		}
 	}
 
 	expectNone("unchanged content on the first ticks")
-	write(strings.Replace(minimal, "slug: acme", "slug: acme-two", 1))
+	write(named("acme-two"))
 	expectApply("acme-two")
 	select {
 	case <-rejected: // a tick that caught an earlier write half done
 	default:
 	}
-	write("accounts: []\n")
+	write("connections: [{ name: Bad }]\n")
 	expectNone("an invalid file must not be applied")
 	// A tick can also catch a write half done, so only that the invalid
 	// file was reported is certain, not how many times.
@@ -507,90 +523,10 @@ func TestWatch(t *testing.T) {
 	}
 	// Reverting to the content last applied applies it again, so the caller
 	// learns the invalid file is gone.
-	write(strings.Replace(minimal, "slug: acme", "slug: acme-two", 1))
+	write(named("acme-two"))
 	expectApply("acme-two")
-	write(strings.Replace(minimal, "slug: acme", "slug: acme-three", 1))
+	write(named("acme-three"))
 	expectApply("acme-three")
-}
-
-// TestRepositoryConnection checks that a repository entry binds to one
-// connection when its owner's account has several, and that settings
-// are looked up by connection and name, so the same owner/repo under two
-// Apps is two repositories.
-func TestRepositoryConnection(t *testing.T) {
-	t.Setenv("TEST_PRIVATE_KEY", "tok")
-	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	twoApps := func(repos string) string {
-		return strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: ["+repos+"]", 1) + `      - name: acme-other
-        forge: github
-        accounts: [acme]
-        app: { clientId: Iv1.other, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
-`
-	}
-	refused := []struct {
-		name, repos, want string
-	}{
-		{"an owner with several connections must name one", "{ name: acme/x }", "set connection to one of them"},
-		{"the named connection must exist", "{ name: acme/x, connection: nope }", `connection "nope" is not a connection`},
-		{"one connection may not list a repository twice", "{ name: acme/x, connection: acme-bot }, { name: acme/x, connection: acme-bot }",
-			`duplicates repositories[0] of connection "acme-bot"`},
-	}
-	for _, tt := range refused {
-		t.Run(tt.name, func(t *testing.T) {
-			if _, err := Parse([]byte(twoApps(tt.repos))); err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("Parse = %v, want an error containing %q", err, tt.want)
-			}
-		})
-	}
-
-	t.Run("the same name under two connections is two repositories", func(t *testing.T) {
-		f, err := Parse([]byte(twoApps("{ name: acme/x, connection: acme-other, mode: agentic }, { name: acme/x, connection: acme-bot }")))
-		if err != nil {
-			t.Fatal(err)
-		}
-		ten := &f.Accounts[0]
-		if in := f.ConnectionFor(ten, &ten.Repositories[0]); in == nil || in.Name != "acme-other" {
-			t.Fatalf("ConnectionFor = %v, want acme-other", in)
-		}
-		if got := f.Settings(ten, "acme-other", "acme/x").Mode; got != ReviewAgentic {
-			t.Fatalf("acme-other mode = %q, want agentic", got)
-		}
-		if got := f.Settings(ten, "acme-bot", "acme/x").Mode; got != ReviewSingle {
-			t.Fatalf("acme-bot mode = %q, want single", got)
-		}
-	})
-
-	t.Run("a connection owns the repositories of every account it serves", func(t *testing.T) {
-		several := strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, Globex]", 1)
-		f, err := Parse([]byte(strings.Replace(several, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x }, { name: globex/y }]", 1)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		ten := &f.Accounts[0]
-		for i := range ten.Repositories {
-			if in := f.ConnectionFor(ten, &ten.Repositories[i]); in == nil || in.Name != "acme-bot" {
-				t.Fatalf("ConnectionFor(%s) = %v, want acme-bot", ten.Repositories[i].Name, in)
-			}
-		}
-		if _, err := Parse([]byte(strings.Replace(several, "slug: acme", "slug: acme\n    repositories: [{ name: initech/z }]", 1))); err == nil ||
-			!strings.Contains(err.Error(), `serves account "initech"`) {
-			t.Fatalf("Parse = %v, want no connection serving initech", err)
-		}
-	})
-
-	t.Run("an entry for one connection leaves the other forge's repository unlisted", func(t *testing.T) {
-		f, err := Parse([]byte(twoApps("{ name: acme/x, connection: acme-other, enabled: false }")))
-		if err != nil {
-			t.Fatal(err)
-		}
-		ten := &f.Accounts[0]
-		if f.Settings(ten, "acme-other", "acme/x").Enabled {
-			t.Fatal("acme-other's acme/x should be disabled")
-		}
-		if !f.Settings(ten, "acme-bot", "acme/x").Enabled {
-			t.Fatal("acme-bot's acme/x should keep the account's settings")
-		}
-	})
 }
 
 // TestPollingIndexingAndRunnerDefaults checks the tuning that lives in the
@@ -602,7 +538,7 @@ func TestPollingIndexingAndRunnerDefaults(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 
 	t.Run("defaults when unset", func(t *testing.T) {
-		f, err := Parse([]byte(minimal))
+		f, err := loadBytes(t, []byte(minimal))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -618,12 +554,12 @@ func TestPollingIndexingAndRunnerDefaults(t *testing.T) {
 	})
 
 	t.Run("set values, and interval 0 turns polling off", func(t *testing.T) {
-		f, err := Parse([]byte(`
+		f, err := loadBytes(t, []byte(`
 polling: { interval: 0s, lookback: 1h }
 indexing: { onboardWindow: 8 }
 defaults:
   runner: { activeDeadlineSeconds: 600, resources: { limits: { memory: 1Gi } } }
-` + strings.Replace(minimal, "slug: acme", "slug: acme\n    runner: { activeDeadlineSeconds: 60 }", 1)))
+`+acme("    runner: { activeDeadlineSeconds: 60 }\n")))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -646,7 +582,7 @@ defaults:
 	}
 	for block, want := range refused {
 		t.Run(block, func(t *testing.T) {
-			if _, err := Parse([]byte(block + "\n" + minimal)); err == nil || !strings.Contains(err.Error(), want) {
+			if _, err := loadBytes(t, []byte(block+"\n"+minimal)); err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("Parse = %v, want an error containing %q", err, want)
 			}
 		})
@@ -673,11 +609,11 @@ defaults:
   limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 `
 	account := func(accountKeys, repos string) string {
-		return head + strings.Replace(minimal, "slug: acme", "slug: acme\n"+accountKeys+"    repositories: ["+repos+"]", 1)
+		return head + acme(""+accountKeys+"    repositories: ["+repos+"]\n")
 	}
 	parse := func(t *testing.T, doc string) *File {
 		t.Helper()
-		f, err := Parse([]byte(doc))
+		f, err := loadBytes(t, []byte(doc))
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -685,8 +621,8 @@ defaults:
 	}
 
 	t.Run("an account inherits what it leaves out", func(t *testing.T) {
-		f := parse(t, account("", "{ name: acme/x }"))
-		s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x")
+		f := parse(t, account("", "{ name: x }"))
+		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Filter == nil || s.Settle != 2*time.Minute || s.Mode != ReviewAgentic || s.Agent.MaxSteps != 9 ||
 			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
 			!slices.Equal(s.Review.Instructions, []string{"ops/rules.md"}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
@@ -699,8 +635,8 @@ defaults:
     settle: 0s
     models: { fallback: "" }
     limits: { tokensPerMonth: 0 }
-`, `{ name: acme/x, review: { instructions: [], templates: { summary: "" } } }`))
-		s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x")
+`, `{ name: x, review: { instructions: [], templates: { summary: "" } } }`))
+		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Filter != nil || s.Settle != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
 			s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {
 			t.Fatalf("cleared settings = %+v", s)
@@ -715,8 +651,8 @@ defaults:
     agent: { maxSteps: 7 }
     review: { requireSuggestedFix: true }
     ignore: ["account/**"]
-`, `{ name: acme/x, models: { review: p/small }, forks: true, agent: { maxTokens: 500 }, ignore: ["repo/**"] }`))
-		s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x")
+`, `{ name: x, models: { review: p/small }, forks: true, agent: { maxTokens: 500 }, ignore: ["repo/**"] }`))
+		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Mode != ReviewSingle || s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" || !s.Forks {
 			t.Fatalf("settings = %+v", s)
 		}
@@ -730,7 +666,7 @@ defaults:
 	})
 
 	t.Run("an explicit concurrency must be positive", func(t *testing.T) {
-		if _, err := Parse([]byte(account("    limits: { concurrency: 0 }\n", "{ name: acme/x }"))); err == nil ||
+		if _, err := loadBytes(t, []byte(account("    limits: { concurrency: 0 }\n", "{ name: x }"))); err == nil ||
 			!strings.Contains(err.Error(), "concurrency must be positive") {
 			t.Fatalf("Parse = %v", err)
 		}
@@ -744,18 +680,18 @@ func TestReviewPresentation(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	parse := func(t *testing.T, accountKeys, repos string) *File {
 		t.Helper()
-		f, err := Parse([]byte(strings.Replace(minimal, "slug: acme", "slug: acme\n"+accountKeys+"    repositories: ["+repos+"]", 1)))
+		f, err := loadBytes(t, []byte(acme(""+accountKeys+"    repositories: ["+repos+"]\n")))
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
 		return f
 	}
-	f := parse(t, "", "{ name: acme/x }")
-	if s := f.Settings(&f.Accounts[0], "", ""); !s.Review.InlineComments || s.Review.MinSeverity != "" {
+	f := parse(t, "", "{ name: x }")
+	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || s.Review.MinSeverity != "" {
 		t.Fatalf("review = %+v, want every finding inline", s.Review)
 	}
-	f = parse(t, "    review: { minSeverity: important, inlineComments: false }\n", "{ name: acme/x, review: { inlineComments: true } }")
-	if s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x"); !s.Review.InlineComments || s.Review.MinSeverity != SeverityImportant {
+	f = parse(t, "    review: { minSeverity: important, inlineComments: false }\n", "{ name: x, review: { inlineComments: true } }")
+	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments || s.Review.MinSeverity != SeverityImportant {
 		t.Fatalf("review = %+v, want the account's floor with the repository's inline comments", s.Review)
 	}
 }
@@ -778,21 +714,21 @@ defaults:
     settle: 30m
 `
 	doc := func(accountKeys, repos string) string {
-		return head + strings.Replace(minimal, "slug: acme", "slug: acme\n"+accountKeys+"    repositories: ["+repos+"]", 1)
+		return head + acme(""+accountKeys+"    repositories: ["+repos+"]\n")
 	}
 
-	f, err := Parse([]byte(doc("    allow: { models: [p/big] }\n", "{ name: acme/x, allow: { settle: 5m, commands: [] } }")))
+	f, err := loadBytes(t, []byte(doc("    allow: { models: [p/big] }\n", "{ name: x, allow: { settle: 5m, commands: [] } }")))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x")
+	s := f.Settings(&f.Accounts[0], "acme/x")
 	a := s.Allow
 	if !slices.Equal(a.Modes, []ReviewMode{ReviewSingle, ReviewAgentic}) || !slices.Equal(a.Models, []ModelRef{"p/big"}) ||
 		a.Commands == nil || len(a.Commands) != 0 || *a.Agent.MaxSteps != 60 || *a.Agent.Timeout != 20*time.Minute ||
 		a.Agent.MaxTokens != nil || *a.Settle != 5*time.Minute {
 		t.Fatalf("allow = %+v", a)
 	}
-	if account := f.Settings(&f.Accounts[0], "", ""); *account.Allow.Settle != 30*time.Minute || !slices.Equal(account.Allow.Commands, []string{"rg", "fd"}) {
+	if account := f.Settings(&f.Accounts[0], ""); *account.Allow.Settle != 30*time.Minute || !slices.Equal(account.Allow.Commands, []string{"rg", "fd"}) {
 		t.Fatalf("account allow = %+v", account.Allow)
 	}
 
@@ -801,18 +737,18 @@ defaults:
 	}{
 		{"an unknown mode", doc("    allow: { modes: [turbo] }\n", ""), "accounts[0].allow.modes[0] must be single or agentic"},
 		{"a model of an undeclared provider", doc("    allow: { models: [q/big] }\n", ""), "allow.models[0] references provider \"q\""},
-		{"a command path", doc("", "{ name: acme/x, allow: { commands: [/bin/sh] } }"), "allow.commands[0] \"/bin/sh\" must be a bare command name"},
+		{"a command path", doc("", "{ name: x, allow: { commands: [/bin/sh] } }"), "allow.commands[0] \"/bin/sh\" must be a bare command name"},
 		{"a bound that is not positive", doc("    allow: { agent: { maxTokens: 0 } }\n", ""), "allow.agent bounds must be positive"},
 		{"a negative settle bound", doc("    allow: { settle: -1s }\n", ""), "allow.settle must not be negative"},
 		{"the operator's mode outside its bounds", doc("    mode: agentic\n    allow: { modes: [single] }\n", ""), "mode agentic is outside allow.modes"},
 		{"the operator's model outside its bounds", doc("    models: { fallback: p/tiny }\n", ""), "models.fallback \"p/tiny\" is outside allow.models"},
-		{"a repository's command outside its bounds", doc("", "{ name: acme/x, agent: { commands: [curl] } }"), "agent.commands \"curl\" is outside allow.commands"},
+		{"a repository's command outside its bounds", doc("", "{ name: x, agent: { commands: [curl] } }"), "agent.commands \"curl\" is outside allow.commands"},
 		{"a built-in limit above its bound", doc("    allow: { agent: { maxSteps: 10 } }\n", ""), "agent.maxSteps is above allow.agent.maxSteps"},
 		{"the operator's settle above its bound", doc("    settle: 1h\n", ""), "settle is above allow.settle"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := Parse([]byte(tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, err := loadBytes(t, []byte(tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Parse = %v, want an error mentioning %q", err, tt.want)
 			}
 		})
@@ -824,11 +760,11 @@ defaults:
 func TestTools(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	f, err := Parse([]byte(`
+	f, err := loadBytes(t, []byte(`
 tools:
   - { name: helm, image: registry.example/helm:3, path: /usr/bin }
   - { name: flux-tools, image: registry.example/flux:2, commands: [flux, flate] }
-` + minimal))
+`+minimal))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -860,7 +796,7 @@ tools:
 	}
 	for list, want := range refused {
 		t.Run(list, func(t *testing.T) {
-			if _, err := Parse([]byte("tools: [" + list + "]\n" + minimal)); err == nil || !strings.Contains(err.Error(), want) {
+			if _, err := loadBytes(t, []byte("tools: ["+list+"]\n"+minimal)); err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("Parse = %v, want an error containing %q", err, want)
 			}
 		})
@@ -871,16 +807,16 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	withRepo := func(repo string) string {
-		return strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: ["+repo+"]", 1)
+		return acme("    repositories: [" + repo + "]\n")
 	}
 
 	t.Run("defaults resolve when unset", func(t *testing.T) {
-		f, err := Parse([]byte(withRepo("{ name: acme/x }")))
+		f, err := loadBytes(t, []byte(withRepo("{ name: x }")))
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, repo := range []string{"acme/x", "acme/unlisted"} {
-			s := f.Settings(&f.Accounts[0], "acme-bot", repo)
+			s := f.Settings(&f.Accounts[0], repo)
 			if s.Mode != ReviewSingle || !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
 				t.Fatalf("%s: mode=%q agent=%+v incremental=%+v", repo, s.Mode, s.Agent, s.Incremental)
 			}
@@ -894,7 +830,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 	})
 
 	t.Run("repository values override the defaults", func(t *testing.T) {
-		f, err := Parse([]byte(withRepo(`{ name: acme/x, mode: agentic,
+		f, err := loadBytes(t, []byte(withRepo(`{ name: x, mode: agentic,
       agent: { maxSteps: 12, maxToolOutputBytes: 4096, maxTokens: 250000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
       incremental: { maxDeltaFiles: 5 },
       review: { instructions: [docs/rules.md], requireSuggestedFix: true,
@@ -902,7 +838,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x")
+		s := f.Settings(&f.Accounts[0], "acme/x")
 		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, Timeout: 3 * time.Minute,
 			Commands: []string{"curl", "rg"}, CommandTimeout: 10 * time.Second}
 		if s.Mode != ReviewAgentic || !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
@@ -918,13 +854,13 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 	})
 
 	t.Run("a partial agent block keeps the other defaults", func(t *testing.T) {
-		f, err := Parse([]byte(withRepo("{ name: acme/x, agent: { maxSteps: 7 } }")))
+		f, err := loadBytes(t, []byte(withRepo("{ name: x, agent: { maxSteps: 7 } }")))
 		if err != nil {
 			t.Fatal(err)
 		}
 		want := DefaultAgent
 		want.MaxSteps = 7
-		if got := f.Settings(&f.Accounts[0], "acme-bot", "acme/x").Agent; !reflect.DeepEqual(got, want) {
+		if got := f.Settings(&f.Accounts[0], "acme/x").Agent; !reflect.DeepEqual(got, want) {
 			t.Fatalf("agent = %+v, want %+v", got, want)
 		}
 	})
@@ -938,29 +874,29 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 	})
 
 	rejects := []struct{ name, repo, want string }{
-		{"invalid mode", "{ name: acme/x, mode: loop }", "mode must be single or agentic"},
-		{"zero max steps", "{ name: acme/x, agent: { maxSteps: 0 } }", "agent.maxSteps must be positive"},
-		{"negative max steps", "{ name: acme/x, agent: { maxSteps: -1 } }", "agent.maxSteps must be positive"},
-		{"zero tool output", "{ name: acme/x, agent: { maxToolOutputBytes: 0 } }", "agent.maxToolOutputBytes must be positive"},
-		{"zero max tokens", "{ name: acme/x, agent: { maxTokens: 0 } }", "agent.maxTokens must be positive"},
-		{"negative max tokens", "{ name: acme/x, agent: { maxTokens: -5 } }", "agent.maxTokens must be positive"},
-		{"zero timeout", "{ name: acme/x, agent: { timeout: 0s } }", "agent.timeout must be positive"},
-		{"zero delta files", "{ name: acme/x, incremental: { maxDeltaFiles: 0 } }", "incremental.maxDeltaFiles must be positive"},
-		{"negative delta files", "{ name: acme/x, incremental: { maxDeltaFiles: -3 } }", "incremental.maxDeltaFiles must be positive"},
-		{"unknown agent key", "{ name: acme/x, agent: { steps: 3 } }", "field steps not found"},
-		{"zero command timeout", "{ name: acme/x, agent: { commandTimeout: 0s } }", "agent.commandTimeout must be at least 1s"},
-		{"sub-second command timeout", "{ name: acme/x, agent: { commandTimeout: 500ms } }", "agent.commandTimeout must be at least 1s"},
-		{"command path", "{ name: acme/x, agent: { commands: [/usr/bin/curl] } }", "must be a bare command name"},
-		{"relative command path", "{ name: acme/x, agent: { commands: [./tool] } }", "must be a bare command name"},
-		{"empty command", "{ name: acme/x, agent: { commands: [''] } }", "must be a bare command name"},
-		{"duplicate command", "{ name: acme/x, agent: { commands: [rg, rg] } }", "is listed twice"},
-		{"absolute instruction path", "{ name: acme/x, review: { instructions: [/etc/passwd] } }", "must be relative"},
-		{"escaping template path", "{ name: acme/x, review: { templates: { summary: ../x.tmpl } } }", "escapes the repository"},
-		{"empty instruction path", "{ name: acme/x, review: { instructions: [''] } }", "must not be empty"},
+		{"invalid mode", "{ name: x, mode: loop }", "mode must be single or agentic"},
+		{"zero max steps", "{ name: x, agent: { maxSteps: 0 } }", "agent.maxSteps must be positive"},
+		{"negative max steps", "{ name: x, agent: { maxSteps: -1 } }", "agent.maxSteps must be positive"},
+		{"zero tool output", "{ name: x, agent: { maxToolOutputBytes: 0 } }", "agent.maxToolOutputBytes must be positive"},
+		{"zero max tokens", "{ name: x, agent: { maxTokens: 0 } }", "agent.maxTokens must be positive"},
+		{"negative max tokens", "{ name: x, agent: { maxTokens: -5 } }", "agent.maxTokens must be positive"},
+		{"zero timeout", "{ name: x, agent: { timeout: 0s } }", "agent.timeout must be positive"},
+		{"zero delta files", "{ name: x, incremental: { maxDeltaFiles: 0 } }", "incremental.maxDeltaFiles must be positive"},
+		{"negative delta files", "{ name: x, incremental: { maxDeltaFiles: -3 } }", "incremental.maxDeltaFiles must be positive"},
+		{"unknown agent key", "{ name: x, agent: { steps: 3 } }", "field steps not found"},
+		{"zero command timeout", "{ name: x, agent: { commandTimeout: 0s } }", "agent.commandTimeout must be at least 1s"},
+		{"sub-second command timeout", "{ name: x, agent: { commandTimeout: 500ms } }", "agent.commandTimeout must be at least 1s"},
+		{"command path", "{ name: x, agent: { commands: [/usr/bin/curl] } }", "must be a bare command name"},
+		{"relative command path", "{ name: x, agent: { commands: [./tool] } }", "must be a bare command name"},
+		{"empty command", "{ name: x, agent: { commands: [''] } }", "must be a bare command name"},
+		{"duplicate command", "{ name: x, agent: { commands: [rg, rg] } }", "is listed twice"},
+		{"absolute instruction path", "{ name: x, review: { instructions: [/etc/passwd] } }", "must be relative"},
+		{"escaping template path", "{ name: x, review: { templates: { summary: ../x.tmpl } } }", "escapes the repository"},
+		{"empty instruction path", "{ name: x, review: { instructions: [''] } }", "must not be empty"},
 	}
 	for _, tt := range rejects {
 		t.Run("rejects "+tt.name, func(t *testing.T) {
-			_, err := Parse([]byte(withRepo(tt.repo)))
+			_, err := loadBytes(t, []byte(withRepo(tt.repo)))
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want it to mention %q", err, tt.want)
 			}
@@ -984,7 +920,7 @@ func TestRetentionTranscripts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f, err := Parse([]byte(tt.yaml + minimal))
+			f, err := loadBytes(t, []byte(tt.yaml+minimal))
 			if tt.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.err) {
 					t.Fatalf("error %v does not mention %q", err, tt.err)

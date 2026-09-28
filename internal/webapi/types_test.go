@@ -32,12 +32,12 @@ var goldenReview = Review{
 }
 
 var goldenSummary = AccountSummary{
-	Slug: "alpha", ManagedBy: configfile.OriginDashboard, Role: auth.RoleAdmin, Connections: 1, Repositories: 3, Reviews7d: 9,
+	Slug: "github/alpha", Role: auth.RoleAdmin, Connection: "alpha-bot", Repositories: 3, Reviews7d: 9,
 	Usage: MonthUsage{Tokens: 5000, CostUSD: 1.5, TokensPerMonth: 1000000, ReviewsToday: 2, ReviewsPerDay: 50},
 }
 
 var goldenRepo = Repository{
-	ID: "repo-1", FullName: "alpha/one", Connection: "alpha-bot", Enabled: true, ManagedBy: "file", DefaultBranch: "main",
+	ID: "repo-1", FullName: "alpha/one", Enabled: true, ManagedBy: "dashboard", DefaultBranch: "main",
 	Index:      IndexState{ActiveCommit: "def456", ActiveAt: &t0, LastRunStatus: store.IndexCompleted, LastRunAt: &t1},
 	LastReview: &ReviewRef{ID: "rev-1", Status: store.ReviewCompleted, CreatedAt: t0},
 }
@@ -88,28 +88,28 @@ var goldens = map[string]any{
 	"page": Page[Repository]{Items: []Repository{goldenRepo}, NextCursor: new("opaque")},
 	"me": Me{
 		User:     User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"},
-		Operator: true, Accounts: []AccountMembership{{Slug: "alpha", Role: auth.RoleMember, ManagedBy: configfile.OriginFile}},
+		Operator: true, Accounts: []AccountMembership{{Slug: "github/alpha", Role: auth.RoleMember}},
 	},
 	"account_summary":  goldenSummary,
-	"operator_account": OperatorAccount{AccountSummary: goldenSummary, Live: false, Revision: 3},
+	"operator_account": OperatorAccount{AccountSummary: goldenSummary, Live: false, Conflict: "no connection serves this account"},
 	"account_detail": AccountDetail{
-		Slug: "alpha", ManagedBy: configfile.OriginFile, Role: auth.RoleMember,
-		Connections: []Connection{{
-			Name: "alpha-bot", Forge: configfile.ForgeGitHub, Accounts: []string{"alpha"},
+		Slug: "github/alpha", Role: auth.RoleMember,
+		Connection: Connection{
+			Name: "alpha-bot", Forge: configfile.ForgeGitHub, ManagedBy: configfile.OriginFile, Accounts: []string{"alpha"},
 			Credentials: CredentialsSet{ClientID: true, PrivateKey: true, WebhookSecret: true},
 			HookPath:    "/hooks/alpha-bot", LastWebhookAt: &t0,
-		}},
+		},
 		Models: Models{Review: "openrouter/acme-large", Fallback: "openrouter/acme-small"},
 		Limits: Limits{Concurrency: 2, ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filter: "!pr.draft",
 		Usage: goldenSummary.Usage,
 	},
 	"repository":       goldenRepo,
-	"instance_setting": InstanceSetting{Section: "polling", Key: "interval", Value: "2m0s", Source: configfile.SourceFile},
+	"instance_setting": InstanceSetting{Section: "connections", Key: "alpha-bot", Value: "alpha, webhook /hooks/alpha-bot", Source: configfile.SourceFile},
 	"repo_detail": RepoDetail{
 		Repository: goldenRepo,
 		Settings:   goldenRepoSettings,
 		Sources: map[string]configfile.Source{
-			"mode": configfile.SourceDashboard, "models.review": configfile.SourceFile, "settle": configfile.SourceDefault,
+			"mode": configfile.SourceAccount, "models.review": configfile.SourceDefaults, "settle": configfile.SourceDefault,
 		},
 		RepoConfig: &RepoConfig{
 			ReviewID: "rev-1", Commit: "def456", Found: true,

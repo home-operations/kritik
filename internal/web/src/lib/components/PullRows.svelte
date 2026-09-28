@@ -9,14 +9,7 @@
   import ReviewStatusPill from './ReviewStatusPill.svelte';
   import SeverityCounts from './SeverityCounts.svelte';
 
-  // connection is set where every row belongs to one connection's
-  // repository (a repository's own page), so its links name it.
-  let {
-    slug,
-    items,
-    selected = -1,
-    connection,
-  }: { slug: string; items: Pull[]; selected?: number; connection?: string } = $props();
+  let { slug, items, selected = -1 }: { slug: string; items: Pull[]; selected?: number } = $props();
 
   function stateOf(p: Pull): { tone: 'ok' | 'merged' | 'muted' | 'danger'; label: string } {
     if (p.merged) return { tone: 'merged', label: 'merged' };
@@ -30,7 +23,7 @@
   {#each items as p, i (p.url)}
     {@const st = stateOf(p)}
     <li class="row" class:selected={i === selected} data-index={i}>
-      <a class="row-link" href={href(pullRoute(slug, p, connection))} aria-current={i === selected ? 'true' : undefined}>
+      <a class="row-link" href={href(pullRoute(slug, p))} aria-current={i === selected ? 'true' : undefined}>
         <span class="mono small muted">{p.repository}#{p.number}</span>
         <span class="row-text">{p.title}</span>
         <span class="small muted">{p.author}</span>

@@ -291,7 +291,7 @@ const webDrain = 10 * time.Second
 
 // startWeb serves the dashboard, its sign-in and its API on WebAddr until
 // ctx ends, when role serves it. Without a sealing key the dashboard still
-// serves, but cannot write dashboard accounts.
+// serves, but cannot write the instance spec.
 func startWeb(
 	ctx context.Context, g *errgroup.Group, role config.Role, st *store.Store, cfg *config.Config, current *configfile.Current,
 	logger *slog.Logger,
@@ -599,11 +599,7 @@ func reportDrift(
 }
 
 func logConfig(logger *slog.Logger, f *configfile.File, msg string) {
-	connections := 0
-	for _, t := range f.Accounts {
-		connections += len(t.Connections)
-	}
-	logger.Info(msg, "providers", len(f.Providers), "accounts", len(f.Accounts), "connections", connections)
+	logger.Info(msg, "providers", len(f.Providers), "accounts", len(f.Accounts), "connections", len(f.Connections))
 }
 
 func newLogger(cfg *config.Config) (*slog.Logger, error) {

@@ -12,11 +12,11 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
-// ErrManagedBy is an ApplyConfig write that would take over a live row
-// another origin manages. ApplyConfig disables every row whose origin no
-// longer declares it before upserting, and merging the dashboard into the
-// file leaves out a file account whose slug or name a dashboard account
-// declares, so this guards the database rather than being expected.
+// ErrManagedBy is an ApplyConfig write that would take over a live
+// connection another origin manages. ApplyConfig disables every connection
+// whose origin no longer declares it before upserting, and merging the
+// spec leaves out a file connection whose name the spec holds, so this
+// guards the database rather than being expected.
 var ErrManagedBy = errors.New("store: row is managed by another origin")
 
 // IsConfigContentError reports whether an ApplyConfig error was caused by
@@ -37,15 +37,15 @@ func IsConfigContentError(err error) bool {
 	return strings.HasPrefix(pgErr.Code, "22") || pgErr.Code == "23502" || pgErr.Code == "23514"
 }
 
-// ApplyConfig upserts the file's accounts, connections and listed
-// repositories as rows managed by each account's origin, disables file and
-// dashboard rows the file no longer declares, and records the applied hash.
-// A row declared again by another origin (a file account removed and a
-// dashboard account of the same slug added, or the reverse) is disabled and
-// then taken over; an enabled row is never taken over, and neither is a
-// connection another account holds (both ErrManagedBy). It runs as the
-// owner in one transaction, so a replica reading config_state never sees a
-// half-applied file. Only the leader calls it.
+// ApplyConfig upserts the running connections, the accounts they serve and
+// the repositories the spec lists, disables the connections and accounts
+// that no longer run and the listed repositories no longer listed, and
+// records the applied hash. A connection declared again by the other origin
+// (a file connection removed and a dashboard one of the same name added,
+// or the reverse) is disabled and then taken over; an enabled one is never
+// taken over (ErrManagedBy). It runs as the owner in one transaction, so a
+// replica reading config_state never sees a half-applied configuration.
+// Only the leader calls it.
 func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader string) error {
 	if s.owner == nil {
 		return errors.New("store: applying configuration needs the owner DSN")
@@ -59,25 +59,18 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 	if err := disableUndeclared(ctx, tx, f); err != nil {
 		return err
 	}
-	for i := range f.Accounts {
-		t := &f.Accounts[i]
-		accountID, err := upsertAccount(ctx, tx, t)
-		if err != nil {
+	for i := range f.Connections {
+		if err := upsertConnection(ctx, tx, &f.Connections[i]); err != nil {
 			return err
 		}
-		connectionIDs := map[string]string{}
-		for j := range t.Connections {
-			in := &t.Connections[j]
-			id, err := upsertConnection(ctx, tx, accountID, t.Origin(), in)
-			if err != nil {
-				return err
-			}
-			connectionIDs[in.Name] = id
+	}
+	for i := range f.Accounts {
+		a := &f.Accounts[i]
+		if err := upsertAccount(ctx, tx, a); err != nil {
+			return err
 		}
-		for j := range t.Repositories {
-			r := &t.Repositories[j]
-			in := f.ConnectionFor(t, r)
-			if err := upsertRepository(ctx, tx, accountID, connectionIDs[in.Name], t.Origin(), r); err != nil {
+		for j := range a.Repositories {
+			if err := upsertRepository(ctx, tx, a, &a.Repositories[j]); err != nil {
 				return err
 			}
 		}
@@ -94,46 +87,42 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 	return nil
 }
 
-// disableUndeclared disables every file or dashboard account and connection
-// f does not declare with that same origin, then every file or dashboard
-// repository under a disabled account or connection or no longer listed by
-// its account. The upserts that follow re-enable what f still declares.
-// Forge-discovered repositories are left alone.
+// disableUndeclared disables every connection f does not run with that same
+// origin and every account no running connection serves, then every listed
+// repository of a disabled account or no longer listed by its account. The
+// upserts that follow re-enable what f still declares. Forge-discovered
+// repositories are left alone.
 func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error {
-	slugs, slugOrigins := make([]string, 0, len(f.Accounts)), make([]string, 0, len(f.Accounts))
-	var names, nameOrigins []string
-	for i := range f.Accounts {
-		t := &f.Accounts[i]
-		slugs, slugOrigins = append(slugs, t.Slug), append(slugOrigins, string(t.Origin()))
-		for j := range t.Connections {
-			names, nameOrigins = append(names, t.Connections[j].Name), append(nameOrigins, string(t.Origin()))
-		}
-	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE accounts SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-		WHERE managed_by IN ('file', 'dashboard') AND enabled
-			AND (slug, managed_by) NOT IN (SELECT * FROM unnest($1::text[], $2::text[]))`, slugs, slugOrigins); err != nil {
-		return fmt.Errorf("store: disable removed accounts: %w", err)
+	names, origins := make([]string, 0, len(f.Connections)), make([]string, 0, len(f.Connections))
+	for i := range f.Connections {
+		names, origins = append(names, f.Connections[i].Name), append(origins, string(f.Connections[i].Origin()))
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE connections SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-		WHERE managed_by IN ('file', 'dashboard') AND enabled
-			AND (name, managed_by) NOT IN (SELECT * FROM unnest($1::text[], $2::text[]))`, names, nameOrigins); err != nil {
+		WHERE enabled AND (name, managed_by) NOT IN (SELECT * FROM unnest($1::text[], $2::text[]))`, names, origins); err != nil {
 		return fmt.Errorf("store: disable removed connections: %w", err)
+	}
+	ids := make([]string, 0, len(f.Accounts))
+	for i := range f.Accounts {
+		ids = append(ids, f.Accounts[i].ID())
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE accounts SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
+		WHERE enabled AND id <> ALL($1::uuid[])`, ids); err != nil {
+		return fmt.Errorf("store: disable unserved accounts: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE repositories r SET enabled = false, disabled_at = coalesce(r.disabled_at, now()), updated_at = now()
-		WHERE r.managed_by IN ('file', 'dashboard') AND r.enabled AND (
-			EXISTS (SELECT 1 FROM accounts t WHERE t.id = r.account_id AND NOT t.enabled)
-			OR EXISTS (SELECT 1 FROM connections i WHERE i.id = r.connection_id AND NOT i.enabled))`); err != nil {
-		return fmt.Errorf("store: disable repositories of removed accounts and connections: %w", err)
+		WHERE r.managed_by = 'dashboard' AND r.enabled
+			AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = r.account_id AND NOT a.enabled)`); err != nil {
+		return fmt.Errorf("store: disable repositories of unserved accounts: %w", err)
 	}
 	for i := range f.Accounts {
-		t := &f.Accounts[i]
+		a := &f.Accounts[i]
 		if _, err := tx.Exec(ctx, `
 			UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-			WHERE account_id = $1 AND managed_by IN ('file', 'dashboard') AND enabled AND name <> ALL($2)`,
-			t.ID(), repoNames(t)); err != nil {
+			WHERE account_id = $1 AND managed_by = 'dashboard' AND enabled AND name <> ALL($2)`,
+			a.ID(), repoNames(a)); err != nil {
 			return fmt.Errorf("store: disable removed repositories: %w", err)
 		}
 	}
@@ -154,71 +143,50 @@ func (s *Store) AppliedConfigHash(ctx context.Context) (string, error) {
 	return hash, nil
 }
 
-func upsertAccount(ctx context.Context, tx pgx.Tx, t *configfile.Account) (string, error) {
-	var id string
-	err := tx.QueryRow(ctx, `
-		INSERT INTO accounts (id, slug, managed_by) VALUES ($1, $2, $3)
-		ON CONFLICT (slug) DO UPDATE SET
-			managed_by = EXCLUDED.managed_by, enabled = true, disabled_at = NULL, updated_at = now()
-		WHERE accounts.managed_by = EXCLUDED.managed_by OR NOT accounts.enabled
-		RETURNING id`, t.ID(), t.Slug, string(t.Origin())).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", managedByConflict(ctx, tx, "account "+t.Slug, t.Origin(), `SELECT managed_by FROM accounts WHERE slug = $1`, t.Slug)
+// upsertAccount enables a's row, creating it the first time a connection
+// serves a, and keeps the name as the configuration spells it.
+func upsertAccount(ctx context.Context, tx pgx.Tx, a *configfile.Account) error {
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO accounts (id, forge, name) VALUES ($1, $2, $3)
+		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, enabled = true, disabled_at = NULL, updated_at = now()`,
+		a.ID(), string(a.Forge), a.Name); err != nil {
+		return fmt.Errorf("store: upsert account %s: %w", a.Key(), err)
 	}
-	if err != nil {
-		return "", fmt.Errorf("store: upsert account %s: %w", t.Slug, err)
-	}
-	return id, nil
+	return nil
 }
 
-func upsertConnection(
-	ctx context.Context, tx pgx.Tx, accountID string, origin configfile.Origin, in *configfile.Connection,
-) (string, error) {
-	var id string
-	err := tx.QueryRow(ctx, `
-		INSERT INTO connections (id, account_id, name, forge, accounts, managed_by)
-		VALUES ($1, $2, $3, $4, $5, $6)
+func upsertConnection(ctx context.Context, tx pgx.Tx, in *configfile.Connection) error {
+	origin := in.Origin()
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO connections (id, name, forge, accounts, managed_by) VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (name) DO UPDATE SET
-			account_id = EXCLUDED.account_id, forge = EXCLUDED.forge, accounts = EXCLUDED.accounts,
-			managed_by = EXCLUDED.managed_by, enabled = true, disabled_at = NULL,
-			updated_at = now()
-		WHERE connections.account_id = EXCLUDED.account_id AND (connections.managed_by = EXCLUDED.managed_by OR NOT connections.enabled)
-		RETURNING id`, in.ID(), accountID, in.Name, string(in.Forge), in.Accounts, string(origin)).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		// Another account's row keeps its history (pull requests, reviews,
-		// repositories) under its own account id; handing the name over would
-		// mix the two, so it stays with its account, enabled or not.
-		return "", managedByConflict(ctx, tx, "connection "+in.Name, origin,
-			`SELECT CASE WHEN account_id = $2 THEN managed_by ELSE 'another account' END FROM connections WHERE name = $1`,
-			in.Name, accountID)
+			forge = EXCLUDED.forge, accounts = EXCLUDED.accounts, managed_by = EXCLUDED.managed_by,
+			enabled = true, disabled_at = NULL, updated_at = now()
+		WHERE connections.managed_by = EXCLUDED.managed_by OR NOT connections.enabled`,
+		in.ID(), in.Name, string(in.Forge), in.Accounts, string(origin))
+	if err == nil && tag.RowsAffected() == 0 {
+		return managedByConflict(ctx, tx, "connection "+in.Name, origin, `SELECT managed_by FROM connections WHERE name = $1`, in.Name)
 	}
 	if err != nil {
-		return "", fmt.Errorf("store: upsert connection %s: %w", in.Name, err)
+		return fmt.Errorf("store: upsert connection %s: %w", in.Name, err)
 	}
-	return id, nil
+	return nil
 }
 
 // upsertRepository also takes over a forge-discovered row: listing a
 // repository the poller or a webhook already found makes it declared.
-func upsertRepository(
-	ctx context.Context, tx pgx.Tx, accountID, connectionID string, origin configfile.Origin, r *configfile.Repository,
-) error {
+func upsertRepository(ctx context.Context, tx pgx.Tx, a *configfile.Account, r *configfile.Repository) error {
 	enabled := r.Enabled == nil || *r.Enabled
-	tag, err := tx.Exec(ctx, `
-		INSERT INTO repositories (id, account_id, connection_id, name, managed_by, enabled, disabled_at)
-		VALUES ($1, $2, $3, $4, $6, $5, CASE WHEN $5 THEN NULL ELSE now() END)
-		ON CONFLICT (connection_id, name) DO UPDATE SET
-			account_id = EXCLUDED.account_id, managed_by = EXCLUDED.managed_by, enabled = EXCLUDED.enabled,
+	name := a.Name + "/" + r.Name
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO repositories (id, account_id, name, managed_by, enabled, disabled_at)
+		VALUES ($1, $2, $3, 'dashboard', $4, CASE WHEN $4 THEN NULL ELSE now() END)
+		ON CONFLICT (account_id, name) DO UPDATE SET
+			managed_by = 'dashboard', enabled = EXCLUDED.enabled,
 			disabled_at = CASE WHEN EXCLUDED.enabled THEN NULL ELSE coalesce(repositories.disabled_at, now()) END,
-			updated_at = now()
-		WHERE repositories.managed_by IN (EXCLUDED.managed_by, 'forge') OR NOT repositories.enabled`,
-		configfile.RepositoryID(connectionID, r.Name), accountID, connectionID, r.Name, enabled, string(origin))
-	if err == nil && tag.RowsAffected() == 0 {
-		return managedByConflict(ctx, tx, "repository "+r.Name, origin,
-			`SELECT managed_by FROM repositories WHERE connection_id = $1 AND name = $2`, connectionID, r.Name)
-	}
-	if err != nil {
-		return fmt.Errorf("store: upsert repository %s: %w", r.Name, err)
+			updated_at = now()`,
+		configfile.RepositoryID(a.ID(), name), a.ID(), name, enabled); err != nil {
+		return fmt.Errorf("store: upsert repository %s: %w", name, err)
 	}
 	return nil
 }
@@ -233,10 +201,10 @@ func managedByConflict(ctx context.Context, tx pgx.Tx, what string, origin confi
 	return fmt.Errorf("store: %s is managed by %s, not taking it over as %s: %w", what, holder, origin, ErrManagedBy)
 }
 
-func repoNames(t *configfile.Account) []string {
-	names := make([]string, 0, len(t.Repositories))
-	for _, r := range t.Repositories {
-		names = append(names, r.Name)
+func repoNames(a *configfile.Account) []string {
+	names := make([]string, 0, len(a.Repositories))
+	for _, r := range a.Repositories {
+		names = append(names, a.Name+"/"+r.Name)
 	}
 	return names
 }

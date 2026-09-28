@@ -1,0 +1,22 @@
+{
+  "revision": 3,
+  "editable": true,
+  "spec": {
+    "connections": [
+      {
+        "name": "alpha-bot",
+        "forge": "github",
+        "accounts": ["alpha"],
+        "app": {
+          "clientId": "Iv1.alpha",
+          "privateKey": {
+            "set": true
+          },
+          "webhookSecret": {
+            "set": true
+          }
+        }
+      }
+    ]
+  }
+}

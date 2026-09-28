@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -19,18 +20,15 @@ import (
 // metaPath is the one API route served without a session.
 const metaPath = "/api/v1/meta"
 
-// slugPath points an error at the spec's slug.
-var slugPath = pathDetails{Path: "slug"}
-
-// maxBodyBytes bounds a request body; an account spec is far smaller.
+// maxBodyBytes bounds a request body; the instance spec is far smaller.
 const maxBodyBytes = 1 << 20
 
-// registerManage mounts dashboard account management.
+// registerManage mounts the instance spec and account settings routes.
 func (s *Server) registerManage(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/accounts/{slug}/config", s.handler(s.getAccountConfig))
-	mux.HandleFunc("POST /api/v1/accounts", s.handler(s.createAccount))
-	mux.HandleFunc("PUT /api/v1/accounts/{slug}/config", s.handler(s.updateAccount))
-	mux.HandleFunc("DELETE /api/v1/accounts/{slug}", s.handler(s.deleteAccount))
+	mux.HandleFunc("GET /api/v1/config", s.handler(s.getInstanceConfig))
+	mux.HandleFunc("PUT /api/v1/config", s.handler(s.updateInstanceConfig))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/config", s.account(s.getAccountConfig))
+	mux.HandleFunc("PUT /api/v1/accounts/{forge}/{name}/config", s.account(s.updateAccountConfig))
 }
 
 func (s *Server) getMeta(w http.ResponseWriter, _ *http.Request) error {
@@ -42,128 +40,48 @@ func (s *Server) getMeta(w http.ResponseWriter, _ *http.Request) error {
 	return nil
 }
 
-// accountIDFor is the id the account with slug has, or will have once the
-// leader applies it.
-func accountIDFor(slug string) string { return (&configfile.Account{Slug: slug}).ID() }
-
 var (
 	errForbidden          = errStatus(http.StatusForbidden, CodeForbidden, "this needs an admin", nil)
-	errFileManaged        = errStatus(http.StatusForbidden, CodeFileManaged, "this account is declared in the configuration file", nil)
 	errManagementDisabled = errStatus(http.StatusServiceUnavailable, CodeManagementDisabled,
-		"dashboard accounts cannot be written: KRITIK_DASHBOARD_KEY is not set", nil)
-	errDashboardSlugTaken = errStatus(http.StatusConflict, CodeSlugTaken, "a dashboard account with this slug already exists", slugPath)
-	errRevisionConflict   = errStatus(http.StatusConflict, CodeRevisionConflict,
-		"the account was changed by another write; reload it and try again", nil)
+		"the configuration cannot be written: KRITIK_DASHBOARD_KEY is not set", nil)
+	errRevisionConflict = errStatus(http.StatusConflict, CodeRevisionConflict,
+		"the configuration was changed by another write; reload it and try again", nil)
 )
 
-// configTarget resolves {slug} for a config route: a live account p may
-// read, or, for an operator, a stored dashboard account that is not live
-// (it does not validate, or has not merged yet). live is nil for the
-// latter.
-func (s *Server) configTarget(p *auth.Principal, slug string) (live *configfile.Account, err error) {
-	t, ok := s.current.Get().Account(slug)
-	switch {
-	case ok && p.CanRead(t.ID()):
-		return t, nil
-	case !ok && p.Operator:
-		return nil, nil
-	default:
-		return nil, errNotFound("account")
+func (s *Server) getInstanceConfig(w http.ResponseWriter, r *http.Request) error {
+	p := auth.PrincipalFrom(r.Context())
+	if !p.Operator {
+		return errForbidden
 	}
-}
-
-func (s *Server) getAccountConfig(w http.ResponseWriter, r *http.Request) error {
-	ctx, p, slug := r.Context(), auth.PrincipalFrom(r.Context()), r.PathValue("slug")
-	live, err := s.configTarget(p, slug)
+	stored, err := s.store.InstanceSpec(r.Context())
 	if err != nil {
 		return err
 	}
-	var out AccountConfig
-	if live != nil && live.Origin() == configfile.OriginFile {
-		out.ManagedBy, out.Policy, out.Inherited = configfile.OriginFile, fieldPolicies(false), s.inherited(live)
-		if out.Spec, err = renderFileAccount(live); err != nil {
-			return err
-		}
-		writeJSON(w, http.StatusOK, out)
-		return nil
-	}
-	var d configfile.DashboardAccount
-	if err := s.store.WithAccount(ctx, accountIDFor(slug), func(tx pgx.Tx) error {
-		d, _, err = s.store.DashboardAccount(ctx, tx, slug)
-		return err
-	}); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return errNotFound("account")
-		}
-		return err
-	}
-	out.ManagedBy = configfile.OriginDashboard
-	out.Revision = &d.Revision
-	out.Editable = s.keyring != nil && p.Operator
-	out.Policy = fieldPolicies(out.Editable)
-	if live == nil {
-		stored, err := configfile.DecodeAccount(d)
-		if err != nil {
-			return err
-		}
-		live = &stored
-	}
-	out.Inherited = s.inherited(live)
-	if out.Spec, err = redactSpec(d.Spec); err != nil {
+	out := InstanceConfig{Revision: stored.Revision, Editable: s.keyring != nil}
+	if out.Spec, err = redactSpec(specOrEmpty(stored.Spec)); err != nil {
 		return err
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
-func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) error {
+func (s *Server) updateInstanceConfig(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
-	if !p.Operator {
-		return errForbidden
-	}
-	if s.keyring == nil {
-		return errManagementDisabled
-	}
-	var req CreateAccountRequest
-	if err := readBody(r, &req); err != nil {
-		return err
-	}
-	if req.Slug == "" || len(req.Spec) == 0 {
-		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, "slug and spec are required", nil)
-	}
-	if s.current.Get().Declares(req.Slug) {
-		return errStatus(http.StatusConflict, CodeSlugTaken, "the configuration file already declares this slug", slugPath)
-	}
-	res, err := s.writeAccount(r.Context(), p, req.Slug, req.Spec, 0, req.Adopt)
-	if err != nil {
-		return err
-	}
-	writeJSON(w, http.StatusCreated, res)
-	return nil
-}
-
-func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) error {
-	p, slug := auth.PrincipalFrom(r.Context()), r.PathValue("slug")
-	live, err := s.configTarget(p, slug)
-	if err != nil {
-		return err
-	}
 	switch {
-	case live != nil && live.Origin() == configfile.OriginFile:
-		return errFileManaged
-	case live != nil && !p.Operator:
+	case !p.Operator:
 		return errForbidden
 	case s.keyring == nil:
 		return errManagementDisabled
 	}
-	var req UpdateAccountRequest
+	var req UpdateConfigRequest
 	if err := readBody(r, &req); err != nil {
 		return err
 	}
-	if req.Revision <= 0 || len(req.Spec) == 0 {
+	if req.Revision < 0 || len(req.Spec) == 0 {
 		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, "revision and spec are required", nil)
 	}
-	res, err := s.writeAccount(r.Context(), p, slug, req.Spec, req.Revision, false)
+	res, err := s.writeSpec(r.Context(), p, req.Revision, "", AuditConfigUpdate, "instance",
+		func(json.RawMessage) (json.RawMessage, error) { return req.Spec, nil }, specFailure)
 	if err != nil {
 		return err
 	}
@@ -171,212 +89,216 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// accountAudit is an account write's audit detail: which secrets were given
-// a new value, never the values.
-type accountAudit struct {
+func (s *Server) getAccountConfig(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+	stored, err := s.store.InstanceSpec(r.Context())
+	if err != nil {
+		return err
+	}
+	entry, _, err := accountEntry(specOrEmpty(stored.Spec), t.account)
+	if err != nil {
+		return err
+	}
+	out := AccountConfig{Revision: stored.Revision, Editable: s.keyring != nil && t.principal.Operator, Inherited: s.inherited(t.account)}
+	out.Policy = fieldPolicies(out.Editable)
+	if out.Spec, err = redactSpec(entry); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+func (s *Server) updateAccountConfig(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+	switch {
+	case !t.principal.Operator:
+		return errForbidden
+	case s.keyring == nil:
+		return errManagementDisabled
+	}
+	var req UpdateConfigRequest
+	if err := readBody(r, &req); err != nil {
+		return err
+	}
+	if req.Revision < 0 || len(req.Spec) == 0 {
+		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, "revision and spec are required", nil)
+	}
+	var index int
+	build := func(stored json.RawMessage) (json.RawMessage, error) {
+		var next json.RawMessage
+		var err error
+		next, index, err = withAccountEntry(stored, t.account, req.Spec)
+		return next, err
+	}
+	fail := func(err error, baseline func() error) error { return accountSpecFailure(err, index, baseline) }
+	res, err := s.writeSpec(r.Context(), t.principal, req.Revision, t.account.ID(), AuditAccountUpdate, t.account.Slug(), build, fail)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, res)
+	return nil
+}
+
+// configAudit is a spec write's audit detail: which secrets were given a
+// new value, never the values.
+type configAudit struct {
 	Revision int64    `json:"revision"`
 	Secrets  []string `json:"secretsChanged,omitempty"`
 }
 
-// writeAccount validates spec as the dashboard account slug and stores it,
-// with its audit row, in one transaction. expected is the revision it
-// replaces, 0 to create it; adopt lets a create re-use a slug an account
-// held before.
-func (s *Server) writeAccount(
-	ctx context.Context, p *auth.Principal, slug string, spec json.RawMessage, expected int64, adopt bool,
-) (AccountWriteResult, error) {
-	tid := accountIDFor(slug)
-	res := AccountWriteResult{Slug: slug}
-	err := s.store.WithAccount(ctx, tid, func(tx pgx.Tx) error {
-		if err := store.LockDashboardWrites(ctx, tx); err != nil {
+// writeSpec replaces the instance spec, while it is still at expected, with
+// what build makes of the stored one, sealed and validated, and records the
+// write in the audit log under accountID ("" for none) in the same
+// transaction. fail turns a spec that does not merge into the API's
+// answer, given a check of the stored spec alone.
+func (s *Server) writeSpec(
+	ctx context.Context, p *auth.Principal, expected int64, accountID string, action AuditAction, target string,
+	build func(stored json.RawMessage) (json.RawMessage, error), fail func(err error, baseline func() error) error,
+) (ConfigWriteResult, error) {
+	var res ConfigWriteResult
+	write := func(tx pgx.Tx) error {
+		if err := store.LockInstanceSpec(ctx, tx); err != nil {
 			return err
 		}
-		var prev *configfile.DashboardAccount
-		if expected > 0 {
-			d, _, err := s.store.DashboardAccount(ctx, tx, slug)
-			if errors.Is(err, store.ErrNotFound) {
-				return errNotFound("account")
-			}
-			if err != nil {
-				return err
-			}
-			if d.Revision != expected {
-				return errRevisionConflict
-			}
-			prev = &d
-		} else {
-			_, _, err := s.store.DashboardAccount(ctx, tx, slug)
-			switch {
-			case err == nil:
-				return errDashboardSlugTaken
-			case !errors.Is(err, store.ErrNotFound):
-				return err
-			}
-			if err := s.claimSlug(ctx, tx, p, tid, slug, adopt); err != nil {
-				return err
-			}
-		}
-		dash, err := store.DashboardAccountsIn(ctx, tx)
+		stored, _, err := store.InstanceSpecIn(ctx, tx)
 		if err != nil {
 			return err
 		}
-		candidate, sealed, err := s.checkSpec(slug, spec, prev, dash)
-		if err != nil {
-			return err
-		}
-		if err := s.checkTakeover(ctx, tx, tid, candidate); err != nil {
-			return err
-		}
-		action := AuditAccountUpdate
-		if expected == 0 {
-			action = AuditAccountCreate
-		}
-		rev, err := s.store.PutDashboardAccount(ctx, tx, slug, sealed.spec, expected, p.User.ID)
-		switch {
-		case errors.Is(err, store.ErrDashboardConflict) && expected == 0:
-			return errDashboardSlugTaken
-		case errors.Is(err, store.ErrDashboardConflict):
+		if stored.Revision != expected {
 			return errRevisionConflict
-		case err != nil:
+		}
+		candidate, err := build(specOrEmpty(stored.Spec))
+		if err != nil {
+			return refusal(err)
+		}
+		sealed, err := sealSpec(candidate, stored.Spec, s.keyring.Seal, generateWebhookSecret)
+		if err != nil {
+			return refusal(err)
+		}
+		next := configfile.InstanceSpec{Spec: sealed.spec, Revision: stored.Revision + 1}
+		if _, err := configfile.DecodeSpec(next.Spec); err != nil {
+			return decodeFailure(err)
+		}
+		if err := configfile.ValidateSpec(s.current.Get(), stored, next, s.keyring); err != nil {
+			return fail(err, func() error { return configfile.ValidateSpec(s.current.Get(), stored, stored, s.keyring) })
+		}
+		rev, err := s.store.PutInstanceSpec(ctx, tx, sealed.spec, expected, p.User.ID)
+		if errors.Is(err, store.ErrSpecConflict) {
+			return errRevisionConflict
+		}
+		if err != nil {
 			return err
 		}
 		res.Revision, res.Generated = rev, sealed.generated
-		return record(ctx, tx, p, &tid, action, slug, accountAudit{Revision: rev, Secrets: sealed.changed})
-	})
-	return res, err
+		var id *string
+		if accountID != "" {
+			id = &accountID
+		}
+		return record(ctx, tx, p, id, action, target, configAudit{Revision: rev, Secrets: sealed.changed})
+	}
+	return res, s.store.WithAccount(ctx, accountID, write)
 }
 
-// claimSlug refuses a create whose slug an account held before, enabled or
-// not: account ids derive from slugs, so the new account would see the old
-// one's reviews, findings and transcripts. adopt accepts that; only a
-// refusal that adopt would overcome says so (slugTakenDetails.Adoptable), never one for an account
-// the file still manages.
-func (s *Server) claimSlug(ctx context.Context, tx pgx.Tx, p *auth.Principal, tid, slug string, adopt bool) error {
-	held, err := store.AccountRowExists(ctx, tx, tid)
-	switch {
-	case err != nil:
-		return err
-	case !held:
-		return nil
-	}
-	// An account the file still manages is not gone: it cannot be adopted.
-	live, err := store.LiveNonDashboard(ctx, tx, tid, nil)
-	switch {
-	case err != nil:
-		return err
-	case len(live) > 0:
-		return errStatus(http.StatusConflict, CodeSlugTaken, "slug is still in use by an account the configuration file manages", slugPath)
-	case !adopt:
-		return errStatus(http.StatusConflict, CodeSlugTaken,
-			"an account used this slug before; creating it again with adopt keeps that account's review history",
-			slugTakenDetails{Path: slugPath.Path, Adoptable: true})
-	}
-	return record(ctx, tx, p, &tid, AuditAccountAdopt, slug, struct{}{})
-}
-
-// checkSpec seals spec's secrets against the account it replaces (nil on
-// create) and checks the result merges with the running file and dash, the
-// dashboard accounts as the write's transaction reads them.
-func (s *Server) checkSpec(
-	slug string, spec json.RawMessage, prev *configfile.DashboardAccount, dash []configfile.DashboardAccount,
-) (*configfile.Account, sealedSpec, error) {
-	var stored json.RawMessage
-	if prev != nil {
-		stored = prev.Spec
-	}
-	sealed, err := sealSpec(spec, stored, s.keyring.Seal, generateWebhookSecret)
+// refusal is err as the API answers it: a *specError is the client's
+// spec refused, a 422 at its path.
+func refusal(err error) error {
 	if se, ok := errors.AsType[*specError](err); ok {
-		return nil, sealed, errStatus(http.StatusUnprocessableEntity, se.errorCode(), se.Error(), pathDetails{Path: se.path})
+		return errStatus(http.StatusUnprocessableEntity, se.errorCode(), se.Error(), pathDetails{Path: se.path})
 	}
-	if err != nil {
-		return nil, sealed, err
-	}
-	candidate := configfile.DashboardAccount{Slug: slug, Spec: sealed.spec, Revision: 1}
-	if prev != nil {
-		candidate.Revision = prev.Revision + 1
-	}
-	next, err := configfile.DecodeAccount(candidate)
-	if err != nil {
-		return nil, sealed, decodeFailure(err)
-	}
-	current := s.current.Get()
-	if err := configfile.ValidateDashboard(current, dash, candidate, s.keyring); err != nil {
-		return nil, sealed, mergeFailure(slug, &next, err, func() error { return validateWithout(current, dash, slug, s.keyring) })
-	}
-	return &next, sealed, nil
+	return err
 }
 
-// checkTakeover refuses a write that would claim a live account or
-// connection row another origin manages (one the file dropped that the
-// leader has not disabled yet, say) or a connection name another
-// account holds in any state, which the leader would refuse to hand over.
-// The merge check already refuses anything the file still declares.
-func (s *Server) checkTakeover(ctx context.Context, tx pgx.Tx, accountID string, t *configfile.Account) error {
-	names := make([]string, len(t.Connections))
-	for i := range t.Connections {
-		names[i] = t.Connections[i].Name
+// specOrEmpty is spec, or an empty object for a spec never written.
+func specOrEmpty(spec json.RawMessage) json.RawMessage {
+	if len(bytes.TrimSpace(spec)) == 0 {
+		return json.RawMessage(`{}`)
 	}
-	taken, err := store.LiveNonDashboard(ctx, tx, accountID, names)
-	if err != nil {
-		return err
-	}
-	msg := " is still in use by an account the configuration file manages"
-	if len(taken) == 0 {
-		if taken, err = store.ConnectionsHeldElsewhere(ctx, tx, accountID, names); err != nil {
-			return err
-		}
-		msg = " belongs to another account"
-	}
-	if len(taken) == 0 {
-		return nil
-	}
-	path := slugPath.Path
-	if taken[0] != slugPath.Path {
-		for i := range t.Connections {
-			if t.Connections[i].Name == taken[0] {
-				path = "connections[" + strconv.Itoa(i) + "].name"
-			}
-		}
-	}
-	return errStatus(http.StatusConflict, CodeSlugTaken, path+msg, pathDetails{Path: path})
+	return spec
 }
 
-func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) error {
-	ctx, p, slug := r.Context(), auth.PrincipalFrom(r.Context()), r.PathValue("slug")
-	if !p.Operator {
-		return errForbidden
-	}
-	if t, ok := s.current.Get().Account(slug); ok && t.Origin() == configfile.OriginFile {
-		return errFileManaged
-	}
-	if s.keyring == nil {
-		return errManagementDisabled
-	}
-	rev, err := strconv.ParseInt(r.URL.Query().Get("revision"), 10, 64)
-	if err != nil || rev <= 0 {
-		return errBadRequest(CodeBadRequest, "revision must be the account's current revision")
-	}
-	tid := accountIDFor(slug)
-	err = s.store.WithAccount(ctx, tid, func(tx pgx.Tx) error {
-		if err := store.LockDashboardWrites(ctx, tx); err != nil {
-			return err
-		}
-		err := s.store.DeleteDashboardAccount(ctx, tx, slug, rev)
-		switch {
-		case errors.Is(err, store.ErrNotFound):
-			return errNotFound("account")
-		case errors.Is(err, store.ErrDashboardConflict):
-			return errRevisionConflict
-		case err != nil:
-			return err
-		}
-		return record(ctx, tx, p, &tid, AuditAccountDelete, slug, accountAudit{Revision: rev})
-	})
+// accountEntry is a's entry in spec, or a new one naming it when the spec
+// lists none, and its index in accounts, -1 for none.
+func accountEntry(spec json.RawMessage, a *configfile.Account) (json.RawMessage, int, error) {
+	root, err := decodeObject(spec)
 	if err != nil {
+		return nil, -1, err
+	}
+	for i, e := range objects(root["accounts"]) {
+		if entryKey(e) == a.Key() {
+			out, err := json.Marshal(e)
+			return out, i, err
+		}
+	}
+	out, err := json.Marshal(map[string]any{"forge": string(a.Forge), "name": a.Name})
+	return out, -1, err
+}
+
+// withAccountEntry is stored with a's entry replaced by entry, or entry
+// appended when there was none, every other secret kept as stored; and the
+// entry's index in accounts. entry must name a.
+func withAccountEntry(stored json.RawMessage, a *configfile.Account, entry json.RawMessage) (json.RawMessage, int, error) {
+	root, err := decodeObject(keepSecrets(stored))
+	if err != nil {
+		return nil, -1, err
+	}
+	e, err := decodeObject(entry)
+	if err != nil {
+		return nil, -1, &specError{msg: "spec must be a JSON object"}
+	}
+	if entryKey(e) != a.Key() {
+		return nil, -1, &specError{path: "name", msg: "the spec must name the account " + a.Slug()}
+	}
+	list, _ := root["accounts"].([]any)
+	index := -1
+	for i, x := range objects(root["accounts"]) {
+		if entryKey(x) == a.Key() {
+			list[i], index = e, i
+		}
+	}
+	if index < 0 {
+		list, index = append(list, e), len(list)
+	}
+	root["accounts"] = list
+	out, err := json.Marshal(root)
+	return out, index, err
+}
+
+// entryKey is an account entry's key, as configfile.AccountKey spells it.
+func entryKey(e map[string]any) string {
+	forge, _ := e["forge"].(string)
+	name, _ := e["name"].(string)
+	return configfile.AccountKey(configfile.Forge(forge), name)
+}
+
+// specFailure turns a failed configfile.ValidateSpec of the instance spec
+// into the API's answer: the offending key's path and the message.
+func specFailure(err error, _ func() error) error {
+	me, ok := errors.AsType[*configfile.MergeError](err)
+	if !ok {
 		return err
 	}
-	w.WriteHeader(http.StatusNoContent)
-	return nil
+	path, msg := splitPath(trimConfigfile(me.Err.Error()))
+	return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, msg, pathDetails{Path: path})
+}
+
+// accountSpecFailure is specFailure for an account's entry at index: a path
+// inside the entry is given relative to it. A failure elsewhere in the spec
+// is the entry's fault when the stored spec validates without it
+// (baseline); when it does not, no write can be judged until an admin
+// fixes the spec, which is a 409.
+func accountSpecFailure(err error, index int, baseline func() error) error {
+	me, ok := errors.AsType[*configfile.MergeError](err)
+	if !ok {
+		return err
+	}
+	path, msg := splitPath(trimConfigfile(me.Err.Error()))
+	prefix := "accounts[" + strconv.Itoa(index) + "]"
+	if rel, ok := strings.CutPrefix(path, prefix+"."); ok {
+		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, strings.Replace(msg, path, rel, 1), pathDetails{Path: rel})
+	}
+	if path == prefix || baseline() == nil {
+		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, msg, pathDetails{})
+	}
+	return errStatus(http.StatusConflict, CodeConfigBlocked,
+		"the configuration is invalid elsewhere, so this change cannot be checked; an admin must fix it first", nil)
 }
 
 // readBody strictly decodes one JSON document into v.
@@ -396,12 +318,12 @@ func readBody(r *http.Request, v any) error {
 	return nil
 }
 
-// inherited is what t's fields and its repository entries' fields resolve
+// inherited is what a's fields and its repository entries' fields resolve
 // to where they are left out, in the running configuration.
-func (s *Server) inherited(t *configfile.Account) Inherited {
+func (s *Server) inherited(a *configfile.Account) Inherited {
 	file, none := s.current.Get(), &configfile.Account{}
 	return Inherited{
-		Account: repoSettings(file.Settings(none, "", "")), AccountSources: file.Sources(none, "", ""),
-		Repository: repoSettings(file.Settings(t, "", "")), RepositorySources: file.Sources(t, "", ""),
+		Account: repoSettings(file.Settings(none, "")), AccountSources: file.Sources(none, ""),
+		Repository: repoSettings(file.Settings(a, "")), RepositorySources: file.Sources(a, ""),
 	}
 }

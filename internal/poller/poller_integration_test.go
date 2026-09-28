@@ -16,24 +16,26 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/store"
 )
 
 const configYAML = `
+connections:
+  - name: bot-ross
+    forge: github
+    accounts: [onedr0p]
+    app:
+      clientId: Iv1.x
+      privateKey: { env: TEST_PEM }
+      webhookSecret: { env: TEST_SECRET }
 accounts:
-  - slug: onedr0p
-    connections:
-      - name: bot-ross
-        forge: github
-        accounts: [onedr0p]
-        app:
-          clientId: Iv1.x
-          privateKey: { env: TEST_PEM }
-          webhookSecret: { env: TEST_SECRET }
+  - forge: github
+    name: onedr0p
     repositories:
-      - name: onedr0p/home-ops
+      - name: home-ops
 `
 
 // listForge answers only the listing call; the poller needs nothing else.
@@ -83,10 +85,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	}
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
-	file, err := configfile.Parse([]byte(configYAML))
-	if err != nil {
-		t.Fatal(err)
-	}
+	file := configfiletest.Load(t, configYAML)
 	if err := st.ApplyConfig(ctx, file, "test"); err != nil {
 		t.Fatal(err)
 	}
@@ -94,10 +93,11 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in, account, _ := file.Connection("bot-ross")
+	in, _ := file.Connection("bot-ross")
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 	var installed time.Time
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT created_at FROM connections WHERE id = $1`, in.ID()).Scan(&installed)
+		return tx.QueryRow(ctx, `SELECT created_at FROM accounts WHERE id = $1`, account.ID()).Scan(&installed)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		Number: 7, Title: "poll me", Author: "onedr0p", State: "open", HeadRef: "f", HeadSHA: "abc123", BaseRef: "main",
 		UpdatedAt: time.Now(), DefaultBranch: "main",
 	}, {
-		// Last touched before kritik knew the connection.
+		// Last touched before kritik knew the account.
 		Number: 8, Title: "leave me", Author: "onedr0p", State: "open", HeadRef: "g", HeadSHA: "old888", BaseRef: "main",
 		UpdatedAt: installed.Add(-time.Hour), DefaultBranch: "main",
 	}}}
@@ -117,7 +117,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	// Start from no poll state and no pull requests 7 or 8, whatever
 	// earlier suites left behind.
 	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE connection_id = $1`, in.ID()); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE account_id = $1`, account.ID()); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE number IN (7, 8)`)
@@ -154,7 +154,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE number = 7`).Scan(&head); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, `SELECT last_polled_at FROM poll_state WHERE connection_id = $1`, in.ID()).Scan(&polledAt)
+		return tx.QueryRow(ctx, `SELECT last_polled_at FROM poll_state WHERE account_id = $1`, account.ID()).Scan(&polledAt)
 	})
 	if err != nil || head != "abc123" || polledAt.Before(before) {
 		t.Fatalf("rows: err=%v head=%s polled=%v", err, head, polledAt)
@@ -244,10 +244,7 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	}
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
-	file, err := configfile.Parse([]byte(configYAML))
-	if err != nil {
-		t.Fatal(err)
-	}
+	file := configfiletest.Load(t, configYAML)
 	if err := st.ApplyConfig(ctx, file, "test"); err != nil {
 		t.Fatal(err)
 	}
@@ -255,8 +252,9 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in, account, _ := file.Connection("bot-ross")
-	repoID := configfile.RepositoryID(in.ID(), "onedr0p/home-ops")
+	in, _ := file.Connection("bot-ross")
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	repoID := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
 	exec := func(sql string, args ...any) {
 		t.Helper()
 		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {

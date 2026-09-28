@@ -43,7 +43,7 @@ Kubernetes Job pod that holds no secrets.
 - **Repository overrides.** A `.kritik.yaml`, read from the merge-base, can
   narrow the operator's settings and bring its own instructions and comment
   templates.
-- **Dashboard.** Sign-in, dashboard-managed accounts, live review state, full
+- **Dashboard.** Sign-in, the instance configuration, live review state, full
   model transcripts and an audit log.
 
 ## Installing
@@ -52,11 +52,13 @@ kritik ships as an OCI Helm chart, `oci://ghcr.io/home-operations/charts/kritik`
 The chart's [README](charts/kritik/README.md) lists every value and shows the
 CloudNativePG setup for the three database roles. In short: a Postgres with
 [VectorChord](https://github.com/tensorchord/VectorChord) (and the pgvector it
-builds on) loaded, with an owner, an application and a runner role, the
-configuration file under `config.file`, the secrets it references under
-`secretMounts`, and optionally an embedder under `embedding` for the index.
-`roles.all` runs the single-process topology; `roles.ingest` and
-`roles.worker` split it.
+builds on) loaded, with an owner, an application and a runner role, a
+sealing key under `dashboard.keySecret`, the configuration file under
+`config.file` with sign-in and any GitHub App that already exists, the
+secrets it references under `secretMounts`, and optionally an embedder under
+`embedding` for the index. Model providers, defaults, accounts and their
+repositories are then set in the dashboard's admin console. `roles.all` runs
+the single-process topology; `roles.ingest` and `roles.worker` split it.
 
 Then [connect a forge](docs/connecting-a-forge.md): a GitHub App, whose one
 webhook covers every repository it is installed on.
@@ -68,8 +70,8 @@ Security notes:
   there, though it can never get or list one.
 - Keep the egress gateway on (the chart's default) with a NetworkPolicy:
   runner pods then reach the outside only through the worker's forward proxy,
-  which allows destinations by hostname (github.com and the file's
-  `egress.allowHosts`), and never hold the credentials `egress.credentials`
+  which allows destinations by hostname (github.com and the instance
+  configuration's `egress.allowHosts`), and never hold the credentials `egress.credentials`
   lets the gateway add. Agentic reviews need it, since their model calls go
   through it too.
 - Run runner Jobs under a sandboxed RuntimeClass such as gVisor
@@ -82,8 +84,8 @@ Security notes:
   permissions, and its webhook
 - [Chart values](charts/kritik/README.md)
 - [`.kritik.yaml` reference](docs/repository-config.md)
-- [Dashboard](docs/dashboard.md): sign-in, roles, the sealing key and
-  transcript retention
+- [Dashboard](docs/dashboard.md): sign-in, roles, the instance
+  configuration, the sealing key and transcript retention
 - [Metrics](docs/metrics.md)
 - [Development](docs/development.md): building, testing, evaluation and the
   cluster loop

@@ -7,11 +7,11 @@
     "email": "ada@example.com",
     "avatarUrl": "https://img.example/a.png"
   },
-  "account": "alpha",
+  "account": "github/alpha",
   "action": "account.update",
-  "target": "alpha",
+  "target": "github/alpha",
   "detail": {
     "revision": 2,
-    "secretsChanged": ["connections[alpha-bot].app.privateKey"]
+    "secretsChanged": ["accounts[github/alpha].providers.own.apiKey"]
   }
 }

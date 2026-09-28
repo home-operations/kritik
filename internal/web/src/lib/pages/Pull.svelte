@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { ambiguousConnections, getJSON } from '../api.svelte';
+  import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
-  import { connectionQuery, pullRoute, repoRoute, rerunPath } from '../links';
-  import ConnectionChoice from '../components/ConnectionChoice.svelte';
+  import { repoRoute, rerunPath, accountApi } from '../links';
   import { canAdmin } from '../session.svelte';
   import ActionButton from '../components/ActionButton.svelte';
   import { shortSha } from '../format';
@@ -17,21 +16,12 @@
   import ReviewMeta from '../components/ReviewMeta.svelte';
   import FollowupItem from '../components/FollowupItem.svelte';
 
-  let {
-    slug,
-    owner,
-    repo,
-    number,
-    connection,
-  }: { slug: string; owner: string; repo: string; number: number; connection?: string } = $props();
+  let { slug, owner, repo, number }: { slug: string; owner: string; repo: string; number: number } = $props();
   const fullName = $derived(`${owner}/${repo}`);
 
   const res = new Resource(() =>
-    getJSON<PullDetail>(
-      `/api/v1/accounts/${encodeURIComponent(slug)}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}${connectionQuery(connection)}`,
-    ),
+    getJSON<PullDetail>(`${accountApi(slug)}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}`),
   );
-  const choices = $derived(ambiguousConnections(res.error));
   $effect(() => {
     void res.load();
   });
@@ -52,17 +42,14 @@
 
 <main class="page">
   <div class="page-inner">
-    {#if choices}
-      <ConnectionChoice name={fullName} connections={choices} route={(i) => pullRoute(slug, { repository: fullName, number }, i)} />
-    {:else}
-      <StateView {res} retry={() => res.load()}>
+    <StateView {res} retry={() => res.load()}>
         {#snippet children(d)}
           {@const p = d.pull}
           {@const forgeUrl = safeHref(p.url)}
           <header class="page-head">
             <p class="crumbs">
               <a href={href({ name: 'pulls', slug })}>Pull requests</a> /
-              <a class="mono" href={href(repoRoute(slug, fullName, connection))}>{fullName}</a>
+              <a class="mono" href={href(repoRoute(slug, fullName))}>{fullName}</a>
             </p>
             <h1>{p.title} <span class="muted">#{p.number}</span></h1>
             <p class="meta-line">
@@ -82,7 +69,7 @@
                   label="Re-run"
                   title="Re-run the review?"
                   body={`Queue a fresh review of ${fullName}#${p.number} at its current head.`}
-                  path={rerunPath(slug, { repository: fullName, number: p.number }, connection)}
+                  path={rerunPath(slug, { repository: fullName, number: p.number })}
                   done="Re-run queued"
                   ondone={() => res.load()}
                 />
@@ -125,6 +112,5 @@
           </section>
         {/snippet}
       </StateView>
-    {/if}
   </div>
 </main>

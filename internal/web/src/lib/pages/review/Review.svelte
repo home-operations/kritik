@@ -4,7 +4,7 @@
   import { REVIEW_TABS, type ReviewTab } from '../../routes';
   import { Resource, live } from '../../resource.svelte';
   import { isActive } from '../../format';
-  import { pullRoute, rerunPath, cancelPath } from '../../links';
+  import { pullRoute, rerunPath, cancelPath, accountApi } from '../../links';
   import { canAdmin } from '../../session.svelte';
   import ActionButton from '../../components/ActionButton.svelte';
   import type { ReviewDetail } from '../../types';
@@ -21,7 +21,7 @@
 
   let { slug, id, tab = 'summary' }: { slug: string; id: string; tab?: ReviewTab } = $props();
 
-  const base = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(id)}`);
+  const base = $derived(`${accountApi(slug)}/reviews/${encodeURIComponent(id)}`);
   const res = new Resource(() => getJSON<ReviewDetail>(base));
   // Bumped on every live refresh so the lazily-loaded tab data refetches too.
   let version = $state(0);

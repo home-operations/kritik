@@ -1,12 +1,12 @@
 // Package poller backstops missed webhooks: on the leader, every interval
-// and per connection, it lists the open pull requests updated since the
-// last poll and hands them to the ingest dispatcher as if a webhook had
+// and per account, it lists the open pull requests updated since the last
+// poll and hands them to the ingest dispatcher as if a webhook had
 // delivered them. Review jobs are unique on the head SHA, so a head the
 // webhook already enqueued is skipped as a duplicate, never reviewed twice.
-// A connection's first poll records the pull requests last updated
-// before kritik knew the connection as a baseline instead of reviewing
-// them: no webhook for them was missed, and on a large install reviewing
-// them all would be one burst of model calls nobody asked for.
+// An account's first poll records the pull requests last updated before
+// kritik knew the account as a baseline instead of reviewing them: no
+// webhook for them was missed, and on a large install reviewing them all
+// would be one burst of model calls nobody asked for.
 package poller
 
 import (
@@ -71,25 +71,23 @@ func (p *Poller) Run(ctx context.Context) error {
 	}
 }
 
-// PollAll polls every connection in the current configuration whose forge
-// the worker can build a client for.
+// PollAll polls every account in the current configuration through the
+// connection serving it.
 func (p *Poller) PollAll(ctx context.Context) {
 	file := p.Current.Get()
-	for ti := range file.Accounts {
-		account := &file.Accounts[ti]
-		for ii := range account.Connections {
-			in := &account.Connections[ii]
-			if ctx.Err() != nil {
-				return
-			}
-			n, err := p.Poll(ctx, file, account, in)
-			switch {
-			case err != nil:
-				p.Logger.Warn("poll failed", "connection", in.Name, "error", err)
-				p.Metrics.Poll(in.Name, "error", 0)
-			default:
-				p.Metrics.Poll(in.Name, "ok", n)
-			}
+	for i := range file.Accounts {
+		account := &file.Accounts[i]
+		in := file.ConnectionFor(account)
+		if in == nil || ctx.Err() != nil {
+			continue
+		}
+		n, err := p.Poll(ctx, file, account, in)
+		switch {
+		case err != nil:
+			p.Logger.Warn("poll failed", "connection", in.Name, "account", account.Key(), "error", err)
+			p.Metrics.Poll(in.Name, "error", 0)
+		default:
+			p.Metrics.Poll(in.Name, "ok", n)
 		}
 	}
 }
@@ -100,10 +98,10 @@ type pollRepo struct {
 	name, defaultBranch, indexed string
 }
 
-// Poll lists one connection's repositories and returns how many pull
-// requests were handed to the dispatcher. For a connection no webhook
-// has reached lately, it also checks each indexed repository's default
-// branch, since no push webhook will say it moved.
+// Poll lists one account's repositories through the connection serving it
+// and returns how many pull requests were handed to the dispatcher. For a
+// connection no webhook has reached lately, it also checks each indexed
+// repository's default branch, since no push webhook will say it moved.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) (int, error) {
 	var repos []pollRepo
 	var known time.Time
@@ -111,7 +109,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, '')
 			FROM repositories r LEFT JOIN index_runs g ON g.id = r.active_index_run_id
-			WHERE r.connection_id = $1 AND r.enabled ORDER BY r.name`, in.ID())
+			WHERE r.enabled ORDER BY r.name`)
 		if err != nil {
 			return err
 		}
@@ -122,8 +120,9 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		}); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, `SELECT i.created_at, s.last_polled_at, i.last_webhook_at FROM connections i
-			LEFT JOIN poll_state s ON s.connection_id = i.id WHERE i.id = $1`, in.ID()).Scan(&known, &polled, &delivered)
+		return tx.QueryRow(ctx, `SELECT a.created_at, s.last_polled_at, c.last_webhook_at FROM accounts a
+			CROSS JOIN connections c LEFT JOIN poll_state s ON s.account_id = a.id
+			WHERE a.id = $1 AND c.id = $2`, account.ID(), in.ID()).Scan(&known, &polled, &delivered)
 	})
 	if err != nil {
 		return 0, fmt.Errorf("poller: read state: %w", err)
@@ -172,8 +171,8 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		}
 	}
 	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO poll_state (connection_id, account_id, last_polled_at) VALUES ($1, $2, $3)
-			ON CONFLICT (connection_id) DO UPDATE SET last_polled_at = excluded.last_polled_at, updated_at = now()`, in.ID(), account.ID(), started)
+		_, err := tx.Exec(ctx, `INSERT INTO poll_state (account_id, last_polled_at) VALUES ($1, $2)
+			ON CONFLICT (account_id) DO UPDATE SET last_polled_at = excluded.last_polled_at, updated_at = now()`, account.ID(), started)
 		return err
 	})
 	if err != nil {

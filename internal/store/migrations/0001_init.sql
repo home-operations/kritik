@@ -14,19 +14,23 @@
 -- deployment configuration, so the leader creates it at startup (see
 -- EnsureIndexSchema).
 
+-- An account is a forge account, github/<name> (ADR-0014 §2.4). Its id
+-- derives from the forge and the lowercased name, so every role can address
+-- it without a lookup; it exists while a connection serves it.
 CREATE TABLE accounts (
-    id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug        text        NOT NULL UNIQUE,
-    managed_by  text        NOT NULL CHECK (managed_by IN ('file', 'dashboard')),
+    id          uuid        PRIMARY KEY,
+    forge       text        NOT NULL CHECK (forge IN ('github')),
+    name        text        NOT NULL,
     enabled     boolean     NOT NULL DEFAULT true,
     disabled_at timestamptz,
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
+-- A connection is one GitHub App serving the accounts it lists. It belongs
+-- to no account, so it carries no row-level security.
 CREATE TABLE connections (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id       uuid        NOT NULL REFERENCES accounts (id),
     name            text        NOT NULL UNIQUE,
     forge           text        NOT NULL CHECK (forge IN ('github')),
     -- The accounts the connection serves, as a public GitHub App
@@ -43,27 +47,25 @@ CREATE TABLE connections (
     -- once a minute.
     last_webhook_at timestamptz
 );
-CREATE INDEX connections_account_id_idx ON connections (account_id);
 
 CREATE TABLE repositories (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id       uuid        NOT NULL REFERENCES accounts (id),
-    connection_id   uuid        NOT NULL REFERENCES connections (id),
+    account_id      uuid        NOT NULL REFERENCES accounts (id),
     name            text        NOT NULL,
     default_branch  text        NOT NULL DEFAULT '',
-    managed_by      text        NOT NULL CHECK (managed_by IN ('file', 'dashboard', 'forge')),
+    managed_by      text        NOT NULL CHECK (managed_by IN ('dashboard', 'forge')),
     enabled         boolean     NOT NULL DEFAULT true,
     disabled_at     timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (connection_id, name)
+    UNIQUE (account_id, name)
 );
 CREATE INDEX repositories_account_id_idx ON repositories (account_id);
 -- The repository list, and a repository looked up by its full name.
 CREATE INDEX repositories_account_name_idx ON repositories (account_id, name, id);
 
 CREATE TABLE model_leases (
-    account_id  uuid   NOT NULL REFERENCES accounts (id),
+    account_id uuid   NOT NULL REFERENCES accounts (id),
     model_key  text   NOT NULL,
     slot       int    NOT NULL,
     job_id     bigint,
@@ -85,7 +87,7 @@ CREATE TABLE config_state (
 -- into the review prompt.
 CREATE TABLE pull_requests (
     id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id     uuid        NOT NULL REFERENCES accounts (id),
+    account_id    uuid        NOT NULL REFERENCES accounts (id),
     repository_id uuid        NOT NULL REFERENCES repositories (id),
     number        int         NOT NULL,
     title         text        NOT NULL DEFAULT '',
@@ -136,7 +138,7 @@ CREATE TABLE users (
 -- did and when.
 CREATE TABLE reviews (
     id                  uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id           uuid        NOT NULL REFERENCES accounts (id),
+    account_id          uuid        NOT NULL REFERENCES accounts (id),
     pull_request_id     uuid        NOT NULL REFERENCES pull_requests (id),
     head_sha            text        NOT NULL,
     merge_base_sha      text        NOT NULL DEFAULT '',
@@ -170,7 +172,7 @@ CREATE INDEX reviews_pull_request_idx ON reviews (pull_request_id, created_at DE
 -- index keeps the sweep's scan to rows still pending.
 CREATE TABLE runner_runs (
     id                 uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id          uuid        NOT NULL REFERENCES accounts (id),
+    account_id         uuid        NOT NULL REFERENCES accounts (id),
     review_id          uuid        REFERENCES reviews (id),
     kind               text        NOT NULL CHECK (kind IN ('review', 'index')),
     job_name           text        NOT NULL DEFAULT '',
@@ -203,7 +205,7 @@ CREATE INDEX runner_runs_review_created_idx ON runner_runs (review_id, created_a
 -- touches that no ignore glob covers.
 CREATE TABLE context_packs (
     runner_run_id  uuid        PRIMARY KEY REFERENCES runner_runs (id),
-    account_id      uuid        NOT NULL REFERENCES accounts (id),
+    account_id     uuid        NOT NULL REFERENCES accounts (id),
     head_sha       text        NOT NULL,
     base_sha       text        NOT NULL,
     patch_id       text        NOT NULL,
@@ -229,7 +231,7 @@ CREATE INDEX context_packs_account_id_idx ON context_packs (account_id);
 -- earlier one with the same fingerprint.
 CREATE TABLE findings (
     id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id        uuid        NOT NULL REFERENCES accounts (id),
+    account_id       uuid        NOT NULL REFERENCES accounts (id),
     review_id        uuid        NOT NULL REFERENCES reviews (id),
     path             text        NOT NULL,
     line             int         NOT NULL,
@@ -250,7 +252,7 @@ CREATE INDEX findings_review_idx ON findings (review_id);
 
 CREATE TABLE sticky_comments (
     pull_request_id  uuid   PRIMARY KEY REFERENCES pull_requests (id),
-    account_id        uuid   NOT NULL REFERENCES accounts (id),
+    account_id       uuid   NOT NULL REFERENCES accounts (id),
     forge_comment_id bigint NOT NULL,
     updated_at       timestamptz NOT NULL DEFAULT now()
 );
@@ -258,7 +260,7 @@ CREATE INDEX sticky_comments_account_id_idx ON sticky_comments (account_id);
 
 CREATE TABLE usage (
     id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id     uuid        NOT NULL REFERENCES accounts (id),
+    account_id    uuid        NOT NULL REFERENCES accounts (id),
     repository_id uuid        REFERENCES repositories (id),
     review_id     uuid        REFERENCES reviews (id),
     role          text        NOT NULL CHECK (role IN ('review', 'fallback', 'embedding', 'followup')),
@@ -279,7 +281,7 @@ CREATE INDEX usage_review_id_idx ON usage (review_id) WHERE review_id IS NOT NUL
 -- the worker embeds it into index_chunks.
 CREATE TABLE index_runs (
     id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id     uuid        NOT NULL REFERENCES accounts (id),
+    account_id    uuid        NOT NULL REFERENCES accounts (id),
     repository_id uuid        NOT NULL REFERENCES repositories (id),
     commit_sha    text        NOT NULL,
     base_sha      text        NOT NULL DEFAULT '',
@@ -302,7 +304,7 @@ ALTER TABLE runner_runs  ADD COLUMN index_run_id uuid REFERENCES index_runs (id)
 
 CREATE TABLE index_packs (
     runner_run_id uuid        PRIMARY KEY REFERENCES runner_runs (id),
-    account_id     uuid        NOT NULL REFERENCES accounts (id),
+    account_id    uuid        NOT NULL REFERENCES accounts (id),
     commit_sha    text        NOT NULL,
     base_sha      text        NOT NULL DEFAULT '',
     mode          text        NOT NULL CHECK (mode IN ('full', 'incremental')),
@@ -315,7 +317,7 @@ CREATE INDEX index_packs_account_id_idx ON index_packs (account_id);
 CREATE TABLE index_staging (
     id            bigserial   PRIMARY KEY,
     runner_run_id uuid        NOT NULL REFERENCES runner_runs (id),
-    account_id     uuid        NOT NULL REFERENCES accounts (id),
+    account_id    uuid        NOT NULL REFERENCES accounts (id),
     path          text        NOT NULL,
     start_line    int         NOT NULL,
     end_line      int         NOT NULL,
@@ -342,7 +344,7 @@ CREATE TABLE index_schema (
 -- webhook cannot answer twice.
 CREATE TABLE followups (
     id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id        uuid        NOT NULL REFERENCES accounts (id),
+    account_id       uuid        NOT NULL REFERENCES accounts (id),
     pull_request_id  uuid        NOT NULL REFERENCES pull_requests (id),
     comment_id       bigint      NOT NULL,
     author           text        NOT NULL DEFAULT '',
@@ -362,15 +364,13 @@ CREATE INDEX followups_account_created_idx ON followups (account_id, created_at 
 -- A follow-up looked up by the comment it answered.
 CREATE INDEX followups_account_comment_idx ON followups (account_id, comment_id);
 
--- One row per connection: when the leader last listed its open pull
+-- One row per account: when the leader last listed its open pull
 -- requests, so a restarted leader resumes where the previous one stopped.
 CREATE TABLE poll_state (
-    connection_id   uuid        PRIMARY KEY REFERENCES connections (id),
-    account_id       uuid        NOT NULL REFERENCES accounts (id),
-    last_polled_at  timestamptz NOT NULL,
-    updated_at      timestamptz NOT NULL DEFAULT now()
+    account_id     uuid        PRIMARY KEY REFERENCES accounts (id),
+    last_polled_at timestamptz NOT NULL,
+    updated_at     timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX poll_state_account_id_idx ON poll_state (account_id);
 
 -- An agentic review's tool loop, written by the runner after its context
 -- pack: how it stopped ('skipped', with the skip reason as the error, when
@@ -381,7 +381,7 @@ CREATE INDEX poll_state_account_id_idx ON poll_state (account_id);
 -- lists as the sources consulted.
 CREATE TABLE agent_runs (
     runner_run_id      uuid           PRIMARY KEY REFERENCES runner_runs (id),
-    account_id          uuid           NOT NULL REFERENCES accounts (id),
+    account_id         uuid           NOT NULL REFERENCES accounts (id),
     stop_reason        text           NOT NULL
         CHECK (stop_reason IN ('submitted', 'max_steps', 'budget', 'no_submit', 'canceled', 'error', 'skipped')),
     result             jsonb,
@@ -408,7 +408,7 @@ CREATE INDEX agent_runs_account_id_idx ON agent_runs (account_id);
 CREATE TABLE gateway_tokens (
     token_hash    bytea       PRIMARY KEY,
     runner_run_id uuid        NOT NULL REFERENCES runner_runs (id),
-    account_id     uuid        NOT NULL REFERENCES accounts (id),
+    account_id    uuid        NOT NULL REFERENCES accounts (id),
     review_id     uuid        NOT NULL REFERENCES reviews (id),
     repository_id uuid        NOT NULL REFERENCES repositories (id),
     -- The provider/model references the run was granted.
@@ -482,28 +482,25 @@ CREATE INDEX login_states_expires_at_idx ON login_states (expires_at);
 -- audit_events records dashboard-driven actions across every account, so an
 -- instance admin can read it without an account context; no RLS.
 CREATE TABLE audit_events (
-    id        bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    at        timestamptz NOT NULL DEFAULT now(),
-    user_id   uuid        REFERENCES users (id) ON DELETE SET NULL,
+    id         bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    at         timestamptz NOT NULL DEFAULT now(),
+    user_id    uuid        REFERENCES users (id) ON DELETE SET NULL,
     account_id uuid        REFERENCES accounts (id),
-    action    text        NOT NULL,
-    target    text        NOT NULL DEFAULT '',
-    detail    jsonb       NOT NULL DEFAULT '{}'::jsonb
+    action     text        NOT NULL,
+    target     text        NOT NULL DEFAULT '',
+    detail     jsonb       NOT NULL DEFAULT '{}'::jsonb
 );
 CREATE INDEX audit_events_account_at_idx ON audit_events (account_id, at DESC);
 
--- dashboard_accounts holds a dashboard-authored account spec pending or
--- already applied by ApplyConfig, keyed by slug rather than account_id: the
--- accounts row itself is created later, by ApplyConfig, so a foreign key to
--- accounts(id) is not possible here. No RLS: it is read before the account it
--- describes exists.
-CREATE TABLE dashboard_accounts (
-    slug       text        PRIMARY KEY,
+-- One row: the instance spec the dashboard edits (ADR-0014 §2.2), every
+-- setting but sign-in and the file's connections, with its secrets sealed.
+-- revision increments on each write. No RLS: it is instance-wide, and read
+-- before any account is known.
+CREATE TABLE instance_config (
+    id         int         PRIMARY KEY CHECK (id = 1),
     spec       jsonb       NOT NULL,
-    revision   bigint      NOT NULL DEFAULT 1,
-    created_by uuid        REFERENCES users (id) ON DELETE SET NULL,
+    revision   bigint      NOT NULL,
     updated_by uuid        REFERENCES users (id) ON DELETE SET NULL,
-    created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -524,7 +521,7 @@ CREATE TABLE dashboard_accounts (
 -- recorded whole. Only agent steps read it back.
 CREATE TABLE model_calls (
     id                  uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    account_id           uuid        NOT NULL REFERENCES accounts (id),
+    account_id          uuid        NOT NULL REFERENCES accounts (id),
     review_id           uuid        REFERENCES reviews (id),
     runner_run_id       uuid        REFERENCES runner_runs (id),
     followup_comment_id bigint,
@@ -561,8 +558,7 @@ CREATE INDEX model_calls_account_created_idx ON model_calls (account_id, created
 CREATE INDEX model_calls_created_at_idx ON model_calls (created_at);
 CREATE INDEX model_calls_followup_comment_idx ON model_calls (followup_comment_id) WHERE followup_comment_id IS NOT NULL;
 
-ALTER TABLE accounts         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE connections   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE accounts        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE repositories    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE model_leases    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pull_requests   ENABLE ROW LEVEL SECURITY;
@@ -583,9 +579,6 @@ ALTER TABLE model_calls     ENABLE ROW LEVEL SECURITY;
 CREATE POLICY account_isolation ON accounts
     USING      (id = NULLIF(current_setting('app.account_id', true), '')::uuid)
     WITH CHECK (id = NULLIF(current_setting('app.account_id', true), '')::uuid);
-CREATE POLICY account_isolation ON connections
-    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
-    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
 CREATE POLICY account_isolation ON repositories
     USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
     WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
@@ -726,16 +719,16 @@ CREATE TRIGGER kritik_notify_model_call
     FOR EACH ROW
     EXECUTE FUNCTION kritik_notify_event('model_call');
 
--- kritik_notify_config publishes the account slug whenever a dashboard-edited
--- account spec changes, so the leader can re-apply it without polling.
+-- kritik_notify_config publishes the spec's revision whenever the dashboard
+-- writes it, so every replica re-merges without polling.
 CREATE FUNCTION kritik_notify_config() RETURNS trigger AS $$
 BEGIN
-    PERFORM pg_notify('kritik_config', NEW.slug);
+    PERFORM pg_notify('kritik_config', NEW.revision::text);
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER kritik_notify_dashboard_account
-    AFTER INSERT OR UPDATE ON dashboard_accounts
+CREATE TRIGGER kritik_notify_instance_config
+    AFTER INSERT OR UPDATE ON instance_config
     FOR EACH ROW
     EXECUTE FUNCTION kritik_notify_config();

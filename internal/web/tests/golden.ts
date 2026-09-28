@@ -33,7 +33,8 @@ export const usageSeries = golden<T.UsageSeries>('usage_series');
 export const liveEvent = golden<T.LiveEvent>('event');
 export const meta = golden<T.Meta>('meta');
 export const accountConfig = golden<T.AccountConfig>('account_config');
-export const accountWriteResult = golden<T.AccountWriteResult>('account_write_result');
+export const configWriteResult = golden<T.ConfigWriteResult>('config_write_result');
+export const instanceConfig = golden<T.InstanceConfig>('instance_config');
 export const auditEvent = golden<T.AuditEvent>('audit_event');
 export const accepted = golden<T.Accepted>('accepted');
 
@@ -80,6 +81,7 @@ export function defaultApi(): [RegExp, Body][] {
     [/\/api\/v1\/accounts$/, [accountSummary]],
     [/\/api\/v1\/operator\/accounts$/, [operatorAccount]],
     [/\/api\/v1\/operator\/instance$/, [instanceSetting]],
+    [/\/api\/v1\/config$/, instanceConfig],
     [new RegExp(`${t}/repos$`), repoPage],
     [new RegExp(`${t}/repos/alpha/one$`), repoDetail],
     [

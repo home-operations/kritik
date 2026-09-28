@@ -14,20 +14,19 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
 const configYAML = `
-accounts:
-  - slug: onedr0p
-    connections:
-      - name: bot-ross
-        forge: github
-        accounts: [onedr0p, home-operations]
-        app:
-          clientId: Iv1.x
-          privateKey: { env: TEST_PEM }
-          webhookSecret: { env: TEST_SECRET }
+connections:
+  - name: bot-ross
+    forge: github
+    accounts: [onedr0p, home-operations]
+    app:
+      clientId: Iv1.x
+      privateKey: { env: TEST_PEM }
+      webhookSecret: { env: TEST_SECRET }
 `
 
 type fakeDispatcher struct {
@@ -43,7 +42,7 @@ func (f *fakeDispatcher) Dispatch(_ context.Context, req Request) (Outcome, erro
 	return f.out, f.err
 }
 
-func (f *fakeDispatcher) RecordDelivery(_ context.Context, _, connectionID string) error {
+func (f *fakeDispatcher) RecordDelivery(_ context.Context, connectionID string) error {
 	f.delivered = append(f.delivered, connectionID)
 	return f.recordErr
 }
@@ -63,10 +62,7 @@ func setup(t *testing.T, disp Dispatcher) *httptest.Server {
 	t.Helper()
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
-	f, err := configfile.Parse([]byte(configYAML))
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := configfiletest.Load(t, configYAML)
 	h := NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if r, ok := disp.(DeliveryRecorder); ok {
 		h.Deliveries = r
@@ -138,7 +134,7 @@ func TestHandler(t *testing.T) {
 			}
 			if tt.dispatched {
 				req := disp.got[0]
-				if req.Account.Slug != "onedr0p" || req.Connection.Name != "bot-ross" || req.Event.Kind != webhook.KindPullRequest {
+				if !strings.EqualFold(req.Account.Name, req.Event.Account) || req.Connection.Name != "bot-ross" || req.Event.Kind != webhook.KindPullRequest {
 					t.Fatalf("request = %+v", req)
 				}
 			}
