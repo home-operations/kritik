@@ -17,8 +17,7 @@ of its alt text, and carries its own annotation. */}}
 
 kritik ships as an OCI Helm chart. It needs a Postgres with
 [VectorChord](https://github.com/tensorchord/VectorChord) and pgvector, three
-roles, a sealing key, the configuration file, and the secrets the file
-references:
+roles, a sealing key, its public URL, and a way to sign in:
 
 ```sh
 helm install kritik oci://ghcr.io/home-operations/charts/kritik \
@@ -28,12 +27,34 @@ helm install kritik oci://ghcr.io/home-operations/charts/kritik \
   --values my-values.yaml
 ```
 
-where `my-values.yaml` carries `config.file` (sign-in and any GitHub App
-that already exists), `secretMounts` for the keys and secrets the file
-references by path, and `dashboard.keySecret`. Model providers, defaults,
-accounts and their repositories are the instance configuration, set in the
-dashboard's admin console, as is the embedder that turns on the vector index
-and the similar-code context stage.
+where `my-values.yaml` sets:
+
+```yaml
+web:
+  url: https://kritik.example.com
+dashboard:
+  keySecret: { name: kritik-dashboard-key }
+auth:
+  admin:
+    passwordSecret: { name: kritik-admin }
+ingress:
+  enabled: true
+  tls: [{ hosts: [kritik.example.com], secretName: kritik-tls }]
+```
+
+`web.url` is the one public URL: the dashboard at it, and the webhook
+listener under it at `/hooks`, which the chart's Ingress or HTTPRoute
+routes. `auth` renders the `KRITIK_AUTH_*` variables: here the local admin,
+with its password from an existing Secret, which is the way into a fresh
+instance. OIDC and GitHub sign-in, with role mappings, set the same way
+(see [the configuration reference](https://github.com/home-operations/kritik/blob/main/docs/configuration.md)).
+
+The first admin to sign in is met by a setup wizard that creates the GitHub
+App, sets a model key and registers the repositories to review. Model
+providers, defaults, accounts, repositories and the embedder are the
+instance configuration, kept in Postgres and edited in the dashboard. An App
+that already exists can instead be declared in `config.file`, with its
+secrets under `secretMounts`.
 
 ### Database
 

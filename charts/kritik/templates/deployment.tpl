@@ -14,11 +14,14 @@
 {{- if and (include "kritik.hasWorker" .) (not .Values.database.runner.existingSecret) -}}
 {{- fail "database.runner.existingSecret is required for roles.all / roles.worker: runner Jobs connect with it" -}}
 {{- end -}}
-{{- if and .Values.roles.web.enabled (not .Values.web.url) -}}
-{{- fail "web.url is required when roles.web.enabled is true" -}}
+{{- if not .Values.web.url -}}
+{{- fail "web.url is required: the dashboard's public URL, which the webhook listener shares under /hooks" -}}
 {{- end -}}
-{{- if and .Values.web.url (not (regexMatch "^https?://" .Values.web.url)) -}}
+{{- if not (regexMatch "^https?://" .Values.web.url) -}}
 {{- fail "web.url must be an http(s) URL" -}}
+{{- end -}}
+{{- if and (not .Values.roles.all.enabled) (not .Values.roles.web.enabled) -}}
+{{- fail "the split topology needs roles.web: kritik is configured in its dashboard" -}}
 {{- end -}}
 {{- range $role := $roles }}
 {{- $spec := index $.Values.roles $role }}
@@ -54,7 +57,7 @@ spec:
         # Selected by the gateway Service and the runner network policy.
         kritik.home-operations.com/gateway: "true"
         {{- end }}
-        {{- if or (eq $role "web") (and (eq $role "all") $.Values.web.url) }}
+        {{- if or (eq $role "web") (eq $role "all") }}
         # Selected by the dashboard Service and the web-ingress network policy rule.
         kritik.home-operations.com/web: "true"
         {{- end }}
@@ -91,8 +94,13 @@ spec:
           securityContext:
             {{- tpl (toYaml $.Values.securityContext) $ | nindent 12 }}
           env:
+            {{- if include "kritik.hasConfigFile" $ }}
             - name: KRITIK_CONFIG_FILE
               value: /etc/kritik/config.yaml
+            {{- end }}
+            - name: KRITIK_WEB_URL
+              value: {{ tpl $.Values.web.url $ | quote }}
+            {{- include "kritik.authEnv" $ | nindent 12 }}
             - name: KRITIK_CONFIG_RELOAD_INTERVAL
               value: {{ tpl (toString $.Values.config.reloadInterval) $ | quote }}
             - name: KRITIK_LOG_LEVEL
@@ -159,9 +167,7 @@ spec:
             - name: KRITIK_INDEX_WORKERS
               value: {{ $.Values.config.indexWorkers | quote }}
             {{- end }}
-            {{- if or (eq $role "web") (and (eq $role "all") $.Values.web.url) }}
-            - name: KRITIK_WEB_URL
-              value: {{ tpl $.Values.web.url $ | quote }}
+            {{- if or (eq $role "web") (eq $role "all") }}
             - name: KRITIK_WEB_ADDR
               value: {{ printf ":%d" (int $.Values.web.port) | quote }}
             {{- end }}
@@ -182,7 +188,7 @@ spec:
               containerPort: {{ $.Values.gateway.port }}
               protocol: TCP
             {{- end }}
-            {{- if or (eq $role "web") (and (eq $role "all") $.Values.web.url) }}
+            {{- if or (eq $role "web") (eq $role "all") }}
             - name: web
               containerPort: {{ $.Values.web.port }}
               protocol: TCP
@@ -200,9 +206,11 @@ spec:
             {{- tpl (toYaml .) $ | nindent 12 }}
           {{- end }}
           volumeMounts:
+            {{- if include "kritik.hasConfigFile" $ }}
             - name: config
               mountPath: /etc/kritik
               readOnly: true
+            {{- end }}
             {{- range $.Values.secretMounts }}
             - name: {{ .name }}
               mountPath: {{ tpl .mountPath $ }}
@@ -212,9 +220,11 @@ spec:
             {{- tpl (toYaml .) $ | nindent 12 }}
             {{- end }}
       volumes:
+        {{- if include "kritik.hasConfigFile" $ }}
         - name: config
           configMap:
             name: {{ include "kritik.configMapName" $ | quote }}
+        {{- end }}
         {{- range $.Values.secretMounts }}
         - name: {{ .name }}
           secret:

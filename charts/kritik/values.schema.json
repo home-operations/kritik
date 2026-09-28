@@ -7,8 +7,162 @@
       "title": "affinity",
       "type": "object"
     },
+    "auth": {
+      "description": "How people sign in (see docs/configuration.md), rendered to the\nKRITIK_AUTH_* variables, which win over the configuration file's `auth`\nblock. Each is left out when empty; secrets come from existing Secrets.",
+      "properties": {
+        "admin": {
+          "properties": {
+            "passwordSecret": {
+              "properties": {
+                "key": {
+                  "default": "password",
+                  "description": "Key in that Secret.",
+                  "title": "key",
+                  "type": "string"
+                },
+                "name": {
+                  "default": "",
+                  "description": "Existing Secret holding the local admin's password; the local admin exists only while one is set.",
+                  "title": "name",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "passwordSecret",
+              "type": "object"
+            },
+            "user": {
+              "default": "",
+              "description": "The local admin's username; empty is `admin`.",
+              "title": "user",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "admin",
+          "type": "object"
+        },
+        "github": {
+          "properties": {
+            "clientId": {
+              "default": "",
+              "description": "Client ID of an OAuth App, or of a GitHub App, to sign in with GitHub.",
+              "title": "clientId",
+              "type": "string"
+            },
+            "clientSecretSecret": {
+              "properties": {
+                "key": {
+                  "default": "client-secret",
+                  "description": "Key in that Secret.",
+                  "title": "key",
+                  "type": "string"
+                },
+                "name": {
+                  "default": "",
+                  "description": "Existing Secret holding the client secret.",
+                  "title": "name",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "clientSecretSecret",
+              "type": "object"
+            },
+            "roleMapping": {
+              "default": "",
+              "description": "CEL expression giving a role, or a map of accounts to roles.",
+              "title": "roleMapping",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "github",
+          "type": "object"
+        },
+        "oidc": {
+          "properties": {
+            "clientId": {
+              "default": "",
+              "description": "OAuth client ID at the issuer.",
+              "title": "clientId",
+              "type": "string"
+            },
+            "clientSecretSecret": {
+              "properties": {
+                "key": {
+                  "default": "client-secret",
+                  "description": "Key in that Secret.",
+                  "title": "key",
+                  "type": "string"
+                },
+                "name": {
+                  "default": "",
+                  "description": "Existing Secret holding the client secret.",
+                  "title": "name",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "clientSecretSecret",
+              "type": "object"
+            },
+            "defaultRole": {
+              "default": "",
+              "description": "Role when the mapping places nobody: none (the default) or member.",
+              "title": "defaultRole",
+              "type": "string"
+            },
+            "issuer": {
+              "default": "",
+              "description": "OIDC issuer (https); set, with a client, to sign in through it.",
+              "title": "issuer",
+              "type": "string"
+            },
+            "name": {
+              "default": "",
+              "description": "The sign-in button's label; empty is \"SSO\".",
+              "title": "name",
+              "type": "string"
+            },
+            "roleMapping": {
+              "default": "",
+              "description": "CEL expression giving a role, or a map of accounts to roles (docs/configuration.md).",
+              "title": "roleMapping",
+              "type": "string"
+            },
+            "rolesClaim": {
+              "default": "",
+              "description": "ID token or UserInfo claim a role mapping reads as `roles`.",
+              "title": "rolesClaim",
+              "type": "string"
+            },
+            "scopes": {
+              "description": "Scopes to request; empty is openid, email and profile.",
+              "items": {
+                "required": []
+              },
+              "title": "scopes",
+              "type": "array"
+            }
+          },
+          "required": [],
+          "title": "oidc",
+          "type": "object"
+        },
+        "sessionTTL": {
+          "default": "",
+          "description": "How long a dashboard session lasts (Go duration, 5m to 720h); empty is 12h.",
+          "title": "sessionTTL",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "auth",
+      "type": "object"
+    },
     "config": {
-      "description": "The configuration file: sign-in (`auth`) and GitHub Apps that already\nexist (`connections`), and nothing else. Every key in it also has a\n`KRITIK_*` environment variable, which wins over the file. Model\nproviders, defaults, accounts and their repositories are the instance\nconfiguration, set in the dashboard's admin console and kept in\nPostgres. The file is either inline as `file`, rendered into a\nchart-managed ConfigMap, or an existing ConfigMap with a `config.yaml`\nkey. Secret material never goes in the file: it references files under\n`secretMounts` or environment variables. Every replica re-reads the file\non `reloadInterval`; the leader applies it to the store.",
+      "description": "The optional configuration file: sign-in (`auth`) and GitHub Apps that\nalready exist (`connections`), and nothing else. Every key in it also has\na `KRITIK_*` environment variable, which wins over the file; the `auth`\nvalues above render those. Model\nproviders, defaults, accounts and their repositories are the instance\nconfiguration, set in the dashboard's admin console and kept in\nPostgres. The file is either inline as `file`, rendered into a\nchart-managed ConfigMap, or an existing ConfigMap with a `config.yaml`\nkey. Secret material never goes in the file: it references files under\n`secretMounts` or environment variables. Every replica re-reads the file\non `reloadInterval`; the leader applies it to the store.",
       "properties": {
         "existingConfigMap": {
           "default": "",
@@ -25,7 +179,7 @@
           "type": "array"
         },
         "file": {
-          "description": "(required unless `existingConfigMap` is set) The configuration file, as YAML: `auth` and `connections`. Passed through verbatim, not tpl'd. See docs/dashboard.md and docs/connecting-a-forge.md.",
+          "description": "(optional) The configuration file, as YAML: `auth` and `connections`. Passed through verbatim, not tpl'd. See docs/configuration.md.",
           "required": [],
           "title": "file",
           "type": "object"
@@ -226,7 +380,6 @@
       "type": "object"
     },
     "httpRoute": {
-      "description": "Gateway API HTTPRoute, an alternative to `ingress` for the webhook listener.",
       "properties": {
         "annotations": {
           "description": "HTTPRoute annotations.",
@@ -242,56 +395,15 @@
         },
         "enabled": {
           "default": false,
-          "description": "Expose the webhook listener via a Gateway API HTTPRoute.",
+          "description": "Expose web.url through a Gateway API HTTPRoute.",
           "title": "enabled",
           "type": "boolean"
-        },
-        "hostnames": {
-          "description": "Hostnames matched against the Host header (templated).",
-          "items": {
-            "required": []
-          },
-          "title": "hostnames",
-          "type": "array"
         },
         "labels": {
           "description": "HTTPRoute labels.",
           "required": [],
           "title": "labels",
           "type": "object"
-        },
-        "matches": {
-          "description": "Match conditions for the route.",
-          "items": {
-            "anyOf": [
-              {
-                "properties": {
-                  "path": {
-                    "properties": {
-                      "type": {
-                        "default": "PathPrefix",
-                        "title": "type",
-                        "type": "string"
-                      },
-                      "value": {
-                        "default": "/hooks",
-                        "title": "value",
-                        "type": "string"
-                      }
-                    },
-                    "required": [],
-                    "title": "path",
-                    "type": "object"
-                  }
-                },
-                "required": [],
-                "type": "object"
-              }
-            ],
-            "required": []
-          },
-          "title": "matches",
-          "type": "array"
         },
         "parentRefs": {
           "description": "Gateways (and listeners) this route attaches to.",
@@ -300,87 +412,6 @@
           },
           "title": "parentRefs",
           "type": "array"
-        },
-        "web": {
-          "description": "The dashboard's own HTTPRoute, separate from the webhook listener's above.",
-          "properties": {
-            "annotations": {
-              "description": "HTTPRoute annotations.",
-              "required": [],
-              "title": "annotations",
-              "type": "object"
-            },
-            "apiVersion": {
-              "default": "",
-              "description": "HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1.",
-              "title": "apiVersion",
-              "type": "string"
-            },
-            "enabled": {
-              "default": false,
-              "description": "Expose the dashboard via a Gateway API HTTPRoute.",
-              "title": "enabled",
-              "type": "boolean"
-            },
-            "hostnames": {
-              "description": "Hostnames matched against the Host header (templated).",
-              "items": {
-                "required": []
-              },
-              "title": "hostnames",
-              "type": "array"
-            },
-            "labels": {
-              "description": "HTTPRoute labels.",
-              "required": [],
-              "title": "labels",
-              "type": "object"
-            },
-            "matches": {
-              "description": "Match conditions for the route.",
-              "items": {
-                "anyOf": [
-                  {
-                    "properties": {
-                      "path": {
-                        "properties": {
-                          "type": {
-                            "default": "PathPrefix",
-                            "title": "type",
-                            "type": "string"
-                          },
-                          "value": {
-                            "default": "/",
-                            "title": "value",
-                            "type": "string"
-                          }
-                        },
-                        "required": [],
-                        "title": "path",
-                        "type": "object"
-                      }
-                    },
-                    "required": [],
-                    "type": "object"
-                  }
-                ],
-                "required": []
-              },
-              "title": "matches",
-              "type": "array"
-            },
-            "parentRefs": {
-              "description": "Gateways (and listeners) this route attaches to.",
-              "items": {
-                "required": []
-              },
-              "title": "parentRefs",
-              "type": "array"
-            }
-          },
-          "required": [],
-          "title": "web",
-          "type": "object"
         }
       },
       "required": [],
@@ -428,6 +459,7 @@
       "type": "array"
     },
     "ingress": {
+      "description": "One Ingress, or one Gateway API HTTPRoute, for `web.url`: `/hooks` under it\ngoes to the webhook listener and everything else to the dashboard. The host\nand paths come from `web.url`.",
       "properties": {
         "annotations": {
           "description": "Ingress annotations.",
@@ -443,143 +475,17 @@
         },
         "enabled": {
           "default": false,
-          "description": "Expose the webhook listener via an Ingress.",
+          "description": "Expose web.url through an Ingress.",
           "title": "enabled",
           "type": "boolean"
         },
-        "hosts": {
-          "description": "Ingress hosts and their paths.",
-          "items": {
-            "anyOf": [
-              {
-                "properties": {
-                  "host": {
-                    "default": "kritik.example.com",
-                    "title": "host",
-                    "type": "string"
-                  },
-                  "paths": {
-                    "items": {
-                      "anyOf": [
-                        {
-                          "properties": {
-                            "path": {
-                              "default": "/hooks",
-                              "title": "path",
-                              "type": "string"
-                            },
-                            "pathType": {
-                              "default": "Prefix",
-                              "title": "pathType",
-                              "type": "string"
-                            }
-                          },
-                          "required": [],
-                          "type": "object"
-                        }
-                      ],
-                      "required": []
-                    },
-                    "title": "paths",
-                    "type": "array"
-                  }
-                },
-                "required": [],
-                "type": "object"
-              }
-            ],
-            "required": []
-          },
-          "title": "hosts",
-          "type": "array"
-        },
         "tls": {
-          "description": "Ingress TLS configuration.",
+          "description": "Ingress TLS configuration, e.g. `[{hosts: [kritik.example.com], secretName: kritik-tls}]`.",
           "items": {
             "required": []
           },
           "title": "tls",
           "type": "array"
-        },
-        "web": {
-          "description": "The dashboard's own Ingress, separate from the webhook listener's above.",
-          "properties": {
-            "annotations": {
-              "description": "Ingress annotations.",
-              "required": [],
-              "title": "annotations",
-              "type": "object"
-            },
-            "className": {
-              "default": "",
-              "description": "IngressClass name.",
-              "title": "className",
-              "type": "string"
-            },
-            "enabled": {
-              "default": false,
-              "description": "Expose the dashboard via an Ingress.",
-              "title": "enabled",
-              "type": "boolean"
-            },
-            "hosts": {
-              "description": "Ingress hosts and their paths.",
-              "items": {
-                "anyOf": [
-                  {
-                    "properties": {
-                      "host": {
-                        "default": "dash.example.com",
-                        "title": "host",
-                        "type": "string"
-                      },
-                      "paths": {
-                        "items": {
-                          "anyOf": [
-                            {
-                              "properties": {
-                                "path": {
-                                  "default": "/",
-                                  "title": "path",
-                                  "type": "string"
-                                },
-                                "pathType": {
-                                  "default": "Prefix",
-                                  "title": "pathType",
-                                  "type": "string"
-                                }
-                              },
-                              "required": [],
-                              "type": "object"
-                            }
-                          ],
-                          "required": []
-                        },
-                        "title": "paths",
-                        "type": "array"
-                      }
-                    },
-                    "required": [],
-                    "type": "object"
-                  }
-                ],
-                "required": []
-              },
-              "title": "hosts",
-              "type": "array"
-            },
-            "tls": {
-              "description": "Ingress TLS configuration.",
-              "items": {
-                "required": []
-              },
-              "title": "tls",
-              "type": "array"
-            }
-          },
-          "required": [],
-          "title": "web",
-          "type": "object"
         }
       },
       "required": [],
@@ -884,13 +790,13 @@
       "type": "object"
     },
     "roles": {
-      "description": "kritik is one binary with three roles. `all` runs ingest and worker in one\nprocess (the usual shape); a split topology enables `ingest` and `worker`\nseparately and scales each. Every enabled role renders its own Deployment\nfrom the same image, config and secrets. Runner pods are not a role here:\nthe worker creates them as Jobs per review and index.",
+      "description": "kritik is one binary with four roles. `all` runs ingest, worker and the\ndashboard in one process (the usual shape); a split topology enables\n`ingest`, `worker` and `web` separately and scales each. Every enabled role\nrenders its own Deployment from the same image, config and secrets. Runner\npods are not a role here: the worker creates them as Jobs per review and\nindex.",
       "properties": {
         "all": {
           "properties": {
             "enabled": {
               "default": true,
-              "description": "Run the single-process topology: webhooks, leader duties and the worker in one Deployment.",
+              "description": "Run the single-process topology: webhooks, leader duties, the worker and the dashboard in one Deployment.",
               "title": "enabled",
               "type": "boolean"
             },
@@ -940,7 +846,7 @@
           "properties": {
             "enabled": {
               "default": false,
-              "description": "Run the dashboard as its own Deployment (split topology). Requires `web.url` to be set.",
+              "description": "Run the dashboard as its own Deployment (split topology, where it is required: kritik is configured there).",
               "title": "enabled",
               "type": "boolean"
             },
@@ -1109,7 +1015,7 @@
         },
         "webPort": {
           "default": 8083,
-          "description": "Dashboard port, served by `all` (once `web.url` is set) and `web` pods.",
+          "description": "Dashboard port, served by `all` and `web` pods.",
           "title": "webPort",
           "type": "integer"
         }
@@ -1215,17 +1121,17 @@
       "type": "array"
     },
     "web": {
-      "description": "The dashboard's public URL and listen address. `web.url` is required for\n`roles.web`; setting it on the `all` topology also serves the dashboard\nfrom the same process.",
+      "description": "The one public URL: the dashboard at `web.url`, and the webhook listener\nunder it at `/hooks`, which the Ingress or HTTPRoute below route.",
       "properties": {
         "port": {
           "default": 8083,
-          "description": "Dashboard port, served by `all` (once `web.url` is set) and `web` pods.",
+          "description": "Dashboard port, served by `all` and `web` pods.",
           "title": "port",
           "type": "integer"
         },
         "url": {
           "default": "",
-          "description": "(required for roles.web) Public URL the dashboard is reached at, e.g. https://kritik.example.com. Must be an absolute http(s) URL with no query or fragment.",
+          "description": "(required) Public URL the dashboard is reached at, e.g. https://kritik.example.com; the webhook listener shares it under `/hooks`, and the GitHub Apps the dashboard creates send their webhooks there. Must be an absolute http(s) URL with no query or fragment.",
           "title": "url",
           "type": "string"
         }

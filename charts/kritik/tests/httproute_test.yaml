@@ -9,73 +9,40 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: renders only the webhook HTTPRoute when enabled without a web role
+  - it: routes web.url's /hooks to the webhook listener and the rest to the dashboard
     set:
       httpRoute.enabled: true
+      httpRoute.parentRefs:
+        - name: gateway
+          namespace: network
     asserts:
       - hasDocuments:
           count: 1
       - equal:
-          path: metadata.name
-          value: RELEASE-NAME-kritik
+          path: apiVersion
+          value: gateway.networking.k8s.io/v1
       - equal:
-          path: spec.rules[0].backendRefs[0].name
-          value: RELEASE-NAME-kritik
+          path: spec.parentRefs[0].name
+          value: gateway
       - equal:
-          path: spec.rules[0].backendRefs[0].port
-          value: 8080
+          path: spec.hostnames
+          value: [kritik.example.com]
+      - equal:
+          path: spec.rules
+          value:
+            - matches: [{ path: { type: PathPrefix, value: /hooks } }]
+              backendRefs: [{ name: RELEASE-NAME-kritik, port: 8080 }]
+            - matches: [{ path: { type: PathPrefix, value: / } }]
+              backendRefs: [{ name: RELEASE-NAME-kritik-web, port: 8083 }]
 
-  - it: leaves the dashboard HTTPRoute out until httpRoute.web.enabled is set, even with a web role
+  - it: keeps web.url's path
     set:
-      roles.all.enabled: false
-      roles.web.enabled: true
-      web.url: https://dash.example.com
+      httpRoute.enabled: true
+      web.url: https://kritik.example.com/kritik
     asserts:
-      - hasDocuments:
-          count: 0
-
-  - it: renders the dashboard HTTPRoute when enabled with a web role
-    set:
-      roles.all.enabled: false
-      roles.web.enabled: true
-      web.url: https://dash.example.com
-      httpRoute.web.enabled: true
-    asserts:
-      - hasDocuments:
-          count: 1
-      - equal:
-          path: metadata.name
-          value: RELEASE-NAME-kritik-web
-      - equal:
-          path: spec.rules[0].backendRefs[0].name
-          value: RELEASE-NAME-kritik-web
-      - equal:
-          path: spec.rules[0].backendRefs[0].port
-          value: 8083
       - equal:
           path: spec.rules[0].matches[0].path.value
-          value: /
-
-  - it: leaves the dashboard HTTPRoute out when httpRoute.web.enabled is set but no role serves the web UI
-    set:
-      httpRoute.web.enabled: true
-    asserts:
-      - hasDocuments:
-          count: 0
-
-  - it: renders both HTTPRoutes when the all role serves the dashboard
-    set:
-      web.url: https://dash.example.com
-      httpRoute.enabled: true
-      httpRoute.web.enabled: true
-    asserts:
-      - hasDocuments:
-          count: 2
+          value: /kritik/hooks
       - equal:
-          path: metadata.name
-          value: RELEASE-NAME-kritik
-        documentIndex: 0
-      - equal:
-          path: metadata.name
-          value: RELEASE-NAME-kritik-web
-        documentIndex: 1
+          path: spec.rules[1].matches[0].path.value
+          value: /kritik

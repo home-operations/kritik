@@ -3,6 +3,7 @@
   import { untrack } from 'svelte';
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
+  import { hookURL } from '../session.svelte';
   import { Resource, live, type Dirty } from '../resource.svelte';
   import { tokens, usd, wholeNumber, indexTone, jobTone, splitRepo } from '../format';
   import type { Job, JobState, Page, Pull, Repository, AccountDetail, AccountSummary } from '../types';
@@ -232,8 +233,7 @@
           {#if !inst.lastWebhookAt}
             <p class="notice" role="note">
               No webhook has reached <span class="mono">{inst.name}</span>, so kritik only polls it for new pull requests and
-              cannot answer mentions. Point the GitHub App's webhook at <span class="mono">{inst.hookPath}</span> on kritik's
-              webhook listener.
+              cannot answer mentions. Point the GitHub App's webhook at <span class="mono">{hookURL(inst.hookPath)}</span>.
             </p>
           {/if}
         </section>

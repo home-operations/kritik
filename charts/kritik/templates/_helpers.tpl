@@ -153,8 +153,72 @@ Whether any enabled role serves webhooks.
 {{- end }}
 
 {{/*
-Whether any enabled role serves the dashboard.
+Whether any enabled role serves the dashboard: all always does, since
+web.url is required.
 */}}
 {{- define "kritik.hasWeb" -}}
-{{- if or .Values.roles.web.enabled (and .Values.roles.all.enabled .Values.web.url) -}}true{{- end -}}
+{{- if or .Values.roles.web.enabled .Values.roles.all.enabled -}}true{{- end -}}
+{{- end }}
+
+{{/*
+Whether a configuration file is mounted: the chart's, or an existing
+ConfigMap. Without one, kritik runs on its environment and the dashboard.
+*/}}
+{{- define "kritik.hasConfigFile" -}}
+{{- if or .Values.config.existingConfigMap .Values.config.file -}}true{{- end -}}
+{{- end }}
+
+{{/*
+web.url's host, without a port, and its path without a trailing slash: the
+one URL the Ingress or HTTPRoute serves, the dashboard at the path and the
+webhook listener under it at /hooks.
+*/}}
+{{- define "kritik.webHost" -}}
+{{- (urlParse (tpl .Values.web.url .)).host | splitList ":" | first -}}
+{{- end }}
+
+{{- define "kritik.webPath" -}}
+{{- (urlParse (tpl .Values.web.url .)).path | trimSuffix "/" -}}
+{{- end }}
+
+{{/*
+The auth values as KRITIK_AUTH_* variables, each only when set so a value
+the configuration file gives is not overridden with an empty one.
+*/}}
+{{- define "kritik.authEnv" -}}
+{{- $a := .Values.auth -}}
+{{- $plain := list
+  (list "KRITIK_AUTH_SESSION_TTL" $a.sessionTTL)
+  (list "KRITIK_AUTH_ADMIN_USER" $a.admin.user)
+  (list "KRITIK_AUTH_OIDC_NAME" $a.oidc.name)
+  (list "KRITIK_AUTH_OIDC_ISSUER" $a.oidc.issuer)
+  (list "KRITIK_AUTH_OIDC_CLIENT_ID" $a.oidc.clientId)
+  (list "KRITIK_AUTH_OIDC_SCOPES" (join "," $a.oidc.scopes))
+  (list "KRITIK_AUTH_OIDC_ROLES_CLAIM" $a.oidc.rolesClaim)
+  (list "KRITIK_AUTH_OIDC_ROLE_MAPPING" $a.oidc.roleMapping)
+  (list "KRITIK_AUTH_OIDC_DEFAULT_ROLE" $a.oidc.defaultRole)
+  (list "KRITIK_AUTH_GITHUB_CLIENT_ID" $a.github.clientId)
+  (list "KRITIK_AUTH_GITHUB_ROLE_MAPPING" $a.github.roleMapping)
+-}}
+{{- range $plain }}
+{{- if index . 1 }}
+- name: {{ index . 0 }}
+  value: {{ tpl (toString (index . 1)) $ | quote }}
+{{- end }}
+{{- end }}
+{{- $secrets := list
+  (list "KRITIK_AUTH_ADMIN_PASSWORD" $a.admin.passwordSecret)
+  (list "KRITIK_AUTH_OIDC_CLIENT_SECRET" $a.oidc.clientSecretSecret)
+  (list "KRITIK_AUTH_GITHUB_CLIENT_SECRET" $a.github.clientSecretSecret)
+-}}
+{{- range $secrets }}
+{{- $ref := index . 1 }}
+{{- if $ref.name }}
+- name: {{ index . 0 }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ tpl $ref.name $ | quote }}
+      key: {{ $ref.key | quote }}
+{{- end }}
+{{- end }}
 {{- end }}

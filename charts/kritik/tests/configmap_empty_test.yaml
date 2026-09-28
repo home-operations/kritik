@@ -2,7 +2,7 @@ suite: configmap without a file
 templates:
   - configmap.tpl
 tests:
-  - it: fails without a file or an existing ConfigMap
+  - it: renders nothing without a file, which is optional
     asserts:
-      - failedTemplate:
-          errorPattern: config.file is required
+      - hasDocuments:
+          count: 0

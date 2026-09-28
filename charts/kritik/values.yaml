@@ -23,14 +23,15 @@ nameOverride: ""
 # -- Override the full release name.
 fullnameOverride: ""
 
-# kritik is one binary with three roles. `all` runs ingest and worker in one
-# process (the usual shape); a split topology enables `ingest` and `worker`
-# separately and scales each. Every enabled role renders its own Deployment
-# from the same image, config and secrets. Runner pods are not a role here:
-# the worker creates them as Jobs per review and index.
+# kritik is one binary with four roles. `all` runs ingest, worker and the
+# dashboard in one process (the usual shape); a split topology enables
+# `ingest`, `worker` and `web` separately and scales each. Every enabled role
+# renders its own Deployment from the same image, config and secrets. Runner
+# pods are not a role here: the worker creates them as Jobs per review and
+# index.
 roles:
   all:
-    # -- Run the single-process topology: webhooks, leader duties and the worker in one Deployment.
+    # -- Run the single-process topology: webhooks, leader duties, the worker and the dashboard in one Deployment.
     enabled: true
     # -- Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time.
     replicas: 1
@@ -51,25 +52,70 @@ roles:
     # -- Resources for this role's pods; empty falls back to `resources`.
     resources: {}
   web:
-    # -- Run the dashboard as its own Deployment (split topology). Requires `web.url` to be set.
+    # -- Run the dashboard as its own Deployment (split topology, where it is required: kritik is configured there).
     enabled: false
     # -- Replicas for the web Deployment.
     replicas: 1
     # -- Resources for this role's pods; empty falls back to `resources`.
     resources: {}
 
-# The dashboard's public URL and listen address. `web.url` is required for
-# `roles.web`; setting it on the `all` topology also serves the dashboard
-# from the same process.
+# The one public URL: the dashboard at `web.url`, and the webhook listener
+# under it at `/hooks`, which the Ingress or HTTPRoute below route.
 web:
-  # -- (required for roles.web) Public URL the dashboard is reached at, e.g. https://kritik.example.com. Must be an absolute http(s) URL with no query or fragment.
+  # -- (required) Public URL the dashboard is reached at, e.g. https://kritik.example.com; the webhook listener shares it under `/hooks`, and the GitHub Apps the dashboard creates send their webhooks there. Must be an absolute http(s) URL with no query or fragment.
   url: ""
-  # -- Dashboard port, served by `all` (once `web.url` is set) and `web` pods.
+  # -- Dashboard port, served by `all` and `web` pods.
   port: 8083
 
-# The configuration file: sign-in (`auth`) and GitHub Apps that already
-# exist (`connections`), and nothing else. Every key in it also has a
-# `KRITIK_*` environment variable, which wins over the file. Model
+# How people sign in (see docs/configuration.md), rendered to the
+# KRITIK_AUTH_* variables, which win over the configuration file's `auth`
+# block. Each is left out when empty; secrets come from existing Secrets.
+auth:
+  # -- How long a dashboard session lasts (Go duration, 5m to 720h); empty is 12h.
+  sessionTTL: ""
+  admin:
+    # -- The local admin's username; empty is `admin`.
+    user: ""
+    passwordSecret:
+      # -- Existing Secret holding the local admin's password; the local admin exists only while one is set.
+      name: ""
+      # -- Key in that Secret.
+      key: password
+  oidc:
+    # -- The sign-in button's label; empty is "SSO".
+    name: ""
+    # -- OIDC issuer (https); set, with a client, to sign in through it.
+    issuer: ""
+    # -- OAuth client ID at the issuer.
+    clientId: ""
+    clientSecretSecret:
+      # -- Existing Secret holding the client secret.
+      name: ""
+      # -- Key in that Secret.
+      key: client-secret
+    # -- Scopes to request; empty is openid, email and profile.
+    scopes: []
+    # -- ID token or UserInfo claim a role mapping reads as `roles`.
+    rolesClaim: ""
+    # -- CEL expression giving a role, or a map of accounts to roles (docs/configuration.md).
+    roleMapping: ""
+    # -- Role when the mapping places nobody: none (the default) or member.
+    defaultRole: ""
+  github:
+    # -- Client ID of an OAuth App, or of a GitHub App, to sign in with GitHub.
+    clientId: ""
+    clientSecretSecret:
+      # -- Existing Secret holding the client secret.
+      name: ""
+      # -- Key in that Secret.
+      key: client-secret
+    # -- CEL expression giving a role, or a map of accounts to roles.
+    roleMapping: ""
+
+# The optional configuration file: sign-in (`auth`) and GitHub Apps that
+# already exist (`connections`), and nothing else. Every key in it also has
+# a `KRITIK_*` environment variable, which wins over the file; the `auth`
+# values above render those. Model
 # providers, defaults, accounts and their repositories are the instance
 # configuration, set in the dashboard's admin console and kept in
 # Postgres. The file is either inline as `file`, rendered into a
@@ -78,15 +124,8 @@ web:
 # `secretMounts` or environment variables. Every replica re-reads the file
 # on `reloadInterval`; the leader applies it to the store.
 config:
-  # -- (required unless `existingConfigMap` is set) The configuration file, as YAML: `auth` and `connections`. Passed through verbatim, not tpl'd. See docs/dashboard.md and docs/connecting-a-forge.md.
+  # -- (optional) The configuration file, as YAML: `auth` and `connections`. Passed through verbatim, not tpl'd. See docs/configuration.md.
   file: {}
-  # auth:
-  #   admin:
-  #     password: { file: /var/run/secrets/kritik/auth/admin-password }
-  #   github:
-  #     clientId: Iv1.example
-  #     clientSecret: { file: /var/run/secrets/kritik/auth/github-client-secret }
-  #     roleMapping: 'login == "user-1" ? "admin" : ""'
   # connections:
   #   - name: github
   #     forge: github
@@ -223,44 +262,24 @@ service:
   port: 8080
   # -- Metrics and probe port, served by every pod.
   metricsPort: 8081
-  # -- Dashboard port, served by `all` (once `web.url` is set) and `web` pods.
+  # -- Dashboard port, served by `all` and `web` pods.
   webPort: 8083
 
+# One Ingress, or one Gateway API HTTPRoute, for `web.url`: `/hooks` under it
+# goes to the webhook listener and everything else to the dashboard. The host
+# and paths come from `web.url`.
 ingress:
-  # -- Expose the webhook listener via an Ingress.
+  # -- Expose web.url through an Ingress.
   enabled: false
   # -- IngressClass name.
   className: ""
   # -- Ingress annotations.
   annotations: {}
-  # -- Ingress hosts and their paths.
-  hosts:
-    - host: kritik.example.com
-      paths:
-        - path: /hooks
-          pathType: Prefix
-  # -- Ingress TLS configuration.
+  # -- Ingress TLS configuration, e.g. `[{hosts: [kritik.example.com], secretName: kritik-tls}]`.
   tls: []
-  # The dashboard's own Ingress, separate from the webhook listener's above.
-  web:
-    # -- Expose the dashboard via an Ingress.
-    enabled: false
-    # -- IngressClass name.
-    className: ""
-    # -- Ingress annotations.
-    annotations: {}
-    # -- Ingress hosts and their paths.
-    hosts:
-      - host: dash.example.com
-        paths:
-          - path: /
-            pathType: Prefix
-    # -- Ingress TLS configuration.
-    tls: []
 
-# Gateway API HTTPRoute, an alternative to `ingress` for the webhook listener.
 httpRoute:
-  # -- Expose the webhook listener via a Gateway API HTTPRoute.
+  # -- Expose web.url through a Gateway API HTTPRoute.
   enabled: false
   # -- HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1.
   apiVersion: ""
@@ -270,32 +289,6 @@ httpRoute:
   labels: {}
   # -- Gateways (and listeners) this route attaches to.
   parentRefs: []
-  # -- Hostnames matched against the Host header (templated).
-  hostnames: []
-  # -- Match conditions for the route.
-  matches:
-    - path:
-        type: PathPrefix
-        value: /hooks
-  # The dashboard's own HTTPRoute, separate from the webhook listener's above.
-  web:
-    # -- Expose the dashboard via a Gateway API HTTPRoute.
-    enabled: false
-    # -- HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1.
-    apiVersion: ""
-    # -- HTTPRoute annotations.
-    annotations: {}
-    # -- HTTPRoute labels.
-    labels: {}
-    # -- Gateways (and listeners) this route attaches to.
-    parentRefs: []
-    # -- Hostnames matched against the Host header (templated).
-    hostnames: []
-    # -- Match conditions for the route.
-    matches:
-      - path:
-          type: PathPrefix
-          value: /
 
 # NetworkPolicies (off by default): one for the service pods (ingress to the
 # webhook and metrics ports; egress to DNS, the forges and models over the

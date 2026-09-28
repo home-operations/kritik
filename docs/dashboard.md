@@ -1,132 +1,15 @@
 # Dashboard
 
-The web role serves a dashboard: sign in with a local admin password,
+kritik serves a dashboard: sign in with a local admin password,
 GitHub or an OIDC provider, and see the accounts you can read, the
 connection serving each and its repositories, live review and conversation state as it
 runs, and, for an admin, the audit log. An admin can also queue a re-run
 of a specific pull request, cancel a review in progress, or reindex a
 repository's embeddings, from the dashboard rather than the forge.
 
-Enable it with role `web` (a dedicated listener) or `all` (which also serves
-it once `KRITIK_WEB_URL` is set, alongside the other roles); `KRITIK_WEB_ADDR`
-is where it listens (default `:8083`), and `KRITIK_WEB_URL` is its
-externally reachable origin — an absolute `http(s)` URL with no query or
-fragment, required for the web role, used to build sign-in callback URLs and
-the session cookie's scope. In the chart, `roles.web.enabled` turns the role
-on, `web.url` sets `KRITIK_WEB_URL`, and `web.port` matches `KRITIK_WEB_ADDR`'s
-port (8083 by default); `ingress.web` and `httpRoute.web` are the Ingress and
-Gateway API HTTPRoute for it, and `dashboard.keySecret` names the Secret
-holding the sealing key (below).
-
-## Signing in
-
-The `auth:` block, a sibling of `connections:` at the file's root, sets how
-people sign in and what each may do. Every key in it also has a
-`KRITIK_AUTH_*` environment variable, and a variable wins over the file, so
-a deployment can configure sign-in from the environment alone. A secret's
-variable carries the value itself, or, with a `_FILE` suffix, the path of a
-file holding it. A `KRITIK_AUTH_*` variable that names no key is refused at
-startup rather than ignored.
-
-| Key                   | Environment variable                       |
-| --------------------- | ------------------------------------------ |
-| `sessionTTL`          | `KRITIK_AUTH_SESSION_TTL`                  |
-| `admin.user`          | `KRITIK_AUTH_ADMIN_USER`                   |
-| `admin.password`      | `KRITIK_AUTH_ADMIN_PASSWORD[_FILE]`        |
-| `oidc.name`           | `KRITIK_AUTH_OIDC_NAME`                    |
-| `oidc.issuer`         | `KRITIK_AUTH_OIDC_ISSUER`                  |
-| `oidc.clientId`       | `KRITIK_AUTH_OIDC_CLIENT_ID`               |
-| `oidc.clientSecret`   | `KRITIK_AUTH_OIDC_CLIENT_SECRET[_FILE]`    |
-| `oidc.scopes`         | `KRITIK_AUTH_OIDC_SCOPES`, comma-separated |
-| `oidc.rolesClaim`     | `KRITIK_AUTH_OIDC_ROLES_CLAIM`             |
-| `oidc.roleMapping`    | `KRITIK_AUTH_OIDC_ROLE_MAPPING`            |
-| `oidc.defaultRole`    | `KRITIK_AUTH_OIDC_DEFAULT_ROLE`            |
-| `github.clientId`     | `KRITIK_AUTH_GITHUB_CLIENT_ID`             |
-| `github.clientSecret` | `KRITIK_AUTH_GITHUB_CLIENT_SECRET[_FILE]`  |
-| `github.roleMapping`  | `KRITIK_AUTH_GITHUB_ROLE_MAPPING`          |
-
-```yaml
-auth:
-  admin:
-    password: { env: ADMIN_PASSWORD }
-  oidc:
-    name: Company SSO
-    issuer: https://idp.example.com
-    clientId: kritik-dashboard
-    clientSecret: { env: OIDC_CLIENT_SECRET }
-    scopes: [openid, email, profile]
-    rolesClaim: groups
-    roleMapping: '"kritik-admins" in roles ? "admin" : ("kritik-users" in roles ? "member" : "")'
-  github:
-    clientId: Iv1.abc123
-    clientSecret: { env: GITHUB_CLIENT_SECRET }
-    roleMapping: 'login == "user-1" ? "admin" : ""'
-```
-
-- `admin` is the local admin. It signs in on the sign-in page with a
-  username, `admin` unless `user` sets another, and `password`. It exists
-  only while a password is set: it is the way into a fresh instance, and a
-  way in when every provider is down. Ten failed attempts from one address
-  within 15 minutes lock that address out until the window passes.
-- `oidc` signs in through any OpenID Connect issuer, an `https` URL. The
-  sign-in page labels it `name`, or "SSO" when unset.
-- `github` signs in on github.com with an OAuth App's client, or a GitHub
-  App's own. An App the admin console creates can serve both: it shows the
-  App's client secret once for this block (see
-  [connecting a forge](connecting-a-forge.md)).
-- `sessionTTL` is how long a dashboard session lasts, between 5 minutes and
-  30 days. It defaults to 12 hours.
-
-A provider must allow the callback URL `<KRITIK_WEB_URL>/auth/callback/oidc`
-or `<KRITIK_WEB_URL>/auth/callback/github`. The dashboard refuses to start
-with no way to sign in. The configuration is refused when nothing could
-make an admin: set an admin password, or a `roleMapping` on a provider.
-
-## Roles
-
-There are two roles:
-
-- **Admin** manages the instance. An admin edits the instance
-  configuration, below, queues re-runs, cancels and reindexes, and reads
-  every account and the audit log. The admin console also lists the instance settings
-  read-only, each with its source: the environment, the configuration
-  file, or kritik's default. A secret shows only whether it is set, and a
-  URL's credentials are hidden. Every write is audit-logged in the same
-  transaction as the change it makes.
-- **Member** reads reviews, conversations and transcripts, with no write
-  access. A member reads every account, or only the accounts serving the
-  forge accounts their sign-in placed them on.
-
-A session holds the role its sign-in gave it. Editing a provider's role
-mapping, or rotating the admin password, ends the sessions it granted, so
-the next request signs in again under the new rules.
-
-### Role mappings
-
-A `roleMapping` is a [CEL](https://cel.dev) expression evaluated at
-sign-in. It yields a role for every account, `"admin"`, `"member"` or `""`
-for none. Or it yields a map from forge account to `"member"`, which reads
-only the accounts serving those accounts, such as
-`{"github/org-1": "member"}`; `"*"` as a key stands for every account. CEL
-gives both branches of a conditional one type, so an expression that
-yields a role on one branch and a map on the other wraps one in `dyn()`.
-
-An OIDC mapping sees `claims`, the ID token's claims merged with the
-UserInfo response, and `roles`, the values of the claim `rolesClaim`
-names, read from a list, a map's keys, or a single string. A GitHub
-mapping sees `login`, `email`, `orgs`, the organizations the user is an
-active member of, and `teams`, each as `"<org>/<team>"`.
-
-When the mapping places nobody:
-
-- An OIDC sign-in is refused, unless `defaultRole: member` lets it read
-  every account. `defaultRole` defaults to `none`, so a wrong mapping fails
-  closed.
-- A GitHub sign-in reads the accounts serving the user's own account, or an
-  organization they are an active member of, and is refused when there are
-  none. Accounts a mapping names are added to those.
-
-A mapping that fails to evaluate refuses the sign-in.
+It is served at `KRITIK_WEB_URL`, the chart's `web.url`, which the webhook
+listener shares under `/hooks`. People sign in as
+[`auth`](configuration.md#auth) configures, with the role it maps them to.
 
 ## First run
 

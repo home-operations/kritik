@@ -1,33 +1,40 @@
-# Connecting a forge
+# Setup
 
 kritik reviews pull requests on github.com through a GitHub App. Events
 reach kritik through the App's own webhook, which covers every repository
 the App is installed on. No repository needs a file: a
-[`.kritik.yaml`](repository-config.md) is optional.
+[`.kritik.yaml`](repository-config.md) is optional. This guide takes a new
+instance from install to its first review.
+
+## Deploy
+
+Install the chart as its [README](../charts/kritik/README.md) shows, with:
+
+- `web.url`, the one public URL. The dashboard is served at it, and GitHub
+  delivers each connection's webhook under it, to
+  `/hooks/<connection name>`. The chart's `ingress` or `httpRoute` routes
+  `/hooks` to the webhook listener and everything else to the dashboard;
+  nothing else needs to be public.
+- `dashboard.keySecret`, the key that seals the secrets the dashboard
+  keeps.
+- A way to sign in: `auth.admin.passwordSecret` for the local admin, which
+  is the way into a fresh instance, or OIDC or GitHub with a role mapping
+  that makes someone an admin ([`auth`](configuration.md#auth)).
+
+## Sign in, and follow the wizard
+
+The first admin to sign in is met by the [setup wizard](dashboard.md#first-run),
+which walks the rest of this guide: the GitHub App, a model key and review
+model, the embedder, and the repositories to review. Every step can also
+be done in the admin console.
+
+## The GitHub App
 
 A connection is one GitHub App that kritik serves accounts through. It
 serves the users and organizations its `accounts` lists, and each of them
 is a kritik account, `github/<name>`, that this connection alone serves.
-Its webhook address is kritik's webhook listener followed by
-`/hooks/<connection name>`. A connection is declared in one of three
-places:
 
-- the configuration file's `connections`;
-- the `KRITIK_CONNECTIONS_*` environment variables, which declare one;
-- the admin console, which keeps it in the instance configuration in
-  Postgres.
-
-## Expose the webhook listener
-
-The forge has to reach `POST /hooks/<connection>` on the listener, the
-chart's `service.port` (8080) on `all` and `ingest` pods. The chart's
-`httpRoute` or `ingress` values publish it, matching `/hooks` by default;
-nothing else needs to be public for webhooks. The dashboard has its own
-route (`httpRoute.web`, `ingress.web`).
-
-## GitHub
-
-### Create the App from the admin console
+### Create it from the admin console
 
 The admin console's "Create a GitHub App" registers the App for you, from
 a [manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest)
@@ -45,18 +52,16 @@ that sets its webhook, permissions and events:
    same App.
 4. Install the App from the link the admin console shows.
 
-The App's webhook is `/hooks/<connection name>` under the dashboard's URL,
-`KRITIK_WEB_URL`, so route `/hooks` there to the webhook listener. To
-serve more accounts through a public App, add them to the connection's
+To serve more accounts through a public App, add them to the connection's
 `accounts` afterwards.
 
-### Register the App by hand
+### Register it by hand
 
 Register a GitHub App under the account whose repositories kritik reviews
 (a personal account's or an organization's Developer settings):
 
 - **Webhook:** Active, with the URL
-  `https://<listener host>/hooks/<connection name>` and a random secret.
+  `<web.url>/hooks/<connection name>` and a random secret.
   This one webhook receives the events of every repository the App is
   installed on.
 - **Repository permissions:**
@@ -82,45 +87,12 @@ Register a GitHub App under the account whose repositories kritik reviews
 
 Then generate a private key and note the App's client ID. Comments mention
 the bot as `@<app slug>`, and only someone with write access gets an
-answer.
+answer. Add the App as a connection in the admin console, whose "Add
+connection" takes these three values and can generate the webhook secret,
+or declare it in the configuration file or the environment
+([`connections`](configuration.md#connections)).
 
-### Configure the connection
-
-```yaml
-connections:
-  - name: github
-    forge: github
-    accounts: [org-1, user-1]
-    app:
-      clientId: Iv1.example
-      privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-      webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
-```
-
-`webhookSecret` holds the same value as the App's webhook secret. The
-same connection can come from the environment instead:
-
-| Variable                                       | Key                                   |
-| ---------------------------------------------- | ------------------------------------- |
-| `KRITIK_CONNECTIONS_NAME`                      | `name`, `github` unless set           |
-| `KRITIK_CONNECTIONS_ACCOUNTS`                  | `accounts`, comma-separated           |
-| `KRITIK_CONNECTIONS_APP_CLIENT_ID`             | `app.clientId`                        |
-| `KRITIK_CONNECTIONS_APP_PRIVATE_KEY[_FILE]`    | `app.privateKey`, or a file's path    |
-| `KRITIK_CONNECTIONS_APP_WEBHOOK_SECRET[_FILE]` | `app.webhookSecret`, or a file's path |
-
-The environment declares at most one connection. It replaces the file's
-connection of the same name whole, or is added to the file's when none
-has that name. A `KRITIK_CONNECTIONS_*` variable that names no key is
-refused at startup.
-
-In the admin console, the instance configuration's "Add connection" takes
-the same values, seals the secrets in Postgres, and can generate the
-webhook secret for you to copy into the App. A dashboard connection may
-not take a name or an account that a file connection declares. When a
-later file edit declares one that a dashboard connection already holds,
-the file's connection is left out, and the admin console says why.
-
-### Install the App
+### Install it
 
 Install the App on each account in `accounts`, for all repositories or
 selected ones. Each pull request in them is reviewed when it opens and

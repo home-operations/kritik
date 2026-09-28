@@ -247,6 +247,15 @@ func (c *Config) WebEnabled(role Role) bool {
 // unset.
 func (c *Config) WebURLParsed() *url.URL { return c.webURL }
 
+// WebBasePath is WebURL's path, "" when it has none or is unset: the
+// dashboard is served under it, and the webhook listener shares it.
+func (c *Config) WebBasePath() string {
+	if c.webURL == nil {
+		return ""
+	}
+	return c.webURL.Path
+}
+
 // parseWebURL trims a trailing slash from WebURL, rejects anything that
 // isn't an absolute http(s) URL with a host and no query or fragment, and
 // caches the result for WebURLParsed. A no-op when WebURL is unset.

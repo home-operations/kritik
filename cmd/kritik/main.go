@@ -190,7 +190,7 @@ func run() error {
 		handler := ingest.NewHandler(current, svc, logger)
 		handler.Metrics = m
 		handler.Deliveries = svc
-		hooks := server.NewHooks(cfg.Addr, handler, logger)
+		hooks := server.NewHooks(cfg.Addr, cfg.WebBasePath(), handler, logger)
 		g.Go(func() error { return hooks.Run(ctx) })
 	}
 	if err := startWeb(ctx, g, role, st, cfg, current, logger); err != nil {
