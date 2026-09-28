@@ -1,7 +1,10 @@
 # ADR-0013: a hosted instance serves whoever installs its App and brings a model key
 
-- **Status:** Proposed
+- **Status:** Withdrawn
 - **Date:** 2026-09-27
+- **Superseded by:** [ADR-0014](0014-github-app-only-self-hosted.md):
+  kritik is a self-hosted instance and is not run as a service for others.
+  Its per-tenant provider keys (§2.4) survive there as per-account keys.
 - **Authors:** onedr0p.
 
 > Scope: running kritik as a service for others. The host owns one public

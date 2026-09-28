@@ -9,9 +9,12 @@
   gateway; no provider key in a runner pod),
   [ADR-0007](0007-vectorchord.md) (the vector index is VectorChord's
   `vchordrq`, replacing the pgvector HNSW of §2.8 and §2.9),
-  [ADR-0009](0009-web-dashboard.md) (the v2 dashboard of §2.17, built) and
+  [ADR-0009](0009-web-dashboard.md) (the v2 dashboard of §2.17, built),
   [ADR-0010](0010-configuration-layers.md) (the configuration layers and
-  their precedence, replacing §2.6's two sources).
+  their precedence, replacing §2.6's two sources) and
+  [ADR-0014](0014-github-app-only-self-hosted.md) (GitHub alone, through
+  an App; the file of §2.6 reduced to sign-in and connections, with the
+  rest configured in the dashboard; a forge account as the tenant).
 - **Authors:** perfectra1n (this ADR, as published at
   [gist 6a67dd03](https://gist.github.com/perfectra1n/6a67dd0362ea9d7afd24a4e917028581));
   rebased onto ADR-0001's final revision by onedr0p. The rebase adds the

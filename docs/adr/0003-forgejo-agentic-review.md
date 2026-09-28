@@ -8,7 +8,9 @@
   [ADR-0008](0008-runner-tools.md), which adds a command tool to the agent
   of §2.6 and routes the runner pod's egress of §2.9 through the gateway,
   and [ADR-0010](0010-configuration-layers.md), which lets `.kritik.yaml`
-  of §2.3 choose within operator bounds and has the worker read it first.
+  of §2.3 choose within operator bounds and has the worker read it first,
+  and [ADR-0014](0014-github-app-only-self-hosted.md), which removes the
+  Forgejo and Gitea support of §2.1.
 - **Date:** 2026-09-24
 - **Amended:** 2026-09-26, to route `forge: gitea` through the Forgejo
   client of §2.1 rather than a separate implementation.
