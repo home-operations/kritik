@@ -2,10 +2,7 @@ package webhook
 
 import (
 	"net/http"
-	"reflect"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/home-operations/kritik/internal/configfile"
 )
@@ -30,14 +27,6 @@ func gh(event string) http.Header {
 	h.Set("X-GitHub-Event", event)
 	h.Set("X-GitHub-Delivery", "d-1")
 	h.Set("Content-Type", "application/json")
-	return h
-}
-
-func hdr(kv ...string) http.Header {
-	h := http.Header{}
-	for i := 0; i+1 < len(kv); i += 2 {
-		h.Set(kv[i], kv[i+1])
-	}
 	return h
 }
 
@@ -160,143 +149,5 @@ func TestParseRejectsMalformedAndOversized(t *testing.T) {
 	}
 	if _, err := Parse(configfile.ForgeGitHub, gh("push"), make([]byte, MaxBody+1)); err == nil {
 		t.Fatal("oversized payload must error")
-	}
-}
-
-func TestParseGitLab(t *testing.T) {
-	mr := func(user, attrs, changes string) []byte {
-		return []byte(`{"object_kind":"merge_request","user":` + user + `,
-		  "project":{"path_with_namespace":"group/sub/repo","default_branch":"main","git_http_url":"https://gl/group/sub/repo.git"},
-		  "object_attributes":{"iid":5,"title":"t","description":"mr body","state":"opened","draft":false,"url":"u","author_id":8,
-		    "created_at":"2026-09-24T10:00:00.000Z","source_branch":"f","target_branch":"main",
-		    "source_project_id":1,"target_project_id":1,"last_commit":{"id":"abc"},` + attrs + `},
-		  "changes":` + changes + `,"labels":[{"title":"x","color":"#fff"}]}`)
-	}
-	const author = `{"id":8,"username":"devin","bot":false}`
-	ev, err := Parse(configfile.ForgeGitLab, hdr("X-Gitlab-Event-UUID", "u-1"), mr(author, `"action":"open"`, `{}`))
-	want := &PullRequest{
-		Number: 5, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "abc", BaseRef: "main", URL: "u",
-		Body: "mr body", CreatedAt: time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC), Labels: []Label{{Name: "x", Color: "fff"}},
-	}
-	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "u-1" || ev.Account != "group" || ev.Action != "opened" ||
-		ev.Repository.FullName != "group/sub/repo" || !reflect.DeepEqual(ev.PullRequest, want) {
-		t.Fatalf("gitlab mr = %+v %+v %v", ev, ev.PullRequest, err)
-	}
-
-	for _, tt := range []struct{ name, attrs, changes, want string }{
-		{"reopened", `"action":"reopen"`, `{}`, "reopened"},
-		{"closed", `"action":"close"`, `{}`, "closed"},
-		{"merged is closed", `"action":"merge"`, `{}`, "closed"},
-		{"a push synchronizes", `"action":"update","oldrev":"old"`, `{}`, "synchronize"},
-		{"out of draft", `"action":"update"`, `{"draft":{"previous":true,"current":false}}`, "ready_for_review"},
-		{"into draft", `"action":"update"`, `{"draft":{"previous":false,"current":true}}`, "update"},
-		{"an edit", `"action":"update"`, `{"title":{"previous":"a","current":"t"}}`, "update"},
-		{"an approval", `"action":"approved"`, `{}`, "approved"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			ev, err := Parse(configfile.ForgeGitLab, http.Header{}, mr(author, tt.attrs, tt.changes))
-			if err != nil || ev.Action != tt.want {
-				t.Fatalf("action = %q, %v; want %q", ev.Action, err, tt.want)
-			}
-		})
-	}
-
-	t.Run("someone else acting leaves the author unknown", func(t *testing.T) {
-		ev, err := Parse(configfile.ForgeGitLab, http.Header{}, mr(`{"id":9,"username":"maintainer","bot":true}`, `"action":"update","oldrev":"old"`, `{}`))
-		if err != nil || ev.PullRequest.Author != "" || ev.PullRequest.AuthorIsBot {
-			t.Fatalf("author = %q (bot %v), %v; want none", ev.PullRequest.Author, ev.PullRequest.AuthorIsBot, err)
-		}
-	})
-
-	t.Run("an older release's timestamp", func(t *testing.T) {
-		body := strings.Replace(string(mr(author, `"action":"open"`, `{}`)), "2026-09-24T10:00:00.000Z", "2026-09-24 10:00:00 UTC", 1)
-		ev, err := Parse(configfile.ForgeGitLab, http.Header{}, []byte(body))
-		if err != nil || !ev.PullRequest.CreatedAt.Equal(time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)) {
-			t.Fatalf("created = %v, %v", ev.PullRequest.CreatedAt, err)
-		}
-	})
-
-	//nolint:misspell // GitLab's field is spelled noteable
-	note := func(attrs string) []byte {
-		return []byte(`{"object_kind":"note","user":{"id":3,"username":"alice"},"project":{"path_with_namespace":"group/repo"},
-		  "merge_request":{"iid":5},"object_attributes":{"id":77,"note":"@bot why","noteable_type":"MergeRequest",` + attrs + `}}`)
-	}
-	ev, err = Parse(configfile.ForgeGitLab, http.Header{}, note(`"action":"create","position":{"new_path":"a.go","new_line":3}`))
-	wantComment := &Comment{ID: 77, Number: 5, Author: "alice", Body: "@bot why", Inline: true, Path: "a.go", Line: 3}
-	if err != nil || ev.Kind != KindComment || ev.Action != "created" || !reflect.DeepEqual(ev.Comment, wantComment) {
-		t.Fatalf("gitlab note = %+v %+v %v", ev, ev.Comment, err)
-	}
-	if ev, err := Parse(configfile.ForgeGitLab, http.Header{}, note(`"action":"update"`)); err != nil || ev.Kind != KindComment || ev.Action != "edited" {
-		t.Fatalf("gitlab note edit = %+v %v", ev, err)
-	}
-	//nolint:misspell // GitLab's field is spelled noteable
-	for name, attrs := range map[string]string{
-		"a system note":      `"action":"create","system":true`,
-		"an internal note":   `"action":"create","internal":true`,
-		"an issue's comment": `"action":"create","noteable_type":"Issue"`,
-	} {
-		if ev, err := Parse(configfile.ForgeGitLab, http.Header{}, note(attrs)); err != nil || ev.Kind != KindIgnored {
-			t.Errorf("%s = %+v %v, want ignored", name, ev, err)
-		}
-	}
-
-	push := `{"object_kind":"push","ref":"refs/heads/main","after":"9","project":{"path_with_namespace":"group/repo","default_branch":"main"}}`
-	ev, err = Parse(configfile.ForgeGitLab, http.Header{}, []byte(push))
-	if err != nil || ev.Kind != KindPush || ev.Push.After != "9" {
-		t.Fatalf("gitlab push = %+v %v", ev, err)
-	}
-}
-
-func TestParseForgejo(t *testing.T) {
-	h := hdr("X-Gitea-Event", "pull_request", "X-Gitea-Delivery", "f-1")
-	ev, err := Parse(configfile.ForgeForgejo, h, []byte(ghPullRequest))
-	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "f-1" || ev.PullRequest.Number != 42 || ev.PullRequest.Body != "a body" || ev.Action != "synchronize" {
-		t.Fatalf("forgejo pr = %+v %v", ev, err)
-	}
-	h.Set("X-Gitea-Event", "issue_comment")
-	ev, err = Parse(configfile.ForgeForgejo, h, []byte(`{"action":"created","is_pull":true,"issue":{"number":3},
-	  "comment":{"id":5,"body":"@bot","user":{"login":"x"}},"repository":{"full_name":"a/b","owner":{"login":"a"}}}`))
-	if err != nil || ev.Kind != KindComment || ev.Comment.Number != 3 {
-		t.Fatalf("forgejo comment = %+v %v", ev, err)
-	}
-}
-
-// TestParseGitea confirms Gitea installations route through the same
-// X-Gitea-* headers and payload parsing as Forgejo.
-func TestParseGitea(t *testing.T) {
-	h := hdr("X-Gitea-Event", "pull_request", "X-Gitea-Delivery", "g-1")
-	ev, err := Parse(configfile.ForgeGitea, h, []byte(ghPullRequest))
-	if err != nil || ev.Kind != KindPullRequest || ev.Delivery != "g-1" || ev.PullRequest.Number != 42 {
-		t.Fatalf("gitea pr = %+v %v", ev, err)
-	}
-}
-
-// TestParseForgejoSynchronizedAction covers the past-tense "synchronized"
-// spelling Forgejo sends for this action, which must normalize to GitHub's
-// "synchronize" so callers can match on one action string regardless of
-// forge.
-func TestParseForgejoSynchronizedAction(t *testing.T) {
-	h := hdr("X-Gitea-Event", "pull_request", "X-Gitea-Delivery", "f-2")
-	body := `{
-	  "action": "synchronized",
-	  "number": 7,
-	  "pull_request": {
-	    "number": 7, "title": "feat: thing", "state": "open",
-	    "user": {"login": "alice"},
-	    "head": {"ref": "topic", "sha": "aaa111", "repo": {"full_name": "acme/widgets"}},
-	    "base": {"ref": "main", "sha": "bbb222", "repo": {"full_name": "acme/widgets"}}
-	  },
-	  "repository": {"full_name": "acme/widgets", "owner": {"login": "acme"}}
-	}`
-	ev, err := Parse(configfile.ForgeForgejo, h, []byte(body))
-	if err != nil || ev.Kind != KindPullRequest || ev.Action != "synchronize" {
-		t.Fatalf("forgejo synchronized pr = %+v %v", ev, err)
-	}
-	// The same raw action, parsed as a GitHub payload, must be left alone:
-	// only the Forgejo path normalizes it.
-	gh := hdr("X-GitHub-Event", "pull_request", "X-GitHub-Delivery", "f-3")
-	ev, err = Parse(configfile.ForgeGitHub, gh, []byte(body))
-	if err != nil || ev.Action != "synchronized" {
-		t.Fatalf("github synchronized pr = %+v %v", ev, err)
 	}
 }

@@ -26,7 +26,7 @@ const ROUTES: Route[] = [
   { name: 'tenant', slug: 'a/b c#d' },
   { name: 'repo', slug: 'acme', owner: 'weird/owner', repo: 're po' },
   // an installation, naming which of several holding owner/repo is meant.
-  { name: 'repo', slug: 'acme', owner: 'kritik', repo: 'kritik', installation: 'acme-forgejo' },
+  { name: 'repo', slug: 'acme', owner: 'kritik', repo: 'kritik', installation: 'acme-other' },
   { name: 'pull', slug: 'acme', owner: 'kritik', repo: 'kritik', number: 42, installation: 'a b&c' },
 ];
 

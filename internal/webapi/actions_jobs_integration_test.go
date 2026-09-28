@@ -39,11 +39,9 @@ tenants:
   - slug: aj-tenant
     installations:
       - name: aj-bot
-        forge: forgejo
-        host: git.example
+        forge: github
         accounts: [aj]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
     repositories:
       - name: aj/one
 `

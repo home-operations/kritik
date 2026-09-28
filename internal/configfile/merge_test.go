@@ -20,11 +20,11 @@ func (fakeOpener) Open(sealed string) ([]byte, error) {
 	return []byte(plain + "\n"), nil
 }
 
-// dashSpec is a valid dashboard tenant spec for slug with one forgejo
-// installation named inst.
+// dashSpec is a valid dashboard tenant spec for slug with one installation
+// named inst.
 func dashSpec(slug, inst string) string {
-	return `{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"forgejo","accounts":["` + slug + `"],` +
-		`"token":{"sealed":"sealed:tok-` + slug + `"},"webhookSecret":{"sealed":"sealed:wh-` + slug + `"}}]}`
+	return `{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"github","accounts":["` + slug + `"],` +
+		`"app":{"clientId":"Iv1.` + slug + `","privateKey":{"sealed":"sealed:key-` + slug + `"},"webhookSecret":{"sealed":"sealed:wh-` + slug + `"}}}]}`
 }
 
 func dash(slug, spec string, rev int64) DashboardTenant {
@@ -33,7 +33,7 @@ func dash(slug, spec string, rev int64) DashboardTenant {
 
 func parseMinimal(t *testing.T) *File {
 	t.Helper()
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f, err := Parse([]byte(minimal))
 	if err != nil {
@@ -43,20 +43,20 @@ func parseMinimal(t *testing.T) *File {
 }
 
 func TestParseRejectsSealed(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	tests := []struct {
 		name string
 		yaml string
 		want string
 	}{
-		{"installation token", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{ sealed: abc }", 1),
-			"tenants[0].installations[0].token: sealed values are only valid in dashboard-managed tenants"},
+		{"installation key", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{ sealed: abc }", 1),
+			"tenants[0].installations[0].app.privateKey: sealed values are only valid in dashboard-managed tenants"},
 		{"provider key", "providers:\n  p:\n    type: openai\n    apiKey: { sealed: abc }\n" + minimal,
 			"providers.p.apiKey: sealed values are only valid in dashboard-managed tenants"},
 		{"egress credential", "egress:\n  allowHosts: [api.example.com]\n  credentials:\n    api.example.com: { sealed: abc }\n" + minimal,
 			"egress.credentials.api.example.com: sealed values are only valid"},
-		{"sealed and env", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{ env: TEST_FORGEJO_TOKEN, sealed: abc }", 1),
+		{"sealed and env", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{ env: TEST_PRIVATE_KEY, sealed: abc }", 1),
 			"set exactly one of env, file or sealed"},
 	}
 	for _, tt := range tests {
@@ -84,8 +84,8 @@ func TestMerge(t *testing.T) {
 		if ten.Slug != "beta" || ten.Origin() != OriginDashboard {
 			t.Fatalf("tenant = %q origin %q", ten.Slug, ten.Origin())
 		}
-		if in.WebhookSecretValue().Value() != "wh-beta" || in.TokenValue().Value() != "tok-beta" {
-			t.Fatalf("secrets = %q %q", in.WebhookSecretValue().Value(), in.TokenValue().Value())
+		if in.WebhookSecretValue().Value() != "wh-beta" || in.App.PrivateKeyValue().Value() != "key-beta" {
+			t.Fatalf("secrets = %q %q", in.WebhookSecretValue().Value(), in.App.PrivateKeyValue().Value())
 		}
 		if m.InstallationFor(ten, &Repository{Name: "beta/repo"}) == nil {
 			t.Fatal("InstallationFor found nothing")
@@ -158,7 +158,7 @@ func TestMergeHash(t *testing.T) {
 		t.Fatal("a revision bump does not change the hash")
 	}
 	// A tenant deleted and created again starts over at revision 1.
-	b3 := dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), "tok-beta", "tok-rotated", 1), 2)
+	b3 := dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), "key-beta", "key-rotated", 1), 2)
 	if hash(a, b) == hash(a, b3) {
 		t.Fatal("a different spec at the same revision does not change the hash")
 	}
@@ -173,19 +173,17 @@ func TestMergeRejects(t *testing.T) {
 		want string
 	}{
 		{"slug mismatch", dash("beta", dashSpec("gamma", "gamma-bot"), 1), fakeOpener{}, "does not match"},
-		{"env ref", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `{"sealed":"sealed:tok-beta"}`, `{"env":"TEST_FORGEJO_TOKEN"}`, 1), 1),
-			fakeOpener{}, "installations[0].token: dashboard-managed tenants take sealed values"},
-		{"file ref", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `{"sealed":"sealed:tok-beta"}`, `{"file":"/etc/passwd"}`, 1), 1),
+		{"env ref", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `{"sealed":"sealed:key-beta"}`, `{"env":"TEST_PRIVATE_KEY"}`, 1), 1),
+			fakeOpener{}, "installations[0].app.privateKey: dashboard-managed tenants take sealed values"},
+		{"file ref", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `{"sealed":"sealed:key-beta"}`, `{"file":"/etc/passwd"}`, 1), 1),
 			fakeOpener{}, "dashboard-managed tenants take sealed values"},
 		{"nil opener", dash("beta", dashSpec("beta", "beta-bot"), 1), nil, "no key to open sealed values"},
-		{"open fails", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), "sealed:tok-beta", "garbage", 1), 1),
+		{"open fails", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), "sealed:key-beta", "garbage", 1), 1),
 			fakeOpener{}, "not sealed by this key"},
 		{"bad filter", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `"installations"`, `"filter":"pr.draft &&","installations"`, 1), 1),
 			fakeOpener{}, "configfile: dashboard[beta].filter: "},
 		{"trailing document", dash("beta", dashSpec("beta", "beta-bot")+"\n---\n{}", 1), fakeOpener{}, "one document"},
 		{"trailing content", dash("beta", dashSpec("beta", "beta-bot")+" x", 1), fakeOpener{}, "tenant spec"},
-		{"host outside the default allowlist", dash("beta", withHost(dashSpec("beta", "beta-bot"), "evil.example.com"), 1), fakeOpener{},
-			`dashboard[beta].installations[0].host: "evil.example.com" is not an allowed dashboard forge host`},
 		{"unknown key", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `"installations"`, `"nope":1,"installations"`, 1), 1),
 			fakeOpener{}, "field nope not found"},
 		{"empty spec", dash("beta", "", 1), fakeOpener{}, "empty"},
@@ -228,7 +226,7 @@ func withProvider(spec, fields string) string {
 // type's endpoint or a host the operator allows, serves its models with
 // the key the keyring opens.
 func TestMergeTenantProviders(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	file, err := Parse([]byte("web:\n  dashboardProviderHosts: [LLM.example]\n" + minimal))
 	if err != nil {
@@ -248,16 +246,15 @@ func TestMergeTenantProviders(t *testing.T) {
 }
 
 func TestMergeSkipsFileTenantsTheDashboardHolds(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	file, err := Parse([]byte(minimal + `
   - slug: zeta
     installations:
       - name: zeta-bot
-        forge: forgejo
+        forge: github
         accounts: [zeta]
-        token: { env: TEST_FORGEJO_TOKEN }
-        webhookSecret: { env: TEST_WEBHOOK_SECRET }
+        app: { clientId: Iv1.zeta, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -377,10 +374,6 @@ func TestOriginValid(t *testing.T) {
 	}
 }
 
-func withHost(spec, host string) string {
-	return strings.Replace(spec, `"forge":"forgejo"`, `"forge":"forgejo","host":"`+host+`"`, 1)
-}
-
 func TestDecodeTenantDuration(t *testing.T) {
 	ten, err := DecodeTenant(dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `"installations"`, `"settle":"5m","installations"`, 1), 1))
 	if err != nil {
@@ -388,47 +381,5 @@ func TestDecodeTenantDuration(t *testing.T) {
 	}
 	if ten.Settle == nil || *ten.Settle != 5*time.Minute {
 		t.Fatalf("settle = %v, want 5m", ten.Settle)
-	}
-}
-
-func TestDashboardForgeHosts(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
-	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	withFileHost := strings.Replace(minimal, "forge: forgejo", "forge: forgejo\n        host: https://Git.Example.com:3000", 1)
-	explicit := "web:\n  dashboardForgeHosts: [Code.Example.org]\n" + withFileHost
-	tests := []struct {
-		name string
-		file string
-		host string // "" for a github installation without a host
-		ok   bool
-	}{
-		{"default allows github.com", withFileHost, "", true},
-		{"default allows a file installation's host, case-insensitively", withFileHost, "git.EXAMPLE.com", true},
-		{"default rejects another host", withFileHost, "code.example.org", false},
-		{"explicit list allows its host", explicit, "https://code.example.org", true},
-		{"explicit list replaces the default", explicit, "git.example.com", false},
-		{"explicit list without github.com rejects github", explicit, "", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			file, err := Parse([]byte(tt.file))
-			if err != nil {
-				t.Fatalf("Parse: %v", err)
-			}
-			spec := withHost(dashSpec("beta", "beta-bot"), tt.host)
-			if tt.host == "" {
-				spec = `{"slug":"beta","installations":[{"name":"beta-bot","forge":"github","accounts":["beta"],` +
-					`"app":{"clientId":"x","privateKey":{"sealed":"sealed:k"},"webhookSecret":{"sealed":"sealed:w"}}}]}`
-			}
-			_, err = Merge(file, []DashboardTenant{dash("beta", spec, 1)}, fakeOpener{})
-			if (err == nil) != tt.ok {
-				t.Fatalf("err = %v, want ok %v", err, tt.ok)
-			}
-			if err != nil {
-				if me, ok := errors.AsType[*MergeError](err); !ok || me.Slug != "beta" || !strings.Contains(err.Error(), "installations[0].host") {
-					t.Fatalf("error %v is not a *MergeError naming the host path", err)
-				}
-			}
-		})
 	}
 }

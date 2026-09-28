@@ -37,8 +37,7 @@ type Fetch struct {
 	// CloneURL is the HTTPS clone URL, or a local path for tests.
 	CloneURL string
 	// Token, when set, authenticates as x-access-token, which is what a GitHub
-	// App installation token and a Forgejo token both expect; GitLab takes an
-	// access token under any username.
+	// App installation token expects.
 	Token string
 	// Head and Base are full commit SHAs.
 	Head, Base string
@@ -105,9 +104,9 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	if f.Token != "" {
 		auth = &githttp.BasicAuth{Username: "x-access-token", Password: f.Token}
 	}
-	// Fetching a bare SHA needs the server to allow it; GitHub, GitLab and
-	// Forgejo do for reachable commits. Both refspecs in one fetch so the
-	// server can send one pack.
+	// Fetching a bare SHA needs the server to allow it; GitHub does for
+	// reachable commits. Both refspecs in one fetch so the server can send
+	// one pack.
 	err = repo.FetchContext(ctx, &git.FetchOptions{
 		RemoteName:   remoteName,
 		Auth:         auth,

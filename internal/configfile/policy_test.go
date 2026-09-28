@@ -41,7 +41,7 @@ func TestSpecValue(t *testing.T) {
 }
 
 func TestSources(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f, err := Parse([]byte("defaults:\n  settle: 2m\n  agent: { maxSteps: 9 }\n" + strings.Replace(minimal, "slug: acme",
 		"slug: acme\n    mode: agentic\n    repositories: [{ name: acme/x, settle: 0s, enabled: false }]", 1)))

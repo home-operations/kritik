@@ -31,19 +31,15 @@ func tenant(slug string, installs ...configfile.Installation) configfile.Tenant 
 	return configfile.Tenant{Slug: slug, Installations: installs}
 }
 
-func install(forge configfile.Forge, host, account string) configfile.Installation {
-	return configfile.Installation{Name: account + "-bot", Forge: forge, Host: host, Accounts: []string{account}}
+func install(account string) configfile.Installation {
+	return configfile.Installation{Name: account + "-bot", Forge: configfile.ForgeGitHub, Accounts: []string{account}}
 }
 
 func TestResolve(t *testing.T) {
 	file := &configfile.File{Tenants: []configfile.Tenant{
-		tenant("personal", install(configfile.ForgeGitHub, "", "Alice")),
-		tenant("org", install(configfile.ForgeGitHub, "", "acme")),
-		tenant("adminorg", install(configfile.ForgeGitHub, "github.com", "widgets")),
-		tenant("ghe", install(configfile.ForgeGitHub, "ghe.example.com", "acme")),
-		tenant("fj", install(configfile.ForgeForgejo, "code.example.org", "acme")),
-		tenant("fjuser", install(configfile.ForgeForgejo, "https://Code.Example.org", "alice")),
-		tenant("mixed", install(configfile.ForgeForgejo, "code.example.org", "nobody"), install(configfile.ForgeGitHub, "", "widgets")),
+		tenant("personal", install("Alice")),
+		tenant("org", install("acme")),
+		tenant("adminorg", install("widgets")),
 		tenant("several", configfile.Installation{Name: "several-bot", Forge: configfile.ForgeGitHub, Accounts: []string{"nobody", "Widgets"}}),
 	}}
 	id := func(t *testing.T, slug string) string {
@@ -56,7 +52,7 @@ func TestResolve(t *testing.T) {
 		t.Fatalf("no tenant %s", slug)
 		return ""
 	}
-	github := configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, Host: "github.com"}
+	github := configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub}
 	tests := []struct {
 		name   string
 		signIn configfile.SignIn
@@ -67,23 +63,11 @@ func TestResolve(t *testing.T) {
 		{
 			name: "personal account is admin, org member and org admin", signIn: github, login: "alice",
 			roles: map[string]Role{"acme": RoleMember, "widgets": RoleAdmin},
-			want:  map[string]Role{"personal": RoleAdmin, "org": RoleMember, "adminorg": RoleAdmin, "mixed": RoleAdmin, "several": RoleAdmin},
+			want:  map[string]Role{"personal": RoleAdmin, "org": RoleMember, "adminorg": RoleAdmin, "several": RoleAdmin},
 		},
 		{
 			name: "not a member of anything", signIn: github, login: "bob",
 			want: map[string]Role{},
-		},
-		{
-			name: "host mismatch: GitHub Enterprise sign-in sees only its host", login: "alice",
-			signIn: configfile.SignIn{Name: "ghe", Type: configfile.SignInGitHub, Host: "https://GHE.example.com"},
-			roles:  map[string]Role{"acme": RoleMember, "widgets": RoleAdmin},
-			want:   map[string]Role{"ghe": RoleMember},
-		},
-		{
-			name: "forge mismatch: forgejo sign-in ignores GitHub installations", login: "alice",
-			signIn: configfile.SignIn{Name: "fj", Type: configfile.SignInForgejo, Host: "code.example.org"},
-			roles:  map[string]Role{"acme": RoleAdmin, "widgets": RoleAdmin},
-			want:   map[string]Role{"fj": RoleAdmin, "fjuser": RoleAdmin},
 		},
 		{
 			name: "oidc resolves nothing", login: "alice",
@@ -130,8 +114,8 @@ func TestResolve(t *testing.T) {
 }
 
 func TestResolveErrors(t *testing.T) {
-	file := &configfile.File{Tenants: []configfile.Tenant{tenant("org", install(configfile.ForgeGitHub, "", "acme"))}}
-	signIn := configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, Host: "github.com"}
+	file := &configfile.File{Tenants: []configfile.Tenant{tenant("org", install("acme"))}}
+	signIn := configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub}
 	boom := errors.New("boom")
 	o := &orgs{err: boom}
 	if _, err := Resolve(context.Background(), file, signIn, Identity{Login: "alice"}, o.membership()); !errors.Is(err, boom) {
@@ -147,7 +131,6 @@ func TestIsOperator(t *testing.T) {
 	web := configfile.Web{
 		SignIn: []configfile.SignIn{
 			{Name: "gh", Type: configfile.SignInGitHub},
-			{Name: "fj", Type: configfile.SignInForgejo},
 			{Name: "corp", Type: configfile.SignInOIDC},
 		},
 		Operators: []string{"gh:Alice", "corp:Sub-123", "email:Ops@Example.com", "gone:carol"},
@@ -158,12 +141,12 @@ func TestIsOperator(t *testing.T) {
 		want bool
 	}{
 		{"forge login, case-insensitive", Identity{Provider: "gh", Login: "ALICE", Subject: "1"}, true},
-		{"same login on another provider", Identity{Provider: "fj", Login: "alice", Subject: "1"}, false},
+		{"same login on another provider", Identity{Provider: "corp", Login: "alice", Subject: "1"}, false},
 		{"oidc subject, exact", Identity{Provider: "corp", Subject: "Sub-123", Login: "x"}, true},
 		{"oidc subject case differs", Identity{Provider: "corp", Subject: "sub-123"}, false},
 		{"oidc matched by login is not enough", Identity{Provider: "corp", Subject: "zzz", Login: "Sub-123"}, false},
-		{"verified email, case-insensitive", Identity{Provider: "fj", Login: "z", Email: "ops@example.COM", EmailVerified: true}, true},
-		{"unverified email", Identity{Provider: "fj", Login: "z", Email: "ops@example.com"}, false},
+		{"verified email, case-insensitive", Identity{Provider: "corp", Login: "z", Email: "ops@example.COM", EmailVerified: true}, true},
+		{"unverified email", Identity{Provider: "corp", Login: "z", Email: "ops@example.com"}, false},
 		{"operator on a sign-in no longer configured", Identity{Provider: "gone", Login: "carol"}, false},
 		{"nobody", Identity{Provider: "gh", Login: "bob"}, false},
 	}

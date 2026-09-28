@@ -48,9 +48,7 @@ const minimalGatewayFile = `tenants:
   - slug: acme
     installations:
       - name: acme-bot
-        forge: forgejo
-        host: forge.example.com
+        forge: github
         accounts: [acme]
-        token: { env: TEST_PROVIDER_KEY }
-        webhookSecret: { env: TEST_PROVIDER_KEY }
+        app: { clientId: Iv1.test, privateKey: { env: TEST_PROVIDER_KEY }, webhookSecret: { env: TEST_PROVIDER_KEY } }
 `

@@ -3,7 +3,6 @@ package configfile
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -144,22 +143,6 @@ func (in *Installation) resolve(where string, refs refPolicy) error {
 		}
 		if in.App.webhookSecret, err = in.App.WebhookSecret.resolve(refs); err != nil {
 			return fmt.Errorf("configfile: %s.app.webhookSecret: %w", where, err)
-		}
-	}
-	for _, s := range []struct {
-		name string
-		ref  SecretRef
-		dst  *Secret
-	}{
-		{"token", in.Token, &in.token},
-		{"webhookSecret", in.WebhookSecret, &in.webhookSecret},
-		{"gitToken", in.GitToken, &in.gitToken},
-	} {
-		if s.ref.empty() {
-			continue
-		}
-		if *s.dst, err = s.ref.resolve(refs); err != nil {
-			return fmt.Errorf("configfile: %s.%s: %w", where, s.name, err)
 		}
 	}
 	return nil
@@ -538,9 +521,6 @@ func (in Installation) validate(where string) error {
 		if in.App == nil {
 			return fmt.Errorf("configfile: %s: a github installation needs an app", where)
 		}
-		if !in.Token.empty() || !in.WebhookSecret.empty() || !in.GitToken.empty() {
-			return fmt.Errorf("configfile: %s: a github installation takes app credentials, not token, gitToken or webhookSecret", where)
-		}
 		if (in.App.ClientID == "") == in.App.ClientIDFrom.empty() {
 			return fmt.Errorf("configfile: %s.app: set exactly one of clientId or clientIdFrom", where)
 		}
@@ -553,27 +533,8 @@ func (in Installation) validate(where string) error {
 		if in.App.webhookSecret.Value() == "" {
 			return fmt.Errorf("configfile: %s.app.webhookSecret is required", where)
 		}
-	case ForgeGitLab, ForgeForgejo, ForgeGitea:
-		if in.App != nil {
-			return fmt.Errorf("configfile: %s: a %s installation takes a token, not an app", where, in.Forge)
-		}
-		if in.token.Value() == "" {
-			return fmt.Errorf("configfile: %s.token is required", where)
-		}
-		if in.webhookSecret.Value() == "" {
-			return fmt.Errorf("configfile: %s.webhookSecret is required", where)
-		}
-		if key, ok := strings.CutPrefix(in.webhookSecret.Value(), GitLabSigningTokenPrefix); ok && in.Forge == ForgeGitLab {
-			if _, err := base64.StdEncoding.DecodeString(key); err != nil {
-				return fmt.Errorf("configfile: %s.webhookSecret is not a GitLab signing token: base64 must follow %s", where, GitLabSigningTokenPrefix)
-			}
-		}
-		if !in.GitToken.empty() && in.gitToken.Value() == "" {
-			return fmt.Errorf("configfile: %s.gitToken resolved to an empty value", where)
-		}
 	default:
-		return fmt.Errorf("configfile: %s.forge must be %s, %s, %s or %s, got %q",
-			where, ForgeGitHub, ForgeGitLab, ForgeForgejo, ForgeGitea, in.Forge)
+		return fmt.Errorf("configfile: %s.forge must be %s, got %q", where, ForgeGitHub, in.Forge)
 	}
 	return nil
 }

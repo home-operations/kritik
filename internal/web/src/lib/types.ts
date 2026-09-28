@@ -24,7 +24,7 @@ export interface Me {
   tenants: TenantMembership[];
 }
 
-export type SignInProviderType = 'oidc' | 'github' | 'forgejo' | 'gitea';
+export type SignInProviderType = 'oidc' | 'github';
 
 export interface SignInProvider {
   name: string;
@@ -64,8 +64,7 @@ export type SkipReason = '' | 'disabled' | 'filtered' | 'only_skipped_paths';
 export type Severity = 'blocking' | 'important' | 'nit';
 export type IndexRunStatus = 'running' | 'completed' | 'failed' | 'superseded';
 export type FollowupStatus = 'answered' | 'limited' | 'ignored' | 'failed';
-export type Forge = 'github' | 'gitlab' | 'forgejo' | 'gitea';
-export type CredentialKind = 'app' | 'token';
+export type Forge = 'github';
 export type UsageGroup = 'day' | 'model' | 'repo' | 'role';
 export type JobState =
   | 'available'
@@ -110,17 +109,13 @@ export interface OperatorTenant extends TenantSummary {
 export interface CredentialsSet {
   clientId: boolean;
   privateKey: boolean;
-  token: boolean;
-  gitToken: boolean;
   webhookSecret: boolean;
 }
 
 export interface Installation {
   name: string;
   forge: Forge;
-  host: string;
   accounts: string[];
-  credentialKind: CredentialKind;
   credentials: CredentialsSet;
   hookPath: string;
   // lastWebhookAt is null until a webhook for the installation reaches

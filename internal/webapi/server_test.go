@@ -20,19 +20,15 @@ tenants:
   - slug: alpha
     installations:
       - name: alpha-bot
-        forge: forgejo
-        host: git.example
+        forge: github
         accounts: [alpha]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.alpha, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
   - slug: beta
     installations:
       - name: beta-bot
-        forge: forgejo
-        host: git.example
+        forge: github
         accounts: [beta]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.beta, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
 `
 
 func testFile(t *testing.T) *configfile.File {

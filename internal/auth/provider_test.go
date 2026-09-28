@@ -26,7 +26,7 @@ func TestForgeProviderURLs(t *testing.T) {
 	}{
 		{
 			name:      "github.com",
-			signIn:    configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, Host: "github.com", ClientID: "cid"},
+			signIn:    configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, ClientID: "cid"},
 			authorize: "https://github.com/login/oauth/authorize",
 			token:     "https://github.com/login/oauth/access_token",
 			api:       "https://api.github.com",
@@ -34,42 +34,13 @@ func TestForgeProviderURLs(t *testing.T) {
 			display:   "GitHub",
 		},
 		{
-			name:      "github enterprise",
-			signIn:    configfile.SignIn{Name: "ghe", Type: configfile.SignInGitHub, Host: "GHE.example.com", ClientID: "cid", Scopes: []string{"read:user"}},
-			authorize: "https://ghe.example.com/login/oauth/authorize",
-			token:     "https://ghe.example.com/login/oauth/access_token",
-			api:       "https://ghe.example.com/api/v3",
+			name:      "github.com with its own scopes",
+			signIn:    configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, ClientID: "cid", Scopes: []string{"read:user"}},
+			authorize: "https://github.com/login/oauth/authorize",
+			token:     "https://github.com/login/oauth/access_token",
+			api:       "https://api.github.com",
 			scope:     "read:user",
-			display:   "GitHub (ghe.example.com)",
-		},
-		{
-			name:      "forgejo",
-			signIn:    configfile.SignIn{Name: "fj", Type: configfile.SignInForgejo, Host: "code.example.org", ClientID: "cid"},
-			authorize: "https://code.example.org/login/oauth/authorize",
-			token:     "https://code.example.org/login/oauth/access_token",
-			api:       "https://code.example.org/api/v1",
-			scope:     "read:user read:organization",
-			display:   "Forgejo (code.example.org)",
-		},
-		{
-			name:      "forgejo with an explicit scheme and port",
-			signIn:    configfile.SignIn{Name: "fj", Type: configfile.SignInForgejo, Host: "http://127.0.0.1:3000/", ClientID: "cid"},
-			authorize: "http://127.0.0.1:3000/login/oauth/authorize",
-			token:     "http://127.0.0.1:3000/login/oauth/access_token",
-			api:       "http://127.0.0.1:3000/api/v1",
-			scope:     "read:user read:organization",
-			display:   "Forgejo (127.0.0.1)",
-		},
-		{
-			// Gitea speaks the same OAuth flow and user API as Forgejo
-			// (buildProvider routes SignInGitea to newForgejoProvider).
-			name:      "gitea",
-			signIn:    configfile.SignIn{Name: "gt", Type: configfile.SignInGitea, Host: "gitea.example.org", ClientID: "cid"},
-			authorize: "https://gitea.example.org/login/oauth/authorize",
-			token:     "https://gitea.example.org/login/oauth/access_token",
-			api:       "https://gitea.example.org/api/v1",
-			scope:     "read:user read:organization",
-			display:   "Gitea (gitea.example.org)",
+			display:   "GitHub",
 		},
 	}
 	for _, tt := range tests {
@@ -127,7 +98,7 @@ func TestRedirectURL(t *testing.T) {
 }
 
 func TestProvidersCacheRebuildsOnChange(t *testing.T) {
-	web := configfile.Web{SignIn: []configfile.SignIn{{Name: "gh", Type: configfile.SignInGitHub, Host: "github.com", ClientID: "one"}}}
+	web := configfile.Web{SignIn: []configfile.SignIn{{Name: "gh", Type: configfile.SignInGitHub, ClientID: "one"}}}
 	u, _ := url.Parse("https://kritik.example.com")
 	ps := newProviders(u, http.DefaultClient, nil)
 	a, _, err := ps.get(context.Background(), web, "gh")
@@ -138,7 +109,7 @@ func TestProvidersCacheRebuildsOnChange(t *testing.T) {
 	if a != b {
 		t.Fatal("unchanged config rebuilt the provider")
 	}
-	web.SignIn = []configfile.SignIn{{Name: "gh", Type: configfile.SignInGitHub, Host: "github.com", ClientID: "two"}}
+	web.SignIn = []configfile.SignIn{{Name: "gh", Type: configfile.SignInGitHub, ClientID: "two"}}
 	c, _, _ := ps.get(context.Background(), web, "gh")
 	if c == a || !strings.Contains(c.AuthCodeURL("s", "n", "v"), "client_id=two") {
 		t.Fatal("changed config did not rebuild the provider")
@@ -153,12 +124,7 @@ func TestSignInOrigin(t *testing.T) {
 		signIn configfile.SignIn
 		want   string
 	}{
-		{configfile.SignIn{Type: configfile.SignInGitHub, Host: "github.com"}, "github:https://github.com"},
-		{configfile.SignIn{Type: configfile.SignInGitHub, Host: "https://GitHub.com/"}, "github:https://github.com"},
-		{configfile.SignIn{Type: configfile.SignInGitHub, Host: "GHE.example.com"}, "github:https://ghe.example.com"},
-		{configfile.SignIn{Type: configfile.SignInForgejo, Host: "code.example.org"}, "forgejo:https://code.example.org"},
-		{configfile.SignIn{Type: configfile.SignInForgejo, Host: "http://127.0.0.1:3000/"}, "forgejo:http://127.0.0.1:3000"},
-		{configfile.SignIn{Type: configfile.SignInGitea, Host: "gitea.example.org"}, "gitea:https://gitea.example.org"},
+		{configfile.SignIn{Type: configfile.SignInGitHub}, "github:https://github.com"},
 		{configfile.SignIn{Type: configfile.SignInOIDC, Issuer: "https://id.example.com/realms/a"}, "oidc:https://id.example.com/realms/a"},
 	}
 	for _, tt := range tests {

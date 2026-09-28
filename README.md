@@ -2,7 +2,7 @@
 
 # kritik
 
-**Repository-aware AI pull request review for GitHub, GitLab, Forgejo and Gitea.**
+**Repository-aware AI pull request review for GitHub.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/home-operations/kritik/ci.yaml?branch=main&label=ci)](https://github.com/home-operations/kritik/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/actions/workflow/status/home-operations/kritik/release.yaml?branch=main&label=release)](https://github.com/home-operations/kritik/actions/workflows/release.yaml)
@@ -58,10 +58,8 @@ configuration file under `config.file`, the secrets it references under
 `roles.all` runs the single-process topology; `roles.ingest` and
 `roles.worker` split it.
 
-Then [connect a forge](docs/connecting-a-forge.md): a GitHub App, or a
-GitLab, Forgejo or Gitea bot account, with one webhook for the App or each
-owner rather than one per repository (on GitLab, per project unless a
-group webhook is available).
+Then [connect a forge](docs/connecting-a-forge.md): a GitHub App, whose one
+webhook covers every repository it is installed on.
 
 Security notes:
 
@@ -70,21 +68,18 @@ Security notes:
   there, though it can never get or list one.
 - Keep the egress gateway on (the chart's default) with a NetworkPolicy:
   runner pods then reach the outside only through the worker's forward proxy,
-  which allows destinations by hostname (the forges and the file's
+  which allows destinations by hostname (github.com and the file's
   `egress.allowHosts`), and never hold the credentials `egress.credentials`
   lets the gateway add. Agentic reviews need it, since their model calls go
   through it too.
 - Run runner Jobs under a sandboxed RuntimeClass such as gVisor
   (`runner.runtimeClassName`) where the cluster has one, since the pod parses
   untrusted content.
-- Give a GitLab, Forgejo or Gitea installation a read-only `gitToken`
-  beside its `token`: runners fetch with `gitToken` when it is set, and
-  otherwise with `token`, which can write to the forge.
 
 ## Documentation
 
-- [Connecting a forge](docs/connecting-a-forge.md): the GitHub App or
-  GitLab, Forgejo or Gitea bot, its permissions, and its webhooks
+- [Connecting a forge](docs/connecting-a-forge.md): the GitHub App, its
+  permissions, and its webhook
 - [Chart values](charts/kritik/README.md)
 - [`.kritik.yaml` reference](docs/repository-config.md)
 - [Dashboard](docs/dashboard.md): sign-in, roles, the sealing key and

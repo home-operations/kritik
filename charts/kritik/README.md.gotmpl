@@ -113,11 +113,11 @@ Worker-capable pods serve a forward proxy on `gateway.port`, and runner Jobs
 are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
-destination by hostname only. The forges of the file's installations are
-always allowed; `egress.allowHosts` in the configuration file adds the rest
-(registries, release APIs), and `egress.credentials` names hosts the gateway
-adds a bearer token to when a runner sends it a plain `http://` request, so
-the runner never holds the token:
+destination by hostname only. github.com is always allowed once the file
+declares an installation; `egress.allowHosts` in the configuration file adds
+the rest (registries, release APIs), and `egress.credentials` names hosts the
+gateway adds a bearer token to when a runner sends it a plain `http://`
+request, so the runner never holds the token:
 
 ```yaml
 config:

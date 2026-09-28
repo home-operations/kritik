@@ -1,5 +1,5 @@
-// Command kritik reviews GitHub, GitLab and Forgejo pull requests against an
-// index of the repository. One binary serves every role; --role selects
+// Command kritik reviews GitHub pull requests against an index of the
+// repository. One binary serves every role; --role selects
 // which part of the service this process runs.
 package main
 

@@ -53,23 +53,6 @@ tenants:
           clientIdFrom: { env: TEST_CLIENT_ID }
           privateKey: { file: __DIR__/private-key.pem }
           webhookSecret: { env: TEST_WEBHOOK_SECRET }
-      - name: onedr0p-forgejo
-        forge: forgejo
-        host: git.example.org
-        accounts: [onedr0p]
-        token: { env: TEST_FORGEJO_TOKEN }
-        webhookSecret: { env: TEST_WEBHOOK_SECRET }
-      - name: onedr0p-gitea
-        forge: gitea
-        host: gitea.example.org
-        accounts: [onedr0p]
-        token: { env: TEST_GITEA_TOKEN }
-        webhookSecret: { env: TEST_WEBHOOK_SECRET }
-      - name: onedr0p-gitlab
-        forge: gitlab
-        accounts: [onedr0p]
-        token: { env: TEST_GITLAB_TOKEN }
-        webhookSecret: { env: TEST_WEBHOOK_SECRET }
     models:
       review: local/claude-opus-5
     forks: true

@@ -38,9 +38,6 @@ func fixture(t *testing.T) string {
 	}
 	t.Setenv("TEST_OPENROUTER_API_KEY", "sk-or-test")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	t.Setenv("TEST_FORGEJO_TOKEN", "fj-token")
-	t.Setenv("TEST_GITEA_TOKEN", "gt-token")
-	t.Setenv("TEST_GITLAB_TOKEN", "gl-token")
 	t.Setenv("TEST_CLIENT_ID", "Iv1.fromenv")
 	return path
 }
@@ -148,25 +145,6 @@ func TestLoadFull(t *testing.T) {
 	})
 }
 
-func TestGitLabSigningToken(t *testing.T) {
-	minimalEnv(t)
-	for _, tt := range []struct {
-		forge, secret string
-		ok            bool
-	}{
-		{"gitlab", "whsec_c2VjcmV0", true},
-		{"gitlab", "whsec_!!", false},
-		{"gitlab", "a-secret-token", true},
-		{"forgejo", "whsec_!!", true},
-	} {
-		t.Setenv("TEST_WEBHOOK_SECRET", tt.secret)
-		_, err := Parse([]byte(strings.Replace(minimal, "forge: forgejo", "forge: "+tt.forge, 1)))
-		if (err == nil) != tt.ok {
-			t.Errorf("%s webhookSecret %q: Parse = %v, want ok %v", tt.forge, tt.secret, err, tt.ok)
-		}
-	}
-}
-
 func TestInstallationCredentials(t *testing.T) {
 	f, err := Load(fixture(t))
 	if err != nil {
@@ -182,18 +160,6 @@ func TestInstallationCredentials(t *testing.T) {
 	br, _, _ := f.Installation("bot-ross")
 	if br.App.ClientIDValue() != "Iv1.fromenv" {
 		t.Fatalf("clientIdFrom not resolved: %q", br.App.ClientIDValue())
-	}
-	fj, _, ok := f.Installation("onedr0p-forgejo")
-	if !ok || fj.TokenValue().Value() != "fj-token" || fj.WebhookSecretValue().Value() != "whsec" {
-		t.Fatal("forgejo credentials not resolved")
-	}
-	gt, _, ok := f.Installation("onedr0p-gitea")
-	if !ok || gt.TokenValue().Value() != "gt-token" || gt.WebhookSecretValue().Value() != "whsec" {
-		t.Fatal("gitea credentials not resolved")
-	}
-	gl, _, ok := f.Installation("onedr0p-gitlab")
-	if !ok || gl.TokenValue().Value() != "gl-token" || gl.WebhookSecretValue().Value() != "whsec" {
-		t.Fatal("gitlab credentials not resolved")
 	}
 	if _, _, ok := f.Installation("nope"); ok {
 		t.Fatal("unknown installation should not resolve")
@@ -260,19 +226,10 @@ func with(pr map[string]any, k string, v any) map[string]any {
 }
 
 // minimal is the smallest valid file; cases mutate it.
-const minimal = `
-tenants:
-  - slug: acme
-    installations:
-      - name: acme-bot
-        forge: forgejo
-        accounts: [acme]
-        token: { env: TEST_FORGEJO_TOKEN }
-        webhookSecret: { env: TEST_WEBHOOK_SECRET }
-`
+var minimal = githubMinimal("clientId: Iv1.acme, ")
 
-// githubMinimal is the smallest github installation; clientFields is spliced
-// into the app block.
+// githubMinimal is the smallest installation; clientFields is spliced into
+// the app block.
 func githubMinimal(clientFields string) string {
 	return `
 tenants:
@@ -281,12 +238,12 @@ tenants:
       - name: acme-bot
         forge: github
         accounts: [acme]
-        app: { ` + clientFields + `privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
+        app: { ` + clientFields + `privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 `
 }
 
 func TestProviders(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	tests := []struct {
 		name    string
@@ -337,7 +294,7 @@ func TestProviders(t *testing.T) {
 // TestTenantProviders: a tenant's own provider serves its models, and only
 // its; a file tenant, the operator's, may point one anywhere.
 func TestTenantProviders(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	own := "    providers:\n      own: { type: openai, baseUrl: http://llm.internal:4000/v1, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" +
 		"    models: { review: own/big }\n"
@@ -372,7 +329,7 @@ func TestTenantProviders(t *testing.T) {
 }
 
 func TestParseRejects(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	t.Setenv("TEST_EMPTY", "")
 
@@ -396,23 +353,16 @@ func TestParseRejects(t *testing.T) {
 		{"missing accounts", strings.Replace(minimal, "        accounts: [acme]\n", "", 1), "accounts must list at least one account"},
 		{"blank account", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ' ']", 1), "accounts[1] is empty"},
 		{"account listed twice", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ACME]", 1), `accounts[1] "ACME" is listed twice`},
-		{"unknown forge", strings.Replace(minimal, "forge: forgejo", "forge: bitbucket", 1), "forge must be github, gitlab, forgejo or gitea"},
-		{"gitlab with app", strings.Replace(strings.Replace(minimal, "forge: forgejo", "forge: gitlab", 1), "token: { env: TEST_FORGEJO_TOKEN }", "app: { clientId: x, privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }", 1), "takes a token, not an app"},
-		{"github without app", strings.Replace(minimal, "forge: forgejo", "forge: github", 1), "needs an app"},
+		{"unknown forge", strings.Replace(minimal, "forge: github", "forge: gitlab", 1), "forge must be github, got \"gitlab\""},
+		{"github without app", strings.Replace(minimal, "        app: { clientId: Iv1.acme, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n", "", 1), "needs an app"},
 		{"github app with both client id forms", githubMinimal("clientId: x, clientIdFrom: { env: TEST_WEBHOOK_SECRET }, "), "exactly one of clientId or clientIdFrom"},
 		{"github app with neither client id form", githubMinimal(""), "exactly one of clientId or clientIdFrom"},
-		{"forgejo with app", strings.Replace(minimal, "token: { env: TEST_FORGEJO_TOKEN }", "app: { clientId: x, privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }", 1), "takes a token, not an app"},
-		{"gitea with app", strings.Replace(strings.Replace(minimal, "forge: forgejo", "forge: gitea", 1), "token: { env: TEST_FORGEJO_TOKEN }", "app: { clientId: x, privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }", 1), "takes a token, not an app"},
-		{"missing token", strings.Replace(minimal, "        token: { env: TEST_FORGEJO_TOKEN }\n", "", 1), "token is required"},
-		{"unset env reference", strings.Replace(minimal, "TEST_FORGEJO_TOKEN", "TEST_DOES_NOT_EXIST", 1), "is not set"},
-		{"empty env reference", strings.Replace(minimal, "TEST_FORGEJO_TOKEN", "TEST_EMPTY", 1), "token is required"},
-		{"missing file reference", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{ file: /nonexistent/token }", 1), "no such file"},
-		{"env and file both set", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{ env: TEST_FORGEJO_TOKEN, file: /x }", 1), "not both"},
-		{"empty reference", strings.Replace(minimal, "{ env: TEST_FORGEJO_TOKEN }", "{}", 1), "token is required"},
-		{"empty gitToken", minimal + "        gitToken: { env: TEST_EMPTY }\n", "gitToken resolved to an empty value"},
-		{"unset gitToken", minimal + "        gitToken: { env: TEST_DOES_NOT_EXIST }\n", "gitToken"},
-		{"github with gitToken", strings.TrimSuffix(githubMinimal("clientId: x, "), "\n") + "\n        gitToken: { env: TEST_FORGEJO_TOKEN }\n",
-			"not token, gitToken or webhookSecret"},
+		{"missing private key", strings.Replace(minimal, "privateKey: { env: TEST_PRIVATE_KEY }, ", "", 1), "app.privateKey: reference must set env or file"},
+		{"unset env reference", strings.Replace(minimal, "TEST_PRIVATE_KEY", "TEST_DOES_NOT_EXIST", 1), "is not set"},
+		{"empty env reference", strings.Replace(minimal, "TEST_PRIVATE_KEY", "TEST_EMPTY", 1), "privateKey is required"},
+		{"missing file reference", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{ file: /nonexistent/token }", 1), "no such file"},
+		{"env and file both set", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{ env: TEST_PRIVATE_KEY, file: /x }", 1), "not both"},
+		{"empty reference", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{}", 1), "app.privateKey: reference must set env or file"},
 		{"unknown provider type", "providers:\n  p:\n    type: cohere\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" + minimal, "type must be"},
 		{"negative pricing", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
 			"    pricing: { acme-large: { input: 3, output: -1 } }\n" + minimal, "providers.p.pricing.acme-large"},
@@ -460,7 +410,7 @@ func TestParseRejects(t *testing.T) {
 // agent.timeout are accepted up to the point where River's job timeout cap
 // would otherwise cut the runner or the review short, and rejected past it.
 func TestJobTimeoutBounds(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 
 	withRepo := func(repo string) string {
@@ -497,7 +447,7 @@ func TestJobTimeoutBounds(t *testing.T) {
 }
 
 func TestWatch(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	write := func(s string) {
@@ -565,18 +515,16 @@ func TestWatch(t *testing.T) {
 
 // TestRepositoryInstallation checks that a repository entry binds to one
 // installation when its owner's account has several, and that settings
-// are looked up by installation and name, so the same owner/repo on two
-// forges is two repositories.
+// are looked up by installation and name, so the same owner/repo under two
+// Apps is two repositories.
 func TestRepositoryInstallation(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	twoForges := func(repos string) string {
+	twoApps := func(repos string) string {
 		return strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: ["+repos+"]", 1) + `      - name: acme-other
-        forge: forgejo
-        host: other.example.com
+        forge: github
         accounts: [acme]
-        token: { env: TEST_FORGEJO_TOKEN }
-        webhookSecret: { env: TEST_WEBHOOK_SECRET }
+        app: { clientId: Iv1.other, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 `
 	}
 	refused := []struct {
@@ -589,14 +537,14 @@ func TestRepositoryInstallation(t *testing.T) {
 	}
 	for _, tt := range refused {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := Parse([]byte(twoForges(tt.repos))); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, err := Parse([]byte(twoApps(tt.repos))); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Parse = %v, want an error containing %q", err, tt.want)
 			}
 		})
 	}
 
 	t.Run("the same name under two installations is two repositories", func(t *testing.T) {
-		f, err := Parse([]byte(twoForges("{ name: acme/x, installation: acme-other, mode: agentic }, { name: acme/x, installation: acme-bot }")))
+		f, err := Parse([]byte(twoApps("{ name: acme/x, installation: acme-other, mode: agentic }, { name: acme/x, installation: acme-bot }")))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -631,7 +579,7 @@ func TestRepositoryInstallation(t *testing.T) {
 	})
 
 	t.Run("an entry for one installation leaves the other forge's repository unlisted", func(t *testing.T) {
-		f, err := Parse([]byte(twoForges("{ name: acme/x, installation: acme-other, enabled: false }")))
+		f, err := Parse([]byte(twoApps("{ name: acme/x, installation: acme-other, enabled: false }")))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -650,7 +598,7 @@ func TestRepositoryInstallation(t *testing.T) {
 // turns polling off, and the tenant, defaults.runner, built-in order of a
 // runner's deadline and resources.
 func TestPollingIndexingAndRunnerDefaults(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 
 	t.Run("defaults when unset", func(t *testing.T) {
@@ -709,7 +657,7 @@ defaults:
 // written at the defaults, a tenant and a repository entry, the narrowest
 // one written wins even when it is empty or zero, and ignore globs add up.
 func TestScopePrecedence(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	const head = `providers:
   p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }
@@ -792,7 +740,7 @@ defaults:
 // TestReviewPresentation checks every finding goes inline unless a scope
 // sets a severity floor or turns inline comments off.
 func TestReviewPresentation(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	parse := func(t *testing.T, tenantKeys, repos string) *File {
 		t.Helper()
@@ -816,7 +764,7 @@ func TestReviewPresentation(t *testing.T) {
 // setting, and that load refuses a bound a repository could not choose
 // and an operator value outside its own bounds.
 func TestAllow(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	const head = `providers:
   p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }
@@ -874,7 +822,7 @@ defaults:
 // TestTools checks the tool catalog: what a run allowed some commands
 // mounts, and the names, images, paths and commands load refuses.
 func TestTools(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f, err := Parse([]byte(`
 tools:
@@ -920,7 +868,7 @@ tools:
 }
 
 func TestRepositoryModeAgentReview(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	withRepo := func(repo string) string {
 		return strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: ["+repo+"]", 1)

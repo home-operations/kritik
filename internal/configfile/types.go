@@ -33,16 +33,10 @@ const (
 // Forge identifies which forge an installation talks to.
 type Forge string
 
-// Forges kritik supports.
-const (
-	ForgeGitHub  Forge = "github"
-	ForgeGitLab  Forge = "gitlab"
-	ForgeForgejo Forge = "forgejo"
-	// ForgeGitea is a Gitea installation. Gitea speaks the same REST API,
-	// webhooks and OAuth as Forgejo, so it is routed to the same client and
-	// provider code rather than getting its own (ADR-0003 amendment).
-	ForgeGitea Forge = "gitea"
-)
+// ForgeGitHub is github.com, the one forge kritik supports. Forge stays a
+// type, and the code that switches on it keeps its switch, so another forge
+// can be added back (ADR-0014).
+const ForgeGitHub Forge = "github"
 
 // SecretRef points at where a secret value lives. Exactly one of Env, File
 // or Sealed is set. Values are resolved at load and never written back to
@@ -344,13 +338,11 @@ func (a GitHubApp) ClientIDValue() string { return a.clientID }
 // PrivateKeyValue returns the resolved private key PEM.
 func (a GitHubApp) PrivateKeyValue() Secret { return a.privateKey }
 
-// Installation is one bot on one forge, serving the accounts it lists. Its
-// name is the hook path, /hooks/{name}, and must be unique across the whole
-// file.
+// Installation is one GitHub App serving the accounts it lists. Its name is
+// the hook path, /hooks/{name}, and must be unique across the whole file.
 type Installation struct {
 	Name  string `yaml:"name"`
 	Forge Forge  `yaml:"forge"`
-	Host  string `yaml:"host,omitempty"`
 	// Accounts are the users and organizations the installation serves: a
 	// webhook for any other account is ignored, and a repository belongs to
 	// the installation serving its owner. A public GitHub App installed on
@@ -358,36 +350,11 @@ type Installation struct {
 	// served that is not listed.
 	Accounts []string `yaml:"accounts"`
 
-	// App is set for GitHub installations.
 	App *GitHubApp `yaml:"app,omitempty"`
-	// Token and WebhookSecret are set for GitLab and Forgejo installations.
-	Token         SecretRef `yaml:"token,omitempty"`
-	WebhookSecret SecretRef `yaml:"webhookSecret,omitempty"`
-	// GitToken, optional for GitLab and Forgejo, is the token runner pods
-	// fetch with in place of Token. Token can write to the forge and would
-	// otherwise reach the pod that reads untrusted content, so a read-only
-	// token belongs here.
-	GitToken SecretRef `yaml:"gitToken,omitempty"`
-
-	token         Secret
-	webhookSecret Secret
-	gitToken      Secret
 }
 
-// TokenValue returns the resolved bot token for GitLab and Forgejo.
-func (i Installation) TokenValue() Secret { return i.token }
-
-// GitTokenValue returns the resolved fetch token for GitLab and Forgejo,
-// empty when none is configured.
-func (i Installation) GitTokenValue() Secret { return i.gitToken }
-
-// WebhookSecretValue returns the resolved webhook secret for any forge.
-func (i Installation) WebhookSecretValue() Secret {
-	if i.App != nil {
-		return i.App.webhookSecret
-	}
-	return i.webhookSecret
-}
+// WebhookSecretValue returns the resolved webhook secret.
+func (i Installation) WebhookSecretValue() Secret { return i.App.webhookSecret }
 
 // Repository carries per-repository overrides. Everything an installation
 // grants access to is watched whether or not it is listed here.

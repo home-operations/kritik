@@ -38,7 +38,7 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *C
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := NewClient(app, 42, "")
+	c, err := NewClient(app, 42)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func newFakeAPI(t *testing.T) (*fakeAPI, *Client) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return f, &Client{api: api, webBase: srv.URL}
+	return f, &Client{api: api}
 }
 
 func (f *fakeAPI) reply(pattern string, status int, body string) {
@@ -151,7 +151,7 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	if err != nil || tip != "tip456" || branch != "trunk" {
 		t.Fatalf("BranchTip = %q %q, %v", tip, branch, err)
 	}
-	if c.CloneURL("o", "r") != c.webBase+"/o/r.git" {
+	if c.CloneURL("o", "r") != "https://github.com/o/r.git" {
 		t.Fatalf("CloneURL = %s", c.CloneURL("o", "r"))
 	}
 	f.reply("GET /api/v3/repos/o/r/compare/main...none", 200, `{}`)
@@ -309,12 +309,6 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 	pr := prs[0]
 	if !pr.Fork || !pr.AuthorIsBot || pr.HeadSHA != "h2" || pr.DefaultBranch != "main" || len(pr.Labels) != 1 {
 		t.Fatalf("open PR = %+v", pr)
-	}
-}
-
-func TestAPIBase(t *testing.T) {
-	if APIBase("") != "" || APIBase("ghe.example.com/") != "https://ghe.example.com/api/v3" {
-		t.Fatal("APIBase")
 	}
 }
 

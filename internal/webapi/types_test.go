@@ -95,8 +95,8 @@ var goldens = map[string]any{
 	"tenant_detail": TenantDetail{
 		Slug: "alpha", ManagedBy: configfile.OriginFile, Role: auth.RoleMember,
 		Installations: []Installation{{
-			Name: "alpha-bot", Forge: configfile.ForgeGitHub, Host: "github.com", Accounts: []string{"alpha"}, CredentialKind: CredentialApp,
-			Credentials: CredentialsSet{ClientID: true, PrivateKey: true, Token: false, GitToken: false, WebhookSecret: true},
+			Name: "alpha-bot", Forge: configfile.ForgeGitHub, Accounts: []string{"alpha"},
+			Credentials: CredentialsSet{ClientID: true, PrivateKey: true, WebhookSecret: true},
 			HookPath:    "/hooks/alpha-bot", LastWebhookAt: &t0,
 		}},
 		Models: Models{Review: "openrouter/acme-large", Fallback: "openrouter/acme-small"},

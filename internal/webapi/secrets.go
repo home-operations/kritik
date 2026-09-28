@@ -31,7 +31,7 @@ type secretKey struct {
 	generatable bool
 	// bound secrets authenticate to one forge identity acting on the
 	// installation's accounts, so a kept one only stays kept while the
-	// installation still names the same forge, host and accounts.
+	// installation still names the same forge and accounts.
 	bound bool
 }
 
@@ -43,9 +43,6 @@ const sealedKey = "sealed"
 var providerKey = secretKey{path: "apiKey", bound: true}
 
 var secretKeys = []secretKey{
-	{path: "token", bound: true},
-	{path: "webhookSecret", generatable: true},
-	{path: "gitToken", bound: true},
 	{path: "app.clientIdFrom", bound: true},
 	{path: "app.privateKey", bound: true},
 	{path: "app.webhookSecret", generatable: true},
@@ -211,8 +208,8 @@ func sealRef(v any, k secretKey, where string, keep func() (any, *specError)) (s
 
 // keepRef is the sealed ref stored at k under the stored installation with
 // next's name. A bound secret is kept only while the installation still
-// names the same forge, host and accounts: kept under others, a token
-// would be sent to a host, or act for an account, it was never meant for.
+// names the same forge and accounts: kept under others, a key would act for
+// an account it was never meant for.
 func keepRef(stored, next map[string]any, k secretKey, where string) (any, *specError) {
 	name, _ := next["name"].(string)
 	ref, prev := storedRef(stored, name, k.path)
@@ -221,7 +218,7 @@ func keepRef(stored, next map[string]any, k secretKey, where string) (any, *spec
 	}
 	if k.bound && identityOf(prev) != identityOf(next) {
 		return nil, &specError{path: where, code: CodeReenterSecret,
-			msg: "the installation's forge, host or accounts changed; enter this secret again"}
+			msg: "the installation's forge or accounts changed; enter this secret again"}
 	}
 	return ref, nil
 }
@@ -273,17 +270,13 @@ func storedRef(stored map[string]any, name, path string) (any, map[string]any) {
 // installationIdentity is who an installation's credentials speak for, and
 // for which accounts.
 type installationIdentity struct {
-	forge, host, accounts string
+	forge, accounts string
 }
 
-// identityOf normalises an installation's forge, host and accounts. The
-// host keeps its scheme (https when it names none) and path, so a secret
-// kept across http and https, or onto another path on the same host, is
-// refused; case and a trailing slash do not count. A GitHub installation
-// that names no host is github.com. The accounts count as a set.
+// identityOf normalises an installation's forge and accounts. The accounts
+// count as a set, without case.
 func identityOf(in map[string]any) installationIdentity {
 	forge, _ := in["forge"].(string)
-	host, _ := in["host"].(string)
 	var accounts []string
 	list, _ := in["accounts"].([]any)
 	for _, a := range list {
@@ -292,14 +285,7 @@ func identityOf(in map[string]any) installationIdentity {
 		}
 	}
 	slices.Sort(accounts)
-	host = strings.TrimRight(strings.ToLower(strings.TrimSpace(host)), "/")
-	if host == "" && forge == string(configfile.ForgeGitHub) {
-		host = "github.com"
-	}
-	if host != "" && !strings.Contains(host, "://") {
-		host = "https://" + host
-	}
-	return installationIdentity{forge: forge, host: host, accounts: strings.Join(slices.Compact(accounts), ",")}
+	return installationIdentity{forge: forge, accounts: strings.Join(slices.Compact(accounts), ",")}
 }
 
 // redactSpec replaces every secret position in a stored or file spec with

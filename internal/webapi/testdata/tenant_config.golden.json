@@ -299,8 +299,10 @@
     "installations": [
       {
         "name": "alpha-bot",
-        "token": {
-          "set": true
+        "app": {
+          "privateKey": {
+            "set": true
+          }
         }
       }
     ]

@@ -78,17 +78,18 @@ func clearDashboard(t *testing.T, st *store.Store) {
 	}
 }
 
-// hook posts a Forgejo ping to installation signed with secret.
+// hook posts a GitHub event kritik accepts and ignores to installation,
+// signed with secret.
 func hook(t *testing.T, srv *httptest.Server, installation, secret string) int {
 	t.Helper()
-	body := []byte(`{"zen":"ping"}`)
+	body := []byte(`{}`)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/hooks/"+installation, strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Gitea-Event", "ping")
-	req.Header.Set("X-Gitea-Delivery", "d-1")
-	req.Header.Set("X-Gitea-Signature", hex.EncodeToString(mac.Sum(nil)))
+	req.Header.Set("X-GitHub-Event", "repository")
+	req.Header.Set("X-GitHub-Delivery", "d-1")
+	req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

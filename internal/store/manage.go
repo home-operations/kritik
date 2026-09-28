@@ -222,8 +222,8 @@ func probeInstallationName(ctx context.Context, tx pgx.Tx, tenantID, name string
 	}()
 	var id string
 	err = sp.QueryRow(ctx, `
-		INSERT INTO installations (id, tenant_id, name, forge, credential_kind, managed_by)
-		VALUES (gen_random_uuid(), $1, $2, 'github', 'token', 'dashboard')
+		INSERT INTO installations (id, tenant_id, name, forge, managed_by)
+		VALUES (gen_random_uuid(), $1, $2, 'github', 'dashboard')
 		ON CONFLICT DO NOTHING RETURNING id`, tenantID, name).Scan(&id)
 	switch pgErr, _ := errors.AsType[*pgconn.PgError](err); {
 	case errors.Is(err, pgx.ErrNoRows):

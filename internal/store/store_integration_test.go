@@ -104,10 +104,9 @@ tenants:
   - slug: alpha
     installations:
       - name: alpha-bot
-        forge: forgejo
+        forge: github
         accounts: [alpha]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
     repositories:
       - name: alpha/one
       - name: alpha/two
@@ -115,10 +114,9 @@ tenants:
   - slug: beta
     installations:
       - name: beta-bot
-        forge: forgejo
+        forge: github
         accounts: [beta]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
 `
 
 func parse(t *testing.T, yaml string) *configfile.File {
@@ -520,27 +518,23 @@ func TestSweepDisabledIndexes(t *testing.T) {
 func TestFindRepoAcrossInstallations(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
-	const twoForges = `
+	const twoApps = `
 tenants:
   - slug: gamma
     installations:
       - name: gamma-one
-        forge: forgejo
-        host: one.example.com
+        forge: github
         accounts: [gamma]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
       - name: gamma-two
-        forge: forgejo
-        host: two.example.com
+        forge: github
         accounts: [gamma]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
     repositories:
       - { name: gamma/x, installation: gamma-one }
       - { name: gamma/x, installation: gamma-two }
 `
-	if err := s.ApplyConfig(ctx, parse(t, twoForges), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoApps), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	gamma := tenantID(t, s, "gamma")
@@ -567,13 +561,11 @@ tenants:
 		t.Fatalf("FindRepo(unknown) = %v, want ErrNotFound", err)
 	}
 
-	oneLeft := strings.Replace(strings.Replace(twoForges, `      - { name: gamma/x, installation: gamma-two }
+	oneLeft := strings.Replace(strings.Replace(twoApps, `      - { name: gamma/x, installation: gamma-two }
 `, "", 1), `      - name: gamma-two
-        forge: forgejo
-        host: two.example.com
+        forge: github
         accounts: [gamma]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
 `, "", 1)
 	if err := s.ApplyConfig(ctx, parse(t, oneLeft), "test"); err != nil {
 		t.Fatalf("ApplyConfig without gamma-two: %v", err)

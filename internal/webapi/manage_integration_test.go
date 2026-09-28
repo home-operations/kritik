@@ -48,16 +48,13 @@ web:
       clientId: kritik
       clientSecret: { env: KRITIK_TEST_TOKEN }
   operators: ["corp:mgr-op"]
-  dashboardForgeHosts: [git.example, git2.example]
 tenants:
   - slug: mgr-file
     installations:
       - name: mgr-file-bot
-        forge: forgejo
-        host: git.example
+        forge: github
         accounts: [mf]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
     repositories:
       - name: mf/one
 `
@@ -295,12 +292,12 @@ func (e *manageEnv) waitFor(what string, cond func(*configfile.File) bool) {
 	}
 }
 
-func dashSpec(tokenRef, hookRef map[string]any, extra map[string]any) map[string]any {
+func dashSpec(keyRef, hookRef map[string]any, extra map[string]any) map[string]any {
 	spec := map[string]any{
 		"slug": "mgr-dash",
 		"installations": []any{map[string]any{
-			"name": "mgr-dash-bot", "forge": "forgejo", "host": "git.example", "accounts": []string{"md"},
-			"token": tokenRef, "webhookSecret": hookRef,
+			"name": "mgr-dash-bot", "forge": "github", "accounts": []string{"md"},
+			"app": map[string]any{"clientId": "Iv1.test", "privateKey": keyRef, "webhookSecret": hookRef},
 		}},
 		"repositories": []any{map[string]any{"name": "md/one"}},
 	}
@@ -334,7 +331,7 @@ func TestManage(t *testing.T) {
 
 func testCreate(t *testing.T, e *manageEnv) string {
 	before := e.totalAudits()
-	spec := dashSpec(map[string]any{"value": "plain-token-xyz"}, map[string]any{"generate": true}, nil)
+	spec := dashSpec(map[string]any{"value": "plain-key-xyz"}, map[string]any{"generate": true}, nil)
 	status, body := e.do("admin", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-dash", Spec: mustJSON(t, spec)})
 	e.expect(status, body, http.StatusUnauthorized, "")
 	status, body = e.do("outsider", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-dash", Spec: mustJSON(t, spec)})
@@ -345,19 +342,19 @@ func testCreate(t *testing.T, e *manageEnv) string {
 	if err := json.Unmarshal(body, &res); err != nil {
 		t.Fatal(err)
 	}
-	secret := res.Generated["installations[mgr-dash-bot].webhookSecret"]
+	secret := res.Generated["installations[mgr-dash-bot].app.webhookSecret"]
 	if res.Revision != 1 || len(secret) != 64 {
 		t.Fatalf("result = %s", body)
 	}
 	stored := e.scalar(`SELECT spec::text FROM dashboard_tenants WHERE slug = 'mgr-dash'`)
-	if strings.Contains(stored, "plain-token-xyz") || strings.Contains(stored, secret) || !strings.Contains(stored, `"sealed"`) {
+	if strings.Contains(stored, "plain-key-xyz") || strings.Contains(stored, secret) || !strings.Contains(stored, `"sealed"`) {
 		t.Errorf("stored spec is not sealed: %s", stored)
 	}
 	if n := e.audits(AuditTenantCreate, "mgr-dash"); n != 1 || e.totalAudits() != before+1 {
 		t.Errorf("tenant.create audit rows = %d (total +%d), want exactly 1", n, e.totalAudits()-before)
 	}
 	detail := e.scalar(`SELECT detail::text FROM audit_events WHERE action = 'tenant.create' AND target = 'mgr-dash'`)
-	if strings.Contains(detail, secret) || strings.Contains(detail, "plain-token-xyz") || !strings.Contains(detail, "webhookSecret") {
+	if strings.Contains(detail, secret) || strings.Contains(detail, "plain-key-xyz") || !strings.Contains(detail, "webhookSecret") {
 		t.Errorf("audit detail = %s", detail)
 	}
 	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-dash", Spec: mustJSON(t, spec)})
@@ -372,7 +369,7 @@ func testCreate(t *testing.T, e *manageEnv) string {
 
 func testHookVerifies(t *testing.T, e *manageEnv, secret string) {
 	in, _, ok := e.src.Current.Get().Installation("mgr-dash-bot")
-	if !ok || in.WebhookSecretValue().Value() != secret || in.TokenValue().Value() != "plain-token-xyz" {
+	if !ok || in.WebhookSecretValue().Value() != secret || in.App.PrivateKeyValue().Value() != "plain-key-xyz" {
 		t.Fatalf("merged installation does not open to the written secrets")
 	}
 	mux := http.NewServeMux()
@@ -387,8 +384,8 @@ func testHookVerifies(t *testing.T, e *manageEnv, secret string) {
 			mac := hmac.New(sha256.New, []byte(tt.key))
 			mac.Write(body)
 			req := httptest.NewRequest("POST", "/hooks/mgr-dash-bot", bytes.NewReader(body))
-			req.Header.Set("X-Gitea-Event", "repository")
-			req.Header.Set("X-Gitea-Signature", hex.EncodeToString(mac.Sum(nil)))
+			req.Header.Set("X-GitHub-Event", "repository")
+			req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)
 			if w.Code != tt.status {
@@ -410,8 +407,8 @@ func testConfigRedacted(t *testing.T, e *manageEnv) {
 			if c.ManagedBy != configfile.OriginDashboard || c.Revision == nil || *c.Revision != 1 || c.Editable != (who != "member") {
 				t.Errorf("config = %s", body)
 			}
-			if s := string(c.Spec); strings.Contains(s, "sealed") || strings.Contains(s, "plain-token") ||
-				!strings.Contains(s, `"token":{"set":true}`) || !strings.Contains(s, `"webhookSecret":{"set":true}`) {
+			if s := string(c.Spec); strings.Contains(s, "sealed") || strings.Contains(s, "plain-key") ||
+				!strings.Contains(s, `"privateKey":{"set":true}`) || !strings.Contains(s, `"webhookSecret":{"set":true}`) {
 				t.Errorf("spec is not redacted: %s", s)
 			}
 		})
@@ -439,26 +436,19 @@ func testAdminUpdate(t *testing.T, e *manageEnv) {
 	env := UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, dashSpec(map[string]any{"env": "HOME"}, keep, nil))}
 	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", env)
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	badHost := dashSpec(map[string]any{"value": "t"}, keep, nil)
-	badHost["installations"].([]any)[0].(map[string]any)["host"] = "evil.example"
-	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, badHost)})
+	badForge := dashSpec(map[string]any{"value": "k"}, keep, nil)
+	badForge["installations"].([]any)[0].(map[string]any)["forge"] = "gitlab"
+	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, badForge)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	if !strings.Contains(string(body), `"path":"installations[0].host"`) || strings.Contains(string(body), "dashboard[") {
+	if !strings.Contains(string(body), `"path":"installations[0].forge"`) || strings.Contains(string(body), "dashboard[") {
 		t.Errorf("merge error = %s", body)
 	}
 	moved := dashSpec(keep, keep, nil)
-	moved["installations"].([]any)[0].(map[string]any)["host"] = "git2.example"
+	moved["installations"].([]any)[0].(map[string]any)["accounts"] = []string{"md", "other"}
 	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, moved)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeReenterSecret)
-	if !strings.Contains(string(body), `"path":"installations[0].token"`) {
+	if !strings.Contains(string(body), `"path":"installations[0].app.privateKey"`) {
 		t.Errorf("reenter_secret details = %s", body)
-	}
-	plain := dashSpec(map[string]any{"value": "t"}, keep, nil)
-	plain["installations"].([]any)[0].(map[string]any)["host"] = "http://git.example"
-	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, plain)})
-	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	if !strings.Contains(string(body), `"path":"installations[0].host"`) {
-		t.Errorf("plain-http host = %s", body)
 	}
 	good := UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, dashSpec(keep, keep, map[string]any{"filter": "true"}))}
 	status, body = e.do("member", "PUT", "/api/v1/tenants/mgr-dash/config", good)
@@ -470,14 +460,14 @@ func testAdminUpdate(t *testing.T, e *manageEnv) {
 	if e.totalAudits() != before {
 		t.Fatalf("refused writes left %d audit rows", e.totalAudits()-before)
 	}
-	sealedToken := e.scalar(`SELECT spec->'installations'->0->'token'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`)
+	sealedKey := e.scalar(`SELECT spec->'installations'->0->'app'->'privateKey'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`)
 	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", good)
 	e.expect(status, body, http.StatusOK, "")
 	if !strings.Contains(string(body), `"revision":2`) {
 		t.Errorf("update = %s", body)
 	}
-	if got := e.scalar(`SELECT spec->'installations'->0->'token'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`); got != sealedToken {
-		t.Errorf("keep replaced the sealed token")
+	if got := e.scalar(`SELECT spec->'installations'->0->'app'->'privateKey'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`); got != sealedKey {
+		t.Errorf("keep replaced the sealed private key")
 	}
 	if n := e.audits(AuditTenantUpdate, "mgr-dash"); n != 1 || e.totalAudits() != before+1 {
 		t.Errorf("tenant.update audit rows = %d, want exactly 1", n)
@@ -521,16 +511,16 @@ func testCollisions(t *testing.T, e *manageEnv) {
 	// mgr-zed sorts after mgr-dash, so the merge reports mgr-dash taking
 	// its installation name against mgr-zed; the blame is still mgr-dash's.
 	zed := map[string]any{"slug": "mgr-zed", "installations": []any{map[string]any{
-		"name": "mgr-zed-bot", "forge": "forgejo", "host": "git.example", "accounts": []string{"mz"},
-		"token": map[string]any{"value": "z"}, "webhookSecret": map[string]any{"value": "z"},
+		"name": "mgr-zed-bot", "forge": "github", "accounts": []string{"mz"},
+		"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "z"}, "webhookSecret": map[string]any{"value": "z"}},
 	}}}
 	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-zed", Spec: mustJSON(t, zed)})
 	e.expect(status, body, http.StatusCreated, "")
 	e.waitFor("mgr-zed to merge", func(f *configfile.File) bool { _, ok := f.Tenant("mgr-zed"); return ok })
 	taken := dashSpec(keep, keep, map[string]any{"filter": "true"})
 	taken["installations"] = append(taken["installations"].([]any), map[string]any{
-		"name": "mgr-zed-bot", "forge": "forgejo", "host": "git.example", "accounts": []string{"mz2"},
-		"token": map[string]any{"value": "t"}, "webhookSecret": map[string]any{"value": "w"},
+		"name": "mgr-zed-bot", "forge": "github", "accounts": []string{"mz2"},
+		"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "k"}, "webhookSecret": map[string]any{"value": "w"}},
 	})
 	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, taken)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
@@ -819,8 +809,8 @@ func testFileTenantLeftOut(t *testing.T, e *manageEnv) {
 		return s
 	}
 	spec := mustJSON(t, map[string]any{"slug": "mgr-file", "installations": []any{map[string]any{
-		"name": "mgr-held-bot", "forge": "forgejo", "host": "git.example", "accounts": []string{"mh"},
-		"token": map[string]any{"sealed": seal("t")}, "webhookSecret": map[string]any{"sealed": seal("w")},
+		"name": "mgr-held-bot", "forge": "github", "accounts": []string{"mh"},
+		"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"sealed": seal("k")}, "webhookSecret": map[string]any{"sealed": seal("w")}},
 	}}})
 	write := func(fn func(pgx.Tx) error) {
 		if err := e.st.WithTenant(ctx, (&configfile.Tenant{Slug: "mgr-file"}).ID(), fn); err != nil {

@@ -1,7 +1,7 @@
 # Dashboard
 
-The web role serves a dashboard: sign in with GitHub, Forgejo, Gitea or any
-OIDC provider, and see the tenants you belong to, their installations and
+The web role serves a dashboard: sign in with GitHub or any OIDC provider,
+and see the tenants you belong to, their installations and
 repositories, live review and conversation state as it runs, member and
 invite management, and a per-tenant and (for operators) instance-wide audit
 log. A tenant admin can also queue a re-run of a specific pull request,
@@ -25,8 +25,8 @@ The `web:` block, a sibling of `tenants:` at the file's root, controls who
 may sign in and who of them may operate the instance:
 
 - `signIn` — one entry per identity provider, each with a `name` (used in
-  the callback URL and in `operators`), a `type` of `oidc`, `github`,
-  `forgejo` or `gitea`, a `clientId`, and a `clientSecret` (a secret
+  the callback URL and in `operators`), a `type` of `oidc` or `github`, a
+  `clientId`, and a `clientSecret` (a secret
   reference: `env`, `file` or `sealed`). Every provider must allow the
   callback URL
   `<KRITIK_WEB_URL>/auth/callback/<name>`. For example:
@@ -44,30 +44,10 @@ may sign in and who of them may operate the instance:
         type: github
         clientId: Iv1.abc123
         clientSecret: { env: GITHUB_CLIENT_SECRET }
-      - name: ghe
-        type: github
-        host: github.example.com
-        clientId: abc123
-        clientSecret: { file: /run/secrets/ghe-client-secret }
-      - name: forgejo
-        type: forgejo
-        host: forgejo.example.com
-        clientId: abc123
-        clientSecret: { env: FORGEJO_CLIENT_SECRET }
-      - name: gitea
-        type: gitea
-        host: gitea.example.com
-        clientId: abc123
-        clientSecret: { env: GITEA_CLIENT_SECRET }
   ```
 
-  `oidc` takes `issuer` (an `https` URL) and no `host`; `github`, `forgejo`
-  and `gitea` take `host` and no `issuer`. A `github` sign-in with no `host`
-  is `github.com` — a GitHub Enterprise instance is still `type: github`,
-  just naming its own `host`; `forgejo`'s and `gitea`'s `host` is always
-  required. Gitea speaks the same OAuth flow and user API as Forgejo, so
-  `type: gitea` behaves identically to `type: forgejo` against a Gitea
-  instance.
+  `oidc` takes `issuer` (an `https` URL); `github` signs in on github.com
+  and takes no `issuer`.
 
 - `operators` — the identities allowed to change configuration, each
   `"<signIn name>:<login or subject>"` (the forge login or OIDC subject) or
@@ -80,11 +60,6 @@ may sign in and who of them may operate the instance:
   only whether it is set, and a URL's credentials are hidden.
 - `sessionTTL` — how long a dashboard session lasts, between 5 minutes and
   30 days; defaults to 12 hours.
-- `dashboardForgeHosts` — the forge hosts a dashboard-managed tenant's
-  installations may use. Every installation host is also an allowed runner
-  egress host, so this bounds what a tenant admin, who did not write the
-  operator's file, can point kritik at; empty means `github.com` plus
-  whatever hosts the file's own installations already use. No wildcards.
 - `dashboardProviderHosts` — the hosts a dashboard-managed tenant's own
   provider keys may name in `baseUrl`. The worker calls a provider from
   inside the cluster with its key, so this bounds where a tenant admin can
@@ -111,17 +86,15 @@ Three roles share the same `web.signIn` and `web.operators`:
   operator-only fields above), set its review and fallback models to one
   on its own provider keys, invite and remove members, and queue a re-run, cancel or
   reindex; every one of those writes is audit-logged in the same
-  transaction as the change it makes. A dashboard installation may only
-  reach its forge over `https`; a plain-`http` host is refused. A secret an
-  admin submits (a client secret, an installation token) is bound to that
-  installation's forge, host (scheme and path included) and accounts —
-  change any of them and the secret must be re-entered, since it no longer
-  speaks for the same identity or acts for the same accounts. The form never keeps a renamed
+  transaction as the change it makes. A secret an admin submits (an App's
+  private key or client ID) is bound to that installation's forge and
+  accounts: change either and the secret must be re-entered, since it no
+  longer acts for the same accounts. The form never keeps a renamed
   installation's secrets. In the advanced JSON editor, as through the API,
   `{"keep": true}` keeps the secret stored under the name the JSON gives:
   renaming an installation there does not carry its secrets along (the
   keep is refused, or takes the secret of a stored installation that
-  already had the new name, when its forge, host and accounts match), so
+  already had the new name, when its forge and accounts match), so
   enter them again when renaming in JSON.
 - **Tenant member** — read access to their tenant's own reviews,
   conversations and transcripts; no write access.

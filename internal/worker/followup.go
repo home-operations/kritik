@@ -271,7 +271,7 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, error) {
 			return nil, err
 		}
 	// Only a reply has a thread to gather: a comment that replies to none
-	// starts its thread, as every Forgejo inline comment does.
+	// starts its thread.
 	case f.comment.InReplyTo != 0:
 		root := f.comment.InReplyTo
 		all, err := f.client.ListInline(ctx, f.owner, f.repo, f.pr.number)

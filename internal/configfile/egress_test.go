@@ -11,11 +11,12 @@ func minimalEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("TEST_OPENROUTER_API_KEY", "sk-or-test")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	t.Setenv("TEST_FORGEJO_TOKEN", "fj-token")
+	t.Setenv("TEST_PRIVATE_KEY", "key")
 	t.Setenv("TEST_CLIENT_ID", "Iv1.fromenv")
 }
 
 func TestEgressRules(t *testing.T) {
+	minimalEnv(t)
 	t.Setenv("TEST_GH_TOKEN", "ghp_x\n")
 	f, err := Load(fixture(t))
 	if err != nil {
@@ -50,25 +51,15 @@ func TestEgressRules(t *testing.T) {
 	if rules.Credentials["api.github.com"] != "Bearer ghp_x" {
 		t.Fatalf("credentials = %v", rules.Credentials)
 	}
-	// A Forgejo installation's host is allowed implicitly, a provider's
-	// baseUrl is not, and a credential's value never leaks into the host
-	// list.
-	h, err := Parse([]byte("providers:\n  p:\n    type: openai\n    baseUrl: https://llm.example:8443/v1\n    apiKey: { env: TEST_GH_TOKEN }\n" +
-		strings.Replace(minimal, "accounts: [acme]", "host: git.example.org\n        accounts: [acme]", 1)))
+	// An installation's forge is allowed implicitly, a provider's baseUrl
+	// is not, and a credential's value never leaks into the host list.
+	h, err := Parse([]byte("providers:\n  p:\n    type: openai\n    baseUrl: https://llm.example:8443/v1\n    apiKey: { env: TEST_GH_TOKEN }\n" + minimal))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hosts := h.EgressRules().Hosts; !slices.Contains(hosts, "git.example.org") || slices.Contains(hosts, "llm.example") ||
+	if hosts := h.EgressRules().Hosts; !slices.Contains(hosts, GitHubHost) || slices.Contains(hosts, "llm.example") ||
 		slices.Contains(hosts, "api.openai.com") || slices.ContainsFunc(hosts, func(h string) bool { return strings.Contains(h, "ghp_") }) {
 		t.Fatalf("hosts = %v", hosts)
-	}
-	// A GitLab installation that names no host talks to gitlab.com.
-	gl, err := Parse([]byte(strings.Replace(minimal, "forge: forgejo", "forge: gitlab", 1)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if hosts := gl.EgressRules().Hosts; !slices.Contains(hosts, GitLabHost) {
-		t.Fatalf("hosts = %v, want %s among them", hosts, GitLabHost)
 	}
 }
 

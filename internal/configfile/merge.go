@@ -11,7 +11,6 @@ import (
 	"io"
 	"slices"
 	"strconv"
-	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -141,72 +140,11 @@ func Merge(file *File, dash []DashboardTenant, open Opener) (*File, error) {
 	if err := out.validateTenants(); err != nil {
 		return nil, err
 	}
-	if err := out.checkDashboardForgeHosts(file.DashboardForgeHosts()); err != nil {
-		return nil, err
-	}
 	if err := out.checkDashboardProviderHosts(file.Web.DashboardProviderHosts); err != nil {
 		return nil, err
 	}
 	out.hash = mergedHash(file.hash, out.dashboard)
 	return &out, nil
-}
-
-// DashboardForgeHosts is the effective web.dashboardForgeHosts, lowercased.
-func (f *File) DashboardForgeHosts() []string {
-	if len(f.Web.DashboardForgeHosts) > 0 {
-		hosts := make([]string, len(f.Web.DashboardForgeHosts))
-		for i, h := range f.Web.DashboardForgeHosts {
-			hosts[i] = strings.ToLower(h)
-		}
-		return hosts
-	}
-	hosts := []string{GitHubHost}
-	for _, t := range f.Tenants {
-		for i := range t.Installations {
-			if h := t.Installations[i].forgeHost(); h != "" && !slices.Contains(hosts, h) {
-				hosts = append(hosts, h)
-			}
-		}
-	}
-	return hosts
-}
-
-// forgeHost is the lowercase host the installation talks to, or "" when it
-// names none.
-func (in *Installation) forgeHost() string { return ForgeHost(in.Forge, in.Host) }
-
-// ForgeHost is the lowercase host an installation or sign-in of kind
-// talks to, "" when it names none.
-func ForgeHost(kind Forge, host string) string {
-	switch {
-	case host != "":
-		return strings.ToLower(hostOf(host))
-	case kind == ForgeGitHub:
-		return GitHubHost
-	case kind == ForgeGitLab:
-		return GitLabHost
-	default:
-		return ""
-	}
-}
-
-// checkDashboardForgeHosts rejects a dashboard installation on a forge host
-// the operator has not allowed.
-func (f *File) checkDashboardForgeHosts(allowed []string) error {
-	for ti := range f.Tenants {
-		t := &f.Tenants[ti]
-		if t.Origin() != OriginDashboard {
-			continue
-		}
-		for ii := range t.Installations {
-			in := &t.Installations[ii]
-			if h := in.forgeHost(); h != "" && !slices.Contains(allowed, h) {
-				return &MergeError{Slug: t.Slug, Err: fmt.Errorf("configfile: %s.installations[%d].host: %q is not an allowed dashboard forge host",
-					t.where(ti), ii, h)}
-			}
-		}
-	}
-	return nil
 }
 
 // mergedHash is the parsed file's hash when no tenant is merged in, so a

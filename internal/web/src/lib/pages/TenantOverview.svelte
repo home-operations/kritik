@@ -224,7 +224,7 @@
                 {#each d.detail.installations as inst (inst.name)}
                   <tr>
                     <td class="mono">{inst.name}</td>
-                    <td><span class="mono">{inst.accounts.join(', ')}</span> <span class="small muted">on {inst.host || inst.forge}</span></td>
+                    <td><span class="mono">{inst.accounts.join(', ')}</span> <span class="small muted">on {inst.forge}</span></td>
                     <td>
                       {#if inst.lastWebhookAt}
                         <Pill tone="ok" label="receiving" /> <span class="small muted">last <Time iso={inst.lastWebhookAt} /></span>
