@@ -237,6 +237,7 @@
       {#each draft.providers as prov, i (prov.key)}
         <ProviderFields
           bind:prov={draft.providers[i]!}
+          account={`${draft.forge}/${draft.name}`}
           {inv}
           onremove={() => structural(() => (draft.providers = draft.providers.filter((x) => x.key !== prov.key)))}
         />

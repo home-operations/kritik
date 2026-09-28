@@ -1,13 +1,18 @@
 <script lang="ts">
   import { canKeepKey, providerPath, type ProviderDraft } from '../../spec';
   import SecretField from './SecretField.svelte';
+  import KeyTest from './KeyTest.svelte';
 
   interface Props {
     prov: ProviderDraft;
     inv: (path: string) => boolean;
     onremove: () => void;
+    // account is the account, "<forge>/<name>", whose own key this is;
+    // absent for the instance's.
+    account?: string;
+    onmodels?: (models: string[]) => void;
   }
-  let { prov = $bindable(), inv, onremove }: Props = $props();
+  let { prov = $bindable(), inv, onremove, account, onmodels }: Props = $props();
   const p = $derived(providerPath(prov));
   // The server keeps a key only under its name and endpoint; the save is
   // refused otherwise (reenter_secret).
@@ -43,4 +48,11 @@
     </label>
     <SecretField label="API key" path="{p}.apiKey" bind:secret={prov.apiKey} {keepable} invalid={inv(`${p}.apiKey`)} />
   </div>
+  <KeyTest
+    path="/api/v1/operator/providers/test"
+    secret={prov.apiKey}
+    {keepable}
+    {onmodels}
+    request={(apiKey) => ({ type: prov.type, baseUrl: prov.baseUrl.trim() || undefined, apiKey, name: prov.origName || undefined, account })}
+  />
 </div>

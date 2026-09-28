@@ -776,6 +776,66 @@ export interface AppInstallation {
   url?: string;
 }
 
+// How far the instance is from reviewing: what the setup wizard shows and
+// resumes from.
+export interface SetupStatus {
+  webUrl: string;
+  // Where each connection's webhook goes, its name appended.
+  hooksUrl: string;
+  fileConnections: string[];
+  connections: string[];
+  // defaults.models.review, '' when unset.
+  reviewModel: string;
+  embedding: boolean;
+  canReview: boolean;
+}
+
+// Tests a provider's key before it is saved. apiKey is {value} or
+// {keep: true}, the running provider name's key (an account's own when
+// account names one), at its own type and endpoint only.
+export interface ProviderTestRequest {
+  type: string;
+  baseUrl?: string;
+  apiKey: SecretInput;
+  name?: string;
+  account?: string;
+}
+
+export interface EmbeddingTestRequest {
+  baseUrl: string;
+  model: string;
+  dims: number;
+  apiKey: SecretInput;
+}
+
+// A test's outcome: the provider's error as it came, and the models a
+// provider lists.
+export interface TestResult {
+  ok: boolean;
+  error?: string;
+  models?: string[];
+}
+
+// One account a connection serves: whether its App is installed there,
+// and the repositories it reaches.
+export interface AccountRepositories {
+  account: string;
+  installed: boolean;
+  repositories: AppRepository[];
+}
+
+export interface AppRepository {
+  name: string;
+  fullName: string;
+  defaultBranch: string;
+  private: boolean;
+  archived: boolean;
+}
+
+export interface RegisterResult {
+  added: number;
+}
+
 export type AuditAction =
   | 'config.update'
   | 'account.update'

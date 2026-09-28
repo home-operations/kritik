@@ -179,6 +179,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	s.registerManage(mux)
 	s.registerApp(mux)
 	s.registerConnections(mux)
+	s.registerSetup(mux)
 	s.registerActions(mux)
 	s.registerAudit(mux)
 }

@@ -132,6 +132,79 @@ type AppInstallation struct {
 	URL             string `json:"url,omitempty"`
 }
 
+// SetupStatus is how far the instance is from reviewing (ADR-0014 §2.6),
+// what the first-run wizard shows and resumes from.
+type SetupStatus struct {
+	// WebURL is the dashboard's URL, and HooksURL where each connection's
+	// webhook goes, its name appended.
+	WebURL   string `json:"webUrl"`
+	HooksURL string `json:"hooksUrl"`
+	// FileConnections are the connections the configuration file and its
+	// environment declare, and Connections the running ones.
+	FileConnections []string `json:"fileConnections"`
+	Connections     []string `json:"connections"`
+	// ReviewModel is defaults.models.review, which validation holds to a
+	// model an instance provider serves; "" when unset.
+	ReviewModel string `json:"reviewModel"`
+	// Embedding is whether an embedder is set.
+	Embedding bool `json:"embedding"`
+	// CanReview is whether the instance can review: a running connection
+	// and a default review model.
+	CanReview bool `json:"canReview"`
+}
+
+// ProviderTestRequest tests a model provider's key before it is saved.
+// APIKey is {"value": "..."}, or {"keep": true} for the key the running
+// provider Name holds, an account's own when Account, "<forge>/<name>",
+// names one; a kept key is tested only at its own type and endpoint.
+type ProviderTestRequest struct {
+	Type    configfile.ProviderType `json:"type"`
+	BaseURL string                  `json:"baseUrl,omitempty"`
+	APIKey  json.RawMessage         `json:"apiKey"`
+	Name    string                  `json:"name,omitempty"`
+	Account string                  `json:"account,omitempty"`
+}
+
+// EmbeddingTestRequest tests an embedder before it is saved: one input
+// embedded at Dims. APIKey is as ProviderTestRequest's, {"keep": true}
+// naming the running embedder's key.
+type EmbeddingTestRequest struct {
+	BaseURL string          `json:"baseUrl"`
+	Model   string          `json:"model"`
+	Dims    int             `json:"dims"`
+	APIKey  json.RawMessage `json:"apiKey"`
+}
+
+// TestResult is a test's outcome: the provider's error verbatim when it
+// failed, and the models a provider offers when it lists them.
+type TestResult struct {
+	OK     bool     `json:"ok"`
+	Error  string   `json:"error,omitempty"`
+	Models []string `json:"models,omitempty"`
+}
+
+// AccountRepositories is one account a connection serves: whether its App
+// is installed there, and the repositories it reaches.
+type AccountRepositories struct {
+	Account      string          `json:"account"`
+	Installed    bool            `json:"installed"`
+	Repositories []AppRepository `json:"repositories"`
+}
+
+// AppRepository is one repository an App reaches.
+type AppRepository struct {
+	Name          string `json:"name"`
+	FullName      string `json:"fullName"`
+	DefaultBranch string `json:"defaultBranch"`
+	Private       bool   `json:"private"`
+	Archived      bool   `json:"archived"`
+}
+
+// RegisterResult is how many repositories a registration added.
+type RegisterResult struct {
+	Added int `json:"added"`
+}
+
 // Accepted is an action queued; JobID is the queued job, when there is
 // one.
 type Accepted struct {

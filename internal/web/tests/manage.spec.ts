@@ -637,6 +637,35 @@ test.describe('admin console', () => {
     await expect(stranger).toHaveCount(0);
   });
 
+  test("tests a provider's key, and the embedder's, before saving", async ({ page }) => {
+    await setup(page, operatorMe, [instanceRow(embedded), [/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    const sent = await g.mockWrites(page, [
+      [
+        'POST',
+        /\/api\/v1\/operator\/providers\/test$/,
+        (s) =>
+          'value' in (s.body as T.ProviderTestRequest).apiKey
+            ? { status: 200, body: { ok: false, error: 'POST "https://openrouter.ai/api/v1/key": 401 Unauthorized' } }
+            : { status: 200, body: g.testResult },
+      ],
+      ['POST', /\/api\/v1\/operator\/embedding\/test$/, { status: 200, body: { ok: true } }],
+    ]);
+    await page.goto('/#/operator');
+    await page.getByRole('button', { name: 'Add provider key' }).click();
+    const prov = page.locator('.item-card').filter({ has: page.locator('[data-path="providers..name"]') });
+    await prov.getByRole('button', { name: 'Test key' }).click();
+    await expect(prov.getByTestId('key-test-result')).toHaveText('enter the key to test it');
+    await prov.getByLabel('API key: new value').fill('sk-bad');
+    await prov.getByRole('button', { name: 'Test key' }).click();
+    await expect(prov.getByTestId('key-test-result')).toContainText('401 Unauthorized');
+    expect(sent[0]!.body).toEqual({ type: 'openrouter', apiKey: { value: 'sk-bad' } });
+
+    const emb = page.locator('.item-card').filter({ has: page.locator('[data-path="embedding.model"]') });
+    await emb.getByRole('button', { name: 'Test key' }).click();
+    await expect(emb.getByTestId('key-test-result')).toHaveText('The key works.');
+    expect(sent[1]!.body).toEqual({ baseUrl: 'https://embed.example/v1', model: 'm', dims: 8, apiKey: { keep: true } });
+  });
+
   test('lists the instance settings read-only with their sources', async ({ page }) => {
     await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
     await page.goto('/#/operator');
