@@ -1673,7 +1673,7 @@ func newTestAccount(ctx context.Context, t *testing.T, appStore *store.Store, te
 	t.Helper()
 	var id string
 	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `INSERT INTO accounts DEFAULT VALUES RETURNING id`).Scan(&id)
+		return tx.QueryRow(ctx, `INSERT INTO users DEFAULT VALUES RETURNING id`).Scan(&id)
 	})
 	if err != nil {
 		t.Fatal(err)

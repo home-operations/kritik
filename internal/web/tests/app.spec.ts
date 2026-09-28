@@ -121,7 +121,7 @@ test.describe('sign-in page', () => {
 });
 
 test.describe('signed-in shell', () => {
-  test('shows tenant nav, the admin link, and the account menu for an admin', async ({ page, signIn }) => {
+  test('shows tenant nav, the admin link, and the user menu for an admin', async ({ page, signIn }) => {
     await signIn();
     await page.goto('/');
 
@@ -132,11 +132,11 @@ test.describe('signed-in shell', () => {
     const side = await page.locator('aside.sidebar').boundingBox();
     const main = await page.locator('main.page').boundingBox();
     expect(side && main && side.x + side.width <= main.x).toBe(true);
-    await expect(page.locator('.account-menu summary')).toHaveAttribute('title', DEFAULT_ME.account.displayName);
+    await expect(page.locator('.user-menu summary')).toHaveAttribute('title', DEFAULT_ME.user.displayName);
 
-    await page.locator('.account-menu summary').click();
-    await expect(page.locator('.account-name')).toHaveText(DEFAULT_ME.account.displayName);
-    await expect(page.locator('.account-email')).toHaveText(DEFAULT_ME.account.email);
+    await page.locator('.user-menu summary').click();
+    await expect(page.locator('.user-name')).toHaveText(DEFAULT_ME.user.displayName);
+    await expect(page.locator('.user-email')).toHaveText(DEFAULT_ME.user.email);
   });
 
   test('hides the admin link for a non-admin member', async ({ page, signIn }) => {
@@ -178,7 +178,7 @@ test.describe('signed-in shell', () => {
     await page.route('**/auth/logout', (route) => route.fulfill({ status: 204 }));
     await page.goto('/');
 
-    await page.locator('.account-menu summary').click();
+    await page.locator('.user-menu summary').click();
     await page.getByRole('button', { name: 'Sign out' }).click();
 
     await expect(page).toHaveURL(/#\/signin$/);

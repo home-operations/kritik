@@ -231,7 +231,7 @@ func (s *Server) writeTenant(
 		if expected == 0 {
 			action = AuditTenantCreate
 		}
-		rev, err := s.store.PutDashboardTenant(ctx, tx, slug, sealed.spec, expected, p.Account.ID)
+		rev, err := s.store.PutDashboardTenant(ctx, tx, slug, sealed.spec, expected, p.User.ID)
 		switch {
 		case errors.Is(err, store.ErrDashboardConflict) && expected == 0:
 			return errDashboardSlugTaken

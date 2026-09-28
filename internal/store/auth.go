@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Role is what a session lets its account do: administer the instance, or
+// Role is what a session lets its user do: administer the instance, or
 // read the accounts its grant names.
 type Role string
 
@@ -40,8 +40,8 @@ type SessionGrant struct {
 	Key string
 }
 
-// Account is a human who has signed in to the dashboard.
-type Account struct {
+// User is a human who has signed in to the dashboard.
+type User struct {
 	ID            string
 	DisplayName   string
 	Email         string
@@ -62,7 +62,7 @@ type SignInIdentity struct {
 // Session is a live dashboard session, whom it belongs to and what its
 // sign-in allowed.
 type Session struct {
-	Account   Account
+	User      User
 	Identity  SignInIdentity
 	Grant     SessionGrant
 	ExpiresAt time.Time
@@ -113,76 +113,76 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-// UpsertIdentity finds or creates the account behind id and refreshes its
+// UpsertIdentity finds or creates the user behind id and refreshes its
 // profile. Identities are keyed by provider, origin and subject only: an
-// email seen on two providers never links their accounts, since either
+// email seen on two providers never links their users, since either
 // provider may let anyone claim any address.
-func (s *Store) UpsertIdentity(ctx context.Context, id SignInIdentity, now time.Time) (Account, error) {
+func (s *Store) UpsertIdentity(ctx context.Context, id SignInIdentity, now time.Time) (User, error) {
 	tx, err := s.app.Begin(ctx)
 	if err != nil {
-		return Account{}, fmt.Errorf("store: upsert identity: %w", err)
+		return User{}, fmt.Errorf("store: upsert identity: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
-	accountID, err := identityAccount(ctx, tx, id)
+	userID, err := identityUser(ctx, tx, id)
 	if err != nil {
-		return Account{}, fmt.Errorf("store: upsert identity: %w", err)
+		return User{}, fmt.Errorf("store: upsert identity: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE identities SET login = $4, email = $5 WHERE provider = $1 AND origin = $2 AND subject = $3`,
 		id.Provider, id.Origin, id.Subject, id.Login, id.Email); err != nil {
-		return Account{}, fmt.Errorf("store: upsert identity: %w", err)
+		return User{}, fmt.Errorf("store: upsert identity: %w", err)
 	}
-	a := Account{ID: accountID}
-	if err := tx.QueryRow(ctx, `UPDATE accounts SET display_name = $2, email = $3, email_verified = $4, avatar_url = $5, last_seen_at = $6
+	u := User{ID: userID}
+	if err := tx.QueryRow(ctx, `UPDATE users SET display_name = $2, email = $3, email_verified = $4, avatar_url = $5, last_seen_at = $6
 		WHERE id = $1 RETURNING display_name, email, email_verified, avatar_url`,
-		accountID, id.DisplayName, id.Email, id.EmailVerified, id.AvatarURL, now).
-		Scan(&a.DisplayName, &a.Email, &a.EmailVerified, &a.AvatarURL); err != nil {
-		return Account{}, fmt.Errorf("store: upsert identity: %w", err)
+		userID, id.DisplayName, id.Email, id.EmailVerified, id.AvatarURL, now).
+		Scan(&u.DisplayName, &u.Email, &u.EmailVerified, &u.AvatarURL); err != nil {
+		return User{}, fmt.Errorf("store: upsert identity: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Account{}, fmt.Errorf("store: upsert identity: %w", err)
+		return User{}, fmt.Errorf("store: upsert identity: %w", err)
 	}
-	return a, nil
+	return u, nil
 }
 
-// identityAccount returns the account id of an existing identity, or
+// identityUser returns the user id of an existing identity, or
 // creates both. A concurrent first sign-in of the same identity makes the
-// identity insert a no-op; the account this call created is then dropped
+// identity insert a no-op; the user this call created is then dropped
 // and the winner's returned.
-func identityAccount(ctx context.Context, tx pgx.Tx, id SignInIdentity) (string, error) {
-	var accountID string
-	err := tx.QueryRow(ctx, `SELECT account_id FROM identities WHERE provider = $1 AND origin = $2 AND subject = $3`,
-		id.Provider, id.Origin, id.Subject).Scan(&accountID)
+func identityUser(ctx context.Context, tx pgx.Tx, id SignInIdentity) (string, error) {
+	var userID string
+	err := tx.QueryRow(ctx, `SELECT user_id FROM identities WHERE provider = $1 AND origin = $2 AND subject = $3`,
+		id.Provider, id.Origin, id.Subject).Scan(&userID)
 	if err == nil {
-		return accountID, nil
+		return userID, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return "", err
 	}
-	if err := tx.QueryRow(ctx, `INSERT INTO accounts DEFAULT VALUES RETURNING id`).Scan(&accountID); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO users DEFAULT VALUES RETURNING id`).Scan(&userID); err != nil {
 		return "", err
 	}
-	tag, err := tx.Exec(ctx, `INSERT INTO identities (provider, origin, subject, account_id) VALUES ($1, $2, $3, $4)
-		ON CONFLICT (provider, origin, subject) DO NOTHING`, id.Provider, id.Origin, id.Subject, accountID)
+	tag, err := tx.Exec(ctx, `INSERT INTO identities (provider, origin, subject, user_id) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (provider, origin, subject) DO NOTHING`, id.Provider, id.Origin, id.Subject, userID)
 	if err != nil {
 		return "", err
 	}
 	if tag.RowsAffected() == 1 {
-		return accountID, nil
+		return userID, nil
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM accounts WHERE id = $1`, accountID); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID); err != nil {
 		return "", err
 	}
-	err = tx.QueryRow(ctx, `SELECT account_id FROM identities WHERE provider = $1 AND origin = $2 AND subject = $3`,
-		id.Provider, id.Origin, id.Subject).Scan(&accountID)
-	return accountID, err
+	err = tx.QueryRow(ctx, `SELECT user_id FROM identities WHERE provider = $1 AND origin = $2 AND subject = $3`,
+		id.Provider, id.Origin, id.Subject).Scan(&userID)
+	return userID, err
 }
 
-// CreateSession stores a new session for the account, signed in through
+// CreateSession stores a new session for the user, signed in through
 // the provider at origin with grant g, valid until expires, and returns its
 // cookie value. Only the value's SHA-256 is kept. Expired sessions are
 // swept on the way.
 func (s *Store) CreateSession(
-	ctx context.Context, accountID, provider, origin string, g SessionGrant, now, expires time.Time,
+	ctx context.Context, userID, provider, origin string, g SessionGrant, now, expires time.Time,
 ) (string, error) {
 	if !g.Role.Valid() {
 		return "", fmt.Errorf("store: create session: invalid role %q", g.Role)
@@ -198,9 +198,9 @@ func (s *Store) CreateSession(
 		return "", fmt.Errorf("store: create session: %w", err)
 	}
 	if _, err := s.app.Exec(ctx, `INSERT INTO sessions
-		(token_hash, account_id, provider, provider_origin, role, all_accounts, accounts, grant_key, created_at, expires_at, last_seen_at)
+		(token_hash, user_id, provider, provider_origin, role, all_accounts, accounts, grant_key, created_at, expires_at, last_seen_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $9)`,
-		tokenHash(token), accountID, provider, origin, g.Role, g.AllAccounts, g.Accounts, g.Key, now, expires); err != nil {
+		tokenHash(token), userID, provider, origin, g.Role, g.AllAccounts, g.Accounts, g.Key, now, expires); err != nil {
 		return "", fmt.Errorf("store: create session: %w", err)
 	}
 	return token, nil
@@ -215,17 +215,17 @@ func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) 
 	hash := tokenHash(token)
 	var sess Session
 	var lastSeen *time.Time
-	err := s.app.QueryRow(ctx, `SELECT s.account_id, s.provider, s.provider_origin, s.expires_at, s.last_seen_at,
+	err := s.app.QueryRow(ctx, `SELECT s.user_id, s.provider, s.provider_origin, s.expires_at, s.last_seen_at,
 			s.role, s.all_accounts, s.accounts, s.grant_key,
-			a.display_name, a.email, a.email_verified, a.avatar_url, i.subject, i.login
+			u.display_name, u.email, u.email_verified, u.avatar_url, i.subject, i.login
 		FROM sessions s
-		JOIN accounts a ON a.id = s.account_id
-		JOIN identities i ON i.account_id = s.account_id AND i.provider = s.provider AND i.origin = s.provider_origin
+		JOIN users u ON u.id = s.user_id
+		JOIN identities i ON i.user_id = s.user_id AND i.provider = s.provider AND i.origin = s.provider_origin
 		WHERE s.token_hash = $1 AND s.expires_at > $2
 		ORDER BY i.created_at LIMIT 1`, hash, now).
-		Scan(&sess.Account.ID, &sess.Identity.Provider, &sess.Identity.Origin, &sess.ExpiresAt, &lastSeen,
+		Scan(&sess.User.ID, &sess.Identity.Provider, &sess.Identity.Origin, &sess.ExpiresAt, &lastSeen,
 			&sess.Grant.Role, &sess.Grant.AllAccounts, &sess.Grant.Accounts, &sess.Grant.Key,
-			&sess.Account.DisplayName, &sess.Account.Email, &sess.Account.EmailVerified, &sess.Account.AvatarURL,
+			&sess.User.DisplayName, &sess.User.Email, &sess.User.EmailVerified, &sess.User.AvatarURL,
 			&sess.Identity.Subject, &sess.Identity.Login)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrSession
@@ -233,15 +233,15 @@ func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) 
 	if err != nil {
 		return Session{}, fmt.Errorf("store: look up session: %w", err)
 	}
-	sess.Identity.Email = sess.Account.Email
-	sess.Identity.EmailVerified = sess.Account.EmailVerified
-	sess.Identity.DisplayName = sess.Account.DisplayName
-	sess.Identity.AvatarURL = sess.Account.AvatarURL
+	sess.Identity.Email = sess.User.Email
+	sess.Identity.EmailVerified = sess.User.EmailVerified
+	sess.Identity.DisplayName = sess.User.DisplayName
+	sess.Identity.AvatarURL = sess.User.AvatarURL
 	if lastSeen == nil || now.Sub(*lastSeen) >= sessionTouchInterval {
 		if _, err := s.app.Exec(ctx, `WITH touched AS (
-				UPDATE sessions SET last_seen_at = $2 WHERE token_hash = $1 RETURNING account_id
+				UPDATE sessions SET last_seen_at = $2 WHERE token_hash = $1 RETURNING user_id
 			)
-			UPDATE accounts SET last_seen_at = $2 WHERE id IN (SELECT account_id FROM touched)`, hash, now); err != nil {
+			UPDATE users SET last_seen_at = $2 WHERE id IN (SELECT user_id FROM touched)`, hash, now); err != nil {
 			return Session{}, fmt.Errorf("store: touch session: %w", err)
 		}
 	}

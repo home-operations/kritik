@@ -57,9 +57,9 @@ func TestDashboardTenants(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	resetDashboard(t, s)
-	var account string
-	if err := s.app.QueryRow(ctx, `INSERT INTO accounts (display_name) VALUES ('op') RETURNING id`).Scan(&account); err != nil {
-		t.Fatalf("insert account: %v", err)
+	var user string
+	if err := s.app.QueryRow(ctx, `INSERT INTO users (display_name) VALUES ('op') RETURNING id`).Scan(&user); err != nil {
+		t.Fatalf("insert user: %v", err)
 	}
 	fingerprint := func(t *testing.T) string {
 		t.Helper()
@@ -74,7 +74,7 @@ func TestDashboardTenants(t *testing.T) {
 		var rev int64
 		err := inTx(t, s, func(tx pgx.Tx) error {
 			var err error
-			rev, err = s.PutDashboardTenant(ctx, tx, slug, dashboardSpec(slug, slug+"-bot"), expected, account)
+			rev, err = s.PutDashboardTenant(ctx, tx, slug, dashboardSpec(slug, slug+"-bot"), expected, user)
 			return err
 		})
 		return rev, err
@@ -112,7 +112,7 @@ func TestDashboardTenants(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if d.Slug != "gamma" || d.Revision != 2 || m.CreatedBy != account || m.UpdatedBy != account || m.UpdatedAt.IsZero() {
+			if d.Slug != "gamma" || d.Revision != 2 || m.CreatedBy != user || m.UpdatedBy != user || m.UpdatedAt.IsZero() {
 				t.Fatalf("got %+v %+v", d, m)
 			}
 			if _, err := configfile.DecodeTenant(d); err != nil {

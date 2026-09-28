@@ -294,7 +294,7 @@ func TestOIDCSignIn(t *testing.T) {
 	}
 	p := e.principal(cookie)
 	if p == nil || p.Identity.Provider != "oidc" || p.Identity.Subject != alice.Login || p.Identity.Login != alice.Login ||
-		!p.Account.EmailVerified || p.Account.Email != alice.Email || p.Operator || !p.AllTenants {
+		!p.User.EmailVerified || p.User.Email != alice.Email || p.Operator || !p.AllTenants {
 		t.Fatalf("principal = %+v", p)
 	}
 
@@ -379,7 +379,7 @@ func TestGitHubSignInGrants(t *testing.T) {
 	firstCookie := e.mustSignIn("github", e.gh, alice)
 	p := e.principal(firstCookie)
 	assertTenants(t, e.tenants(p), "auth-personal", "auth-acme", "auth-widgets")
-	if p.Identity.Subject != "1001" || p.Identity.Login != "Alice-GH" || p.Account.Email != "alice@gh.example" || !p.Account.EmailVerified ||
+	if p.Identity.Subject != "1001" || p.Identity.Login != "Alice-GH" || p.User.Email != "alice@gh.example" || !p.User.EmailVerified ||
 		p.Operator || p.AllTenants {
 		t.Fatalf("principal = %+v", p)
 	}
@@ -387,8 +387,8 @@ func TestGitHubSignInGrants(t *testing.T) {
 	delete(alice.Orgs, "acme")
 	again := e.principal(e.mustSignIn("github", e.gh, alice))
 	assertTenants(t, e.tenants(again), "auth-personal", "auth-widgets")
-	if again.Account.ID != p.Account.ID {
-		t.Fatalf("second sign-in made account %s, want %s", again.Account.ID, p.Account.ID)
+	if again.User.ID != p.User.ID {
+		t.Fatalf("second sign-in made user %s, want %s", again.User.ID, p.User.ID)
 	}
 	// A session keeps the grant it signed in with.
 	assertTenants(t, e.tenants(e.principal(firstCookie)), "auth-personal", "auth-acme", "auth-widgets")
@@ -440,12 +440,12 @@ func TestLocalAdminSignIn(t *testing.T) {
 	}
 	cookie := sessionFrom(t, w, e.h.webURL)
 	p := e.principal(cookie)
-	if p == nil || !p.Operator || p.Identity.Provider != "local" || p.Identity.Login != "admin" || p.Account.DisplayName != "admin" {
+	if p == nil || !p.Operator || p.Identity.Provider != "local" || p.Identity.Login != "admin" || p.User.DisplayName != "admin" {
 		t.Fatalf("principal = %+v", p)
 	}
 	again := e.principal(sessionFrom(t, e.localSignIn("admin", adminTestPassword), e.h.webURL))
-	if again == nil || again.Account.ID != p.Account.ID {
-		t.Fatalf("second sign-in = %+v, want account %s", again, p.Account.ID)
+	if again == nil || again.User.ID != p.User.ID {
+		t.Fatalf("second sign-in = %+v, want user %s", again, p.User.ID)
 	}
 
 	t.Run("rotating the password ends the session", func(t *testing.T) {
@@ -474,7 +474,7 @@ func TestSessionLifecycle(t *testing.T) {
 	lastSeen := func() time.Time {
 		t.Helper()
 		var ts time.Time
-		if err := e.st.App().QueryRow(ctx, `SELECT last_seen_at FROM sessions WHERE account_id = $1`, p.Account.ID).Scan(&ts); err != nil {
+		if err := e.st.App().QueryRow(ctx, `SELECT last_seen_at FROM sessions WHERE user_id = $1`, p.User.ID).Scan(&ts); err != nil {
 			t.Fatalf("last_seen_at: %v", err)
 		}
 		return ts
@@ -551,8 +551,8 @@ func TestIdentitiesNotLinkedAcrossProviders(t *testing.T) {
 	viaOIDC := e.principal(e.mustSignIn("oidc", e.oidc, &fakeUser{Login: "shared-oidc-" + randomHex(t), Email: email, EmailVerified: true, Groups: []string{"staff"}}))
 	viaGitHub := e.principal(e.mustSignIn("github", e.gh, &fakeUser{ID: 5001, Login: "shared-gh", Email: email, EmailVerified: true,
 		Orgs: map[string]string{"acme": "member"}}))
-	if viaOIDC.Account.ID == viaGitHub.Account.ID {
-		t.Fatalf("accounts linked by email: oidc %s github %s", viaOIDC.Account.ID, viaGitHub.Account.ID)
+	if viaOIDC.User.ID == viaGitHub.User.ID {
+		t.Fatalf("accounts linked by email: oidc %s github %s", viaOIDC.User.ID, viaGitHub.User.ID)
 	}
 }
 
@@ -573,7 +573,7 @@ func TestSignInMovedToAnotherOrigin(t *testing.T) {
 		t.Fatalf("session from the old origin still authenticates: %+v", p)
 	}
 	now := e.principal(e.mustSignIn("oidc", e.oidc2, user))
-	if now == nil || now.Account.ID == was.Account.ID {
-		t.Fatalf("same subject on a new origin linked to account %s", was.Account.ID)
+	if now == nil || now.User.ID == was.User.ID {
+		t.Fatalf("same subject on a new origin linked to user %s", was.User.ID)
 	}
 }

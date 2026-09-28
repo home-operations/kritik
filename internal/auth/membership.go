@@ -14,7 +14,7 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// Role is what a session lets its account do.
+// Role is what a session lets its user do.
 type Role = store.Role
 
 // Session roles.

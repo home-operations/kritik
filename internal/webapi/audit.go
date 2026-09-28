@@ -29,7 +29,7 @@ func record(ctx context.Context, tx pgx.Tx, p *auth.Principal, tenantID *string,
 	if err != nil {
 		return fmt.Errorf("webapi: audit detail: %w", err)
 	}
-	e := store.AuditEntry{AccountID: p.Account.ID, Action: action.String(), Target: target, Detail: raw}
+	e := store.AuditEntry{UserID: p.User.ID, Action: action.String(), Target: target, Detail: raw}
 	if tenantID != nil {
 		e.TenantID = *tenantID
 	}
@@ -78,7 +78,7 @@ func (s *Server) writeAudit(w http.ResponseWriter, r *http.Request, tenantID str
 			ID: fmt.Sprint(e.ID), At: e.At, Tenant: slugs[e.TenantID], Action: AuditAction(e.Action), Target: e.Target, Detail: e.Detail,
 		}
 		if e.Actor != nil {
-			a := account(*e.Actor)
+			a := toUser(*e.Actor)
 			items[i].Actor = &a
 		}
 	}

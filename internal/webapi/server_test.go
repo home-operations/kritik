@@ -92,7 +92,7 @@ func (ts *testServer) as(p *auth.Principal, r *http.Request) *httptest.ResponseR
 func memberOf(t *testing.T, f *configfile.File, slug string) *auth.Principal {
 	t.Helper()
 	return &auth.Principal{
-		Account: auth.Account{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com"},
+		User:    auth.User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com"},
 		Tenants: map[string]bool{tenantIDOf(t, f, slug): true},
 	}
 }

@@ -166,14 +166,14 @@ func TestSweepSessions(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	now := time.Now()
-	var account string
-	if err := s.app.QueryRow(ctx, `INSERT INTO accounts (display_name) VALUES ('sweep') RETURNING id`).Scan(&account); err != nil {
+	var user string
+	if err := s.app.QueryRow(ctx, `INSERT INTO users (display_name) VALUES ('sweep') RETURNING id`).Scan(&user); err != nil {
 		t.Fatal(err)
 	}
 	for i, expires := range []time.Time{now.Add(-time.Minute), now.Add(time.Hour)} {
 		key := []byte{byte(i), 's', 'w', 'e', 'e', 'p', byte(now.UnixNano())}
-		if _, err := s.app.Exec(ctx, `INSERT INTO sessions (token_hash, account_id, provider, role, all_accounts, accounts, grant_key, expires_at)
-			VALUES ($1, $2, 'github', 'member', true, '{}', 'k', $3)`, key, account, expires); err != nil {
+		if _, err := s.app.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, provider, role, all_accounts, accounts, grant_key, expires_at)
+			VALUES ($1, $2, 'github', 'member', true, '{}', 'k', $3)`, key, user, expires); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := s.app.Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at, browser_hash)
@@ -186,8 +186,8 @@ func TestSweepSessions(t *testing.T) {
 		t.Fatalf("swept %d, %v", n, err)
 	}
 	var sessions, states int
-	if err := s.app.QueryRow(ctx, `SELECT (SELECT count(*) FROM sessions WHERE account_id = $1),
-		(SELECT count(*) FROM login_states WHERE expires_at > $2)`, account, now).Scan(&sessions, &states); err != nil {
+	if err := s.app.QueryRow(ctx, `SELECT (SELECT count(*) FROM sessions WHERE user_id = $1),
+		(SELECT count(*) FROM login_states WHERE expires_at > $2)`, user, now).Scan(&sessions, &states); err != nil {
 		t.Fatal(err)
 	}
 	if sessions != 1 || states < 1 {

@@ -242,14 +242,14 @@ func (e *apiEnv) seedModelCalls(s seeded, slug string) {
 func (e *apiEnv) signIn(name, subject string, g store.SessionGrant) {
 	e.t.Helper()
 	ctx, now, origin := context.Background(), time.Now(), "oidc:https://idp.example"
-	acct, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{
+	user, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{
 		Provider: "oidc", Origin: origin, Subject: subject, DisplayName: name,
 	}, now)
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	g.Key, _ = auth.GrantKey(e.file.Auth, "oidc")
-	token, err := e.st.CreateSession(ctx, acct.ID, "oidc", origin, g, now, now.Add(time.Hour))
+	token, err := e.st.CreateSession(ctx, user.ID, "oidc", origin, g, now, now.Add(time.Hour))
 	if err != nil {
 		e.t.Fatal(err)
 	}

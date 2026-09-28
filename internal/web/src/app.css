@@ -392,17 +392,17 @@ kbd {
   font-family: var(--font-mono);
 }
 
-/* ---- account menu ------------------------------------------------------ */
-.account-menu {
+/* ---- user menu --------------------------------------------------------- */
+.user-menu {
   position: relative;
 }
-.account-menu summary {
+.user-menu summary {
   list-style: none;
 }
-.account-menu summary::-webkit-details-marker {
+.user-menu summary::-webkit-details-marker {
   display: none;
 }
-.account-panel {
+.user-panel {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
@@ -417,12 +417,12 @@ kbd {
   border-radius: 8px;
   box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 15%, transparent);
 }
-.account-name {
+.user-name {
   margin: 0;
   font-weight: 600;
   font-size: 13px;
 }
-.account-email {
+.user-email {
   margin: 0;
   color: var(--muted);
   font-size: 12px;

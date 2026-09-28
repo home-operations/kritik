@@ -145,12 +145,12 @@ func TestPrincipalFor(t *testing.T) {
 		return tn.ID()
 	}
 	sess := store.Session{
-		Account:  store.Account{ID: "acct"},
+		User:     store.User{ID: "acct"},
 		Identity: store.SignInIdentity{Provider: "github", Subject: "1", Login: "Alice"},
 		Grant:    store.SessionGrant{Role: RoleMember, Accounts: []string{"github/widgets", "github/gone"}},
 	}
 	p := principalFor(file, sess)
-	if p.Operator || p.AllTenants || p.Account.ID != "acct" || p.Identity.Login != "Alice" {
+	if p.Operator || p.AllTenants || p.User.ID != "acct" || p.Identity.Login != "Alice" {
 		t.Fatalf("principal = %+v", p)
 	}
 	if len(p.Tenants) != 2 || !p.Tenants[tid("adminorg")] || !p.Tenants[tid("several")] {

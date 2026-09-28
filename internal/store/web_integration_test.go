@@ -40,7 +40,7 @@ func insertReview(t *testing.T, ctx context.Context, s *Store, tenant string) st
 	return reviewID
 }
 
-// TestListenPublishesReviewEvents exercises the notify.go/0004_web.sql
+// TestListenPublishesReviewEvents exercises the notify.go/0001_init.sql
 // contract end to end: a reviews.status change must produce an Event on the
 // kritik_events channel that Listen decodes and hands to onEvent.
 func TestListenPublishesReviewEvents(t *testing.T) {
@@ -222,7 +222,7 @@ func TestModelCallsRowLevelSecurity(t *testing.T) {
 // TestRunnerRoleCannotTouchWebTables checks that the web dashboard's
 // instance-level tables (no RLS; access control lives in web code) are not
 // among the tables grant() gives the runner role, since a compromised
-// runner container should never be able to read or write accounts,
+// runner container should never be able to read or write users,
 // sessions, or any other dashboard table.
 func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 	openStore(t) // ensures Migrate/grant() have run against this schema
@@ -237,7 +237,7 @@ func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 	t.Cleanup(runner.Close)
 
 	tables := []string{
-		"accounts", "identities", "sessions", "login_states",
+		"users", "identities", "sessions", "login_states",
 		"audit_events", "dashboard_tenants", "model_calls",
 	}
 	for _, table := range tables {

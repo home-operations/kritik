@@ -8,7 +8,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
-var goldenAccount = Account{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"}
+var goldenUser = User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"}
 
 func init() {
 	maps.Copy(goldens, map[string]any{
@@ -32,7 +32,7 @@ func init() {
 		},
 		"accepted": Accepted{JobID: 42},
 		"audit_event": AuditEvent{
-			ID: "7", At: t0, Actor: &goldenAccount, Tenant: "alpha", Action: AuditTenantUpdate, Target: "alpha",
+			ID: "7", At: t0, Actor: &goldenUser, Tenant: "alpha", Action: AuditTenantUpdate, Target: "alpha",
 			Detail: json.RawMessage(`{"revision":2,"secretsChanged":["installations[alpha-bot].app.privateKey"]}`),
 		},
 	})
