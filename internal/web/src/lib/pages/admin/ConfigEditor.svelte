@@ -1,9 +1,8 @@
 <script lang="ts">
   // The form for an account's entry in the instance spec. It edits a draft
-  // (see spec.ts) and hands the built entry to onsave; the caller does the request and passes back any
-  // error, whose path highlights and focuses the field it names. A field
-  // editable says the caller may not change, by the server's policy table,
-  // stays disabled (ADR-0010 §2.7).
+  // (see spec.ts) and hands the built entry to onsave; the caller does the
+  // request and passes back any error, whose path highlights and focuses
+  // the field it names.
   import { tick, untrack, type Snippet } from 'svelte';
   import {
     buildSpec,
@@ -25,8 +24,6 @@
 
   interface Props {
     initial: Obj;
-    // editable says whether the caller may change the setting at a key.
-    editable: (key: string) => boolean;
     // inherited is what fields left empty take.
     inherited?: Inherited;
     saving: boolean;
@@ -42,7 +39,6 @@
   }
   let {
     initial,
-    editable,
     inherited,
     saving,
     errMessage = '',
@@ -82,7 +78,6 @@
     if (errPath) clearedSeq = errSeq;
   }
   const inv = (path: string) => pathMatches(path, activePath);
-  const opHint = 'admin only';
   const own = $derived(inherited?.account);
   const hint = (key: string, value: string, fallback = '') =>
     inherited ? inheritsHint(value, inherited.accountSources[key]) : fallback;
@@ -180,20 +175,20 @@
       <legend>Account <span class="mono">{draft.forge}/{draft.name}</span></legend>
       <div class="fields">
         <label class="field">
-          <span>Review model {#if !editable('models.review')}<span class="field-hint">({opHint})</span>{/if}</span>
-          <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder={hint('models.review', own?.models.review || 'no model', 'provider/model')} disabled={!editable('models.review')} />
+          <span>Review model</span>
+          <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder={hint('models.review', own?.models.review || 'no model', 'provider/model')} />
         </label>
         <label class="field">
-          <span>Fallback model {#if !editable('models.fallback')}<span class="field-hint">({opHint})</span>{/if}</span>
-          <input class="mono" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder={hint('models.fallback', own?.models.fallback || 'no fallback', 'provider/model')} disabled={!editable('models.fallback')} />
+          <span>Fallback model</span>
+          <input class="mono" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder={hint('models.fallback', own?.models.fallback || 'no fallback', 'provider/model')} />
         </label>
         <label class="field">
           <span>Filter</span>
           <input class="mono" data-path="filter" aria-invalid={inv('filter') || undefined} bind:value={draft.filter} placeholder={hint('filter', own?.filter || 'no filter')} />
         </label>
         <label class="field">
-          <span>Forks {#if !editable('forks')}<span class="field-hint">({opHint})</span>{/if}</span>
-          <select data-path="forks" aria-invalid={inv('forks') || undefined} bind:value={draft.forks} disabled={!editable('forks')}>
+          <span>Forks</span>
+          <select data-path="forks" aria-invalid={inv('forks') || undefined} bind:value={draft.forks}>
             <option value="">{own ? `default: ${own.forks ? 'review' : 'skip'}` : 'default'}</option>
             <option value="true">review</option>
             <option value="false">skip</option>
@@ -207,23 +202,23 @@
     </fieldset>
 
     <fieldset>
-      <legend>Limits {#if !editable('limits')}<span class="field-hint">({opHint})</span>{/if}</legend>
+      <legend>Limits</legend>
       <div class="fields">
         <label class="field">
           <span>Concurrency</span>
-          <input inputmode="numeric" data-path="limits.concurrency" aria-invalid={inv('limits.concurrency') || undefined} bind:value={draft.concurrency} placeholder={hint('limits', String(own?.limits.concurrency))} disabled={!editable('limits')} />
+          <input inputmode="numeric" data-path="limits.concurrency" aria-invalid={inv('limits.concurrency') || undefined} bind:value={draft.concurrency} placeholder={hint('limits', String(own?.limits.concurrency))} />
         </label>
         <label class="field">
           <span>Reviews per day</span>
-          <input inputmode="numeric" data-path="limits.reviewsPerDay" aria-invalid={inv('limits.reviewsPerDay') || undefined} bind:value={draft.reviewsPerDay} placeholder={hint('limits', own?.limits.reviewsPerDay ? String(own.limits.reviewsPerDay) : 'unlimited')} disabled={!editable('limits')} />
+          <input inputmode="numeric" data-path="limits.reviewsPerDay" aria-invalid={inv('limits.reviewsPerDay') || undefined} bind:value={draft.reviewsPerDay} placeholder={hint('limits', own?.limits.reviewsPerDay ? String(own.limits.reviewsPerDay) : 'unlimited')} />
         </label>
         <label class="field">
           <span>Tokens per month</span>
-          <input inputmode="numeric" data-path="limits.tokensPerMonth" aria-invalid={inv('limits.tokensPerMonth') || undefined} bind:value={draft.tokensPerMonth} placeholder={hint('limits', own?.limits.tokensPerMonth ? String(own.limits.tokensPerMonth) : 'unlimited')} disabled={!editable('limits')} />
+          <input inputmode="numeric" data-path="limits.tokensPerMonth" aria-invalid={inv('limits.tokensPerMonth') || undefined} bind:value={draft.tokensPerMonth} placeholder={hint('limits', own?.limits.tokensPerMonth ? String(own.limits.tokensPerMonth) : 'unlimited')} />
         </label>
         <label class="field">
-          <span>Runner (JSON) {#if !editable('runner')}<span class="field-hint">({opHint})</span>{/if}</span>
-          <textarea rows="3" data-path="runner" aria-invalid={inv('runner') || undefined} bind:value={draft.runner} disabled={!editable('runner')}></textarea>
+          <span>Runner (JSON)</span>
+          <textarea rows="3" data-path="runner" aria-invalid={inv('runner') || undefined} bind:value={draft.runner}></textarea>
         </label>
       </div>
     </fieldset>
@@ -251,7 +246,6 @@
         <RepositoryFields
           bind:repo={draft.repositories[i]!}
           index={i}
-          {editable}
           inherited={inherited && { settings: inherited.repository, sources: inherited.repositorySources }}
           {inv}
           onremove={() => structural(() => (draft.repositories = draft.repositories.filter((x) => x.key !== repo.key)))}

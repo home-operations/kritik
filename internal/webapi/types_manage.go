@@ -32,12 +32,11 @@ type InstanceConfig struct {
 // AccountConfig is an account's entry in the instance spec, every secret
 // {"set": bool}; an account the spec lists no entry for gets one naming it.
 // Revision is the instance spec's, which a write of the entry must match.
-// Policy is the policy table as the principal meets it here, for the
-// dashboard to render which settings it may change.
+// Editable is whether the principal may change it: an admin changes every
+// setting, and nobody else changes any.
 type AccountConfig struct {
 	Revision  int64           `json:"revision"`
 	Editable  bool            `json:"editable"`
-	Policy    []FieldPolicy   `json:"policy"`
 	Inherited Inherited       `json:"inherited"`
 	Spec      json.RawMessage `json:"spec"`
 }
@@ -51,13 +50,6 @@ type Inherited struct {
 	AccountSources    map[string]configfile.Source `json:"accountSources"`
 	Repository        RepoSettings                 `json:"repository"`
 	RepositorySources map[string]configfile.Source `json:"repositorySources"`
-}
-
-// FieldPolicy is one setting of the policy table, and whether the
-// principal may change it on this account.
-type FieldPolicy struct {
-	configfile.Policy
-	Editable bool `json:"editable"`
 }
 
 // UpdateConfigRequest replaces the instance spec, or one account's entry

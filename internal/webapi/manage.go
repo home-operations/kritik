@@ -100,7 +100,6 @@ func (s *Server) getAccountConfig(w http.ResponseWriter, r *http.Request, t *acc
 		return err
 	}
 	out := AccountConfig{Revision: stored.Revision, Editable: s.keyring != nil && t.principal.Operator, Inherited: s.inherited(t.account)}
-	out.Policy = fieldPolicies(out.Editable)
 	if out.Spec, err = redactSpec(entry); err != nil {
 		return err
 	}
