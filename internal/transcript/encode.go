@@ -2,7 +2,8 @@ package transcript
 
 import (
 	"encoding/json"
-	"unicode/utf8"
+
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // Size caps (ADR-0009 §2.8).
@@ -82,7 +83,7 @@ func (r Row) Encode() Encoded {
 		e.Tools, _ = json.Marshal(*r.Tools) // cannot fail: every RawMessage is valid JSON
 	}
 	if e.System != nil && len(*e.System) > SystemCap {
-		system := cutString(*e.System, SystemCap) + SystemTruncated
+		system := textcut.Prefix(*e.System, SystemCap) + SystemTruncated
 		e.System, e.Truncated = &system, true
 	}
 	msgs, cut := cutResults(msgs)
@@ -121,7 +122,7 @@ func cutResults(msgs []Message) ([]Message, bool) {
 		out[i].ToolResults = make([]ToolResult, len(m.ToolResults))
 		for j, res := range m.ToolResults {
 			if len(res.Content) > ToolResultCap {
-				kept := cutString(res.Content, ToolResultCap)
+				kept := textcut.Prefix(res.Content, ToolResultCap)
 				res.TruncatedBytes += len(res.Content) - len(kept)
 				res.Content, cut = kept, true
 			}
@@ -150,15 +151,4 @@ func placeholders(msgs []Message) []Message {
 		}
 	}
 	return out
-}
-
-// cutString is s cut to at most n bytes on a rune boundary.
-func cutString(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
 }

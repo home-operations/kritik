@@ -23,13 +23,13 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/prfilter"
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // FileName is the repository-relative path of the per-repository config file.
@@ -352,7 +352,7 @@ func Instructions(files Files, paths []string) (out []string, truncated bool) {
 			room -= len("\n\n")
 		}
 		if len(s) > room {
-			s = cutUTF8(s, max(room, 0))
+			s = textcut.Prefix(s, max(room, 0))
 			room, truncated = 0, true
 			if s == "" {
 				continue
@@ -362,15 +362,4 @@ func Instructions(files Files, paths []string) (out []string, truncated bool) {
 		out = append(out, s)
 	}
 	return out, truncated
-}
-
-// cutUTF8 shortens s to at most n bytes without splitting a rune.
-func cutUTF8(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
 }

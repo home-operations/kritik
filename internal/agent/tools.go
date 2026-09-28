@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // defaultGrepMaxResults and grepMaxResultsCap bound grep's max_results
@@ -28,13 +29,14 @@ const (
 // it and keeps walking.
 const maxBlobBytes = 1 << 20
 
-// truncate caps s at max bytes, appending a note of how much was cut. A
-// non-positive max disables truncation.
-func truncate(s string, max int) string {
-	if max <= 0 || len(s) <= max {
+// truncate caps s at limit bytes, appending a note of how much was cut. A
+// non-positive limit disables truncation.
+func truncate(s string, limit int) string {
+	if limit <= 0 || len(s) <= limit {
 		return s
 	}
-	return s[:max] + fmt.Sprintf("\n[truncated %d bytes]", len(s)-max)
+	kept := textcut.Prefix(s, limit)
+	return kept + fmt.Sprintf("\n[truncated %d bytes]", len(s)-len(kept))
 }
 
 // decodeInput unmarshals input into v, treating a nil or empty input as

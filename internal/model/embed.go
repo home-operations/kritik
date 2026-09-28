@@ -9,6 +9,8 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
+
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // OpenAIEmbedder is an Embedder over any OpenAI-compatible embeddings
@@ -54,10 +56,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 		}
 		batch := make([]string, 0, end-start)
 		for _, s := range inputs[start:end] {
-			if len(s) > e.MaxItemChars {
-				s = s[:e.MaxItemChars]
-			}
-			batch = append(batch, s)
+			batch = append(batch, textcut.Prefix(s, e.MaxItemChars))
 		}
 		params := openai.EmbeddingNewParams{
 			Input: openai.EmbeddingNewParamsInputUnion{OfArrayOfStrings: batch},

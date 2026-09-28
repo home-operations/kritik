@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 
 	"github.com/home-operations/kritik/internal/chunk"
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // Stages, in the order the prompt spends its budget on them.
@@ -348,7 +349,7 @@ func (b *builder) assemble() []Chunk {
 	total := 0
 	add := func(c Chunk) bool {
 		if len(c.Text) > b.opts.MaxChunkBytes {
-			c.Text = c.Text[:b.opts.MaxChunkBytes] + "\n… (truncated)"
+			c.Text = textcut.Prefix(c.Text, b.opts.MaxChunkBytes) + "\n… (truncated)"
 		}
 		if total+len(c.Text) > b.opts.MaxPackBytes {
 			return false
