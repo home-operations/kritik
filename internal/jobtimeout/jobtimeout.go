@@ -40,7 +40,7 @@ const (
 	RescueStuckJobsAfter = MaxJobTimeout + time.Hour
 )
 
-// MaxRunnerDeadline is the largest runner.activeDeadlineSeconds a tenant may
+// MaxRunnerDeadline is the largest runner.activeDeadlineSeconds an account may
 // set. Past it, either a single-mode review's timeout (deadline plus
 // LeaseWaitHeadroom and PublishHeadroom) or an index's timeout (deadline
 // plus IndexWriteHeadroom) would exceed MaxJobTimeout, and River would cut
@@ -50,5 +50,5 @@ const MaxRunnerDeadline = min(MaxJobTimeout-LeaseWaitHeadroom-PublishHeadroom, M
 // MaxAgentTimeout is the largest agent.timeout a repository in agentic mode
 // may set. Past it, agentDeadline's own contribution (agent.timeout plus
 // AgentFetchHeadroom, LeaseWaitHeadroom and PublishHeadroom) alone would
-// exceed MaxJobTimeout, regardless of the tenant's runner deadline.
+// exceed MaxJobTimeout, regardless of the account's runner deadline.
 const MaxAgentTimeout = MaxJobTimeout - AgentFetchHeadroom - LeaseWaitHeadroom - PublishHeadroom

@@ -1,6 +1,6 @@
 // Package store owns kritik's Postgres access: the two connection pools,
 // the startup assertion that keeps row-level security honest, schema
-// migrations, the leader lock, tenant-scoped transactions, and the sync of
+// migrations, the leader lock, account-scoped transactions, and the sync of
 // the configuration file into file-managed rows.
 package store
 
@@ -101,8 +101,8 @@ func (s *Store) Close() {
 	}
 }
 
-// App exposes the application pool for tenant-scoped work; prefer
-// [Store.WithTenant].
+// App exposes the application pool for account-scoped work; prefer
+// [Store.WithAccount].
 func (s *Store) App() *pgxpool.Pool { return s.app }
 
 // LeaderEligible reports whether an owner DSN was configured.
@@ -198,17 +198,17 @@ func (s *Store) WithRunnerJob(ctx context.Context, runID string, fn func(pgx.Tx)
 	return nil
 }
 
-// WithTenant runs fn in a transaction on the application pool with the
-// tenant set transaction-locally, so every policy resolves to that tenant
+// WithAccount runs fn in a transaction on the application pool with the
+// account set transaction-locally, so every policy resolves to that account
 // and nothing survives on the pooled connection after commit or rollback.
-func (s *Store) WithTenant(ctx context.Context, tenantID string, fn func(pgx.Tx) error) error {
+func (s *Store) WithAccount(ctx context.Context, accountID string, fn func(pgx.Tx) error) error {
 	tx, err := s.app.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("store: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
-	if _, err := tx.Exec(ctx, `SELECT set_config('app.tenant_id', $1, true)`, tenantID); err != nil {
-		return fmt.Errorf("store: set tenant: %w", err)
+	if _, err := tx.Exec(ctx, `SELECT set_config('app.account_id', $1, true)`, accountID); err != nil {
+		return fmt.Errorf("store: set account: %w", err)
 	}
 	if err := fn(tx); err != nil {
 		return err

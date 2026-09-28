@@ -39,7 +39,7 @@
         {:else}
           <section class="panel" aria-labelledby="admin-audit">
             <header class="panel-head"><h2 id="admin-audit">Audit log</h2></header>
-            <AuditTable path={`/api/v1/tenants/${encodeURIComponent(slug)}/audit`} />
+            <AuditTable path={`/api/v1/accounts/${encodeURIComponent(slug)}/audit`} />
           </section>
         {/if}
       </section>

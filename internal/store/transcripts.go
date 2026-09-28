@@ -27,7 +27,7 @@ const (
 // FollowupCommentID are left empty (zero) when the call has none. Row's
 // State is what the next agent step of RunnerRunID is a delta against.
 type ModelCall struct {
-	TenantID          string
+	AccountID         string
 	ReviewID          string
 	RunnerRunID       string
 	FollowupCommentID int64
@@ -43,7 +43,7 @@ type ModelCall struct {
 	Error             string
 }
 
-// InsertModelCall records c in tx, which must be scoped to c's tenant.
+// InsertModelCall records c in tx, which must be scoped to c's account.
 func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
 	if !c.Kind.Valid() {
 		return fmt.Errorf("store: model call kind %q", c.Kind)
@@ -55,12 +55,12 @@ func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
 	}
 	st := c.Row.State
 	_, err := tx.Exec(ctx, `INSERT INTO model_calls
-		(tenant_id, review_id, runner_run_id, followup_comment_id, kind, step, model, upstream, system, tools,
+		(account_id, review_id, runner_run_id, followup_comment_id, kind, step, model, upstream, system, tools,
 		 messages_from, messages, response, stop_reason, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,
 		 cost_usd, duration_ms, error, truncated, messages_end, messages_sha, system_sha, tools_sha, run_bytes)
 		VALUES ($1, nullif($2, '')::uuid, nullif($3, '')::uuid, nullif($4::bigint, 0), $5, $6, $7, $8, $9, $10::jsonb,
 		 $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
-		c.TenantID, c.ReviewID, c.RunnerRunID, c.FollowupCommentID, string(c.Kind), c.Step, c.Model, c.Upstream, c.Row.System, tools,
+		c.AccountID, c.ReviewID, c.RunnerRunID, c.FollowupCommentID, string(c.Kind), c.Step, c.Model, c.Upstream, c.Row.System, tools,
 		c.Row.MessagesFrom, string(c.Row.Messages), string(c.Row.Response), string(c.Stop),
 		c.Usage.Input, c.Usage.CacheRead, c.Usage.CacheWrite, c.Usage.Output, c.CostUSD, c.Duration.Milliseconds(), c.Error,
 		c.Row.Truncated, st.MessagesEnd, st.MessagesSHA[:], st.SystemSHA[:], st.ToolsSHA[:], st.Bytes)
@@ -105,7 +105,7 @@ type ModelCallFilter struct {
 }
 
 // ModelCalls returns the model calls f selects in the order they were
-// recorded, as tx's tenant may see them.
+// recorded, as tx's account may see them.
 func ModelCalls(ctx context.Context, tx pgx.Tx, f ModelCallFilter) ([]transcript.StoredRow, error) {
 	var where string
 	var arg any
@@ -147,7 +147,7 @@ func scanModelCall(row pgx.CollectableRow) (transcript.StoredRow, error) {
 	return r, err
 }
 
-// SweepModelCalls deletes every tenant's model calls recorded more than
+// SweepModelCalls deletes every account's model calls recorded more than
 // olderThan ago and returns how many it deleted. It runs on the owner
 // connection, which row-level security does not restrict. Leader only.
 func (s *Store) SweepModelCalls(ctx context.Context, olderThan time.Duration) (int64, error) {

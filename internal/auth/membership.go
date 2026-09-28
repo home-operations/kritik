@@ -93,8 +93,8 @@ func grant(ctx context.Context, file *configfile.File, s *configfile.SignIn, id 
 func forgeAccounts(ctx context.Context, file *configfile.File, forge configfile.Forge, login string, m Membership) ([]string, error) {
 	checked := map[string]bool{}
 	var out []string
-	for ti := range file.Tenants {
-		for _, in := range file.Tenants[ti].Connections {
+	for ti := range file.Accounts {
+		for _, in := range file.Accounts[ti].Connections {
 			if in.Forge != forge {
 				continue
 			}

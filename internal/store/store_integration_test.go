@@ -99,8 +99,8 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
-const twoTenants = `
-tenants:
+const twoAccounts = `
+accounts:
   - slug: alpha
     connections:
       - name: alpha-bot
@@ -129,11 +129,11 @@ func parse(t *testing.T, yaml string) *configfile.File {
 	return f
 }
 
-func tenantID(t *testing.T, s *Store, slug string) string {
+func accountID(t *testing.T, s *Store, slug string) string {
 	t.Helper()
 	var id string
-	if err := s.owner.QueryRow(context.Background(), `SELECT id FROM tenants WHERE slug = $1`, slug).Scan(&id); err != nil {
-		t.Fatalf("tenant %s: %v", slug, err)
+	if err := s.owner.QueryRow(context.Background(), `SELECT id FROM accounts WHERE slug = $1`, slug).Scan(&id); err != nil {
+		t.Fatalf("account %s: %v", slug, err)
 	}
 	return id
 }
@@ -141,50 +141,50 @@ func tenantID(t *testing.T, s *Store, slug string) string {
 func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	f := parse(t, twoTenants)
+	f := parse(t, twoAccounts)
 	if err := s.ApplyConfig(ctx, f, "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	if got, _ := s.AppliedConfigHash(ctx); got != f.Hash() {
 		t.Fatalf("applied hash = %q, want %q", got, f.Hash())
 	}
-	alpha, beta := tenantID(t, s, "alpha"), tenantID(t, s, "beta")
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 
-	count := func(t *testing.T, tenant, table string) int {
+	count := func(t *testing.T, account, table string) int {
 		t.Helper()
 		var n int
-		err := s.WithTenant(ctx, tenant, func(tx pgx.Tx) error {
+		err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&n)
 		})
 		if err != nil {
-			t.Fatalf("count %s as %s: %v", table, tenant, err)
+			t.Fatalf("count %s as %s: %v", table, account, err)
 		}
 		return n
 	}
 
-	t.Run("each tenant sees only its own rows", func(t *testing.T) {
-		if count(t, alpha, "tenants") != 1 || count(t, alpha, "connections") != 1 || count(t, alpha, "repositories") != 2 {
-			t.Fatal("alpha should see its own tenant, connection and two repositories")
+	t.Run("each account sees only its own rows", func(t *testing.T) {
+		if count(t, alpha, "accounts") != 1 || count(t, alpha, "connections") != 1 || count(t, alpha, "repositories") != 2 {
+			t.Fatal("alpha should see its own account, connection and two repositories")
 		}
 		if count(t, beta, "repositories") != 0 || count(t, beta, "connections") != 1 {
 			t.Fatal("beta should see one connection and no repositories")
 		}
 	})
 
-	t.Run("no tenant set sees nothing", func(t *testing.T) {
-		for _, table := range []string{"tenants", "connections", "repositories", "model_leases"} {
+	t.Run("no account set sees nothing", func(t *testing.T) {
+		for _, table := range []string{"accounts", "connections", "repositories", "model_leases"} {
 			var n int
 			if err := s.app.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&n); err != nil {
 				t.Fatalf("%s: %v", table, err)
 			}
 			if n != 0 {
-				t.Fatalf("%s: %d rows visible with no tenant set", table, n)
+				t.Fatalf("%s: %d rows visible with no account set", table, n)
 			}
 		}
 	})
 
-	t.Run("tenant does not leak across pooled connections", func(t *testing.T) {
-		// Exhaust the pool's connections through WithTenant, then query bare.
+	t.Run("account does not leak across pooled connections", func(t *testing.T) {
+		// Exhaust the pool's connections through WithAccount, then query bare.
 		for range 20 {
 			if count(t, alpha, "repositories") != 2 {
 				t.Fatal("alpha count changed")
@@ -192,17 +192,17 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 		}
 		var n int
 		if err := s.app.QueryRow(ctx, `SELECT count(*) FROM repositories`).Scan(&n); err != nil || n != 0 {
-			t.Fatalf("bare query after tenant transactions saw %d rows (err %v)", n, err)
+			t.Fatalf("bare query after account transactions saw %d rows (err %v)", n, err)
 		}
 	})
 
-	t.Run("application role cannot insert into another tenant", func(t *testing.T) {
-		err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `INSERT INTO model_leases (tenant_id, model_key, slot) VALUES ($1, 'p/m', 0)`, beta)
+	t.Run("application role cannot insert into another account", func(t *testing.T) {
+		err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `INSERT INTO model_leases (account_id, model_key, slot) VALUES ($1, 'p/m', 0)`, beta)
 			return err
 		})
 		if err == nil {
-			t.Fatal("insert with a foreign tenant_id must fail the WITH CHECK policy")
+			t.Fatal("insert with a foreign account_id must fail the WITH CHECK policy")
 		}
 	})
 
@@ -217,14 +217,14 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 		}
 	})
 
-	t.Run("removing a tenant from the file disables it and keeps its rows", func(t *testing.T) {
-		f2 := parse(t, strings.SplitN(twoTenants, "  - slug: beta", 2)[0])
+	t.Run("removing an account from the file disables it and keeps its rows", func(t *testing.T) {
+		f2 := parse(t, strings.SplitN(twoAccounts, "  - slug: beta", 2)[0])
 		if err := s.ApplyConfig(ctx, f2, "test"); err != nil {
 			t.Fatalf("ApplyConfig: %v", err)
 		}
 		var enabled bool
 		var rows int
-		if err := s.owner.QueryRow(ctx, `SELECT enabled, (SELECT count(*) FROM connections WHERE tenant_id = tenants.id) FROM tenants WHERE slug = 'beta'`).Scan(&enabled, &rows); err != nil {
+		if err := s.owner.QueryRow(ctx, `SELECT enabled, (SELECT count(*) FROM connections WHERE account_id = accounts.id) FROM accounts WHERE slug = 'beta'`).Scan(&enabled, &rows); err != nil {
 			t.Fatal(err)
 		}
 		if enabled || rows != 1 {
@@ -237,7 +237,7 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 		if err := s.ApplyConfig(ctx, f, "test"); err != nil {
 			t.Fatalf("re-apply: %v", err)
 		}
-		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM tenants WHERE slug = 'beta'`).Scan(&enabled); err != nil || !enabled {
+		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM accounts WHERE slug = 'beta'`).Scan(&enabled); err != nil || !enabled {
 			t.Fatalf("beta re-enabled=%v err=%v", enabled, err)
 		}
 	})
@@ -246,13 +246,13 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	alpha, beta := tenantID(t, s, "alpha"), tenantID(t, s, "beta")
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	var runID string
-	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, kind) VALUES ($1, 'index') RETURNING id`, alpha).Scan(&runID)
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'index') RETURNING id`, alpha).Scan(&runID)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 		{name: "phase", stmt: `UPDATE runner_runs SET phase = 'fetching' WHERE id = $1`, allowed: true},
 		{name: "heartbeat", stmt: `UPDATE runner_runs SET heartbeat_at = now() WHERE id = $1`, allowed: true},
 		{name: "error", stmt: `UPDATE runner_runs SET phase = 'failed', error = 'boom' WHERE id = $1`, allowed: true},
-		{name: "tenant", stmt: `UPDATE runner_runs SET tenant_id = '` + beta + `' WHERE id = $1`},
+		{name: "account", stmt: `UPDATE runner_runs SET account_id = '` + beta + `' WHERE id = $1`},
 		{name: "log tail", stmt: `UPDATE runner_runs SET log_tail = 'forged' WHERE id = $1`},
 		{name: "exit code", stmt: `UPDATE runner_runs SET exit_code = 0 WHERE id = $1`},
 		{name: "secret swept", stmt: `UPDATE runner_runs SET secret_swept_at = now() WHERE id = $1`},
@@ -292,29 +292,29 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 			}
 		})
 	}
-	var tenant string
-	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT tenant_id FROM runner_runs WHERE id = $1`, runID).Scan(&tenant)
-	}); err != nil || tenant != alpha {
-		t.Fatalf("run tenant = %q, %v", tenant, err)
+	var account string
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT account_id FROM runner_runs WHERE id = $1`, runID).Scan(&account)
+	}); err != nil || account != alpha {
+		t.Fatalf("run account = %q, %v", account, err)
 	}
 }
 
 func TestRunSecretsToSweep(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	alpha, beta := tenantID(t, s, "alpha"), tenantID(t, s, "beta")
-	insert := func(tenant, age string, finished, swept bool) string {
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
+	insert := func(account, age string, finished, swept bool) string {
 		t.Helper()
 		var id string
-		if err := s.WithTenant(ctx, tenant, func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, kind, created_at, finished_at, secret_swept_at)
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind, created_at, finished_at, secret_swept_at)
 				VALUES ($1, 'index', now() - $2::interval,
 					CASE WHEN $3 THEN now() END, CASE WHEN $4 THEN now() END) RETURNING id`,
-				tenant, age, finished, swept).Scan(&id)
+				account, age, finished, swept).Scan(&id)
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -337,7 +337,7 @@ func TestRunSecretsToSweep(t *testing.T) {
 	if limited, err := s.RunSecretsToSweep(ctx, alpha, 15*time.Minute, 3*time.Hour, 1); err != nil || len(limited) != 1 || limited[0] != abandoned {
 		t.Fatalf("limited sweep = %v, %v; want the oldest run only", limited, err)
 	}
-	// Marking is idempotent and scoped to the tenant: beta's run is not
+	// Marking is idempotent and scoped to the account: beta's run is not
 	// visible from alpha, so marking it there changes nothing.
 	for range 2 {
 		if err := s.MarkRunSecretsSwept(ctx, alpha, append(got, betaRun)); err != nil {
@@ -448,7 +448,7 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 func TestSweepDisabledIndexes(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
-	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	// The suites share one database: leave no index schema behind.
@@ -465,12 +465,12 @@ func TestSweepDisabledIndexes(t *testing.T) {
 	for _, name := range []string{"alpha/one", "alpha/two"} {
 		var run string
 		if err := s.owner.QueryRow(ctx, `WITH g AS (
-				INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-				SELECT tenant_id, id, 'abc', 'test-embed', 8, 'full', 'completed' FROM repositories WHERE name = $1
-				RETURNING id, tenant_id, repository_id
+				INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+				SELECT account_id, id, 'abc', 'test-embed', 8, 'full', 'completed' FROM repositories WHERE name = $1
+				RETURNING id, account_id, repository_id
 			), c AS (
-				INSERT INTO index_chunks (tenant_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
-				SELECT tenant_id, repository_id, id, 'main.go', 1, 1, 'package main', '[1,0,0,0,0,0,0,0]' FROM g
+				INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+				SELECT account_id, repository_id, id, 'main.go', 1, 1, 'package main', '[1,0,0,0,0,0,0,0]' FROM g
 			)
 			UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id RETURNING g.id`, name).Scan(&run); err != nil {
 			t.Fatalf("index %s: %v", name, err)
@@ -512,14 +512,14 @@ func TestSweepDisabledIndexes(t *testing.T) {
 }
 
 // TestFindRepoAcrossConnections checks that a repository name two
-// connections of a tenant hold is ambiguous without a connection,
+// connections of an account hold is ambiguous without a connection,
 // resolves with one, and stops being ambiguous once one connection is
 // gone and only its disabled repository is left.
 func TestFindRepoAcrossConnections(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
 	const twoApps = `
-tenants:
+accounts:
   - slug: gamma
     connections:
       - name: gamma-one
@@ -537,11 +537,11 @@ tenants:
 	if err := s.ApplyConfig(ctx, parse(t, twoApps), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	gamma := tenantID(t, s, "gamma")
+	gamma := accountID(t, s, "gamma")
 	find := func(name, connection string) (RepoRow, error) {
 		t.Helper()
 		var row RepoRow
-		err := s.WithTenant(ctx, gamma, func(tx pgx.Tx) error {
+		err := s.WithAccount(ctx, gamma, func(tx pgx.Tx) error {
 			var err error
 			row, err = FindRepo(ctx, tx, name, connection)
 			return err
@@ -587,28 +587,28 @@ func changeLast(s string) string {
 func TestGatewayTokens(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	alpha := tenantID(t, s, "alpha")
+	alpha := accountID(t, s, "alpha")
 	// A run needs a review, which needs a pull request of a repository.
 	grant := func() GatewayGrant {
 		t.Helper()
-		g := GatewayGrant{TenantID: alpha, Model: "openrouter/acme/large", Fallback: "openrouter/acme/small", Budget: 1000}
-		if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+		g := GatewayGrant{AccountID: alpha, Model: "openrouter/acme/large", Fallback: "openrouter/acme/small", Budget: 1000}
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 			if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE name = 'alpha/one'`).Scan(&g.RepositoryID); err != nil {
 				return err
 			}
 			var prID string
-			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (tenant_id, repository_id, number, head_sha)
+			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha)
 				VALUES ($1, $2, (random() * 1e6)::int, 'abc') RETURNING id`, alpha, g.RepositoryID).Scan(&prID); err != nil {
 				return err
 			}
-			if err := tx.QueryRow(ctx, `INSERT INTO reviews (tenant_id, pull_request_id, head_sha, status)
+			if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status)
 				VALUES ($1, $2, 'abc', 'running') RETURNING id`, alpha, prID).Scan(&g.ReviewID); err != nil {
 				return err
 			}
-			return tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, kind) VALUES ($1, 'review') RETURNING id`, alpha).Scan(&g.RunID)
+			return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'review') RETURNING id`, alpha).Scan(&g.RunID)
 		}); err != nil {
 			t.Fatal(err)
 		}

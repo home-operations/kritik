@@ -41,37 +41,37 @@ func TestParseEvent(t *testing.T) {
 	}{
 		{
 			name:    "review with review_id",
-			payload: `{"tenant_id":"a1f6c9d0-0000-0000-0000-000000000001","kind":"review","id":"` + reviewID + `","review_id":"` + reviewID + `"}`,
+			payload: `{"account_id":"a1f6c9d0-0000-0000-0000-000000000001","kind":"review","id":"` + reviewID + `","review_id":"` + reviewID + `"}`,
 			want: Event{
-				TenantID: "a1f6c9d0-0000-0000-0000-000000000001",
-				Kind:     EventReview,
-				ID:       reviewID,
-				ReviewID: &reviewID,
+				AccountID: "a1f6c9d0-0000-0000-0000-000000000001",
+				Kind:      EventReview,
+				ID:        reviewID,
+				ReviewID:  &reviewID,
 			},
 		},
 		{
 			name:    "index_run with null review_id",
-			payload: `{"tenant_id":"a1f6c9d0-0000-0000-0000-000000000001","kind":"index_run","id":"c1f6c9d0-0000-0000-0000-000000000001","review_id":null}`,
+			payload: `{"account_id":"a1f6c9d0-0000-0000-0000-000000000001","kind":"index_run","id":"c1f6c9d0-0000-0000-0000-000000000001","review_id":null}`,
 			want: Event{
-				TenantID: "a1f6c9d0-0000-0000-0000-000000000001",
-				Kind:     EventIndexRun,
-				ID:       "c1f6c9d0-0000-0000-0000-000000000001",
-				ReviewID: nil,
+				AccountID: "a1f6c9d0-0000-0000-0000-000000000001",
+				Kind:      EventIndexRun,
+				ID:        "c1f6c9d0-0000-0000-0000-000000000001",
+				ReviewID:  nil,
 			},
 		},
 		{
 			name:    "unknown kind",
-			payload: `{"tenant_id":"a1f6c9d0-0000-0000-0000-000000000001","kind":"bogus","id":"c1f6c9d0-0000-0000-0000-000000000001"}`,
+			payload: `{"account_id":"a1f6c9d0-0000-0000-0000-000000000001","kind":"bogus","id":"c1f6c9d0-0000-0000-0000-000000000001"}`,
 			wantErr: true,
 		},
 		{
-			name:    "missing tenant_id",
+			name:    "missing account_id",
 			payload: `{"kind":"review","id":"` + reviewID + `"}`,
 			wantErr: true,
 		},
 		{
 			name:    "missing id",
-			payload: `{"tenant_id":"a1f6c9d0-0000-0000-0000-000000000001","kind":"review"}`,
+			payload: `{"account_id":"a1f6c9d0-0000-0000-0000-000000000001","kind":"review"}`,
 			wantErr: true,
 		},
 		{
@@ -89,7 +89,7 @@ func TestParseEvent(t *testing.T) {
 			if tt.wantErr {
 				return
 			}
-			if got.TenantID != tt.want.TenantID || got.Kind != tt.want.Kind || got.ID != tt.want.ID {
+			if got.AccountID != tt.want.AccountID || got.Kind != tt.want.Kind || got.ID != tt.want.ID {
 				t.Errorf("parseEvent(%q) = %+v, want %+v", tt.payload, got, tt.want)
 			}
 			switch {

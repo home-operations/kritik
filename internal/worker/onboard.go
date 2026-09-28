@@ -25,8 +25,8 @@ const (
 // Onboarder feeds onboarding index jobs to the index queue a few at a time:
 // after a first install, or a model change that drops every index, all
 // repositories need one at once, and inserting them all would put the
-// first-declared tenant's hundreds ahead of everyone else's. It keeps at
-// most indexing.onboardWindow of them queued or running, tenants taking turns and the
+// first-declared account's hundreds ahead of everyone else's. It keeps at
+// most indexing.onboardWindow of them queued or running, accounts taking turns and the
 // repositories whose pull requests moved last going first. A leader duty.
 type Onboarder struct {
 	Store *store.Store
@@ -71,7 +71,7 @@ func (o *Onboarder) Offer(ctx context.Context) error {
 	}
 	params := make([]river.InsertManyParams, 0, len(refs))
 	for _, r := range refs {
-		args := jobs.IndexArgs{TenantID: r.TenantID, RepositoryID: r.ID, Trigger: jobs.TriggerOnboard}
+		args := jobs.IndexArgs{AccountID: r.AccountID, RepositoryID: r.ID, Trigger: jobs.TriggerOnboard}
 		params = append(params, river.InsertManyParams{Args: args})
 	}
 	results, err := o.Queue.InsertMany(ctx, params)

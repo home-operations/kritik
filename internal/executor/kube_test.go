@@ -28,7 +28,7 @@ const (
 func spec() Spec {
 	return Spec{
 		RunID:       "0123456789abcdef-run",
-		Labels:      map[string]string{"tenant": "acme", "pr": "42", "kind": "review"},
+		Labels:      map[string]string{"account": "acme", "pr": "42", "kind": "review"},
 		Annotations: map[string]string{"head-sha": headSHA},
 		Job: runner.Spec{
 			Version: runner.SpecVersion, Kind: runner.KindReview, RunID: "0123456789abcdef-run",
@@ -51,7 +51,7 @@ func TestJobSpec(t *testing.T) {
 	if *j.Spec.ActiveDeadlineSeconds != 300 || *j.Spec.TTLSecondsAfterFinished != 600 || *j.Spec.BackoffLimit != 0 {
 		t.Fatalf("deadline/ttl/backoff = %d/%d/%d", *j.Spec.ActiveDeadlineSeconds, *j.Spec.TTLSecondsAfterFinished, *j.Spec.BackoffLimit)
 	}
-	if j.Labels["kritik.home-operations.com/tenant"] != "acme" || j.Annotations["kritik.home-operations.com/head-sha"] != headSHA ||
+	if j.Labels["kritik.home-operations.com/account"] != "acme" || j.Annotations["kritik.home-operations.com/head-sha"] != headSHA ||
 		j.Spec.Template.Labels["kritik.home-operations.com/role"] != "runner" {
 		t.Fatalf("labels/annotations = %v %v", j.Labels, j.Annotations)
 	}
@@ -347,7 +347,7 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 	if err != nil || got.Head != headSHA || got.Base != baseSHA || strings.Join(got.Ignore, ",") != "vendor/**,**/*.lock" {
 		t.Fatalf("run spec = %+v, %v", got, err)
 	}
-	if sec.Labels["kritik.home-operations.com/role"] != "runner" || sec.Labels["kritik.home-operations.com/tenant"] != "acme" {
+	if sec.Labels["kritik.home-operations.com/role"] != "runner" || sec.Labels["kritik.home-operations.com/account"] != "acme" {
 		t.Fatalf("secret labels = %v", sec.Labels)
 	}
 	ref := sec.OwnerReferences[0]

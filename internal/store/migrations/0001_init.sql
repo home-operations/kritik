@@ -1,5 +1,5 @@
--- kritik's schema. Tenant-scoped tables carry tenant_id and a row-level
--- security policy keyed on the transaction-local setting app.tenant_id. The
+-- kritik's schema. Account-scoped tables carry account_id and a row-level
+-- security policy keyed on the transaction-local setting app.account_id. The
 -- policy normalises the setting with NULLIF because after a transaction-local
 -- set_config ends the setting reads back as '' rather than NULL, and ''::uuid
 -- raises. Tables a runner writes carry a second, runner_job policy keyed on
@@ -14,7 +14,7 @@
 -- deployment configuration, so the leader creates it at startup (see
 -- EnsureIndexSchema).
 
-CREATE TABLE tenants (
+CREATE TABLE accounts (
     id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     slug        text        NOT NULL UNIQUE,
     managed_by  text        NOT NULL CHECK (managed_by IN ('file', 'dashboard')),
@@ -26,7 +26,7 @@ CREATE TABLE tenants (
 
 CREATE TABLE connections (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id       uuid        NOT NULL REFERENCES tenants (id),
+    account_id       uuid        NOT NULL REFERENCES accounts (id),
     name            text        NOT NULL UNIQUE,
     forge           text        NOT NULL CHECK (forge IN ('github')),
     -- The accounts the connection serves, as a public GitHub App
@@ -43,11 +43,11 @@ CREATE TABLE connections (
     -- once a minute.
     last_webhook_at timestamptz
 );
-CREATE INDEX connections_tenant_id_idx ON connections (tenant_id);
+CREATE INDEX connections_account_id_idx ON connections (account_id);
 
 CREATE TABLE repositories (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id       uuid        NOT NULL REFERENCES tenants (id),
+    account_id       uuid        NOT NULL REFERENCES accounts (id),
     connection_id   uuid        NOT NULL REFERENCES connections (id),
     name            text        NOT NULL,
     default_branch  text        NOT NULL DEFAULT '',
@@ -58,20 +58,20 @@ CREATE TABLE repositories (
     updated_at      timestamptz NOT NULL DEFAULT now(),
     UNIQUE (connection_id, name)
 );
-CREATE INDEX repositories_tenant_id_idx ON repositories (tenant_id);
+CREATE INDEX repositories_account_id_idx ON repositories (account_id);
 -- The repository list, and a repository looked up by its full name.
-CREATE INDEX repositories_tenant_name_idx ON repositories (tenant_id, name, id);
+CREATE INDEX repositories_account_name_idx ON repositories (account_id, name, id);
 
 CREATE TABLE model_leases (
-    tenant_id  uuid   NOT NULL REFERENCES tenants (id),
+    account_id  uuid   NOT NULL REFERENCES accounts (id),
     model_key  text   NOT NULL,
     slot       int    NOT NULL,
     job_id     bigint,
     expires_at timestamptz,
-    PRIMARY KEY (tenant_id, model_key, slot)
+    PRIMARY KEY (account_id, model_key, slot)
 );
 
--- One row. Not tenant-scoped: written by the leader, read by every replica
+-- One row. Not account-scoped: written by the leader, read by every replica
 -- to report configuration drift.
 CREATE TABLE config_state (
     id           int         PRIMARY KEY CHECK (id = 1),
@@ -85,7 +85,7 @@ CREATE TABLE config_state (
 -- into the review prompt.
 CREATE TABLE pull_requests (
     id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id     uuid        NOT NULL REFERENCES tenants (id),
+    account_id     uuid        NOT NULL REFERENCES accounts (id),
     repository_id uuid        NOT NULL REFERENCES repositories (id),
     number        int         NOT NULL,
     title         text        NOT NULL DEFAULT '',
@@ -106,12 +106,12 @@ CREATE TABLE pull_requests (
     merged        boolean     NOT NULL DEFAULT false,
     UNIQUE (repository_id, number)
 );
-CREATE INDEX pull_requests_tenant_id_idx ON pull_requests (tenant_id);
-CREATE INDEX pull_requests_tenant_updated_idx ON pull_requests (tenant_id, updated_at DESC, id DESC);
+CREATE INDEX pull_requests_account_id_idx ON pull_requests (account_id);
+CREATE INDEX pull_requests_account_updated_idx ON pull_requests (account_id, updated_at DESC, id DESC);
 
 -- users, identities, sessions and login_states are all looked up before any
--- tenant is known (a session cookie or an OAuth callback carries no
--- tenant), so, like gateway_tokens, they carry no row-level security on
+-- account is known (a session cookie or an OAuth callback carries no
+-- account), so, like gateway_tokens, they carry no row-level security on
 -- purpose: web code enforces who may see what. A user is a person who
 -- signs in to the dashboard (ADR-0009).
 CREATE TABLE users (
@@ -136,7 +136,7 @@ CREATE TABLE users (
 -- did and when.
 CREATE TABLE reviews (
     id                  uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id           uuid        NOT NULL REFERENCES tenants (id),
+    account_id           uuid        NOT NULL REFERENCES accounts (id),
     pull_request_id     uuid        NOT NULL REFERENCES pull_requests (id),
     head_sha            text        NOT NULL,
     merge_base_sha      text        NOT NULL DEFAULT '',
@@ -159,7 +159,7 @@ CREATE TABLE reviews (
     cancel_requested_at timestamptz,
     canceled_by         uuid        REFERENCES users (id) ON DELETE SET NULL
 );
-CREATE INDEX reviews_tenant_id_idx ON reviews (tenant_id);
+CREATE INDEX reviews_account_id_idx ON reviews (account_id);
 CREATE INDEX reviews_pull_request_idx ON reviews (pull_request_id, created_at DESC);
 
 -- runner_runs is the record of the Kubernetes Job that prepared a review or
@@ -170,7 +170,7 @@ CREATE INDEX reviews_pull_request_idx ON reviews (pull_request_id, created_at DE
 -- index keeps the sweep's scan to rows still pending.
 CREATE TABLE runner_runs (
     id                 uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id          uuid        NOT NULL REFERENCES tenants (id),
+    account_id          uuid        NOT NULL REFERENCES accounts (id),
     review_id          uuid        REFERENCES reviews (id),
     kind               text        NOT NULL CHECK (kind IN ('review', 'index')),
     job_name           text        NOT NULL DEFAULT '',
@@ -189,8 +189,8 @@ CREATE TABLE runner_runs (
     heartbeat_at       timestamptz,
     secret_swept_at    timestamptz
 );
-CREATE INDEX runner_runs_tenant_id_idx ON runner_runs (tenant_id);
-CREATE INDEX runner_runs_secret_pending_idx ON runner_runs (tenant_id, created_at) WHERE secret_swept_at IS NULL;
+CREATE INDEX runner_runs_account_id_idx ON runner_runs (account_id);
+CREATE INDEX runner_runs_secret_pending_idx ON runner_runs (account_id, created_at) WHERE secret_swept_at IS NULL;
 -- A review's newest runner run.
 CREATE INDEX runner_runs_review_created_idx ON runner_runs (review_id, created_at DESC) WHERE review_id IS NOT NULL;
 
@@ -203,7 +203,7 @@ CREATE INDEX runner_runs_review_created_idx ON runner_runs (review_id, created_a
 -- touches that no ignore glob covers.
 CREATE TABLE context_packs (
     runner_run_id  uuid        PRIMARY KEY REFERENCES runner_runs (id),
-    tenant_id      uuid        NOT NULL REFERENCES tenants (id),
+    account_id      uuid        NOT NULL REFERENCES accounts (id),
     head_sha       text        NOT NULL,
     base_sha       text        NOT NULL,
     patch_id       text        NOT NULL,
@@ -217,7 +217,7 @@ CREATE TABLE context_packs (
     delta_diff     text        NOT NULL DEFAULT '',
     delta_paths    text[]      NOT NULL DEFAULT '{}'
 );
-CREATE INDEX context_packs_tenant_id_idx ON context_packs (tenant_id);
+CREATE INDEX context_packs_account_id_idx ON context_packs (account_id);
 
 -- A finding of the review contract: anchored to line, or to the range
 -- line through end_line (0 for line alone), with an explanation, an
@@ -229,7 +229,7 @@ CREATE INDEX context_packs_tenant_id_idx ON context_packs (tenant_id);
 -- earlier one with the same fingerprint.
 CREATE TABLE findings (
     id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id        uuid        NOT NULL REFERENCES tenants (id),
+    account_id        uuid        NOT NULL REFERENCES accounts (id),
     review_id        uuid        NOT NULL REFERENCES reviews (id),
     path             text        NOT NULL,
     line             int         NOT NULL,
@@ -245,20 +245,20 @@ CREATE TABLE findings (
     replacement      text        NOT NULL DEFAULT '',
     agent_prompt     text        NOT NULL DEFAULT ''
 );
-CREATE INDEX findings_tenant_id_idx ON findings (tenant_id);
+CREATE INDEX findings_account_id_idx ON findings (account_id);
 CREATE INDEX findings_review_idx ON findings (review_id);
 
 CREATE TABLE sticky_comments (
     pull_request_id  uuid   PRIMARY KEY REFERENCES pull_requests (id),
-    tenant_id        uuid   NOT NULL REFERENCES tenants (id),
+    account_id        uuid   NOT NULL REFERENCES accounts (id),
     forge_comment_id bigint NOT NULL,
     updated_at       timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX sticky_comments_tenant_id_idx ON sticky_comments (tenant_id);
+CREATE INDEX sticky_comments_account_id_idx ON sticky_comments (account_id);
 
 CREATE TABLE usage (
     id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id     uuid        NOT NULL REFERENCES tenants (id),
+    account_id     uuid        NOT NULL REFERENCES accounts (id),
     repository_id uuid        REFERENCES repositories (id),
     review_id     uuid        REFERENCES reviews (id),
     role          text        NOT NULL CHECK (role IN ('review', 'fallback', 'embedding', 'followup')),
@@ -269,7 +269,7 @@ CREATE TABLE usage (
     cost_usd      numeric(12, 6) NOT NULL DEFAULT 0,
     created_at    timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX usage_tenant_created_idx ON usage (tenant_id, created_at DESC);
+CREATE INDEX usage_account_created_idx ON usage (account_id, created_at DESC);
 -- A review's cost and a review's usage rows.
 CREATE INDEX usage_review_id_idx ON usage (review_id) WHERE review_id IS NOT NULL;
 
@@ -279,7 +279,7 @@ CREATE INDEX usage_review_id_idx ON usage (review_id) WHERE review_id IS NOT NUL
 -- the worker embeds it into index_chunks.
 CREATE TABLE index_runs (
     id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id     uuid        NOT NULL REFERENCES tenants (id),
+    account_id     uuid        NOT NULL REFERENCES accounts (id),
     repository_id uuid        NOT NULL REFERENCES repositories (id),
     commit_sha    text        NOT NULL,
     base_sha      text        NOT NULL DEFAULT '',
@@ -293,16 +293,16 @@ CREATE TABLE index_runs (
     created_at    timestamptz NOT NULL DEFAULT now(),
     finished_at   timestamptz
 );
-CREATE INDEX index_runs_tenant_id_idx ON index_runs (tenant_id);
+CREATE INDEX index_runs_account_id_idx ON index_runs (account_id);
 CREATE INDEX index_runs_repository_idx ON index_runs (repository_id, created_at DESC);
-CREATE INDEX index_runs_tenant_created_idx ON index_runs (tenant_id, created_at DESC, id DESC);
+CREATE INDEX index_runs_account_created_idx ON index_runs (account_id, created_at DESC, id DESC);
 
 ALTER TABLE repositories ADD COLUMN active_index_run_id uuid REFERENCES index_runs (id);
 ALTER TABLE runner_runs  ADD COLUMN index_run_id uuid REFERENCES index_runs (id);
 
 CREATE TABLE index_packs (
     runner_run_id uuid        PRIMARY KEY REFERENCES runner_runs (id),
-    tenant_id     uuid        NOT NULL REFERENCES tenants (id),
+    account_id     uuid        NOT NULL REFERENCES accounts (id),
     commit_sha    text        NOT NULL,
     base_sha      text        NOT NULL DEFAULT '',
     mode          text        NOT NULL CHECK (mode IN ('full', 'incremental')),
@@ -310,12 +310,12 @@ CREATE TABLE index_packs (
     chunk_count   int         NOT NULL DEFAULT 0,
     created_at    timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX index_packs_tenant_id_idx ON index_packs (tenant_id);
+CREATE INDEX index_packs_account_id_idx ON index_packs (account_id);
 
 CREATE TABLE index_staging (
     id            bigserial   PRIMARY KEY,
     runner_run_id uuid        NOT NULL REFERENCES runner_runs (id),
-    tenant_id     uuid        NOT NULL REFERENCES tenants (id),
+    account_id     uuid        NOT NULL REFERENCES accounts (id),
     path          text        NOT NULL,
     start_line    int         NOT NULL,
     end_line      int         NOT NULL,
@@ -326,7 +326,7 @@ CREATE TABLE index_staging (
     text          text        NOT NULL
 );
 CREATE INDEX index_staging_run_idx ON index_staging (runner_run_id, id);
-CREATE INDEX index_staging_tenant_id_idx ON index_staging (tenant_id);
+CREATE INDEX index_staging_account_id_idx ON index_staging (account_id);
 
 -- One row: which embedding model and dimension index_chunks was created
 -- for. Owner-only writes, like config_state.
@@ -342,7 +342,7 @@ CREATE TABLE index_schema (
 -- webhook cannot answer twice.
 CREATE TABLE followups (
     id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id        uuid        NOT NULL REFERENCES tenants (id),
+    account_id        uuid        NOT NULL REFERENCES accounts (id),
     pull_request_id  uuid        NOT NULL REFERENCES pull_requests (id),
     comment_id       bigint      NOT NULL,
     author           text        NOT NULL DEFAULT '',
@@ -356,21 +356,21 @@ CREATE TABLE followups (
     created_at       timestamptz NOT NULL DEFAULT now(),
     UNIQUE (pull_request_id, comment_id)
 );
-CREATE INDEX followups_tenant_id_idx ON followups (tenant_id);
+CREATE INDEX followups_account_id_idx ON followups (account_id);
 CREATE INDEX followups_pr_created_idx ON followups (pull_request_id, created_at DESC);
-CREATE INDEX followups_tenant_created_idx ON followups (tenant_id, created_at DESC, id DESC);
+CREATE INDEX followups_account_created_idx ON followups (account_id, created_at DESC, id DESC);
 -- A follow-up looked up by the comment it answered.
-CREATE INDEX followups_tenant_comment_idx ON followups (tenant_id, comment_id);
+CREATE INDEX followups_account_comment_idx ON followups (account_id, comment_id);
 
 -- One row per connection: when the leader last listed its open pull
 -- requests, so a restarted leader resumes where the previous one stopped.
 CREATE TABLE poll_state (
     connection_id   uuid        PRIMARY KEY REFERENCES connections (id),
-    tenant_id       uuid        NOT NULL REFERENCES tenants (id),
+    account_id       uuid        NOT NULL REFERENCES accounts (id),
     last_polled_at  timestamptz NOT NULL,
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX poll_state_tenant_id_idx ON poll_state (tenant_id);
+CREATE INDEX poll_state_account_id_idx ON poll_state (account_id);
 
 -- An agentic review's tool loop, written by the runner after its context
 -- pack: how it stopped ('skipped', with the skip reason as the error, when
@@ -381,7 +381,7 @@ CREATE INDEX poll_state_tenant_id_idx ON poll_state (tenant_id);
 -- lists as the sources consulted.
 CREATE TABLE agent_runs (
     runner_run_id      uuid           PRIMARY KEY REFERENCES runner_runs (id),
-    tenant_id          uuid           NOT NULL REFERENCES tenants (id),
+    account_id          uuid           NOT NULL REFERENCES accounts (id),
     stop_reason        text           NOT NULL
         CHECK (stop_reason IN ('submitted', 'max_steps', 'budget', 'no_submit', 'canceled', 'error', 'skipped')),
     result             jsonb,
@@ -399,16 +399,16 @@ CREATE TABLE agent_runs (
     sources            jsonb          NOT NULL DEFAULT '[]'::jsonb,
     CHECK ((stop_reason = 'submitted') = (result IS NOT NULL))
 );
-CREATE INDEX agent_runs_tenant_id_idx ON agent_runs (tenant_id);
+CREATE INDEX agent_runs_account_id_idx ON agent_runs (account_id);
 
 -- Per-run credentials for the worker's model gateway (ADR-0004). A token
--- is looked up by its SHA-256 before any tenant is known, so the table has
+-- is looked up by its SHA-256 before any account is known, so the table has
 -- no row-level security on purpose: holding the token is the
 -- authorisation, and a row reveals only the ids of the run it belongs to.
 CREATE TABLE gateway_tokens (
     token_hash    bytea       PRIMARY KEY,
     runner_run_id uuid        NOT NULL REFERENCES runner_runs (id),
-    tenant_id     uuid        NOT NULL REFERENCES tenants (id),
+    account_id     uuid        NOT NULL REFERENCES accounts (id),
     review_id     uuid        NOT NULL REFERENCES reviews (id),
     repository_id uuid        NOT NULL REFERENCES repositories (id),
     -- The provider/model references the run was granted.
@@ -479,25 +479,25 @@ CREATE TABLE login_states (
 );
 CREATE INDEX login_states_expires_at_idx ON login_states (expires_at);
 
--- audit_events records dashboard-driven actions across every tenant, so an
--- instance admin can read it without a tenant context; no RLS.
+-- audit_events records dashboard-driven actions across every account, so an
+-- instance admin can read it without an account context; no RLS.
 CREATE TABLE audit_events (
     id        bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     at        timestamptz NOT NULL DEFAULT now(),
     user_id   uuid        REFERENCES users (id) ON DELETE SET NULL,
-    tenant_id uuid        REFERENCES tenants (id),
+    account_id uuid        REFERENCES accounts (id),
     action    text        NOT NULL,
     target    text        NOT NULL DEFAULT '',
     detail    jsonb       NOT NULL DEFAULT '{}'::jsonb
 );
-CREATE INDEX audit_events_tenant_at_idx ON audit_events (tenant_id, at DESC);
+CREATE INDEX audit_events_account_at_idx ON audit_events (account_id, at DESC);
 
--- dashboard_tenants holds a dashboard-authored tenant spec pending or
--- already applied by ApplyConfig, keyed by slug rather than tenant_id: the
--- tenants row itself is created later, by ApplyConfig, so a foreign key to
--- tenants(id) is not possible here. No RLS: it is read before the tenant it
+-- dashboard_accounts holds a dashboard-authored account spec pending or
+-- already applied by ApplyConfig, keyed by slug rather than account_id: the
+-- accounts row itself is created later, by ApplyConfig, so a foreign key to
+-- accounts(id) is not possible here. No RLS: it is read before the account it
 -- describes exists.
-CREATE TABLE dashboard_tenants (
+CREATE TABLE dashboard_accounts (
     slug       text        PRIMARY KEY,
     spec       jsonb       NOT NULL,
     revision   bigint      NOT NULL DEFAULT 1,
@@ -507,7 +507,7 @@ CREATE TABLE dashboard_tenants (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- model_calls is tenant content (row-level security applies, unlike the
+-- model_calls is account content (row-level security applies, unlike the
 -- tables above): one row per model call the gateway made, whether an
 -- agent's step, a plain review, a fallback, or a followup reply, kept for
 -- the dashboard's transcript view and cost accounting. A NULL system or
@@ -524,7 +524,7 @@ CREATE TABLE dashboard_tenants (
 -- recorded whole. Only agent steps read it back.
 CREATE TABLE model_calls (
     id                  uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id           uuid        NOT NULL REFERENCES tenants (id),
+    account_id           uuid        NOT NULL REFERENCES accounts (id),
     review_id           uuid        REFERENCES reviews (id),
     runner_run_id       uuid        REFERENCES runner_runs (id),
     followup_comment_id bigint,
@@ -555,13 +555,13 @@ CREATE TABLE model_calls (
 );
 CREATE INDEX model_calls_review_step_idx ON model_calls (review_id, step);
 CREATE INDEX model_calls_runner_run_step_idx ON model_calls (runner_run_id, step);
-CREATE INDEX model_calls_tenant_created_idx ON model_calls (tenant_id, created_at);
--- The retention sweep deletes by age across every tenant; a follow-up's
+CREATE INDEX model_calls_account_created_idx ON model_calls (account_id, created_at);
+-- The retention sweep deletes by age across every account; a follow-up's
 -- transcript is looked up by the comment it answered.
 CREATE INDEX model_calls_created_at_idx ON model_calls (created_at);
 CREATE INDEX model_calls_followup_comment_idx ON model_calls (followup_comment_id) WHERE followup_comment_id IS NOT NULL;
 
-ALTER TABLE tenants         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE accounts         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE connections   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE repositories    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE model_leases    ENABLE ROW LEVEL SECURITY;
@@ -580,60 +580,60 @@ ALTER TABLE poll_state      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_runs      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE model_calls     ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY tenant_isolation ON tenants
-    USING      (id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON connections
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON repositories
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON model_leases
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON pull_requests
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON reviews
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON runner_runs
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON context_packs
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON findings
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON sticky_comments
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON usage
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON index_runs
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON index_packs
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON index_staging
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON followups
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON poll_state
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON agent_runs
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON model_calls
-    USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
+CREATE POLICY account_isolation ON accounts
+    USING      (id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON connections
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON repositories
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON model_leases
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON pull_requests
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON reviews
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON runner_runs
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON context_packs
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON findings
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON sticky_comments
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON usage
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON index_runs
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON index_packs
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON index_staging
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON followups
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON poll_state
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON agent_runs
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON model_calls
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
 
 -- The runner may update the phase of its own run and write its own packs,
 -- staging rows and agent run.
@@ -666,7 +666,7 @@ DECLARE
     row_json jsonb := to_jsonb(NEW);
 BEGIN
     PERFORM pg_notify('kritik_events', jsonb_build_object(
-        'tenant_id', row_json ->> 'tenant_id',
+        'account_id', row_json ->> 'account_id',
         'kind', TG_ARGV[0],
         'id', row_json ->> 'id',
         'review_id', row_json ->> 'review_id'
@@ -726,8 +726,8 @@ CREATE TRIGGER kritik_notify_model_call
     FOR EACH ROW
     EXECUTE FUNCTION kritik_notify_event('model_call');
 
--- kritik_notify_config publishes the tenant slug whenever a dashboard-edited
--- tenant spec changes, so the leader can re-apply it without polling.
+-- kritik_notify_config publishes the account slug whenever a dashboard-edited
+-- account spec changes, so the leader can re-apply it without polling.
 CREATE FUNCTION kritik_notify_config() RETURNS trigger AS $$
 BEGIN
     PERFORM pg_notify('kritik_config', NEW.slug);
@@ -735,7 +735,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER kritik_notify_dashboard_tenant
-    AFTER INSERT OR UPDATE ON dashboard_tenants
+CREATE TRIGGER kritik_notify_dashboard_account
+    AFTER INSERT OR UPDATE ON dashboard_accounts
     FOR EACH ROW
     EXECUTE FUNCTION kritik_notify_config();

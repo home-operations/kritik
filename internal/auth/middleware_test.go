@@ -112,15 +112,15 @@ func TestRequirePrincipal(t *testing.T) {
 }
 
 func TestPrincipalCanRead(t *testing.T) {
-	member := &Principal{Tenants: map[string]bool{"t1": true}}
+	member := &Principal{Accounts: map[string]bool{"t1": true}}
 	tests := []struct {
 		name string
 		p    *Principal
 		want bool
 	}{
-		{"a member of the tenant", member, true},
-		{"a member of another", &Principal{Tenants: map[string]bool{"t2": true}}, false},
-		{"a member of every tenant", &Principal{AllTenants: true}, true},
+		{"a member of the account", member, true},
+		{"a member of another", &Principal{Accounts: map[string]bool{"t2": true}}, false},
+		{"a member of every account", &Principal{AllAccounts: true}, true},
 		{"an operator", &Principal{Operator: true}, true},
 		{"nil principal", nil, false},
 	}
@@ -133,14 +133,14 @@ func TestPrincipalCanRead(t *testing.T) {
 	}
 }
 
-// TestPrincipalFor: a member reads the tenants whose connections serve an
+// TestPrincipalFor: a member reads the accounts whose connections serve an
 // account the grant names, among those the file still declares.
 func TestPrincipalFor(t *testing.T) {
 	file := testFile(t, "auth:\n"+adminPassword)
 	tid := func(slug string) string {
-		tn, ok := file.Tenant(slug)
+		tn, ok := file.Account(slug)
 		if !ok {
-			t.Fatalf("no tenant %s", slug)
+			t.Fatalf("no account %s", slug)
 		}
 		return tn.ID()
 	}
@@ -150,11 +150,11 @@ func TestPrincipalFor(t *testing.T) {
 		Grant:    store.SessionGrant{Role: RoleMember, Accounts: []string{"github/widgets", "github/gone"}},
 	}
 	p := principalFor(file, sess)
-	if p.Operator || p.AllTenants || p.User.ID != "acct" || p.Identity.Login != "Alice" {
+	if p.Operator || p.AllAccounts || p.User.ID != "acct" || p.Identity.Login != "Alice" {
 		t.Fatalf("principal = %+v", p)
 	}
-	if len(p.Tenants) != 2 || !p.Tenants[tid("adminorg")] || !p.Tenants[tid("several")] {
-		t.Fatalf("tenants = %v, want adminorg and several", p.Tenants)
+	if len(p.Accounts) != 2 || !p.Accounts[tid("adminorg")] || !p.Accounts[tid("several")] {
+		t.Fatalf("accounts = %v, want adminorg and several", p.Accounts)
 	}
 	sess.Grant = store.SessionGrant{Role: RoleAdmin}
 	if p := principalFor(file, sess); !p.Operator || !p.CanRead(tid("org")) {

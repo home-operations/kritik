@@ -52,7 +52,7 @@ const indexAttempts = 3
 
 // ReviewArgs reviews one head of one pull request.
 type ReviewArgs struct {
-	TenantID     string `json:"tenant_id"     river:"unique"`
+	AccountID    string `json:"account_id"     river:"unique"`
 	RepositoryID string `json:"repository_id" river:"unique"`
 	Number       int    `json:"number"        river:"unique"`
 	HeadSHA      string `json:"head_sha"      river:"unique"`
@@ -64,7 +64,7 @@ type ReviewArgs struct {
 	// the omitempty tag is load-bearing: it must serialize to no "request"
 	// key at all (every trigger but manual) for the hash to match what a job
 	// enqueued before this field existed would have produced, keeping the
-	// existing dedup on tenant+repository+number+head unchanged. A manual
+	// existing dedup on account+repository+number+head unchanged. A manual
 	// re-run sets a fresh value (a UUID) so it is never deduped against a
 	// prior run of the same head, including another manual one.
 	Request string `json:"request,omitempty" river:"unique"`
@@ -80,7 +80,7 @@ func (ReviewArgs) InsertOpts() river.InsertOpts {
 
 // FollowUpArgs answers one comment that addressed the bot.
 type FollowUpArgs struct {
-	TenantID     string `json:"tenant_id"`
+	AccountID    string `json:"account_id"`
 	RepositoryID string `json:"repository_id"`
 	Number       int    `json:"number"`
 	CommentID    int64  `json:"comment_id" river:"unique"`
@@ -100,7 +100,7 @@ func (FollowUpArgs) InsertOpts() river.InsertOpts {
 // IndexArgs builds or advances a repository's index to its default branch
 // tip, whatever the tip is when the job runs.
 type IndexArgs struct {
-	TenantID     string `json:"tenant_id"`
+	AccountID    string `json:"account_id"`
 	RepositoryID string `json:"repository_id" river:"unique"`
 	// CommitSHA is the commit a push moved the default branch to, for the
 	// record only: a burst of pushes needs one job, not one each, so it is

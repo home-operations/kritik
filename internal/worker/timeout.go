@@ -14,10 +14,10 @@ import (
 // agentic mode, plus the lease wait and the publish phase around it.
 func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
 	file := w.Current.Get()
-	tenant := tenantByID(file, job.Args.TenantID)
-	deadline, _ := file.RunnerFor(tenant)
-	if tenant != nil {
-		settings := repoSettings(file, tenant, job.Args.RepositoryID)
+	account := accountByID(file, job.Args.AccountID)
+	deadline, _ := file.RunnerFor(account)
+	if account != nil {
+		settings := repoSettings(file, account, job.Args.RepositoryID)
 		if settings.Mode == configfile.ReviewAgentic {
 			deadline = agentDeadline(deadline, settings.Agent.Timeout)
 		}
@@ -29,7 +29,7 @@ func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
 // and writing the generation, which waits on embedding leases.
 func (w *Index) Timeout(job *river.Job[jobs.IndexArgs]) time.Duration {
 	file := w.Current.Get()
-	deadline, _ := file.RunnerFor(tenantByID(file, job.Args.TenantID))
+	deadline, _ := file.RunnerFor(accountByID(file, job.Args.AccountID))
 	return min(deadline+jobtimeout.IndexWriteHeadroom, jobtimeout.MaxJobTimeout)
 }
 
@@ -41,14 +41,14 @@ func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration {
 
 // repoSettings resolves a repository's settings from its id, which a job
 // carries instead of the connection and name the configuration is keyed
-// by. A repository the tenant does not list gets the tenant's settings, as
+// by. A repository the account does not list gets the account's settings, as
 // in Settings.
-func repoSettings(file *configfile.File, tenant *configfile.Tenant, repositoryID string) configfile.Settings {
-	for i := range tenant.Repositories {
-		r := &tenant.Repositories[i]
-		if in := file.ConnectionFor(tenant, r); in != nil && configfile.RepositoryID(in.ID(), r.Name) == repositoryID {
-			return file.Settings(tenant, in.Name, r.Name)
+func repoSettings(file *configfile.File, account *configfile.Account, repositoryID string) configfile.Settings {
+	for i := range account.Repositories {
+		r := &account.Repositories[i]
+		if in := file.ConnectionFor(account, r); in != nil && configfile.RepositoryID(in.ID(), r.Name) == repositoryID {
+			return file.Settings(account, in.Name, r.Name)
 		}
 	}
-	return file.Settings(tenant, "", "")
+	return file.Settings(account, "", "")
 }

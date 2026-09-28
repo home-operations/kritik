@@ -1,5 +1,5 @@
 // Package webapi is the dashboard's JSON API and static UI server: the
-// read endpoints over one tenant's reviews, repositories, usage and queue,
+// read endpoints over one account's reviews, repositories, usage and queue,
 // and the server-sent event stream that keeps the UI live. The web role
 // runs it; internal/auth decides who a request acts as.
 package webapi
@@ -26,7 +26,7 @@ type Config struct {
 	Store   *store.Store
 	Current *configfile.Current
 	Auth    *auth.Handler
-	// Keyring seals the secrets of dashboard tenants; nil disables writing
+	// Keyring seals the secrets of dashboard accounts; nil disables writing
 	// them.
 	Keyring *sealbox.Keyring
 	// Actions queues re-runs, cancels and reindexes; nil disables them.

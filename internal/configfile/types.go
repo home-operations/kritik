@@ -1,5 +1,5 @@
 // Package configfile loads the declarative configuration file: the model
-// providers, defaults, tenants, connections and repositories kritik
+// providers, defaults, accounts, connections and repositories kritik
 // manages. Process configuration (addresses, database, log level) is
 // environment variables and lives in internal/config.
 //
@@ -40,7 +40,7 @@ const ForgeGitHub Forge = "github"
 
 // SecretRef points at where a secret value lives. Exactly one of Env, File
 // or Sealed is set. Values are resolved at load and never written back to
-// disk or the database. Sealed is ciphertext only a dashboard-managed tenant
+// disk or the database. Sealed is ciphertext only a dashboard-managed account
 // may carry; Env and File would read the server's own environment and
 // filesystem, so only the operator's file may use them.
 type SecretRef struct {
@@ -93,7 +93,7 @@ type Provider struct {
 func (p Provider) APIKeyValue() Secret { return p.apiKey }
 
 // ModelRef names a model as "<provider>/<model>", where provider is a key of
-// the tenant's or the file's providers map and model is whatever the
+// the account's or the file's providers map and model is whatever the
 // provider accepts.
 type ModelRef string
 
@@ -133,15 +133,15 @@ type ModelsSpec struct {
 	Fallback *ModelRef `yaml:"fallback,omitempty"`
 }
 
-// Limits bound what a tenant may consume, as resolved. A cap of zero is no
+// Limits bound what an account may consume, as resolved. A cap of zero is no
 // cap; Concurrency is never zero once resolved.
 type Limits struct {
-	// Concurrency is the number of advisory-lock slots per tenant and model:
+	// Concurrency is the number of advisory-lock slots per account and model:
 	// how many model calls may run at once.
 	Concurrency int
-	// ReviewsPerDay caps review passes per tenant per calendar day.
+	// ReviewsPerDay caps review passes per account per calendar day.
 	ReviewsPerDay int
-	// TokensPerMonth caps input plus output tokens per tenant per calendar
+	// TokensPerMonth caps input plus output tokens per account per calendar
 	// month.
 	TokensPerMonth int64
 }
@@ -159,7 +159,7 @@ type LimitsSpec struct {
 // DefaultConcurrency applies when no level of the file sets one.
 const DefaultConcurrency = 2
 
-// Runner overrides for the Kubernetes Job a tenant's index and review pods
+// Runner overrides for the Kubernetes Job an account's index and review pods
 // run as. Kept as loose maps for resources because the values are copied
 // verbatim into the pod spec and the Kubernetes types are not a dependency
 // of this package.
@@ -168,13 +168,13 @@ type Runner struct {
 	ActiveDeadlineSeconds int64          `yaml:"activeDeadlineSeconds,omitempty"`
 }
 
-// DefaultRunnerDeadline bounds a runner Job when neither the tenant nor
+// DefaultRunnerDeadline bounds a runner Job when neither the account nor
 // defaults.runner sets activeDeadlineSeconds.
 const DefaultRunnerDeadline = 15 * time.Minute
 
-// Defaults apply to every tenant unless overridden.
+// Defaults apply to every account unless overridden.
 type Defaults struct {
-	// Runner is every tenant's runner block unless the tenant sets its own
+	// Runner is every account's runner block unless the account sets its own
 	// deadline or resources.
 	Runner    *Runner `yaml:"runner,omitempty"`
 	Overrides `yaml:",inline"`
@@ -182,7 +182,7 @@ type Defaults struct {
 }
 
 // Overrides are the repository settings every operator scope may set: the
-// defaults, a tenant and a repository entry. A field a narrower scope
+// defaults, an account and a repository entry. A field a narrower scope
 // writes replaces the broader scope's, even when it is empty or zero; a
 // field it leaves out inherits (ADR-0010 §2.4). Ignore globs are unioned
 // instead.
@@ -271,7 +271,7 @@ func (t Tool) Provides() []string {
 // Indexing tunes how repositories are onboarded into the embedding index.
 type Indexing struct {
 	// OnboardWindow is how many onboarding index jobs the leader keeps
-	// queued or running at once; tenants take turns, and the repositories
+	// queued or running at once; accounts take turns, and the repositories
 	// whose pull requests moved last go first.
 	OnboardWindow int `yaml:"onboardWindow,omitempty"`
 }
@@ -360,7 +360,7 @@ func (i Connection) WebhookSecretValue() Secret { return i.App.webhookSecret }
 // grants access to is watched whether or not it is listed here.
 type Repository struct {
 	Name string `yaml:"name"`
-	// Connection names the tenant's connection the repository belongs
+	// Connection names the account's connection the repository belongs
 	// to. It is required only when the owner is the account of more than
 	// one connection, so the same "owner/repo" on two forges is two
 	// entries.
@@ -505,16 +505,16 @@ func (r Review) Referenced() []string {
 	return out
 }
 
-// Tenant is a forge account and the unit of isolation.
-type Tenant struct {
+// Account is a forge account and the unit of isolation.
+type Account struct {
 	Slug         string       `yaml:"slug"`
 	Runner       *Runner      `yaml:"runner,omitempty"`
 	Connections  []Connection `yaml:"connections"`
 	Overrides    `yaml:",inline"`
 	Limits       LimitsSpec   `yaml:"limits,omitempty"`
 	Repositories []Repository `yaml:"repositories,omitempty"`
-	// Providers are the tenant's own model providers: its keys, for the
-	// models it pays for. A model reference in the tenant names one of them
+	// Providers are the account's own model providers: its keys, for the
+	// models it pays for. A model reference in the account names one of them
 	// or one of the file's, and a name may not be both.
 	Providers map[string]Provider `yaml:"providers,omitempty"`
 
@@ -543,24 +543,24 @@ type File struct {
 	Retention Retention           `yaml:"retention,omitempty"`
 	Egress    Egress              `yaml:"egress,omitempty"`
 	Auth      Auth                `yaml:"auth,omitempty"`
-	Tenants   []Tenant            `yaml:"tenants"`
+	Accounts  []Account           `yaml:"accounts"`
 
 	hash string
 	// base is the parsed file a merged File was built from, nil for a
-	// parsed one; dashboard holds the tenants merged into it.
+	// parsed one; dashboard holds the accounts merged into it.
 	base      *File
-	dashboard []DashboardTenant
-	skipped   []SkippedTenant
+	dashboard []DashboardAccount
+	skipped   []SkippedAccount
 }
 
 // Hash is the hex SHA-256 of the file's bytes as parsed, or for a merged
-// File, of the parsed file's hash and each dashboard tenant's revision. The
+// File, of the parsed file's hash and each dashboard account's revision. The
 // leader records it in the store after applying the file, and followers
 // compare it with their own copy to report drift.
 func (f *File) Hash() string { return f.hash }
 
 // Settings are the effective settings for one repository after defaults,
-// tenant and repository layers are merged.
+// account and repository layers are merged.
 type Settings struct {
 	Enabled bool
 	Models  Models

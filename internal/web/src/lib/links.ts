@@ -21,20 +21,20 @@ export function connectionQuery(connection?: string): string {
 }
 
 // API paths for the dashboard actions.
-function tenantApi(slug: string): string {
-  return `/api/v1/tenants/${encodeURIComponent(slug)}`;
+function accountApi(slug: string): string {
+  return `/api/v1/accounts/${encodeURIComponent(slug)}`;
 }
 
 export function rerunPath(slug: string, p: { repository: string; number: number }, connection?: string): string {
   const n = splitRepo(p.repository);
-  return `${tenantApi(slug)}/pulls/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/${p.number}/rerun${connectionQuery(connection)}`;
+  return `${accountApi(slug)}/pulls/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/${p.number}/rerun${connectionQuery(connection)}`;
 }
 
 export function cancelPath(slug: string, reviewId: string): string {
-  return `${tenantApi(slug)}/reviews/${encodeURIComponent(reviewId)}/cancel`;
+  return `${accountApi(slug)}/reviews/${encodeURIComponent(reviewId)}/cancel`;
 }
 
 export function reindexPath(slug: string, fullName: string, connection?: string): string {
   const n = splitRepo(fullName);
-  return `${tenantApi(slug)}/repos/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/reindex${connectionQuery(connection)}`;
+  return `${accountApi(slug)}/repos/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/reindex${connectionQuery(connection)}`;
 }

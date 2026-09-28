@@ -22,7 +22,7 @@ func uniqueFields(v any) map[string]bool {
 
 func TestReviewArgsUniqueTags(t *testing.T) {
 	got := uniqueFields(ReviewArgs{})
-	want := map[string]bool{"TenantID": true, "RepositoryID": true, "Number": true, "HeadSHA": true, "Request": true}
+	want := map[string]bool{"AccountID": true, "RepositoryID": true, "Number": true, "HeadSHA": true, "Request": true}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("river:\"unique\" fields = %v, want %v", got, want)
 	}
@@ -34,7 +34,7 @@ func TestReviewArgsUniqueTags(t *testing.T) {
 // key at all, not merely an empty string, or it would still perturb the hash
 // relative to jobs enqueued before this field existed.
 func TestReviewArgsRequestOmittedFromJSONWhenEmpty(t *testing.T) {
-	data, err := json.Marshal(ReviewArgs{TenantID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: "push"})
+	data, err := json.Marshal(ReviewArgs{AccountID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: "push"})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestReviewArgsRequestOmittedFromJSONWhenEmpty(t *testing.T) {
 // JSON, or two manual re-runs of the same head would collide.
 func TestReviewArgsRequestPresentInJSONWhenSet(t *testing.T) {
 	data, err := json.Marshal(ReviewArgs{
-		TenantID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: TriggerManual,
+		AccountID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: TriggerManual,
 		Request: "11111111-1111-1111-1111-111111111111",
 	})
 	if err != nil {
@@ -68,14 +68,14 @@ func TestReviewArgsRequestPresentInJSONWhenSet(t *testing.T) {
 }
 
 // TestReviewArgsSameHeadDedupeUnaffected pins the dedup contract for every
-// existing trigger: two jobs for the same tenant/repo/number/head, neither
+// existing trigger: two jobs for the same account/repo/number/head, neither
 // carrying a manual Request, present identical values on every
 // river:"unique" field, so River hashes them the same and the second insert
 // is deduped exactly as before this field was added.
 func TestReviewArgsSameHeadDedupeUnaffected(t *testing.T) {
-	a := ReviewArgs{TenantID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: "synchronize"}
-	b := ReviewArgs{TenantID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: "poll"}
-	if a.TenantID != b.TenantID || a.RepositoryID != b.RepositoryID || a.Number != b.Number ||
+	a := ReviewArgs{AccountID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: "synchronize"}
+	b := ReviewArgs{AccountID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: "poll"}
+	if a.AccountID != b.AccountID || a.RepositoryID != b.RepositoryID || a.Number != b.Number ||
 		a.HeadSHA != b.HeadSHA || a.Request != b.Request {
 		t.Fatalf("unique fields differ between %+v and %+v", a, b)
 	}
@@ -85,8 +85,8 @@ func TestReviewArgsSameHeadDedupeUnaffected(t *testing.T) {
 // head do not collide: each caller of EnqueueRerun sets a fresh Request, so
 // the jobs differ on a river:"unique" field and River inserts both.
 func TestReviewArgsManualRerunsDiffer(t *testing.T) {
-	first := ReviewArgs{TenantID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: TriggerManual, Request: "11111111-1111-1111-1111-111111111111"}
-	second := ReviewArgs{TenantID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: TriggerManual, Request: "22222222-2222-2222-2222-222222222222"}
+	first := ReviewArgs{AccountID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: TriggerManual, Request: "11111111-1111-1111-1111-111111111111"}
+	second := ReviewArgs{AccountID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: TriggerManual, Request: "22222222-2222-2222-2222-222222222222"}
 	if first.Request == second.Request {
 		t.Fatalf("two manual re-runs must set distinct Request values")
 	}

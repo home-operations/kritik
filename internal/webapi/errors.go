@@ -74,8 +74,8 @@ type ambiguousRepoDetails struct {
 }
 
 // slugTakenDetails are a slug_taken error's details. Adoptable is set only
-// when the slug belonged to a tenant that is gone, so creating it again
-// with adopt would succeed; never for a slug a live tenant holds.
+// when the slug belonged to an account that is gone, so creating it again
+// with adopt would succeed; never for a slug a live account holds.
 type slugTakenDetails struct {
 	Path      string `json:"path"`
 	Adoptable bool   `json:"adoptable,omitempty"`

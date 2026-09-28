@@ -54,7 +54,7 @@ func (s *Server) usageQuery(r *http.Request) (store.UsageGroup, time.Time, time.
 	return group, from, to, nil
 }
 
-func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	group, from, to, err := s.usageQuery(r)
 	if err != nil {
 		return err
@@ -78,7 +78,7 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *tenantScope
 	return nil
 }
 
-func (s *Server) listQueue(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) listQueue(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
 	var rows []store.JobRow
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {

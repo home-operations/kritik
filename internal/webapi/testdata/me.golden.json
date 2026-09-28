@@ -6,7 +6,7 @@
     "avatarUrl": "https://img.example/a.png"
   },
   "operator": true,
-  "tenants": [
+  "accounts": [
     {
       "slug": "alpha",
       "role": "member",

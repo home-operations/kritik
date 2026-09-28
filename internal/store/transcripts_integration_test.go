@@ -17,16 +17,16 @@ import (
 func TestModelCalls(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	alpha, beta := tenantID(t, s, "alpha"), tenantID(t, s, "beta")
+	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	reviewID := insertReview(t, ctx, s, alpha)
-	// Other tests count every model call a tenant has.
+	// Other tests count every model call an account has.
 	t.Cleanup(func() { deleteModelCalls(t, s, `review_id = $1 OR followup_comment_id = 4242`, reviewID) })
 	var runID string
-	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, kind, review_id) VALUES ($1, 'review', $2) RETURNING id`,
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind, review_id) VALUES ($1, 'review', $2) RETURNING id`,
 			alpha, reviewID).Scan(&runID)
 	}); err != nil {
 		t.Fatal(err)
@@ -37,14 +37,14 @@ func TestModelCalls(t *testing.T) {
 	msgs = append(msgs, model.Message{Role: model.RoleUser, Text: "review"})
 	record := func(req model.StepRequest) {
 		t.Helper()
-		if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 			prev, step, err := AgentState(ctx, tx, runID)
 			if err != nil {
 				return err
 			}
 			r := transcript.Delta(prev, req, nil)
 			r.Response = transcript.Response{Text: "ok", Stop: model.StopToolUse}
-			return InsertModelCall(ctx, tx, ModelCall{TenantID: alpha, ReviewID: reviewID, RunnerRunID: runID, Kind: ModelCallAgentStep,
+			return InsertModelCall(ctx, tx, ModelCall{AccountID: alpha, ReviewID: reviewID, RunnerRunID: runID, Kind: ModelCallAgentStep,
 				Step: step, Model: "m", Row: r.Encode(), Usage: model.Usage{Input: 10, Output: 2}, CostUSD: 0.25, Duration: 1500 * time.Millisecond})
 		}); err != nil {
 			t.Fatal(err)
@@ -54,10 +54,10 @@ func TestModelCalls(t *testing.T) {
 	msgs = append(msgs, model.Message{Role: model.RoleAssistant, Text: "looking"}, model.Message{Role: model.RoleUser, Text: "more"})
 	record(model.StepRequest{System: "sys", Messages: msgs, Tools: tools})
 
-	list := func(tenant string, f ModelCallFilter) []transcript.StoredRow {
+	list := func(account string, f ModelCallFilter) []transcript.StoredRow {
 		t.Helper()
 		var rows []transcript.StoredRow
-		if err := s.WithTenant(ctx, tenant, func(tx pgx.Tx) error {
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			var err error
 			rows, err = ModelCalls(ctx, tx, f)
 			return err
@@ -81,9 +81,9 @@ func TestModelCalls(t *testing.T) {
 	}
 
 	// A follow-up row is found by its comment, and has no run.
-	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 		r := transcript.Delta(transcript.State{}, model.StepRequest{System: "f", Messages: msgs[:1]}, nil)
-		return InsertModelCall(ctx, tx, ModelCall{TenantID: alpha, FollowupCommentID: 4242, Kind: ModelCallFollowUp, Row: r.Encode()})
+		return InsertModelCall(ctx, tx, ModelCall{AccountID: alpha, FollowupCommentID: 4242, Kind: ModelCallFollowUp, Row: r.Encode()})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -97,20 +97,20 @@ func TestModelCalls(t *testing.T) {
 // checkModelCallRefusals checks what ModelCalls and InsertModelCall refuse.
 func checkModelCallRefusals(t *testing.T, s *Store, alpha, beta, reviewID, runID string) {
 	ctx := context.Background()
-	if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 		if _, err := ModelCalls(ctx, tx, ModelCallFilter{ReviewID: reviewID, RunnerRunID: runID}); err == nil {
 			t.Error("a filter with two fields was accepted")
 		}
-		if err := InsertModelCall(ctx, tx, ModelCall{TenantID: alpha, Kind: "other"}); err == nil {
+		if err := InsertModelCall(ctx, tx, ModelCall{AccountID: alpha, Kind: "other"}); err == nil {
 			t.Error("an unknown kind was inserted")
 		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// Another tenant cannot write into alpha's transcript either.
-	if err := s.WithTenant(ctx, beta, func(tx pgx.Tx) error {
-		return InsertModelCall(ctx, tx, ModelCall{TenantID: alpha, Kind: ModelCallReview, Row: transcript.Delta(transcript.State{},
+	// Another account cannot write into alpha's transcript either.
+	if err := s.WithAccount(ctx, beta, func(tx pgx.Tx) error {
+		return InsertModelCall(ctx, tx, ModelCall{AccountID: alpha, Kind: ModelCallReview, Row: transcript.Delta(transcript.State{},
 			model.StepRequest{}, nil).Encode()})
 	}); err == nil {
 		t.Fatal("beta inserted a model call for alpha")
@@ -127,15 +127,15 @@ func deleteModelCalls(t *testing.T, s *Store, where string, args ...any) {
 func TestSweepModelCalls(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoTenants), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	alpha := tenantID(t, s, "alpha")
+	alpha := accountID(t, s, "alpha")
 	insert := func() string {
 		t.Helper()
 		var id string
-		if err := s.WithTenant(ctx, alpha, func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `INSERT INTO model_calls (tenant_id, kind) VALUES ($1, 'review') RETURNING id`, alpha).Scan(&id)
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `INSERT INTO model_calls (account_id, kind) VALUES ($1, 'review') RETURNING id`, alpha).Scan(&id)
 		}); err != nil {
 			t.Fatal(err)
 		}

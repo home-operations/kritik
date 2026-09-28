@@ -3,34 +3,34 @@
 // `$state` rune) so these functions can be imported by tooling that doesn't
 // go through Svelte's compiler -- e.g. a plain Playwright test.
 //
-//   #/                                        overview (tenant picker / landing)
+//   #/                                        overview (account picker / landing)
 //   #/signin                                  sign-in page
-//   #/operator                                admin console (cross-tenant)
-//   #/t/<slug>                                tenant overview
-//   #/t/<slug>/repos                          tenant's repo list
-//   #/t/<slug>/repos/<owner>/<repo>           one repo
-//   #/t/<slug>/pulls                          tenant's pull list
-//   #/t/<slug>/pulls/<owner>/<repo>/<n>       one pull request
+//   #/operator                                admin console (cross-account)
+//   #/a/<slug>                                account overview
+//   #/a/<slug>/repos                          account's repo list
+//   #/a/<slug>/repos/<owner>/<repo>           one repo
+//   #/a/<slug>/pulls                          account's pull list
+//   #/a/<slug>/pulls/<owner>/<repo>/<n>       one pull request
 //
 // A repo or pull route may end in "?connection=<name>", naming which of
 // several connections holding the same owner/repo it means.
-//   #/t/<slug>/reviews/<id>[/<tab>]           one review, optional tab
-//   #/t/<slug>/queue                          run queue
-//   #/t/<slug>/usage                          usage/cost dashboard
-//   #/t/<slug>/followups                      follow-up tracker
-//   #/t/<slug>/admin[/<section>]              a tenant's admin page, optional section
+//   #/a/<slug>/reviews/<id>[/<tab>]           one review, optional tab
+//   #/a/<slug>/queue                          run queue
+//   #/a/<slug>/usage                          usage/cost dashboard
+//   #/a/<slug>/followups                      follow-up tracker
+//   #/a/<slug>/admin[/<section>]              an account's admin page, optional section
 //
 // Segments round-trip through encodeURIComponent/decodeURIComponent, so a
 // slug/owner/repo/id/section containing a literal "/" or other reserved
 // character survives href() -> parse(). A single trailing slash is
-// tolerated -- "#/t/<slug>/repos/" parses exactly like "#/t/<slug>/repos" --
+// tolerated -- "#/a/<slug>/repos/" parses exactly like "#/a/<slug>/repos" --
 // since href() never produces one but a bookmark or typed URL might. Any
-// other malformation -- an empty non-trailing segment (e.g. "#/t//repos"),
+// other malformation -- an empty non-trailing segment (e.g. "#/a//repos"),
 // more than one trailing slash, an undecodable percent-escape, or extra
 // trailing segments beyond what a route shape accepts -- falls back to that
-// tenant's overview once a slug has been parsed, and to the global overview
+// account's overview once a slug has been parsed, and to the global overview
 // otherwise, including when the malformation is what prevents the slug
-// itself from being parsed (e.g. "#/t//acme").
+// itself from being parsed (e.g. "#/a//acme").
 
 export const REVIEW_TABS = ['summary', 'diff', 'conversation', 'timeline', 'raw', 'usage'] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
@@ -43,7 +43,7 @@ export type Route =
   | { name: 'overview' }
   | { name: 'signin' }
   | { name: 'operator' }
-  | { name: 'tenant'; slug: string }
+  | { name: 'account'; slug: string }
   | { name: 'repos'; slug: string }
   | { name: 'repo'; slug: string; owner: string; repo: string; connection?: string }
   | { name: 'pulls'; slug: string }
@@ -81,16 +81,16 @@ function segments(hash: string): { parts: string[]; ok: boolean } {
   return { parts: decoded, ok: true };
 }
 
-// parseTenantRoute handles everything under #/t/<slug>/... . Anything
+// parseAccountRoute handles everything under #/a/<slug>/... . Anything
 // malformed past the slug -- including an extra trailing segment -- falls
-// back to that tenant's overview rather than the global overview, so a bad
-// deep link still lands the user in-tenant.
-function parseTenantRoute(slug: string, rest: string[], connection: string | undefined): Route {
+// back to that account's overview rather than the global overview, so a bad
+// deep link still lands the user in-account.
+function parseAccountRoute(slug: string, rest: string[], connection: string | undefined): Route {
   const [section, ...tail] = rest;
   const inst = connection ? { connection } : {};
   switch (section) {
     case undefined:
-      return { name: 'tenant', slug };
+      return { name: 'account', slug };
     case 'repos':
       if (tail.length === 0) return { name: 'repos', slug };
       if (tail.length === 2) return { name: 'repo', slug, owner: tail[0]!, repo: tail[1]!, ...inst };
@@ -119,7 +119,7 @@ function parseTenantRoute(slug: string, rest: string[], connection: string | und
       if (tail.length === 1) return { name: 'admin', slug, section: tail[0] };
       break;
   }
-  return { name: 'tenant', slug };
+  return { name: 'account', slug };
 }
 
 export function parse(hash: string): Route {
@@ -129,16 +129,16 @@ export function parse(hash: string): Route {
   if (!ok) {
     // The malformation struck before a slug could be parsed: nothing to
     // fall back into but the global overview. Once a slug WAS parsed
-    // (parts[0] === 't' && parts[1]), the malformation is downstream of it
+    // (parts[0] === 'a' && parts[1]), the malformation is downstream of it
     // (a bad section, an empty segment, extra segments, ...), so fall back
-    // to that tenant's own overview instead.
-    if (parts[0] === 't' && parts[1] !== undefined) return { name: 'tenant', slug: parts[1] };
+    // to that account's own overview instead.
+    if (parts[0] === 'a' && parts[1] !== undefined) return { name: 'account', slug: parts[1] };
     return { name: 'overview' };
   }
   if (parts.length === 0) return { name: 'overview' };
   if (parts.length === 1 && parts[0] === 'signin') return { name: 'signin' };
   if (parts.length === 1 && parts[0] === 'operator') return { name: 'operator' };
-  if (parts[0] === 't' && parts[1] !== undefined) return parseTenantRoute(parts[1], parts.slice(2), connection);
+  if (parts[0] === 'a' && parts[1] !== undefined) return parseAccountRoute(parts[1], parts.slice(2), connection);
   return { name: 'overview' };
 }
 
@@ -152,25 +152,25 @@ export function href(r: Route): string {
       return '#/signin';
     case 'operator':
       return '#/operator';
-    case 'tenant':
-      return `#/t/${s(r.slug)}`;
+    case 'account':
+      return `#/a/${s(r.slug)}`;
     case 'repos':
-      return `#/t/${s(r.slug)}/repos`;
+      return `#/a/${s(r.slug)}/repos`;
     case 'repo':
-      return `#/t/${s(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}${inst(r.connection)}`;
+      return `#/a/${s(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}${inst(r.connection)}`;
     case 'pulls':
-      return `#/t/${s(r.slug)}/pulls`;
+      return `#/a/${s(r.slug)}/pulls`;
     case 'pull':
-      return `#/t/${s(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}${inst(r.connection)}`;
+      return `#/a/${s(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}${inst(r.connection)}`;
     case 'review':
-      return r.tab ? `#/t/${s(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}` : `#/t/${s(r.slug)}/reviews/${s(r.id)}`;
+      return r.tab ? `#/a/${s(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}` : `#/a/${s(r.slug)}/reviews/${s(r.id)}`;
     case 'queue':
-      return `#/t/${s(r.slug)}/queue`;
+      return `#/a/${s(r.slug)}/queue`;
     case 'usage':
-      return `#/t/${s(r.slug)}/usage`;
+      return `#/a/${s(r.slug)}/usage`;
     case 'followups':
-      return `#/t/${s(r.slug)}/followups`;
+      return `#/a/${s(r.slug)}/followups`;
     case 'admin':
-      return r.section ? `#/t/${s(r.slug)}/admin/${s(r.section)}` : `#/t/${s(r.slug)}/admin`;
+      return r.section ? `#/a/${s(r.slug)}/admin/${s(r.section)}` : `#/a/${s(r.slug)}/admin`;
   }
 }

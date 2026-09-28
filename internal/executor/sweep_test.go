@@ -22,22 +22,22 @@ const (
 	runC = "cccccccc-0000-0000-0000-000000000000"
 )
 
-// fakeRunStore hands out each tenant's pending runs and records the marks.
+// fakeRunStore hands out each account's pending runs and records the marks.
 type fakeRunStore struct {
 	pending map[string][]string
 	marked  map[string][]string
 	listErr error
 }
 
-func (f *fakeRunStore) RunSecretsToSweep(_ context.Context, tenantID string, settle, abandoned time.Duration, _ int) ([]string, error) {
+func (f *fakeRunStore) RunSecretsToSweep(_ context.Context, accountID string, settle, abandoned time.Duration, _ int) ([]string, error) {
 	if settle != RunSecretSettle || abandoned != RunSecretAbandoned {
 		return nil, errors.New("unexpected sweep bounds")
 	}
-	return f.pending[tenantID], f.listErr
+	return f.pending[accountID], f.listErr
 }
 
-func (f *fakeRunStore) MarkRunSecretsSwept(_ context.Context, tenantID string, ids []string) error {
-	f.marked[tenantID] = append(f.marked[tenantID], ids...)
+func (f *fakeRunStore) MarkRunSecretsSwept(_ context.Context, accountID string, ids []string) error {
+	f.marked[accountID] = append(f.marked[accountID], ids...)
 	return nil
 }
 

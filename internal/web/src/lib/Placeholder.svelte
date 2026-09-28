@@ -12,7 +12,7 @@
     overview: 'Overview',
     signin: 'Sign in',
     operator: 'Admin console',
-    tenant: 'Tenant overview',
+    account: 'Account overview',
     repos: 'Repos',
     repo: 'Repo',
     pulls: 'Pull requests',

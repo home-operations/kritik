@@ -72,7 +72,7 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS index_chunks (
 			id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-			tenant_id     uuid        NOT NULL REFERENCES tenants (id),
+			account_id     uuid        NOT NULL REFERENCES accounts (id),
 			repository_id uuid        NOT NULL REFERENCES repositories (id),
 			index_run_id  uuid        NOT NULL REFERENCES index_runs (id) ON DELETE CASCADE,
 			path          text        NOT NULL,
@@ -87,17 +87,17 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 			created_at    timestamptz NOT NULL DEFAULT now()
 		)`, dims),
 		`CREATE INDEX IF NOT EXISTS index_chunks_run_path_idx ON index_chunks (index_run_id, path)`,
-		`CREATE INDEX IF NOT EXISTS index_chunks_tenant_id_idx ON index_chunks (tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS index_chunks_account_id_idx ON index_chunks (account_id)`,
 		// VectorChord's access method: it partitions and quantises rather
 		// than building a graph, so it builds fast and answers a filtered
 		// query in full. Unpartitioned, since the table stays far below the
 		// size at which VectorChord recommends lists.
 		`CREATE INDEX IF NOT EXISTS index_chunks_embedding_idx ON index_chunks USING vchordrq (embedding halfvec_cosine_ops)`,
 		`ALTER TABLE index_chunks ENABLE ROW LEVEL SECURITY`,
-		`DROP POLICY IF EXISTS tenant_isolation ON index_chunks`,
-		`CREATE POLICY tenant_isolation ON index_chunks
-			USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-			WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)`,
+		`DROP POLICY IF EXISTS account_isolation ON index_chunks`,
+		`CREATE POLICY account_isolation ON index_chunks
+			USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+			WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)`,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_chunks TO ` + app,
 	}
 	for _, stmt := range stmts {
@@ -150,15 +150,15 @@ func (s *Store) SweepDisabledIndexes(ctx context.Context, grace time.Duration) (
 	return int64(len(runs)), nil
 }
 
-// RepoRef names a repository and its tenant.
-type RepoRef struct{ ID, TenantID string }
+// RepoRef names a repository and its account.
+type RepoRef struct{ ID, AccountID string }
 
 // liveIndexJob is an index job of a repository still queued or running,
 // in River's own table: the states its unique key spans.
 const liveIndexJob = `j.kind = 'index' AND j.state IN ('available', 'pending', 'running', 'scheduled', 'retryable')`
 
 // OnboardingInFlight counts onboarding index jobs queued or running.
-// Owner connection: it spans every tenant.
+// Owner connection: it spans every account.
 func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 	if s.owner == nil {
 		return 0, errors.New("store: OnboardingInFlight needs the owner connection")
@@ -174,16 +174,16 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 // OnboardCandidates lists up to limit enabled repositories with no active
 // index generation, no index job queued or running, and no onboarding job
 // that finished within retryAfter without building an index: one that
-// failed or was skipped would fail or be skipped again. Tenants take turns,
-// and within a tenant the repositories whose pull requests moved last come
+// failed or was skipped would fail or be skipped again. Accounts take turns,
+// and within an account the repositories whose pull requests moved last come
 // first, as the ones a review is likeliest to need soon. Owner connection:
-// it spans every tenant.
+// it spans every account.
 func (s *Store) OnboardCandidates(ctx context.Context, limit int, retryAfter time.Duration) ([]RepoRef, error) {
 	if s.owner == nil {
 		return nil, errors.New("store: OnboardCandidates needs the owner connection")
 	}
 	rows, err := s.owner.Query(ctx, `WITH candidates AS (
-			SELECT r.id, r.tenant_id, r.created_at,
+			SELECT r.id, r.account_id, r.created_at,
 				(SELECT max(p.updated_at) FROM pull_requests p WHERE p.repository_id = r.id) AS active
 			FROM repositories r
 			WHERE r.enabled AND r.active_index_run_id IS NULL
@@ -193,8 +193,8 @@ func (s *Store) OnboardCandidates(ctx context.Context, limit int, retryAfter tim
 			                  AND NOT EXISTS (SELECT 1 FROM index_runs ir WHERE ir.repository_id = r.id
 			                                  AND ir.status IN ('completed', 'superseded') AND ir.created_at >= j.created_at))
 		)
-		SELECT id, tenant_id FROM (
-			SELECT c.*, row_number() OVER (PARTITION BY tenant_id ORDER BY active DESC NULLS LAST, created_at, id) AS turn FROM candidates c
+		SELECT id, account_id FROM (
+			SELECT c.*, row_number() OVER (PARTITION BY account_id ORDER BY active DESC NULLS LAST, created_at, id) AS turn FROM candidates c
 		) ranked
 		ORDER BY turn, active DESC NULLS LAST, created_at, id
 		LIMIT $1`, limit, retryAfter.Seconds())
@@ -203,7 +203,7 @@ func (s *Store) OnboardCandidates(ctx context.Context, limit int, retryAfter tim
 	}
 	refs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RepoRef, error) {
 		var r RepoRef
-		err := row.Scan(&r.ID, &r.TenantID)
+		err := row.Scan(&r.ID, &r.AccountID)
 		return r, err
 	})
 	if err != nil {

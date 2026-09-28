@@ -8,7 +8,7 @@
 
   let { slug, commentId }: { slug: string; commentId: number } = $props();
   const res = new Resource(() =>
-    getJSON<Transcript>(`/api/v1/tenants/${encodeURIComponent(slug)}/followups/${commentId}/transcript`),
+    getJSON<Transcript>(`/api/v1/accounts/${encodeURIComponent(slug)}/followups/${commentId}/transcript`),
   );
   $effect(() => {
     void res.load();

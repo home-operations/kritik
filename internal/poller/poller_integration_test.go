@@ -22,7 +22,7 @@ import (
 )
 
 const configYAML = `
-tenants:
+accounts:
   - slug: onedr0p
     connections:
       - name: bot-ross
@@ -94,9 +94,9 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in, tenant, _ := file.Connection("bot-ross")
+	in, account, _ := file.Connection("bot-ross")
 	var installed time.Time
-	if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT created_at FROM connections WHERE id = $1`, in.ID()).Scan(&installed)
 	}); err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 
 	// Start from no poll state and no pull requests 7 or 8, whatever
 	// earlier suites left behind.
-	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE connection_id = $1`, in.ID()); err != nil {
 			return err
 		}
@@ -130,7 +130,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := time.Now()
-	n, err := p.Poll(ctx, file, tenant, in)
+	n, err := p.Poll(ctx, file, account, in)
 	if err != nil || n != 2 {
 		t.Fatalf("first poll: n=%d err=%v", n, err)
 	}
@@ -147,10 +147,10 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	if jobs, trigger := countJobs(7); jobs != 1 || trigger != "poll" {
 		t.Fatalf("after first poll: jobs=%d trigger=%q", jobs, trigger)
 	}
-	checkBaseline(ctx, t, st, tenant.ID(), 8, "old888")
+	checkBaseline(ctx, t, st, account.ID(), 8, "old888")
 	var head string
 	var polledAt time.Time
-	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE number = 7`).Scan(&head); err != nil {
 			return err
 		}
@@ -165,7 +165,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	lf.mu.Lock()
 	lf.prs = lf.prs[:1]
 	lf.mu.Unlock()
-	if n, err := p.Poll(ctx, file, tenant, in); err != nil || n != 1 {
+	if n, err := p.Poll(ctx, file, account, in); err != nil || n != 1 {
 		t.Fatalf("second poll: n=%d err=%v", n, err)
 	}
 	if jobs, _ := countJobs(7); jobs != 1 {
@@ -183,7 +183,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	lf.prs[0].State = "closed"
 	lf.prs[0].HeadSHA = "def456"
 	lf.mu.Unlock()
-	if n, err := p.Poll(ctx, file, tenant, in); err != nil || n != 1 {
+	if n, err := p.Poll(ctx, file, account, in); err != nil || n != 1 {
 		t.Fatalf("third poll: n=%d err=%v", n, err)
 	}
 	if jobs, _ := countJobs(7); jobs != 2 {
@@ -195,7 +195,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 
 // checkBaseline asserts the pull request numbered number was recorded at
 // head with no review job: the first poll's baseline.
-func checkBaseline(ctx context.Context, t *testing.T, st *store.Store, tenantID string, number int, head string) {
+func checkBaseline(ctx context.Context, t *testing.T, st *store.Store, accountID string, number int, head string) {
 	t.Helper()
 	var jobs int
 	var got string
@@ -203,7 +203,7 @@ func checkBaseline(ctx context.Context, t *testing.T, st *store.Store, tenantID 
 		Scan(&jobs); err != nil {
 		t.Fatal(err)
 	}
-	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE number = $1`, number).Scan(&got)
 	})
 	if err != nil || got != head || jobs != 0 {
@@ -255,11 +255,11 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in, tenant, _ := file.Connection("bot-ross")
+	in, account, _ := file.Connection("bot-ross")
 	repoID := configfile.RepositoryID(in.ID(), "onedr0p/home-ops")
 	exec := func(sql string, args ...any) {
 		t.Helper()
-		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, sql, args...)
 			return err
 		}); err != nil {
@@ -267,9 +267,9 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 		}
 	}
 	var runID string
-	if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-			VALUES ($1, $2, 'indexed', 'fake-embed', 8, 'full', 'completed') RETURNING id`, tenant.ID(), repoID).Scan(&runID)
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			VALUES ($1, $2, 'indexed', 'fake-embed', 8, 'full', 'completed') RETURNING id`, account.ID(), repoID).Scan(&runID)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	p := &Poller{Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: tf}, Dispatcher: ingest.NewService(st, queue), Logger: logger}
 	poll := func() {
 		t.Helper()
-		if _, err := p.Poll(ctx, file, tenant, in); err != nil {
+		if _, err := p.Poll(ctx, file, account, in); err != nil {
 			t.Fatal(err)
 		}
 	}

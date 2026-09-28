@@ -21,11 +21,11 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// CompleterSource resolves a provider name, the tenant's own or the
+// CompleterSource resolves a provider name, the account's own or the
 // file's, to its model adapter; each call wraps it in a model.Structured
 // that records its steps.
 type CompleterSource interface {
-	Stepper(f *configfile.File, t *configfile.Tenant, name string) (model.Stepper, error)
+	Stepper(f *configfile.File, t *configfile.Account, name string) (model.Stepper, error)
 }
 
 // maxOutputTokens bounds one review answer. Findings are short by
@@ -57,7 +57,7 @@ type reviewInput struct {
 type publishPhase struct {
 	w        *Review
 	file     *configfile.File
-	tenant   *configfile.Tenant
+	account  *configfile.Account
 	settings configfile.Settings
 	client   forge.Client
 	pr       *pullRequest
@@ -118,7 +118,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 		byStage[c.Stage]++
 	}
 	for stage, n := range byStage {
-		p.w.Metrics.ContextChunks(p.tenant.Slug, stage, n)
+		p.w.Metrics.ContextChunks(p.account.Slug, stage, n)
 	}
 
 	resp, role, err := p.complete(ctx, ref, system, msg)
@@ -162,32 +162,32 @@ func (p *publishPhase) countFindings(res review.Result) {
 		bySeverity[string(f.Severity)]++
 	}
 	for severity, n := range bySeverity {
-		p.w.Metrics.Findings(p.tenant.Slug, severity, n)
+		p.w.Metrics.Findings(p.account.Slug, severity, n)
 	}
 }
 
-// capReached returns a description of the tenant's cap that is exhausted,
+// capReached returns a description of the account's cap that is exhausted,
 // or "".
-func capReached(ctx context.Context, st *store.Store, tenantID string, limits configfile.Limits) (string, error) {
+func capReached(ctx context.Context, st *store.Store, accountID string, limits configfile.Limits) (string, error) {
 	if limits.ReviewsPerDay <= 0 && limits.TokensPerMonth <= 0 {
 		return "", nil
 	}
-	u, err := readUsage(ctx, st, tenantID)
+	u, err := readUsage(ctx, st, accountID)
 	if err != nil {
 		return "", err
 	}
 	return u.reached(limits), nil
 }
 
-// capUsage is what a tenant's caps count: completed reviews today and
+// capUsage is what an account's caps count: completed reviews today and
 // tokens this month.
 type capUsage struct {
 	reviews, tokens int64
 }
 
-func readUsage(ctx context.Context, st *store.Store, tenantID string) (capUsage, error) {
+func readUsage(ctx context.Context, st *store.Store, accountID string) (capUsage, error) {
 	var m store.MonthUsage
-	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
 		m, err = store.ReadMonthUsage(ctx, tx)
 		return err
@@ -201,17 +201,17 @@ func readUsage(ctx context.Context, st *store.Store, tenantID string) (capUsage,
 // reviewUsage is one model call charged to a review: its whole prompt,
 // cached part included, as input.
 type reviewUsage struct {
-	tenantID, repositoryID, reviewID, role, model, upstream string
-	input, output                                           int64
-	costUSD                                                 float64
+	accountID, repositoryID, reviewID, role, model, upstream string
+	input, output                                            int64
+	costUSD                                                  float64
 }
 
 // insertUsage records u, where the caps count it.
 func insertUsage(ctx context.Context, tx pgx.Tx, u reviewUsage) error {
 	if _, err := tx.Exec(ctx, `INSERT INTO usage
-		(tenant_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
+		(account_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		u.tenantID, u.repositoryID, u.reviewID, u.role, u.model, u.upstream, u.input, u.output, u.costUSD); err != nil {
+		u.accountID, u.repositoryID, u.reviewID, u.role, u.model, u.upstream, u.input, u.output, u.costUSD); err != nil {
 		return fmt.Errorf("worker: insert usage: %w", err)
 	}
 	return nil
@@ -230,7 +230,7 @@ func (u capUsage) reached(limits configfile.Limits) string {
 
 func (p *publishPhase) load(ctx context.Context) (reviewInput, error) {
 	var in reviewInput
-	err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		var stages []byte
 		if err := tx.QueryRow(ctx, `SELECT diff, changed_paths, stages, delta_diff FROM context_packs WHERE runner_run_id = $1`, p.runID).
 			Scan(&in.diff, &in.changed, &stages, &in.deltaDiff); err != nil {
@@ -260,10 +260,10 @@ func (p *publishPhase) complete(
 ) (model.CompletionResponse, string, error) {
 	var resp model.CompletionResponse
 	role := roleReview
-	err := p.w.withLease(ctx, p.tenant, string(ref), p.settings.Limits.Concurrency, p.jobID, func(ctx context.Context) error {
+	err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, func(ctx context.Context) error {
 		// Under the lease, so concurrent reviews cannot all pass a cap of
 		// one; a review only counts once it has completed.
-		capped, err := capReached(ctx, p.w.Store, p.tenant.ID(), p.settings.Limits)
+		capped, err := capReached(ctx, p.w.Store, p.account.ID(), p.settings.Limits)
 		if err != nil {
 			return err
 		}
@@ -276,7 +276,7 @@ func (p *publishPhase) complete(
 	return resp, role, err
 }
 
-// cappedError says which tenant cap stopped a review.
+// cappedError says which account cap stopped a review.
 type cappedError string
 
 func (e cappedError) Error() string { return string(e) }
@@ -297,26 +297,26 @@ func (p *publishPhase) callModels(
 	if fallback != "" && fallback.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fallback.Model()}
 	}
-	stepper, err := p.w.Completers.Stepper(p.file, p.tenant, ref.Provider())
+	stepper, err := p.w.Completers.Stepper(p.file, p.account, ref.Provider())
 	if err != nil {
 		return model.CompletionResponse{}, "", err
 	}
 	completer := model.Structured{Stepper: stepper, OnStep: p.onStep(ctx, ref.Provider(), store.ModelCallReview, 0)}
 	resp, err := completer.Complete(ctx, req)
-	p.w.Metrics.ModelCall(p.tenant.Slug, string(ref), roleReview, callOutcome(err),
+	p.w.Metrics.ModelCall(p.account.Slug, string(ref), roleReview, callOutcome(err),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 	if err == nil || fallback == "" || fallback.Provider() == ref.Provider() || ctx.Err() != nil {
 		return resp, roleReview, err
 	}
 	p.logger.Warn("primary model failed, trying fallback", "model", ref, "fallback", fallback, "error", err)
-	fs, ferr := p.w.Completers.Stepper(p.file, p.tenant, fallback.Provider())
+	fs, ferr := p.w.Completers.Stepper(p.file, p.account, fallback.Provider())
 	if ferr != nil {
 		return model.CompletionResponse{}, "", errors.Join(err, ferr)
 	}
 	req.Model, req.Fallbacks = fallback.Model(), nil
 	fc := model.Structured{Stepper: fs, OnStep: p.onStep(ctx, fallback.Provider(), store.ModelCallFallback, 1)}
 	resp, ferr = fc.Complete(ctx, req)
-	p.w.Metrics.ModelCall(p.tenant.Slug, string(fallback), roleFallback, callOutcome(ferr),
+	p.w.Metrics.ModelCall(p.account.Slug, string(fallback), roleFallback, callOutcome(ferr),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 	if ferr != nil {
 		return model.CompletionResponse{}, "", errors.Join(err, ferr)
@@ -329,8 +329,8 @@ func (p *publishPhase) callModels(
 func (p *publishPhase) onStep(
 	ctx context.Context, provider string, kind store.ModelCallKind, step int,
 ) func(model.StepRequest, model.StepResponse, error, time.Duration) {
-	c := store.ModelCall{TenantID: p.tenant.ID(), ReviewID: p.reviewID, Kind: kind, Step: step}
-	spec, _ := p.file.Provider(p.tenant, provider)
+	c := store.ModelCall{AccountID: p.account.ID(), ReviewID: p.reviewID, Kind: kind, Step: step}
+	spec, _ := p.file.Provider(p.account, provider)
 	return p.w.onStep(ctx, p.logger, c, transcriptMask(p.file, spec))
 }
 
@@ -464,7 +464,7 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 		return 0, err
 	}
 	var commentID int64
-	_ = p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+	_ = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT forge_comment_id FROM sticky_comments WHERE pull_request_id = $1`, p.pr.id).Scan(&commentID)
 	})
 	if commentID == 0 {
@@ -486,25 +486,25 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 func (p *publishPhase) persist(
 	ctx context.Context, res review.Result, inline []bool, resp model.CompletionResponse, role string, commentID int64,
 ) error {
-	return p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		for i, f := range res.Findings {
 			if _, err := tx.Exec(ctx, `INSERT INTO findings
-				(tenant_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint, posted_inline,
+				(account_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint, posted_inline,
 				 end_line, replacement, agent_prompt)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`, p.tenant.ID(), p.reviewID, f.Path, f.Line,
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`, p.account.ID(), p.reviewID, f.Path, f.Line,
 				string(f.Severity), f.Title, f.Explanation, f.SuggestedFix, review.Fingerprint(f), inline[i],
 				f.EndLine, f.Replacement, f.AgentPrompt); err != nil {
 				return fmt.Errorf("worker: insert finding: %w", err)
 			}
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO sticky_comments (pull_request_id, tenant_id, forge_comment_id) VALUES ($1, $2, $3)
+		if _, err := tx.Exec(ctx, `INSERT INTO sticky_comments (pull_request_id, account_id, forge_comment_id) VALUES ($1, $2, $3)
 			ON CONFLICT (pull_request_id) DO UPDATE SET forge_comment_id = excluded.forge_comment_id, updated_at = now()`,
-			p.pr.id, p.tenant.ID(), commentID); err != nil {
+			p.pr.id, p.account.ID(), commentID); err != nil {
 			return fmt.Errorf("worker: upsert sticky comment: %w", err)
 		}
 		if p.agent == nil {
 			if err := insertUsage(ctx, tx, reviewUsage{
-				tenantID: p.tenant.ID(), repositoryID: p.pr.repositoryID, reviewID: p.reviewID, role: role, model: resp.Model,
+				accountID: p.account.ID(), repositoryID: p.pr.repositoryID, reviewID: p.reviewID, role: role, model: resp.Model,
 				upstream: resp.Upstream, input: resp.InputTokens, output: resp.OutputTokens, costUSD: resp.CostUSD,
 			}); err != nil {
 				return err
@@ -540,7 +540,7 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 		return nil, nil
 	}
 	var runID string
-	err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT r.active_index_run_id::text FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
 			WHERE r.id = $1 AND g.status = 'completed' AND g.embed_model = $2`, p.pr.repositoryID, p.w.EmbedModel).Scan(&runID)
 	})
@@ -567,10 +567,10 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 	}
 	var vectors [][]float32
 	var tokens int64
-	err = p.w.withLease(ctx, p.tenant, "embed:"+p.w.EmbedModel, p.settings.Limits.Concurrency, p.jobID, func(ctx context.Context) error {
+	err = p.w.withLease(ctx, p.account, "embed:"+p.w.EmbedModel, p.settings.Limits.Concurrency, p.jobID, func(ctx context.Context) error {
 		var err error
 		vectors, tokens, err = p.w.Embedder.Embed(ctx, texts)
-		p.w.Metrics.ModelCall(p.tenant.Slug, p.w.EmbedModel, roleEmbedding, callOutcome(err), tokens, 0, 0, 0)
+		p.w.Metrics.ModelCall(p.account.Slug, p.w.EmbedModel, roleEmbedding, callOutcome(err), tokens, 0, 0, 0)
 		return err
 	})
 	if err != nil {
@@ -582,14 +582,14 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 	}
 	var hits []hit
 	seen := map[string]bool{}
-	err = p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		if err := insertUsage(ctx, tx, reviewUsage{
-			tenantID: p.tenant.ID(), repositoryID: p.pr.repositoryID, reviewID: p.reviewID,
+			accountID: p.account.ID(), repositoryID: p.pr.repositoryID, reviewID: p.reviewID,
 			role: roleEmbedding, model: p.w.EmbedModel, input: tokens,
 		}); err != nil {
 			return err
 		}
-		// The generation and tenant filters are strict and cheap, exactly
+		// The generation and account filters are strict and cheap, exactly
 		// what VectorChord's prefilter wants: it then skips the distance of
 		// every chunk outside this repository's generation.
 		if _, err := tx.Exec(ctx, `SET LOCAL vchordrq.prefilter = on`); err != nil {

@@ -244,9 +244,9 @@ func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []s
 func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord, phase string) error {
 	return st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO agent_runs (runner_run_id, tenant_id, stop_reason, result, steps, tool_calls, timeline,
+			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
 				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources)
-			SELECT id, tenant_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14 FROM runner_runs WHERE id = $1`,
+			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14 FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
 			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
 			rec.sources)

@@ -279,7 +279,7 @@ func ReviewModelCalls(ctx context.Context, tx pgx.Tx, reviewID string) ([]transc
 // comment on one pull request. A comment id is only unique per forge, so
 // the pull request pins which comment is meant: a call recorded against a
 // review must belong to one of its reviews, and one recorded against no
-// review is kept only when no other pull request of the tenant has a
+// review is kept only when no other pull request of the account has a
 // follow-up with that comment id.
 func FollowupModelCalls(ctx context.Context, tx pgx.Tx, pullRequestID string, commentID int64) ([]transcript.StoredRow, error) {
 	return modelCallsWhere(ctx, tx, `kind = 'followup' AND followup_comment_id = $2 AND (

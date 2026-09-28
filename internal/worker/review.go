@@ -84,21 +84,21 @@ type pullRequest struct {
 func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) error {
 	args := job.Args
 	file := w.Current.Get()
-	tenant, err := w.tenant(file, args.TenantID)
+	account, err := w.account(file, args.AccountID)
 	if err != nil {
 		return err
 	}
-	logger := w.Logger.With("tenant", tenant.Slug, "pr", args.Number, "head", short(args.HeadSHA))
+	logger := w.Logger.With("account", account.Slug, "pr", args.Number, "head", short(args.HeadSHA))
 	started := time.Now()
 
-	b, done, err := w.begin(ctx, job, file, tenant, logger, started)
+	b, done, err := w.begin(ctx, job, file, account, logger, started)
 	if done {
 		return err
 	}
 	pr, client, owner, repo, mergeBase, eff := b.early.pr, b.client, b.owner, b.repo, b.early.mergeBase, b.eff
 	settings := eff.Settings
 	agentic := settings.Mode == configfile.ReviewAgentic
-	admitted, done, err := w.admit(ctx, b.early, job, file, tenant, settings)
+	admitted, done, err := w.admit(ctx, b.early, job, file, account, settings)
 	if done {
 		return err
 	}
@@ -110,29 +110,29 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if err != nil {
 		return err
 	}
-	deadline, resources := file.RunnerFor(tenant)
+	deadline, resources := file.RunnerFor(account)
 	spec := runner.Spec{
 		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
 		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, Ignore: settings.Ignore, RepoFiles: eff.repoFiles(),
 	}
 	secrets := runner.Secrets{GitToken: b.token}
 	ended := endedReview{
-		tenantID: args.TenantID, tenantSlug: tenant.Slug, reviewID: reviewID, headSHA: args.HeadSHA,
+		accountID: args.AccountID, accountSlug: account.Slug, reviewID: reviewID, headSHA: args.HeadSHA,
 		owner: owner, repo: repo, client: client, started: started, logger: logger,
 	}
 	var tools []configfile.Tool
 	if agentic {
-		deadline, err = w.agentSpec(ctx, args.TenantID, reviewID, runID, args.Trigger, pr, eff, prior, admitted, &spec, &secrets, deadline)
+		deadline, err = w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, prior, admitted, &spec, &secrets, deadline)
 		if err != nil {
 			return w.agentSpecFailed(ctx, ended, runID, err)
 		}
 		tools = file.ToolsFor(settings.Agent.Commands)
 	}
-	sup := runSupervision(w.Store, args.TenantID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
+	sup := runSupervision(w.Store, args.AccountID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		RunID: runID,
 		Labels: map[string]string{
-			"tenant": tenant.Slug, "repository": pr.repository,
+			"account": account.Slug, "repository": pr.repository,
 			"pr": strconv.Itoa(args.Number), "kind": jobs.QueueReview,
 		},
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": args.HeadSHA},
@@ -148,7 +148,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	var agentErr error
 	if agentic {
 		w.revokeGatewayTokens(ctx, logger, runID)
-		agentOutcome, agentErr = w.readAgentRun(ctx, args.TenantID, runID, settings.Models.Review, stopped(ctx, res, cause))
+		agentOutcome, agentErr = w.readAgentRun(ctx, args.AccountID, runID, settings.Models.Review, stopped(ctx, res, cause))
 	}
 	// A River cancel (JobCancelTx from a web request) cancels ctx itself,
 	// unlike supervise's own errSuperseded/errHeartbeatLost, which only
@@ -160,7 +160,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	canceled := errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely)
 	cctx := context.WithoutCancel(ctx)
 	ended.jobName = res.JobName
-	if err := recordRun(cctx, w.Store, w.Metrics, tenant.Slug, args.TenantID, runID, jobs.QueueReview, res); err != nil {
+	if err := recordRun(cctx, w.Store, w.Metrics, account.Slug, args.AccountID, runID, jobs.QueueReview, res); err != nil {
 		if !canceled {
 			return err
 		}
@@ -179,23 +179,23 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	if agentErr != nil {
 		logger.Error("agent run not read", "error", agentErr)
-		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
+		w.Metrics.Review(account.Slug, statusFailed, time.Since(started))
 		// A retry would run the agent again; the review ends here.
-		return w.finishReview(cctx, args.TenantID, reviewID, statusFailed, "", agentErr.Error())
+		return w.finishReview(cctx, args.AccountID, reviewID, statusFailed, "", agentErr.Error())
 	}
 	switch {
 	case res.Err != nil && errors.Is(cause, errSuperseded):
 		logger.Info("review superseded while running", "job", res.JobName)
-		w.Metrics.Review(tenant.Slug, statusSuperseded, time.Since(started))
-		return w.finishReview(cctx, args.TenantID, reviewID, statusSuperseded, "", "")
+		w.Metrics.Review(account.Slug, statusSuperseded, time.Since(started))
+		return w.finishReview(cctx, args.AccountID, reviewID, statusSuperseded, "", "")
 	case res.Err != nil && errors.Is(cause, errHeartbeatLost):
 		logger.Warn("runner heartbeat lost", "job", res.JobName)
-		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
-		return w.finishReview(cctx, args.TenantID, reviewID, statusFailed, "", "runner heartbeat lost")
+		w.Metrics.Review(account.Slug, statusFailed, time.Since(started))
+		return w.finishReview(cctx, args.AccountID, reviewID, statusFailed, "", "runner heartbeat lost")
 	case res.Err != nil:
 		logger.Warn("runner failed", "error", res.Err, "job", res.JobName, "reason", res.TerminationReason)
-		w.Metrics.Review(tenant.Slug, statusFailed, time.Since(started))
-		return w.finishReview(cctx, args.TenantID, reviewID, statusFailed, "", res.Err.Error())
+		w.Metrics.Review(account.Slug, statusFailed, time.Since(started))
+		return w.finishReview(cctx, args.AccountID, reviewID, statusFailed, "", res.Err.Error())
 	}
 	prep, status, err := w.afterRun(ctx, args, pr, eff, b.notes, client, reviewID, runID, prior, logger)
 	if err != nil {
@@ -205,12 +205,12 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		return w.finishEnded(ctx, ended, err)
 	}
 	if prep.patchID == "" {
-		w.Metrics.Review(tenant.Slug, status, time.Since(started))
+		w.Metrics.Review(account.Slug, status, time.Since(started))
 		return nil
 	}
 	patchID := prep.patchID
 	phase := &publishPhase{
-		w: w, file: file, tenant: tenant, settings: prep.eff.Settings, client: client, pr: pr,
+		w: w, file: file, account: account, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, jobID: job.ID, logger: logger,
 		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix}, templates: prep.eff.Templates,
 		instructions: prep.eff.Instructions, references: prep.eff.References, repoNotes: prep.notes, prior: prior, scope: prep.scope,
@@ -232,8 +232,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		logger.Error("review failed", "error", perr)
 	}
 	logger.Info("review " + status)
-	w.Metrics.Review(tenant.Slug, status, time.Since(started))
-	return w.finishReview(cctx, args.TenantID, reviewID, status, patchID, errText(perr))
+	w.Metrics.Review(account.Slug, status, time.Since(started))
+	return w.finishReview(cctx, args.AccountID, reviewID, status, patchID, errText(perr))
 }
 
 // prepared is what afterRun hands the model phase: the patch id, the
@@ -247,7 +247,7 @@ type prepared struct {
 	scope   review.Scope
 }
 
-// afterRun re-checks the head under the tenant transaction, lifts the patch
+// afterRun re-checks the head under the account transaction, lifts the patch
 // id and the merge-base repository files out of the context pack, and
 // finishes applying .kritik.yaml: a review whose changes its skip rule
 // covers ends skipped with a success status saying why. A bot-authored PR
@@ -267,7 +267,7 @@ func (w *Review) afterRun(
 		filesJSON                      []byte
 		vars                           map[string]any
 	)
-	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		var currentHead string
 		if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1`, pr.id).Scan(&currentHead); err != nil {
 			return fmt.Errorf("worker: re-read head: %w", err)
@@ -301,7 +301,7 @@ func (w *Review) afterRun(
 	}
 	if superseded {
 		logger.Info("review "+statusSuperseded, "patch_id", short(patchID))
-		return prepared{}, statusSuperseded, w.finishReview(ctx, args.TenantID, reviewID, statusSuperseded, patchID, "")
+		return prepared{}, statusSuperseded, w.finishReview(ctx, args.AccountID, reviewID, statusSuperseded, patchID, "")
 	}
 
 	var files repoconfig.Files
@@ -315,7 +315,7 @@ func (w *Review) afterRun(
 	}
 	if reason != "" {
 		logger.Info("review "+statusSkipped, "reason", reason, "patch_id", short(patchID))
-		if err := w.finishSkipped(ctx, args.TenantID, reviewID, patchID, reason); err != nil {
+		if err := w.finishSkipped(ctx, args.AccountID, reviewID, patchID, reason); err != nil {
 			return prepared{}, "", err
 		}
 		owner, repo, _ := strings.Cut(pr.repository, "/")
@@ -327,7 +327,7 @@ func (w *Review) afterRun(
 	}
 	if pr.authorIsBot && lastPatch != "" && lastPatch == patchID {
 		logger.Info("review "+statusSkipped, "patch_id", short(patchID))
-		return prepared{}, statusSkipped, w.finishReview(ctx, args.TenantID, reviewID, statusSkipped, patchID, "")
+		return prepared{}, statusSkipped, w.finishReview(ctx, args.AccountID, reviewID, statusSkipped, patchID, "")
 	}
 
 	scope, scopeReason := review.DecideScope(prior.id != "", priorFetched != nil, len(deltaPaths), eff.Incremental.MaxDeltaFiles)
@@ -337,7 +337,7 @@ func (w *Review) afterRun(
 	}
 	// Prepared is not terminal: the model phase follows, so finished_at
 	// stays NULL until it ends one way or the other.
-	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, scope = $4, scope_reason = $5, prior_review_id = $6
 			WHERE id = $1`, reviewID, statusPrepared, patchID, string(scope), scopeReason, priorID)
 		return err
@@ -351,9 +351,9 @@ func (w *Review) afterRun(
 
 // loadPullRequest reads a job's pull request. One the store does not know
 // cancels the job: it will not appear by retrying.
-func loadPullRequest(ctx context.Context, st *store.Store, tenantID, repositoryID string, number int) (*pullRequest, error) {
+func loadPullRequest(ctx context.Context, st *store.Store, accountID, repositoryID string, number int) (*pullRequest, error) {
 	var pr pullRequest
-	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT p.id, p.repository_id, r.name, p.number, i.name, p.head_sha, p.base_ref, p.title, p.author, p.author_is_bot
 			FROM pull_requests p JOIN repositories r ON r.id = p.repository_id JOIN connections i ON i.id = r.connection_id
@@ -372,9 +372,9 @@ func loadPullRequest(ctx context.Context, st *store.Store, tenantID, repositoryI
 
 // earlyEnd is what a review ended before its runner is recorded with.
 type earlyEnd struct {
-	args                              jobs.ReviewArgs
-	pr                                *pullRequest
-	tenantSlug, mergeBase, forgePatch string
+	args                               jobs.ReviewArgs
+	pr                                 *pullRequest
+	accountSlug, mergeBase, forgePatch string
 	// skip is why the repository's .kritik.yaml skipped the review.
 	skip    repoconfig.SkipReason
 	started time.Time
@@ -384,12 +384,12 @@ type earlyEnd struct {
 // end records a review that never ran as status, for reason, and counts
 // it.
 func (w *Review) end(ctx context.Context, e earlyEnd, status, reason string) error {
-	w.Metrics.Review(e.tenantSlug, status, time.Since(e.started))
-	return w.Store.WithTenant(ctx, e.args.TenantID, func(tx pgx.Tx) error {
+	w.Metrics.Review(e.accountSlug, status, time.Since(e.started))
+	return w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO reviews
-			(tenant_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error, finished_at)
+			(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error, finished_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())`,
-			e.args.TenantID, e.pr.id, e.args.HeadSHA, e.mergeBase, e.forgePatch, status, string(e.skip), e.args.Trigger, reason)
+			e.args.AccountID, e.pr.id, e.args.HeadSHA, e.mergeBase, e.forgePatch, status, string(e.skip), e.args.Trigger, reason)
 		return err
 	})
 }
@@ -403,7 +403,7 @@ func (w *Review) skipUnchangedBot(ctx context.Context, e earlyEnd, client forge.
 	if !e.pr.authorIsBot || e.args.Trigger == jobs.TriggerManual {
 		return "", false, nil
 	}
-	patch, unchanged := w.botPatch(ctx, e.logger, client, owner, repo, e.args.TenantID, e.pr, e.mergeBase)
+	patch, unchanged := w.botPatch(ctx, e.logger, client, owner, repo, e.args.AccountID, e.pr, e.mergeBase)
 	if !unchanged {
 		return patch, false, nil
 	}
@@ -434,21 +434,21 @@ type begun struct {
 // slots too. It reports whether it ended the job, with the error of that or
 // of getting this far.
 func (w *Review) begin(
-	ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File, tenant *configfile.Tenant,
+	ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File, account *configfile.Account,
 	logger *slog.Logger, started time.Time,
 ) (begun, bool, error) {
 	args := job.Args
-	pr, err := loadPullRequest(ctx, w.Store, args.TenantID, args.RepositoryID, args.Number)
+	pr, err := loadPullRequest(ctx, w.Store, args.AccountID, args.RepositoryID, args.Number)
 	if err != nil {
 		return begun{}, true, err
 	}
-	e := earlyEnd{args: args, pr: pr, tenantSlug: tenant.Slug, started: started, logger: logger}
+	e := earlyEnd{args: args, pr: pr, accountSlug: account.Slug, started: started, logger: logger}
 	if pr.headSHA != args.HeadSHA {
 		logger.Info("review superseded before start", "current_head", short(pr.headSHA))
 		return begun{}, true, w.end(ctx, e, statusSuperseded, "")
 	}
-	settings := file.Settings(tenant, pr.connection, pr.repository)
-	if held, err := w.slotsHeld(ctx, e, job, tenant.ID(), settings); held {
+	settings := file.Settings(account, pr.connection, pr.repository)
+	if held, err := w.slotsHeld(ctx, e, job, account.ID(), settings); held {
 		return begun{}, true, err
 	}
 	client, err := w.client(ctx, file, pr.connection, pr.repository)
@@ -472,7 +472,7 @@ func (w *Review) begin(
 		return begun{}, true, err
 	}
 	if eff.Models.Review != settings.Models.Review {
-		if held, err := w.slotsHeld(ctx, e, job, tenant.ID(), eff.Settings); held {
+		if held, err := w.slotsHeld(ctx, e, job, account.ID(), eff.Settings); held {
 			return begun{}, true, err
 		}
 	}
@@ -494,19 +494,19 @@ var errNoSlot = errors.New("worker: every model slot is held")
 
 // admit settles what a review may spend before its runner starts. An
 // agentic review, whose runner spends against the model through the
-// gateway, takes its model lease and passes the tenant's caps (see
+// gateway, takes its model lease and passes the account's caps (see
 // agentAdmit), and is snoozed if the slot begin saw free has been taken
 // since; a single-mode review takes its lease later, for its model call
 // alone. It reports whether it ended the job, with the error of admitting
 // or of recording that.
 func (w *Review) admit(
-	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], file *configfile.File, tenant *configfile.Tenant,
+	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], file *configfile.File, account *configfile.Account,
 	settings configfile.Settings,
 ) (admission, bool, error) {
 	if settings.Mode != configfile.ReviewAgentic {
 		return admission{}, false, nil
 	}
-	a, status, reason, err := w.agentAdmit(ctx, e.logger, file, tenant, settings, job.ID)
+	a, status, reason, err := w.agentAdmit(ctx, e.logger, file, account, settings, job.ID)
 	if errors.Is(err, errNoSlot) {
 		return admission{}, true, w.snooze(e, job, string(settings.Models.Review))
 	}
@@ -520,14 +520,14 @@ func (w *Review) admit(
 	return admission{}, true, w.end(ctx, e, status, reason)
 }
 
-// slotsHeld snoozes the job when every one of the tenant's slots on the
+// slotsHeld snoozes the job when every one of the account's slots on the
 // review model settings name is held, and reports whether it did, with the
 // error that snoozes it. Slots it cannot count let the review go on.
 func (w *Review) slotsHeld(
-	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], tenantID string, settings configfile.Settings,
+	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], accountID string, settings configfile.Settings,
 ) (bool, error) {
 	ref := string(settings.Models.Review)
-	free, err := slotFree(ctx, w.Store, tenantID, ref, settings.Limits.Concurrency)
+	free, err := slotFree(ctx, w.Store, accountID, ref, settings.Limits.Concurrency)
 	if err != nil {
 		e.logger.Warn("model slots not read; the review goes on", "error", err)
 		return false, nil
@@ -551,7 +551,7 @@ func (w *Review) snooze(e earlyEnd, job *river.Job[jobs.ReviewArgs], modelKey st
 	}
 	d := backoff(meta.Snoozes, snoozeMin, snoozeMax)
 	e.logger.Info("review snoozed: every model slot is held", "model", modelKey, "snoozes", meta.Snoozes+1, "for", d.Round(time.Second))
-	w.Metrics.ReviewSnoozed(e.tenantSlug, modelKey)
+	w.Metrics.ReviewSnoozed(e.accountSlug, modelKey)
 	return river.JobSnooze(d)
 }
 
@@ -561,7 +561,7 @@ func (w *Review) snooze(e earlyEnd, job *river.Job[jobs.ReviewArgs], modelKey st
 // before it without one, tells nothing: the pull request is then reviewed
 // as usual.
 func (w *Review) botPatch(
-	ctx context.Context, logger *slog.Logger, client forge.Client, owner, repo, tenantID string, pr *pullRequest, mergeBase string,
+	ctx context.Context, logger *slog.Logger, client forge.Client, owner, repo, accountID string, pr *pullRequest, mergeBase string,
 ) (patch string, unchanged bool) {
 	diff, err := client.PullRequestDiff(ctx, owner, repo, pr.number, mergeBase, pr.headSHA)
 	if err != nil {
@@ -570,7 +570,7 @@ func (w *Review) botPatch(
 	}
 	patch = gitfetch.PatchID(diff)
 	var last string
-	err = w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err = w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT forge_patch_id FROM reviews WHERE pull_request_id = $1
 			AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, pr.id).Scan(&last)
 	})
@@ -585,19 +585,19 @@ func (w *Review) botPatch(
 func (w *Review) start(
 	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase, forgePatchID string, mode configfile.ReviewMode, jobID int64,
 ) (reviewID, runID string, prior priorReview, err error) {
-	err = w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
+	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		var err error
 		if prior, err = lastCompleted(ctx, tx, pr.id); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO reviews
-			(tenant_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, trigger, mode, river_job_id)
+			(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, trigger, mode, river_job_id)
 			VALUES ($1, $2, $3, $4, $5, 'running', $6, $7, $8) RETURNING id`,
-			args.TenantID, pr.id, args.HeadSHA, mergeBase, forgePatchID, args.Trigger, string(mode), jobID).Scan(&reviewID); err != nil {
+			args.AccountID, pr.id, args.HeadSHA, mergeBase, forgePatchID, args.Trigger, string(mode), jobID).Scan(&reviewID); err != nil {
 			return fmt.Errorf("worker: insert review: %w", err)
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (tenant_id, review_id, kind) VALUES ($1, $2, 'review') RETURNING id`,
-			args.TenantID, reviewID).Scan(&runID); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, review_id, kind) VALUES ($1, $2, 'review') RETURNING id`,
+			args.AccountID, reviewID).Scan(&runID); err != nil {
 			return fmt.Errorf("worker: insert runner run: %w", err)
 		}
 		return nil
@@ -605,8 +605,8 @@ func (w *Review) start(
 	return reviewID, runID, prior, err
 }
 
-func (w *Review) finishReview(ctx context.Context, tenantID, reviewID, status, patchID, errText string) error {
-	return w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+func (w *Review) finishReview(ctx context.Context, accountID, reviewID, status, patchID, errText string) error {
+	return w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, error = left($4, 2000), finished_at = now() WHERE id = $1`,
 			reviewID, status, patchID, errText)
 		if err != nil {
@@ -619,11 +619,11 @@ func (w *Review) finishReview(ctx context.Context, tenantID, reviewID, status, p
 // endedReview is what finishEnded needs to know of the review whose job
 // ended.
 type endedReview struct {
-	tenantID, tenantSlug, reviewID, headSHA, jobName string
-	owner, repo                                      string
-	client                                           forge.Client
-	started                                          time.Time
-	logger                                           *slog.Logger
+	accountID, accountSlug, reviewID, headSHA, jobName string
+	owner, repo                                        string
+	client                                             forge.Client
+	started                                            time.Time
+	logger                                             *slog.Logger
 }
 
 // finishEnded ends a review whose job ctx ended before the review could: a
@@ -642,7 +642,7 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 	if !errors.Is(cause, river.ErrJobCancelledRemotely) {
 		status, errText, desc = statusFailed, "review timed out: "+cause.Error(), "kritik: review timed out"
 	}
-	finished, ferr := w.finishUnfinished(cctx, e.tenantID, e.reviewID, status, errText)
+	finished, ferr := w.finishUnfinished(cctx, e.accountID, e.reviewID, status, errText)
 	if ferr != nil || !finished {
 		return ferr
 	}
@@ -650,7 +650,7 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 	if err := e.client.SetStatus(cctx, e.owner, e.repo, e.headSHA, forge.StatusError, desc); err != nil {
 		e.logger.Warn("commit status not set", "error", err)
 	}
-	w.Metrics.Review(e.tenantSlug, status, time.Since(e.started))
+	w.Metrics.Review(e.accountSlug, status, time.Since(e.started))
 	return nil
 }
 
@@ -662,21 +662,21 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 func (w *Review) agentSpecFailed(ctx context.Context, e endedReview, runID string, err error) error {
 	dctx, cancel := detach(ctx)
 	defer cancel()
-	runErr := failRun(dctx, w.Store, e.tenantID, runID, err.Error())
+	runErr := failRun(dctx, w.Store, e.accountID, runID, err.Error())
 	if ctx.Err() != nil {
 		if runErr != nil {
 			e.logger.Warn("runner run not ended", "error", runErr)
 		}
 		return w.finishEnded(ctx, e, err)
 	}
-	return errors.Join(err, w.finishReview(dctx, e.tenantID, e.reviewID, statusFailed, "", err.Error()), runErr)
+	return errors.Join(err, w.finishReview(dctx, e.accountID, e.reviewID, statusFailed, "", err.Error()), runErr)
 }
 
 // finishUnfinished ends a review only if nothing has ended it yet, and
 // reports whether it did.
-func (w *Review) finishUnfinished(ctx context.Context, tenantID, reviewID, status, errText string) (bool, error) {
+func (w *Review) finishUnfinished(ctx context.Context, accountID, reviewID, status, errText string) (bool, error) {
 	var finished bool
-	err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, error = left($3, 2000), finished_at = now()
 			WHERE id = $1 AND finished_at IS NULL`, reviewID, status, errText)
 		if err != nil {
@@ -690,8 +690,8 @@ func (w *Review) finishUnfinished(ctx context.Context, tenantID, reviewID, statu
 
 // failRun ends a runner run that never got a Job, so it does not stay
 // 'created' for good.
-func failRun(ctx context.Context, st *store.Store, tenantID, runID, errText string) error {
-	return st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+func failRun(ctx context.Context, st *store.Store, accountID, runID, errText string) error {
+	return st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000), finished_at = now() WHERE id = $1`,
 			runID, errText)
 		if err != nil {
@@ -701,8 +701,8 @@ func failRun(ctx context.Context, st *store.Store, tenantID, runID, errText stri
 	})
 }
 
-func (w *Review) finishSkipped(ctx context.Context, tenantID, reviewID, patchID string, reason repoconfig.SkipReason) error {
-	return w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+func (w *Review) finishSkipped(ctx context.Context, accountID, reviewID, patchID string, reason repoconfig.SkipReason) error {
+	return w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, skip_reason = $4, finished_at = now() WHERE id = $1`,
 			reviewID, statusSkipped, patchID, string(reason))
 		if err != nil {
@@ -712,10 +712,10 @@ func (w *Review) finishSkipped(ctx context.Context, tenantID, reviewID, patchID 
 	})
 }
 
-func tenantByID(f *configfile.File, id string) *configfile.Tenant {
-	for i := range f.Tenants {
-		if f.Tenants[i].ID() == id {
-			return &f.Tenants[i]
+func accountByID(f *configfile.File, id string) *configfile.Account {
+	for i := range f.Accounts {
+		if f.Accounts[i].ID() == id {
+			return &f.Accounts[i]
 		}
 	}
 	return nil

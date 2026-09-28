@@ -16,7 +16,7 @@ type Spec struct {
 	// RunID is the runner_runs row; it becomes the Job and Secret name
 	// suffix.
 	RunID string
-	// Labels are put on the Job for kubectl and Grafana: tenant, repository,
+	// Labels are put on the Job for kubectl and Grafana: account, repository,
 	// pr, kind.
 	Labels map[string]string
 	// Annotations carry the River job id and head SHA.
@@ -29,7 +29,7 @@ type Spec struct {
 	Secrets runner.Secrets
 	// Deadline bounds the whole run.
 	Deadline time.Duration
-	// Resources overrides the pod's resource requirements, as the tenant's
+	// Resources overrides the pod's resource requirements, as the account's
 	// runner block in the configuration file spells them.
 	Resources map[string]any
 	// Tools are mounted read-only from their images and put first on the

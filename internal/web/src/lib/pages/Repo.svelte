@@ -15,14 +15,14 @@
 
   let { slug, owner, repo, connection }: { slug: string; owner: string; repo: string; connection?: string } = $props();
   const fullName = $derived(`${owner}/${repo}`);
-  const tenant = $derived(`/api/v1/tenants/${encodeURIComponent(slug)}`);
+  const account = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}`);
 
   const res = new Resource(() =>
-    getJSON<RepoDetail>(`${tenant}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${connectionQuery(connection)}`),
+    getJSON<RepoDetail>(`${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${connectionQuery(connection)}`),
   );
   const pulls = new Resource(() =>
     getJSON<Page<Pull>>(
-      `${tenant}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}${connection ? `&connection=${encodeURIComponent(connection)}` : ''}`,
+      `${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}${connection ? `&connection=${encodeURIComponent(connection)}` : ''}`,
     ),
   );
   const choices = $derived(ambiguousConnections(res.error));
@@ -35,7 +35,7 @@
   });
   $effect(() =>
     live(
-      (e) => e.tenant === slug && e.kind !== 'model_call',
+      (e) => e.account === slug && e.kind !== 'model_call',
       () => {
         void res.load();
         void pulls.load();

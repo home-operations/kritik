@@ -1,23 +1,23 @@
 <script lang="ts">
-  // The landing page: totals across every tenant the viewer can see, then
-  // one row per tenant with its own numbers, each linking to the tenant.
+  // The landing page: totals across every account the viewer can see, then
+  // one row per account with its own numbers, each linking to the account.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { tokens, usd, wholeNumber } from '../format';
-  import type { TenantSummary } from '../types';
+  import type { AccountSummary } from '../types';
   import StateView from '../components/StateView.svelte';
   import Meter from '../components/Meter.svelte';
 
-  const res = new Resource(() => getJSON<TenantSummary[]>('/api/v1/tenants'));
+  const res = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
 
   $effect(() => {
     void res.load();
   });
   $effect(() => live((e) => e.kind !== 'model_call', () => void res.load()));
 
-  function totals(list: TenantSummary[]) {
-    const sum = (f: (t: TenantSummary) => number) => list.reduce((n, t) => n + f(t), 0);
+  function totals(list: AccountSummary[]) {
+    const sum = (f: (t: AccountSummary) => number) => list.reduce((n, t) => n + f(t), 0);
     return {
       connections: sum((t) => t.connections),
       repositories: sum((t) => t.repositories),
@@ -31,13 +31,13 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head"><h1>All tenants</h1></header>
-    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any tenant yet.">
+    <header class="page-head"><h1>All accounts</h1></header>
+    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any account yet.">
       {#snippet children(list)}
         {@const all = totals(list)}
-        <section class="tiles" aria-label="Across all tenants">
+        <section class="tiles" aria-label="Across all accounts">
           <div class="tile">
-            <span class="tile-label">Tenants</span>
+            <span class="tile-label">Accounts</span>
             <span class="tile-value">{wholeNumber(list.length)}</span>
             <span class="small muted">{wholeNumber(all.connections)} connections</span>
           </div>
@@ -60,13 +60,13 @@
           </div>
         </section>
 
-        <section class="panel" aria-labelledby="tenant-breakdown">
-          <header class="panel-head"><h2 id="tenant-breakdown">By tenant</h2></header>
+        <section class="panel" aria-labelledby="account-breakdown">
+          <header class="panel-head"><h2 id="account-breakdown">By account</h2></header>
           <div class="table-wrap">
-            <table class="data tenant-breakdown">
+            <table class="data account-breakdown">
               <thead>
                 <tr>
-                  <th scope="col">Tenant</th>
+                  <th scope="col">Account</th>
                   <th scope="col">Role</th>
                   <th scope="col" class="num">Connections</th>
                   <th scope="col" class="num">Repositories</th>
@@ -78,7 +78,7 @@
               <tbody>
                 {#each list as t (t.slug)}
                   <tr>
-                    <td class="mono"><a href={href({ name: 'tenant', slug: t.slug })}>{t.slug}</a></td>
+                    <td class="mono"><a href={href({ name: 'account', slug: t.slug })}>{t.slug}</a></td>
                     <td>{t.role} <span class="muted small">({t.managedBy})</span></td>
                     <td class="num">{wholeNumber(t.connections)}</td>
                     <td class="num">{wholeNumber(t.repositories)}</td>

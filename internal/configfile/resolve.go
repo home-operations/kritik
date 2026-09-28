@@ -6,22 +6,22 @@ import (
 	"time"
 )
 
-// Tenant returns the tenant with the given slug.
-func (f *File) Tenant(slug string) (*Tenant, bool) {
-	for i := range f.Tenants {
-		if f.Tenants[i].Slug == slug {
-			return &f.Tenants[i], true
+// Account returns the account with the given slug.
+func (f *File) Account(slug string) (*Account, bool) {
+	for i := range f.Accounts {
+		if f.Accounts[i].Slug == slug {
+			return &f.Accounts[i], true
 		}
 	}
 	return nil, false
 }
 
-// Connection returns the connection with the given name and the tenant
+// Connection returns the connection with the given name and the account
 // that owns it. Names are unique across the file, so this is how the ingest
 // role turns a hook path into a webhook secret.
-func (f *File) Connection(name string) (*Connection, *Tenant, bool) {
-	for ti := range f.Tenants {
-		t := &f.Tenants[ti]
+func (f *File) Connection(name string) (*Connection, *Account, bool) {
+	for ti := range f.Accounts {
+		t := &f.Accounts[ti]
 		for ii := range t.Connections {
 			if t.Connections[ii].Name == name {
 				return &t.Connections[ii], t, true
@@ -31,11 +31,11 @@ func (f *File) Connection(name string) (*Connection, *Tenant, bool) {
 	return nil, nil, false
 }
 
-// ConnectionFor returns the tenant's connection a repository entry
+// ConnectionFor returns the account's connection a repository entry
 // belongs to: the one it names, or else the only one whose account owns
 // it. It is nil when none matches, or when several do and the entry names
 // none of them.
-func (f *File) ConnectionFor(t *Tenant, r *Repository) *Connection {
+func (f *File) ConnectionFor(t *Account, r *Repository) *Connection {
 	in, err := t.repositoryConnection(r, "")
 	if err != nil {
 		return nil
@@ -44,12 +44,12 @@ func (f *File) ConnectionFor(t *Tenant, r *Repository) *Connection {
 }
 
 // Settings resolves the effective settings for the repository "owner/repo"
-// of a tenant, reached through the named connection. Layers apply in one
-// direction: defaults, then the tenant, then the repository entry bound to
+// of an account, reached through the named connection. Layers apply in one
+// direction: defaults, then the account, then the repository entry bound to
 // that connection, if one exists. A repository not listed under the
-// tenant gets the tenant's settings and is enabled; empty connection and
-// repo give the tenant's settings alone.
-func (f *File) Settings(t *Tenant, connection, repo string) Settings {
+// account gets the account's settings and is enabled; empty connection and
+// repo give the account's settings alone.
+func (f *File) Settings(t *Account, connection, repo string) Settings {
 	s := Settings{
 		Enabled:     true,
 		Ignore:      append([]string(nil), DefaultIgnore...),
@@ -74,9 +74,9 @@ func (f *File) Settings(t *Tenant, connection, repo string) Settings {
 	return s
 }
 
-// repositoryEntry is the tenant's entry for the repository "owner/repo"
+// repositoryEntry is the account's entry for the repository "owner/repo"
 // reached through the named connection, nil when it lists none.
-func (f *File) repositoryEntry(t *Tenant, connection, repo string) *Repository {
+func (f *File) repositoryEntry(t *Account, connection, repo string) *Repository {
 	for i := range t.Repositories {
 		r := &t.Repositories[i]
 		if r.Name != repo {
@@ -106,7 +106,7 @@ const (
 // from: the author of the narrowest scope that writes it, the file for
 // the defaults, or the built-in default. Ignore globs come from every
 // scope; the narrowest that adds some is given.
-func (f *File) Sources(t *Tenant, connection, repo string) map[string]Source {
+func (f *File) Sources(t *Account, connection, repo string) map[string]Source {
 	type scope struct {
 		spec   any
 		source Source
@@ -192,10 +192,10 @@ func (f *File) OnboardWindow() int {
 	return DefaultOnboardWindow
 }
 
-// RunnerFor resolves a tenant's runner Job deadline and resources: the
-// tenant's runner block, then defaults.runner, then DefaultRunnerDeadline
-// and no resources. t may be nil for a tenant no longer in the file.
-func (f *File) RunnerFor(t *Tenant) (deadline time.Duration, resources map[string]any) {
+// RunnerFor resolves an account's runner Job deadline and resources: the
+// account's runner block, then defaults.runner, then DefaultRunnerDeadline
+// and no resources. t may be nil for an account no longer in the file.
+func (f *File) RunnerFor(t *Account) (deadline time.Duration, resources map[string]any) {
 	deadline = DefaultRunnerDeadline
 	blocks := []*Runner{f.Defaults.Runner}
 	if t != nil {

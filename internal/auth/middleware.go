@@ -23,16 +23,16 @@ type Principal struct {
 	// Operator administers the instance: the admin role, which reads and
 	// changes everything.
 	Operator bool
-	// AllTenants is a member who reads every tenant.
-	AllTenants bool
-	// Tenants are the tenants a member reads, by id: those among the
+	// AllAccounts is a member who reads every account.
+	AllAccounts bool
+	// Accounts are the accounts a member reads, by id: those among the
 	// current file's whose connections serve an account the grant names.
-	Tenants map[string]bool
+	Accounts map[string]bool
 }
 
-// CanRead reports whether p may read the tenant's content.
-func (p *Principal) CanRead(tenantID string) bool {
-	return p != nil && (p.Operator || p.AllTenants || p.Tenants[tenantID])
+// CanRead reports whether p may read the account's content.
+func (p *Principal) CanRead(accountID string) bool {
+	return p != nil && (p.Operator || p.AllAccounts || p.Accounts[accountID])
 }
 
 type principalKey struct{}
@@ -104,21 +104,21 @@ func principalFor(file *configfile.File, sess store.Session) *Principal {
 	g := sess.Grant
 	p := &Principal{
 		User: sess.User, Identity: Identity(sess.Identity),
-		Operator: g.Role == RoleAdmin, AllTenants: g.AllAccounts, Tenants: map[string]bool{},
+		Operator: g.Role == RoleAdmin, AllAccounts: g.AllAccounts, Accounts: map[string]bool{},
 	}
-	if p.Operator || p.AllTenants {
+	if p.Operator || p.AllAccounts {
 		return p
 	}
 	accounts := map[string]bool{}
 	for _, a := range g.Accounts {
 		accounts[a] = true
 	}
-	for i := range file.Tenants {
-		t := &file.Tenants[i]
+	for i := range file.Accounts {
+		t := &file.Accounts[i]
 		for _, in := range t.Connections {
 			for _, a := range in.Accounts {
 				if accounts[AccountKey(in.Forge, a)] {
-					p.Tenants[t.ID()] = true
+					p.Accounts[t.ID()] = true
 				}
 			}
 		}

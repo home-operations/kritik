@@ -16,11 +16,11 @@ func TestReturnTo(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"", "#/"},
 		{"#/", "#/"},
-		{"#/tenants/alpha/reviews", "#/tenants/alpha/reviews"},
+		{"#/accounts/alpha/reviews", "#/accounts/alpha/reviews"},
 		{"#/a_b.c~d-e%20f", "#/a_b.c~d-e%20f"},
 		{"https://evil.example/", "#/"},
 		{"//evil.example", "#/"},
-		{"/tenants", "#/"},
+		{"/accounts", "#/"},
 		{"#/x?y=1", "#/"},
 		{"#/x#y", "#/"},
 		{"#/x\n", "#/"},

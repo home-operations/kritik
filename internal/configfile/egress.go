@@ -57,7 +57,7 @@ func (f *File) EgressRules() egress.Rules {
 			hosts = append(hosts, h)
 		}
 	}
-	for _, t := range f.Tenants {
+	for _, t := range f.Accounts {
 		if len(t.Connections) > 0 {
 			add(GitHubHost)
 		}

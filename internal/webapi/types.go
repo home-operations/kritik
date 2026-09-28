@@ -31,8 +31,8 @@ type User struct {
 	AvatarURL   string `json:"avatarUrl"`
 }
 
-// TenantMembership is a tenant the principal may read and its role there.
-type TenantMembership struct {
+// AccountMembership is an account the principal may read and its role there.
+type AccountMembership struct {
 	Slug      string            `json:"slug"`
 	Role      auth.Role         `json:"role"`
 	ManagedBy configfile.Origin `json:"managedBy"`
@@ -40,12 +40,12 @@ type TenantMembership struct {
 
 // Me is who the session acts as.
 type Me struct {
-	User     User               `json:"user"`
-	Operator bool               `json:"operator"`
-	Tenants  []TenantMembership `json:"tenants"`
+	User     User                `json:"user"`
+	Operator bool                `json:"operator"`
+	Accounts []AccountMembership `json:"accounts"`
 }
 
-// MonthUsage is a tenant's usage against its caps; a zero cap is unset.
+// MonthUsage is an account's usage against its caps; a zero cap is unset.
 type MonthUsage struct {
 	Tokens         int64   `json:"tokens"`
 	CostUSD        float64 `json:"costUsd"`
@@ -54,8 +54,8 @@ type MonthUsage struct {
 	ReviewsPerDay  int     `json:"reviewsPerDay"`
 }
 
-// TenantSummary is one row of the tenant list.
-type TenantSummary struct {
+// AccountSummary is one row of the account list.
+type AccountSummary struct {
 	Slug         string            `json:"slug"`
 	ManagedBy    configfile.Origin `json:"managedBy"`
 	Role         auth.Role         `json:"role"`
@@ -65,16 +65,16 @@ type TenantSummary struct {
 	Usage        MonthUsage        `json:"usage"`
 }
 
-// OperatorTenant is one tenant as an operator sees it: Live is false for
-// a dashboard tenant stored but not part of the running configuration,
+// OperatorAccount is one account as an operator sees it: Live is false for
+// a dashboard account stored but not part of the running configuration,
 // because it does not validate or has not been merged yet, and for a file
-// tenant the merge left out, which Conflict explains.
-type OperatorTenant struct {
-	TenantSummary
+// account the merge left out, which Conflict explains.
+type OperatorAccount struct {
+	AccountSummary
 	Live     bool  `json:"live"`
 	Revision int64 `json:"revision"`
-	// Conflict is why the running configuration leaves out a file tenant:
-	// a dashboard tenant holds its slug or one of its connection names.
+	// Conflict is why the running configuration leaves out a file account:
+	// a dashboard account holds its slug or one of its connection names.
 	Conflict string `json:"conflict,omitempty"`
 }
 
@@ -125,8 +125,8 @@ type Limits struct {
 	TokensPerMonth int64 `json:"tokensPerMonth"`
 }
 
-// TenantDetail is one tenant's configuration and usage.
-type TenantDetail struct {
+// AccountDetail is one account's configuration and usage.
+type AccountDetail struct {
 	Slug        string            `json:"slug"`
 	ManagedBy   configfile.Origin `json:"managedBy"`
 	Role        auth.Role         `json:"role"`
@@ -626,7 +626,7 @@ type UsagePoint struct {
 	Calls            int64   `json:"calls"`
 }
 
-// UsageSeries is the tenant's usage in [From, To) grouped by Group.
+// UsageSeries is the account's usage in [From, To) grouped by Group.
 type UsageSeries struct {
 	Group store.UsageGroup `json:"group"`
 	From  time.Time        `json:"from"`
@@ -644,7 +644,7 @@ type JobArgs struct {
 	CommentID  int64  `json:"commentId"`
 }
 
-// Job is one River job of the tenant.
+// Job is one River job of the account.
 type Job struct {
 	ID          int64          `json:"id"`
 	Kind        string         `json:"kind"`
@@ -660,10 +660,10 @@ type Job struct {
 }
 
 // Event is one server-sent event's data: a row of Kind changed in the
-// tenant with this slug.
+// account with this slug.
 type Event struct {
 	Kind     store.EventKind `json:"kind"`
-	Tenant   string          `json:"tenant"`
+	Account  string          `json:"account"`
 	ID       string          `json:"id"`
 	ReviewID *string         `json:"reviewId"`
 }

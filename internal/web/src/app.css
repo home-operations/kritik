@@ -378,7 +378,7 @@ kbd {
   background: var(--panel-alt);
   box-shadow: inset 2px 0 0 var(--accent);
 }
-.tenant-switch {
+.account-switch {
   border: 1px solid var(--border);
   background: var(--panel-alt);
   color: var(--text);
@@ -540,7 +540,7 @@ kbd {
     padding-top: 0;
     border-top: 0;
   }
-  .tenant-switch {
+  .account-switch {
     width: auto;
     max-width: 160px;
   }

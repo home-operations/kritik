@@ -16,7 +16,7 @@ import (
 )
 
 // Service is the store-backed Dispatcher: every write happens in one
-// tenant-scoped transaction together with the River insert, so a row and
+// account-scoped transaction together with the River insert, so a row and
 // its job either both exist or neither does.
 type Service struct {
 	store *store.Store
@@ -59,8 +59,8 @@ var pullRequestActions = map[string]bool{
 // RecordDelivery implements DeliveryRecorder. It writes at most once a
 // minute per connection: the dashboard needs to know deliveries arrive,
 // not to count them.
-func (s *Service) RecordDelivery(ctx context.Context, tenantID, connectionID string) error {
-	err := s.store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+func (s *Service) RecordDelivery(ctx context.Context, accountID, connectionID string) error {
+	err := s.store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE connections SET last_webhook_at = now()
 			WHERE id = $1 AND (last_webhook_at IS NULL OR last_webhook_at < now() - interval '1 minute')`, connectionID)
 		return err
@@ -96,7 +96,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	review, ok := pullRequestActions[ev.Action]
 	if !ok {
 		if ev.Action == "closed" {
-			err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
+			err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', updated_at = now()
 					WHERE repository_id = $1 AND number = $2`, repoID(req, ev.Repository.FullName), pr.Number)
 				return err
@@ -105,7 +105,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		}
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
-	settings := req.File.Settings(req.Tenant, req.Connection.Name, ev.Repository.FullName)
+	settings := req.File.Settings(req.Account, req.Connection.Name, ev.Repository.FullName)
 	switch {
 	case !settings.Enabled:
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
@@ -126,13 +126,13 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		return Outcome{}, fmt.Errorf("ingest: encode labels: %w", err)
 	}
 	out := Outcome{Status: Enqueued, Job: "review"}
-	err = s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
+	err = s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
 		if err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO pull_requests (tenant_id, repository_id, number, title, author, author_is_bot, draft, fork, state,
+			INSERT INTO pull_requests (account_id, repository_id, number, title, author, author_is_bot, draft, fork, state,
 				head_ref, head_sha, base_ref, base_sha, url, body, opened_at, labels, merged)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11, $12, $13, $14, $15, $16, $17)
 			ON CONFLICT (repository_id, number) DO UPDATE SET
@@ -140,7 +140,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 				fork = EXCLUDED.fork, state = 'open', head_ref = EXCLUDED.head_ref, head_sha = EXCLUDED.head_sha,
 				base_ref = EXCLUDED.base_ref, base_sha = EXCLUDED.base_sha, url = EXCLUDED.url, body = EXCLUDED.body,
 				labels = EXCLUDED.labels, merged = EXCLUDED.merged, updated_at = now()`,
-			req.Tenant.ID(), rid, pr.Number, pr.Title, pr.Author, pr.AuthorIsBot, pr.Draft, pr.Fork,
+			req.Account.ID(), rid, pr.Number, pr.Title, pr.Author, pr.AuthorIsBot, pr.Draft, pr.Fork,
 			pr.HeadRef, pr.HeadSHA, pr.BaseRef, pr.BaseSHA, pr.URL, pr.Body, nullTime(pr), labels, pr.Merged); err != nil {
 			return fmt.Errorf("ingest: upsert pull request: %w", err)
 		}
@@ -149,7 +149,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			return nil
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
-			TenantID: req.Tenant.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: ev.Action,
+			AccountID: req.Account.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: ev.Action,
 		}, nil)
 		if err != nil {
 			return fmt.Errorf("ingest: enqueue review: %w", err)
@@ -177,18 +177,18 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}
-	settings := req.File.Settings(req.Tenant, req.Connection.Name, ev.Repository.FullName)
+	settings := req.File.Settings(req.Account, req.Connection.Name, ev.Repository.FullName)
 	if !settings.Enabled {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	}
 	out := Outcome{Status: Enqueued, Job: "followup"}
-	err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
+	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
 		if err != nil {
 			return err
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.FollowUpArgs{
-			TenantID: req.Tenant.ID(), RepositoryID: rid, Number: c.Number, CommentID: c.ID,
+			AccountID: req.Account.ID(), RepositoryID: rid, Number: c.Number, CommentID: c.ID,
 			Inline: c.Inline, Path: c.Path, Line: c.Line,
 		}, nil)
 		if err != nil {
@@ -213,12 +213,12 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Push.After == "" || strings.Trim(ev.Push.After, "0") == "" {
 		return Outcome{Status: Skipped, Reason: "branch-deleted"}, nil
 	}
-	settings := req.File.Settings(req.Tenant, req.Connection.Name, ev.Repository.FullName)
+	settings := req.File.Settings(req.Account, req.Connection.Name, ev.Repository.FullName)
 	if !settings.Enabled {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	}
 	out := Outcome{Status: Enqueued, Job: "index"}
-	err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
+	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
 		if err != nil {
 			return err
@@ -235,7 +235,7 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 			return nil
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.IndexArgs{
-			TenantID: req.Tenant.ID(), RepositoryID: rid, CommitSHA: ev.Push.After, Trigger: jobs.TriggerPush,
+			AccountID: req.Account.ID(), RepositoryID: rid, CommitSHA: ev.Push.After, Trigger: jobs.TriggerPush,
 		}, nil)
 		if err != nil {
 			return fmt.Errorf("ingest: enqueue index: %w", err)
@@ -261,7 +261,7 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 	if !enable && !disable {
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
-	err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
+	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 		if disable && len(inst.Repositories) == 0 {
 			// The App left this account: its repositories go, not those of
 			// the other accounts the connection serves.
@@ -294,14 +294,14 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook.Repository) (string, error) {
 	id := repoID(req, repo.FullName)
 	_, err := tx.Exec(ctx, `
-		INSERT INTO repositories (id, tenant_id, connection_id, name, default_branch, managed_by, enabled)
+		INSERT INTO repositories (id, account_id, connection_id, name, default_branch, managed_by, enabled)
 		VALUES ($1, $2, $3, $4, $5, 'forge', true)
 		ON CONFLICT (connection_id, name) DO UPDATE SET
 			default_branch = CASE WHEN EXCLUDED.default_branch <> '' THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
 			enabled = CASE WHEN repositories.managed_by = 'forge' THEN true ELSE repositories.enabled END,
 			disabled_at = CASE WHEN repositories.managed_by = 'forge' THEN NULL ELSE repositories.disabled_at END,
 			updated_at = now()`,
-		id, req.Tenant.ID(), req.Connection.ID(), repo.FullName, repo.DefaultBranch)
+		id, req.Account.ID(), req.Connection.ID(), repo.FullName, repo.DefaultBranch)
 	if err != nil {
 		return "", fmt.Errorf("ingest: ensure repository %s: %w", repo.FullName, err)
 	}

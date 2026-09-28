@@ -60,8 +60,8 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 	}
 	err = st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO index_packs (runner_run_id, tenant_id, commit_sha, base_sha, mode, changed_paths, chunk_count)
-			SELECT id, tenant_id, $2, $3, $4, $5, $6 FROM runner_runs WHERE id = $1`,
+			INSERT INTO index_packs (runner_run_id, account_id, commit_sha, base_sha, mode, changed_paths, chunk_count)
+			SELECT id, account_id, $2, $3, $4, $5, $6 FROM runner_runs WHERE id = $1`,
 			p.RunID, p.Head, baseFor(mode, p.Base), mode, changed, len(chunks)); err != nil {
 			return fmt.Errorf("runner: write index pack: %w", err)
 		}
@@ -108,7 +108,7 @@ func baseFor(mode, base string) string {
 	return base
 }
 
-// stage inserts one batch of chunks under the run, copying tenant_id from
+// stage inserts one batch of chunks under the run, copying account_id from
 // the run row the same way context packs do.
 func stage(ctx context.Context, tx pgx.Tx, runID string, chunks []indexer.Chunk) error {
 	n := len(chunks)
@@ -119,8 +119,8 @@ func stage(ctx context.Context, tx pgx.Tx, runID string, chunks []indexer.Chunk)
 		langs[i], symbols[i], kinds[i], scopes[i], texts[i] = c.Language, c.Symbol, c.Kind, c.Scope, c.Text
 	}
 	_, err := tx.Exec(ctx, `
-		INSERT INTO index_staging (runner_run_id, tenant_id, path, start_line, end_line, language, symbol, kind, scope, text)
-		SELECT r.id, r.tenant_id, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text
+		INSERT INTO index_staging (runner_run_id, account_id, path, start_line, end_line, language, symbol, kind, scope, text)
+		SELECT r.id, r.account_id, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text
 		FROM runner_runs r, unnest($2::text[], $3::int[], $4::int[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[])
 			AS c (path, start_line, end_line, language, symbol, kind, scope, text)
 		WHERE r.id = $1`, runID, paths, starts, ends, langs, symbols, kinds, scopes, texts)

@@ -51,12 +51,12 @@ type FollowUp struct {
 func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) error {
 	args := job.Args
 	file := w.Current.Get()
-	tenant, err := w.tenant(file, args.TenantID)
+	account, err := w.account(file, args.AccountID)
 	if err != nil {
 		return err
 	}
-	logger := w.Logger.With("tenant", tenant.Slug, "pr", args.Number, "comment", args.CommentID)
-	pr, err := loadPullRequest(ctx, w.Store, args.TenantID, args.RepositoryID, args.Number)
+	logger := w.Logger.With("account", account.Slug, "pr", args.Number, "comment", args.CommentID)
+	pr, err := loadPullRequest(ctx, w.Store, args.AccountID, args.RepositoryID, args.Number)
 	if err != nil {
 		return err
 	}
@@ -73,13 +73,13 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	if err != nil {
 		return err
 	}
-	f := &followUp{w: w, file: file, tenant: tenant, settings: file.Settings(tenant, pr.connection, pr.repository), client: client, pr: pr,
+	f := &followUp{w: w, file: file, account: account, settings: file.Settings(account, pr.connection, pr.repository), client: client, pr: pr,
 		comment: comment, owner: owner, repo: repo, botLogin: login, jobID: job.ID, logger: logger}
 	if done, err := f.alreadyAnswered(ctx); err != nil || done {
 		return err
 	}
 	outcome, err := f.run(ctx)
-	w.Metrics.FollowUp(tenant.Slug, outcome)
+	w.Metrics.FollowUp(account.Slug, outcome)
 	if err != nil {
 		logger.Error("follow-up failed", "error", err)
 		_ = f.record(ctx, followUpFailed, err.Error(), 0, "")
@@ -92,7 +92,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 type followUp struct {
 	w        *FollowUp
 	file     *configfile.File
-	tenant   *configfile.Tenant
+	account  *configfile.Account
 	settings configfile.Settings
 	// instructionFiles are the instruction files settings name, as
 	// repoConfig read them, and scoped the changed-path globs each scoped
@@ -114,7 +114,7 @@ type followUp struct {
 func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	var status string
 	var replyID *int64
-	err := f.w.Store.WithTenant(ctx, f.tenant.ID(), func(tx pgx.Tx) error {
+	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT status, reply_comment_id FROM followups WHERE pull_request_id = $1 AND comment_id = $2`,
 			f.pr.id, f.comment.ID).Scan(&status, &replyID)
 	})
@@ -187,10 +187,10 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	}
 	f.logger.Info("follow-up answered", "model", resp.Model, "reply", replyID, "input_tokens", resp.InputTokens,
 		"output_tokens", resp.OutputTokens, "cost_usd", resp.CostUSD)
-	err = f.w.Store.WithTenant(ctx, f.tenant.ID(), func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `INSERT INTO usage (tenant_id, repository_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
+	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `INSERT INTO usage (account_id, repository_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
 			VALUES ($1, $2, 'followup', $3, $4, $5, $6, $7)`,
-			f.tenant.ID(), f.pr.repositoryID, resp.Model, resp.Upstream, resp.InputTokens, resp.OutputTokens, resp.CostUSD); err != nil {
+			f.account.ID(), f.pr.repositoryID, resp.Model, resp.Upstream, resp.InputTokens, resp.OutputTokens, resp.CostUSD); err != nil {
 			return fmt.Errorf("worker: record follow-up usage: %w", err)
 		}
 		return nil
@@ -240,7 +240,7 @@ func (f *followUp) disqualified(ctx context.Context) string {
 // has had its share of answers, and records it.
 func (f *followUp) rateLimited(ctx context.Context) (bool, error) {
 	var answered, notices int
-	err := f.w.Store.WithTenant(ctx, f.tenant.ID(), func(tx pgx.Tx) error {
+	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE status = 'answered'), count(*) FILTER (WHERE status = 'limited')
 			FROM followups WHERE pull_request_id = $1 AND created_at > now() - interval '1 hour'`, f.pr.id).Scan(&answered, &notices)
 	})
@@ -326,7 +326,7 @@ type reviewRecord struct {
 // stands alone.
 func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 	var rec reviewRecord
-	err := f.w.Store.WithTenant(ctx, f.tenant.ID(), func(tx pgx.Tx) error {
+	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `SELECT body FROM pull_requests WHERE id = $1`, f.pr.id).Scan(&rec.body); err != nil {
 			return fmt.Errorf("worker: load pull request body: %w", err)
 		}
@@ -397,13 +397,13 @@ func (f *followUp) complete(ctx context.Context, msg, reviewID string, instructi
 	if ref == "" {
 		return model.CompletionResponse{}, errors.New("worker: no review model is configured for this repository")
 	}
-	stepper, err := f.w.Completers.Stepper(f.file, f.tenant, ref.Provider())
+	stepper, err := f.w.Completers.Stepper(f.file, f.account, ref.Provider())
 	if err != nil {
 		return model.CompletionResponse{}, err
 	}
-	spec, _ := f.file.Provider(f.tenant, ref.Provider())
+	spec, _ := f.file.Provider(f.account, ref.Provider())
 	completer := model.Structured{Stepper: stepper, OnStep: f.w.onStep(ctx, f.logger, store.ModelCall{
-		TenantID: f.tenant.ID(), ReviewID: reviewID, FollowupCommentID: f.comment.ID, Kind: store.ModelCallFollowUp,
+		AccountID: f.account.ID(), ReviewID: reviewID, FollowupCommentID: f.comment.ID, Kind: store.ModelCallFollowUp,
 	}, transcriptMask(f.file, spec))}
 	req := model.CompletionRequest{
 		System: review.FollowUpSystemPrompt(instructions), User: msg, Model: ref.Model(),
@@ -413,10 +413,10 @@ func (f *followUp) complete(ctx context.Context, msg, reviewID string, instructi
 		req.Fallbacks = []string{fb.Model()}
 	}
 	var resp model.CompletionResponse
-	err = f.w.withLease(ctx, f.tenant, string(ref), f.settings.Limits.Concurrency, f.jobID, func(ctx context.Context) error {
+	err = f.w.withLease(ctx, f.account, string(ref), f.settings.Limits.Concurrency, f.jobID, func(ctx context.Context) error {
 		var err error
 		resp, err = completer.Complete(ctx, req)
-		f.w.Metrics.ModelCall(f.tenant.Slug, string(ref), "followup", callOutcome(err),
+		f.w.Metrics.ModelCall(f.account.Slug, string(ref), "followup", callOutcome(err),
 			resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 		return err
 	})
@@ -424,13 +424,13 @@ func (f *followUp) complete(ctx context.Context, msg, reviewID string, instructi
 }
 
 func (f *followUp) record(ctx context.Context, status, reason string, replyID int64, modelName string) error {
-	return f.w.Store.WithTenant(ctx, f.tenant.ID(), func(tx pgx.Tx) error {
+	return f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO followups
-			(tenant_id, pull_request_id, comment_id, author, inline, path, line, status, reason, reply_comment_id, model)
+			(account_id, pull_request_id, comment_id, author, inline, path, line, status, reason, reply_comment_id, model)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, left($9, 500), nullif($10::bigint, 0), $11)
 			ON CONFLICT (pull_request_id, comment_id) DO UPDATE SET status = excluded.status, reason = excluded.reason,
 				reply_comment_id = coalesce(excluded.reply_comment_id, followups.reply_comment_id), model = excluded.model`,
-			f.tenant.ID(), f.pr.id, f.comment.ID, f.comment.Author, f.comment.Inline, f.comment.Path, f.comment.Line,
+			f.account.ID(), f.pr.id, f.comment.ID, f.comment.Author, f.comment.Inline, f.comment.Path, f.comment.Line,
 			status, reason, replyID, modelName)
 		if err != nil {
 			return fmt.Errorf("worker: record follow-up: %w", err)

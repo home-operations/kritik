@@ -18,7 +18,7 @@ import (
 )
 
 const configYAML = `
-tenants:
+accounts:
   - slug: onedr0p
     connections:
       - name: bot-ross
@@ -138,7 +138,7 @@ func TestHandler(t *testing.T) {
 			}
 			if tt.dispatched {
 				req := disp.got[0]
-				if req.Tenant.Slug != "onedr0p" || req.Connection.Name != "bot-ross" || req.Event.Kind != webhook.KindPullRequest {
+				if req.Account.Slug != "onedr0p" || req.Connection.Name != "bot-ross" || req.Event.Kind != webhook.KindPullRequest {
 					t.Fatalf("request = %+v", req)
 				}
 			}

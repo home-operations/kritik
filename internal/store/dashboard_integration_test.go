@@ -34,8 +34,8 @@ func dashboardSpec(slug, inst string) json.RawMessage {
 
 func resetDashboard(t *testing.T, s *Store) {
 	t.Helper()
-	if _, err := s.owner.Exec(context.Background(), `DELETE FROM dashboard_tenants`); err != nil {
-		t.Fatalf("reset dashboard_tenants: %v", err)
+	if _, err := s.owner.Exec(context.Background(), `DELETE FROM dashboard_accounts`); err != nil {
+		t.Fatalf("reset dashboard_accounts: %v", err)
 	}
 }
 
@@ -53,7 +53,7 @@ func inTx(t *testing.T, s *Store, fn func(pgx.Tx) error) error {
 	return tx.Commit(ctx)
 }
 
-func TestDashboardTenants(t *testing.T) {
+func TestDashboardAccounts(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	resetDashboard(t, s)
@@ -74,13 +74,13 @@ func TestDashboardTenants(t *testing.T) {
 		var rev int64
 		err := inTx(t, s, func(tx pgx.Tx) error {
 			var err error
-			rev, err = s.PutDashboardTenant(ctx, tx, slug, dashboardSpec(slug, slug+"-bot"), expected, user)
+			rev, err = s.PutDashboardAccount(ctx, tx, slug, dashboardSpec(slug, slug+"-bot"), expected, user)
 			return err
 		})
 		return rev, err
 	}
 	del := func(slug string, expected int64) error {
-		return inTx(t, s, func(tx pgx.Tx) error { return s.DeleteDashboardTenant(ctx, tx, slug, expected) })
+		return inTx(t, s, func(tx pgx.Tx) error { return s.DeleteDashboardAccount(ctx, tx, slug, expected) })
 	}
 
 	steps := []struct {
@@ -93,9 +93,9 @@ func TestDashboardTenants(t *testing.T) {
 		{"create again conflicts", func() (int64, error) { return put("gamma", 0) }, 0, ErrDashboardConflict},
 		{"update at current revision", func() (int64, error) { return put("gamma", 1) }, 2, nil},
 		{"update at stale revision conflicts", func() (int64, error) { return put("gamma", 1) }, 0, ErrDashboardConflict},
-		{"update a missing tenant conflicts", func() (int64, error) { return put("nope", 3) }, 0, ErrDashboardConflict},
+		{"update a missing account conflicts", func() (int64, error) { return put("nope", 3) }, 0, ErrDashboardConflict},
 		{"delete at stale revision conflicts", func() (int64, error) { return 0, del("gamma", 1) }, 0, ErrDashboardConflict},
-		{"delete a missing tenant", func() (int64, error) { return 0, del("nope", 1) }, 0, ErrNotFound},
+		{"delete a missing account", func() (int64, error) { return 0, del("nope", 1) }, 0, ErrNotFound},
 	}
 	for _, st := range steps {
 		t.Run(st.name, func(t *testing.T) {
@@ -108,19 +108,19 @@ func TestDashboardTenants(t *testing.T) {
 
 	t.Run("read one with its writers", func(t *testing.T) {
 		err := inTx(t, s, func(tx pgx.Tx) error {
-			d, m, err := s.DashboardTenant(ctx, tx, "gamma")
+			d, m, err := s.DashboardAccount(ctx, tx, "gamma")
 			if err != nil {
 				return err
 			}
 			if d.Slug != "gamma" || d.Revision != 2 || m.CreatedBy != user || m.UpdatedBy != user || m.UpdatedAt.IsZero() {
 				t.Fatalf("got %+v %+v", d, m)
 			}
-			if _, err := configfile.DecodeTenant(d); err != nil {
+			if _, err := configfile.DecodeAccount(d); err != nil {
 				t.Fatalf("stored spec does not decode: %v", err)
 			}
-			_, _, err = s.DashboardTenant(ctx, tx, "nope")
+			_, _, err = s.DashboardAccount(ctx, tx, "nope")
 			if !errors.Is(err, ErrNotFound) {
-				t.Fatalf("missing tenant: %v, want ErrNotFound", err)
+				t.Fatalf("missing account: %v, want ErrNotFound", err)
 			}
 			return nil
 		})
@@ -137,9 +137,9 @@ func TestDashboardTenants(t *testing.T) {
 		if _, err := put("delta", 0); err != nil {
 			t.Fatal(err)
 		}
-		all, err := s.DashboardTenants(ctx)
+		all, err := s.DashboardAccounts(ctx)
 		if err != nil || len(all) != 2 || all[0].Slug != "delta" || all[1].Slug != "gamma" {
-			t.Fatalf("DashboardTenants = %+v, %v", all, err)
+			t.Fatalf("DashboardAccounts = %+v, %v", all, err)
 		}
 		if err := del("delta", 1); err != nil {
 			t.Fatal(err)
@@ -162,8 +162,8 @@ func TestDashboardTenants(t *testing.T) {
 func TestApplyConfigManagedBy(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	file := parse(t, twoTenants)
-	merged, err := configfile.Merge(file, []configfile.DashboardTenant{
+	file := parse(t, twoAccounts)
+	merged, err := configfile.Merge(file, []configfile.DashboardAccount{
 		{Slug: "gamma", Spec: dashboardSpec("gamma", "gamma-bot"), Revision: 1},
 	}, plainOpener{})
 	if err != nil {
@@ -182,23 +182,23 @@ func TestApplyConfigManagedBy(t *testing.T) {
 		return managedBy, enabled
 	}
 	const (
-		tenantQ = `SELECT managed_by, enabled FROM tenants WHERE slug = 'gamma'`
-		instQ   = `SELECT managed_by, enabled FROM connections WHERE name = 'gamma-bot'`
-		repoQ   = `SELECT managed_by, enabled FROM repositories WHERE name = 'gamma/one'`
+		accountQ = `SELECT managed_by, enabled FROM accounts WHERE slug = 'gamma'`
+		instQ    = `SELECT managed_by, enabled FROM connections WHERE name = 'gamma-bot'`
+		repoQ    = `SELECT managed_by, enabled FROM repositories WHERE name = 'gamma/one'`
 	)
 
 	t.Run("dashboard rows are dashboard-managed", func(t *testing.T) {
-		for _, q := range []string{tenantQ, instQ, repoQ} {
+		for _, q := range []string{accountQ, instQ, repoQ} {
 			if by, on := row(t, q); by != "dashboard" || !on {
 				t.Fatalf("%s: managed_by=%s enabled=%v", q, by, on)
 			}
 		}
-		if by, _ := row(t, `SELECT managed_by, enabled FROM tenants WHERE slug = 'alpha'`); by != "file" {
+		if by, _ := row(t, `SELECT managed_by, enabled FROM accounts WHERE slug = 'alpha'`); by != "file" {
 			t.Fatalf("alpha managed_by=%s", by)
 		}
 	})
 
-	t.Run("a deleted dashboard tenant is disabled", func(t *testing.T) {
+	t.Run("a deleted dashboard account is disabled", func(t *testing.T) {
 		gone, err := configfile.Merge(merged, nil, plainOpener{})
 		if err != nil {
 			t.Fatal(err)
@@ -206,7 +206,7 @@ func TestApplyConfigManagedBy(t *testing.T) {
 		if err := s.ApplyConfig(ctx, gone, "test"); err != nil {
 			t.Fatalf("ApplyConfig: %v", err)
 		}
-		for _, q := range []string{tenantQ, instQ} {
+		for _, q := range []string{accountQ, instQ} {
 			if by, on := row(t, q); by != "dashboard" || on {
 				t.Fatalf("%s: managed_by=%s enabled=%v; want disabled and still dashboard", q, by, on)
 			}
@@ -217,7 +217,7 @@ func TestApplyConfigManagedBy(t *testing.T) {
 		if err := s.ApplyConfig(ctx, merged, "test"); err != nil {
 			t.Fatalf("ApplyConfig: %v", err)
 		}
-		for _, q := range []string{tenantQ, instQ, repoQ} {
+		for _, q := range []string{accountQ, instQ, repoQ} {
 			if by, on := row(t, q); by != "dashboard" || !on {
 				t.Fatalf("%s: managed_by=%s enabled=%v", q, by, on)
 			}
@@ -228,9 +228,9 @@ func TestApplyConfigManagedBy(t *testing.T) {
 	}
 }
 
-// swapFileTenant is a file tenant declaring what dashboardSpec("swap",
+// swapFileAccount is a file account declaring what dashboardSpec("swap",
 // "swap-bot") does: the same slug, connection and repository.
-const swapFileTenant = `
+const swapFileAccount = `
   - slug: swap
     connections:
       - name: swap-bot
@@ -244,9 +244,9 @@ const swapFileTenant = `
 func TestApplyConfigCrossOriginReAdd(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	base := parse(t, twoTenants)
-	withFile := parse(t, twoTenants+swapFileTenant)
-	withDashboard, err := configfile.Merge(base, []configfile.DashboardTenant{
+	base := parse(t, twoAccounts)
+	withFile := parse(t, twoAccounts+swapFileAccount)
+	withDashboard, err := configfile.Merge(base, []configfile.DashboardAccount{
 		{Slug: "swap", Spec: dashboardSpec("swap", "swap-bot"), Revision: 1},
 	}, plainOpener{})
 	if err != nil {
@@ -258,7 +258,7 @@ func TestApplyConfigCrossOriginReAdd(t *testing.T) {
 		var te, ie, re bool
 		err := s.owner.QueryRow(ctx, `
 			SELECT t.managed_by, t.enabled, i.managed_by, i.enabled, r.managed_by, r.enabled
-			FROM tenants t JOIN connections i ON i.tenant_id = t.id JOIN repositories r ON r.connection_id = i.id
+			FROM accounts t JOIN connections i ON i.account_id = t.id JOIN repositories r ON r.connection_id = i.id
 			WHERE t.slug = 'swap' AND i.name = 'swap-bot' AND r.name = 'swap/one'`).Scan(&tb, &te, &ib, &ie, &rb, &re)
 		if err != nil {
 			t.Fatalf("read swap rows: %v", err)
@@ -278,7 +278,7 @@ func TestApplyConfigCrossOriginReAdd(t *testing.T) {
 		{"file to dashboard in the same apply", []*configfile.File{withFile, withDashboard}, want("dashboard", true)},
 		{"dashboard to file, one apply apart", []*configfile.File{withDashboard, base, withFile}, want("file", true)},
 		{"dashboard to file in the same apply", []*configfile.File{withDashboard, withFile}, want("file", true)},
-		{"removing the tenant disables its repositories", []*configfile.File{withDashboard, base}, want("dashboard", false)},
+		{"removing the account disables its repositories", []*configfile.File{withDashboard, base}, want("dashboard", false)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -288,7 +288,7 @@ func TestApplyConfigCrossOriginReAdd(t *testing.T) {
 				}
 			}
 			if got := states(t); !slices.Equal(got, tt.want) {
-				t.Fatalf("swap tenant, connection, repository = %v, want %v", got, tt.want)
+				t.Fatalf("swap account, connection, repository = %v, want %v", got, tt.want)
 			}
 		})
 	}

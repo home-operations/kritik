@@ -14,7 +14,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
-// claimSpec is a dashboard tenant with one connection per name.
+// claimSpec is a dashboard account with one connection per name.
 func claimSpec(slug string, names ...string) map[string]any {
 	ins := make([]any, 0, len(names))
 	for _, n := range names {
@@ -27,21 +27,21 @@ func claimSpec(slug string, names ...string) map[string]any {
 }
 
 // TestManageClaims covers what dashboard writes may claim: slugs and
-// connection names other writes, or tenants gone before, hold.
+// connection names other writes, or accounts gone before, hold.
 func TestManageClaims(t *testing.T) {
 	e := newManageEnv(t)
 	for _, slug := range []string{"clm-a", "clm-b"} {
-		status, body := e.do("operator", "POST", "/api/v1/tenants",
-			CreateTenantRequest{Slug: slug, Spec: mustJSON(t, claimSpec(slug, slug+"-bot"))})
+		status, body := e.do("operator", "POST", "/api/v1/accounts",
+			CreateAccountRequest{Slug: slug, Spec: mustJSON(t, claimSpec(slug, slug+"-bot"))})
 		e.expect(status, body, http.StatusCreated, "")
 	}
 	e.waitFor("clm-a and clm-b to merge", func(f *configfile.File) bool {
-		_, a := f.Tenant("clm-a")
-		_, b := f.Tenant("clm-b")
+		_, a := f.Account("clm-a")
+		_, b := f.Account("clm-b")
 		return a && b
 	})
 	t.Run("concurrent writes claiming one connection name", func(t *testing.T) { testConcurrentClaims(t, e) })
-	t.Run("a slug a tenant held before", func(t *testing.T) { testSlugReuse(t, e) })
+	t.Run("a slug an account held before", func(t *testing.T) { testSlugReuse(t, e) })
 }
 
 // testConcurrentClaims races pairs of writes that each add one name: a
@@ -54,8 +54,8 @@ func testConcurrentClaims(t *testing.T, e *manageEnv) {
 			r := strconv.Itoa(round)
 			pair, shared = []string{"clm-a" + r, "clm-b" + r}, "clm-shared-bot"+r
 			for _, slug := range pair {
-				status, body := e.do("operator", "POST", "/api/v1/tenants",
-					CreateTenantRequest{Slug: slug, Spec: mustJSON(t, claimSpec(slug, slug+"-bot"))})
+				status, body := e.do("operator", "POST", "/api/v1/accounts",
+					CreateAccountRequest{Slug: slug, Spec: mustJSON(t, claimSpec(slug, slug+"-bot"))})
 				e.expect(status, body, http.StatusCreated, "")
 			}
 		}
@@ -63,8 +63,8 @@ func testConcurrentClaims(t *testing.T, e *manageEnv) {
 		var wg sync.WaitGroup
 		for i, slug := range pair {
 			wg.Go(func() {
-				statuses[i], _ = e.do("operator", "PUT", "/api/v1/tenants/"+slug+"/config",
-					UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, claimSpec(slug, slug+"-bot", shared))})
+				statuses[i], _ = e.do("operator", "PUT", "/api/v1/accounts/"+slug+"/config",
+					UpdateAccountRequest{Revision: 1, Spec: mustJSON(t, claimSpec(slug, slug+"-bot", shared))})
 			})
 		}
 		wg.Wait()
@@ -83,41 +83,41 @@ func testSlugReuse(t *testing.T, e *manageEnv) {
 	if err := e.st.ApplyConfig(ctx, e.src.Current.Get(), "claims-test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	rev := e.scalar(`SELECT revision::text FROM dashboard_tenants WHERE slug = 'clm-b'`)
-	status, body := e.do("operator", "DELETE", "/api/v1/tenants/clm-b?revision="+rev, nil)
+	rev := e.scalar(`SELECT revision::text FROM dashboard_accounts WHERE slug = 'clm-b'`)
+	status, body := e.do("operator", "DELETE", "/api/v1/accounts/clm-b?revision="+rev, nil)
 	e.expect(status, body, http.StatusNoContent, "")
-	e.waitFor("clm-b to leave", func(f *configfile.File) bool { _, ok := f.Tenant("clm-b"); return !ok })
+	e.waitFor("clm-b to leave", func(f *configfile.File) bool { _, ok := f.Account("clm-b"); return !ok })
 	if err := e.st.ApplyConfig(ctx, e.src.Current.Get(), "claims-test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 
 	// The disabled connection stays clm-b's, whoever asks for it.
-	status, body = e.do("operator", "POST", "/api/v1/tenants",
-		CreateTenantRequest{Slug: "clm-c", Spec: mustJSON(t, claimSpec("clm-c", "clm-b-bot"))})
+	status, body = e.do("operator", "POST", "/api/v1/accounts",
+		CreateAccountRequest{Slug: "clm-c", Spec: mustJSON(t, claimSpec("clm-c", "clm-b-bot"))})
 	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
 	if !strings.Contains(string(body), `"path":"connections[0].name"`) {
 		t.Errorf("held connection = %s", body)
 	}
 
 	spec := mustJSON(t, claimSpec("clm-b", "clm-b-bot"))
-	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "clm-b", Spec: spec})
+	status, body = e.do("operator", "POST", "/api/v1/accounts", CreateAccountRequest{Slug: "clm-b", Spec: spec})
 	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
 	if !strings.Contains(string(body), `"adoptable":true`) {
 		t.Errorf("slug used before = %s, want it adoptable", body)
 	}
-	// A live dashboard tenant's slug is taken, not adoptable.
-	status, body = e.do("operator", "POST", "/api/v1/tenants",
-		CreateTenantRequest{Slug: "clm-a", Spec: mustJSON(t, claimSpec("clm-a", "clm-a-bot")), Adopt: true})
+	// A live dashboard account's slug is taken, not adoptable.
+	status, body = e.do("operator", "POST", "/api/v1/accounts",
+		CreateAccountRequest{Slug: "clm-a", Spec: mustJSON(t, claimSpec("clm-a", "clm-a-bot")), Adopt: true})
 	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
-	if strings.Contains(string(body), "adoptable") || e.audits(AuditTenantAdopt, "clm-a") != 0 {
+	if strings.Contains(string(body), "adoptable") || e.audits(AuditAccountAdopt, "clm-a") != 0 {
 		t.Errorf("live dashboard slug = %s, want a plain refusal and no adopt", body)
 	}
-	if e.audits(AuditTenantAdopt, "clm-b") != 0 {
+	if e.audits(AuditAccountAdopt, "clm-b") != 0 {
 		t.Fatal("a refused create was audited as an adopt")
 	}
-	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "clm-b", Spec: spec, Adopt: true})
+	status, body = e.do("operator", "POST", "/api/v1/accounts", CreateAccountRequest{Slug: "clm-b", Spec: spec, Adopt: true})
 	e.expect(status, body, http.StatusCreated, "")
-	if e.audits(AuditTenantAdopt, "clm-b") != 1 {
-		t.Error("tenant.adopt audit rows are wrong")
+	if e.audits(AuditAccountAdopt, "clm-b") != 1 {
+		t.Error("account.adopt audit rows are wrong")
 	}
 }

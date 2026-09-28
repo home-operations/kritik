@@ -19,7 +19,7 @@ import (
 // Request is a verified, parsed webhook with the configuration it applies to.
 type Request struct {
 	File       *configfile.File
-	Tenant     *configfile.Tenant
+	Account    *configfile.Account
 	Connection *configfile.Connection
 	Event      webhook.Event
 }
@@ -51,7 +51,7 @@ type Dispatcher interface {
 // DeliveryRecorder notes that a connection's webhook delivered a request
 // kritik verified. The store-backed implementation is Service.
 type DeliveryRecorder interface {
-	RecordDelivery(ctx context.Context, tenantID, connectionID string) error
+	RecordDelivery(ctx context.Context, accountID, connectionID string) error
 }
 
 // Handler serves POST /hooks/{connection}.
@@ -79,7 +79,7 @@ func NewHandler(current *configfile.Current, disp Dispatcher, logger *slog.Logge
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("connection")
 	file := h.current.Get()
-	in, tenant, ok := file.Connection(name)
+	in, account, ok := file.Connection(name)
 	if !ok {
 		// The name is the caller's, not ours: labelling by it would let any
 		// request mint a new series.
@@ -87,7 +87,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown connection", http.StatusNotFound)
 		return
 	}
-	logger := h.logger.With("connection", name, "tenant", tenant.Slug)
+	logger := h.logger.With("connection", name, "account", account.Slug)
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, webhook.MaxBody))
 	if err != nil {
@@ -109,7 +109,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Any verified delivery shows the forge's webhook is set up, whatever
 	// becomes of the event.
 	if h.Deliveries != nil {
-		if err := h.Deliveries.RecordDelivery(r.Context(), tenant.ID(), in.ID()); err != nil {
+		if err := h.Deliveries.RecordDelivery(r.Context(), account.ID(), in.ID()); err != nil {
 			logger.Warn("webhook delivery not recorded", "error", err)
 		}
 	}
@@ -141,7 +141,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := h.disp.Dispatch(r.Context(), Request{File: file, Tenant: tenant, Connection: in, Event: ev})
+	out, err := h.disp.Dispatch(r.Context(), Request{File: file, Account: account, Connection: in, Event: ev})
 	if err != nil {
 		logger.Error("webhook dispatch failed", "error", err)
 		h.Metrics.Webhook(name, "error")

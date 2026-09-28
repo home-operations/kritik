@@ -69,12 +69,12 @@ func TestLoadFull(t *testing.T) {
 		}
 	})
 
-	t.Run("settings layer defaults, tenant, repository", func(t *testing.T) {
-		ho, _ := f.Tenant("home-operations")
-		od, _ := f.Tenant("onedr0p")
+	t.Run("settings layer defaults, account, repository", func(t *testing.T) {
+		ho, _ := f.Account("home-operations")
+		od, _ := f.Account("onedr0p")
 		tests := []struct {
 			name     string
-			tenant   *Tenant
+			account  *Account
 			repo     string
 			enabled  bool
 			review   ModelRef
@@ -86,27 +86,27 @@ func TestLoadFull(t *testing.T) {
 			filterNo map[string]any // a PR the effective filter must reject
 		}{
 			{
-				name: "unlisted repo inherits tenant", tenant: ho, repo: "home-operations/other",
+				name: "unlisted repo inherits account", account: ho, repo: "home-operations/other",
 				enabled: true, review: "openrouter/openai/gpt-6-sol", forks: false, conc: 3, perDay: 200,
 				filterOK: SamplePR(), filterNo: with(SamplePR(), "draft", true),
 			},
 			{
-				name: "listed repo applies its own settle", tenant: ho, repo: "home-operations/flate",
+				name: "listed repo applies its own settle", account: ho, repo: "home-operations/flate",
 				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
 				settle:   30 * time.Second,
 				filterOK: SamplePR(),
 			},
 			{
-				name: "repo filter replaces tenant filter", tenant: ho, repo: "home-operations/kopiur",
+				name: "repo filter replaces account filter", account: ho, repo: "home-operations/kopiur",
 				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
 				filterOK: SamplePR(), filterNo: with(SamplePR(), "labels", []any{map[string]any{"name": "skip-review", "color": "0"}}),
 			},
 			{
-				name: "disabled repo", tenant: ho, repo: "home-operations/charts-mirror",
+				name: "disabled repo", account: ho, repo: "home-operations/charts-mirror",
 				enabled: false, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
 			},
 			{
-				name: "tenant overrides review model and forks", tenant: od, repo: "onedr0p/home-ops",
+				name: "account overrides review model and forks", account: od, repo: "onedr0p/home-ops",
 				enabled: true, review: "local/claude-opus-5", forks: true, conc: 3,
 				settle:   2 * time.Minute,
 				filterOK: SamplePR(),
@@ -114,7 +114,7 @@ func TestLoadFull(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				s := f.Settings(tt.tenant, tt.tenant.Connections[0].Name, tt.repo)
+				s := f.Settings(tt.account, tt.account.Connections[0].Name, tt.repo)
 				if s.Enabled != tt.enabled || s.Models.Review != tt.review || s.Forks != tt.forks ||
 					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay ||
 					s.Settle != tt.settle {
@@ -138,8 +138,8 @@ func TestLoadFull(t *testing.T) {
 	})
 
 	t.Run("concurrency falls back to the default when unset everywhere", func(t *testing.T) {
-		g := &File{Tenants: []Tenant{{Slug: "x"}}}
-		if got := g.Settings(&g.Tenants[0], "", "x/y").Limits.Concurrency; got != DefaultConcurrency {
+		g := &File{Accounts: []Account{{Slug: "x"}}}
+		if got := g.Settings(&g.Accounts[0], "", "x/y").Limits.Concurrency; got != DefaultConcurrency {
 			t.Fatalf("concurrency = %d, want %d", got, DefaultConcurrency)
 		}
 	})
@@ -150,9 +150,9 @@ func TestConnectionCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	in, tenant, ok := f.Connection("sticky-gecko")
-	if !ok || tenant.Slug != "home-operations" {
-		t.Fatalf("Connection(sticky-gecko) = %v, %v, %v", in, tenant, ok)
+	in, account, ok := f.Connection("sticky-gecko")
+	if !ok || account.Slug != "home-operations" {
+		t.Fatalf("Connection(sticky-gecko) = %v, %v, %v", in, account, ok)
 	}
 	if in.App.PrivateKeyValue().Value() == "" || in.WebhookSecretValue().Value() != "whsec" || in.App.ClientIDValue() != "Iv1.xxxxxxxx" {
 		t.Fatal("github app credentials not resolved")
@@ -174,7 +174,7 @@ func TestHashAndConnectionLookup(t *testing.T) {
 	if len(f.Hash()) != 64 {
 		t.Fatalf("hash = %q", f.Hash())
 	}
-	ho, _ := f.Tenant("home-operations")
+	ho, _ := f.Account("home-operations")
 	if in := f.ConnectionFor(ho, &Repository{Name: "home-operations/flate"}); in == nil || in.Name != "sticky-gecko" {
 		t.Fatalf("ConnectionFor = %v", in)
 	}
@@ -194,7 +194,7 @@ func TestRetentionAndIgnore(t *testing.T) {
 	if (&File{}).DisabledIndexGrace() != DefaultDisabledIndexGrace {
 		t.Fatal("unset grace should fall back to the default")
 	}
-	ho, _ := f.Tenant("home-operations")
+	ho, _ := f.Account("home-operations")
 	got := f.Settings(ho, "sticky-gecko", "home-operations/flate").Ignore
 	if len(got) != len(DefaultIgnore)+1 || got[len(got)-1] != "**/testdata/**" {
 		t.Fatalf("ignore = %v", got)
@@ -232,7 +232,7 @@ var minimal = githubMinimal("clientId: Iv1.acme, ")
 // the app block.
 func githubMinimal(clientFields string) string {
 	return `
-tenants:
+accounts:
   - slug: acme
     connections:
       - name: acme-bot
@@ -291,9 +291,9 @@ func TestProviders(t *testing.T) {
 	}
 }
 
-// TestTenantProviders: a tenant's own provider serves its models, and only
-// its; a file tenant, the operator's, may point one anywhere.
-func TestTenantProviders(t *testing.T) {
+// TestAccountProviders: an account's own provider serves its models, and only
+// its; a file account, the operator's, may point one anywhere.
+func TestAccountProviders(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	own := "    providers:\n      own: { type: openai, baseUrl: http://llm.internal:4000/v1, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" +
@@ -305,18 +305,18 @@ func TestTenantProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	ten := &f.Tenants[0]
+	ten := &f.Accounts[0]
 	if p, ok := f.Provider(ten, "own"); !ok || p.Type != ProviderOpenAI || p.APIKeyValue().Value() != "whsec" {
 		t.Fatalf("Provider(acme, own) = %+v, %v", p, ok)
 	}
 	if _, ok := f.Provider(nil, "own"); ok {
-		t.Fatal("a tenant's provider must not be the file's")
+		t.Fatal("an account's provider must not be the file's")
 	}
 	refused := []struct{ name, yaml, want string }{
 		{"a name a model reference cannot carry", strings.Replace(withOwn(""), "      own:", "      Own:", 1), "a provider name must be lowercase"},
 		{"a name the file already uses", "providers:\n  own: { type: anthropic, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" + withOwn(""),
 			"the file declares a provider by that name"},
-		{"the defaults naming a tenant's provider", "defaults:\n  models: { review: own/big }\n" + withOwn(""), "not declared under providers"},
+		{"the defaults naming an account's provider", "defaults:\n  models: { review: own/big }\n" + withOwn(""), "not declared under providers"},
 		{"an invalid provider", strings.Replace(withOwn(""), "type: openai", "type: gemini", 1), "providers.own.type must be"},
 	}
 	for _, tt := range refused {
@@ -343,13 +343,13 @@ func TestParseRejects(t *testing.T) {
 		want string // substring of the error
 	}{
 		{"empty file", "", "empty"},
-		{"unknown top-level key", minimal + "tenant: []\n", "field tenant not found"},
+		{"unknown top-level key", minimal + "account: []\n", "field account not found"},
 		{"unknown nested key", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme]\n        owner: acme", 1), "field owner not found"},
-		{"no tenants", "tenants: []\n", "at least one tenant"},
+		{"no accounts", "accounts: []\n", "at least one account"},
 		{"bad slug", strings.Replace(minimal, "slug: acme", "slug: Acme Corp", 1), "lowercase"},
-		{"duplicate slug", minimal + strings.TrimPrefix(strings.Replace(minimal, "acme-bot", "acme-bot-2", 1), "\ntenants:\n"), "duplicates tenants[0]"},
-		{"duplicate connection across tenants", minimal + strings.TrimPrefix(strings.Replace(minimal, "slug: acme", "slug: other", 1), "\ntenants:\n"), "names are hook paths"},
-		{"no connections", "tenants:\n  - slug: acme\n    connections: []\n", "at least one connection"},
+		{"duplicate slug", minimal + strings.TrimPrefix(strings.Replace(minimal, "acme-bot", "acme-bot-2", 1), "\naccounts:\n"), "duplicates accounts[0]"},
+		{"duplicate connection across accounts", minimal + strings.TrimPrefix(strings.Replace(minimal, "slug: acme", "slug: other", 1), "\naccounts:\n"), "names are hook paths"},
+		{"no connections", "accounts:\n  - slug: acme\n    connections: []\n", "at least one connection"},
 		{"missing accounts", strings.Replace(minimal, "        accounts: [acme]\n", "", 1), "accounts must list at least one account"},
 		{"blank account", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ' ']", 1), "accounts[1] is empty"},
 		{"account listed twice", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ACME]", 1), `accounts[1] "ACME" is listed twice`},
@@ -373,7 +373,7 @@ func TestParseRejects(t *testing.T) {
 		{"anthropic without key", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_EMPTY }\n" + minimal, "apiKey resolved to an empty value"},
 		{"model without provider", "defaults:\n  models:\n    review: gpt\n" + minimal, "<provider>/<model>"},
 		{"model referencing undeclared provider", "defaults:\n  models:\n    review: nope/gpt\n" + minimal, "not declared under providers"},
-		{"tenant model referencing undeclared provider", strings.Replace(minimal, "slug: acme", "slug: acme\n    models: { review: nope/gpt }", 1), "not declared under providers"},
+		{"account model referencing undeclared provider", strings.Replace(minimal, "slug: acme", "slug: acme\n    models: { review: nope/gpt }", 1), "not declared under providers"},
 		{"negative limit", "defaults:\n  limits:\n    reviewsPerDay: -1\n" + minimal, "must not be negative"},
 		{"negative deadline", strings.Replace(minimal, "slug: acme", "slug: acme\n    runner: { activeDeadlineSeconds: -5 }", 1), "must not be negative"},
 		{"negative retention", "retention:\n  disabledIndexGrace: -1h\n" + minimal, "retention.disabledIndexGrace"},
@@ -382,7 +382,7 @@ func TestParseRejects(t *testing.T) {
 		{"context without a description", "defaults:\n  review: { context: [{ path: db/schema.sql }] }\n" + minimal, "defaults.review.context[0]: description is required"},
 		{"context outside the repository", "defaults:\n  review: { context: [{ path: ../x, description: x }] }\n" + minimal, "escapes the repository"},
 		{"context with a bad glob", "defaults:\n  review: { context: [{ path: x, description: x, paths: ['['] }] }\n" + minimal, "paths[0] \"[\" is not a valid glob"},
-		{"negative settle tenant", strings.Replace(minimal, "slug: acme", "slug: acme\n    settle: -1s", 1), "must not be negative"},
+		{"negative settle account", strings.Replace(minimal, "slug: acme", "slug: acme\n    settle: -1s", 1), "must not be negative"},
 		{"negative settle repository", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, settle: -1s }]", 1), "must not be negative"},
 		{"indexing role removed", "defaults:\n  models:\n    indexing: p/m\n" + minimal, "field indexing not found"},
 		{"bad ignore glob", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, ignore: ['['] }]", 1), "not a valid glob"},
@@ -390,7 +390,7 @@ func TestParseRejects(t *testing.T) {
 		{"filter fails smoke test", "defaults:\n  filter: 'pr.labels[5].name == \"x\"'\n" + minimal, "smoke test"},
 		{"repository filter error", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, filter: 'pr.title' }]", 1), "repositories[0].filter"},
 		{"repository without owner", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: x }]", 1), "owner/repo"},
-		{"repository owner without connection", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: other/x }]", 1), "no connection in tenant"},
+		{"repository owner without connection", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: other/x }]", 1), "no connection in account"},
 		{"duplicate repository", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x }, { name: acme/x }]", 1), "duplicates repositories[0]"},
 	}
 	for _, tt := range tests {
@@ -473,7 +473,7 @@ func TestWatch(t *testing.T) {
 		t.Helper()
 		select {
 		case f := <-applied:
-			t.Fatalf("%s: unexpected apply of %d tenants", why, len(f.Tenants))
+			t.Fatalf("%s: unexpected apply of %d accounts", why, len(f.Accounts))
 		case <-time.After(150 * time.Millisecond):
 		}
 	}
@@ -481,8 +481,8 @@ func TestWatch(t *testing.T) {
 		t.Helper()
 		select {
 		case f := <-applied:
-			if f.Tenants[0].Slug != slug {
-				t.Fatalf("applied slug %q, want %q", f.Tenants[0].Slug, slug)
+			if f.Accounts[0].Slug != slug {
+				t.Fatalf("applied slug %q, want %q", f.Accounts[0].Slug, slug)
 			}
 		case <-time.After(2 * time.Second):
 			t.Fatalf("no apply for %q", slug)
@@ -496,7 +496,7 @@ func TestWatch(t *testing.T) {
 	case <-rejected: // a tick that caught an earlier write half done
 	default:
 	}
-	write("tenants: []\n")
+	write("accounts: []\n")
 	expectNone("an invalid file must not be applied")
 	// A tick can also catch a write half done, so only that the invalid
 	// file was reported is certain, not how many times.
@@ -548,7 +548,7 @@ func TestRepositoryConnection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ten := &f.Tenants[0]
+		ten := &f.Accounts[0]
 		if in := f.ConnectionFor(ten, &ten.Repositories[0]); in == nil || in.Name != "acme-other" {
 			t.Fatalf("ConnectionFor = %v, want acme-other", in)
 		}
@@ -566,7 +566,7 @@ func TestRepositoryConnection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ten := &f.Tenants[0]
+		ten := &f.Accounts[0]
 		for i := range ten.Repositories {
 			if in := f.ConnectionFor(ten, &ten.Repositories[i]); in == nil || in.Name != "acme-bot" {
 				t.Fatalf("ConnectionFor(%s) = %v, want acme-bot", ten.Repositories[i].Name, in)
@@ -583,19 +583,19 @@ func TestRepositoryConnection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ten := &f.Tenants[0]
+		ten := &f.Accounts[0]
 		if f.Settings(ten, "acme-other", "acme/x").Enabled {
 			t.Fatal("acme-other's acme/x should be disabled")
 		}
 		if !f.Settings(ten, "acme-bot", "acme/x").Enabled {
-			t.Fatal("acme-bot's acme/x should keep the tenant's settings")
+			t.Fatal("acme-bot's acme/x should keep the account's settings")
 		}
 	})
 }
 
 // TestPollingIndexingAndRunnerDefaults checks the tuning that lives in the
 // file rather than the environment: its defaults, an explicit zero that
-// turns polling off, and the tenant, defaults.runner, built-in order of a
+// turns polling off, and the account, defaults.runner, built-in order of a
 // runner's deadline and resources.
 func TestPollingIndexingAndRunnerDefaults(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
@@ -606,7 +606,7 @@ func TestPollingIndexingAndRunnerDefaults(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		deadline, resources := f.RunnerFor(&f.Tenants[0])
+		deadline, resources := f.RunnerFor(&f.Accounts[0])
 		if f.PollInterval() != DefaultPollInterval || f.PollLookback() != DefaultPollLookback || f.OnboardWindow() != DefaultOnboardWindow ||
 			deadline != DefaultRunnerDeadline || resources != nil {
 			t.Fatalf("interval=%s lookback=%s window=%d deadline=%s resources=%v",
@@ -630,9 +630,9 @@ defaults:
 		if f.PollInterval() != 0 || f.PollLookback() != time.Hour || f.OnboardWindow() != 8 {
 			t.Fatalf("interval=%s lookback=%s window=%d", f.PollInterval(), f.PollLookback(), f.OnboardWindow())
 		}
-		deadline, resources := f.RunnerFor(&f.Tenants[0])
+		deadline, resources := f.RunnerFor(&f.Accounts[0])
 		if deadline != time.Minute || resources["limits"] == nil {
-			t.Fatalf("tenant runner = %s %v; want the tenant's deadline over the default's resources", deadline, resources)
+			t.Fatalf("account runner = %s %v; want the account's deadline over the default's resources", deadline, resources)
 		}
 		if d, _ := f.RunnerFor(nil); d != 10*time.Minute {
 			t.Fatalf("RunnerFor(nil) = %s, want defaults.runner's 10m", d)
@@ -654,7 +654,7 @@ defaults:
 }
 
 // TestScopePrecedence checks ADR-0010 §2.4: every repository setting can be
-// written at the defaults, a tenant and a repository entry, the narrowest
+// written at the defaults, an account and a repository entry, the narrowest
 // one written wins even when it is empty or zero, and ignore globs add up.
 func TestScopePrecedence(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
@@ -672,8 +672,8 @@ defaults:
   review: { instructions: [ops/rules.md], templates: { summary: ops/summary.tmpl } }
   limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 `
-	tenant := func(tenantKeys, repos string) string {
-		return head + strings.Replace(minimal, "slug: acme", "slug: acme\n"+tenantKeys+"    repositories: ["+repos+"]", 1)
+	account := func(accountKeys, repos string) string {
+		return head + strings.Replace(minimal, "slug: acme", "slug: acme\n"+accountKeys+"    repositories: ["+repos+"]", 1)
 	}
 	parse := func(t *testing.T, doc string) *File {
 		t.Helper()
@@ -684,9 +684,9 @@ defaults:
 		return f
 	}
 
-	t.Run("a tenant inherits what it leaves out", func(t *testing.T) {
-		f := parse(t, tenant("", "{ name: acme/x }"))
-		s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x")
+	t.Run("an account inherits what it leaves out", func(t *testing.T) {
+		f := parse(t, account("", "{ name: acme/x }"))
+		s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x")
 		if s.Filter == nil || s.Settle != 2*time.Minute || s.Mode != ReviewAgentic || s.Agent.MaxSteps != 9 ||
 			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
 			!slices.Equal(s.Review.Instructions, []string{"ops/rules.md"}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
@@ -695,12 +695,12 @@ defaults:
 	})
 
 	t.Run("an empty or zero value written at a narrower scope clears", func(t *testing.T) {
-		f := parse(t, tenant(`    filter: ""
+		f := parse(t, account(`    filter: ""
     settle: 0s
     models: { fallback: "" }
     limits: { tokensPerMonth: 0 }
 `, `{ name: acme/x, review: { instructions: [], templates: { summary: "" } } }`))
-		s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x")
+		s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x")
 		if s.Filter != nil || s.Settle != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
 			s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {
 			t.Fatalf("cleared settings = %+v", s)
@@ -711,26 +711,26 @@ defaults:
 	})
 
 	t.Run("the narrowest scope written wins, field by field", func(t *testing.T) {
-		f := parse(t, tenant(`    mode: single
+		f := parse(t, account(`    mode: single
     agent: { maxSteps: 7 }
     review: { requireSuggestedFix: true }
-    ignore: ["tenant/**"]
+    ignore: ["account/**"]
 `, `{ name: acme/x, models: { review: p/small }, forks: true, agent: { maxTokens: 500 }, ignore: ["repo/**"] }`))
-		s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x")
+		s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x")
 		if s.Mode != ReviewSingle || s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" || !s.Forks {
 			t.Fatalf("settings = %+v", s)
 		}
 		if !s.Review.RequireSuggestedFix || !slices.Equal(s.Review.Instructions, []string{"ops/rules.md"}) {
-			t.Fatalf("review = %+v, want the tenant's strictness over the defaults' instructions", s.Review)
+			t.Fatalf("review = %+v, want the account's strictness over the defaults' instructions", s.Review)
 		}
-		want := append(append([]string(nil), DefaultIgnore...), "defaults/**", "tenant/**", "repo/**")
+		want := append(append([]string(nil), DefaultIgnore...), "defaults/**", "account/**", "repo/**")
 		if !slices.Equal(s.Ignore, want) {
 			t.Fatalf("ignore = %v, want %v", s.Ignore, want)
 		}
 	})
 
 	t.Run("an explicit concurrency must be positive", func(t *testing.T) {
-		if _, err := Parse([]byte(tenant("    limits: { concurrency: 0 }\n", "{ name: acme/x }"))); err == nil ||
+		if _, err := Parse([]byte(account("    limits: { concurrency: 0 }\n", "{ name: acme/x }"))); err == nil ||
 			!strings.Contains(err.Error(), "concurrency must be positive") {
 			t.Fatalf("Parse = %v", err)
 		}
@@ -742,21 +742,21 @@ defaults:
 func TestReviewPresentation(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	parse := func(t *testing.T, tenantKeys, repos string) *File {
+	parse := func(t *testing.T, accountKeys, repos string) *File {
 		t.Helper()
-		f, err := Parse([]byte(strings.Replace(minimal, "slug: acme", "slug: acme\n"+tenantKeys+"    repositories: ["+repos+"]", 1)))
+		f, err := Parse([]byte(strings.Replace(minimal, "slug: acme", "slug: acme\n"+accountKeys+"    repositories: ["+repos+"]", 1)))
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
 		return f
 	}
 	f := parse(t, "", "{ name: acme/x }")
-	if s := f.Settings(&f.Tenants[0], "", ""); !s.Review.InlineComments || s.Review.MinSeverity != "" {
+	if s := f.Settings(&f.Accounts[0], "", ""); !s.Review.InlineComments || s.Review.MinSeverity != "" {
 		t.Fatalf("review = %+v, want every finding inline", s.Review)
 	}
 	f = parse(t, "    review: { minSeverity: important, inlineComments: false }\n", "{ name: acme/x, review: { inlineComments: true } }")
-	if s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x"); !s.Review.InlineComments || s.Review.MinSeverity != SeverityImportant {
-		t.Fatalf("review = %+v, want the tenant's floor with the repository's inline comments", s.Review)
+	if s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x"); !s.Review.InlineComments || s.Review.MinSeverity != SeverityImportant {
+		t.Fatalf("review = %+v, want the account's floor with the repository's inline comments", s.Review)
 	}
 }
 
@@ -777,29 +777,29 @@ defaults:
     agent: { maxSteps: 60, timeout: 20m }
     settle: 30m
 `
-	doc := func(tenantKeys, repos string) string {
-		return head + strings.Replace(minimal, "slug: acme", "slug: acme\n"+tenantKeys+"    repositories: ["+repos+"]", 1)
+	doc := func(accountKeys, repos string) string {
+		return head + strings.Replace(minimal, "slug: acme", "slug: acme\n"+accountKeys+"    repositories: ["+repos+"]", 1)
 	}
 
 	f, err := Parse([]byte(doc("    allow: { models: [p/big] }\n", "{ name: acme/x, allow: { settle: 5m, commands: [] } }")))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x")
+	s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x")
 	a := s.Allow
 	if !slices.Equal(a.Modes, []ReviewMode{ReviewSingle, ReviewAgentic}) || !slices.Equal(a.Models, []ModelRef{"p/big"}) ||
 		a.Commands == nil || len(a.Commands) != 0 || *a.Agent.MaxSteps != 60 || *a.Agent.Timeout != 20*time.Minute ||
 		a.Agent.MaxTokens != nil || *a.Settle != 5*time.Minute {
 		t.Fatalf("allow = %+v", a)
 	}
-	if tenant := f.Settings(&f.Tenants[0], "", ""); *tenant.Allow.Settle != 30*time.Minute || !slices.Equal(tenant.Allow.Commands, []string{"rg", "fd"}) {
-		t.Fatalf("tenant allow = %+v", tenant.Allow)
+	if account := f.Settings(&f.Accounts[0], "", ""); *account.Allow.Settle != 30*time.Minute || !slices.Equal(account.Allow.Commands, []string{"rg", "fd"}) {
+		t.Fatalf("account allow = %+v", account.Allow)
 	}
 
 	tests := []struct {
 		name, yaml, want string
 	}{
-		{"an unknown mode", doc("    allow: { modes: [turbo] }\n", ""), "tenants[0].allow.modes[0] must be single or agentic"},
+		{"an unknown mode", doc("    allow: { modes: [turbo] }\n", ""), "accounts[0].allow.modes[0] must be single or agentic"},
 		{"a model of an undeclared provider", doc("    allow: { models: [q/big] }\n", ""), "allow.models[0] references provider \"q\""},
 		{"a command path", doc("", "{ name: acme/x, allow: { commands: [/bin/sh] } }"), "allow.commands[0] \"/bin/sh\" must be a bare command name"},
 		{"a bound that is not positive", doc("    allow: { agent: { maxTokens: 0 } }\n", ""), "allow.agent bounds must be positive"},
@@ -880,7 +880,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, repo := range []string{"acme/x", "acme/unlisted"} {
-			s := f.Settings(&f.Tenants[0], "acme-bot", repo)
+			s := f.Settings(&f.Accounts[0], "acme-bot", repo)
 			if s.Mode != ReviewSingle || !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
 				t.Fatalf("%s: mode=%q agent=%+v incremental=%+v", repo, s.Mode, s.Agent, s.Incremental)
 			}
@@ -902,7 +902,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s := f.Settings(&f.Tenants[0], "acme-bot", "acme/x")
+		s := f.Settings(&f.Accounts[0], "acme-bot", "acme/x")
 		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, Timeout: 3 * time.Minute,
 			Commands: []string{"curl", "rg"}, CommandTimeout: 10 * time.Second}
 		if s.Mode != ReviewAgentic || !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
@@ -924,7 +924,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		}
 		want := DefaultAgent
 		want.MaxSteps = 7
-		if got := f.Settings(&f.Tenants[0], "acme-bot", "acme/x").Agent; !reflect.DeepEqual(got, want) {
+		if got := f.Settings(&f.Accounts[0], "acme-bot", "acme/x").Agent; !reflect.DeepEqual(got, want) {
 			t.Fatalf("agent = %+v, want %+v", got, want)
 		}
 	})

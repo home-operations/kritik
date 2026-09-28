@@ -26,10 +26,10 @@ export function isOperator(): boolean {
   return session.me?.operator === true;
 }
 
-// canAdmin is whether the viewer may change tenant slug: /me gives an
-// admin the admin role on every tenant, and anyone else member.
+// canAdmin is whether the viewer may change account slug: /me gives an
+// admin the admin role on every account, and anyone else member.
 export function canAdmin(slug: string): boolean {
   const me = session.me;
   if (!me) return false;
-  return me.operator || me.tenants.some((t) => t.slug === slug && t.role === 'admin');
+  return me.operator || me.accounts.some((t) => t.slug === slug && t.role === 'admin');
 }

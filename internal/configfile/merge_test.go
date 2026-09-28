@@ -20,15 +20,15 @@ func (fakeOpener) Open(sealed string) ([]byte, error) {
 	return []byte(plain + "\n"), nil
 }
 
-// dashSpec is a valid dashboard tenant spec for slug with one connection
+// dashSpec is a valid dashboard account spec for slug with one connection
 // named inst.
 func dashSpec(slug, inst string) string {
 	return `{"slug":"` + slug + `","connections":[{"name":"` + inst + `","forge":"github","accounts":["` + slug + `"],` +
 		`"app":{"clientId":"Iv1.` + slug + `","privateKey":{"sealed":"sealed:key-` + slug + `"},"webhookSecret":{"sealed":"sealed:wh-` + slug + `"}}}]}`
 }
 
-func dash(slug, spec string, rev int64) DashboardTenant {
-	return DashboardTenant{Slug: slug, Spec: json.RawMessage(spec), Revision: rev}
+func dash(slug, spec string, rev int64) DashboardAccount {
+	return DashboardAccount{Slug: slug, Spec: json.RawMessage(spec), Revision: rev}
 }
 
 func parseMinimal(t *testing.T) *File {
@@ -51,9 +51,9 @@ func TestParseRejectsSealed(t *testing.T) {
 		want string
 	}{
 		{"connection key", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{ sealed: abc }", 1),
-			"tenants[0].connections[0].app.privateKey: sealed values are only valid in dashboard-managed tenants"},
+			"accounts[0].connections[0].app.privateKey: sealed values are only valid in dashboard-managed accounts"},
 		{"provider key", "providers:\n  p:\n    type: openai\n    apiKey: { sealed: abc }\n" + minimal,
-			"providers.p.apiKey: sealed values are only valid in dashboard-managed tenants"},
+			"providers.p.apiKey: sealed values are only valid in dashboard-managed accounts"},
 		{"egress credential", "egress:\n  allowHosts: [api.example.com]\n  credentials:\n    api.example.com: { sealed: abc }\n" + minimal,
 			"egress.credentials.api.example.com: sealed values are only valid"},
 		{"sealed and env", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{ env: TEST_PRIVATE_KEY, sealed: abc }", 1),
@@ -71,7 +71,7 @@ func TestParseRejectsSealed(t *testing.T) {
 
 func TestMerge(t *testing.T) {
 	file := parseMinimal(t)
-	m, err := Merge(file, []DashboardTenant{dash("beta", dashSpec("beta", "beta-bot"), 3)}, fakeOpener{})
+	m, err := Merge(file, []DashboardAccount{dash("beta", dashSpec("beta", "beta-bot"), 3)}, fakeOpener{})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestMerge(t *testing.T) {
 			t.Fatal("beta-bot not found")
 		}
 		if ten.Slug != "beta" || ten.Origin() != OriginDashboard {
-			t.Fatalf("tenant = %q origin %q", ten.Slug, ten.Origin())
+			t.Fatalf("account = %q origin %q", ten.Slug, ten.Origin())
 		}
 		if in.WebhookSecretValue().Value() != "wh-beta" || in.App.PrivateKeyValue().Value() != "key-beta" {
 			t.Fatalf("secrets = %q %q", in.WebhookSecretValue().Value(), in.App.PrivateKeyValue().Value())
@@ -95,8 +95,8 @@ func TestMerge(t *testing.T) {
 		}
 	})
 
-	t.Run("file tenants keep origin file", func(t *testing.T) {
-		ten, ok := m.Tenant("acme")
+	t.Run("file accounts keep origin file", func(t *testing.T) {
+		ten, ok := m.Account("acme")
 		if !ok || ten.Origin() != OriginFile {
 			t.Fatalf("acme origin = %v", ten)
 		}
@@ -106,8 +106,8 @@ func TestMerge(t *testing.T) {
 	})
 
 	t.Run("file is not mutated", func(t *testing.T) {
-		if len(file.Tenants) != 1 || len(file.Dashboard()) != 0 {
-			t.Fatalf("file tenants = %d dashboard = %d", len(file.Tenants), len(file.Dashboard()))
+		if len(file.Accounts) != 1 || len(file.Dashboard()) != 0 {
+			t.Fatalf("file accounts = %d dashboard = %d", len(file.Accounts), len(file.Dashboard()))
 		}
 		if _, _, ok := file.Connection("beta-bot"); ok {
 			t.Fatal("dashboard connection leaked into the file")
@@ -121,13 +121,13 @@ func TestMerge(t *testing.T) {
 		}
 	})
 
-	t.Run("merging a merged file replaces its dashboard tenants", func(t *testing.T) {
-		again, err := Merge(m, []DashboardTenant{dash("gamma", dashSpec("gamma", "gamma-bot"), 1)}, fakeOpener{})
+	t.Run("merging a merged file replaces its dashboard accounts", func(t *testing.T) {
+		again, err := Merge(m, []DashboardAccount{dash("gamma", dashSpec("gamma", "gamma-bot"), 1)}, fakeOpener{})
 		if err != nil {
 			t.Fatalf("Merge: %v", err)
 		}
-		if _, ok := again.Tenant("beta"); ok || len(again.Tenants) != 2 {
-			t.Fatalf("tenants = %d, beta kept = %v", len(again.Tenants), ok)
+		if _, ok := again.Account("beta"); ok || len(again.Accounts) != 2 {
+			t.Fatalf("accounts = %d, beta kept = %v", len(again.Accounts), ok)
 		}
 	})
 }
@@ -135,7 +135,7 @@ func TestMerge(t *testing.T) {
 func TestMergeHash(t *testing.T) {
 	file := parseMinimal(t)
 	a, b := dash("alpha", dashSpec("alpha", "alpha-bot"), 1), dash("beta", dashSpec("beta", "beta-bot"), 2)
-	hash := func(d ...DashboardTenant) string {
+	hash := func(d ...DashboardAccount) string {
 		t.Helper()
 		m, err := Merge(file, d, fakeOpener{})
 		if err != nil {
@@ -144,20 +144,20 @@ func TestMergeHash(t *testing.T) {
 		return m.Hash()
 	}
 	if got := hash(); got != file.Hash() {
-		t.Fatalf("no dashboard tenants: hash %s, want the file's %s", got, file.Hash())
+		t.Fatalf("no dashboard accounts: hash %s, want the file's %s", got, file.Hash())
 	}
 	if hash(a, b) != hash(b, a) {
 		t.Fatal("hash depends on input order")
 	}
 	if hash(a, b) == file.Hash() {
-		t.Fatal("dashboard tenants do not change the hash")
+		t.Fatal("dashboard accounts do not change the hash")
 	}
 	b2 := b
 	b2.Revision = 3
 	if hash(a, b) == hash(a, b2) {
 		t.Fatal("a revision bump does not change the hash")
 	}
-	// A tenant deleted and created again starts over at revision 1.
+	// An account deleted and created again starts over at revision 1.
 	b3 := dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), "key-beta", "key-rotated", 1), 2)
 	if hash(a, b) == hash(a, b3) {
 		t.Fatal("a different spec at the same revision does not change the hash")
@@ -168,33 +168,33 @@ func TestMergeRejects(t *testing.T) {
 	file := parseMinimal(t)
 	tests := []struct {
 		name string
-		d    DashboardTenant
+		d    DashboardAccount
 		open Opener
 		want string
 	}{
 		{"slug mismatch", dash("beta", dashSpec("gamma", "gamma-bot"), 1), fakeOpener{}, "does not match"},
 		{"env ref", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `{"sealed":"sealed:key-beta"}`, `{"env":"TEST_PRIVATE_KEY"}`, 1), 1),
-			fakeOpener{}, "connections[0].app.privateKey: dashboard-managed tenants take sealed values"},
+			fakeOpener{}, "connections[0].app.privateKey: dashboard-managed accounts take sealed values"},
 		{"file ref", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `{"sealed":"sealed:key-beta"}`, `{"file":"/etc/passwd"}`, 1), 1),
-			fakeOpener{}, "dashboard-managed tenants take sealed values"},
+			fakeOpener{}, "dashboard-managed accounts take sealed values"},
 		{"nil opener", dash("beta", dashSpec("beta", "beta-bot"), 1), nil, "no key to open sealed values"},
 		{"open fails", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), "sealed:key-beta", "garbage", 1), 1),
 			fakeOpener{}, "not sealed by this key"},
 		{"bad filter", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `"connections"`, `"filter":"pr.draft &&","connections"`, 1), 1),
 			fakeOpener{}, "configfile: dashboard[beta].filter: "},
 		{"trailing document", dash("beta", dashSpec("beta", "beta-bot")+"\n---\n{}", 1), fakeOpener{}, "one document"},
-		{"trailing content", dash("beta", dashSpec("beta", "beta-bot")+" x", 1), fakeOpener{}, "tenant spec"},
+		{"trailing content", dash("beta", dashSpec("beta", "beta-bot")+" x", 1), fakeOpener{}, "account spec"},
 		{"unknown key", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `"connections"`, `"nope":1,"connections"`, 1), 1),
 			fakeOpener{}, "field nope not found"},
 		{"empty spec", dash("beta", "", 1), fakeOpener{}, "empty"},
 		{"undeclared provider", dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `"connections"`, `"models":{"review":"x/y"},"connections"`, 1), 1),
 			fakeOpener{}, "not declared under providers"},
 		{"a provider key from the environment", dash("beta", strings.Replace(withProvider(dashSpec("beta", "beta-bot"), ""),
-			`{"sealed":"sealed:sk-own"}`, `{"env":"TEST_WEBHOOK_SECRET"}`, 1), 1), fakeOpener{}, "dashboard-managed tenants take sealed values"},
+			`{"sealed":"sealed:sk-own"}`, `{"env":"TEST_WEBHOOK_SECRET"}`, 1), 1), fakeOpener{}, "dashboard-managed accounts take sealed values"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Merge(file, []DashboardTenant{tt.d}, tt.open)
+			_, err := Merge(file, []DashboardAccount{tt.d}, tt.open)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error %v does not mention %q", err, tt.want)
 			}
@@ -202,7 +202,7 @@ func TestMergeRejects(t *testing.T) {
 			if !ok || me.Slug != tt.d.Slug {
 				t.Fatalf("error %v is not a *MergeError for %q", err, tt.d.Slug)
 			}
-			if len(file.Tenants) != 1 {
+			if len(file.Accounts) != 1 {
 				t.Fatal("file mutated")
 			}
 		})
@@ -216,10 +216,10 @@ func withProvider(spec, fields string) string {
 		`"providers":{"own":{"type":"openai",`+fields+`"apiKey":{"sealed":"sealed:sk-own"}}},"connections"`, 1)
 }
 
-// TestMergeTenantProviders: a dashboard tenant's own provider, on its
+// TestMergeAccountProviders: a dashboard account's own provider, on its
 // type's endpoint or another, serves its models with the key the keyring
 // opens.
-func TestMergeTenantProviders(t *testing.T) {
+func TestMergeAccountProviders(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	file, err := Parse([]byte(minimal))
@@ -228,18 +228,18 @@ func TestMergeTenantProviders(t *testing.T) {
 	}
 	for _, fields := range []string{"", `"baseUrl":"https://llm.example/v1",`} {
 		spec := strings.Replace(withProvider(dashSpec("beta", "beta-bot"), fields), `"connections"`, `"models":{"review":"own/big"},"connections"`, 1)
-		m, err := Merge(file, []DashboardTenant{dash("beta", spec, 1)}, fakeOpener{})
+		m, err := Merge(file, []DashboardAccount{dash("beta", spec, 1)}, fakeOpener{})
 		if err != nil {
 			t.Fatalf("Merge with %q: %v", fields, err)
 		}
-		beta, _ := m.Tenant("beta")
+		beta, _ := m.Account("beta")
 		if p, ok := m.Provider(beta, "own"); !ok || p.APIKeyValue().Value() != "sk-own" {
 			t.Fatalf("Provider(beta, own) = %+v, %v", p, ok)
 		}
 	}
 }
 
-func TestMergeSkipsFileTenantsTheDashboardHolds(t *testing.T) {
+func TestMergeSkipsFileAccountsTheDashboardHolds(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	file, err := Parse([]byte(minimal + `
@@ -255,19 +255,19 @@ func TestMergeSkipsFileTenantsTheDashboardHolds(t *testing.T) {
 	}
 	tests := []struct {
 		name    string
-		d       DashboardTenant
-		skipped []SkippedTenant
+		d       DashboardAccount
+		skipped []SkippedAccount
 		running []string
 	}{
 		{"slug", dash("acme", dashSpec("acme", "other-bot"), 1),
-			[]SkippedTenant{{"acme", `dashboard tenant "acme" already holds the slug`}}, []string{"zeta", "acme"}},
+			[]SkippedAccount{{"acme", `dashboard account "acme" already holds the slug`}}, []string{"zeta", "acme"}},
 		{"connection name", dash("beta", dashSpec("beta", "acme-bot"), 1),
-			[]SkippedTenant{{"acme", `dashboard tenant "beta" already holds connection name "acme-bot"`}}, []string{"zeta", "beta"}},
+			[]SkippedAccount{{"acme", `dashboard account "beta" already holds connection name "acme-bot"`}}, []string{"zeta", "beta"}},
 		{"no clash", dash("beta", dashSpec("beta", "beta-bot"), 1), nil, []string{"acme", "zeta", "beta"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m, err := Merge(file, []DashboardTenant{tt.d}, fakeOpener{})
+			m, err := Merge(file, []DashboardAccount{tt.d}, fakeOpener{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -275,24 +275,24 @@ func TestMergeSkipsFileTenantsTheDashboardHolds(t *testing.T) {
 				t.Errorf("Skipped = %v, want %v", m.Skipped(), tt.skipped)
 			}
 			var running []string
-			for i := range m.Tenants {
-				running = append(running, m.Tenants[i].Slug)
+			for i := range m.Accounts {
+				running = append(running, m.Accounts[i].Slug)
 			}
 			if !slices.Equal(running, tt.running) {
-				t.Errorf("running tenants = %v, want %v", running, tt.running)
+				t.Errorf("running accounts = %v, want %v", running, tt.running)
 			}
 			if !m.Declares("acme") || m.Declares("beta") {
 				t.Error("Declares does not follow the file")
 			}
-			if len(file.Tenants) != 2 {
+			if len(file.Accounts) != 2 {
 				t.Fatal("file mutated")
 			}
 			back, err := Merge(m, nil, fakeOpener{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if acme, ok := back.Tenant("acme"); !ok || acme.Origin() != OriginFile || len(back.Skipped()) != 0 {
-				t.Error("the file tenant does not return once the dashboard tenant is gone")
+			if acme, ok := back.Account("acme"); !ok || acme.Origin() != OriginFile || len(back.Skipped()) != 0 {
+				t.Error("the file account does not return once the dashboard account is gone")
 			}
 		})
 	}
@@ -300,18 +300,18 @@ func TestMergeSkipsFileTenantsTheDashboardHolds(t *testing.T) {
 
 func TestValidateDashboard(t *testing.T) {
 	file := parseMinimal(t)
-	m, err := Merge(file, []DashboardTenant{dash("beta", dashSpec("beta", "beta-bot"), 1)}, fakeOpener{})
+	m, err := Merge(file, []DashboardAccount{dash("beta", dashSpec("beta", "beta-bot"), 1)}, fakeOpener{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	tests := []struct {
 		name string
-		d    DashboardTenant
+		d    DashboardAccount
 		ok   bool
 	}{
 		{"replace existing with a new connection name", dash("beta", dashSpec("beta", "beta-bot-2"), 2), true},
 		{"add another", dash("gamma", dashSpec("gamma", "gamma-bot"), 1), true},
-		{"add one colliding with an existing dashboard tenant", dash("gamma", dashSpec("gamma", "beta-bot"), 1), false},
+		{"add one colliding with an existing dashboard account", dash("gamma", dashSpec("gamma", "beta-bot"), 1), false},
 		{"add one colliding with the file", dash("acme", dashSpec("acme", "x-bot"), 1), false},
 		{"add one taking a file connection name", dash("gamma", dashSpec("gamma", "acme-bot"), 1), false},
 	}
@@ -325,11 +325,11 @@ func TestValidateDashboard(t *testing.T) {
 	}
 }
 
-// A dashboard tenant holding names the file also declares keeps them, and
-// the conflict does not block writes to other tenants.
+// A dashboard account holding names the file also declares keeps them, and
+// the conflict does not block writes to other accounts.
 func TestValidateDashboardKeepsHeldNames(t *testing.T) {
 	file := parseMinimal(t)
-	m, err := Merge(file, []DashboardTenant{dash("acme", dashSpec("acme", "acme-bot"), 1), dash("beta", dashSpec("beta", "beta-bot"), 1)}, fakeOpener{})
+	m, err := Merge(file, []DashboardAccount{dash("acme", dashSpec("acme", "acme-bot"), 1), dash("beta", dashSpec("beta", "beta-bot"), 1)}, fakeOpener{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,13 +338,13 @@ func TestValidateDashboardKeepsHeldNames(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		d    DashboardTenant
+		d    DashboardAccount
 		ok   bool
 	}{
 		{"keep the slug and connection name", dash("acme", dashSpec("acme", "acme-bot"), 2), true},
 		{"rename the connection", dash("acme", dashSpec("acme", "acme-bot-2"), 2), true},
-		{"update another tenant", dash("beta", dashSpec("beta", "beta-bot-2"), 2), true},
-		{"another tenant takes the held connection name", dash("beta", dashSpec("beta", "acme-bot"), 2), false},
+		{"update another account", dash("beta", dashSpec("beta", "beta-bot-2"), 2), true},
+		{"another account takes the held connection name", dash("beta", dashSpec("beta", "acme-bot"), 2), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -362,16 +362,16 @@ func TestOriginValid(t *testing.T) {
 			t.Errorf("%q.Valid() = %v", o, !want)
 		}
 	}
-	var zero Tenant
+	var zero Account
 	if zero.Origin() != OriginFile {
-		t.Fatal("zero tenant origin is not file")
+		t.Fatal("zero account origin is not file")
 	}
 }
 
-func TestDecodeTenantDuration(t *testing.T) {
-	ten, err := DecodeTenant(dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `"connections"`, `"settle":"5m","connections"`, 1), 1))
+func TestDecodeAccountDuration(t *testing.T) {
+	ten, err := DecodeAccount(dash("beta", strings.Replace(dashSpec("beta", "beta-bot"), `"connections"`, `"settle":"5m","connections"`, 1), 1))
 	if err != nil {
-		t.Fatalf("DecodeTenant: %v", err)
+		t.Fatalf("DecodeAccount: %v", err)
 	}
 	if ten.Settle == nil || *ten.Settle != 5*time.Minute {
 		t.Fatalf("settle = %v, want 5m", ten.Settle)

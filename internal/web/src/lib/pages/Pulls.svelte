@@ -22,7 +22,7 @@
   let selected = $state(-1);
   let searchEl = $state<HTMLInputElement | undefined>(undefined);
 
-  const tenant = $derived(`/api/v1/tenants/${encodeURIComponent(slug)}`);
+  const account = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}`);
 
   function query(after?: string): string {
     const p = new URLSearchParams({ state: prState, limit: '50' });
@@ -30,12 +30,12 @@
     if (repoName) p.set('repo', repoName);
     if (q) p.set('q', q);
     if (after) p.set('cursor', after);
-    return `${tenant}/pulls?${p}`;
+    return `${account}/pulls?${p}`;
   }
 
   const paged = new Paged<Pull>(query, (p) => `${p.repository}#${p.number}`);
   const res = paged.first;
-  const repos = new Resource(() => getJSON<Page<Repository>>(`${tenant}/repos?limit=100`));
+  const repos = new Resource(() => getJSON<Page<Repository>>(`${account}/repos?limit=100`));
 
   $effect(() => {
     void paged.load();
@@ -43,7 +43,7 @@
   $effect(() => {
     void repos.load();
   });
-  $effect(() => live((e) => e.tenant === slug && (e.kind === 'review' || e.kind === 'followup'), () => void paged.load()));
+  $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void paged.load()));
   // Debounce the search box so typing doesn't fire a request per keystroke.
   $effect(() => {
     const v = qInput.trim();

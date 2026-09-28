@@ -49,7 +49,7 @@ type UsageSeriesRow struct {
 	Calls            int64
 }
 
-// UsageSeries sums the tenant's usage in [from, to) by group, ordered by
+// UsageSeries sums the account's usage in [from, to) by group, ordered by
 // key.
 func UsageSeries(ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time.Time) ([]UsageSeriesRow, error) {
 	keys, ok := usageKeys[group]
@@ -98,7 +98,7 @@ const (
 	JobDiscarded JobState = "discarded"
 )
 
-// JobRow is one River job of the tenant, with the parts of its arguments
+// JobRow is one River job of the account, with the parts of its arguments
 // the queue view shows.
 type JobRow struct {
 	ID           int64
@@ -127,9 +127,9 @@ const (
 	queueActive   = 500
 )
 
-// ListQueue returns the tenant's review, follow-up and index jobs that
+// ListQueue returns the account's review, follow-up and index jobs that
 // have not finished, oldest first, then the most recently finished ones.
-// River's tables carry no row-level security, so the tenant comes from
+// River's tables carry no row-level security, so the account comes from
 // the transaction's own setting rather than a parameter a caller could get
 // wrong.
 func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
@@ -138,7 +138,7 @@ func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
 		coalesce(j.args->>'head_sha', j.args->>'commit_sha', ''), coalesce(j.args->>'trigger', ''),
 		coalesce((j.args->>'comment_id')::bigint, 0), coalesce(j.errors[array_length(j.errors, 1)]->>'error', '')
 		FROM river_job j LEFT JOIN repositories r ON r.id::text = j.args->>'repository_id'
-		WHERE j.args->>'tenant_id' = current_setting('app.tenant_id', true) AND j.kind IN ('review', 'followup', 'index')`
+		WHERE j.args->>'account_id' = current_setting('app.account_id', true) AND j.kind IN ('review', 'followup', 'index')`
 	rows, err := tx.Query(ctx, `(SELECT `+cols+` AND j.state IN ('available', 'scheduled', 'running', 'retryable')
 			ORDER BY j.scheduled_at, j.id LIMIT $1)
 		UNION ALL

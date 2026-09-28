@@ -1,50 +1,50 @@
 import { test, expect } from './fixtures';
 import * as g from './golden';
-import type { TenantDetail } from '../src/lib/types';
+import type { AccountDetail } from '../src/lib/types';
 
-const T = `#/t/${g.SLUG}`;
+const T = `#/a/${g.SLUG}`;
 
 test.beforeEach(async ({ page }) => {
   await g.mockApi(page, g.defaultApi());
 });
 
 test.describe('overview', () => {
-  test('a single-tenant member stays on the breakdown instead of leaving for the tenant', async ({ page }) => {
+  test('a single-account member stays on the breakdown instead of leaving for the account', async ({ page }) => {
     await page.goto('/#/');
-    await expect(page.locator('.page-head h1')).toHaveText('All tenants');
+    await expect(page.locator('.page-head h1')).toHaveText('All accounts');
     await expect(page).toHaveURL(/#\/$/);
-    const rows = page.locator('table.tenant-breakdown tbody tr');
+    const rows = page.locator('table.account-breakdown tbody tr');
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText(g.tenantSummary.slug);
-    await rows.first().getByRole('link', { name: g.tenantSummary.slug }).click();
-    await expect(page).toHaveURL(new RegExp(`#/t/${g.tenantSummary.slug}$`));
+    await expect(rows.first()).toContainText(g.accountSummary.slug);
+    await rows.first().getByRole('link', { name: g.accountSummary.slug }).click();
+    await expect(page).toHaveURL(new RegExp(`#/a/${g.accountSummary.slug}$`));
   });
 
-  test('several tenants each get a row, and the tiles add them up', async ({ page }) => {
-    await g.mockApi(page, [[/\/api\/v1\/tenants$/, [g.tenantSummary, { ...g.tenantSummary, slug: 'beta' }]], ...g.defaultApi()]);
+  test('several accounts each get a row, and the tiles add them up', async ({ page }) => {
+    await g.mockApi(page, [[/\/api\/v1\/accounts$/, [g.accountSummary, { ...g.accountSummary, slug: 'beta' }]], ...g.defaultApi()]);
     await page.goto('/#/');
-    await expect(page.locator('table.tenant-breakdown tbody tr')).toHaveCount(2);
-    const tiles = page.getByRole('region', { name: 'Across all tenants' });
-    await expect(tiles.locator('.tile').filter({ hasText: 'Reviews, last 7 days' })).toContainText(String(2 * g.tenantSummary.reviews7d));
-    await expect(tiles.locator('.tile').filter({ hasText: 'Repositories' })).toContainText(String(2 * g.tenantSummary.repositories));
+    await expect(page.locator('table.account-breakdown tbody tr')).toHaveCount(2);
+    const tiles = page.getByRole('region', { name: 'Across all accounts' });
+    await expect(tiles.locator('.tile').filter({ hasText: 'Reviews, last 7 days' })).toContainText(String(2 * g.accountSummary.reviews7d));
+    await expect(tiles.locator('.tile').filter({ hasText: 'Repositories' })).toContainText(String(2 * g.accountSummary.repositories));
     await expect(tiles.locator('.tile').filter({ hasText: 'Spend this month' })).toContainText('$3.00');
   });
 });
 
-test('tenant overview shows tiles, recent reviews, queue and repositories', async ({ page }) => {
+test('account overview shows tiles, recent reviews, queue and repositories', async ({ page }) => {
   await page.goto(`/${T}`);
-  await expect(page.locator('.tile').first()).toContainText(String(g.tenantSummary.reviews7d));
+  await expect(page.locator('.tile').first()).toContainText(String(g.accountSummary.reviews7d));
   await expect(page.locator('.tiles')).toContainText('$1.50');
-  await expect(page.getByRole('meter', { name: 'Monthly tokens used' })).toHaveAttribute('aria-valuemax', String(g.tenantSummary.usage.tokensPerMonth));
+  await expect(page.getByRole('meter', { name: 'Monthly tokens used' })).toHaveAttribute('aria-valuemax', String(g.accountSummary.usage.tokensPerMonth));
   await expect(page.locator('#ov-recent').locator('..').locator('..')).toContainText(g.pull.title);
   await expect(page.locator('.chips')).toContainText(`1 ${g.job.state}`);
   await expect(page.getByRole('region', { name: 'Repositories', exact: true }).locator('table.data')).toContainText(g.repoPage.items[0]!.fullName);
 });
 
-test('tenant overview says whether each connection receives webhooks', async ({ page }) => {
-  const detail = g.golden<TenantDetail>('tenant_detail');
+test('account overview says whether each connection receives webhooks', async ({ page }) => {
+  const detail = g.golden<AccountDetail>('account_detail');
   const quiet = { ...detail.connections[0]!, name: 'alpha-quiet', hookPath: '/hooks/alpha-quiet', lastWebhookAt: null };
-  await g.mockApi(page, [[new RegExp(`/api/v1/tenants/${g.SLUG}$`), { ...detail, connections: [...detail.connections, quiet] }], ...g.defaultApi()]);
+  await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connections: [...detail.connections, quiet] }], ...g.defaultApi()]);
   await page.goto(`/${T}`);
   const panel = page.getByRole('region', { name: 'Connections' });
   await expect(panel.getByRole('row').filter({ hasText: detail.connections[0]!.name })).toContainText('receiving');
@@ -80,12 +80,12 @@ test('repository settings say where each comes from and what .kritik.yaml chose'
   const file = page.locator('#repo-file').locator('../..');
   await expect(file).toContainText(rc.filter);
   await expect(file).toContainText(rc.dropped[0]!);
-  await expect(file.getByRole('link', { name: 'the last review' })).toHaveAttribute('href', `#/t/${g.SLUG}/reviews/${rc.reviewId}`);
+  await expect(file.getByRole('link', { name: 'the last review' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/${rc.reviewId}`);
   await expect(page.locator('#repo-bounds').locator('../..')).toContainText(g.repoDetail.settings.allow.models!.join(', '));
 });
 
 test('a repository several connections hold asks which one, then loads it', async ({ page }) => {
-  const detail = new RegExp(`/api/v1/tenants/${g.SLUG}/repos/alpha/one$`);
+  const detail = new RegExp(`/api/v1/accounts/${g.SLUG}/repos/alpha/one$`);
   await page.route(
     (u) => detail.test(u.pathname),
     (route) => {
@@ -209,10 +209,10 @@ test('queue, usage, follow-ups and operator pages render their fixtures', async 
   await expect(page.locator('.followup')).toContainText(`${g.followup.repository}#${g.followup.number}`);
 
   await page.goto('/#/operator');
-  await expect(page.getByRole('row').filter({ hasText: g.operatorTenant.slug })).toContainText('not live');
+  await expect(page.getByRole('row').filter({ hasText: g.operatorAccount.slug })).toContainText('not live');
 });
 
-test('a server-sent event for the tenant refetches the page', async ({ page }) => {
+test('a server-sent event for the account refetches the page', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.route('**/api/events', (route) =>
     route.fulfill({
@@ -246,7 +246,7 @@ test('a signed-in user navigating to sign-in is sent back', async ({ page, mockP
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await page.evaluate(() => (location.hash = '#/signin'));
   await expect(page).toHaveURL(/#\/$/);
-  await expect(page.locator('.page-head h1')).toHaveText('All tenants');
+  await expect(page.locator('.page-head h1')).toHaveText('All accounts');
   await expect(page.locator('.signin-card')).toHaveCount(0);
 });
 

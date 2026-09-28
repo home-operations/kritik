@@ -26,7 +26,7 @@ const (
 )
 
 // hub fans the store's row events out to the server-sent event streams of
-// every principal allowed to read the event's tenant.
+// every principal allowed to read the event's account.
 type hub struct {
 	current   *configfile.Current
 	logger    *slog.Logger
@@ -73,31 +73,31 @@ func (h *hub) unsubscribe(c *client) {
 	h.mu.Unlock()
 }
 
-// slug returns the slug of the tenant with id tenantID in the current
-// file, false for a tenant the file no longer has.
-func (h *hub) slug(tenantID string) (string, bool) {
+// slug returns the slug of the account with id accountID in the current
+// file, false for an account the file no longer has.
+func (h *hub) slug(accountID string) (string, bool) {
 	file := h.current.Get()
-	for i := range file.Tenants {
-		if file.Tenants[i].ID() == tenantID {
-			return file.Tenants[i].Slug, true
+	for i := range file.Accounts {
+		if file.Accounts[i].ID() == accountID {
+			return file.Accounts[i].Slug, true
 		}
 	}
 	return "", false
 }
 
-// publish delivers e to every client that may read its tenant, without
+// publish delivers e to every client that may read its account, without
 // ever blocking: a client whose buffer is full is sent a resync instead.
 // It runs on the store listener's single callback goroutine.
 func (h *hub) publish(e store.Event) {
-	slug, ok := h.slug(e.TenantID)
+	slug, ok := h.slug(e.AccountID)
 	if !ok {
 		return
 	}
-	ev := Event{Kind: e.Kind, Tenant: slug, ID: e.ID, ReviewID: e.ReviewID}
+	ev := Event{Kind: e.Kind, Account: slug, ID: e.ID, ReviewID: e.ReviewID}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for c := range h.clients {
-		if !c.principal.CanRead(e.TenantID) {
+		if !c.principal.CanRead(e.AccountID) {
 			continue
 		}
 		select {

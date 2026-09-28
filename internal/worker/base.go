@@ -26,13 +26,13 @@ type Base struct {
 	Metrics *metrics.Metrics
 }
 
-// tenant finds the job's tenant in the current file. A tenant that has
+// account finds the job's account in the current file. An account that has
 // been removed cancels the job: it will not come back by retrying.
-func (b *Base) tenant(file *configfile.File, id string) (*configfile.Tenant, error) {
-	if t := tenantByID(file, id); t != nil {
+func (b *Base) account(file *configfile.File, id string) (*configfile.Account, error) {
+	if t := accountByID(file, id); t != nil {
 		return t, nil
 	}
-	return nil, river.JobCancel(fmt.Errorf("worker: tenant %s is not in the configuration", id))
+	return nil, river.JobCancel(fmt.Errorf("worker: account %s is not in the configuration", id))
 }
 
 // client resolves a connection by name to its forge client for repo.
@@ -58,18 +58,18 @@ func detach(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), detachTimeout)
 }
 
-// withLease runs fn while holding one of the tenant's slots on key,
+// withLease runs fn while holding one of the account's slots on key,
 // records the wait, and releases the slot afterwards even when the job's
 // context has been cancelled.
 func (b *Base) withLease(
-	ctx context.Context, tenant *configfile.Tenant, key string, slots int, jobID int64, fn func(ctx context.Context) error,
+	ctx context.Context, account *configfile.Account, key string, slots int, jobID int64, fn func(ctx context.Context) error,
 ) error {
 	waited := time.Now()
-	l, err := acquireLease(ctx, b.Store, tenant.ID(), key, slots, jobID)
+	l, err := acquireLease(ctx, b.Store, account.ID(), key, slots, jobID)
 	if err != nil {
 		return err
 	}
-	b.Metrics.LeaseWait(tenant.Slug, key, time.Since(waited))
+	b.Metrics.LeaseWait(account.Slug, key, time.Since(waited))
 	defer b.releaseLease(ctx, b.Logger, l, key)
 	return fn(ctx)
 }

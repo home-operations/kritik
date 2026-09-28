@@ -10,12 +10,12 @@
   import Time from '../components/Time.svelte';
 
   let { slug }: { slug: string } = $props();
-  const res = new Resource(() => getJSON<Job[]>(`/api/v1/tenants/${encodeURIComponent(slug)}/queue`));
+  const res = new Resource(() => getJSON<Job[]>(`/api/v1/accounts/${encodeURIComponent(slug)}/queue`));
 
   $effect(() => {
     void res.load();
   });
-  $effect(() => live((e) => e.tenant === slug, () => void res.load()));
+  $effect(() => live((e) => e.account === slug, () => void res.load()));
   // Job state changes (a retry coming due, a worker picking a job up) don't
   // all emit events, so also poll while the page is open.
   $effect(() => {

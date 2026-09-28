@@ -23,29 +23,29 @@ func testHub(t *testing.T) (*hub, *configfile.File) {
 	return newHub(configfile.NewCurrent(f), slog.New(slog.NewTextHandler(io.Discard, nil))), f
 }
 
-func TestHubPublishFiltersByTenant(t *testing.T) {
+func TestHubPublishFiltersByAccount(t *testing.T) {
 	h, f := testHub(t)
-	alpha, beta := tenantIDOf(t, f, "alpha"), tenantIDOf(t, f, "beta")
-	a := h.subscribe(&auth.Principal{Tenants: map[string]bool{alpha: true}})
-	b := h.subscribe(&auth.Principal{Tenants: map[string]bool{beta: true}})
+	alpha, beta := accountIDOf(t, f, "alpha"), accountIDOf(t, f, "beta")
+	a := h.subscribe(&auth.Principal{Accounts: map[string]bool{alpha: true}})
+	b := h.subscribe(&auth.Principal{Accounts: map[string]bool{beta: true}})
 	op := h.subscribe(&auth.Principal{Operator: true})
 	rid := "r-1"
 
-	h.publish(store.Event{TenantID: alpha, Kind: store.EventReview, ID: "e-1", ReviewID: &rid})
-	h.publish(store.Event{TenantID: "not-in-the-file", Kind: store.EventReview, ID: "e-2"})
+	h.publish(store.Event{AccountID: alpha, Kind: store.EventReview, ID: "e-1", ReviewID: &rid})
+	h.publish(store.Event{AccountID: "not-in-the-file", Kind: store.EventReview, ID: "e-2"})
 
-	want := Event{Kind: store.EventReview, Tenant: "alpha", ID: "e-1", ReviewID: &rid}
+	want := Event{Kind: store.EventReview, Account: "alpha", ID: "e-1", ReviewID: &rid}
 	for name, c := range map[string]*client{"member of alpha": a, "operator": op} {
 		select {
 		case got := <-c.events:
-			if got.Kind != want.Kind || got.Tenant != want.Tenant || got.ID != want.ID || *got.ReviewID != rid {
+			if got.Kind != want.Kind || got.Account != want.Account || got.ID != want.ID || *got.ReviewID != rid {
 				t.Errorf("%s got %+v, want %+v", name, got, want)
 			}
 		default:
 			t.Errorf("%s got no event", name)
 		}
 		if len(c.events) != 0 {
-			t.Errorf("%s got the event of a tenant not in the file", name)
+			t.Errorf("%s got the event of an account not in the file", name)
 		}
 	}
 	if len(b.events) != 0 {
@@ -53,7 +53,7 @@ func TestHubPublishFiltersByTenant(t *testing.T) {
 	}
 
 	h.unsubscribe(a)
-	h.publish(store.Event{TenantID: alpha, Kind: store.EventReview, ID: "e-3"})
+	h.publish(store.Event{AccountID: alpha, Kind: store.EventReview, ID: "e-3"})
 	if len(a.events) != 0 {
 		t.Errorf("unsubscribed client still receives events")
 	}
@@ -62,11 +62,11 @@ func TestHubPublishFiltersByTenant(t *testing.T) {
 func TestHubOverflowAndReconnectResync(t *testing.T) {
 	h, f := testHub(t)
 	h.buffer = 2
-	alpha := tenantIDOf(t, f, "alpha")
-	slow := h.subscribe(&auth.Principal{Tenants: map[string]bool{alpha: true}})
+	alpha := accountIDOf(t, f, "alpha")
+	slow := h.subscribe(&auth.Principal{Accounts: map[string]bool{alpha: true}})
 	other := h.subscribe(&auth.Principal{})
 	for range 5 {
-		h.publish(store.Event{TenantID: alpha, Kind: store.EventRunnerRun, ID: "x"})
+		h.publish(store.Event{AccountID: alpha, Kind: store.EventRunnerRun, ID: "x"})
 	}
 	if len(slow.resync) != 1 {
 		t.Errorf("a full client was not sent a resync")
@@ -114,8 +114,8 @@ func expectResync(t *testing.T, br *bufio.Reader) {
 func TestHubServe(t *testing.T) {
 	h, f := testHub(t)
 	h.heartbeat = 20 * time.Millisecond
-	alpha := tenantIDOf(t, f, "alpha")
-	p := &auth.Principal{Tenants: map[string]bool{alpha: true}}
+	alpha := accountIDOf(t, f, "alpha")
+	p := &auth.Principal{Accounts: map[string]bool{alpha: true}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.serve(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	}))
@@ -133,7 +133,7 @@ func TestHubServe(t *testing.T) {
 	br := bufio.NewReader(resp.Body)
 	expectResync(t, br)
 
-	h.publish(store.Event{TenantID: alpha, Kind: store.EventIndexRun, ID: "ix-1"})
+	h.publish(store.Event{AccountID: alpha, Kind: store.EventIndexRun, ID: "ix-1"})
 	var lines []string
 	for len(lines) < 2 {
 		l := sseLine(t, br)
@@ -148,7 +148,7 @@ func TestHubServe(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(lines[1], "data: ")), &ev); err != nil {
 		t.Fatalf("data %q: %v", lines[1], err)
 	}
-	if ev.Tenant != "alpha" || ev.ID != "ix-1" || ev.Kind != store.EventIndexRun || ev.ReviewID != nil {
+	if ev.Account != "alpha" || ev.ID != "ix-1" || ev.Kind != store.EventIndexRun || ev.ReviewID != nil {
 		t.Errorf("event = %+v", ev)
 	}
 

@@ -24,7 +24,7 @@ import (
 )
 
 const fileYAML = `
-tenants:
+accounts:
   - slug: acme
     connections:
       - name: acme-bot
@@ -37,7 +37,7 @@ tenants:
 // test sets, and a Listen that hands the test its handlers.
 type fakeStore struct {
 	mu       sync.Mutex
-	rows     []configfile.DashboardTenant
+	rows     []configfile.DashboardAccount
 	fp       string
 	err      error
 	handlers chan store.ListenHandlers
@@ -45,7 +45,7 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore { return &fakeStore{handlers: make(chan store.ListenHandlers, 1)} }
 
-func (f *fakeStore) set(fp string, rows ...configfile.DashboardTenant) {
+func (f *fakeStore) set(fp string, rows ...configfile.DashboardAccount) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rows, f.fp, f.err = rows, fp, nil
@@ -57,7 +57,7 @@ func (f *fakeStore) fail(err error) {
 	f.err = err
 }
 
-func (f *fakeStore) DashboardTenants(context.Context) ([]configfile.DashboardTenant, error) {
+func (f *fakeStore) DashboardAccounts(context.Context) ([]configfile.DashboardAccount, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.rows, f.err
@@ -83,9 +83,9 @@ func testKeyring(t *testing.T) *sealbox.Keyring {
 	return k
 }
 
-// dashRow is a dashboard tenant slug with one connection inst, its App's
+// dashRow is a dashboard account slug with one connection inst, its App's
 // private key and webhook secret sealed with k.
-func dashRow(t *testing.T, k *sealbox.Keyring, slug, inst string, rev int64) configfile.DashboardTenant {
+func dashRow(t *testing.T, k *sealbox.Keyring, slug, inst string, rev int64) configfile.DashboardAccount {
 	t.Helper()
 	seal := func(v string) string {
 		s, err := k.Seal([]byte(v))
@@ -96,7 +96,7 @@ func dashRow(t *testing.T, k *sealbox.Keyring, slug, inst string, rev int64) con
 	}
 	spec := `{"slug":"` + slug + `","connections":[{"name":"` + inst + `","forge":"github","accounts":["` + slug + `"],` +
 		`"app":{"clientId":"Iv1.` + slug + `","privateKey":{"sealed":"` + seal("key-"+slug) + `"},"webhookSecret":{"sealed":"` + seal("wh-"+slug) + `"}}}]}`
-	return configfile.DashboardTenant{Slug: slug, Spec: json.RawMessage(spec), Revision: rev}
+	return configfile.DashboardAccount{Slug: slug, Spec: json.RawMessage(spec), Revision: rev}
 }
 
 func writeFile(t *testing.T, path, yaml string) {
@@ -115,7 +115,7 @@ func configPath(t *testing.T) string {
 	return path
 }
 
-// countingHandler counts records at error level, reloads and file tenants
+// countingHandler counts records at error level, reloads and file accounts
 // left out.
 type countingHandler struct{ errors, reloads, skips atomic.Int32 }
 
@@ -127,7 +127,7 @@ func (h *countingHandler) Handle(_ context.Context, r slog.Record) error {
 	switch r.Message {
 	case "configuration reloaded":
 		h.reloads.Add(1)
-	case "configsource: file tenant left out of the running configuration":
+	case "configsource: file account left out of the running configuration":
 		h.skips.Add(1)
 	}
 	return nil
@@ -155,15 +155,15 @@ func TestLoad(t *testing.T) {
 	tests := []struct {
 		name    string
 		keyring *sealbox.Keyring
-		rows    []configfile.DashboardTenant
+		rows    []configfile.DashboardAccount
 		wantErr error
 		want    []string
 	}{
 		{name: "file only", want: []string{"acme-bot"}},
 		{name: "file only, no key needed", keyring: nil, want: []string{"acme-bot"}},
-		{name: "file and dashboard", keyring: k, rows: []configfile.DashboardTenant{dashRow(t, k, "beta", "beta-bot", 1)},
+		{name: "file and dashboard", keyring: k, rows: []configfile.DashboardAccount{dashRow(t, k, "beta", "beta-bot", 1)},
 			want: []string{"acme-bot", "beta-bot"}},
-		{name: "dashboard rows without a key", rows: []configfile.DashboardTenant{dashRow(t, k, "beta", "beta-bot", 1)},
+		{name: "dashboard rows without a key", rows: []configfile.DashboardAccount{dashRow(t, k, "beta", "beta-bot", 1)},
 			wantErr: ErrNoDashboardKey},
 	}
 	for _, tt := range tests {
@@ -189,7 +189,7 @@ func TestLoad(t *testing.T) {
 		})
 	}
 
-	t.Run("a dashboard tenant holding the file's slug leaves the file tenant out", func(t *testing.T) {
+	t.Run("a dashboard account holding the file's slug leaves the file account out", func(t *testing.T) {
 		fs := newFakeStore()
 		fs.set("fp", dashRow(t, k, "acme", "other-bot", 1))
 		reg := prometheus.NewRegistry()
@@ -197,8 +197,8 @@ func TestLoad(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if acme, ok := f.Tenant("acme"); !ok || acme.Origin() != configfile.OriginDashboard || len(f.Skipped()) != 1 {
-			t.Fatalf("tenant acme = %+v, skipped %v; want the dashboard's, with the file's left out", acme, f.Skipped())
+		if acme, ok := f.Account("acme"); !ok || acme.Origin() != configfile.OriginDashboard || len(f.Skipped()) != 1 {
+			t.Fatalf("account acme = %+v, skipped %v; want the dashboard's, with the file's left out", acme, f.Skipped())
 		}
 		if v := mergeGauge(t, reg); v != 1 {
 			t.Fatalf("merge error gauge = %v, want 1", v)
@@ -303,20 +303,20 @@ func TestRun(t *testing.T) {
 		if v := mergeGauge(t, reg); v != 0 {
 			t.Fatalf("merge error gauge = %v after recovery, want 0", v)
 		}
-		if _, ok := current().Tenant("gamma"); ok || !hasConnection(current(), "acme-bot") {
+		if _, ok := current().Account("gamma"); ok || !hasConnection(current(), "acme-bot") {
 			t.Fatal("snapshot after recovery is wrong")
 		}
 	})
 
-	t.Run("a dashboard tenant holding a file connection name leaves that tenant out, warning once", func(t *testing.T) {
+	t.Run("a dashboard account holding a file connection name leaves that account out, warning once", func(t *testing.T) {
 		skips := logs.skips.Load()
 		fs.set("5", beta3, dashRow(t, k, "gamma", "acme-bot", 1))
 		h.OnConfig("gamma")
-		waitFor(t, "gamma", func() bool { _, ok := current().Tenant("gamma"); return ok })
-		if _, ok := current().Tenant("acme"); ok || s.LastError() != nil {
-			t.Fatalf("the file tenant still runs, or the merge failed: %v", s.LastError())
+		waitFor(t, "gamma", func() bool { _, ok := current().Account("gamma"); return ok })
+		if _, ok := current().Account("acme"); ok || s.LastError() != nil {
+			t.Fatalf("the file account still runs, or the merge failed: %v", s.LastError())
 		}
-		want := []configfile.SkippedTenant{{Slug: "acme", Reason: `dashboard tenant "gamma" already holds connection name "acme-bot"`}}
+		want := []configfile.SkippedAccount{{Slug: "acme", Reason: `dashboard account "gamma" already holds connection name "acme-bot"`}}
 		if got := current().Skipped(); !slices.Equal(got, want) {
 			t.Fatalf("Skipped = %v, want %v", got, want)
 		}
@@ -326,7 +326,7 @@ func TestRun(t *testing.T) {
 		waitFor(t, "gamma at revision 2", func() bool { return dashRevision(current(), "gamma") == 2 })
 		fs.set("4", beta3)
 		h.OnConfig("gamma")
-		waitFor(t, "acme back", func() bool { _, ok := current().Tenant("acme"); return ok })
+		waitFor(t, "acme back", func() bool { _, ok := current().Account("acme"); return ok })
 		waitFor(t, "merge gauge cleared", func() bool { return mergeGauge(t, reg) == 0 })
 		if n := logs.skips.Load() - skips; n != 1 {
 			t.Fatalf("warned %d times for one clash, want 1", n)
@@ -360,11 +360,11 @@ func TestRun(t *testing.T) {
 `)
 		waitFor(t, "zeta-bot", func() bool { return hasConnection(current(), "zeta-bot") })
 		if !hasConnection(current(), "beta-bot") {
-			t.Fatal("dashboard tenant lost on a file reload")
+			t.Fatal("dashboard account lost on a file reload")
 		}
 	})
 
-	t.Run("a deleted row drops the tenant", func(t *testing.T) {
+	t.Run("a deleted row drops the account", func(t *testing.T) {
 		fs.set("4")
 		h.OnConfig("beta")
 		waitFor(t, "beta-bot gone", func() bool { return !hasConnection(current(), "beta-bot") })
@@ -375,7 +375,7 @@ func TestRun(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		writeFile(t, path, "tenants: []\n")
+		writeFile(t, path, "accounts: []\n")
 		waitFor(t, "merge gauge", func() bool { return mergeGauge(t, reg) == 1 })
 		// A dashboard change still merges onto the last good file, and does
 		// not clear the gauge the bad file raised.

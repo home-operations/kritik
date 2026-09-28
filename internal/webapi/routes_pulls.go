@@ -14,7 +14,7 @@ import (
 // pullFollowups bounds the follow-ups a pull request's detail lists.
 const pullFollowups = 200
 
-func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	page, err := parsePage(r)
 	if err != nil {
 		return err
@@ -86,7 +86,7 @@ func findPull(r *http.Request, tx pgx.Tx) (store.PullRow, error) {
 	return p, err
 }
 
-func (s *Server) getPull(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) getPull(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
 	var d PullDetail
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
@@ -139,7 +139,7 @@ func followupList(rows []store.FollowupRow) []Followup {
 	return out
 }
 
-func (s *Server) listFollowups(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) listFollowups(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	page, err := parsePage(r)
 	if err != nil {
 		return err
@@ -163,9 +163,9 @@ func (s *Server) listFollowups(w http.ResponseWriter, r *http.Request, t *tenant
 
 // getFollowupTranscript serves the model calls that answered a follow-up
 // comment. A comment id is unique only per forge, so when two of the
-// tenant's pull requests have a follow-up with it, ?repo= (and
+// account's pull requests have a follow-up with it, ?repo= (and
 // ?connection=) must say which is meant.
-func (s *Server) getFollowupTranscript(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) getFollowupTranscript(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	commentID, err := strconv.ParseInt(r.PathValue("commentId"), 10, 64)
 	if err != nil || commentID <= 0 {
 		return errNotFound("follow-up")

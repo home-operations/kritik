@@ -4,7 +4,7 @@
   import { href } from '../router.svelte';
   import { Resource, live, type Dirty } from '../resource.svelte';
   import { tokens, usd, wholeNumber, indexTone, jobTone, splitRepo } from '../format';
-  import type { Job, JobState, Page, Pull, Repository, TenantDetail, TenantSummary } from '../types';
+  import type { Job, JobState, Page, Pull, Repository, AccountDetail, AccountSummary } from '../types';
   import StateView from '../components/StateView.svelte';
   import Meter from '../components/Meter.svelte';
   import Pill from '../components/Pill.svelte';
@@ -15,15 +15,15 @@
   let { slug }: { slug: string } = $props();
 
   interface Data {
-    summary: TenantSummary | undefined;
-    detail: TenantDetail;
+    summary: AccountSummary | undefined;
+    detail: AccountDetail;
     repos: Page<Repository>;
     open: Page<Pull>;
     recent: Pull[];
     queue: Job[];
   }
 
-  const base = $derived(`/api/v1/tenants/${encodeURIComponent(slug)}`);
+  const base = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}`);
 
   type Part = 'summary' | 'repos' | 'pulls' | 'queue';
   const ALL: readonly Part[] = ['summary', 'repos', 'pulls', 'queue'];
@@ -46,9 +46,9 @@
     const prev: Data | undefined = untrack(() => res.data);
     const want = prev ? stale : new Set(ALL);
     stale = new Set();
-    const [tenants, detail, repos, pulls, queue] = await Promise.all([
-      want.has('summary') || !prev ? getJSON<TenantSummary[]>('/api/v1/tenants') : undefined,
-      want.has('summary') || !prev ? getJSON<TenantDetail>(b) : prev.detail,
+    const [accounts, detail, repos, pulls, queue] = await Promise.all([
+      want.has('summary') || !prev ? getJSON<AccountSummary[]>('/api/v1/accounts') : undefined,
+      want.has('summary') || !prev ? getJSON<AccountDetail>(b) : prev.detail,
       want.has('repos') || !prev ? getJSON<Page<Repository>>(`${b}/repos?limit=100`) : prev.repos,
       want.has('pulls') || !prev
         ? Promise.all([getJSON<Page<Pull>>(`${b}/pulls?state=open&limit=100`), getJSON<Page<Pull>>(`${b}/pulls?state=all&limit=50`)])
@@ -62,7 +62,7 @@
           .slice(0, 10)
       : prev!.recent;
     return {
-      summary: tenants ? tenants.find((t) => t.slug === slug) : prev?.summary,
+      summary: accounts ? accounts.find((t) => t.slug === slug) : prev?.summary,
       detail,
       repos,
       open: pulls ? pulls[0] : prev!.open,
@@ -78,7 +78,7 @@
   // except the token tile, which the next review event refreshes.
   $effect(() =>
     live(
-      (e) => e.tenant === slug && e.kind !== 'model_call',
+      (e) => e.account === slug && e.kind !== 'model_call',
       (dirty) => {
         const parts = partsFor(dirty);
         if (!parts.length) return;

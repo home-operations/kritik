@@ -12,36 +12,36 @@ import (
 )
 
 var (
-	// otherTenantRe matches the ways a configfile error names a tenant, so
+	// otherAccountRe matches the ways a configfile error names an account, so
 	// a message about the one being written never names another.
-	otherTenantRe = regexp.MustCompile(`dashboard\[([^\]]*)\]|tenants\[\d+\]|tenant "([^"]*)"`)
-	quotedRe      = regexp.MustCompile(`"([^"]*)"`)
-	installNameRe = regexp.MustCompile(`^connections\[\d+\]\.name$`)
-	yamlLineRe    = regexp.MustCompile(`^line \d+: `)
-	yamlFieldRe   = regexp.MustCompile(`field (\S+) not found`)
-	yamlTypeRe    = regexp.MustCompile(` in type [\w.*\[\]]+`)
+	otherAccountRe = regexp.MustCompile(`dashboard\[([^\]]*)\]|accounts\[\d+\]|account "([^"]*)"`)
+	quotedRe       = regexp.MustCompile(`"([^"]*)"`)
+	installNameRe  = regexp.MustCompile(`^connections\[\d+\]\.name$`)
+	yamlLineRe     = regexp.MustCompile(`^line \d+: `)
+	yamlFieldRe    = regexp.MustCompile(`field (\S+) not found`)
+	yamlTypeRe     = regexp.MustCompile(` in type [\w.*\[\]]+`)
 )
 
 // validateWithout merges dash minus slug onto current's file: whether the
 // configuration is valid before the write being judged.
-func validateWithout(current *configfile.File, dash []configfile.DashboardTenant, slug string, open configfile.Opener) error {
-	dash = slices.DeleteFunc(slices.Clone(dash), func(d configfile.DashboardTenant) bool { return d.Slug == slug })
+func validateWithout(current *configfile.File, dash []configfile.DashboardAccount, slug string, open configfile.Opener) error {
+	dash = slices.DeleteFunc(slices.Clone(dash), func(d configfile.DashboardAccount) bool { return d.Slug == slug })
 	_, err := configfile.Merge(current, dash, open)
 	return err
 }
 
-// mergeFailure turns a failed configfile.ValidateDashboard of the tenant
+// mergeFailure turns a failed configfile.ValidateDashboard of the account
 // slug, decoded as candidate, into the API's answer. Merge reports a clash
-// against whichever tenant sorts later, so an error naming another tenant
+// against whichever account sorts later, so an error naming another account
 // is still the candidate's fault when the configuration validates without
 // it (baseline): both are a 422. Only a configuration already invalid
 // without the write is a 409, as no write can be judged until an operator
 // fixes it.
-func mergeFailure(slug string, candidate *configfile.Tenant, err error, baseline func() error) error {
+func mergeFailure(slug string, candidate *configfile.Account, err error, baseline func() error) error {
 	me, ok := errors.AsType[*configfile.MergeError](err)
 	if ok && me.Slug == slug {
 		path, msg := splitPath(trimConfigfile(me.Err.Error()), slug)
-		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, scrubTenants(msg, slug), pathDetails{Path: path})
+		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, scrubAccounts(msg, slug), pathDetails{Path: path})
 	}
 	if baseline() != nil {
 		return errStatus(http.StatusConflict, CodeConfigBlocked,
@@ -56,7 +56,7 @@ func mergeFailure(slug string, candidate *configfile.Tenant, err error, baseline
 	}
 	theirPath, detail := splitPath(rest, other)
 	path := candidatePath(candidate, theirPath, detail)
-	msg := "conflicts with another tenant: " + scrubTenants(strings.TrimLeft(strings.TrimPrefix(detail, theirPath), ": "), slug)
+	msg := "conflicts with another account: " + scrubAccounts(strings.TrimLeft(strings.TrimPrefix(detail, theirPath), ": "), slug)
 	if path != "" {
 		msg = path + ": " + msg
 	}
@@ -85,9 +85,9 @@ func splitPath(msg, slug string) (path, rest string) {
 	return path, after
 }
 
-// candidatePath maps the path of another tenant's clash onto the
+// candidatePath maps the path of another account's clash onto the
 // candidate's spec: the slug, or a connection by the name it shares.
-func candidatePath(candidate *configfile.Tenant, theirPath, detail string) string {
+func candidatePath(candidate *configfile.Account, theirPath, detail string) string {
 	switch {
 	case theirPath == slugPath.Path:
 		return slugPath.Path
@@ -105,18 +105,18 @@ func candidatePath(candidate *configfile.Tenant, theirPath, detail string) strin
 	return ""
 }
 
-// scrubTenants rewords every mention of a tenant other than slug.
-func scrubTenants(msg, slug string) string {
-	return otherTenantRe.ReplaceAllStringFunc(msg, func(m string) string {
-		sub := otherTenantRe.FindStringSubmatch(m)
+// scrubAccounts rewords every mention of an account other than slug.
+func scrubAccounts(msg, slug string) string {
+	return otherAccountRe.ReplaceAllStringFunc(msg, func(m string) string {
+		sub := otherAccountRe.FindStringSubmatch(m)
 		if (sub[1] != "" && sub[1] == slug) || (sub[2] != "" && sub[2] == slug) {
 			return m
 		}
-		return "another tenant"
+		return "another account"
 	})
 }
 
-// decodeFailure is a spec that does not decode as a tenant: the decoder's
+// decodeFailure is a spec that does not decode as an account: the decoder's
 // message without the line numbers of a document the client never wrote,
 // and the offending field's name as the path when it has one.
 func decodeFailure(err error) error {
@@ -135,7 +135,7 @@ func decodeFailure(err error) error {
 	switch m := yamlFieldRe.FindStringSubmatch(msg); {
 	case m != nil:
 		path = m[1]
-	case strings.Contains(msg, "tenant spec slug"):
+	case strings.Contains(msg, "account spec slug"):
 		path = slugPath.Path
 	}
 	return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, msg, pathDetails{Path: path})

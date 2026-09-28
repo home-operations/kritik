@@ -30,12 +30,12 @@ test.describe('signed-out shell', () => {
         body: JSON.stringify({ code: 'unauthorized', message: 'no session' }),
       }),
     );
-    await page.goto('/#/t/acme/repos');
+    await page.goto('/#/a/acme/repos');
     await expect(page).toHaveURL(/#\/signin$/);
     await expect(page.locator('.signin-card h1')).toHaveText('kritik');
 
     const link = page.locator('.signin-provider');
-    await expect(link).toHaveAttribute('href', /return_to=%23%2Ft%2Facme%2Frepos/);
+    await expect(link).toHaveAttribute('href', /return_to=%23%2Fa%2Facme%2Frepos/);
   });
 
   // "#/signin/" parses as the sign-in route, so a 401 there must neither
@@ -121,12 +121,12 @@ test.describe('sign-in page', () => {
 });
 
 test.describe('signed-in shell', () => {
-  test('shows tenant nav, the admin link, and the user menu for an admin', async ({ page, signIn }) => {
+  test('shows account nav, the admin link, and the user menu for an admin', async ({ page, signIn }) => {
     await signIn();
     await page.goto('/');
 
-    await expect(page.locator('.tenant-switch option')).toHaveText(['acme']);
-    await expect(page.locator('.nav a')).toHaveCount(8); // All tenants, then Overview/Repos/Pulls/Queue/Usage/Follow-ups/Admin
+    await expect(page.locator('.account-switch option')).toHaveText(['acme']);
+    await expect(page.locator('.nav a')).toHaveCount(8); // All accounts, then Overview/Repos/Pulls/Queue/Usage/Follow-ups/Admin
     // The sections are a sidebar left of the page, not part of the topbar.
     await expect(page.locator('.topbar .nav')).toHaveCount(0);
     const side = await page.locator('aside.sidebar').boundingBox();
@@ -140,7 +140,7 @@ test.describe('signed-in shell', () => {
   });
 
   test('hides the admin link for a non-admin member', async ({ page, signIn }) => {
-    await signIn({ ...DEFAULT_ME, tenants: [{ slug: 'acme', role: 'member', managedBy: 'file' }] });
+    await signIn({ ...DEFAULT_ME, accounts: [{ slug: 'acme', role: 'member', managedBy: 'file' }] });
     await page.goto('/');
     await expect(page.locator('.nav a')).toHaveCount(7);
   });
@@ -151,17 +151,17 @@ test.describe('signed-in shell', () => {
     await expect(page.getByRole('navigation', { name: 'Instance' }).getByRole('link', { name: 'Admin console' })).toBeVisible();
   });
 
-  test('switching tenants in the dropdown navigates to that tenant', async ({ page, signIn }) => {
+  test('switching accounts in the dropdown navigates to that account', async ({ page, signIn }) => {
     await signIn({
       ...DEFAULT_ME,
-      tenants: [
+      accounts: [
         { slug: 'acme', role: 'admin', managedBy: 'file' },
         { slug: 'globex', role: 'member', managedBy: 'file' },
       ],
     });
     await page.goto('/');
-    await page.locator('.tenant-switch').selectOption('globex');
-    await expect(page).toHaveURL(/#\/t\/globex$/);
+    await page.locator('.account-switch').selectOption('globex');
+    await expect(page).toHaveURL(/#\/a\/globex$/);
   });
 
   test('a signed-in visit to #/signin redirects to the overview', async ({ page, signIn, mockProviders }) => {
@@ -170,7 +170,7 @@ test.describe('signed-in shell', () => {
     await page.goto('/#/signin');
     await expect(page).toHaveURL(/#\/$/);
     await expect(page.locator('.signin-card')).toHaveCount(0);
-    await expect(page.locator('.tenant-switch')).toBeVisible();
+    await expect(page.locator('.account-switch')).toBeVisible();
   });
 
   test('signing out clears the shell and returns to sign-in', async ({ page, signIn }) => {
@@ -182,7 +182,7 @@ test.describe('signed-in shell', () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
 
     await expect(page).toHaveURL(/#\/signin$/);
-    await expect(page.locator('.tenant-switch')).toHaveCount(0);
+    await expect(page.locator('.account-switch')).toHaveCount(0);
   });
 });
 
@@ -255,9 +255,9 @@ test('a stream the server refuses for a dead session sends the tab to sign-in', 
     streams++;
     return route.fulfill({ status: 401, contentType: 'application/json', body: '{"code":"unauthenticated"}' });
   });
-  await page.goto('/#/t/acme/repos');
+  await page.goto('/#/a/acme/repos');
   await expect(page).toHaveURL(/#\/signin$/, { timeout: 10_000 });
-  await expect(page.locator('.signin-provider')).toHaveAttribute('href', /return_to=%23%2Ft%2Facme%2Frepos/);
+  await expect(page.locator('.signin-provider')).toHaveAttribute('href', /return_to=%23%2Fa%2Facme%2Frepos/);
   const after = streams;
   await page.waitForTimeout(2_500);
   expect(streams).toBe(after);
@@ -266,12 +266,12 @@ test('a stream the server refuses for a dead session sends the tab to sign-in', 
 test('a 401 from a page while signed in stays on sign-in', async ({ page, signIn, mockProviders }) => {
   await signIn();
   await mockProviders();
-  await page.route('**/api/v1/tenants/acme/repos**', (route) =>
+  await page.route('**/api/v1/accounts/acme/repos**', (route) =>
     route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: 'unauthenticated', message: 'no session' }) }),
   );
-  await page.goto('/#/t/acme/repos');
+  await page.goto('/#/a/acme/repos');
   await expect(page).toHaveURL(/#\/signin$/);
   await page.waitForTimeout(500);
   await expect(page).toHaveURL(/#\/signin$/);
-  await expect(page.locator('.tenant-switch')).toHaveCount(0);
+  await expect(page.locator('.account-switch')).toHaveCount(0);
 });

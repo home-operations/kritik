@@ -136,7 +136,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 	runner := pgx.Identifier{runnerRole}.Sanitize()
 	stmts := []string{
 		`GRANT USAGE ON SCHEMA public TO ` + app + `, ` + runner,
-		`GRANT SELECT ON tenants, config_state, schema_migrations TO ` + app,
+		`GRANT SELECT ON accounts, config_state, schema_migrations TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON connections, repositories, model_leases, pull_requests TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, followups, poll_state TO ` + app,
@@ -144,14 +144,14 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON gateway_tokens TO ` + app,
 		// The web dashboard's own tables (ADR-0009): all instance-level (no
 		// RLS, access control lives in web code) except model_calls, which is
-		// tenant content gated by its own tenant_isolation policy.
+		// account content gated by its own account_isolation policy.
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON users, identities, sessions, login_states TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON audit_events, dashboard_tenants TO ` + app,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON audit_events, dashboard_accounts TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON model_calls TO ` + app,
 		// The runner role sees only its own job through the runner_job
 		// policies; it needs the table privileges those policies gate. On
 		// runner_runs it may update only what a runner reports, never the
-		// tenant or review its run belongs to.
+		// account or review its run belongs to.
 		`GRANT SELECT, UPDATE (` + strings.Join(runnerRunColumns, ", ") + `) ON runner_runs TO ` + runner,
 		`GRANT SELECT, INSERT ON context_packs, index_packs, index_staging, agent_runs TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + runner,

@@ -1,6 +1,6 @@
 {
   "kind": "review",
-  "tenant": "alpha",
+  "account": "alpha",
   "id": "rev-1",
   "reviewId": "rev-1"
 }

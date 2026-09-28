@@ -11,13 +11,13 @@
     },
     {
       "key": "filter",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "and",
       "editable": true
     },
     {
       "key": "ignore",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "union",
       "editable": true
     },
@@ -29,127 +29,127 @@
     },
     {
       "key": "forks",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "editable": true
     },
     {
       "key": "models.review",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "choose",
       "editable": true
     },
     {
       "key": "models.fallback",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "choose",
       "editable": true
     },
     {
       "key": "mode",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "choose",
       "editable": true
     },
     {
       "key": "agent.maxSteps",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "atMost",
       "editable": true
     },
     {
       "key": "agent.maxToolOutputBytes",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "atMost",
       "editable": true
     },
     {
       "key": "agent.maxTokens",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "atMost",
       "editable": true
     },
     {
       "key": "agent.timeout",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "atMost",
       "editable": true
     },
     {
       "key": "agent.commands",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "subset",
       "editable": true
     },
     {
       "key": "agent.commandTimeout",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "editable": true
     },
     {
       "key": "settle",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "atMost",
       "editable": true
     },
     {
       "key": "incremental.maxDeltaFiles",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "editable": true
     },
     {
       "key": "review.instructions",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "append",
       "editable": true
     },
     {
       "key": "review.requireSuggestedFix",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "turnOn",
       "editable": true
     },
     {
       "key": "review.templates",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "replace",
       "editable": true
     },
     {
       "key": "review.context",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "append",
       "editable": true
     },
     {
       "key": "review.minSeverity",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "replace",
       "editable": true
     },
     {
       "key": "review.inlineComments",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "repository": "replace",
       "editable": true
     },
     {
       "key": "allow",
-      "scopes": ["defaults", "tenant", "repository"],
+      "scopes": ["defaults", "account", "repository"],
       "editable": true
     },
     {
       "key": "limits",
-      "scopes": ["defaults", "tenant"],
+      "scopes": ["defaults", "account"],
       "editable": true
     },
     {
       "key": "runner",
-      "scopes": ["defaults", "tenant"],
+      "scopes": ["defaults", "account"],
       "editable": true
     }
   ],
   "inherited": {
-    "tenant": {
+    "account": {
       "enabled": true,
       "mode": "agentic",
       "models": {
@@ -204,7 +204,7 @@
         "settleSeconds": 600
       }
     },
-    "tenantSources": {
+    "accountSources": {
       "models.review": "file"
     },
     "repository": {

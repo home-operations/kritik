@@ -44,7 +44,7 @@ func TestMaskProvider(t *testing.T) {
 
 // minimalGatewayFile is the rest of a configuration file the provider
 // above sits in.
-const minimalGatewayFile = `tenants:
+const minimalGatewayFile = `accounts:
   - slug: acme
     connections:
       - name: acme-bot

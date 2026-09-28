@@ -278,7 +278,7 @@ kbd {
   height: 100%;
   background: var(--tone, var(--ok));
 }
-.tenant-breakdown .meter {
+.account-breakdown .meter {
   margin-top: 4px;
 }
 

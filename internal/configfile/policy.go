@@ -11,7 +11,7 @@ type Scope string
 // Operator scopes, broadest first.
 const (
 	ScopeDefaults   Scope = "defaults"
-	ScopeTenant     Scope = "tenant"
+	ScopeAccount    Scope = "account"
 	ScopeRepository Scope = "repository"
 )
 
@@ -57,8 +57,8 @@ type Policy struct {
 }
 
 var (
-	everyScope   = []Scope{ScopeDefaults, ScopeTenant, ScopeRepository}
-	tenantScopes = []Scope{ScopeDefaults, ScopeTenant}
+	everyScope    = []Scope{ScopeDefaults, ScopeAccount, ScopeRepository}
+	accountScopes = []Scope{ScopeDefaults, ScopeAccount}
 )
 
 // The agent limits' keys.
@@ -94,11 +94,11 @@ var Policies = []Policy{
 	{Key: "review.minSeverity", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "review.inlineComments", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "allow", Scopes: everyScope},
-	{Key: "limits", Scopes: tenantScopes},
-	{Key: "runner", Scopes: tenantScopes},
+	{Key: "limits", Scopes: accountScopes},
+	{Key: "runner", Scopes: accountScopes},
 }
 
-// SpecValue is the value spec, one scope's settings (a *Defaults, *Tenant or
+// SpecValue is the value spec, one scope's settings (a *Defaults, *Account or
 // *Repository), writes for key, found by the names the configuration
 // spells, and whether the scope has the key at all. A nested key under an
 // unset block is that block's zero value.

@@ -17,7 +17,7 @@ func TestInstanceSettings(t *testing.T) {
 	f, err := configfile.Parse([]byte(`providers:
   gw: { type: openai, baseUrl: "https://kritik:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
 polling: { interval: 2m }
-tenants:
+accounts:
   - slug: acme
     connections:
       - { name: acme-bot, forge: github, accounts: [acme], app: { clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } } }
@@ -64,7 +64,7 @@ func TestInstanceSettingsAreOperatorOnly(t *testing.T) {
 		return ts.as(p, httptest.NewRequest("GET", "/api/v1/operator/instance", nil))
 	}
 	if w := get(memberOf(t, ts.file, "alpha")); w.Code != http.StatusNotFound {
-		t.Fatalf("tenant admin: status = %d, want 404", w.Code)
+		t.Fatalf("account admin: status = %d, want 404", w.Code)
 	}
 	w := get(&auth.Principal{Operator: true})
 	var rows []InstanceSetting

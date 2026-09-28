@@ -9,7 +9,7 @@ const ROUTES: Route[] = [
   { name: 'overview' },
   { name: 'signin' },
   { name: 'operator' },
-  { name: 'tenant', slug: 'acme' },
+  { name: 'account', slug: 'acme' },
   { name: 'repos', slug: 'acme' },
   { name: 'repo', slug: 'acme', owner: 'kritik', repo: 'kritik' },
   { name: 'pulls', slug: 'acme' },
@@ -23,7 +23,7 @@ const ROUTES: Route[] = [
   { name: 'admin', slug: 'acme', section: 'tokens' },
   // segments containing characters that must round-trip through
   // encodeURIComponent/decodeURIComponent (slashes, spaces, '#').
-  { name: 'tenant', slug: 'a/b c#d' },
+  { name: 'account', slug: 'a/b c#d' },
   { name: 'repo', slug: 'acme', owner: 'weird/owner', repo: 're po' },
   // a connection, naming which of several holding owner/repo is meant.
   { name: 'repo', slug: 'acme', owner: 'kritik', repo: 'kritik', connection: 'acme-other' },
@@ -44,36 +44,36 @@ const MALFORMED: [string, Route][] = [
   ['#/nonsense', { name: 'overview' }],
   ['#/signin/extra', { name: 'overview' }],
   ['#/operator/extra', { name: 'overview' }],
-  ['#/t', { name: 'overview' }],
-  ['#/t/', { name: 'overview' }],
-  ['#/t//repos', { name: 'overview' }],
-  ['#/t//acme', { name: 'overview' }],
+  ['#/a', { name: 'overview' }],
+  ['#/a/', { name: 'overview' }],
+  ['#/a//repos', { name: 'overview' }],
+  ['#/a//acme', { name: 'overview' }],
   // A single trailing slash is tolerated and parses like its absence, even
-  // on a bare tenant slug -- this is no longer "malformed" so much as an
+  // on a bare account slug -- this is no longer "malformed" so much as an
   // accepted alternate spelling.
-  ['#/t/acme/', { name: 'tenant', slug: 'acme' }],
-  ['#/t/acme/repos/only-owner', { name: 'tenant', slug: 'acme' }],
-  ['#/t/acme/repos/o/r/extra', { name: 'tenant', slug: 'acme' }],
+  ['#/a/acme/', { name: 'account', slug: 'acme' }],
+  ['#/a/acme/repos/only-owner', { name: 'account', slug: 'acme' }],
+  ['#/a/acme/repos/o/r/extra', { name: 'account', slug: 'acme' }],
   // Same case as above, but with a tolerated trailing slash: still falls
-  // back to the tenant overview, not the global one.
-  ['#/t/acme/repos/o/r/extra/', { name: 'tenant', slug: 'acme' }],
+  // back to the account overview, not the global one.
+  ['#/a/acme/repos/o/r/extra/', { name: 'account', slug: 'acme' }],
   // A double slash after the slug is downstream of it, so it falls back to
-  // that tenant's overview rather than the global one.
-  ['#/t/acme//repos', { name: 'tenant', slug: 'acme' }],
-  ['#/t/acme/pulls/o/r/abc', { name: 'tenant', slug: 'acme' }],
-  ['#/t/acme/pulls/o/r/-5', { name: 'tenant', slug: 'acme' }],
-  ['#/t/acme/pulls/o/r/3.5', { name: 'tenant', slug: 'acme' }],
-  ['#/t/acme/pulls/o/r/1e2', { name: 'tenant', slug: 'acme' }],
-  ['#/t/acme/queue/extra', { name: 'tenant', slug: 'acme' }],
-  ['#/t/acme/admin/section/extra', { name: 'tenant', slug: 'acme' }],
-  ['#/t/acme/reviews/r1/bogus', { name: 'review', slug: 'acme', id: 'r1' }],
-  ['#/t/acme/reviews/r1/diff/extra', { name: 'tenant', slug: 'acme' }],
-  ['#/t/acme/bogus-section', { name: 'tenant', slug: 'acme' }],
+  // that account's overview rather than the global one.
+  ['#/a/acme//repos', { name: 'account', slug: 'acme' }],
+  ['#/a/acme/pulls/o/r/abc', { name: 'account', slug: 'acme' }],
+  ['#/a/acme/pulls/o/r/-5', { name: 'account', slug: 'acme' }],
+  ['#/a/acme/pulls/o/r/3.5', { name: 'account', slug: 'acme' }],
+  ['#/a/acme/pulls/o/r/1e2', { name: 'account', slug: 'acme' }],
+  ['#/a/acme/queue/extra', { name: 'account', slug: 'acme' }],
+  ['#/a/acme/admin/section/extra', { name: 'account', slug: 'acme' }],
+  ['#/a/acme/reviews/r1/bogus', { name: 'review', slug: 'acme', id: 'r1' }],
+  ['#/a/acme/reviews/r1/diff/extra', { name: 'account', slug: 'acme' }],
+  ['#/a/acme/bogus-section', { name: 'account', slug: 'acme' }],
   // An empty or absent connection names none; only repo and pull routes
   // take one.
-  ['#/t/acme/repos/o/r?connection=', { name: 'repo', slug: 'acme', owner: 'o', repo: 'r' }],
-  ['#/t/acme/pulls/o/r/7?other=1', { name: 'pull', slug: 'acme', owner: 'o', repo: 'r', number: 7 }],
-  ['#/t/acme/queue?connection=x', { name: 'queue', slug: 'acme' }],
+  ['#/a/acme/repos/o/r?connection=', { name: 'repo', slug: 'acme', owner: 'o', repo: 'r' }],
+  ['#/a/acme/pulls/o/r/7?other=1', { name: 'pull', slug: 'acme', owner: 'o', repo: 'r', number: 7 }],
+  ['#/a/acme/queue?connection=x', { name: 'queue', slug: 'acme' }],
 ];
 
 test.describe('routes: parse() on unknown/malformed hashes', () => {

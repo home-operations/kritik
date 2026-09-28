@@ -9,7 +9,7 @@ import (
 // TestPoliciesNameSettings checks every row of the table names a setting
 // each scope it lists has, and no scope it leaves out.
 func TestPoliciesNameSettings(t *testing.T) {
-	specs := map[Scope]any{ScopeDefaults: &Defaults{}, ScopeTenant: &Tenant{}, ScopeRepository: &Repository{}}
+	specs := map[Scope]any{ScopeDefaults: &Defaults{}, ScopeAccount: &Account{}, ScopeRepository: &Repository{}}
 	for _, p := range Policies {
 		for scope, spec := range specs {
 			_, ok := SpecValue(spec, p.Key)
@@ -29,14 +29,14 @@ func TestSpecValue(t *testing.T) {
 	if v, ok := SpecValue(r, "mode"); !ok || v.(ReviewMode) != ReviewAgentic {
 		t.Fatalf("mode = %v, %v", v, ok)
 	}
-	if v, ok := SpecValue(&Tenant{}, "runner"); !ok || v.(*Runner) != nil {
+	if v, ok := SpecValue(&Account{}, "runner"); !ok || v.(*Runner) != nil {
 		t.Fatalf("runner = %v, %v", v, ok)
 	}
-	if v, ok := SpecValue(&Tenant{}, "limits.concurrency"); !ok || v.(*int) != nil {
+	if v, ok := SpecValue(&Account{}, "limits.concurrency"); !ok || v.(*int) != nil {
 		t.Fatalf("limits.concurrency = %v, %v", v, ok)
 	}
-	if _, ok := SpecValue(&Tenant{}, "enabled"); ok {
-		t.Fatal("a tenant has no enabled key")
+	if _, ok := SpecValue(&Account{}, "enabled"); ok {
+		t.Fatal("an account has no enabled key")
 	}
 }
 
@@ -48,7 +48,7 @@ func TestSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := f.Sources(&f.Tenants[0], "acme-bot", "acme/x")
+	s := f.Sources(&f.Accounts[0], "acme-bot", "acme/x")
 	for key, want := range map[string]Source{
 		"settle": SourceFile, "mode": SourceFile, "agent.maxSteps": SourceFile, "enabled": SourceFile,
 		"agent.maxTokens": SourceDefault, "models.review": SourceDefault, "ignore": SourceDefault,
@@ -60,11 +60,11 @@ func TestSources(t *testing.T) {
 	if _, ok := s["skip.onlyPaths"]; ok {
 		t.Error("a setting only the repository has has no operator source")
 	}
-	dash, err := DecodeTenant(DashboardTenant{Slug: "beta", Spec: []byte(`{"slug":"beta","filter":"true","connections":[{"name":"b"}]}`)})
+	dash, err := DecodeAccount(DashboardAccount{Slug: "beta", Spec: []byte(`{"slug":"beta","filter":"true","connections":[{"name":"b"}]}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s := f.Sources(&dash, "b", "beta/x"); s["filter"] != SourceDashboard || s["settle"] != SourceFile {
-		t.Fatalf("dashboard tenant sources = %v", s)
+		t.Fatalf("dashboard account sources = %v", s)
 	}
 }

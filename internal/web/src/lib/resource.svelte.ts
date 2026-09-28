@@ -45,7 +45,7 @@ const KINDS: readonly EventKind[] = ['review', 'runner_run', 'index_run', 'follo
 export type Dirty = ReadonlySet<EventKind | 'resync'>;
 
 function isLiveEvent(v: unknown): v is LiveEvent {
-  return typeof v === 'object' && v !== null && 'kind' in v && 'tenant' in v;
+  return typeof v === 'object' && v !== null && 'kind' in v && 'account' in v;
 }
 
 // live calls refetch whenever a server-sent event matches, and on every

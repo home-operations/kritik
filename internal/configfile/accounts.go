@@ -11,9 +11,9 @@ func (i *Connection) Serves(account string) bool {
 	return slices.ContainsFunc(i.Accounts, func(a string) bool { return strings.EqualFold(a, account) })
 }
 
-// validateAccounts requires at least one account, none blank and none
+// validateAccountNames requires at least one account, none blank and none
 // listed twice, in any case.
-func validateAccounts(accounts []string, where string) error {
+func validateAccountNames(accounts []string, where string) error {
 	if len(accounts) == 0 {
 		return fmt.Errorf("configfile: %s.accounts must list at least one account", where)
 	}

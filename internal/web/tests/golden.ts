@@ -16,8 +16,8 @@ export function golden<V>(name: string): V {
 }
 
 export const me = golden<T.Me>('me');
-export const tenantSummary = golden<T.TenantSummary>('tenant_summary');
-export const operatorTenant = golden<T.OperatorTenant>('operator_tenant');
+export const accountSummary = golden<T.AccountSummary>('account_summary');
+export const operatorAccount = golden<T.OperatorAccount>('operator_account');
 export const instanceSetting = golden<T.InstanceSetting>('instance_setting');
 export const repoPage = golden<T.Page<T.Repository>>('page');
 export const repoDetail = golden<T.RepoDetail>('repo_detail');
@@ -32,12 +32,12 @@ export const followup = golden<T.Followup>('followup');
 export const usageSeries = golden<T.UsageSeries>('usage_series');
 export const liveEvent = golden<T.LiveEvent>('event');
 export const meta = golden<T.Meta>('meta');
-export const tenantConfig = golden<T.TenantConfig>('tenant_config');
-export const tenantWriteResult = golden<T.TenantWriteResult>('tenant_write_result');
+export const accountConfig = golden<T.AccountConfig>('account_config');
+export const accountWriteResult = golden<T.AccountWriteResult>('account_write_result');
 export const auditEvent = golden<T.AuditEvent>('audit_event');
 export const accepted = golden<T.Accepted>('accepted');
 
-export const SLUG = me.tenants[0]!.slug;
+export const SLUG = me.accounts[0]!.slug;
 
 // The golden diff is only the file header; add a hunk whose new-side line
 // 3 is where the golden finding (a.go:3) points.
@@ -70,15 +70,15 @@ export async function mockApi(page: PWPage, table: [RegExp, Body][]): Promise<UR
   return seen;
 }
 
-const t = `/api/v1/tenants/${SLUG}`;
+const t = `/api/v1/accounts/${SLUG}`;
 
 // defaultApi is every read endpoint answered from its golden.
 export function defaultApi(): [RegExp, Body][] {
   return [
     [/\/api\/v1\/meta$/, meta],
     [/\/api\/v1\/me$/, me],
-    [/\/api\/v1\/tenants$/, [tenantSummary]],
-    [/\/api\/v1\/operator\/tenants$/, [operatorTenant]],
+    [/\/api\/v1\/accounts$/, [accountSummary]],
+    [/\/api\/v1\/operator\/accounts$/, [operatorAccount]],
     [/\/api\/v1\/operator\/instance$/, [instanceSetting]],
     [new RegExp(`${t}/repos$`), repoPage],
     [new RegExp(`${t}/repos/alpha/one$`), repoDetail],
@@ -95,7 +95,7 @@ export function defaultApi(): [RegExp, Body][] {
     [new RegExp(`${t}/reviews/rev-1/raw$`), reviewRaw],
     [new RegExp(`${t}/usage$`), usageSeries],
     [new RegExp(`${t}/queue$`), [job]],
-    [new RegExp(`${t}$`), golden<T.TenantDetail>('tenant_detail')],
+    [new RegExp(`${t}$`), golden<T.AccountDetail>('account_detail')],
   ];
 }
 

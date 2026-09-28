@@ -30,9 +30,9 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 
 	want := `# HELP kritik_model_tokens_total Tokens spent, by role and direction (input, cached, output); cached is the part of input the provider served from its prompt cache.
 # TYPE kritik_model_tokens_total counter
-kritik_model_tokens_total{direction="cached",model="openai/gpt-6-sol",role="review",tenant="onedr0p"} 1574
-kritik_model_tokens_total{direction="input",model="openai/gpt-6-sol",role="review",tenant="onedr0p"} 1706
-kritik_model_tokens_total{direction="output",model="openai/gpt-6-sol",role="review",tenant="onedr0p"} 83
+kritik_model_tokens_total{account="onedr0p",direction="cached",model="openai/gpt-6-sol",role="review"} 1574
+kritik_model_tokens_total{account="onedr0p",direction="input",model="openai/gpt-6-sol",role="review"} 1706
+kritik_model_tokens_total{account="onedr0p",direction="output",model="openai/gpt-6-sol",role="review"} 83
 `
 	if err := testutil.GatherAndCompare(reg, strings.NewReader(want), "kritik_model_tokens_total"); err != nil {
 		t.Fatal(err)
