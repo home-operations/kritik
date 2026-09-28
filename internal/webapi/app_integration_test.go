@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/store"
@@ -48,6 +49,11 @@ func fakeGitHub(t *testing.T) *fakeGitHubServer {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/app/installations":
 			_, _ = w.Write([]byte(`[{"id":1,"account":{"login":"org-9","type":"Organization"},"repository_selection":"all"},` +
 				`{"id":2,"account":{"login":"stranger","type":"User"},"repository_selection":"selected"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v3/app/installations/1/access_tokens":
+			exp := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+			_, _ = w.Write([]byte(`{"token":"ghs_1","expires_at":"` + exp + `"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/installation/repositories":
+			_, _ = w.Write([]byte(`{"total_count":1,"repositories":[{"name":"repo-1","full_name":"org-9/repo-1","default_branch":"main"}]}`))
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v3/app/installations/"):
 			f.mu.Lock()
 			f.deleted = append(f.deleted, strings.TrimPrefix(r.URL.Path, "/api/v3/app/installations/"))
@@ -81,10 +87,10 @@ func (e *manageEnv) visit(who, path string) *http.Response {
 	return resp
 }
 
-// startManifest starts a flow as who and returns its state.
-func (e *manageEnv) startManifest(who string, req AppManifestRequest) (string, AppManifestForm) {
+// startManifest starts a flow as the operator and returns its state.
+func (e *manageEnv) startManifest(req AppManifestRequest) (string, AppManifestForm) {
 	e.t.Helper()
-	status, body := e.do(who, "POST", "/api/v1/app/manifests", req)
+	status, body := e.do("operator", "POST", "/api/v1/app/manifests", req)
 	e.expect(status, body, http.StatusOK, "")
 	var form AppManifestForm
 	if err := json.Unmarshal(body, &form); err != nil {
@@ -154,7 +160,7 @@ func TestAppManifestFlow(t *testing.T) {
 		}
 	})
 
-	state, form := e.startManifest("operator", AppManifestRequest{Connection: "mgr-app", Organization: "org-9"})
+	state, form := e.startManifest(AppManifestRequest{Connection: "mgr-app", Organization: "org-9"})
 	if !strings.HasPrefix(form.URL, "https://github.com/organizations/org-9/settings/apps/new?state=") || state == "" {
 		t.Fatalf("form URL = %s", form.URL)
 	}
@@ -207,7 +213,7 @@ func TestAppManifestFlow(t *testing.T) {
 		}
 	})
 	t.Run("an expired code", func(t *testing.T) {
-		state, _ := e.startManifest("operator", AppManifestRequest{Connection: "mgr-late"})
+		state, _ := e.startManifest(AppManifestRequest{Connection: "mgr-late"})
 		if resp := e.visit("operator", "/app/callback?code=stale&state="+url.QueryEscape(state)); resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("callback = %d", resp.StatusCode)
 		}
@@ -226,7 +232,7 @@ func TestAppManifestFlow(t *testing.T) {
 // connection does not serve.
 func TestAppInstallations(t *testing.T) {
 	e := newManageEnv(t)
-	state, _ := e.startManifest("operator", AppManifestRequest{Connection: "mgr-app", Organization: "org-9"})
+	state, _ := e.startManifest(AppManifestRequest{Connection: "mgr-app", Organization: "org-9"})
 	if resp := e.visit("operator", "/app/callback?code=good&state="+url.QueryEscape(state)); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("callback = %d", resp.StatusCode)
 	}
@@ -294,5 +300,45 @@ func TestAppInstallations(t *testing.T) {
 	}
 	if n := e.audits(AuditAppUninstall, "mgr-app/stranger"); n != 1 {
 		t.Fatalf("app.uninstall audits = %d, want 1", n)
+	}
+}
+
+// TestReachedRepositories: the wizard lists what each served account's
+// installation reaches, and registers it so polling and onboarding know it.
+func TestReachedRepositories(t *testing.T) {
+	e := newManageEnv(t)
+	state, _ := e.startManifest(AppManifestRequest{Connection: "mgr-app", Organization: "org-9"})
+	e.visit("operator", "/app/callback?code=good&state="+url.QueryEscape(state))
+	e.collect("operator")
+	e.waitFor("the App's connection", func(f *configfile.File) bool { _, ok := f.Connection("mgr-app"); return ok })
+	// The leader would apply the new account; this suite has none.
+	if err := e.st.ApplyConfig(t.Context(), e.src.Current.Get(), "manage-test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+
+	path := "/api/v1/operator/connections/mgr-app/repositories"
+	status, body := e.do("operator", "GET", path, nil)
+	e.expect(status, body, http.StatusOK, "")
+	var reached []AccountRepositories
+	if err := json.Unmarshal(body, &reached); err != nil {
+		t.Fatal(err)
+	}
+	if len(reached) != 1 || reached[0].Account != "org-9" || !reached[0].Installed || len(reached[0].Repositories) != 1 ||
+		reached[0].Repositories[0].FullName != "org-9/repo-1" {
+		t.Fatalf("reached = %+v", reached)
+	}
+	for i, want := range []int{1, 0} {
+		status, body := e.do("operator", "POST", path, nil)
+		e.expect(status, body, http.StatusOK, "")
+		var res RegisterResult
+		if err := json.Unmarshal(body, &res); err != nil || res.Added != want {
+			t.Fatalf("register %d = %s, want %d added", i, body, want)
+		}
+	}
+	if branch := e.scalar(`SELECT default_branch FROM repositories WHERE name = 'org-9/repo-1'`); branch != "main" {
+		t.Fatalf("default branch = %q", branch)
+	}
+	if status, body := e.do("outsider", "GET", path, nil); status != http.StatusNotFound {
+		t.Fatalf("a member's listing = %d: %s", status, body)
 	}
 }

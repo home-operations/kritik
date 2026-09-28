@@ -1,6 +1,7 @@
 <script lang="ts">
   import { canKeepEmbeddingKey, type EmbeddingDraft } from '../../spec';
   import SecretField from './SecretField.svelte';
+  import KeyTest from './KeyTest.svelte';
 
   interface Props {
     emb: EmbeddingDraft;
@@ -38,4 +39,10 @@
     </label>
     <SecretField label="Embedding API key" path="embedding.apiKey" bind:secret={emb.apiKey} {keepable} invalid={inv('embedding.apiKey')} />
   </div>
+  <KeyTest
+    path="/api/v1/operator/embedding/test"
+    secret={emb.apiKey}
+    {keepable}
+    request={(apiKey) => ({ baseUrl: emb.baseUrl.trim(), model: emb.model.trim(), dims: Number(emb.dims.trim()), apiKey })}
+  />
 </div>

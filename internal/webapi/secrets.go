@@ -25,8 +25,12 @@ const (
 	valueKey  = "value"
 )
 
-// nameKey names a connection or an account entry in the spec.
-const nameKey = "name"
+// nameKey names a connection or an account entry in the spec, and
+// apiKeyKey is a provider's or the embedder's key.
+const (
+	nameKey   = "name"
+	apiKeyKey = "apiKey"
+)
 
 // secretPos is one SecretRef position in a spec.
 type secretPos struct {
@@ -113,10 +117,10 @@ func secretPositions(root map[string]any) []secretPos {
 	}
 	if emb := objectMap(root["embedding"]); emb != nil {
 		out = append(out, secretPos{
-			parent: emb, leaf: "apiKey", where: "embedding.apiKey", logical: "embedding.apiKey",
+			parent: emb, leaf: apiKeyKey, where: "embedding.apiKey", logical: "embedding.apiKey",
 			stored: func(prev map[string]any) (any, *specError) {
 				old := objectMap(prev["embedding"])
-				ref := sealedAt(old, "apiKey")
+				ref := sealedAt(old, apiKeyKey)
 				// The embedder has no type, so its endpoint is its baseUrl alone.
 				if ref != nil && providerEndpoint(old) != providerEndpoint(emb) {
 					return nil, &specError{code: CodeReenterSecret, msg: "the embedder's endpoint changed; enter this key again"}
@@ -138,10 +142,10 @@ func providerSecrets(owner map[string]any, where, logical string, within func(pr
 	for _, name := range slices.Sorted(maps.Keys(providers)) {
 		p := objectMap(providers[name])
 		out = append(out, secretPos{
-			parent: p, leaf: "apiKey", where: where + "." + name + ".apiKey", logical: logical + "." + name + ".apiKey",
+			parent: p, leaf: apiKeyKey, where: where + "." + name + ".apiKey", logical: logical + "." + name + ".apiKey",
 			stored: func(prev map[string]any) (any, *specError) {
 				old := objectMap(objectMap(within(prev)["providers"])[name])
-				ref := sealedAt(old, "apiKey")
+				ref := sealedAt(old, apiKeyKey)
 				if ref != nil && providerEndpoint(old) != providerEndpoint(p) {
 					return nil, &specError{code: CodeReenterSecret, msg: "the provider's type or endpoint changed; enter this key again"}
 				}
@@ -305,7 +309,7 @@ func sealRef(v any, pos secretPos, prev map[string]any) (secretInput, error) {
 func providerEndpoint(p map[string]any) string {
 	typ, _ := p["type"].(string)
 	base, _ := p["baseUrl"].(string)
-	return typ + " " + strings.TrimRight(strings.ToLower(strings.TrimSpace(base)), "/")
+	return typ + " " + endpointOf(base)
 }
 
 // connectionIdentity is who a connection's credentials speak for, and

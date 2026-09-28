@@ -38,6 +38,8 @@ export const instanceConfig = golden<T.InstanceConfig>('instance_config');
 export const appManifestForm = golden<T.AppManifestForm>('app_manifest_form');
 export const appManifestResult = golden<T.AppManifestResult>('app_manifest_result');
 export const appInstallation = golden<T.AppInstallation>('app_installation');
+export const testResult = golden<T.TestResult>('test_result');
+export const setupStatus = golden<T.SetupStatus>('setup_status');
 export const auditEvent = golden<T.AuditEvent>('audit_event');
 export const accepted = golden<T.Accepted>('accepted');
 

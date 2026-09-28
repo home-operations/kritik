@@ -99,6 +99,32 @@ func (a *App) Installations(ctx context.Context) ([]Installation, error) {
 	return out, nil
 }
 
+// Repository is one repository an installation reaches.
+type Repository struct {
+	// Name is the repository's name, FullName "owner/name".
+	Name, FullName, DefaultBranch string
+	Private, Archived             bool
+}
+
+// Repositories lists every repository installation id reaches, with a
+// token of that installation.
+func (a *App) Repositories(ctx context.Context, id int64) ([]Repository, error) {
+	client, err := a.Client(a.InstallationTokens(id))
+	if err != nil {
+		return nil, err
+	}
+	var out []Repository
+	for r, err := range client.Apps.ListReposIter(ctx, &gh.ListOptions{PerPage: 100}) {
+		if err != nil {
+			return nil, fmt.Errorf("github: list installation %d repositories: %w", id, err)
+		}
+		out = append(out, Repository{
+			Name: r.GetName(), FullName: r.GetFullName(), DefaultBranch: r.GetDefaultBranch(), Private: r.GetPrivate(), Archived: r.GetArchived(),
+		})
+	}
+	return out, nil
+}
+
 // Uninstall removes the App's installation id.
 func (a *App) Uninstall(ctx context.Context, id int64) error {
 	if _, err := a.apps.Apps.DeleteInstallation(ctx, id); err != nil {

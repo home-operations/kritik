@@ -131,3 +131,33 @@ func TestInstallationsAndUninstall(t *testing.T) {
 		t.Fatalf("Uninstall = %v, deleted %v", err, deleted)
 	}
 }
+
+func TestRepositories(t *testing.T) {
+	_, pemKey := testKeyPEM(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v3/app/installations/7/access_tokens":
+			exp := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+			_, _ = w.Write([]byte(`{"token":"ghs_7","expires_at":"` + exp + `"}`))
+		case "/api/v3/installation/repositories":
+			if r.Header.Get("Authorization") != "token ghs_7" && r.Header.Get("Authorization") != "Bearer ghs_7" {
+				t.Errorf("listing repositories with %q, want the installation token", r.Header.Get("Authorization"))
+			}
+			_, _ = w.Write([]byte(`{"total_count":2,"repositories":[{"name":"repo-1","full_name":"org-1/repo-1","private":true,"default_branch":"main"},` +
+				`{"name":"old","full_name":"org-1/old","archived":true}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	app, err := NewApp("Iv1.abc", pemKey, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := app.Repositories(t.Context(), 7)
+	want := []Repository{{Name: "repo-1", FullName: "org-1/repo-1", DefaultBranch: "main", Private: true}, {Name: "old", FullName: "org-1/old", Archived: true}}
+	if err != nil || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("Repositories = %+v, %v", got, err)
+	}
+}

@@ -1,0 +1,8 @@
+{
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "model": "voyage-code-3",
+  "dims": 1024,
+  "apiKey": {
+    "value": "sk"
+  }
+}

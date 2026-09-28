@@ -247,3 +247,11 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.key-test {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}

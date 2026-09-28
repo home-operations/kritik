@@ -1,0 +1,13 @@
+{
+  "account": "alpha",
+  "installed": true,
+  "repositories": [
+    {
+      "name": "one",
+      "fullName": "alpha/one",
+      "defaultBranch": "main",
+      "private": true,
+      "archived": false
+    }
+  ]
+}

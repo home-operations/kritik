@@ -1,0 +1,9 @@
+{
+  "webUrl": "https://kritik.example",
+  "hooksUrl": "https://kritik.example/hooks/",
+  "fileConnections": ["alpha-bot"],
+  "connections": ["alpha-bot"],
+  "reviewModel": "openrouter/acme-large",
+  "embedding": false,
+  "canReview": true
+}

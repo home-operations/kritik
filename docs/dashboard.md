@@ -197,6 +197,11 @@ and never shown again. A saved key is kept only while its name, type and
 endpoint stay the same, so a key cannot be sent anywhere it was not
 entered for. Account limits still apply to runs on an account's own key.
 
+"Test key", beside any provider key or the embedder, checks a key before
+it is saved with one cheap call: listing the provider's models, checking
+an OpenRouter key against its key endpoint, or embedding one word at the
+embedder's dimension. The provider's answer is shown as it came.
+
 ## Embeddings
 
 The embedder builds each repository's similar-code index, which reviews

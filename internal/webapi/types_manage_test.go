@@ -39,6 +39,22 @@ func init() {
 			ID: 2, Account: "stranger", AccountType: "User", Served: false,
 			URL: "https://github.com/settings/installations/2",
 		},
+		"setup_status": SetupStatus{
+			WebURL: "https://kritik.example", HooksURL: "https://kritik.example/hooks/",
+			FileConnections: []string{"alpha-bot"}, Connections: []string{"alpha-bot"}, ReviewModel: "openrouter/acme-large", CanReview: true,
+		},
+		"provider_test_request": ProviderTestRequest{
+			Type: configfile.ProviderOpenRouter, APIKey: json.RawMessage(`{"keep":true}`), Name: "own", Account: "github/alpha",
+		},
+		"embedding_test_request": EmbeddingTestRequest{
+			BaseURL: "https://openrouter.ai/api/v1", Model: "voyage-code-3", Dims: 1024, APIKey: json.RawMessage(`{"value":"sk"}`),
+		},
+		"test_result": TestResult{OK: true, Models: []string{"acme-large", "acme-small"}},
+		"account_repositories": AccountRepositories{
+			Account: "alpha", Installed: true,
+			Repositories: []AppRepository{{Name: "one", FullName: "alpha/one", DefaultBranch: "main", Private: true}},
+		},
+		"register_result":      RegisterResult{Added: 3},
 		"app_manifest_request": AppManifestRequest{Connection: "beta-bot", Organization: "beta", Name: "kritik-beta", Public: true},
 		"app_manifest_form": AppManifestForm{
 			URL:      "https://github.com/organizations/beta/settings/apps/new?state=s1",
