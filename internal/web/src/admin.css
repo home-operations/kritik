@@ -23,6 +23,9 @@
   width: min(560px, calc(100vw - 32px));
   box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 15%, transparent);
 }
+.dialog-wide {
+  width: min(820px, calc(100vw - 32px));
+}
 .dialog::backdrop {
   background: color-mix(in srgb, var(--bg) 60%, transparent);
 }
@@ -246,6 +249,42 @@
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.setup-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 16px 0;
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  font-size: 12px;
+  color: var(--muted);
+}
+.setup-steps li::before {
+  counter-increment: step;
+  content: counter(step) '. ';
+}
+.setup-steps li.current {
+  color: var(--text);
+  font-weight: 600;
+}
+.setup-list {
+  margin: 0;
+  padding-left: 18px;
 }
 
 .key-test {

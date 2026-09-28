@@ -15,8 +15,10 @@
     // save that remounted it, or a disabled button that dropped focus to
     // the body): a selector, by default the page title.
     fallback?: string;
+    // wide makes room for a form.
+    wide?: boolean;
   }
-  let { open = $bindable(false), title, children, footer, onclose, fallback = 'main h1' }: Props = $props();
+  let { open = $bindable(false), title, children, footer, onclose, fallback = 'main h1', wide = false }: Props = $props();
   const id = `d${Math.random().toString(36).slice(2, 9)}`;
   let el = $state<HTMLDialogElement | undefined>(undefined);
   let restore: HTMLElement | null = null;
@@ -47,7 +49,7 @@
   }
 </script>
 
-<dialog bind:this={el} class="dialog" aria-modal="true" aria-labelledby={id} onclose={closed}>
+<dialog bind:this={el} class="dialog" class:dialog-wide={wide} aria-modal="true" aria-labelledby={id} onclose={closed}>
   {#if open}
     <h2 class="dialog-title" {id}>{title}</h2>
     <div class="dialog-body">{@render children()}</div>

@@ -128,6 +128,28 @@ When the mapping places nobody:
 
 A mapping that fails to evaluate refuses the sign-in.
 
+## First run
+
+The first admin to sign in to a fresh instance is met by a setup wizard.
+It walks the instance configuration in the order its parts depend on each
+other:
+
+1. **Listener:** the dashboard's URL and where each webhook goes.
+2. **GitHub App:** create one from a manifest, or declare an existing one
+   in the configuration file, then install it. The step moves on once
+   GitHub reports an installation on an account the App serves.
+3. **Model provider:** the instance's key, tested before it is saved, and
+   the default review model.
+4. **Embeddings:** the embedder, which can be skipped.
+5. **Repositories:** registers every repository the App reaches, so kritik
+   polls, and indexes, them before the first webhook arrives.
+
+Each step saves through the same API as the admin console, so closing the
+wizard loses nothing. It reopens at the first step not done, and a banner
+offers to resume it until the instance can review: a running connection
+and a default review model. The steps with nothing to save that were
+passed are remembered in the browser.
+
 ## Instance configuration
 
 Everything but sign-in and the file's connections is the instance
