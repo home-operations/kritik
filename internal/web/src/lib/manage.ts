@@ -2,7 +2,7 @@
 // The server's message is already human-readable; these add what to do
 // next where the code alone says more than the message does.
 import { ApiError } from './api.svelte';
-import type { ConfigSource, ErrorCode, FieldPolicy, ManagementErrorCode, PathDetails } from './types';
+import type { ConfigSource, ErrorCode, ManagementErrorCode, PathDetails } from './types';
 
 const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
   revision_conflict: 'Someone else saved the configuration since you loaded it.',
@@ -35,13 +35,6 @@ const inheritedFrom: Record<ConfigSource, string> = {
 // inheritsHint is what a field left empty takes, and from where.
 export function inheritsHint(value: string, source: ConfigSource | undefined): string {
   return `inherits ${value} from ${inheritedFrom[source ?? 'default']}`;
-}
-
-// fieldEditable says whether the policy lets the caller change key: every
-// setting it covers, itself or nested under it, is editable.
-export function fieldEditable(policy: FieldPolicy[], key: string): boolean {
-  const rows = policy.filter((p) => p.key === key || p.key.startsWith(`${key}.`));
-  return rows.length > 0 && rows.every((p) => p.editable);
 }
 
 export function describe(err: unknown): string {

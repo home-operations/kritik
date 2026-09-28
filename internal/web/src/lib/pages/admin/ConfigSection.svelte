@@ -3,7 +3,7 @@
   import { getJSON, sendJSON } from '../../api.svelte';
   import { setLeaveGuard } from '../../router.svelte';
   import { Resource } from '../../resource.svelte';
-  import { describe, errorPath, fieldEditable, isCode } from '../../manage';
+  import { describe, errorPath, isCode } from '../../manage';
   import { MANAGEMENT_OFF, management } from '../../session.svelte';
   import { toast } from '../../toast.svelte';
   import type { AccountConfig, ConfigWriteResult } from '../../types';
@@ -88,7 +88,6 @@
           {#key epoch}
             <ConfigEditor
               initial={cfg.spec}
-              editable={(key) => fieldEditable(cfg.policy, key)}
               inherited={cfg.inherited}
               {saving}
               {errMessage}

@@ -22,7 +22,7 @@ func init() {
 				`"app":{"clientId":"Iv1.alpha","privateKey":{"set":true},"webhookSecret":{"set":true}}}]}`),
 		},
 		"account_config": AccountConfig{
-			Revision: 3, Editable: true, Policy: fieldPolicies(true),
+			Revision: 3, Editable: true,
 			Inherited: Inherited{
 				Account: goldenRepoSettings, AccountSources: map[string]configfile.Source{"models.review": configfile.SourceDefaults},
 				Repository:        goldenRepoSettings,

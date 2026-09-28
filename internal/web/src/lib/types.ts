@@ -677,16 +677,6 @@ export type RepoRule =
   | 'atMost'
   | 'replace';
 
-// One setting of the policy table: where an admin may write it, what a
-// repository's .kritik.yaml may do with it, and whether the caller may
-// change it on this account.
-export interface FieldPolicy {
-  key: string;
-  scopes: ConfigScope[];
-  repository?: RepoRule;
-  editable: boolean;
-}
-
 // What an account's fields, and its repository entries' fields, resolve to
 // where the spec leaves them out, and where each value comes from.
 export interface Inherited {
@@ -709,7 +699,6 @@ export interface InstanceConfig {
 export interface AccountConfig {
   revision: number;
   editable: boolean;
-  policy: FieldPolicy[];
   inherited: Inherited;
   spec: Record<string, unknown>;
 }

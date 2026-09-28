@@ -7,29 +7,22 @@
   interface Props {
     repo: RepositoryDraft;
     index: number;
-    editable: (key: string) => boolean;
     // inherited is what the entry's fields take from the account when left
     // empty; none when creating.
     inherited?: { settings: RepoSettings; sources: Record<string, ConfigSource> };
     inv: (path: string) => boolean;
     onremove: () => void;
   }
-  let { repo = $bindable(), index, editable, inherited, inv, onremove }: Props = $props();
+  let { repo = $bindable(), index, inherited, inv, onremove }: Props = $props();
   const own = $derived(inherited?.settings);
   const hint = (key: string, value: string, fallback = '') => (inherited ? inheritsHint(value, inherited.sources[key]) : fallback);
   const list = (xs: string[] | undefined) => (xs?.length ? xs.join(', ') : 'none');
   const p = $derived(`repositories[${index}]`);
-  const opHint = 'admin only';
-  const opSet = $derived(
-    (!editable('mode') && repo.mode !== '') ||
-      (!editable('agent') && repo.agent.trim() !== '') ||
-      (!editable('incremental') && repo.maxDeltaFiles.trim() !== ''),
-  );
 </script>
 
 <div class="item-card">
   <div class="item-head">
-    <span class="mono">{repo.name || 'New repository'}{#if opSet} <span class="field-hint">(operator-set fields)</span>{/if}</span>
+    <span class="mono">{repo.name || 'New repository'}</span>
     <button type="button" class="btn btn-small btn-danger" onclick={onremove}>Remove repository</button>
   </div>
   <div class="fields">
@@ -68,20 +61,20 @@
   </div>
   <div class="fields">
     <label class="field">
-      <span>Mode {#if !editable('mode')}<span class="field-hint">({opHint})</span>{/if}</span>
-      <select data-path="{p}.mode" aria-invalid={inv(`${p}.mode`) || undefined} bind:value={repo.mode} disabled={!editable('mode')}>
+      <span>Mode</span>
+      <select data-path="{p}.mode" aria-invalid={inv(`${p}.mode`) || undefined} bind:value={repo.mode}>
         <option value="">{own ? `default: ${own.mode}` : 'default'}</option>
         <option value="single">single</option>
         <option value="agentic">agentic</option>
       </select>
     </label>
     <label class="field">
-      <span>Incremental: max delta files {#if !editable('incremental')}<span class="field-hint">({opHint})</span>{/if}</span>
-      <input inputmode="numeric" data-path="{p}.incremental" aria-invalid={inv(`${p}.incremental`) || undefined} bind:value={repo.maxDeltaFiles} placeholder={hint('incremental.maxDeltaFiles', String(own?.maxDeltaFiles))} disabled={!editable('incremental')} />
+      <span>Incremental: max delta files</span>
+      <input inputmode="numeric" data-path="{p}.incremental" aria-invalid={inv(`${p}.incremental`) || undefined} bind:value={repo.maxDeltaFiles} placeholder={hint('incremental.maxDeltaFiles', String(own?.maxDeltaFiles))} />
     </label>
     <label class="field">
-      <span>Agent (JSON) {#if !editable('agent')}<span class="field-hint">({opHint})</span>{/if}</span>
-      <textarea rows="3" data-path="{p}.agent" aria-invalid={inv(`${p}.agent`) || undefined} bind:value={repo.agent} disabled={!editable('agent')}></textarea>
+      <span>Agent (JSON)</span>
+      <textarea rows="3" data-path="{p}.agent" aria-invalid={inv(`${p}.agent`) || undefined} bind:value={repo.agent}></textarea>
     </label>
   </div>
 </div>
