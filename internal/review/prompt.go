@@ -427,8 +427,8 @@ func splitFiles(diff string) []fileSection {
 
 func pathFromHeader(l string) string {
 	// "diff --git a/x/y b/x/y"
-	if i := strings.LastIndex(l, " b/"); i >= 0 {
-		return l[i+3:]
+	if _, after, ok := strings.CutLast(l, " b/"); ok {
+		return after
 	}
 	return strings.TrimPrefix(l, "diff --git ")
 }
