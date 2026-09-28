@@ -118,7 +118,7 @@ type Spec struct {
 	Head      string `json:"head"`
 	Base      string `json:"base,omitempty"`
 	PriorHead string `json:"priorHead,omitempty"`
-	// Ignore globs, the operator's and .kritik.yaml's, are skipped by the
+	// Ignore globs, the admin's and .kritik.yaml's, are skipped by the
 	// context stages.
 	Ignore []string `json:"ignore,omitempty"`
 	// RepoFiles are repository paths read from the merge base: the files

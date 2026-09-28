@@ -46,7 +46,7 @@ func readRepoConfig(ctx context.Context, client forge.Client, owner, repo, ref s
 }
 
 // effective applies doc, the merge-base .kritik.yaml or nil when there is
-// none, onto the operator's settings (see repoconfig.Merge). The notes say
+// none, onto the admin's settings (see repoconfig.Merge). The notes say
 // which of the file's values were dropped, or why the whole file was
 // ignored.
 func effective(settings configfile.Settings, doc []byte) (Effective, []string) {

@@ -12,31 +12,31 @@ import (
 	"github.com/home-operations/kritik/internal/prfilter"
 )
 
-// Merged is the operator's settings with the merge-base FileName applied.
+// Merged is the admin's settings with the merge-base FileName applied.
 type Merged struct {
 	configfile.Settings
-	// InRepoFilter is the file's own filter, ANDed with the operator's,
+	// InRepoFilter is the file's own filter, ANDed with the admin's,
 	// which ingest has already applied; nil when it sets none.
 	InRepoFilter *prfilter.Program
 	Skip         Skip
 	// Scoped maps each instruction file the repository scoped to the
 	// globs of the changed paths it applies to; see Active.
 	Scoped map[string][]string
-	// Dropped says which of the file's values fell outside the operator's
-	// bounds; the operator's value applies for each.
+	// Dropped says which of the file's values fell outside the admin's
+	// bounds; the admin's value applies for each.
 	Dropped []string
 }
 
 // Merge applies doc, the merge-base FileName or nil when the repository has
-// none, over the operator's settings op (ADR-0010 §2.5). The file narrows
-// what the operator allows (enabled, filter, ignore, skip), appends its
-// instructions and context files to the operator's, may only turn
+// none, over the admin's settings op (ADR-0010 §2.5). The file narrows
+// what an admin allows (enabled, filter, ignore, skip), appends its
+// instructions and context files to the admin's, may only turn
 // requireSuggestedFix on, and replaces the templates, the inline severity
 // floor and whether findings go inline, which grant nothing. It chooses
 // its mode, models, agent limits and commands and settle time within the
-// bounds op.Allow gives it; a bound the operator leaves unset allows only
-// the operator's own mode, models and commands, and limits and a settle
-// time at or below the operator's own. A value outside its bound is
+// bounds op.Allow gives it; a bound an admin leaves unset allows only
+// the admin's own mode, models and commands, and limits and a settle
+// time at or below the admin's own. A value outside its bound is
 // dropped, not clamped, and Dropped says so. A file that does not parse is
 // ignored as a whole: op stands, and the error says why.
 func Merge(doc []byte, op configfile.Settings) (Merged, error) {
@@ -169,7 +169,7 @@ func (m *Merged) choose(f *File, op *configfile.Settings) {
 }
 
 // capped sets *dst to the limit the file wants when it is positive and at
-// most bound, or when bound is nil at most the operator's own, *dst.
+// most bound, or when bound is nil at most the admin's own, *dst.
 func capped[T int | int64 | time.Duration](m *Merged, field string, want, bound, dst *T) {
 	if want == nil {
 		return

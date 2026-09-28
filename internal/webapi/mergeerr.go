@@ -35,7 +35,7 @@ func specPath(msg string) string {
 // isSpecKey reports whether key is a top-level key of the spec.
 func isSpecKey(key string) bool {
 	switch key {
-	case "providers", "defaults", "polling", "indexing", "tools", "retention", "egress", "connections", "accounts":
+	case "providers", "defaults", "polling", "indexing", "tools", "retention", "egress", "embedding", "connections", "accounts":
 		return true
 	}
 	return false

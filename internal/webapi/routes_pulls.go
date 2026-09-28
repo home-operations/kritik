@@ -161,9 +161,9 @@ func (s *Server) listFollowups(w http.ResponseWriter, r *http.Request, t *accoun
 }
 
 // getFollowupTranscript serves the model calls that answered a follow-up
-// comment. A comment id is unique only per forge, so when two of the
-// account's pull requests have a follow-up with it, ?repo= (and
-// ?connection=) must say which is meant.
+// comment. GitHub numbers conversation and inline comments apart, so when
+// two of the account's pull requests have a follow-up with the id, ?repo=
+// must say which is meant.
 func (s *Server) getFollowupTranscript(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	commentID, err := strconv.ParseInt(r.PathValue("commentId"), 10, 64)
 	if err != nil || commentID <= 0 {

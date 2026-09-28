@@ -1,7 +1,8 @@
 // Package store owns kritik's Postgres access: the two connection pools,
 // the startup assertion that keeps row-level security honest, schema
-// migrations, the leader lock, account-scoped transactions, and the sync of
-// the configuration file into file-managed rows.
+// migrations, the leader lock, account-scoped transactions, and applying
+// the running configuration, the file's and the dashboard's, to the rows
+// it declares.
 package store
 
 import (
@@ -140,7 +141,7 @@ func (s *Store) assertApplicationRole(ctx context.Context) error {
 var ErrOwnerSuperuser = errors.New("store: owner role must not be a superuser")
 
 // assertOwnerRole refuses a superuser as owner: the owner is meant to own the
-// tables and nothing more, and the extension is the operator's job.
+// tables and nothing more, and the extension is the admin's job.
 func assertOwnerRole(ctx context.Context, owner *pgxpool.Pool) error {
 	var super bool
 	if err := owner.QueryRow(ctx, `SELECT rolsuper FROM pg_roles WHERE rolname = current_user`).Scan(&super); err != nil {

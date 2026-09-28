@@ -2,16 +2,17 @@ package configfile
 
 import "sync"
 
-// Current holds the last good File and lets one consumer wait for the next
-// replacement. It is the hand-off between Watch, which produces files, and
-// the leader, which applies them.
+// Current holds the last good merged File and lets one consumer wait for
+// the next replacement. It is the hand-off between the configuration
+// source, which merges the file with the instance spec, and the leader,
+// which applies what it merged.
 type Current struct {
 	mu      sync.Mutex
 	file    *File
 	changed chan struct{}
 }
 
-// NewCurrent starts from the file loaded at startup.
+// NewCurrent starts from the configuration loaded at startup.
 func NewCurrent(f *File) *Current {
 	return &Current{file: f, changed: make(chan struct{})}
 }

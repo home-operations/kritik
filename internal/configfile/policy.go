@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-// Scope is where the operator writes a repository setting.
+// Scope is where an admin writes a repository setting.
 type Scope string
 
-// Operator scopes, broadest first.
+// Admin scopes, broadest first.
 const (
 	ScopeDefaults   Scope = "defaults"
 	ScopeAccount    Scope = "account"
@@ -27,33 +27,33 @@ const (
 	RepoTurnOff RepoRule = "turnOff"
 	// RepoTurnOn may only turn the setting on.
 	RepoTurnOn RepoRule = "turnOn"
-	// RepoAnd is ANDed with the operator's.
+	// RepoAnd is ANDed with the admin's.
 	RepoAnd RepoRule = "and"
-	// RepoUnion is added to the operator's.
+	// RepoUnion is added to the admin's.
 	RepoUnion RepoRule = "union"
-	// RepoAppend follows the operator's.
+	// RepoAppend follows the admin's.
 	RepoAppend RepoRule = "append"
-	// RepoChoose picks one value the operator's allow bound lists.
+	// RepoChoose picks one value an admin's allow bound lists.
 	RepoChoose RepoRule = "choose"
-	// RepoSubset picks some of the values the operator's allow bound lists.
+	// RepoSubset picks some of the values an admin's allow bound lists.
 	RepoSubset RepoRule = "subset"
-	// RepoAtMost is at most the operator's allow bound.
+	// RepoAtMost is at most an admin's allow bound.
 	RepoAtMost RepoRule = "atMost"
-	// RepoReplace replaces the operator's; it grants nothing.
+	// RepoReplace replaces the admin's; it grants nothing.
 	RepoReplace RepoRule = "replace"
 )
 
 // Policy is one row of the table that says where a repository setting is
-// written (ADR-0010 §2.4, §2.7): the scopes the operator writes it at, and
-// what the repository's .kritik.yaml may do with it. The dashboard serves it
-// for the UI to render from, and the keys the repository file takes follow
-// it. Instance settings are the file's alone and not in it.
+// written (ADR-0010 §2.4, §2.7): the scopes an admin writes it at, and what
+// the repository's .kritik.yaml may do with it. Sources reports where each
+// setting it lists comes from, and the keys the repository file takes
+// follow it. Instance-wide settings are not in it.
 type Policy struct {
 	// Key is the setting as the configuration spells it; a dotted key is
 	// nested.
-	Key        string   `json:"key"`
-	Scopes     []Scope  `json:"scopes"`
-	Repository RepoRule `json:"repository,omitempty"`
+	Key        string
+	Scopes     []Scope
+	Repository RepoRule
 }
 
 var (

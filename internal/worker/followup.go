@@ -131,7 +131,7 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
-// run qualifies the mention (§2.7), gathers the thread and the review's
+// run qualifies the mention (ADR-0002 §2.7), gathers the thread and the review's
 // record, asks the model, and posts the reply. Nothing after the reply is
 // posted may fail the job: a retry would answer twice.
 func (f *followUp) run(ctx context.Context) (string, error) {

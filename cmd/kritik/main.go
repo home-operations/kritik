@@ -124,8 +124,8 @@ func run() error {
 	defer st.Close()
 
 	// The runner gets everything it needs from its Job spec; every other role
-	// is driven by the configuration file, merged with the dashboard's
-	// accounts, and must not start without it.
+	// is driven by the configuration file merged with the instance spec the
+	// dashboard keeps, and must not start without it.
 	var current *configfile.Current
 	var exec executor.Executor
 	if role != config.RoleRunner {
@@ -488,8 +488,8 @@ type retentionStore interface {
 }
 
 // retentionSweep runs once immediately, then every interval until ctx ends,
-// deleting model-call transcripts older than the current file's retention
-// window and the indexes of repositories disabled for longer than its
+// deleting model-call transcripts older than the current configuration's
+// retention window and the indexes of repositories disabled for longer than its
 // disabledIndexGrace (owner pool, bypassing row-level security), and
 // expired dashboard sessions (app pool). A sweep failure is logged, never
 // fatal: it just leaves stale rows for the next tick.

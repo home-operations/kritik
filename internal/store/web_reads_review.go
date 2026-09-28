@@ -276,8 +276,9 @@ func ReviewModelCalls(ctx context.Context, tx pgx.Tx, reviewID string) ([]transc
 }
 
 // FollowupModelCalls returns the model calls that answered a follow-up
-// comment on one pull request. A comment id is only unique per forge, so
-// the pull request pins which comment is meant: a call recorded against a
+// comment on one pull request. GitHub numbers conversation and inline
+// comments apart, so a comment id alone may name two comments, and the pull
+// request pins which one is meant: a call recorded against a
 // review must belong to one of its reviews, and one recorded against no
 // review is kept only when no other pull request of the account has a
 // follow-up with that comment id.

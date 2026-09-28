@@ -4,6 +4,7 @@
 // in. Row-level security on pull_requests/reviews already scopes every query
 // here to the transaction's account; the explicit account_id predicates below
 // are defense in depth, matching the rest of the codebase.
+
 package jobs
 
 import (

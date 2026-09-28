@@ -24,6 +24,8 @@ func TestSpecFailure(t *testing.T) {
 	}{
 		{name: "a key of the spec", err: merge(`configfile: providers.p.type must be openai, got "x"`), baseline: fine,
 			status: 422, code: CodeInvalidSpec, path: "providers.p.type", message: `providers.p.type must be openai, got "x"`},
+		{name: "a bare key of the spec", err: merge("configfile: embedding: cannot open the key"), baseline: fine,
+			status: 422, code: CodeInvalidSpec, path: "embedding", message: "embedding: cannot open the key"},
 		{name: "a message naming no key", err: merge("configfile: no way to sign in"), baseline: fine,
 			status: 422, code: CodeInvalidSpec, message: "no way to sign in"},
 		{name: "a key of the account's entry", account: true, err: merge(`configfile: accounts[2].models.review references provider "q"`),

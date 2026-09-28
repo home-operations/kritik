@@ -271,7 +271,7 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 	return nil
 }
 
-// repoConfig applies the .kritik.yaml a review read to the operator's
+// repoConfig applies the .kritik.yaml a review read to the admin's
 // settings as they are now; nil when no review has read one.
 func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfig {
 	if row == nil {
@@ -378,17 +378,11 @@ func (s *Server) listInstanceSettings(w http.ResponseWriter, r *http.Request) er
 }
 
 // instanceSettings are the settings no account owns: this process's
-// environment, then the file's instance blocks.
+// environment, then the running connections, those left out, and sign-in.
 func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting {
 	out := []InstanceSetting{}
 	add := func(section, key, value string, source configfile.Source) {
 		out = append(out, InstanceSetting{Section: section, Key: key, Value: value, Source: source})
-	}
-	from := func(set bool) configfile.Source {
-		if set {
-			return configfile.SourceFile
-		}
-		return configfile.SourceDefault
 	}
 	for _, e := range env {
 		source := configfile.SourceDefault
@@ -417,17 +411,20 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 	a := f.Auth
 	// An auth key an environment variable set shows as coming from it.
 	authFrom := func(path string, set bool) configfile.Source {
-		if a.FromEnv(path) {
+		switch {
+		case a.FromEnv(path):
 			return configfile.SourceEnv
+		case set:
+			return configfile.SourceFile
 		}
-		return from(set)
+		return configfile.SourceDefault
 	}
 	add("auth", "sessionTTL", a.SessionTTLOrDefault().String(), authFrom("sessionTTL", a.SessionTTL > 0))
-	var admin []string
-	if user, _, ok := a.AdminUser(); ok {
-		admin = []string{user}
+	admin, _, local := a.AdminUser()
+	if !local {
+		admin = "none"
 	}
-	add("auth", "admin", listOrNone(admin), authFrom("admin.password", admin != nil))
+	add("auth", "admin", admin, authFrom("admin.password", local))
 	for _, s := range a.SignIns() {
 		value := s.Label()
 		if s.Issuer != "" {
@@ -450,11 +447,4 @@ func withoutCredentials(s string) string {
 	}
 	u.User = nil
 	return u.String() + " (credentials hidden)"
-}
-
-func listOrNone(xs []string) string {
-	if len(xs) == 0 {
-		return "none"
-	}
-	return strings.Join(xs, ", ")
 }

@@ -2,13 +2,14 @@
 // which pull requests kritik reviews (the `filter` setting in the configuration file).
 //
 // The expression sees a single variable, pr — a map of the PR's fields. The
-// caller supplies that map (the server builds it from api.PR), so this package
-// stays decoupled from the forge model and is testable with plain maps. An
+// caller supplies that map (ingest builds it from the webhook's pull request,
+// the worker from the stored row), so this package stays decoupled from the
+// forge model and is testable with plain maps. An
 // expression must evaluate to a boolean; the program is type-checked once at
 // Compile so a malformed filter fails fast at startup rather than per request.
 //
 // CEL is the right tool here: it's a safe, bounded, non-Turing-complete
-// expression language (no I/O, no unbounded loops), so an operator-supplied
+// expression language (no I/O, no unbounded loops), so an admin-supplied
 // predicate can't hang or escape — and the home-ops/Kubernetes audience already
 // knows it from admission policies.
 package prfilter
@@ -27,9 +28,9 @@ type Program struct {
 }
 
 // evalCostLimit caps the CEL cost of a single filter evaluation. The expression
-// is operator-supplied (trusted) and its attacker-influenced inputs (pr.title,
+// is admin-supplied (trusted) and its attacker-influenced inputs (pr.title,
 // pr.labels) are forge-bounded, so this is defense-in-depth against a pathological
-// operator expression rather than a likely attack — a ceiling no reasonable PR
+// admin's expression rather than a likely attack — a ceiling no reasonable PR
 // predicate approaches, while still bounding an accidental blow-up (CEL has no
 // loops, so a finite cost is guaranteed to exist).
 const evalCostLimit = 1_000_000

@@ -90,9 +90,11 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	if !ok {
 		if ev.Action == "closed" {
 			err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = $3, updated_at = now()
-					WHERE repository_id = $1 AND number = $2`, repoID(req, ev.Repository.FullName), pr.Number, pr.Merged)
-				return err
+				if _, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = $3, updated_at = now()
+					WHERE repository_id = $1 AND number = $2`, repoID(req, ev.Repository.FullName), pr.Number, pr.Merged); err != nil {
+					return fmt.Errorf("ingest: close pull request: %w", err)
+				}
+				return nil
 			})
 			return Outcome{Status: Ignored, Reason: "closed"}, err
 		}
@@ -258,9 +260,11 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 		if disable && len(inst.Repositories) == 0 {
 			// The App left this account: its repositories go, not those of
 			// the other accounts the connection serves.
-			_, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-				WHERE account_id = $1 AND managed_by = 'forge'`, req.Account.ID())
-			return err
+			if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
+				WHERE account_id = $1 AND managed_by = 'forge'`, req.Account.ID()); err != nil {
+				return fmt.Errorf("ingest: disable the account's repositories: %w", err)
+			}
+			return nil
 		}
 		for _, name := range inst.Repositories {
 			if enable {

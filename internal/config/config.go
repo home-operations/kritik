@@ -35,7 +35,7 @@ const (
 	RoleIngest Role = "ingest"
 	RoleWorker Role = "worker"
 	RoleRunner Role = "runner"
-	// RoleWeb serves the operator dashboard (ADR-0009): sign-in, sessions,
+	// RoleWeb serves the dashboard (ADR-0009): sign-in, sessions,
 	// the accounts' pages and the instance configuration. "all" serves it
 	// too.
 	RoleWeb Role = "web"
@@ -85,7 +85,7 @@ type Config struct {
 	// minted it dies before revoking it.
 	GatewayTokenTTL time.Duration `env:"KRITIK_GATEWAY_TOKEN_TTL" envDefault:"1h"`
 
-	// WebAddr is the listen address for the operator dashboard the web role
+	// WebAddr is the listen address for the dashboard the web role
 	// serves. Its own port, matching the pattern of Addr/MetricsAddr/
 	// GatewayAddr, so the dashboard can be exposed without opening the
 	// other surfaces.

@@ -1,10 +1,10 @@
 // Package chunk cuts source files into declarations. It is the one place
 // that speaks tree-sitter: the runner uses it for the PR-head overlay,
-// definitions and callers, and the indexer will use it for the embedding
-// index, so both see the same chunks.
+// definitions and callers, and the indexer for the embedding index, so
+// both see the same chunks.
 //
 // Parsing is pure Go through gotreesitter with every grammar embedded, so
-// any file an operator points the service at parses without a rebuild. A
+// any file a repository holds parses without a rebuild. A
 // language whose grammar carries no tags query (configuration formats,
 // mostly) has no declarations and falls back to fixed windows.
 package chunk

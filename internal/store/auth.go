@@ -48,9 +48,10 @@ type User struct {
 }
 
 // SignInIdentity is who a sign-in provider says a human is. Provider is the
-// sign-in's configured name and Origin where it pointed (forge type and base
-// URL, or OIDC issuer) when the human signed in; Subject is the provider's
-// stable id for them, unique only within that origin.
+// sign-in's configured name and Origin where it pointed when the human
+// signed in (GitHub, the OIDC issuer, or "local" for the local admin);
+// Subject is the provider's stable id for them, unique only within that
+// origin.
 type SignInIdentity struct {
 	Provider, Origin, Subject, Login, Email string
 	EmailVerified                           bool

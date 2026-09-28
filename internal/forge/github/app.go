@@ -1,8 +1,9 @@
-// Package github holds the GitHub App credential machinery copied from
-// konflate: a transport that signs requests as the App with a short-lived
-// JWT, and one that mints, caches and refreshes an installation token. The
-// installation token authenticates API calls and git fetches alike, so an
-// App-only installation needs no personal token.
+// Package github is kritik's forge: the App's credentials, a transport
+// that signs requests as the App with a short-lived JWT and one that mints,
+// caches and refreshes an installation token, the forge.Client over an
+// installation, and the App manifest flow. The installation token
+// authenticates API calls and git fetches alike, so an App-only
+// installation needs no personal token.
 package github
 
 import (

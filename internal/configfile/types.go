@@ -46,7 +46,7 @@ const ForgeGitHub Forge = "github"
 // or Sealed is set. Values are resolved at load and never written back to
 // disk or the database. Sealed is ciphertext only the instance spec may
 // carry; Env and File would read the server's own environment and
-// filesystem, so only the operator's file may use them.
+// filesystem, so only the admin's file may use them.
 type SecretRef struct {
 	Env    string `yaml:"env,omitempty"`
 	File   string `yaml:"file,omitempty"`
@@ -97,7 +97,7 @@ type Provider struct {
 func (p Provider) APIKeyValue() Secret { return p.apiKey }
 
 // ModelRef names a model as "<provider>/<model>", where provider is a key of
-// the account's or the file's providers map and model is whatever the
+// the account's or the instance's providers map and model is whatever the
 // provider accepts.
 type ModelRef string
 
@@ -122,9 +122,8 @@ func (m ModelRef) Model() string {
 }
 
 // Models are the resolved completion roles; a role empty after resolution
-// means the feature is off. The embedding model is not here: it is
-// deployment-wide and lives in the process environment, because changing it
-// reindexes every repository.
+// means the feature is off. The embedding model is not here: it is the
+// instance's Embedding, since changing it reindexes every repository.
 type Models struct {
 	Review   ModelRef
 	Fallback ModelRef
@@ -160,7 +159,7 @@ type LimitsSpec struct {
 	TokensPerMonth *int64 `yaml:"tokensPerMonth,omitempty"`
 }
 
-// DefaultConcurrency applies when no level of the file sets one.
+// DefaultConcurrency applies when no level of the configuration sets one.
 const DefaultConcurrency = 2
 
 // Runner overrides for the Kubernetes Job an account's index and review pods
@@ -185,7 +184,7 @@ type Defaults struct {
 	Limits    LimitsSpec `yaml:"limits,omitempty"`
 }
 
-// Overrides are the repository settings every operator scope may set: the
+// Overrides are the repository settings every admin scope may set: the
 // defaults, an account and a repository entry. A field a narrower scope
 // writes replaces the broader scope's, even when it is empty or zero; a
 // field it leaves out inherits (ADR-0010 §2.4). Ignore globs are unioned
@@ -211,8 +210,8 @@ type Overrides struct {
 // Allow bounds what a repository's .kritik.yaml may choose (ADR-0010
 // §2.5), bound by bound: one written at a narrower scope replaces the
 // broader scope's, even when empty. A bound written nowhere leaves a
-// repository only the operator's own mode, model and commands, and limits
-// and a settle time at or below the operator's own.
+// repository only the admin's own mode, model and commands, and limits
+// and a settle time at or below the admin's own.
 type Allow struct {
 	Modes    []ReviewMode `yaml:"modes,omitempty"`
 	Models   []ModelRef   `yaml:"models,omitempty"`
@@ -241,7 +240,7 @@ type Polling struct {
 	Lookback time.Duration `yaml:"lookback,omitempty"`
 }
 
-// Poll defaults, when the file sets none.
+// Poll defaults, when the configuration sets none.
 const (
 	DefaultPollInterval = 10 * time.Minute
 	DefaultPollLookback = 24 * time.Hour
@@ -280,7 +279,7 @@ type Indexing struct {
 	OnboardWindow int `yaml:"onboardWindow,omitempty"`
 }
 
-// DefaultOnboardWindow applies when the file sets no onboardWindow.
+// DefaultOnboardWindow applies when the configuration sets no onboardWindow.
 const DefaultOnboardWindow = 4
 
 // Embedding is the instance's embedder, any OpenAI-compatible embeddings
@@ -333,10 +332,12 @@ type Retention struct {
 // DefaultDisabledIndexGrace applies when the file sets no retention.
 const DefaultDisabledIndexGrace = 30 * 24 * time.Hour
 
-// DefaultTranscripts applies when the file sets no transcript retention.
+// DefaultTranscripts applies when the configuration sets no transcript
+// retention.
 const DefaultTranscripts = 30 * 24 * time.Hour
 
-// minTranscripts is the shortest transcript retention the file may set.
+// minTranscripts is the shortest transcript retention the configuration
+// may set.
 const minTranscripts = 24 * time.Hour
 
 // TranscriptsOrDefault returns the transcript retention or its default.
@@ -348,7 +349,7 @@ func (r Retention) TranscriptsOrDefault() time.Duration {
 }
 
 // DefaultIgnore is always skipped by chunking and the caller search, on top
-// of whatever the operator's file and the in-repo file add. Vendored and
+// of whatever the admin's file and the in-repo file add. Vendored and
 // generated trees otherwise dominate both.
 var DefaultIgnore = []string{
 	"vendor/**",
@@ -359,7 +360,7 @@ var DefaultIgnore = []string{
 }
 
 // GitHubApp is a GitHub App credential owned by a connection. The client
-// id is not secret, but operators often keep it next to the key, so it may
+// id is not secret, but admins often keep it next to the key, so it may
 // be given inline or by reference; exactly one of the two.
 type GitHubApp struct {
 	ClientID      string    `yaml:"clientId,omitempty"`
@@ -475,7 +476,7 @@ type ReviewTemplates struct {
 	Inline  string `yaml:"inline,omitempty"`
 }
 
-// Review is the operator's resolved presentation and strictness for a
+// Review is the admin's resolved presentation and strictness for a
 // repository. Paths name files in the repository's merge-base tree.
 type Review struct {
 	Instructions        []string
