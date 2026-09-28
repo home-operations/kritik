@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritik/internal/model"
 )
 
 // specConnection is a dashboard connection named name serving accounts,
@@ -261,7 +263,7 @@ func TestMergeEmbedding(t *testing.T) {
 	if e == nil || e.Model != "voyage-code-3" || e.Dims != 1024 || e.APIKeyValue().Value() != "ek" {
 		t.Fatalf("embedding = %+v", e)
 	}
-	if batch, chars, item := e.Bounds(); batch != 8 || chars != DefaultEmbedMaxBatchChars || item != DefaultEmbedMaxItemChars {
+	if batch, chars, item := e.Bounds(); batch != 8 || chars != model.DefaultEmbedMaxBatchChars || item != model.DefaultEmbedMaxItemChars {
 		t.Fatalf("Bounds = %d, %d, %d", batch, chars, item)
 	}
 }

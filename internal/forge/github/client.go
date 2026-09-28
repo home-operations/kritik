@@ -16,9 +16,6 @@ import (
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
-// userTypeBot is how GitHub types App and bot accounts.
-const userTypeBot = "Bot"
-
 // Client is one App installation's access to GitHub.
 type Client struct {
 	app    *App
@@ -277,14 +274,14 @@ func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int
 
 func conversationComment(cm *gh.IssueComment) forge.Comment {
 	return forge.Comment{
-		ID: cm.GetID(), Author: cm.GetUser().GetLogin(), AuthorIsBot: cm.GetUser().GetType() == userTypeBot,
+		ID: cm.GetID(), Author: cm.GetUser().GetLogin(), AuthorIsBot: webhook.IsBot(cm.GetUser().GetType(), cm.GetUser().GetLogin()),
 		Body: cm.GetBody(), CreatedAt: cm.GetCreatedAt().Time,
 	}
 }
 
 func inlineComment(cm *gh.PullRequestComment) forge.Comment {
 	return forge.Comment{
-		ID: cm.GetID(), Author: cm.GetUser().GetLogin(), AuthorIsBot: cm.GetUser().GetType() == userTypeBot,
+		ID: cm.GetID(), Author: cm.GetUser().GetLogin(), AuthorIsBot: webhook.IsBot(cm.GetUser().GetType(), cm.GetUser().GetLogin()),
 		Body: cm.GetBody(), CreatedAt: cm.GetCreatedAt().Time,
 		Inline: true, Path: cm.GetPath(), Line: cm.GetLine(), InReplyTo: cm.GetInReplyTo(),
 	}
@@ -312,7 +309,7 @@ func openPullRequest(pr *gh.PullRequest) forge.OpenPullRequest {
 	head, base := pr.GetHead(), pr.GetBase()
 	out := forge.OpenPullRequest{
 		Number: pr.GetNumber(), Title: pr.GetTitle(), Author: pr.GetUser().GetLogin(),
-		AuthorIsBot: pr.GetUser().GetType() == userTypeBot || strings.HasSuffix(pr.GetUser().GetLogin(), "[bot]"),
+		AuthorIsBot: webhook.IsBot(pr.GetUser().GetType(), pr.GetUser().GetLogin()),
 		State:       pr.GetState(), Merged: pr.GetMerged(), Draft: pr.GetDraft(),
 		// A deleted fork leaves head.repo null, which is not the base repo
 		// either, as the webhook parser rules.

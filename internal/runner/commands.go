@@ -60,7 +60,7 @@ func commandTool(ctx context.Context, p Spec, tree *agent.Tree, maxOutput int, l
 	}
 	logger.Info("checkout written", "files", stats.Files, "bytes", stats.Bytes, "skipped", stats.Skipped,
 		"truncated", stats.Truncated, "elapsed", time.Since(started).Round(time.Millisecond))
-	note := "The checkout leaves out ignored paths, symlinks and files over 1 MiB."
+	note := fmt.Sprintf("The checkout leaves out ignored paths, symlinks and files over %d MiB.", agent.MaxBlobBytes>>20)
 	if stats.Truncated {
 		note += fmt.Sprintf(" It stopped at %d MiB, so the paths that sort last are missing.", agent.MaxCheckoutBytes>>20)
 	}

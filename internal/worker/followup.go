@@ -189,12 +189,10 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	f.logger.Info("follow-up answered", "model", resp.Model, "reply", replyID, "input_tokens", resp.InputTokens,
 		"output_tokens", resp.OutputTokens, "cost_usd", resp.CostUSD)
 	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `INSERT INTO usage (account_id, repository_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
-			VALUES ($1, $2, 'followup', $3, $4, $5, $6, $7)`,
-			f.account.ID(), f.pr.repositoryID, resp.Model, resp.Upstream, resp.InputTokens, resp.OutputTokens, resp.CostUSD); err != nil {
-			return fmt.Errorf("worker: record follow-up usage: %w", err)
-		}
-		return nil
+		return insertUsage(ctx, tx, usageRow{
+			accountID: f.account.ID(), repositoryID: f.pr.repositoryID, role: roleFollowUp, model: resp.Model, upstream: resp.Upstream,
+			input: resp.InputTokens, output: resp.OutputTokens, costUSD: resp.CostUSD,
+		})
 	})
 	if err != nil {
 		f.logger.Error("follow-up usage not recorded", "error", err)

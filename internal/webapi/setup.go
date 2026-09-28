@@ -3,11 +3,11 @@ package webapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/store"
@@ -22,17 +22,14 @@ import (
 const probeTimeout = 20 * time.Second
 
 func (s *Server) registerSetup(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/operator/setup", s.handler(s.getSetup))
-	mux.HandleFunc("POST /api/v1/operator/providers/test", s.handler(s.testProvider))
-	mux.HandleFunc("POST /api/v1/operator/embedding/test", s.handler(s.testEmbedding))
-	mux.HandleFunc("GET /api/v1/operator/connections/{name}/repositories", s.handler(s.listReached))
-	mux.HandleFunc("POST /api/v1/operator/connections/{name}/repositories", s.handler(s.registerReached))
+	mux.HandleFunc("GET /api/v1/operator/setup", s.operator(s.getSetup))
+	mux.HandleFunc("POST /api/v1/operator/providers/test", s.operator(s.testProvider))
+	mux.HandleFunc("POST /api/v1/operator/embedding/test", s.operator(s.testEmbedding))
+	mux.HandleFunc("GET /api/v1/operator/connections/{name}/repositories", s.operator(s.listReached))
+	mux.HandleFunc("POST /api/v1/operator/connections/{name}/repositories", s.operator(s.registerReached))
 }
 
 func (s *Server) getSetup(w http.ResponseWriter, r *http.Request) error {
-	if !auth.PrincipalFrom(r.Context()).Operator {
-		return errNotFound("route")
-	}
 	writeJSON(w, http.StatusOK, setupStatus(s.current.Get(), s.webURL.String()))
 	return nil
 }
@@ -88,9 +85,6 @@ func endpointOf(baseURL string) string {
 }
 
 func (s *Server) testProvider(w http.ResponseWriter, r *http.Request) error {
-	if !auth.PrincipalFrom(r.Context()).Operator {
-		return errNotFound("route")
-	}
 	var req ProviderTestRequest
 	if err := readBody(r, &req); err != nil {
 		return err
@@ -125,9 +119,6 @@ func (s *Server) testProvider(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) testEmbedding(w http.ResponseWriter, r *http.Request) error {
-	if !auth.PrincipalFrom(r.Context()).Operator {
-		return errNotFound("route")
-	}
 	var req EmbeddingTestRequest
 	if err := readBody(r, &req); err != nil {
 		return err
@@ -136,7 +127,8 @@ func (s *Server) testEmbedding(w http.ResponseWriter, r *http.Request) error {
 	case strings.TrimSpace(req.BaseURL) == "" || strings.TrimSpace(req.Model) == "":
 		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, "an endpoint and a model are required", nil)
 	case req.Dims <= 0 || req.Dims > configfile.MaxEmbedDims:
-		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, "dims must be between 1 and 4000", pathDetails{Path: "dims"})
+		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, fmt.Sprintf("dims must be between 1 and %d", configfile.MaxEmbedDims),
+			pathDetails{Path: "dims"})
 	}
 	var held string
 	var sameEndpoint bool
@@ -193,9 +185,6 @@ func (s *Server) reached(r *http.Request) (*configfile.Connection, []AccountRepo
 }
 
 func (s *Server) listReached(w http.ResponseWriter, r *http.Request) error {
-	if !auth.PrincipalFrom(r.Context()).Operator {
-		return errNotFound("route")
-	}
 	_, out, err := s.reached(r)
 	if err != nil {
 		return err
@@ -208,9 +197,6 @@ func (s *Server) listReached(w http.ResponseWriter, r *http.Request) error {
 // an account it serves, so the leader polls them and, with an embedder,
 // indexes them before any webhook names them.
 func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
-	if !auth.PrincipalFrom(r.Context()).Operator {
-		return errNotFound("route")
-	}
 	in, accounts, err := s.reached(r)
 	if err != nil {
 		return err

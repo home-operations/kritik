@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/webhook"
 )
 
 func operator() configfile.Settings {
@@ -231,4 +232,31 @@ func jsonRoundTrip(in, out any) error {
 		return err
 	}
 	return json.Unmarshal(b, out)
+}
+
+// TestVarsMatchFilterVars: a filter sees the same pr variable when ingest
+// judges a webhook's pull request as when the worker judges its stored row.
+func TestVarsMatchFilterVars(t *testing.T) {
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	hook := webhook.PullRequest{
+		Number: 7, Title: "t", Author: "a", State: "open", Merged: true, Draft: true, Fork: true,
+		HeadRef: "f", HeadSHA: "abc", BaseRef: "main", URL: "https://x", Body: "b", CreatedAt: at,
+		Labels: []webhook.Label{{Name: "bug", Color: "f00"}},
+	}
+	labels, err := json.Marshal(hook.LabelVars())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := PullRequest{
+		Number: 7, Title: "t", Author: "a", State: "open", Merged: true, Draft: true, Fork: true,
+		HeadRef: "f", HeadSHA: "abc", BaseRef: "main", URL: "https://x", Body: "b", CreatedAt: at,
+		Labels: labels, Event: "opened",
+	}
+	got, err := stored.Vars()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := hook.FilterVars("opened"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Vars = %v\nFilterVars = %v", got, want)
+	}
 }

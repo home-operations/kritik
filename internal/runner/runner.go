@@ -129,8 +129,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		if err != nil {
 			return fmt.Errorf("runner: write context pack: %w", err)
 		}
-		_, err = tx.Exec(ctx, `UPDATE runner_runs SET phase = $2 WHERE id = $1`, p.RunID, next)
-		return err
+		return setPhaseTx(ctx, tx, p.RunID, next)
 	})
 	if err != nil {
 		return err
@@ -213,16 +212,19 @@ func beat(ctx context.Context, st *store.Store, runID string) error {
 }
 
 func setPhase(ctx context.Context, st *store.Store, runID, phase string) error {
-	return st.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = $2 WHERE id = $1`, runID, phase)
-		if err != nil {
-			return fmt.Errorf("runner: set phase: %w", err)
-		}
-		if tag.RowsAffected() == 0 {
-			return fmt.Errorf("runner: run %s is not visible to this role", runID)
-		}
-		return nil
-	})
+	return st.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error { return setPhaseTx(ctx, tx, runID, phase) })
+}
+
+// setPhaseTx is setPhase in tx, alongside what the run wrote there.
+func setPhaseTx(ctx context.Context, tx pgx.Tx, runID, phase string) error {
+	tag, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = $2 WHERE id = $1`, runID, phase)
+	if err != nil {
+		return fmt.Errorf("runner: set phase: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("runner: run %s is not visible to this role", runID)
+	}
+	return nil
 }
 
 // fail records cause as the run's error, with its secrets masked: a git or

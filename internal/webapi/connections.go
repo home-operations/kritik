@@ -17,15 +17,12 @@ import (
 // and of the accounts each one's GitHub App is installed on (ADR-0014
 // §2.3), where an installation no connection serves can be removed.
 func (s *Server) registerConnections(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/operator/connections", s.handler(s.listConnections))
-	mux.HandleFunc("GET /api/v1/operator/connections/{name}/installations", s.handler(s.listInstallations))
-	mux.HandleFunc("DELETE /api/v1/operator/connections/{name}/installations/{id}", s.handler(s.uninstall))
+	mux.HandleFunc("GET /api/v1/operator/connections", s.operator(s.listConnections))
+	mux.HandleFunc("GET /api/v1/operator/connections/{name}/installations", s.operator(s.listInstallations))
+	mux.HandleFunc("DELETE /api/v1/operator/connections/{name}/installations/{id}", s.operator(s.uninstall))
 }
 
 func (s *Server) listConnections(w http.ResponseWriter, r *http.Request) error {
-	if !auth.PrincipalFrom(r.Context()).Operator {
-		return errNotFound("route")
-	}
 	var webhooks map[string]time.Time
 	if err := s.store.WithAccount(r.Context(), "", func(tx pgx.Tx) error {
 		var err error
@@ -67,9 +64,6 @@ func errForge(err error) error {
 }
 
 func (s *Server) listInstallations(w http.ResponseWriter, r *http.Request) error {
-	if !auth.PrincipalFrom(r.Context()).Operator {
-		return errNotFound("route")
-	}
 	in, app, err := s.connectionApp(r)
 	if err != nil {
 		return err
@@ -93,9 +87,6 @@ func (s *Server) listInstallations(w http.ResponseWriter, r *http.Request) error
 // the connection does not serve, audited in the same transaction.
 func (s *Server) uninstall(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
-	if !p.Operator {
-		return errNotFound("route")
-	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		return errNotFound("installation")

@@ -36,6 +36,7 @@ const (
 	roleReview    = "review"
 	roleFallback  = "fallback"
 	roleEmbedding = "embedding"
+	roleFollowUp  = "followup"
 )
 
 // reviewInput is what the model phase reads from the database.
@@ -197,19 +198,20 @@ func readUsage(ctx context.Context, st *store.Store, accountID string) (capUsage
 	return capUsage{reviews: m.ReviewsToday, tokens: m.Tokens}, nil
 }
 
-// reviewUsage is one model call charged to a review: its whole prompt,
-// cached part included, as input.
-type reviewUsage struct {
+// usageRow is one model call charged to an account, and to the review it
+// served when there is one: its whole prompt, cached part included, as
+// input.
+type usageRow struct {
 	accountID, repositoryID, reviewID, role, model, upstream string
 	input, output                                            int64
 	costUSD                                                  float64
 }
 
 // insertUsage records u, where the caps count it.
-func insertUsage(ctx context.Context, tx pgx.Tx, u reviewUsage) error {
+func insertUsage(ctx context.Context, tx pgx.Tx, u usageRow) error {
 	if _, err := tx.Exec(ctx, `INSERT INTO usage
 		(account_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		VALUES ($1, $2, nullif($3, '')::uuid, $4, $5, $6, $7, $8, $9)`,
 		u.accountID, u.repositoryID, u.reviewID, u.role, u.model, u.upstream, u.input, u.output, u.costUSD); err != nil {
 		return fmt.Errorf("worker: insert usage: %w", err)
 	}
@@ -486,7 +488,7 @@ func (p *publishPhase) persist(
 			return fmt.Errorf("worker: upsert sticky comment: %w", err)
 		}
 		if p.agent == nil {
-			if err := insertUsage(ctx, tx, reviewUsage{
+			if err := insertUsage(ctx, tx, usageRow{
 				accountID: p.account.ID(), repositoryID: p.pr.repositoryID, reviewID: p.reviewID, role: role, model: resp.Model,
 				upstream: resp.Upstream, input: resp.InputTokens, output: resp.OutputTokens, costUSD: resp.CostUSD,
 			}); err != nil {
@@ -568,7 +570,7 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 	var hits []hit
 	seen := map[string]bool{}
 	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		if err := insertUsage(ctx, tx, reviewUsage{
+		if err := insertUsage(ctx, tx, usageRow{
 			accountID: p.account.ID(), repositoryID: p.pr.repositoryID, reviewID: p.reviewID,
 			role: roleEmbedding, model: emb.Model, input: tokens,
 		}); err != nil {

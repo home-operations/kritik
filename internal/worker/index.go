@@ -396,11 +396,9 @@ func (w *Index) embed(
 		if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID); err != nil {
 			return fmt.Errorf("worker: clear staging: %w", err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO usage (account_id, repository_id, role, model, input_tokens) VALUES ($1, $2, 'embedding', $3, $4)`,
-			args.AccountID, args.RepositoryID, embedModel, tokens); err != nil {
-			return fmt.Errorf("worker: record embedding usage: %w", err)
-		}
-		return nil
+		return insertUsage(ctx, tx, usageRow{
+			accountID: args.AccountID, repositoryID: args.RepositoryID, role: roleEmbedding, model: embedModel, input: tokens,
+		})
 	})
 	return total, pack.mode, err
 }

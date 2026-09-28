@@ -24,10 +24,10 @@ const (
 	grepMaxResultsCap     = 500
 )
 
-// maxBlobBytes bounds how large a blob read_file and grep will read into
-// memory. read_file rejects an oversized blob with a tool error; grep skips
-// it and keeps walking.
-const maxBlobBytes = 1 << 20
+// MaxBlobBytes bounds how large a blob the agent reads: read_file rejects
+// an oversized blob with a tool error, grep skips it and keeps walking, and
+// a checkout leaves it out.
+const MaxBlobBytes = 1 << 20
 
 // truncate caps s at limit bytes, appending a note of how much was cut. A
 // non-positive limit disables truncation.
@@ -92,8 +92,8 @@ func (rt *readFileTool) Run(_ context.Context, input json.RawMessage) (string, e
 	if err != nil {
 		return "", fmt.Errorf("agent: read_file: %w", err)
 	}
-	if f.Size > maxBlobBytes {
-		return "", fmt.Errorf("agent: read_file: %s is %d bytes, over the %d byte limit", cleaned, f.Size, maxBlobBytes)
+	if f.Size > MaxBlobBytes {
+		return "", fmt.Errorf("agent: read_file: %s is %d bytes, over the %d byte limit", cleaned, f.Size, MaxBlobBytes)
 	}
 	content, err := f.Contents()
 	if err != nil {
@@ -213,7 +213,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		if ok, _ := doublestar.Match(glob, f.Name); !ok {
 			return nil
 		}
-		if f.Size > maxBlobBytes {
+		if f.Size > MaxBlobBytes {
 			return nil
 		}
 		content, err := f.Contents()

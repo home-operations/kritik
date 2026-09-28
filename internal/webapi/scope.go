@@ -63,6 +63,17 @@ func (s *Server) handler(h func(w http.ResponseWriter, r *http.Request) error) h
 	}
 }
 
+// operator adapts a handler only an instance admin may call: to anyone
+// else its route does not exist.
+func (s *Server) operator(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+	return s.handler(func(w http.ResponseWriter, r *http.Request) error {
+		if !auth.PrincipalFrom(r.Context()).Operator {
+			return errNotFound("route")
+		}
+		return h(w, r)
+	})
+}
+
 // read runs fn in a transaction scoped to t's account, so row-level
 // security confines every query in it.
 func (s *Server) read(ctx context.Context, t *accountScope, fn func(pgx.Tx) error) error {

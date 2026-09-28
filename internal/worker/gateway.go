@@ -188,25 +188,11 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 }
 
 // monthCapped says why the account may not take another step this month,
-// or "".
+// or "". A step spends tokens, not a review, so only the month's cap
+// applies.
 func (g *Gateway) monthCapped(ctx context.Context, file *configfile.File, account *configfile.Account) (string, error) {
 	limits := file.Settings(account, "").Limits
-	if limits.TokensPerMonth <= 0 {
-		return "", nil
-	}
-	var m store.MonthUsage
-	err := g.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		var err error
-		m, err = store.ReadMonthUsage(ctx, tx)
-		return err
-	})
-	if err != nil {
-		return "", fmt.Errorf("worker: read month's tokens: %w", err)
-	}
-	if m.Tokens >= limits.TokensPerMonth {
-		return fmt.Sprintf("tokensPerMonth (%d) reached", limits.TokensPerMonth), nil
-	}
-	return "", nil
+	return capReached(ctx, g.Store, account.ID(), configfile.Limits{TokensPerMonth: limits.TokensPerMonth})
 }
 
 // charge settles a step's reservation: an answered step's actual spend
@@ -224,7 +210,7 @@ func (g *Gateway) charge(
 	spent := resp.Usage.Prompt() + resp.Usage.Output
 	budgetErr := g.Store.ChargeGatewayToken(ctx, token, spent-reserved)
 	usageErr := g.Store.WithAccount(ctx, grant.AccountID, func(tx pgx.Tx) error {
-		return insertUsage(ctx, tx, reviewUsage{
+		return insertUsage(ctx, tx, usageRow{
 			accountID: grant.AccountID, repositoryID: grant.RepositoryID, reviewID: grant.ReviewID, role: roleReview, model: resp.Model,
 			upstream: resp.Upstream, input: resp.Usage.Prompt(), output: resp.Usage.Output, costUSD: resp.CostUSD,
 		})

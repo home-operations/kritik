@@ -38,7 +38,7 @@ func (t *Tree) Checkout(ctx context.Context, dir string, maxBytes int64) (Checko
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if f.Mode == filemode.Symlink || t.ignored(f.Name) || f.Size > maxBlobBytes {
+		if f.Mode == filemode.Symlink || t.ignored(f.Name) || f.Size > MaxBlobBytes {
 			stats.Skipped++
 			return nil
 		}

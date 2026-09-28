@@ -191,8 +191,12 @@ type ghUser struct {
 	Type  string `json:"type"`
 }
 
-func (u ghUser) isBot() bool {
-	return strings.EqualFold(u.Type, "Bot") || strings.HasSuffix(u.Login, "[bot]")
+func (u ghUser) isBot() bool { return IsBot(u.Type, u.Login) }
+
+// IsBot reports whether a GitHub user of userType and login is an App or
+// bot account, as the type says or the "[bot]" suffix of its login does.
+func IsBot(userType, login string) bool {
+	return strings.EqualFold(userType, "Bot") || strings.HasSuffix(login, "[bot]")
 }
 
 // ghRepo is a repository as GitHub payloads carry one.

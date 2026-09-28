@@ -232,6 +232,26 @@ func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) 
 	return sess, nil
 }
 
+// SweepSessions deletes the dashboard sessions, in-flight logins and App
+// registrations that expired by now and returns how many it deleted.
+func (s *Store) SweepSessions(ctx context.Context, now time.Time) (int64, error) {
+	var n int64
+	err := pgx.BeginFunc(ctx, s.app, func(tx pgx.Tx) error {
+		for _, table := range []string{"sessions", "login_states", "app_manifests"} {
+			tag, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE expires_at <= $1`, now)
+			if err != nil {
+				return err
+			}
+			n += tag.RowsAffected()
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("store: sweep sessions: %w", err)
+	}
+	return n, nil
+}
+
 // DeleteSession ends the session a cookie value names, if any.
 func (s *Store) DeleteSession(ctx context.Context, token string) error {
 	if _, err := s.app.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, tokenHash(token)); err != nil {

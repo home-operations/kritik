@@ -253,7 +253,6 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}
-		_, err = tx.Exec(ctx, `UPDATE runner_runs SET phase = $2 WHERE id = $1`, p.RunID, phase)
-		return err
+		return setPhaseTx(ctx, tx, p.RunID, phase)
 	})
 }

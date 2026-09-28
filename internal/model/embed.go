@@ -24,6 +24,14 @@ type OpenAIEmbedder struct {
 	MaxBatch, MaxBatchChars, MaxItemChars int
 }
 
+// Request bounds an embedder keeps to unless told otherwise, conservative
+// enough for the common OpenAI-compatible servers.
+const (
+	DefaultEmbedMaxBatch      = 64
+	DefaultEmbedMaxBatchChars = 200_000
+	DefaultEmbedMaxItemChars  = 16_000
+)
+
 // NewOpenAIEmbedder builds an embedder. dims is sent to the server so the
 // vectors match the table; models that ignore it return their native size
 // and the caller must check.
@@ -35,7 +43,7 @@ func NewOpenAIEmbedder(baseURL, apiKey, model string, dims int) *OpenAIEmbedder 
 	}
 	return &OpenAIEmbedder{
 		client: openai.NewClient(opts...), model: model, dims: int64(dims),
-		MaxBatch: 64, MaxBatchChars: 200_000, MaxItemChars: 16_000,
+		MaxBatch: DefaultEmbedMaxBatch, MaxBatchChars: DefaultEmbedMaxBatchChars, MaxItemChars: DefaultEmbedMaxItemChars,
 	}
 }
 

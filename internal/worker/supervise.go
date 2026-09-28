@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/executor"
+	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -24,7 +25,7 @@ const (
 	superviseInterval = 10 * time.Second
 	// heartbeatStale is how old a runner's heartbeat may get before the run
 	// is treated as dead: six missed beats, to ride out a slow database.
-	heartbeatStale = 90 * time.Second
+	heartbeatStale = 6 * runner.HeartbeatInterval
 )
 
 // supervision is what the worker watches while a runner works.

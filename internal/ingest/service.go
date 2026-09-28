@@ -279,25 +279,9 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 	return Outcome{Status: Enqueued, Job: "installation", Reason: ev.Action}, err
 }
 
-// ensureRepository makes sure the repository row exists and, for a
-// forge-managed row, that it is enabled: the forge just told us about it. A
-// row the spec lists keeps its enabled flag, only learning the default
-// branch.
 func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook.Repository) (string, error) {
-	id := repoID(req, repo.FullName)
-	_, err := tx.Exec(ctx, `
-		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled)
-		VALUES ($1, $2, $3, $4, 'forge', true)
-		ON CONFLICT (account_id, name) DO UPDATE SET
-			default_branch = CASE WHEN EXCLUDED.default_branch <> '' THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
-			enabled = CASE WHEN repositories.managed_by = 'forge' THEN true ELSE repositories.enabled END,
-			disabled_at = CASE WHEN repositories.managed_by = 'forge' THEN NULL ELSE repositories.disabled_at END,
-			updated_at = now()`,
-		id, req.Account.ID(), repo.FullName, repo.DefaultBranch)
-	if err != nil {
-		return "", fmt.Errorf("ingest: ensure repository %s: %w", repo.FullName, err)
-	}
-	return id, nil
+	id, _, err := store.EnsureRepository(ctx, tx, req.Account.ID(), repo.FullName, repo.DefaultBranch)
+	return id, err
 }
 
 func repoID(req Request, fullName string) string {
