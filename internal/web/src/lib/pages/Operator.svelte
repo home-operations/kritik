@@ -8,6 +8,8 @@
   import Pill from '../components/Pill.svelte';
   import AuditTable from '../components/AuditTable.svelte';
   import InstanceSection from './admin/InstanceSection.svelte';
+  import AppSetup from './admin/AppSetup.svelte';
+  import { management } from '../session.svelte';
 
   const res = new Resource(() => getJSON<OperatorAccount[]>('/api/v1/operator/accounts'));
   const instance = new Resource(() => getJSON<InstanceSetting[]>('/api/v1/operator/instance'));
@@ -82,6 +84,8 @@
     </StateView>
 
     <InstanceSection onsaved={refresh} />
+
+    {#if management()}<AppSetup />{/if}
 
     <section class="panel" aria-labelledby="op-instance">
       <header class="panel-head"><h2 id="op-instance">Instance settings</h2></header>

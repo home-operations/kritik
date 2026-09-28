@@ -228,6 +228,7 @@ test.describe('account configuration', () => {
     await expect(page.locator('.spec-view')).toContainText('alpha-bot');
     await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Add connection' })).toHaveCount(0);
+    await expect(page.locator('#op-app')).toHaveCount(0);
   });
 
   test('an account member cannot open the admin page', async ({ page }) => {
@@ -548,6 +549,66 @@ test.describe('admin console', () => {
     await page.locator('[data-path="embedding.baseUrl"]').fill('https://elsewhere.example/v1');
     await expect(key.getByLabel('Keep current')).toHaveCount(0);
     await expect(page.getByRole('note').filter({ hasText: 'endpoint changed' })).toBeVisible();
+  });
+
+  test('registers a GitHub App by posting its manifest to GitHub', async ({ page }) => {
+    await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    const target = 'https://github.com/organizations/org-1/settings/apps/new?state=s1';
+    const sent = await g.mockWrites(page, [
+      ['POST', /\/api\/v1\/app\/manifests$/, { status: 200, body: { url: target, manifest: g.appManifestForm.manifest } }],
+    ]);
+    let posted = '';
+    await page.route('https://github.com/**', async (route) => {
+      posted = route.request().postData() ?? '';
+      await route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>GitHub</h1>' });
+    });
+    await page.goto('/#/operator');
+    const panel = page.locator('#op-app').locator('../..');
+    await panel.getByLabel('Connection name').fill('org-1-bot');
+    await panel.getByLabel('An organization').check();
+    await panel.getByLabel('Organization', { exact: true }).fill('org-1');
+    await panel.getByLabel('Public: any account').check();
+    await panel.getByRole('button', { name: 'Create on GitHub' }).click();
+    await expect(page).toHaveURL(target);
+    expect(sent[0]!.body).toEqual({ connection: 'org-1-bot', organization: 'org-1', public: true });
+    expect(JSON.parse(new URLSearchParams(posted).get('manifest')!)).toEqual(g.appManifestForm.manifest);
+  });
+
+  test('a refused registration names the field', async ({ page }) => {
+    await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    await g.mockWrites(page, [
+      ['POST', /\/api\/v1\/app\/manifests$/, g.apiError(422, 'invalid_spec', 'a connection named alpha-bot already exists', { path: 'connection' })],
+    ]);
+    await page.goto('/#/operator');
+    const panel = page.locator('#op-app').locator('../..');
+    await panel.getByLabel('Connection name').fill('alpha-bot');
+    await panel.getByRole('button', { name: 'Create on GitHub' }).click();
+    await expect(panel.getByRole('alert')).toContainText('already exists');
+    await expect(panel.getByLabel('Connection name')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page).toHaveURL(/#\/operator$/);
+  });
+
+  test("shows a registered App and its client secret once", async ({ page }) => {
+    let collects = 0;
+    await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    const failed: T.AppManifestResult = { connection: 'late-bot', error: "GitHub did not return the App's credentials: expired" };
+    await g.mockWrites(page, [
+      ['POST', /\/api\/v1\/app\/manifests\/collect$/, () => ({ status: 200, body: collects++ === 0 ? [g.appManifestResult, failed] : [] })],
+    ]);
+    await page.goto('/#/operator');
+    const dialog = page.getByRole('dialog', { name: 'GitHub App registration' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId('app-client-secret')).toHaveText(g.appManifestResult.clientSecret!);
+    await expect(dialog.getByTestId('app-client-id')).toHaveText(g.appManifestResult.clientId!);
+    await expect(dialog.getByRole('link', { name: 'Install it on GitHub' })).toHaveAttribute('href', g.appManifestResult.installUrl!);
+    await expect(dialog.getByRole('alert')).toContainText('did not return');
+    await dialog.getByRole('button', { name: 'Done' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId('app-client-secret')).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator('#op-app')).toBeVisible();
+    await expect.poll(() => collects).toBe(2);
+    await expect(dialog).toBeHidden();
   });
 
   test('lists the instance settings read-only with their sources', async ({ page }) => {

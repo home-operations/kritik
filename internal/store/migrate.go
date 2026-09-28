@@ -145,7 +145,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		// The web dashboard's own tables (ADR-0009): all instance-level (no
 		// RLS, access control lives in web code) except model_calls, which is
 		// account content gated by its own account_isolation policy.
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON users, identities, sessions, login_states TO ` + app,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON users, identities, sessions, login_states, app_manifests TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON audit_events, instance_config TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON model_calls TO ` + app,
 		// The runner role sees only its own job through the runner_job

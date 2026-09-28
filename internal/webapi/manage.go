@@ -261,7 +261,7 @@ func accountEntry(spec json.RawMessage, a *configfile.Account) (json.RawMessage,
 			return out, i, err
 		}
 	}
-	out, err := json.Marshal(map[string]any{"forge": string(a.Forge), "name": a.Name})
+	out, err := json.Marshal(map[string]any{"forge": string(a.Forge), nameKey: a.Name})
 	return out, -1, err
 }
 

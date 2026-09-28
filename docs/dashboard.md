@@ -71,7 +71,9 @@ auth:
 - `oidc` signs in through any OpenID Connect issuer, an `https` URL. The
   sign-in page labels it `name`, or "SSO" when unset.
 - `github` signs in on github.com with an OAuth App's client, or a GitHub
-  App's own.
+  App's own. An App the admin console creates can serve both: it shows the
+  App's client secret once for this block (see
+  [connecting a forge](connecting-a-forge.md)).
 - `sessionTTL` is how long a dashboard session lasts, between 5 minutes and
   30 days. It defaults to 12 hours.
 

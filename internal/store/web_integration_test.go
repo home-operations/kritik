@@ -229,7 +229,7 @@ func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 	t.Cleanup(runner.Close)
 
 	tables := []string{
-		"users", "identities", "sessions", "login_states",
+		"users", "identities", "sessions", "login_states", "app_manifests",
 		"audit_events", "instance_config", "model_calls",
 	}
 	for _, table := range tables {
