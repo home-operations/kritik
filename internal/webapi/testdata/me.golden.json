@@ -1,5 +1,5 @@
 {
-  "account": {
+  "user": {
     "id": "acct-1",
     "displayName": "Ada",
     "email": "ada@example.com",

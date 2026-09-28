@@ -45,14 +45,14 @@ func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/queue", s.tenant(s.listQueue))
 }
 
-func account(a store.Account) Account {
-	return Account{ID: a.ID, DisplayName: a.DisplayName, Email: a.Email, AvatarURL: a.AvatarURL}
+func toUser(a store.User) User {
+	return User{ID: a.ID, DisplayName: a.DisplayName, Email: a.Email, AvatarURL: a.AvatarURL}
 }
 
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	me := Me{
-		Account:  account(p.Account),
+		User:     toUser(p.User),
 		Operator: p.Operator, Tenants: []TenantMembership{},
 	}
 	for _, t := range readable(s.current.Get(), p) {

@@ -103,21 +103,21 @@
 
   // A native <details> has no built-in Escape handling and stays open on an
   // outside click, so both are wired up by hand here.
-  let accountMenuEl = $state<HTMLDetailsElement | undefined>(undefined);
+  let userMenuEl = $state<HTMLDetailsElement | undefined>(undefined);
 
-  function closeAccountMenu(): void {
-    if (accountMenuEl) accountMenuEl.open = false;
+  function closeUserMenu(): void {
+    if (userMenuEl) userMenuEl.open = false;
   }
 
-  function onAccountMenuKeydown(e: KeyboardEvent): void {
+  function onUserMenuKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
       e.stopPropagation();
-      closeAccountMenu();
+      closeUserMenu();
     }
   }
 
   function onDocumentClick(e: MouseEvent): void {
-    if (accountMenuEl?.open && !accountMenuEl.contains(e.target as Node)) closeAccountMenu();
+    if (userMenuEl?.open && !userMenuEl.contains(e.target as Node)) closeUserMenu();
   }
 </script>
 
@@ -146,14 +146,14 @@
           <Icon path={themeIconPath} label="Toggle theme" />
         </button>
         {#if me}
-          <details class="account-menu" bind:this={accountMenuEl} onkeydown={onAccountMenuKeydown}>
-            <summary class="btn btn-icon" title={me.account.displayName}>
-              <Icon path={mdiAccountOutline} label="Account" />
+          <details class="user-menu" bind:this={userMenuEl} onkeydown={onUserMenuKeydown}>
+            <summary class="btn btn-icon" title={me.user.displayName}>
+              <Icon path={mdiAccountOutline} label="User" />
               <Icon path={mdiChevronDown} size={12} />
             </summary>
-            <div class="account-panel">
-              <p class="account-name">{me.account.displayName}</p>
-              <p class="account-email mono">{me.account.email}</p>
+            <div class="user-panel">
+              <p class="user-name">{me.user.displayName}</p>
+              <p class="user-email mono">{me.user.email}</p>
               <button class="btn" onclick={signOut}>
                 <Icon path={mdiLogout} size={14} /> Sign out
               </button>

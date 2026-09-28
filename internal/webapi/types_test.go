@@ -87,7 +87,7 @@ var goldenTools = []ToolDef{{Name: "grep", Description: "search", InputSchema: j
 var goldens = map[string]any{
 	"page": Page[Repository]{Items: []Repository{goldenRepo}, NextCursor: new("opaque")},
 	"me": Me{
-		Account:  Account{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"},
+		User:     User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"},
 		Operator: true, Tenants: []TenantMembership{{Slug: "alpha", Role: auth.RoleMember, ManagedBy: configfile.OriginFile}},
 	},
 	"tenant_summary":  goldenSummary,

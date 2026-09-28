@@ -109,7 +109,7 @@ type manageEnv struct {
 	srv     *Server
 	http    *httptest.Server
 	cookie  map[string]*http.Cookie
-	account map[string]string
+	user    map[string]string
 }
 
 func newManageEnv(t *testing.T) *manageEnv {
@@ -133,7 +133,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(owner.Close)
-	e := &manageEnv{t: t, st: st, owner: owner, actions: &fakeActions{}, cookie: map[string]*http.Cookie{}, account: map[string]string{}}
+	e := &manageEnv{t: t, st: st, owner: owner, actions: &fakeActions{}, cookie: map[string]*http.Cookie{}, user: map[string]string{}}
 	// Other suites leave dashboard tenants sealed under other keys.
 	e.exec(`DELETE FROM dashboard_tenants`)
 	t.Cleanup(func() { _, _ = owner.Exec(context.Background(), `DELETE FROM dashboard_tenants`) })
@@ -191,19 +191,19 @@ func (e *manageEnv) scalar(sql string) string {
 func (e *manageEnv) signIn(name, subject string, g store.SessionGrant) {
 	e.t.Helper()
 	ctx, now, origin := context.Background(), time.Now(), "oidc:https://idp.example"
-	acct, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{
+	user, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{
 		Provider: "oidc", Origin: origin, Subject: subject, DisplayName: name, Email: name + "@example.com", EmailVerified: true,
 	}, now)
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	g.Key, _ = auth.GrantKey(e.src.Current.Get().Auth, "oidc")
-	token, err := e.st.CreateSession(ctx, acct.ID, "oidc", origin, g, now, now.Add(time.Hour))
+	token, err := e.st.CreateSession(ctx, user.ID, "oidc", origin, g, now, now.Add(time.Hour))
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	e.cookie[name] = &http.Cookie{Name: auth.SessionCookieName(&url.URL{Scheme: "https", Host: "kritik.example"}), Value: token}
-	e.account[name] = acct.ID
+	e.user[name] = user.ID
 }
 
 // do sends a request as who; a mutation carries the same-origin headers
@@ -569,7 +569,7 @@ func testActions(t *testing.T, e *manageEnv, dashID string) {
 	e.expect(status, body, http.StatusConflict, CodeNotCancelable)
 	status, body = e.do("operator", "POST", "/api/v1/tenants/mgr-dash/reviews/"+review+"/cancel", nil)
 	e.expect(status, body, http.StatusAccepted, "")
-	if e.actions.last() != fmt.Sprintf("cancel %s by %s in %s", review, e.account["operator"], dashID) {
+	if e.actions.last() != fmt.Sprintf("cancel %s by %s in %s", review, e.user["operator"], dashID) {
 		t.Errorf("cancel call %q", e.actions.last())
 	}
 	if e.audits(AuditReviewCancel, review) != 1 || e.audits(AuditReviewCancel, e.actions.notCancelable) != 0 {

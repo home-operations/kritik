@@ -110,13 +110,13 @@ func (a AuditAction) Valid() bool {
 
 func (a AuditAction) String() string { return string(a) }
 
-// AuditEvent is one audit log entry. Actor is null once the account is
+// AuditEvent is one audit log entry. Actor is null once the user is
 // deleted; Tenant is the tenant's slug, "" when the event names none or
 // the tenant is gone. Detail never holds a secret.
 type AuditEvent struct {
 	ID     string          `json:"id"`
 	At     time.Time       `json:"at"`
-	Actor  *Account        `json:"actor"`
+	Actor  *User           `json:"actor"`
 	Tenant string          `json:"tenant"`
 	Action AuditAction     `json:"action"`
 	Target string          `json:"target"`

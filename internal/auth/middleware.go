@@ -12,13 +12,13 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// Account is a human who has signed in to the dashboard.
-type Account = store.Account
+// User is a human who has signed in to the dashboard.
+type User = store.User
 
 // Principal is who an authenticated request acts as, and what the grant
 // their sign-in decided lets them do.
 type Principal struct {
-	Account  Account
+	User     User
 	Identity Identity
 	// Operator administers the instance: the admin role, which reads and
 	// changes everything.
@@ -103,7 +103,7 @@ func honoured(auth configfile.Auth, sess store.Session) bool {
 func principalFor(file *configfile.File, sess store.Session) *Principal {
 	g := sess.Grant
 	p := &Principal{
-		Account: sess.Account, Identity: Identity(sess.Identity),
+		User: sess.User, Identity: Identity(sess.Identity),
 		Operator: g.Role == RoleAdmin, AllTenants: g.AllAccounts, Tenants: map[string]bool{},
 	}
 	if p.Operator || p.AllTenants {

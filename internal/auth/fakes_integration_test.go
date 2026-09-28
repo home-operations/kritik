@@ -25,7 +25,7 @@ const (
 	fakeClientSecret = "tok" // KRITIK_TEST_TOKEN, which every clientSecret reads
 )
 
-// fakeUser is one account on a fake provider.
+// fakeUser is one user on a fake provider.
 type fakeUser struct {
 	ID            int64
 	Login, Email  string

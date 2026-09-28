@@ -258,16 +258,16 @@ func (h *Handler) replaceSession(r *http.Request, id Identity, g store.SessionGr
 			return "", time.Time{}, err
 		}
 	}
-	acct, err := h.store.UpsertIdentity(ctx, store.SignInIdentity(id), now)
+	user, err := h.store.UpsertIdentity(ctx, store.SignInIdentity(id), now)
 	if err != nil {
 		return "", time.Time{}, err
 	}
 	expires := now.Add(ttl)
-	token, err := h.store.CreateSession(ctx, acct.ID, id.Provider, id.Origin, g, now, expires)
+	token, err := h.store.CreateSession(ctx, user.ID, id.Provider, id.Origin, g, now, expires)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	h.logger.InfoContext(ctx, "auth: signed in", "account", acct.ID, "sign_in", id.Provider, "login", id.Login,
+	h.logger.InfoContext(ctx, "auth: signed in", "user", user.ID, "sign_in", id.Provider, "login", id.Login,
 		"role", g.Role, "all_accounts", g.AllAccounts, "accounts", len(g.Accounts))
 	return token, expires, nil
 }

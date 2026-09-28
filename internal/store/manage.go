@@ -17,18 +17,18 @@ import (
 // tenant created from the dashboard before the leader has applied it logs
 // its creation against no tenant; Target still names it.
 type AuditEntry struct {
-	AccountID string
-	TenantID  string
-	Action    string
-	Target    string
-	Detail    json.RawMessage
+	UserID   string
+	TenantID string
+	Action   string
+	Target   string
+	Detail   json.RawMessage
 }
 
 // AuditEvent is one audit log row.
 type AuditEvent struct {
 	ID       int64
 	At       time.Time
-	Actor    *Account
+	Actor    *User
 	TenantID string
 	Action   string
 	Target   string
@@ -41,9 +41,9 @@ func InsertAudit(ctx context.Context, tx pgx.Tx, e AuditEntry) error {
 	if len(detail) == 0 {
 		detail = json.RawMessage(`{}`)
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO audit_events (account_id, tenant_id, action, target, detail)
+	_, err := tx.Exec(ctx, `INSERT INTO audit_events (user_id, tenant_id, action, target, detail)
 		VALUES (nullif($1, '')::uuid, (SELECT id FROM tenants WHERE id = nullif($2, '')::uuid), $3, $4, $5)`,
-		e.AccountID, e.TenantID, e.Action, e.Target, detail)
+		e.UserID, e.TenantID, e.Action, e.Target, detail)
 	if err != nil {
 		return fmt.Errorf("store: insert audit event: %w", err)
 	}
@@ -65,9 +65,9 @@ func (s *Store) ListAudit(ctx context.Context, tenantID string, p Page) ([]Audit
 		}
 		after = &n
 	}
-	rows, err := s.app.Query(ctx, `SELECT e.id, e.at, e.account_id::text, coalesce(a.display_name, ''), coalesce(a.email, ''),
-			coalesce(a.avatar_url, ''), coalesce(e.tenant_id::text, ''), e.action, e.target, e.detail
-		FROM audit_events e LEFT JOIN accounts a ON a.id = e.account_id
+	rows, err := s.app.Query(ctx, `SELECT e.id, e.at, e.user_id::text, coalesce(u.display_name, ''), coalesce(u.email, ''),
+			coalesce(u.avatar_url, ''), coalesce(e.tenant_id::text, ''), e.action, e.target, e.detail
+		FROM audit_events e LEFT JOIN users u ON u.id = e.user_id
 		WHERE ($1::uuid IS NULL OR e.tenant_id = $1) AND ($2::bigint IS NULL OR e.id < $2)
 		ORDER BY e.id DESC LIMIT $3`, uuidParam(tenantID), after, p.Limit+1)
 	if err != nil {
@@ -75,14 +75,14 @@ func (s *Store) ListAudit(ctx context.Context, tenantID string, p Page) ([]Audit
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (AuditEvent, error) {
 		var (
-			e       AuditEvent
-			account *string
-			a       Account
+			e      AuditEvent
+			userID *string
+			u      User
 		)
-		err := row.Scan(&e.ID, &e.At, &account, &a.DisplayName, &a.Email, &a.AvatarURL, &e.TenantID, &e.Action, &e.Target, &e.Detail)
-		if account != nil {
-			a.ID = *account
-			e.Actor = &a
+		err := row.Scan(&e.ID, &e.At, &userID, &u.DisplayName, &u.Email, &u.AvatarURL, &e.TenantID, &e.Action, &e.Target, &e.Detail)
+		if userID != nil {
+			u.ID = *userID
+			e.Actor = &u
 		}
 		return e, err
 	})

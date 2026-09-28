@@ -23,8 +23,8 @@ type Page[T any] struct {
 	NextCursor *string `json:"nextCursor"`
 }
 
-// Account is the signed-in human.
-type Account struct {
+// User is the signed-in human.
+type User struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
 	Email       string `json:"email"`
@@ -40,7 +40,7 @@ type TenantMembership struct {
 
 // Me is who the session acts as.
 type Me struct {
-	Account  Account            `json:"account"`
+	User     User               `json:"user"`
 	Operator bool               `json:"operator"`
 	Tenants  []TenantMembership `json:"tenants"`
 }

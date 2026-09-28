@@ -11,7 +11,8 @@ export interface TenantMembership {
   managedBy: TenantManagedBy;
 }
 
-export interface Account {
+// A person signed in to the dashboard.
+export interface User {
   id: string;
   displayName: string;
   email: string;
@@ -19,7 +20,7 @@ export interface Account {
 }
 
 export interface Me {
-  account: Account;
+  user: User;
   operator: boolean;
   tenants: TenantMembership[];
 }
@@ -746,7 +747,7 @@ export type AuditAction =
 export interface AuditEvent {
   id: string;
   at: string;
-  actor: Account | null;
+  actor: User | null;
   tenant: string;
   action: AuditAction;
   target: string;
