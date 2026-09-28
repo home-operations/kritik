@@ -2,7 +2,9 @@
   // The Cmd/Ctrl+K command palette: jump to any page from anywhere. Starts as
   // a static registry of routes (global pages, plus the current account's
   // pages when the active route is inside one); later tasks can extend the
-  // registry with real search results (repos, pulls, reviews).
+  // registry with real search results (repos, pulls, reviews). A search also
+  // finds the settings an admin edits: each section and field, which the
+  // palette focuses once its page shows it.
   import type { Route } from './router.svelte';
   import { router, navigate } from './router.svelte';
   import { palette, togglePalette } from './keyboard.svelte';
@@ -30,7 +32,37 @@
     hint?: string;
     route: Route;
     icon: string;
+    // target selects the element to focus once the route shows it.
+    target?: string;
+    // keywords are matched as well as the label and hint.
+    keywords?: string;
   }
+
+  // The admin console's sections, and one account's settings: the fields of
+  // its configuration form, by the path each carries.
+  const consoleSettings: [label: string, target: string, keywords: string][] = [
+    ['Instance configuration', '#op-config', 'settings spec json'],
+    ['Connections', '#instance-connections', 'github app webhook'],
+    ['Provider keys', '#instance-providers', 'model api key byok openrouter openai anthropic'],
+    ['Embeddings', '#instance-embedding', 'embedder index vector'],
+    ['Create a GitHub App', '#op-app', 'manifest register'],
+    ['GitHub installations', '#op-connections', 'uninstall connections'],
+    ['Instance settings', '#op-instance', 'environment'],
+    ['Admin audit log', '#op-audit', 'history'],
+  ];
+  const accountSettings: [label: string, target: string, keywords: string][] = [
+    ['Review model', '[data-path="models.review"]', 'models.review'],
+    ['Fallback model', '[data-path="models.fallback"]', 'models.fallback'],
+    ['Filter', '[data-path="filter"]', 'cel'],
+    ['Forks', '[data-path="forks"]', ''],
+    ['Settle', '[data-path="settle"]', 'delay'],
+    ['Concurrency', '[data-path="limits.concurrency"]', 'limits'],
+    ['Reviews per day', '[data-path="limits.reviewsPerDay"]', 'limits'],
+    ['Tokens per month', '[data-path="limits.tokensPerMonth"]', 'limits budget spend'],
+    ['Runner', '[data-path="runner"]', 'deadline resources'],
+    ['Provider keys', '#account-providers', 'model api key byok'],
+    ['Repositories', '#account-repositories', 'mode enabled'],
+  ];
 
   // currentSlug reads the account slug off whatever route is active, when the
   // route carries one — every account-scoped Route variant does.
@@ -41,10 +73,15 @@
   // Gated the same way as the top-bar (App.svelte): admin console and
   // per-account admin are role-restricted, and "Sign in" only makes sense
   // when there's no session yet.
-  function buildEntries(r: Route): Entry[] {
+  function buildEntries(r: Route, searching: boolean): Entry[] {
     const entries: Entry[] = [{ label: 'Overview', route: { name: 'overview' }, icon: mdiViewDashboardOutline }];
     if (me?.operator) {
       entries.push({ label: 'Admin console', route: { name: 'operator' }, icon: mdiConsoleLine });
+      if (searching) {
+        for (const [label, target, keywords] of consoleSettings) {
+          entries.push({ label, hint: 'admin console', route: { name: 'operator' }, icon: mdiCogOutline, target, keywords });
+        }
+      }
     }
     if (!me) {
       entries.push({ label: 'Sign in', route: { name: 'signin' }, icon: mdiLogin });
@@ -64,6 +101,13 @@
       );
       if (me?.accounts.find((t) => t.slug === slug)?.role === 'admin') {
         entries.push({ label: 'Admin', hint: slug, route: { name: 'admin', slug }, icon: mdiCogOutline });
+        if (searching) {
+          for (const [label, target, keywords] of accountSettings) {
+            entries.push({
+              label, hint: `${slug} settings`, route: { name: 'admin', slug, section: 'config' }, icon: mdiCogOutline, target, keywords,
+            });
+          }
+        }
       }
     }
     for (const p of recent) {
@@ -107,9 +151,9 @@
 
   const rows = $derived.by(() => {
     const needle = q.trim().toLowerCase();
-    const entries = buildEntries(router.route);
+    const entries = buildEntries(router.route, needle !== '');
     if (!needle) return entries;
-    return entries.filter((e) => e.label.toLowerCase().includes(needle) || e.hint?.toLowerCase().includes(needle));
+    return entries.filter((e) => [e.label, e.hint, e.keywords].some((s) => s?.toLowerCase().includes(needle)));
   });
 
   // Clamp the cursor when the rows change under it (typing narrows the list).
@@ -121,6 +165,26 @@
     if (!row) return;
     togglePalette();
     navigate(row.route);
+    if (row.target) focusWhenShown(row.target);
+  }
+
+  // focusWhenShown focuses the element target selects, or the first field
+  // inside it, once the page shows it: a page loads its data first.
+  function focusWhenShown(target: string): void {
+    const deadline = performance.now() + 3000;
+    const attempt = (): void => {
+      const el = document.querySelector<HTMLElement>(target);
+      if (!el) {
+        if (performance.now() < deadline) requestAnimationFrame(attempt);
+        return;
+      }
+      const field = el.matches('input, select, textarea') ? el : el.querySelector<HTMLElement>('input, select, textarea');
+      const focus = field ?? el;
+      if (!field && !focus.hasAttribute('tabindex')) focus.setAttribute('tabindex', '-1');
+      focus.scrollIntoView({ block: 'center' });
+      focus.focus();
+    };
+    requestAnimationFrame(attempt);
   }
 
   function onKeydown(e: KeyboardEvent): void {

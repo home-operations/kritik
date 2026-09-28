@@ -31,7 +31,8 @@
   import SignIn from './lib/SignIn.svelte';
   import Page from './lib/pages/Page.svelte';
   import Toasts from './lib/components/Toasts.svelte';
-  import { session, loadMeta } from './lib/session.svelte';
+  import Setup from './lib/pages/admin/Setup.svelte';
+  import { session, loadMeta, management } from './lib/session.svelte';
   import type { Me } from './lib/types';
 
   const me = $derived(session.me);
@@ -257,7 +258,10 @@
         </aside>
       {/if}
 
-      <Page route={router.route} />
+      <div class="main-col">
+        {#if me?.operator && management()}<Setup />{/if}
+        <Page route={router.route} />
+      </div>
     </div>
 
     <Palette {me} />

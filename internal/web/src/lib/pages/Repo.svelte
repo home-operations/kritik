@@ -89,6 +89,18 @@
     repository: '.kritik.yaml',
   };
 
+  // settingFilter narrows the settings shown to those whose label, key or
+  // value holds it.
+  let settingFilter = $state('');
+  function matches(...texts: string[]): boolean {
+    const needle = settingFilter.trim().toLowerCase();
+    return !needle || texts.some((t) => t.toLowerCase().includes(needle));
+  }
+  function shown(d: RepoDetail, rows: Row[]): Row[] {
+    const eff = d.repoConfig?.settings ?? d.settings;
+    return rows.filter((r) => matches(r.label, r.key, r.value(eff)));
+  }
+
   // The bounds a repository's .kritik.yaml chooses within, each "own" when
   // the operator set none.
   function bounds(s: RepoSettings): { label: string; value: string }[] {
@@ -145,21 +157,30 @@
         {#snippet children(d)}
           {@const s = d.settings}
           {@const rc = d.repoConfig}
+          {@const enabled = s.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'}
+          {@const rows = shown(d, settingRows)}
+          {@const agent = shown(d, agentRows)}
           <div class="grid-2">
             <section class="panel" aria-labelledby="repo-settings">
-              <header class="panel-head"><h2 id="repo-settings">Effective settings</h2></header>
+              <header class="panel-head">
+                <h2 id="repo-settings">Effective settings</h2>
+                <input class="settings-filter" type="search" aria-label="Filter settings" placeholder="Filter settings" bind:value={settingFilter} />
+              </header>
               <dl class="deflist">
-                <dt>Enabled</dt><dd>{s.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'} <span class="muted small">({d.managedBy})</span></dd>
-                <dt>Default branch</dt><dd class="mono">{d.defaultBranch}</dd>
-                {#each settingRows as r (r.label)}
+                {#if matches('Enabled', 'enabled', enabled)}
+                  <dt>Enabled</dt><dd>{enabled} <span class="muted small">({d.managedBy})</span></dd>
+                {/if}
+                {#if matches('Default branch', d.defaultBranch)}<dt>Default branch</dt><dd class="mono">{d.defaultBranch}</dd>{/if}
+                {#each rows as r (r.label)}
                   {@render setting(d, r)}
                 {/each}
               </dl>
+              {#if rows.length === 0 && agent.length === 0}<p class="state-msg">No setting matches “{settingFilter.trim()}”.</p>{/if}
             </section>
             <section class="panel" aria-labelledby="repo-agent">
               <header class="panel-head"><h2 id="repo-agent">Agent limits</h2></header>
               <dl class="deflist">
-                {#each agentRows as r (r.label)}
+                {#each agent as r (r.label)}
                   {@render setting(d, r)}
                 {/each}
               </dl>

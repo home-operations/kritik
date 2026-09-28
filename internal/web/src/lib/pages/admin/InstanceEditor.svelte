@@ -146,7 +146,7 @@
       <textarea class="json-edit" spellcheck="false" bind:value={jsonText} aria-invalid={!!clientError || undefined}></textarea>
     </label>
   {:else}
-    <fieldset>
+    <fieldset id="instance-connections">
       <legend>Connections</legend>
       <p class="field-hint">
         Each GitHub App kritik serves accounts through. Connections the configuration file declares are listed in the settings
@@ -165,7 +165,7 @@
       <div><button type="button" class="btn" onclick={() => structural(() => draft.connections.push(newConnection()))}>Add connection</button></div>
     </fieldset>
 
-    <fieldset>
+    <fieldset id="instance-providers">
       <legend>Provider keys</legend>
       <p class="field-hint">
         The instance's model keys. A model named <span class="mono">&lt;key name&gt;/&lt;model&gt;</span> runs on its key; an
@@ -181,7 +181,7 @@
       <div><button type="button" class="btn" onclick={() => structural(() => draft.providers.push(newProvider()))}>Add provider key</button></div>
     </fieldset>
 
-    <fieldset>
+    <fieldset id="instance-embedding">
       <legend>Embeddings</legend>
       <p class="field-hint">
         The embedder that builds each repository's similar-code index, which reviews draw context from. Without one, reviews

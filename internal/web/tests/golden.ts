@@ -87,6 +87,8 @@ export function defaultApi(): [RegExp, Body][] {
     [/\/api\/v1\/operator\/accounts$/, [operatorAccount]],
     [/\/api\/v1\/operator\/instance$/, [instanceSetting]],
     [/\/api\/v1\/operator\/connections$/, [golden<T.AccountDetail>('account_detail').connection]],
+    [/\/api\/v1\/operator\/setup$/, setupStatus],
+    [/\/api\/v1\/app\/manifests\/collect$/, []],
     [/\/api\/v1\/config$/, instanceConfig],
     [new RegExp(`${t}/repos$`), repoPage],
     [new RegExp(`${t}/repos/alpha/one$`), repoDetail],

@@ -228,7 +228,7 @@
       </div>
     </fieldset>
 
-    <fieldset>
+    <fieldset id="account-providers">
       <legend>Provider keys</legend>
       <p class="field-hint">
         The account's own model keys. A model named <span class="mono">&lt;key name&gt;/&lt;model&gt;</span> runs on its key, and the
@@ -245,7 +245,7 @@
       <div><button type="button" class="btn" onclick={() => structural(() => draft.providers.push(newProvider()))}>Add provider key</button></div>
     </fieldset>
 
-    <fieldset>
+    <fieldset id="account-repositories">
       <legend>Repositories</legend>
       {#each draft.repositories as repo, i (repo.key)}
         <RepositoryFields
