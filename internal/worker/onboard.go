@@ -54,13 +54,18 @@ func (o *Onboarder) Run(ctx context.Context) {
 	}
 }
 
-// Offer queues onboarding jobs up to the window.
+// Offer queues onboarding jobs up to the window, and none while the
+// running configuration has no embedder.
 func (o *Onboarder) Offer(ctx context.Context) error {
+	f := o.Current.Get()
+	if f.Embedding == nil {
+		return nil
+	}
 	inFlight, err := o.Store.OnboardingInFlight(ctx)
 	if err != nil {
 		return err
 	}
-	window := o.Current.Get().OnboardWindow()
+	window := f.OnboardWindow()
 	room := window - inFlight
 	if room <= 0 {
 		return nil

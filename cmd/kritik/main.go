@@ -36,7 +36,6 @@ import (
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/metrics"
-	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/poller"
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/server"
@@ -102,7 +101,6 @@ func run() error {
 		"gateway_url", cfg.GatewayURL,
 		"config_file", cfg.ConfigFile,
 		"owner_dsn", cfg.DatabaseOwnerURL != "",
-		"embedding", cfg.EmbeddingEnabled(),
 	)
 
 	// Graceful shutdown on the usual termination signals. stop() runs as soon
@@ -204,7 +202,7 @@ func run() error {
 				return err
 			}
 		}
-		embedder := newEmbedder(cfg)
+		embedders := &worker.Embedders{Build: worker.BuildEmbedder}
 		forges := &worker.ForgeCache{Build: worker.BuildForge}
 		workers := river.NewWorkers()
 		base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
@@ -225,12 +223,12 @@ func run() error {
 			return server.ServeDrain(ctx, cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
 		})
 		river.AddWorker(workers, &worker.Review{
-			Base: base, Executor: exec, Completers: completers, Embedder: embedder, EmbedModel: cfg.EmbedModel,
+			Base: base, Executor: exec, Completers: completers, Embedders: embedders,
 			GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
 		})
 		river.AddWorker(workers, &worker.FollowUp{Base: base, Completers: completers})
 		river.AddWorker(workers, &worker.Index{
-			Base: base, Executor: exec, Embedder: embedder, EmbedModel: cfg.EmbedModel, EmbedDims: cfg.EmbedDims,
+			Base: base, Executor: exec, Embedders: embedders,
 		})
 		queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
 			Logger: logger,
@@ -350,16 +348,6 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 	return fmt.Errorf("river: start: %w", err)
 }
 
-// newEmbedder builds the deployment embedder, or nil when indexing is off.
-func newEmbedder(cfg *config.Config) model.Embedder {
-	if !cfg.EmbeddingEnabled() {
-		return nil
-	}
-	e := model.NewOpenAIEmbedder(cfg.EmbedBaseURL, cfg.EmbedAPIKey, cfg.EmbedModel, cfg.EmbedDims)
-	e.MaxBatch, e.MaxBatchChars, e.MaxItemChars = cfg.EmbedMaxBatch, cfg.EmbedMaxBatchChars, cfg.EmbedMaxItemChars
-	return e
-}
-
 // newExecutor builds the runner executor the configuration selects.
 func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (executor.Executor, error) {
 	if cfg.Executor == "local" {
@@ -408,20 +396,15 @@ func openStore(ctx context.Context, opts store.Options, logger *slog.Logger) (*s
 const secretSweepInterval = 5 * time.Minute
 
 // lead runs for as long as this replica holds the leader lock: migrate,
-// apply the current file, then re-apply whenever the file changes. With an
-// embedder configured it also owns the index schema and enqueues an
-// onboarding index job for every repository that has none.
+// apply the current configuration, then re-apply whenever it changes. While
+// the configuration has an embedder it also keeps the index schema to it
+// and enqueues an onboarding index job for every repository that has none.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
 	sweeper *executor.Kube, m *metrics.Metrics, configErrors *server.ConfigErrorGauge, leader string, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
-	}
-	if cfg.EmbeddingEnabled() {
-		if err := st.EnsureIndexSchema(ctx, cfg.DatabaseAppRole, cfg.EmbedModel, cfg.EmbedDims, cfg.ReindexOnModelChange); err != nil {
-			return err
-		}
 	}
 	// The backstop poll is a leader duty: one lister per connection.
 	pollCtx, stopPoll := context.WithCancel(ctx)
@@ -448,22 +431,33 @@ func lead(
 	}
 	// So is feeding the index queue its onboarding jobs, a few at a time.
 	onboarder := &worker.Onboarder{Store: st, Queue: queue, Current: current, Logger: logger}
-	if cfg.EmbeddingEnabled() {
-		go onboarder.Run(pollCtx)
-	}
+	go onboarder.Run(pollCtx)
 	// And so is retention: model-call transcripts past their configured
 	// window and the indexes of repositories disabled past their grace
 	// (owner pool, bypassing row-level security), and expired dashboard
 	// sessions (app pool).
 	go retentionSweep(pollCtx, st, current, retentionSweepInterval, logger)
 	return applyLoop(ctx, current, func(ctx context.Context, f *configfile.File) error {
-		return st.ApplyConfig(ctx, f, leader)
-	}, func(ctx context.Context) error {
-		if !cfg.EmbeddingEnabled() {
-			return nil
+		if err := st.ApplyConfig(ctx, f, leader); err != nil {
+			return err
 		}
-		return onboarder.Offer(ctx)
-	}, refusedRetryInterval, configErrors, logger)
+		return ensureIndexSchema(ctx, st, cfg.DatabaseAppRole, f.Embedding, logger)
+	}, onboarder.Offer, refusedRetryInterval, configErrors, logger)
+}
+
+// ensureIndexSchema keeps the index table to the configuration's embedder,
+// rebuilding it, and so every repository's index, when the model or
+// dimension changed: the dashboard asked the admin to confirm that before
+// saving it. Without an embedder the table is left as it is.
+func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *configfile.Embedding, logger *slog.Logger) error {
+	if e == nil {
+		return nil
+	}
+	rebuilt, err := st.EnsureIndexSchema(ctx, appRole, e.Model, e.Dims)
+	if rebuilt {
+		logger.Warn("index rebuilt for a new embedder: every repository is indexed again", "model", e.Model, "dims", e.Dims)
+	}
+	return err
 }
 
 // retentionSweepInterval is how often the leader deletes model-call

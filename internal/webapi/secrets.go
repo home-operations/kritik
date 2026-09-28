@@ -52,7 +52,7 @@ var connectionSecrets = []struct {
 
 // secretPositions lists every SecretRef position root holds: its
 // connections' credentials, its providers' and its accounts' providers'
-// keys, and its egress credentials.
+// keys, its egress credentials and its embedder's key.
 func secretPositions(root map[string]any) []secretPos {
 	out := make([]secretPos, 0, 3*len(objects(root["connections"])))
 	for i, in := range objects(root["connections"]) {
@@ -101,6 +101,20 @@ func secretPositions(root map[string]any) []secretPos {
 			parent: creds, leaf: host, where: "egress.credentials." + host, logical: "egress.credentials." + host,
 			stored: func(prev map[string]any) (any, *specError) {
 				return sealedAt(objectMap(objectMap(prev["egress"])["credentials"]), host), nil
+			},
+		})
+	}
+	if emb := objectMap(root["embedding"]); emb != nil {
+		out = append(out, secretPos{
+			parent: emb, leaf: "apiKey", where: "embedding.apiKey", logical: "embedding.apiKey",
+			stored: func(prev map[string]any) (any, *specError) {
+				old := objectMap(prev["embedding"])
+				ref := sealedAt(old, "apiKey")
+				// The embedder has no type, so its endpoint is its baseUrl alone.
+				if ref != nil && providerEndpoint(old) != providerEndpoint(emb) {
+					return nil, &specError{code: CodeReenterSecret, msg: "the embedder's endpoint changed; enter this key again"}
+				}
+				return ref, nil
 			},
 		})
 	}

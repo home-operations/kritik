@@ -103,42 +103,6 @@ tests:
             secret:
               secretName: kritik-auth
 
-  - it: leaves the embedder out until a model is set
-    asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIK_EMBED_MODEL
-            value: voyageai/voyage-code-4
-          any: true
-
-  - it: sets the embedder from an existing secret
-    set:
-      embedding.model: voyageai/voyage-code-4
-      embedding.existingSecret: kritik-providers
-      embedding.existingSecretKey: openrouter-api-key
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIK_EMBED_MODEL
-            value: voyageai/voyage-code-4
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIK_EMBED_API_KEY
-            valueFrom:
-              secretKeyRef:
-                name: kritik-providers
-                key: openrouter-api-key
-
-  - it: fails when a model is set without a key
-    set:
-      embedding.model: voyageai/voyage-code-4
-    asserts:
-      - failedTemplate:
-          errorPattern: embedding.model is set but no key
-
   - it: renders the split topology with an ingest and a worker Deployment
     set:
       roles.all.enabled: false

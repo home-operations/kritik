@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The form for the instance spec: its connections and the instance's
-  // provider keys, and every other setting as JSON. It edits a draft (see
+  // The form for the instance spec: its connections, the instance's
+  // provider keys and its embedder, and every other setting as JSON. It edits a draft (see
   // spec.ts) and hands the built spec to onsave; the caller does the
   // request and passes back any error, whose path highlights the field it
   // names.
@@ -10,12 +10,14 @@
     hasTypedSecret,
     instanceDraftOf,
     newConnection,
+    newEmbedding,
     newProvider,
     pathMatches,
     type InstanceDraft,
     type SpecError,
   } from '../../spec';
   import ConnectionFields from './ConnectionFields.svelte';
+  import EmbeddingFields from './EmbeddingFields.svelte';
   import ProviderFields from './ProviderFields.svelte';
 
   type Obj = Record<string, unknown>;
@@ -177,6 +179,19 @@
         />
       {/each}
       <div><button type="button" class="btn" onclick={() => structural(() => draft.providers.push(newProvider()))}>Add provider key</button></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Embeddings</legend>
+      <p class="field-hint">
+        The embedder that builds each repository's similar-code index, which reviews draw context from. Without one, reviews
+        run without it.
+      </p>
+      {#if draft.embedding}
+        <EmbeddingFields bind:emb={draft.embedding} {inv} onremove={() => structural(() => (draft.embedding = undefined))} />
+      {:else}
+        <div><button type="button" class="btn" onclick={() => structural(() => (draft.embedding = newEmbedding()))}>Add embedder</button></div>
+      {/if}
     </fieldset>
   {/if}
 

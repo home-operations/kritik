@@ -39,11 +39,9 @@ type Index struct {
 	river.WorkerDefaults[jobs.IndexArgs]
 	Base
 	Executor executor.Executor
-	Embedder model.Embedder
-	// EmbedModel and EmbedDims name the deployment embedder; a generation
-	// built with anything else is rebuilt in full.
-	EmbedModel string
-	EmbedDims  int
+	// Embedders resolves the instance's embedder; a generation built with
+	// another model or dimension is rebuilt in full.
+	Embedders *Embedders
 
 	// superviseEvery overrides superviseInterval.
 	superviseEvery time.Duration
@@ -65,10 +63,11 @@ type activeGeneration struct {
 // Work implements river.Worker.
 func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error {
 	args := job.Args
-	if w.Embedder == nil {
+	file := w.Current.Get()
+	embedder, emb := w.Embedders.Embedder(file)
+	if embedder == nil {
 		return river.JobCancel(errors.New("worker: no embedder is configured, indexing is off"))
 	}
-	file := w.Current.Get()
 	account, err := w.account(file, args.AccountID)
 	if err != nil {
 		return err
@@ -107,7 +106,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	mode, base := modeFull, ""
-	if !args.Full && active != nil && active.model == w.EmbedModel && active.dims == w.EmbedDims {
+	if !args.Full && active != nil && active.model == emb.Model && active.dims == emb.Dims {
 		if active.commit == commit {
 			logger.Info("index already at this commit")
 			return nil
@@ -129,7 +128,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	if err != nil {
 		return err
 	}
-	runID, runnerRunID, err := w.start(ctx, args, commit, base, mode)
+	runID, runnerRunID, err := w.start(ctx, args, emb, commit, base, mode)
 	if err != nil {
 		return err
 	}
@@ -166,7 +165,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		// timeout, a node going away) do not repeat.
 		return errors.Join(fmt.Errorf("worker: index runner failed: %s", reason), w.finish(ctx, args.AccountID, runID, "failed", 0, reason))
 	}
-	n, mode, err := w.embed(ctx, args, account, commit, runID, runnerRunID, active, settings, job.ID)
+	n, mode, err := w.embed(ctx, args, account, embedder, emb.Model, commit, runID, runnerRunID, active, settings, job.ID)
 	if err != nil {
 		logger.Error("index embedding failed", "error", err)
 		w.Metrics.IndexRun(account.Key(), mode, "failed", 0)
@@ -229,7 +228,9 @@ func (w *Index) activeGeneration(ctx context.Context, accountID, runID string) (
 	return g, nil
 }
 
-func (w *Index) start(ctx context.Context, args jobs.IndexArgs, commit, base, mode string) (runID, runnerRunID string, err error) {
+func (w *Index) start(
+	ctx context.Context, args jobs.IndexArgs, emb *configfile.Embedding, commit, base, mode string,
+) (runID, runnerRunID string, err error) {
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		// Only the active generation keeps its chunks: any other run's were
 		// left by a job that could not clear them, such as one killed
@@ -244,7 +245,7 @@ func (w *Index) start(ctx context.Context, args jobs.IndexArgs, commit, base, mo
 		if err := tx.QueryRow(ctx, `INSERT INTO index_runs
 			(account_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, mode, status, trigger)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8) RETURNING id`,
-			args.AccountID, args.RepositoryID, commit, base, w.EmbedModel, w.EmbedDims, mode, args.Trigger).Scan(&runID); err != nil {
+			args.AccountID, args.RepositoryID, commit, base, emb.Model, emb.Dims, mode, args.Trigger).Scan(&runID); err != nil {
 			return fmt.Errorf("worker: insert index run: %w", err)
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, index_run_id, kind) VALUES ($1, $2, 'index') RETURNING id`,
@@ -304,8 +305,8 @@ type stagedChunk struct {
 // an incremental step moves its chunks into the active generation, in place
 // of the changed paths' chunks.
 func (w *Index) embed(
-	ctx context.Context, args jobs.IndexArgs, account *configfile.Account, commit, runID, runnerRunID string, active *activeGeneration,
-	settings configfile.Settings, jobID int64,
+	ctx context.Context, args jobs.IndexArgs, account *configfile.Account, embedder model.Embedder, embedModel string,
+	commit, runID, runnerRunID string, active *activeGeneration, settings configfile.Settings, jobID int64,
 ) (int, string, error) {
 	var pack indexPack
 	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
@@ -326,7 +327,7 @@ func (w *Index) embed(
 	}
 	var total int
 	var tokens int64
-	err = w.withLease(ctx, account, "embed:"+w.EmbedModel, settings.Limits.Concurrency, jobID, func(ctx context.Context) error {
+	err = w.withLease(ctx, account, "embed:"+embedModel, settings.Limits.Concurrency, jobID, func(ctx context.Context) error {
 		var last int64
 		for {
 			var batch []stagedChunk
@@ -342,12 +343,12 @@ func (w *Index) embed(
 			for i, c := range batch {
 				texts[i] = embedText(c)
 			}
-			vectors, used, err := w.Embedder.Embed(ctx, texts)
+			vectors, used, err := embedder.Embed(ctx, texts)
 			if err != nil {
-				w.Metrics.ModelCall(account.Key(), w.EmbedModel, roleEmbedding, "error", 0, 0, 0, 0)
+				w.Metrics.ModelCall(account.Key(), embedModel, roleEmbedding, "error", 0, 0, 0, 0)
 				return err
 			}
-			w.Metrics.ModelCall(account.Key(), w.EmbedModel, roleEmbedding, "ok", used, 0, 0, 0)
+			w.Metrics.ModelCall(account.Key(), embedModel, roleEmbedding, "ok", used, 0, 0, 0)
 			tokens += used
 			err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 				return insertChunks(ctx, tx, args.AccountID, args.RepositoryID, runID, batch, vectors)
@@ -392,7 +393,7 @@ func (w *Index) embed(
 			return fmt.Errorf("worker: clear staging: %w", err)
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO usage (account_id, repository_id, role, model, input_tokens) VALUES ($1, $2, 'embedding', $3, $4)`,
-			args.AccountID, args.RepositoryID, w.EmbedModel, tokens); err != nil {
+			args.AccountID, args.RepositoryID, embedModel, tokens); err != nil {
 			return fmt.Errorf("worker: record embedding usage: %w", err)
 		}
 		return nil

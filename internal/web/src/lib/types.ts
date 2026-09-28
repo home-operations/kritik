@@ -640,7 +640,8 @@ export type ManagementErrorCode =
   | 'not_cancelable'
   | 'actions_disabled'
   | 'already_queued'
-  | 'reenter_secret';
+  | 'reenter_secret'
+  | 'reindex_required';
 
 // details of an invalid_spec error.
 export interface PathDetails {
@@ -716,6 +717,9 @@ export interface AccountConfig {
 export interface UpdateConfigRequest {
   revision: number;
   spec: Record<string, unknown>;
+  // Accepts that a new embedding model or dimension rebuilds every
+  // repository's index; without it such a write is reindex_required.
+  confirmReindex?: boolean;
 }
 
 export interface ConfigWriteResult {

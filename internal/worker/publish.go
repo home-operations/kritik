@@ -536,13 +536,15 @@ const (
 // of the repository's active index generation are pulled in, excluding
 // the changed paths, which the overlay already covers.
 func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpack.Chunk, error) {
-	if p.w.Embedder == nil {
+	embedder, emb := p.w.Embedders.Embedder(p.file)
+	if embedder == nil {
 		return nil, nil
 	}
 	var runID string
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT r.active_index_run_id::text FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
-			WHERE r.id = $1 AND g.status = 'completed' AND g.embed_model = $2`, p.pr.repositoryID, p.w.EmbedModel).Scan(&runID)
+			WHERE r.id = $1 AND g.status = 'completed' AND g.embed_model = $2 AND g.embed_dims = $3`,
+			p.pr.repositoryID, emb.Model, emb.Dims).Scan(&runID)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -567,10 +569,10 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 	}
 	var vectors [][]float32
 	var tokens int64
-	err = p.w.withLease(ctx, p.account, "embed:"+p.w.EmbedModel, p.settings.Limits.Concurrency, p.jobID, func(ctx context.Context) error {
+	err = p.w.withLease(ctx, p.account, "embed:"+emb.Model, p.settings.Limits.Concurrency, p.jobID, func(ctx context.Context) error {
 		var err error
-		vectors, tokens, err = p.w.Embedder.Embed(ctx, texts)
-		p.w.Metrics.ModelCall(p.account.Key(), p.w.EmbedModel, roleEmbedding, callOutcome(err), tokens, 0, 0, 0)
+		vectors, tokens, err = embedder.Embed(ctx, texts)
+		p.w.Metrics.ModelCall(p.account.Key(), emb.Model, roleEmbedding, callOutcome(err), tokens, 0, 0, 0)
 		return err
 	})
 	if err != nil {
@@ -585,7 +587,7 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		if err := insertUsage(ctx, tx, reviewUsage{
 			accountID: p.account.ID(), repositoryID: p.pr.repositoryID, reviewID: p.reviewID,
-			role: roleEmbedding, model: p.w.EmbedModel, input: tokens,
+			role: roleEmbedding, model: emb.Model, input: tokens,
 		}); err != nil {
 			return err
 		}

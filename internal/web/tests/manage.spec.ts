@@ -31,6 +31,10 @@ const instanceConfig: T.InstanceConfig = {
   spec: { ...g.instanceConfig.spec, defaults: { settle: '1m' }, accounts: [accountEntry] },
 };
 const alphaBot = (g.instanceConfig.spec.connections as Record<string, unknown>[])[0]!;
+const embedded: T.InstanceConfig = {
+  ...instanceConfig,
+  spec: { ...instanceConfig.spec, embedding: { baseUrl: 'https://embed.example/v1', model: 'm', dims: 8, apiKey: { set: true } } },
+};
 
 async function setup(page: Page, who: T.Me, rows: [RegExp, unknown][] = []): Promise<URL[]> {
   return g.mockApi(page, [[/\/api\/v1\/me$/, who], ...rows, ...g.defaultApi()]);
@@ -486,6 +490,64 @@ test.describe('admin console', () => {
     await expect(page.locator('#op-config').locator('..')).toContainText('revision 9');
     await expect(accounts).toHaveValue('alpha');
     await expect(page.getByRole('alert')).toHaveCount(0);
+  });
+
+  test('adds an embedder to the instance', async ({ page }) => {
+    await setup(page, operatorMe, [instanceRow(instanceConfig)]);
+    const sent = await g.mockWrites(page, [['PUT', CONFIG, { status: 200, body: { revision: 4 } }]]);
+    await page.goto('/#/operator');
+    await page.getByRole('button', { name: 'Add embedder' }).click();
+    await page.getByLabel('Endpoint').fill('https://openrouter.ai/api/v1');
+    await page.getByLabel('Model', { exact: true }).fill('voyage-code-3');
+    await page.getByLabel('Dimension').fill('1024');
+    await page.getByLabel('Embedding API key: new value').fill('ek');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    const body = sent[0]!.body as T.UpdateConfigRequest;
+    expect(body.confirmReindex).toBeUndefined();
+    expect(body.spec.embedding).toEqual({ baseUrl: 'https://openrouter.ai/api/v1', model: 'voyage-code-3', dims: 1024, apiKey: { value: 'ek' } });
+  });
+
+  test('a new embedding model asks before rebuilding every index', async ({ page }) => {
+    await setup(page, operatorMe, [instanceRow(embedded), [/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    const sent = await g.mockWrites(page, [
+      [
+        'PUT',
+        CONFIG,
+        (s) =>
+          (s.body as T.UpdateConfigRequest).confirmReindex
+            ? { status: 200, body: { revision: 4 } }
+            : g.apiError(409, 'reindex_required', 'confirm the reindex to save', { path: 'embedding.model' }),
+      ],
+    ]);
+    await page.goto('/#/operator');
+    await expect(page.locator('[data-path="embedding.apiKey"]').getByLabel('Keep current')).toBeChecked();
+    await page.locator('[data-path="embedding.model"]').fill('n');
+    await page.getByRole('button', { name: 'Save' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Rebuild every index?' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(dialog).toBeHidden();
+    expect(sent).toHaveLength(1);
+    await expect(page.locator('[data-path="embedding.model"]')).toHaveValue('n');
+    await expect(page.getByRole('alert')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Save' }).click();
+    await dialog.getByRole('button', { name: 'Save and reindex' }).click();
+    await expect.poll(() => sent.length).toBe(3);
+    const body = sent[2]!.body as T.UpdateConfigRequest;
+    expect(body.confirmReindex).toBe(true);
+    expect(body.spec.embedding).toEqual({ baseUrl: 'https://embed.example/v1', model: 'n', dims: 8, apiKey: { keep: true } });
+    await expect(page.getByRole('status')).toContainText('Saved: revision 4');
+  });
+
+  test("the embedder's key is not kept once its endpoint changes", async ({ page }) => {
+    await setup(page, operatorMe, [instanceRow(embedded)]);
+    await page.goto('/#/operator');
+    const key = page.locator('[data-path="embedding.apiKey"]');
+    await page.locator('[data-path="embedding.baseUrl"]').fill('https://elsewhere.example/v1');
+    await expect(key.getByLabel('Keep current')).toHaveCount(0);
+    await expect(page.getByRole('note').filter({ hasText: 'endpoint changed' })).toBeVisible();
   });
 
   test('lists the instance settings read-only with their sources', async ({ page }) => {

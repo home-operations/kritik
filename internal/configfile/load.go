@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -115,6 +116,13 @@ func (s *Spec) resolve(open Opener) error {
 		}
 		s.Egress.credentials[strings.ToLower(host)] = v
 	}
+	if e := s.Embedding; e != nil {
+		v, err := e.APIKey.resolve(refs)
+		if err != nil {
+			return fmt.Errorf("configfile: embedding.apiKey: %w", err)
+		}
+		e.apiKey = v
+	}
 	if err := s.Defaults.compile(); err != nil {
 		return fmt.Errorf("configfile: defaults.filter: %w", err)
 	}
@@ -194,6 +202,9 @@ func (f *File) validate(spec *Spec) error {
 	if err := f.validateTools(); err != nil {
 		return err
 	}
+	if err := f.validateEmbedding(); err != nil {
+		return err
+	}
 	if err := validateConnections(spec.Connections); err != nil {
 		return err
 	}
@@ -229,6 +240,31 @@ func (f *File) validateTools() error {
 			}
 			commands[c] = t.Name
 		}
+	}
+	return nil
+}
+
+// validateEmbedding checks the embedder: an absolute endpoint, a key, a
+// model, and a dimension the index column takes.
+func (f *File) validateEmbedding() error {
+	e := f.Embedding
+	if e == nil {
+		return nil
+	}
+	if u, err := url.Parse(e.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("configfile: embedding.baseUrl %q must be an absolute URL", e.BaseURL)
+	}
+	if e.apiKey.Value() == "" {
+		return errors.New("configfile: embedding.apiKey resolved to an empty value")
+	}
+	if strings.TrimSpace(e.Model) == "" {
+		return errors.New("configfile: embedding.model is required")
+	}
+	if e.Dims <= 0 || e.Dims > MaxEmbedDims {
+		return fmt.Errorf("configfile: embedding.dims must be between 1 and %d (the index's halfvec limit), got %d", MaxEmbedDims, e.Dims)
+	}
+	if e.MaxBatch < 0 || e.MaxBatchChars < 0 || e.MaxItemChars < 0 {
+		return errors.New("configfile: embedding.maxBatch, maxBatchChars and maxItemChars must not be negative")
 	}
 	return nil
 }

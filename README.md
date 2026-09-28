@@ -55,9 +55,9 @@ CloudNativePG setup for the three database roles. In short: a Postgres with
 builds on) loaded, with an owner, an application and a runner role, a
 sealing key under `dashboard.keySecret`, the configuration file under
 `config.file` with sign-in and any GitHub App that already exists, the
-secrets it references under `secretMounts`, and optionally an embedder under
-`embedding` for the index. Model providers, defaults, accounts and their
-repositories are then set in the dashboard's admin console. `roles.all` runs
+secrets it references under `secretMounts`. Model providers, the embedder for
+the index, defaults, accounts and their repositories are then set in the
+dashboard's admin console. `roles.all` runs
 the single-process topology; `roles.ingest` and `roles.worker` split it.
 
 Then [connect a forge](docs/connecting-a-forge.md): a GitHub App, whose one

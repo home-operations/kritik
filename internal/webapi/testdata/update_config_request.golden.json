@@ -3,5 +3,6 @@
   "spec": {
     "forge": "github",
     "name": "alpha"
-  }
+  },
+  "confirmReindex": true
 }

@@ -131,11 +131,12 @@ A mapping that fails to evaluate refuses the sign-in.
 Everything but sign-in and the file's connections is the instance
 configuration: one document kept in Postgres and edited in the admin
 console. It holds the connections added in the dashboard, the instance's
-provider keys, `defaults`, `polling`, `indexing`, `tools`, `retention`,
-`egress`, and `accounts`, each account's own settings, provider keys and
-repository entries.
+provider keys, its `embedding`, `defaults`, `polling`, `indexing`, `tools`,
+`retention`, `egress`, and `accounts`, each account's own settings,
+provider keys and repository entries.
 
-- The admin console's form edits the connections and the provider keys.
+- The admin console's form edits the connections, the provider keys and
+  the embedder.
   "Advanced: edit JSON" edits the whole document.
 - An account's admin page edits that account's entry alone.
 - A save names the revision it was loaded at. A save over a newer
@@ -193,6 +194,23 @@ and a repository entry's, may name a model on one of these keys. The keys are se
 and never shown again. A saved key is kept only while its name, type and
 endpoint stay the same, so a key cannot be sent anywhere it was not
 entered for. Account limits still apply to runs on an account's own key.
+
+## Embeddings
+
+The embedder builds each repository's similar-code index, which reviews
+draw context from. It is the instance configuration's `embedding`: any
+OpenAI-compatible embeddings endpoint, with `baseUrl`, `apiKey`, `model`
+and `dims`, at most 4000. The optional `maxBatch`, `maxBatchChars` and
+`maxItemChars` bound one request, 64 inputs, 200,000 characters and 16,000
+characters per input unless set. Without an embedder, indexing is off and
+reviews run without vector retrieval.
+
+The index holds one model and dimension. A save that changes either is
+refused with `409 reindex_required` until the admin confirms the reindex.
+The leader then drops every repository's index and builds each again, a
+few at a time, as `indexing.onboardWindow` paces them. Removing the
+embedder keeps the index, and adding back the same model and dimension
+uses it again. The key is kept only while `baseUrl` stays the same.
 
 ## Sealing key
 

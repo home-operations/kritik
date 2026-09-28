@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -433,7 +434,7 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
 	})
-	if err := s.EnsureIndexSchema(ctx, "kritik_app", "test-embed", 8, true); err != nil {
+	if _, err := s.EnsureIndexSchema(ctx, "kritik_app", "test-embed", 8); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
 	var method string
@@ -446,6 +447,76 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	}
 	if _, err := s.app.Exec(ctx, `SET vchordrq.prefilter = on`); err != nil {
 		t.Fatalf("the application role must be able to set the prefilter: %v", err)
+	}
+}
+
+// TestEnsureIndexSchemaRebuildsForANewEmbedder: the same embedder leaves
+// the index alone, and another model or dimension drops every generation
+// with the table and leaves each repository to onboard afresh.
+func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t)
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
+			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+	})
+	ensure := func(model string, dims int) bool {
+		t.Helper()
+		rebuilt, err := s.EnsureIndexSchema(ctx, "kritik_app", model, dims)
+		if err != nil {
+			t.Fatalf("EnsureIndexSchema(%s, %d): %v", model, dims, err)
+		}
+		return rebuilt
+	}
+	if ensure("test-embed", 8) {
+		t.Fatal("creating the index is not a rebuild")
+	}
+	var run string
+	if err := s.owner.QueryRow(ctx, `WITH g AS (
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			SELECT account_id, id, 'abc', 'test-embed', 8, 'full', 'completed' FROM repositories WHERE name = 'alpha/one'
+			RETURNING id, account_id, repository_id
+		), c AS (
+			INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+			SELECT account_id, repository_id, id, 'main.go', 1, 1, 'package main', '[1,0,0,0,0,0,0,0]' FROM g
+		)
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id RETURNING g.id`).Scan(&run); err != nil {
+		t.Fatalf("seed a generation: %v", err)
+	}
+	if ensure("test-embed", 8) {
+		t.Fatal("the same embedder must not rebuild the index")
+	}
+	for _, next := range []struct {
+		model string
+		dims  int
+	}{{"other-embed", 8}, {"other-embed", 16}} {
+		if !ensure(next.model, next.dims) {
+			t.Fatalf("%s/%d must rebuild the index", next.model, next.dims)
+		}
+		var active *string
+		var status string
+		if err := s.owner.QueryRow(ctx, `SELECT r.active_index_run_id::text, g.status FROM repositories r, index_runs g
+			WHERE r.name = 'alpha/one' AND g.id = $1`, run).Scan(&active, &status); err != nil {
+			t.Fatal(err)
+		}
+		if active != nil || status != "superseded" {
+			t.Fatalf("after the rebuild: active = %v, status = %s", active, status)
+		}
+		var model string
+		var dims int
+		if err := s.owner.QueryRow(ctx, `SELECT embed_model, embed_dims FROM index_schema`).Scan(&model, &dims); err != nil ||
+			model != next.model || dims != next.dims {
+			t.Fatalf("index_schema = %s/%d, %v", model, dims, err)
+		}
+		var typmod string
+		if err := s.owner.QueryRow(ctx, `SELECT format_type(atttypid, atttypmod) FROM pg_attribute
+			WHERE attrelid = 'index_chunks'::regclass AND attname = 'embedding'`).Scan(&typmod); err != nil ||
+			typmod != fmt.Sprintf("halfvec(%d)", next.dims) {
+			t.Fatalf("embedding column = %s, %v", typmod, err)
+		}
 	}
 }
 
@@ -463,7 +534,7 @@ func TestSweepDisabledIndexes(t *testing.T) {
 		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
 			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
 	})
-	if err := s.EnsureIndexSchema(ctx, "kritik_app", "test-embed", 8, true); err != nil {
+	if _, err := s.EnsureIndexSchema(ctx, "kritik_app", "test-embed", 8); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
 	// Both alpha repositories get an active generation with one chunk;

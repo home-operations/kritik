@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -80,7 +81,7 @@ func (s *Server) updateInstanceConfig(w http.ResponseWriter, r *http.Request) er
 	if req.Revision < 0 || len(req.Spec) == 0 {
 		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, "revision and spec are required", nil)
 	}
-	res, err := s.writeSpec(r.Context(), p, req.Revision, "", AuditConfigUpdate, "instance",
+	res, err := s.writeSpec(r.Context(), p, req.Revision, req.ConfirmReindex, "", AuditConfigUpdate, "instance",
 		func(json.RawMessage) (json.RawMessage, error) { return req.Spec, nil }, specFailure)
 	if err != nil {
 		return err
@@ -129,7 +130,8 @@ func (s *Server) updateAccountConfig(w http.ResponseWriter, r *http.Request, t *
 		return next, err
 	}
 	fail := func(err error, baseline func() error) error { return accountSpecFailure(err, index, baseline) }
-	res, err := s.writeSpec(r.Context(), t.principal, req.Revision, t.account.ID(), AuditAccountUpdate, t.account.Slug(), build, fail)
+	res, err := s.writeSpec(r.Context(), t.principal, req.Revision, req.ConfirmReindex, t.account.ID(),
+		AuditAccountUpdate, t.account.Slug(), build, fail)
 	if err != nil {
 		return err
 	}
@@ -138,19 +140,21 @@ func (s *Server) updateAccountConfig(w http.ResponseWriter, r *http.Request, t *
 }
 
 // configAudit is a spec write's audit detail: which secrets were given a
-// new value, never the values.
+// new value, never the values, and whether it rebuilds every index.
 type configAudit struct {
 	Revision int64    `json:"revision"`
 	Secrets  []string `json:"secretsChanged,omitempty"`
+	Reindex  bool     `json:"reindex,omitempty"`
 }
 
 // writeSpec replaces the instance spec, while it is still at expected, with
 // what build makes of the stored one, sealed and validated, and records the
 // write in the audit log under accountID ("" for none) in the same
 // transaction. fail turns a spec that does not merge into the API's
-// answer, given a check of the stored spec alone.
+// answer, given a check of the stored spec alone. A write that rebuilds
+// every index is refused unless confirmReindex.
 func (s *Server) writeSpec(
-	ctx context.Context, p *auth.Principal, expected int64, accountID string, action AuditAction, target string,
+	ctx context.Context, p *auth.Principal, expected int64, confirmReindex bool, accountID string, action AuditAction, target string,
 	build func(stored json.RawMessage) (json.RawMessage, error), fail func(err error, baseline func() error) error,
 ) (ConfigWriteResult, error) {
 	var res ConfigWriteResult
@@ -174,11 +178,19 @@ func (s *Server) writeSpec(
 			return refusal(err)
 		}
 		next := configfile.InstanceSpec{Spec: sealed.spec, Revision: stored.Revision + 1}
-		if _, err := configfile.DecodeSpec(next.Spec); err != nil {
+		decoded, err := configfile.DecodeSpec(next.Spec)
+		if err != nil {
 			return decodeFailure(err)
 		}
 		if err := configfile.ValidateSpec(s.current.Get(), stored, next, s.keyring); err != nil {
 			return fail(err, func() error { return configfile.ValidateSpec(s.current.Get(), stored, stored, s.keyring) })
+		}
+		reindex, err := rebuildsIndex(ctx, tx, stored, decoded.Embedding)
+		if err != nil {
+			return err
+		}
+		if reindex && !confirmReindex {
+			return errReindexRequired
 		}
 		rev, err := s.store.PutInstanceSpec(ctx, tx, sealed.spec, expected, p.User.ID)
 		if errors.Is(err, store.ErrSpecConflict) {
@@ -192,9 +204,31 @@ func (s *Server) writeSpec(
 		if accountID != "" {
 			id = &accountID
 		}
-		return record(ctx, tx, p, id, action, target, configAudit{Revision: rev, Secrets: sealed.changed})
+		return record(ctx, tx, p, id, action, target, configAudit{Revision: rev, Secrets: sealed.changed, Reindex: reindex})
 	}
 	return res, s.store.WithAccount(ctx, accountID, write)
+}
+
+var errReindexRequired = errStatus(http.StatusConflict, CodeReindexRequired,
+	"a new embedding model or dimension rebuilds every repository's index; confirm the reindex to save",
+	pathDetails{Path: "embedding.model"})
+
+// rebuildsIndex reports whether next, the embedder a write saves, rebuilds
+// the index: the index was built for another model or dimension, and the
+// stored spec, whose change was confirmed already, does not name next's.
+func rebuildsIndex(ctx context.Context, tx pgx.Tx, stored configfile.InstanceSpec, next *configfile.Embedding) (bool, error) {
+	if next == nil {
+		return false, nil
+	}
+	model, dims, built, err := store.IndexSchemaIn(ctx, tx)
+	if err != nil || !built || (model == next.Model && dims == next.Dims) {
+		return false, err
+	}
+	prev, err := configfile.DecodeSpec(stored.Spec)
+	if err != nil {
+		return false, fmt.Errorf("webapi: stored spec: %w", err)
+	}
+	return prev.Embedding == nil || prev.Embedding.Model != next.Model || prev.Embedding.Dims != next.Dims, nil
 }
 
 // refusal is err as the API answers it: a *specError is the client's

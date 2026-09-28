@@ -16,10 +16,8 @@ Runner Jobs appear in this namespace as kritik-run-*; every run is also recorded
 in the runner_runs table.
 {{- end }}
 
-{{ if not (include "kritik.embeddingEnabled" .) -}}
-Indexing is off (embedding.model is empty): reviews run without the similar-code
-context stage.
-{{- end }}
+Model providers, accounts and the embedder that builds the similar-code index
+are set in the dashboard's admin console.
 
 Health: /healthz and /readyz, metrics: /metrics, all on port {{ .Values.service.metricsPort }}
 of every pod ({{ include "kritik.fullname" . }}-metrics Service).
