@@ -641,7 +641,9 @@ export type ManagementErrorCode =
   | 'actions_disabled'
   | 'already_queued'
   | 'reenter_secret'
-  | 'reindex_required';
+  | 'reindex_required'
+  | 'forge_error'
+  | 'installation_served';
 
 // details of an invalid_spec error.
 export interface PathDetails {
@@ -761,10 +763,24 @@ export interface AppManifestResult {
   error?: string;
 }
 
+// One account a connection's GitHub App is installed on. served is whether
+// the connection lists the account; kritik reviews nothing on one it does
+// not, and an admin may uninstall the App there.
+export interface AppInstallation {
+  id: number;
+  account: string;
+  accountType: string;
+  allRepositories: boolean;
+  suspended: boolean;
+  served: boolean;
+  url?: string;
+}
+
 export type AuditAction =
   | 'config.update'
   | 'account.update'
   | 'app.create'
+  | 'app.uninstall'
   | 'review.rerun'
   | 'review.cancel'
   | 'repo.reindex';

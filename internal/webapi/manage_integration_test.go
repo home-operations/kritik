@@ -101,6 +101,7 @@ type manageEnv struct {
 	src     *configsource.Source
 	actions *fakeActions
 	srv     *Server
+	github  *fakeGitHubServer
 	http    *httptest.Server
 	cookie  map[string]*http.Cookie
 	user    map[string]string
@@ -127,7 +128,10 @@ func newManageEnv(t *testing.T) *manageEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(owner.Close)
-	e := &manageEnv{t: t, st: st, owner: owner, actions: &fakeActions{}, cookie: map[string]*http.Cookie{}, user: map[string]string{}}
+	e := &manageEnv{
+		t: t, st: st, owner: owner, actions: &fakeActions{}, github: fakeGitHub(t),
+		cookie: map[string]*http.Cookie{}, user: map[string]string{},
+	}
 	// Other suites leave a spec sealed under other keys.
 	e.exec(`DELETE FROM instance_config`)
 	t.Cleanup(func() { _, _ = owner.Exec(context.Background(), `DELETE FROM instance_config`) })
@@ -160,7 +164,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 	}
 	e.srv = New(Config{
 		Store: st, Current: e.src.Current, Auth: h, Keyring: kr, Actions: e.actions, WebURL: webURL, Logger: logger,
-		GitHubAPI: fakeGitHub(t) + "/api/v3",
+		GitHubAPI: e.github.url + "/api/v3",
 	})
 	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(e.http.Close)

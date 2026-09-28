@@ -127,6 +127,12 @@ selected ones. Each pull request in them is reviewed when it opens and
 after each push, under the account's settings, which an admin sets on the
 account's admin page.
 
+Anyone can install a public App by its slug. The admin console's
+Connections panel lists every account each connection's App is installed
+on, marks those the connection does not serve, and uninstalls the App
+from any of them. kritik reviews nothing on an account its connection
+does not list, whether or not the App is installed there.
+
 ## Check that it works
 
 GitHub keeps the App webhook's recent deliveries with kritik's response:

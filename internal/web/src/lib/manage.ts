@@ -8,6 +8,8 @@ const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
   revision_conflict: 'Someone else saved the configuration since you loaded it.',
   reenter_secret: "What this secret acts for changed, so it must be entered again.",
   reindex_required: "A new embedding model or dimension rebuilds every repository's index.",
+  forge_error: 'GitHub refused or failed the request.',
+  installation_served: 'The connection serves this account.',
   config_blocked: 'The running configuration is invalid elsewhere; an admin must fix it before this can be saved.',
   management_disabled: 'Dashboard management is disabled: no sealing key configured.',
   actions_disabled: 'This server process cannot queue dashboard actions.',
