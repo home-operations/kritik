@@ -34,7 +34,11 @@ func init() {
 		"config_write_result": ConfigWriteResult{
 			Revision: 4, Generated: map[string]string{"connections[alpha-bot].app.webhookSecret": "00ff"},
 		},
-		"accepted":             Accepted{JobID: 42},
+		"accepted": Accepted{JobID: 42},
+		"app_installation": AppInstallation{
+			ID: 2, Account: "stranger", AccountType: "User", Served: false,
+			URL: "https://github.com/settings/installations/2",
+		},
 		"app_manifest_request": AppManifestRequest{Connection: "beta-bot", Organization: "beta", Name: "kritik-beta", Public: true},
 		"app_manifest_form": AppManifestForm{
 			URL:      "https://github.com/organizations/beta/settings/apps/new?state=s1",

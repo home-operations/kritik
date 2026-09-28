@@ -11,34 +11,55 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// fakeGitHub serves the manifest conversion: code "good" registers
-// kritik-org-9 under org-9, any other code has expired.
-func fakeGitHub(t *testing.T) string {
+// fakeGitHubServer is a GitHub API for the App kritik-org-9.
+type fakeGitHubServer struct {
+	url     string
+	mu      sync.Mutex
+	deleted []string
+}
+
+// fakeGitHub serves the manifest conversion, where code "good" registers
+// kritik-org-9 under org-9 and any other code has expired, and that App's
+// installations: on org-9 and on stranger.
+func fakeGitHub(t *testing.T) *fakeGitHubServer {
 	t.Helper()
+	f := &fakeGitHubServer{}
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
 	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/v3/app-manifests/good/conversions" {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v3/app-manifests/good/conversions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"slug": "kritik-org-9", "client_id": "Iv1.org9", "client_secret": "client-secret", "webhook_secret": "hook-secret",
+				"pem": pemKey, "owner": map[string]any{"login": "org-9"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/app/installations":
+			_, _ = w.Write([]byte(`[{"id":1,"account":{"login":"org-9","type":"Organization"},"repository_selection":"all"},` +
+				`{"id":2,"account":{"login":"stranger","type":"User"},"repository_selection":"selected"}]`))
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v3/app/installations/"):
+			f.mu.Lock()
+			f.deleted = append(f.deleted, strings.TrimPrefix(r.URL.Path, "/api/v3/app/installations/"))
+			f.mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		default:
 			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
-			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"slug": "kritik-org-9", "client_id": "Iv1.org9", "client_secret": "client-secret", "webhook_secret": "hook-secret",
-			"pem": pemKey, "owner": map[string]any{"login": "org-9"},
-		})
 	}))
 	t.Cleanup(srv.Close)
-	return srv.URL
+	f.url = srv.URL
+	return f
 }
 
 // visit sends a browser navigation as who, without following redirects.
@@ -197,5 +218,81 @@ func TestAppManifestFlow(t *testing.T) {
 	})
 	if resp := e.visit("operator", "/app/installed?installation_id=1&setup_action=install"); resp.Header.Get("Location") != "/#/operator" {
 		t.Fatalf("setup URL redirects to %q", resp.Header.Get("Location"))
+	}
+}
+
+// TestAppInstallations: the admin console lists every account a
+// connection's App is installed on, and removes it from one the
+// connection does not serve.
+func TestAppInstallations(t *testing.T) {
+	e := newManageEnv(t)
+	state, _ := e.startManifest("operator", AppManifestRequest{Connection: "mgr-app", Organization: "org-9"})
+	if resp := e.visit("operator", "/app/callback?code=good&state="+url.QueryEscape(state)); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("callback = %d", resp.StatusCode)
+	}
+	e.collect("operator")
+	e.waitFor("the App's connection", func(f *configfile.File) bool { _, ok := f.Connection("mgr-app"); return ok })
+
+	status, body := e.do("operator", "GET", "/api/v1/operator/connections", nil)
+	e.expect(status, body, http.StatusOK, "")
+	var conns []Connection
+	if err := json.Unmarshal(body, &conns); err != nil {
+		t.Fatal(err)
+	}
+	origins := map[string]configfile.Origin{}
+	for _, c := range conns {
+		origins[c.Name] = c.ManagedBy
+	}
+	if origins["mgr-file-bot"] != configfile.OriginFile || origins["mgr-app"] != configfile.OriginDashboard {
+		t.Fatalf("connections = %+v", conns)
+	}
+
+	path := "/api/v1/operator/connections/mgr-app/installations"
+	status, body = e.do("operator", "GET", path, nil)
+	e.expect(status, body, http.StatusOK, "")
+	var insts []AppInstallation
+	if err := json.Unmarshal(body, &insts); err != nil {
+		t.Fatal(err)
+	}
+	if len(insts) != 2 || insts[0].Account != "org-9" || !insts[0].Served || !insts[0].AllRepositories ||
+		insts[1].Account != "stranger" || insts[1].Served {
+		t.Fatalf("installations = %+v", insts)
+	}
+
+	for _, tt := range []struct {
+		name, who, path string
+		status          int
+		code            ErrorCode
+	}{
+		{"a member", "outsider", path, http.StatusNotFound, ""},
+		{"an unknown connection", "operator", "/api/v1/operator/connections/nope/installations", http.StatusNotFound, CodeNotFound},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			status, body := e.do(tt.who, "GET", tt.path, nil)
+			e.expect(status, body, tt.status, tt.code)
+		})
+	}
+	for _, tt := range []struct {
+		name, id string
+		status   int
+		code     ErrorCode
+	}{
+		{"a served account", "1", http.StatusConflict, CodeInstallationServed},
+		{"an installation of another App", "3", http.StatusNotFound, CodeNotFound},
+		{"an unserved account", "2", http.StatusNoContent, ""},
+	} {
+		t.Run("uninstall "+tt.name, func(t *testing.T) {
+			status, body := e.do("operator", "DELETE", path+"/"+tt.id, nil)
+			e.expect(status, body, tt.status, tt.code)
+		})
+	}
+	e.github.mu.Lock()
+	deleted := slices.Clone(e.github.deleted)
+	e.github.mu.Unlock()
+	if !slices.Equal(deleted, []string{"2"}) {
+		t.Fatalf("uninstalled %v, want [2]", deleted)
+	}
+	if n := e.audits(AuditAppUninstall, "mgr-app/stranger"); n != 1 {
+		t.Fatalf("app.uninstall audits = %d, want 1", n)
 	}
 }

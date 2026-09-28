@@ -611,6 +611,32 @@ test.describe('admin console', () => {
     await expect(dialog).toBeHidden();
   });
 
+  test("lists an App's installations and uninstalls it from an account nobody serves", async ({ page }) => {
+    const conn = g.golden<T.AccountDetail>('account_detail').connection;
+    const path = `/api/v1/operator/connections/${conn.name}/installations`;
+    const served: T.AppInstallation = { ...g.appInstallation, id: 1, account: 'alpha', accountType: 'Organization', allRepositories: true, served: true };
+    let reads = 0;
+    await setup(page, operatorMe, [
+      [/\/api\/v1\/operator\/audit$/, g.pageOf([])],
+      [new RegExp(`${path}$`), () => (reads++ === 0 ? [served, g.appInstallation] : [served])],
+    ]);
+    const sent = await g.mockWrites(page, [['DELETE', new RegExp(`${path}/${g.appInstallation.id}$`), { status: 204 }]]);
+    await page.goto('/#/operator');
+    const panel = page.locator('#op-connections').locator('../..');
+    await expect(panel.getByRole('row').filter({ hasText: conn.name })).toContainText('config file');
+    await panel.getByRole('button', { name: 'Installations' }).click();
+    const table = panel.getByRole('table', { name: `Installations of ${conn.name}` });
+    const stranger = table.getByRole('row').filter({ hasText: g.appInstallation.account });
+    await expect(stranger).toContainText('not served');
+    await expect(table.getByRole('button', { name: 'Uninstall from alpha' })).toHaveCount(0);
+    await stranger.getByRole('button', { name: `Uninstall from ${g.appInstallation.account}` }).click();
+    const dialog = page.getByRole('dialog', { name: 'Uninstall the App?' });
+    await dialog.getByRole('button', { name: 'Uninstall' }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    await expect(page.getByRole('status')).toContainText(`Uninstalled from ${g.appInstallation.account}`);
+    await expect(stranger).toHaveCount(0);
+  });
+
   test('lists the instance settings read-only with their sources', async ({ page }) => {
     await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
     await page.goto('/#/operator');

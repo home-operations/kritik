@@ -9,6 +9,7 @@
   import AuditTable from '../components/AuditTable.svelte';
   import InstanceSection from './admin/InstanceSection.svelte';
   import AppSetup from './admin/AppSetup.svelte';
+  import ConnectionsSection from './admin/ConnectionsSection.svelte';
   import { management } from '../session.svelte';
 
   const res = new Resource(() => getJSON<OperatorAccount[]>('/api/v1/operator/accounts'));
@@ -84,6 +85,8 @@
     </StateView>
 
     <InstanceSection onsaved={refresh} />
+
+    <ConnectionsSection />
 
     {#if management()}<AppSetup />{/if}
 

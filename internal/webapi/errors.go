@@ -34,6 +34,12 @@ const (
 	// or dimension, which rebuilds every repository's index, until the
 	// client confirms it with UpdateConfigRequest.ConfirmReindex.
 	CodeReindexRequired ErrorCode = "reindex_required"
+	// CodeForgeError is GitHub failing or refusing a call an admin asked
+	// for; the message is GitHub's.
+	CodeForgeError ErrorCode = "forge_error"
+	// CodeInstallationServed refuses to uninstall an App from an account
+	// its connection serves.
+	CodeInstallationServed ErrorCode = "installation_served"
 )
 
 // apiError is an error a handler returns to be written as ErrorBody.

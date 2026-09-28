@@ -91,3 +91,43 @@ func TestInstallationTokensMintOnceAndRefresh(t *testing.T) {
 		t.Fatalf("tokens = %q, %q with %d mints; want a refresh then a cache hit", second, third, mints)
 	}
 }
+
+func TestInstallationsAndUninstall(t *testing.T) {
+	_, pemKey := testKeyPEM(t)
+	var deleted []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ey") {
+			t.Errorf("%s %s without an App JWT bearer", r.Method, r.URL.Path)
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/app/installations" && r.URL.Query().Get("page") == "":
+			w.Header().Set("Link", `<`+"http://"+r.Host+`/api/v3/app/installations?page=2>; rel="next"`)
+			_, _ = w.Write([]byte(`[{"id":1,"account":{"login":"org-1","type":"Organization"},"repository_selection":"all",` +
+				`"html_url":"https://github.com/organizations/org-1/settings/installations/1"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/app/installations":
+			_, _ = w.Write([]byte(`[{"id":2,"account":{"login":"user-1","type":"User"},"repository_selection":"selected",` +
+				`"suspended_at":"2026-09-01T00:00:00Z"}]`))
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v3/app/installations/"):
+			deleted = append(deleted, strings.TrimPrefix(r.URL.Path, "/api/v3/app/installations/"))
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	app, err := NewApp("Iv1.abc", pemKey, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := app.Installations(t.Context())
+	want := []Installation{
+		{ID: 1, Account: "org-1", AccountType: "Organization", AllRepositories: true, HTMLURL: "https://github.com/organizations/org-1/settings/installations/1"},
+		{ID: 2, Account: "user-1", AccountType: "User", Suspended: true},
+	}
+	if err != nil || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("Installations = %+v, %v", got, err)
+	}
+	if err := app.Uninstall(t.Context(), 2); err != nil || len(deleted) != 1 || deleted[0] != "2" {
+		t.Fatalf("Uninstall = %v, deleted %v", err, deleted)
+	}
+}

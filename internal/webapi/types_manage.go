@@ -117,6 +117,21 @@ type AppManifestResult struct {
 	Error        string `json:"error,omitempty"`
 }
 
+// AppInstallation is one account a connection's GitHub App is installed
+// on. Served is whether the connection lists the account: kritik reviews
+// nothing on one it does not, and an admin may uninstall the App there.
+type AppInstallation struct {
+	ID          int64  `json:"id"`
+	Account     string `json:"account"`
+	AccountType string `json:"accountType"`
+	// AllRepositories is whether it covers every repository of the
+	// account rather than those selected.
+	AllRepositories bool   `json:"allRepositories"`
+	Suspended       bool   `json:"suspended"`
+	Served          bool   `json:"served"`
+	URL             string `json:"url,omitempty"`
+}
+
 // Accepted is an action queued; JobID is the queued job, when there is
 // one.
 type Accepted struct {
@@ -131,6 +146,7 @@ const (
 	AuditConfigUpdate  AuditAction = "config.update"
 	AuditAccountUpdate AuditAction = "account.update"
 	AuditAppCreate     AuditAction = "app.create"
+	AuditAppUninstall  AuditAction = "app.uninstall"
 	AuditReviewRerun   AuditAction = "review.rerun"
 	AuditReviewCancel  AuditAction = "review.cancel"
 	AuditRepoReindex   AuditAction = "repo.reindex"
@@ -139,7 +155,7 @@ const (
 // Valid reports whether a is an audited action.
 func (a AuditAction) Valid() bool {
 	switch a {
-	case AuditConfigUpdate, AuditAccountUpdate, AuditAppCreate, AuditReviewRerun, AuditReviewCancel, AuditRepoReindex:
+	case AuditConfigUpdate, AuditAccountUpdate, AuditAppCreate, AuditAppUninstall, AuditReviewRerun, AuditReviewCancel, AuditRepoReindex:
 		return true
 	}
 	return false

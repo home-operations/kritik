@@ -70,6 +70,43 @@ func (a *App) DiscoverInstallation(ctx context.Context, owner, repo string) (int
 	return inst.GetID(), nil
 }
 
+// Installation is one account the App is installed on.
+type Installation struct {
+	ID int64
+	// Account is the login of the account, AccountType "User" or
+	// "Organization".
+	Account, AccountType string
+	// AllRepositories is whether it covers every repository of the account
+	// rather than those selected.
+	AllRepositories bool
+	Suspended       bool
+	// HTMLURL is the installation's settings page on GitHub.
+	HTMLURL string
+}
+
+// Installations lists every account the App is installed on.
+func (a *App) Installations(ctx context.Context) ([]Installation, error) {
+	var out []Installation
+	for inst, err := range a.apps.Apps.ListInstallationsIter(ctx, &gh.ListOptions{PerPage: 100}) {
+		if err != nil {
+			return nil, fmt.Errorf("github: list App installations: %w", err)
+		}
+		out = append(out, Installation{
+			ID: inst.GetID(), Account: inst.GetAccount().GetLogin(), AccountType: inst.GetAccount().GetType(),
+			AllRepositories: inst.GetRepositorySelection() == "all", Suspended: inst.SuspendedAt != nil, HTMLURL: inst.GetHTMLURL(),
+		})
+	}
+	return out, nil
+}
+
+// Uninstall removes the App's installation id.
+func (a *App) Uninstall(ctx context.Context, id int64) error {
+	if _, err := a.apps.Apps.DeleteInstallation(ctx, id); err != nil {
+		return fmt.Errorf("github: uninstall App installation %d: %w", id, err)
+	}
+	return nil
+}
+
 // Client returns a go-github client authenticated as the installation.
 func (a *App) Client(tokens *InstallationTokens) (*gh.Client, error) {
 	return newClient(&installTransport{base: http.DefaultTransport, tokens: tokens}, a.apiBase)

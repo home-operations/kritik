@@ -37,6 +37,7 @@ export const configWriteResult = golden<T.ConfigWriteResult>('config_write_resul
 export const instanceConfig = golden<T.InstanceConfig>('instance_config');
 export const appManifestForm = golden<T.AppManifestForm>('app_manifest_form');
 export const appManifestResult = golden<T.AppManifestResult>('app_manifest_result');
+export const appInstallation = golden<T.AppInstallation>('app_installation');
 export const auditEvent = golden<T.AuditEvent>('audit_event');
 export const accepted = golden<T.Accepted>('accepted');
 
@@ -83,6 +84,7 @@ export function defaultApi(): [RegExp, Body][] {
     [/\/api\/v1\/accounts$/, [accountSummary]],
     [/\/api\/v1\/operator\/accounts$/, [operatorAccount]],
     [/\/api\/v1\/operator\/instance$/, [instanceSetting]],
+    [/\/api\/v1\/operator\/connections$/, [golden<T.AccountDetail>('account_detail').connection]],
     [/\/api\/v1\/config$/, instanceConfig],
     [new RegExp(`${t}/repos$`), repoPage],
     [new RegExp(`${t}/repos/alpha/one$`), repoDetail],
