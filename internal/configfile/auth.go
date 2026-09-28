@@ -252,7 +252,10 @@ func (s *SignIn) validate(where string) error {
 		for _, f := range []struct {
 			key string
 			set bool
-		}{{"name", s.Name != ""}, {"issuer", s.Issuer != ""}, {"rolesClaim", s.RolesClaim != ""}, {"defaultRole", s.DefaultRole != ""}} {
+		}{
+			{"name", s.Name != ""}, {"issuer", s.Issuer != ""}, {"scopes", len(s.Scopes) > 0},
+			{"rolesClaim", s.RolesClaim != ""}, {"defaultRole", s.DefaultRole != ""},
+		} {
 			if f.set {
 				return fmt.Errorf("configfile: %s.%s is for oidc sign-ins", where, f.key)
 			}
@@ -276,8 +279,10 @@ var authEnvSecrets = map[string]bool{"ADMIN_PASSWORD": true, "OIDC_CLIENT_SECRET
 
 // overlayEnv sets every auth key a KRITIK_AUTH_* variable in environ names,
 // over what the file says (ADR-0014 §2.2). A variable that names no key is
-// an error, so a typo is refused rather than ignored.
+// an error, so a typo is refused rather than ignored, and so is a secret
+// set both directly and by _FILE, since environ's order would pick one.
 func (a *Auth) overlayEnv(environ []string) error {
+	setBy := map[string]string{}
 	for _, kv := range environ {
 		name, value, _ := strings.Cut(kv, "=")
 		key, ok := strings.CutPrefix(name, authEnvPrefix)
@@ -331,6 +336,10 @@ func (a *Auth) overlayEnv(environ []string) error {
 		default:
 			return fmt.Errorf("configfile: environment variable %s names no auth setting", name)
 		}
+		if prev, dup := setBy[path]; dup {
+			return fmt.Errorf("configfile: environment variables %s and %s both set auth.%s; set one", prev, name, path)
+		}
+		setBy[path] = name
 		if a.fromEnv == nil {
 			a.fromEnv = map[string]bool{}
 		}

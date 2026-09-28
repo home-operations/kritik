@@ -93,17 +93,22 @@ const DefaultEnvConnection = "github"
 // (ADR-0014 §2.2): it replaces the file's connection of its name whole, or
 // joins them. It returns the connection's name, "" when no
 // KRITIK_CONNECTIONS_* variable is set. A variable that names no key is an
-// error, so a typo is refused rather than ignored.
+// error, so a typo is refused rather than ignored, and so is a secret set
+// both directly and by _FILE, since environ's order would pick one.
 func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error) {
 	in := Connection{Name: DefaultEnvConnection, Forge: ForgeGitHub, App: &GitHubApp{}}
-	set := false
+	setBy := map[string]string{}
 	for _, kv := range environ {
 		name, value, _ := strings.Cut(kv, "=")
 		key, ok := strings.CutPrefix(name, connectionEnvPrefix)
 		if !ok {
 			continue
 		}
-		set = true
+		setting := strings.TrimSuffix(key, "_FILE")
+		if prev, dup := setBy[setting]; dup {
+			return "", fmt.Errorf("configfile: environment variables %s and %s set the same connection setting; set one", prev, name)
+		}
+		setBy[setting] = name
 		switch key {
 		case "NAME":
 			in.Name = value
@@ -123,7 +128,7 @@ func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error)
 			return "", fmt.Errorf("configfile: environment variable %s names no connection setting", name)
 		}
 	}
-	if !set {
+	if len(setBy) == 0 {
 		return "", nil
 	}
 	for i := range *conns {

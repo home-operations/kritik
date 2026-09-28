@@ -37,7 +37,7 @@ func TestLoad(t *testing.T) {
 				if c.WebAddr != ":8083" {
 					t.Fatalf("web addr default = %q", c.WebAddr)
 				}
-				if c.WebURL != "" || c.WebURLParsed() != nil || c.WebEnabled(RoleAll) {
+				if c.WebURL != "" || c.WebURLParsed() != nil {
 					t.Fatalf("web should be unconfigured by default: %+v", c)
 				}
 			},
@@ -124,17 +124,14 @@ func TestWebURL(t *testing.T) {
 				t.Fatalf("WebURL = %q, base path %q, want %q, %q", cfg.WebURL, cfg.WebBasePath(), want, tt.path)
 			}
 			if tt.url == "" {
-				if cfg.WebURLParsed() != nil || cfg.WebEnabled(RoleAll) || !cfg.WebEnabled(RoleWeb) {
-					t.Fatalf("web role always serves the dashboard, all does only once WebURL is set: %+v", cfg)
+				if cfg.WebURLParsed() != nil {
+					t.Fatalf("WebURLParsed() = %v, want nil", cfg.WebURLParsed())
 				}
 				return
 			}
 			u := cfg.WebURLParsed()
 			if u == nil || u.String() == "" {
 				t.Fatalf("WebURLParsed() = %v", u)
-			}
-			if !cfg.WebEnabled(RoleAll) || !cfg.WebEnabled(RoleWeb) {
-				t.Fatal("web should be enabled for all and web once WebURL is set")
 			}
 		})
 	}
@@ -165,7 +162,7 @@ func TestRoleValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := cfg.ValidateWeb(); err == nil {
-		t.Fatal("web role without KRITIK_WEB_URL must fail")
+		t.Fatal("serving the dashboard without KRITIK_WEB_URL must fail")
 	}
 	cfg.WebURL = "https://dash.example.com"
 	if err := cfg.ValidateWeb(); err != nil {

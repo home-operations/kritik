@@ -79,6 +79,7 @@ func TestAuthRejects(t *testing.T) {
 		{"oidc http issuer", rep("issuer: https://", "issuer: http://"), "auth.oidc.issuer"},
 		{"oidc without issuer", rep("    issuer: https://sso.example.com\n", ""), "auth.oidc.issuer"},
 		{"issuer on github", rep("    clientId: Iv1.x\n", "    clientId: Iv1.x\n    issuer: https://x.example.com\n"), "auth.github.issuer is for oidc"},
+		{"scopes on github", rep("    clientId: Iv1.x\n", "    clientId: Iv1.x\n    scopes: [read:user]\n"), "auth.github.scopes is for oidc"},
 		{"github enterprise host", rep("    clientId: Iv1.x\n", "    clientId: Iv1.x\n    host: github.example.com\n"), "field host not found"},
 		{"no client id", rep("clientId: kritik", "clientId: \"\""), "auth.oidc.clientId is required"},
 		{"unset secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ env: TEST_NOPE }"), "auth.oidc.clientSecret"},
@@ -162,6 +163,12 @@ func TestAuthEnv(t *testing.T) {
 		}
 		if _, ok := f.Auth.SignInByType(SignInGitHub); !ok {
 			t.Fatal("the environment alone did not configure github")
+		}
+	})
+	t.Run("a secret set twice", func(t *testing.T) {
+		t.Setenv("KRITIK_AUTH_GITHUB_CLIENT_SECRET", "from-env")
+		if _, err := loadBytes(t, []byte(minimal)); err == nil || !strings.Contains(err.Error(), "both set auth.github.clientSecret") {
+			t.Fatalf("Parse = %v", err)
 		}
 	})
 	t.Run("a variable naming nothing", func(t *testing.T) {

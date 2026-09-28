@@ -115,6 +115,13 @@ func TestConnectionEnv(t *testing.T) {
 			t.Fatalf("connections = %+v", f.Connections)
 		}
 	})
+	t.Run("a secret set twice", func(t *testing.T) {
+		env(t, "")
+		t.Setenv("KRITIK_CONNECTIONS_APP_PRIVATE_KEY", "pem")
+		if _, err := Parse(file); err == nil || !strings.Contains(err.Error(), "set the same connection setting") {
+			t.Fatalf("Parse = %v", err)
+		}
+	})
 	t.Run("a variable naming nothing", func(t *testing.T) {
 		t.Setenv("KRITIK_CONNECTIONS_APP_KEY", "x")
 		if _, err := Parse(file); err == nil || !strings.Contains(err.Error(), "KRITIK_CONNECTIONS_APP_KEY names no connection setting") {

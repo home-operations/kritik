@@ -23,8 +23,8 @@ import (
 	"github.com/home-operations/kritik/internal/prfilter"
 )
 
-// nameRe bounds connection and account names to what is safe in a URL path
-// segment, a Kubernetes label value and a log line.
+// nameRe bounds connection and provider names to what is safe in a URL
+// path segment, a Kubernetes label value and a log line.
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // toolNameRe bounds a tool name to what fits a pod volume name after its
@@ -296,8 +296,8 @@ func (f *File) validateRetention() error {
 }
 
 func (f *File) validateProviders() error {
-	for name, p := range f.Providers {
-		if err := p.validate("providers." + name); err != nil {
+	for _, name := range slices.Sorted(maps.Keys(f.Providers)) {
+		if err := f.Providers[name].validate("providers." + name); err != nil {
 			return err
 		}
 	}
@@ -352,8 +352,8 @@ func (f *File) validateAccount(where string, a *Account) error {
 	if a.Forge != ForgeGitHub {
 		return fmt.Errorf("configfile: %s.forge must be %s, got %q", where, ForgeGitHub, a.Forge)
 	}
-	if strings.TrimSpace(a.Name) == "" || strings.ContainsAny(a.Name, "/ ") {
-		return fmt.Errorf("configfile: %s.name %q must be the account's name on the forge", where, a.Name)
+	if err := checkAccountName(where+".name", a.Name); err != nil {
+		return err
 	}
 	if err := checkLimits(where+".limits", a.Limits); err != nil {
 		return err
@@ -548,11 +548,14 @@ func (in Connection) validate(where string) error {
 }
 
 func (f *File) checkModels(where string, t *Account, m ModelsSpec) error {
-	for role, r := range map[string]*ModelRef{"review": m.Review, "fallback": m.Fallback} {
-		if r == nil || *r == "" {
+	for _, r := range []struct {
+		role string
+		ref  *ModelRef
+	}{{"review", m.Review}, {"fallback", m.Fallback}} {
+		if r.ref == nil || *r.ref == "" {
 			continue
 		}
-		if err := f.checkModelRef(where+"."+role, t, *r); err != nil {
+		if err := f.checkModelRef(where+"."+r.role, t, *r.ref); err != nil {
 			return err
 		}
 	}

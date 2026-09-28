@@ -154,9 +154,9 @@ func (s Spec) Validate() error {
 	if s.Kind == KindReview && s.Base == "" {
 		return errors.New("runner: a review spec needs a base")
 	}
-	for name, sha := range map[string]string{"base": s.Base, "priorHead": s.PriorHead} {
-		if sha != "" && !gitfetch.IsSHA(sha) {
-			return fmt.Errorf("runner: spec %s %q is not a commit SHA", name, sha)
+	for _, c := range []struct{ name, sha string }{{"base", s.Base}, {"priorHead", s.PriorHead}} {
+		if c.sha != "" && !gitfetch.IsSHA(c.sha) {
+			return fmt.Errorf("runner: spec %s %q is not a commit SHA", c.name, c.sha)
 		}
 	}
 	if s.Mode == ModeAgentic {
