@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"maps"
 
-	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
@@ -14,7 +13,6 @@ func init() {
 	maps.Copy(goldens, map[string]any{
 		"meta": Meta{
 			Version: "v1.2.3", Management: true, WebURL: "https://kritik.example",
-			SignIn: []auth.ProviderInfo{{Name: "corp", Type: configfile.SignInOIDC, DisplayName: "Corp"}},
 		},
 		"instance_config": InstanceConfig{
 			Revision: 3, Editable: true,

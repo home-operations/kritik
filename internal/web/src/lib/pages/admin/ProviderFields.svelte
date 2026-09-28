@@ -44,7 +44,7 @@
     <label class="field">
       <span>Base URL</span>
       <input class="mono" data-path="{p}.baseUrl" aria-invalid={inv(`${p}.baseUrl`) || undefined} bind:value={prov.baseUrl} placeholder="the provider's own endpoint" />
-      <span class="field-hint">Blank uses the provider's own endpoint; another must be https on a host the operator allows.</span>
+      <span class="field-hint">Blank uses the provider's own endpoint; another must be https on a host an admin allows.</span>
     </label>
     <SecretField label="API key" path="{p}.apiKey" bind:secret={prov.apiKey} {keepable} invalid={inv(`${p}.apiKey`)} />
   </div>

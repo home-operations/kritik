@@ -10,7 +10,6 @@
   import StateView from '../../components/StateView.svelte';
   import ConfigEditor from './ConfigEditor.svelte';
   import SpecView from './SpecView.svelte';
-  import GeneratedSecrets from './GeneratedSecrets.svelte';
 
   let { slug }: { slug: string } = $props();
   const path = $derived(`${accountApi(slug)}/config`);
@@ -25,12 +24,11 @@
   let errPath = $state('');
   let errSeq = $state(0);
   let conflict = $state(false);
-  let generated = $state<Record<string, string> | undefined>(undefined);
   // Bumped to remount the editor on a fresh draft.
   let epoch = $state(0);
 
   $effect(() => {
-    setLeaveGuard(() => dirty || generated !== undefined);
+    setLeaveGuard(() => dirty);
     return () => setLeaveGuard(undefined);
   });
 
@@ -53,7 +51,6 @@
     try {
       const r = await sendJSON<ConfigWriteResult>('PUT', path, { revision: cfg.revision, spec });
       toast(`Saved: revision ${r.revision}`);
-      if (r.generated && Object.keys(r.generated).length) generated = r.generated;
       await reload();
     } catch (err) {
       errMessage = describe(err);
@@ -106,5 +103,3 @@
     </section>
   {/snippet}
 </StateView>
-
-<GeneratedSecrets bind:generated fallback="#admin-config" />

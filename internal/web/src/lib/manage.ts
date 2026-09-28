@@ -2,6 +2,7 @@
 // The server's message is already human-readable; these add what to do
 // next where the code alone says more than the message does.
 import { ApiError } from './api.svelte';
+import { MANAGEMENT_OFF } from './session.svelte';
 import type { ConfigSource, ErrorCode, ManagementErrorCode, PathDetails } from './types';
 
 const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
@@ -11,7 +12,7 @@ const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
   forge_error: 'GitHub refused or failed the request.',
   installation_served: 'The connection serves this account.',
   config_blocked: 'The running configuration is invalid elsewhere; an admin must fix it before this can be saved.',
-  management_disabled: 'Dashboard management is disabled: no sealing key configured.',
+  management_disabled: MANAGEMENT_OFF,
   actions_disabled: 'This server process cannot queue dashboard actions.',
   already_queued: 'That is already queued or running; it will show up here when it finishes.',
   unauthenticated: 'Your session has ended; sign in again.',
@@ -21,7 +22,6 @@ const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
   forbidden: 'You are not allowed to do this.',
 };
 
-// describe is one line for a failed management call.
 const inheritedFrom: Record<ConfigSource, string> = {
   default: "kritik's default",
   env: 'the environment',
@@ -37,6 +37,7 @@ export function inheritsHint(value: string, source: ConfigSource | undefined): s
   return `inherits ${value} from ${inheritedFrom[source ?? 'default']}`;
 }
 
+// describe is one line for a failed management call.
 export function describe(err: unknown): string {
   if (!(err instanceof ApiError)) return err instanceof Error ? err.message : String(err);
   const hint = hints[err.code as ManagementErrorCode | ErrorCode];

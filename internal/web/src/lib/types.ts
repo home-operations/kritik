@@ -653,7 +653,6 @@ export interface PathDetails {
 export interface Meta {
   version: string;
   management: boolean;
-  signIn: SignInProvider[];
   webUrl: string;
 }
 
@@ -663,19 +662,6 @@ export interface SecretState {
   set: boolean;
 }
 export type SecretInput = { value: string } | { keep: true } | { generate: true };
-
-export type ConfigScope = 'defaults' | 'account' | 'repository';
-export type RepoRule =
-  | 'own'
-  | 'turnOff'
-  | 'turnOn'
-  | 'and'
-  | 'union'
-  | 'append'
-  | 'choose'
-  | 'subset'
-  | 'atMost'
-  | 'replace';
 
 // What an account's fields, and its repository entries' fields, resolve to
 // where the spec leaves them out, and where each value comes from.

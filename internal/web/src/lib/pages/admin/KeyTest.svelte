@@ -4,12 +4,12 @@
   import { sendJSON } from '../../api.svelte';
   import { describe } from '../../manage';
   import type { SecretDraft } from '../../spec';
-  import type { TestResult } from '../../types';
+  import type { EmbeddingTestRequest, ProviderTestRequest, SecretInput, TestResult } from '../../types';
 
   interface Props {
     path: string;
     // request builds the test's body around the key, as keyInput gives it.
-    request: (key: Record<string, unknown>) => Record<string, unknown>;
+    request: (key: SecretInput) => ProviderTestRequest | EmbeddingTestRequest;
     secret: SecretDraft;
     keepable: boolean;
     // onmodels receives the models a provider lists.
@@ -20,7 +20,7 @@
   let result = $state<{ ok: boolean; text: string } | undefined>(undefined);
 
   // keyInput is the key as the test API takes it, or why there is none.
-  function keyInput(): Record<string, unknown> | string {
+  function keyInput(): SecretInput | string {
     if (secret.mode === 'keep' && keepable) return { keep: true };
     if (secret.mode === 'replace' && secret.value !== '') return { value: secret.value };
     return 'enter the key to test it';

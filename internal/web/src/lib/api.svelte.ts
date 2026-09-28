@@ -7,6 +7,7 @@
 import { basePath } from './base';
 import { parse, replace } from './router.svelte';
 import { session } from './session.svelte';
+import type { ErrorBody } from './types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -22,12 +23,6 @@ export class ApiError extends Error {
   }
 }
 
-interface ErrorBody {
-  code?: string;
-  message?: string;
-  details?: unknown;
-}
-
 const commonHeaders: HeadersInit = { 'X-Kritik': '1' };
 
 // Where SignIn.svelte should send the user back to after signing in: the
@@ -38,9 +33,9 @@ const commonHeaders: HeadersInit = { 'X-Kritik': '1' };
 export const signinState = $state<{ returnTo: string }>({ returnTo: '' });
 
 async function toApiError(res: Response): Promise<ApiError> {
-  let body: ErrorBody = {};
+  let body: Partial<ErrorBody> = {};
   try {
-    body = (await res.json()) as ErrorBody;
+    body = (await res.json()) as Partial<ErrorBody>;
   } catch {
     // No JSON body (e.g. a proxy error page) — fall back to the status text.
   }
@@ -83,7 +78,7 @@ export async function getJSON<T>(path: string): Promise<T> {
   return handle<T>(res);
 }
 
-export type WriteMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export type WriteMethod = 'POST' | 'PUT' | 'DELETE';
 
 export async function sendJSON<T>(method: WriteMethod, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${basePath}${path}`, {

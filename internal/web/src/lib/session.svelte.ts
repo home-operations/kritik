@@ -28,10 +28,6 @@ export function management(): boolean {
   return session.meta?.management === true;
 }
 
-export function isOperator(): boolean {
-  return session.me?.operator === true;
-}
-
 // canAdmin is whether the viewer may change account slug: /me gives an
 // admin the admin role on every account, and anyone else member.
 export function canAdmin(slug: string): boolean {

@@ -71,20 +71,11 @@ body {
   vertical-align: -0.15em;
   flex: 0 0 auto;
 }
-.avatar {
-  border-radius: 50%;
-  object-fit: cover;
-  flex: 0 0 auto;
-  background: var(--panel-alt);
-}
 .add {
   color: var(--ok);
 }
 .del {
   color: var(--danger);
-}
-.chg {
-  color: var(--accent);
 }
 
 /* ---- shell + topbar -------------------------------------------------- */
@@ -164,9 +155,6 @@ body {
 }
 .btn-icon {
   padding: 6px 9px;
-}
-.spin {
-  animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
   to {
@@ -340,9 +328,6 @@ kbd {
   color: var(--muted);
   font-size: 11px;
 }
-.palette-footer .foot-gap {
-  flex: 1 1 auto;
-}
 
 /* ---- brand + nav (kritik-specific: no konflate equivalent) ------------ */
 .wordmark {
@@ -491,22 +476,6 @@ kbd {
 }
 .signin-error {
   color: var(--danger);
-}
-
-/* ---- placeholder (stands in for pages later tasks build) --------------- */
-.placeholder {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 24px;
-}
-.placeholder-note {
-  margin: 0;
-  color: var(--muted);
-}
-.placeholder-route {
-  color: var(--muted);
-  font-size: 12px;
 }
 
 /* ---- mobile -------------------------------------------------------------- */

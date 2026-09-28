@@ -1,6 +1,5 @@
 // Keyboard-first navigation. Active only outside text inputs and without
-// modifier keys, so it never fights the browser or a filter box a later page
-// adds.
+// modifier keys, so it never fights the browser or a page's filter box.
 
 // Two overlays: the shortcuts help ('?' or the topbar button) and the command
 // palette (Cmd/Ctrl+K). They are mutually exclusive, and opening either
