@@ -30,19 +30,14 @@ export interface InstallationDraft {
   origName: string;
   name: string;
   forge: Forge;
-  host: string;
   // accounts: one per line.
   accounts: string;
-  // github: the app's credentials.
+  // The App's credentials.
   clientId: string;
   clientIdFrom: SecretDraft;
   privateKey: SecretDraft;
   appWebhookSecret: SecretDraft;
   appRest: Obj;
-  // gitlab, forgejo and gitea: a token.
-  token: SecretDraft;
-  webhookSecret: SecretDraft;
-  gitToken: SecretDraft;
   rest: Obj;
 }
 
@@ -197,17 +192,13 @@ function installationOf(v: unknown): InstallationDraft {
     origName: str(o.name),
     name: str(o.name),
     forge: (str(o.forge) || 'github') as Forge,
-    host: str(o.host),
     accounts: lines(o.accounts),
     clientId: str(app.clientId),
     clientIdFrom: secretOf(app.clientIdFrom, 'none'),
     privateKey: secretOf(app.privateKey, 'replace'),
     appWebhookSecret: secretOf(app.webhookSecret, 'generate'),
     appRest: take(app, 'clientId', 'clientIdFrom', 'privateKey', 'webhookSecret'),
-    token: secretOf(o.token, 'replace'),
-    webhookSecret: secretOf(o.webhookSecret, 'generate'),
-    gitToken: secretOf(o.gitToken, 'none'),
-    rest: take(o, 'name', 'forge', 'host', 'accounts', 'app', 'token', 'webhookSecret', 'gitToken'),
+    rest: take(o, 'name', 'forge', 'accounts', 'app'),
   };
 }
 
@@ -350,7 +341,7 @@ export function canKeep(d: InstallationDraft): boolean {
 export function hasTypedSecret(d: TenantDraft): boolean {
   const typed = (sd: SecretDraft) => sd.mode === 'replace' && sd.value !== '';
   return (
-    d.installations.some((x) => [x.clientIdFrom, x.privateKey, x.appWebhookSecret, x.token, x.webhookSecret, x.gitToken].some(typed)) ||
+    d.installations.some((x) => [x.clientIdFrom, x.privateKey, x.appWebhookSecret].some(typed)) ||
     d.providers.some((x) => typed(x.apiKey))
   );
 }
@@ -390,24 +381,16 @@ function installationSpec(b: Builder, d: InstallationDraft, i: number): Obj {
   if (d.name.trim() === '') b.fail(`${p}.name`, 'a name is required');
   out.name = d.name.trim();
   out.forge = d.forge;
-  set(out, 'host', d.host);
-  if (/^http:\/\//i.test(d.host.trim())) b.fail(`${p}.host`, 'a dashboard installation must reach its forge over https');
   const accounts = list(d.accounts);
   if (accounts.length === 0) b.fail(`${p}.accounts`, 'list at least one account');
   out.accounts = accounts;
-  if (d.forge === 'github') {
-    const app: Obj = { ...d.appRest };
-    set(app, 'clientId', d.clientId);
-    secret(app, 'clientIdFrom', d.clientIdFrom, `${p}.app.clientIdFrom`, false);
-    if (app.clientId === undefined && app.clientIdFrom === undefined) b.fail(`${p}.app.clientId`, 'set a client ID');
-    secret(app, 'privateKey', d.privateKey, `${p}.app.privateKey`, true);
-    secret(app, 'webhookSecret', d.appWebhookSecret, `${p}.app.webhookSecret`, true);
-    out.app = app;
-  } else {
-    secret(out, 'token', d.token, `${p}.token`, true);
-    secret(out, 'webhookSecret', d.webhookSecret, `${p}.webhookSecret`, true);
-    secret(out, 'gitToken', d.gitToken, `${p}.gitToken`, false);
-  }
+  const app: Obj = { ...d.appRest };
+  set(app, 'clientId', d.clientId);
+  secret(app, 'clientIdFrom', d.clientIdFrom, `${p}.app.clientIdFrom`, false);
+  if (app.clientId === undefined && app.clientIdFrom === undefined) b.fail(`${p}.app.clientId`, 'set a client ID');
+  secret(app, 'privateKey', d.privateKey, `${p}.app.privateKey`, true);
+  secret(app, 'webhookSecret', d.appWebhookSecret, `${p}.app.webhookSecret`, true);
+  out.app = app;
   return out;
 }
 

@@ -8,146 +8,56 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/forge"
-	"github.com/home-operations/kritik/internal/forge/forgejo"
 )
 
-// forgejoConfigYAML is the smallest valid Forgejo installation: a token, no
-// app block (Forgejo, unlike GitHub, authenticates with a bot token).
-const forgejoConfigYAML = `
+// appInstallation is an installation of an App with clientID, its private
+// key and webhook secret read from TEST_PRIVATE_KEY and TEST_WEBHOOK_SECRET.
+func appInstallation(t *testing.T, clientID string) *configfile.Installation {
+	t.Helper()
+	file, err := configfile.Parse([]byte(`
 tenants:
   - slug: acme
     installations:
-      - name: acme-forgejo
-        forge: forgejo
-        host: https://forge.example.com
+      - name: acme-bot
+        forge: github
         accounts: [acme]
-        token: { env: TEST_FORGEJO_BUILD_TOKEN }
-        webhookSecret: { env: TEST_FORGEJO_BUILD_SECRET }
-`
-
-func TestBuildForgeReturnsForgejoClient(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_BUILD_TOKEN", "tok")
-	t.Setenv("TEST_FORGEJO_BUILD_SECRET", "s")
-	file, err := configfile.Parse([]byte(forgejoConfigYAML))
+        app: { clientId: ` + clientID + `, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
+`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	in, _, ok := file.Installation("acme-forgejo")
-	if !ok {
-		t.Fatal("installation not found")
-	}
-
-	// repo is a GitHub-only concern (installation discovery); Forgejo's
-	// client construction does not need it.
-	client, err := BuildForge(t.Context(), in, "acme/widgets")
-	if err != nil {
-		t.Fatalf("BuildForge: %v", err)
-	}
-	if _, ok := client.(*forgejo.Client); !ok {
-		t.Fatalf("BuildForge returned %T, want *forgejo.Client", client)
-	}
+	in, _, _ := file.Installation("acme-bot")
+	return in
 }
 
-// giteaConfigYAML mirrors forgejoConfigYAML: Gitea installations route
-// through the same forgejo.Client (see BuildForge).
-const giteaConfigYAML = `
-tenants:
-  - slug: acme
-    installations:
-      - name: acme-gitea
-        forge: gitea
-        host: https://gitea.example.com
-        accounts: [acme]
-        token: { env: TEST_GITEA_BUILD_TOKEN }
-        webhookSecret: { env: TEST_GITEA_BUILD_SECRET }
-`
-
-func TestBuildForgeReturnsForgejoClientForGitea(t *testing.T) {
-	t.Setenv("TEST_GITEA_BUILD_TOKEN", "tok")
-	t.Setenv("TEST_GITEA_BUILD_SECRET", "s")
-	file, err := configfile.Parse([]byte(giteaConfigYAML))
-	if err != nil {
-		t.Fatal(err)
-	}
-	in, _, ok := file.Installation("acme-gitea")
-	if !ok {
-		t.Fatal("installation not found")
-	}
-
-	client, err := BuildForge(t.Context(), in, "acme/widgets")
-	if err != nil {
-		t.Fatalf("BuildForge: %v", err)
-	}
-	if _, ok := client.(*forgejo.Client); !ok {
-		t.Fatalf("BuildForge returned %T, want *forgejo.Client", client)
-	}
-}
-
-func TestBuildForgeGitToken(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_BUILD_TOKEN", "api-token")
-	t.Setenv("TEST_FORGEJO_BUILD_SECRET", "s")
-	t.Setenv("TEST_FORGEJO_FETCH_TOKEN", "fetch-token")
-	tests := []struct {
-		name, extra, want string
-	}{
-		{name: "the API token when no gitToken is set", want: "api-token"},
-		{name: "the gitToken when set", extra: "        gitToken: { env: TEST_FORGEJO_FETCH_TOKEN }\n", want: "fetch-token"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			file, err := configfile.Parse([]byte(forgejoConfigYAML + tt.extra))
-			if err != nil {
-				t.Fatal(err)
-			}
-			in, _, _ := file.Installation("acme-forgejo")
-			client, err := BuildForge(t.Context(), in, "acme/widgets")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got, err := client.GitToken(t.Context()); err != nil || got != tt.want {
-				t.Fatalf("GitToken = %q, %v; want %q", got, err, tt.want)
-			}
-		})
+func TestBuildForgeRefusesAnotherForge(t *testing.T) {
+	if _, err := BuildForge(t.Context(), &configfile.Installation{Name: "x", Forge: "gitlab"}, "acme/widgets"); err == nil {
+		t.Fatal("BuildForge built a client for a forge kritik does not support")
 	}
 }
 
 func TestForgeCacheRebuildsOnRotatedCredentials(t *testing.T) {
-	load := func(t *testing.T, token, gitToken string) *configfile.Installation {
-		t.Helper()
-		t.Setenv("TEST_FORGEJO_BUILD_TOKEN", token)
-		t.Setenv("TEST_FORGEJO_BUILD_SECRET", "s")
-		yaml := forgejoConfigYAML
-		if gitToken != "" {
-			t.Setenv("TEST_FORGEJO_BUILD_GIT", gitToken)
-			yaml += "        gitToken: { env: TEST_FORGEJO_BUILD_GIT }\n"
-		}
-		file, err := configfile.Parse([]byte(yaml))
-		if err != nil {
-			t.Fatal(err)
-		}
-		in, _, _ := file.Installation("acme-forgejo")
-		return in
-	}
+	t.Setenv("TEST_WEBHOOK_SECRET", "s")
 	builds := 0
 	cache := &ForgeCache{Build: func(context.Context, *configfile.Installation, string) (forge.Client, error) {
 		builds++
 		return nil, nil
 	}}
 	steps := []struct {
-		name       string
-		token, git string
-		wantBuilds int
+		name          string
+		clientID, key string
+		wantBuilds    int
 	}{
-		{"first use builds", "tok", "", 1},
-		{"same credentials reuse", "tok", "", 1},
-		{"rotated token rebuilds", "tok2", "", 2},
-		{"added git token rebuilds", "tok2", "git", 3},
-		{"rotated git token rebuilds", "tok2", "git2", 4},
-		{"unchanged again reuses", "tok2", "git2", 4},
+		{"first use builds", "Iv1.a", "pem-a", 1},
+		{"same credentials reuse", "Iv1.a", "pem-a", 1},
+		{"rotated key rebuilds", "Iv1.a", "pem-b", 2},
+		{"another client id rebuilds", "Iv1.b", "pem-b", 3},
+		{"unchanged again reuses", "Iv1.b", "pem-b", 3},
 	}
 	for _, st := range steps {
 		t.Run(st.name, func(t *testing.T) {
-			if _, err := cache.For(t.Context(), load(t, st.token, st.git), "acme/widgets"); err != nil {
+			t.Setenv("TEST_PRIVATE_KEY", st.key)
+			if _, err := cache.For(t.Context(), appInstallation(t, st.clientID), "acme/widgets"); err != nil {
 				t.Fatal(err)
 			}
 			if builds != st.wantBuilds {
@@ -164,13 +74,9 @@ func TestForgeCacheRebuildsOnRotatedCredentials(t *testing.T) {
 // token, per account, so repositories of different owners get their own
 // client and repositories of one owner share one.
 func TestForgeCacheBuildsPerOwner(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_BUILD_TOKEN", "tok")
-	t.Setenv("TEST_FORGEJO_BUILD_SECRET", "s")
-	file, err := configfile.Parse([]byte(forgejoConfigYAML))
-	if err != nil {
-		t.Fatal(err)
-	}
-	in, _, _ := file.Installation("acme-forgejo")
+	t.Setenv("TEST_PRIVATE_KEY", "pem")
+	t.Setenv("TEST_WEBHOOK_SECRET", "s")
+	in := appInstallation(t, "Iv1.a")
 	var built []string
 	cache := &ForgeCache{Build: func(_ context.Context, _ *configfile.Installation, repo string) (forge.Client, error) {
 		built = append(built, repo)
@@ -187,34 +93,17 @@ func TestForgeCacheBuildsPerOwner(t *testing.T) {
 }
 
 func TestCredentialFingerprint(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "pem-a")
+	t.Setenv("TEST_PRIVATE_KEY", "pem-a")
 	t.Setenv("TEST_WEBHOOK_SECRET", "wh")
-	app := func(t *testing.T, clientID string) *configfile.Installation {
-		t.Helper()
-		file, err := configfile.Parse([]byte(`
-tenants:
-  - slug: acme
-    installations:
-      - name: acme-bot
-        forge: github
-        accounts: [acme]
-        app: { clientId: ` + clientID + `, privateKey: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
-`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		in, _, _ := file.Installation("acme-bot")
-		return in
-	}
-	a := credentialFingerprint(app(t, "Iv1.a"))
-	if b := credentialFingerprint(app(t, "Iv1.a")); a != b {
+	a := credentialFingerprint(appInstallation(t, "Iv1.a"))
+	if b := credentialFingerprint(appInstallation(t, "Iv1.a")); a != b {
 		t.Fatal("fingerprint is not stable")
 	}
-	if b := credentialFingerprint(app(t, "Iv1.b")); a == b {
+	if b := credentialFingerprint(appInstallation(t, "Iv1.b")); a == b {
 		t.Fatal("client id change kept the fingerprint")
 	}
-	t.Setenv("TEST_FORGEJO_TOKEN", "pem-b")
-	if b := credentialFingerprint(app(t, "Iv1.a")); a == b {
+	t.Setenv("TEST_PRIVATE_KEY", "pem-b")
+	if b := credentialFingerprint(appInstallation(t, "Iv1.a")); a == b {
 		t.Fatal("private key change kept the fingerprint")
 	}
 	if strings.Contains(a, "pem-a") || strings.Contains(a, "Iv1.a") {

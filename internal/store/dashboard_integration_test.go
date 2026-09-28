@@ -28,8 +28,8 @@ func (plainOpener) Open(sealed string) ([]byte, error) {
 }
 
 func dashboardSpec(slug, inst string) json.RawMessage {
-	return json.RawMessage(`{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"forgejo","accounts":["` + slug + `"],` +
-		`"token":{"sealed":"sealed:tok"},"webhookSecret":{"sealed":"sealed:wh"}}],"repositories":[{"name":"` + slug + `/one"}]}`)
+	return json.RawMessage(`{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"github","accounts":["` + slug + `"],` +
+		`"app":{"clientId":"Iv1.test","privateKey":{"sealed":"sealed:key"},"webhookSecret":{"sealed":"sealed:wh"}}}],"repositories":[{"name":"` + slug + `/one"}]}`)
 }
 
 func resetDashboard(t *testing.T, s *Store) {
@@ -234,10 +234,9 @@ const swapFileTenant = `
   - slug: swap
     installations:
       - name: swap-bot
-        forge: forgejo
+        forge: github
         accounts: [swap]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
     repositories:
       - name: swap/one
 `

@@ -188,9 +188,9 @@ func TestNormalizeOrigin(t *testing.T) {
 }
 
 func TestPrincipalRejectsMovedSignIn(t *testing.T) {
-	signIn := configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, Host: "github.com"}
-	if signInOrigin(signIn) == signInOrigin(configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, Host: "ghe.example.com"}) {
-		t.Fatal("moving a sign-in to another host kept its origin")
+	signIn := configfile.SignIn{Name: "corp", Type: configfile.SignInOIDC, Issuer: "https://id.example.com"}
+	if signInOrigin(signIn) == signInOrigin(configfile.SignIn{Name: "corp", Type: configfile.SignInOIDC, Issuer: "https://other.example.com"}) {
+		t.Fatal("moving a sign-in to another issuer kept its origin")
 	}
 }
 

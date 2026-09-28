@@ -20,7 +20,7 @@ polling: { interval: 2m }
 tenants:
   - slug: acme
     installations:
-      - { name: acme-bot, forge: forgejo, accounts: [acme], token: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } }
+      - { name: acme-bot, forge: github, accounts: [acme], app: { clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } } }
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +45,6 @@ tenants:
 		"providers gw":                    {"providers", "gw", "openai at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
 		"polling interval":                {"polling", "interval", "2m0s", configfile.SourceFile},
 		"polling lookback":                {"polling", "lookback", "24h0m0s", configfile.SourceDefault},
-		"web dashboardForgeHosts":         {"web", "dashboardForgeHosts", "github.com", configfile.SourceDefault},
 	} {
 		if rows[key] != want {
 			t.Errorf("%s = %+v, want %+v", key, rows[key], want)

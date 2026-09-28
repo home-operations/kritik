@@ -17,17 +17,16 @@ import (
 	gh "github.com/google/go-github/v92/github"
 )
 
-// App is a GitHub App identity: the client id and private key of one App,
-// against one GitHub host.
+// App is a GitHub App identity: the client id and private key of one App.
 type App struct {
 	clientID string
-	apiBase  string // "" for github.com
+	apiBase  string // "" for api.github.com
 	apps     *gh.Client
 }
 
 // NewApp parses the App's private key and builds the App-level client used
 // for installation lookup and token minting. apiBase is empty for
-// github.com and "https://host/api/v3" for GitHub Enterprise Server.
+// api.github.com; tests point it at a server of their own.
 func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
 	key, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(privateKeyPEM))
 	if err != nil {

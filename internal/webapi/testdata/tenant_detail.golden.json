@@ -6,14 +6,10 @@
     {
       "name": "alpha-bot",
       "forge": "github",
-      "host": "github.com",
       "accounts": ["alpha"],
-      "credentialKind": "app",
       "credentials": {
         "clientId": true,
         "privateKey": true,
-        "token": false,
-        "gitToken": false,
         "webhookSecret": true
       },
       "hookPath": "/hooks/alpha-bot",

@@ -91,7 +91,7 @@ test('a repository several installations hold asks which one, then loads it', as
     (route) => {
       const installation = new URL(route.request().url()).searchParams.get('installation');
       if (!installation) {
-        const body = { code: 'ambiguous', message: 'several installations hold this repository', details: { installations: ['alpha-forgejo', 'alpha-github'] } };
+        const body = { code: 'ambiguous', message: 'several installations hold this repository', details: { installations: ['alpha-other', 'alpha-github'] } };
         return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(body) });
       }
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...g.repoDetail, installation }) });

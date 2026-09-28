@@ -20,8 +20,8 @@ func claimSpec(slug string, names ...string) map[string]any {
 	ins := make([]any, 0, len(names))
 	for _, n := range names {
 		ins = append(ins, map[string]any{
-			"name": n, "forge": "forgejo", "host": "git.example", "accounts": []string{slug},
-			"token": map[string]any{"value": "t"}, "webhookSecret": map[string]any{"value": "w"},
+			"name": n, "forge": "github", "accounts": []string{slug},
+			"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "k"}, "webhookSecret": map[string]any{"value": "w"}},
 		})
 	}
 	return map[string]any{"slug": slug, "installations": ins}

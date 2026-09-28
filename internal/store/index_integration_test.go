@@ -14,10 +14,9 @@ const onboardTenants = twoTenants + `
   - slug: east
     installations:
       - name: east-bot
-        forge: forgejo
+        forge: github
         accounts: [east]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
     repositories:
       - name: east/busy
       - name: east/quiet
@@ -32,10 +31,9 @@ const onboardTenants = twoTenants + `
   - slug: west
     installations:
       - name: west-bot
-        forge: forgejo
+        forge: github
         accounts: [west]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
     repositories:
       - name: west/one
       - name: west/old-failure

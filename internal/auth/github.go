@@ -13,15 +13,9 @@ import (
 // githubScopes read the profile, its verified emails and org memberships.
 var githubScopes = []string{"read:user", "user:email", "read:org"}
 
-// newGitHubProvider signs in through a GitHub OAuth app on github.com or a
-// GitHub Enterprise Server host.
+// newGitHubProvider signs in through a GitHub OAuth app on github.com.
 func newGitHubProvider(s configfile.SignIn, redirect string, client *http.Client) *forgeProvider {
-	web, api := "https://github.com", "https://api.github.com"
-	if configfile.ForgeHost(configfile.Forge(s.Type), s.Host) != configfile.GitHubHost {
-		web = webBase(s.Host)
-		api = web + "/api/v3"
-	}
-	p := newForgeProvider(s, web, api, redirect, githubScopes, client, githubAPI{})
+	p := newForgeProvider(s, "https://github.com", "https://api.github.com", redirect, githubScopes, client, githubAPI{})
 	p.headers = map[string]string{"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
 	return p
 }

@@ -126,20 +126,6 @@ func TestDispatchPullRequest(t *testing.T) {
 		t.Fatalf("labels = %s merged = %v err = %v", labels, merged, err)
 	}
 
-	// A GitLab hook names no author when someone else acted.
-	anon := pr2
-	anon.Author = ""
-	if _, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: ActionBaseline, Repository: repo("onedr0p/home-ops"), PullRequest: &anon})); err != nil {
-		t.Fatal(err)
-	}
-	var author string
-	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT author FROM pull_requests WHERE number = 7`).Scan(&author)
-	})
-	if err != nil || author != "devin" {
-		t.Fatalf("author = %q, %v; want the one already known", author, err)
-	}
-
 	t.Run("gates", func(t *testing.T) {
 		draft := *pr
 		draft.Draft = true

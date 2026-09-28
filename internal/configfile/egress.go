@@ -2,23 +2,14 @@ package configfile
 
 import (
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 
 	"github.com/home-operations/kritik/internal/egress"
 )
 
-// GitHubHost is where a GitHub installation or sign-in without a host lives.
+// GitHubHost is the forge every installation and GitHub sign-in talks to.
 const GitHubHost = "github.com"
-
-// GitLabHost is where a GitLab installation without a host lives.
-const GitLabHost = "gitlab.com"
-
-// GitLabSigningTokenPrefix starts a GitLab webhook signing token, which
-// GitLab generates; a GitLab installation's webhookSecret with it is one,
-// and any other is a secret token.
-const GitLabSigningTokenPrefix = "whsec_"
 
 // validateEgress checks the allowlist entries are bare hostnames and each
 // credential names a host that is allowed, explicitly or implicitly.
@@ -54,8 +45,8 @@ func checkHost(h string) error {
 }
 
 // EgressRules is what the gateway allows for this file: the configured
-// hosts and every installation's forge host, since runners fetch from it,
-// plus the credentials as Authorization header values. Provider endpoints
+// hosts and, once any installation exists, GitHub, since runners fetch from
+// it, plus the credentials as Authorization header values. Provider endpoints
 // are not among them: a runner reaches its model through the gateway's
 // model endpoint, and the worker calls the provider (ADR-0004).
 func (f *File) EgressRules() egress.Rules {
@@ -67,8 +58,8 @@ func (f *File) EgressRules() egress.Rules {
 		}
 	}
 	for _, t := range f.Tenants {
-		for _, i := range t.Installations {
-			add(i.forgeHost())
+		if len(t.Installations) > 0 {
+			add(GitHubHost)
 		}
 	}
 	creds := make(map[string]string, len(f.Egress.credentials))
@@ -76,16 +67,4 @@ func (f *File) EgressRules() egress.Rules {
 		creds[host] = "Bearer " + secret.Value()
 	}
 	return egress.Rules{Hosts: hosts, Credentials: creds}
-}
-
-// hostOf is the hostname of a URL or a bare host, without a port.
-func hostOf(s string) string {
-	if !strings.Contains(s, "://") {
-		s = "https://" + s
-	}
-	u, err := url.Parse(s)
-	if err != nil {
-		return ""
-	}
-	return u.Hostname()
 }

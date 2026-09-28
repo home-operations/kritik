@@ -29,7 +29,7 @@ func build(t *testing.T) repo {
 	}
 	// A depth-one fetch of a bare SHA needs the server to allow it. Real git
 	// serves a local path and only advertises the capability when told to,
-	// which is also what GitHub, GitLab and Forgejo do server-side.
+	// which is also what GitHub does server-side.
 	allowSHAFetch(t, r)
 	wt, _ := r.Worktree()
 	commit := func(msg string, files map[string]string) string {

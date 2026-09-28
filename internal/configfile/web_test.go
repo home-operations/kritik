@@ -18,17 +18,12 @@ const webMinimal = `web:
       clientId: Iv1.x
       clientSecret: { env: TEST_WEBHOOK_SECRET }
       scopes: [read:user]
-    - name: fj
-      type: forgejo
-      host: git.example.com
-      clientId: fj
-      clientSecret: { env: TEST_WEBHOOK_SECRET }
   operators: ["sso:abc-123", "gh:octocat", "email:ops@example.com"]
   sessionTTL: 8h
 `
 
 func TestWeb(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f, err := Parse([]byte(webMinimal + minimal))
 	if err != nil {
@@ -38,9 +33,8 @@ func TestWeb(t *testing.T) {
 	if !ok || sso.Type != SignInOIDC || sso.ClientSecretValue().Value() != "whsec" {
 		t.Fatalf("sso = %+v, %v", sso, ok)
 	}
-	gh, _ := f.Web.SignInByName("gh")
-	if gh.Host != GitHubHost {
-		t.Fatalf("github host = %q, want the default", gh.Host)
+	if gh, ok := f.Web.SignInByName("gh"); !ok || gh.Type != SignInGitHub {
+		t.Fatalf("gh = %+v, %v", gh, ok)
 	}
 	if _, ok := f.Web.SignInByName("nope"); ok {
 		t.Fatal("found an undeclared sign-in")
@@ -53,13 +47,13 @@ func TestWeb(t *testing.T) {
 	}
 
 	m, err := Merge(f, nil, nil)
-	if err != nil || len(m.Web.SignIn) != 3 {
+	if err != nil || len(m.Web.SignIn) != 2 {
 		t.Fatalf("merge lost the web section: %v", err)
 	}
 }
 
 func TestWebRejects(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	t.Setenv("TEST_EMPTY", "")
 	rep := func(o, n string) string { return strings.Replace(webMinimal, o, n, 1) + minimal }
@@ -75,8 +69,8 @@ func TestWebRejects(t *testing.T) {
 		{"oidc http issuer", rep("issuer: https://", "issuer: http://"), "https"},
 		{"oidc without issuer", rep("      issuer: https://sso.example.com/application/o/kritik/\n", ""), "https"},
 		{"issuer on github", rep("type: github\n", "type: github\n      issuer: https://x.example.com\n"), "web.signIn[1].issuer"},
-		{"forgejo without host", rep("      host: git.example.com\n", ""), "web.signIn[2].host is required"},
-		{"host on oidc", rep("type: oidc\n", "type: oidc\n      host: x.example.com\n"), "web.signIn[0].host"},
+		{"github enterprise host", rep("type: github\n", "type: github\n      host: github.example.com\n"), "field host not found"},
+		{"forgejo sign-in", rep("type: github\n", "type: forgejo\n"), "web.signIn[1].type must be oidc or github"},
 		{"no client id", rep("clientId: kritik", "clientId: \"\""), "web.signIn[0].clientId is required"},
 		{"unset secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ env: TEST_NOPE }"), "web.signIn[0].clientSecret"},
 		{"empty secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ env: TEST_EMPTY }"), "web.signIn[0].clientSecret resolved to an empty value"},
@@ -89,8 +83,6 @@ func TestWebRejects(t *testing.T) {
 		{"ttl too long", rep("sessionTTL: 8h", "sessionTTL: 800h"), "web.sessionTTL"},
 		{"ttl negative", rep("sessionTTL: 8h", "sessionTTL: -1h"), "web.sessionTTL"},
 		{"unknown key", rep("scopes:", "scope:"), "field scope not found"},
-		{"dashboard forge host with scheme", rep("sessionTTL: 8h", "sessionTTL: 8h\n  dashboardForgeHosts: [https://git.example.com]"), "web.dashboardForgeHosts[0]"},
-		{"dashboard forge host wildcard", rep("sessionTTL: 8h", "sessionTTL: 8h\n  dashboardForgeHosts: ['*.example.com']"), "web.dashboardForgeHosts[0]"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -103,7 +95,7 @@ func TestWebRejects(t *testing.T) {
 }
 
 func TestRetentionTranscripts(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "tok")
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	tests := []struct {
 		name string

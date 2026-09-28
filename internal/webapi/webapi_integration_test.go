@@ -50,22 +50,18 @@ tenants:
   - slug: webapi-a
     installations:
       - name: webapi-a-bot
-        forge: forgejo
-        host: git.example
+        forge: github
         accounts: [wa]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
     repositories:
       - name: wa/one
       - name: wa/two
   - slug: webapi-b
     installations:
       - name: webapi-b-bot
-        forge: forgejo
-        host: git.example
+        forge: github
         accounts: [wb]
-        token: { env: KRITIK_TEST_TOKEN }
-        webhookSecret: { env: KRITIK_TEST_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
     repositories:
       - name: wb/one
 `

@@ -28,10 +28,9 @@ tenants:
   - slug: acme
     installations:
       - name: acme-bot
-        forge: forgejo
+        forge: github
         accounts: [acme]
-        token: { env: TEST_CS_TOKEN }
-        webhookSecret: { env: TEST_CS_SECRET }
+        app: { clientId: Iv1.acme, privateKey: { env: TEST_CS_KEY }, webhookSecret: { env: TEST_CS_SECRET } }
 `
 
 // fakeStore is the dashboard side of a Source: rows and a fingerprint the
@@ -84,8 +83,8 @@ func testKeyring(t *testing.T) *sealbox.Keyring {
 	return k
 }
 
-// dashRow is a dashboard tenant slug with one forgejo installation inst,
-// its token and webhook secret sealed with k.
+// dashRow is a dashboard tenant slug with one installation inst, its App's
+// private key and webhook secret sealed with k.
 func dashRow(t *testing.T, k *sealbox.Keyring, slug, inst string, rev int64) configfile.DashboardTenant {
 	t.Helper()
 	seal := func(v string) string {
@@ -95,8 +94,8 @@ func dashRow(t *testing.T, k *sealbox.Keyring, slug, inst string, rev int64) con
 		}
 		return s
 	}
-	spec := `{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"forgejo","accounts":["` + slug + `"],` +
-		`"token":{"sealed":"` + seal("tok-"+slug) + `"},"webhookSecret":{"sealed":"` + seal("wh-"+slug) + `"}}]}`
+	spec := `{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"github","accounts":["` + slug + `"],` +
+		`"app":{"clientId":"Iv1.` + slug + `","privateKey":{"sealed":"` + seal("key-"+slug) + `"},"webhookSecret":{"sealed":"` + seal("wh-"+slug) + `"}}}]}`
 	return configfile.DashboardTenant{Slug: slug, Spec: json.RawMessage(spec), Revision: rev}
 }
 
@@ -109,7 +108,7 @@ func writeFile(t *testing.T, path, yaml string) {
 
 func configPath(t *testing.T) string {
 	t.Helper()
-	t.Setenv("TEST_CS_TOKEN", "tok")
+	t.Setenv("TEST_CS_KEY", "tok")
 	t.Setenv("TEST_CS_SECRET", "wh")
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	writeFile(t, path, fileYAML)
@@ -259,7 +258,7 @@ func TestRun(t *testing.T) {
 		h.OnConfig("beta")
 		waitFor(t, "beta-bot", func() bool { return hasInstallation(current(), "beta-bot") })
 		in, _, _ := current().Installation("beta-bot")
-		if in.TokenValue().Value() != "tok-beta" || in.WebhookSecretValue().Value() != "wh-beta" {
+		if in.App.PrivateKeyValue().Value() != "key-beta" || in.WebhookSecretValue().Value() != "wh-beta" {
 			t.Fatal("sealed credentials were not opened")
 		}
 	})
@@ -355,10 +354,9 @@ func TestRun(t *testing.T) {
   - slug: zeta
     installations:
       - name: zeta-bot
-        forge: forgejo
+        forge: github
         accounts: [zeta]
-        token: { env: TEST_CS_TOKEN }
-        webhookSecret: { env: TEST_CS_SECRET }
+        app: { clientId: Iv1.zeta, privateKey: { env: TEST_CS_KEY }, webhookSecret: { env: TEST_CS_SECRET } }
 `)
 		waitFor(t, "zeta-bot", func() bool { return hasInstallation(current(), "zeta-bot") })
 		if !hasInstallation(current(), "beta-bot") {

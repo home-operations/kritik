@@ -27,10 +27,9 @@ tenants:
   - slug: ` + slug + `
     installations:
       - name: ` + slug + `-bot
-        forge: forgejo
+        forge: github
         accounts: [` + slug + `]
-        token: { env: TEST_MAIN_TOKEN }
-        webhookSecret: { env: TEST_MAIN_TOKEN }
+        app: { clientId: Iv1.test, privateKey: { env: TEST_MAIN_TOKEN }, webhookSecret: { env: TEST_MAIN_TOKEN } }
 `))
 	if err != nil {
 		t.Fatal(err)

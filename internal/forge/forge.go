@@ -67,8 +67,8 @@ const (
 // StatusContext is the commit status context kritik reports under.
 const StatusContext = "kritik/review"
 
-// MaxStatusDescription is the length, in characters, GitHub, and Forgejo
-// matching it, truncates a commit status description to.
+// MaxStatusDescription is the length, in characters, GitHub truncates a
+// commit status description to.
 const MaxStatusDescription = 140
 
 // StatusDescription is s cut to MaxStatusDescription characters, the last
@@ -124,10 +124,9 @@ type Client interface {
 	PullRequestDiff(ctx context.Context, owner, repo string, number int, base, head string) (string, error)
 	// CloneURL is the HTTPS clone URL of a repository on this forge.
 	CloneURL(owner, repo string) string
-	// GitToken is the credential a runner fetches with: a short-lived
-	// installation token on GitHub, and on Forgejo a static token, the
-	// installation's gitToken when configured and its API token otherwise.
-	// It reaches a pod that reads untrusted content.
+	// GitToken is the credential a runner fetches with, a short-lived
+	// installation token on GitHub. It reaches a pod that reads untrusted
+	// content.
 	GitToken(ctx context.Context) (string, error)
 	// BranchTip returns the commit a branch points at; an empty branch
 	// means the repository's default branch, whose name is also returned.

@@ -182,20 +182,13 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request, t *tenantScop
 }
 
 func installation(in *configfile.Installation) Installation {
-	out := Installation{
-		Name: in.Name, Forge: in.Forge, Host: in.Host, Accounts: in.Accounts, CredentialKind: CredentialToken,
-		HookPath: "/hooks/" + in.Name,
+	return Installation{
+		Name: in.Name, Forge: in.Forge, Accounts: in.Accounts, HookPath: "/hooks/" + in.Name,
 		Credentials: CredentialsSet{
-			Token: in.TokenValue().Value() != "", GitToken: in.GitTokenValue().Value() != "",
+			ClientID: in.App.ClientIDValue() != "", PrivateKey: in.App.PrivateKeyValue().Value() != "",
 			WebhookSecret: in.WebhookSecretValue().Value() != "",
 		},
 	}
-	if in.App != nil {
-		out.CredentialKind = CredentialApp
-		out.Credentials.ClientID = in.App.ClientIDValue() != ""
-		out.Credentials.PrivateKey = in.App.PrivateKeyValue().Value() != ""
-	}
-	return out
 }
 
 func models(m configfile.Models) Models { return Models{Review: m.Review, Fallback: m.Fallback} }
@@ -460,7 +453,6 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		ttl = configfile.DefaultSessionTTL
 	}
 	add("web", "sessionTTL", ttl.String(), from(f.Web.SessionTTL > 0))
-	add("web", "dashboardForgeHosts", strings.Join(f.DashboardForgeHosts(), ", "), from(len(f.Web.DashboardForgeHosts) > 0))
 	add("web", "dashboardProviderHosts", strings.Join(f.Web.DashboardProviderHosts, ", "), from(len(f.Web.DashboardProviderHosts) > 0))
 	return out
 }

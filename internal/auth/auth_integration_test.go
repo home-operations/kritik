@@ -58,34 +58,25 @@ web:
       clientSecret: { env: KRITIK_TEST_TOKEN }
     - name: gh
       type: github
-      host: %[2]s
-      clientId: kritik-client
-      clientSecret: { env: KRITIK_TEST_TOKEN }
-    - name: fj
-      type: forgejo
-      host: %[3]s
       clientId: kritik-client
       clientSecret: { env: KRITIK_TEST_TOKEN }
   operators: ["corp:op-oidc", "gh:OpGH", "email:ops@ops.example"]
 tenants:
   - slug: auth-personal
     installations:
-      - {name: auth-personal-bot, forge: github, host: "%[2]s", accounts: [alice-gh], app: &app {clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}}
+      - {name: auth-personal-bot, forge: github, accounts: [alice-gh], app: &app {clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}}
   - slug: auth-acme
     installations:
-      - {name: auth-acme-bot, forge: github, host: "%[2]s", accounts: [acme], app: *app}
+      - {name: auth-acme-bot, forge: github, accounts: [acme], app: *app}
   - slug: auth-widgets
     installations:
-      - {name: auth-widgets-bot, forge: github, host: "%[2]s", accounts: [Widgets], app: *app}
+      - {name: auth-widgets-bot, forge: github, accounts: [Widgets], app: *app}
   - slug: auth-pending
     installations:
-      - {name: auth-pending-bot, forge: github, host: "%[2]s", accounts: [pendco], app: *app}
-  - slug: auth-fj
-    installations:
-      - {name: auth-fj-bot, forge: forgejo, host: "%[3]s", accounts: [fjorg], token: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
+      - {name: auth-pending-bot, forge: github, accounts: [pendco], app: *app}
   - slug: auth-invite
     installations:
-      - {name: auth-invite-bot, forge: forgejo, host: "%[3]s", accounts: [nobody], token: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
+      - {name: auth-invite-bot, forge: github, accounts: [nobody], app: *app}
 `
 
 type authEnv struct {
@@ -96,8 +87,8 @@ type authEnv struct {
 	current  *configfile.Current
 	file     *configfile.File
 	oidc     *fakeOAuth
-	gh, fj   *fakeOAuth
-	gh2      *fakeOAuth
+	oidc2    *fakeOAuth
+	gh       *fakeOAuth
 	now      time.Time
 	tenantID map[string]string
 }
@@ -117,11 +108,11 @@ func newAuthEnv(t *testing.T) *authEnv {
 		t.Fatalf("Migrate: %v", err)
 	}
 	e := &authEnv{
-		t: t, st: st, oidc: newFakeOIDC(t), gh: newFakeGitHub(t), gh2: newFakeGitHub(t), fj: newFakeForgejo(t),
+		t: t, st: st, oidc: newFakeOIDC(t), oidc2: newFakeOIDC(t), gh: newFakeGitHub(t),
 		now: time.Now(), tenantID: map[string]string{},
 	}
 	t.Setenv("KRITIK_TEST_TOKEN", fakeClientSecret)
-	e.file, err = configfile.Parse(fmt.Appendf(nil, authConfigYAML, e.oidc.srv.URL, e.gh.srv.URL, e.fj.srv.URL))
+	e.file, err = configfile.Parse(fmt.Appendf(nil, authConfigYAML, e.oidc.srv.URL))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -134,7 +125,7 @@ func newAuthEnv(t *testing.T) *authEnv {
 	e.current = configfile.NewCurrent(e.file)
 	e.h, err = New(Config{
 		Store: st, Current: e.current, WebURL: mustParseURL(t, "https://kritik.example.com/dash/"),
-		HTTPClient: trustingClient(e.oidc, e.gh, e.gh2, e.fj), Now: func() time.Time { return e.now },
+		HTTPClient: trustingClient(e.gh, e.oidc, e.oidc2), Now: func() time.Time { return e.now },
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
@@ -393,7 +384,7 @@ func TestGitHubSignInMemberships(t *testing.T) {
 	if p.Identity.Subject != "1001" || p.Identity.Login != "Alice-GH" || p.Account.Email != "alice@gh.example" || !p.Account.EmailVerified {
 		t.Fatalf("principal = %+v", p)
 	}
-	if !p.CanAdmin(e.tenantID["auth-widgets"]) || p.CanAdmin(e.tenantID["auth-acme"]) || !p.CanRead(e.tenantID["auth-acme"]) || p.CanRead(e.tenantID["auth-fj"]) {
+	if !p.CanAdmin(e.tenantID["auth-widgets"]) || p.CanAdmin(e.tenantID["auth-acme"]) || !p.CanRead(e.tenantID["auth-acme"]) || p.CanRead(e.tenantID["auth-invite"]) {
 		t.Fatalf("role checks wrong for %+v", p.Memberships)
 	}
 
@@ -410,30 +401,6 @@ func TestGitHubSignInMemberships(t *testing.T) {
 	op := &fakeUser{ID: 1002, Login: "opgh", Email: "op@gh.example"}
 	if p := e.principal(e.mustSignIn("gh", e.gh, op)); !p.Operator || !p.CanAdmin(e.tenantID["auth-acme"]) {
 		t.Fatalf("principal = %+v, want an operator", p)
-	}
-}
-
-func TestForgejoSignInMemberships(t *testing.T) {
-	e := newAuthEnv(t)
-	tests := []struct {
-		user *fakeUser
-		want map[string]Role
-	}{
-		{&fakeUser{ID: 2001, Login: "bob-fj", Email: "bob@fj.example", EmailVerified: true, Orgs: map[string]string{"fjorg": "admin"}},
-			map[string]Role{"auth-fj": RoleAdmin}},
-		{&fakeUser{ID: 2002, Login: "carol-fj", Orgs: map[string]string{"fjorg": "member", "acme": "admin"}},
-			map[string]Role{"auth-fj": RoleMember}},
-		{&fakeUser{ID: 2003, Login: "nobody"}, map[string]Role{"auth-invite": RoleAdmin}},
-		{&fakeUser{ID: 2004, Login: "dave-fj"}, map[string]Role{}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.user.Login, func(t *testing.T) {
-			p := e.principal(e.mustSignIn("fj", e.fj, tt.user))
-			assertRoles(t, e.roles(p), tt.want)
-			if p.Identity.Subject != fmt.Sprint(tt.user.ID) || p.Account.EmailVerified != tt.user.EmailVerified {
-				t.Fatalf("principal = %+v", p)
-			}
-		})
 	}
 }
 
@@ -485,8 +452,8 @@ func TestInviteAcceptance(t *testing.T) {
 func TestSessionLifecycle(t *testing.T) {
 	e := newAuthEnv(t)
 	ctx := context.Background()
-	user := &fakeUser{ID: 4001, Login: "erin-" + randomHex(t), Email: "erin@fj.example"}
-	cookie := e.mustSignIn("fj", e.fj, user)
+	user := &fakeUser{ID: 4001, Login: "erin-" + randomHex(t), Email: "erin@gh.example"}
+	cookie := e.mustSignIn("gh", e.gh, user)
 	p := e.principal(cookie)
 	if p == nil {
 		t.Fatal("no principal for a fresh session")
@@ -513,7 +480,7 @@ func TestSessionLifecycle(t *testing.T) {
 
 	t.Run("a sign-in removed from the file ends its sessions", func(t *testing.T) {
 		trimmed := *e.file
-		trimmed.Web.SignIn = e.file.Web.SignIn[:2]
+		trimmed.Web.SignIn = e.file.Web.SignIn[:1]
 		e.current.Set(&trimmed)
 		defer e.current.Set(e.file)
 		if p := e.principal(cookie); p != nil {
@@ -526,7 +493,7 @@ func TestSessionLifecycle(t *testing.T) {
 		}
 	})
 	t.Run("logout", func(t *testing.T) {
-		other := e.mustSignIn("fj", e.fj, user)
+		other := e.mustSignIn("gh", e.gh, user)
 		r := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 		r.Header.Set("X-Kritik", "1")
 		r.Header.Set("Origin", "https://kritik.example.com")
@@ -559,21 +526,20 @@ func TestIdentitiesNotLinkedAcrossProviders(t *testing.T) {
 	email := "shared-" + randomHex(t) + "@example.com"
 	viaOIDC := e.principal(e.mustSignIn("corp", e.oidc, &fakeUser{Login: "shared-oidc-" + randomHex(t), Email: email, EmailVerified: true}))
 	viaGitHub := e.principal(e.mustSignIn("gh", e.gh, &fakeUser{ID: 5001, Login: "shared-gh", Email: email, EmailVerified: true}))
-	viaForgejo := e.principal(e.mustSignIn("fj", e.fj, &fakeUser{ID: 5001, Login: "shared-fj", Email: email, EmailVerified: true}))
-	if viaOIDC.Account.ID == viaGitHub.Account.ID || viaGitHub.Account.ID == viaForgejo.Account.ID || viaOIDC.Account.ID == viaForgejo.Account.ID {
-		t.Fatalf("accounts linked by email: oidc %s github %s forgejo %s", viaOIDC.Account.ID, viaGitHub.Account.ID, viaForgejo.Account.ID)
+	if viaOIDC.Account.ID == viaGitHub.Account.ID {
+		t.Fatalf("accounts linked by email: oidc %s github %s", viaOIDC.Account.ID, viaGitHub.Account.ID)
 	}
 }
 
 func TestSignInMovedToAnotherOrigin(t *testing.T) {
 	e := newAuthEnv(t)
-	user := &fakeUser{ID: 6001, Login: "frank-" + randomHex(t), Email: "frank@gh.example", EmailVerified: true}
-	before := e.mustSignIn("gh", e.gh, user)
+	user := &fakeUser{Login: "frank-" + randomHex(t), Email: "frank@example.com", EmailVerified: true}
+	before := e.mustSignIn("corp", e.oidc, user)
 	was := e.principal(before)
 
-	// The same sign-in name, now pointing at another GitHub host whose
-	// user 6001 is someone else entirely.
-	moved, err := configfile.Parse(fmt.Appendf(nil, authConfigYAML, e.oidc.srv.URL, e.gh2.srv.URL, e.fj.srv.URL))
+	// The same sign-in name, now pointing at another issuer whose subject
+	// of the same name is someone else entirely.
+	moved, err := configfile.Parse(fmt.Appendf(nil, authConfigYAML, e.oidc2.srv.URL))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -581,7 +547,7 @@ func TestSignInMovedToAnotherOrigin(t *testing.T) {
 	if p := e.principal(before); p != nil {
 		t.Fatalf("session from the old origin still authenticates: %+v", p)
 	}
-	now := e.principal(e.mustSignIn("gh", e.gh2, user))
+	now := e.principal(e.mustSignIn("corp", e.oidc2, user))
 	if now == nil || now.Account.ID == was.Account.ID {
 		t.Fatalf("same subject on a new origin linked to account %s", was.Account.ID)
 	}

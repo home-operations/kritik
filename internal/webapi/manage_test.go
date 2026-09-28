@@ -147,7 +147,7 @@ func TestFileTenantConfigIsRedacted(t *testing.T) {
 		slices.ContainsFunc(c.Policy, func(p FieldPolicy) bool { return p.Editable }) {
 		t.Errorf("config = %+v", c)
 	}
-	if body := w.Body.String(); strings.Contains(body, "KRITIK_TEST_TOKEN") || !strings.Contains(body, `"token":{"set":true}`) {
+	if body := w.Body.String(); strings.Contains(body, "KRITIK_TEST_TOKEN") || !strings.Contains(body, `"privateKey":{"set":true}`) {
 		t.Errorf("spec is not redacted: %s", body)
 	}
 	if in := c.Inherited; in.Tenant.Mode != configfile.ReviewSingle || in.TenantSources["mode"] != configfile.SourceDefault ||

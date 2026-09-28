@@ -124,26 +124,8 @@ config:
   #           clientId: Iv1.example
   #           privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
   #           webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
-  #       # GitLab, Forgejo and Gitea installations authenticate with a bot
-  #       # token instead of a GitHub App. Gitea speaks the same API as
-  #       # Forgejo, so forge: gitea works identically here; forge: gitlab
-  #       # talks to gitlab.com unless it names a host.
-  #       - name: example-forgejo
-  #         forge: forgejo
-  #         host: forge.example.com
-  #         accounts: [example]
-  #         token: { file: /var/run/secrets/kritik/bot/forgejo-token }
-  #         # Runner pods fetch with gitToken instead of token when set; a
-  #         # read-only token keeps a write-capable one out of the pod that
-  #         # reads untrusted pull request content.
-  #         gitToken: { file: /var/run/secrets/kritik/bot/forgejo-read-token }
-  #         webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
   #     repositories:
   #       - name: example/widgets
-  #         # Both installations serve account "example", so the entry names
-  #         # the one it belongs to; the same name on the other forge is a
-  #         # separate repository.
-  #         installation: example-github
   #         # agentic mode gives the model a bounded, read-only tool loop
   #         # over the commit tree instead of one prompt with the diff.
   #         mode: agentic

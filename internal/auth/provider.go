@@ -135,7 +135,7 @@ func requestEnded(ctx context.Context) bool {
 func signInsKey(signIns []configfile.SignIn) [sha256.Size]byte {
 	h := sha256.New()
 	for _, s := range signIns {
-		fields := []string{s.Name, string(s.Type), s.Issuer, s.Host, s.ClientID, s.ClientSecretValue().Value(), strings.Join(s.Scopes, " ")}
+		fields := []string{s.Name, string(s.Type), s.Issuer, s.ClientID, s.ClientSecretValue().Value(), strings.Join(s.Scopes, " ")}
 		for _, f := range fields {
 			h.Write([]byte(f))
 			h.Write([]byte{0})
@@ -153,29 +153,19 @@ func buildProvider(ctx context.Context, s configfile.SignIn, redirect string, cl
 		return newOIDCProvider(ctx, s, redirect, client, now)
 	case configfile.SignInGitHub:
 		return newGitHubProvider(s, redirect, client), nil
-	case configfile.SignInForgejo, configfile.SignInGitea:
-		// Gitea speaks the same OAuth flow and user API as Forgejo.
-		return newForgejoProvider(s, redirect, client), nil
 	default:
 		return nil, fmt.Errorf("auth: sign-in %s: unsupported type %q", s.Name, s.Type)
 	}
 }
 
-// signInOrigin is where a sign-in points: its type and normalised base URL,
-// or for OIDC its issuer exactly as configured, since the issuer is compared
-// exactly against the ID token's. Identities and sessions are bound to it.
+// signInOrigin is where a sign-in points: its type and base URL, or for OIDC
+// its issuer exactly as configured, since the issuer is compared exactly
+// against the ID token's. Identities and sessions are bound to it.
 func signInOrigin(s configfile.SignIn) string {
-	switch s.Type {
-	case configfile.SignInOIDC:
+	if s.Type == configfile.SignInOIDC {
 		return string(s.Type) + ":" + s.Issuer
-	case configfile.SignInGitHub:
-		if configfile.ForgeHost(configfile.Forge(s.Type), s.Host) == configfile.GitHubHost {
-			return string(s.Type) + ":https://" + configfile.GitHubHost
-		}
-		return string(s.Type) + ":" + webBase(s.Host)
-	default:
-		return string(s.Type) + ":" + webBase(s.Host)
 	}
+	return string(s.Type) + ":https://" + configfile.GitHubHost
 }
 
 // redirectURL is the callback a provider returns the browser to.
@@ -187,28 +177,8 @@ func redirectURL(webURL *url.URL, name string) string {
 func displayName(s configfile.SignIn) string {
 	switch s.Type {
 	case configfile.SignInGitHub:
-		if h := configfile.ForgeHost(configfile.Forge(s.Type), s.Host); h != configfile.GitHubHost {
-			return "GitHub (" + h + ")"
-		}
 		return "GitHub"
-	case configfile.SignInForgejo:
-		return "Forgejo (" + configfile.ForgeHost(configfile.Forge(s.Type), s.Host) + ")"
-	case configfile.SignInGitea:
-		return "Gitea (" + configfile.ForgeHost(configfile.Forge(s.Type), s.Host) + ")"
 	default:
 		return s.Name
 	}
-}
-
-// webBase is the scheme and host a forge host names, https unless it carries
-// its own scheme, without a trailing slash.
-func webBase(host string) string {
-	if !strings.Contains(host, "://") {
-		host = "https://" + host
-	}
-	u, err := url.Parse(strings.TrimRight(host, "/"))
-	if err != nil {
-		return strings.TrimRight(host, "/")
-	}
-	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + strings.TrimRight(u.Path, "/")
 }

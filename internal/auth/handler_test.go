@@ -80,9 +80,8 @@ func TestSessionCookie(t *testing.T) {
 
 func TestProvidersEndpoint(t *testing.T) {
 	f := &configfile.File{Web: configfile.Web{SignIn: []configfile.SignIn{
-		{Name: "gh", Type: configfile.SignInGitHub, Host: "github.com"},
+		{Name: "gh", Type: configfile.SignInGitHub},
 		{Name: "corp", Type: configfile.SignInOIDC, Issuer: "https://id.example.com"},
-		{Name: "fj", Type: configfile.SignInForgejo, Host: "code.example.org"},
 	}}}
 	h := testHandler(t, "https://kritik.example.com", f)
 	mux := http.NewServeMux()
@@ -99,7 +98,6 @@ func TestProvidersEndpoint(t *testing.T) {
 	want := []ProviderInfo{
 		{Name: "gh", Type: configfile.SignInGitHub, DisplayName: "GitHub"},
 		{Name: "corp", Type: configfile.SignInOIDC, DisplayName: "corp"},
-		{Name: "fj", Type: configfile.SignInForgejo, DisplayName: "Forgejo (code.example.org)"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("providers = %+v", got)

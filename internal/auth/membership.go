@@ -27,20 +27,19 @@ type Grant = store.Grant
 type Membership func(ctx context.Context, org string) (Role, error)
 
 // Resolve derives the tenants a forge sign-in grants: for every account a
-// tenant installation on the same forge type and host as signIn serves, the
-// user is admin when the account is their own, otherwise whatever role m
-// reports for that account as an organization. A tenant gets the highest
-// role among its matching installations' accounts. An OIDC sign-in matches
-// no installation and resolves nothing.
+// tenant installation on the same forge as signIn serves, the user is admin
+// when the account is their own, otherwise whatever role m reports for that
+// account as an organization. A tenant gets the highest role among its
+// matching installations' accounts. An OIDC sign-in matches no installation
+// and resolves nothing.
 func Resolve(ctx context.Context, file *configfile.File, signIn configfile.SignIn, id Identity, m Membership) ([]Grant, error) {
-	host := configfile.ForgeHost(configfile.Forge(signIn.Type), signIn.Host)
 	checked := map[string]Role{}
 	var grants []Grant
 	for ti := range file.Tenants {
 		t := &file.Tenants[ti]
 		var role Role
 		for _, in := range t.Installations {
-			if string(in.Forge) != string(signIn.Type) || configfile.ForgeHost(in.Forge, in.Host) != host || host == "" {
+			if string(in.Forge) != string(signIn.Type) {
 				continue
 			}
 			for _, account := range in.Accounts {
@@ -96,7 +95,7 @@ func maxRole(a, b Role) Role {
 }
 
 // IsOperator reports whether id is on the file's operator allowlist:
-// "<sign-in name>:<login>" for a GitHub or Forgejo sign-in, compared
+// "<sign-in name>:<login>" for a GitHub sign-in, compared
 // without case as forge logins are; "<sign-in name>:<subject>" for OIDC,
 // exact, since a subject is opaque; or "email:<address>", which only a
 // provider-verified email matches. An entry naming a sign-in the file no

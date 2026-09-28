@@ -23,26 +23,22 @@ type Client struct {
 	app    *App
 	api    *gh.Client
 	tokens *InstallationTokens
-	// webBase is "https://github.com" or the GHES host.
-	webBase string
 
 	mu    sync.Mutex
 	login string
 }
 
-// NewClient builds a Client for an installation. host is empty for
-// github.com, or the GHES hostname.
-func NewClient(app *App, installationID int64, host string) (*Client, error) {
+// webBase is where repositories, files and clone URLs live.
+const webBase = "https://github.com"
+
+// NewClient builds a Client for an installation.
+func NewClient(app *App, installationID int64) (*Client, error) {
 	tokens := app.InstallationTokens(installationID)
 	api, err := app.Client(tokens)
 	if err != nil {
 		return nil, err
 	}
-	web := "https://github.com"
-	if host != "" {
-		web = "https://" + strings.TrimRight(host, "/")
-	}
-	return &Client{app: app, api: api, tokens: tokens, webBase: web}, nil
+	return &Client{app: app, api: api, tokens: tokens}, nil
 }
 
 // MergeBase implements forge.Client through the compare API, whose
@@ -72,7 +68,7 @@ func (c *Client) PullRequestDiff(ctx context.Context, owner, repo string, _ int,
 
 // CloneURL implements forge.Client.
 func (c *Client) CloneURL(owner, repo string) string {
-	return c.webBase + "/" + owner + "/" + repo + ".git"
+	return webBase + "/" + owner + "/" + repo + ".git"
 }
 
 // LineRanges implements forge.Client: GitHub review comments take a
@@ -81,7 +77,7 @@ func (c *Client) LineRanges() bool { return true }
 
 // FileURL implements forge.Client.
 func (c *Client) FileURL(owner, repo, sha, path string, line, endLine int) string {
-	u := fmt.Sprintf("%s/%s/%s/blob/%s/%s#L%d", c.webBase, owner, repo, sha, path, line)
+	u := fmt.Sprintf("%s/%s/%s/blob/%s/%s#L%d", webBase, owner, repo, sha, path, line)
 	if endLine > line {
 		u += fmt.Sprintf("-L%d", endLine)
 	}
@@ -338,13 +334,4 @@ func (c *Client) SetStatus(ctx context.Context, owner, repo, sha string, state f
 		return fmt.Errorf("github: status on %s: %w", sha, err)
 	}
 	return nil
-}
-
-// APIBase derives the REST base for a host: empty for github.com, the
-// Enterprise Server path otherwise.
-func APIBase(host string) string {
-	if host == "" {
-		return ""
-	}
-	return "https://" + strings.TrimRight(host, "/") + "/api/v3"
 }

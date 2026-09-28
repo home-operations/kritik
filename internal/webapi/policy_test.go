@@ -24,7 +24,7 @@ func decodeSpec(t *testing.T, spec string) *configfile.Tenant {
 }
 
 func TestOperatorOnlyChange(t *testing.T) {
-	const base = `"slug":"alpha","installations":[{"name":"a","forge":"forgejo","accounts":["alpha"]}]`
+	const base = `"slug":"alpha","installations":[{"name":"a","forge":"github","accounts":["alpha"]}]`
 	tests := []struct {
 		name     string
 		old, new string
@@ -165,8 +165,8 @@ func TestMergeFailure(t *testing.T) {
 	}{
 		{
 			name:   "the edited tenant is blamed with its prefix stripped",
-			err:    &configfile.MergeError{Slug: "alpha", Err: errors.New(`configfile: dashboard[alpha].installations[0].host: "x" is not allowed`)},
-			status: 422, code: CodeInvalidSpec, path: "installations[0].host", message: `installations[0].host: "x" is not allowed`,
+			err:    &configfile.MergeError{Slug: "alpha", Err: errors.New(`configfile: dashboard[alpha].installations[0].app.clientId: "x" is not allowed`)},
+			status: 422, code: CodeInvalidSpec, path: "installations[0].app.clientId", message: `installations[0].app.clientId: "x" is not allowed`,
 		},
 		{
 			name:   "a path ending at a space",
@@ -201,7 +201,7 @@ func TestMergeFailure(t *testing.T) {
 		},
 		{
 			name:     "another tenant blocks the write",
-			err:      &configfile.MergeError{Slug: "beta", Err: errors.New(`configfile: dashboard[beta].installations[0].token: cannot open`)},
+			err:      &configfile.MergeError{Slug: "beta", Err: errors.New(`configfile: dashboard[beta].installations[0].app.privateKey: cannot open`)},
 			baseline: broken,
 			status:   409, code: CodeConfigBlocked,
 		},

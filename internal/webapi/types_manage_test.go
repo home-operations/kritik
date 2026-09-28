@@ -24,12 +24,12 @@ func init() {
 				Repository:        goldenRepoSettings,
 				RepositorySources: map[string]configfile.Source{"models.review": configfile.SourceFile, "mode": configfile.SourceDashboard},
 			},
-			Spec: json.RawMessage(`{"slug":"alpha","installations":[{"name":"alpha-bot","token":{"set":true}}]}`),
+			Spec: json.RawMessage(`{"slug":"alpha","installations":[{"name":"alpha-bot","app":{"privateKey":{"set":true}}}]}`),
 		},
 		"create_tenant_request": CreateTenantRequest{Slug: "alpha", Spec: json.RawMessage(`{"slug":"alpha"}`)},
 		"update_tenant_request": UpdateTenantRequest{Revision: 3, Spec: json.RawMessage(`{"slug":"alpha"}`)},
 		"tenant_write_result": TenantWriteResult{
-			Slug: "alpha", Revision: 1, Generated: map[string]string{"installations[alpha-bot].webhookSecret": "00ff"},
+			Slug: "alpha", Revision: 1, Generated: map[string]string{"installations[alpha-bot].app.webhookSecret": "00ff"},
 		},
 		"members": Members{
 			Members: []Member{{
@@ -44,7 +44,7 @@ func init() {
 		"accepted":              Accepted{JobID: 42},
 		"audit_event": AuditEvent{
 			ID: "7", At: t0, Actor: &goldenAccount, Tenant: "alpha", Action: AuditTenantUpdate, Target: "alpha",
-			Detail: json.RawMessage(`{"revision":2,"secretsChanged":["installations[alpha-bot].token"]}`),
+			Detail: json.RawMessage(`{"revision":2,"secretsChanged":["installations[alpha-bot].app.privateKey"]}`),
 		},
 	})
 }

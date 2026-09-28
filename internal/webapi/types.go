@@ -89,36 +89,23 @@ type InstanceSetting struct {
 	Source  configfile.Source `json:"source"`
 }
 
-// CredentialKind is how an installation authenticates to its forge.
-type CredentialKind string
-
-// Credential kinds, as installations.credential_kind spells them.
-const (
-	CredentialApp   CredentialKind = "app"
-	CredentialToken CredentialKind = "token"
-)
-
 // CredentialsSet says which of an installation's secrets resolve to a
 // value; the values themselves are never exposed.
 type CredentialsSet struct {
 	ClientID      bool `json:"clientId"`
 	PrivateKey    bool `json:"privateKey"`
-	Token         bool `json:"token"`
-	GitToken      bool `json:"gitToken"`
 	WebhookSecret bool `json:"webhookSecret"`
 }
 
-// Installation is one bot on one forge and the accounts it serves. HookPath
+// Installation is one GitHub App and the accounts it serves. HookPath
 // is relative to the ingest endpoint, whose origin the dashboard does not
 // know.
 type Installation struct {
-	Name           string           `json:"name"`
-	Forge          configfile.Forge `json:"forge"`
-	Host           string           `json:"host"`
-	Accounts       []string         `json:"accounts"`
-	CredentialKind CredentialKind   `json:"credentialKind"`
-	Credentials    CredentialsSet   `json:"credentials"`
-	HookPath       string           `json:"hookPath"`
+	Name        string           `json:"name"`
+	Forge       configfile.Forge `json:"forge"`
+	Accounts    []string         `json:"accounts"`
+	Credentials CredentialsSet   `json:"credentials"`
+	HookPath    string           `json:"hookPath"`
 	// LastWebhookAt is when a webhook for the installation last passed
 	// signature verification, to the minute; null when none ever has, and
 	// kritik only polls it.
