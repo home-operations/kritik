@@ -21,7 +21,7 @@ import (
 	"github.com/home-operations/kritik/internal/prfilter"
 )
 
-// nameRe bounds installation and tenant names to what is safe in a URL path
+// nameRe bounds connection and tenant names to what is safe in a URL path
 // segment, a Kubernetes label value and a log line.
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
@@ -109,8 +109,8 @@ func (t *Tenant) resolve(where string, refs refPolicy) error {
 	if err := t.compile(); err != nil {
 		return fmt.Errorf("configfile: %s.filter: %w", where, err)
 	}
-	for ii := range t.Installations {
-		if err := t.Installations[ii].resolve(fmt.Sprintf("%s.installations[%d]", where, ii), refs); err != nil {
+	for ii := range t.Connections {
+		if err := t.Connections[ii].resolve(fmt.Sprintf("%s.connections[%d]", where, ii), refs); err != nil {
 			return err
 		}
 	}
@@ -130,7 +130,7 @@ func (t *Tenant) resolve(where string, refs refPolicy) error {
 	return nil
 }
 
-func (in *Installation) resolve(where string, refs refPolicy) error {
+func (in *Connection) resolve(where string, refs refPolicy) error {
 	var err error
 	if in.App != nil {
 		in.App.clientID = in.App.ClientID
@@ -174,34 +174,34 @@ func (f *File) validate() error {
 	return f.validateTenants()
 }
 
-// repositoryInstallation is the installation a repository entry binds to,
-// or an error saying why it binds to none: the installation it names does
-// not own it, no installation owns it, or several do and it names none.
-func (t *Tenant) repositoryInstallation(r *Repository, where string) (*Installation, error) {
+// repositoryConnection is the connection a repository entry binds to,
+// or an error saying why it binds to none: the connection it names does
+// not own it, no connection owns it, or several do and it names none.
+func (t *Tenant) repositoryConnection(r *Repository, where string) (*Connection, error) {
 	owner, _, _ := strings.Cut(r.Name, "/")
-	var owners []*Installation
-	for i := range t.Installations {
-		in := &t.Installations[i]
+	var owners []*Connection
+	for i := range t.Connections {
+		in := &t.Connections[i]
 		if !in.Serves(owner) {
 			continue
 		}
-		if in.Name == r.Installation {
+		if in.Name == r.Connection {
 			return in, nil
 		}
 		owners = append(owners, in)
 	}
 	switch {
-	case r.Installation != "":
-		return nil, fmt.Errorf("configfile: %s.installation %q is not an installation of tenant %q serving account %q",
-			where, r.Installation, t.Slug, owner)
+	case r.Connection != "":
+		return nil, fmt.Errorf("configfile: %s.connection %q is not a connection of tenant %q serving account %q",
+			where, r.Connection, t.Slug, owner)
 	case len(owners) == 0:
-		return nil, fmt.Errorf("configfile: %s.name %q: no installation in tenant %q serves account %q", where, r.Name, t.Slug, owner)
+		return nil, fmt.Errorf("configfile: %s.name %q: no connection in tenant %q serves account %q", where, r.Name, t.Slug, owner)
 	case len(owners) > 1:
 		names := make([]string, len(owners))
 		for i, in := range owners {
 			names[i] = in.Name
 		}
-		return nil, fmt.Errorf("configfile: %s.name %q: installations %s of tenant %q all serve account %q; set installation to one of them",
+		return nil, fmt.Errorf("configfile: %s.name %q: connections %s of tenant %q all serve account %q; set connection to one of them",
 			where, r.Name, strings.Join(names, ", "), t.Slug, owner)
 	}
 	return owners[0], nil
@@ -302,10 +302,10 @@ func (f *File) validateTenants() error {
 		return errors.New("configfile: tenants must list at least one tenant")
 	}
 	slugs := map[string]string{}
-	installations := map[string]string{}
+	connections := map[string]string{}
 	for ti := range f.Tenants {
 		t := &f.Tenants[ti]
-		if err := f.validateTenant(t.where(ti), t, slugs, installations); err != nil {
+		if err := f.validateTenant(t.where(ti), t, slugs, connections); err != nil {
 			if t.Origin() == OriginDashboard {
 				return &MergeError{Slug: t.Slug, Err: err}
 			}
@@ -315,10 +315,10 @@ func (f *File) validateTenants() error {
 	return nil
 }
 
-// validateTenant checks one tenant. slugs and installations record the
-// slugs and installation names already seen, so duplicates across tenants
+// validateTenant checks one tenant. slugs and connections record the
+// slugs and connection names already seen, so duplicates across tenants
 // are caught whichever origin each has.
-func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[string]string) error {
+func (f *File) validateTenant(where string, t *Tenant, slugs, connections map[string]string) error {
 	if !nameRe.MatchString(t.Slug) {
 		return fmt.Errorf("configfile: %s.slug %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", where, t.Slug)
 	}
@@ -340,19 +340,19 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[
 			return err
 		}
 	}
-	if len(t.Installations) == 0 {
-		return fmt.Errorf("configfile: %s (%s) must list at least one installation", where, t.Slug)
+	if len(t.Connections) == 0 {
+		return fmt.Errorf("configfile: %s (%s) must list at least one connection", where, t.Slug)
 	}
-	for ii, in := range t.Installations {
-		iwhere := fmt.Sprintf("%s.installations[%d]", where, ii)
+	for ii, in := range t.Connections {
+		iwhere := fmt.Sprintf("%s.connections[%d]", where, ii)
 		if !nameRe.MatchString(in.Name) {
 			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", iwhere, in.Name)
 		}
-		if owner, dup := installations[in.Name]; dup {
-			return fmt.Errorf("configfile: %s.name %q duplicates an installation in tenant %q; names are hook paths and must be unique",
+		if owner, dup := connections[in.Name]; dup {
+			return fmt.Errorf("configfile: %s.name %q duplicates a connection in tenant %q; names are hook paths and must be unique",
 				iwhere, in.Name, owner)
 		}
-		installations[in.Name] = t.Slug
+		connections[in.Name] = t.Slug
 		if err := validateAccounts(in.Accounts, iwhere); err != nil {
 			return err
 		}
@@ -366,13 +366,13 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, installations map[
 		if r.Name == "" || !strings.Contains(r.Name, "/") {
 			return fmt.Errorf("configfile: %s.name must be \"owner/repo\", got %q", rwhere, r.Name)
 		}
-		in, err := t.repositoryInstallation(&r, rwhere)
+		in, err := t.repositoryConnection(&r, rwhere)
 		if err != nil {
 			return err
 		}
 		key := in.Name + "\x00" + r.Name
 		if prev, dup := repos[key]; dup {
-			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d] of installation %q", rwhere, r.Name, prev, in.Name)
+			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d] of connection %q", rwhere, r.Name, prev, in.Name)
 		}
 		repos[key] = ri
 		if err := f.validateOverrides(rwhere, t, &r.Overrides); err != nil {
@@ -518,11 +518,11 @@ func checkRepoPath(p string) error {
 	return nil
 }
 
-func (in Installation) validate(where string) error {
+func (in Connection) validate(where string) error {
 	switch in.Forge {
 	case ForgeGitHub:
 		if in.App == nil {
-			return fmt.Errorf("configfile: %s: a github installation needs an app", where)
+			return fmt.Errorf("configfile: %s: a github connection needs an app", where)
 		}
 		if (in.App.ClientID == "") == in.App.ClientIDFrom.empty() {
 			return fmt.Errorf("configfile: %s.app: set exactly one of clientId or clientIdFrom", where)

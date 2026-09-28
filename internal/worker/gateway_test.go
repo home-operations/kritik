@@ -46,7 +46,7 @@ func TestMaskProvider(t *testing.T) {
 // above sits in.
 const minimalGatewayFile = `tenants:
   - slug: acme
-    installations:
+    connections:
       - name: acme-bot
         forge: github
         accounts: [acme]

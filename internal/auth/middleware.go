@@ -26,7 +26,7 @@ type Principal struct {
 	// AllTenants is a member who reads every tenant.
 	AllTenants bool
 	// Tenants are the tenants a member reads, by id: those among the
-	// current file's whose installations serve an account the grant names.
+	// current file's whose connections serve an account the grant names.
 	Tenants map[string]bool
 }
 
@@ -115,7 +115,7 @@ func principalFor(file *configfile.File, sess store.Session) *Principal {
 	}
 	for i := range file.Tenants {
 		t := &file.Tenants[i]
-		for _, in := range t.Installations {
+		for _, in := range t.Connections {
 			for _, a := range in.Accounts {
 				if accounts[AccountKey(in.Forge, a)] {
 					p.Tenants[t.ID()] = true

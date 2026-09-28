@@ -2,7 +2,7 @@
   "slug": "alpha",
   "managedBy": "file",
   "role": "member",
-  "installations": [
+  "connections": [
     {
       "name": "alpha-bot",
       "forge": "github",

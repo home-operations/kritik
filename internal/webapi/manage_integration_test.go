@@ -48,7 +48,7 @@ auth:
     roleMapping: '"kritik-admin" in roles ? "admin" : ""'
 tenants:
   - slug: mgr-file
-    installations:
+    connections:
       - name: mgr-file-bot
         forge: github
         accounts: [mf]
@@ -291,7 +291,7 @@ func (e *manageEnv) waitFor(what string, cond func(*configfile.File) bool) {
 func dashSpec(keyRef, hookRef map[string]any, extra map[string]any) map[string]any {
 	spec := map[string]any{
 		"slug": "mgr-dash",
-		"installations": []any{map[string]any{
+		"connections": []any{map[string]any{
 			"name": "mgr-dash-bot", "forge": "github", "accounts": []string{"md"},
 			"app": map[string]any{"clientId": "Iv1.test", "privateKey": keyRef, "webhookSecret": hookRef},
 		}},
@@ -335,7 +335,7 @@ func testCreate(t *testing.T, e *manageEnv) string {
 	if err := json.Unmarshal(body, &res); err != nil {
 		t.Fatal(err)
 	}
-	secret := res.Generated["installations[mgr-dash-bot].app.webhookSecret"]
+	secret := res.Generated["connections[mgr-dash-bot].app.webhookSecret"]
 	if res.Revision != 1 || len(secret) != 64 {
 		t.Fatalf("result = %s", body)
 	}
@@ -361,12 +361,12 @@ func testCreate(t *testing.T, e *manageEnv) string {
 }
 
 func testHookVerifies(t *testing.T, e *manageEnv, secret string) {
-	in, _, ok := e.src.Current.Get().Installation("mgr-dash-bot")
+	in, _, ok := e.src.Current.Get().Connection("mgr-dash-bot")
 	if !ok || in.WebhookSecretValue().Value() != secret || in.App.PrivateKeyValue().Value() != "plain-key-xyz" {
-		t.Fatalf("merged installation does not open to the written secrets")
+		t.Fatalf("merged connection does not open to the written secrets")
 	}
 	mux := http.NewServeMux()
-	mux.Handle("POST /hooks/{installation}", ingest.NewHandler(e.src.Current, nil, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	mux.Handle("POST /hooks/{connection}", ingest.NewHandler(e.src.Current, nil, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	body := []byte(`{}`)
 	for _, tt := range []struct {
 		name   string
@@ -424,17 +424,17 @@ func testUpdate(t *testing.T, e *manageEnv) {
 	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", env)
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
 	badForge := dashSpec(map[string]any{"value": "k"}, keep, nil)
-	badForge["installations"].([]any)[0].(map[string]any)["forge"] = "gitlab"
+	badForge["connections"].([]any)[0].(map[string]any)["forge"] = "gitlab"
 	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, badForge)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	if !strings.Contains(string(body), `"path":"installations[0].forge"`) || strings.Contains(string(body), "dashboard[") {
+	if !strings.Contains(string(body), `"path":"connections[0].forge"`) || strings.Contains(string(body), "dashboard[") {
 		t.Errorf("merge error = %s", body)
 	}
 	moved := dashSpec(keep, keep, nil)
-	moved["installations"].([]any)[0].(map[string]any)["accounts"] = []string{"md", "other"}
+	moved["connections"].([]any)[0].(map[string]any)["accounts"] = []string{"md", "other"}
 	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, moved)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeReenterSecret)
-	if !strings.Contains(string(body), `"path":"installations[0].app.privateKey"`) {
+	if !strings.Contains(string(body), `"path":"connections[0].app.privateKey"`) {
 		t.Errorf("reenter_secret details = %s", body)
 	}
 	good := UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, dashSpec(keep, keep, map[string]any{"filter": "true"}))}
@@ -447,13 +447,13 @@ func testUpdate(t *testing.T, e *manageEnv) {
 	if e.totalAudits() != before {
 		t.Fatalf("refused writes left %d audit rows", e.totalAudits()-before)
 	}
-	sealedKey := e.scalar(`SELECT spec->'installations'->0->'app'->'privateKey'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`)
+	sealedKey := e.scalar(`SELECT spec->'connections'->0->'app'->'privateKey'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`)
 	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", good)
 	e.expect(status, body, http.StatusOK, "")
 	if !strings.Contains(string(body), `"revision":2`) {
 		t.Errorf("update = %s", body)
 	}
-	if got := e.scalar(`SELECT spec->'installations'->0->'app'->'privateKey'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`); got != sealedKey {
+	if got := e.scalar(`SELECT spec->'connections'->0->'app'->'privateKey'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`); got != sealedKey {
 		t.Errorf("keep replaced the sealed private key")
 	}
 	if n := e.audits(AuditTenantUpdate, "mgr-dash"); n != 1 || e.totalAudits() != before+1 {
@@ -474,18 +474,18 @@ func testCollisions(t *testing.T, e *manageEnv) {
 	e.expect(status, body, http.StatusForbidden, CodeFileManaged)
 
 	dup := dashSpec(map[string]any{"value": "x"}, map[string]any{"value": "y"}, map[string]any{"slug": "mgr-dup"})
-	dup["installations"].([]any)[0].(map[string]any)["name"] = "mgr-file-bot"
+	dup["connections"].([]any)[0].(map[string]any)["name"] = "mgr-file-bot"
 	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-dup", Spec: mustJSON(t, dup)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	if !strings.Contains(string(body), `"path":"installations[0].name"`) {
-		t.Errorf("duplicate installation = %s", body)
+	if !strings.Contains(string(body), `"path":"connections[0].name"`) {
+		t.Errorf("duplicate connection = %s", body)
 	}
 
 	// A tenant the file dropped but the leader has not disabled yet.
 	staleID := (&configfile.Tenant{Slug: "mgr-stale"}).ID()
 	e.exec(`INSERT INTO tenants (id, slug, managed_by) VALUES ($1, 'mgr-stale', 'file') ON CONFLICT (id) DO NOTHING`, staleID)
 	stale := dashSpec(map[string]any{"value": "x"}, map[string]any{"value": "y"}, map[string]any{"slug": "mgr-stale"})
-	stale["installations"].([]any)[0].(map[string]any)["name"] = "mgr-stale-bot"
+	stale["connections"].([]any)[0].(map[string]any)["name"] = "mgr-stale-bot"
 	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-stale", Spec: mustJSON(t, stale)})
 	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
 	if strings.Contains(string(body), "adoptable") {
@@ -496,8 +496,8 @@ func testCollisions(t *testing.T, e *manageEnv) {
 	}
 
 	// mgr-zed sorts after mgr-dash, so the merge reports mgr-dash taking
-	// its installation name against mgr-zed; the blame is still mgr-dash's.
-	zed := map[string]any{"slug": "mgr-zed", "installations": []any{map[string]any{
+	// its connection name against mgr-zed; the blame is still mgr-dash's.
+	zed := map[string]any{"slug": "mgr-zed", "connections": []any{map[string]any{
 		"name": "mgr-zed-bot", "forge": "github", "accounts": []string{"mz"},
 		"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "z"}, "webhookSecret": map[string]any{"value": "z"}},
 	}}}
@@ -505,13 +505,13 @@ func testCollisions(t *testing.T, e *manageEnv) {
 	e.expect(status, body, http.StatusCreated, "")
 	e.waitFor("mgr-zed to merge", func(f *configfile.File) bool { _, ok := f.Tenant("mgr-zed"); return ok })
 	taken := dashSpec(keep, keep, map[string]any{"filter": "true"})
-	taken["installations"] = append(taken["installations"].([]any), map[string]any{
+	taken["connections"] = append(taken["connections"].([]any), map[string]any{
 		"name": "mgr-zed-bot", "forge": "github", "accounts": []string{"mz2"},
 		"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "k"}, "webhookSecret": map[string]any{"value": "w"}},
 	})
 	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, taken)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
-	if !strings.Contains(string(body), `"path":"installations[1].name"`) || strings.Contains(string(body), "dashboard[mgr-zed]") || strings.Contains(string(body), `tenant \"mgr-zed\"`) {
+	if !strings.Contains(string(body), `"path":"connections[1].name"`) || strings.Contains(string(body), "dashboard[mgr-zed]") || strings.Contains(string(body), `tenant \"mgr-zed\"`) {
 		t.Errorf("clash against a later tenant = %s", body)
 	}
 }
@@ -542,7 +542,7 @@ func testTenantProviderKey(t *testing.T, e *manageEnv) {
 }
 
 func testActions(t *testing.T, e *manageEnv, dashID string) {
-	in, _, _ := e.src.Current.Get().Installation("mgr-dash-bot")
+	in, _, _ := e.src.Current.Get().Connection("mgr-dash-bot")
 	repoID := configfile.RepositoryID(in.ID(), "md/one")
 	e.exec(`INSERT INTO pull_requests (tenant_id, repository_id, number, title, author, head_sha)
 		VALUES ($1, $2, 3, 'x', 'ada', 'h3') ON CONFLICT DO NOTHING`, dashID, repoID)
@@ -662,7 +662,7 @@ func testFileTenantLeftOut(t *testing.T, e *manageEnv) {
 		}
 		return s
 	}
-	spec := mustJSON(t, map[string]any{"slug": "mgr-file", "installations": []any{map[string]any{
+	spec := mustJSON(t, map[string]any{"slug": "mgr-file", "connections": []any{map[string]any{
 		"name": "mgr-held-bot", "forge": "github", "accounts": []string{"mh"},
 		"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"sealed": seal("k")}, "webhookSecret": map[string]any{"sealed": seal("w")}},
 	}}})

@@ -5,15 +5,15 @@ reach kritik through the App's own webhook, which covers every repository
 the App is installed on. No repository needs a file: a
 [`.kritik.yaml`](repository-config.md) is optional.
 
-An installation is one entry under a tenant's `installations` in the
+A connection is one entry under a tenant's `connections` in the
 configuration file, or one added in the dashboard for a dashboard-managed
 tenant, serving the users and organizations its `accounts` lists. Its
 webhook address is kritik's webhook listener followed by
-`/hooks/<installation name>`.
+`/hooks/<connection name>`.
 
 ## Expose the webhook listener
 
-The forge has to reach `POST /hooks/<installation>` on the listener, the
+The forge has to reach `POST /hooks/<connection>` on the listener, the
 chart's `service.port` (8080) on `all` and `ingest` pods. The chart's
 `httpRoute` or `ingress` values publish it, matching `/hooks` by default;
 nothing else needs to be public for webhooks. The dashboard has its own
@@ -27,7 +27,7 @@ Register a GitHub App under the account whose repositories kritik reviews
 (a personal account's or an organization's Developer settings):
 
 - **Webhook:** Active, with the URL
-  `https://<listener host>/hooks/<installation name>` and a random secret.
+  `https://<listener host>/hooks/<connection name>` and a random secret.
   This one webhook receives the events of every repository the App is
   installed on.
 - **Repository permissions:**
@@ -44,7 +44,7 @@ Register a GitHub App under the account whose repositories kritik reviews
   Push. Installation events arrive without subscribing.
 - **Where it can be installed:** only on this account, unless it should
   serve several. A public App can be installed on many organizations: list
-  each one kritik should review in the installation's `accounts`. A
+  each one kritik should review in the connection's `accounts`. A
   delivery for any account not listed is accepted and ignored, so nobody
   else who installs the App gets reviews.
 
@@ -52,12 +52,12 @@ Then generate a private key and note the App's client ID. Comments mention
 the bot as `@<app slug>`, and only someone with write access gets an
 answer.
 
-### Configure the installation
+### Configure the connection
 
 ```yaml
 tenants:
   - slug: example
-    installations:
+    connections:
       - name: example-github
         forge: github
         accounts: [example]
@@ -68,7 +68,7 @@ tenants:
 ```
 
 `webhookSecret` holds the same value as the App's webhook secret. In the
-dashboard, a dashboard-managed tenant's installation form takes the same
+dashboard, a dashboard-managed tenant's connection form takes the same
 three values, and can generate the webhook secret for you to copy into the
 App.
 
@@ -82,10 +82,10 @@ after each push, under the tenant's settings.
 
 GitHub keeps the App webhook's recent deliveries with kritik's response:
 204 for a ping, 202 for anything accepted, 401 when the secrets differ,
-and 404 when the path names no installation. The tenant overview's
-Installations panel shows when each installation last had a delivery, and
+and 404 when the path names no connection. The tenant overview's
+Connections panel shows when each connection last had a delivery, and
 explains where its webhook goes while none has.
-`kritik_webhooks_total{installation,outcome}` counts deliveries by outcome.
+`kritik_webhooks_total{connection,outcome}` counts deliveries by outcome.
 
 ## Without webhooks
 
@@ -97,7 +97,7 @@ backstop, not a substitute:
 - a review waits for the next poll;
 - no mention is answered, since the poller does not read comments;
 - the index catches up with the default branch at the next poll, not on
-  each push: while no webhook has reached an installation within
+  each push: while no webhook has reached a connection within
   `polling.lookback`, each poll also checks its indexed repositories'
   default branches;
 - only repositories kritik already knows, from the configuration or an

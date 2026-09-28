@@ -25,7 +25,7 @@ func parseTenant(t *testing.T, slug string) *configfile.File {
 	f, err := configfile.Parse([]byte(`
 tenants:
   - slug: ` + slug + `
-    installations:
+    connections:
       - name: ` + slug + `-bot
         forge: github
         accounts: [` + slug + `]

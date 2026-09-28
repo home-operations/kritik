@@ -213,15 +213,15 @@
           {/if}
         </section>
 
-        <section class="panel" aria-labelledby="ov-installations">
-          <header class="panel-head"><h2 id="ov-installations">Installations</h2></header>
+        <section class="panel" aria-labelledby="ov-connections">
+          <header class="panel-head"><h2 id="ov-connections">Connections</h2></header>
           <div class="table-wrap">
             <table class="data">
               <thead>
-                <tr><th scope="col">Installation</th><th scope="col">Account</th><th scope="col">Webhooks</th></tr>
+                <tr><th scope="col">Connection</th><th scope="col">Account</th><th scope="col">Webhooks</th></tr>
               </thead>
               <tbody>
-                {#each d.detail.installations as inst (inst.name)}
+                {#each d.detail.connections as inst (inst.name)}
                   <tr>
                     <td class="mono">{inst.name}</td>
                     <td><span class="mono">{inst.accounts.join(', ')}</span> <span class="small muted">on {inst.forge}</span></td>
@@ -237,7 +237,7 @@
               </tbody>
             </table>
           </div>
-          {#each d.detail.installations.filter((i) => !i.lastWebhookAt) as inst (inst.name)}
+          {#each d.detail.connections.filter((i) => !i.lastWebhookAt) as inst (inst.name)}
             <p class="notice" role="note">
               No webhook has reached <span class="mono">{inst.name}</span>, so kritik only polls it for new pull requests and
               cannot answer mentions.

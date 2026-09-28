@@ -14,7 +14,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
-// claimSpec is a dashboard tenant with one installation per name.
+// claimSpec is a dashboard tenant with one connection per name.
 func claimSpec(slug string, names ...string) map[string]any {
 	ins := make([]any, 0, len(names))
 	for _, n := range names {
@@ -23,11 +23,11 @@ func claimSpec(slug string, names ...string) map[string]any {
 			"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "k"}, "webhookSecret": map[string]any{"value": "w"}},
 		})
 	}
-	return map[string]any{"slug": slug, "installations": ins}
+	return map[string]any{"slug": slug, "connections": ins}
 }
 
 // TestManageClaims covers what dashboard writes may claim: slugs and
-// installation names other writes, or tenants gone before, hold.
+// connection names other writes, or tenants gone before, hold.
 func TestManageClaims(t *testing.T) {
 	e := newManageEnv(t)
 	for _, slug := range []string{"clm-a", "clm-b"} {
@@ -40,7 +40,7 @@ func TestManageClaims(t *testing.T) {
 		_, b := f.Tenant("clm-b")
 		return a && b
 	})
-	t.Run("concurrent writes claiming one installation name", func(t *testing.T) { testConcurrentClaims(t, e) })
+	t.Run("concurrent writes claiming one connection name", func(t *testing.T) { testConcurrentClaims(t, e) })
 	t.Run("a slug a tenant held before", func(t *testing.T) { testSlugReuse(t, e) })
 }
 
@@ -71,7 +71,7 @@ func testConcurrentClaims(t *testing.T, e *manageEnv) {
 		if !slices.Contains(statuses, http.StatusOK) || !slices.Contains(statuses, http.StatusUnprocessableEntity) {
 			t.Fatalf("round %d: statuses = %v, want one 200 and one 422", round, statuses)
 		}
-		e.waitFor("the winner to merge", func(f *configfile.File) bool { _, _, ok := f.Installation(shared); return ok })
+		e.waitFor("the winner to merge", func(f *configfile.File) bool { _, _, ok := f.Connection(shared); return ok })
 		if err := e.src.LastError(); err != nil {
 			t.Fatalf("round %d: merge after the race: %v", round, err)
 		}
@@ -91,12 +91,12 @@ func testSlugReuse(t *testing.T, e *manageEnv) {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 
-	// The disabled installation stays clm-b's, whoever asks for it.
+	// The disabled connection stays clm-b's, whoever asks for it.
 	status, body = e.do("operator", "POST", "/api/v1/tenants",
 		CreateTenantRequest{Slug: "clm-c", Spec: mustJSON(t, claimSpec("clm-c", "clm-b-bot"))})
 	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
-	if !strings.Contains(string(body), `"path":"installations[0].name"`) {
-		t.Errorf("held installation = %s", body)
+	if !strings.Contains(string(body), `"path":"connections[0].name"`) {
+		t.Errorf("held connection = %s", body)
 	}
 
 	spec := mustJSON(t, claimSpec("clm-b", "clm-b-bot"))

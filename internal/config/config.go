@@ -1,5 +1,5 @@
 // Package config loads kritik's process configuration from environment
-// variables. Everything the service manages (tenants, installations,
+// variables. Everything the service manages (tenants, connections,
 // repositories, models) lives in the declarative configuration file, not
 // here; this package covers only what the process itself needs to start.
 package config
@@ -33,7 +33,7 @@ const (
 	RoleWorker Role = "worker"
 	RoleRunner Role = "runner"
 	// RoleWeb serves the operator dashboard (ADR-0009): sign-in, sessions
-	// and the tenant/config surfaces a dashboard-managed installation uses.
+	// and the tenant/config surfaces a dashboard-managed connection uses.
 	// "all" also serves it once WebURL is configured; see [Config.WebEnabled].
 	RoleWeb Role = "web"
 )
@@ -53,7 +53,7 @@ func ParseRole(s string) (Role, error) {
 // validate; do not construct directly.
 type Config struct {
 	// Addr is the listen address for the HTTP surface the ingest role serves:
-	// /hooks/{installation} and nothing else. Port 8080 matches the container
+	// /hooks/{connection} and nothing else. Port 8080 matches the container
 	// image's EXPOSE and the other services in the fleet.
 	Addr string `env:"KRITIK_ADDR" envDefault:":8080"`
 
@@ -99,7 +99,7 @@ type Config struct {
 	WebURL string `env:"KRITIK_WEB_URL"`
 
 	// ConfigFile is the path of the declarative configuration file (tenants,
-	// installations, repositories, models). Every role except runner loads it
+	// connections, repositories, models). Every role except runner loads it
 	// at startup and watches it for changes. The default is where the Helm
 	// chart mounts it.
 	ConfigFile string `env:"KRITIK_CONFIG_FILE" envDefault:"/etc/kritik/config.yaml"`

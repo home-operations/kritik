@@ -13,10 +13,10 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
-// An installation name another tenant held is never handed to a new
+// A connection name another tenant held is never handed to a new
 // tenant, even once its first tenant is gone: its repositories and
 // history stay with the tenant that made them.
-func TestApplyConfigKeepsInstallationWithItsTenant(t *testing.T) {
+func TestApplyConfigKeepsConnectionWithItsTenant(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	base := parse(t, twoTenants)
@@ -39,10 +39,10 @@ func TestApplyConfigKeepsInstallationWithItsTenant(t *testing.T) {
 	}
 	err := s.ApplyConfig(ctx, second, "test")
 	if !errors.Is(err, ErrManagedBy) || !IsConfigContentError(err) {
-		t.Fatalf("ApplyConfig of another tenant's installation = %v, want a content ErrManagedBy", err)
+		t.Fatalf("ApplyConfig of another tenant's connection = %v, want a content ErrManagedBy", err)
 	}
 	var owner string
-	if err := s.owner.QueryRow(ctx, `SELECT t.slug FROM installations i JOIN tenants t ON t.id = i.tenant_id
+	if err := s.owner.QueryRow(ctx, `SELECT t.slug FROM connections i JOIN tenants t ON t.id = i.tenant_id
 		WHERE i.name = 'held-bot'`).Scan(&owner); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestApplyConfigKeepsInstallationWithItsTenant(t *testing.T) {
 				var got []string
 				err := s.WithTenant(ctx, id, func(tx pgx.Tx) error {
 					var err error
-					got, err = InstallationsHeldElsewhere(ctx, tx, id, tt.names)
+					got, err = ConnectionsHeldElsewhere(ctx, tx, id, tt.names)
 					return err
 				})
 				if err != nil {
@@ -79,7 +79,7 @@ func TestApplyConfigKeepsInstallationWithItsTenant(t *testing.T) {
 			})
 		}
 		var n int
-		if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM installations WHERE name = 'free-bot'`).Scan(&n); err != nil || n != 0 {
+		if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM connections WHERE name = 'free-bot'`).Scan(&n); err != nil || n != 0 {
 			t.Fatalf("probe left %d free-bot rows (%v)", n, err)
 		}
 	})

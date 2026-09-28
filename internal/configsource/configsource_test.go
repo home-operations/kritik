@@ -26,7 +26,7 @@ import (
 const fileYAML = `
 tenants:
   - slug: acme
-    installations:
+    connections:
       - name: acme-bot
         forge: github
         accounts: [acme]
@@ -83,7 +83,7 @@ func testKeyring(t *testing.T) *sealbox.Keyring {
 	return k
 }
 
-// dashRow is a dashboard tenant slug with one installation inst, its App's
+// dashRow is a dashboard tenant slug with one connection inst, its App's
 // private key and webhook secret sealed with k.
 func dashRow(t *testing.T, k *sealbox.Keyring, slug, inst string, rev int64) configfile.DashboardTenant {
 	t.Helper()
@@ -94,7 +94,7 @@ func dashRow(t *testing.T, k *sealbox.Keyring, slug, inst string, rev int64) con
 		}
 		return s
 	}
-	spec := `{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"github","accounts":["` + slug + `"],` +
+	spec := `{"slug":"` + slug + `","connections":[{"name":"` + inst + `","forge":"github","accounts":["` + slug + `"],` +
 		`"app":{"clientId":"Iv1.` + slug + `","privateKey":{"sealed":"` + seal("key-"+slug) + `"},"webhookSecret":{"sealed":"` + seal("wh-"+slug) + `"}}}]}`
 	return configfile.DashboardTenant{Slug: slug, Spec: json.RawMessage(spec), Revision: rev}
 }
@@ -144,8 +144,8 @@ func dashRevision(f *configfile.File, slug string) int64 {
 	return 0
 }
 
-func hasInstallation(f *configfile.File, name string) bool {
-	_, _, ok := f.Installation(name)
+func hasConnection(f *configfile.File, name string) bool {
+	_, _, ok := f.Connection(name)
 	return ok
 }
 
@@ -182,8 +182,8 @@ func TestLoad(t *testing.T) {
 				t.Fatal("Load did not seed Current with the merged file")
 			}
 			for _, name := range tt.want {
-				if !hasInstallation(f, name) {
-					t.Fatalf("installation %s missing", name)
+				if !hasConnection(f, name) {
+					t.Fatalf("connection %s missing", name)
 				}
 			}
 		})
@@ -256,8 +256,8 @@ func TestRun(t *testing.T) {
 	t.Run("a config notification merges the new row", func(t *testing.T) {
 		fs.set("1", beta1)
 		h.OnConfig("beta")
-		waitFor(t, "beta-bot", func() bool { return hasInstallation(current(), "beta-bot") })
-		in, _, _ := current().Installation("beta-bot")
+		waitFor(t, "beta-bot", func() bool { return hasConnection(current(), "beta-bot") })
+		in, _, _ := current().Connection("beta-bot")
 		if in.App.PrivateKeyValue().Value() != "key-beta" || in.WebhookSecretValue().Value() != "wh-beta" {
 			t.Fatal("sealed credentials were not opened")
 		}
@@ -303,12 +303,12 @@ func TestRun(t *testing.T) {
 		if v := mergeGauge(t, reg); v != 0 {
 			t.Fatalf("merge error gauge = %v after recovery, want 0", v)
 		}
-		if _, ok := current().Tenant("gamma"); ok || !hasInstallation(current(), "acme-bot") {
+		if _, ok := current().Tenant("gamma"); ok || !hasConnection(current(), "acme-bot") {
 			t.Fatal("snapshot after recovery is wrong")
 		}
 	})
 
-	t.Run("a dashboard tenant holding a file installation name leaves that tenant out, warning once", func(t *testing.T) {
+	t.Run("a dashboard tenant holding a file connection name leaves that tenant out, warning once", func(t *testing.T) {
 		skips := logs.skips.Load()
 		fs.set("5", beta3, dashRow(t, k, "gamma", "acme-bot", 1))
 		h.OnConfig("gamma")
@@ -316,7 +316,7 @@ func TestRun(t *testing.T) {
 		if _, ok := current().Tenant("acme"); ok || s.LastError() != nil {
 			t.Fatalf("the file tenant still runs, or the merge failed: %v", s.LastError())
 		}
-		want := []configfile.SkippedTenant{{Slug: "acme", Reason: `dashboard tenant "gamma" already holds installation name "acme-bot"`}}
+		want := []configfile.SkippedTenant{{Slug: "acme", Reason: `dashboard tenant "gamma" already holds connection name "acme-bot"`}}
 		if got := current().Skipped(); !slices.Equal(got, want) {
 			t.Fatalf("Skipped = %v, want %v", got, want)
 		}
@@ -352,14 +352,14 @@ func TestRun(t *testing.T) {
 	t.Run("a file change is merged with the dashboard rows", func(t *testing.T) {
 		writeFile(t, path, fileYAML+`
   - slug: zeta
-    installations:
+    connections:
       - name: zeta-bot
         forge: github
         accounts: [zeta]
         app: { clientId: Iv1.zeta, privateKey: { env: TEST_CS_KEY }, webhookSecret: { env: TEST_CS_SECRET } }
 `)
-		waitFor(t, "zeta-bot", func() bool { return hasInstallation(current(), "zeta-bot") })
-		if !hasInstallation(current(), "beta-bot") {
+		waitFor(t, "zeta-bot", func() bool { return hasConnection(current(), "zeta-bot") })
+		if !hasConnection(current(), "beta-bot") {
 			t.Fatal("dashboard tenant lost on a file reload")
 		}
 	})
@@ -367,7 +367,7 @@ func TestRun(t *testing.T) {
 	t.Run("a deleted row drops the tenant", func(t *testing.T) {
 		fs.set("4")
 		h.OnConfig("beta")
-		waitFor(t, "beta-bot gone", func() bool { return !hasInstallation(current(), "beta-bot") })
+		waitFor(t, "beta-bot gone", func() bool { return !hasConnection(current(), "beta-bot") })
 	})
 
 	t.Run("a file that does not parse raises the gauge until one that does replaces it", func(t *testing.T) {
@@ -381,7 +381,7 @@ func TestRun(t *testing.T) {
 		// not clear the gauge the bad file raised.
 		fs.set("6", dashRow(t, k, "beta", "beta-bot", 4))
 		h.OnConfig("beta")
-		waitFor(t, "beta-bot", func() bool { return hasInstallation(current(), "beta-bot") })
+		waitFor(t, "beta-bot", func() bool { return hasConnection(current(), "beta-bot") })
 		if v := mergeGauge(t, reg); v != 1 {
 			t.Fatalf("merge error gauge = %v while the file is bad, want 1", v)
 		}
@@ -416,5 +416,5 @@ func TestRunPollsTheFingerprint(t *testing.T) {
 	go func() { _ = s.Run(t.Context(), path, time.Hour) }()
 	<-fs.handlers
 	fs.set("changed", dashRow(t, k, "beta", "beta-bot", 1))
-	waitFor(t, "beta-bot via poll", func() bool { return hasInstallation(s.Current.Get(), "beta-bot") })
+	waitFor(t, "beta-bot via poll", func() bool { return hasConnection(s.Current.Get(), "beta-bot") })
 }

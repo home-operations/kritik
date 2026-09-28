@@ -70,7 +70,7 @@ type UpdateTenantRequest struct {
 }
 
 // TenantWriteResult is a written tenant's new revision. Generated holds
-// each server-generated secret, keyed "installations[<name>].<key>",
+// each server-generated secret, keyed "connections[<name>].<key>",
 // shown this once and never again.
 type TenantWriteResult struct {
 	Slug      string            `json:"slug"`

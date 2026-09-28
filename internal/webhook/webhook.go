@@ -24,7 +24,7 @@ var (
 )
 
 // Verify reports whether an inbound webhook request is authentic for forge,
-// given the installation's secret, the request headers, and the raw body.
+// given the connection's secret, the request headers, and the raw body.
 // It returns nil when authentic; otherwise one of the sentinel errors above.
 func Verify(forge configfile.Forge, secret string, header http.Header, body []byte) error {
 	if secret == "" {

@@ -2,7 +2,7 @@
 
 The web role serves a dashboard: sign in with a local admin password,
 GitHub or an OIDC provider, and see the tenants you can read, their
-installations and repositories, live review and conversation state as it
+connections and repositories, live review and conversation state as it
 runs, and, for an admin, the audit log. An admin can also queue a re-run
 of a specific pull request, cancel a review in progress, or reindex a
 repository's embeddings, from the dashboard rather than the forge.
@@ -85,7 +85,7 @@ make an admin: set an admin password, or a `roleMapping` on a provider.
 There are two roles:
 
 - **Admin** manages the instance. An admin creates, edits and deletes
-  dashboard tenants with their installations, repositories and provider
+  dashboard tenants with their connections, repositories and provider
   keys, queues re-runs, cancels and reindexes, and reads every tenant and
   the audit log. The admin console also lists the instance settings
   read-only, each with its source: the environment, the configuration
@@ -130,13 +130,13 @@ A mapping that fails to evaluate refuses the sign-in.
 ## Tenant writes
 
 A secret an admin submits, such as an App's private key or client ID, is
-bound to that installation's forge and accounts: change either and the
+bound to that connection's forge and accounts: change either and the
 secret must be re-entered, since it no longer acts for the same accounts.
-The form never keeps a renamed installation's secrets. In the advanced
+The form never keeps a renamed connection's secrets. In the advanced
 JSON editor, as through the API, `{"keep": true}` keeps the secret stored
-under the name the JSON gives: renaming an installation there does not
+under the name the JSON gives: renaming a connection there does not
 carry its secrets along. The keep is refused, or takes the secret of a
-stored installation that already had the new name when its forge and
+stored connection that already had the new name when its forge and
 accounts match, so enter them again when renaming in JSON.
 
 Re-run, cancel and reindex all respond `202 Accepted`, with a job ID for
@@ -148,7 +148,7 @@ dashboard tenant does not delete its history: its reviews, findings, usage
 and transcripts stay keyed on its slug. Creating a tenant under a slug any
 tenant held before is therefore also `409 slug_taken`, unless the admin
 creates it with `adopt`, offered in the admin console after that refusal.
-The new tenant keeps the old one's review history. An installation name
+The new tenant keeps the old one's review history. A connection name
 stays with the tenant that first held it, even once that tenant is gone.
 
 ## Provider keys
@@ -158,7 +158,7 @@ shape as the file's top-level `providers`, edited in the dashboard's
 "Provider keys" section. A model named `<key name>/<model>` then runs on
 that key, and the tenant pays for it; a key's name may not be one the
 file's providers already use. The tenant's review and fallback models,
-and a repository entry's, may name a model on one of these keys. The keys are sealed at rest like installation secrets
+and a repository entry's, may name a model on one of these keys. The keys are sealed at rest like connection secrets
 and never shown again. A saved key is kept only while its name, type and
 endpoint stay the same, so a key cannot be sent anywhere it was not
 entered for. Tenant limits still apply to runs on a tenant's own key.
@@ -190,7 +190,7 @@ visible to every member of the tenant it belongs to, not only admins.
   row or the file. A merge or apply failure after boot instead keeps the
   last good configuration running and raises the `kritik_config_error`
   gauge (labelled `merge` or `apply`) until a later attempt succeeds.
-- A file tenant whose slug or installation name a dashboard tenant already
+- A file tenant whose slug or connection name a dashboard tenant already
   holds is left out of the running configuration, at boot or on reload,
   while every other tenant runs: the admin console lists it with the
   reason and `kritik_config_error{stage="merge"}` stays at 1. Rename either

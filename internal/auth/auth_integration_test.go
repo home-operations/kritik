@@ -65,19 +65,19 @@ auth:
     roleMapping: 'login == "opgh" ? "admin" : ("mapped-org" in orgs ? dyn({"github/acme": "member"}) : "")'
 tenants:
   - slug: auth-personal
-    installations:
+    connections:
       - {name: auth-personal-bot, forge: github, accounts: [alice-gh], app: &app {clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}}
   - slug: auth-acme
-    installations:
+    connections:
       - {name: auth-acme-bot, forge: github, accounts: [acme], app: *app}
   - slug: auth-widgets
-    installations:
+    connections:
       - {name: auth-widgets-bot, forge: github, accounts: [Widgets], app: *app}
   - slug: auth-pending
-    installations:
+    connections:
       - {name: auth-pending-bot, forge: github, accounts: [pendco], app: *app}
   - slug: auth-invite
-    installations:
+    connections:
       - {name: auth-invite-bot, forge: github, accounts: [nobody], app: *app}
 `
 

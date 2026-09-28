@@ -12,7 +12,7 @@ import (
 
 const onboardTenants = twoTenants + `
   - slug: east
-    installations:
+    connections:
       - name: east-bot
         forge: github
         accounts: [east]
@@ -29,7 +29,7 @@ const onboardTenants = twoTenants + `
       - name: east/off
         enabled: false
   - slug: west
-    installations:
+    connections:
       - name: west-bot
         forge: github
         accounts: [west]

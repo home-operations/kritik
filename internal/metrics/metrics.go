@@ -10,7 +10,7 @@ import (
 )
 
 // Metrics holds the collectors. Labels are bounded by configuration
-// (tenants, installations, models) or by fixed vocabularies (status,
+// (tenants, connections, models) or by fixed vocabularies (status,
 // stage, outcome); nothing per PR or per commit is ever a label.
 type Metrics struct {
 	webhooks       *prometheus.CounterVec
@@ -36,26 +36,26 @@ type Metrics struct {
 
 // Label names shared across series.
 const (
-	lblTenant       = "tenant"
-	lblModel        = "model"
-	lblRole         = "role"
-	lblOutcome      = "outcome"
-	lblInstallation = "installation"
-	lblKind         = "kind"
+	lblTenant     = "tenant"
+	lblModel      = "model"
+	lblRole       = "role"
+	lblOutcome    = "outcome"
+	lblConnection = "connection"
+	lblKind       = "kind"
 )
 
 // New registers the collectors on reg.
 func New(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
 		webhooks: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_webhooks_total", Help: "Webhook deliveries by installation and what became of them.",
-		}, []string{lblInstallation, lblOutcome}),
+			Name: "kritik_webhooks_total", Help: "Webhook deliveries by connection and what became of them.",
+		}, []string{lblConnection, lblOutcome}),
 		polls: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_polls_total", Help: "Backstop polls per installation, by outcome (ok, error).",
-		}, []string{lblInstallation, lblOutcome}),
+			Name: "kritik_polls_total", Help: "Backstop polls per connection, by outcome (ok, error).",
+		}, []string{lblConnection, lblOutcome}),
 		polled: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_polled_pull_requests_total", Help: "Open pull requests the backstop poll handed to ingest.",
-		}, []string{lblInstallation}),
+		}, []string{lblConnection}),
 		reviews: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_reviews_total", Help: "Reviews finished, by terminal status.",
 		}, []string{lblTenant, "status"}),
@@ -119,18 +119,18 @@ func New(reg prometheus.Registerer) *Metrics {
 }
 
 // Webhook counts one delivery.
-func (m *Metrics) Webhook(installation, outcome string) {
+func (m *Metrics) Webhook(connection, outcome string) {
 	if m != nil {
-		m.webhooks.WithLabelValues(installation, outcome).Inc()
+		m.webhooks.WithLabelValues(connection, outcome).Inc()
 	}
 }
 
-// Poll counts one installation poll and the pull requests it handed on.
-func (m *Metrics) Poll(installation, outcome string, pullRequests int) {
+// Poll counts one connection poll and the pull requests it handed on.
+func (m *Metrics) Poll(connection, outcome string, pullRequests int) {
 	if m != nil {
-		m.polls.WithLabelValues(installation, outcome).Inc()
+		m.polls.WithLabelValues(connection, outcome).Inc()
 		if pullRequests > 0 {
-			m.polled.WithLabelValues(installation).Add(float64(pullRequests))
+			m.polled.WithLabelValues(connection).Add(float64(pullRequests))
 		}
 	}
 }

@@ -32,7 +32,7 @@ type ConfigErrorStage string
 const (
 	// ConfigErrorMerge is the file or a dashboard tenant failing to parse,
 	// resolve or merge, which leaves the last good snapshot live, or the
-	// merge leaving out a file tenant whose slug or installation name a
+	// merge leaving out a file tenant whose slug or connection name a
 	// dashboard tenant holds.
 	ConfigErrorMerge ConfigErrorStage = "merge"
 	// ConfigErrorApply is the leader's store refusing the merged snapshot;

@@ -23,15 +23,15 @@ import (
 // own environment and disk, and sealed would let a client replay
 // ciphertext lifted from elsewhere.
 
-// secretKey is a SecretRef position within one installation.
+// secretKey is a SecretRef position within one connection.
 type secretKey struct {
-	// path is dotted from the installation, e.g. "app.privateKey".
+	// path is dotted from the connection, e.g. "app.privateKey".
 	path string
 	// generatable secrets may be minted by the server.
 	generatable bool
 	// bound secrets authenticate to one forge identity acting on the
-	// installation's accounts, so a kept one only stays kept while the
-	// installation still names the same forge and accounts.
+	// connection's accounts, so a kept one only stays kept while the
+	// connection still names the same forge and accounts.
 	bound bool
 }
 
@@ -74,7 +74,7 @@ func (e *specError) Error() string {
 // sealedSpec is a client's spec made storable.
 type sealedSpec struct {
 	spec json.RawMessage
-	// generated maps "installations[<name>].<key>" to each secret the
+	// generated maps "connections[<name>].<key>" to each secret the
 	// server generated, returned to the client exactly once.
 	generated map[string]string
 	// changed lists the same logical paths, and "providers.<name>.apiKey"
@@ -86,7 +86,7 @@ type sealedSpec struct {
 // sealSpec turns a client's spec into the stored form: each secret given
 // a value or generated is sealed with seal, and each kept one is copied
 // from stored, the spec it replaces (nil on create), matching
-// installations and providers by name.
+// connections and providers by name.
 func sealSpec(spec, stored json.RawMessage, seal func([]byte) (string, error), generate func() (string, error)) (sealedSpec, error) {
 	var out sealedSpec
 	root, err := decodeObject(spec)
@@ -132,12 +132,12 @@ func sealSpec(spec, stored json.RawMessage, seal func([]byte) (string, error), g
 		out.changed = append(out.changed, logical)
 		return nil
 	}
-	for i, in := range objects(root["installations"]) {
+	for i, in := range objects(root["connections"]) {
 		name, _ := in["name"].(string)
 		for _, k := range secretKeys {
 			parent, leaf := lookupParent(in, k.path)
-			where := fmt.Sprintf("installations[%d].%s", i, k.path)
-			logical := fmt.Sprintf("installations[%s].%s", name, k.path)
+			where := fmt.Sprintf("connections[%d].%s", i, k.path)
+			logical := fmt.Sprintf("connections[%s].%s", name, k.path)
 			if err := at(parent, leaf, k, where, logical, func() (any, *specError) { return keepRef(prev, in, k, where) }); err != nil {
 				return out, err
 			}
@@ -206,8 +206,8 @@ func sealRef(v any, k secretKey, where string, keep func() (any, *specError)) (s
 	return in, nil
 }
 
-// keepRef is the sealed ref stored at k under the stored installation with
-// next's name. A bound secret is kept only while the installation still
+// keepRef is the sealed ref stored at k under the stored connection with
+// next's name. A bound secret is kept only while the connection still
 // names the same forge and accounts: kept under others, a key would act for
 // an account it was never meant for.
 func keepRef(stored, next map[string]any, k secretKey, where string) (any, *specError) {
@@ -218,7 +218,7 @@ func keepRef(stored, next map[string]any, k secretKey, where string) (any, *spec
 	}
 	if k.bound && identityOf(prev) != identityOf(next) {
 		return nil, &specError{path: where, code: CodeReenterSecret,
-			msg: "the installation's forge or accounts changed; enter this secret again"}
+			msg: "the connection's forge or accounts changed; enter this secret again"}
 	}
 	return ref, nil
 }
@@ -247,13 +247,13 @@ func providerEndpoint(p map[string]any) string {
 	return typ + " " + strings.TrimRight(strings.ToLower(strings.TrimSpace(base)), "/")
 }
 
-// storedRef is the sealed ref stored at path under the installation named
-// name, and that installation, if there is one.
+// storedRef is the sealed ref stored at path under the connection named
+// name, and that connection, if there is one.
 func storedRef(stored map[string]any, name, path string) (any, map[string]any) {
 	if name == "" {
 		return nil, nil
 	}
-	for _, in := range objects(stored["installations"]) {
+	for _, in := range objects(stored["connections"]) {
 		if in["name"] != name {
 			continue
 		}
@@ -267,15 +267,15 @@ func storedRef(stored map[string]any, name, path string) (any, map[string]any) {
 	return nil, nil
 }
 
-// installationIdentity is who an installation's credentials speak for, and
+// connectionIdentity is who a connection's credentials speak for, and
 // for which accounts.
-type installationIdentity struct {
+type connectionIdentity struct {
 	forge, accounts string
 }
 
-// identityOf normalises an installation's forge and accounts. The accounts
+// identityOf normalises a connection's forge and accounts. The accounts
 // count as a set, without case.
-func identityOf(in map[string]any) installationIdentity {
+func identityOf(in map[string]any) connectionIdentity {
 	forge, _ := in["forge"].(string)
 	var accounts []string
 	list, _ := in["accounts"].([]any)
@@ -285,7 +285,7 @@ func identityOf(in map[string]any) installationIdentity {
 		}
 	}
 	slices.Sort(accounts)
-	return installationIdentity{forge: forge, accounts: strings.Join(slices.Compact(accounts), ",")}
+	return connectionIdentity{forge: forge, accounts: strings.Join(slices.Compact(accounts), ",")}
 }
 
 // redactSpec replaces every secret position in a stored or file spec with
@@ -295,7 +295,7 @@ func redactSpec(spec json.RawMessage) (json.RawMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("webapi: redact spec: %w", err)
 	}
-	for _, in := range objects(root["installations"]) {
+	for _, in := range objects(root["connections"]) {
 		for _, k := range secretKeys {
 			parent, leaf := lookupParent(in, k.path)
 			v, ok := parent[leaf]

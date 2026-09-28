@@ -78,14 +78,14 @@ func clearDashboard(t *testing.T, st *store.Store) {
 	}
 }
 
-// hook posts a GitHub event kritik accepts and ignores to installation,
+// hook posts a GitHub event kritik accepts and ignores to connection,
 // signed with secret.
-func hook(t *testing.T, srv *httptest.Server, installation, secret string) int {
+func hook(t *testing.T, srv *httptest.Server, connection, secret string) int {
 	t.Helper()
 	body := []byte(`{}`)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/hooks/"+installation, strings.NewReader(string(body)))
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/hooks/"+connection, strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GitHub-Event", "repository")
 	req.Header.Set("X-GitHub-Delivery", "d-1")
@@ -131,7 +131,7 @@ func TestDashboardTenantEndToEnd(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	tenant, ok := f.Tenant("dash")
-	if !ok || !hasInstallation(f, "dash-bot") {
+	if !ok || !hasConnection(f, "dash-bot") {
 		t.Fatal("Current is missing the dashboard tenant")
 	}
 	tenantID := tenant.ID()
@@ -139,7 +139,7 @@ func TestDashboardTenantEndToEnd(t *testing.T) {
 		t.Helper()
 		err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `
-				SELECT t.managed_by, t.enabled, i.managed_by FROM tenants t JOIN installations i ON i.tenant_id = t.id
+				SELECT t.managed_by, t.enabled, i.managed_by FROM tenants t JOIN connections i ON i.tenant_id = t.id
 				WHERE t.slug = 'dash' AND i.name = 'dash-bot'`).Scan(&managedBy, &enabled, &instManagedBy)
 		})
 		if err != nil {
@@ -153,13 +153,13 @@ func TestDashboardTenantEndToEnd(t *testing.T) {
 			t.Fatalf("ApplyConfig: %v", err)
 		}
 		if by, on, inst := tenantState(t); by != "dashboard" || !on || inst != "dashboard" {
-			t.Fatalf("tenant managed_by=%s enabled=%v installation managed_by=%s", by, on, inst)
+			t.Fatalf("tenant managed_by=%s enabled=%v connection managed_by=%s", by, on, inst)
 		}
 	})
 
 	t.Run("the hook verifies with the sealed webhook secret", func(t *testing.T) {
 		mux := http.NewServeMux()
-		mux.Handle("POST /hooks/{installation}", ingest.NewHandler(s.Current, noDispatch{}, logger))
+		mux.Handle("POST /hooks/{connection}", ingest.NewHandler(s.Current, noDispatch{}, logger))
 		srv := httptest.NewServer(mux)
 		defer srv.Close()
 		if code := hook(t, srv, "dash-bot", "wh-dash"); code != http.StatusAccepted {
@@ -194,7 +194,7 @@ func TestDashboardTenantEndToEnd(t *testing.T) {
 
 	t.Run("deleting the row disables the tenant on the next apply", func(t *testing.T) {
 		withTx(t, st, func(tx pgx.Tx) error { return st.DeleteDashboardTenant(ctx, tx, "dash", 1) })
-		waitFor(t, "dash-bot gone", func() bool { return !hasInstallation(s.Current.Get(), "dash-bot") })
+		waitFor(t, "dash-bot gone", func() bool { return !hasConnection(s.Current.Get(), "dash-bot") })
 		if err := st.ApplyConfig(ctx, s.Current.Get(), "test"); err != nil {
 			t.Fatalf("ApplyConfig: %v", err)
 		}

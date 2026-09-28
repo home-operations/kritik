@@ -24,7 +24,7 @@ import (
 const configYAML = `
 tenants:
   - slug: onedr0p
-    installations:
+    connections:
       - name: bot-ross
         forge: github
         accounts: [onedr0p]
@@ -54,7 +54,7 @@ func (f *listForge) ListOpenPullRequests(_ context.Context, _, _ string, since t
 
 type forges struct{ f forge.Client }
 
-func (f *forges) For(context.Context, *configfile.Installation, string) (forge.Client, error) {
+func (f *forges) For(context.Context, *configfile.Connection, string) (forge.Client, error) {
 	return f.f, nil
 }
 
@@ -94,10 +94,10 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in, tenant, _ := file.Installation("bot-ross")
+	in, tenant, _ := file.Connection("bot-ross")
 	var installed time.Time
 	if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT created_at FROM installations WHERE id = $1`, in.ID()).Scan(&installed)
+		return tx.QueryRow(ctx, `SELECT created_at FROM connections WHERE id = $1`, in.ID()).Scan(&installed)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		Number: 7, Title: "poll me", Author: "onedr0p", State: "open", HeadRef: "f", HeadSHA: "abc123", BaseRef: "main",
 		UpdatedAt: time.Now(), DefaultBranch: "main",
 	}, {
-		// Last touched before kritik knew the installation.
+		// Last touched before kritik knew the connection.
 		Number: 8, Title: "leave me", Author: "onedr0p", State: "open", HeadRef: "g", HeadSHA: "old888", BaseRef: "main",
 		UpdatedAt: installed.Add(-time.Hour), DefaultBranch: "main",
 	}}}
@@ -117,7 +117,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	// Start from no poll state and no pull requests 7 or 8, whatever
 	// earlier suites left behind.
 	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE installation_id = $1`, in.ID()); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE connection_id = $1`, in.ID()); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE number IN (7, 8)`)
@@ -154,7 +154,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE number = 7`).Scan(&head); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, `SELECT last_polled_at FROM poll_state WHERE installation_id = $1`, in.ID()).Scan(&polledAt)
+		return tx.QueryRow(ctx, `SELECT last_polled_at FROM poll_state WHERE connection_id = $1`, in.ID()).Scan(&polledAt)
 	})
 	if err != nil || head != "abc123" || polledAt.Before(before) {
 		t.Fatalf("rows: err=%v head=%s polled=%v", err, head, polledAt)
@@ -228,7 +228,7 @@ func (f *tipForge) BranchTip(context.Context, string, string, string) (string, s
 	return f.tip, "main", nil
 }
 
-// TestPollerIndexesAMovedDefaultBranch: an installation no webhook reaches
+// TestPollerIndexesAMovedDefaultBranch: a connection no webhook reaches
 // has its indexed repositories' default branches checked, and an index job
 // queued when one moved; one that webhooks reach does not.
 func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
@@ -255,7 +255,7 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in, tenant, _ := file.Installation("bot-ross")
+	in, tenant, _ := file.Connection("bot-ross")
 	repoID := configfile.RepositoryID(in.ID(), "onedr0p/home-ops")
 	exec := func(sql string, args ...any) {
 		t.Helper()
@@ -306,7 +306,7 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
 		t.Fatal(err)
 	}
-	exec(`UPDATE installations SET last_webhook_at = NULL WHERE id = $1`, in.ID())
+	exec(`UPDATE connections SET last_webhook_at = NULL WHERE id = $1`, in.ID())
 	poll()
 	if got := indexJobs(); len(got) != 1 || got[0] != "moved" {
 		t.Fatalf("index jobs = %v, want one at the moved tip", got)
@@ -315,14 +315,14 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`); err != nil {
 		t.Fatal(err)
 	}
-	exec(`UPDATE installations SET last_webhook_at = now() WHERE id = $1`, in.ID())
+	exec(`UPDATE connections SET last_webhook_at = now() WHERE id = $1`, in.ID())
 	calls := tf.calls
 	poll()
 	if tf.calls != calls || len(indexJobs()) != 0 {
 		t.Fatalf("with webhooks arriving: %d tip checks and index jobs %v, want none", tf.calls-calls, indexJobs())
 	}
 
-	exec(`UPDATE installations SET last_webhook_at = NULL WHERE id = $1`, in.ID())
+	exec(`UPDATE connections SET last_webhook_at = NULL WHERE id = $1`, in.ID())
 	tf.tip = "indexed"
 	poll()
 	if got := indexJobs(); len(got) != 0 {

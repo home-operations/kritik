@@ -24,12 +24,12 @@ CREATE TABLE tenants (
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE installations (
+CREATE TABLE connections (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id       uuid        NOT NULL REFERENCES tenants (id),
     name            text        NOT NULL UNIQUE,
     forge           text        NOT NULL CHECK (forge IN ('github')),
-    -- The accounts the installation serves, as a public GitHub App
+    -- The accounts the connection serves, as a public GitHub App
     -- installed on several organizations does.
     accounts        text[]      NOT NULL DEFAULT '{}',
     managed_by      text        NOT NULL CHECK (managed_by IN ('file', 'dashboard')),
@@ -37,18 +37,18 @@ CREATE TABLE installations (
     disabled_at     timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
-    -- When the installation's webhook last delivered a request kritik
-    -- verified, so the dashboard can tell an installation whose forge sends
+    -- When the connection's webhook last delivered a request kritik
+    -- verified, so the dashboard can tell a connection whose forge sends
     -- webhooks from one kritik only polls. The listener writes it at most
     -- once a minute.
     last_webhook_at timestamptz
 );
-CREATE INDEX installations_tenant_id_idx ON installations (tenant_id);
+CREATE INDEX connections_tenant_id_idx ON connections (tenant_id);
 
 CREATE TABLE repositories (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id       uuid        NOT NULL REFERENCES tenants (id),
-    installation_id uuid        NOT NULL REFERENCES installations (id),
+    connection_id   uuid        NOT NULL REFERENCES connections (id),
     name            text        NOT NULL,
     default_branch  text        NOT NULL DEFAULT '',
     managed_by      text        NOT NULL CHECK (managed_by IN ('file', 'dashboard', 'forge')),
@@ -56,7 +56,7 @@ CREATE TABLE repositories (
     disabled_at     timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (installation_id, name)
+    UNIQUE (connection_id, name)
 );
 CREATE INDEX repositories_tenant_id_idx ON repositories (tenant_id);
 -- The repository list, and a repository looked up by its full name.
@@ -362,10 +362,10 @@ CREATE INDEX followups_tenant_created_idx ON followups (tenant_id, created_at DE
 -- A follow-up looked up by the comment it answered.
 CREATE INDEX followups_tenant_comment_idx ON followups (tenant_id, comment_id);
 
--- One row per installation: when the leader last listed its open pull
+-- One row per connection: when the leader last listed its open pull
 -- requests, so a restarted leader resumes where the previous one stopped.
 CREATE TABLE poll_state (
-    installation_id uuid        PRIMARY KEY REFERENCES installations (id),
+    connection_id   uuid        PRIMARY KEY REFERENCES connections (id),
     tenant_id       uuid        NOT NULL REFERENCES tenants (id),
     last_polled_at  timestamptz NOT NULL,
     updated_at      timestamptz NOT NULL DEFAULT now()
@@ -562,7 +562,7 @@ CREATE INDEX model_calls_created_at_idx ON model_calls (created_at);
 CREATE INDEX model_calls_followup_comment_idx ON model_calls (followup_comment_id) WHERE followup_comment_id IS NOT NULL;
 
 ALTER TABLE tenants         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE installations   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE connections   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE repositories    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE model_leases    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pull_requests   ENABLE ROW LEVEL SECURITY;
@@ -583,7 +583,7 @@ ALTER TABLE model_calls     ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON tenants
     USING      (id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
     WITH CHECK (id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
-CREATE POLICY tenant_isolation ON installations
+CREATE POLICY tenant_isolation ON connections
     USING      (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
     WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 CREATE POLICY tenant_isolation ON repositories

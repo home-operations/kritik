@@ -10,7 +10,7 @@ import (
 )
 
 func TestMergeFailure(t *testing.T) {
-	candidate := &configfile.Tenant{Slug: "alpha", Installations: []configfile.Installation{{Name: "own"}, {Name: "shared"}}}
+	candidate := &configfile.Tenant{Slug: "alpha", Connections: []configfile.Connection{{Name: "own"}, {Name: "shared"}}}
 	broken := errors.New("still broken")
 	tests := []struct {
 		name     string
@@ -23,8 +23,8 @@ func TestMergeFailure(t *testing.T) {
 	}{
 		{
 			name:   "the edited tenant is blamed with its prefix stripped",
-			err:    &configfile.MergeError{Slug: "alpha", Err: errors.New(`configfile: dashboard[alpha].installations[0].app.clientId: "x" is not allowed`)},
-			status: 422, code: CodeInvalidSpec, path: "installations[0].app.clientId", message: `installations[0].app.clientId: "x" is not allowed`,
+			err:    &configfile.MergeError{Slug: "alpha", Err: errors.New(`configfile: dashboard[alpha].connections[0].app.clientId: "x" is not allowed`)},
+			status: 422, code: CodeInvalidSpec, path: "connections[0].app.clientId", message: `connections[0].app.clientId: "x" is not allowed`,
 		},
 		{
 			name:   "a path ending at a space",
@@ -33,15 +33,15 @@ func TestMergeFailure(t *testing.T) {
 		},
 		{
 			name:   "the whole tenant",
-			err:    &configfile.MergeError{Slug: "alpha", Err: errors.New(`configfile: dashboard[alpha] (alpha) must list at least one installation`)},
-			status: 422, code: CodeInvalidSpec, path: "", message: `(alpha) must list at least one installation`,
+			err:    &configfile.MergeError{Slug: "alpha", Err: errors.New(`configfile: dashboard[alpha] (alpha) must list at least one connection`)},
+			status: 422, code: CodeInvalidSpec, path: "", message: `(alpha) must list at least one connection`,
 		},
 		{
 			name: "another tenant's slug is not revealed",
 			err: &configfile.MergeError{Slug: "alpha", Err: errors.New(
-				`configfile: dashboard[alpha].installations[0].name "x" duplicates an installation in tenant "secret-co"; names must be unique`)},
-			status: 422, code: CodeInvalidSpec, path: "installations[0].name",
-			message: `installations[0].name "x" duplicates an installation in another tenant; names must be unique`,
+				`configfile: dashboard[alpha].connections[0].name "x" duplicates a connection in tenant "secret-co"; names must be unique`)},
+			status: 422, code: CodeInvalidSpec, path: "connections[0].name",
+			message: `connections[0].name "x" duplicates a connection in another tenant; names must be unique`,
 		},
 		{
 			name: "a duplicate slug names no tenant",
@@ -52,14 +52,14 @@ func TestMergeFailure(t *testing.T) {
 		{
 			name: "a clash reported against a later tenant is the candidate's",
 			err: &configfile.MergeError{Slug: "beta", Err: errors.New(
-				`configfile: dashboard[beta].installations[0].name "shared" duplicates an installation in tenant "alpha"; names must be unique`)},
-			status: 422, code: CodeInvalidSpec, path: "installations[1].name",
-			message: `installations[1].name: conflicts with another tenant: "shared" duplicates an installation in tenant "alpha"; ` +
+				`configfile: dashboard[beta].connections[0].name "shared" duplicates a connection in tenant "alpha"; names must be unique`)},
+			status: 422, code: CodeInvalidSpec, path: "connections[1].name",
+			message: `connections[1].name: conflicts with another tenant: "shared" duplicates a connection in tenant "alpha"; ` +
 				`names must be unique`,
 		},
 		{
 			name:     "another tenant blocks the write",
-			err:      &configfile.MergeError{Slug: "beta", Err: errors.New(`configfile: dashboard[beta].installations[0].app.privateKey: cannot open`)},
+			err:      &configfile.MergeError{Slug: "beta", Err: errors.New(`configfile: dashboard[beta].connections[0].app.privateKey: cannot open`)},
 			baseline: broken,
 			status:   409, code: CodeConfigBlocked,
 		},
@@ -101,7 +101,7 @@ func TestDecodeFailure(t *testing.T) {
 		spec, path, message string
 	}{
 		{`{"slug":"alpha","nope":1}`, "nope", "tenant spec: field nope not found"},
-		{`{"slug":"alpha","installations":[{"name":"a","bogus":true}]}`, "bogus", "tenant spec: field bogus not found"},
+		{`{"slug":"alpha","connections":[{"name":"a","bogus":true}]}`, "bogus", "tenant spec: field bogus not found"},
 		{`{"slug":"beta"}`, "slug", `tenant spec slug "beta" does not match "alpha"`},
 	}
 	for _, tt := range tests {

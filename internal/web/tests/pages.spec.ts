@@ -41,13 +41,13 @@ test('tenant overview shows tiles, recent reviews, queue and repositories', asyn
   await expect(page.getByRole('region', { name: 'Repositories', exact: true }).locator('table.data')).toContainText(g.repoPage.items[0]!.fullName);
 });
 
-test('tenant overview says whether each installation receives webhooks', async ({ page }) => {
+test('tenant overview says whether each connection receives webhooks', async ({ page }) => {
   const detail = g.golden<TenantDetail>('tenant_detail');
-  const quiet = { ...detail.installations[0]!, name: 'alpha-quiet', hookPath: '/hooks/alpha-quiet', lastWebhookAt: null };
-  await g.mockApi(page, [[new RegExp(`/api/v1/tenants/${g.SLUG}$`), { ...detail, installations: [...detail.installations, quiet] }], ...g.defaultApi()]);
+  const quiet = { ...detail.connections[0]!, name: 'alpha-quiet', hookPath: '/hooks/alpha-quiet', lastWebhookAt: null };
+  await g.mockApi(page, [[new RegExp(`/api/v1/tenants/${g.SLUG}$`), { ...detail, connections: [...detail.connections, quiet] }], ...g.defaultApi()]);
   await page.goto(`/${T}`);
-  const panel = page.getByRole('region', { name: 'Installations' });
-  await expect(panel.getByRole('row').filter({ hasText: detail.installations[0]!.name })).toContainText('receiving');
+  const panel = page.getByRole('region', { name: 'Connections' });
+  await expect(panel.getByRole('row').filter({ hasText: detail.connections[0]!.name })).toContainText('receiving');
   await expect(panel.getByRole('row').filter({ hasText: 'alpha-quiet' })).toContainText('none yet');
   const note = panel.getByRole('note');
   await expect(note).toHaveCount(1);
@@ -84,23 +84,23 @@ test('repository settings say where each comes from and what .kritik.yaml chose'
   await expect(page.locator('#repo-bounds').locator('../..')).toContainText(g.repoDetail.settings.allow.models!.join(', '));
 });
 
-test('a repository several installations hold asks which one, then loads it', async ({ page }) => {
+test('a repository several connections hold asks which one, then loads it', async ({ page }) => {
   const detail = new RegExp(`/api/v1/tenants/${g.SLUG}/repos/alpha/one$`);
   await page.route(
     (u) => detail.test(u.pathname),
     (route) => {
-      const installation = new URL(route.request().url()).searchParams.get('installation');
-      if (!installation) {
-        const body = { code: 'ambiguous', message: 'several installations hold this repository', details: { installations: ['alpha-other', 'alpha-github'] } };
+      const connection = new URL(route.request().url()).searchParams.get('connection');
+      if (!connection) {
+        const body = { code: 'ambiguous', message: 'several connections hold this repository', details: { connections: ['alpha-other', 'alpha-github'] } };
         return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(body) });
       }
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...g.repoDetail, installation }) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...g.repoDetail, connection }) });
     },
   );
   await page.goto(`/${T}/repos/alpha/one`);
-  await expect(page.getByRole('heading', { name: 'Which installation?' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Which connection?' })).toBeVisible();
   await page.getByRole('link', { name: 'alpha-github' }).click();
-  await expect(page).toHaveURL(new RegExp(`${T}/repos/alpha/one\\?installation=alpha-github$`));
+  await expect(page).toHaveURL(new RegExp(`${T}/repos/alpha/one\\?connection=alpha-github$`));
   await expect(page.locator('.deflist').first()).toContainText('alpha-github');
 });
 

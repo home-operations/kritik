@@ -12,6 +12,6 @@
   "target": "alpha",
   "detail": {
     "revision": 2,
-    "secretsChanged": ["installations[alpha-bot].app.privateKey"]
+    "secretsChanged": ["connections[alpha-bot].app.privateKey"]
   }
 }

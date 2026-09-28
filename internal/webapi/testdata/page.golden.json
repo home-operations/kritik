@@ -3,7 +3,7 @@
     {
       "id": "repo-1",
       "fullName": "alpha/one",
-      "installation": "alpha-bot",
+      "connection": "alpha-bot",
       "enabled": true,
       "managedBy": "file",
       "defaultBranch": "main",

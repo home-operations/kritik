@@ -141,10 +141,10 @@ func paged[T any](rows []T, limit int, key func(T) Cursor) ([]T, *Cursor) {
 
 // TenantStats is what the tenant list shows of one tenant.
 type TenantStats struct {
-	Installations int
-	Repositories  int
-	Reviews7d     int
-	Month         MonthUsage
+	Connections  int
+	Repositories int
+	Reviews7d    int
+	Month        MonthUsage
 }
 
 // MonthUsage is what a tenant's caps count: tokens and spend this calendar
@@ -160,10 +160,10 @@ type MonthUsage struct {
 func ReadTenantStats(ctx context.Context, tx pgx.Tx) (TenantStats, error) {
 	var s TenantStats
 	err := tx.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM installations WHERE enabled),
+		(SELECT count(*) FROM connections WHERE enabled),
 		(SELECT count(*) FROM repositories WHERE enabled),
 		(SELECT count(*) FROM reviews WHERE created_at >= now() - interval '7 days')`).
-		Scan(&s.Installations, &s.Repositories, &s.Reviews7d)
+		Scan(&s.Connections, &s.Repositories, &s.Reviews7d)
 	if err != nil {
 		return s, fmt.Errorf("store: tenant stats: %w", err)
 	}
@@ -186,11 +186,11 @@ func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	return m, nil
 }
 
-// ReadWebhookDeliveries reads when each of the tenant's installations last
-// received a verified webhook, keyed by installation id; one that never has
+// ReadWebhookDeliveries reads when each of the tenant's connections last
+// received a verified webhook, keyed by connection id; one that never has
 // is absent.
 func ReadWebhookDeliveries(ctx context.Context, tx pgx.Tx) (map[string]time.Time, error) {
-	rows, err := tx.Query(ctx, `SELECT id::text, last_webhook_at FROM installations WHERE last_webhook_at IS NOT NULL`)
+	rows, err := tx.Query(ctx, `SELECT id::text, last_webhook_at FROM connections WHERE last_webhook_at IS NOT NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("store: webhook deliveries: %w", err)
 	}
@@ -208,13 +208,13 @@ func ReadWebhookDeliveries(ctx context.Context, tx pgx.Tx) (map[string]time.Time
 
 // RepoRow is one repository as the repository list shows it.
 type RepoRow struct {
-	ID             string
-	FullName       string
-	InstallationID string
-	Installation   string
-	Enabled        bool
-	ManagedBy      string
-	DefaultBranch  string
+	ID            string
+	FullName      string
+	ConnectionID  string
+	Connection    string
+	Enabled       bool
+	ManagedBy     string
+	DefaultBranch string
 	// ActiveCommit and ActiveAt describe the active index generation, empty
 	// when there is none.
 	ActiveCommit string
@@ -232,12 +232,12 @@ type ReviewRef struct {
 	CreatedAt time.Time
 }
 
-const repoColumns = `r.id, r.name, r.installation_id, i.name, r.enabled, r.managed_by, r.default_branch,
+const repoColumns = `r.id, r.name, r.connection_id, i.name, r.enabled, r.managed_by, r.default_branch,
 	coalesce(a.commit_sha, ''), coalesce(a.finished_at, a.created_at),
 	coalesce(l.status, ''), l.created_at,
 	lr.id, lr.status, lr.created_at
 	FROM repositories r
-	JOIN installations i ON i.id = r.installation_id
+	JOIN connections i ON i.id = r.connection_id
 	LEFT JOIN index_runs a ON a.id = r.active_index_run_id
 	LEFT JOIN LATERAL (SELECT status, created_at FROM index_runs x WHERE x.repository_id = r.id
 		ORDER BY created_at DESC, id DESC LIMIT 1) l ON true
@@ -249,7 +249,7 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 	var status string
 	var lrID, lrStatus *string
 	var lrAt *time.Time
-	err := row.Scan(&r.ID, &r.FullName, &r.InstallationID, &r.Installation, &r.Enabled, &r.ManagedBy, &r.DefaultBranch,
+	err := row.Scan(&r.ID, &r.FullName, &r.ConnectionID, &r.Connection, &r.Enabled, &r.ManagedBy, &r.DefaultBranch,
 		&r.ActiveCommit, &r.ActiveAt, &status, &r.LastIndexAt, &lrID, &lrStatus, &lrAt)
 	r.LastIndexStatus = IndexRunStatus(status)
 	if r.ActiveCommit == "" {
@@ -281,26 +281,26 @@ func ListRepos(ctx context.Context, tx pgx.Tx, p Page) ([]RepoRow, *Cursor, erro
 	return items, next, nil
 }
 
-// AmbiguousRepoError is FindRepo's answer when several installations of
+// AmbiguousRepoError is FindRepo's answer when several connections of
 // the tenant hold a repository of the name asked for and the caller named
 // none of them.
 type AmbiguousRepoError struct {
-	Installations []string
+	Connections []string
 }
 
 func (e *AmbiguousRepoError) Error() string {
-	return "store: several installations hold this repository: " + strings.Join(e.Installations, ", ")
+	return "store: several connections hold this repository: " + strings.Join(e.Connections, ", ")
 }
 
 // FindRepo returns the tenant's repository named fullName, reached through
-// installation when it is set. Without it, a name several installations
+// connection when it is set. Without it, a name several connections
 // hold is an *AmbiguousRepoError, except that an enabled repository wins
-// over disabled ones, which a removed or renamed installation leaves
+// over disabled ones, which a removed or renamed connection leaves
 // behind.
-func FindRepo(ctx context.Context, tx pgx.Tx, fullName, installation string) (RepoRow, error) {
+func FindRepo(ctx context.Context, tx pgx.Tx, fullName, connection string) (RepoRow, error) {
 	rows, err := tx.Query(ctx, `SELECT `+repoColumns+`
 		WHERE r.name = $1 AND ($2 = '' OR i.name = $2)
-		ORDER BY r.enabled DESC, r.created_at, r.id`, fullName, installation)
+		ORDER BY r.enabled DESC, r.created_at, r.id`, fullName, connection)
 	if err != nil {
 		return RepoRow{}, fmt.Errorf("store: find repository: %w", err)
 	}
@@ -315,7 +315,7 @@ func FindRepo(ctx context.Context, tx pgx.Tx, fullName, installation string) (Re
 		e := &AmbiguousRepoError{}
 		for _, r := range repos {
 			if r.Enabled == repos[0].Enabled {
-				e.Installations = append(e.Installations, r.Installation)
+				e.Connections = append(e.Connections, r.Connection)
 			}
 		}
 		return RepoRow{}, e

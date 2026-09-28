@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { ambiguousInstallations, getJSON } from '../api.svelte';
+  import { ambiguousConnections, getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
-  import { installationQuery, pullRoute, repoRoute, rerunPath } from '../links';
-  import InstallationChoice from '../components/InstallationChoice.svelte';
+  import { connectionQuery, pullRoute, repoRoute, rerunPath } from '../links';
+  import ConnectionChoice from '../components/ConnectionChoice.svelte';
   import { canAdmin } from '../session.svelte';
   import ActionButton from '../components/ActionButton.svelte';
   import { shortSha } from '../format';
@@ -22,16 +22,16 @@
     owner,
     repo,
     number,
-    installation,
-  }: { slug: string; owner: string; repo: string; number: number; installation?: string } = $props();
+    connection,
+  }: { slug: string; owner: string; repo: string; number: number; connection?: string } = $props();
   const fullName = $derived(`${owner}/${repo}`);
 
   const res = new Resource(() =>
     getJSON<PullDetail>(
-      `/api/v1/tenants/${encodeURIComponent(slug)}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}${installationQuery(installation)}`,
+      `/api/v1/tenants/${encodeURIComponent(slug)}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}${connectionQuery(connection)}`,
     ),
   );
-  const choices = $derived(ambiguousInstallations(res.error));
+  const choices = $derived(ambiguousConnections(res.error));
   $effect(() => {
     void res.load();
   });
@@ -53,7 +53,7 @@
 <main class="page">
   <div class="page-inner">
     {#if choices}
-      <InstallationChoice name={fullName} installations={choices} route={(i) => pullRoute(slug, { repository: fullName, number }, i)} />
+      <ConnectionChoice name={fullName} connections={choices} route={(i) => pullRoute(slug, { repository: fullName, number }, i)} />
     {:else}
       <StateView {res} retry={() => res.load()}>
         {#snippet children(d)}
@@ -62,7 +62,7 @@
           <header class="page-head">
             <p class="crumbs">
               <a href={href({ name: 'pulls', slug })}>Pull requests</a> /
-              <a class="mono" href={href(repoRoute(slug, fullName, installation))}>{fullName}</a>
+              <a class="mono" href={href(repoRoute(slug, fullName, connection))}>{fullName}</a>
             </p>
             <h1>{p.title} <span class="muted">#{p.number}</span></h1>
             <p class="meta-line">
@@ -82,7 +82,7 @@
                   label="Re-run"
                   title="Re-run the review?"
                   body={`Queue a fresh review of ${fullName}#${p.number} at its current head.`}
-                  path={rerunPath(slug, { repository: fullName, number: p.number }, installation)}
+                  path={rerunPath(slug, { repository: fullName, number: p.number }, connection)}
                   done="Re-run queued"
                   ondone={() => res.load()}
                 />

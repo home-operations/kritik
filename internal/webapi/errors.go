@@ -67,10 +67,10 @@ type pathDetails struct {
 }
 
 // ambiguousRepoDetails are an ambiguous repository's details: the
-// installations that hold a repository of the name asked for, one of which
-// ?installation= must name.
+// connections that hold a repository of the name asked for, one of which
+// ?connection= must name.
 type ambiguousRepoDetails struct {
-	Installations []string `json:"installations"`
+	Connections []string `json:"connections"`
 }
 
 // slugTakenDetails are a slug_taken error's details. Adoptable is set only

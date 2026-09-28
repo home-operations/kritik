@@ -40,13 +40,13 @@ func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration {
 }
 
 // repoSettings resolves a repository's settings from its id, which a job
-// carries instead of the installation and name the configuration is keyed
+// carries instead of the connection and name the configuration is keyed
 // by. A repository the tenant does not list gets the tenant's settings, as
 // in Settings.
 func repoSettings(file *configfile.File, tenant *configfile.Tenant, repositoryID string) configfile.Settings {
 	for i := range tenant.Repositories {
 		r := &tenant.Repositories[i]
-		if in := file.InstallationFor(tenant, r); in != nil && configfile.RepositoryID(in.ID(), r.Name) == repositoryID {
+		if in := file.ConnectionFor(tenant, r); in != nil && configfile.RepositoryID(in.ID(), r.Name) == repositoryID {
 			return file.Settings(tenant, in.Name, r.Name)
 		}
 	}

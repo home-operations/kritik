@@ -32,12 +32,12 @@ var goldenReview = Review{
 }
 
 var goldenSummary = TenantSummary{
-	Slug: "alpha", ManagedBy: configfile.OriginDashboard, Role: auth.RoleAdmin, Installations: 1, Repositories: 3, Reviews7d: 9,
+	Slug: "alpha", ManagedBy: configfile.OriginDashboard, Role: auth.RoleAdmin, Connections: 1, Repositories: 3, Reviews7d: 9,
 	Usage: MonthUsage{Tokens: 5000, CostUSD: 1.5, TokensPerMonth: 1000000, ReviewsToday: 2, ReviewsPerDay: 50},
 }
 
 var goldenRepo = Repository{
-	ID: "repo-1", FullName: "alpha/one", Installation: "alpha-bot", Enabled: true, ManagedBy: "file", DefaultBranch: "main",
+	ID: "repo-1", FullName: "alpha/one", Connection: "alpha-bot", Enabled: true, ManagedBy: "file", DefaultBranch: "main",
 	Index:      IndexState{ActiveCommit: "def456", ActiveAt: &t0, LastRunStatus: store.IndexCompleted, LastRunAt: &t1},
 	LastReview: &ReviewRef{ID: "rev-1", Status: store.ReviewCompleted, CreatedAt: t0},
 }
@@ -94,7 +94,7 @@ var goldens = map[string]any{
 	"operator_tenant": OperatorTenant{TenantSummary: goldenSummary, Live: false, Revision: 3},
 	"tenant_detail": TenantDetail{
 		Slug: "alpha", ManagedBy: configfile.OriginFile, Role: auth.RoleMember,
-		Installations: []Installation{{
+		Connections: []Connection{{
 			Name: "alpha-bot", Forge: configfile.ForgeGitHub, Accounts: []string{"alpha"},
 			Credentials: CredentialsSet{ClientID: true, PrivateKey: true, WebhookSecret: true},
 			HookPath:    "/hooks/alpha-bot", LastWebhookAt: &t0,

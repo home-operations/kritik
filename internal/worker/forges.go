@@ -13,9 +13,9 @@ import (
 	"github.com/home-operations/kritik/internal/forge/github"
 )
 
-// BuildForge constructs the forge client for an installation from its
+// BuildForge constructs the forge client for a connection from its
 // credentials in the configuration file, for repositories of repo's owner.
-func BuildForge(ctx context.Context, in *configfile.Installation, repo string) (forge.Client, error) {
+func BuildForge(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
 	switch in.Forge {
 	case configfile.ForgeGitHub:
 		app, err := github.NewApp(in.App.ClientIDValue(), in.App.PrivateKeyValue().Value(), "")
@@ -39,7 +39,7 @@ func BuildForge(ctx context.Context, in *configfile.Installation, repo string) (
 // cached client is rebuilt once any of it changes: an App key rotated
 // through the file or the dashboard. It is a hash, never the
 // material itself.
-func credentialFingerprint(in *configfile.Installation) string {
+func credentialFingerprint(in *configfile.Connection) string {
 	parts := []string{string(in.Forge), in.App.ClientIDValue(), in.App.PrivateKeyValue().Value()}
 	h := sha256.New()
 	for _, p := range parts {

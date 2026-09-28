@@ -164,7 +164,7 @@ func (s *Server) listFollowups(w http.ResponseWriter, r *http.Request, t *tenant
 // getFollowupTranscript serves the model calls that answered a follow-up
 // comment. A comment id is unique only per forge, so when two of the
 // tenant's pull requests have a follow-up with it, ?repo= (and
-// ?installation=) must say which is meant.
+// ?connection=) must say which is meant.
 func (s *Server) getFollowupTranscript(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
 	commentID, err := strconv.ParseInt(r.PathValue("commentId"), 10, 64)
 	if err != nil || commentID <= 0 {

@@ -24,7 +24,7 @@ tenants:
     runner:
       resources: { limits: { cpu: "2", memory: 4Gi } }
       activeDeadlineSeconds: 900
-    installations:
+    connections:
       - name: sticky-gecko
         forge: github
         accounts: [home-operations]
@@ -45,7 +45,7 @@ tenants:
         enabled: false
 
   - slug: onedr0p
-    installations:
+    connections:
       - name: bot-ross
         forge: github
         accounts: [onedr0p]

@@ -12,8 +12,8 @@
 //   #/t/<slug>/pulls                          tenant's pull list
 //   #/t/<slug>/pulls/<owner>/<repo>/<n>       one pull request
 //
-// A repo or pull route may end in "?installation=<name>", naming which of
-// several installations holding the same owner/repo it means.
+// A repo or pull route may end in "?connection=<name>", naming which of
+// several connections holding the same owner/repo it means.
 //   #/t/<slug>/reviews/<id>[/<tab>]           one review, optional tab
 //   #/t/<slug>/queue                          run queue
 //   #/t/<slug>/usage                          usage/cost dashboard
@@ -45,9 +45,9 @@ export type Route =
   | { name: 'operator' }
   | { name: 'tenant'; slug: string }
   | { name: 'repos'; slug: string }
-  | { name: 'repo'; slug: string; owner: string; repo: string; installation?: string }
+  | { name: 'repo'; slug: string; owner: string; repo: string; connection?: string }
   | { name: 'pulls'; slug: string }
-  | { name: 'pull'; slug: string; owner: string; repo: string; number: number; installation?: string }
+  | { name: 'pull'; slug: string; owner: string; repo: string; number: number; connection?: string }
   | { name: 'review'; slug: string; id: string; tab?: ReviewTab }
   | { name: 'queue'; slug: string }
   | { name: 'usage'; slug: string }
@@ -85,9 +85,9 @@ function segments(hash: string): { parts: string[]; ok: boolean } {
 // malformed past the slug -- including an extra trailing segment -- falls
 // back to that tenant's overview rather than the global overview, so a bad
 // deep link still lands the user in-tenant.
-function parseTenantRoute(slug: string, rest: string[], installation: string | undefined): Route {
+function parseTenantRoute(slug: string, rest: string[], connection: string | undefined): Route {
   const [section, ...tail] = rest;
-  const inst = installation ? { installation } : {};
+  const inst = connection ? { connection } : {};
   switch (section) {
     case undefined:
       return { name: 'tenant', slug };
@@ -124,7 +124,7 @@ function parseTenantRoute(slug: string, rest: string[], installation: string | u
 
 export function parse(hash: string): Route {
   const q = hash.indexOf('?');
-  const installation = q < 0 ? undefined : (new URLSearchParams(hash.slice(q + 1)).get('installation') ?? undefined);
+  const connection = q < 0 ? undefined : (new URLSearchParams(hash.slice(q + 1)).get('connection') ?? undefined);
   const { parts, ok } = segments(q < 0 ? hash : hash.slice(0, q));
   if (!ok) {
     // The malformation struck before a slug could be parsed: nothing to
@@ -138,13 +138,13 @@ export function parse(hash: string): Route {
   if (parts.length === 0) return { name: 'overview' };
   if (parts.length === 1 && parts[0] === 'signin') return { name: 'signin' };
   if (parts.length === 1 && parts[0] === 'operator') return { name: 'operator' };
-  if (parts[0] === 't' && parts[1] !== undefined) return parseTenantRoute(parts[1], parts.slice(2), installation);
+  if (parts[0] === 't' && parts[1] !== undefined) return parseTenantRoute(parts[1], parts.slice(2), connection);
   return { name: 'overview' };
 }
 
 export function href(r: Route): string {
   const s = (v: string) => encodeURIComponent(v);
-  const inst = (v: string | undefined) => (v ? `?installation=${s(v)}` : '');
+  const inst = (v: string | undefined) => (v ? `?connection=${s(v)}` : '');
   switch (r.name) {
     case 'overview':
       return '#/';
@@ -157,11 +157,11 @@ export function href(r: Route): string {
     case 'repos':
       return `#/t/${s(r.slug)}/repos`;
     case 'repo':
-      return `#/t/${s(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}${inst(r.installation)}`;
+      return `#/t/${s(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}${inst(r.connection)}`;
     case 'pulls':
       return `#/t/${s(r.slug)}/pulls`;
     case 'pull':
-      return `#/t/${s(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}${inst(r.installation)}`;
+      return `#/t/${s(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}${inst(r.connection)}`;
     case 'review':
       return r.tab ? `#/t/${s(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}` : `#/t/${s(r.slug)}/reviews/${s(r.id)}`;
     case 'queue':

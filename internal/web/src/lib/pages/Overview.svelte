@@ -19,7 +19,7 @@
   function totals(list: TenantSummary[]) {
     const sum = (f: (t: TenantSummary) => number) => list.reduce((n, t) => n + f(t), 0);
     return {
-      installations: sum((t) => t.installations),
+      connections: sum((t) => t.connections),
       repositories: sum((t) => t.repositories),
       reviews7d: sum((t) => t.reviews7d),
       reviewsToday: sum((t) => t.usage.reviewsToday),
@@ -39,7 +39,7 @@
           <div class="tile">
             <span class="tile-label">Tenants</span>
             <span class="tile-value">{wholeNumber(list.length)}</span>
-            <span class="small muted">{wholeNumber(all.installations)} installations</span>
+            <span class="small muted">{wholeNumber(all.connections)} connections</span>
           </div>
           <div class="tile">
             <span class="tile-label">Repositories</span>
@@ -68,7 +68,7 @@
                 <tr>
                   <th scope="col">Tenant</th>
                   <th scope="col">Role</th>
-                  <th scope="col" class="num">Installations</th>
+                  <th scope="col" class="num">Connections</th>
                   <th scope="col" class="num">Repositories</th>
                   <th scope="col" class="num">Reviews 7d</th>
                   <th scope="col" class="num">Spend</th>
@@ -80,7 +80,7 @@
                   <tr>
                     <td class="mono"><a href={href({ name: 'tenant', slug: t.slug })}>{t.slug}</a></td>
                     <td>{t.role} <span class="muted small">({t.managedBy})</span></td>
-                    <td class="num">{wholeNumber(t.installations)}</td>
+                    <td class="num">{wholeNumber(t.connections)}</td>
                     <td class="num">{wholeNumber(t.repositories)}</td>
                     <td class="num">{wholeNumber(t.reviews7d)}</td>
                     <td class="num">{usd(t.usage.costUsd)}</td>

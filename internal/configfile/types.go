@@ -1,5 +1,5 @@
 // Package configfile loads the declarative configuration file: the model
-// providers, defaults, tenants, installations and repositories kritik
+// providers, defaults, tenants, connections and repositories kritik
 // manages. Process configuration (addresses, database, log level) is
 // environment variables and lives in internal/config.
 //
@@ -30,7 +30,7 @@ const (
 	ProviderAnthropic  = model.ProviderAnthropic
 )
 
-// Forge identifies which forge an installation talks to.
+// Forge identifies which forge a connection talks to.
 type Forge string
 
 // ForgeGitHub is github.com, the one forge kritik supports. Forge stays a
@@ -227,7 +227,7 @@ type AllowAgent struct {
 }
 
 // Polling is the leader's backstop for missed webhooks: it lists each
-// installation's open pull requests every Interval.
+// connection's open pull requests every Interval.
 type Polling struct {
 	// Interval is how often to poll; an explicit 0 turns polling off, and
 	// unset is DefaultPollInterval.
@@ -318,7 +318,7 @@ var DefaultIgnore = []string{
 	"**/go.sum",
 }
 
-// GitHubApp is a GitHub App credential owned by an installation. The client
+// GitHubApp is a GitHub App credential owned by a connection. The client
 // id is not secret, but operators often keep it next to the key, so it may
 // be given inline or by reference; exactly one of the two.
 type GitHubApp struct {
@@ -338,14 +338,14 @@ func (a GitHubApp) ClientIDValue() string { return a.clientID }
 // PrivateKeyValue returns the resolved private key PEM.
 func (a GitHubApp) PrivateKeyValue() Secret { return a.privateKey }
 
-// Installation is one GitHub App serving the accounts it lists. Its name is
+// Connection is one GitHub App serving the accounts it lists. Its name is
 // the hook path, /hooks/{name}, and must be unique across the whole file.
-type Installation struct {
+type Connection struct {
 	Name  string `yaml:"name"`
 	Forge Forge  `yaml:"forge"`
-	// Accounts are the users and organizations the installation serves: a
+	// Accounts are the users and organizations the connection serves: a
 	// webhook for any other account is ignored, and a repository belongs to
-	// the installation serving its owner. A public GitHub App installed on
+	// the connection serving its owner. A public GitHub App installed on
 	// several organizations lists each one kritik reviews for; nothing is
 	// served that is not listed.
 	Accounts []string `yaml:"accounts"`
@@ -354,19 +354,19 @@ type Installation struct {
 }
 
 // WebhookSecretValue returns the resolved webhook secret.
-func (i Installation) WebhookSecretValue() Secret { return i.App.webhookSecret }
+func (i Connection) WebhookSecretValue() Secret { return i.App.webhookSecret }
 
-// Repository carries per-repository overrides. Everything an installation
+// Repository carries per-repository overrides. Everything a connection
 // grants access to is watched whether or not it is listed here.
 type Repository struct {
 	Name string `yaml:"name"`
-	// Installation names the tenant's installation the repository belongs
+	// Connection names the tenant's connection the repository belongs
 	// to. It is required only when the owner is the account of more than
-	// one installation, so the same "owner/repo" on two forges is two
+	// one connection, so the same "owner/repo" on two forges is two
 	// entries.
-	Installation string `yaml:"installation,omitempty"`
-	Enabled      *bool  `yaml:"enabled,omitempty"`
-	Overrides    `yaml:",inline"`
+	Connection string `yaml:"connection,omitempty"`
+	Enabled    *bool  `yaml:"enabled,omitempty"`
+	Overrides  `yaml:",inline"`
 }
 
 // ReviewMode is how a review is carried out.
@@ -507,12 +507,12 @@ func (r Review) Referenced() []string {
 
 // Tenant is a forge account and the unit of isolation.
 type Tenant struct {
-	Slug          string         `yaml:"slug"`
-	Runner        *Runner        `yaml:"runner,omitempty"`
-	Installations []Installation `yaml:"installations"`
-	Overrides     `yaml:",inline"`
-	Limits        LimitsSpec   `yaml:"limits,omitempty"`
-	Repositories  []Repository `yaml:"repositories,omitempty"`
+	Slug         string       `yaml:"slug"`
+	Runner       *Runner      `yaml:"runner,omitempty"`
+	Connections  []Connection `yaml:"connections"`
+	Overrides    `yaml:",inline"`
+	Limits       LimitsSpec   `yaml:"limits,omitempty"`
+	Repositories []Repository `yaml:"repositories,omitempty"`
 	// Providers are the tenant's own model providers: its keys, for the
 	// models it pays for. A model reference in the tenant names one of them
 	// or one of the file's, and a name may not be both.

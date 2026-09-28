@@ -8,7 +8,7 @@
       "type": "object"
     },
     "config": {
-      "description": "The declarative configuration file (providers, defaults, tenants with their\ninstallations and repositories). Either inline as `file`, rendered into a\nchart-managed ConfigMap, or an existing ConfigMap with a `config.yaml` key.\nSecret material never goes in the file: it references files under\n`secretMounts` or environment variables. Every replica re-reads the file on\n`reloadInterval`; the leader applies it to the store.",
+      "description": "The declarative configuration file (providers, defaults, tenants with their\nconnections and repositories). Either inline as `file`, rendered into a\nchart-managed ConfigMap, or an existing ConfigMap with a `config.yaml` key.\nSecret material never goes in the file: it references files under\n`secretMounts` or environment variables. Every replica re-reads the file on\n`reloadInterval`; the leader applies it to the store.",
       "properties": {
         "existingConfigMap": {
           "default": "",
@@ -1165,7 +1165,7 @@
         },
         "port": {
           "default": 8080,
-          "description": "Webhook port (`POST /hooks/{installation}`), served by `all` and `ingest` pods.",
+          "description": "Webhook port (`POST /hooks/{connection}`), served by `all` and `ingest` pods.",
           "title": "port",
           "type": "integer"
         },

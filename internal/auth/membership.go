@@ -87,14 +87,14 @@ func grant(ctx context.Context, file *configfile.File, s *configfile.SignIn, id 
 	return g, nil
 }
 
-// forgeAccounts lists the accounts the file's installations on forge serve
+// forgeAccounts lists the accounts the file's connections on forge serve
 // that the person with login belongs to: their own login, and each
 // organization m reports them an active member of, as account keys.
 func forgeAccounts(ctx context.Context, file *configfile.File, forge configfile.Forge, login string, m Membership) ([]string, error) {
 	checked := map[string]bool{}
 	var out []string
 	for ti := range file.Tenants {
-		for _, in := range file.Tenants[ti].Installations {
+		for _, in := range file.Tenants[ti].Connections {
 			if in.Forge != forge {
 				continue
 			}

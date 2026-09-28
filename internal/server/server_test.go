@@ -62,7 +62,7 @@ func TestManagementHandler(t *testing.T) {
 func TestHooksHandlerRouting(t *testing.T) {
 	h := NewHooks(":0", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(r.PathValue("installation")))
+		_, _ = w.Write([]byte(r.PathValue("connection")))
 	}), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	srv := httptest.NewServer(h.Handler())
 	defer srv.Close()
@@ -73,7 +73,7 @@ func TestHooksHandlerRouting(t *testing.T) {
 		path   string
 		want   int
 	}{
-		{name: "post to an installation", method: http.MethodPost, path: "/hooks/sticky-gecko", want: http.StatusAccepted},
+		{name: "post to a connection", method: http.MethodPost, path: "/hooks/sticky-gecko", want: http.StatusAccepted},
 		{name: "get is not routable", method: http.MethodGet, path: "/hooks/sticky-gecko", want: http.StatusMethodNotAllowed},
 		{name: "bare hooks path", method: http.MethodPost, path: "/hooks", want: http.StatusNotFound},
 	}

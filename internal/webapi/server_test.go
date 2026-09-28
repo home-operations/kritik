@@ -18,13 +18,13 @@ import (
 const testConfig = `
 tenants:
   - slug: alpha
-    installations:
+    connections:
       - name: alpha-bot
         forge: github
         accounts: [alpha]
         app: { clientId: Iv1.alpha, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
   - slug: beta
-    installations:
+    connections:
       - name: beta-bot
         forge: github
         accounts: [beta]

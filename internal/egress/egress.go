@@ -4,7 +4,7 @@
 // inspection, which is how git, the model SDKs and curl reach TLS
 // endpoints; a plain http:// request to an allowed host is upgraded to
 // HTTPS here, with a configured credential added, so a runner can use an
-// API at an installation's rate limit without holding a token. Every other
+// API at a connection's rate limit without holding a token. Every other
 // destination is refused by hostname.
 package egress
 

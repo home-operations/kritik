@@ -1,6 +1,6 @@
 // Package forge is the worker's view of a forge: the few calls a review
-// needs before and after the runner does its work. Each installation gets
-// its own Client, authenticated as that installation.
+// needs before and after the runner does its work. Each connection gets
+// its own Client, authenticated as that connection.
 package forge
 
 import (
@@ -110,7 +110,7 @@ const MaxFileBytes = 1 << 20
 // ErrFileTooLarge is FileAt refusing a file over MaxFileBytes.
 var ErrFileTooLarge = errors.New("forge: file is over the size limit")
 
-// Client is one installation's access to its forge.
+// Client is one connection's access to its forge.
 type Client interface {
 	// MergeBase asks the forge for the merge-base of base (a branch) and
 	// head (a commit) of pull request number, the same way the forge
