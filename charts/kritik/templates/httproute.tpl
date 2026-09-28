@@ -1,5 +1,8 @@
-{{- if and .Values.httpRoute.enabled (include "kritik.hasIngest" .) -}}
+{{- if .Values.httpRoute.enabled -}}
 {{- $route := .Values.httpRoute -}}
+{{- $base := include "kritik.webPath" . -}}
+# One HTTPRoute for web.url: the webhook listener under /hooks, the dashboard
+# everywhere else (ADR-0014 §2.1).
 apiVersion: {{ $route.apiVersion | default "gateway.networking.k8s.io/v1" }}
 kind: HTTPRoute
 metadata:
@@ -19,51 +22,23 @@ spec:
   parentRefs:
     {{- tpl (toYaml .) $ | nindent 4 }}
   {{- end }}
-  {{- with $route.hostnames }}
   hostnames:
-    {{- tpl (toYaml .) $ | nindent 4 }}
-  {{- end }}
+    - {{ include "kritik.webHost" . | quote }}
   rules:
-    - backendRefs:
+    {{- if include "kritik.hasIngest" . }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ printf "%s/hooks" $base | quote }}
+      backendRefs:
         - name: {{ include "kritik.fullname" . }}
           port: {{ .Values.service.port }}
-      {{- with $route.matches }}
-      matches:
-        {{- tpl (toYaml .) $ | nindent 8 }}
-      {{- end }}
-{{- end }}
-{{- if and .Values.httpRoute.web.enabled (include "kritik.hasWeb" .) }}
----
-{{- $route := .Values.httpRoute.web -}}
-apiVersion: {{ $route.apiVersion | default "gateway.networking.k8s.io/v1" }}
-kind: HTTPRoute
-metadata:
-  name: {{ include "kritik.fullname" . }}-web
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kritik.labels" . | nindent 4 }}
-    {{- with $route.labels }}
-    {{- tpl (toYaml .) $ | nindent 4 }}
     {{- end }}
-  {{- with $route.annotations }}
-  annotations:
-    {{- tpl (toYaml .) $ | nindent 4 }}
-  {{- end }}
-spec:
-  {{- with $route.parentRefs }}
-  parentRefs:
-    {{- tpl (toYaml .) $ | nindent 4 }}
-  {{- end }}
-  {{- with $route.hostnames }}
-  hostnames:
-    {{- tpl (toYaml .) $ | nindent 4 }}
-  {{- end }}
-  rules:
-    - backendRefs:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ $base | default "/" | quote }}
+      backendRefs:
         - name: {{ include "kritik.fullname" . }}-web
           port: {{ .Values.service.webPort }}
-      {{- with $route.matches }}
-      matches:
-        {{- tpl (toYaml .) $ | nindent 8 }}
-      {{- end }}
 {{- end }}

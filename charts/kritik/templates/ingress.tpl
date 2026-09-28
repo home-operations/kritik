@@ -1,4 +1,7 @@
-{{- if and .Values.ingress.enabled (include "kritik.hasIngest" .) -}}
+{{- if .Values.ingress.enabled -}}
+{{- $base := include "kritik.webPath" . -}}
+# One Ingress for web.url: the webhook listener under /hooks, the dashboard
+# everywhere else (ADR-0014 §2.1).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -19,55 +22,23 @@ spec:
     {{- tpl (toYaml .) $ | nindent 4 }}
   {{- end }}
   rules:
-    {{- range .Values.ingress.hosts }}
-    - host: {{ tpl .host $ | quote }}
+    - host: {{ include "kritik.webHost" . | quote }}
       http:
         paths:
-          {{- range .paths }}
-          - path: {{ .path }}
-            pathType: {{ .pathType }}
+          {{- if include "kritik.hasIngest" . }}
+          - path: {{ printf "%s/hooks" $base | quote }}
+            pathType: Prefix
             backend:
               service:
-                name: {{ include "kritik.fullname" $ }}
+                name: {{ include "kritik.fullname" . }}
                 port:
                   name: http
           {{- end }}
-    {{- end }}
-{{- end }}
-{{- if and .Values.ingress.web.enabled (include "kritik.hasWeb" .) }}
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: {{ include "kritik.fullname" . }}-web
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kritik.labels" . | nindent 4 }}
-  {{- with .Values.ingress.web.annotations }}
-  annotations:
-    {{- tpl (toYaml .) $ | nindent 4 }}
-  {{- end }}
-spec:
-  {{- with .Values.ingress.web.className }}
-  ingressClassName: {{ tpl . $ | quote }}
-  {{- end }}
-  {{- with .Values.ingress.web.tls }}
-  tls:
-    {{- tpl (toYaml .) $ | nindent 4 }}
-  {{- end }}
-  rules:
-    {{- range .Values.ingress.web.hosts }}
-    - host: {{ tpl .host $ | quote }}
-      http:
-        paths:
-          {{- range .paths }}
-          - path: {{ .path }}
-            pathType: {{ .pathType }}
+          - path: {{ $base | default "/" | quote }}
+            pathType: Prefix
             backend:
               service:
-                name: {{ include "kritik.fullname" $ }}-web
+                name: {{ include "kritik.fullname" . }}-web
                 port:
                   name: web
-          {{- end }}
-    {{- end }}
 {{- end }}

@@ -99,21 +99,22 @@ tests:
       - contains:
           path: spec.template.spec.volumes
           content:
-            name: auth
+            name: bot
             secret:
-              secretName: kritik-auth
+              secretName: kritik-bot
 
-  - it: renders the split topology with an ingest and a worker Deployment
+  - it: renders the split topology with an ingest, a worker and a web Deployment
     set:
       roles.all.enabled: false
       roles.ingest.enabled: true
       roles.worker.enabled: true
+      roles.web.enabled: true
       roles.worker.resources:
         limits:
           memory: 2Gi
     asserts:
       - hasDocuments:
-          count: 2
+          count: 3
       - equal:
           path: metadata.name
           value: RELEASE-NAME-kritik-ingest
@@ -236,7 +237,7 @@ tests:
             value: kubernetes
           any: true
 
-  - it: hands the all role the dashboard env and port when web.url is set
+  - it: hands the all role the dashboard env and port
     set:
       web.url: https://dash.example.com
     asserts:
@@ -257,25 +258,62 @@ tests:
             name: http
           any: true
 
-  - it: leaves the dashboard env and port out of the all role when web.url is unset
+  - it: fails without web.url
+    set:
+      web.url: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: web.url is required
+
+  - it: fails on a split topology without the web role
+    set:
+      roles.all.enabled: false
+      roles.ingest.enabled: true
+      roles.worker.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: the split topology needs roles.web
+
+  - it: renders each auth value set as its KRITIK_AUTH_ variable, and no other
+    set:
+      auth.sessionTTL: 24h
+      auth.oidc.issuer: https://idp.example
+      auth.oidc.scopes: [openid, email]
+      auth.github.clientSecretSecret.name: kritik-github
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIK_AUTH_SESSION_TTL, value: 24h }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIK_AUTH_OIDC_SCOPES, value: "openid,email" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_AUTH_GITHUB_CLIENT_SECRET
+            valueFrom: { secretKeyRef: { name: kritik-github, key: client-secret } }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_AUTH_ADMIN_PASSWORD
+            valueFrom: { secretKeyRef: { name: kritik-auth, key: password } }
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIK_AUTH_OIDC_NAME }
+          any: true
+
+  - it: runs without a configuration file
+    set:
+      config.file: null
     asserts:
       - notContains:
           path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIK_WEB_URL
+          content: { name: KRITIK_CONFIG_FILE }
           any: true
       - notContains:
-          path: spec.template.spec.containers[0].ports
-          content:
-            name: web
+          path: spec.template.spec.volumes
+          content: { name: config }
           any: true
-
-  - it: fails when roles.web.enabled is true without web.url
-    set:
-      roles.web.enabled: true
-    asserts:
-      - failedTemplate:
-          errorPattern: web.url is required when roles.web.enabled is true
 
   - it: fails when web.url is not an http(s) URL
     set:

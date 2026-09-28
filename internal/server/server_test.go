@@ -60,7 +60,7 @@ func TestManagementHandler(t *testing.T) {
 }
 
 func TestHooksHandlerRouting(t *testing.T) {
-	h := NewHooks(":0", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := NewHooks(":0", "/kritik/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(r.PathValue("connection")))
 	}), slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -76,6 +76,8 @@ func TestHooksHandlerRouting(t *testing.T) {
 		{name: "post to a connection", method: http.MethodPost, path: "/hooks/sticky-gecko", want: http.StatusAccepted},
 		{name: "get is not routable", method: http.MethodGet, path: "/hooks/sticky-gecko", want: http.StatusMethodNotAllowed},
 		{name: "bare hooks path", method: http.MethodPost, path: "/hooks", want: http.StatusNotFound},
+		{name: "post under the dashboard's base path", method: http.MethodPost, path: "/kritik/hooks/sticky-gecko", want: http.StatusAccepted},
+		{name: "another base path", method: http.MethodPost, path: "/other/hooks/sticky-gecko", want: http.StatusNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

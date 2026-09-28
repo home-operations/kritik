@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { accountKey, canKeep, type ConnectionDraft, type SecretDraft } from '../../spec';
   import SecretField from './SecretField.svelte';
+  import { hookURL } from '../../session.svelte';
 
   interface Props {
     inst: ConnectionDraft;
@@ -62,7 +63,7 @@
     <SecretField label="Webhook secret" path="{p}.app.webhookSecret" bind:secret={inst.appWebhookSecret} generatable {keepable} invalid={inv(`${p}.app.webhookSecret`)} />
   </div>
   <p class="field-hint">
-    Webhook: set the GitHub App's webhook URL to <span class="mono">/hooks/{inst.name || '<name>'}</span> on kritik's webhook
-    listener, with this webhook secret. It covers every repository the App is installed on.
+    Webhook: set the GitHub App's webhook URL to <span class="mono">{hookURL(`/hooks/${inst.name || '<name>'}`)}</span>, with
+    this webhook secret. It covers every repository the App is installed on.
   </p>
 </div>

@@ -18,6 +18,12 @@ export async function loadMeta(): Promise<void> {
   }
 }
 
+// hookURL is a webhook path under the dashboard's URL, which the webhook
+// listener shares.
+export function hookURL(path: string): string {
+  return (session.meta?.webUrl ?? '').replace(/\/+$/, '') + path;
+}
+
 export function management(): boolean {
   return session.meta?.management === true;
 }

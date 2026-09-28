@@ -18,7 +18,7 @@ tests:
           pattern: "clientId: Iv1.example"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: "file: /var/run/secrets/kritik/auth/admin-password"
+          pattern: "file: /var/run/secrets/kritik/bot/private-key.pem"
 
   - it: renders nothing when an existing ConfigMap is named
     set:

@@ -52,16 +52,15 @@ kritik ships as an OCI Helm chart, `oci://ghcr.io/home-operations/charts/kritik`
 The chart's [README](charts/kritik/README.md) lists every value and shows the
 CloudNativePG setup for the three database roles. In short: a Postgres with
 [VectorChord](https://github.com/tensorchord/VectorChord) (and the pgvector it
-builds on) loaded, with an owner, an application and a runner role, a
-sealing key under `dashboard.keySecret`, the configuration file under
-`config.file` with sign-in and any GitHub App that already exists, the
-secrets it references under `secretMounts`. Model providers, the embedder for
-the index, defaults, accounts and their repositories are then set in the
-dashboard's admin console. `roles.all` runs
-the single-process topology; `roles.ingest` and `roles.worker` split it.
+builds on) loaded, with an owner, an application and a runner role; the one
+public URL under `web.url`, which the dashboard and GitHub's webhooks share;
+a sealing key under `dashboard.keySecret`; and a way to sign in under `auth`.
+`roles.all` runs the single-process topology; `roles.ingest`, `roles.worker`
+and `roles.web` split it.
 
-Then [connect a forge](docs/connecting-a-forge.md): a GitHub App, whose one
-webhook covers every repository it is installed on.
+Then sign in: the [setup guide](docs/setup.md) and the setup wizard take a
+fresh instance through its GitHub App, model key, embedder and repositories
+to its first review.
 
 Security notes:
 
@@ -80,11 +79,13 @@ Security notes:
 
 ## Documentation
 
-- [Connecting a forge](docs/connecting-a-forge.md): the GitHub App, its
-  permissions, and its webhook
+- [Setup](docs/setup.md): from install to the first review, the GitHub App,
+  its permissions and its webhook
+- [Configuration](docs/configuration.md): where each setting lives, sign-in
+  and role mappings, and the configuration file's connections
 - [Chart values](charts/kritik/README.md)
 - [`.kritik.yaml` reference](docs/repository-config.md)
-- [Dashboard](docs/dashboard.md): sign-in, roles, the instance
+- [Dashboard](docs/dashboard.md): the setup wizard, the instance
   configuration, the sealing key and transcript retention
 - [Metrics](docs/metrics.md)
 - [Development](docs/development.md): building, testing, evaluation and the

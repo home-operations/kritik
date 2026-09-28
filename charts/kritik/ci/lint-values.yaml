@@ -8,11 +8,14 @@ database:
     existingSecret: kritik-postgres-credentials
   runner:
     existingSecret: kritik-postgres-runner
+web:
+  url: https://kritik.example.com
+auth:
+  admin:
+    passwordSecret:
+      name: kritik-auth
 config:
   file:
-    auth:
-      admin:
-        password: { file: /var/run/secrets/kritik/auth/admin-password }
     connections:
       - name: github
         forge: github
@@ -25,6 +28,3 @@ secretMounts:
   - name: bot
     secretName: kritik-bot
     mountPath: /var/run/secrets/kritik/bot
-  - name: auth
-    secretName: kritik-auth
-    mountPath: /var/run/secrets/kritik/auth

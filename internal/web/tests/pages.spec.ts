@@ -52,7 +52,7 @@ test('account overview says whether its connection receives webhooks', async ({ 
   await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connection: { ...detail.connection, lastWebhookAt: null } }], ...g.defaultApi()]);
   await page.reload();
   await expect(panel).toContainText('none yet');
-  await expect(panel.getByRole('note')).toContainText(`GitHub App's webhook at ${detail.connection.hookPath}`);
+  await expect(panel.getByRole('note')).toContainText(`GitHub App's webhook at ${g.meta.webUrl}${detail.connection.hookPath}`);
 });
 
 test('repositories filter and repository detail', async ({ page }) => {

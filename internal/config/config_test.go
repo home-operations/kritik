@@ -90,10 +90,12 @@ func TestWebURL(t *testing.T) {
 		url     string
 		wantErr bool
 		want    string // expected WebURL after Load, defaults to url when empty and wantErr is false
+		path    string // expected WebBasePath
 	}{
 		{name: "unset", url: ""},
 		{name: "valid https", url: "https://dash.example.com"},
 		{name: "trailing slash trimmed", url: "http://dash.example.com/", want: "http://dash.example.com"},
+		{name: "under a path", url: "https://example.com/kritik/", want: "https://example.com/kritik", path: "/kritik"},
 		{name: "missing scheme", url: "dash.example.com", wantErr: true},
 		{name: "non-http scheme", url: "ftp://dash.example.com", wantErr: true},
 		{name: "missing host", url: "https:///path", wantErr: true},
@@ -118,8 +120,8 @@ func TestWebURL(t *testing.T) {
 			if want == "" {
 				want = tt.url
 			}
-			if cfg.WebURL != want {
-				t.Fatalf("WebURL = %q, want %q", cfg.WebURL, want)
+			if cfg.WebURL != want || cfg.WebBasePath() != tt.path {
+				t.Fatalf("WebURL = %q, base path %q, want %q, %q", cfg.WebURL, cfg.WebBasePath(), want, tt.path)
 			}
 			if tt.url == "" {
 				if cfg.WebURLParsed() != nil || cfg.WebEnabled(RoleAll) || !cfg.WebEnabled(RoleWeb) {

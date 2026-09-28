@@ -1,23 +1,22 @@
 kritik {{ .Chart.AppVersion }} is installed as {{ include "kritik.fullname" . }} with roles: {{ include "kritik.enabledRoles" . }}.
 
-{{ if include "kritik.hasIngest" . -}}
-Point each connection's webhook at:
-
-  https://<your host>/hooks/<connection name>
-
-with the connection's webhook secret, content type application/json, and the
-pull_request, issue_comment, pull_request_review_comment, push and installation
-events. Inside the cluster the listener is
-{{ include "kritik.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}.
+Open {{ tpl .Values.web.url . }} to sign in. The first admin is met by a setup
+wizard that creates the GitHub App, sets a model key and registers the
+repositories to review.
+{{ if include "kritik.hasIngest" . }}
+GitHub delivers each connection's webhook to {{ tpl .Values.web.url . | trimSuffix "/" }}/hooks/<connection>:
+{{- if or .Values.ingress.enabled .Values.httpRoute.enabled }} the chart's
+{{ if .Values.ingress.enabled }}Ingress{{ else }}HTTPRoute{{ end }} routes /hooks there to the webhook listener.
+{{- else }} route /hooks under
+that URL to the webhook listener, {{ include "kritik.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }},
+and the rest to the dashboard, {{ include "kritik.fullname" . }}-web.{{ .Release.Namespace }}.svc:{{ .Values.service.webPort }}.
+{{- end }}
 {{- end }}
 
 {{ if include "kritik.hasWorker" . -}}
 Runner Jobs appear in this namespace as kritik-run-*; every run is also recorded
 in the runner_runs table.
 {{- end }}
-
-Model providers, accounts and the embedder that builds the similar-code index
-are set in the dashboard's admin console.
 
 Health: /healthz and /readyz, metrics: /metrics, all on port {{ .Values.service.metricsPort }}
 of every pod ({{ include "kritik.fullname" . }}-metrics Service).

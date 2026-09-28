@@ -1,7 +1,4 @@
-{{- if not .Values.config.existingConfigMap }}
-{{- if not .Values.config.file }}
-{{- fail "config.file is required unless config.existingConfigMap names a ConfigMap with a config.yaml key" }}
-{{- end }}
+{{- if and .Values.config.file (not .Values.config.existingConfigMap) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

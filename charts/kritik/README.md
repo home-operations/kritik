@@ -12,8 +12,7 @@ Multi-tenant AI pull request reviewer for GitHub organisations, backed by Postgr
 
 kritik ships as an OCI Helm chart. It needs a Postgres with
 [VectorChord](https://github.com/tensorchord/VectorChord) and pgvector, three
-roles, a sealing key, the configuration file, and the secrets the file
-references:
+roles, a sealing key, its public URL, and a way to sign in:
 
 ```sh
 helm install kritik oci://ghcr.io/home-operations/charts/kritik \
@@ -23,12 +22,34 @@ helm install kritik oci://ghcr.io/home-operations/charts/kritik \
   --values my-values.yaml
 ```
 
-where `my-values.yaml` carries `config.file` (sign-in and any GitHub App
-that already exists), `secretMounts` for the keys and secrets the file
-references by path, and `dashboard.keySecret`. Model providers, defaults,
-accounts and their repositories are the instance configuration, set in the
-dashboard's admin console, as is the embedder that turns on the vector index
-and the similar-code context stage.
+where `my-values.yaml` sets:
+
+```yaml
+web:
+  url: https://kritik.example.com
+dashboard:
+  keySecret: { name: kritik-dashboard-key }
+auth:
+  admin:
+    passwordSecret: { name: kritik-admin }
+ingress:
+  enabled: true
+  tls: [{ hosts: [kritik.example.com], secretName: kritik-tls }]
+```
+
+`web.url` is the one public URL: the dashboard at it, and the webhook
+listener under it at `/hooks`, which the chart's Ingress or HTTPRoute
+routes. `auth` renders the `KRITIK_AUTH_*` variables: here the local admin,
+with its password from an existing Secret, which is the way into a fresh
+instance. OIDC and GitHub sign-in, with role mappings, set the same way
+(see [the configuration reference](https://github.com/home-operations/kritik/blob/main/docs/configuration.md)).
+
+The first admin to sign in is met by a setup wizard that creates the GitHub
+App, sets a model key and registers the repositories to review. Model
+providers, defaults, accounts, repositories and the embedder are the
+instance configuration, kept in Postgres and edited in the dashboard. An App
+that already exists can instead be declared in `config.file`, with its
+secrets under `secretMounts`.
 
 ### Database
 
@@ -213,9 +234,26 @@ Kubernetes: `>=1.25.0-0`
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
+| auth.admin.passwordSecret.key | string | `"password"` | Key in that Secret. |
+| auth.admin.passwordSecret.name | string | `""` | Existing Secret holding the local admin's password; the local admin exists only while one is set. |
+| auth.admin.user | string | `""` | The local admin's username; empty is `admin`. |
+| auth.github.clientId | string | `""` | Client ID of an OAuth App, or of a GitHub App, to sign in with GitHub. |
+| auth.github.clientSecretSecret.key | string | `"client-secret"` | Key in that Secret. |
+| auth.github.clientSecretSecret.name | string | `""` | Existing Secret holding the client secret. |
+| auth.github.roleMapping | string | `""` | CEL expression giving a role, or a map of accounts to roles. |
+| auth.oidc.clientId | string | `""` | OAuth client ID at the issuer. |
+| auth.oidc.clientSecretSecret.key | string | `"client-secret"` | Key in that Secret. |
+| auth.oidc.clientSecretSecret.name | string | `""` | Existing Secret holding the client secret. |
+| auth.oidc.defaultRole | string | `""` | Role when the mapping places nobody: none (the default) or member. |
+| auth.oidc.issuer | string | `""` | OIDC issuer (https); set, with a client, to sign in through it. |
+| auth.oidc.name | string | `""` | The sign-in button's label; empty is "SSO". |
+| auth.oidc.roleMapping | string | `""` | CEL expression giving a role, or a map of accounts to roles (docs/configuration.md). |
+| auth.oidc.rolesClaim | string | `""` | ID token or UserInfo claim a role mapping reads as `roles`. |
+| auth.oidc.scopes | list | `[]` | Scopes to request; empty is openid, email and profile. |
+| auth.sessionTTL | string | `""` | How long a dashboard session lasts (Go duration, 5m to 720h); empty is 12h. |
 | config.existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. |
 | config.extraEnv | list | `[]` | Extra raw env vars merged into every role's container (advanced). |
-| config.file | required unless `existingConfigMap` is set | `{}` | The configuration file, as YAML: `auth` and `connections`. Passed through verbatim, not tpl'd. See docs/dashboard.md and docs/connecting-a-forge.md. |
+| config.file | optional | `{}` | The configuration file, as YAML: `auth` and `connections`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
 | config.indexWorkers | int | `1` | Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews. |
 | config.logFormat | string | `"json"` | Log format: json or text. |
 | config.logLevel | string | `"info"` | Log level: debug, info, warn or error. |
@@ -239,18 +277,9 @@ Kubernetes: `>=1.25.0-0`
 | gateway.port | int | `8082` | Gateway port on the pods and its Service. |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
-| httpRoute.enabled | bool | `false` | Expose the webhook listener via a Gateway API HTTPRoute. |
-| httpRoute.hostnames | list | `[]` | Hostnames matched against the Host header (templated). |
+| httpRoute.enabled | bool | `false` | Expose web.url through a Gateway API HTTPRoute. |
 | httpRoute.labels | object | `{}` | HTTPRoute labels. |
-| httpRoute.matches | list | `[{"path":{"type":"PathPrefix","value":"/hooks"}}]` | Match conditions for the route. |
 | httpRoute.parentRefs | list | `[]` | Gateways (and listeners) this route attaches to. |
-| httpRoute.web.annotations | object | `{}` | HTTPRoute annotations. |
-| httpRoute.web.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
-| httpRoute.web.enabled | bool | `false` | Expose the dashboard via a Gateway API HTTPRoute. |
-| httpRoute.web.hostnames | list | `[]` | Hostnames matched against the Host header (templated). |
-| httpRoute.web.labels | object | `{}` | HTTPRoute labels. |
-| httpRoute.web.matches | list | `[{"path":{"type":"PathPrefix","value":"/"}}]` | Match conditions for the route. |
-| httpRoute.web.parentRefs | list | `[]` | Gateways (and listeners) this route attaches to. |
 | image.digest | string | `""` | Pin the image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published image's digest. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | image.repository | string | `"ghcr.io/home-operations/kritik"` | Image repository. |
@@ -258,14 +287,8 @@ Kubernetes: `>=1.25.0-0`
 | imagePullSecrets | list | `[]` | Image pull secrets for private registries. |
 | ingress.annotations | object | `{}` | Ingress annotations. |
 | ingress.className | string | `""` | IngressClass name. |
-| ingress.enabled | bool | `false` | Expose the webhook listener via an Ingress. |
-| ingress.hosts | list | `[{"host":"kritik.example.com","paths":[{"path":"/hooks","pathType":"Prefix"}]}]` | Ingress hosts and their paths. |
-| ingress.tls | list | `[]` | Ingress TLS configuration. |
-| ingress.web.annotations | object | `{}` | Ingress annotations. |
-| ingress.web.className | string | `""` | IngressClass name. |
-| ingress.web.enabled | bool | `false` | Expose the dashboard via an Ingress. |
-| ingress.web.hosts | list | `[{"host":"dash.example.com","paths":[{"path":"/","pathType":"Prefix"}]}]` | Ingress hosts and their paths. |
-| ingress.web.tls | list | `[]` | Ingress TLS configuration. |
+| ingress.enabled | bool | `false` | Expose web.url through an Ingress. |
+| ingress.tls | list | `[]` | Ingress TLS configuration, e.g. `[{hosts: [kritik.example.com], secretName: kritik-tls}]`. |
 | livenessProbe | object | `{"httpGet":{"path":"/healthz","port":"metrics"},"periodSeconds":20}` | Liveness probe, on the metrics port. |
 | monitoring.serviceMonitor.annotations | object | `{}` | ServiceMonitor annotations. |
 | monitoring.serviceMonitor.enabled | bool | `false` | Create a Prometheus Operator ServiceMonitor for every role's metrics (requires its CRDs). |
@@ -289,13 +312,13 @@ Kubernetes: `>=1.25.0-0`
 | rbac.create | bool | `true` | Create the Role and RoleBinding the worker needs: Jobs in the release namespace, their pods and logs, and the Secrets it hands them. Nothing cluster-wide. |
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"metrics"},"periodSeconds":10}` | Readiness probe, on the metrics port. A replica is ready once it has a database connection and its listeners are up. |
 | resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Pod resource requests/limits shared by every role; `roles.<role>.resources` overrides per role. |
-| roles.all.enabled | bool | `true` | Run the single-process topology: webhooks, leader duties and the worker in one Deployment. |
+| roles.all.enabled | bool | `true` | Run the single-process topology: webhooks, leader duties, the worker and the dashboard in one Deployment. |
 | roles.all.replicas | int | `1` | Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time. |
 | roles.all.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
 | roles.ingest.enabled | bool | `false` | Run webhook ingest as its own Deployment (split topology). |
 | roles.ingest.replicas | int | `2` | Replicas for the ingest Deployment. |
 | roles.ingest.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
-| roles.web.enabled | bool | `false` | Run the dashboard as its own Deployment (split topology). Requires `web.url` to be set. |
+| roles.web.enabled | bool | `false` | Run the dashboard as its own Deployment (split topology, where it is required: kritik is configured there). |
 | roles.web.replicas | int | `1` | Replicas for the web Deployment. |
 | roles.web.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
 | roles.worker.enabled | bool | `false` | Run the worker (queues, runner Jobs, leader duties) as its own Deployment (split topology). |
@@ -312,7 +335,7 @@ Kubernetes: `>=1.25.0-0`
 | service.metricsPort | int | `8081` | Metrics and probe port, served by every pod. |
 | service.port | int | `8080` | Webhook port (`POST /hooks/{connection}`), served by `all` and `ingest` pods. |
 | service.type | string | `"ClusterIP"` | Service type for the webhook listener. |
-| service.webPort | int | `8083` | Dashboard port, served by `all` (once `web.url` is set) and `web` pods. |
+| service.webPort | int | `8083` | Dashboard port, served by `all` and `web` pods. |
 | serviceAccount.annotations | object | `{}` | Annotations for the ServiceAccount. |
 | serviceAccount.automount | bool | `true` | Automount the API token. The worker needs it to create runner Jobs; a pure ingest topology could turn it off. |
 | serviceAccount.create | bool | `true` | Create the ServiceAccount the roles run as. |
@@ -322,8 +345,8 @@ Kubernetes: `>=1.25.0-0`
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
 | volumeMounts | list | `[]` | Additional volume mounts on every container. |
 | volumes | list | `[]` | Additional volumes on every Deployment. |
-| web.port | int | `8083` | Dashboard port, served by `all` (once `web.url` is set) and `web` pods. |
-| web.url | required for roles.web | `""` | Public URL the dashboard is reached at, e.g. https://kritik.example.com. Must be an absolute http(s) URL with no query or fragment. |
+| web.port | int | `8083` | Dashboard port, served by `all` and `web` pods. |
+| web.url | required | `""` | Public URL the dashboard is reached at, e.g. https://kritik.example.com; the webhook listener shares it under `/hooks`, and the GitHub Apps the dashboard creates send their webhooks there. Must be an absolute http(s) URL with no query or fragment. |
 
 ---
 
