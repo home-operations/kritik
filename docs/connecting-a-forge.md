@@ -27,7 +27,30 @@ route (`httpRoute.web`, `ingress.web`).
 
 ## GitHub
 
-### Register the App
+### Create the App from the admin console
+
+The admin console's "Create a GitHub App" registers the App for you, from
+a [manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest)
+that sets its webhook, permissions and events:
+
+1. Name the connection, and choose whether the App belongs to your own
+   GitHub account or to an organization, and whether it is private or
+   public.
+2. "Create on GitHub" takes you to GitHub, which shows the App as kritik
+   described it. Confirm it there within an hour.
+3. GitHub sends you back to kritik, which adds the App as a dashboard
+   connection serving the account it belongs to. The admin console then
+   shows the App's client secret, once: kritik does not keep it. Set it
+   and the client ID as `auth.github` to sign in with GitHub through the
+   same App.
+4. Install the App from the link the admin console shows.
+
+The App's webhook is `/hooks/<connection name>` under the dashboard's URL,
+`KRITIK_WEB_URL`, so route `/hooks` there to the webhook listener. To
+serve more accounts through a public App, add them to the connection's
+`accounts` afterwards.
+
+### Register the App by hand
 
 Register a GitHub App under the account whose repositories kritik reviews
 (a personal account's or an organization's Developer settings):
@@ -46,6 +69,9 @@ Register a GitHub App under the account whose repositories kritik reviews
     comments as issue comments, and an App subscribes to those only with
     this permission.
   - Commit statuses: read and write, for the `kritik/review` status.
+- **Organization permissions:** Members: read-only, only for signing in
+  with GitHub through this App, whose role mapping reads the
+  organizations a person belongs to.
 - **Events:** Pull request, Pull request review comment, Issue comment and
   Push. Installation events arrive without subscribing.
 - **Where it can be installed:** only on this account, unless it should

@@ -733,9 +733,38 @@ export interface Accepted {
   jobId?: number;
 }
 
+// Starts registering a GitHub App from a manifest for a new connection.
+// organization is empty for the admin's own GitHub account; name defaults
+// to "kritik-<connection>".
+export interface AppManifestRequest {
+  connection: string;
+  organization?: string;
+  name?: string;
+  public: boolean;
+}
+
+// What the browser POSTs to GitHub: manifest, as the form's manifest
+// field, to url.
+export interface AppManifestForm {
+  url: string;
+  manifest: Record<string, unknown>;
+}
+
+// One finished registration, read once: the App and where to install it,
+// with its client ID and secret for GitHub sign-in, or why it failed.
+export interface AppManifestResult {
+  connection: string;
+  slug?: string;
+  installUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  error?: string;
+}
+
 export type AuditAction =
   | 'config.update'
   | 'account.update'
+  | 'app.create'
   | 'review.rerun'
   | 'review.cancel'
   | 'repo.reindex';

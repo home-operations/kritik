@@ -80,6 +80,43 @@ type ConfigWriteResult struct {
 	Generated map[string]string `json:"generated,omitempty"`
 }
 
+// AppManifestRequest starts registering a GitHub App from a manifest for
+// a new dashboard connection (ADR-0014 §2.3).
+type AppManifestRequest struct {
+	// Connection names the connection the App will serve, and so its hook
+	// path.
+	Connection string `json:"connection"`
+	// Organization registers the App under that organization, "" under
+	// the admin's own GitHub account.
+	Organization string `json:"organization,omitempty"`
+	// Name is the App's name on GitHub, "kritik-<connection>" when empty;
+	// the admin may still change it there.
+	Name string `json:"name,omitempty"`
+	// Public lets any account install the App; only the accounts its
+	// connection lists are served.
+	Public bool `json:"public"`
+}
+
+// AppManifestForm is what the browser POSTs to GitHub: Manifest, as the
+// form's manifest field, to URL, which carries the flow's state.
+type AppManifestForm struct {
+	URL      string          `json:"url"`
+	Manifest json.RawMessage `json:"manifest"`
+}
+
+// AppManifestResult is one finished manifest flow, read once: the App
+// registered for Connection and where to install it, with its client ID
+// and secret for signing in with GitHub through it, which kritik does not
+// keep; or why the flow failed.
+type AppManifestResult struct {
+	Connection   string `json:"connection"`
+	Slug         string `json:"slug,omitempty"`
+	InstallURL   string `json:"installUrl,omitempty"`
+	ClientID     string `json:"clientId,omitempty"`
+	ClientSecret string `json:"clientSecret,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
 // Accepted is an action queued; JobID is the queued job, when there is
 // one.
 type Accepted struct {
@@ -93,6 +130,7 @@ type AuditAction string
 const (
 	AuditConfigUpdate  AuditAction = "config.update"
 	AuditAccountUpdate AuditAction = "account.update"
+	AuditAppCreate     AuditAction = "app.create"
 	AuditReviewRerun   AuditAction = "review.rerun"
 	AuditReviewCancel  AuditAction = "review.cancel"
 	AuditRepoReindex   AuditAction = "repo.reindex"
@@ -101,7 +139,7 @@ const (
 // Valid reports whether a is an audited action.
 func (a AuditAction) Valid() bool {
 	switch a {
-	case AuditConfigUpdate, AuditAccountUpdate, AuditReviewRerun, AuditReviewCancel, AuditRepoReindex:
+	case AuditConfigUpdate, AuditAccountUpdate, AuditAppCreate, AuditReviewRerun, AuditReviewCancel, AuditRepoReindex:
 		return true
 	}
 	return false

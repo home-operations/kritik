@@ -164,12 +164,12 @@ func (s *Store) SweepModelCalls(ctx context.Context, olderThan time.Duration) (i
 	return tag.RowsAffected(), nil
 }
 
-// SweepSessions deletes the dashboard sessions and in-flight logins that
-// expired by now and returns how many it deleted.
+// SweepSessions deletes the dashboard sessions, in-flight logins and App
+// registrations that expired by now and returns how many it deleted.
 func (s *Store) SweepSessions(ctx context.Context, now time.Time) (int64, error) {
 	var n int64
 	err := pgx.BeginFunc(ctx, s.app, func(tx pgx.Tx) error {
-		for _, table := range []string{"sessions", "login_states"} {
+		for _, table := range []string{"sessions", "login_states", "app_manifests"} {
 			tag, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE expires_at <= $1`, now)
 			if err != nil {
 				return err

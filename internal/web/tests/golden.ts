@@ -35,6 +35,8 @@ export const meta = golden<T.Meta>('meta');
 export const accountConfig = golden<T.AccountConfig>('account_config');
 export const configWriteResult = golden<T.ConfigWriteResult>('config_write_result');
 export const instanceConfig = golden<T.InstanceConfig>('instance_config');
+export const appManifestForm = golden<T.AppManifestForm>('app_manifest_form');
+export const appManifestResult = golden<T.AppManifestResult>('app_manifest_result');
 export const auditEvent = golden<T.AuditEvent>('audit_event');
 export const accepted = golden<T.Accepted>('accepted');
 

@@ -158,7 +158,10 @@ func newManageEnv(t *testing.T) *manageEnv {
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
 	}
-	e.srv = New(Config{Store: st, Current: e.src.Current, Auth: h, Keyring: kr, Actions: e.actions, WebURL: webURL, Logger: logger})
+	e.srv = New(Config{
+		Store: st, Current: e.src.Current, Auth: h, Keyring: kr, Actions: e.actions, WebURL: webURL, Logger: logger,
+		GitHubAPI: fakeGitHub(t) + "/api/v3",
+	})
 	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(e.http.Close)
 	e.signIn("operator", "mgr-op", store.SessionGrant{Role: store.RoleAdmin})

@@ -18,8 +18,15 @@ import (
 // API: env and file would read the server's own environment and disk, and
 // sealed would let a client replay ciphertext lifted from elsewhere.
 
-// sealedKey is SecretRef.Sealed's spec key.
-const sealedKey = "sealed"
+// sealedKey is SecretRef.Sealed's spec key, and valueKey the write form
+// that sets a secret.
+const (
+	sealedKey = "sealed"
+	valueKey  = "value"
+)
+
+// nameKey names a connection or an account entry in the spec.
+const nameKey = "name"
 
 // secretPos is one SecretRef position in a spec.
 type secretPos struct {
@@ -257,7 +264,7 @@ func sealRef(v any, pos secretPos, prev map[string]any) (secretInput, error) {
 	}
 	for form, x := range m {
 		switch form {
-		case "value":
+		case valueKey:
 			s, ok := x.(string)
 			if !ok || s == "" {
 				return in, &specError{path: pos.where, msg: "value must be a non-empty string"}

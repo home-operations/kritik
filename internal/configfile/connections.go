@@ -62,6 +62,10 @@ func validateConnections(conns []Connection) error {
 	return nil
 }
 
+// ValidConnectionName reports whether name may name a connection: it is
+// the connection's hook path segment.
+func ValidConnectionName(name string) bool { return nameRe.MatchString(name) }
+
 // clash says which of held, the names and account keys the spec's
 // connections hold, keeps the file's connection in from running, or ""
 // when none does.

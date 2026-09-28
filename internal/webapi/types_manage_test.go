@@ -34,7 +34,16 @@ func init() {
 		"config_write_result": ConfigWriteResult{
 			Revision: 4, Generated: map[string]string{"connections[alpha-bot].app.webhookSecret": "00ff"},
 		},
-		"accepted": Accepted{JobID: 42},
+		"accepted":             Accepted{JobID: 42},
+		"app_manifest_request": AppManifestRequest{Connection: "beta-bot", Organization: "beta", Name: "kritik-beta", Public: true},
+		"app_manifest_form": AppManifestForm{
+			URL:      "https://github.com/organizations/beta/settings/apps/new?state=s1",
+			Manifest: json.RawMessage(`{"name":"kritik-beta","url":"https://kritik.example"}`),
+		},
+		"app_manifest_result": AppManifestResult{
+			Connection: "beta-bot", Slug: "kritik-beta", InstallURL: "https://github.com/apps/kritik-beta/installations/new",
+			ClientID: "Iv1.beta", ClientSecret: "cs-1",
+		},
 		"audit_event": AuditEvent{
 			ID: "7", At: t0, Actor: &goldenUser, Account: "github/alpha", Action: AuditAccountUpdate, Target: "github/alpha",
 			Detail: json.RawMessage(`{"revision":2,"secretsChanged":["accounts[github/alpha].providers.own.apiKey"]}`),

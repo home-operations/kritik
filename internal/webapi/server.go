@@ -46,23 +46,27 @@ type Config struct {
 	// Env is this process's environment as the configuration read it,
 	// shown to operators; secrets show only whether they are set.
 	Env []config.EnvVar
+	// GitHubAPI is the GitHub API the App manifest flow converts its code
+	// at, "" for api.github.com; tests point it at a server of their own.
+	GitHubAPI string
 }
 
 // Server serves the dashboard.
 type Server struct {
-	store    *store.Store
-	current  *configfile.Current
-	auth     *auth.Handler
-	keyring  *sealbox.Keyring
-	actions  Actions
-	version  string
-	webURL   *url.URL
-	ui       fs.FS
-	basePath string
-	logger   *slog.Logger
-	now      func() time.Time
-	hub      *hub
-	env      []config.EnvVar
+	store     *store.Store
+	current   *configfile.Current
+	auth      *auth.Handler
+	keyring   *sealbox.Keyring
+	actions   Actions
+	version   string
+	webURL    *url.URL
+	ui        fs.FS
+	basePath  string
+	logger    *slog.Logger
+	now       func() time.Time
+	hub       *hub
+	env       []config.EnvVar
+	githubAPI string
 }
 
 // New builds a Server from cfg.
@@ -80,7 +84,7 @@ func New(cfg Config) *Server {
 	return &Server{
 		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, keyring: cfg.Keyring, actions: cfg.Actions, version: cfg.Version,
 		webURL: cfg.WebURL, ui: cfg.UI, basePath: base,
-		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger), env: cfg.Env,
+		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger), env: cfg.Env, githubAPI: cfg.GitHubAPI,
 	}
 }
 
@@ -142,6 +146,10 @@ func (s *Server) routes() http.Handler {
 	s.auth.Register(signIn)
 	signIn.HandleFunc("/", s.notFound)
 
+	app := http.NewServeMux()
+	s.registerAppPages(app)
+	app.HandleFunc("/", s.notFound)
+
 	ui := s.uiHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -154,6 +162,9 @@ func (s *Server) routes() http.Handler {
 		case strings.HasPrefix(r.URL.Path, "/auth/"):
 			w.Header().Set("Cache-Control", "no-store")
 			signIn.ServeHTTP(w, r)
+		case strings.HasPrefix(r.URL.Path, "/app/"):
+			w.Header().Set("Cache-Control", "no-store")
+			app.ServeHTTP(w, r)
 		default:
 			ui.ServeHTTP(w, r)
 		}
@@ -166,6 +177,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/events", s.hub.serve)
 	s.registerReads(mux)
 	s.registerManage(mux)
+	s.registerApp(mux)
 	s.registerActions(mux)
 	s.registerAudit(mux)
 }

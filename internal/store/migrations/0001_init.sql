@@ -479,6 +479,25 @@ CREATE TABLE login_states (
 );
 CREATE INDEX login_states_expires_at_idx ON login_states (expires_at);
 
+-- app_manifests holds one GitHub App manifest flow (ADR-0012, ADR-0014
+-- §2.3), from the admin's form to their reading its result, keyed by the
+-- SHA-256 of its state parameter. It is bound to the session that started
+-- it and goes with it. The callback claims it once, then records the App
+-- it registered, with the App's client secret sealed, or why it failed.
+CREATE TABLE app_manifests (
+    state_hash    bytea       PRIMARY KEY,
+    session_hash  bytea       NOT NULL REFERENCES sessions (token_hash) ON DELETE CASCADE,
+    connection    text        NOT NULL,
+    expires_at    timestamptz NOT NULL,
+    claimed_at    timestamptz,
+    finished_at   timestamptz,
+    app_slug      text        NOT NULL DEFAULT '',
+    client_id     text        NOT NULL DEFAULT '',
+    client_secret text        NOT NULL DEFAULT '',
+    error         text        NOT NULL DEFAULT ''
+);
+CREATE INDEX app_manifests_session_hash_idx ON app_manifests (session_hash);
+
 -- audit_events records dashboard-driven actions across every account, so an
 -- instance admin can read it without an account context; no RLS.
 CREATE TABLE audit_events (
