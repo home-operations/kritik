@@ -166,7 +166,6 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/events", s.hub.serve)
 	s.registerReads(mux)
 	s.registerManage(mux)
-	s.registerMembers(mux)
 	s.registerActions(mux)
 	s.registerAudit(mux)
 }

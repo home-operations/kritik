@@ -1,12 +1,11 @@
 # Dashboard
 
-The web role serves a dashboard: sign in with GitHub or any OIDC provider,
-and see the tenants you belong to, their installations and
-repositories, live review and conversation state as it runs, member and
-invite management, and a per-tenant and (for operators) instance-wide audit
-log. A tenant admin can also queue a re-run of a specific pull request,
-cancel a review in progress, or reindex a repository's embeddings, from the
-dashboard rather than the forge.
+The web role serves a dashboard: sign in with a local admin password,
+GitHub or an OIDC provider, and see the tenants you can read, their
+installations and repositories, live review and conversation state as it
+runs, and, for an admin, the audit log. An admin can also queue a re-run
+of a specific pull request, cancel a review in progress, or reindex a
+repository's embeddings, from the dashboard rather than the forge.
 
 Enable it with role `web` (a dedicated listener) or `all` (which also serves
 it once `KRITIK_WEB_URL` is set, alongside the other roles); `KRITIK_WEB_ADDR`
@@ -19,101 +18,138 @@ port (8083 by default); `ingress.web` and `httpRoute.web` are the Ingress and
 Gateway API HTTPRoute for it, and `dashboard.keySecret` names the Secret
 holding the sealing key (below).
 
-## `web:` configuration reference
+## Signing in
 
-The `web:` block, a sibling of `tenants:` at the file's root, controls who
-may sign in and who of them may operate the instance:
+The `auth:` block, a sibling of `tenants:` at the file's root, sets how
+people sign in and what each may do. Every key in it also has a
+`KRITIK_AUTH_*` environment variable, and a variable wins over the file, so
+a deployment can configure sign-in from the environment alone. A secret's
+variable carries the value itself, or, with a `_FILE` suffix, the path of a
+file holding it. A `KRITIK_AUTH_*` variable that names no key is refused at
+startup rather than ignored.
 
-- `signIn` — one entry per identity provider, each with a `name` (used in
-  the callback URL and in `operators`), a `type` of `oidc` or `github`, a
-  `clientId`, and a `clientSecret` (a secret
-  reference: `env`, `file` or `sealed`). Every provider must allow the
-  callback URL
-  `<KRITIK_WEB_URL>/auth/callback/<name>`. For example:
+| Key                   | Environment variable                       |
+| --------------------- | ------------------------------------------ |
+| `sessionTTL`          | `KRITIK_AUTH_SESSION_TTL`                  |
+| `admin.user`          | `KRITIK_AUTH_ADMIN_USER`                   |
+| `admin.password`      | `KRITIK_AUTH_ADMIN_PASSWORD[_FILE]`        |
+| `oidc.name`           | `KRITIK_AUTH_OIDC_NAME`                    |
+| `oidc.issuer`         | `KRITIK_AUTH_OIDC_ISSUER`                  |
+| `oidc.clientId`       | `KRITIK_AUTH_OIDC_CLIENT_ID`               |
+| `oidc.clientSecret`   | `KRITIK_AUTH_OIDC_CLIENT_SECRET[_FILE]`    |
+| `oidc.scopes`         | `KRITIK_AUTH_OIDC_SCOPES`, comma-separated |
+| `oidc.rolesClaim`     | `KRITIK_AUTH_OIDC_ROLES_CLAIM`             |
+| `oidc.roleMapping`    | `KRITIK_AUTH_OIDC_ROLE_MAPPING`            |
+| `oidc.defaultRole`    | `KRITIK_AUTH_OIDC_DEFAULT_ROLE`            |
+| `github.clientId`     | `KRITIK_AUTH_GITHUB_CLIENT_ID`             |
+| `github.clientSecret` | `KRITIK_AUTH_GITHUB_CLIENT_SECRET[_FILE]`  |
+| `github.roleMapping`  | `KRITIK_AUTH_GITHUB_ROLE_MAPPING`          |
 
-  ```yaml
-  web:
-    signIn:
-      - name: sso
-        type: oidc
-        issuer: https://idp.example.com
-        clientId: kritik-dashboard
-        clientSecret: { env: OIDC_CLIENT_SECRET }
-        scopes: [openid, email, profile]
-      - name: github
-        type: github
-        clientId: Iv1.abc123
-        clientSecret: { env: GITHUB_CLIENT_SECRET }
-  ```
+```yaml
+auth:
+  admin:
+    password: { env: ADMIN_PASSWORD }
+  oidc:
+    name: Company SSO
+    issuer: https://idp.example.com
+    clientId: kritik-dashboard
+    clientSecret: { env: OIDC_CLIENT_SECRET }
+    scopes: [openid, email, profile]
+    rolesClaim: groups
+    roleMapping: '"kritik-admins" in roles ? "admin" : ("kritik-users" in roles ? "member" : "")'
+  github:
+    clientId: Iv1.abc123
+    clientSecret: { env: GITHUB_CLIENT_SECRET }
+    roleMapping: 'login == "user-1" ? "admin" : ""'
+```
 
-  `oidc` takes `issuer` (an `https` URL); `github` signs in on github.com
-  and takes no `issuer`.
+- `admin` is the local admin. It signs in on the sign-in page with a
+  username, `admin` unless `user` sets another, and `password`. It exists
+  only while a password is set: it is the way into a fresh instance, and a
+  way in when every provider is down. Ten failed attempts from one address
+  within 15 minutes lock that address out until the window passes.
+- `oidc` signs in through any OpenID Connect issuer, an `https` URL. The
+  sign-in page labels it `name`, or "SSO" when unset.
+- `github` signs in on github.com with an OAuth App's client, or a GitHub
+  App's own.
+- `sessionTTL` is how long a dashboard session lasts, between 5 minutes and
+  30 days. It defaults to 12 hours.
 
-- `operators` — the identities allowed to change configuration, each
-  `"<signIn name>:<login or subject>"` (the forge login or OIDC subject) or
-  `"email:<address>"`, matched against the address a sign-in reports.
-  `email` is reserved and cannot name a `signIn`. An operator creates and
-  deletes dashboard tenants from the operator console and is the only one
-  who may set the operator-only fields below. The console also lists the
-  instance settings read-only, each with its source: the web process's
-  environment, the configuration file, or kritik's default. A secret shows
-  only whether it is set, and a URL's credentials are hidden.
-- `sessionTTL` — how long a dashboard session lasts, between 5 minutes and
-  30 days; defaults to 12 hours.
-- `dashboardProviderHosts` — the hosts a dashboard-managed tenant's own
-  provider keys may name in `baseUrl`. The worker calls a provider from
-  inside the cluster with its key, so this bounds where a tenant admin can
-  aim it; empty allows only each provider type's own endpoint (no
-  `baseUrl`). A `baseUrl` must be `https` on port 443. No wildcards.
+A provider must allow the callback URL `<KRITIK_WEB_URL>/auth/callback/oidc`
+or `<KRITIK_WEB_URL>/auth/callback/github`. The dashboard refuses to start
+with no way to sign in. The configuration is refused when nothing could
+make an admin: set an admin password, or a `roleMapping` on a provider.
 
 ## Roles
 
-Three roles share the same `web.signIn` and `web.operators`:
+There are two roles:
 
-- **Operator** — an identity in `web.operators`. The only one who can edit
-  the configuration file, the only way a dashboard tenant is created, and
-  the only one who may set a dashboard tenant's `runner` and `limits`, or
-  its `models` (on the operator's providers), `forks`, `mode`, `agent`,
-  `incremental` or `allow` at the tenant or on any of its
-  `repositories[]`; a tenant admin's write that touches any of those is
-  rejected. The rule is the policy table in
-  `internal/configfile/policy.go`: the tenant configuration read serves it
-  with what the caller may change there, and the form disables the rest. Membership is checked per source (the forge, refreshed
-  at sign-in, and accepted invites), and a principal who qualifies through
-  more than one gets the highest of the roles it grants.
-- **Tenant admin** — can edit a dashboard-managed tenant's configuration,
-  installations, repositories and provider keys (other than the
-  operator-only fields above), set its review and fallback models to one
-  on its own provider keys, invite and remove members, and queue a re-run, cancel or
-  reindex; every one of those writes is audit-logged in the same
-  transaction as the change it makes. A secret an admin submits (an App's
-  private key or client ID) is bound to that installation's forge and
-  accounts: change either and the secret must be re-entered, since it no
-  longer acts for the same accounts. The form never keeps a renamed
-  installation's secrets. In the advanced JSON editor, as through the API,
-  `{"keep": true}` keeps the secret stored under the name the JSON gives:
-  renaming an installation there does not carry its secrets along (the
-  keep is refused, or takes the secret of a stored installation that
-  already had the new name, when its forge and accounts match), so
-  enter them again when renaming in JSON.
-- **Tenant member** — read access to their tenant's own reviews,
-  conversations and transcripts; no write access.
+- **Admin** manages the instance. An admin creates, edits and deletes
+  dashboard tenants with their installations, repositories and provider
+  keys, queues re-runs, cancels and reindexes, and reads every tenant and
+  the audit log. The admin console also lists the instance settings
+  read-only, each with its source: the environment, the configuration
+  file, or kritik's default. A secret shows only whether it is set, and a
+  URL's credentials are hidden. Every write is audit-logged in the same
+  transaction as the change it makes.
+- **Member** reads reviews, conversations and transcripts, with no write
+  access. A member reads every tenant, or only the tenants serving the
+  forge accounts their sign-in placed them on.
 
-Re-run, cancel and reindex all respond `202 Accepted` (with a job ID for
-re-run and reindex) and queue the work rather than running it inline;
-re-running a pull request with no known head, or cancelling a review that
-is not running, is a `409 Conflict`. Inviting an address that is already a
-member of the tenant is refused, `409 already_member`, instead of creating
-a duplicate, and claiming a slug another tenant already holds, file- or
-dashboard-managed, is `409 slug_taken`. Deleting a dashboard tenant removes
-its memberships and invites along with it, but not its history: its
-reviews, findings, usage and transcripts stay keyed on its slug. Creating a
-tenant under a slug any tenant held before is therefore also `409
-slug_taken`, unless the operator creates it with `adopt` (offered in the
-operator console after that refusal): the new tenant starts with none of
-the old one's members or invites but keeps its review history, visible to
-the new tenant's members. An installation name stays with the tenant that
-first held it, even once that tenant is gone.
+A session holds the role its sign-in gave it. Editing a provider's role
+mapping, or rotating the admin password, ends the sessions it granted, so
+the next request signs in again under the new rules.
+
+### Role mappings
+
+A `roleMapping` is a [CEL](https://cel.dev) expression evaluated at
+sign-in. It yields a role for every tenant, `"admin"`, `"member"` or `""`
+for none. Or it yields a map from forge account to `"member"`, which reads
+only the tenants serving those accounts, such as
+`{"github/org-1": "member"}`; `"*"` as a key stands for every account. CEL
+gives both branches of a conditional one type, so an expression that
+yields a role on one branch and a map on the other wraps one in `dyn()`.
+
+An OIDC mapping sees `claims`, the ID token's claims merged with the
+UserInfo response, and `roles`, the values of the claim `rolesClaim`
+names, read from a list, a map's keys, or a single string. A GitHub
+mapping sees `login`, `email`, `orgs`, the organizations the user is an
+active member of, and `teams`, each as `"<org>/<team>"`.
+
+When the mapping places nobody:
+
+- An OIDC sign-in is refused, unless `defaultRole: member` lets it read
+  every tenant. `defaultRole` defaults to `none`, so a wrong mapping fails
+  closed.
+- A GitHub sign-in reads the tenants serving the user's own account, or an
+  organization they are an active member of, and is refused when there are
+  none. Accounts a mapping names are added to those.
+
+A mapping that fails to evaluate refuses the sign-in.
+
+## Tenant writes
+
+A secret an admin submits, such as an App's private key or client ID, is
+bound to that installation's forge and accounts: change either and the
+secret must be re-entered, since it no longer acts for the same accounts.
+The form never keeps a renamed installation's secrets. In the advanced
+JSON editor, as through the API, `{"keep": true}` keeps the secret stored
+under the name the JSON gives: renaming an installation there does not
+carry its secrets along. The keep is refused, or takes the secret of a
+stored installation that already had the new name when its forge and
+accounts match, so enter them again when renaming in JSON.
+
+Re-run, cancel and reindex all respond `202 Accepted`, with a job ID for
+re-run and reindex, and queue the work rather than running it inline.
+Re-running a pull request with no known head, or cancelling a review that
+is not running, is a `409 Conflict`. Claiming a slug another tenant already
+holds, file- or dashboard-managed, is `409 slug_taken`. Deleting a
+dashboard tenant does not delete its history: its reviews, findings, usage
+and transcripts stay keyed on its slug. Creating a tenant under a slug any
+tenant held before is therefore also `409 slug_taken`, unless the admin
+creates it with `adopt`, offered in the admin console after that refusal.
+The new tenant keeps the old one's review history. An installation name
+stays with the tenant that first held it, even once that tenant is gone.
 
 ## Provider keys
 
@@ -121,10 +157,8 @@ A tenant can bring its own model keys: `providers` in its spec, the same
 shape as the file's top-level `providers`, edited in the dashboard's
 "Provider keys" section. A model named `<key name>/<model>` then runs on
 that key, and the tenant pays for it; a key's name may not be one the
-file's providers already use. A tenant admin may set the tenant's review
-and fallback models, and a repository entry's, to a model on one of these
-keys or clear them; a model on the operator's providers stays the
-operator's to set. The keys are sealed at rest like installation secrets
+file's providers already use. The tenant's review and fallback models,
+and a repository entry's, may name a model on one of these keys. The keys are sealed at rest like installation secrets
 and never shown again. A saved key is kept only while its name, type and
 endpoint stay the same, so a key cannot be sent anywhere it was not
 entered for. Tenant limits still apply to runs on a tenant's own key.
@@ -158,15 +192,15 @@ visible to every member of the tenant it belongs to, not only admins.
   gauge (labelled `merge` or `apply`) until a later attempt succeeds.
 - A file tenant whose slug or installation name a dashboard tenant already
   holds is left out of the running configuration, at boot or on reload,
-  while every other tenant runs: the operator console lists it with the
+  while every other tenant runs: the admin console lists it with the
   reason and `kritik_config_error{stage="merge"}` stays at 1. Rename either
   side, or delete the dashboard tenant, to bring it back.
 - A secret referenced by `file:` is only re-read when the configuration
   file itself changes, not on the referenced file's own schedule: rotate
   the file, then touch or reapply the configuration to pick it up.
-- An `email:` operator, or an email invite, is only as trustworthy as the
-  forge or IdP's own email verification — kritik does not verify addresses
-  itself, it trusts what the sign-in reports.
+- A role mapping is only as trustworthy as what it reads. Map on groups
+  or roles the IdP controls, not on an email or name a user can set on
+  their own profile.
 - The web role only ever holds the application database DSN, never the
   owner DSN a migration or leader election needs, and refuses to start if
   it would.

@@ -34,8 +34,6 @@ export const liveEvent = golden<T.LiveEvent>('event');
 export const meta = golden<T.Meta>('meta');
 export const tenantConfig = golden<T.TenantConfig>('tenant_config');
 export const tenantWriteResult = golden<T.TenantWriteResult>('tenant_write_result');
-export const members = golden<T.Members>('members');
-export const memberRemoved = golden<T.MemberRemoved>('member_removed');
 export const auditEvent = golden<T.AuditEvent>('audit_event');
 export const accepted = golden<T.Accepted>('accepted');
 

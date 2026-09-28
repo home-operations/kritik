@@ -24,7 +24,8 @@ export interface Me {
   tenants: TenantMembership[];
 }
 
-export type SignInProviderType = 'oidc' | 'github';
+// local is the admin's username and password form, posted to /auth/local.
+export type SignInProviderType = 'local' | 'oidc' | 'github';
 
 export interface SignInProvider {
   name: string;
@@ -225,7 +226,7 @@ export interface RepoSettings {
 
 export type ConfigSource = 'default' | 'env' | 'file' | 'dashboard' | 'repository';
 
-// One instance-wide setting, read-only in the operator console: a secret
+// One instance-wide setting, read-only in the admin console: a secret
 // shows only whether it is set.
 export interface InstanceSetting {
   section: string;
@@ -625,28 +626,23 @@ export interface LiveEvent {
   reviewId: string | null;
 }
 
-// The management API: dashboard tenants, members and invites, actions and
-// the audit log. ErrorBody.code may also be one of these.
+// The management API: dashboard tenants, actions and the audit log.
+// ErrorBody.code may also be one of these.
 export type ManagementErrorCode =
   | 'forbidden'
   | 'invalid_spec'
-  | 'operator_only'
   | 'revision_conflict'
   | 'config_blocked'
   | 'slug_taken'
   | 'file_managed'
   | 'management_disabled'
-  | 'invite_exists'
-  | 'not_invite_member'
-  | 'last_admin'
   | 'no_head'
   | 'not_cancelable'
   | 'actions_disabled'
   | 'already_queued'
-  | 'reenter_secret'
-  | 'already_member';
+  | 'reenter_secret';
 
-// details of an invalid_spec, operator_only or slug_taken error.
+// details of an invalid_spec or slug_taken error.
 export interface PathDetails {
   path: string;
 }
@@ -684,16 +680,12 @@ export type RepoRule =
   | 'atMost'
   | 'replace';
 
-// One setting of the policy table: where the operator may write it,
-// whether a tenant admin may too, what a repository's .kritik.yaml may do
-// with it, and whether the caller may change it on this tenant.
+// One setting of the policy table: where an admin may write it, what a
+// repository's .kritik.yaml may do with it, and whether the caller may
+// change it on this tenant.
 export interface FieldPolicy {
   key: string;
   scopes: ConfigScope[];
-  tenantAdmin: boolean;
-  // A tenant admin may write it too, but only to a model on one of the
-  // tenant's own provider keys, or to nothing.
-  ownProviders?: boolean;
   repository?: RepoRule;
   editable: boolean;
 }
@@ -721,8 +713,7 @@ export interface TenantConfig {
 export interface CreateTenantRequest {
   slug: string;
   spec: Record<string, unknown>;
-  // Re-use a slug a tenant held before: its members and invites are
-  // removed, its review history is kept.
+  // Re-use a slug a tenant held before, keeping its review history.
   adopt?: boolean;
 }
 
@@ -739,47 +730,6 @@ export interface TenantWriteResult {
   generated?: Record<string, string>;
 }
 
-export type MembershipSource = 'forge' | 'invite';
-
-export interface MemberSource {
-  source: MembershipSource;
-  role: TenantRole;
-}
-
-export interface Member {
-  account: Account;
-  role: TenantRole;
-  sources: MemberSource[];
-}
-
-export interface Invite {
-  id: string;
-  email: string;
-  role: TenantRole;
-  createdBy: Account | null;
-  expiresAt: string;
-}
-
-export interface Members {
-  members: Member[];
-  // null unless the viewer is an admin.
-  invites: Invite[] | null;
-}
-
-export interface CreateInviteRequest {
-  email: string;
-  role: TenantRole;
-  ttlHours?: number;
-}
-
-export interface UpdateMemberRequest {
-  role: TenantRole;
-}
-
-export interface MemberRemoved {
-  note: string;
-}
-
 export interface Accepted {
   jobId?: number;
 }
@@ -789,10 +739,6 @@ export type AuditAction =
   | 'tenant.update'
   | 'tenant.delete'
   | 'tenant.adopt'
-  | 'invite.create'
-  | 'invite.delete'
-  | 'member.update'
-  | 'member.remove'
   | 'review.rerun'
   | 'review.cancel'
   | 'repo.reindex';

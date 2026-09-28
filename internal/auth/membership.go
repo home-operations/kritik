@@ -2,126 +2,158 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/rolemap"
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// Role is what a membership lets an account do on a tenant.
+// Role is what a session lets its account do.
 type Role = store.Role
 
-// Membership roles.
+// Session roles.
 const (
 	RoleAdmin  = store.RoleAdmin
 	RoleMember = store.RoleMember
 )
 
-// Grant is a role on one tenant.
-type Grant = store.Grant
+// Membership answers, with the signed-in user's own token, whether the
+// user is an active member of a forge organization.
+type Membership func(ctx context.Context, org string) (bool, error)
 
-// Membership answers, with the signed-in user's own token, what role the
-// user holds in a forge organization: RoleAdmin, RoleMember, or "" when the
-// user is not an active member.
-type Membership func(ctx context.Context, org string) (Role, error)
+// Errors deciding a grant, each a refused sign-in.
+var (
+	// ErrNoGrant is a sign-in that places the person nowhere: neither the
+	// role mapping nor the forge gives them any access.
+	ErrNoGrant = errors.New("auth: the sign-in grants no access")
+	// ErrRoleMapping is a role mapping that failed to evaluate.
+	ErrRoleMapping = errors.New("auth: role mapping")
+)
 
-// Resolve derives the tenants a forge sign-in grants: for every account a
-// tenant installation on the same forge as signIn serves, the user is admin
-// when the account is their own, otherwise whatever role m reports for that
-// account as an organization. A tenant gets the highest role among its
-// matching installations' accounts. An OIDC sign-in matches no installation
-// and resolves nothing.
-func Resolve(ctx context.Context, file *configfile.File, signIn configfile.SignIn, id Identity, m Membership) ([]Grant, error) {
-	checked := map[string]Role{}
-	var grants []Grant
+// grant decides what a sign-in allows (ADR-0014 §2.5): the sign-in's role
+// mapping, evaluated over facts, and for a forge the served accounts the
+// person belongs to; where both speak, the higher role wins. The grant's
+// key binds the session to the configuration that decided it.
+func grant(ctx context.Context, file *configfile.File, s *configfile.SignIn, id Identity, facts Facts) (store.SessionGrant, error) {
+	var mapped rolemap.Result
+	if prg := s.Mapping(); prg != nil {
+		vars, err := facts.MappingVars(ctx)
+		if err != nil {
+			return store.SessionGrant{}, err
+		}
+		if mapped, err = prg.Eval(vars); err != nil {
+			return store.SessionGrant{}, fmt.Errorf("%w: %w", ErrRoleMapping, err)
+		}
+	}
+	g := store.SessionGrant{Role: RoleMember}
+	switch {
+	case mapped.Role == rolemap.RoleAdmin:
+		g.Role = RoleAdmin
+	case mapped.Role == rolemap.RoleMember || mapped.Accounts[rolemap.AllAccounts]:
+		g.AllAccounts = true
+	default:
+		accounts := map[string]bool{}
+		for a := range mapped.Accounts {
+			accounts[a] = true
+		}
+		if facts.Membership != nil {
+			forge, err := forgeAccounts(ctx, file, configfile.Forge(s.Type()), id.Login, facts.Membership)
+			if err != nil {
+				return store.SessionGrant{}, err
+			}
+			for _, a := range forge {
+				accounts[a] = true
+			}
+		}
+		for a := range accounts {
+			g.Accounts = append(g.Accounts, a)
+		}
+		slices.Sort(g.Accounts)
+		switch {
+		case len(g.Accounts) > 0:
+		case s.Type() == configfile.SignInOIDC && s.MembersByDefault():
+			g.AllAccounts = true
+		default:
+			return store.SessionGrant{}, ErrNoGrant
+		}
+	}
+	g.Key, _ = GrantKey(file.Auth, string(s.Type()))
+	return g, nil
+}
+
+// forgeAccounts lists the accounts the file's installations on forge serve
+// that the person with login belongs to: their own login, and each
+// organization m reports them an active member of, as account keys.
+func forgeAccounts(ctx context.Context, file *configfile.File, forge configfile.Forge, login string, m Membership) ([]string, error) {
+	checked := map[string]bool{}
+	var out []string
 	for ti := range file.Tenants {
-		t := &file.Tenants[ti]
-		var role Role
-		for _, in := range t.Installations {
-			if string(in.Forge) != string(signIn.Type) {
+		for _, in := range file.Tenants[ti].Installations {
+			if in.Forge != forge {
 				continue
 			}
 			for _, account := range in.Accounts {
-				r, err := accountRole(ctx, id.Login, account, m, checked)
-				if err != nil {
-					return nil, fmt.Errorf("auth: tenant %s: %w", t.Slug, err)
+				key := AccountKey(forge, account)
+				if account == "" || checked[key] {
+					continue
 				}
-				role = maxRole(role, r)
+				checked[key] = true
+				ok := strings.EqualFold(login, account)
+				if !ok {
+					var err error
+					if ok, err = m(ctx, account); err != nil {
+						return nil, err
+					}
+				}
+				if ok {
+					out = append(out, key)
+				}
 			}
 		}
-		if role != "" {
-			grants = append(grants, Grant{TenantID: t.ID(), Role: role})
-		}
 	}
-	return grants, nil
+	return out, nil
 }
 
-// accountRole is the user's role on one forge account, asking m about each
-// organization once per Resolve.
-func accountRole(ctx context.Context, login, account string, m Membership, checked map[string]Role) (Role, error) {
-	if account == "" {
-		return "", nil
-	}
-	if strings.EqualFold(login, account) {
-		return RoleAdmin, nil
-	}
-	if m == nil {
-		return "", nil
-	}
-	key := strings.ToLower(account)
-	if r, ok := checked[key]; ok {
-		return r, nil
-	}
-	r, err := m(ctx, account)
-	if err != nil {
-		return "", err
-	}
-	if !r.Valid() {
-		r = ""
-	}
-	checked[key] = r
-	return r, nil
+// AccountKey is how a grant names a forge account: "<forge>/<account>",
+// lowercased, as a role mapping's map keys spell it.
+func AccountKey(forge configfile.Forge, account string) string {
+	return strings.ToLower(string(forge) + "/" + account)
 }
 
-func maxRole(a, b Role) Role {
-	if a == RoleAdmin || b == RoleAdmin {
-		return RoleAdmin
-	}
-	if a == RoleMember || b == RoleMember {
-		return RoleMember
-	}
-	return ""
-}
-
-// IsOperator reports whether id is on the file's operator allowlist:
-// "<sign-in name>:<login>" for a GitHub sign-in, compared
-// without case as forge logins are; "<sign-in name>:<subject>" for OIDC,
-// exact, since a subject is opaque; or "email:<address>", which only a
-// provider-verified email matches. An entry naming a sign-in the file no
-// longer declares matches nobody.
-func IsOperator(web configfile.Web, id Identity) bool {
-	signIn, known := web.SignInByName(id.Provider)
-	for _, op := range web.Operators {
-		kind, subject, ok := strings.Cut(op, ":")
-		if !ok || subject == "" {
-			continue
+// GrantKey fingerprints what decides a sign-in's grants, the key a session
+// through provider must carry to be honoured under a: for the local
+// admin its name and password, and for a provider its role mapping and
+// what the mapping reads. A session whose sign-in's key has changed since
+// is not honoured, so editing a mapping, or rotating the password, ends
+// the sessions it granted. ok is false when the sign-in is not configured.
+func GrantKey(a configfile.Auth, provider string) (key string, ok bool) {
+	var parts []string
+	if configfile.SignInType(provider) == configfile.SignInLocal {
+		user, password, ok := a.AdminUser()
+		if !ok {
+			return "", false
 		}
-		switch {
-		case kind == configfile.OperatorEmail:
-			if id.EmailVerified && id.Email != "" && strings.EqualFold(subject, id.Email) {
-				return true
-			}
-		case !known || kind != id.Provider:
-		case signIn.Type == configfile.SignInOIDC:
-			if subject == id.Subject {
-				return true
-			}
-		default:
-			if id.Login != "" && strings.EqualFold(subject, id.Login) {
-				return true
-			}
+		pw := sha256.Sum256([]byte(password.Value()))
+		parts = []string{user, hex.EncodeToString(pw[:])}
+	} else {
+		s, ok := a.SignInByType(configfile.SignInType(provider))
+		if !ok {
+			return "", false
 		}
+		parts = []string{s.RoleMapping, s.RolesClaim, s.DefaultRole}
 	}
-	return false
+	h := sha256.New()
+	h.Write([]byte(provider))
+	for _, p := range parts {
+		// Length-prefixed, so no two different part lists hash alike; a
+		// hash's Write never fails.
+		_, _ = fmt.Fprintf(h, "\x00%d:%s", len(p), p)
+	}
+	return hex.EncodeToString(h.Sum(nil)), true
 }

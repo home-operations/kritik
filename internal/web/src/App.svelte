@@ -250,7 +250,7 @@
                 aria-current={router.route.name === 'operator' ? 'page' : undefined}
                 href={href({ name: 'operator' })}
               >
-                <Icon path={mdiConsoleLine} size={15} /> Operator console
+                <Icon path={mdiConsoleLine} size={15} /> Admin console
               </a>
             </nav>
           {/if}

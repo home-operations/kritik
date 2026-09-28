@@ -542,7 +542,7 @@ type File struct {
 	Tools     []Tool              `yaml:"tools,omitempty"`
 	Retention Retention           `yaml:"retention,omitempty"`
 	Egress    Egress              `yaml:"egress,omitempty"`
-	Web       Web                 `yaml:"web,omitempty"`
+	Auth      Auth                `yaml:"auth,omitempty"`
 	Tenants   []Tenant            `yaml:"tenants"`
 
 	hash string

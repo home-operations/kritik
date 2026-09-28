@@ -26,8 +26,8 @@ export function isOperator(): boolean {
   return session.me?.operator === true;
 }
 
-// canAdmin mirrors the server's CanAdmin: an operator administers every
-// tenant, anyone else only the tenants they are an admin of.
+// canAdmin is whether the viewer may change tenant slug: /me gives an
+// admin the admin role on every tenant, and anyone else member.
 export function canAdmin(slug: string): boolean {
   const me = session.me;
   if (!me) return false;

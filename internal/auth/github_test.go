@@ -3,22 +3,24 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestGitHubOrgRole(t *testing.T) {
+func TestGitHubMember(t *testing.T) {
 	tests := []struct {
 		name    string
 		status  int
 		header  map[string]string
 		body    string
-		want    Role
+		want    bool
 		wantErr bool
 	}{
-		{name: "active member", status: 200, body: `{"state":"active","role":"member"}`, want: RoleMember},
-		{name: "active admin", status: 200, body: `{"state":"active","role":"admin"}`, want: RoleAdmin},
+		{name: "active member", status: 200, body: `{"state":"active","role":"member"}`, want: true},
+		{name: "active admin", status: 200, body: `{"state":"active","role":"admin"}`, want: true},
 		{name: "pending", status: 200, body: `{"state":"pending","role":"admin"}`},
 		{name: "billing manager", status: 200, body: `{"state":"active","role":"billing_manager"}`},
 		{name: "not found", status: 404},
@@ -40,10 +42,45 @@ func TestGitHubOrgRole(t *testing.T) {
 				_, _ = w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			got, err := githubAPI{}.orgRole(context.Background(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "alice", "acme")
+			got, err := githubAPI{}.member(context.Background(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "alice", "acme")
 			if tt.wantErr != (err != nil) || (err != nil && !errors.Is(err, ErrForgeAPI)) || got != tt.want {
-				t.Fatalf("orgRole = %q, %v; want %q, error %v", got, err, tt.want, tt.wantErr)
+				t.Fatalf("member = %v, %v; want %v, error %v", got, err, tt.want, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestGitHubMappingVars: the role mapping sees every organization the user
+// is an active member of and every team, across pages.
+func TestGitHubMappingVars(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		switch {
+		case r.URL.Path == "/user/memberships/orgs" && r.URL.Query().Get("state") == "active" && page == "1":
+			items := make([]string, 0, 100)
+			for i := range 100 {
+				items = append(items, fmt.Sprintf(`{"state":"active","role":"member","organization":{"login":"org-%d"}}`, i))
+			}
+			_, _ = fmt.Fprint(w, "["+strings.Join(items, ",")+"]")
+		case r.URL.Path == "/user/memberships/orgs" && page == "2":
+			_, _ = fmt.Fprint(w, `[{"state":"active","role":"admin","organization":{"login":"last"}},`+
+				`{"state":"active","role":"billing_manager","organization":{"login":"billing"}}]`)
+		case r.URL.Path == "/user/teams" && page == "1":
+			_, _ = fmt.Fprint(w, `[{"slug":"ops","organization":{"login":"org-1"}}]`)
+		default:
+			t.Errorf("unexpected request %s", r.URL)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	vars, err := githubAPI{}.mappingVars(context.Background(), apiClient{base: srv.URL, token: "tok", client: srv.Client()},
+		Identity{Login: "alice", Email: "a@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	orgs, _ := vars["orgs"].([]string)
+	teams, _ := vars["teams"].([]string)
+	if len(orgs) != 101 || orgs[100] != "last" || strings.Join(teams, ",") != "org-1/ops" || vars["login"] != "alice" || vars["email"] != "a@example.com" {
+		t.Fatalf("vars = %v", vars)
 	}
 }

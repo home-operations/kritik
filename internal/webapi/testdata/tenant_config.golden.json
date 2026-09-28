@@ -6,173 +6,146 @@
     {
       "key": "enabled",
       "scopes": ["repository"],
-      "tenantAdmin": true,
       "repository": "turnOff",
       "editable": true
     },
     {
       "key": "filter",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": true,
       "repository": "and",
       "editable": true
     },
     {
       "key": "ignore",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": true,
       "repository": "union",
       "editable": true
     },
     {
       "key": "skip.onlyPaths",
       "scopes": [],
-      "tenantAdmin": false,
       "repository": "own",
-      "editable": false
+      "editable": true
     },
     {
       "key": "forks",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
-      "editable": false
+      "editable": true
     },
     {
       "key": "models.review",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
-      "ownProviders": true,
       "repository": "choose",
       "editable": true
     },
     {
       "key": "models.fallback",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
-      "ownProviders": true,
       "repository": "choose",
       "editable": true
     },
     {
       "key": "mode",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
       "repository": "choose",
-      "editable": false
+      "editable": true
     },
     {
       "key": "agent.maxSteps",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
       "repository": "atMost",
-      "editable": false
+      "editable": true
     },
     {
       "key": "agent.maxToolOutputBytes",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
       "repository": "atMost",
-      "editable": false
+      "editable": true
     },
     {
       "key": "agent.maxTokens",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
       "repository": "atMost",
-      "editable": false
+      "editable": true
     },
     {
       "key": "agent.timeout",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
       "repository": "atMost",
-      "editable": false
+      "editable": true
     },
     {
       "key": "agent.commands",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
       "repository": "subset",
-      "editable": false
+      "editable": true
     },
     {
       "key": "agent.commandTimeout",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
-      "editable": false
+      "editable": true
     },
     {
       "key": "settle",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": true,
       "repository": "atMost",
       "editable": true
     },
     {
       "key": "incremental.maxDeltaFiles",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
-      "editable": false
+      "editable": true
     },
     {
       "key": "review.instructions",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": true,
       "repository": "append",
       "editable": true
     },
     {
       "key": "review.requireSuggestedFix",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": true,
       "repository": "turnOn",
       "editable": true
     },
     {
       "key": "review.templates",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": true,
       "repository": "replace",
       "editable": true
     },
     {
       "key": "review.context",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": true,
       "repository": "append",
       "editable": true
     },
     {
       "key": "review.minSeverity",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": true,
       "repository": "replace",
       "editable": true
     },
     {
       "key": "review.inlineComments",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": true,
       "repository": "replace",
       "editable": true
     },
     {
       "key": "allow",
       "scopes": ["defaults", "tenant", "repository"],
-      "tenantAdmin": false,
-      "editable": false
+      "editable": true
     },
     {
       "key": "limits",
       "scopes": ["defaults", "tenant"],
-      "tenantAdmin": false,
-      "editable": false
+      "editable": true
     },
     {
       "key": "runner",
       "scopes": ["defaults", "tenant"],
-      "tenantAdmin": false,
-      "editable": false
+      "editable": true
     }
   ],
   "inherited": {

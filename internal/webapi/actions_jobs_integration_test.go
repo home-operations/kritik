@@ -27,14 +27,12 @@ import (
 )
 
 const actionsConfig = `
-web:
-  signIn:
-    - name: corp
-      type: oidc
-      issuer: https://idp.example
-      clientId: kritik
-      clientSecret: { env: KRITIK_TEST_TOKEN }
-  operators: ["corp:aj-op"]
+auth:
+  oidc:
+    issuer: https://idp.example
+    clientId: kritik
+    clientSecret: { env: KRITIK_TEST_TOKEN }
+    roleMapping: '"kritik-admin" in roles ? "admin" : ""'
 tenants:
   - slug: aj-tenant
     installations:
@@ -111,7 +109,7 @@ func newActionsEnv(t *testing.T) *actionsEnv {
 	e.prID = e.scalar(`INSERT INTO pull_requests (tenant_id, repository_id, number, title, author, head_sha)
 		VALUES ($1, $2, 11, 'rerun me', 'ada', 'headA') RETURNING id::text`, e.tenantID, e.repoID)
 
-	e.signIn("operator", "aj-op", nil)
+	e.signIn("operator", "aj-op", store.SessionGrant{Role: store.RoleAdmin})
 	return e
 }
 
@@ -124,19 +122,17 @@ func (e *actionsEnv) scalar(sql string, args ...any) string {
 	return v
 }
 
-func (e *actionsEnv) signIn(name, subject string, grants []store.Grant) {
+func (e *actionsEnv) signIn(name, subject string, g store.SessionGrant) {
 	e.t.Helper()
-	ctx := context.Background()
-	now := time.Now()
-	origin := "oidc:https://idp.example"
-	acct, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{Provider: "corp", Origin: origin, Subject: subject, DisplayName: name}, now)
+	ctx, now, origin := context.Background(), time.Now(), "oidc:https://idp.example"
+	acct, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{
+		Provider: "oidc", Origin: origin, Subject: subject, DisplayName: name,
+	}, now)
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	if err := e.st.ReplaceForgeMemberships(ctx, acct.ID, grants, now); err != nil {
-		e.t.Fatal(err)
-	}
-	token, err := e.st.CreateSession(ctx, acct.ID, "corp", origin, now, now.Add(time.Hour))
+	g.Key, _ = auth.GrantKey(e.srv.current.Get().Auth, "oidc")
+	token, err := e.st.CreateSession(ctx, acct.ID, "oidc", origin, g, now, now.Add(time.Hour))
 	if err != nil {
 		e.t.Fatal(err)
 	}

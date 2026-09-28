@@ -302,6 +302,9 @@ func startWeb(
 	if role == config.RoleWeb && st.LeaderEligible() {
 		return errors.New("the web role must never hold the owner DSN")
 	}
+	if !current.Get().Auth.Configured() {
+		return errors.New("the dashboard has no way to sign in: set KRITIK_AUTH_ADMIN_PASSWORD, or auth in the configuration file")
+	}
 	webLogger := logger.With("listener", "web")
 	authHandler, err := auth.New(auth.Config{Store: st, Current: current, WebURL: cfg.WebURLParsed(), Logger: webLogger})
 	if err != nil {

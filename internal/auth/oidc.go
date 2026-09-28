@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"time"
@@ -25,19 +26,20 @@ var ErrOIDC = errors.New("auth: oidc")
 // oidcProvider signs in through an OpenID Connect issuer with the
 // authorization-code flow, PKCE and a nonce.
 type oidcProvider struct {
-	signIn   configfile.SignIn
-	conf     *oauth2.Config
-	client   *http.Client
-	verifier *oidc.IDTokenVerifier
+	signIn     *configfile.SignIn
+	conf       *oauth2.Config
+	client     *http.Client
+	discovered *oidc.Provider
+	verifier   *oidc.IDTokenVerifier
 }
 
 // newOIDCProvider runs the issuer's discovery, so it needs the network.
 func newOIDCProvider(
-	ctx context.Context, s configfile.SignIn, redirect string, client *http.Client, now func() time.Time,
+	ctx context.Context, s *configfile.SignIn, redirect string, client *http.Client, now func() time.Time,
 ) (*oidcProvider, error) {
 	discovered, err := oidc.NewProvider(oidc.ClientContext(ctx, client), s.Issuer)
 	if err != nil {
-		return nil, fmt.Errorf("auth: sign-in %s: discovery: %w", s.Name, err)
+		return nil, fmt.Errorf("auth: oidc: discovery: %w", err)
 	}
 	scopes := oidcScopes
 	if len(s.Scopes) > 0 {
@@ -55,14 +57,11 @@ func newOIDCProvider(
 			RedirectURL:  redirect,
 			Scopes:       scopes,
 		},
-		client:   client,
-		verifier: discovered.Verifier(&oidc.Config{ClientID: s.ClientID, Now: now}),
+		client:     client,
+		discovered: discovered,
+		verifier:   discovered.Verifier(&oidc.Config{ClientID: s.ClientID, Now: now}),
 	}, nil
 }
-
-func (p *oidcProvider) Name() string                { return p.signIn.Name }
-func (p *oidcProvider) Type() configfile.SignInType { return p.signIn.Type }
-func (p *oidcProvider) DisplayName() string         { return displayName(p.signIn) }
 
 func (p *oidcProvider) AuthCodeURL(state, nonce, pkceVerifier string) string {
 	return p.conf.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(pkceVerifier))
@@ -78,36 +77,74 @@ type idClaims struct {
 	Picture           string   `json:"picture"`
 }
 
-func (p *oidcProvider) Exchange(ctx context.Context, code, pkceVerifier, nonce string) (Identity, Membership, error) {
+func (p *oidcProvider) Exchange(ctx context.Context, code, pkceVerifier, nonce string) (Identity, Facts, error) {
 	tok, err := p.conf.Exchange(oidc.ClientContext(ctx, p.client), code, oauth2.VerifierOption(pkceVerifier))
 	if err != nil {
-		return Identity{}, nil, fmt.Errorf("auth: %s: exchange: %w", p.signIn.Name, err)
+		return Identity{}, Facts{}, fmt.Errorf("auth: oidc: exchange: %w", err)
 	}
 	raw, ok := tok.Extra("id_token").(string)
 	if !ok || raw == "" {
-		return Identity{}, nil, fmt.Errorf("%w: %s: token response has no id_token", ErrOIDC, p.signIn.Name)
+		return Identity{}, Facts{}, fmt.Errorf("%w: token response has no id_token", ErrOIDC)
 	}
 	idt, err := p.verifier.Verify(ctx, raw)
 	if err != nil {
-		return Identity{}, nil, fmt.Errorf("%w: %s: %w", ErrOIDC, p.signIn.Name, err)
+		return Identity{}, Facts{}, fmt.Errorf("%w: %w", ErrOIDC, err)
 	}
 	// go-oidc leaves the nonce to the caller.
 	if nonce == "" || subtle.ConstantTimeCompare([]byte(idt.Nonce), []byte(nonce)) != 1 {
-		return Identity{}, nil, fmt.Errorf("%w: %s: nonce mismatch", ErrOIDC, p.signIn.Name)
+		return Identity{}, Facts{}, fmt.Errorf("%w: nonce mismatch", ErrOIDC)
 	}
 	var c idClaims
 	if err := idt.Claims(&c); err != nil {
-		return Identity{}, nil, fmt.Errorf("%w: %s: claims: %w", ErrOIDC, p.signIn.Name, err)
+		return Identity{}, Facts{}, fmt.Errorf("%w: claims: %w", ErrOIDC, err)
 	}
 	id := Identity{
-		Provider: p.signIn.Name, Origin: signInOrigin(p.signIn), Subject: idt.Subject, Login: c.PreferredUsername,
+		Provider: string(p.signIn.Type()), Origin: signInOrigin(p.signIn), Subject: idt.Subject, Login: c.PreferredUsername,
 		Email: c.Email, EmailVerified: bool(c.EmailVerified) && c.Email != "",
 		DisplayName: c.Name, AvatarURL: c.Picture,
 	}
 	if id.DisplayName == "" {
 		id.DisplayName = id.Login
 	}
-	return id, nil, nil
+	facts := Facts{MappingVars: func(ctx context.Context) (map[string]any, error) {
+		claims := map[string]any{}
+		if err := idt.Claims(&claims); err != nil {
+			return nil, fmt.Errorf("%w: claims: %w", ErrOIDC, err)
+		}
+		if p.discovered.UserInfoEndpoint() != "" {
+			info, err := p.discovered.UserInfo(oidc.ClientContext(ctx, p.client), oauth2.StaticTokenSource(tok))
+			if err != nil {
+				return nil, fmt.Errorf("%w: userinfo: %w", ErrOIDC, err)
+			}
+			more := map[string]any{}
+			if err := info.Claims(&more); err != nil {
+				return nil, fmt.Errorf("%w: userinfo: %w", ErrOIDC, err)
+			}
+			maps.Copy(claims, more)
+		}
+		return map[string]any{"claims": claims, "roles": rolesOf(claims[p.signIn.RolesClaim])}, nil
+	}}
+	return id, facts, nil
+}
+
+// rolesOf reads a roles claim: a list of strings, a map whose keys are the
+// roles (as Zitadel sends them), or a single string. Anything else, or no
+// claim, is no roles.
+func rolesOf(v any) []string {
+	roles := []string{}
+	switch r := v.(type) {
+	case []any:
+		for _, x := range r {
+			if s, ok := x.(string); ok {
+				roles = append(roles, s)
+			}
+		}
+	case map[string]any:
+		roles = slices.Sorted(maps.Keys(r))
+	case string:
+		roles = append(roles, r)
+	}
+	return roles
 }
 
 type flexBool bool

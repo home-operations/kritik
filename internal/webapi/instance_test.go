@@ -63,7 +63,7 @@ func TestInstanceSettingsAreOperatorOnly(t *testing.T) {
 	get := func(p *auth.Principal) *httptest.ResponseRecorder {
 		return ts.as(p, httptest.NewRequest("GET", "/api/v1/operator/instance", nil))
 	}
-	if w := get(memberOf(t, ts.file, "alpha", auth.RoleAdmin)); w.Code != http.StatusNotFound {
+	if w := get(memberOf(t, ts.file, "alpha")); w.Code != http.StatusNotFound {
 		t.Fatalf("tenant admin: status = %d, want 404", w.Code)
 	}
 	w := get(&auth.Principal{Operator: true})

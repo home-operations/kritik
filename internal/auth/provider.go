@@ -1,6 +1,7 @@
-// Package auth signs humans in to the dashboard through the file's web
-// sign-ins, keeps their sessions, derives their tenant memberships from the
-// forge, and guards the dashboard's routes (ADR-0009 §§2.3, 2.4, 2.7).
+// Package auth signs humans in to the dashboard, as the local admin or
+// through the file's OIDC and GitHub sign-ins, decides what each may do from
+// the sign-in's role mapping and the forge, keeps their sessions, and guards
+// the dashboard's routes (ADR-0009 §2.7, ADR-0014 §2.5).
 package auth
 
 import (
@@ -18,14 +19,10 @@ import (
 )
 
 // Identity is who a sign-in provider says a human is. Provider is the
-// sign-in's configured name and Origin where it points (see signInOrigin);
-// Subject is the provider's stable id for them, unique within that origin.
-//
+// sign-in's type and Origin where it points (see signInOrigin); Subject is
+// the provider's stable id for them, unique within that origin.
 // EmailVerified is the provider's own word: the OIDC email_verified claim,
-// or the forge's verified flag on the primary address. kritik cannot check
-// it, and a verified email accepts invites and matches "email:" operators,
-// so an operator should only configure sign-ins whose email verification
-// they trust.
+// or the forge's verified flag on the primary address.
 type Identity struct {
 	Provider, Origin, Subject, Login, Email string
 	EmailVerified                           bool
@@ -34,18 +31,25 @@ type Identity struct {
 
 // Provider is one configured way to sign in.
 type Provider interface {
-	Name() string
-	Type() configfile.SignInType
-	DisplayName() string
 	// AuthCodeURL is where to send the browser to sign in. nonce binds an
 	// OIDC ID token to this request; forge OAuth ignores it.
 	AuthCodeURL(state, nonce, pkceVerifier string) string
-	// Exchange trades the callback's code for the human's identity and, for
-	// a forge, a Membership bound to their token; OIDC returns a nil one.
-	Exchange(ctx context.Context, code, pkceVerifier, nonce string) (Identity, Membership, error)
+	// Exchange trades the callback's code for the human's identity and the
+	// facts their grant is decided from.
+	Exchange(ctx context.Context, code, pkceVerifier, nonce string) (Identity, Facts, error)
 }
 
-// ErrUnknownProvider is a sign-in name the file does not declare.
+// Facts are what a provider learned about a person, bound to their token,
+// for deciding what they may do.
+type Facts struct {
+	// MappingVars fills the sign-in's role mapping's variables; it may call
+	// the provider, so it runs only when the sign-in has a mapping.
+	MappingVars func(ctx context.Context) (map[string]any, error)
+	// Membership asks a forge about one organization; nil for OIDC.
+	Membership Membership
+}
+
+// ErrUnknownProvider is a sign-in the file does not configure.
 var ErrUnknownProvider = errors.New("auth: unknown sign-in")
 
 // failedBuildTTL is how long a failed build, an unreachable OIDC issuer's
@@ -79,13 +83,14 @@ func newProviders(webURL *url.URL, client *http.Client, now func() time.Time) *p
 	return &providers{webURL: webURL, client: client, now: now, built: map[string]Provider{}, failed: map[string]failedBuild{}}
 }
 
-// get returns the provider for the named sign-in and its configuration.
-func (ps *providers) get(ctx context.Context, web configfile.Web, name string) (Provider, configfile.SignIn, error) {
-	signIn, ok := web.SignInByName(name)
+// get returns the provider for the sign-in of type name and its
+// configuration.
+func (ps *providers) get(ctx context.Context, auth configfile.Auth, name string) (Provider, *configfile.SignIn, error) {
+	signIn, ok := auth.SignInByType(configfile.SignInType(name))
 	if !ok {
-		return nil, configfile.SignIn{}, ErrUnknownProvider
+		return nil, nil, ErrUnknownProvider
 	}
-	key := signInsKey(web.SignIn)
+	key := signInsKey(auth.SignIns())
 	ps.mu.Lock()
 	if key != ps.key {
 		ps.key = key
@@ -99,7 +104,7 @@ func (ps *providers) get(ctx context.Context, web configfile.Web, name string) (
 		return p, signIn, nil
 	}
 	if hasFailed && ps.now().Sub(failed.at) < failedBuildTTL {
-		return nil, configfile.SignIn{}, failed.err
+		return nil, nil, failed.err
 	}
 	// Built outside the lock: OIDC discovery is a network round trip, and two
 	// concurrent first builds only cost a duplicate discovery.
@@ -116,7 +121,7 @@ func (ps *providers) get(ctx context.Context, web configfile.Web, name string) (
 	}
 	ps.mu.Unlock()
 	if err != nil {
-		return nil, configfile.SignIn{}, err
+		return nil, nil, err
 	}
 	return p, signIn, nil
 }
@@ -132,10 +137,10 @@ func requestEnded(ctx context.Context) bool {
 
 // signInsKey fingerprints everything a built provider depends on, the
 // resolved client secret included, so rotating it rebuilds.
-func signInsKey(signIns []configfile.SignIn) [sha256.Size]byte {
+func signInsKey(signIns []*configfile.SignIn) [sha256.Size]byte {
 	h := sha256.New()
 	for _, s := range signIns {
-		fields := []string{s.Name, string(s.Type), s.Issuer, s.ClientID, s.ClientSecretValue().Value(), strings.Join(s.Scopes, " ")}
+		fields := []string{string(s.Type()), s.Issuer, s.ClientID, s.ClientSecretValue().Value(), strings.Join(s.Scopes, " ")}
 		for _, f := range fields {
 			h.Write([]byte(f))
 			h.Write([]byte{0})
@@ -147,38 +152,33 @@ func signInsKey(signIns []configfile.SignIn) [sha256.Size]byte {
 	return key
 }
 
-func buildProvider(ctx context.Context, s configfile.SignIn, redirect string, client *http.Client, now func() time.Time) (Provider, error) {
-	switch s.Type {
+func buildProvider(
+	ctx context.Context, s *configfile.SignIn, redirect string, client *http.Client, now func() time.Time,
+) (Provider, error) {
+	switch s.Type() {
 	case configfile.SignInOIDC:
 		return newOIDCProvider(ctx, s, redirect, client, now)
 	case configfile.SignInGitHub:
 		return newGitHubProvider(s, redirect, client), nil
 	default:
-		return nil, fmt.Errorf("auth: sign-in %s: unsupported type %q", s.Name, s.Type)
+		return nil, fmt.Errorf("auth: unsupported sign-in type %q", s.Type())
 	}
 }
 
 // signInOrigin is where a sign-in points: its type and base URL, or for OIDC
 // its issuer exactly as configured, since the issuer is compared exactly
 // against the ID token's. Identities and sessions are bound to it.
-func signInOrigin(s configfile.SignIn) string {
-	if s.Type == configfile.SignInOIDC {
-		return string(s.Type) + ":" + s.Issuer
+func signInOrigin(s *configfile.SignIn) string {
+	if s.Type() == configfile.SignInOIDC {
+		return string(s.Type()) + ":" + s.Issuer
 	}
-	return string(s.Type) + ":https://" + configfile.GitHubHost
+	return string(s.Type()) + ":https://" + configfile.GitHubHost
 }
+
+// localOrigin is the local admin's origin: it has no provider to point at.
+const localOrigin = "local"
 
 // redirectURL is the callback a provider returns the browser to.
 func redirectURL(webURL *url.URL, name string) string {
 	return strings.TrimSuffix(webURL.String(), "/") + "/auth/callback/" + url.PathEscape(name)
-}
-
-// displayName is how the sign-in page labels a sign-in.
-func displayName(s configfile.SignIn) string {
-	switch s.Type {
-	case configfile.SignInGitHub:
-		return "GitHub"
-	default:
-		return s.Name
-	}
 }

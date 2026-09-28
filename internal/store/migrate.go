@@ -146,7 +146,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		// RLS, access control lives in web code) except model_calls, which is
 		// tenant content gated by its own tenant_isolation policy.
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON accounts, identities, sessions, login_states TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON memberships, invites, audit_events, dashboard_tenants TO ` + app,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON audit_events, dashboard_tenants TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON model_calls TO ` + app,
 		// The runner role sees only its own job through the runner_job
 		// policies; it needs the table privileges those policies gate. On

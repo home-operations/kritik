@@ -6,7 +6,6 @@ import (
 
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/store"
 )
 
 // The management API's JSON shapes; internal/web/src/lib/types.ts mirrors
@@ -55,9 +54,8 @@ type FieldPolicy struct {
 
 // CreateTenantRequest creates a dashboard tenant. Spec is a tenant entry
 // of the file in JSON; each secret is {"value": "..."} or, for a webhook
-// secret, {"generate": true}. Adopt re-uses a slug a tenant held before:
-// the new tenant starts with none of the old one's members or invites but
-// keeps its review history, which is keyed on the slug.
+// secret, {"generate": true}. Adopt re-uses a slug a tenant held before,
+// keeping its review history, which is keyed on the slug.
 type CreateTenantRequest struct {
 	Slug  string          `json:"slug"`
 	Spec  json.RawMessage `json:"spec"`
@@ -80,55 +78,6 @@ type TenantWriteResult struct {
 	Generated map[string]string `json:"generated,omitempty"`
 }
 
-// MemberSource is one source of a member's access.
-type MemberSource struct {
-	Source store.MembershipSource `json:"source"`
-	Role   auth.Role              `json:"role"`
-}
-
-// Member is an account with access to a tenant; Role is the highest its
-// sources give.
-type Member struct {
-	Account Account        `json:"account"`
-	Role    auth.Role      `json:"role"`
-	Sources []MemberSource `json:"sources"`
-}
-
-// Invite is a pending invitation. CreatedBy is null once that account is
-// deleted.
-type Invite struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Role      auth.Role `json:"role"`
-	CreatedBy *Account  `json:"createdBy"`
-	ExpiresAt time.Time `json:"expiresAt"`
-}
-
-// Members is a tenant's members; Invites is null unless the principal is
-// an admin.
-type Members struct {
-	Members []Member `json:"members"`
-	Invites []Invite `json:"invites"`
-}
-
-// CreateInviteRequest invites an email to a tenant. TTLHours defaults to
-// a week and may be at most thirty days.
-type CreateInviteRequest struct {
-	Email    string    `json:"email"`
-	Role     auth.Role `json:"role"`
-	TTLHours *int      `json:"ttlHours,omitempty"`
-}
-
-// UpdateMemberRequest changes a member's invite-granted role.
-type UpdateMemberRequest struct {
-	Role auth.Role `json:"role"`
-}
-
-// MemberRemoved says what removing a member did.
-type MemberRemoved struct {
-	Note string `json:"note"`
-}
-
 // Accepted is an action queued; JobID is the queued job, when there is
 // one.
 type Accepted struct {
@@ -144,10 +93,6 @@ const (
 	AuditTenantUpdate AuditAction = "tenant.update"
 	AuditTenantDelete AuditAction = "tenant.delete"
 	AuditTenantAdopt  AuditAction = "tenant.adopt"
-	AuditInviteCreate AuditAction = "invite.create"
-	AuditInviteDelete AuditAction = "invite.delete"
-	AuditMemberUpdate AuditAction = "member.update"
-	AuditMemberRemove AuditAction = "member.remove"
 	AuditReviewRerun  AuditAction = "review.rerun"
 	AuditReviewCancel AuditAction = "review.cancel"
 	AuditRepoReindex  AuditAction = "repo.reindex"
@@ -156,8 +101,8 @@ const (
 // Valid reports whether a is an audited action.
 func (a AuditAction) Valid() bool {
 	switch a {
-	case AuditTenantCreate, AuditTenantUpdate, AuditTenantDelete, AuditTenantAdopt, AuditInviteCreate, AuditInviteDelete,
-		AuditMemberUpdate, AuditMemberRemove, AuditReviewRerun, AuditReviewCancel, AuditRepoReindex:
+	case AuditTenantCreate, AuditTenantUpdate, AuditTenantDelete, AuditTenantAdopt, AuditReviewRerun, AuditReviewCancel,
+		AuditRepoReindex:
 		return true
 	}
 	return false

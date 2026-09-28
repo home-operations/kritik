@@ -172,8 +172,8 @@ func TestSweepSessions(t *testing.T) {
 	}
 	for i, expires := range []time.Time{now.Add(-time.Minute), now.Add(time.Hour)} {
 		key := []byte{byte(i), 's', 'w', 'e', 'e', 'p', byte(now.UnixNano())}
-		if _, err := s.app.Exec(ctx, `INSERT INTO sessions (token_hash, account_id, provider, expires_at) VALUES ($1, $2, 'github', $3)`,
-			key, account, expires); err != nil {
+		if _, err := s.app.Exec(ctx, `INSERT INTO sessions (token_hash, account_id, provider, role, all_accounts, accounts, grant_key, expires_at)
+			VALUES ($1, $2, 'github', 'member', true, '{}', 'k', $3)`, key, account, expires); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := s.app.Exec(ctx, `INSERT INTO login_states (state_hash, provider, nonce, pkce_verifier, expires_at, browser_hash)

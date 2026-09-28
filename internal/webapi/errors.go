@@ -22,21 +22,16 @@ const (
 
 	CodeForbidden          ErrorCode = "forbidden"
 	CodeInvalidSpec        ErrorCode = "invalid_spec"
-	CodeOperatorOnly       ErrorCode = "operator_only"
 	CodeRevisionConflict   ErrorCode = "revision_conflict"
 	CodeConfigBlocked      ErrorCode = "config_blocked"
 	CodeSlugTaken          ErrorCode = "slug_taken"
 	CodeFileManaged        ErrorCode = "file_managed"
 	CodeManagementDisabled ErrorCode = "management_disabled"
-	CodeInviteExists       ErrorCode = "invite_exists"
-	CodeNotInviteMember    ErrorCode = "not_invite_member"
-	CodeLastAdmin          ErrorCode = "last_admin"
 	CodeNoHead             ErrorCode = "no_head"
 	CodeNotCancelable      ErrorCode = "not_cancelable"
 	CodeActionsDisabled    ErrorCode = "actions_disabled"
 	CodeAlreadyQueued      ErrorCode = "already_queued"
 	CodeReenterSecret      ErrorCode = "reenter_secret"
-	CodeAlreadyMember      ErrorCode = "already_member"
 )
 
 // apiError is an error a handler returns to be written as ErrorBody.

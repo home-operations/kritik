@@ -43,23 +43,17 @@ const (
 	RepoReplace RepoRule = "replace"
 )
 
-// Policy is one row of the table that says who may write a repository
-// setting (ADR-0010 §2.4, §2.7): the scopes the operator writes it at,
-// whether a tenant admin may write it too on a dashboard tenant, and what
-// the repository's .kritik.yaml may do with it. The dashboard's write API
-// enforces it and serves it for the UI to render from, and the keys the
-// repository file takes follow it. Instance settings are the file's alone
-// and not in it.
+// Policy is one row of the table that says where a repository setting is
+// written (ADR-0010 §2.4, §2.7): the scopes the operator writes it at, and
+// what the repository's .kritik.yaml may do with it. The dashboard serves it
+// for the UI to render from, and the keys the repository file takes follow
+// it. Instance settings are the file's alone and not in it.
 type Policy struct {
 	// Key is the setting as the configuration spells it; a dotted key is
 	// nested.
-	Key         string  `json:"key"`
-	Scopes      []Scope `json:"scopes"`
-	TenantAdmin bool    `json:"tenantAdmin"`
-	// OwnProviders lets a tenant admin write the setting too, but only to
-	// a model on one of the tenant's own providers, or to nothing.
-	OwnProviders bool     `json:"ownProviders,omitempty"`
-	Repository   RepoRule `json:"repository,omitempty"`
+	Key        string   `json:"key"`
+	Scopes     []Scope  `json:"scopes"`
+	Repository RepoRule `json:"repository,omitempty"`
 }
 
 var (
@@ -75,18 +69,15 @@ const (
 	keyTimeout            = "agent.timeout"
 )
 
-// Policies is the table. What a review costs, and how much of an untrusted
-// pull request it exposes the instance to, is the operator's alone, except
-// that a tenant paying with its own provider key picks the model it pays
-// for.
+// Policies is the table.
 var Policies = []Policy{
-	{Key: "enabled", Scopes: []Scope{ScopeRepository}, TenantAdmin: true, Repository: RepoTurnOff},
-	{Key: "filter", Scopes: everyScope, TenantAdmin: true, Repository: RepoAnd},
-	{Key: "ignore", Scopes: everyScope, TenantAdmin: true, Repository: RepoUnion},
+	{Key: "enabled", Scopes: []Scope{ScopeRepository}, Repository: RepoTurnOff},
+	{Key: "filter", Scopes: everyScope, Repository: RepoAnd},
+	{Key: "ignore", Scopes: everyScope, Repository: RepoUnion},
 	{Key: "skip.onlyPaths", Scopes: []Scope{}, Repository: RepoOwn},
 	{Key: "forks", Scopes: everyScope},
-	{Key: "models.review", Scopes: everyScope, OwnProviders: true, Repository: RepoChoose},
-	{Key: "models.fallback", Scopes: everyScope, OwnProviders: true, Repository: RepoChoose},
+	{Key: "models.review", Scopes: everyScope, Repository: RepoChoose},
+	{Key: "models.fallback", Scopes: everyScope, Repository: RepoChoose},
 	{Key: "mode", Scopes: everyScope, Repository: RepoChoose},
 	{Key: keyMaxSteps, Scopes: everyScope, Repository: RepoAtMost},
 	{Key: keyMaxToolOutputBytes, Scopes: everyScope, Repository: RepoAtMost},
@@ -94,14 +85,14 @@ var Policies = []Policy{
 	{Key: keyTimeout, Scopes: everyScope, Repository: RepoAtMost},
 	{Key: "agent.commands", Scopes: everyScope, Repository: RepoSubset},
 	{Key: "agent.commandTimeout", Scopes: everyScope},
-	{Key: "settle", Scopes: everyScope, TenantAdmin: true, Repository: RepoAtMost},
+	{Key: "settle", Scopes: everyScope, Repository: RepoAtMost},
 	{Key: "incremental.maxDeltaFiles", Scopes: everyScope},
-	{Key: "review.instructions", Scopes: everyScope, TenantAdmin: true, Repository: RepoAppend},
-	{Key: "review.requireSuggestedFix", Scopes: everyScope, TenantAdmin: true, Repository: RepoTurnOn},
-	{Key: "review.templates", Scopes: everyScope, TenantAdmin: true, Repository: RepoReplace},
-	{Key: "review.context", Scopes: everyScope, TenantAdmin: true, Repository: RepoAppend},
-	{Key: "review.minSeverity", Scopes: everyScope, TenantAdmin: true, Repository: RepoReplace},
-	{Key: "review.inlineComments", Scopes: everyScope, TenantAdmin: true, Repository: RepoReplace},
+	{Key: "review.instructions", Scopes: everyScope, Repository: RepoAppend},
+	{Key: "review.requireSuggestedFix", Scopes: everyScope, Repository: RepoTurnOn},
+	{Key: "review.templates", Scopes: everyScope, Repository: RepoReplace},
+	{Key: "review.context", Scopes: everyScope, Repository: RepoAppend},
+	{Key: "review.minSeverity", Scopes: everyScope, Repository: RepoReplace},
+	{Key: "review.inlineComments", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "allow", Scopes: everyScope},
 	{Key: "limits", Scopes: tenantScopes},
 	{Key: "runner", Scopes: tenantScopes},

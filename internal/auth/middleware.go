@@ -15,33 +15,24 @@ import (
 // Account is a human who has signed in to the dashboard.
 type Account = store.Account
 
-// Principal is who an authenticated request acts as.
+// Principal is who an authenticated request acts as, and what the grant
+// their sign-in decided lets them do.
 type Principal struct {
 	Account  Account
 	Identity Identity
-	// Operator is recomputed from the current file on every request, so
-	// removing an operator takes effect at once.
+	// Operator administers the instance: the admin role, which reads and
+	// changes everything.
 	Operator bool
-	// Memberships maps tenant id to role, limited to tenants the current
-	// file declares.
-	Memberships map[string]Role
+	// AllTenants is a member who reads every tenant.
+	AllTenants bool
+	// Tenants are the tenants a member reads, by id: those among the
+	// current file's whose installations serve an account the grant names.
+	Tenants map[string]bool
 }
 
 // CanRead reports whether p may read the tenant's content.
 func (p *Principal) CanRead(tenantID string) bool {
-	if p == nil {
-		return false
-	}
-	_, ok := p.Memberships[tenantID]
-	return p.Operator || ok
-}
-
-// CanAdmin reports whether p may change the tenant.
-func (p *Principal) CanAdmin(tenantID string) bool {
-	if p == nil {
-		return false
-	}
-	return p.Operator || p.Memberships[tenantID] == RoleAdmin
+	return p != nil && (p.Operator || p.AllTenants || p.Tenants[tenantID])
 }
 
 type principalKey struct{}
@@ -62,8 +53,9 @@ func PrincipalFrom(ctx context.Context) *Principal {
 // Authenticate resolves the session cookie, if any, to a Principal on the
 // request's context. A request without a valid session passes through
 // unauthenticated; RequirePrincipal is what rejects it. So does a session
-// whose sign-in the file no longer declares, or now points at another host
-// or issuer.
+// whose sign-in the file no longer configures, now points at another
+// issuer, or has had its role configuration changed since the session
+// began.
 func (h *Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(SessionCookieName(h.webURL))
@@ -83,29 +75,52 @@ func (h *Handler) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 		file := h.current.Get()
-		signIn, ok := file.Web.SignInByName(sess.Identity.Provider)
-		if !ok || signInOrigin(signIn) != sess.Identity.Origin {
+		if !honoured(file.Auth, sess) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		roles, err := h.store.Memberships(ctx, sess.Account.ID)
-		if err != nil {
-			h.logger.ErrorContext(ctx, "auth: load memberships", "error", err)
-			writeJSON(w, http.StatusInternalServerError, errorBody{Code: codeInternal})
-			return
-		}
-		next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principalFor(file, sess, roles))))
+		next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principalFor(file, sess))))
 	})
 }
 
+// honoured reports whether a session still stands under auth: its sign-in
+// is configured, points where it did, and would decide grants as it did.
+func honoured(auth configfile.Auth, sess store.Session) bool {
+	provider := sess.Identity.Provider
+	origin := localOrigin
+	if provider != string(configfile.SignInLocal) {
+		s, ok := auth.SignInByType(configfile.SignInType(provider))
+		if !ok {
+			return false
+		}
+		origin = signInOrigin(s)
+	}
+	key, ok := GrantKey(auth, provider)
+	return ok && origin == sess.Identity.Origin && key == sess.Grant.Key
+}
+
 // principalFor builds the principal a session acts as under file.
-func principalFor(file *configfile.File, sess store.Session, roles map[string]Role) *Principal {
-	id := Identity(sess.Identity)
-	p := &Principal{Account: sess.Account, Identity: id, Operator: IsOperator(file.Web, id), Memberships: map[string]Role{}}
+func principalFor(file *configfile.File, sess store.Session) *Principal {
+	g := sess.Grant
+	p := &Principal{
+		Account: sess.Account, Identity: Identity(sess.Identity),
+		Operator: g.Role == RoleAdmin, AllTenants: g.AllAccounts, Tenants: map[string]bool{},
+	}
+	if p.Operator || p.AllTenants {
+		return p
+	}
+	accounts := map[string]bool{}
+	for _, a := range g.Accounts {
+		accounts[a] = true
+	}
 	for i := range file.Tenants {
-		tid := file.Tenants[i].ID()
-		if r, ok := roles[tid]; ok && r.Valid() {
-			p.Memberships[tid] = r
+		t := &file.Tenants[i]
+		for _, in := range t.Installations {
+			for _, a := range in.Accounts {
+				if accounts[AccountKey(in.Forge, a)] {
+					p.Tenants[t.ID()] = true
+				}
+			}
 		}
 	}
 	return p

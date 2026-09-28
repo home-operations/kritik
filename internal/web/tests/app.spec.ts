@@ -1,4 +1,4 @@
-import { test, expect, DEFAULT_ME } from './fixtures';
+import { test, expect, DEFAULT_ME, DEFAULT_PROVIDERS } from './fixtures';
 
 test.describe('signed-out shell', () => {
   // The dashboard has no public content: a 401 from /api/v1/me on the bare
@@ -72,6 +72,45 @@ test.describe('sign-in page', () => {
     await expect(page.locator('.signin-empty')).toHaveText('No sign-in providers configured.');
   });
 
+  test('the admin signs in with a password and returns to where they were', async ({ page, mockProviders }) => {
+    await mockProviders([{ name: 'local', type: 'local', displayName: 'Admin' }, ...DEFAULT_PROVIDERS]);
+    let signedIn = false;
+    await page.route('**/api/v1/me', (route) =>
+      signedIn
+        ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...DEFAULT_ME, operator: true }) })
+        : route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: 'unauthenticated' }) }),
+    );
+    let sent: unknown;
+    await page.route('**/auth/local', async (route) => {
+      sent = route.request().postDataJSON();
+      expect(route.request().headers()['x-kritik']).toBe('1');
+      signedIn = true;
+      await route.fulfill({ status: 204 });
+    });
+    await page.goto('/#/operator');
+    await expect(page).toHaveURL(/#\/signin$/);
+    const form = page.getByRole('form', { name: 'Admin sign-in' });
+    await form.getByLabel('Username').fill('admin');
+    await form.getByLabel('Password').fill('hunter2');
+    await form.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page).toHaveURL(/#\/operator$/);
+    expect(sent).toEqual({ user: 'admin', password: 'hunter2' });
+  });
+
+  test('a wrong password says so and clears the field', async ({ page, mockProviders }) => {
+    await mockProviders([{ name: 'local', type: 'local', displayName: 'Admin' }]);
+    await page.route('**/auth/local', (route) =>
+      route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: 'invalid_credentials' }) }),
+    );
+    await page.goto('/#/signin');
+    await page.getByLabel('Username').fill('admin');
+    await page.getByLabel('Password').fill('wrong');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByRole('alert')).toHaveText('Wrong username or password.');
+    await expect(page.getByLabel('Password')).toHaveValue('');
+    await expect(page.locator('a.signin-provider')).toHaveCount(0);
+  });
+
   test('shows an error state when the providers request fails', async ({ page }) => {
     await page.route('**/auth/providers', (route) =>
       route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }),
@@ -106,10 +145,10 @@ test.describe('signed-in shell', () => {
     await expect(page.locator('.nav a')).toHaveCount(7);
   });
 
-  test('shows the operator console link for an operator account', async ({ page, signIn }) => {
+  test('shows the admin console link for an admin', async ({ page, signIn }) => {
     await signIn({ ...DEFAULT_ME, operator: true });
     await page.goto('/');
-    await expect(page.getByRole('navigation', { name: 'Instance' }).getByRole('link', { name: 'Operator console' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Instance' }).getByRole('link', { name: 'Admin console' })).toBeVisible();
   });
 
   test('switching tenants in the dropdown navigates to that tenant', async ({ page, signIn }) => {
@@ -185,9 +224,9 @@ test.describe('keyboard shortcuts', () => {
     await page.keyboard.press('ControlOrMeta+k');
     await expect(page.locator('.palette-input input')).toBeFocused();
 
-    await page.keyboard.type('operator');
+    await page.keyboard.type('console');
     await expect(page.locator('.palette-row')).toHaveCount(1);
-    await expect(page.locator('.row-title')).toHaveText('Operator console');
+    await expect(page.locator('.row-title')).toHaveText('Admin console');
 
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/#\/operator$/);
