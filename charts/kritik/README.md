@@ -27,8 +27,8 @@ where `my-values.yaml` carries `config.file` (sign-in and any GitHub App
 that already exists), `secretMounts` for the keys and secrets the file
 references by path, and `dashboard.keySecret`. Model providers, defaults,
 accounts and their repositories are the instance configuration, set in the
-dashboard's admin console. Set `embedding.model` and a key to turn on the
-vector index and the similar-code context stage.
+dashboard's admin console, as is the embedder that turns on the vector index
+and the similar-code context stage.
 
 ### Database
 
@@ -234,16 +234,6 @@ Kubernetes: `>=1.25.0-0`
 | database.runner.key | string | `"uri"` | Key in that Secret. |
 | database.runner.role | string | `"kritik_runner"` | Name of the runner role, granted only what runner Jobs need. |
 | deploymentAnnotations | object | `{}` | Annotations added to every Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
-| embedding.apiKey | string | `""` | API key, rendered into a chart-managed Secret. Prefer `existingSecret`. |
-| embedding.baseUrl | string | `"https://openrouter.ai/api/v1"` | OpenAI-compatible embeddings endpoint (OpenRouter serves Voyage's code models). |
-| embedding.dims | int | `1024` | Vector dimension, at most 4000. |
-| embedding.existingSecret | string | `""` | Existing Secret holding the API key. |
-| embedding.existingSecretKey | string | `"api-key"` | Key in that Secret. |
-| embedding.maxBatch | int | `64` | Max inputs per embedding request. |
-| embedding.maxBatchChars | int | `200000` | Max characters per embedding request. |
-| embedding.maxItemChars | int | `16000` | Max characters per input; longer inputs are truncated. |
-| embedding.model | string | `""` | Embedding model id; empty disables indexing. |
-| embedding.reindexOnModelChange | bool | `false` | Rebuild the index when the model or dimension changes instead of refusing to start. |
 | fullnameOverride | string | `""` | Override the full release name. |
 | gateway.enabled | bool | `true` | Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once a connection exists, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews are refused without it. |
 | gateway.port | int | `8082` | Gateway port on the pods and its Service. |

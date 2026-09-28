@@ -23,7 +23,6 @@ import (
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/runner"
@@ -44,10 +43,10 @@ type Review struct {
 	Executor executor.Executor
 	// Completers resolves the configured model providers.
 	Completers CompleterSource
-	// Embedder and EmbedModel enable stage 4 (similar code from the
-	// repository's active index); nil Embedder skips it.
-	Embedder   model.Embedder
-	EmbedModel string
+	// Embedders resolves the instance's embedder, which enables stage 4
+	// (similar code from the repository's active index); without one it is
+	// skipped.
+	Embedders *Embedders
 	// GatewayURL is where an agentic runner calls its model, and
 	// GatewayTokenTTL how long its run token outlives the Job's deadline.
 	// Agentic reviews are refused without a gateway.

@@ -114,32 +114,6 @@ ConfigMap the file is read from.
 {{- end }}
 
 {{/*
-Whether indexing is configured.
-*/}}
-{{- define "kritik.embeddingEnabled" -}}
-{{- if .Values.embedding.model -}}true{{- end -}}
-{{- end }}
-
-{{/*
-Secret holding the embedding API key: the existing one, or the chart's.
-*/}}
-{{- define "kritik.embeddingSecretName" -}}
-{{- if .Values.embedding.existingSecret -}}
-{{- tpl .Values.embedding.existingSecret $ -}}
-{{- else if .Values.embedding.apiKey -}}
-{{- printf "%s-embedding" (include "kritik.fullname" .) -}}
-{{- end -}}
-{{- end }}
-
-{{- define "kritik.embeddingSecretKey" -}}
-{{- if .Values.embedding.existingSecret -}}
-{{- .Values.embedding.existingSecretKey -}}
-{{- else -}}
-api-key
-{{- end -}}
-{{- end }}
-
-{{/*
 Roles that are enabled, in a fixed order, so templates that range over them
 render deterministically.
 */}}

@@ -135,31 +135,6 @@ type Config struct {
 	// leader lock and how often the holder verifies it still has it.
 	LeaderRetryInterval time.Duration `env:"KRITIK_LEADER_RETRY_INTERVAL" envDefault:"15s"`
 
-	// EmbedBaseURL, EmbedAPIKey, EmbedModel and EmbedDims configure the
-	// deployment-wide embedder, always OpenAI-compatible. They live here
-	// rather than in the configuration file because changing the model
-	// reindexes every repository, so it should take a deploy, not a config
-	// reload. All four are set together or not at all; unset means indexing
-	// is off and reviews run without vector retrieval.
-	EmbedBaseURL string `env:"KRITIK_EMBED_BASE_URL"`
-	EmbedAPIKey  string `env:"KRITIK_EMBED_API_KEY,unset"`
-	EmbedModel   string `env:"KRITIK_EMBED_MODEL"`
-	EmbedDims    int    `env:"KRITIK_EMBED_DIMS"`
-
-	// EmbedMaxBatch, EmbedMaxBatchChars and EmbedMaxItemChars bound one
-	// embedding request. OpenAI-compatible servers differ widely in what
-	// they accept; these defaults are conservative enough for the common
-	// ones and can be raised per deployment.
-	EmbedMaxBatch      int `env:"KRITIK_EMBED_MAX_BATCH" envDefault:"64"`
-	EmbedMaxBatchChars int `env:"KRITIK_EMBED_MAX_BATCH_CHARS" envDefault:"200000"`
-	EmbedMaxItemChars  int `env:"KRITIK_EMBED_MAX_ITEM_CHARS" envDefault:"16000"`
-
-	// ReindexOnModelChange lets a worker start when EmbedModel differs from
-	// the model recorded in the store at the same dimension, and enqueues a
-	// reindex of every repository. Off by default so a mistyped model name
-	// cannot trigger a fleet-wide re-embed.
-	ReindexOnModelChange bool `env:"KRITIK_REINDEX_ON_MODEL_CHANGE" envDefault:"false"`
-
 	// ReviewWorkers is how many review jobs one worker replica runs at once.
 	// Each one holds a runner pod open for the length of a fetch and diff,
 	// so this bounds pods per replica, not model calls.
@@ -295,9 +270,6 @@ func (c *Config) parseWebURL() error {
 	return nil
 }
 
-// EmbeddingEnabled reports whether a deployment-wide embedder is configured.
-func (c *Config) EmbeddingEnabled() bool { return c.EmbedModel != "" }
-
 // DashboardKeyring returns the keyring built from DashboardKey and
 // DashboardOldKeys, nil when no key is configured.
 func (c *Config) DashboardKeyring() *sealbox.Keyring { return c.keyring }
@@ -337,21 +309,6 @@ func (c *Config) validate() error {
 	}
 	if err := c.parseWebURL(); err != nil {
 		return err
-	}
-	set := 0
-	for _, v := range []bool{c.EmbedBaseURL != "", c.EmbedAPIKey != "", c.EmbedModel != "", c.EmbedDims != 0} {
-		if v {
-			set++
-		}
-	}
-	if set != 0 && set != 4 {
-		return fmt.Errorf("config: KRITIK_EMBED_BASE_URL, KRITIK_EMBED_API_KEY, KRITIK_EMBED_MODEL and KRITIK_EMBED_DIMS must be set together")
-	}
-	if c.EmbedDims < 0 || c.EmbedDims > 4000 {
-		return fmt.Errorf("config: KRITIK_EMBED_DIMS must be between 1 and 4000 (the halfvec index limit), got %d", c.EmbedDims)
-	}
-	if c.EmbedMaxBatch <= 0 || c.EmbedMaxBatchChars <= 0 || c.EmbedMaxItemChars <= 0 {
-		return fmt.Errorf("config: KRITIK_EMBED_MAX_* must be positive")
 	}
 	if c.DatabaseAppRole == "" || c.DatabaseRunnerRole == "" || c.DatabaseAppRole == c.DatabaseRunnerRole {
 		return fmt.Errorf("config: KRITIK_DATABASE_APP_ROLE and KRITIK_DATABASE_RUNNER_ROLE must be set and distinct")

@@ -3,6 +3,7 @@ package configfile
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -212,6 +213,12 @@ func TestMergeRejects(t *testing.T) {
 		{"an account two spec connections serve", `{"connections":[` + specConnection("a", "x") + `,` + specConnection("b", "X") + `]}`,
 			"an account is served by one connection"},
 		{"two documents", `{} {}`, "one document"},
+		{"an embedder with no endpoint", embeddingSpec(`"baseUrl":"embed.example"`), "embedding.baseUrl"},
+		{"an embedder with no model", embeddingSpec(`"model":""`), "embedding.model is required"},
+		{"an embedder too wide for the index", embeddingSpec(`"dims":4096`), "embedding.dims must be between 1 and 4000"},
+		{"an embedder with a negative bound", embeddingSpec(`"maxBatch":-1`), "must not be negative"},
+		{"an embedder key that does not open", `{"embedding":{"baseUrl":"https://e.example/v1","apiKey":{"sealed":"garbage"},"model":"m","dims":8}}`,
+			"embedding.apiKey"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Merge(file, spec(tt.spec, 1), testOpener{})
@@ -219,6 +226,36 @@ func TestMergeRejects(t *testing.T) {
 				t.Fatalf("Merge = %v, want a *MergeError containing %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// embeddingSpec is a spec whose embedder is valid but for override, a
+// field that replaces the one of its name.
+func embeddingSpec(override string) string {
+	fields := map[string]string{
+		"baseUrl": `"baseUrl":"https://embed.example/v1"`, "apiKey": `"apiKey":{"sealed":"test:ek"}`,
+		"model": `"model":"voyage-code-3"`, "dims": `"dims":1024`,
+	}
+	key, _, _ := strings.Cut(strings.Trim(override, `"`), `"`)
+	fields[key] = override
+	return `{"embedding":{` + strings.Join(slices.Sorted(maps.Values(fields)), ",") + `}}`
+}
+
+func TestMergeEmbedding(t *testing.T) {
+	file := parseMinimal(t)
+	if m, err := Merge(file, spec(`{}`, 1), testOpener{}); err != nil || m.Embedding != nil {
+		t.Fatalf("no embedder: %+v, %v", m.Embedding, err)
+	}
+	m, err := Merge(file, spec(embeddingSpec(`"maxBatch":8`), 2), testOpener{})
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	e := m.Embedding
+	if e == nil || e.Model != "voyage-code-3" || e.Dims != 1024 || e.APIKeyValue().Value() != "ek" {
+		t.Fatalf("embedding = %+v", e)
+	}
+	if batch, chars, item := e.Bounds(); batch != 8 || chars != DefaultEmbedMaxBatchChars || item != DefaultEmbedMaxItemChars {
+		t.Fatalf("Bounds = %d, %d, %d", batch, chars, item)
 	}
 }
 

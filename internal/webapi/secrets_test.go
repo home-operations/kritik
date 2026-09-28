@@ -155,6 +155,24 @@ func TestSealSpec(t *testing.T) {
 			errPath: "providers.mine.apiKey", errCode: CodeReenterSecret,
 		},
 		{
+			name:    "the embedder's key is sealed",
+			spec:    `{"embedding":{"baseUrl":"https://embed.example/v1","model":"m","dims":8,"apiKey":{"value":"ek"}}}`,
+			want:    `{"embedding":{"apiKey":{"sealed":"sealed:ek"},"baseUrl":"https://embed.example/v1","dims":8,"model":"m"}}`,
+			changed: []string{"embedding.apiKey"},
+		},
+		{
+			name:   "the embedder's key is kept across a model change",
+			stored: `{"embedding":{"baseUrl":"https://embed.example/v1","model":"m","dims":8,"apiKey":{"sealed":"old-ek"}}}`,
+			spec:   `{"embedding":{"baseUrl":"https://embed.example/v1/","model":"n","dims":16,"apiKey":{"keep":true}}}`,
+			want:   `{"embedding":{"apiKey":{"sealed":"old-ek"},"baseUrl":"https://embed.example/v1/","dims":16,"model":"n"}}`,
+		},
+		{
+			name:    "the embedder's key is not kept onto another endpoint",
+			stored:  `{"embedding":{"baseUrl":"https://embed.example/v1","model":"m","dims":8,"apiKey":{"sealed":"old-ek"}}}`,
+			spec:    `{"embedding":{"baseUrl":"https://elsewhere.example/v1","model":"m","dims":8,"apiKey":{"keep":true}}}`,
+			errPath: "embedding.apiKey", errCode: CodeReenterSecret,
+		},
+		{
 			name:    "a provider key is not generated",
 			spec:    `{"providers":{"mine":{"type":"openai","apiKey":{"generate":true}}}}`,
 			errPath: "providers.mine.apiKey",

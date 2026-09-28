@@ -63,10 +63,13 @@ type FieldPolicy struct {
 // UpdateConfigRequest replaces the instance spec, or one account's entry
 // in it, while the instance spec is still at Revision, 0 when none is
 // stored. Each secret is {"value": "..."}, {"keep": true} or, for a
-// webhook secret, {"generate": true}.
+// webhook secret, {"generate": true}. ConfirmReindex accepts that the
+// write's new embedder model or dimension rebuilds every repository's
+// index; without it such a write is refused with CodeReindexRequired.
 type UpdateConfigRequest struct {
-	Revision int64           `json:"revision"`
-	Spec     json.RawMessage `json:"spec"`
+	Revision       int64           `json:"revision"`
+	Spec           json.RawMessage `json:"spec"`
+	ConfirmReindex bool            `json:"confirmReindex,omitempty"`
 }
 
 // ConfigWriteResult is the instance spec's new revision. Generated holds

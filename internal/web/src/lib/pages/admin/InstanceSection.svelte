@@ -7,7 +7,8 @@
   import { describe, errorPath, isCode } from '../../manage';
   import { MANAGEMENT_OFF, management } from '../../session.svelte';
   import { toast } from '../../toast.svelte';
-  import type { ConfigWriteResult, InstanceConfig } from '../../types';
+  import type { ConfigWriteResult, InstanceConfig, UpdateConfigRequest } from '../../types';
+  import Dialog from '../../components/Dialog.svelte';
   import StateView from '../../components/StateView.svelte';
   import InstanceEditor from './InstanceEditor.svelte';
   import SpecView from './SpecView.svelte';
@@ -28,6 +29,10 @@
   let conflict = $state(false);
   let generated = $state<Record<string, string> | undefined>(undefined);
   let epoch = $state(0);
+  // A save the server refused until the admin confirms rebuilding every
+  // index, held while the dialog asks.
+  let pending = $state<{ cfg: InstanceConfig; spec: Record<string, unknown> } | undefined>(undefined);
+  let reindexOpen = $state(false);
 
   $effect(() => {
     setLeaveGuard(() => dirty || generated !== undefined);
@@ -43,18 +48,25 @@
     epoch++;
   }
 
-  async function save(cfg: InstanceConfig, spec: Record<string, unknown>): Promise<void> {
+  async function save(cfg: InstanceConfig, spec: Record<string, unknown>, reindex = false): Promise<void> {
     saving = true;
     errMessage = '';
     errPath = '';
     conflict = false;
+    const body: UpdateConfigRequest = { revision: cfg.revision, spec };
+    if (reindex) body.confirmReindex = true;
     try {
-      const r = await sendJSON<ConfigWriteResult>('PUT', path, { revision: cfg.revision, spec });
+      const r = await sendJSON<ConfigWriteResult>('PUT', path, body);
       toast(`Saved: revision ${r.revision}`);
       if (r.generated && Object.keys(r.generated).length) generated = r.generated;
       await reload();
       onsaved?.();
     } catch (err) {
+      if (isCode(err, 'reindex_required')) {
+        pending = { cfg, spec };
+        reindexOpen = true;
+        return;
+      }
       errMessage = describe(err);
       errPath = errorPath(err);
       errSeq++;
@@ -62,6 +74,12 @@
     } finally {
       saving = false;
     }
+  }
+
+  function confirmReindex(): void {
+    const p = pending;
+    reindexOpen = false;
+    if (p) void save(p.cfg, p.spec, true);
   }
 </script>
 
@@ -91,3 +109,14 @@
 </StateView>
 
 <GeneratedSecrets bind:generated fallback="#op-config" />
+
+<Dialog bind:open={reindexOpen} title="Rebuild every index?" onclose={() => (pending = undefined)} fallback="#op-config">
+  <p>
+    The index was built with another embedding model or dimension. Saving drops every repository's index and builds each
+    again from scratch, which embeds every repository anew; reviews run without similar code until theirs is rebuilt.
+  </p>
+  {#snippet footer()}
+    <button class="btn" onclick={() => (reindexOpen = false)}>Keep editing</button>
+    <button class="btn btn-primary btn-danger" onclick={confirmReindex}>Save and reindex</button>
+  {/snippet}
+</Dialog>

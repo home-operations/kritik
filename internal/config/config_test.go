@@ -28,8 +28,8 @@ func TestLoad(t *testing.T) {
 				if c.ConfigFile != "" || c.ConfigReloadInterval != 10*time.Second {
 					t.Fatalf("config file defaults = %q, %s", c.ConfigFile, c.ConfigReloadInterval)
 				}
-				if c.EmbeddingEnabled() || c.DatabaseOwnerURL != "" || c.ReindexOnModelChange {
-					t.Fatalf("embedder and owner should be unset by default: %+v", c)
+				if c.DatabaseOwnerURL != "" {
+					t.Fatalf("owner should be unset by default: %+v", c)
 				}
 				if lvl, _ := c.Level(); lvl != slog.LevelInfo {
 					t.Fatalf("level default = %v", lvl)
@@ -58,22 +58,10 @@ func TestLoad(t *testing.T) {
 		{name: "bad format", env: map[string]string{"KRITIK_LOG_FORMAT": "xml"}, wantErr: true},
 		{name: "zero reload interval", env: map[string]string{"KRITIK_CONFIG_RELOAD_INTERVAL": "0s"}, wantErr: true},
 		{name: "database url required", env: map[string]string{"KRITIK_DATABASE_URL": ""}, wantErr: true},
-		{name: "embedder half configured", env: map[string]string{"KRITIK_EMBED_MODEL": "m", "KRITIK_EMBED_DIMS": "1024"}, wantErr: true},
-		{name: "embedder dims over halfvec limit", env: map[string]string{"KRITIK_EMBED_BASE_URL": "https://e", "KRITIK_EMBED_API_KEY": "k", "KRITIK_EMBED_MODEL": "m", "KRITIK_EMBED_DIMS": "4096"}, wantErr: true},
-		{name: "embedder max batch zero", env: map[string]string{"KRITIK_EMBED_MAX_BATCH": "0"}, wantErr: true},
 		{name: "same role for app and runner", env: map[string]string{"KRITIK_DATABASE_RUNNER_ROLE": "kritik_app"}, wantErr: true},
 		{name: "zero leader retry", env: map[string]string{"KRITIK_LEADER_RETRY_INTERVAL": "0"}, wantErr: true},
 		{name: "unknown executor", env: map[string]string{"KRITIK_EXECUTOR": "docker"}, wantErr: true},
 		{name: "zero review workers", env: map[string]string{"KRITIK_REVIEW_WORKERS": "0"}, wantErr: true},
-		{
-			name: "embedder fully configured",
-			env:  map[string]string{"KRITIK_EMBED_BASE_URL": "https://e", "KRITIK_EMBED_API_KEY": "k", "KRITIK_EMBED_MODEL": "m", "KRITIK_EMBED_DIMS": "1024"},
-			check: func(t *testing.T, c *Config) {
-				if !c.EmbeddingEnabled() || c.EmbedDims != 1024 || c.EmbedMaxBatch != 64 {
-					t.Fatalf("embedder = %+v", c)
-				}
-			},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

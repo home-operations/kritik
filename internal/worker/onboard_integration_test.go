@@ -60,7 +60,8 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	window := before + 2
-	o := &Onboarder{Store: st, Queue: queue, Current: configfile.NewCurrent(&configfile.File{Indexing: configfile.Indexing{OnboardWindow: window}}), Logger: logger}
+	current := configfile.NewCurrent(&configfile.File{Indexing: configfile.Indexing{OnboardWindow: window}})
+	o := &Onboarder{Store: st, Queue: queue, Current: current, Logger: logger}
 	queued := func() (jobs, repos int) {
 		t.Helper()
 		if err := st.App().QueryRow(ctx, `SELECT count(*), count(DISTINCT args->>'repository_id') FROM river_job
@@ -69,6 +70,13 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 		}
 		return jobs, repos
 	}
+	if err := o.Offer(ctx); err != nil {
+		t.Fatalf("Offer: %v", err)
+	}
+	if jobs, _ := queued(); jobs != 0 {
+		t.Fatalf("queued %d jobs with no embedder, want none", jobs)
+	}
+	current.Set(&configfile.File{Indexing: configfile.Indexing{OnboardWindow: window}, Embedding: &configfile.Embedding{Model: "m", Dims: 8}})
 	for range 2 {
 		if err := o.Offer(ctx); err != nil {
 			t.Fatalf("Offer: %v", err)

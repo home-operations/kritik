@@ -685,3 +685,49 @@ func TestConcurrentSpecWrites(t *testing.T) {
 		t.Fatalf("revision = %s, want 1", rev)
 	}
 }
+
+// TestReindexConfirmation: a write whose embedder would rebuild the index
+// needs the admin's confirmation, once; one that keeps the index's model
+// and dimension, or adds the first embedder, does not.
+func TestReindexConfirmation(t *testing.T) {
+	e := newManageEnv(t)
+	t.Cleanup(func() { e.exec(`DELETE FROM index_schema`) })
+	revision := int64(0)
+	put := func(path string, spec map[string]any, confirm bool, wantStatus int, wantCode ErrorCode) {
+		t.Helper()
+		status, body := e.do("operator", "PUT", path, UpdateConfigRequest{Revision: revision, Spec: mustJSON(t, spec), ConfirmReindex: confirm})
+		e.expect(status, body, wantStatus, wantCode)
+		if status == http.StatusOK {
+			revision++
+		}
+	}
+	embedding := func(model string, dims int, key map[string]any) map[string]any {
+		return map[string]any{"embedding": map[string]any{"baseUrl": "https://embed.example/v1", "apiKey": key, "model": model, "dims": dims}}
+	}
+	withKeys := func(extra map[string]any) map[string]any {
+		spec := instanceSpec(keep, keep, extra)
+		spec["providers"] = map[string]any{"shared": map[string]any{"type": "openrouter", "apiKey": keep}}
+		return spec
+	}
+
+	put(instancePath, instanceSpec(map[string]any{"value": "pem"}, map[string]any{"generate": true},
+		embedding("m", 8, map[string]any{"value": "ek"})), false, http.StatusOK, "")
+	// The leader has built the index for m/8.
+	e.exec(`INSERT INTO index_schema (id, embed_model, embed_dims) VALUES (1, 'm', 8)`)
+
+	put(instancePath, withKeys(embedding("m", 16, keep)), false, http.StatusConflict, CodeReindexRequired)
+	put(instancePath, withKeys(embedding("n", 8, keep)), false, http.StatusConflict, CodeReindexRequired)
+	put(instancePath, withKeys(embedding("n", 8, keep)), true, http.StatusOK, "")
+	if got := e.scalar(`SELECT detail->>'reindex' FROM audit_events WHERE action = 'config.update' ORDER BY id DESC LIMIT 1`); got != "true" {
+		t.Fatalf("audit detail reindex = %s, want true", got)
+	}
+	// Confirmed once: until the leader rebuilds, later writes naming n pass.
+	polled := withKeys(embedding("n", 8, keep))
+	polled["polling"] = map[string]any{"interval": "5m"}
+	put(instancePath, polled, false, http.StatusOK, "")
+	put(mdPath+"/config", mdEntry(map[string]any{"limits": map[string]any{"concurrency": 2}}), false, http.StatusOK, "")
+	// No embedder, then the index's own again, need nothing; another does.
+	put(instancePath, withKeys(nil), false, http.StatusOK, "")
+	put(instancePath, withKeys(embedding("m", 8, map[string]any{"value": "ek"})), false, http.StatusOK, "")
+	put(instancePath, withKeys(embedding("x", 8, keep)), false, http.StatusConflict, CodeReindexRequired)
+}

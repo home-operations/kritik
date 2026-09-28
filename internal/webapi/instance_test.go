@@ -24,7 +24,7 @@ connections:
 	env := []config.EnvVar{
 		{Name: "KRITIK_ADDR", Value: ":9090", Set: true},
 		{Name: "KRITIK_METRICS_ADDR", Value: ":8081"},
-		{Name: "KRITIK_EMBED_BASE_URL", Value: "https://user:pass@embed.example", Set: true},
+		{Name: "KRITIK_GATEWAY_URL", Value: "https://user:pass@gw.example", Set: true},
 		{Name: "KRITIK_DATABASE_URL", Value: "set", Secret: true, Set: true},
 	}
 	rows := map[string]InstanceSetting{}
@@ -34,8 +34,8 @@ connections:
 	for key, want := range map[string]InstanceSetting{
 		"environment KRITIK_ADDR":         {"environment", "KRITIK_ADDR", ":9090", configfile.SourceEnv},
 		"environment KRITIK_METRICS_ADDR": {"environment", "KRITIK_METRICS_ADDR", ":8081", configfile.SourceDefault},
-		"environment KRITIK_EMBED_BASE_URL": {
-			"environment", "KRITIK_EMBED_BASE_URL", "https://embed.example (credentials hidden)", configfile.SourceEnv,
+		"environment KRITIK_GATEWAY_URL": {
+			"environment", "KRITIK_GATEWAY_URL", "https://gw.example (credentials hidden)", configfile.SourceEnv,
 		},
 		"environment KRITIK_DATABASE_URL": {"environment", "KRITIK_DATABASE_URL", "set", configfile.SourceEnv},
 		"connections acme-bot":            {"connections", "acme-bot", "acme, org-1, webhook /hooks/acme-bot", configfile.SourceFile},

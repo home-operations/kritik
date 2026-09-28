@@ -98,12 +98,25 @@ export interface AccountDraft {
   rest: Obj;
 }
 
-// The instance spec as its form edits it: the connections and the
-// instance's provider keys, and everything else, the defaults and the
-// accounts among it, as rest.
+// The instance's embedder, which builds the similar-code index.
+export interface EmbeddingDraft {
+  // The endpoint it was loaded with: the server keeps its key only while
+  // the endpoint is the same.
+  origEndpoint: string;
+  baseUrl: string;
+  model: string;
+  dims: string;
+  apiKey: SecretDraft;
+  rest: Obj;
+}
+
+// The instance spec as its form edits it: the connections, the
+// instance's provider keys and its embedder, and everything else, the
+// defaults and the accounts among it, as rest.
 export interface InstanceDraft {
   connections: ConnectionDraft[];
   providers: ProviderDraft[];
+  embedding: EmbeddingDraft | undefined;
   rest: Obj;
 }
 
@@ -211,6 +224,35 @@ function connectionOf(v: unknown): ConnectionDraft {
   };
 }
 
+// embeddingEndpoint is where the embedder's key goes, as the server
+// compares it when keeping the key: its base URL, in any case, without a
+// trailing slash.
+function embeddingEndpoint(baseUrl: string): string {
+  return baseUrl.trim().toLowerCase().replace(/\/+$/, '');
+}
+
+function embeddingOf(v: unknown): EmbeddingDraft {
+  const o = obj(v);
+  return {
+    origEndpoint: embeddingEndpoint(str(o.baseUrl)),
+    baseUrl: str(o.baseUrl),
+    model: str(o.model),
+    dims: str(o.dims),
+    apiKey: secretOf(o.apiKey, 'replace'),
+    rest: take(o, 'baseUrl', 'model', 'dims', 'apiKey'),
+  };
+}
+
+export function newEmbedding(): EmbeddingDraft {
+  return embeddingOf({});
+}
+
+// canKeepEmbeddingKey says whether the embedder may keep its stored key: it
+// has its endpoint still.
+export function canKeepEmbeddingKey(d: EmbeddingDraft): boolean {
+  return embeddingEndpoint(d.baseUrl) === d.origEndpoint;
+}
+
 export function newRepository(): RepositoryDraft {
   return repositoryOf({});
 }
@@ -283,7 +325,8 @@ export function instanceDraftOf(spec: Obj): InstanceDraft {
   return {
     connections: Array.isArray(o.connections) ? o.connections.map(connectionOf) : [],
     providers: Object.entries(obj(o.providers)).map(([name, v]) => providerOf(name, v)),
-    rest: obj(keptSecrets(take(o, 'connections', 'providers'))),
+    embedding: o.embedding ? embeddingOf(o.embedding) : undefined,
+    rest: obj(keptSecrets(take(o, 'connections', 'providers', 'embedding'))),
   };
 }
 
@@ -373,11 +416,12 @@ export function canKeep(d: ConnectionDraft): boolean {
 
 // hasTypedSecret reports whether any secret holds a value typed into the
 // form.
-export function hasTypedSecret(d: { providers: ProviderDraft[]; connections?: ConnectionDraft[] }): boolean {
+export function hasTypedSecret(d: { providers: ProviderDraft[]; connections?: ConnectionDraft[]; embedding?: EmbeddingDraft }): boolean {
   const typed = (sd: SecretDraft) => sd.mode === 'replace' && sd.value !== '';
   return (
     (d.connections ?? []).some((x) => [x.clientIdFrom, x.privateKey, x.appWebhookSecret].some(typed)) ||
-    d.providers.some((x) => typed(x.apiKey))
+    d.providers.some((x) => typed(x.apiKey)) ||
+    (d.embedding !== undefined && typed(d.embedding.apiKey))
   );
 }
 
@@ -426,6 +470,19 @@ function connectionSpec(b: Builder, d: ConnectionDraft, i: number): Obj {
   secret(app, 'privateKey', d.privateKey, `${p}.app.privateKey`, true);
   secret(app, 'webhookSecret', d.appWebhookSecret, `${p}.app.webhookSecret`, true);
   out.app = app;
+  return out;
+}
+
+function embeddingSpec(b: Builder, d: EmbeddingDraft): Obj {
+  const out: Obj = { ...d.rest };
+  if (d.baseUrl.trim() === '') b.fail('embedding.baseUrl', 'an endpoint is required');
+  out.baseUrl = d.baseUrl.trim();
+  if (d.model.trim() === '') b.fail('embedding.model', 'a model is required');
+  out.model = d.model.trim();
+  if (d.dims.trim() === '') b.fail('embedding.dims', 'a dimension is required');
+  b.int(out, 'dims', d.dims, 'embedding.dims');
+  if (d.apiKey.mode === 'keep' && !canKeepEmbeddingKey(d)) b.fail('embedding.apiKey', 'the endpoint changed: enter the key again');
+  b.secret(out, 'apiKey', d.apiKey, 'embedding.apiKey', true);
   return out;
 }
 
@@ -482,6 +539,7 @@ export function buildInstanceSpec(d: InstanceDraft, redact = false): Built {
   const b = new Builder(redact);
   const out: Obj = { ...d.rest };
   if (d.providers.length) out.providers = providersSpec(b, d.providers);
+  if (d.embedding) out.embedding = embeddingSpec(b, d.embedding);
   if (d.connections.length) out.connections = d.connections.map((x, i) => connectionSpec(b, x, i));
   return { spec: out, error: b.error };
 }

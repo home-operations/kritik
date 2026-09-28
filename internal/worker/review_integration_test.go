@@ -66,6 +66,11 @@ defaults:
     review: test/reviewer
   limits:
     concurrency: 1
+embedding:
+  baseUrl: http://unused.invalid/v1
+  apiKey: { env: TEST_SECRET }
+  model: fake-embed
+  dims: 8
 connections:
   - name: bot-ross
     forge: github
@@ -923,11 +928,8 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	if err := appStore.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	if err := appStore.EnsureIndexSchema(ctx, "kritik_app", "fake-embed", 8, false); err != nil {
+	if _, err := appStore.EnsureIndexSchema(ctx, "kritik_app", "fake-embed", 8); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
-	}
-	if err := appStore.EnsureIndexSchema(ctx, "kritik_app", "other-model", 8, false); !errors.Is(err, store.ErrIndexSchemaMismatch) {
-		t.Fatalf("a different embedding model must be refused without reindex, got %v", err)
 	}
 	runnerStore, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_RUNNER_URL"), Logger: logger})
 	if err != nil {
@@ -971,17 +973,18 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	lf := &localForge{dir: dir, base: base, tip: head, permissions: map[string]forge.Permission{"onedr0p": forge.PermissionAdmin}}
 	fc := &fakeCompleter{started: make(chan struct{}, 1)}
 	fe := &fakeEmbedder{}
+	embedders := &Embedders{Build: func(configfile.Embedding) model.Embedder { return fe }}
 	exec := &gateExecutor{inner: &executor.Local{Store: runnerStore}, started: make(chan executor.Spec)}
 	deadline := &jobDeadline{}
 	workers := river.NewWorkers()
 	wb := Base{Store: appStore, Current: current, Forges: &forges{f: lf}, Logger: logger}
 	river.AddWorker(workers, &Review{
-		Base: wb, Completers: &completers{c: fc}, Embedder: fe, EmbedModel: "fake-embed", Executor: exec,
+		Base: wb, Completers: &completers{c: fc}, Embedders: embedders, Executor: exec,
 		superviseEvery: 50 * time.Millisecond,
 	})
 	river.AddWorker(workers, &FollowUp{Base: wb, Completers: &completers{c: fc}})
 	river.AddWorker(workers, &Index{
-		Base: wb, Executor: exec, Embedder: fe, EmbedModel: "fake-embed", EmbedDims: 8,
+		Base: wb, Executor: exec, Embedders: embedders,
 		// A chunk a batch, so a build commits several.
 		batch: 1,
 	})

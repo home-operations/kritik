@@ -30,7 +30,7 @@ func init() {
 			},
 			Spec: json.RawMessage(`{"forge":"github","name":"alpha","providers":{"own":{"type":"openai","apiKey":{"set":true}}}}`),
 		},
-		"update_config_request": UpdateConfigRequest{Revision: 3, Spec: json.RawMessage(`{"forge":"github","name":"alpha"}`)},
+		"update_config_request": UpdateConfigRequest{Revision: 3, Spec: json.RawMessage(`{"forge":"github","name":"alpha"}`), ConfirmReindex: true},
 		"config_write_result": ConfigWriteResult{
 			Revision: 4, Generated: map[string]string{"connections[alpha-bot].app.webhookSecret": "00ff"},
 		},

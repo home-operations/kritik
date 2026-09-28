@@ -76,7 +76,7 @@ func Merge(file *File, spec InstanceSpec, open Opener) (*File, error) {
 	}
 	out := &File{
 		Auth: file.Auth, Providers: s.Providers, Defaults: s.Defaults, Polling: s.Polling, Indexing: s.Indexing,
-		Tools: s.Tools, Retention: s.Retention, Egress: s.Egress,
+		Tools: s.Tools, Retention: s.Retention, Egress: s.Egress, Embedding: s.Embedding,
 		hash: mergedHash(file.hash, spec), base: file, spec: spec, envConnection: file.envConnection,
 	}
 	held := map[string]string{}

@@ -14,9 +14,6 @@
 {{- if and (include "kritik.hasWorker" .) (not .Values.database.runner.existingSecret) -}}
 {{- fail "database.runner.existingSecret is required for roles.all / roles.worker: runner Jobs connect with it" -}}
 {{- end -}}
-{{- if and (include "kritik.embeddingEnabled" .) (not (include "kritik.embeddingSecretName" .)) -}}
-{{- fail "embedding.model is set but no key is given: set embedding.apiKey or embedding.existingSecret" -}}
-{{- end -}}
 {{- if and .Values.roles.web.enabled (not .Values.web.url) -}}
 {{- fail "web.url is required when roles.web.enabled is true" -}}
 {{- end -}}
@@ -161,29 +158,6 @@ spec:
               value: {{ $.Values.config.reviewWorkers | quote }}
             - name: KRITIK_INDEX_WORKERS
               value: {{ $.Values.config.indexWorkers | quote }}
-            {{- if include "kritik.embeddingEnabled" $ }}
-            - name: KRITIK_EMBED_BASE_URL
-              value: {{ tpl $.Values.embedding.baseUrl $ | quote }}
-            - name: KRITIK_EMBED_MODEL
-              value: {{ tpl $.Values.embedding.model $ | quote }}
-            - name: KRITIK_EMBED_DIMS
-              value: {{ $.Values.embedding.dims | quote }}
-            - name: KRITIK_EMBED_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "kritik.embeddingSecretName" $ | quote }}
-                  key: {{ include "kritik.embeddingSecretKey" $ | quote }}
-            - name: KRITIK_EMBED_MAX_BATCH
-              value: {{ $.Values.embedding.maxBatch | quote }}
-            - name: KRITIK_EMBED_MAX_BATCH_CHARS
-              value: {{ $.Values.embedding.maxBatchChars | quote }}
-            - name: KRITIK_EMBED_MAX_ITEM_CHARS
-              value: {{ $.Values.embedding.maxItemChars | quote }}
-            {{- if $.Values.embedding.reindexOnModelChange }}
-            - name: KRITIK_REINDEX_ON_MODEL_CHANGE
-              value: "true"
-            {{- end }}
-            {{- end }}
             {{- end }}
             {{- if or (eq $role "web") (and (eq $role "all") $.Values.web.url) }}
             - name: KRITIK_WEB_URL

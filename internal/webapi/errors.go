@@ -30,6 +30,10 @@ const (
 	CodeActionsDisabled    ErrorCode = "actions_disabled"
 	CodeAlreadyQueued      ErrorCode = "already_queued"
 	CodeReenterSecret      ErrorCode = "reenter_secret"
+	// CodeReindexRequired refuses a write that changes the embedder's model
+	// or dimension, which rebuilds every repository's index, until the
+	// client confirms it with UpdateConfigRequest.ConfirmReindex.
+	CodeReindexRequired ErrorCode = "reindex_required"
 )
 
 // apiError is an error a handler returns to be written as ErrorBody.

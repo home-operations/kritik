@@ -14,6 +14,7 @@
 package configfile
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 	"time"
@@ -282,6 +283,48 @@ type Indexing struct {
 // DefaultOnboardWindow applies when the file sets no onboardWindow.
 const DefaultOnboardWindow = 4
 
+// Embedding is the instance's embedder, any OpenAI-compatible embeddings
+// endpoint, which builds the similar-code index. There is one per instance
+// because the index has one vector dimension (ADR-0014 §2.6). Unset,
+// indexing is off and reviews run without vector retrieval.
+type Embedding struct {
+	// BaseURL is the endpoint, such as https://openrouter.ai/api/v1.
+	BaseURL string    `yaml:"baseUrl"`
+	APIKey  SecretRef `yaml:"apiKey"`
+	Model   string    `yaml:"model"`
+	// Dims is the vector dimension, which shapes the index table: a change
+	// of it or of Model rebuilds every repository's index.
+	Dims int `yaml:"dims"`
+	// MaxBatch, MaxBatchChars and MaxItemChars bound one request: inputs,
+	// characters, and characters per input, beyond which an input is cut.
+	// OpenAI-compatible servers differ widely in what they accept; unset,
+	// each is a default conservative enough for the common ones.
+	MaxBatch      int `yaml:"maxBatch,omitempty"`
+	MaxBatchChars int `yaml:"maxBatchChars,omitempty"`
+	MaxItemChars  int `yaml:"maxItemChars,omitempty"`
+
+	apiKey Secret
+}
+
+// APIKeyValue returns the resolved API key.
+func (e *Embedding) APIKeyValue() Secret { return e.apiKey }
+
+// Embedding request bounds, when the spec sets none, and the largest
+// dimension the index's halfvec column takes.
+const (
+	DefaultEmbedMaxBatch      = 64
+	DefaultEmbedMaxBatchChars = 200_000
+	DefaultEmbedMaxItemChars  = 16_000
+	MaxEmbedDims              = 4000
+)
+
+// Bounds returns MaxBatch, MaxBatchChars and MaxItemChars, each its
+// default when unset.
+func (e *Embedding) Bounds() (batch, batchChars, itemChars int) {
+	return cmp.Or(e.MaxBatch, DefaultEmbedMaxBatch), cmp.Or(e.MaxBatchChars, DefaultEmbedMaxBatchChars),
+		cmp.Or(e.MaxItemChars, DefaultEmbedMaxItemChars)
+}
+
 // Retention controls what is deleted and when. Reviews, findings and usage
 // are kept indefinitely; only bulky, reproducible data expires.
 type Retention struct {
@@ -547,6 +590,7 @@ type Spec struct {
 	Tools       []Tool              `yaml:"tools,omitempty"`
 	Retention   Retention           `yaml:"retention,omitempty"`
 	Egress      Egress              `yaml:"egress,omitempty"`
+	Embedding   *Embedding          `yaml:"embedding,omitempty"`
 	Connections []Connection        `yaml:"connections,omitempty"`
 	Accounts    []Account           `yaml:"accounts,omitempty"`
 }
@@ -565,6 +609,8 @@ type File struct {
 	Tools       []Tool
 	Retention   Retention
 	Egress      Egress
+	// Embedding is the instance's embedder, nil when indexing is off.
+	Embedding *Embedding
 	// Accounts are every account a running connection serves, in the order
 	// the connections list them.
 	Accounts []Account
