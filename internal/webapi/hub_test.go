@@ -26,8 +26,8 @@ func testHub(t *testing.T) (*hub, *configfile.File) {
 func TestHubPublishFiltersByTenant(t *testing.T) {
 	h, f := testHub(t)
 	alpha, beta := tenantIDOf(t, f, "alpha"), tenantIDOf(t, f, "beta")
-	a := h.subscribe(&auth.Principal{Memberships: map[string]auth.Role{alpha: auth.RoleMember}})
-	b := h.subscribe(&auth.Principal{Memberships: map[string]auth.Role{beta: auth.RoleMember}})
+	a := h.subscribe(&auth.Principal{Tenants: map[string]bool{alpha: true}})
+	b := h.subscribe(&auth.Principal{Tenants: map[string]bool{beta: true}})
 	op := h.subscribe(&auth.Principal{Operator: true})
 	rid := "r-1"
 
@@ -63,7 +63,7 @@ func TestHubOverflowAndReconnectResync(t *testing.T) {
 	h, f := testHub(t)
 	h.buffer = 2
 	alpha := tenantIDOf(t, f, "alpha")
-	slow := h.subscribe(&auth.Principal{Memberships: map[string]auth.Role{alpha: auth.RoleMember}})
+	slow := h.subscribe(&auth.Principal{Tenants: map[string]bool{alpha: true}})
 	other := h.subscribe(&auth.Principal{})
 	for range 5 {
 		h.publish(store.Event{TenantID: alpha, Kind: store.EventRunnerRun, ID: "x"})
@@ -115,7 +115,7 @@ func TestHubServe(t *testing.T) {
 	h, f := testHub(t)
 	h.heartbeat = 20 * time.Millisecond
 	alpha := tenantIDOf(t, f, "alpha")
-	p := &auth.Principal{Memberships: map[string]auth.Role{alpha: auth.RoleMember}}
+	p := &auth.Principal{Tenants: map[string]bool{alpha: true}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.serve(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	}))

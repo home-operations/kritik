@@ -53,6 +53,9 @@ func Parse(raw []byte) (*File, error) {
 		}
 		return nil, fmt.Errorf("configfile: parse: %w", err)
 	}
+	if err := f.Auth.overlayEnv(os.Environ()); err != nil {
+		return nil, err
+	}
 	if err := f.resolve(); err != nil {
 		return nil, err
 	}
@@ -84,7 +87,7 @@ func (f *File) resolve() error {
 		f.Egress.credentials[strings.ToLower(host)] = v
 	}
 
-	if err := f.Web.resolve(); err != nil {
+	if err := f.Auth.resolve(); err != nil {
 		return err
 	}
 
@@ -165,7 +168,7 @@ func (f *File) validate() error {
 	if err := f.validateTools(); err != nil {
 		return err
 	}
-	if err := f.Web.validate(); err != nil {
+	if err := f.Auth.validate(); err != nil {
 		return err
 	}
 	return f.validateTenants()

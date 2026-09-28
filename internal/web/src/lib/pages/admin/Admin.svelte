@@ -3,13 +3,11 @@
   import { canAdmin, session } from '../../session.svelte';
   import AuditTable from '../../components/AuditTable.svelte';
   import ConfigSection from './ConfigSection.svelte';
-  import MembersSection from './MembersSection.svelte';
 
   let { slug, section }: { slug: string; section?: string } = $props();
 
   const SECTIONS = [
     ['config', 'Configuration'],
-    ['members', 'Members'],
     ['audit', 'Audit log'],
   ] as const;
   const current = $derived(section ?? 'config');
@@ -24,7 +22,7 @@
     {#if !session.me}
       <p class="state-msg" aria-live="polite">Loading…</p>
     {:else if !canAdmin(slug)}
-      <p class="state-msg" role="alert">Only a tenant admin or an instance operator can see this page.</p>
+      <p class="state-msg" role="alert">Only an admin can see this page.</p>
     {:else}
       <nav class="tabs" aria-label="Admin sections">
         {#each SECTIONS as [s, label] (s)}
@@ -38,8 +36,6 @@
           <p class="state-msg">No such section.</p>
         {:else if current === 'config'}
           <ConfigSection {slug} />
-        {:else if current === 'members'}
-          <MembersSection {slug} />
         {:else}
           <section class="panel" aria-labelledby="admin-audit">
             <header class="panel-head"><h2 id="admin-audit">Audit log</h2></header>

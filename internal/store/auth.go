@@ -11,27 +11,33 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Role is what a membership lets an account do on a tenant.
+// Role is what a session lets its account do: administer the instance, or
+// read the accounts its grant names.
 type Role string
 
-// Membership roles.
+// Session roles.
 const (
 	RoleAdmin  Role = "admin"
 	RoleMember Role = "member"
 )
 
-// Valid reports whether r is a membership role.
+// Valid reports whether r is a session role.
 func (r Role) Valid() bool { return r == RoleAdmin || r == RoleMember }
 
 func (r Role) String() string { return string(r) }
 
-// Grant is a role on one tenant.
-type Grant struct {
-	TenantID string
-	Role     Role
+// SessionGrant is what a sign-in allowed, fixed for the session's life: the
+// role, and for a member the forge accounts they read, or every account.
+type SessionGrant struct {
+	Role        Role
+	AllAccounts bool
+	// Accounts are lowercased "<forge>/<name>" keys.
+	Accounts []string
+	// Key fingerprints the sign-in configuration that decided the grant; a
+	// caller honours the session only while it still matches.
+	Key string
 }
 
 // Account is a human who has signed in to the dashboard.
@@ -53,10 +59,12 @@ type SignInIdentity struct {
 	DisplayName, AvatarURL                  string
 }
 
-// Session is a live dashboard session and whom it belongs to.
+// Session is a live dashboard session, whom it belongs to and what its
+// sign-in allowed.
 type Session struct {
 	Account   Account
 	Identity  SignInIdentity
+	Grant     SessionGrant
 	ExpiresAt time.Time
 }
 
@@ -169,107 +177,19 @@ func identityAccount(ctx context.Context, tx pgx.Tx, id SignInIdentity) (string,
 	return accountID, err
 }
 
-// ReplaceForgeMemberships makes grants the account's forge-sourced
-// memberships, dropping any it no longer holds; invite-sourced memberships
-// are untouched. A grant on a tenant the leader has not yet created is
-// skipped rather than failing the sign-in; the next sign-in picks it up.
-func (s *Store) ReplaceForgeMemberships(ctx context.Context, accountID string, grants []Grant, now time.Time) error {
-	for _, g := range grants {
-		if !g.Role.Valid() {
-			return fmt.Errorf("store: replace forge memberships: invalid role %q", g.Role)
-		}
-	}
-	tx, err := s.app.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("store: replace forge memberships: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
-	if _, err := tx.Exec(ctx, `DELETE FROM memberships WHERE account_id = $1 AND source = 'forge'`, accountID); err != nil {
-		return fmt.Errorf("store: replace forge memberships: %w", err)
-	}
-	for _, g := range grants {
-		if err := insertForgeMembership(ctx, tx, accountID, g, now); err != nil {
-			return fmt.Errorf("store: replace forge memberships: %w", err)
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("store: replace forge memberships: %w", err)
-	}
-	return nil
-}
-
-// insertForgeMembership inserts under a savepoint, since a foreign-key
-// failure would otherwise abort the whole transaction.
-func insertForgeMembership(ctx context.Context, tx pgx.Tx, accountID string, g Grant, now time.Time) error {
-	sp, err := tx.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = sp.Rollback(ctx) }() // no-op after a successful commit
-	_, err = sp.Exec(ctx, `INSERT INTO memberships (tenant_id, account_id, role, source, refreshed_at)
-		VALUES ($1, $2, $3, 'forge', $4) ON CONFLICT (tenant_id, account_id, source) DO NOTHING`, g.TenantID, accountID, g.Role, now)
-	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23503" {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return sp.Commit(ctx)
-}
-
-// AcceptInvites turns every pending, unexpired invite for email into an
-// invite-sourced membership of the account, with the invite's role, and
-// marks it accepted, returning how many it accepted. email must be one the
-// provider verified. Forge-sourced memberships are untouched.
-//
-// It does not take LockTenantAdmins, so an accepted member invite can
-// replace an earlier invite's admin role without the last-admin check. The
-// dashboard refuses to invite an email that is already a member, which
-// leaves only an invite issued before its account joined by another source.
-func (s *Store) AcceptInvites(ctx context.Context, accountID, email string, now time.Time) (int, error) {
-	if email == "" {
-		return 0, nil
-	}
-	tag, err := s.app.Exec(ctx, `WITH accepted AS (
-			UPDATE invites SET accepted_at = $3, accepted_by = $1
-			WHERE accepted_at IS NULL AND expires_at > $3 AND lower(email) = lower($2)
-			RETURNING tenant_id, role
-		)
-		INSERT INTO memberships (tenant_id, account_id, role, source, refreshed_at)
-		SELECT tenant_id, $1, role, 'invite', $3 FROM accepted
-		-- The latest accepted invite wins: its role replaces an earlier invite's.
-		ON CONFLICT (tenant_id, account_id, source) DO UPDATE SET
-			role = EXCLUDED.role, refreshed_at = EXCLUDED.refreshed_at`, accountID, email, now)
-	if err != nil {
-		return 0, fmt.Errorf("store: accept invites: %w", err)
-	}
-	return int(tag.RowsAffected()), nil
-}
-
-// Memberships returns the account's effective role on each tenant it
-// belongs to: the highest its forge and invite memberships give.
-func (s *Store) Memberships(ctx context.Context, accountID string) (map[string]Role, error) {
-	rows, err := s.app.Query(ctx, `SELECT tenant_id, CASE WHEN bool_or(role = 'admin') THEN 'admin' ELSE 'member' END
-		FROM memberships WHERE account_id = $1 GROUP BY tenant_id`, accountID)
-	if err != nil {
-		return nil, fmt.Errorf("store: memberships: %w", err)
-	}
-	out := map[string]Role{}
-	var tenantID string
-	var role Role
-	if _, err := pgx.ForEachRow(rows, []any{&tenantID, &role}, func() error {
-		out[tenantID] = role
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("store: memberships: %w", err)
-	}
-	return out, nil
-}
-
 // CreateSession stores a new session for the account, signed in through
-// the provider at origin, valid until expires, and returns its cookie value.
-// Only the value's SHA-256 is kept. Expired sessions are swept on the way.
-func (s *Store) CreateSession(ctx context.Context, accountID, provider, origin string, now, expires time.Time) (string, error) {
+// the provider at origin with grant g, valid until expires, and returns its
+// cookie value. Only the value's SHA-256 is kept. Expired sessions are
+// swept on the way.
+func (s *Store) CreateSession(
+	ctx context.Context, accountID, provider, origin string, g SessionGrant, now, expires time.Time,
+) (string, error) {
+	if !g.Role.Valid() {
+		return "", fmt.Errorf("store: create session: invalid role %q", g.Role)
+	}
+	if g.Accounts == nil {
+		g.Accounts = []string{}
+	}
 	token, err := randomToken()
 	if err != nil {
 		return "", fmt.Errorf("store: create session: %w", err)
@@ -278,8 +198,9 @@ func (s *Store) CreateSession(ctx context.Context, accountID, provider, origin s
 		return "", fmt.Errorf("store: create session: %w", err)
 	}
 	if _, err := s.app.Exec(ctx, `INSERT INTO sessions
-		(token_hash, account_id, provider, provider_origin, created_at, expires_at, last_seen_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $5)`, tokenHash(token), accountID, provider, origin, now, expires); err != nil {
+		(token_hash, account_id, provider, provider_origin, role, all_accounts, accounts, grant_key, created_at, expires_at, last_seen_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $9)`,
+		tokenHash(token), accountID, provider, origin, g.Role, g.AllAccounts, g.Accounts, g.Key, now, expires); err != nil {
 		return "", fmt.Errorf("store: create session: %w", err)
 	}
 	return token, nil
@@ -295,6 +216,7 @@ func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) 
 	var sess Session
 	var lastSeen *time.Time
 	err := s.app.QueryRow(ctx, `SELECT s.account_id, s.provider, s.provider_origin, s.expires_at, s.last_seen_at,
+			s.role, s.all_accounts, s.accounts, s.grant_key,
 			a.display_name, a.email, a.email_verified, a.avatar_url, i.subject, i.login
 		FROM sessions s
 		JOIN accounts a ON a.id = s.account_id
@@ -302,6 +224,7 @@ func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) 
 		WHERE s.token_hash = $1 AND s.expires_at > $2
 		ORDER BY i.created_at LIMIT 1`, hash, now).
 		Scan(&sess.Account.ID, &sess.Identity.Provider, &sess.Identity.Origin, &sess.ExpiresAt, &lastSeen,
+			&sess.Grant.Role, &sess.Grant.AllAccounts, &sess.Grant.Accounts, &sess.Grant.Key,
 			&sess.Account.DisplayName, &sess.Account.Email, &sess.Account.EmailVerified, &sess.Account.AvatarURL,
 			&sess.Identity.Subject, &sess.Identity.Login)
 	if errors.Is(err, pgx.ErrNoRows) {

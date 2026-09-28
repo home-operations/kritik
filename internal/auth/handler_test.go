@@ -79,10 +79,8 @@ func TestSessionCookie(t *testing.T) {
 }
 
 func TestProvidersEndpoint(t *testing.T) {
-	f := &configfile.File{Web: configfile.Web{SignIn: []configfile.SignIn{
-		{Name: "gh", Type: configfile.SignInGitHub},
-		{Name: "corp", Type: configfile.SignInOIDC, Issuer: "https://id.example.com"},
-	}}}
+	f := testFile(t, "auth:\n"+adminPassword+"  oidc:\n    name: Corp\n    issuer: https://id.example.com\n    clientId: c\n"+
+		"    clientSecret: { env: TEST_AUTH_SECRET }\n  github:\n    clientId: c\n    clientSecret: { env: TEST_AUTH_SECRET }\n")
 	h := testHandler(t, "https://kritik.example.com", f)
 	mux := http.NewServeMux()
 	h.Register(mux)
@@ -96,8 +94,9 @@ func TestProvidersEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []ProviderInfo{
-		{Name: "gh", Type: configfile.SignInGitHub, DisplayName: "GitHub"},
-		{Name: "corp", Type: configfile.SignInOIDC, DisplayName: "corp"},
+		{Name: "local", Type: configfile.SignInLocal, DisplayName: "Admin"},
+		{Name: "oidc", Type: configfile.SignInOIDC, DisplayName: "Corp"},
+		{Name: "github", Type: configfile.SignInGitHub, DisplayName: "GitHub"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("providers = %+v", got)
@@ -108,7 +107,7 @@ func TestProvidersEndpoint(t *testing.T) {
 		}
 	}
 
-	f.Web.SignIn = nil
+	h.current.Set(&configfile.File{})
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/auth/providers", nil))
 	if strings.TrimSpace(w.Body.String()) != "[]" {
@@ -121,7 +120,7 @@ func TestLoginUnknownProvider(t *testing.T) {
 	mux := http.NewServeMux()
 	h.Register(mux)
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/auth/login/nope", nil))
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/auth/login/local", nil))
 	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "unknown_sign_in") ||
 		!strings.Contains(w.Body.String(), `href="https://kritik.example.com/"`) {
 		t.Fatalf("status %d body %s", w.Code, w.Body.String())

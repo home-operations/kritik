@@ -471,6 +471,18 @@ kbd {
   justify-content: center;
   padding: 8px 12px;
 }
+.signin-local {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+}
+.signin-or {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
 .signin-empty,
 .signin-error {
   margin: 0;

@@ -86,7 +86,7 @@
     if (errPath) clearedSeq = errSeq;
   }
   const inv = (path: string) => pathMatches(path, activePath);
-  const opHint = 'operator only';
+  const opHint = 'admin only';
   const own = $derived(inherited?.tenant);
   const hint = (key: string, value: string, fallback = '') =>
     inherited ? inheritsHint(value, inherited.tenantSources[key]) : fallback;
@@ -241,8 +241,8 @@
     <fieldset>
       <legend>Provider keys</legend>
       <p class="field-hint">
-        The tenant's own model keys. A model named <span class="mono">&lt;key name&gt;/&lt;model&gt;</span> runs on its key, and a
-        tenant admin may set the review and fallback models to one; a model on the operator's providers stays the operator's to set.
+        The tenant's own model keys. A model named <span class="mono">&lt;key name&gt;/&lt;model&gt;</span> runs on its key, and the
+        tenant pays for it.
       </p>
       {#each draft.providers as prov, i (prov.key)}
         <ProviderFields

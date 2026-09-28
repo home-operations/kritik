@@ -33,6 +33,8 @@ type fakeUser struct {
 	// Orgs maps a lowercase organization to "admin", "member", or for
 	// GitHub "pending"; absent means not a member.
 	Orgs map[string]string
+	// Groups is the OIDC groups claim.
+	Groups []string
 }
 
 // pendingAuth is what the fake's authorize step would have recorded for a
@@ -170,7 +172,7 @@ func newFakeOIDC(t *testing.T) *fakeOAuth {
 		now := time.Now()
 		claims, _ := json.Marshal(map[string]any{
 			"iss": iss, "sub": p.user.Login, "aud": fakeClientID, "exp": now.Add(time.Hour).Unix(), "iat": now.Unix(),
-			"nonce": nonce, "preferred_username": p.user.Login, "email": p.user.Email,
+			"nonce": nonce, "preferred_username": p.user.Login, "email": p.user.Email, "groups": p.user.Groups,
 			// Some issuers send email_verified as a string.
 			"email_verified": map[bool]string{true: "true", false: "false"}[p.user.EmailVerified], "name": "Name " + p.user.Login,
 		})
@@ -219,6 +221,24 @@ func newFakeGitHub(t *testing.T) *fakeOAuth {
 			writeFakeJSON(w, map[string]string{"state": "pending", "role": "member"})
 		default:
 			writeFakeJSON(w, map[string]string{"state": "active", "role": role})
+		}
+	})
+	mux.HandleFunc("GET /user/memberships/orgs", func(w http.ResponseWriter, r *http.Request) {
+		u := f.user(w, r)
+		if u == nil {
+			return
+		}
+		out := []map[string]any{}
+		for org, role := range u.Orgs {
+			if role != "pending" && r.URL.Query().Get("page") == "1" {
+				out = append(out, map[string]any{"state": "active", "role": role, "organization": map[string]string{"login": org}})
+			}
+		}
+		writeFakeJSON(w, out)
+	})
+	mux.HandleFunc("GET /user/teams", func(w http.ResponseWriter, r *http.Request) {
+		if u := f.user(w, r); u != nil {
+			writeFakeJSON(w, []any{})
 		}
 	})
 	return f

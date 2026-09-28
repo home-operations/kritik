@@ -88,11 +88,12 @@ func (ts *testServer) as(p *auth.Principal, r *http.Request) *httptest.ResponseR
 	return w
 }
 
-func memberOf(t *testing.T, f *configfile.File, slug string, role auth.Role) *auth.Principal {
+// memberOf is a member who reads the tenant slug.
+func memberOf(t *testing.T, f *configfile.File, slug string) *auth.Principal {
 	t.Helper()
 	return &auth.Principal{
-		Account:     auth.Account{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com"},
-		Memberships: map[string]auth.Role{tenantIDOf(t, f, slug): role},
+		Account: auth.Account{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com"},
+		Tenants: map[string]bool{tenantIDOf(t, f, slug): true},
 	}
 }
 
@@ -122,7 +123,7 @@ func TestAPIRequiresPrincipal(t *testing.T) {
 
 func TestTenantScopeHidesUnreadableTenants(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	alphaMember := memberOf(t, ts.file, "alpha", auth.RoleMember)
+	alphaMember := memberOf(t, ts.file, "alpha")
 	paths := []string{
 		"/api/v1/tenants/%s", "/api/v1/tenants/%s/repos", "/api/v1/tenants/%s/repos/o/r", "/api/v1/tenants/%s/pulls",
 		"/api/v1/tenants/%s/pulls/o/r/1", "/api/v1/tenants/%s/reviews/x", "/api/v1/tenants/%s/reviews/x/diff",
@@ -156,9 +157,9 @@ func TestResolveTenant(t *testing.T) {
 		wantRole auth.Role
 		wantErr  bool
 	}{
-		{"member reads own tenant", &auth.Principal{Memberships: map[string]auth.Role{alpha: auth.RoleMember}}, "alpha", auth.RoleMember, false},
-		{"admin reads own tenant", &auth.Principal{Memberships: map[string]auth.Role{alpha: auth.RoleAdmin}}, "alpha", auth.RoleAdmin, false},
-		{"member of another tenant", &auth.Principal{Memberships: map[string]auth.Role{alpha: auth.RoleMember}}, "beta", "", true},
+		{"member reads own tenant", &auth.Principal{Tenants: map[string]bool{alpha: true}}, "alpha", auth.RoleMember, false},
+		{"member of every tenant", &auth.Principal{AllTenants: true}, "beta", auth.RoleMember, false},
+		{"member of another tenant", &auth.Principal{Tenants: map[string]bool{alpha: true}}, "beta", "", true},
 		{"unknown tenant", &auth.Principal{Operator: true}, "gamma", "", true},
 		{"operator reads any tenant as admin", &auth.Principal{Operator: true}, "beta", auth.RoleAdmin, false},
 		{"no memberships", &auth.Principal{}, "alpha", "", true},
@@ -191,7 +192,7 @@ func TestMe(t *testing.T) {
 		operator bool
 		tenants  []TenantMembership
 	}{
-		{"member", memberOf(t, ts.file, "beta", auth.RoleMember), false,
+		{"member", memberOf(t, ts.file, "beta"), false,
 			[]TenantMembership{{Slug: "beta", Role: auth.RoleMember, ManagedBy: configfile.OriginFile}}},
 		{"operator sees every tenant as admin", &auth.Principal{Operator: true}, true, []TenantMembership{
 			{Slug: "alpha", Role: auth.RoleAdmin, ManagedBy: configfile.OriginFile},
@@ -231,7 +232,7 @@ func TestListTenantsWithNoneReadable(t *testing.T) {
 
 func TestOperatorRouteHiddenFromNonOperators(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	w := ts.as(memberOf(t, ts.file, "alpha", auth.RoleAdmin), httptest.NewRequest("GET", "/api/v1/operator/tenants", nil))
+	w := ts.as(memberOf(t, ts.file, "alpha"), httptest.NewRequest("GET", "/api/v1/operator/tenants", nil))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
@@ -239,7 +240,7 @@ func TestOperatorRouteHiddenFromNonOperators(t *testing.T) {
 
 func TestRequestValidation(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	p := memberOf(t, ts.file, "alpha", auth.RoleMember)
+	p := memberOf(t, ts.file, "alpha")
 	tests := []struct {
 		path string
 		code ErrorCode

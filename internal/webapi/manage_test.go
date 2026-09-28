@@ -48,8 +48,7 @@ func TestMetaNeedsNoSession(t *testing.T) {
 func TestManagementRefusals(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
 	operator := &auth.Principal{Operator: true}
-	admin := memberOf(t, ts.file, "alpha", auth.RoleAdmin)
-	member := memberOf(t, ts.file, "alpha", auth.RoleMember)
+	member := memberOf(t, ts.file, "alpha")
 	const spec = `{"slug":"gamma","spec":{"slug":"gamma"}}`
 	tests := []struct {
 		name   string
@@ -58,33 +57,22 @@ func TestManagementRefusals(t *testing.T) {
 		status int
 		code   ErrorCode
 	}{
-		{"create needs an operator", admin, mutate("POST", "/api/v1/tenants", spec), 403, CodeForbidden},
+		{"create needs an operator", member, mutate("POST", "/api/v1/tenants", spec), 403, CodeForbidden},
 		{"create needs the sealing key", operator, mutate("POST", "/api/v1/tenants", spec), 503, CodeManagementDisabled},
-		{"update of a file tenant", admin, mutate("PUT", "/api/v1/tenants/alpha/config", `{"revision":1,"spec":{}}`), 403, CodeFileManaged},
+		{"update of a file tenant", member, mutate("PUT", "/api/v1/tenants/alpha/config", `{"revision":1,"spec":{}}`), 403, CodeFileManaged},
 		{"update of a file tenant by an operator", operator, mutate("PUT", "/api/v1/tenants/alpha/config", `{}`), 403, CodeFileManaged},
-		{"update of an unreadable tenant", admin, mutate("PUT", "/api/v1/tenants/beta/config", `{}`), 404, CodeNotFound},
-		{"update of an unknown tenant", admin, mutate("PUT", "/api/v1/tenants/gamma/config", `{}`), 404, CodeNotFound},
+		{"update of an unreadable tenant", member, mutate("PUT", "/api/v1/tenants/beta/config", `{}`), 404, CodeNotFound},
+		{"update of an unknown tenant", member, mutate("PUT", "/api/v1/tenants/gamma/config", `{}`), 404, CodeNotFound},
 		{"update needs the sealing key", operator, mutate("PUT", "/api/v1/tenants/gamma/config", `{}`), 503, CodeManagementDisabled},
-		{"delete needs an operator", admin, mutate("DELETE", "/api/v1/tenants/gamma?revision=1", ""), 403, CodeForbidden},
+		{"delete needs an operator", member, mutate("DELETE", "/api/v1/tenants/gamma?revision=1", ""), 403, CodeForbidden},
 		{"delete of a file tenant", operator, mutate("DELETE", "/api/v1/tenants/alpha?revision=1", ""), 403, CodeFileManaged},
 		{"config of an unreadable tenant", member, httptest.NewRequest("GET", "/api/v1/tenants/beta/config", nil), 404, CodeNotFound},
-		{"invite as a member", member, mutate("POST", "/api/v1/tenants/alpha/invites", `{"email":"a@b.c","role":"member"}`), 403, CodeForbidden},
-		{"invite elsewhere", admin, mutate("POST", "/api/v1/tenants/beta/invites", `{"email":"a@b.c","role":"member"}`), 404, CodeNotFound},
-		{"bad invite email", admin, mutate("POST", "/api/v1/tenants/alpha/invites", `{"email":"Ada <a@b.c>","role":"member"}`), 400, CodeBadRequest},
-		{"bad invite role", admin, mutate("POST", "/api/v1/tenants/alpha/invites", `{"email":"a@b.c","role":"owner"}`), 400, CodeBadRequest},
-		{"invite ttl too long", admin, mutate("POST", "/api/v1/tenants/alpha/invites", `{"email":"a@b.c","role":"member","ttlHours":721}`),
-			400, CodeBadRequest},
-		{"unknown invite field", admin, mutate("POST", "/api/v1/tenants/alpha/invites", `{"email":"a@b.c","role":"member","x":1}`),
-			400, CodeBadRequest},
-		{"member change as a member", member, mutate("PATCH", "/api/v1/tenants/alpha/members/x", `{"role":"admin"}`), 403, CodeForbidden},
-		{"member removal as a member", member, mutate("DELETE", "/api/v1/tenants/alpha/members/x", ""), 403, CodeForbidden},
-		{"invite removal of a bad id", admin, mutate("DELETE", "/api/v1/tenants/alpha/invites/x", ""), 404, CodeNotFound},
 		{"rerun as a member", member, mutate("POST", "/api/v1/tenants/alpha/pulls/o/r/1/rerun", ""), 403, CodeForbidden},
 		{"cancel as a member", member, mutate("POST", "/api/v1/tenants/alpha/reviews/x/cancel", ""), 403, CodeForbidden},
 		{"reindex as a member", member, mutate("POST", "/api/v1/tenants/alpha/repos/o/r/reindex", ""), 403, CodeForbidden},
-		{"rerun without actions", admin, mutate("POST", "/api/v1/tenants/alpha/pulls/o/r/1/rerun", ""), 503, CodeActionsDisabled},
+		{"rerun without actions", operator, mutate("POST", "/api/v1/tenants/alpha/pulls/o/r/1/rerun", ""), 503, CodeActionsDisabled},
 		{"tenant audit as a member", member, httptest.NewRequest("GET", "/api/v1/tenants/alpha/audit", nil), 403, CodeForbidden},
-		{"operator audit as an admin", admin, httptest.NewRequest("GET", "/api/v1/operator/audit", nil), 403, CodeForbidden},
+		{"admin audit as a member", member, httptest.NewRequest("GET", "/api/v1/operator/audit", nil), 403, CodeForbidden},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -118,8 +106,6 @@ func TestManagementNeedsSameOrigin(t *testing.T) {
 	operator := &auth.Principal{Operator: true}
 	for _, route := range []struct{ method, path string }{
 		{"POST", "/api/v1/tenants"}, {"PUT", "/api/v1/tenants/alpha/config"}, {"DELETE", "/api/v1/tenants/alpha"},
-		{"POST", "/api/v1/tenants/alpha/invites"}, {"DELETE", "/api/v1/tenants/alpha/invites/x"},
-		{"PATCH", "/api/v1/tenants/alpha/members/x"}, {"DELETE", "/api/v1/tenants/alpha/members/x"},
 		{"POST", "/api/v1/tenants/alpha/pulls/o/r/1/rerun"}, {"POST", "/api/v1/tenants/alpha/reviews/x/cancel"},
 		{"POST", "/api/v1/tenants/alpha/repos/o/r/reindex"},
 	} {
@@ -135,7 +121,7 @@ func TestManagementNeedsSameOrigin(t *testing.T) {
 
 func TestFileTenantConfigIsRedacted(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	w := ts.as(memberOf(t, ts.file, "alpha", auth.RoleAdmin), httptest.NewRequest("GET", "/api/v1/tenants/alpha/config", nil))
+	w := ts.as(memberOf(t, ts.file, "alpha"), httptest.NewRequest("GET", "/api/v1/tenants/alpha/config", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}

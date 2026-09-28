@@ -17,15 +17,15 @@ type tenantScope struct {
 	principal *auth.Principal
 }
 
-// role is the principal's effective role on the tenant; an operator is an
-// admin of every tenant.
-func (t *tenantScope) role() auth.Role { return roleOn(t.principal, t.tenant.ID()) }
+// role is the principal's role on the tenant: an operator is an admin of
+// every tenant, and anyone else who may read it a member.
+func (t *tenantScope) role() auth.Role { return roleOn(t.principal) }
 
-func roleOn(p *auth.Principal, tenantID string) auth.Role {
+func roleOn(p *auth.Principal) auth.Role {
 	if p.Operator {
 		return auth.RoleAdmin
 	}
-	return p.Memberships[tenantID]
+	return auth.RoleMember
 }
 
 // resolveTenant finds the tenant named slug in the current file for p. A

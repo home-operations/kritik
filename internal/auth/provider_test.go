@@ -14,59 +14,48 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
+// githubAuth is an auth block with a GitHub sign-in whose client id is
+// clientID, with scopes spliced in.
+func githubAuth(clientID, scopes string) string {
+	return "auth:\n" + adminPassword + "  github:\n    clientId: " + clientID + "\n    clientSecret: { env: TEST_AUTH_SECRET }\n" + scopes
+}
+
+// oidcAuth is an auth block with an OIDC sign-in at issuer.
+func oidcAuth(issuer string) string {
+	return "auth:\n" + adminPassword + "  oidc:\n    issuer: " + issuer + "\n    clientId: c\n    clientSecret: { env: TEST_AUTH_SECRET }\n"
+}
+
 func TestForgeProviderURLs(t *testing.T) {
 	tests := []struct {
-		name      string
-		signIn    configfile.SignIn
-		authorize string
-		token     string
-		api       string
-		scope     string
-		display   string
+		name   string
+		scopes string
+		scope  string
 	}{
-		{
-			name:      "github.com",
-			signIn:    configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, ClientID: "cid"},
-			authorize: "https://github.com/login/oauth/authorize",
-			token:     "https://github.com/login/oauth/access_token",
-			api:       "https://api.github.com",
-			scope:     "read:user user:email read:org",
-			display:   "GitHub",
-		},
-		{
-			name:      "github.com with its own scopes",
-			signIn:    configfile.SignIn{Name: "gh", Type: configfile.SignInGitHub, ClientID: "cid", Scopes: []string{"read:user"}},
-			authorize: "https://github.com/login/oauth/authorize",
-			token:     "https://github.com/login/oauth/access_token",
-			api:       "https://api.github.com",
-			scope:     "read:user",
-			display:   "GitHub",
-		},
+		{"github.com", "", "read:user user:email read:org"},
+		{"github.com with its own scopes", "    scopes: [read:user]\n", "read:user"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := buildProvider(context.Background(), tt.signIn, "https://kritik.example.com/auth/callback/"+tt.signIn.Name, http.DefaultClient, nil)
+			s, _ := testFile(t, githubAuth("cid", tt.scopes)).Auth.SignInByType(configfile.SignInGitHub)
+			p, err := buildProvider(context.Background(), s, "https://kritik.example.com/auth/callback/github", http.DefaultClient, nil)
 			if err != nil {
 				t.Fatalf("buildProvider: %v", err)
 			}
 			fp := p.(*forgeProvider)
-			if fp.conf.Endpoint.TokenURL != tt.token || fp.apiBase != tt.api {
-				t.Fatalf("token URL %q, API %q; want %q, %q", fp.conf.Endpoint.TokenURL, fp.apiBase, tt.token, tt.api)
-			}
-			if p.Name() != tt.signIn.Name || p.Type() != tt.signIn.Type || p.DisplayName() != tt.display {
-				t.Fatalf("name %q type %q display %q", p.Name(), p.Type(), p.DisplayName())
+			if fp.conf.Endpoint.TokenURL != "https://github.com/login/oauth/access_token" || fp.apiBase != "https://api.github.com" {
+				t.Fatalf("token URL %q, API %q", fp.conf.Endpoint.TokenURL, fp.apiBase)
 			}
 			u, err := url.Parse(p.AuthCodeURL("st", "no", "verifier-verifier-verifier-verifier-verifier"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := u.Scheme + "://" + u.Host + u.Path; got != tt.authorize {
-				t.Fatalf("authorize URL %q, want %q", got, tt.authorize)
+			if got := u.Scheme + "://" + u.Host + u.Path; got != "https://github.com/login/oauth/authorize" {
+				t.Fatalf("authorize URL %q", got)
 			}
 			q := u.Query()
 			want := map[string]string{
 				"client_id": "cid", "state": "st", "response_type": "code", "scope": tt.scope,
-				"redirect_uri":          "https://kritik.example.com/auth/callback/" + tt.signIn.Name,
+				"redirect_uri":          "https://kritik.example.com/auth/callback/github",
 				"code_challenge_method": "S256",
 			}
 			for k, v := range want {
@@ -98,47 +87,43 @@ func TestRedirectURL(t *testing.T) {
 }
 
 func TestProvidersCacheRebuildsOnChange(t *testing.T) {
-	web := configfile.Web{SignIn: []configfile.SignIn{{Name: "gh", Type: configfile.SignInGitHub, ClientID: "one"}}}
+	auth := testFile(t, githubAuth("one", "")).Auth
 	u, _ := url.Parse("https://kritik.example.com")
 	ps := newProviders(u, http.DefaultClient, nil)
-	a, _, err := ps.get(context.Background(), web, "gh")
+	a, _, err := ps.get(context.Background(), auth, "github")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _, _ := ps.get(context.Background(), web, "gh")
+	b, _, _ := ps.get(context.Background(), auth, "github")
 	if a != b {
 		t.Fatal("unchanged config rebuilt the provider")
 	}
-	web.SignIn = []configfile.SignIn{{Name: "gh", Type: configfile.SignInGitHub, ClientID: "two"}}
-	c, _, _ := ps.get(context.Background(), web, "gh")
+	auth = testFile(t, githubAuth("two", "")).Auth
+	c, _, _ := ps.get(context.Background(), auth, "github")
 	if c == a || !strings.Contains(c.AuthCodeURL("s", "n", "v"), "client_id=two") {
 		t.Fatal("changed config did not rebuild the provider")
 	}
-	if _, _, err := ps.get(context.Background(), web, "nope"); err == nil {
-		t.Fatal("unknown sign-in resolved")
+	for _, name := range []string{"oidc", "local", "nope"} {
+		if _, _, err := ps.get(context.Background(), auth, name); !errors.Is(err, ErrUnknownProvider) {
+			t.Fatalf("get(%s) = %v, want ErrUnknownProvider", name, err)
+		}
 	}
 }
 
 func TestSignInOrigin(t *testing.T) {
-	tests := []struct {
-		signIn configfile.SignIn
-		want   string
-	}{
-		{configfile.SignIn{Type: configfile.SignInGitHub}, "github:https://github.com"},
-		{configfile.SignIn{Type: configfile.SignInOIDC, Issuer: "https://id.example.com/realms/a"}, "oidc:https://id.example.com/realms/a"},
+	gh, _ := testFile(t, githubAuth("c", "")).Auth.SignInByType(configfile.SignInGitHub)
+	oidc, _ := testFile(t, oidcAuth("https://id.example.com/realms/a")).Auth.SignInByType(configfile.SignInOIDC)
+	if got := signInOrigin(gh); got != "github:https://github.com" {
+		t.Fatalf("github origin = %q", got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			if got := signInOrigin(tt.signIn); got != tt.want {
-				t.Fatalf("signInOrigin = %q, want %q", got, tt.want)
-			}
-		})
+	if got := signInOrigin(oidc); got != "oidc:https://id.example.com/realms/a" {
+		t.Fatalf("oidc origin = %q", got)
 	}
 }
 
 func TestProvidersRemembersFailedDiscovery(t *testing.T) {
 	var hits atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits.Add(1)
 		http.Error(w, "down", http.StatusServiceUnavailable)
 	}))
@@ -146,9 +131,9 @@ func TestProvidersRemembersFailedDiscovery(t *testing.T) {
 	now := time.Now()
 	u, _ := url.Parse("https://kritik.example.com")
 	ps := newProviders(u, srv.Client(), func() time.Time { return now })
-	web := configfile.Web{SignIn: []configfile.SignIn{{Name: "corp", Type: configfile.SignInOIDC, Issuer: srv.URL, ClientID: "c"}}}
+	auth := testFile(t, oidcAuth(srv.URL)).Auth
 	for range 3 {
-		if _, _, err := ps.get(context.Background(), web, "corp"); err == nil || errors.Is(err, ErrUnknownProvider) {
+		if _, _, err := ps.get(context.Background(), auth, "oidc"); err == nil || errors.Is(err, ErrUnknownProvider) {
 			t.Fatalf("get = %v, want a discovery error", err)
 		}
 	}
@@ -156,7 +141,7 @@ func TestProvidersRemembersFailedDiscovery(t *testing.T) {
 		t.Fatalf("discovery requests = %d within the retry window, want 1", hits.Load())
 	}
 	now = now.Add(failedBuildTTL)
-	_, _, _ = ps.get(context.Background(), web, "corp")
+	_, _, _ = ps.get(context.Background(), auth, "oidc")
 	if hits.Load() != 2 {
 		t.Fatalf("discovery requests = %d after the retry window, want 2", hits.Load())
 	}
@@ -164,20 +149,20 @@ func TestProvidersRemembersFailedDiscovery(t *testing.T) {
 
 func TestProvidersDoesNotRememberAnEndedRequest(t *testing.T) {
 	var hits atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits.Add(1)
 		http.Error(w, "down", http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
 	u, _ := url.Parse("https://kritik.example.com")
 	ps := newProviders(u, srv.Client(), nil)
-	web := configfile.Web{SignIn: []configfile.SignIn{{Name: "corp", Type: configfile.SignInOIDC, Issuer: srv.URL, ClientID: "c"}}}
+	auth := testFile(t, oidcAuth(srv.URL)).Auth
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, _, err := ps.get(canceled, web, "corp"); err == nil {
+	if _, _, err := ps.get(canceled, auth, "oidc"); err == nil {
 		t.Fatal("get with a canceled request succeeded")
 	}
-	if _, _, err := ps.get(context.Background(), web, "corp"); err == nil || hits.Load() != 1 {
+	if _, _, err := ps.get(context.Background(), auth, "oidc"); err == nil || hits.Load() != 1 {
 		t.Fatalf("get after a canceled request = %v with %d discovery requests, want a fresh attempt", err, hits.Load())
 	}
 }
@@ -185,7 +170,7 @@ func TestProvidersDoesNotRememberAnEndedRequest(t *testing.T) {
 func TestProvidersRemembersASlowIssuer(t *testing.T) {
 	var hits atomic.Int32
 	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		select {
 		case <-release:
@@ -198,12 +183,12 @@ func TestProvidersRemembersASlowIssuer(t *testing.T) {
 	client.Timeout = 50 * time.Millisecond
 	u, _ := url.Parse("https://kritik.example.com")
 	ps := newProviders(u, client, nil)
-	web := configfile.Web{SignIn: []configfile.SignIn{{Name: "corp", Type: configfile.SignInOIDC, Issuer: srv.URL, ClientID: "c"}}}
-	if _, _, err := ps.get(context.Background(), web, "corp"); !errors.Is(err, context.DeadlineExceeded) {
+	auth := testFile(t, oidcAuth(srv.URL)).Auth
+	if _, _, err := ps.get(context.Background(), auth, "oidc"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("get = %v, want the client timeout", err)
 	}
 	start := time.Now()
-	if _, _, err := ps.get(context.Background(), web, "corp"); err == nil {
+	if _, _, err := ps.get(context.Background(), auth, "oidc"); err == nil {
 		t.Fatal("second get succeeded")
 	}
 	if hits.Load() != 1 || time.Since(start) >= client.Timeout {

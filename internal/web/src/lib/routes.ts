@@ -5,7 +5,7 @@
 //
 //   #/                                        overview (tenant picker / landing)
 //   #/signin                                  sign-in page
-//   #/operator                                operator console (cross-tenant)
+//   #/operator                                admin console (cross-tenant)
 //   #/t/<slug>                                tenant overview
 //   #/t/<slug>/repos                          tenant's repo list
 //   #/t/<slug>/repos/<owner>/<repo>           one repo
@@ -18,7 +18,7 @@
 //   #/t/<slug>/queue                          run queue
 //   #/t/<slug>/usage                          usage/cost dashboard
 //   #/t/<slug>/followups                      follow-up tracker
-//   #/t/<slug>/admin[/<section>]              tenant admin, optional section
+//   #/t/<slug>/admin[/<section>]              a tenant's admin page, optional section
 //
 // Segments round-trip through encodeURIComponent/decodeURIComponent, so a
 // slug/owner/repo/id/section containing a literal "/" or other reserved

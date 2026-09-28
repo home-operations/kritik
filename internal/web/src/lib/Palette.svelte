@@ -38,13 +38,13 @@
     return 'slug' in r ? r.slug : undefined;
   }
 
-  // Gated the same way as the top-bar (App.svelte): operator console and
+  // Gated the same way as the top-bar (App.svelte): admin console and
   // per-tenant admin are role-restricted, and "Sign in" only makes sense
   // when there's no session yet.
   function buildEntries(r: Route): Entry[] {
     const entries: Entry[] = [{ label: 'Overview', route: { name: 'overview' }, icon: mdiViewDashboardOutline }];
     if (me?.operator) {
-      entries.push({ label: 'Operator console', route: { name: 'operator' }, icon: mdiConsoleLine });
+      entries.push({ label: 'Admin console', route: { name: 'operator' }, icon: mdiConsoleLine });
     }
     if (!me) {
       entries.push({ label: 'Sign in', route: { name: 'signin' }, icon: mdiLogin });

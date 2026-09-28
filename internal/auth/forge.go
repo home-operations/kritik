@@ -23,14 +23,17 @@ var ErrForgeAPI = errors.New("auth: forge API")
 // the OAuth dance is done.
 type forgeAPI interface {
 	identity(ctx context.Context, c apiClient) (Identity, error)
-	orgRole(ctx context.Context, c apiClient, login, org string) (Role, error)
+	// member reports whether the user is an active member of org.
+	member(ctx context.Context, c apiClient, login, org string) (bool, error)
+	// mappingVars fills the role mapping's variables for the user.
+	mappingVars(ctx context.Context, c apiClient, id Identity) (map[string]any, error)
 }
 
 // forgeProvider is an OAuth 2 authorization-code sign-in with PKCE against a
 // forge, whose API then says who the user is and which organizations they
 // belong to.
 type forgeProvider struct {
-	signIn  configfile.SignIn
+	signIn  *configfile.SignIn
 	conf    *oauth2.Config
 	client  *http.Client
 	apiBase string
@@ -39,7 +42,7 @@ type forgeProvider struct {
 }
 
 func newForgeProvider(
-	s configfile.SignIn, web, apiBase, redirect string, scopes []string, client *http.Client, api forgeAPI,
+	s *configfile.SignIn, web, apiBase, redirect string, scopes []string, client *http.Client, api forgeAPI,
 ) *forgeProvider {
 	if len(s.Scopes) > 0 {
 		scopes = s.Scopes
@@ -59,37 +62,42 @@ func newForgeProvider(
 	}
 }
 
-func (p *forgeProvider) Name() string                { return p.signIn.Name }
-func (p *forgeProvider) Type() configfile.SignInType { return p.signIn.Type }
-func (p *forgeProvider) DisplayName() string         { return displayName(p.signIn) }
-
 func (p *forgeProvider) AuthCodeURL(state, _, pkceVerifier string) string {
 	return p.conf.AuthCodeURL(state, oauth2.S256ChallengeOption(pkceVerifier))
 }
 
-func (p *forgeProvider) Exchange(ctx context.Context, code, pkceVerifier, _ string) (Identity, Membership, error) {
+func (p *forgeProvider) Exchange(ctx context.Context, code, pkceVerifier, _ string) (Identity, Facts, error) {
+	name := string(p.signIn.Type())
 	tok, err := p.conf.Exchange(context.WithValue(ctx, oauth2.HTTPClient, p.client), code, oauth2.VerifierOption(pkceVerifier))
 	if err != nil {
-		return Identity{}, nil, fmt.Errorf("auth: %s: exchange: %w", p.signIn.Name, err)
+		return Identity{}, Facts{}, fmt.Errorf("auth: %s: exchange: %w", name, err)
 	}
 	c := apiClient{base: p.apiBase, token: tok.AccessToken, client: p.client, headers: p.headers}
 	id, err := p.api.identity(ctx, c)
 	if err != nil {
-		return Identity{}, nil, fmt.Errorf("auth: %s: %w", p.signIn.Name, err)
+		return Identity{}, Facts{}, fmt.Errorf("auth: %s: %w", name, err)
 	}
-	id.Provider, id.Origin = p.signIn.Name, signInOrigin(p.signIn)
+	id.Provider, id.Origin = name, signInOrigin(p.signIn)
 	if id.DisplayName == "" {
 		id.DisplayName = id.Login
 	}
-	login := id.Login
-	m := func(ctx context.Context, org string) (Role, error) {
-		r, err := p.api.orgRole(ctx, c, login, org)
-		if err != nil {
-			return "", fmt.Errorf("auth: %s: organization %s: %w", p.signIn.Name, org, err)
-		}
-		return r, nil
+	facts := Facts{
+		MappingVars: func(ctx context.Context) (map[string]any, error) {
+			vars, err := p.api.mappingVars(ctx, c, id)
+			if err != nil {
+				return nil, fmt.Errorf("auth: %s: %w", name, err)
+			}
+			return vars, nil
+		},
+		Membership: func(ctx context.Context, org string) (bool, error) {
+			ok, err := p.api.member(ctx, c, id.Login, org)
+			if err != nil {
+				return false, fmt.Errorf("auth: %s: organization %s: %w", name, org, err)
+			}
+			return ok, nil
+		},
 	}
-	return id, m, nil
+	return id, facts, nil
 }
 
 // apiClient calls a forge's REST API as the signed-in user.
@@ -150,8 +158,7 @@ type forgeEmail struct {
 
 // verifiedEmail sets id's email to the primary address when the forge has
 // verified it. Without the scope to list addresses, the profile's own email
-// stands, unverified: an unverified address can neither accept an invite nor
-// match an email operator.
+// stands, unverified.
 func verifiedEmail(ctx context.Context, c apiClient, id *Identity) error {
 	var emails []forgeEmail
 	status, _, err := c.get(ctx, "/user/emails", &emails)

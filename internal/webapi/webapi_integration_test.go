@@ -38,14 +38,12 @@ func testEnv(t *testing.T, key string) string {
 }
 
 const integrationConfig = `
-web:
-  signIn:
-    - name: corp
-      type: oidc
-      issuer: https://idp.example
-      clientId: kritik
-      clientSecret: { env: KRITIK_TEST_TOKEN }
-  operators: ["corp:op-sub"]
+auth:
+  oidc:
+    issuer: https://idp.example
+    clientId: kritik
+    clientSecret: { env: KRITIK_TEST_TOKEN }
+    roleMapping: '"kritik-admin" in roles ? "admin" : ""'
 tenants:
   - slug: webapi-a
     installations:
@@ -130,14 +128,15 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	e.a, e.b = e.seedTenant("webapi-a", "wa/one"), e.seedTenant("webapi-b", "wb/one")
 	e.exec(`INSERT INTO followups (tenant_id, pull_request_id, comment_id, author, status)
 		VALUES ($1, $2, $3, 'carol', 'answered')`, e.b.tenantID, e.b.prID, onlyBComment)
-	e.signIn("member-a", "alice", seededGrant(e.a.tenantID))
-	e.signIn("member-b", "bob", seededGrant(e.b.tenantID))
-	e.signIn("operator", "op-sub", nil)
+	e.signIn("member-a", "alice", memberOfAccounts("github/wa"))
+	e.signIn("member-b", "bob", memberOfAccounts("github/wb"))
+	e.signIn("operator", "op-sub", store.SessionGrant{Role: store.RoleAdmin})
 	return e
 }
 
-func seededGrant(tenantID string) []store.Grant {
-	return []store.Grant{{TenantID: tenantID, Role: store.RoleMember}}
+// memberOfAccounts is a member's grant on the forge accounts named.
+func memberOfAccounts(accounts ...string) store.SessionGrant {
+	return store.SessionGrant{Role: store.RoleMember, Accounts: accounts}
 }
 
 func (e *apiEnv) exec(sql string, args ...any) {
@@ -240,19 +239,17 @@ func (e *apiEnv) seedModelCalls(s seeded, slug string) {
 	}
 }
 
-func (e *apiEnv) signIn(name, subject string, grants []store.Grant) {
+func (e *apiEnv) signIn(name, subject string, g store.SessionGrant) {
 	e.t.Helper()
-	ctx := context.Background()
-	now := time.Now()
-	origin := "oidc:https://idp.example"
-	acct, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{Provider: "corp", Origin: origin, Subject: subject, DisplayName: name}, now)
+	ctx, now, origin := context.Background(), time.Now(), "oidc:https://idp.example"
+	acct, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{
+		Provider: "oidc", Origin: origin, Subject: subject, DisplayName: name,
+	}, now)
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	if err := e.st.ReplaceForgeMemberships(ctx, acct.ID, grants, now); err != nil {
-		e.t.Fatal(err)
-	}
-	token, err := e.st.CreateSession(ctx, acct.ID, "corp", origin, now, now.Add(time.Hour))
+	g.Key, _ = auth.GrantKey(e.file.Auth, "oidc")
+	token, err := e.st.CreateSession(ctx, acct.ID, "oidc", origin, g, now, now.Add(time.Hour))
 	if err != nil {
 		e.t.Fatal(err)
 	}

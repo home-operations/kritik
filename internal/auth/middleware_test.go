@@ -111,57 +111,85 @@ func TestRequirePrincipal(t *testing.T) {
 	}
 }
 
-func TestPrincipalRoles(t *testing.T) {
-	member := &Principal{Memberships: map[string]Role{"t1": RoleMember, "t2": RoleAdmin}}
-	operator := &Principal{Operator: true}
-	var none *Principal
+func TestPrincipalCanRead(t *testing.T) {
+	member := &Principal{Tenants: map[string]bool{"t1": true}}
 	tests := []struct {
-		name              string
-		p                 *Principal
-		tenant            string
-		canRead, canAdmin bool
+		name string
+		p    *Principal
+		want bool
 	}{
-		{"member reads", member, "t1", true, false},
-		{"admin administers", member, "t2", true, true},
-		{"stranger", member, "t3", false, false},
-		{"operator everywhere", operator, "t3", true, true},
-		{"nil principal", none, "t1", false, false},
+		{"a member of the tenant", member, true},
+		{"a member of another", &Principal{Tenants: map[string]bool{"t2": true}}, false},
+		{"a member of every tenant", &Principal{AllTenants: true}, true},
+		{"an operator", &Principal{Operator: true}, true},
+		{"nil principal", nil, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.p.CanRead(tt.tenant); got != tt.canRead {
-				t.Fatalf("CanRead = %v, want %v", got, tt.canRead)
-			}
-			if got := tt.p.CanAdmin(tt.tenant); got != tt.canAdmin {
-				t.Fatalf("CanAdmin = %v, want %v", got, tt.canAdmin)
+			if got := tt.p.CanRead("t1"); got != tt.want {
+				t.Fatalf("CanRead = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
+// TestPrincipalFor: a member reads the tenants whose installations serve an
+// account the grant names, among those the file still declares.
 func TestPrincipalFor(t *testing.T) {
-	file := &configfile.File{
-		Web: configfile.Web{
-			SignIn:    []configfile.SignIn{{Name: "gh", Type: configfile.SignInGitHub}},
-			Operators: []string{"gh:alice"},
-		},
-		Tenants: []configfile.Tenant{{Slug: "kept"}},
+	file := testFile(t, "auth:\n"+adminPassword)
+	tid := func(slug string) string {
+		tn, ok := file.Tenant(slug)
+		if !ok {
+			t.Fatalf("no tenant %s", slug)
+		}
+		return tn.ID()
 	}
-	kept := file.Tenants[0].ID()
 	sess := store.Session{
 		Account:  store.Account{ID: "acct"},
-		Identity: store.SignInIdentity{Provider: "gh", Subject: "1", Login: "Alice"},
+		Identity: store.SignInIdentity{Provider: "github", Subject: "1", Login: "Alice"},
+		Grant:    store.SessionGrant{Role: RoleMember, Accounts: []string{"github/widgets", "github/gone"}},
 	}
-	p := principalFor(file, sess, map[string]Role{kept: RoleAdmin, "gone-tenant": RoleAdmin})
-	if !p.Operator || p.Account.ID != "acct" || p.Identity.Login != "Alice" {
+	p := principalFor(file, sess)
+	if p.Operator || p.AllTenants || p.Account.ID != "acct" || p.Identity.Login != "Alice" {
 		t.Fatalf("principal = %+v", p)
 	}
-	if len(p.Memberships) != 1 || p.Memberships[kept] != RoleAdmin {
-		t.Fatalf("memberships = %v, want only the tenant still in the file", p.Memberships)
+	if len(p.Tenants) != 2 || !p.Tenants[tid("adminorg")] || !p.Tenants[tid("several")] {
+		t.Fatalf("tenants = %v, want adminorg and several", p.Tenants)
 	}
-	file.Web.Operators = nil
-	if principalFor(file, sess, nil).Operator {
-		t.Fatal("operator removed from the file is still an operator")
+	sess.Grant = store.SessionGrant{Role: RoleAdmin}
+	if p := principalFor(file, sess); !p.Operator || !p.CanRead(tid("org")) {
+		t.Fatalf("admin principal = %+v", p)
+	}
+}
+
+// TestHonoured: a session stands while its sign-in is configured, points
+// where it did, and would decide grants as it did.
+func TestHonoured(t *testing.T) {
+	auth := "auth:\n  admin: { password: { env: TEST_AUTH_SECRET } }\n  oidc:\n    issuer: https://id.example.com\n    clientId: k\n" +
+		"    clientSecret: { env: TEST_AUTH_SECRET }\n    roleMapping: '\"a\" in roles ? \"admin\" : \"\"'\n"
+	file := testFile(t, auth)
+	s, _ := file.Auth.SignInByType(configfile.SignInOIDC)
+	oidcKey, _ := GrantKey(file.Auth, "oidc")
+	localKey, _ := GrantKey(file.Auth, "local")
+	sess := func(provider, origin, key string) store.Session {
+		return store.Session{Identity: store.SignInIdentity{Provider: provider, Origin: origin}, Grant: store.SessionGrant{Key: key}}
+	}
+	for _, tt := range []struct {
+		name string
+		sess store.Session
+		want bool
+	}{
+		{"an oidc session", sess("oidc", signInOrigin(s), oidcKey), true},
+		{"the local admin", sess("local", localOrigin, localKey), true},
+		{"an issuer since moved", sess("oidc", "oidc:https://other.example.com", oidcKey), false},
+		{"a mapping since changed", sess("oidc", signInOrigin(s), "old"), false},
+		{"a sign-in since removed", sess("github", "github:https://github.com", oidcKey), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := honoured(file.Auth, tt.sess); got != tt.want {
+				t.Fatalf("honoured = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -184,13 +212,6 @@ func TestNormalizeOrigin(t *testing.T) {
 				t.Fatalf("normalizeOrigin(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestPrincipalRejectsMovedSignIn(t *testing.T) {
-	signIn := configfile.SignIn{Name: "corp", Type: configfile.SignInOIDC, Issuer: "https://id.example.com"}
-	if signInOrigin(signIn) == signInOrigin(configfile.SignIn{Name: "corp", Type: configfile.SignInOIDC, Issuer: "https://other.example.com"}) {
-		t.Fatal("moving a sign-in to another issuer kept its origin")
 	}
 }
 

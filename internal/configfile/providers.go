@@ -5,7 +5,6 @@ import (
 	"maps"
 	"net/url"
 	"slices"
-	"strings"
 )
 
 // Provider is the model provider name refers to for tenant t: the tenant's
@@ -55,40 +54,6 @@ func (f *File) validateTenantProviders(where string, t *Tenant) error {
 		}
 		if err := t.Providers[name].validate(pwhere); err != nil {
 			return err
-		}
-	}
-	return nil
-}
-
-// checkDashboardProviderHosts rejects a dashboard tenant's provider whose
-// baseUrl is not https on a host the operator allows. The worker calls a
-// provider from inside the cluster with its key, so a tenant admin must not
-// aim it anywhere else; with no baseUrl a provider uses its type's own
-// endpoint.
-func (f *File) checkDashboardProviderHosts(allowed []string) error {
-	for ti := range f.Tenants {
-		t := &f.Tenants[ti]
-		if t.Origin() != OriginDashboard {
-			continue
-		}
-		for _, name := range slices.Sorted(maps.Keys(t.Providers)) {
-			raw := t.Providers[name].BaseURL
-			if raw == "" {
-				continue
-			}
-			u, err := url.Parse(raw)
-			host := ""
-			if err == nil {
-				host = strings.ToLower(u.Hostname())
-			}
-			switch {
-			case err != nil || u.Scheme != "https" || (u.Port() != "" && u.Port() != "443"):
-				return &MergeError{Slug: t.Slug, Err: fmt.Errorf(
-					"configfile: %s.providers.%s.baseUrl: a dashboard provider's endpoint must be https on port 443", t.where(ti), name)}
-			case !slices.ContainsFunc(allowed, func(h string) bool { return strings.EqualFold(h, host) }):
-				return &MergeError{Slug: t.Slug, Err: fmt.Errorf("configfile: %s.providers.%s.baseUrl: %q is not an allowed dashboard provider host",
-					t.where(ti), name, host)}
-			}
 		}
 	}
 	return nil

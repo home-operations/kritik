@@ -117,7 +117,7 @@
 <main class="page">
   <div class="page-inner">
     <header class="page-head">
-      <h1>Operator console</h1>
+      <h1>Admin console</h1>
       <p class="muted">
         Every tenant in the running configuration, plus dashboard tenants that are stored but not live and file tenants a
         conflict leaves out.
@@ -140,8 +140,8 @@
                 Adopt this slug
               </label>
               <p class="muted">
-                A tenant used this slug before. Adopting it removes that tenant's members and invites, but its reviews, findings
-                and transcripts are kept and become visible to the new tenant's members.
+                A tenant used this slug before. Adopting it keeps that tenant's reviews, findings and transcripts, which become
+                the new tenant's.
               </p>
             </div>
           {/if}
@@ -240,7 +240,7 @@
     </section>
 
     <section class="panel" aria-labelledby="op-audit">
-      <header class="panel-head"><h2 id="op-audit">Operator audit log</h2></header>
+      <header class="panel-head"><h2 id="op-audit">Admin audit log</h2></header>
       <AuditTable path="/api/v1/operator/audit" showTenant />
     </section>
   </div>

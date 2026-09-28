@@ -19,7 +19,7 @@
   const hint = (key: string, value: string, fallback = '') => (inherited ? inheritsHint(value, inherited.sources[key]) : fallback);
   const list = (xs: string[] | undefined) => (xs?.length ? xs.join(', ') : 'none');
   const p = $derived(`repositories[${index}]`);
-  const opHint = 'operator only';
+  const opHint = 'admin only';
   const opSet = $derived(
     (!editable('mode') && repo.mode !== '') ||
       (!editable('agent') && repo.agent.trim() !== '') ||

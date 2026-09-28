@@ -40,7 +40,7 @@ func record(ctx context.Context, tx pgx.Tx, p *auth.Principal, tenantID *string,
 // tenant.
 func (s *Server) admin(h tenantHandler) http.HandlerFunc {
 	return s.tenant(func(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
-		if !t.principal.CanAdmin(t.tenant.ID()) {
+		if !t.principal.Operator {
 			return errForbidden
 		}
 		return h(w, r, t)
@@ -53,7 +53,7 @@ func (s *Server) listTenantAudit(w http.ResponseWriter, r *http.Request, t *tena
 
 func (s *Server) listOperatorAudit(w http.ResponseWriter, r *http.Request) error {
 	if !auth.PrincipalFrom(r.Context()).Operator {
-		return errOperatorOnly
+		return errForbidden
 	}
 	return s.writeAudit(w, r, "")
 }

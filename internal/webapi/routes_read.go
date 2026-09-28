@@ -45,6 +45,10 @@ func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/tenants/{slug}/queue", s.tenant(s.listQueue))
 }
 
+func account(a store.Account) Account {
+	return Account{ID: a.ID, DisplayName: a.DisplayName, Email: a.Email, AvatarURL: a.AvatarURL}
+}
+
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	me := Me{
@@ -52,7 +56,7 @@ func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
 		Operator: p.Operator, Tenants: []TenantMembership{},
 	}
 	for _, t := range readable(s.current.Get(), p) {
-		me.Tenants = append(me.Tenants, TenantMembership{Slug: t.Slug, Role: roleOn(p, t.ID()), ManagedBy: t.Origin()})
+		me.Tenants = append(me.Tenants, TenantMembership{Slug: t.Slug, Role: roleOn(p), ManagedBy: t.Origin()})
 	}
 	writeJSON(w, http.StatusOK, me)
 	return nil
@@ -74,7 +78,7 @@ func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) error {
 	file := s.current.Get()
 	out := []TenantSummary{}
 	for _, t := range readable(file, p) {
-		sum, err := s.tenantSummary(r.Context(), file, t, roleOn(p, t.ID()))
+		sum, err := s.tenantSummary(r.Context(), file, t, roleOn(p))
 		if err != nil {
 			return err
 		}
@@ -444,16 +448,30 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		add("tools", t.Name, t.Image+" ("+strings.Join(t.Provides(), ", ")+")", configfile.SourceFile)
 	}
 	add("egress", "allowHosts", listOrNone(f.Egress.AllowHosts), from(len(f.Egress.AllowHosts) > 0))
-	for _, sp := range f.Web.SignIn {
-		add("web", "signIn."+sp.Name, string(sp.Type), configfile.SourceFile)
+	a := f.Auth
+	// An auth key an environment variable set shows as coming from it.
+	authFrom := func(path string, set bool) configfile.Source {
+		if a.FromEnv(path) {
+			return configfile.SourceEnv
+		}
+		return from(set)
 	}
-	add("web", "operators", strconv.Itoa(len(f.Web.Operators)), from(len(f.Web.Operators) > 0))
-	ttl := f.Web.SessionTTL
-	if ttl == 0 {
-		ttl = configfile.DefaultSessionTTL
+	add("auth", "sessionTTL", a.SessionTTLOrDefault().String(), authFrom("sessionTTL", a.SessionTTL > 0))
+	var admin []string
+	if user, _, ok := a.AdminUser(); ok {
+		admin = []string{user}
 	}
-	add("web", "sessionTTL", ttl.String(), from(f.Web.SessionTTL > 0))
-	add("web", "dashboardProviderHosts", strings.Join(f.Web.DashboardProviderHosts, ", "), from(len(f.Web.DashboardProviderHosts) > 0))
+	add("auth", "admin", listOrNone(admin), authFrom("admin.password", admin != nil))
+	for _, s := range a.SignIns() {
+		value := s.Label()
+		if s.Issuer != "" {
+			value += " at " + s.Issuer
+		}
+		if s.RoleMapping == "" {
+			value += ", no role mapping"
+		}
+		add("auth", string(s.Type()), value, authFrom(string(s.Type())+".clientId", true))
+	}
 	return out
 }
 

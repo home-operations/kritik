@@ -67,6 +67,7 @@ type Handler struct {
 	now       func() time.Time
 	logger    *slog.Logger
 	providers *providers
+	attempts  *attempts
 }
 
 // New builds a Handler from c, or fails with ErrWebURL.
@@ -95,6 +96,7 @@ func New(c Config) (*Handler, error) {
 		now:       c.Now,
 		logger:    c.Logger,
 		providers: newProviders(c.WebURL, c.HTTPClient, c.Now),
+		attempts:  newAttempts(c.Now),
 	}, nil
 }
 
@@ -109,6 +111,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/providers", h.listProviders)
 	mux.HandleFunc("GET /auth/login/{name}", h.login)
 	mux.HandleFunc("GET /auth/callback/{name}", h.callback)
+	mux.Handle("POST /auth/local", h.SameOrigin(http.HandlerFunc(h.localSignIn)))
 	mux.Handle("POST /auth/logout", h.SameOrigin(http.HandlerFunc(h.logout)))
 }
 
@@ -119,12 +122,16 @@ type ProviderInfo struct {
 	DisplayName string                `json:"displayName"`
 }
 
-// Providers lists the sign-ins the current file declares, in file order.
+// Providers lists the ways to sign in the current file configures: the
+// local admin's password form first, then OIDC and GitHub.
 func (h *Handler) Providers() []ProviderInfo {
-	signIns := h.current.Get().Web.SignIn
-	out := make([]ProviderInfo, 0, len(signIns))
-	for _, s := range signIns {
-		out = append(out, ProviderInfo{Name: s.Name, Type: s.Type, DisplayName: displayName(s)})
+	auth := h.current.Get().Auth
+	out := []ProviderInfo{}
+	if _, _, ok := auth.AdminUser(); ok {
+		out = append(out, ProviderInfo{Name: string(configfile.SignInLocal), Type: configfile.SignInLocal, DisplayName: "Admin"})
+	}
+	for _, s := range auth.SignIns() {
+		out = append(out, ProviderInfo{Name: string(s.Type()), Type: s.Type(), DisplayName: s.Label()})
 	}
 	return out
 }
@@ -135,7 +142,7 @@ func (h *Handler) listProviders(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	p, _, err := h.providers.get(r.Context(), h.current.Get().Web, name)
+	p, _, err := h.providers.get(r.Context(), h.current.Get().Auth, name)
 	if errors.Is(err, ErrUnknownProvider) {
 		h.fail(w, r, http.StatusNotFound, codeUnknownSignIn, nil)
 		return
@@ -174,9 +181,9 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 
 // callback completes a sign-in: it consumes the state the login left,
 // provided this browser holds the login cookie it was bound to, trades the
-// code for an identity, refreshes the account and its forge memberships,
-// accepts pending invites for a verified email, and starts a session in
-// place of any this browser already had.
+// code for an identity, decides what the person may do, and starts a
+// session with that grant in place of any this browser already had. A
+// sign-in that grants nothing is refused.
 func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name, q := r.PathValue("name"), r.URL.Query()
@@ -205,7 +212,7 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	file := h.current.Get()
-	p, signIn, err := h.providers.get(ctx, file.Web, name)
+	p, signIn, err := h.providers.get(ctx, file.Auth, name)
 	if errors.Is(err, ErrUnknownProvider) {
 		h.fail(w, r, http.StatusNotFound, codeUnknownSignIn, nil)
 		return
@@ -214,23 +221,24 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, http.StatusBadGateway, codeProviderUnavailable, err)
 		return
 	}
-	id, m, err := p.Exchange(ctx, q.Get("code"), ls.PKCEVerifier, ls.Nonce)
+	id, facts, err := p.Exchange(ctx, q.Get("code"), ls.PKCEVerifier, ls.Nonce)
 	if err != nil {
 		h.fail(w, r, http.StatusBadGateway, codeExchangeFailed, err)
 		return
 	}
-	grants, err := Resolve(ctx, file, signIn, id, m)
-	if err != nil {
+	g, err := grant(ctx, file, signIn, id, facts)
+	switch {
+	case errors.Is(err, ErrNoGrant):
+		h.fail(w, r, http.StatusForbidden, codeNotAllowed, fmt.Errorf("auth: %s: %s: %w", name, id.Login, err))
+		return
+	case errors.Is(err, ErrRoleMapping):
+		h.fail(w, r, http.StatusForbidden, codeRoleMappingFailed, err)
+		return
+	case err != nil:
 		h.fail(w, r, http.StatusBadGateway, codeMembershipFailed, err)
 		return
 	}
-	if c, err := r.Cookie(SessionCookieName(h.webURL)); err == nil && c.Value != "" {
-		if err := h.store.DeleteSession(ctx, c.Value); err != nil {
-			h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
-			return
-		}
-	}
-	token, expires, err := h.startSession(r, id, grants, file.Web.SessionTTLOrDefault())
+	token, expires, err := h.replaceSession(r, id, g, file.Auth.SessionTTLOrDefault())
 	if err != nil {
 		h.fail(w, r, http.StatusInternalServerError, codeInternal, err)
 		return
@@ -240,32 +248,27 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, h.home()+returnTo(ls.ReturnTo), http.StatusFound)
 }
 
-// startSession records the signed-in identity and its memberships and
-// returns a new session's cookie value and expiry.
-func (h *Handler) startSession(r *http.Request, id Identity, grants []Grant, ttl time.Duration) (string, time.Time, error) {
+// replaceSession ends the session r's browser already has, if any, records
+// the signed-in identity, and returns a new session's cookie value and
+// expiry, holding grant g.
+func (h *Handler) replaceSession(r *http.Request, id Identity, g store.SessionGrant, ttl time.Duration) (string, time.Time, error) {
 	ctx, now := r.Context(), h.now()
+	if c, err := r.Cookie(SessionCookieName(h.webURL)); err == nil && c.Value != "" {
+		if err := h.store.DeleteSession(ctx, c.Value); err != nil {
+			return "", time.Time{}, err
+		}
+	}
 	acct, err := h.store.UpsertIdentity(ctx, store.SignInIdentity(id), now)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	if err := h.store.ReplaceForgeMemberships(ctx, acct.ID, grants, now); err != nil {
-		return "", time.Time{}, err
-	}
-	if id.EmailVerified {
-		n, err := h.store.AcceptInvites(ctx, acct.ID, id.Email, now)
-		if err != nil {
-			return "", time.Time{}, err
-		}
-		if n > 0 {
-			h.logger.InfoContext(ctx, "auth: accepted invites", "account", acct.ID, "count", n)
-		}
-	}
 	expires := now.Add(ttl)
-	token, err := h.store.CreateSession(ctx, acct.ID, id.Provider, id.Origin, now, expires)
+	token, err := h.store.CreateSession(ctx, acct.ID, id.Provider, id.Origin, g, now, expires)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	h.logger.InfoContext(ctx, "auth: signed in", "account", acct.ID, "sign_in", id.Provider, "login", id.Login, "tenants", len(grants))
+	h.logger.InfoContext(ctx, "auth: signed in", "account", acct.ID, "sign_in", id.Provider, "login", id.Login,
+		"role", g.Role, "all_accounts", g.AllAccounts, "accounts", len(g.Accounts))
 	return token, expires, nil
 }
 
@@ -409,6 +412,11 @@ const (
 	codeExchangeFailed      errorCode = "exchange_failed"
 	codeMembershipFailed    errorCode = "membership_failed"
 	codeTooManySignIns      errorCode = "too_many_sign_ins"
+	codeNotAllowed          errorCode = "not_allowed"
+	codeRoleMappingFailed   errorCode = "role_mapping_failed"
+	codeInvalidCredentials  errorCode = "invalid_credentials"
+	codeTooManyAttempts     errorCode = "too_many_attempts"
+	codeInvalidRequest      errorCode = "invalid_request"
 )
 
 // errorBody is every JSON error the auth middleware returns.

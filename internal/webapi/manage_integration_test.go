@@ -40,14 +40,12 @@ import (
 const manageConfig = `
 providers:
   shared: { type: openrouter, apiKey: { env: KRITIK_TEST_TOKEN } }
-web:
-  signIn:
-    - name: corp
-      type: oidc
-      issuer: https://idp.example
-      clientId: kritik
-      clientSecret: { env: KRITIK_TEST_TOKEN }
-  operators: ["corp:mgr-op"]
+auth:
+  oidc:
+    issuer: https://idp.example
+    clientId: kritik
+    clientSecret: { env: KRITIK_TEST_TOKEN }
+    roleMapping: '"kritik-admin" in roles ? "admin" : ""'
 tenants:
   - slug: mgr-file
     installations:
@@ -169,8 +167,8 @@ func newManageEnv(t *testing.T) *manageEnv {
 	e.srv = New(Config{Store: st, Current: e.src.Current, Auth: h, Keyring: kr, Actions: e.actions, WebURL: webURL, Logger: logger})
 	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(e.http.Close)
-	e.signIn("operator", "mgr-op", nil)
-	e.signIn("outsider", "mgr-outsider", nil)
+	e.signIn("operator", "mgr-op", store.SessionGrant{Role: store.RoleAdmin})
+	e.signIn("outsider", "mgr-outsider", memberOfAccounts("github/nobody"))
 	return e
 }
 
@@ -190,19 +188,17 @@ func (e *manageEnv) scalar(sql string) string {
 	return v
 }
 
-func (e *manageEnv) signIn(name, subject string, grants []store.Grant) {
+func (e *manageEnv) signIn(name, subject string, g store.SessionGrant) {
 	e.t.Helper()
 	ctx, now, origin := context.Background(), time.Now(), "oidc:https://idp.example"
 	acct, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{
-		Provider: "corp", Origin: origin, Subject: subject, DisplayName: name, Email: name + "@example.com", EmailVerified: true,
+		Provider: "oidc", Origin: origin, Subject: subject, DisplayName: name, Email: name + "@example.com", EmailVerified: true,
 	}, now)
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	if err := e.st.ReplaceForgeMemberships(ctx, acct.ID, grants, now); err != nil {
-		e.t.Fatal(err)
-	}
-	token, err := e.st.CreateSession(ctx, acct.ID, "corp", origin, now, now.Add(time.Hour))
+	g.Key, _ = auth.GrantKey(e.src.Current.Get().Auth, "oidc")
+	token, err := e.st.CreateSession(ctx, acct.ID, "oidc", origin, g, now, now.Add(time.Hour))
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -315,15 +311,12 @@ func TestManage(t *testing.T) {
 	t.Run("operator creates a dashboard tenant", func(t *testing.T) { generated = testCreate(t, e) })
 	t.Run("the generated webhook secret verifies a hook", func(t *testing.T) { testHookVerifies(t, e, generated) })
 	dashID := (&configfile.Tenant{Slug: "mgr-dash"}).ID()
-	e.signIn("admin", "mgr-admin", []store.Grant{{TenantID: dashID, Role: store.RoleAdmin}})
-	e.signIn("member", "mgr-member", []store.Grant{{TenantID: dashID, Role: store.RoleMember}})
+	e.signIn("member", "mgr-member", memberOfAccounts("github/md"))
 	t.Run("config reads are redacted", func(t *testing.T) { testConfigRedacted(t, e) })
-	t.Run("tenant admin updates", func(t *testing.T) { testAdminUpdate(t, e) })
+	t.Run("updates", func(t *testing.T) { testUpdate(t, e) })
 	t.Run("collisions", func(t *testing.T) { testCollisions(t, e) })
-	t.Run("tenant admin brings a provider key", func(t *testing.T) { testAdminProviderKey(t, e) })
+	t.Run("a tenant's own provider key", func(t *testing.T) { testTenantProviderKey(t, e) })
 	t.Run("actions", func(t *testing.T) { testActions(t, e, dashID) })
-	t.Run("invites and members", func(t *testing.T) { testMembers(t, e, dashID) })
-	t.Run("mutual demotion", func(t *testing.T) { testMutualDemotion(t, e, dashID) })
 	t.Run("audit log", func(t *testing.T) { testAuditLog(t, e) })
 	t.Run("operator deletes the tenant", func(t *testing.T) { testDelete(t, e) })
 	t.Run("a file tenant a dashboard row crowds out", func(t *testing.T) { testFileTenantLeftOut(t, e) })
@@ -332,7 +325,7 @@ func TestManage(t *testing.T) {
 func testCreate(t *testing.T, e *manageEnv) string {
 	before := e.totalAudits()
 	spec := dashSpec(map[string]any{"value": "plain-key-xyz"}, map[string]any{"generate": true}, nil)
-	status, body := e.do("admin", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-dash", Spec: mustJSON(t, spec)})
+	status, body := e.do("anonymous", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-dash", Spec: mustJSON(t, spec)})
 	e.expect(status, body, http.StatusUnauthorized, "")
 	status, body = e.do("outsider", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "mgr-dash", Spec: mustJSON(t, spec)})
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
@@ -396,7 +389,7 @@ func testHookVerifies(t *testing.T, e *manageEnv, secret string) {
 }
 
 func testConfigRedacted(t *testing.T, e *manageEnv) {
-	for _, who := range []string{"operator", "admin", "member"} {
+	for _, who := range []string{"operator", "member"} {
 		t.Run(who, func(t *testing.T) {
 			status, body := e.do(who, "GET", "/api/v1/tenants/mgr-dash/config", nil)
 			e.expect(status, body, http.StatusOK, "")
@@ -422,30 +415,24 @@ func testConfigRedacted(t *testing.T, e *manageEnv) {
 	}
 }
 
-func testAdminUpdate(t *testing.T, e *manageEnv) {
+func testUpdate(t *testing.T, e *manageEnv) {
 	before := e.totalAudits()
-	limits := UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, dashSpec(keep, keep, map[string]any{"limits": map[string]any{"concurrency": 9}}))}
-	status, body := e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", limits)
-	e.expect(status, body, http.StatusUnprocessableEntity, CodeOperatorOnly)
-	if !strings.Contains(string(body), `"path":"limits"`) {
-		t.Errorf("operator_only details = %s", body)
-	}
 	stale := UpdateTenantRequest{Revision: 7, Spec: mustJSON(t, dashSpec(keep, keep, nil))}
-	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", stale)
+	status, body := e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", stale)
 	e.expect(status, body, http.StatusConflict, CodeRevisionConflict)
 	env := UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, dashSpec(map[string]any{"env": "HOME"}, keep, nil))}
-	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", env)
+	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", env)
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
 	badForge := dashSpec(map[string]any{"value": "k"}, keep, nil)
 	badForge["installations"].([]any)[0].(map[string]any)["forge"] = "gitlab"
-	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, badForge)})
+	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, badForge)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
 	if !strings.Contains(string(body), `"path":"installations[0].forge"`) || strings.Contains(string(body), "dashboard[") {
 		t.Errorf("merge error = %s", body)
 	}
 	moved := dashSpec(keep, keep, nil)
 	moved["installations"].([]any)[0].(map[string]any)["accounts"] = []string{"md", "other"}
-	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, moved)})
+	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 1, Spec: mustJSON(t, moved)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeReenterSecret)
 	if !strings.Contains(string(body), `"path":"installations[0].app.privateKey"`) {
 		t.Errorf("reenter_secret details = %s", body)
@@ -455,13 +442,13 @@ func testAdminUpdate(t *testing.T, e *manageEnv) {
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
 	status, body = e.do("outsider", "PUT", "/api/v1/tenants/mgr-dash/config", good)
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
-	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", good, false)
+	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", good, false)
 	e.expect(status, body, http.StatusForbidden, "")
 	if e.totalAudits() != before {
 		t.Fatalf("refused writes left %d audit rows", e.totalAudits()-before)
 	}
 	sealedKey := e.scalar(`SELECT spec->'installations'->0->'app'->'privateKey'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`)
-	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", good)
+	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", good)
 	e.expect(status, body, http.StatusOK, "")
 	if !strings.Contains(string(body), `"revision":2`) {
 		t.Errorf("update = %s", body)
@@ -522,25 +509,19 @@ func testCollisions(t *testing.T, e *manageEnv) {
 		"name": "mgr-zed-bot", "forge": "github", "accounts": []string{"mz2"},
 		"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "k"}, "webhookSecret": map[string]any{"value": "w"}},
 	})
-	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, taken)})
+	status, body = e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, taken)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
 	if !strings.Contains(string(body), `"path":"installations[1].name"`) || strings.Contains(string(body), "dashboard[mgr-zed]") || strings.Contains(string(body), `tenant \"mgr-zed\"`) {
 		t.Errorf("clash against a later tenant = %s", body)
 	}
 }
 
-// testAdminProviderKey: a tenant admin brings the tenant's own model key
-// and points its review model at it, sealed at rest and opened in the
-// merged configuration; a model on the operator's providers stays the
-// operator's to set.
-func testAdminProviderKey(t *testing.T, e *manageEnv) {
+// testTenantProviderKey: a tenant's own model key, which its review model
+// points at, is sealed at rest and opened in the merged configuration.
+func testTenantProviderKey(t *testing.T, e *manageEnv) {
 	mine := map[string]any{"mine": map[string]any{"type": "openai", "apiKey": map[string]any{"value": "sk-mine"}}}
-	shared := dashSpec(keep, keep, map[string]any{"filter": "true", "providers": mine, "models": map[string]any{"review": "shared/big"}})
-	status, body := e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, shared)})
-	e.expect(status, body, http.StatusUnprocessableEntity, CodeOperatorOnly)
-
 	own := dashSpec(keep, keep, map[string]any{"filter": "true", "providers": mine, "models": map[string]any{"review": "mine/gpt"}})
-	status, body = e.do("admin", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, own)})
+	status, body := e.do("operator", "PUT", "/api/v1/tenants/mgr-dash/config", UpdateTenantRequest{Revision: 2, Spec: mustJSON(t, own)})
 	e.expect(status, body, http.StatusOK, "")
 	if sealed := e.scalar(`SELECT spec->'providers'->'mine'->'apiKey'->>'sealed' FROM dashboard_tenants WHERE slug = 'mgr-dash'`); sealed == "" ||
 		strings.Contains(sealed, "sk-mine") {
@@ -554,7 +535,7 @@ func testAdminProviderKey(t *testing.T, e *manageEnv) {
 		p, ok := f.Provider(tn, "mine")
 		return ok && p.APIKeyValue().Value() == "sk-mine"
 	})
-	status, body = e.do("admin", "GET", "/api/v1/tenants/mgr-dash/config", nil)
+	status, body = e.do("operator", "GET", "/api/v1/tenants/mgr-dash/config", nil)
 	if status != http.StatusOK || strings.Contains(string(body), "sk-mine") || !strings.Contains(string(body), `"apiKey":{"set":true}`) {
 		t.Errorf("config read = %d %s", status, body)
 	}
@@ -568,12 +549,12 @@ func testActions(t *testing.T, e *manageEnv, dashID string) {
 
 	status, body := e.do("member", "POST", "/api/v1/tenants/mgr-dash/pulls/md/one/3/rerun", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/pulls/md/one/3/rerun", nil, false)
+	status, body = e.do("operator", "POST", "/api/v1/tenants/mgr-dash/pulls/md/one/3/rerun", nil, false)
 	e.expect(status, body, http.StatusForbidden, "")
-	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/pulls/md/one/99/rerun", nil)
+	status, body = e.do("operator", "POST", "/api/v1/tenants/mgr-dash/pulls/md/one/99/rerun", nil)
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
 
-	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/pulls/md/one/3/rerun", nil)
+	status, body = e.do("operator", "POST", "/api/v1/tenants/mgr-dash/pulls/md/one/3/rerun", nil)
 	e.expect(status, body, http.StatusAccepted, "")
 	if string(bytes.TrimSpace(body)) != `{"jobId":101}` || e.actions.last() != fmt.Sprintf("rerun %s %s 3 in %s", dashID, repoID, dashID) {
 		t.Errorf("rerun = %s, call %q", body, e.actions.last())
@@ -584,156 +565,34 @@ func testActions(t *testing.T, e *manageEnv, dashID string) {
 
 	review := "00000000-0000-4000-8000-000000000001"
 	e.actions.notCancelable = "00000000-0000-4000-8000-000000000002"
-	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/reviews/"+e.actions.notCancelable+"/cancel", nil)
+	status, body = e.do("operator", "POST", "/api/v1/tenants/mgr-dash/reviews/"+e.actions.notCancelable+"/cancel", nil)
 	e.expect(status, body, http.StatusConflict, CodeNotCancelable)
-	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/reviews/"+review+"/cancel", nil)
+	status, body = e.do("operator", "POST", "/api/v1/tenants/mgr-dash/reviews/"+review+"/cancel", nil)
 	e.expect(status, body, http.StatusAccepted, "")
-	if e.actions.last() != fmt.Sprintf("cancel %s by %s in %s", review, e.account["admin"], dashID) {
+	if e.actions.last() != fmt.Sprintf("cancel %s by %s in %s", review, e.account["operator"], dashID) {
 		t.Errorf("cancel call %q", e.actions.last())
 	}
 	if e.audits(AuditReviewCancel, review) != 1 || e.audits(AuditReviewCancel, e.actions.notCancelable) != 0 {
 		t.Errorf("review.cancel audit rows are wrong")
 	}
 
-	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/repos/md/one/reindex", nil)
+	status, body = e.do("operator", "POST", "/api/v1/tenants/mgr-dash/repos/md/one/reindex", nil)
 	e.expect(status, body, http.StatusAccepted, "")
 	if e.actions.last() != fmt.Sprintf("reindex %s %s in %s", dashID, repoID, dashID) || e.audits(AuditRepoReindex, "md/one") != 1 {
 		t.Errorf("reindex = %s, call %q", body, e.actions.last())
 	}
 }
 
-func testMembers(t *testing.T, e *manageEnv, dashID string) {
-	ctx := context.Background()
-	status, body := e.do("member", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: "carol@example.com", Role: "admin"})
-	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: "carol@example.com", Role: "admin"})
-	e.expect(status, body, http.StatusCreated, "")
-	var inv Invite
-	if err := json.Unmarshal(body, &inv); err != nil || inv.CreatedBy == nil || inv.CreatedBy.ID != e.account["admin"] {
-		t.Fatalf("invite = %s", body)
-	}
-	if e.audits(AuditInviteCreate, inv.ID) != 1 {
-		t.Errorf("invite.create audit rows are wrong")
-	}
-	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: "Carol@example.com", Role: "member"})
-	e.expect(status, body, http.StatusConflict, CodeInviteExists)
-	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: "Member@example.com", Role: "admin"})
-	e.expect(status, body, http.StatusConflict, CodeAlreadyMember)
-
-	var members Members
-	status, body = e.do("member", "GET", "/api/v1/tenants/mgr-dash/members", nil)
-	e.expect(status, body, http.StatusOK, "")
-	if err := json.Unmarshal(body, &members); err != nil || members.Invites != nil || len(members.Members) != 2 {
-		t.Errorf("members as a member = %s", body)
-	}
-	status, body = e.do("admin", "GET", "/api/v1/tenants/mgr-dash/members", nil)
-	e.expect(status, body, http.StatusOK, "")
-	if err := json.Unmarshal(body, &members); err != nil || len(members.Invites) != 1 || members.Invites[0].Email != "carol@example.com" {
-		t.Errorf("members as an admin = %s", body)
-	}
-
-	// Carol signs in and accepts; the invite grant is hers to lose.
-	e.signIn("carol", "mgr-carol", nil)
-	if n, err := e.st.AcceptInvites(ctx, e.account["carol"], "carol@example.com", time.Now()); err != nil || n != 1 {
-		t.Fatalf("AcceptInvites = %d, %v", n, err)
-	}
-	status, body = e.do("carol", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: "dan@example.com", Role: "member"})
-	e.expect(status, body, http.StatusCreated, "")
-	var dan Invite
-	_ = json.Unmarshal(body, &dan)
-	status, body = e.do("carol", "DELETE", "/api/v1/tenants/mgr-dash/invites/"+dan.ID, nil)
-	e.expect(status, body, http.StatusNoContent, "")
-	if e.audits(AuditInviteDelete, dan.ID) != 1 {
-		t.Errorf("invite.delete audit rows are wrong")
-	}
-
-	// The forge admin drops out: carol is the last admin but operators.
-	if err := e.st.ReplaceForgeMemberships(ctx, e.account["admin"], nil, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	status, body = e.do("carol", "DELETE", "/api/v1/tenants/mgr-dash/members/"+e.account["carol"], nil)
-	e.expect(status, body, http.StatusConflict, CodeLastAdmin)
-	status, body = e.do("carol", "PATCH", "/api/v1/tenants/mgr-dash/members/"+e.account["carol"], UpdateMemberRequest{Role: "member"})
-	e.expect(status, body, http.StatusConflict, CodeLastAdmin)
-	if err := e.st.ReplaceForgeMemberships(ctx, e.account["admin"], []store.Grant{{TenantID: dashID, Role: store.RoleAdmin}}, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-
-	status, body = e.do("admin", "PATCH", "/api/v1/tenants/mgr-dash/members/"+e.account["member"], UpdateMemberRequest{Role: "admin"})
-	e.expect(status, body, http.StatusConflict, CodeNotInviteMember)
-	status, body = e.do("admin", "PATCH", "/api/v1/tenants/mgr-dash/members/"+e.account["carol"], UpdateMemberRequest{Role: "member"})
-	e.expect(status, body, http.StatusNoContent, "")
-	if e.audits(AuditMemberUpdate, e.account["carol"]) != 1 {
-		t.Errorf("member.update audit rows are wrong")
-	}
-	status, body = e.do("admin", "DELETE", "/api/v1/tenants/mgr-dash/members/"+e.account["carol"], nil)
-	e.expect(status, body, http.StatusOK, "")
-	if !strings.Contains(string(body), "sign-in") || e.audits(AuditMemberRemove, e.account["carol"]) != 1 {
-		t.Errorf("remove = %s", body)
-	}
-	status, body = e.do("carol", "GET", "/api/v1/tenants/mgr-dash/members", nil)
-	e.expect(status, body, http.StatusNotFound, CodeNotFound)
-	status, body = e.do("admin", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: "erin@example.com", Role: "member"})
-	e.expect(status, body, http.StatusCreated, "")
-}
-
-// testMutualDemotion has two invite admins demote each other, the second
-// acting on a principal authenticated before the first change landed, as
-// two concurrent requests would.
-func testMutualDemotion(t *testing.T, e *manageEnv, dashID string) {
-	ctx := context.Background()
-	for _, who := range []string{"ann", "ben"} {
-		status, body := e.do("admin", "POST", "/api/v1/tenants/mgr-dash/invites", CreateInviteRequest{Email: who + "@example.com", Role: "admin"})
-		e.expect(status, body, http.StatusCreated, "")
-		e.signIn(who, "mgr-"+who, nil)
-		if n, err := e.st.AcceptInvites(ctx, e.account[who], who+"@example.com", time.Now()); err != nil || n != 1 {
-			t.Fatalf("AcceptInvites(%s) = %d, %v", who, n, err)
-		}
-	}
-	if err := e.st.ReplaceForgeMemberships(ctx, e.account["admin"], nil, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	stale := func(who string) *auth.Principal {
-		return &auth.Principal{Account: auth.Account{ID: e.account[who]}, Memberships: map[string]auth.Role{dashID: auth.RoleAdmin}}
-	}
-	demote := func(by, target string) *httptest.ResponseRecorder {
-		body := strings.NewReader(`{"role":"member"}`)
-		req := httptest.NewRequest("PATCH", "/api/v1/tenants/mgr-dash/members/"+e.account[target], body)
-		req.Header.Set("Origin", "https://kritik.example")
-		req.Header.Set("X-Kritik", "1")
-		req = req.WithContext(auth.WithPrincipal(req.Context(), stale(by)))
-		w := httptest.NewRecorder()
-		e.srv.Handler().ServeHTTP(w, req)
-		return w
-	}
-	if w := demote("ann", "ben"); w.Code != http.StatusNoContent {
-		t.Fatalf("ann demotes ben = %d %s", w.Code, w.Body)
-	}
-	if w := demote("ben", "ann"); w.Code != http.StatusForbidden {
-		t.Fatalf("ben, no longer an admin, demotes ann = %d %s", w.Code, w.Body)
-	}
-	if w := demote("ben", "ben"); w.Code != http.StatusForbidden {
-		t.Fatalf("ben, no longer an admin, changes his own role = %d %s", w.Code, w.Body)
-	}
-	admins := e.scalar(`SELECT count(DISTINCT account_id)::text FROM memberships WHERE tenant_id = '` + dashID + `' AND role = 'admin'`)
-	if admins != "1" {
-		t.Errorf("admins left = %s, want 1", admins)
-	}
-	if err := e.st.ReplaceForgeMemberships(ctx, e.account["admin"], []store.Grant{{TenantID: dashID, Role: store.RoleAdmin}}, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func testAuditLog(t *testing.T, e *manageEnv) {
 	status, body := e.do("member", "GET", "/api/v1/tenants/mgr-dash/audit", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	status, body = e.do("admin", "GET", "/api/v1/operator/audit", nil)
+	status, body = e.do("member", "GET", "/api/v1/operator/audit", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
 
 	var seen []AuditEvent
 	path := "/api/v1/tenants/mgr-dash/audit?limit=3"
 	for range 20 {
-		status, body = e.do("admin", "GET", path, nil)
+		status, body = e.do("operator", "GET", path, nil)
 		e.expect(status, body, http.StatusOK, "")
 		var page Page[AuditEvent]
 		if err := json.Unmarshal(body, &page); err != nil {
@@ -750,7 +609,7 @@ func testAuditLog(t *testing.T, e *manageEnv) {
 		(&configfile.Tenant{Slug: "mgr-dash"}).ID()).Scan(&want); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != want || want < 8 {
+	if len(seen) != want || want < 4 {
 		t.Fatalf("paged %d events, want %d", len(seen), want)
 	}
 	var prev int64
@@ -769,7 +628,7 @@ func testAuditLog(t *testing.T, e *manageEnv) {
 }
 
 func testDelete(t *testing.T, e *manageEnv) {
-	status, body := e.do("admin", "DELETE", "/api/v1/tenants/mgr-dash?revision=3", nil)
+	status, body := e.do("member", "DELETE", "/api/v1/tenants/mgr-dash?revision=3", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
 	status, body = e.do("operator", "DELETE", "/api/v1/tenants/mgr-dash?revision=1", nil)
 	e.expect(status, body, http.StatusConflict, CodeRevisionConflict)
@@ -779,11 +638,6 @@ func testDelete(t *testing.T, e *manageEnv) {
 	e.expect(status, body, http.StatusNoContent, "")
 	if e.audits(AuditTenantDelete, "mgr-dash") != 1 {
 		t.Errorf("tenant.delete audit rows are wrong")
-	}
-	dashID := (&configfile.Tenant{Slug: "mgr-dash"}).ID()
-	if n := e.scalar(`SELECT ((SELECT count(*) FROM memberships WHERE tenant_id = '` + dashID + `') +
-		(SELECT count(*) FROM invites WHERE tenant_id = '` + dashID + `' AND accepted_at IS NULL))::text`); n != "0" {
-		t.Errorf("%s memberships and invites outlived the tenant", n)
 	}
 	e.waitFor("mgr-dash to leave", func(f *configfile.File) bool { _, ok := f.Tenant("mgr-dash"); return !ok })
 	status, body = e.do("operator", "GET", "/api/v1/tenants/mgr-dash/config", nil)

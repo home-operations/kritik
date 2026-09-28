@@ -11,7 +11,7 @@
   const titles: Record<Route['name'], string> = {
     overview: 'Overview',
     signin: 'Sign in',
-    operator: 'Operator console',
+    operator: 'Admin console',
     tenant: 'Tenant overview',
     repos: 'Repos',
     repo: 'Repo',

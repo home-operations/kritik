@@ -6,7 +6,6 @@ import (
 
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/store"
 )
 
 var goldenAccount = Account{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"}
@@ -18,7 +17,7 @@ func init() {
 			SignIn: []auth.ProviderInfo{{Name: "corp", Type: configfile.SignInOIDC, DisplayName: "Corp"}},
 		},
 		"tenant_config": TenantConfig{
-			ManagedBy: configfile.OriginDashboard, Revision: new(int64(3)), Editable: true, Policy: fieldPolicies(&auth.Principal{}, true),
+			ManagedBy: configfile.OriginDashboard, Revision: new(int64(3)), Editable: true, Policy: fieldPolicies(true),
 			Inherited: Inherited{
 				Tenant: goldenRepoSettings, TenantSources: map[string]configfile.Source{"models.review": configfile.SourceFile},
 				Repository:        goldenRepoSettings,
@@ -31,17 +30,7 @@ func init() {
 		"tenant_write_result": TenantWriteResult{
 			Slug: "alpha", Revision: 1, Generated: map[string]string{"installations[alpha-bot].app.webhookSecret": "00ff"},
 		},
-		"members": Members{
-			Members: []Member{{
-				Account: goldenAccount, Role: auth.RoleAdmin,
-				Sources: []MemberSource{{Source: store.SourceForge, Role: auth.RoleMember}, {Source: store.SourceInvite, Role: auth.RoleAdmin}},
-			}},
-			Invites: []Invite{{ID: "inv-1", Email: "bob@example.com", Role: auth.RoleMember, CreatedBy: &goldenAccount, ExpiresAt: t1}},
-		},
-		"create_invite_request": CreateInviteRequest{Email: "bob@example.com", Role: auth.RoleMember, TTLHours: new(24)},
-		"update_member_request": UpdateMemberRequest{Role: auth.RoleAdmin},
-		"member_removed":        MemberRemoved{Note: removedNote},
-		"accepted":              Accepted{JobID: 42},
+		"accepted": Accepted{JobID: 42},
 		"audit_event": AuditEvent{
 			ID: "7", At: t0, Actor: &goldenAccount, Tenant: "alpha", Action: AuditTenantUpdate, Target: "alpha",
 			Detail: json.RawMessage(`{"revision":2,"secretsChanged":["installations[alpha-bot].app.privateKey"]}`),

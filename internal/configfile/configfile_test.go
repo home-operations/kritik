@@ -967,3 +967,36 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		})
 	}
 }
+
+func TestRetentionTranscripts(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	tests := []struct {
+		name string
+		yaml string
+		want time.Duration
+		err  string
+	}{
+		{"default", "", 30 * 24 * time.Hour, ""},
+		{"set", "retention:\n  transcripts: 48h\n", 48 * time.Hour, ""},
+		{"too short", "retention:\n  transcripts: 1h\n", 0, "retention.transcripts"},
+		{"negative", "retention:\n  transcripts: -48h\n", 0, "retention.transcripts"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := Parse([]byte(tt.yaml + minimal))
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) {
+					t.Fatalf("error %v does not mention %q", err, tt.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := f.Retention.TranscriptsOrDefault(); got != tt.want {
+				t.Fatalf("transcripts = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}

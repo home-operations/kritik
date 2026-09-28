@@ -47,8 +47,7 @@ func (s *Server) getMeta(w http.ResponseWriter, _ *http.Request) error {
 func tenantIDFor(slug string) string { return (&configfile.Tenant{Slug: slug}).ID() }
 
 var (
-	errForbidden          = errStatus(http.StatusForbidden, CodeForbidden, "this needs a tenant admin", nil)
-	errOperatorOnly       = errStatus(http.StatusForbidden, CodeForbidden, "this needs an instance operator", nil)
+	errForbidden          = errStatus(http.StatusForbidden, CodeForbidden, "this needs an admin", nil)
 	errFileManaged        = errStatus(http.StatusForbidden, CodeFileManaged, "this tenant is declared in the configuration file", nil)
 	errManagementDisabled = errStatus(http.StatusServiceUnavailable, CodeManagementDisabled,
 		"dashboard tenants cannot be written: KRITIK_DASHBOARD_KEY is not set", nil)
@@ -81,7 +80,7 @@ func (s *Server) getTenantConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 	var out TenantConfig
 	if live != nil && live.Origin() == configfile.OriginFile {
-		out.ManagedBy, out.Policy, out.Inherited = configfile.OriginFile, fieldPolicies(p, false), s.inherited(live)
+		out.ManagedBy, out.Policy, out.Inherited = configfile.OriginFile, fieldPolicies(false), s.inherited(live)
 		if out.Spec, err = renderFileTenant(live); err != nil {
 			return err
 		}
@@ -100,8 +99,8 @@ func (s *Server) getTenantConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 	out.ManagedBy = configfile.OriginDashboard
 	out.Revision = &d.Revision
-	out.Editable = s.keyring != nil && p.CanAdmin(tenantIDFor(slug))
-	out.Policy = fieldPolicies(p, out.Editable)
+	out.Editable = s.keyring != nil && p.Operator
+	out.Policy = fieldPolicies(out.Editable)
 	if live == nil {
 		stored, err := configfile.DecodeTenant(d)
 		if err != nil {
@@ -120,7 +119,7 @@ func (s *Server) getTenantConfig(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	if !p.Operator {
-		return errOperatorOnly
+		return errForbidden
 	}
 	if s.keyring == nil {
 		return errManagementDisabled
@@ -152,7 +151,7 @@ func (s *Server) updateTenant(w http.ResponseWriter, r *http.Request) error {
 	switch {
 	case live != nil && live.Origin() == configfile.OriginFile:
 		return errFileManaged
-	case live != nil && !p.CanAdmin(live.ID()):
+	case live != nil && !p.Operator:
 		return errForbidden
 	case s.keyring == nil:
 		return errManagementDisabled
@@ -221,7 +220,7 @@ func (s *Server) writeTenant(
 		if err != nil {
 			return err
 		}
-		candidate, sealed, err := s.checkSpec(p, slug, spec, prev, dash)
+		candidate, sealed, err := s.checkSpec(slug, spec, prev, dash)
 		if err != nil {
 			return err
 		}
@@ -249,9 +248,8 @@ func (s *Server) writeTenant(
 
 // claimSlug refuses a create whose slug a tenant held before, enabled or
 // not: tenant ids derive from slugs, so the new tenant would see the old
-// one's reviews, findings and transcripts. adopt accepts that, clearing
-// the old tenant's members and invites; only a refusal that adopt would
-// overcome says so (slugTakenDetails.Adoptable), never one for a tenant
+// one's reviews, findings and transcripts. adopt accepts that; only a
+// refusal that adopt would overcome says so (slugTakenDetails.Adoptable), never one for a tenant
 // the file still manages.
 func (s *Server) claimSlug(ctx context.Context, tx pgx.Tx, p *auth.Principal, tid, slug string, adopt bool) error {
 	held, err := store.TenantRowExists(ctx, tx, tid)
@@ -273,18 +271,14 @@ func (s *Server) claimSlug(ctx context.Context, tx pgx.Tx, p *auth.Principal, ti
 			"a tenant used this slug before; creating it again with adopt keeps that tenant's review history",
 			slugTakenDetails{Path: slugPath.Path, Adoptable: true})
 	}
-	if err := store.DeleteTenantAccess(ctx, tx, tid); err != nil {
-		return err
-	}
 	return record(ctx, tx, p, &tid, AuditTenantAdopt, slug, struct{}{})
 }
 
 // checkSpec seals spec's secrets against the tenant it replaces (nil on
-// create), holds a non-operator to the fields it may change, and checks
-// the result merges with the running file and dash, the dashboard tenants
-// as the write's transaction reads them.
+// create) and checks the result merges with the running file and dash, the
+// dashboard tenants as the write's transaction reads them.
 func (s *Server) checkSpec(
-	p *auth.Principal, slug string, spec json.RawMessage, prev *configfile.DashboardTenant, dash []configfile.DashboardTenant,
+	slug string, spec json.RawMessage, prev *configfile.DashboardTenant, dash []configfile.DashboardTenant,
 ) (*configfile.Tenant, sealedSpec, error) {
 	var stored json.RawMessage
 	if prev != nil {
@@ -304,16 +298,6 @@ func (s *Server) checkSpec(
 	next, err := configfile.DecodeTenant(candidate)
 	if err != nil {
 		return nil, sealed, decodeFailure(err)
-	}
-	if prev != nil && !p.Operator {
-		old, err := configfile.DecodeTenant(*prev)
-		if err != nil {
-			return nil, sealed, err
-		}
-		if path := operatorOnlyChange(&old, &next); path != "" {
-			return nil, sealed, errStatus(http.StatusUnprocessableEntity, CodeOperatorOnly,
-				path+" can only be changed by an instance operator", pathDetails{Path: path})
-		}
 	}
 	current := s.current.Get()
 	if err := configfile.ValidateDashboard(current, dash, candidate, s.keyring); err != nil {
@@ -360,7 +344,7 @@ func (s *Server) checkTakeover(ctx context.Context, tx pgx.Tx, tenantID string, 
 func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) error {
 	ctx, p, slug := r.Context(), auth.PrincipalFrom(r.Context()), r.PathValue("slug")
 	if !p.Operator {
-		return errOperatorOnly
+		return errForbidden
 	}
 	if t, ok := s.current.Get().Tenant(slug); ok && t.Origin() == configfile.OriginFile {
 		return errFileManaged
@@ -384,9 +368,6 @@ func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) error {
 		case errors.Is(err, store.ErrDashboardConflict):
 			return errRevisionConflict
 		case err != nil:
-			return err
-		}
-		if err := store.DeleteTenantAccess(ctx, tx, tid); err != nil {
 			return err
 		}
 		return record(ctx, tx, p, &tid, AuditTenantDelete, slug, tenantAudit{Revision: rev})

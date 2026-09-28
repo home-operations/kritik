@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/store"
 )
 
 // claimSpec is a dashboard tenant with one installation per name.
@@ -100,8 +99,6 @@ func testSlugReuse(t *testing.T, e *manageEnv) {
 		t.Errorf("held installation = %s", body)
 	}
 
-	bID := (&configfile.Tenant{Slug: "clm-b"}).ID()
-	e.signIn("clm-old-admin", "clm-old-admin", []store.Grant{{TenantID: bID, Role: store.RoleAdmin}})
 	spec := mustJSON(t, claimSpec("clm-b", "clm-b-bot"))
 	status, body = e.do("operator", "POST", "/api/v1/tenants", CreateTenantRequest{Slug: "clm-b", Spec: spec})
 	e.expect(status, body, http.StatusConflict, CodeSlugTaken)
@@ -122,8 +119,5 @@ func testSlugReuse(t *testing.T, e *manageEnv) {
 	e.expect(status, body, http.StatusCreated, "")
 	if e.audits(AuditTenantAdopt, "clm-b") != 1 {
 		t.Error("tenant.adopt audit rows are wrong")
-	}
-	if n := e.scalar(`SELECT count(*)::text FROM memberships WHERE tenant_id = '` + bID + `'`); n != "0" {
-		t.Errorf("%s memberships of the old tenant survived the adopt", n)
 	}
 }

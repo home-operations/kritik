@@ -91,29 +91,6 @@ test.describe('tenant configuration', () => {
     await expect(page.locator('input[type=password]')).toHaveCount(0);
   });
 
-  test('the fields the policy keeps for operators are disabled for a tenant admin and enabled for an operator', async ({ page }) => {
-    await setup(page, adminMe, [configRow(dashboardConfig)]);
-    await page.goto(`/${ADMIN}/config`);
-    await expect(page.getByLabel('Concurrency')).toBeDisabled();
-    await expect(page.locator('[data-path="repositories[0].mode"]')).toBeDisabled();
-    await expect(page.locator('[data-path="repositories[0].agent"]')).toBeDisabled();
-    await expect(page.locator('[data-path="runner"]')).toBeDisabled();
-    // An admin may set a model on the tenant's own provider key.
-    await expect(page.locator('[data-path="models.review"]')).toBeEnabled();
-    await expect(page.locator('[data-path="models.fallback"]')).toBeEnabled();
-    await expect(page.locator('[data-path="forks"]')).toBeDisabled();
-    await expect(page.getByText('(operator only)').first()).toBeVisible();
-
-    // The server says what an operator may change; the page renders that.
-    const asOperator: T.TenantConfig = { ...dashboardConfig, policy: dashboardConfig.policy.map((p) => ({ ...p, editable: true })) };
-    await setup(page, operatorMe, [configRow(asOperator)]);
-    await page.reload();
-    await expect(page.getByLabel('Concurrency')).toBeEnabled();
-    await expect(page.locator('[data-path="repositories[0].mode"]')).toBeEnabled();
-    await expect(page.locator('[data-path="models.review"]')).toBeEnabled();
-    await expect(page.locator('[data-path="forks"]')).toBeEnabled();
-  });
-
   test('fields left empty show what they inherit, and from where', async ({ page }) => {
     await setup(page, adminMe, [configRow(dashboardConfig)]);
     await page.goto(`/${ADMIN}/config`);
@@ -271,16 +248,16 @@ test.describe('tenant configuration', () => {
   });
 
   test('unsaved edits ask before leaving', async ({ page }) => {
-    await setup(page, adminMe, [configRow(dashboardConfig), [new RegExp(`${API}/members$`), g.members]]);
+    await setup(page, adminMe, [configRow(dashboardConfig), [new RegExp(`${API}/audit$`), g.pageOf([])]]);
     await page.goto(`/${ADMIN}/config`);
     await page.getByLabel('Filter').first().fill('draft');
     page.once('dialog', (d) => void d.dismiss());
-    await page.getByRole('link', { name: 'Members' }).click();
+    await page.getByRole('link', { name: 'Audit log' }).click();
     await expect(page).toHaveURL(new RegExp(`${ADMIN}/config$`));
     await expect(page.getByLabel('Filter').first()).toHaveValue('draft');
     page.once('dialog', (d) => void d.accept());
-    await page.getByRole('link', { name: 'Members' }).click();
-    await expect(page).toHaveURL(new RegExp(`${ADMIN}/members$`));
+    await page.getByRole('link', { name: 'Audit log' }).click();
+    await expect(page).toHaveURL(new RegExp(`${ADMIN}/audit$`));
   });
 
   test('management disabled makes the config read-only and hides tenant creation', async ({ page }) => {
@@ -297,73 +274,13 @@ test.describe('tenant configuration', () => {
   test('a tenant member cannot open the admin page', async ({ page }) => {
     await setup(page, memberMe);
     await page.goto(`/${ADMIN}/config`);
-    await expect(page.getByRole('alert')).toContainText('Only a tenant admin');
+    await expect(page.getByRole('alert')).toContainText('Only an admin');
     await expect(page.getByRole('link', { name: 'Admin' })).toHaveCount(0);
   });
 });
 
-test.describe('members and invites', () => {
-  const forgeOnly: T.Member = {
-    account: { ...g.members.members[0]!.account, id: 'acct-2', displayName: 'Bea', email: 'bea@example.com' },
-    role: 'member',
-    sources: [{ source: 'forge', role: 'member' }],
-  };
-  const list: T.Members = { ...g.members, members: [...g.members.members, forgeOnly] };
-
-  test('change an invite role, remove invite access, and surface last_admin', async ({ page }) => {
-    await setup(page, adminMe, [[new RegExp(`${API}/members$`), list]]);
-    const member = new RegExp(`${API}/members/acct-1$`);
-    const sent = await g.mockWrites(page, [
-      ['PATCH', member, () => (sent.length === 1 ? { status: 200, body: g.members.members[0] } : g.apiError(409, 'last_admin', 'no admin'))],
-      ['DELETE', member, { status: 200, body: g.memberRemoved }],
-    ]);
-    await page.goto(`/${ADMIN}/members`);
-    const rows = page.locator('#admin-members').locator('../..').locator('tbody tr');
-    await expect(rows).toHaveCount(2);
-    await expect(rows.nth(1)).toContainText('from the forge at sign-in');
-    await expect(rows.nth(1).getByRole('combobox')).toHaveCount(0);
-
-    const role = page.getByLabel('Invite role for Ada');
-    await role.selectOption('member');
-    await expect.poll(() => sent.length).toBe(1);
-    expect(sent[0]!.body).toEqual({ role: 'member' });
-    await expect(page.getByRole('status')).toContainText('Ada is now member');
-
-    await role.selectOption('member');
-    await expect(page.locator('.state-error')).toContainText('left with no admin');
-
-    await page.getByRole('button', { name: 'Remove', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Remove access' }).click();
-    await expect.poll(() => sent.filter((s) => s.method === 'DELETE').length).toBe(1);
-    await expect(page.getByRole('status')).toContainText(g.memberRemoved.note);
-  });
-
-  test('create and revoke invites', async ({ page }) => {
-    await setup(page, adminMe, [[new RegExp(`${API}/members$`), g.members]]);
-    const invite = g.members.invites![0]!;
-    const sent = await g.mockWrites(page, [
-      ['POST', new RegExp(`${API}/invites$`), { status: 201, body: { ...invite, id: 'inv-2', email: 'cy@example.com', role: 'admin' } }],
-      ['DELETE', new RegExp(`${API}/invites/inv-1$`), { status: 204 }],
-    ]);
-    await page.goto(`/${ADMIN}/members`);
-    await expect(page.locator('#admin-invites').locator('../..')).toContainText(invite.email);
-
-    await page.getByLabel('Email').fill('cy@example.com');
-    await page.locator('.inline-form').getByRole('combobox').selectOption('admin');
-    await page.getByLabel(/Expires after/).fill('24');
-    await page.getByRole('button', { name: 'Invite', exact: true }).click();
-    await expect.poll(() => sent.length).toBe(1);
-    expect(sent[0]!.body).toEqual({ email: 'cy@example.com', role: 'admin', ttlHours: 24 });
-    await expect(page.getByRole('status')).toContainText('Invited cy@example.com as admin');
-
-    await page.getByRole('button', { name: `Revoke the invite for ${invite.email}` }).click();
-    await expect.poll(() => sent.filter((s) => s.method === 'DELETE').length).toBe(1);
-    await expect(page.getByRole('status')).toContainText(`Revoked the invite for ${invite.email}`);
-  });
-});
-
 test('the audit log pages and expands detail', async ({ page }) => {
-  const older: T.AuditEvent = { ...g.auditEvent, id: '6', action: 'invite.create', target: 'inv-1', detail: {} };
+  const older: T.AuditEvent = { ...g.auditEvent, id: '6', action: 'tenant.create', target: g.SLUG, detail: {} };
   const seen = await setup(page, adminMe, [
     [new RegExp(`${API}/audit$`), (u: URL) => (u.searchParams.get('cursor') ? g.pageOf([older]) : g.pageOf([g.auditEvent], 'c1'))],
   ]);
@@ -434,7 +351,7 @@ test.describe('actions', () => {
   });
 });
 
-test.describe('operator console', () => {
+test.describe('admin console', () => {
   test('creates a tenant', async ({ page }) => {
     await setup(page, operatorMe);
     const sent = await g.mockWrites(page, [
