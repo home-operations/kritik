@@ -122,7 +122,7 @@ func settleLeft(trigger string, settle time.Duration, created, now time.Time) ti
 // reports whether it ended the review, with the error of recording that.
 func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective, client forge.Client, owner, repo string) (bool, error) {
 	var vars map[string]any
-	if err := w.Store.WithTenant(ctx, e.args.TenantID, func(tx pgx.Tx) error {
+	if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 		var err error
 		vars, err = filterVars(ctx, tx, e.pr.id, e.args.Trigger)
 		return err

@@ -7,7 +7,7 @@
   import Time from './Time.svelte';
   import Collapsible from './Collapsible.svelte';
 
-  let { path, showTenant = false }: { path: string; showTenant?: boolean } = $props();
+  let { path, showAccount = false }: { path: string; showAccount?: boolean } = $props();
 
   const paged = new Paged<AuditEvent>(
     (cursor) => (cursor ? `${path}?cursor=${encodeURIComponent(cursor)}` : path),
@@ -27,7 +27,7 @@
         <thead>
           <tr>
             <th scope="col">Time</th>
-            {#if showTenant}<th scope="col">Tenant</th>{/if}
+            {#if showAccount}<th scope="col">Account</th>{/if}
             <th scope="col">Actor</th>
             <th scope="col">Action</th>
             <th scope="col">Target</th>
@@ -38,7 +38,7 @@
           {#each paged.items as e (e.id)}
             <tr>
               <td><Time iso={e.at} /></td>
-              {#if showTenant}<td class="mono">{e.tenant || '—'}</td>{/if}
+              {#if showAccount}<td class="mono">{e.account || '—'}</td>{/if}
               <td>{e.actor?.displayName ?? 'system'}</td>
               <td class="mono">{e.action}</td>
               <td class="mono">{e.target}</td>

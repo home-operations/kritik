@@ -74,8 +74,8 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 }
 
 func request(f *configfile.File, ev webhook.Event) Request {
-	in, tenant, _ := f.Connection("bot-ross")
-	return Request{File: f, Tenant: tenant, Connection: in, Event: ev}
+	in, account, _ := f.Connection("bot-ross")
+	return Request{File: f, Account: account, Connection: in, Event: ev}
 }
 
 func repo(name string) *webhook.Repository {
@@ -104,12 +104,12 @@ func TestDispatchPullRequest(t *testing.T) {
 		t.Fatalf("a new head must enqueue: %+v, %v", out, err)
 	}
 
-	tenant, _ := f.Tenant("onedr0p")
+	account, _ := f.Account("onedr0p")
 	var headSHA, body string
 	var labels []byte
 	var merged bool
 	var jobsN int
-	err = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `SELECT head_sha, body, labels, merged FROM pull_requests WHERE number = 7`).
 			Scan(&headSHA, &body, &labels, &merged); err != nil {
 			return err
@@ -161,7 +161,7 @@ func TestDispatchPullRequest(t *testing.T) {
 			t.Fatalf("closed = %+v, %v", out, err)
 		}
 		var state string
-		_ = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT state FROM pull_requests WHERE number = 7`).Scan(&state)
 		})
 		if state != "closed" {
@@ -175,11 +175,11 @@ func TestDispatchPullRequest(t *testing.T) {
 func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
-	tenant, _ := f.Tenant("onedr0p")
+	account, _ := f.Account("onedr0p")
 	scheduledAt := func(headSHA string) time.Time {
 		t.Helper()
 		var ts time.Time
-		err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx,
 				`SELECT scheduled_at FROM river_job WHERE kind = 'review' AND args->>'head_sha' = $1`, headSHA).Scan(&ts)
 		})
@@ -216,10 +216,10 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 func TestDispatchCommentPushInstallation(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
-	tenant, _ := f.Tenant("onedr0p")
+	account, _ := f.Account("onedr0p")
 	count := func(kind string) int {
 		var n int
-		_ = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = $1`, kind).Scan(&n)
 		})
 		return n
@@ -250,12 +250,12 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 			t.Fatalf("push before an index = %+v, %v; index jobs = %d", out, err, count("index"))
 		}
 		in, _, _ := f.Connection("bot-ross")
-		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `WITH g AS (
-					INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+					INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
 					VALUES ($1, $2, 'ddd', 'm', 8, 'full', 'completed') RETURNING id, repository_id)
 				UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`,
-				tenant.ID(), configfile.RepositoryID(in.ID(), "onedr0p/home-ops"))
+				account.ID(), configfile.RepositoryID(in.ID(), "onedr0p/home-ops"))
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -283,7 +283,7 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 			t.Fatal(err)
 		}
 		var newEnabled, disabledEnabled bool
-		_ = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			if err := tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'onedr0p/new-repo'`).Scan(&newEnabled); err != nil {
 				return err
 			}
@@ -297,7 +297,7 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 		if _, err := svc.Dispatch(ctx, request(f, removed)); err != nil {
 			t.Fatal(err)
 		}
-		_ = st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'onedr0p/new-repo'`).Scan(&newEnabled)
 		})
 		if newEnabled {
@@ -326,7 +326,7 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 			t.Fatal(err)
 		}
 		enabled := map[string]bool{}
-		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			rows, err := tx.Query(ctx, `SELECT name, enabled FROM repositories WHERE name IN ('onedr0p/stays', 'home-operations/goes')`)
 			if err != nil {
 				return err
@@ -350,10 +350,10 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 func TestRecordDelivery(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
-	in, tenant, _ := f.Connection("bot-ross")
+	in, account, _ := f.Connection("bot-ross")
 	exec := func(sql string) {
 		t.Helper()
-		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, sql, in.ID())
 			return err
 		}); err != nil {
@@ -363,7 +363,7 @@ func TestRecordDelivery(t *testing.T) {
 	last := func() time.Time {
 		t.Helper()
 		var at *time.Time
-		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT last_webhook_at FROM connections WHERE id = $1`, in.ID()).Scan(&at)
 		}); err != nil {
 			t.Fatal(err)
@@ -375,7 +375,7 @@ func TestRecordDelivery(t *testing.T) {
 	}
 	record := func() {
 		t.Helper()
-		if err := svc.RecordDelivery(ctx, tenant.ID(), in.ID()); err != nil {
+		if err := svc.RecordDelivery(ctx, account.ID(), in.ID()); err != nil {
 			t.Fatalf("RecordDelivery: %v", err)
 		}
 	}

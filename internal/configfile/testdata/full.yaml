@@ -19,7 +19,7 @@ defaults:
 retention:
   disabledIndexGrace: 720h
 
-tenants:
+accounts:
   - slug: home-operations
     runner:
       resources: { limits: { cpu: "2", memory: 4Gi } }

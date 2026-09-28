@@ -19,11 +19,11 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-func parseTenant(t *testing.T, slug string) *configfile.File {
+func parseAccount(t *testing.T, slug string) *configfile.File {
 	t.Helper()
 	t.Setenv("TEST_MAIN_TOKEN", "tok")
 	f, err := configfile.Parse([]byte(`
-tenants:
+accounts:
   - slug: ` + slug + `
     connections:
       - name: ` + slug + `-bot
@@ -40,13 +40,13 @@ tenants:
 // recordApplied is an onApplied that reports the applied slug and returns err.
 func recordApplied(current *configfile.Current, ch chan<- string, err error) func(context.Context) error {
 	return func(context.Context) error {
-		ch <- current.Get().Tenants[0].Slug
+		ch <- current.Get().Accounts[0].Slug
 		return err
 	}
 }
 
 func TestApplyLoopReturnsOnAppliedError(t *testing.T) {
-	current := configfile.NewCurrent(parseTenant(t, "good"))
+	current := configfile.NewCurrent(parseAccount(t, "good"))
 	gauge := server.NewConfigErrorGauge(prometheus.NewRegistry())
 	err := applyLoop(t.Context(), current, func(context.Context, *configfile.File) error { return nil },
 		recordApplied(current, make(chan string, 1), errors.New("enqueue failed")), time.Hour, gauge, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -70,7 +70,7 @@ func applyStage(reg *prometheus.Registry) float64 {
 }
 
 func TestApplyLoop(t *testing.T) {
-	good, refused, broken, fixed := parseTenant(t, "good"), parseTenant(t, "refused"), parseTenant(t, "broken"), parseTenant(t, "fixed")
+	good, refused, broken, fixed := parseAccount(t, "good"), parseAccount(t, "refused"), parseAccount(t, "broken"), parseAccount(t, "fixed")
 	current := configfile.NewCurrent(good)
 	reg := prometheus.NewRegistry()
 	gauge := server.NewConfigErrorGauge(reg)
@@ -78,11 +78,11 @@ func TestApplyLoop(t *testing.T) {
 	appliedCh := make(chan string, 10)
 	attempts := make(chan string, 10)
 	apply := func(_ context.Context, f *configfile.File) error {
-		slug := f.Tenants[0].Slug
+		slug := f.Accounts[0].Slug
 		attempts <- slug
 		switch slug {
 		case "refused":
-			return fmt.Errorf("store: tenant refused: %w", store.ErrManagedBy)
+			return fmt.Errorf("store: account refused: %w", store.ErrManagedBy)
 		case "broken":
 			return errors.New("connection reset")
 		}
@@ -162,7 +162,7 @@ func (h *errorCounter) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *errorCounter) WithGroup(string) slog.Handler      { return h }
 
 func TestApplyLoopRetriesARefusal(t *testing.T) {
-	current := configfile.NewCurrent(parseTenant(t, "racy"))
+	current := configfile.NewCurrent(parseAccount(t, "racy"))
 	reg := prometheus.NewRegistry()
 	gauge := server.NewConfigErrorGauge(reg)
 	logs := &errorCounter{}
@@ -170,7 +170,7 @@ func TestApplyLoopRetriesARefusal(t *testing.T) {
 	apply := func(context.Context, *configfile.File) error {
 		// The first three attempts lose a race; the fourth wins.
 		if attempts.Add(1) <= 3 {
-			return fmt.Errorf("store: tenant racy: %w", store.ErrManagedBy)
+			return fmt.Errorf("store: account racy: %w", store.ErrManagedBy)
 		}
 		return nil
 	}
@@ -271,7 +271,7 @@ func (h *warnCounter) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *warnCounter) WithGroup(string) slog.Handler      { return h }
 
 func TestRetentionSweep(t *testing.T) {
-	current := configfile.NewCurrent(parseTenant(t, "acme"))
+	current := configfile.NewCurrent(parseAccount(t, "acme"))
 	st := &fakeRetentionStore{calls: make(chan sweepCall, 16)}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
@@ -321,7 +321,7 @@ func TestRetentionSweep(t *testing.T) {
 }
 
 func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
-	current := configfile.NewCurrent(parseTenant(t, "acme"))
+	current := configfile.NewCurrent(parseAccount(t, "acme"))
 	st := &fakeRetentionStore{calls: make(chan sweepCall, 16), fail: true}
 	logs := &warnCounter{}
 	ctx, cancel := context.WithCancel(t.Context())

@@ -18,12 +18,12 @@
 
   const res = new Resource(() => {
     const p = new URLSearchParams({ group, from: daysAgo(days, Date.now()) });
-    return getJSON<UsageSeries>(`/api/v1/tenants/${encodeURIComponent(slug)}/usage?${p}`);
+    return getJSON<UsageSeries>(`/api/v1/accounts/${encodeURIComponent(slug)}/usage?${p}`);
   });
   $effect(() => {
     void res.load();
   });
-  $effect(() => live((e) => e.tenant === slug && e.kind === 'model_call', () => void res.load(), 2000));
+  $effect(() => live((e) => e.account === slug && e.kind === 'model_call', () => void res.load(), 2000));
 
   function sum(rows: UsagePoint[]): UsagePoint {
     const z: UsagePoint = { key: 'Total', inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, costUsd: 0, calls: 0 };

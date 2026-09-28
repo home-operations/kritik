@@ -65,7 +65,7 @@ defaults:
     review: test/reviewer
   limits:
     concurrency: 1
-tenants:
+accounts:
   - slug: onedr0p
     connections:
       - name: bot-ross
@@ -375,7 +375,7 @@ func (f *fakeCompleter) Step(ctx context.Context, req model.StepRequest) (model.
 
 type completers struct{ c model.Stepper }
 
-func (c *completers) Stepper(*configfile.File, *configfile.Tenant, string) (model.Stepper, error) {
+func (c *completers) Stepper(*configfile.File, *configfile.Account, string) (model.Stepper, error) {
 	return c.c, nil
 }
 
@@ -456,12 +456,12 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 
 // checkReviewRows asserts the findings, usage, lease and model rows a
 // completed review leaves behind.
-func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, tenantID, head string) {
+func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, accountID, head string) {
 	t.Helper()
 	var findings, usage, leasesHeld int
 	var modelName, take, explanation, fix, fingerprint string
 	var tokens int64
-	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `SELECT count(*), min(explanation), min(suggested_fix), min(fingerprint) FROM findings`).
 			Scan(&findings, &explanation, &fix, &fingerprint); err != nil {
 			return err
@@ -496,7 +496,7 @@ func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, tenantI
 func checkContextPack(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter,
 	dispatch func(headSHA string, bot bool), waitReview func(headSHA string) (status, patchID, mergeBase string),
-	tenantID, head, base string,
+	accountID, head, base string,
 ) {
 	t.Helper()
 	dispatch(head, true)
@@ -505,12 +505,12 @@ func checkContextPack(
 		t.Fatalf("status=%s patch=%s base=%s", status, patchID, mergeBase)
 	}
 	checkWriteBack(t, lf, fc)
-	checkReviewRows(ctx, t, appStore, tenantID, head)
-	checkSingleShotTranscript(ctx, t, appStore, tenantID, head, fc)
+	checkReviewRows(ctx, t, appStore, accountID, head)
+	checkSingleShotTranscript(ctx, t, appStore, accountID, head, fc)
 	var diff, phase, logTail, stages string
 	var changed []string
 	var heartbeat bool
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages::text, r.phase, r.log_tail, r.heartbeat_at IS NOT NULL FROM context_packs c
 			JOIN runner_runs r ON r.id = c.runner_run_id WHERE c.head_sha = $1`, head).Scan(&diff, &changed, &stages, &phase, &logTail, &heartbeat)
 	})
@@ -532,7 +532,7 @@ func checkContextPack(
 // joins the running job, which indexes head incrementally once the build
 // is done; it checks the generation, chunk and staging rows after each.
 func checkIndexing(
-	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, exec *gateExecutor, tenantID, repoID, base, head string,
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, exec *gateExecutor, accountID, repoID, base, head string,
 ) {
 	t.Helper()
 	waitIndex := func(commit string) (status, mode string) {
@@ -543,7 +543,7 @@ func checkIndexing(
 			// before its own row finishes, so only read once no run to the
 			// commit is running; the newest finished row is then the step
 			// itself.
-			err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `SELECT status, mode FROM index_runs WHERE commit_sha = $1 AND finished_at IS NOT NULL
 					AND NOT EXISTS (SELECT 1 FROM index_runs WHERE status = 'running' AND commit_sha = $1)
 					ORDER BY created_at DESC LIMIT 1`, commit).Scan(&status, &mode)
@@ -556,7 +556,7 @@ func checkIndexing(
 		// Say why: the job's recorded errors and the run rows.
 		var errs, runs string
 		_ = st.App().QueryRow(ctx, `SELECT coalesce(string_agg(e->>'error', ' | '), '') FROM river_job j, jsonb_array_elements(j.errors) e WHERE j.kind = 'index'`).Scan(&errs)
-		_ = st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_ = st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT coalesce(string_agg(status || '/' || mode || ' ' || error, ' | '), '') FROM index_runs`).Scan(&runs)
 		})
 		t.Fatalf("index of %s never finished; job errors: %s; runs: %s", commit[:7], errs, runs)
@@ -565,7 +565,7 @@ func checkIndexing(
 	// stray counts the chunks outside the active generation.
 	indexRows := func() (active, activeCommit string, chunks, stray int, mainChunks []string) {
 		t.Helper()
-		err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			if err := tx.QueryRow(ctx, `SELECT coalesce(r.active_index_run_id::text, ''), coalesce(g.commit_sha, '') FROM repositories r
 				LEFT JOIN index_runs g ON g.id = r.active_index_run_id WHERE r.id = $1`, repoID).Scan(&active, &activeCommit); err != nil {
 				return err
@@ -586,9 +586,9 @@ func checkIndexing(
 		}
 		return active, activeCommit, chunks, stray, mainChunks
 	}
-	pushed, checked := pushDuringBuild(ctx, t, queue, lf, exec, tenantID, repoID, head)
+	pushed, checked := pushDuringBuild(ctx, t, queue, lf, exec, accountID, repoID, head)
 	lf.setTip(base)
-	job, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerOnboard}, nil)
+	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: accountID, RepositoryID: repoID, Trigger: jobs.TriggerOnboard}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -609,7 +609,7 @@ func checkIndexing(
 	active2, activeCommit, chunks, stray, mainChunks := indexRows()
 	if active2 != active || activeCommit != head || chunks < 2 || stray != 0 || !strings.Contains(strings.Join(mainChunks, ""), "func b") {
 		var packs, logs string
-		_ = st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_ = st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			_ = tx.QueryRow(ctx, `SELECT string_agg(mode || ':' || array_to_string(changed_paths, ','), ' | ') FROM index_packs`).Scan(&packs)
 			return tx.QueryRow(ctx, `SELECT string_agg(right(log_tail, 600), ' || ') FROM runner_runs WHERE kind = 'index'`).Scan(&logs)
 		})
@@ -617,7 +617,7 @@ func checkIndexing(
 			active2, active, activeCommit, chunks, stray, mainChunks, packs, logs)
 	}
 	var staged int
-	_ = st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	_ = st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*) FROM index_staging`).Scan(&staged)
 	})
 	if staged != 0 {
@@ -644,7 +644,7 @@ func checkIndexing(
 // result it sends on pushed; the second, the incremental step to head,
 // waits until checked closes, so the full build's rows can be read first.
 func pushDuringBuild(
-	ctx context.Context, t *testing.T, queue *river.Client[pgx.Tx], lf *localForge, exec *gateExecutor, tenantID, repoID, head string,
+	ctx context.Context, t *testing.T, queue *river.Client[pgx.Tx], lf *localForge, exec *gateExecutor, accountID, repoID, head string,
 ) (pushed <-chan error, checked chan struct{}) {
 	t.Helper()
 	var runs atomic.Int32
@@ -654,7 +654,7 @@ func pushDuringBuild(
 		switch runs.Add(1) {
 		case 1:
 			lf.setTip(head)
-			res, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, CommitSHA: head, Trigger: jobs.TriggerPush}, nil)
+			res, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: accountID, RepositoryID: repoID, CommitSHA: head, Trigger: jobs.TriggerPush}, nil)
 			if err == nil && !res.UniqueSkippedAsDuplicate {
 				err = errors.New("a push while the repository indexed queued a second job")
 			}
@@ -677,13 +677,13 @@ func pushDuringBuild(
 // cancels the third. It also checks the job drops the chunks a build killed
 // long before left behind, but not those of a build that may still be
 // running beside it.
-func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], exec *gateExecutor, tenantID, repoID string) {
+func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], exec *gateExecutor, accountID, repoID string) {
 	t.Helper()
-	killed := plantBuild(ctx, t, st, tenantID, repoID, jobtimeout.RescueStuckJobsAfter+time.Minute)
-	running := plantBuild(ctx, t, st, tenantID, repoID, 0)
+	killed := plantBuild(ctx, t, st, accountID, repoID, jobtimeout.RescueStuckJobsAfter+time.Minute)
+	running := plantBuild(ctx, t, st, accountID, repoID, 0)
 	exec.setBeforeIndex(func() error { return errors.New("node went away") })
 	t.Cleanup(func() { exec.setBeforeIndex(nil) })
-	job, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)
+	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: accountID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -700,16 +700,16 @@ func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *
 	if attempt != 2 || maxAttempts != 3 {
 		t.Fatalf("failed index job: retryable after attempt %d of %d, want 2 of 3", attempt, maxAttempts)
 	}
-	if err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*) FROM index_runs WHERE repository_id = $1 AND status = 'failed' AND error LIKE '%node went away%'`, repoID).
 			Scan(&failed)
 	}); err != nil || failed != 2 {
 		t.Fatalf("failed index runs = %d, %v; want one per attempt, with the runner's error", failed, err)
 	}
-	if n := runChunks(ctx, t, st, tenantID, killed); n != 0 {
+	if n := runChunks(ctx, t, st, accountID, killed); n != 0 {
 		t.Fatalf("a killed build's %d chunks were left behind", n)
 	}
-	if runChunks(ctx, t, st, tenantID, running) == 0 {
+	if runChunks(ctx, t, st, accountID, running) == 0 {
 		t.Fatal("a build that may still be running lost its chunks")
 	}
 }
@@ -717,18 +717,18 @@ func checkIndexRetry(ctx context.Context, t *testing.T, st *store.Store, queue *
 // plantBuild leaves chunks under an unfinished index run started age ago,
 // as a job killed mid-build or one still embedding would, and returns the
 // run's id. The run goes when the test ends.
-func plantBuild(ctx context.Context, t *testing.T, st *store.Store, tenantID, repoID string, age time.Duration) string {
+func plantBuild(ctx context.Context, t *testing.T, st *store.Store, accountID, repoID string, age time.Duration) string {
 	t.Helper()
 	var runID string
 	var planted int64
-	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, created_at)
+	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, created_at)
 			VALUES ($1, $2, 'unfinished', 'fake-embed', 8, 'full', 'running', now() - make_interval(secs => $3)) RETURNING id`,
-			tenantID, repoID, age.Seconds()).Scan(&runID); err != nil {
+			accountID, repoID, age.Seconds()).Scan(&runID); err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx, `INSERT INTO index_chunks (tenant_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
-			SELECT tenant_id, repository_id, $2, path, start_line, end_line, text, embedding FROM index_chunks
+		tag, err := tx.Exec(ctx, `INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+			SELECT account_id, repository_id, $2, path, start_line, end_line, text, embedding FROM index_chunks
 			WHERE index_run_id = (SELECT active_index_run_id FROM repositories WHERE id = $1)`, repoID, runID)
 		planted = tag.RowsAffected()
 		return err
@@ -737,7 +737,7 @@ func plantBuild(ctx context.Context, t *testing.T, st *store.Store, tenantID, re
 		t.Fatalf("plant an unfinished build's chunks: %d, %v", planted, err)
 	}
 	t.Cleanup(func() {
-		_ = st.WithTenant(context.Background(), tenantID, func(tx pgx.Tx) error {
+		_ = st.WithAccount(context.Background(), accountID, func(tx pgx.Tx) error {
 			_, err := tx.Exec(context.Background(), `DELETE FROM index_runs WHERE id = $1`, runID)
 			return err
 		})
@@ -746,10 +746,10 @@ func plantBuild(ctx context.Context, t *testing.T, st *store.Store, tenantID, re
 }
 
 // runChunks counts the chunks under an index run.
-func runChunks(ctx context.Context, t *testing.T, st *store.Store, tenantID, runID string) int {
+func runChunks(ctx context.Context, t *testing.T, st *store.Store, accountID, runID string) int {
 	t.Helper()
 	var n int
-	if err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1`, runID).Scan(&n)
 	}); err != nil {
 		t.Fatal(err)
@@ -761,14 +761,14 @@ func runChunks(ctx context.Context, t *testing.T, st *store.Store, tenantID, run
 // batch and checks neither the chunks its runner staged nor the ones it
 // embedded are left behind for good, and the live index is untouched.
 func checkIndexEmbedFailure(
-	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], fe *fakeEmbedder, tenantID, repoID string,
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], fe *fakeEmbedder, accountID, repoID string,
 ) {
 	t.Helper()
-	active := activeIndexGeneration(ctx, t, st, tenantID, repoID)
-	live := runChunks(ctx, t, st, tenantID, active)
+	active := activeIndexGeneration(ctx, t, st, accountID, repoID)
+	live := runChunks(ctx, t, st, accountID, active)
 	fe.passes.Store(1)
 	fe.fail.Store(true)
-	job, err := queue.Insert(ctx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)
+	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: accountID, RepositoryID: repoID, Trigger: jobs.TriggerReindex, Full: true}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -778,7 +778,7 @@ func checkIndexEmbedFailure(
 	})
 	var packed, staged, embedded int
 	waitFor(t, 20*time.Second, "the failed embedding's staged and embedded chunks to be cleared", func() bool {
-		err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT p.chunk_count, (SELECT count(*) FROM index_staging s WHERE s.runner_run_id = r.id),
 				(SELECT count(*) FROM index_chunks c WHERE c.index_run_id = i.id)
 				FROM index_runs i JOIN runner_runs r ON r.index_run_id = i.id JOIN index_packs p ON p.runner_run_id = r.id
@@ -798,7 +798,7 @@ func checkIndexEmbedFailure(
 	if packed < 2 {
 		t.Fatalf("the runner staged %d chunks, too few for a batch to be written before the failure", packed)
 	}
-	if now := activeIndexGeneration(ctx, t, st, tenantID, repoID); now != active || runChunks(ctx, t, st, tenantID, active) != live {
+	if now := activeIndexGeneration(ctx, t, st, accountID, repoID); now != active || runChunks(ctx, t, st, accountID, active) != live {
 		t.Fatalf("the failed rebuild changed the live index: generation %s, was %s", now, active)
 	}
 }
@@ -806,7 +806,7 @@ func checkIndexEmbedFailure(
 // checkFollowUps posts mentions as the forge would deliver them and checks
 // qualification, the reply, the thread in the prompt, and the rate limit.
 func checkFollowUps(
-	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, fc *fakeCompleter, req ingest.Request, tenantID string,
+	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, fc *fakeCompleter, req ingest.Request, accountID string,
 ) {
 	t.Helper()
 	mention := func(author, body string) int64 {
@@ -829,7 +829,7 @@ func checkFollowUps(
 		t.Helper()
 		deadline := time.Now().Add(20 * time.Second)
 		for time.Now().Before(deadline) {
-			err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `SELECT status, reason FROM followups WHERE comment_id = $1`, id).Scan(&status, &reason)
 			})
 			if err == nil {
@@ -853,7 +853,7 @@ func checkFollowUps(
 	if _, body := lastComment(); !strings.Contains(body, "Because b is new.") || !strings.Contains(body, "kritik follow-up with reviewer") {
 		t.Fatalf("reply = %q", body)
 	}
-	checkFollowUpTranscript(ctx, t, st, tenantID, id, fc)
+	checkFollowUpTranscript(ctx, t, st, accountID, id, fc)
 	fc.mu.Lock()
 	prompt := fc.users[len(fc.users)-1]
 	fc.mu.Unlock()
@@ -863,7 +863,7 @@ func checkFollowUps(
 		}
 	}
 	var replyID int64
-	_ = st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	_ = st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT reply_comment_id FROM followups WHERE comment_id = $1`, id).Scan(&replyID)
 	})
 	if replyID <= commentBase {
@@ -881,10 +881,10 @@ func checkFollowUps(
 
 	// Four more answers exhaust the hourly allowance; the next mention gets
 	// one notice, the one after that nothing new.
-	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO followups (tenant_id, pull_request_id, comment_id, status)
+	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO followups (account_id, pull_request_id, comment_id, status)
 			SELECT $1, f.pull_request_id, f.comment_id + 1000 + s, 'answered' FROM followups f, generate_series(1, 4) AS s WHERE f.comment_id = $2`,
-			tenantID, id)
+			accountID, id)
 		return err
 	})
 	if err != nil {
@@ -954,10 +954,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := ingest.NewService(appStore, insertOnly)
-	in, tenant, _ := file.Connection("bot-ross")
+	in, account, _ := file.Connection("bot-ross")
 	dispatchPR := func(number int, headSHA string, bot bool, labels ...string) {
 		t.Helper()
-		out, err := svc.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Connection: in, Event: webhook.Event{
+		out, err := svc.Dispatch(ctx, ingest.Request{File: file, Account: account, Connection: in, Event: webhook.Event{
 			Kind: webhook.KindPullRequest, Action: "synchronize", Account: "onedr0p",
 			Repository:  &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
 			PullRequest: &webhook.PullRequest{Number: number, Title: "t", Body: "Adds b.", Author: "renovate[bot]", AuthorIsBot: bot, State: "open", HeadRef: "f", HeadSHA: headSHA, BaseRef: "main", Labels: labelled(labels)},
@@ -1004,7 +1004,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		t.Helper()
 		deadline := time.Now().Add(20 * time.Second)
 		for time.Now().Before(deadline) {
-			err := appStore.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+			err := appStore.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `SELECT status, patch_id, merge_base_sha FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL ORDER BY created_at DESC LIMIT 1`, headSHA).
 					Scan(&status, &patchID, &mergeBase)
 			})
@@ -1027,7 +1027,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		t.Helper()
 		deadline := time.Now().Add(20 * time.Second)
 		for time.Now().Before(deadline) {
-			err := appStore.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+			err := appStore.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 				var count int
 				if err := tx.QueryRow(ctx,
 					`SELECT count(*) FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL`, headSHA).
@@ -1051,44 +1051,44 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	repoID := configfile.RepositoryID(in.ID(), "onedr0p/home-ops")
 	t.Run("index builds in full, then advances incrementally", func(t *testing.T) {
-		checkIndexing(ctx, t, appStore, insertOnly, lf, exec, tenant.ID(), repoID, base, head)
+		checkIndexing(ctx, t, appStore, insertOnly, lf, exec, account.ID(), repoID, base, head)
 	})
 
 	t.Run("a failed index runner is retried", func(t *testing.T) {
-		checkIndexRetry(ctx, t, appStore, insertOnly, exec, tenant.ID(), repoID)
+		checkIndexRetry(ctx, t, appStore, insertOnly, exec, account.ID(), repoID)
 	})
 
 	t.Run("a failed embedding leaves no staged chunks", func(t *testing.T) {
-		checkIndexEmbedFailure(ctx, t, appStore, insertOnly, fe, tenant.ID(), repoID)
+		checkIndexEmbedFailure(ctx, t, appStore, insertOnly, fe, account.ID(), repoID)
 	})
 
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {
-		checkContextPack(ctx, t, appStore, lf, fc, dispatch, waitReview, tenant.ID(), head, base)
+		checkContextPack(ctx, t, appStore, lf, fc, dispatch, waitReview, account.ID(), head, base)
 	})
 
 	t.Run("follow-up answers a qualifying mention and rate-limits the thread", func(t *testing.T) {
-		checkFollowUps(ctx, t, appStore, svc, lf, fc, ingest.Request{File: file, Tenant: tenant, Connection: in}, tenant.ID())
+		checkFollowUps(ctx, t, appStore, svc, lf, fc, ingest.Request{File: file, Account: account, Connection: in}, account.ID())
 	})
 
 	t.Run("bot PR with the same patch id is skipped", func(t *testing.T) {
-		checkBotPatchIDSkip(ctx, t, appStore, dir, base, lf, dispatch, waitReviewCount, insertOnly, tenant.ID(), repoID)
+		checkBotPatchIDSkip(ctx, t, appStore, dir, base, lf, dispatch, waitReviewCount, insertOnly, account.ID(), repoID)
 	})
 
 	t.Run("a review snoozes while every model slot is held", func(t *testing.T) {
-		checkSnoozeWhileSlotsHeld(ctx, t, appStore, dir, base, lf, dispatchPR, tenant.ID(), "test/reviewer")
+		checkSnoozeWhileSlotsHeld(ctx, t, appStore, dir, base, lf, dispatchPR, account.ID(), "test/reviewer")
 	})
 
 	t.Run("the merge-base .kritik.yaml skips, instructs and templates", func(t *testing.T) {
-		checkRepoConfig(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, tenant.ID())
+		checkRepoConfig(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, account.ID())
 	})
 
 	t.Run("re-reviews build on the last reviewed head", func(t *testing.T) {
-		checkIncremental(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, tenant.ID())
+		checkIncremental(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, account.ID())
 	})
 
 	t.Run("superseded when the head moves before the job runs", func(t *testing.T) {
 		// Insert a job for a head that is no longer the PR's head.
-		res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{TenantID: tenant.ID(), RepositoryID: configfile.RepositoryID(in.ID(), "onedr0p/home-ops"), Number: 1, HeadSHA: "0000000000000000000000000000000000000000", Trigger: "poll"}, nil)
+		res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{AccountID: account.ID(), RepositoryID: configfile.RepositoryID(in.ID(), "onedr0p/home-ops"), Number: 1, HeadSHA: "0000000000000000000000000000000000000000", Trigger: "poll"}, nil)
 		if err != nil || res.UniqueSkippedAsDuplicate {
 			t.Fatalf("insert = %+v, %v", res, err)
 		}
@@ -1099,15 +1099,15 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("supervision ends a running review", func(t *testing.T) {
-		checkSupervision(ctx, t, appStore, exec, dispatch, waitReview, tenant.ID(), repoID)
+		checkSupervision(ctx, t, appStore, exec, dispatch, waitReview, account.ID(), repoID)
 	})
 
 	t.Run("a job that ends after the runner still ends its review", func(t *testing.T) {
-		checkJobEnded(ctx, t, appStore, insertOnly, exec, fc, deadline, dispatch, waitReview, dir, base, tenant.ID(), lf)
+		checkJobEnded(ctx, t, appStore, insertOnly, exec, fc, deadline, dispatch, waitReview, dir, base, account.ID(), lf)
 	})
 
 	t.Run("worker actions: rerun, cancel and forced reindex", func(t *testing.T) {
-		checkActions(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, dir, base, head, tenant.ID(), repoID, lf, fc)
+		checkActions(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, dir, base, head, account.ID(), repoID, lf, fc)
 	})
 }
 
@@ -1126,7 +1126,7 @@ func labelled(names []string) []webhook.Label {
 func checkBotPatchIDSkip(
 	ctx context.Context, t *testing.T, appStore *store.Store, dir, base string, lf *localForge,
 	dispatch func(headSHA string, bot bool), waitReviewCount func(headSHA string, min int) (status, patchID, mergeBase string),
-	insertOnly *river.Client[pgx.Tx], tenantID, repoID string,
+	insertOnly *river.Client[pgx.Tx], accountID, repoID string,
 ) {
 	t.Helper()
 	r, _ := git.PlainOpen(dir)
@@ -1149,7 +1149,7 @@ func checkBotPatchIDSkip(
 	// The forge's diff told it before any runner was made for the head.
 	var runs int
 	var forgePatch string
-	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT forge_patch_id, (SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
 			FROM reviews r WHERE head_sha = $1`, newHead.String()).Scan(&forgePatch, &runs)
 	}); err != nil || runs != 0 || forgePatch == "" {
@@ -1165,7 +1165,7 @@ func checkBotPatchIDSkip(
 	// dispatch's already-finished row) is required to observe this job's own
 	// outcome rather than the previous one's.
 	res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{
-		TenantID: tenantID, RepositoryID: repoID, Number: 1, HeadSHA: newHead.String(),
+		AccountID: accountID, RepositoryID: repoID, Number: 1, HeadSHA: newHead.String(),
 		Trigger: jobs.TriggerManual, Request: uuid.NewString(),
 	}, nil)
 	if err != nil || res.UniqueSkippedAsDuplicate {
@@ -1177,13 +1177,13 @@ func checkBotPatchIDSkip(
 	}
 }
 
-// checkSnoozeWhileSlotsHeld holds every model slot of the tenant, commits
+// checkSnoozeWhileSlotsHeld holds every model slot of the account, commits
 // a new head on a pull request of its own and dispatches it: the review is
 // snoozed, recording nothing and starting no runner, until the slot is let
 // go, and then completes.
 func checkSnoozeWhileSlotsHeld(
 	ctx context.Context, t *testing.T, appStore *store.Store, dir, base string, lf *localForge,
-	dispatchPR func(int, string, bool, ...string), tenantID, modelKey string,
+	dispatchPR func(int, string, bool, ...string), accountID, modelKey string,
 ) {
 	t.Helper()
 	r, _ := git.PlainOpen(dir)
@@ -1203,11 +1203,11 @@ func checkSnoozeWhileSlotsHeld(
 	lf.setBase(base)
 	setSlots := func(jobID *int64) {
 		t.Helper()
-		if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `INSERT INTO model_leases (tenant_id, model_key, slot, job_id, expires_at)
+		if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `INSERT INTO model_leases (account_id, model_key, slot, job_id, expires_at)
 				VALUES ($1, $2, 1, $3, CASE WHEN $3::bigint IS NULL THEN NULL ELSE now() + interval '1 hour' END)
-				ON CONFLICT (tenant_id, model_key, slot) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`,
-				tenantID, modelKey, jobID)
+				ON CONFLICT (account_id, model_key, slot) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`,
+				accountID, modelKey, jobID)
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -1227,7 +1227,7 @@ func checkSnoozeWhileSlotsHeld(
 	}
 	waitFor(t, 30*time.Second, "the review to snooze", func() bool { return snoozes() >= 1 })
 	var reviews, runs int
-	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*), (SELECT count(*) FROM runner_runs rr JOIN reviews r2 ON r2.id = rr.review_id
 			WHERE r2.head_sha = $1) FROM reviews WHERE head_sha = $1`, head).Scan(&reviews, &runs)
 	}); err != nil || reviews != 0 || runs != 0 {
@@ -1237,7 +1237,7 @@ func checkSnoozeWhileSlotsHeld(
 	setSlots(nil)
 	var status string
 	waitFor(t, 30*time.Second, "the review to complete once the slot was free", func() bool {
-		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT status FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL`, head).Scan(&status)
 		})
 		return err == nil
@@ -1264,7 +1264,7 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 // against it.
 func checkRepoConfig(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
-	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), tenantID string,
+	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), accountID string,
 ) {
 	t.Helper()
 	r, _ := git.PlainOpen(dir)
@@ -1312,7 +1312,7 @@ review:
 	fc.mu.Unlock()
 	skipReason := func(head string) string {
 		var reason string
-		if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT skip_reason FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL`, head).Scan(&reason)
 		}); err != nil {
 			t.Fatal(err)
@@ -1384,7 +1384,7 @@ review:
 // would build on is gone.
 func checkIncremental(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
-	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), tenantID string,
+	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), accountID string,
 ) {
 	t.Helper()
 	const number = 5
@@ -1425,7 +1425,7 @@ func checkIncremental(
 		lf.mu.Lock()
 		newInline := len(lf.inline) - inlineBefore
 		lf.mu.Unlock()
-		return scopeRow(ctx, t, appStore, tenantID, head), prompt, newInline
+		return scopeRow(ctx, t, appStore, accountID, head), prompt, newInline
 	}
 
 	reset()
@@ -1438,7 +1438,7 @@ func checkIncremental(
 	if strings.Contains(prompt, "Changed since the last review") {
 		t.Fatalf("a first review has no incremental sections:\n%s", prompt)
 	}
-	if p := postedInline(ctx, t, appStore, tenantID, firstRow.id); len(p) != 1 || !p[0] {
+	if p := postedInline(ctx, t, appStore, accountID, firstRow.id); len(p) != 1 || !p[0] {
 		t.Fatalf("posted_inline = %v", p)
 	}
 
@@ -1456,10 +1456,10 @@ func checkIncremental(
 			t.Fatalf("missing %q in the incremental prompt:\n%s", want, prompt)
 		}
 	}
-	if p := postedInline(ctx, t, appStore, tenantID, secondRow.id); len(p) != 1 || !p[0] {
+	if p := postedInline(ctx, t, appStore, accountID, secondRow.id); len(p) != 1 || !p[0] {
 		t.Fatalf("a finding carried from the last review keeps posted_inline, got %v", p)
 	}
-	checkIncrementalRecord(ctx, t, appStore, lf, tenantID, secondRow.id, first)
+	checkIncrementalRecord(ctx, t, appStore, lf, accountID, secondRow.id, first)
 
 	// Force-push: the second head is no longer reachable from any ref.
 	reset()
@@ -1476,10 +1476,10 @@ func checkIncremental(
 
 type reviewScopeRow struct{ id, scope, reason, prior string }
 
-func scopeRow(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, head string) reviewScopeRow {
+func scopeRow(ctx context.Context, t *testing.T, appStore *store.Store, accountID, head string) reviewScopeRow {
 	t.Helper()
 	var out reviewScopeRow
-	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT id, scope, scope_reason, coalesce(prior_review_id::text, '') FROM reviews
 			WHERE head_sha = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, head).Scan(&out.id, &out.scope, &out.reason, &out.prior)
 	}); err != nil {
@@ -1488,10 +1488,10 @@ func scopeRow(ctx context.Context, t *testing.T, appStore *store.Store, tenantID
 	return out
 }
 
-func postedInline(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, reviewID string) []bool {
+func postedInline(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID string) []bool {
 	t.Helper()
 	var out []bool
-	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT posted_inline FROM findings WHERE review_id = $1`, reviewID)
 		if err != nil {
 			return err
@@ -1506,11 +1506,11 @@ func postedInline(ctx context.Context, t *testing.T, appStore *store.Store, tena
 
 // checkIncrementalRecord asserts the context pack and sticky comment of an
 // incremental review of PR 5 that builds on prior.
-func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, tenantID, reviewID, prior string) {
+func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, accountID, reviewID, prior string) {
 	t.Helper()
 	var priorHead string
 	var deltaPaths []string
-	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT c.prior_head_sha, c.delta_paths FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
 			WHERE rr.review_id = $1`, reviewID).Scan(&priorHead, &deltaPaths)
 	}); err != nil || priorHead != prior || len(deltaPaths) != 1 || deltaPaths[0] != "main.go" {
@@ -1535,7 +1535,7 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 // the heartbeat, expecting supervision to cancel each run.
 func checkSupervision(
 	ctx context.Context, t *testing.T, appStore *store.Store, exec *gateExecutor, dispatch func(string, bool),
-	waitReview func(string) (string, string, string), tenantID, repoID string,
+	waitReview func(string) (string, string, string), accountID, repoID string,
 ) {
 	exec.setBlock(true)
 	t.Cleanup(func() { exec.setBlock(false) })
@@ -1552,7 +1552,7 @@ func checkSupervision(
 	reviewError := func(headSHA string) string {
 		t.Helper()
 		var text string
-		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT error FROM reviews WHERE head_sha = $1 ORDER BY created_at DESC LIMIT 1`, headSHA).Scan(&text)
 		})
 		if err != nil {
@@ -1568,7 +1568,7 @@ func checkSupervision(
 		if spec.Job.Version != runner.SpecVersion || spec.Job.Kind != runner.KindReview || spec.Job.Head != running || spec.Job.Base == "" {
 			t.Fatalf("job = %+v", spec.Job)
 		}
-		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `UPDATE pull_requests SET head_sha = $2 WHERE repository_id = $1 AND number = 1`, repoID, newer)
 			return err
 		})
@@ -1584,7 +1584,7 @@ func checkSupervision(
 		const running = "3333333333333333333333333333333333333333"
 		dispatch(running, false)
 		spec := started()
-		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() - interval '5 minutes' WHERE id = $1`, spec.RunID)
 			return err
 		})
@@ -1609,43 +1609,43 @@ func checkSupervision(
 func checkActions(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], exec *gateExecutor,
 	dispatch func(string, bool), waitReview func(string) (string, string, string),
-	dir, base, head, tenantID, repoID string, lf *localForge, fc *fakeCompleter,
+	dir, base, head, accountID, repoID string, lf *localForge, fc *fakeCompleter,
 ) {
 	t.Helper()
 
 	var rerunHead string
 	t.Run("EnqueueRerun produces a second completed review of the same head", func(t *testing.T) {
-		rerunHead = checkEnqueueRerun(ctx, t, appStore, insertOnly, dispatch, waitReview, dir, base, tenantID, repoID)
+		rerunHead = checkEnqueueRerun(ctx, t, appStore, insertOnly, dispatch, waitReview, dir, base, accountID, repoID)
 	})
 	t.Run("RequestCancel on a completed review is rejected", func(t *testing.T) {
-		checkRequestCancelRejected(ctx, t, appStore, insertOnly, tenantID, rerunHead)
+		checkRequestCancelRejected(ctx, t, appStore, insertOnly, accountID, rerunHead)
 	})
-	t.Run("RequestCancel on another tenant's review is rejected", func(t *testing.T) {
-		checkRequestCancelCrossTenant(ctx, t, appStore, insertOnly, tenantID, rerunHead)
+	t.Run("RequestCancel on another account's review is rejected", func(t *testing.T) {
+		checkRequestCancelCrossAccount(ctx, t, appStore, insertOnly, accountID, rerunHead)
 	})
 	t.Run("RequestCancel ends a running review as canceled with no retry", func(t *testing.T) {
-		checkRequestCancelRunning(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, tenantID, lf)
+		checkRequestCancelRunning(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, accountID, lf)
 	})
 	t.Run("RequestCancel ends a queued (prepared) review as canceled", func(t *testing.T) {
-		checkRequestCancelPrepared(ctx, t, appStore, insertOnly, fc, dispatch, waitReview, dir, base, tenantID)
+		checkRequestCancelPrepared(ctx, t, appStore, insertOnly, fc, dispatch, waitReview, dir, base, accountID)
 	})
 	t.Run("EnqueueReindex forces a full generation even when one is active", func(t *testing.T) {
-		checkEnqueueReindex(ctx, t, appStore, insertOnly, tenantID, repoID, head)
+		checkEnqueueReindex(ctx, t, appStore, insertOnly, accountID, repoID, head)
 	})
 	t.Run("EnqueueReindex reports the sentinels it branches on", func(t *testing.T) {
-		checkEnqueueReindexSentinels(ctx, t, appStore, insertOnly, tenantID, repoID)
+		checkEnqueueReindexSentinels(ctx, t, appStore, insertOnly, accountID, repoID)
 	})
 	t.Run("EnqueueRerun on a closed pull request is rejected", func(t *testing.T) {
-		checkEnqueueRerunClosed(ctx, t, appStore, insertOnly, tenantID, repoID)
+		checkEnqueueRerunClosed(ctx, t, appStore, insertOnly, accountID, repoID)
 	})
 }
 
 // countReviewsByStatus returns how many reviews rows exist for headSHA with
-// exactly status, scoped to the tenant.
-func countReviewsByStatus(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, headSHA, status string) int {
+// exactly status, scoped to the account.
+func countReviewsByStatus(ctx context.Context, t *testing.T, appStore *store.Store, accountID, headSHA, status string) int {
 	t.Helper()
 	var n int
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1 AND status = $2`, headSHA, status).Scan(&n)
 	})
 	if err != nil {
@@ -1655,10 +1655,10 @@ func countReviewsByStatus(ctx context.Context, t *testing.T, appStore *store.Sto
 }
 
 // latestReviewID returns the most recently created review's id for headSHA.
-func latestReviewID(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, headSHA string) string {
+func latestReviewID(ctx context.Context, t *testing.T, appStore *store.Store, accountID, headSHA string) string {
 	t.Helper()
 	var id string
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT id FROM reviews WHERE head_sha = $1 ORDER BY created_at DESC LIMIT 1`, headSHA).Scan(&id)
 	})
 	if err != nil {
@@ -1667,12 +1667,12 @@ func latestReviewID(ctx context.Context, t *testing.T, appStore *store.Store, te
 	return id
 }
 
-// newTestAccount inserts a bare accounts row and returns its id, standing in
+// newTestUser inserts a bare accounts row and returns its id, standing in
 // for whichever human account RequestCancel's by should record.
-func newTestAccount(ctx context.Context, t *testing.T, appStore *store.Store, tenantID string) string {
+func newTestUser(ctx context.Context, t *testing.T, appStore *store.Store, accountID string) string {
 	t.Helper()
 	var id string
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `INSERT INTO users DEFAULT VALUES RETURNING id`).Scan(&id)
 	})
 	if err != nil {
@@ -1713,7 +1713,7 @@ func commitOnBase(t *testing.T, dir, base, msg, body string) string {
 // asserts a second completed review lands, returning the head it exercised.
 func checkEnqueueRerun(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx],
-	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, tenantID, repoID string,
+	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, accountID, repoID string,
 ) string {
 	t.Helper()
 	rerunHead := commitOnBase(t, dir, base, "rerun target", "package main\n\nfunc rerun() {}\n")
@@ -1721,18 +1721,18 @@ func checkEnqueueRerun(
 	if status, _, _ := waitReview(rerunHead); status != "completed" {
 		t.Fatalf("status = %s, want completed", status)
 	}
-	if n := countReviewsByStatus(ctx, t, appStore, tenantID, rerunHead, "completed"); n != 1 {
+	if n := countReviewsByStatus(ctx, t, appStore, accountID, rerunHead, "completed"); n != 1 {
 		t.Fatalf("completed reviews for %s = %d, want 1 before the rerun", rerunHead[:7], n)
 	}
 	// The review row completes just before River records its job
 	// completed, and a re-run is refused while that job is still running.
-	waitRiverJobCompleted(ctx, t, appStore, tenantID, latestReviewID(ctx, t, appStore, tenantID, rerunHead))
+	waitRiverJobCompleted(ctx, t, appStore, accountID, latestReviewID(ctx, t, appStore, accountID, rerunHead))
 
 	rerun := func() (int64, error) {
 		var jobID int64
-		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			var err error
-			jobID, err = jobs.EnqueueRerun(ctx, tx, insertOnly, tenantID, repoID, 1)
+			jobID, err = jobs.EnqueueRerun(ctx, tx, insertOnly, accountID, repoID, 1)
 			return err
 		})
 		return jobID, err
@@ -1745,10 +1745,10 @@ func checkEnqueueRerun(
 	}
 
 	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) && countReviewsByStatus(ctx, t, appStore, tenantID, rerunHead, "completed") < 2 {
+	for time.Now().Before(deadline) && countReviewsByStatus(ctx, t, appStore, accountID, rerunHead, "completed") < 2 {
 		time.Sleep(100 * time.Millisecond)
 	}
-	if n := countReviewsByStatus(ctx, t, appStore, tenantID, rerunHead, "completed"); n != 2 {
+	if n := countReviewsByStatus(ctx, t, appStore, accountID, rerunHead, "completed"); n != 2 {
 		t.Fatalf("completed reviews for %s = %d, want 2 after the rerun", rerunHead[:7], n)
 	}
 	return rerunHead
@@ -1756,11 +1756,11 @@ func checkEnqueueRerun(
 
 // checkRequestCancelRejected asserts RequestCancel refuses a review that has
 // already finished.
-func checkRequestCancelRejected(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], tenantID, headSHA string) {
+func checkRequestCancelRejected(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, headSHA string) {
 	t.Helper()
-	id := latestReviewID(ctx, t, appStore, tenantID, headSHA)
-	by := newTestAccount(ctx, t, appStore, tenantID)
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	id := latestReviewID(ctx, t, appStore, accountID, headSHA)
+	by := newTestUser(ctx, t, appStore, accountID)
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
 	})
 	if !errors.Is(err, jobs.ErrNotCancelable) {
@@ -1768,20 +1768,20 @@ func checkRequestCancelRejected(ctx context.Context, t *testing.T, appStore *sto
 	}
 }
 
-// checkRequestCancelCrossTenant asserts RequestCancel refuses a review that
-// belongs to a different tenant than the one the caller's transaction scopes
+// checkRequestCancelCrossAccount asserts RequestCancel refuses a review that
+// belongs to a different account than the one the caller's transaction scopes
 // to: row-level security hides the row entirely, so it surfaces the same as
 // "not found" rather than a distinguishable authorization error.
-func checkRequestCancelCrossTenant(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], tenantID, headSHA string) {
+func checkRequestCancelCrossAccount(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, headSHA string) {
 	t.Helper()
-	id := latestReviewID(ctx, t, appStore, tenantID, headSHA)
-	by := newTestAccount(ctx, t, appStore, tenantID)
+	id := latestReviewID(ctx, t, appStore, accountID, headSHA)
+	by := newTestUser(ctx, t, appStore, accountID)
 	other := uuid.NewString()
-	err := appStore.WithTenant(ctx, other, func(tx pgx.Tx) error {
+	err := appStore.WithAccount(ctx, other, func(tx pgx.Tx) error {
 		return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
 	})
 	if !errors.Is(err, jobs.ErrNotCancelable) {
-		t.Fatalf("RequestCancel from another tenant = %v, want ErrNotCancelable", err)
+		t.Fatalf("RequestCancel from another account = %v, want ErrNotCancelable", err)
 	}
 }
 
@@ -1792,7 +1792,7 @@ func checkRequestCancelCrossTenant(ctx context.Context, t *testing.T, appStore *
 // is recorded as failed with the remote-cancellation error.
 func checkRequestCancelRunning(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], exec *gateExecutor,
-	dispatch func(string, bool), waitReview func(string) (string, string, string), tenantID string, lf *localForge,
+	dispatch func(string, bool), waitReview func(string) (string, string, string), accountID string, lf *localForge,
 ) {
 	t.Helper()
 	const canceling = "4444444444444444444444444444444444444444"
@@ -1805,9 +1805,9 @@ func checkRequestCancelRunning(
 		t.Fatal("the review runner never started")
 	}
 
-	id := latestReviewID(ctx, t, appStore, tenantID, canceling)
-	by := newTestAccount(ctx, t, appStore, tenantID)
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	id := latestReviewID(ctx, t, appStore, accountID, canceling)
+	by := newTestUser(ctx, t, appStore, accountID)
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
 	})
 	if err != nil {
@@ -1817,7 +1817,7 @@ func checkRequestCancelRunning(
 	if status, _, _ := waitReview(canceling); status != "canceled" {
 		t.Fatalf("status = %s, want canceled", status)
 	}
-	if n := countReviewsByStatus(ctx, t, appStore, tenantID, canceling, "canceled"); n != 1 {
+	if n := countReviewsByStatus(ctx, t, appStore, accountID, canceling, "canceled"); n != 1 {
 		t.Fatalf("canceled reviews for %s = %d, want 1 (no River retry)", canceling, n)
 	}
 
@@ -1833,7 +1833,7 @@ func checkRequestCancelRunning(
 	var attempt int
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		err = appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT state, attempt FROM river_job WHERE id = (
 				SELECT river_job_id FROM reviews WHERE id = $1)`, id).Scan(&state, &attempt)
 		})
@@ -1858,7 +1858,7 @@ func checkRequestCancelRunning(
 
 	var requestedAt sql.NullTime
 	var canceledBy sql.NullString
-	err = appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT cancel_requested_at, canceled_by FROM reviews WHERE id = $1`, id).
 			Scan(&requestedAt, &canceledBy)
 	})
@@ -1873,7 +1873,7 @@ func checkRequestCancelRunning(
 	}
 
 	var phase, runErr string
-	err = appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT phase, error FROM runner_runs WHERE review_id = $1
 			ORDER BY created_at DESC LIMIT 1`, id).Scan(&phase, &runErr)
 	})
@@ -1893,7 +1893,7 @@ func checkRequestCancelRunning(
 // on runner_runs.
 func checkRequestCancelPrepared(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], fc *fakeCompleter,
-	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, tenantID string,
+	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, accountID string,
 ) {
 	t.Helper()
 	head := commitOnBase(t, dir, base, "cancel during prepared", "package main\n\nfunc preparedCancel() {}\n")
@@ -1906,9 +1906,9 @@ func checkRequestCancelPrepared(
 		t.Fatal("the completer never started")
 	}
 
-	id := latestReviewID(ctx, t, appStore, tenantID, head)
-	by := newTestAccount(ctx, t, appStore, tenantID)
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	id := latestReviewID(ctx, t, appStore, accountID, head)
+	by := newTestUser(ctx, t, appStore, accountID)
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
 	})
 	if err != nil {
@@ -1918,7 +1918,7 @@ func checkRequestCancelPrepared(
 	if status, _, _ := waitReview(head); status != "canceled" {
 		t.Fatalf("status = %s, want canceled", status)
 	}
-	if n := countReviewsByStatus(ctx, t, appStore, tenantID, head, "canceled"); n != 1 {
+	if n := countReviewsByStatus(ctx, t, appStore, accountID, head, "canceled"); n != 1 {
 		t.Fatalf("canceled reviews for %s = %d, want 1 (no River retry)", head, n)
 	}
 }
@@ -1928,19 +1928,19 @@ func checkRequestCancelPrepared(
 // "open"), so this closes it directly with SQL rather than through a
 // dispatch, and must run after every other checkActions subtest that
 // dispatches: a later dispatch would silently reopen the row.
-func checkEnqueueRerunClosed(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], tenantID, repoID string) {
+func checkEnqueueRerunClosed(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID string) {
 	t.Helper()
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed' WHERE tenant_id = $1 AND repository_id = $2 AND number = 1`,
-			tenantID, repoID)
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed' WHERE account_id = $1 AND repository_id = $2 AND number = 1`,
+			accountID, repoID)
 		return err
 	})
 	if err != nil {
 		t.Fatalf("close pull request: %v", err)
 	}
 
-	err = appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		_, err := jobs.EnqueueRerun(ctx, tx, insertOnly, tenantID, repoID, 1)
+	err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := jobs.EnqueueRerun(ctx, tx, insertOnly, accountID, repoID, 1)
 		return err
 	})
 	if !errors.Is(err, jobs.ErrNoHead) {
@@ -1949,10 +1949,10 @@ func checkEnqueueRerunClosed(ctx context.Context, t *testing.T, appStore *store.
 }
 
 // activeIndexGeneration returns repositories.active_index_run_id for repoID.
-func activeIndexGeneration(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, repoID string) string {
+func activeIndexGeneration(ctx context.Context, t *testing.T, appStore *store.Store, accountID, repoID string) string {
 	t.Helper()
 	var id string
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT coalesce(active_index_run_id::text, '') FROM repositories WHERE id = $1`, repoID).Scan(&id)
 	})
 	if err != nil {
@@ -1970,17 +1970,17 @@ func activeIndexGeneration(ctx context.Context, t *testing.T, appStore *store.St
 // generation drops to 'superseded' at essentially the same time the new one
 // lands. What actually distinguishes "forced a new generation" from "no-op"
 // is the repository's active_index_run_id switching to a different row.
-func checkEnqueueReindex(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], tenantID, repoID, head string) {
+func checkEnqueueReindex(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, head string) {
 	t.Helper()
-	before := activeIndexGeneration(ctx, t, appStore, tenantID, repoID)
+	before := activeIndexGeneration(ctx, t, appStore, accountID, repoID)
 	if before == "" {
 		t.Fatal("no active index generation before forcing a reindex")
 	}
 
 	var jobID int64
-	err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
-		jobID, err = jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, repoID)
+		jobID, err = jobs.EnqueueReindex(ctx, tx, insertOnly, accountID, repoID)
 		return err
 	})
 	if err != nil || jobID == 0 {
@@ -1993,8 +1993,8 @@ func checkEnqueueReindex(ctx context.Context, t *testing.T, appStore *store.Stor
 	after := before
 	var mode, status string
 	for time.Now().Before(deadline) {
-		if after = activeIndexGeneration(ctx, t, appStore, tenantID, repoID); after != "" && after != before {
-			if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if after = activeIndexGeneration(ctx, t, appStore, accountID, repoID); after != "" && after != before {
+			if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `SELECT mode, status FROM index_runs WHERE id = $1`, after).Scan(&mode, &status)
 			}); err != nil {
 				t.Fatal(err)
@@ -2013,7 +2013,7 @@ func checkEnqueueReindex(ctx context.Context, t *testing.T, appStore *store.Stor
 	}
 
 	var priorStatus string
-	if err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT status FROM index_runs WHERE id = $1`, before).Scan(&priorStatus)
 	}); err != nil {
 		t.Fatal(err)
@@ -2141,7 +2141,7 @@ func (d *jobDeadline) fire() {
 func checkJobEnded(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], exec *gateExecutor,
 	fc *fakeCompleter, deadline *jobDeadline, dispatch func(string, bool), waitReview func(string) (string, string, string),
-	dir, base, tenantID string, lf *localForge,
+	dir, base, accountID string, lf *localForge,
 ) {
 	t.Run("a timeout during afterRun fails the review", func(t *testing.T) {
 		head := commitOnBase(t, dir, base, "timed out after the runner", "package main\n\nfunc timedOut() {}\n")
@@ -2152,16 +2152,16 @@ func checkJobEnded(
 		if status, _, _ := waitReview(head); status != statusFailed {
 			t.Fatalf("status = %s, want failed", status)
 		}
-		id := latestReviewID(ctx, t, appStore, tenantID, head)
+		id := latestReviewID(ctx, t, appStore, accountID, head)
 		var errText string
-		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT error FROM reviews WHERE id = $1`, id).Scan(&errText)
 		})
 		if err != nil || errText != "review timed out: context deadline exceeded" {
 			t.Fatalf("error = %q, %v; want review timed out: context deadline exceeded", errText, err)
 		}
-		waitRiverJobCompleted(ctx, t, appStore, tenantID, id)
-		if n := countReviewsByStatus(ctx, t, appStore, tenantID, head, "running"); n != 0 {
+		waitRiverJobCompleted(ctx, t, appStore, accountID, id)
+		if n := countReviewsByStatus(ctx, t, appStore, accountID, head, "running"); n != 0 {
 			t.Fatalf("running reviews for %s = %d, want 0", head, n)
 		}
 		if got := lf.lastStatus(); got != "error: kritik: review timed out" {
@@ -2171,10 +2171,10 @@ func checkJobEnded(
 
 	t.Run("a cancel after the model answered keeps the review completed", func(t *testing.T) {
 		head := commitOnBase(t, dir, base, "canceled after the answer", "package main\n\nfunc answered() {}\n")
-		by := newTestAccount(ctx, t, appStore, tenantID)
+		by := newTestUser(ctx, t, appStore, accountID)
 		fc.setAnswered(func(cctx context.Context) {
-			id := latestReviewID(ctx, t, appStore, tenantID, head)
-			err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			id := latestReviewID(ctx, t, appStore, accountID, head)
+			err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 				return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
 			})
 			if err != nil {
@@ -2192,15 +2192,15 @@ func checkJobEnded(
 		if status, _, _ := waitReview(head); status != statusCompleted {
 			t.Fatalf("status = %s, want completed", status)
 		}
-		id := latestReviewID(ctx, t, appStore, tenantID, head)
+		id := latestReviewID(ctx, t, appStore, accountID, head)
 		var usage int
-		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT count(*) FROM usage WHERE review_id = $1 AND role = 'review'`, id).Scan(&usage)
 		})
 		if err != nil || usage != 1 {
 			t.Fatalf("review usage rows = %d, %v; want 1", usage, err)
 		}
-		waitRiverJobCompleted(ctx, t, appStore, tenantID, id)
+		waitRiverJobCompleted(ctx, t, appStore, accountID, id)
 		if got := lf.lastStatus(); !strings.HasPrefix(got, "success: ") {
 			t.Fatalf("commit status = %q, want success", got)
 		}
@@ -2210,13 +2210,13 @@ func checkJobEnded(
 // waitRiverJobCompleted waits for the review's River job to settle as
 // completed on its first attempt: River writes its own row only after Work
 // returns, and a job that returned an error would be retryable instead.
-func waitRiverJobCompleted(ctx context.Context, t *testing.T, appStore *store.Store, tenantID, reviewID string) {
+func waitRiverJobCompleted(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID string) {
 	t.Helper()
 	var state string
 	var attempt int
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT state, attempt FROM river_job WHERE id = (
 				SELECT river_job_id FROM reviews WHERE id = $1)`, reviewID).Scan(&state, &attempt)
 		})
@@ -2242,12 +2242,12 @@ func (l *localForge) lastStatus() string {
 // checkEnqueueReindexSentinels asserts EnqueueReindex's two sentinels. Each
 // case runs in a transaction it rolls back, so no job it inserts outlives it.
 func checkEnqueueReindexSentinels(
-	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], tenantID, repoID string,
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID string,
 ) {
 	errRollback := errors.New("roll back")
-	t.Run("ErrRepositoryNotFound for a repository the tenant does not have", func(t *testing.T) {
-		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-			_, err := jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, uuid.NewString())
+	t.Run("ErrRepositoryNotFound for a repository the account does not have", func(t *testing.T) {
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			_, err := jobs.EnqueueReindex(ctx, tx, insertOnly, accountID, uuid.NewString())
 			return errors.Join(err, errRollback)
 		})
 		if !errors.Is(err, jobs.ErrRepositoryNotFound) {
@@ -2267,15 +2267,15 @@ func checkEnqueueReindexSentinels(
 		})
 		var first int64
 		var second error
-		err := appStore.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-			if _, err := insertOnly.InsertTx(ctx, tx, jobs.IndexArgs{TenantID: tenantID, RepositoryID: repoID, Trigger: jobs.TriggerOnboard}, nil); err != nil {
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			if _, err := insertOnly.InsertTx(ctx, tx, jobs.IndexArgs{AccountID: accountID, RepositoryID: repoID, Trigger: jobs.TriggerOnboard}, nil); err != nil {
 				return fmt.Errorf("insert onboard job: %w", err)
 			}
 			var err error
-			if first, err = jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, repoID); err != nil {
+			if first, err = jobs.EnqueueReindex(ctx, tx, insertOnly, accountID, repoID); err != nil {
 				return err
 			}
-			_, second = jobs.EnqueueReindex(ctx, tx, insertOnly, tenantID, repoID)
+			_, second = jobs.EnqueueReindex(ctx, tx, insertOnly, accountID, repoID)
 			return errRollback
 		})
 		if !errors.Is(err, errRollback) || first == 0 {

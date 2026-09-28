@@ -136,7 +136,7 @@ func run() error {
 
 	// The runner gets everything it needs from its Job spec; every other role
 	// is driven by the configuration file, merged with the dashboard's
-	// tenants, and must not start without it.
+	// accounts, and must not start without it.
 	var current *configfile.Current
 	var exec executor.Executor
 	if role != config.RoleRunner {
@@ -291,7 +291,7 @@ const webDrain = 10 * time.Second
 
 // startWeb serves the dashboard, its sign-in and its API on WebAddr until
 // ctx ends, when role serves it. Without a sealing key the dashboard still
-// serves, but cannot write dashboard tenants.
+// serves, but cannot write dashboard accounts.
 func startWeb(
 	ctx context.Context, g *errgroup.Group, role config.Role, st *store.Store, cfg *config.Config, current *configfile.Current,
 	logger *slog.Logger,
@@ -434,14 +434,14 @@ func lead(
 		}).Run(pollCtx)
 	}()
 	// So is deleting, by name, run Secrets a dead worker left without an
-	// owner. Like the poller it walks the configured tenants, each under
+	// owner. Like the poller it walks the configured accounts, each under
 	// its own row-level security scope.
 	if sweeper != nil {
 		go sweeper.RunSecretSweeper(pollCtx, st, func() []string {
-			tenants := current.Get().Tenants
-			ids := make([]string, 0, len(tenants))
-			for i := range tenants {
-				ids = append(ids, tenants[i].ID())
+			accounts := current.Get().Accounts
+			ids := make([]string, 0, len(accounts))
+			for i := range accounts {
+				ids = append(ids, accounts[i].ID())
 			}
 			return ids
 		}, secretSweepInterval)
@@ -600,10 +600,10 @@ func reportDrift(
 
 func logConfig(logger *slog.Logger, f *configfile.File, msg string) {
 	connections := 0
-	for _, t := range f.Tenants {
+	for _, t := range f.Accounts {
 		connections += len(t.Connections)
 	}
-	logger.Info(msg, "providers", len(f.Providers), "tenants", len(f.Tenants), "connections", connections)
+	logger.Info(msg, "providers", len(f.Providers), "accounts", len(f.Accounts), "connections", connections)
 }
 
 func newLogger(cfg *config.Config) (*slog.Logger, error) {

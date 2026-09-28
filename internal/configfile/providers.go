@@ -7,9 +7,9 @@ import (
 	"slices"
 )
 
-// Provider is the model provider name refers to for tenant t: the tenant's
+// Provider is the model provider name refers to for account t: the account's
 // own when it declares one by that name, else the file's. t may be nil.
-func (f *File) Provider(t *Tenant, name string) (Provider, bool) {
+func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	if t != nil {
 		if p, ok := t.Providers[name]; ok {
 			return p, true
@@ -41,9 +41,9 @@ func (p Provider) validate(where string) error {
 	return nil
 }
 
-// validateTenantProviders checks a tenant's own providers: names a model
+// validateAccountProviders checks an account's own providers: names a model
 // reference can carry, none the file's providers already use, each valid.
-func (f *File) validateTenantProviders(where string, t *Tenant) error {
+func (f *File) validateAccountProviders(where string, t *Account) error {
 	for _, name := range slices.Sorted(maps.Keys(t.Providers)) {
 		pwhere := where + ".providers." + name
 		if !nameRe.MatchString(name) {

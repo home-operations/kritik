@@ -92,7 +92,7 @@ instructions, and chooses a few settings within bounds the operator sets:
 ## What it may choose within the operator's bounds
 
 These choose a value for the repository, each within a bound the operator
-sets in an `allow` block (at `defaults`, a tenant or a repository entry).
+sets in an `allow` block (at `defaults`, an account or a repository entry).
 Where the operator sets no bound, the file may only pick the operator's own
 value, or a limit or settle time at or below it:
 

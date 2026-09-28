@@ -12,8 +12,8 @@ import (
 )
 
 // The dashboard's read queries. Each takes a transaction opened by
-// WithTenant, so row-level security confines it to that tenant; none of
-// them filters by tenant_id itself.
+// WithAccount, so row-level security confines it to that account; none of
+// them filters by account_id itself.
 
 // ReviewStatus is a reviews.status value.
 type ReviewStatus string
@@ -139,15 +139,15 @@ func paged[T any](rows []T, limit int, key func(T) Cursor) ([]T, *Cursor) {
 	return rows, &next
 }
 
-// TenantStats is what the tenant list shows of one tenant.
-type TenantStats struct {
+// AccountStats is what the account list shows of one account.
+type AccountStats struct {
 	Connections  int
 	Repositories int
 	Reviews7d    int
 	Month        MonthUsage
 }
 
-// MonthUsage is what a tenant's caps count: tokens and spend this calendar
+// MonthUsage is what an account's caps count: tokens and spend this calendar
 // month and completed reviews today.
 type MonthUsage struct {
 	Tokens       int64
@@ -155,17 +155,17 @@ type MonthUsage struct {
 	ReviewsToday int64
 }
 
-// ReadTenantStats reads the tenant's counts. The month and day boundaries
+// ReadAccountStats reads the account's counts. The month and day boundaries
 // are the database's, as the worker's cap checks use.
-func ReadTenantStats(ctx context.Context, tx pgx.Tx) (TenantStats, error) {
-	var s TenantStats
+func ReadAccountStats(ctx context.Context, tx pgx.Tx) (AccountStats, error) {
+	var s AccountStats
 	err := tx.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM connections WHERE enabled),
 		(SELECT count(*) FROM repositories WHERE enabled),
 		(SELECT count(*) FROM reviews WHERE created_at >= now() - interval '7 days')`).
 		Scan(&s.Connections, &s.Repositories, &s.Reviews7d)
 	if err != nil {
-		return s, fmt.Errorf("store: tenant stats: %w", err)
+		return s, fmt.Errorf("store: account stats: %w", err)
 	}
 	if s.Month, err = ReadMonthUsage(ctx, tx); err != nil {
 		return s, err
@@ -173,7 +173,7 @@ func ReadTenantStats(ctx context.Context, tx pgx.Tx) (TenantStats, error) {
 	return s, nil
 }
 
-// ReadMonthUsage reads the tenant's month-to-date usage.
+// ReadMonthUsage reads the account's month-to-date usage.
 func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	var m MonthUsage
 	err := tx.QueryRow(ctx, `SELECT coalesce(sum(input_tokens + output_tokens), 0), coalesce(sum(cost_usd), 0)::float8,
@@ -186,7 +186,7 @@ func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	return m, nil
 }
 
-// ReadWebhookDeliveries reads when each of the tenant's connections last
+// ReadWebhookDeliveries reads when each of the account's connections last
 // received a verified webhook, keyed by connection id; one that never has
 // is absent.
 func ReadWebhookDeliveries(ctx context.Context, tx pgx.Tx) (map[string]time.Time, error) {
@@ -261,7 +261,7 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 	return r, err
 }
 
-// ListRepos returns a page of the tenant's repositories ordered by full
+// ListRepos returns a page of the account's repositories ordered by full
 // name.
 func ListRepos(ctx context.Context, tx pgx.Tx, p Page) ([]RepoRow, *Cursor, error) {
 	if err := p.check(); err != nil {
@@ -282,7 +282,7 @@ func ListRepos(ctx context.Context, tx pgx.Tx, p Page) ([]RepoRow, *Cursor, erro
 }
 
 // AmbiguousRepoError is FindRepo's answer when several connections of
-// the tenant hold a repository of the name asked for and the caller named
+// the account hold a repository of the name asked for and the caller named
 // none of them.
 type AmbiguousRepoError struct {
 	Connections []string
@@ -292,7 +292,7 @@ func (e *AmbiguousRepoError) Error() string {
 	return "store: several connections hold this repository: " + strings.Join(e.Connections, ", ")
 }
 
-// FindRepo returns the tenant's repository named fullName, reached through
+// FindRepo returns the account's repository named fullName, reached through
 // connection when it is set. Without it, a name several connections
 // hold is an *AmbiguousRepoError, except that an enabled repository wins
 // over disabled ones, which a removed or renamed connection leaves

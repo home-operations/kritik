@@ -23,7 +23,7 @@ helm install kritik oci://ghcr.io/home-operations/charts/kritik \
 ```
 
 where `my-values.yaml` carries `config.file` (the declarative configuration:
-providers, defaults, tenants with connections and repositories) and
+providers, defaults, accounts with connections and repositories) and
 `secretMounts` for the GitHub App keys, webhook secrets and provider API
 keys the file references by path. Set `embedding.model` and a key to turn
 on the vector index and the similar-code context stage.
@@ -129,9 +129,9 @@ config:
 The same port is an agentic runner's model endpoint. The worker mints a
 token for each run, good for that run until its Job's deadline and revoked
 when it ends, and hands it to the pod in place of a provider key; the
-gateway answers each step through the tenant's provider with the key only
+gateway answers each step through the account's provider with the key only
 the worker holds, refuses a step once the run's token budget or the
-tenant's `tokensPerMonth` is spent, and records the step's usage. Provider
+account's `tokensPerMonth` is spent, and records the step's usage. Provider
 endpoints are therefore not in a runner's allowlist.
 
 `gateway.enabled: false` removes the listener and the Service and gives runner
@@ -156,7 +156,7 @@ config:
   file:
     egress:
       allowHosts: [api.github.com, "*.githubusercontent.com"]
-    tenants:
+    accounts:
       - slug: example
         repositories:
           - name: example/home-ops
@@ -217,7 +217,7 @@ Kubernetes: `>=1.25.0-0`
 | config.reloadInterval | string | `"10s"` | How often each replica re-reads the file (Go duration). |
 | config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers). |
 | dashboard.keySecret.key | string | `"key"` | Key in that Secret. |
-| dashboard.keySecret.name | string | `""` | Secret holding the key that seals dashboard tenants' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start. |
+| dashboard.keySecret.name | string | `""` | Secret holding the key that seals dashboard accounts' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start. |
 | dashboard.oldKeysSecret.key | string | `"old-keys"` | Key in that Secret. |
 | dashboard.oldKeysSecret.name | optional | `""` | Secret holding retired sealing keys, comma-separated, only to open values sealed under them. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |

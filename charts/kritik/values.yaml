@@ -67,7 +67,7 @@ web:
   # -- Dashboard port, served by `all` (once `web.url` is set) and `web` pods.
   port: 8083
 
-# The declarative configuration file (providers, defaults, tenants with their
+# The declarative configuration file (providers, defaults, accounts with their
 # connections and repositories). Either inline as `file`, rendered into a
 # chart-managed ConfigMap, or an existing ConfigMap with a `config.yaml` key.
 # Secret material never goes in the file: it references files under
@@ -95,7 +95,7 @@ config:
   #     pricing:
   #       claude-sonnet-5: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }
   # defaults:
-  #   # Every tenant's runner Job deadline unless it sets its own.
+  #   # Every account's runner Job deadline unless it sets its own.
   #   runner: { activeDeadlineSeconds: 900 }
   #   models:
   #     review: openrouter/openai/gpt-6-sol
@@ -114,7 +114,7 @@ config:
   # # images (statically linked) into runs whose agent.commands allow them.
   # tools:
   #   - { name: helm, image: ghcr.io/example/helm:3@sha256:..., path: /usr/local/bin }
-  # tenants:
+  # accounts:
   #   - slug: example
   #     connections:
   #       - name: example-github
@@ -130,7 +130,7 @@ config:
   #         # over the commit tree instead of one prompt with the diff.
   #         mode: agentic
   #         # maxTokens bounds one review's spend; it is cut further to what
-  #         # is left of the tenant's tokensPerMonth. commands lets the agent
+  #         # is left of the account's tokensPerMonth. commands lets the agent
   #         # run these binaries, found on the runner image's PATH (the -tools
   #         # image ships curl, fd and rg), each for at most commandTimeout.
   #         agent: { timeout: 15m, maxTokens: 1000000, commands: [curl, fd, rg], commandTimeout: 30s }
@@ -383,16 +383,16 @@ networkPolicy:
   postgresPort: 5432
 
 # KRITIK_DASHBOARD_KEY is the AES-256 key that seals every dashboard-managed
-# tenant's credentials (installation tokens, App keys, webhook secrets) at
+# account's credentials (installation tokens, App keys, webhook secrets) at
 # rest; it has nothing to do with sessions. Wired onto every non-runner role
-# and required there once a dashboard tenant exists. To rotate it, move the
+# and required there once a dashboard account exists. To rotate it, move the
 # old value into oldKeysSecret (KRITIK_DASHBOARD_OLD_KEYS), which only opens
 # values sealed under it, and keep it there until every value has been
 # written again. Losing a key that still seals a value makes those
 # credentials unreadable, and the pod then fails to start.
 dashboard:
   keySecret:
-    # -- Secret holding the key that seals dashboard tenants' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start.
+    # -- Secret holding the key that seals dashboard accounts' credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start.
     name: ""
     # -- Key in that Secret.
     key: key

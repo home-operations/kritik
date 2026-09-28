@@ -45,20 +45,20 @@ func TestCompletersRebuildOnChange(t *testing.T) {
 	}
 }
 
-// TestCompletersTenantProviders: a tenant's own provider is its, even when
-// another tenant's has the same name, and the file's providers stay
+// TestCompletersAccountProviders: an account's own provider is its, even when
+// another account's has the same name, and the file's providers stay
 // shared.
-func TestCompletersTenantProviders(t *testing.T) {
+func TestCompletersAccountProviders(t *testing.T) {
 	var built []configfile.ProviderType
 	c := &Completers{Build: func(p configfile.Provider) (model.Stepper, error) {
 		built = append(built, p.Type)
 		return &model.OpenAI{}, nil
 	}}
 	f := &configfile.File{Providers: map[string]configfile.Provider{"shared": {Type: configfile.ProviderOpenRouter}}}
-	alpha := &configfile.Tenant{Slug: "alpha", Providers: map[string]configfile.Provider{"own": {Type: configfile.ProviderOpenAI}}}
-	beta := &configfile.Tenant{Slug: "beta", Providers: map[string]configfile.Provider{"own": {Type: configfile.ProviderAnthropic}}}
+	alpha := &configfile.Account{Slug: "alpha", Providers: map[string]configfile.Provider{"own": {Type: configfile.ProviderOpenAI}}}
+	beta := &configfile.Account{Slug: "beta", Providers: map[string]configfile.Provider{"own": {Type: configfile.ProviderAnthropic}}}
 	for _, call := range []struct {
-		t    *configfile.Tenant
+		t    *configfile.Account
 		name string
 	}{{alpha, "own"}, {beta, "own"}, {alpha, "shared"}, {beta, "shared"}, {alpha, "own"}} {
 		if _, err := c.Stepper(f, call.t, call.name); err != nil {
@@ -67,7 +67,7 @@ func TestCompletersTenantProviders(t *testing.T) {
 	}
 	want := []configfile.ProviderType{configfile.ProviderOpenAI, configfile.ProviderAnthropic, configfile.ProviderOpenRouter}
 	if !slices.Equal(built, want) {
-		t.Fatalf("built %v, want %v: one per tenant's own provider and one shared", built, want)
+		t.Fatalf("built %v, want %v: one per account's own provider and one shared", built, want)
 	}
 	if _, err := c.Stepper(f, beta, "missing"); err == nil {
 		t.Fatal("an undeclared provider must be an error")

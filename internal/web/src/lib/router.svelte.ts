@@ -1,6 +1,6 @@
 // A tiny hash router so every dashboard view is deep-linkable and survives
-// refresh / browser back. Every tenant-scoped route carries the tenant's
-// slug (from Me.tenants[].slug) so switching tenants is just a URL rewrite.
+// refresh / browser back. Every account-scoped route carries the account's
+// slug (from Me.accounts[].slug) so switching accounts is just a URL rewrite.
 //
 // `Route`/`REVIEW_TABS`/`parse`/`href` are pure and live in routes.ts (no
 // runes, so they're importable outside Svelte's compiler -- see

@@ -13,10 +13,10 @@ import (
 	"github.com/home-operations/kritik/internal/transcript"
 )
 
-func modelCalls(ctx context.Context, t *testing.T, st *store.Store, tenantID string, f store.ModelCallFilter) []transcript.StoredRow {
+func modelCalls(ctx context.Context, t *testing.T, st *store.Store, accountID string, f store.ModelCallFilter) []transcript.StoredRow {
 	t.Helper()
 	var rows []transcript.StoredRow
-	if err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
 		rows, err = store.ModelCalls(ctx, tx, f)
 		return err
@@ -28,10 +28,10 @@ func modelCalls(ctx context.Context, t *testing.T, st *store.Store, tenantID str
 
 // checkSingleShotTranscript checks that a single-mode review recorded its
 // one call: the system prompt, the prompt and the forced tool's input.
-func checkSingleShotTranscript(ctx context.Context, t *testing.T, st *store.Store, tenantID, head string, fc *fakeCompleter) {
+func checkSingleShotTranscript(ctx context.Context, t *testing.T, st *store.Store, accountID, head string, fc *fakeCompleter) {
 	t.Helper()
 	var reviewID string
-	if err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT id FROM reviews WHERE head_sha = $1 AND status = 'completed'`, head).Scan(&reviewID)
 	}); err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func checkSingleShotTranscript(ctx context.Context, t *testing.T, st *store.Stor
 	fc.mu.Lock()
 	system, user := fc.systems[len(fc.systems)-1], fc.users[len(fc.users)-1]
 	fc.mu.Unlock()
-	conv := transcript.Rebuild(modelCalls(ctx, t, st, tenantID, store.ModelCallFilter{ReviewID: reviewID}))
+	conv := transcript.Rebuild(modelCalls(ctx, t, st, accountID, store.ModelCallFilter{ReviewID: reviewID}))
 	if len(conv.Turns) != 1 || conv.System != system || len(conv.Tools) != 1 || conv.Tools[0].Name != "findings" {
 		t.Fatalf("conversation = %+v", conv)
 	}
@@ -53,12 +53,12 @@ func checkSingleShotTranscript(ctx context.Context, t *testing.T, st *store.Stor
 
 // checkFollowUpTranscript checks that answering commentID recorded one
 // followup call against the review it followed.
-func checkFollowUpTranscript(ctx context.Context, t *testing.T, st *store.Store, tenantID string, commentID int64, fc *fakeCompleter) {
+func checkFollowUpTranscript(ctx context.Context, t *testing.T, st *store.Store, accountID string, commentID int64, fc *fakeCompleter) {
 	t.Helper()
 	fc.mu.Lock()
 	user := fc.users[len(fc.users)-1]
 	fc.mu.Unlock()
-	rows := modelCalls(ctx, t, st, tenantID, store.ModelCallFilter{FollowupCommentID: commentID})
+	rows := modelCalls(ctx, t, st, accountID, store.ModelCallFilter{FollowupCommentID: commentID})
 	if len(rows) != 1 || rows[0].Kind != store.ModelCallFollowUp || rows[0].ReviewID == "" || rows[0].Messages[0].Text != user ||
 		!strings.Contains(string(rows[0].Response.ToolCalls[0].Input), "Because b is new.") {
 		t.Fatalf("follow-up model calls = %+v", rows)

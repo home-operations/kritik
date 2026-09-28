@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The tenant spec form. It edits a draft (see spec.ts) and hands the
+  // The account spec form. It edits a draft (see spec.ts) and hands the
   // built spec to onsave; the caller does the request and passes back any
   // error, whose path highlights and focuses the field it names. A field
   // editable says the caller may not change, by the server's policy table,
@@ -14,7 +14,7 @@
     newRepository,
     pathMatches,
     type SpecError,
-    type TenantDraft,
+    type AccountDraft,
   } from '../../spec';
   import { duration } from '../../format';
   import { inheritsHint } from '../../manage';
@@ -58,7 +58,7 @@
     onsave,
   }: Props = $props();
 
-  let draft = $state<TenantDraft>(untrack(() => draftOf(initial)));
+  let draft = $state<AccountDraft>(untrack(() => draftOf(initial)));
   const baseline = untrack(() => JSON.stringify(buildSpec(draftOf(initial)).spec));
   let clientError = $state<SpecError | undefined>(undefined);
   let jsonMode = $state(false);
@@ -87,9 +87,9 @@
   }
   const inv = (path: string) => pathMatches(path, activePath);
   const opHint = 'admin only';
-  const own = $derived(inherited?.tenant);
+  const own = $derived(inherited?.account);
   const hint = (key: string, value: string, fallback = '') =>
-    inherited ? inheritsHint(value, inherited.tenantSources[key]) : fallback;
+    inherited ? inheritsHint(value, inherited.accountSources[key]) : fallback;
 
   function focusPath(path: string): void {
     if (!path || !formEl) return;
@@ -181,7 +181,7 @@
     </label>
   {:else}
     <fieldset>
-      <legend>Tenant</legend>
+      <legend>Account</legend>
       <div class="fields">
         {#if creating}
           <label class="field">
@@ -241,8 +241,8 @@
     <fieldset>
       <legend>Provider keys</legend>
       <p class="field-hint">
-        The tenant's own model keys. A model named <span class="mono">&lt;key name&gt;/&lt;model&gt;</span> runs on its key, and the
-        tenant pays for it.
+        The account's own model keys. A model named <span class="mono">&lt;key name&gt;/&lt;model&gt;</span> runs on its key, and the
+        account pays for it.
       </p>
       {#each draft.providers as prov, i (prov.key)}
         <ProviderFields

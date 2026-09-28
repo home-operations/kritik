@@ -69,12 +69,12 @@ func withTx(t *testing.T, st *store.Store, fn func(pgx.Tx) error) {
 func clearDashboard(t *testing.T, st *store.Store) {
 	t.Helper()
 	ctx := context.Background()
-	rows, err := st.DashboardTenants(ctx)
+	rows, err := st.DashboardAccounts(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, d := range rows {
-		withTx(t, st, func(tx pgx.Tx) error { return st.DeleteDashboardTenant(ctx, tx, d.Slug, d.Revision) })
+		withTx(t, st, func(tx pgx.Tx) error { return st.DeleteDashboardAccount(ctx, tx, d.Slug, d.Revision) })
 	}
 }
 
@@ -104,7 +104,7 @@ func (noDispatch) Dispatch(context.Context, ingest.Request) (ingest.Outcome, err
 	return ingest.Outcome{}, errors.New("unexpected dispatch")
 }
 
-func TestDashboardTenantEndToEnd(t *testing.T) {
+func TestDashboardAccountEndToEnd(t *testing.T) {
 	st := openStore(t)
 	ctx := context.Background()
 	clearDashboard(t, st)
@@ -113,7 +113,7 @@ func TestDashboardTenantEndToEnd(t *testing.T) {
 	k := testKeyring(t)
 	dash := dashRow(t, k, "dash", "dash-bot", 1)
 	withTx(t, st, func(tx pgx.Tx) error {
-		_, err := st.PutDashboardTenant(ctx, tx, dash.Slug, dash.Spec, 0, "")
+		_, err := st.PutDashboardAccount(ctx, tx, dash.Slug, dash.Spec, 0, "")
 		return err
 	})
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -130,20 +130,20 @@ func TestDashboardTenantEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	tenant, ok := f.Tenant("dash")
+	account, ok := f.Account("dash")
 	if !ok || !hasConnection(f, "dash-bot") {
-		t.Fatal("Current is missing the dashboard tenant")
+		t.Fatal("Current is missing the dashboard account")
 	}
-	tenantID := tenant.ID()
-	tenantState := func(t *testing.T) (managedBy string, enabled bool, instManagedBy string) {
+	accountID := account.ID()
+	accountState := func(t *testing.T) (managedBy string, enabled bool, instManagedBy string) {
 		t.Helper()
-		err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `
-				SELECT t.managed_by, t.enabled, i.managed_by FROM tenants t JOIN connections i ON i.tenant_id = t.id
+				SELECT t.managed_by, t.enabled, i.managed_by FROM accounts t JOIN connections i ON i.account_id = t.id
 				WHERE t.slug = 'dash' AND i.name = 'dash-bot'`).Scan(&managedBy, &enabled, &instManagedBy)
 		})
 		if err != nil {
-			t.Fatalf("read tenant: %v", err)
+			t.Fatalf("read account: %v", err)
 		}
 		return managedBy, enabled, instManagedBy
 	}
@@ -152,8 +152,8 @@ func TestDashboardTenantEndToEnd(t *testing.T) {
 		if err := st.ApplyConfig(ctx, s.Current.Get(), "test"); err != nil {
 			t.Fatalf("ApplyConfig: %v", err)
 		}
-		if by, on, inst := tenantState(t); by != "dashboard" || !on || inst != "dashboard" {
-			t.Fatalf("tenant managed_by=%s enabled=%v connection managed_by=%s", by, on, inst)
+		if by, on, inst := accountState(t); by != "dashboard" || !on || inst != "dashboard" {
+			t.Fatalf("account managed_by=%s enabled=%v connection managed_by=%s", by, on, inst)
 		}
 	})
 
@@ -178,7 +178,7 @@ func TestDashboardTenantEndToEnd(t *testing.T) {
 		before := s.Current.Get()
 		clash := dashRow(t, k, "clash", "dash-bot", 1)
 		withTx(t, st, func(tx pgx.Tx) error {
-			_, err := st.PutDashboardTenant(ctx, tx, clash.Slug, clash.Spec, 0, "")
+			_, err := st.PutDashboardAccount(ctx, tx, clash.Slug, clash.Spec, 0, "")
 			return err
 		})
 		waitFor(t, "LastError", func() bool { return s.LastError() != nil })
@@ -188,18 +188,18 @@ func TestDashboardTenantEndToEnd(t *testing.T) {
 		if s.Current.Get() != before {
 			t.Fatal("the collision replaced the snapshot")
 		}
-		withTx(t, st, func(tx pgx.Tx) error { return st.DeleteDashboardTenant(ctx, tx, clash.Slug, 1) })
+		withTx(t, st, func(tx pgx.Tx) error { return st.DeleteDashboardAccount(ctx, tx, clash.Slug, 1) })
 		waitFor(t, "recovery", func() bool { return s.LastError() == nil })
 	})
 
-	t.Run("deleting the row disables the tenant on the next apply", func(t *testing.T) {
-		withTx(t, st, func(tx pgx.Tx) error { return st.DeleteDashboardTenant(ctx, tx, "dash", 1) })
+	t.Run("deleting the row disables the account on the next apply", func(t *testing.T) {
+		withTx(t, st, func(tx pgx.Tx) error { return st.DeleteDashboardAccount(ctx, tx, "dash", 1) })
 		waitFor(t, "dash-bot gone", func() bool { return !hasConnection(s.Current.Get(), "dash-bot") })
 		if err := st.ApplyConfig(ctx, s.Current.Get(), "test"); err != nil {
 			t.Fatalf("ApplyConfig: %v", err)
 		}
-		if by, on, _ := tenantState(t); by != "dashboard" || on {
-			t.Fatalf("tenant managed_by=%s enabled=%v; want disabled", by, on)
+		if by, on, _ := accountState(t); by != "dashboard" || on {
+			t.Fatalf("account managed_by=%s enabled=%v; want disabled", by, on)
 		}
 	})
 }

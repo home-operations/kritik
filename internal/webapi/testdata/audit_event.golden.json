@@ -7,8 +7,8 @@
     "email": "ada@example.com",
     "avatarUrl": "https://img.example/a.png"
   },
-  "tenant": "alpha",
-  "action": "tenant.update",
+  "account": "alpha",
+  "action": "account.update",
   "target": "alpha",
   "detail": {
     "revision": 2,

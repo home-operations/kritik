@@ -30,10 +30,10 @@ type ConfigErrorStage string
 
 // Configuration error stages.
 const (
-	// ConfigErrorMerge is the file or a dashboard tenant failing to parse,
+	// ConfigErrorMerge is the file or a dashboard account failing to parse,
 	// resolve or merge, which leaves the last good snapshot live, or the
-	// merge leaving out a file tenant whose slug or connection name a
-	// dashboard tenant holds.
+	// merge leaving out a file account whose slug or connection name a
+	// dashboard account holds.
 	ConfigErrorMerge ConfigErrorStage = "merge"
 	// ConfigErrorApply is the leader's store refusing the merged snapshot;
 	// the last applied state stays live.
@@ -51,7 +51,7 @@ func NewConfigErrorGauge(reg prometheus.Registerer) *ConfigErrorGauge {
 	g := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "kritik_config_error",
 		Help: "1 while the latest attempt at a stage (merge, apply) of loading the configuration failed, " +
-			"or the merge left a file tenant out, else 0.",
+			"or the merge left a file account out, else 0.",
 	}, []string{"stage"})
 	reg.MustRegister(g)
 	for _, s := range []ConfigErrorStage{ConfigErrorMerge, ConfigErrorApply} {

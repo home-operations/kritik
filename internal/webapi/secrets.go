@@ -15,7 +15,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
-// A tenant spec in the API is the JSON form of a tenant entry in the file,
+// An account spec in the API is the JSON form of an account entry in the file,
 // except at each SecretRef position: a client writes {"value": "..."} to
 // set a secret, {"keep": true} to keep the one stored, or, for a webhook
 // secret, {"generate": true}; a read shows {"set": bool}. The env, file and
@@ -38,7 +38,7 @@ type secretKey struct {
 // sealedKey is SecretRef.Sealed's spec key.
 const sealedKey = "sealed"
 
-// providerKey is a tenant provider's apiKey, bound to the provider's type
+// providerKey is an account provider's apiKey, bound to the provider's type
 // and endpoint by keepProviderRef.
 var providerKey = secretKey{path: "apiKey", bound: true}
 
@@ -48,7 +48,7 @@ var secretKeys = []secretKey{
 	{path: "app.webhookSecret", generatable: true},
 }
 
-// specError is a tenant spec the API refuses, at path ("" for the whole
+// specError is an account spec the API refuses, at path ("" for the whole
 // spec), in the form the file's validation errors use.
 type specError struct {
 	path string
@@ -329,20 +329,20 @@ func refSet(v any) bool {
 	return false
 }
 
-// renderFileTenant is a file tenant in spec form, secrets redacted. It
+// renderFileAccount is a file account in spec form, secrets redacted. It
 // goes through YAML because the file's keys are the yaml tags.
-func renderFileTenant(t *configfile.Tenant) (json.RawMessage, error) {
+func renderFileAccount(t *configfile.Account) (json.RawMessage, error) {
 	raw, err := yaml.Marshal(t)
 	if err != nil {
-		return nil, fmt.Errorf("webapi: render tenant: %w", err)
+		return nil, fmt.Errorf("webapi: render account: %w", err)
 	}
 	var tree any
 	if err := yaml.Unmarshal(raw, &tree); err != nil {
-		return nil, fmt.Errorf("webapi: render tenant: %w", err)
+		return nil, fmt.Errorf("webapi: render account: %w", err)
 	}
 	spec, err := json.Marshal(tree)
 	if err != nil {
-		return nil, fmt.Errorf("webapi: render tenant: %w", err)
+		return nil, fmt.Errorf("webapi: render account: %w", err)
 	}
 	return redactSpec(spec)
 }

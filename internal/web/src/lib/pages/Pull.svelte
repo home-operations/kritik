@@ -28,14 +28,14 @@
 
   const res = new Resource(() =>
     getJSON<PullDetail>(
-      `/api/v1/tenants/${encodeURIComponent(slug)}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}${connectionQuery(connection)}`,
+      `/api/v1/accounts/${encodeURIComponent(slug)}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}${connectionQuery(connection)}`,
     ),
   );
   const choices = $derived(ambiguousConnections(res.error));
   $effect(() => {
     void res.load();
   });
-  $effect(() => live((e) => e.tenant === slug && e.kind !== 'index_run' && e.kind !== 'model_call', () => void res.load()));
+  $effect(() => live((e) => e.account === slug && e.kind !== 'index_run' && e.kind !== 'model_call', () => void res.load()));
 
   // Label colours come from the forge; anything but a hex triplet/quad/etc.
   // falls back to the border colour rather than reaching the style attribute.

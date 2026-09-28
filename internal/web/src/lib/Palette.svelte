@@ -1,6 +1,6 @@
 <script lang="ts">
   // The Cmd/Ctrl+K command palette: jump to any page from anywhere. Starts as
-  // a static registry of routes (global pages, plus the current tenant's
+  // a static registry of routes (global pages, plus the current account's
   // pages when the active route is inside one); later tasks can extend the
   // registry with real search results (repos, pulls, reviews).
   import type { Route } from './router.svelte';
@@ -32,14 +32,14 @@
     icon: string;
   }
 
-  // currentSlug reads the tenant slug off whatever route is active, when the
-  // route carries one — every tenant-scoped Route variant does.
+  // currentSlug reads the account slug off whatever route is active, when the
+  // route carries one — every account-scoped Route variant does.
   function currentSlug(r: Route): string | undefined {
     return 'slug' in r ? r.slug : undefined;
   }
 
   // Gated the same way as the top-bar (App.svelte): admin console and
-  // per-tenant admin are role-restricted, and "Sign in" only makes sense
+  // per-account admin are role-restricted, and "Sign in" only makes sense
   // when there's no session yet.
   function buildEntries(r: Route): Entry[] {
     const entries: Entry[] = [{ label: 'Overview', route: { name: 'overview' }, icon: mdiViewDashboardOutline }];
@@ -49,20 +49,20 @@
     if (!me) {
       entries.push({ label: 'Sign in', route: { name: 'signin' }, icon: mdiLogin });
     }
-    // Every tenant the user can see gets its pages, current tenant first,
-    // so any page of any tenant is a few keystrokes away.
+    // Every account the user can see gets its pages, current account first,
+    // so any page of any account is a few keystrokes away.
     const current = currentSlug(r);
-    const slugs = [...new Set([...(current ? [current] : []), ...(me?.tenants.map((t) => t.slug) ?? [])])];
+    const slugs = [...new Set([...(current ? [current] : []), ...(me?.accounts.map((t) => t.slug) ?? [])])];
     for (const slug of slugs) {
       entries.push(
-        { label: 'Tenant overview', hint: slug, route: { name: 'tenant', slug }, icon: mdiViewDashboardOutline },
+        { label: 'Account overview', hint: slug, route: { name: 'account', slug }, icon: mdiViewDashboardOutline },
         { label: 'Repos', hint: slug, route: { name: 'repos', slug }, icon: mdiSourceRepository },
         { label: 'Pull requests', hint: slug, route: { name: 'pulls', slug }, icon: mdiSourcePull },
         { label: 'Queue', hint: slug, route: { name: 'queue', slug }, icon: mdiTrayFull },
         { label: 'Usage', hint: slug, route: { name: 'usage', slug }, icon: mdiCurrencyUsd },
         { label: 'Follow-ups', hint: slug, route: { name: 'followups', slug }, icon: mdiClipboardTextClockOutline },
       );
-      if (me?.tenants.find((t) => t.slug === slug)?.role === 'admin') {
+      if (me?.accounts.find((t) => t.slug === slug)?.role === 'admin') {
         entries.push({ label: 'Admin', hint: slug, route: { name: 'admin', slug }, icon: mdiCogOutline });
       }
     }
@@ -72,7 +72,7 @@
     return entries;
   }
 
-  // The current tenant's recently updated pulls, fetched each time the
+  // The current account's recently updated pulls, fetched each time the
   // palette opens so they are jump targets too.
   let recent = $state<Pull[]>([]);
   let recentSlug = $state('');
@@ -82,7 +82,7 @@
   async function loadRecent(slug: string): Promise<void> {
     const seq = ++recentSeq;
     try {
-      const p = await getJSON<Page<Pull>>(`/api/v1/tenants/${encodeURIComponent(slug)}/pulls?state=all&limit=20`);
+      const p = await getJSON<Page<Pull>>(`/api/v1/accounts/${encodeURIComponent(slug)}/pulls?state=all&limit=20`);
       if (seq !== recentSeq) return;
       recent = p.items;
       recentSlug = slug;
@@ -92,7 +92,7 @@
   }
 
   $effect(() => {
-    const slug = currentSlug(router.route) ?? me?.tenants[0]?.slug;
+    const slug = currentSlug(router.route) ?? me?.accounts[0]?.slug;
     if (palette.open && slug) void loadRecent(slug);
   });
 

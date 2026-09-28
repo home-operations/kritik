@@ -21,15 +21,15 @@ const (
 	// before its Secret is swept. Past it River has cancelled the job that
 	// ran it, and any Job a dead worker left has passed its deadline.
 	RunSecretAbandoned = jobtimeout.MaxJobTimeout
-	// sweepBatch bounds the runs one tenant's sweep visits per pass.
+	// sweepBatch bounds the runs one account's sweep visits per pass.
 	sweepBatch = 200
 )
 
 // RunSecretStore finds the runs whose Secret the sweep should delete and
 // records the ones it did.
 type RunSecretStore interface {
-	RunSecretsToSweep(ctx context.Context, tenantID string, settle, abandoned time.Duration, limit int) ([]string, error)
-	MarkRunSecretsSwept(ctx context.Context, tenantID string, runIDs []string) error
+	RunSecretsToSweep(ctx context.Context, accountID string, settle, abandoned time.Duration, limit int) ([]string, error)
+	MarkRunSecretsSwept(ctx context.Context, accountID string, runIDs []string) error
 }
 
 // DeleteRunSecret deletes a run's job-scoped Secret by name. A Secret that
@@ -44,16 +44,16 @@ func (k *Kube) DeleteRunSecret(ctx context.Context, runID string) error {
 }
 
 // SweepRunSecrets deletes, by name, the Secret of every run the store says
-// no longer needs one, for each tenant, and marks those runs swept. A
+// no longer needs one, for each account, and marks those runs swept. A
 // worker that dies between creating a run's Secret and setting its owner
 // reference leaves one behind, credentials included, that garbage
 // collection will never remove; the sweep never lists or reads a Secret to
 // find it. It returns how many runs it marked.
-func (k *Kube) SweepRunSecrets(ctx context.Context, st RunSecretStore, tenantIDs []string) (int, error) {
+func (k *Kube) SweepRunSecrets(ctx context.Context, st RunSecretStore, accountIDs []string) (int, error) {
 	swept := 0
 	var errs []error
-	for _, tenantID := range tenantIDs {
-		ids, err := st.RunSecretsToSweep(ctx, tenantID, RunSecretSettle, RunSecretAbandoned, sweepBatch)
+	for _, accountID := range accountIDs {
+		ids, err := st.RunSecretsToSweep(ctx, accountID, RunSecretSettle, RunSecretAbandoned, sweepBatch)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -66,7 +66,7 @@ func (k *Kube) SweepRunSecrets(ctx context.Context, st RunSecretStore, tenantIDs
 			}
 			done = append(done, id)
 		}
-		if err := st.MarkRunSecretsSwept(ctx, tenantID, done); err != nil {
+		if err := st.MarkRunSecretsSwept(ctx, accountID, done); err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -76,13 +76,13 @@ func (k *Kube) SweepRunSecrets(ctx context.Context, st RunSecretStore, tenantIDs
 }
 
 // RunSecretSweeper sweeps run Secrets now and then every interval until
-// ctx ends, for the tenants tenantIDs returns at each pass. A failed sweep
+// ctx ends, for the accounts accountIDs returns at each pass. A failed sweep
 // is logged and tried again next time.
-func (k *Kube) RunSecretSweeper(ctx context.Context, st RunSecretStore, tenantIDs func() []string, every time.Duration) {
+func (k *Kube) RunSecretSweeper(ctx context.Context, st RunSecretStore, accountIDs func() []string, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
-		n, err := k.SweepRunSecrets(ctx, st, tenantIDs())
+		n, err := k.SweepRunSecrets(ctx, st, accountIDs())
 		switch {
 		case err != nil && ctx.Err() == nil:
 			k.logger().Warn("runner secrets not swept", "error", err)

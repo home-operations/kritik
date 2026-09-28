@@ -13,7 +13,7 @@
   let { slug }: { slug: string } = $props();
   let filter = $state('');
 
-  const base = $derived(`/api/v1/tenants/${encodeURIComponent(slug)}/repos`);
+  const base = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}/repos`);
   const paged = new Paged<Repository>(
     (cursor) => `${base}?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
     (r) => r.id,
@@ -23,7 +23,7 @@
   $effect(() => {
     void paged.load();
   });
-  $effect(() => live((e) => e.tenant === slug && e.kind === 'index_run', () => void paged.load()));
+  $effect(() => live((e) => e.account === slug && e.kind === 'index_run', () => void paged.load()));
 
   // A name several connections hold links with its connection, so the
   // repository page does not have to ask which one.

@@ -8,7 +8,7 @@
     repo: RepositoryDraft;
     index: number;
     editable: (key: string) => boolean;
-    // inherited is what the entry's fields take from the tenant when left
+    // inherited is what the entry's fields take from the account when left
     // empty; none when creating.
     inherited?: { settings: RepoSettings; sources: Record<string, ConfigSource> };
     inv: (path: string) => boolean;

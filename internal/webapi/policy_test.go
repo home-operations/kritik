@@ -10,7 +10,7 @@ import (
 )
 
 func TestMergeFailure(t *testing.T) {
-	candidate := &configfile.Tenant{Slug: "alpha", Connections: []configfile.Connection{{Name: "own"}, {Name: "shared"}}}
+	candidate := &configfile.Account{Slug: "alpha", Connections: []configfile.Connection{{Name: "own"}, {Name: "shared"}}}
 	broken := errors.New("still broken")
 	tests := []struct {
 		name     string
@@ -22,7 +22,7 @@ func TestMergeFailure(t *testing.T) {
 		message  string
 	}{
 		{
-			name:   "the edited tenant is blamed with its prefix stripped",
+			name:   "the edited account is blamed with its prefix stripped",
 			err:    &configfile.MergeError{Slug: "alpha", Err: errors.New(`configfile: dashboard[alpha].connections[0].app.clientId: "x" is not allowed`)},
 			status: 422, code: CodeInvalidSpec, path: "connections[0].app.clientId", message: `connections[0].app.clientId: "x" is not allowed`,
 		},
@@ -32,40 +32,40 @@ func TestMergeFailure(t *testing.T) {
 			status: 422, code: CodeInvalidSpec, path: "slug", message: `slug "X" must be lowercase`,
 		},
 		{
-			name:   "the whole tenant",
+			name:   "the whole account",
 			err:    &configfile.MergeError{Slug: "alpha", Err: errors.New(`configfile: dashboard[alpha] (alpha) must list at least one connection`)},
 			status: 422, code: CodeInvalidSpec, path: "", message: `(alpha) must list at least one connection`,
 		},
 		{
-			name: "another tenant's slug is not revealed",
+			name: "another account's slug is not revealed",
 			err: &configfile.MergeError{Slug: "alpha", Err: errors.New(
-				`configfile: dashboard[alpha].connections[0].name "x" duplicates a connection in tenant "secret-co"; names must be unique`)},
+				`configfile: dashboard[alpha].connections[0].name "x" duplicates a connection in account "secret-co"; names must be unique`)},
 			status: 422, code: CodeInvalidSpec, path: "connections[0].name",
-			message: `connections[0].name "x" duplicates a connection in another tenant; names must be unique`,
+			message: `connections[0].name "x" duplicates a connection in another account; names must be unique`,
 		},
 		{
-			name: "a duplicate slug names no tenant",
+			name: "a duplicate slug names no account",
 			err: &configfile.MergeError{Slug: "alpha", Err: errors.New(
-				`configfile: dashboard[alpha].slug "alpha" duplicates tenants[3]`)},
-			status: 422, code: CodeInvalidSpec, path: "slug", message: `slug "alpha" duplicates another tenant`,
+				`configfile: dashboard[alpha].slug "alpha" duplicates accounts[3]`)},
+			status: 422, code: CodeInvalidSpec, path: "slug", message: `slug "alpha" duplicates another account`,
 		},
 		{
-			name: "a clash reported against a later tenant is the candidate's",
+			name: "a clash reported against a later account is the candidate's",
 			err: &configfile.MergeError{Slug: "beta", Err: errors.New(
-				`configfile: dashboard[beta].connections[0].name "shared" duplicates a connection in tenant "alpha"; names must be unique`)},
+				`configfile: dashboard[beta].connections[0].name "shared" duplicates a connection in account "alpha"; names must be unique`)},
 			status: 422, code: CodeInvalidSpec, path: "connections[1].name",
-			message: `connections[1].name: conflicts with another tenant: "shared" duplicates a connection in tenant "alpha"; ` +
+			message: `connections[1].name: conflicts with another account: "shared" duplicates a connection in account "alpha"; ` +
 				`names must be unique`,
 		},
 		{
-			name:     "another tenant blocks the write",
+			name:     "another account blocks the write",
 			err:      &configfile.MergeError{Slug: "beta", Err: errors.New(`configfile: dashboard[beta].connections[0].app.privateKey: cannot open`)},
 			baseline: broken,
 			status:   409, code: CodeConfigBlocked,
 		},
 		{
 			name:     "the file itself",
-			err:      errors.New("configfile: tenants must list at least one tenant"),
+			err:      errors.New("configfile: accounts must list at least one account"),
 			baseline: broken,
 			status:   409, code: CodeConfigBlocked,
 		},
@@ -86,7 +86,7 @@ func TestMergeFailure(t *testing.T) {
 				t.Errorf("message = %q, want %q", e.message, tt.message)
 			}
 			if strings.Contains(e.message, "beta") || strings.Contains(e.message, "secret-co") {
-				t.Errorf("message names another tenant: %q", e.message)
+				t.Errorf("message names another account: %q", e.message)
 			}
 			var d pathDetails
 			if err := json.Unmarshal(e.details, &d); err != nil || d.Path != tt.path {
@@ -100,13 +100,13 @@ func TestDecodeFailure(t *testing.T) {
 	tests := []struct {
 		spec, path, message string
 	}{
-		{`{"slug":"alpha","nope":1}`, "nope", "tenant spec: field nope not found"},
-		{`{"slug":"alpha","connections":[{"name":"a","bogus":true}]}`, "bogus", "tenant spec: field bogus not found"},
-		{`{"slug":"beta"}`, "slug", `tenant spec slug "beta" does not match "alpha"`},
+		{`{"slug":"alpha","nope":1}`, "nope", "account spec: field nope not found"},
+		{`{"slug":"alpha","connections":[{"name":"a","bogus":true}]}`, "bogus", "account spec: field bogus not found"},
+		{`{"slug":"beta"}`, "slug", `account spec slug "beta" does not match "alpha"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.spec, func(t *testing.T) {
-			_, err := configfile.DecodeTenant(configfile.DashboardTenant{Slug: "alpha", Spec: json.RawMessage(tt.spec)})
+			_, err := configfile.DecodeAccount(configfile.DashboardAccount{Slug: "alpha", Spec: json.RawMessage(tt.spec)})
 			if err == nil {
 				t.Fatal("decoded")
 			}

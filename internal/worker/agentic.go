@@ -23,7 +23,7 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// agentDeadline bounds an agentic runner Job: the tenant's runner deadline,
+// agentDeadline bounds an agentic runner Job: the account's runner deadline,
 // unless the agent's timeout plus the fetch headroom needs longer.
 func agentDeadline(runnerDeadline, agentTimeout time.Duration) time.Duration {
 	return max(runnerDeadline, agentTimeout+jobtimeout.AgentFetchHeadroom)
@@ -72,12 +72,12 @@ type admission struct {
 
 // agentAdmit settles what an agentic review may spend before its runner
 // starts, since the runner spends against the model through the gateway:
-// the gateway must be configured, a review model must be, the tenant's
+// the gateway must be configured, a review model must be, the account's
 // caps must allow a review, and a free model lease is taken, renewed until
 // released, or errNoSlot returned. A non-empty status ends the review
 // before it runs, for the reason given.
 func (w *Review) agentAdmit(
-	ctx context.Context, logger *slog.Logger, file *configfile.File, tenant *configfile.Tenant, settings configfile.Settings, jobID int64,
+	ctx context.Context, logger *slog.Logger, file *configfile.File, account *configfile.Account, settings configfile.Settings, jobID int64,
 ) (admission, string, string, error) {
 	ref := settings.Models.Review
 	if ref == "" {
@@ -86,10 +86,10 @@ func (w *Review) agentAdmit(
 	if w.GatewayURL == "" {
 		return admission{}, statusFailed, "agentic mode needs the model gateway (KRITIK_GATEWAY_URL)", nil
 	}
-	if _, ok := file.Provider(tenant, ref.Provider()); !ok {
+	if _, ok := file.Provider(account, ref.Provider()); !ok {
 		return admission{}, statusFailed, fmt.Sprintf("worker: provider %q is not in the configuration", ref.Provider()), nil
 	}
-	l, err := takeLease(ctx, w.Store, tenant.ID(), string(ref), settings.Limits.Concurrency, jobID)
+	l, err := takeLease(ctx, w.Store, account.ID(), string(ref), settings.Limits.Concurrency, jobID)
 	if err != nil {
 		return admission{}, "", "", err
 	}
@@ -98,7 +98,7 @@ func (w *Review) agentAdmit(
 	}
 	// The caps are read under the lease, so concurrent reviews cannot all
 	// pass a cap of one.
-	budget, capped, err := w.agentCaps(ctx, tenant, settings)
+	budget, capped, err := w.agentCaps(ctx, account, settings)
 	if err != nil || capped != "" {
 		w.releaseLease(ctx, logger, l, string(ref))
 		if err != nil {
@@ -111,12 +111,12 @@ func (w *Review) agentAdmit(
 
 // agentCaps is the token budget an agentic review may spend, or the cap
 // that stops it.
-func (w *Review) agentCaps(ctx context.Context, tenant *configfile.Tenant, settings configfile.Settings) (int64, string, error) {
+func (w *Review) agentCaps(ctx context.Context, account *configfile.Account, settings configfile.Settings) (int64, string, error) {
 	limits := settings.Limits
 	if limits.ReviewsPerDay <= 0 && limits.TokensPerMonth <= 0 {
 		return settings.Agent.MaxTokens, "", nil
 	}
-	u, err := readUsage(ctx, w.Store, tenant.ID())
+	u, err := readUsage(ctx, w.Store, account.ID())
 	if err != nil {
 		return 0, "", err
 	}
@@ -132,7 +132,7 @@ func (w *Review) agentCaps(ctx context.Context, tenant *configfile.Tenant, setti
 const minAgentTokens = 50_000
 
 // agentBudget is how many tokens one agentic review may spend: the
-// repository's agent budget, cut to what is left of the tenant's monthly
+// repository's agent budget, cut to what is left of the account's monthly
 // cap when one is set. A non-empty reason caps the review instead, when
 // too little is left for an agent to do anything with.
 func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) {
@@ -151,14 +151,14 @@ func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) 
 // sees it and, for a bot author, the patch id of its last prepared review,
 // which afterRun skips as unchanged.
 func (w *Review) agentPrompt(
-	ctx context.Context, tenantID, reviewID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
+	ctx context.Context, accountID, reviewID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
 ) (*runner.Prompt, error) {
 	p := &runner.Prompt{
 		Repository: pr.repository, Instructions: eff.Review.Instructions, InstructionScopes: eff.Scoped, Context: eff.Review.Context,
 		RequireSuggestedFix: eff.Review.RequireSuggestedFix,
 		SkipPaths:           eff.Skip.OnlyPaths, MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
 	}
-	err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
 		if p.PullRequest, err = loadFilterPR(ctx, tx, pr.id); err != nil {
 			return err
@@ -179,9 +179,9 @@ func (w *Review) agentPrompt(
 
 // loadAgentRun reads the agent_runs row of a runner run; found is false
 // when the runner wrote none.
-func (w *Review) loadAgentRun(ctx context.Context, tenantID, runID string) (run agentRun, found bool, err error) {
+func (w *Review) loadAgentRun(ctx context.Context, accountID, runID string) (run agentRun, found bool, err error) {
 	var stop string
-	err = w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+	err = w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT stop_reason, result::text, steps, input_tokens, cache_read_tokens, cache_write_tokens,
 			output_tokens, cost_usd::float8, model, error, sources FROM agent_runs WHERE runner_run_id = $1`, runID).
 			Scan(&stop, &run.result, &run.steps, &run.usage.Input, &run.usage.CacheRead, &run.usage.CacheWrite,
@@ -206,12 +206,12 @@ func (w *Review) loadAgentRun(ctx context.Context, tenantID, runID string) (run 
 // pod records how its agent stopped while it terminates. await waits for
 // that, until the run settles or agentRowWait passes. ctx's cancellation is
 // not inherited, so a job River cancels still reads the row.
-func (w *Review) readAgentRun(ctx context.Context, tenantID, runID string, ref configfile.ModelRef, await bool) (*agentRun, error) {
+func (w *Review) readAgentRun(ctx context.Context, accountID, runID string, ref configfile.ModelRef, await bool) (*agentRun, error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agentRowWait+10*time.Second)
 	defer cancel()
-	run, found, err := w.loadAgentRun(ctx, tenantID, runID)
+	run, found, err := w.loadAgentRun(ctx, accountID, runID)
 	if err == nil && !found && await {
-		run, found, err = w.awaitAgentRun(ctx, tenantID, runID)
+		run, found, err = w.awaitAgentRun(ctx, accountID, runID)
 	}
 	if err != nil || !found {
 		return nil, err
@@ -232,17 +232,17 @@ const gatewayModel = "review"
 // returns the runner Job's deadline, which the agent's timeout may
 // lengthen.
 func (w *Review) agentSpec(
-	ctx context.Context, tenantID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
+	ctx context.Context, accountID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
 	admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
 ) (time.Duration, error) {
 	settings := eff.Settings
-	prompt, err := w.agentPrompt(ctx, tenantID, reviewID, trigger, pr, eff, prior)
+	prompt, err := w.agentPrompt(ctx, accountID, reviewID, trigger, pr, eff, prior)
 	if err != nil {
 		return deadline, err
 	}
 	deadline = agentDeadline(deadline, settings.Agent.Timeout)
 	token, err := w.Store.MintGatewayToken(ctx, store.GatewayGrant{
-		RunID: runID, TenantID: tenantID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
+		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
 		Model: string(settings.Models.Review), Fallback: string(settings.Models.Fallback), Budget: admitted.maxTokens,
 	}, time.Now().Add(deadline+w.GatewayTokenTTL))
 	if err != nil {
@@ -284,11 +284,11 @@ const agentRowPoll = time.Second
 
 // awaitAgentRun polls for a run's agent_runs row until it appears, the
 // run's phase settles without one, or agentRowWait passes.
-func (w *Review) awaitAgentRun(ctx context.Context, tenantID, runID string) (agentRun, bool, error) {
+func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string) (agentRun, bool, error) {
 	deadline := time.After(agentRowWait)
 	for {
 		var phase string
-		err := w.Store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT phase FROM runner_runs WHERE id = $1`, runID).Scan(&phase)
 		})
 		if err != nil {
@@ -296,7 +296,7 @@ func (w *Review) awaitAgentRun(ctx context.Context, tenantID, runID string) (age
 		}
 		// The runner writes its agent row before it settles the phase.
 		settled := phase == "done" || phase == "failed"
-		run, found, err := w.loadAgentRun(ctx, tenantID, runID)
+		run, found, err := w.loadAgentRun(ctx, accountID, runID)
 		if err != nil || found || settled {
 			return run, found, err
 		}
@@ -328,7 +328,7 @@ func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
 		p.logger.Info("review "+statusSkipped+" by the runner", "reason", run.errText)
 		p.skippedStatus(ctx, run.errText)
 		if reason := repoconfig.SkipReason(run.errText); reason.Valid() {
-			err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+			err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, `UPDATE reviews SET skip_reason = $2 WHERE id = $1`, p.reviewID, string(reason))
 				return err
 			})
@@ -339,7 +339,7 @@ func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
 		return statusSkipped, nil
 	}
 	var diff string
-	err := p.w.Store.WithTenant(ctx, p.tenant.ID(), func(tx pgx.Tx) error {
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT diff FROM context_packs WHERE runner_run_id = $1`, p.runID).Scan(&diff)
 	})
 	if err != nil {

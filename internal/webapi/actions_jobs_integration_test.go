@@ -33,8 +33,8 @@ auth:
     clientId: kritik
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: '"kritik-admin" in roles ? "admin" : ""'
-tenants:
-  - slug: aj-tenant
+accounts:
+  - slug: aj-account
     connections:
       - name: aj-bot
         forge: github
@@ -48,16 +48,16 @@ tenants:
 // through HTTP against a real, insert-only River client, the way startWeb
 // wires webapi.JobActions in production.
 type actionsEnv struct {
-	t        *testing.T
-	st       *store.Store
-	owner    *pgxpool.Pool
-	queue    *river.Client[pgx.Tx]
-	srv      *Server
-	http     *httptest.Server
-	cookie   *http.Cookie
-	tenantID string
-	repoID   string
-	prID     string
+	t         *testing.T
+	st        *store.Store
+	owner     *pgxpool.Pool
+	queue     *river.Client[pgx.Tx]
+	srv       *Server
+	http      *httptest.Server
+	cookie    *http.Cookie
+	accountID string
+	repoID    string
+	prID      string
 }
 
 func newActionsEnv(t *testing.T) *actionsEnv {
@@ -103,11 +103,11 @@ func newActionsEnv(t *testing.T) *actionsEnv {
 	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(e.http.Close)
 
-	tn, _ := file.Tenant("aj-tenant")
-	e.tenantID = tn.ID()
+	tn, _ := file.Account("aj-account")
+	e.accountID = tn.ID()
 	e.repoID = configfile.RepositoryID(tn.Connections[0].ID(), "aj/one")
-	e.prID = e.scalar(`INSERT INTO pull_requests (tenant_id, repository_id, number, title, author, head_sha)
-		VALUES ($1, $2, 11, 'rerun me', 'ada', 'headA') RETURNING id::text`, e.tenantID, e.repoID)
+	e.prID = e.scalar(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha)
+		VALUES ($1, $2, 11, 'rerun me', 'ada', 'headA') RETURNING id::text`, e.accountID, e.repoID)
 
 	e.signIn("operator", "aj-op", store.SessionGrant{Role: store.RoleAdmin})
 	return e
@@ -212,7 +212,7 @@ func TestActionsJobs(t *testing.T) {
 }
 
 func testRerunJob(t *testing.T, e *actionsEnv) {
-	status, body := e.do("/api/v1/tenants/aj-tenant/pulls/aj/one/11/rerun")
+	status, body := e.do("/api/v1/accounts/aj-account/pulls/aj/one/11/rerun")
 	e.expect(status, body, http.StatusAccepted, "")
 
 	var accepted Accepted
@@ -236,14 +236,14 @@ func testRerunJob(t *testing.T, e *actionsEnv) {
 }
 
 func testRerunDedupes(t *testing.T, e *actionsEnv) {
-	const path = "/api/v1/tenants/aj-tenant/pulls/aj/one/11/rerun"
+	const path = "/api/v1/accounts/aj-account/pulls/aj/one/11/rerun"
 	status, body := e.do(path)
 	e.expect(status, body, http.StatusConflict, CodeAlreadyQueued)
 
 	e.scalar(`UPDATE river_job SET state = 'completed', finalized_at = now()
 		WHERE kind = 'review' AND args->>'repository_id' = $1 RETURNING 'done'`, e.repoID)
-	review := e.scalar(`INSERT INTO reviews (tenant_id, pull_request_id, head_sha, status)
-		VALUES ($1, $2, 'headA', 'running') RETURNING id::text`, e.tenantID, e.prID)
+	review := e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status)
+		VALUES ($1, $2, 'headA', 'running') RETURNING id::text`, e.accountID, e.prID)
 	status, body = e.do(path)
 	e.expect(status, body, http.StatusConflict, CodeAlreadyQueued)
 
@@ -258,13 +258,13 @@ func testRerunDedupes(t *testing.T, e *actionsEnv) {
 }
 
 func testRerunConcurrent(t *testing.T, e *actionsEnv) {
-	e.scalar(`INSERT INTO pull_requests (tenant_id, repository_id, number, title, author, head_sha)
-		VALUES ($1, $2, 12, 'race me', 'ada', 'headR') RETURNING id::text`, e.tenantID, e.repoID)
+	e.scalar(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha)
+		VALUES ($1, $2, 12, 'race me', 'ada', 'headR') RETURNING id::text`, e.accountID, e.repoID)
 	for round := range 5 {
 		statuses := make([]int, 2)
 		var wg sync.WaitGroup
 		for i := range statuses {
-			wg.Go(func() { statuses[i], _ = e.do("/api/v1/tenants/aj-tenant/pulls/aj/one/12/rerun") })
+			wg.Go(func() { statuses[i], _ = e.do("/api/v1/accounts/aj-account/pulls/aj/one/12/rerun") })
 		}
 		wg.Wait()
 		if !slices.Contains(statuses, http.StatusAccepted) || !slices.Contains(statuses, http.StatusConflict) {
@@ -276,10 +276,10 @@ func testRerunConcurrent(t *testing.T, e *actionsEnv) {
 }
 
 func testCancelNotCancelable(t *testing.T, e *actionsEnv) {
-	review := e.scalar(`INSERT INTO reviews (tenant_id, pull_request_id, head_sha, status)
-		VALUES ($1, $2, 'headA', 'completed') RETURNING id::text`, e.tenantID, e.prID)
+	review := e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status)
+		VALUES ($1, $2, 'headA', 'completed') RETURNING id::text`, e.accountID, e.prID)
 
-	status, body := e.do("/api/v1/tenants/aj-tenant/reviews/" + review + "/cancel")
+	status, body := e.do("/api/v1/accounts/aj-account/reviews/" + review + "/cancel")
 	e.expect(status, body, http.StatusConflict, CodeNotCancelable)
 	if n := e.audits(AuditReviewCancel, review); n != 0 {
 		t.Errorf("review.cancel audit rows = %d, want 0", n)
@@ -289,16 +289,16 @@ func testCancelNotCancelable(t *testing.T, e *actionsEnv) {
 func testCancelRunning(t *testing.T, e *actionsEnv) {
 	ctx := context.Background()
 	res, err := e.queue.Insert(ctx, jobs.ReviewArgs{
-		TenantID: e.tenantID, RepositoryID: e.repoID, Number: 11, HeadSHA: "headA",
+		AccountID: e.accountID, RepositoryID: e.repoID, Number: 11, HeadSHA: "headA",
 		Trigger: jobs.TriggerManual, Request: "cancel-me",
 	}, nil)
 	if err != nil {
 		t.Fatalf("insert job to cancel: %v", err)
 	}
-	review := e.scalar(`INSERT INTO reviews (tenant_id, pull_request_id, head_sha, status, river_job_id)
-		VALUES ($1, $2, 'headA', 'running', $3) RETURNING id::text`, e.tenantID, e.prID, res.Job.ID)
+	review := e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status, river_job_id)
+		VALUES ($1, $2, 'headA', 'running', $3) RETURNING id::text`, e.accountID, e.prID, res.Job.ID)
 
-	status, body := e.do("/api/v1/tenants/aj-tenant/reviews/" + review + "/cancel")
+	status, body := e.do("/api/v1/accounts/aj-account/reviews/" + review + "/cancel")
 	e.expect(status, body, http.StatusAccepted, "")
 
 	if j := e.job(res.Job.ID); j.state != "cancelled" {
@@ -311,17 +311,17 @@ func testCancelRunning(t *testing.T, e *actionsEnv) {
 
 func testCancelEndedJob(t *testing.T, e *actionsEnv) {
 	res, err := e.queue.Insert(context.Background(), jobs.ReviewArgs{
-		TenantID: e.tenantID, RepositoryID: e.repoID, Number: 11, HeadSHA: "headA",
+		AccountID: e.accountID, RepositoryID: e.repoID, Number: 11, HeadSHA: "headA",
 		Trigger: jobs.TriggerManual, Request: "ended",
 	}, nil)
 	if err != nil {
 		t.Fatalf("insert job: %v", err)
 	}
 	e.scalar(`UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1 RETURNING 'done'`, res.Job.ID)
-	review := e.scalar(`INSERT INTO reviews (tenant_id, pull_request_id, head_sha, status, river_job_id)
-		VALUES ($1, $2, 'headA', 'running', $3) RETURNING id::text`, e.tenantID, e.prID, res.Job.ID)
+	review := e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status, river_job_id)
+		VALUES ($1, $2, 'headA', 'running', $3) RETURNING id::text`, e.accountID, e.prID, res.Job.ID)
 
-	status, body := e.do("/api/v1/tenants/aj-tenant/reviews/" + review + "/cancel")
+	status, body := e.do("/api/v1/accounts/aj-account/reviews/" + review + "/cancel")
 	e.expect(status, body, http.StatusConflict, CodeNotCancelable)
 	if got := e.scalar(`SELECT (cancel_requested_at IS NULL)::text FROM reviews WHERE id = $1`, review); got != "true" {
 		t.Error("a refused cancel still marked the review cancel-requested")
@@ -332,7 +332,7 @@ func testCancelEndedJob(t *testing.T, e *actionsEnv) {
 }
 
 func testReindexJob(t *testing.T, e *actionsEnv) {
-	status, body := e.do("/api/v1/tenants/aj-tenant/repos/aj/one/reindex")
+	status, body := e.do("/api/v1/accounts/aj-account/repos/aj/one/reindex")
 	e.expect(status, body, http.StatusAccepted, "")
 
 	var accepted Accepted
@@ -356,7 +356,7 @@ func testReindexJob(t *testing.T, e *actionsEnv) {
 
 	// The job above is still available (nothing runs it here), so a second
 	// forced reindex of the same repository dedupes onto it.
-	status, body = e.do("/api/v1/tenants/aj-tenant/repos/aj/one/reindex")
+	status, body = e.do("/api/v1/accounts/aj-account/repos/aj/one/reindex")
 	e.expect(status, body, http.StatusConflict, CodeAlreadyQueued)
 	if n := e.audits(AuditRepoReindex, "aj/one"); n != 1 {
 		t.Errorf("repo.reindex audit rows after dedup = %d, want still 1", n)

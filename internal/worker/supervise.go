@@ -92,7 +92,7 @@ func (s supervision) check(ctx context.Context) error {
 // runSupervision builds the supervision of one runner run. Heartbeat age is
 // measured by the database's clock, the same clock that stamped it. prID
 // empty skips the supersede check.
-func runSupervision(st *store.Store, tenantID, runID, prID, head string, every time.Duration, logger *slog.Logger) supervision {
+func runSupervision(st *store.Store, accountID, runID, prID, head string, every time.Duration, logger *slog.Logger) supervision {
 	if every <= 0 {
 		every = superviseInterval
 	}
@@ -100,7 +100,7 @@ func runSupervision(st *store.Store, tenantID, runID, prID, head string, every t
 		every: every, stale: heartbeatStale, logger: logger,
 		heartbeat: func(ctx context.Context) (time.Duration, bool, error) {
 			var seconds *float64
-			err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `SELECT extract(epoch FROM now() - heartbeat_at)::float8 FROM runner_runs WHERE id = $1`, runID).Scan(&seconds)
 			})
 			if err != nil {
@@ -116,7 +116,7 @@ func runSupervision(st *store.Store, tenantID, runID, prID, head string, every t
 		s.want = head
 		s.head = func(ctx context.Context) (string, error) {
 			var current string
-			err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
+			err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1`, prID).Scan(&current)
 			})
 			if err != nil {

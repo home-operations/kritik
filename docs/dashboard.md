@@ -1,7 +1,7 @@
 # Dashboard
 
 The web role serves a dashboard: sign in with a local admin password,
-GitHub or an OIDC provider, and see the tenants you can read, their
+GitHub or an OIDC provider, and see the accounts you can read, their
 connections and repositories, live review and conversation state as it
 runs, and, for an admin, the audit log. An admin can also queue a re-run
 of a specific pull request, cancel a review in progress, or reindex a
@@ -20,7 +20,7 @@ holding the sealing key (below).
 
 ## Signing in
 
-The `auth:` block, a sibling of `tenants:` at the file's root, sets how
+The `auth:` block, a sibling of `accounts:` at the file's root, sets how
 people sign in and what each may do. Every key in it also has a
 `KRITIK_AUTH_*` environment variable, and a variable wins over the file, so
 a deployment can configure sign-in from the environment alone. A secret's
@@ -85,15 +85,15 @@ make an admin: set an admin password, or a `roleMapping` on a provider.
 There are two roles:
 
 - **Admin** manages the instance. An admin creates, edits and deletes
-  dashboard tenants with their connections, repositories and provider
-  keys, queues re-runs, cancels and reindexes, and reads every tenant and
+  dashboard accounts with their connections, repositories and provider
+  keys, queues re-runs, cancels and reindexes, and reads every account and
   the audit log. The admin console also lists the instance settings
   read-only, each with its source: the environment, the configuration
   file, or kritik's default. A secret shows only whether it is set, and a
   URL's credentials are hidden. Every write is audit-logged in the same
   transaction as the change it makes.
 - **Member** reads reviews, conversations and transcripts, with no write
-  access. A member reads every tenant, or only the tenants serving the
+  access. A member reads every account, or only the accounts serving the
   forge accounts their sign-in placed them on.
 
 A session holds the role its sign-in gave it. Editing a provider's role
@@ -103,9 +103,9 @@ the next request signs in again under the new rules.
 ### Role mappings
 
 A `roleMapping` is a [CEL](https://cel.dev) expression evaluated at
-sign-in. It yields a role for every tenant, `"admin"`, `"member"` or `""`
+sign-in. It yields a role for every account, `"admin"`, `"member"` or `""`
 for none. Or it yields a map from forge account to `"member"`, which reads
-only the tenants serving those accounts, such as
+only the accounts serving those accounts, such as
 `{"github/org-1": "member"}`; `"*"` as a key stands for every account. CEL
 gives both branches of a conditional one type, so an expression that
 yields a role on one branch and a map on the other wraps one in `dyn()`.
@@ -119,15 +119,15 @@ active member of, and `teams`, each as `"<org>/<team>"`.
 When the mapping places nobody:
 
 - An OIDC sign-in is refused, unless `defaultRole: member` lets it read
-  every tenant. `defaultRole` defaults to `none`, so a wrong mapping fails
+  every account. `defaultRole` defaults to `none`, so a wrong mapping fails
   closed.
-- A GitHub sign-in reads the tenants serving the user's own account, or an
+- A GitHub sign-in reads the accounts serving the user's own account, or an
   organization they are an active member of, and is refused when there are
   none. Accounts a mapping names are added to those.
 
 A mapping that fails to evaluate refuses the sign-in.
 
-## Tenant writes
+## Account writes
 
 A secret an admin submits, such as an App's private key or client ID, is
 bound to that connection's forge and accounts: change either and the
@@ -142,30 +142,30 @@ accounts match, so enter them again when renaming in JSON.
 Re-run, cancel and reindex all respond `202 Accepted`, with a job ID for
 re-run and reindex, and queue the work rather than running it inline.
 Re-running a pull request with no known head, or cancelling a review that
-is not running, is a `409 Conflict`. Claiming a slug another tenant already
+is not running, is a `409 Conflict`. Claiming a slug another account already
 holds, file- or dashboard-managed, is `409 slug_taken`. Deleting a
-dashboard tenant does not delete its history: its reviews, findings, usage
-and transcripts stay keyed on its slug. Creating a tenant under a slug any
-tenant held before is therefore also `409 slug_taken`, unless the admin
+dashboard account does not delete its history: its reviews, findings, usage
+and transcripts stay keyed on its slug. Creating an account under a slug any
+account held before is therefore also `409 slug_taken`, unless the admin
 creates it with `adopt`, offered in the admin console after that refusal.
-The new tenant keeps the old one's review history. A connection name
-stays with the tenant that first held it, even once that tenant is gone.
+The new account keeps the old one's review history. A connection name
+stays with the account that first held it, even once that account is gone.
 
 ## Provider keys
 
-A tenant can bring its own model keys: `providers` in its spec, the same
+An account can bring its own model keys: `providers` in its spec, the same
 shape as the file's top-level `providers`, edited in the dashboard's
 "Provider keys" section. A model named `<key name>/<model>` then runs on
-that key, and the tenant pays for it; a key's name may not be one the
-file's providers already use. The tenant's review and fallback models,
+that key, and the account pays for it; a key's name may not be one the
+file's providers already use. The account's review and fallback models,
 and a repository entry's, may name a model on one of these keys. The keys are sealed at rest like connection secrets
 and never shown again. A saved key is kept only while its name, type and
 endpoint stay the same, so a key cannot be sent anywhere it was not
-entered for. Tenant limits still apply to runs on a tenant's own key.
+entered for. Account limits still apply to runs on an account's own key.
 
 ## Sealing key
 
-A dashboard-managed tenant's secrets are sealed at rest with an instance
+A dashboard-managed account's secrets are sealed at rest with an instance
 key, `KRITIK_DASHBOARD_KEY` / `dashboard.keySecret`: generate one with
 `openssl rand -base64 32`. To rotate it, move the old value into
 `KRITIK_DASHBOARD_OLD_KEYS` / `dashboard.oldKeysSecret` (comma-separated,
@@ -181,20 +181,20 @@ A top-level `retention.transcripts` (default 30 days, minimum 24 hours)
 controls how long an agentic review's full model transcript is kept; the
 review itself, its findings and its comments outlive it. A transcript may
 contain repository content the agent read while investigating, and it is
-visible to every member of the tenant it belongs to, not only admins.
+visible to every member of the account it belongs to, not only admins.
 
 ## Operational notes
 
-- A dashboard tenant that fails to merge into the configuration at boot
+- A dashboard account that fails to merge into the configuration at boot
   fails startup the same as a bad configuration file: fix the offending
   row or the file. A merge or apply failure after boot instead keeps the
   last good configuration running and raises the `kritik_config_error`
   gauge (labelled `merge` or `apply`) until a later attempt succeeds.
-- A file tenant whose slug or connection name a dashboard tenant already
+- A file account whose slug or connection name a dashboard account already
   holds is left out of the running configuration, at boot or on reload,
-  while every other tenant runs: the admin console lists it with the
+  while every other account runs: the admin console lists it with the
   reason and `kritik_config_error{stage="merge"}` stays at 1. Rename either
-  side, or delete the dashboard tenant, to bring it back.
+  side, or delete the dashboard account, to bring it back.
 - A secret referenced by `file:` is only re-read when the configuration
   file itself changes, not on the referenced file's own schedule: rotate
   the file, then touch or reapply the configuration to pick it up.

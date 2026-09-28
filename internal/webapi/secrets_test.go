@@ -232,15 +232,15 @@ func TestRedactSpec(t *testing.T) {
 	}
 }
 
-func TestRenderFileTenant(t *testing.T) {
+func TestRenderFileAccount(t *testing.T) {
 	f := testFile(t)
-	tn, _ := f.Tenant("alpha")
-	got, err := renderFileTenant(tn)
+	tn, _ := f.Account("alpha")
+	got, err := renderFileAccount(tn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(got), "KRITIK_TEST_TOKEN") || strings.Contains(string(got), "tok\"") {
-		t.Fatalf("file tenant render leaks a secret reference: %s", got)
+		t.Fatalf("file account render leaks a secret reference: %s", got)
 	}
 	var back struct {
 		Slug        string `json:"slug"`
@@ -261,9 +261,9 @@ func TestRenderFileTenant(t *testing.T) {
 	}
 }
 
-func TestRenderFileTenantDurations(t *testing.T) {
-	tn := configfile.Tenant{Slug: "x", Settle: new(90 * time.Second)}
-	got, err := renderFileTenant(&tn)
+func TestRenderFileAccountDurations(t *testing.T) {
+	tn := configfile.Account{Slug: "x", Settle: new(90 * time.Second)}
+	got, err := renderFileAccount(&tn)
 	if err != nil {
 		t.Fatal(err)
 	}

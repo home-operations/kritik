@@ -13,13 +13,13 @@ import (
 )
 
 // Actions queues the work an admin can ask for from the dashboard, each in
-// the caller's tenant transaction so the job and its audit row commit
+// the caller's account transaction so the job and its audit row commit
 // together.
 type Actions interface {
 	// Rerun queues a manual review of the pull request's current head,
 	// jobs.ErrNoHead when none is known, jobs.ErrRerunQueued when one is
 	// already queued or running.
-	Rerun(ctx context.Context, tx pgx.Tx, tenantID, repositoryID string, number int) (int64, error)
+	Rerun(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, number int) (int64, error)
 	// Cancel asks a running review to stop, recording by as the user
 	// that asked; jobs.ErrNotCancelable when it is not running.
 	Cancel(ctx context.Context, tx pgx.Tx, reviewID, by string) error
@@ -28,16 +28,16 @@ type Actions interface {
 	// resolved it in the same transaction, so this is defense in depth),
 	// jobs.ErrReindexQueued when a forced reindex is already queued or
 	// running.
-	Reindex(ctx context.Context, tx pgx.Tx, tenantID, repositoryID string) (int64, error)
+	Reindex(ctx context.Context, tx pgx.Tx, accountID, repositoryID string) (int64, error)
 }
 
 var errActionsDisabled = errStatus(http.StatusServiceUnavailable, CodeActionsDisabled, "this process does not queue dashboard actions", nil)
 
 // registerActions mounts re-run, cancel and reindex.
 func (s *Server) registerActions(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/pulls/{owner}/{repo}/{number}/rerun", s.admin(s.rerun))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/reviews/{id}/cancel", s.admin(s.cancel))
-	mux.HandleFunc("POST /api/v1/tenants/{slug}/repos/{owner}/{repo}/reindex", s.admin(s.reindex))
+	mux.HandleFunc("POST /api/v1/accounts/{slug}/pulls/{owner}/{repo}/{number}/rerun", s.admin(s.rerun))
+	mux.HandleFunc("POST /api/v1/accounts/{slug}/reviews/{id}/cancel", s.admin(s.cancel))
+	mux.HandleFunc("POST /api/v1/accounts/{slug}/repos/{owner}/{repo}/reindex", s.admin(s.reindex))
 }
 
 // jobAudit is a queued action's audit detail.
@@ -45,11 +45,11 @@ type jobAudit struct {
 	JobID int64 `json:"jobId,omitempty"`
 }
 
-func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	if s.actions == nil {
 		return errActionsDisabled
 	}
-	ctx, tid := r.Context(), t.tenant.ID()
+	ctx, tid := r.Context(), t.account.ID()
 	var job int64
 	err := s.read(ctx, t, func(tx pgx.Tx) error {
 		p, err := findPull(r, tx)
@@ -75,11 +75,11 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *tenantScope) e
 	return nil
 }
 
-func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	if s.actions == nil {
 		return errActionsDisabled
 	}
-	ctx, tid, id := r.Context(), t.tenant.ID(), r.PathValue("id")
+	ctx, tid, id := r.Context(), t.account.ID(), r.PathValue("id")
 	if uuid.Validate(id) != nil {
 		return errNotFound("review")
 	}
@@ -100,11 +100,11 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *tenantScope) 
 	return nil
 }
 
-func (s *Server) reindex(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) reindex(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	if s.actions == nil {
 		return errActionsDisabled
 	}
-	ctx, tid := r.Context(), t.tenant.ID()
+	ctx, tid := r.Context(), t.account.ID()
 	var job int64
 	err := s.read(ctx, t, func(tx pgx.Tx) error {
 		repo, err := findRepo(ctx, tx, r)

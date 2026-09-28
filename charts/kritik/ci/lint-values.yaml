@@ -18,7 +18,7 @@ config:
       models:
         review: openrouter/openai/gpt-6-sol
       filter: "!pr.draft"
-    tenants:
+    accounts:
       - slug: example
         connections:
           - name: example-github

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A read-only rendering of a tenant spec: nested keys as a tree, and
+  // A read-only rendering of an account spec: nested keys as a tree, and
   // every secret position ({"set": bool}) as "set" or "not set", never a
   // value (the API never sends one).
   let { spec }: { spec: Record<string, unknown> } = $props();

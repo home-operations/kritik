@@ -53,7 +53,7 @@ defaults:
 tools:
   - { name: helm, image: registry.example/helm:3 }
   - { name: kurl, image: registry.example/kurl:1, path: /usr/bin, commands: [curl] }
-tenants:
+accounts:
   - slug: acme
     connections:
       - name: acme-bot
@@ -211,18 +211,18 @@ type agentRunRow struct {
 // agenticHarness drives agentic reviews of acme/widgets#1 through River,
 // the local executor and the real runner.
 type agenticHarness struct {
-	ctx    context.Context
-	st     *store.Store
-	svc    *ingest.Service
-	file   *configfile.File
-	in     *configfile.Connection
-	tenant *configfile.Tenant
-	other  *configfile.Tenant
-	lf     *localForge
-	exec   *hookExecutor
-	review *Review
+	ctx     context.Context
+	st      *store.Store
+	svc     *ingest.Service
+	file    *configfile.File
+	in      *configfile.Connection
+	account *configfile.Account
+	other   *configfile.Account
+	lf      *localForge
+	exec    *hookExecutor
+	review  *Review
 	// gatewayURL is the worker's gateway the runner calls its model
-	// through, which calls sm with the tenant's key.
+	// through, which calls sm with the account's key.
 	gatewayURL string
 	fc         *fakeCompleter
 	sm         *scriptedModel
@@ -266,7 +266,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	if err := appStore.ApplyConfig(ctx, h.file, "test"); err != nil {
 		t.Fatal(err)
 	}
-	h.in, h.tenant, _ = h.file.Connection("acme-bot")
+	h.in, h.account, _ = h.file.Connection("acme-bot")
 	_, h.other, _ = h.file.Connection("globex-bot")
 	h.dir, h.base, h.head = testRepo(t)
 	// The run tool's curl: prints what it was given and fetches nothing.
@@ -325,7 +325,7 @@ func (h *agenticHarness) dispatchBody(t *testing.T, headSHA, body string) {
 // bot is set.
 func (h *agenticHarness) dispatchAs(t *testing.T, headSHA, body string, bot bool) {
 	t.Helper()
-	out, err := h.svc.Dispatch(h.ctx, ingest.Request{File: h.file, Tenant: h.tenant, Connection: h.in, Event: webhook.Event{
+	out, err := h.svc.Dispatch(h.ctx, ingest.Request{File: h.file, Account: h.account, Connection: h.in, Event: webhook.Event{
 		Kind: webhook.KindPullRequest, Action: "synchronize", Account: "acme",
 		Repository: &webhook.Repository{FullName: "acme/widgets", DefaultBranch: "main"},
 		PullRequest: &webhook.PullRequest{Number: 1, Title: "Add b", Body: body, Author: "octocat", AuthorIsBot: bot, State: "open",
@@ -340,7 +340,7 @@ func (h *agenticHarness) waitReview(t *testing.T, headSHA string) (id, status, e
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(h.ctx, `SELECT id, status, error FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL
 				ORDER BY created_at DESC LIMIT 1`, headSHA).Scan(&id, &status, &errText)
 		})
@@ -356,7 +356,7 @@ func (h *agenticHarness) waitReview(t *testing.T, headSHA string) (id, status, e
 func (h *agenticHarness) agentRow(t *testing.T, reviewID string) agentRunRow {
 	t.Helper()
 	var r agentRunRow
-	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT a.stop_reason, a.model, a.error, a.steps, a.tool_calls::text, a.timeline::text,
 			a.sources::text, a.input_tokens, a.output_tokens, a.cost_usd::float8
 			FROM agent_runs a JOIN runner_runs r ON r.id = a.runner_run_id WHERE r.review_id = $1`, reviewID).
@@ -384,17 +384,17 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("the gateway serves a run token's steps within its budget", func(t *testing.T) { checkGatewayEndpoint(t, h) })
 	t.Run("an agentic review snoozes while every model slot is held", func(t *testing.T) { checkAgentSnoozes(t, h) })
 	t.Run("the agent runs curl and the comment lists what it fetched", func(t *testing.T) { checkAgentRunsCommands(t, h) })
-	t.Run("another tenant cannot read the agent runs", func(t *testing.T) {
-		count := func(tenantID string) int {
+	t.Run("another account cannot read the agent runs", func(t *testing.T) {
+		count := func(accountID string) int {
 			var n int
-			if err := h.st.WithTenant(h.ctx, tenantID, func(tx pgx.Tx) error {
+			if err := h.st.WithAccount(h.ctx, accountID, func(tx pgx.Tx) error {
 				return tx.QueryRow(h.ctx, `SELECT count(*) FROM agent_runs`).Scan(&n)
 			}); err != nil {
 				t.Fatal(err)
 			}
 			return n
 		}
-		if own, foreign := count(h.tenant.ID()), count(h.other.ID()); own != 9 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 9 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -408,7 +408,7 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 		t.Fatalf("status = %s (%s)", status, errText)
 	}
 	var mode string
-	if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT mode FROM reviews WHERE id = $1`, reviewID).Scan(&mode)
 	}); err != nil || mode != "agentic" {
 		t.Fatalf("review mode = %q, %v", mode, err)
@@ -431,7 +431,7 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	var findings, usage int
 	var usageModel string
 	var tokens int64
-	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		if err := tx.QueryRow(h.ctx, `SELECT count(*) FROM findings WHERE review_id = $1 AND path = 'main.go' AND line = 3
 			AND posted_inline`, reviewID).Scan(&findings); err != nil {
 			return err
@@ -468,10 +468,10 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 
 // checkAgentTranscript checks that the gateway recorded a review's steps
 // so that they rebuild into the conversation the provider was last sent,
-// with no secret in any column and nothing another tenant can read.
+// with no secret in any column and nothing another account can read.
 func checkAgentTranscript(t *testing.T, h *agenticHarness, reviewID string) {
 	t.Helper()
-	rows := h.modelCalls(t, h.tenant.ID(), store.ModelCallFilter{ReviewID: reviewID})
+	rows := h.modelCalls(t, h.account.ID(), store.ModelCallFilter{ReviewID: reviewID})
 	if len(rows) != 3 {
 		t.Fatalf("%d model calls recorded, want 3", len(rows))
 	}
@@ -513,10 +513,10 @@ func checkAgentTranscript(t *testing.T, h *agenticHarness, reviewID string) {
 	}
 }
 
-func (h *agenticHarness) modelCalls(t *testing.T, tenantID string, f store.ModelCallFilter) []transcript.StoredRow {
+func (h *agenticHarness) modelCalls(t *testing.T, accountID string, f store.ModelCallFilter) []transcript.StoredRow {
 	t.Helper()
 	var rows []transcript.StoredRow
-	if err := h.st.WithTenant(h.ctx, tenantID, func(tx pgx.Tx) error {
+	if err := h.st.WithAccount(h.ctx, accountID, func(tx pgx.Tx) error {
 		var err error
 		rows, err = store.ModelCalls(h.ctx, tx, f)
 		return err
@@ -540,7 +540,7 @@ func (h *agenticHarness) checkStepMasked(t *testing.T, runID string) {
 func (h *agenticHarness) checkNoSecrets(t *testing.T, where string, args ...any) string {
 	t.Helper()
 	var text string
-	if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT coalesce(string_agg(to_jsonb(m)::text, ''), '') FROM model_calls m WHERE `+where, args...).Scan(&text)
 	}); err != nil {
 		t.Fatal(err)
@@ -586,13 +586,13 @@ func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 
 // checkGatewayEndpoint calls the gateway the way a runner does, with a run
 // token minted for a run of its own: steps are answered through the
-// tenant's provider and charged, and refused once the budget is spent, for
+// account's provider and charged, and refused once the budget is spent, for
 // a model other than the run's, or without a valid token.
 func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
-	args := jobs.ReviewArgs{TenantID: h.tenant.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
+	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
 		HeadSHA: strings.Repeat("c", 40), Trigger: "test"}
-	pr, err := loadPullRequest(h.ctx, h.st, args.TenantID, args.RepositoryID, args.Number)
+	pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, args.Number)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +601,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 		t.Fatal(err)
 	}
 	token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
-		RunID: runID, TenantID: h.tenant.ID(), ReviewID: reviewID, RepositoryID: pr.repositoryID, Model: "gateway/agent-model", Budget: 150,
+		RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: pr.repositoryID, Model: "gateway/agent-model", Budget: 150,
 	}, time.Now().Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
@@ -659,7 +659,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 		t.Fatal("a refused step reached the provider")
 	}
 	checkParallelSteps(t, h, store.GatewayGrant{
-		RunID: runID, TenantID: h.tenant.ID(), ReviewID: reviewID, RepositoryID: pr.repositoryID, Model: "gateway/agent-model",
+		RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: pr.repositoryID, Model: "gateway/agent-model",
 	}, step)
 	if err := h.st.RevokeGatewayTokens(h.ctx, runID); err != nil {
 		t.Fatal(err)
@@ -667,13 +667,13 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	if _, err := step(token, gatewayModel); err == nil || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("a revoked token = %v", err)
 	}
-	// The suites share one database; count only this tenant's tokens.
+	// The suites share one database; count only this account's tokens.
 	var left int
-	if err := h.st.App().QueryRow(h.ctx, `SELECT count(*) FROM gateway_tokens WHERE tenant_id = $1`, h.tenant.ID()).Scan(&left); err != nil ||
+	if err := h.st.App().QueryRow(h.ctx, `SELECT count(*) FROM gateway_tokens WHERE account_id = $1`, h.account.ID()).Scan(&left); err != nil ||
 		left != 0 {
 		t.Fatalf("gateway tokens left after the reviews = %d, %v", left, err)
 	}
-	if err := failRun(h.ctx, h.st, h.tenant.ID(), runID, "test run"); err != nil {
+	if err := failRun(h.ctx, h.st, h.account.ID(), runID, "test run"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -717,7 +717,7 @@ func checkParallelSteps(t *testing.T, h *agenticHarness, grant store.GatewayGran
 	}
 }
 
-// checkAgentSnoozes holds the tenant's one model slot and dispatches a new
+// checkAgentSnoozes holds the account's one model slot and dispatches a new
 // head: the agentic review is snoozed without a review row, a lease or a
 // runner until the slot is let go, and then runs to completion.
 func checkAgentSnoozes(t *testing.T, h *agenticHarness) {
@@ -725,11 +725,11 @@ func checkAgentSnoozes(t *testing.T, h *agenticHarness) {
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc snoozed() {}\n")
 	hold := func(jobID *int64) {
 		t.Helper()
-		if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
-			_, err := tx.Exec(h.ctx, `INSERT INTO model_leases (tenant_id, model_key, slot, job_id, expires_at)
+		if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(h.ctx, `INSERT INTO model_leases (account_id, model_key, slot, job_id, expires_at)
 				VALUES ($1, 'gateway/agent-model', 1, $2, CASE WHEN $2::bigint IS NULL THEN NULL ELSE now() + interval '1 hour' END)
-				ON CONFLICT (tenant_id, model_key, slot) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`,
-				h.tenant.ID(), jobID)
+				ON CONFLICT (account_id, model_key, slot) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`,
+				h.account.ID(), jobID)
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -747,7 +747,7 @@ func checkAgentSnoozes(t *testing.T, h *agenticHarness) {
 		return n >= 1
 	})
 	var reviews int
-	if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1`, next).Scan(&reviews)
 	}); err != nil || reviews != 0 {
 		t.Fatalf("a snoozed agentic review recorded %d reviews, %v", reviews, err)
@@ -872,7 +872,7 @@ func (h *agenticHarness) commit(t *testing.T, name, content string) string {
 // usageTokens is the review's review-role usage: rows and tokens.
 func (h *agenticHarness) usageTokens(t *testing.T, reviewID string) (rows int, tokens int64) {
 	t.Helper()
-	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT count(*), coalesce(sum(input_tokens + output_tokens), 0) FROM usage
 			WHERE review_id = $1 AND role = 'review'`, reviewID).Scan(&rows, &tokens)
 	})
@@ -888,7 +888,7 @@ func checkAgentSupersededCharges(t *testing.T, h *agenticHarness) {
 	h.exec.mu.Lock()
 	h.exec.after = func() {
 		// A push lands as the Job ends.
-		err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 			_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = $1 WHERE number = 1`, strings.Repeat("f", 40))
 			return err
 		})
@@ -924,7 +924,7 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 	// No step was answered, so the run names no model and the review the
 	// one it was granted, never the gateway's name for it.
 	var reviewModel string
-	if err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT model FROM reviews WHERE id = $1`, reviewID).Scan(&reviewModel)
 	}); err != nil || run.model != "" || reviewModel != "agent-model" {
 		t.Fatalf("agent run model = %q, review model = %q, %v", run.model, reviewModel, err)
@@ -940,7 +940,7 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 		t.Fatalf("usage rows = %d", rows)
 	}
 	// The refused step is still recorded, the key it echoed masked.
-	rows := h.modelCalls(t, h.tenant.ID(), store.ModelCallFilter{ReviewID: reviewID})
+	rows := h.modelCalls(t, h.account.ID(), store.ModelCallFilter{ReviewID: reviewID})
 	if len(rows) == 0 || !strings.Contains(rows[0].Error, "invalid api key ***") {
 		t.Fatalf("model calls = %+v", rows)
 	}
@@ -965,7 +965,7 @@ func checkAgentFiltered(t *testing.T, h *agenticHarness) {
 	}
 	var reason string
 	var runs int
-	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT skip_reason, (SELECT count(*) FROM runner_runs WHERE review_id = $1) FROM reviews WHERE id = $1`,
 			reviewID).Scan(&reason, &runs)
 	})
@@ -999,7 +999,7 @@ func checkAgentOutlivesJobTimeout(t *testing.T, h *agenticHarness) {
 		t.Fatalf("status = %s (%s) after %s", status, errText, time.Since(started))
 	}
 	var reviews int
-	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1`, next).Scan(&reviews)
 	})
 	if err != nil || reviews != 1 {
@@ -1007,7 +1007,7 @@ func checkAgentOutlivesJobTimeout(t *testing.T, h *agenticHarness) {
 	}
 }
 
-// checkAgentCappedUnderLease caps a review on the tenant's daily count,
+// checkAgentCappedUnderLease caps a review on the account's daily count,
 // which earlier subtests have already spent, and checks the lease taken to
 // read the caps is released rather than held for the capped review.
 func checkAgentCappedUnderLease(t *testing.T, h *agenticHarness) {
@@ -1022,7 +1022,7 @@ func checkAgentCappedUnderLease(t *testing.T, h *agenticHarness) {
 		t.Fatalf("status = %s (%s), want capped on reviewsPerDay", status, errText)
 	}
 	var held int
-	err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT count(*) FROM model_leases WHERE job_id IS NOT NULL`).Scan(&held)
 	})
 	if err != nil || held != 0 {
@@ -1037,7 +1037,7 @@ func checkAgentCanceledCharges(t *testing.T, h *agenticHarness) {
 	h.sm.stalled = func() {
 		// A push lands while the agent waits on its second step, and
 		// supervision cancels the run.
-		err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 			_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = $1 WHERE number = 1`, strings.Repeat("e", 40))
 			return err
 		})
@@ -1063,9 +1063,9 @@ func checkAgentCanceledCharges(t *testing.T, h *agenticHarness) {
 }
 
 func checkFailRun(t *testing.T, h *agenticHarness) {
-	args := jobs.ReviewArgs{TenantID: h.tenant.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
+	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"), Number: 1,
 		HeadSHA: strings.Repeat("d", 40), Trigger: "test"}
-	pr, err := loadPullRequest(h.ctx, h.st, args.TenantID, args.RepositoryID, args.Number)
+	pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, args.Number)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1073,12 +1073,12 @@ func checkFailRun(t *testing.T, h *agenticHarness) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := failRun(h.ctx, h.st, h.tenant.ID(), runID, "worker: read pull request for the filter: boom"); err != nil {
+	if err := failRun(h.ctx, h.st, h.account.ID(), runID, "worker: read pull request for the filter: boom"); err != nil {
 		t.Fatal(err)
 	}
 	var phase, errText string
 	var finished bool
-	err = h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+	err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT phase, error, finished_at IS NOT NULL FROM runner_runs WHERE id = $1`, runID).
 			Scan(&phase, &errText, &finished)
 	})
@@ -1107,9 +1107,9 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := jobs.ReviewArgs{TenantID: h.tenant.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"),
+			args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.in.ID(), "acme/widgets"),
 				Number: 1, HeadSHA: tt.head, Trigger: "test"}
-			pr, err := loadPullRequest(h.ctx, h.st, args.TenantID, args.RepositoryID, args.Number)
+			pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, args.Number)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1117,14 +1117,14 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			e := endedReview{tenantID: h.tenant.ID(), tenantSlug: h.tenant.Slug, reviewID: reviewID, headSHA: tt.head,
+			e := endedReview{accountID: h.account.ID(), accountSlug: h.account.Slug, reviewID: reviewID, headSHA: tt.head,
 				owner: "acme", repo: "widgets", client: h.lf, started: time.Now(), logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 			err = h.review.agentSpecFailed(tt.ctx, e, runID, boom)
 			if (err != nil) != tt.retried {
 				t.Fatalf("agentSpecFailed = %v, want an error only when River should retry", err)
 			}
 			var status, errText, phase string
-			err = h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+			err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 				return tx.QueryRow(h.ctx, `SELECT r.status, coalesce(r.error, ''), rr.phase FROM reviews r, runner_runs rr
 					WHERE r.id = $1 AND rr.id = $2`, reviewID, runID).Scan(&status, &errText, &phase)
 			})
@@ -1151,10 +1151,10 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	// The last review had this head's patch, but the forge reported another
 	// patch for it, so the worker's own check before the runner passes.
 	var lastID string
-	err = h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(h.ctx, `INSERT INTO reviews (tenant_id, pull_request_id, head_sha, merge_base_sha, patch_id, forge_patch_id,
+	err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, merge_base_sha, patch_id, forge_patch_id,
 			status, trigger, finished_at) SELECT $1, id, $2, $3, $4, 'another', 'completed', 'synchronize', now()
-			FROM pull_requests WHERE number = 1 RETURNING id`, h.tenant.ID(), h.head, base, patch).Scan(&lastID)
+			FROM pull_requests WHERE number = 1 RETURNING id`, h.account.ID(), h.head, base, patch).Scan(&lastID)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1164,7 +1164,7 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Unlock()
 	h.exec.mu.Lock()
 	h.exec.after = func() {
-		err := h.st.WithTenant(h.ctx, h.tenant.ID(), func(tx pgx.Tx) error {
+		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 			_, err := tx.Exec(h.ctx, `UPDATE reviews SET patch_id = 'changed' WHERE id = $1`, lastID)
 			return err
 		})

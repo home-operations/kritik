@@ -18,7 +18,7 @@ const (
 
 // encodeCursor makes c the opaque token a client passes back as ?cursor=.
 // It is only a position, not a capability: every read it feeds still runs
-// under the requesting principal's tenant scope.
+// under the requesting principal's account scope.
 func encodeCursor(c store.Cursor) string {
 	raw, _ := json.Marshal(c) // a struct of a time and two strings always marshals
 	return base64.RawURLEncoding.EncodeToString(raw)

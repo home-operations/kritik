@@ -37,7 +37,7 @@ interface BrandIcon {
   title: string;
 }
 
-// Forge brand logos, keyed by the forge kind a tenant/repo is configured
+// Forge brand logos, keyed by the forge kind an account/repo is configured
 // with.
 export const forgeIcon: Record<string, BrandIcon> = {
   github: siGithub,

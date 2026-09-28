@@ -1,4 +1,4 @@
-// The config editor's model of a tenant spec: the JSON form of a tenant
+// The config editor's model of an account spec: the JSON form of an account
 // entry of the configuration file (see internal/webapi/secrets.go), split
 // into the fields the form edits plus `rest`, every key it does not know,
 // carried through unchanged so a save never drops a setting the form has no
@@ -43,7 +43,7 @@ export interface ConnectionDraft {
 
 export type ProviderType = 'openrouter' | 'openai' | 'anthropic';
 
-// A model provider of the tenant's own: its key, for models it pays for.
+// A model provider of the account's own: its key, for models it pays for.
 export interface ProviderDraft {
   key: number;
   // The name and endpoint the provider was loaded under: the server keeps
@@ -78,7 +78,7 @@ export interface RepositoryDraft {
   rest: Obj;
 }
 
-export interface TenantDraft {
+export interface AccountDraft {
   slug: string;
   reviewModel: string;
   fallbackModel: string;
@@ -228,7 +228,7 @@ function repositoryOf(v: unknown): RepositoryDraft {
   };
 }
 
-export function draftOf(spec: Obj): TenantDraft {
+export function draftOf(spec: Obj): AccountDraft {
   const o = obj(spec);
   const models = obj(o.models);
   const limits = obj(o.limits);
@@ -338,7 +338,7 @@ export function canKeep(d: ConnectionDraft): boolean {
 
 // hasTypedSecret reports whether any secret holds a value typed into the
 // form.
-export function hasTypedSecret(d: TenantDraft): boolean {
+export function hasTypedSecret(d: AccountDraft): boolean {
   const typed = (sd: SecretDraft) => sd.mode === 'replace' && sd.value !== '';
   return (
     d.connections.some((x) => [x.clientIdFrom, x.privateKey, x.appWebhookSecret].some(typed)) ||
@@ -422,7 +422,7 @@ export interface Built {
   error: SpecError | undefined;
 }
 
-export function buildSpec(d: TenantDraft, redact = false): Built {
+export function buildSpec(d: AccountDraft, redact = false): Built {
   const b = new Builder(redact);
   const out: Obj = { ...d.rest };
   if (d.slug.trim() === '') b.fail('slug', 'a slug is required');

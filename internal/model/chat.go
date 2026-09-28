@@ -16,7 +16,7 @@ import (
 // through any provider's adapter.
 
 // ErrBudget is a step the gateway refused because the run's token budget
-// or the tenant's monthly cap is spent.
+// or the account's monthly cap is spent.
 var ErrBudget = errors.New("model: token budget exhausted")
 
 // BudgetCode is the error code of the gateway's budget refusal.

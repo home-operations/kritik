@@ -2,13 +2,13 @@
 // JSON names in internal/webapi/testdata/*.golden.json. Timestamps are
 // RFC 3339 strings; null means "none".
 
-export type TenantRole = 'admin' | 'member';
-export type TenantManagedBy = 'file' | 'dashboard';
+export type AccountRole = 'admin' | 'member';
+export type AccountManagedBy = 'file' | 'dashboard';
 
-export interface TenantMembership {
+export interface AccountMembership {
   slug: string;
-  role: TenantRole;
-  managedBy: TenantManagedBy;
+  role: AccountRole;
+  managedBy: AccountManagedBy;
 }
 
 // A person signed in to the dashboard.
@@ -22,7 +22,7 @@ export interface User {
 export interface Me {
   user: User;
   operator: boolean;
-  tenants: TenantMembership[];
+  accounts: AccountMembership[];
 }
 
 // local is the admin's username and password form, posted to /auth/local.
@@ -89,20 +89,20 @@ export interface MonthUsage {
   reviewsPerDay: number;
 }
 
-export interface TenantSummary {
+export interface AccountSummary {
   slug: string;
-  managedBy: TenantManagedBy;
-  role: TenantRole;
+  managedBy: AccountManagedBy;
+  role: AccountRole;
   connections: number;
   repositories: number;
   reviews7d: number;
   usage: MonthUsage;
 }
 
-// live is false for a dashboard tenant stored but not in the running
+// live is false for a dashboard account stored but not in the running
 // configuration (it does not validate, or has not been merged yet), and for
-// a file tenant the merge left out, which conflict explains.
-export interface OperatorTenant extends TenantSummary {
+// a file account the merge left out, which conflict explains.
+export interface OperatorAccount extends AccountSummary {
   live: boolean;
   revision: number;
   conflict?: string;
@@ -136,10 +136,10 @@ export interface Limits {
   tokensPerMonth: number;
 }
 
-export interface TenantDetail {
+export interface AccountDetail {
   slug: string;
-  managedBy: TenantManagedBy;
-  role: TenantRole;
+  managedBy: AccountManagedBy;
+  role: AccountRole;
   connections: Connection[];
   models: Models;
   limits: Limits;
@@ -622,12 +622,12 @@ export interface Job {
 // "resync" (data {}) when the client should refetch everything it shows.
 export interface LiveEvent {
   kind: EventKind;
-  tenant: string;
+  account: string;
   id: string;
   reviewId: string | null;
 }
 
-// The management API: dashboard tenants, actions and the audit log.
+// The management API: dashboard accounts, actions and the audit log.
 // ErrorBody.code may also be one of these.
 export type ManagementErrorCode =
   | 'forbidden'
@@ -649,7 +649,7 @@ export interface PathDetails {
 }
 
 // details of a slug_taken error: adoptable only when the slug belonged to
-// a tenant that is gone, so creating it again with adopt succeeds.
+// an account that is gone, so creating it again with adopt succeeds.
 export interface SlugTakenDetails extends PathDetails {
   adoptable?: boolean;
 }
@@ -668,7 +668,7 @@ export interface SecretState {
 }
 export type SecretInput = { value: string } | { keep: true } | { generate: true };
 
-export type ConfigScope = 'defaults' | 'tenant' | 'repository';
+export type ConfigScope = 'defaults' | 'account' | 'repository';
 export type RepoRule =
   | 'own'
   | 'turnOff'
@@ -683,7 +683,7 @@ export type RepoRule =
 
 // One setting of the policy table: where an admin may write it, what a
 // repository's .kritik.yaml may do with it, and whether the caller may
-// change it on this tenant.
+// change it on this account.
 export interface FieldPolicy {
   key: string;
   scopes: ConfigScope[];
@@ -691,39 +691,39 @@ export interface FieldPolicy {
   editable: boolean;
 }
 
-// What a tenant's fields, and its repository entries' fields, resolve to
+// What an account's fields, and its repository entries' fields, resolve to
 // where the spec leaves them out, and where each value comes from.
 export interface Inherited {
-  tenant: RepoSettings;
-  tenantSources: Record<string, ConfigSource>;
+  account: RepoSettings;
+  accountSources: Record<string, ConfigSource>;
   repository: RepoSettings;
   repositorySources: Record<string, ConfigSource>;
 }
 
-export interface TenantConfig {
-  managedBy: TenantManagedBy;
+export interface AccountConfig {
+  managedBy: AccountManagedBy;
   revision: number | null;
   editable: boolean;
   policy: FieldPolicy[];
   inherited: Inherited;
-  // A tenant entry of the configuration file, in JSON, with every secret
+  // An account entry of the configuration file, in JSON, with every secret
   // a SecretState.
   spec: Record<string, unknown>;
 }
 
-export interface CreateTenantRequest {
+export interface CreateAccountRequest {
   slug: string;
   spec: Record<string, unknown>;
-  // Re-use a slug a tenant held before, keeping its review history.
+  // Re-use a slug an account held before, keeping its review history.
   adopt?: boolean;
 }
 
-export interface UpdateTenantRequest {
+export interface UpdateAccountRequest {
   revision: number;
   spec: Record<string, unknown>;
 }
 
-export interface TenantWriteResult {
+export interface AccountWriteResult {
   slug: string;
   revision: number;
   // Each server-generated secret, keyed "connections[<name>].<key>";
@@ -736,10 +736,10 @@ export interface Accepted {
 }
 
 export type AuditAction =
-  | 'tenant.create'
-  | 'tenant.update'
-  | 'tenant.delete'
-  | 'tenant.adopt'
+  | 'account.create'
+  | 'account.update'
+  | 'account.delete'
+  | 'account.adopt'
   | 'review.rerun'
   | 'review.cancel'
   | 'repo.reindex';
@@ -748,7 +748,7 @@ export interface AuditEvent {
   id: string;
   at: string;
   actor: User | null;
-  tenant: string;
+  account: string;
   action: AuditAction;
   target: string;
   detail: Record<string, unknown>;

@@ -10,7 +10,7 @@ import (
 )
 
 // Metrics holds the collectors. Labels are bounded by configuration
-// (tenants, connections, models) or by fixed vocabularies (status,
+// (accounts, connections, models) or by fixed vocabularies (status,
 // stage, outcome); nothing per PR or per commit is ever a label.
 type Metrics struct {
 	webhooks       *prometheus.CounterVec
@@ -36,7 +36,7 @@ type Metrics struct {
 
 // Label names shared across series.
 const (
-	lblTenant     = "tenant"
+	lblAccount    = "account"
 	lblModel      = "model"
 	lblRole       = "role"
 	lblOutcome    = "outcome"
@@ -58,7 +58,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		}, []string{lblConnection}),
 		reviews: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_reviews_total", Help: "Reviews finished, by terminal status.",
-		}, []string{lblTenant, "status"}),
+		}, []string{lblAccount, "status"}),
 		egress: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_egress_requests_total",
 			Help: "Requests runner pods made through the gateway, by kind (connect, http) and outcome (allowed, refused, error).",
@@ -70,25 +70,25 @@ func New(reg prometheus.Registerer) *Metrics {
 		reviewDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritik_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",
 			Buckets: []float64{5, 10, 20, 30, 60, 120, 300, 600, 900},
-		}, []string{lblTenant}),
+		}, []string{lblAccount}),
 		followups: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_followups_total", Help: "Follow-up mentions handled, by outcome: answered, limited, ignored, failed.",
-		}, []string{lblTenant, lblOutcome}),
+		}, []string{lblAccount, lblOutcome}),
 		findings: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_findings_total", Help: "Findings posted, by severity.",
-		}, []string{lblTenant, "severity"}),
+		}, []string{lblAccount, "severity"}),
 		contextChunks: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_context_chunks_total", Help: "Context chunks put in front of the model, by stage.",
-		}, []string{lblTenant, "stage"}),
+		}, []string{lblAccount, "stage"}),
 		indexRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_index_runs_total", Help: "Index runs finished, by mode and status.",
-		}, []string{lblTenant, "mode", "status"}),
+		}, []string{lblAccount, "mode", "status"}),
 		indexChunks: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_index_chunks_total", Help: "Chunks embedded into the index.",
-		}, []string{lblTenant}),
+		}, []string{lblAccount}),
 		runnerRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_runner_runs_total", Help: "Runner Jobs finished, by kind and outcome.",
-		}, []string{lblTenant, "kind", lblOutcome}),
+		}, []string{lblAccount, "kind", lblOutcome}),
 		runnerDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritik_runner_duration_seconds", Help: "Runner Job time from start to finish.",
 			Buckets: []float64{2, 5, 10, 20, 30, 60, 120, 300, 600, 900},
@@ -96,21 +96,21 @@ func New(reg prometheus.Registerer) *Metrics {
 		leaseWait: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritik_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
 			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300},
-		}, []string{lblTenant, lblModel}),
+		}, []string{lblAccount, lblModel}),
 		reviewSnoozes: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_review_snoozes_total", Help: "Reviews put back on the queue because every model slot was held.",
-		}, []string{lblTenant, lblModel}),
+		}, []string{lblAccount, lblModel}),
 		modelCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_model_calls_total", Help: "Model calls, by role and outcome.",
-		}, []string{lblTenant, lblModel, lblRole, lblOutcome}),
+		}, []string{lblAccount, lblModel, lblRole, lblOutcome}),
 		modelTokens: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_model_tokens_total",
 			Help: "Tokens spent, by role and direction (input, cached, output); " +
 				"cached is the part of input the provider served from its prompt cache.",
-		}, []string{lblTenant, lblModel, lblRole, "direction"}),
+		}, []string{lblAccount, lblModel, lblRole, "direction"}),
 		modelCost: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_model_cost_usd_total", Help: "Provider-reported cost in US dollars, by role.",
-		}, []string{lblTenant, lblModel, lblRole}),
+		}, []string{lblAccount, lblModel, lblRole}),
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,
 		m.contextChunks, m.indexRuns, m.indexChunks,
@@ -136,48 +136,48 @@ func (m *Metrics) Poll(connection, outcome string, pullRequests int) {
 }
 
 // Review counts a finished review and its duration.
-func (m *Metrics) Review(tenant, status string, took time.Duration) {
+func (m *Metrics) Review(account, status string, took time.Duration) {
 	if m != nil {
-		m.reviews.WithLabelValues(tenant, status).Inc()
-		m.reviewDuration.WithLabelValues(tenant).Observe(took.Seconds())
+		m.reviews.WithLabelValues(account, status).Inc()
+		m.reviewDuration.WithLabelValues(account).Observe(took.Seconds())
 	}
 }
 
 // FollowUp counts one handled mention.
-func (m *Metrics) FollowUp(tenant, outcome string) {
+func (m *Metrics) FollowUp(account, outcome string) {
 	if m != nil {
-		m.followups.WithLabelValues(tenant, outcome).Inc()
+		m.followups.WithLabelValues(account, outcome).Inc()
 	}
 }
 
 // Findings counts posted findings of one severity.
-func (m *Metrics) Findings(tenant, severity string, n int) {
+func (m *Metrics) Findings(account, severity string, n int) {
 	if m != nil && n > 0 {
-		m.findings.WithLabelValues(tenant, severity).Add(float64(n))
+		m.findings.WithLabelValues(account, severity).Add(float64(n))
 	}
 }
 
 // ContextChunks counts chunks of one stage put in a prompt.
-func (m *Metrics) ContextChunks(tenant, stage string, n int) {
+func (m *Metrics) ContextChunks(account, stage string, n int) {
 	if m != nil && n > 0 {
-		m.contextChunks.WithLabelValues(tenant, stage).Add(float64(n))
+		m.contextChunks.WithLabelValues(account, stage).Add(float64(n))
 	}
 }
 
 // IndexRun counts a finished index run and the chunks it embedded.
-func (m *Metrics) IndexRun(tenant, mode, status string, chunks int) {
+func (m *Metrics) IndexRun(account, mode, status string, chunks int) {
 	if m != nil {
-		m.indexRuns.WithLabelValues(tenant, mode, status).Inc()
+		m.indexRuns.WithLabelValues(account, mode, status).Inc()
 		if chunks > 0 {
-			m.indexChunks.WithLabelValues(tenant).Add(float64(chunks))
+			m.indexChunks.WithLabelValues(account).Add(float64(chunks))
 		}
 	}
 }
 
 // RunnerRun counts a finished runner Job; took is zero when unknown.
-func (m *Metrics) RunnerRun(tenant, kind, outcome string, took time.Duration) {
+func (m *Metrics) RunnerRun(account, kind, outcome string, took time.Duration) {
 	if m != nil {
-		m.runnerRuns.WithLabelValues(tenant, kind, outcome).Inc()
+		m.runnerRuns.WithLabelValues(account, kind, outcome).Inc()
 		if took > 0 {
 			m.runnerDuration.WithLabelValues(kind).Observe(took.Seconds())
 		}
@@ -185,42 +185,42 @@ func (m *Metrics) RunnerRun(tenant, kind, outcome string, took time.Duration) {
 }
 
 // LeaseWait records how long a lease took to acquire.
-func (m *Metrics) LeaseWait(tenant, model string, took time.Duration) {
+func (m *Metrics) LeaseWait(account, model string, took time.Duration) {
 	if m != nil {
-		m.leaseWait.WithLabelValues(tenant, model).Observe(took.Seconds())
+		m.leaseWait.WithLabelValues(account, model).Observe(took.Seconds())
 	}
 }
 
 // ReviewSnoozed counts a review put back on the queue to wait for a model
 // slot.
-func (m *Metrics) ReviewSnoozed(tenant, model string) {
+func (m *Metrics) ReviewSnoozed(account, model string) {
 	if m != nil {
-		m.reviewSnoozes.WithLabelValues(tenant, model).Inc()
+		m.reviewSnoozes.WithLabelValues(account, model).Inc()
 	}
 }
 
 // ModelCall records one call: outcome is ok or error; tokens and cost are
 // added only for ok. cachedTokens is the part of inputTokens the provider
 // served from its prompt cache.
-func (m *Metrics) ModelCall(tenant, model, role, outcome string, inputTokens, cachedTokens, outputTokens int64, costUSD float64) {
+func (m *Metrics) ModelCall(account, model, role, outcome string, inputTokens, cachedTokens, outputTokens int64, costUSD float64) {
 	if m == nil {
 		return
 	}
-	m.modelCalls.WithLabelValues(tenant, model, role, outcome).Inc()
+	m.modelCalls.WithLabelValues(account, model, role, outcome).Inc()
 	if outcome != "ok" {
 		return
 	}
 	if inputTokens > 0 {
-		m.modelTokens.WithLabelValues(tenant, model, role, "input").Add(float64(inputTokens))
+		m.modelTokens.WithLabelValues(account, model, role, "input").Add(float64(inputTokens))
 	}
 	if cachedTokens > 0 {
-		m.modelTokens.WithLabelValues(tenant, model, role, "cached").Add(float64(cachedTokens))
+		m.modelTokens.WithLabelValues(account, model, role, "cached").Add(float64(cachedTokens))
 	}
 	if outputTokens > 0 {
-		m.modelTokens.WithLabelValues(tenant, model, role, "output").Add(float64(outputTokens))
+		m.modelTokens.WithLabelValues(account, model, role, "output").Add(float64(outputTokens))
 	}
 	if costUSD > 0 {
-		m.modelCost.WithLabelValues(tenant, model, role).Add(costUSD)
+		m.modelCost.WithLabelValues(account, model, role).Add(costUSD)
 	}
 }
 

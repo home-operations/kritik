@@ -1,12 +1,12 @@
 <script lang="ts">
-  // Maps the active route to its page. Keyed so switching tenant or record
+  // Maps the active route to its page. Keyed so switching account or record
   // starts the page fresh (filters, cursors), while switching review tabs
   // keeps the review page mounted.
   import type { Route } from '../routes';
   import Placeholder from '../Placeholder.svelte';
   import Overview from './Overview.svelte';
   import Operator from './Operator.svelte';
-  import TenantOverview from './TenantOverview.svelte';
+  import AccountOverview from './AccountOverview.svelte';
   import Repos from './Repos.svelte';
   import Repo from './Repo.svelte';
   import Pulls from './Pulls.svelte';
@@ -33,8 +33,8 @@
     <Overview />
   {:else if route.name === 'operator'}
     <Operator />
-  {:else if route.name === 'tenant'}
-    <TenantOverview slug={route.slug} />
+  {:else if route.name === 'account'}
+    <AccountOverview slug={route.slug} />
   {:else if route.name === 'repos'}
     <Repos slug={route.slug} />
   {:else if route.name === 'repo'}

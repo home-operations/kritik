@@ -66,7 +66,7 @@ func missing(err error) (bool, error) {
 	return false, err
 }
 
-func (s *Server) getReview(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) getReview(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
 	var d ReviewDetail
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
@@ -173,7 +173,7 @@ func contextPack(m *store.ContextPackMeta) *ContextPack {
 	return out
 }
 
-func (s *Server) getReviewDiff(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) getReviewDiff(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
 	d := ReviewDiff{}
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
@@ -194,7 +194,7 @@ func (s *Server) getReviewDiff(w http.ResponseWriter, r *http.Request, t *tenant
 	return nil
 }
 
-func (s *Server) getReviewRaw(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) getReviewRaw(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
 	raw := ReviewRaw{RepoFiles: map[string]string{}, Stages: []ContextChunk{}}
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
@@ -233,7 +233,7 @@ func contextChunks(in []contextpack.Chunk) []ContextChunk {
 	return out
 }
 
-func (s *Server) getReviewTranscript(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) getReviewTranscript(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
 	var rows []transcript.StoredRow
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {

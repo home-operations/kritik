@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const onboardTenants = twoTenants + `
+const onboardAccounts = twoAccounts + `
   - slug: east
     connections:
       - name: east-bot
@@ -40,12 +40,12 @@ const onboardTenants = twoTenants + `
 `
 
 // TestOnboardCandidates checks which repositories the onboarding feeder is
-// offered and in what order: tenants take turns, and a tenant's repositories
+// offered and in what order: accounts take turns, and an account's repositories
 // whose pull requests moved last go first.
 func TestOnboardCandidates(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, onboardTenants), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, onboardAccounts), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	ids := map[string]string{}
@@ -78,12 +78,12 @@ func TestOnboardCandidates(t *testing.T) {
 		exec(`UPDATE repositories SET created_at = now() - $2::interval WHERE id = $1`, ids[name], age)
 	}
 	for name, age := range map[string]string{"east/busy": "1 minute", "west/one": "1 day"} {
-		exec(`INSERT INTO pull_requests (tenant_id, repository_id, number, head_sha, updated_at)
-			SELECT tenant_id, id, 1, 'abc', now() - $2::interval FROM repositories WHERE id = $1`, ids[name], age)
+		exec(`INSERT INTO pull_requests (account_id, repository_id, number, head_sha, updated_at)
+			SELECT account_id, id, 1, 'abc', now() - $2::interval FROM repositories WHERE id = $1`, ids[name], age)
 	}
 	exec(`WITH g AS (
-			INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-			SELECT tenant_id, id, 'abc', 'm', 8, 'full', 'completed' FROM repositories WHERE id = $1 RETURNING id, repository_id)
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			SELECT account_id, id, 'abc', 'm', 8, 'full', 'completed' FROM repositories WHERE id = $1 RETURNING id, repository_id)
 		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/indexed"])
 
 	before, err := s.OnboardingInFlight(ctx)
@@ -107,8 +107,8 @@ func TestOnboardCandidates(t *testing.T) {
 	// An onboarding that built an index since dropped, as a model change
 	// drops them all, is no reason to wait.
 	job("east/rebuilt", "onboard", "completed", "5 minutes")
-	exec(`INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-		SELECT tenant_id, id, 'abc', 'm', 8, 'full', 'superseded' FROM repositories WHERE id = $1`, ids["east/rebuilt"])
+	exec(`INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+		SELECT account_id, id, 'abc', 'm', 8, 'full', 'superseded' FROM repositories WHERE id = $1`, ids["east/rebuilt"])
 	after, err := s.OnboardingInFlight(ctx)
 	if err != nil || after != before {
 		t.Fatalf("OnboardingInFlight = %d, %v; want %d: pushes and finished jobs are not onboarding", after, err, before)

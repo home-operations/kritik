@@ -89,7 +89,7 @@ func (b *Base) recordModelCall(
 	if stepErr != nil {
 		c.Error = mask(stepErr.Error())
 	}
-	err := b.Store.WithTenant(ctx, c.TenantID, func(tx pgx.Tx) error {
+	err := b.Store.WithAccount(ctx, c.AccountID, func(tx pgx.Tx) error {
 		var prev transcript.State
 		if c.Kind == store.ModelCallAgentStep {
 			var err error

@@ -6,7 +6,7 @@
   import LoadMore from '../components/LoadMore.svelte';
 
   let { slug }: { slug: string } = $props();
-  const base = $derived(`/api/v1/tenants/${encodeURIComponent(slug)}/followups`);
+  const base = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}/followups`);
   const paged = new Paged<Followup>(
     (cursor) => `${base}?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
     (f) => f.id,
@@ -16,7 +16,7 @@
   $effect(() => {
     void paged.load();
   });
-  $effect(() => live((e) => e.tenant === slug && e.kind === 'followup', () => void paged.load()));
+  $effect(() => live((e) => e.account === slug && e.kind === 'followup', () => void paged.load()));
 </script>
 
 <main class="page">

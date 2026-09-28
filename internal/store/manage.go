@@ -12,27 +12,27 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// AuditEntry is one row to write to the audit log. TenantID is recorded
-// only while the tenant row exists and is visible to the transaction, so a
-// tenant created from the dashboard before the leader has applied it logs
-// its creation against no tenant; Target still names it.
+// AuditEntry is one row to write to the audit log. AccountID is recorded
+// only while the account row exists and is visible to the transaction, so an
+// account created from the dashboard before the leader has applied it logs
+// its creation against no account; Target still names it.
 type AuditEntry struct {
-	UserID   string
-	TenantID string
-	Action   string
-	Target   string
-	Detail   json.RawMessage
+	UserID    string
+	AccountID string
+	Action    string
+	Target    string
+	Detail    json.RawMessage
 }
 
 // AuditEvent is one audit log row.
 type AuditEvent struct {
-	ID       int64
-	At       time.Time
-	Actor    *User
-	TenantID string
-	Action   string
-	Target   string
-	Detail   json.RawMessage
+	ID        int64
+	At        time.Time
+	Actor     *User
+	AccountID string
+	Action    string
+	Target    string
+	Detail    json.RawMessage
 }
 
 // InsertAudit writes e in tx.
@@ -41,19 +41,19 @@ func InsertAudit(ctx context.Context, tx pgx.Tx, e AuditEntry) error {
 	if len(detail) == 0 {
 		detail = json.RawMessage(`{}`)
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO audit_events (user_id, tenant_id, action, target, detail)
-		VALUES (nullif($1, '')::uuid, (SELECT id FROM tenants WHERE id = nullif($2, '')::uuid), $3, $4, $5)`,
-		e.UserID, e.TenantID, e.Action, e.Target, detail)
+	_, err := tx.Exec(ctx, `INSERT INTO audit_events (user_id, account_id, action, target, detail)
+		VALUES (nullif($1, '')::uuid, (SELECT id FROM accounts WHERE id = nullif($2, '')::uuid), $3, $4, $5)`,
+		e.UserID, e.AccountID, e.Action, e.Target, detail)
 	if err != nil {
 		return fmt.Errorf("store: insert audit event: %w", err)
 	}
 	return nil
 }
 
-// ListAudit returns a page of audit events, newest first: of one tenant
-// when tenantID is set, of every tenant otherwise. The cursor's ID is the
+// ListAudit returns a page of audit events, newest first: of one account
+// when accountID is set, of every account otherwise. The cursor's ID is the
 // last event's id.
-func (s *Store) ListAudit(ctx context.Context, tenantID string, p Page) ([]AuditEvent, *Cursor, error) {
+func (s *Store) ListAudit(ctx context.Context, accountID string, p Page) ([]AuditEvent, *Cursor, error) {
 	if p.Limit <= 0 {
 		return nil, nil, ErrPageLimit
 	}
@@ -66,10 +66,10 @@ func (s *Store) ListAudit(ctx context.Context, tenantID string, p Page) ([]Audit
 		after = &n
 	}
 	rows, err := s.app.Query(ctx, `SELECT e.id, e.at, e.user_id::text, coalesce(u.display_name, ''), coalesce(u.email, ''),
-			coalesce(u.avatar_url, ''), coalesce(e.tenant_id::text, ''), e.action, e.target, e.detail
+			coalesce(u.avatar_url, ''), coalesce(e.account_id::text, ''), e.action, e.target, e.detail
 		FROM audit_events e LEFT JOIN users u ON u.id = e.user_id
-		WHERE ($1::uuid IS NULL OR e.tenant_id = $1) AND ($2::bigint IS NULL OR e.id < $2)
-		ORDER BY e.id DESC LIMIT $3`, uuidParam(tenantID), after, p.Limit+1)
+		WHERE ($1::uuid IS NULL OR e.account_id = $1) AND ($2::bigint IS NULL OR e.id < $2)
+		ORDER BY e.id DESC LIMIT $3`, uuidParam(accountID), after, p.Limit+1)
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list audit events: %w", err)
 	}
@@ -79,7 +79,7 @@ func (s *Store) ListAudit(ctx context.Context, tenantID string, p Page) ([]Audit
 			userID *string
 			u      User
 		)
-		err := row.Scan(&e.ID, &e.At, &userID, &u.DisplayName, &u.Email, &u.AvatarURL, &e.TenantID, &e.Action, &e.Target, &e.Detail)
+		err := row.Scan(&e.ID, &e.At, &userID, &u.DisplayName, &u.Email, &u.AvatarURL, &e.AccountID, &e.Action, &e.Target, &e.Detail)
 		if userID != nil {
 			u.ID = *userID
 			e.Actor = &u
@@ -93,14 +93,14 @@ func (s *Store) ListAudit(ctx context.Context, tenantID string, p Page) ([]Audit
 	return items, next, nil
 }
 
-// LiveNonDashboard lists what a dashboard tenant writing in tx would take
-// over: "slug" when the tx's tenant has a live row another origin manages,
+// LiveNonDashboard lists what a dashboard account writing in tx would take
+// over: "slug" when the tx's account has a live row another origin manages,
 // and each of names that is a live connection another origin manages.
-// Row-level security confines the check to the tenant tx is scoped to.
-func LiveNonDashboard(ctx context.Context, tx pgx.Tx, tenantID string, names []string) ([]string, error) {
-	rows, err := tx.Query(ctx, `SELECT 'slug' FROM tenants WHERE id = $1 AND enabled AND managed_by <> 'dashboard'
+// Row-level security confines the check to the account tx is scoped to.
+func LiveNonDashboard(ctx context.Context, tx pgx.Tx, accountID string, names []string) ([]string, error) {
+	rows, err := tx.Query(ctx, `SELECT 'slug' FROM accounts WHERE id = $1 AND enabled AND managed_by <> 'dashboard'
 		UNION ALL
-		SELECT name FROM connections WHERE name = ANY($2) AND enabled AND managed_by <> 'dashboard'`, tenantID, names)
+		SELECT name FROM connections WHERE name = ANY($2) AND enabled AND managed_by <> 'dashboard'`, accountID, names)
 	if err != nil {
 		return nil, fmt.Errorf("store: check live rows: %w", err)
 	}
@@ -111,24 +111,24 @@ func LiveNonDashboard(ctx context.Context, tx pgx.Tx, tenantID string, names []s
 	return out, nil
 }
 
-// TenantRowExists reports whether the tenant has a tenants row, enabled or
-// not, managed by either origin. tx must be scoped to tenantID.
-func TenantRowExists(ctx context.Context, tx pgx.Tx, tenantID string) (bool, error) {
+// AccountRowExists reports whether the account has an accounts row, enabled or
+// not, managed by either origin. tx must be scoped to accountID.
+func AccountRowExists(ctx context.Context, tx pgx.Tx, accountID string) (bool, error) {
 	var ok bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE id = $1)`, tenantID).Scan(&ok); err != nil {
-		return false, fmt.Errorf("store: tenant exists: %w", err)
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM accounts WHERE id = $1)`, accountID).Scan(&ok); err != nil {
+		return false, fmt.Errorf("store: account exists: %w", err)
 	}
 	return ok, nil
 }
 
 // ConnectionsHeldElsewhere lists each of names that a connection row
-// of a tenant other than the one tx is scoped to holds, in any state.
+// of an account other than the one tx is scoped to holds, in any state.
 // Row-level security hides those rows, but not the unique index on name:
-// each name the tenant cannot see is probed with an insert that stops at
+// each name the account cannot see is probed with an insert that stops at
 // that index, inside a savepoint that is always rolled back. A name that is
-// free either inserts or, when the tenant has no tenants row yet, fails its
+// free either inserts or, when the account has no accounts row yet, fails its
 // foreign key; both mean no one holds it.
-func ConnectionsHeldElsewhere(ctx context.Context, tx pgx.Tx, tenantID string, names []string) ([]string, error) {
+func ConnectionsHeldElsewhere(ctx context.Context, tx pgx.Tx, accountID string, names []string) ([]string, error) {
 	rows, err := tx.Query(ctx, `SELECT n FROM unnest($1::text[]) n WHERE NOT EXISTS (SELECT 1 FROM connections WHERE name = n)`, names)
 	if err != nil {
 		return nil, fmt.Errorf("store: check connection names: %w", err)
@@ -139,7 +139,7 @@ func ConnectionsHeldElsewhere(ctx context.Context, tx pgx.Tx, tenantID string, n
 	}
 	var held []string
 	for _, name := range unseen {
-		taken, err := probeConnectionName(ctx, tx, tenantID, name)
+		taken, err := probeConnectionName(ctx, tx, accountID, name)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +150,7 @@ func ConnectionsHeldElsewhere(ctx context.Context, tx pgx.Tx, tenantID string, n
 	return held, nil
 }
 
-func probeConnectionName(ctx context.Context, tx pgx.Tx, tenantID, name string) (taken bool, err error) {
+func probeConnectionName(ctx context.Context, tx pgx.Tx, accountID, name string) (taken bool, err error) {
 	sp, err := tx.Begin(ctx)
 	if err != nil {
 		return false, fmt.Errorf("store: probe connection %s: %w", name, err)
@@ -164,9 +164,9 @@ func probeConnectionName(ctx context.Context, tx pgx.Tx, tenantID, name string) 
 	}()
 	var id string
 	err = sp.QueryRow(ctx, `
-		INSERT INTO connections (id, tenant_id, name, forge, managed_by)
+		INSERT INTO connections (id, account_id, name, forge, managed_by)
 		VALUES (gen_random_uuid(), $1, $2, 'github', 'dashboard')
-		ON CONFLICT DO NOTHING RETURNING id`, tenantID, name).Scan(&id)
+		ON CONFLICT DO NOTHING RETURNING id`, accountID, name).Scan(&id)
 	switch pgErr, _ := errors.AsType[*pgconn.PgError](err); {
 	case errors.Is(err, pgx.ErrNoRows):
 		return true, nil

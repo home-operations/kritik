@@ -63,7 +63,7 @@ auth:
     clientId: kritik-client
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: 'login == "opgh" ? "admin" : ("mapped-org" in orgs ? dyn({"github/acme": "member"}) : "")'
-tenants:
+accounts:
   - slug: auth-personal
     connections:
       - {name: auth-personal-bot, forge: github, accounts: [alice-gh], app: &app {clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}}
@@ -82,17 +82,17 @@ tenants:
 `
 
 type authEnv struct {
-	t        *testing.T
-	st       *store.Store
-	h        *Handler
-	mux      *http.ServeMux
-	current  *configfile.Current
-	file     *configfile.File
-	oidc     *fakeOAuth
-	oidc2    *fakeOAuth
-	gh       *fakeOAuth
-	now      time.Time
-	tenantID map[string]string
+	t         *testing.T
+	st        *store.Store
+	h         *Handler
+	mux       *http.ServeMux
+	current   *configfile.Current
+	file      *configfile.File
+	oidc      *fakeOAuth
+	oidc2     *fakeOAuth
+	gh        *fakeOAuth
+	now       time.Time
+	accountID map[string]string
 }
 
 func newAuthEnv(t *testing.T) *authEnv {
@@ -111,7 +111,7 @@ func newAuthEnv(t *testing.T) *authEnv {
 	}
 	e := &authEnv{
 		t: t, st: st, oidc: newFakeOIDC(t), oidc2: newFakeOIDC(t), gh: newFakeGitHub(t),
-		now: time.Now(), tenantID: map[string]string{},
+		now: time.Now(), accountID: map[string]string{},
 	}
 	t.Setenv("KRITIK_TEST_TOKEN", fakeClientSecret)
 	t.Setenv("KRITIK_TEST_ADMIN_PASSWORD", adminTestPassword)
@@ -122,8 +122,8 @@ func newAuthEnv(t *testing.T) *authEnv {
 	if err := st.ApplyConfig(ctx, e.file, "auth-test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	for i := range e.file.Tenants {
-		e.tenantID[e.file.Tenants[i].Slug] = e.file.Tenants[i].ID()
+	for i := range e.file.Accounts {
+		e.accountID[e.file.Accounts[i].Slug] = e.file.Accounts[i].ID()
 	}
 	e.current = configfile.NewCurrent(e.file)
 	e.h, err = New(Config{
@@ -236,14 +236,14 @@ func (e *authEnv) principal(c *http.Cookie) *Principal {
 	return got
 }
 
-// tenants lists the slugs of the file's tenants p reads.
-func (e *authEnv) tenants(p *Principal) []string {
+// accounts lists the slugs of the file's accounts p reads.
+func (e *authEnv) accounts(p *Principal) []string {
 	e.t.Helper()
 	if p == nil {
 		e.t.Fatal("no principal")
 	}
 	var out []string
-	for slug, id := range e.tenantID {
+	for slug, id := range e.accountID {
 		if p.CanRead(id) {
 			out = append(out, slug)
 		}
@@ -252,11 +252,11 @@ func (e *authEnv) tenants(p *Principal) []string {
 	return out
 }
 
-func assertTenants(t *testing.T, got []string, want ...string) {
+func assertAccounts(t *testing.T, got []string, want ...string) {
 	t.Helper()
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
-		t.Fatalf("tenants = %v, want %v", got, want)
+		t.Fatalf("accounts = %v, want %v", got, want)
 	}
 }
 
@@ -294,7 +294,7 @@ func TestOIDCSignIn(t *testing.T) {
 	}
 	p := e.principal(cookie)
 	if p == nil || p.Identity.Provider != "oidc" || p.Identity.Subject != alice.Login || p.Identity.Login != alice.Login ||
-		!p.User.EmailVerified || p.User.Email != alice.Email || p.Operator || !p.AllTenants {
+		!p.User.EmailVerified || p.User.Email != alice.Email || p.Operator || !p.AllAccounts {
 		t.Fatalf("principal = %+v", p)
 	}
 
@@ -378,30 +378,30 @@ func TestGitHubSignInGrants(t *testing.T) {
 		Orgs: map[string]string{"acme": "member", "widgets": "admin", "pendco": "pending"}}
 	firstCookie := e.mustSignIn("github", e.gh, alice)
 	p := e.principal(firstCookie)
-	assertTenants(t, e.tenants(p), "auth-personal", "auth-acme", "auth-widgets")
+	assertAccounts(t, e.accounts(p), "auth-personal", "auth-acme", "auth-widgets")
 	if p.Identity.Subject != "1001" || p.Identity.Login != "Alice-GH" || p.User.Email != "alice@gh.example" || !p.User.EmailVerified ||
-		p.Operator || p.AllTenants {
+		p.Operator || p.AllAccounts {
 		t.Fatalf("principal = %+v", p)
 	}
 
 	delete(alice.Orgs, "acme")
 	again := e.principal(e.mustSignIn("github", e.gh, alice))
-	assertTenants(t, e.tenants(again), "auth-personal", "auth-widgets")
+	assertAccounts(t, e.accounts(again), "auth-personal", "auth-widgets")
 	if again.User.ID != p.User.ID {
 		t.Fatalf("second sign-in made user %s, want %s", again.User.ID, p.User.ID)
 	}
 	// A session keeps the grant it signed in with.
-	assertTenants(t, e.tenants(e.principal(firstCookie)), "auth-personal", "auth-acme", "auth-widgets")
+	assertAccounts(t, e.accounts(e.principal(firstCookie)), "auth-personal", "auth-acme", "auth-widgets")
 
 	t.Run("an admin by login", func(t *testing.T) {
 		op := &fakeUser{ID: 1002, Login: "opgh", Email: "op@gh.example"}
-		if p := e.principal(e.mustSignIn("github", e.gh, op)); !p.Operator || !p.CanRead(e.tenantID["auth-acme"]) {
+		if p := e.principal(e.mustSignIn("github", e.gh, op)); !p.Operator || !p.CanRead(e.accountID["auth-acme"]) {
 			t.Fatalf("principal = %+v, want an admin", p)
 		}
 	})
 	t.Run("a mapped account", func(t *testing.T) {
 		bob := &fakeUser{ID: 1003, Login: "bob", Orgs: map[string]string{"mapped-org": "member"}}
-		assertTenants(t, e.tenants(e.principal(e.mustSignIn("github", e.gh, bob))), "auth-acme")
+		assertAccounts(t, e.accounts(e.principal(e.mustSignIn("github", e.gh, bob))), "auth-acme")
 	})
 	t.Run("a stranger is refused", func(t *testing.T) {
 		assertFailed(t, e.signIn("github", e.gh, &fakeUser{ID: 1004, Login: "mallory"}, ""), http.StatusForbidden, "not_allowed")

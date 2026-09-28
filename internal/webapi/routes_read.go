@@ -26,23 +26,23 @@ const recentIndexRuns = 20
 // registerReads mounts the read-only API.
 func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me", s.handler(s.getMe))
-	mux.HandleFunc("GET /api/v1/tenants", s.handler(s.listTenants))
-	mux.HandleFunc("GET /api/v1/operator/tenants", s.handler(s.listOperatorTenants))
+	mux.HandleFunc("GET /api/v1/accounts", s.handler(s.listAccounts))
+	mux.HandleFunc("GET /api/v1/operator/accounts", s.handler(s.listOperatorAccounts))
 	mux.HandleFunc("GET /api/v1/operator/instance", s.handler(s.listInstanceSettings))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}", s.tenant(s.getTenant))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/repos", s.tenant(s.listRepos))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/repos/{owner}/{repo}", s.tenant(s.getRepo))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/index-runs", s.tenant(s.listIndexRuns))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/pulls", s.tenant(s.listPulls))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/pulls/{owner}/{repo}/{number}", s.tenant(s.getPull))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/followups", s.tenant(s.listFollowups))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/followups/{commentId}/transcript", s.tenant(s.getFollowupTranscript))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/reviews/{id}", s.tenant(s.getReview))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/reviews/{id}/diff", s.tenant(s.getReviewDiff))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/reviews/{id}/transcript", s.tenant(s.getReviewTranscript))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/reviews/{id}/raw", s.tenant(s.getReviewRaw))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/usage", s.tenant(s.getUsage))
-	mux.HandleFunc("GET /api/v1/tenants/{slug}/queue", s.tenant(s.listQueue))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}", s.account(s.getAccount))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/repos", s.account(s.listRepos))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/repos/{owner}/{repo}", s.account(s.getRepo))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/index-runs", s.account(s.listIndexRuns))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/pulls", s.account(s.listPulls))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/pulls/{owner}/{repo}/{number}", s.account(s.getPull))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/followups", s.account(s.listFollowups))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/followups/{commentId}/transcript", s.account(s.getFollowupTranscript))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/reviews/{id}", s.account(s.getReview))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/reviews/{id}/diff", s.account(s.getReviewDiff))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/reviews/{id}/transcript", s.account(s.getReviewTranscript))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/reviews/{id}/raw", s.account(s.getReviewRaw))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/usage", s.account(s.getUsage))
+	mux.HandleFunc("GET /api/v1/accounts/{slug}/queue", s.account(s.listQueue))
 }
 
 func toUser(a store.User) User {
@@ -53,32 +53,32 @@ func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	me := Me{
 		User:     toUser(p.User),
-		Operator: p.Operator, Tenants: []TenantMembership{},
+		Operator: p.Operator, Accounts: []AccountMembership{},
 	}
 	for _, t := range readable(s.current.Get(), p) {
-		me.Tenants = append(me.Tenants, TenantMembership{Slug: t.Slug, Role: roleOn(p), ManagedBy: t.Origin()})
+		me.Accounts = append(me.Accounts, AccountMembership{Slug: t.Slug, Role: roleOn(p), ManagedBy: t.Origin()})
 	}
 	writeJSON(w, http.StatusOK, me)
 	return nil
 }
 
-// readable lists the file's tenants p may read, in file order.
-func readable(file *configfile.File, p *auth.Principal) []*configfile.Tenant {
-	var out []*configfile.Tenant
-	for i := range file.Tenants {
-		if p.CanRead(file.Tenants[i].ID()) {
-			out = append(out, &file.Tenants[i])
+// readable lists the file's accounts p may read, in file order.
+func readable(file *configfile.File, p *auth.Principal) []*configfile.Account {
+	var out []*configfile.Account
+	for i := range file.Accounts {
+		if p.CanRead(file.Accounts[i].ID()) {
+			out = append(out, &file.Accounts[i])
 		}
 	}
 	return out
 }
 
-func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) error {
+func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	file := s.current.Get()
-	out := []TenantSummary{}
+	out := []AccountSummary{}
 	for _, t := range readable(file, p) {
-		sum, err := s.tenantSummary(r.Context(), file, t, roleOn(p))
+		sum, err := s.accountSummary(r.Context(), file, t, roleOn(p))
 		if err != nil {
 			return err
 		}
@@ -88,17 +88,17 @@ func (s *Server) listTenants(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (s *Server) tenantSummary(ctx context.Context, file *configfile.File, t *configfile.Tenant, role auth.Role) (TenantSummary, error) {
-	var stats store.TenantStats
-	err := s.store.WithTenant(ctx, t.ID(), func(tx pgx.Tx) error {
+func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *configfile.Account, role auth.Role) (AccountSummary, error) {
+	var stats store.AccountStats
+	err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
 		var err error
-		stats, err = store.ReadTenantStats(ctx, tx)
+		stats, err = store.ReadAccountStats(ctx, tx)
 		return err
 	})
 	if err != nil {
-		return TenantSummary{}, err
+		return AccountSummary{}, err
 	}
-	return TenantSummary{
+	return AccountSummary{
 		Slug: t.Slug, ManagedBy: t.Origin(), Role: role, Connections: stats.Connections, Repositories: stats.Repositories,
 		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "", "").Limits),
 	}, nil
@@ -111,17 +111,17 @@ func monthUsage(m store.MonthUsage, l configfile.Limits) MonthUsage {
 	}
 }
 
-// listOperatorTenants lists every tenant of the running configuration and
-// every dashboard tenant stored but not part of it. It is reported as a
+// listOperatorAccounts lists every account of the running configuration and
+// every dashboard account stored but not part of it. It is reported as a
 // missing route to anyone but an operator.
-func (s *Server) listOperatorTenants(w http.ResponseWriter, r *http.Request) error {
+func (s *Server) listOperatorAccounts(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	if !p.Operator {
 		return errNotFound("route")
 	}
 	ctx := r.Context()
 	file := s.current.Get()
-	stored, err := s.store.DashboardTenants(ctx)
+	stored, err := s.store.DashboardAccounts(ctx)
 	if err != nil {
 		return err
 	}
@@ -129,32 +129,32 @@ func (s *Server) listOperatorTenants(w http.ResponseWriter, r *http.Request) err
 	for _, d := range stored {
 		revisions[d.Slug] = d.Revision
 	}
-	out := []OperatorTenant{}
-	for i := range file.Tenants {
-		t := &file.Tenants[i]
-		sum, err := s.tenantSummary(ctx, file, t, auth.RoleAdmin)
+	out := []OperatorAccount{}
+	for i := range file.Accounts {
+		t := &file.Accounts[i]
+		sum, err := s.accountSummary(ctx, file, t, auth.RoleAdmin)
 		if err != nil {
 			return err
 		}
-		out = append(out, OperatorTenant{TenantSummary: sum, Live: true, Revision: revisions[t.Slug]})
+		out = append(out, OperatorAccount{AccountSummary: sum, Live: true, Revision: revisions[t.Slug]})
 		delete(revisions, t.Slug)
 	}
 	for _, d := range stored {
 		if rev, ok := revisions[d.Slug]; ok {
-			out = append(out, OperatorTenant{
+			out = append(out, OperatorAccount{
 				Slug: d.Slug, ManagedBy: configfile.OriginDashboard, Role: auth.RoleAdmin,
 				Revision: rev,
 			})
 		}
 	}
 	for _, sk := range file.Skipped() {
-		out = append(out, OperatorTenant{Slug: sk.Slug, ManagedBy: configfile.OriginFile, Role: auth.RoleAdmin, Conflict: sk.Reason})
+		out = append(out, OperatorAccount{Slug: sk.Slug, ManagedBy: configfile.OriginFile, Role: auth.RoleAdmin, Conflict: sk.Reason})
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
-func (s *Server) getTenant(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
 	var month store.MonthUsage
 	var webhooks map[string]time.Time
@@ -168,15 +168,15 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request, t *tenantScop
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.tenant, "", "")
-	d := TenantDetail{
-		Slug: t.tenant.Slug, ManagedBy: t.tenant.Origin(), Role: t.role(), Connections: []Connection{},
+	settings := t.file.Settings(t.account, "", "")
+	d := AccountDetail{
+		Slug: t.account.Slug, ManagedBy: t.account.Origin(), Role: t.role(), Connections: []Connection{},
 		Models: models(settings.Models), Limits: limits(settings.Limits), Filter: filterSource(settings),
 		Usage: monthUsage(month, settings.Limits),
 	}
-	for i := range t.tenant.Connections {
-		in := connection(&t.tenant.Connections[i])
-		if at, ok := webhooks[t.tenant.Connections[i].ID()]; ok {
+	for i := range t.account.Connections {
+		in := connection(&t.account.Connections[i])
+		if at, ok := webhooks[t.account.Connections[i].ID()]; ok {
 			in.LastWebhookAt = &at
 		}
 		d.Connections = append(d.Connections, in)
@@ -208,7 +208,7 @@ func filterSource(s configfile.Settings) string {
 	return s.Filter.Source()
 }
 
-func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	page, err := parsePage(r)
 	if err != nil {
 		return err
@@ -242,7 +242,7 @@ func repository(r store.RepoRow) Repository {
 	return out
 }
 
-// findRepo resolves {owner}/{repo}, and ?connection= when a tenant has
+// findRepo resolves {owner}/{repo}, and ?connection= when an account has
 // the same repository under two connections.
 func findRepo(ctx context.Context, tx pgx.Tx, r *http.Request) (store.RepoRow, error) {
 	return lookupRepo(ctx, tx, r.PathValue("owner")+"/"+r.PathValue("repo"), r.URL.Query().Get("connection"))
@@ -263,7 +263,7 @@ func lookupRepo(ctx context.Context, tx pgx.Tx, name, connection string) (store.
 	return row, err
 }
 
-func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
 	var row store.RepoRow
 	var runs []store.IndexRunRow
@@ -287,9 +287,9 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope)
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.tenant, row.Connection, row.FullName)
+	settings := t.file.Settings(t.account, row.Connection, row.FullName)
 	d := RepoDetail{
-		Repository: repository(row), Settings: repoSettings(settings), Sources: t.file.Sources(t.tenant, row.Connection, row.FullName),
+		Repository: repository(row), Settings: repoSettings(settings), Sources: t.file.Sources(t.account, row.Connection, row.FullName),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
 	}
 	writeJSON(w, http.StatusOK, d)
@@ -375,7 +375,7 @@ func repoFilter(ctx context.Context, tx pgx.Tx, r *http.Request) (string, error)
 	return row.ID, err
 }
 
-func (s *Server) listIndexRuns(w http.ResponseWriter, r *http.Request, t *tenantScope) error {
+func (s *Server) listIndexRuns(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	page, err := parsePage(r)
 	if err != nil {
 		return err
@@ -405,7 +405,7 @@ func (s *Server) listInstanceSettings(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-// instanceSettings are the settings no tenant owns: this process's
+// instanceSettings are the settings no account owns: this process's
 // environment, then the file's instance blocks.
 func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting {
 	out := []InstanceSetting{}

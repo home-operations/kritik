@@ -21,7 +21,7 @@ import (
 	"github.com/home-operations/kritik/internal/prfilter"
 )
 
-// nameRe bounds connection and tenant names to what is safe in a URL path
+// nameRe bounds connection and account names to what is safe in a URL path
 // segment, a Kubernetes label value and a log line.
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
@@ -95,17 +95,17 @@ func (f *File) resolve() error {
 		return fmt.Errorf("configfile: defaults.filter: %w", err)
 	}
 
-	for ti := range f.Tenants {
-		if err := f.Tenants[ti].resolve(fmt.Sprintf("tenants[%d]", ti), fileRefs); err != nil {
+	for ti := range f.Accounts {
+		if err := f.Accounts[ti].resolve(fmt.Sprintf("accounts[%d]", ti), fileRefs); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// resolve reads the tenant's secret references under refs and compiles its
+// resolve reads the account's secret references under refs and compiles its
 // filters; where prefixes every error.
-func (t *Tenant) resolve(where string, refs refPolicy) error {
+func (t *Account) resolve(where string, refs refPolicy) error {
 	if err := t.compile(); err != nil {
 		return fmt.Errorf("configfile: %s.filter: %w", where, err)
 	}
@@ -171,13 +171,13 @@ func (f *File) validate() error {
 	if err := f.Auth.validate(); err != nil {
 		return err
 	}
-	return f.validateTenants()
+	return f.validateAccounts()
 }
 
 // repositoryConnection is the connection a repository entry binds to,
 // or an error saying why it binds to none: the connection it names does
 // not own it, no connection owns it, or several do and it names none.
-func (t *Tenant) repositoryConnection(r *Repository, where string) (*Connection, error) {
+func (t *Account) repositoryConnection(r *Repository, where string) (*Connection, error) {
 	owner, _, _ := strings.Cut(r.Name, "/")
 	var owners []*Connection
 	for i := range t.Connections {
@@ -192,16 +192,16 @@ func (t *Tenant) repositoryConnection(r *Repository, where string) (*Connection,
 	}
 	switch {
 	case r.Connection != "":
-		return nil, fmt.Errorf("configfile: %s.connection %q is not a connection of tenant %q serving account %q",
+		return nil, fmt.Errorf("configfile: %s.connection %q is not a connection of account %q serving account %q",
 			where, r.Connection, t.Slug, owner)
 	case len(owners) == 0:
-		return nil, fmt.Errorf("configfile: %s.name %q: no connection in tenant %q serves account %q", where, r.Name, t.Slug, owner)
+		return nil, fmt.Errorf("configfile: %s.name %q: no connection in account %q serves account %q", where, r.Name, t.Slug, owner)
 	case len(owners) > 1:
 		names := make([]string, len(owners))
 		for i, in := range owners {
 			names[i] = in.Name
 		}
-		return nil, fmt.Errorf("configfile: %s.name %q: connections %s of tenant %q all serve account %q; set connection to one of them",
+		return nil, fmt.Errorf("configfile: %s.name %q: connections %s of account %q all serve account %q; set connection to one of them",
 			where, r.Name, strings.Join(names, ", "), t.Slug, owner)
 	}
 	return owners[0], nil
@@ -275,7 +275,7 @@ func (f *File) validateProviders() error {
 	return nil
 }
 
-// validateRunnerDeadline checks that a tenant's runner.activeDeadlineSeconds is
+// validateRunnerDeadline checks that an account's runner.activeDeadlineSeconds is
 // non-negative and, once converted to a job timeout, does not exceed River's cap.
 func validateRunnerDeadline(where string, seconds int64) error {
 	if seconds < 0 {
@@ -290,7 +290,7 @@ func validateRunnerDeadline(where string, seconds int64) error {
 	return nil
 }
 
-func (f *File) validateTenants() error {
+func (f *File) validateAccounts() error {
 	if err := checkLimits("defaults.limits", f.Defaults.Limits); err != nil {
 		return err
 	}
@@ -298,14 +298,14 @@ func (f *File) validateTenants() error {
 		return err
 	}
 
-	if len(f.Tenants) == 0 {
-		return errors.New("configfile: tenants must list at least one tenant")
+	if len(f.Accounts) == 0 {
+		return errors.New("configfile: accounts must list at least one account")
 	}
 	slugs := map[string]string{}
 	connections := map[string]string{}
-	for ti := range f.Tenants {
-		t := &f.Tenants[ti]
-		if err := f.validateTenant(t.where(ti), t, slugs, connections); err != nil {
+	for ti := range f.Accounts {
+		t := &f.Accounts[ti]
+		if err := f.validateAccount(t.where(ti), t, slugs, connections); err != nil {
 			if t.Origin() == OriginDashboard {
 				return &MergeError{Slug: t.Slug, Err: err}
 			}
@@ -315,10 +315,10 @@ func (f *File) validateTenants() error {
 	return nil
 }
 
-// validateTenant checks one tenant. slugs and connections record the
-// slugs and connection names already seen, so duplicates across tenants
+// validateAccount checks one account. slugs and connections record the
+// slugs and connection names already seen, so duplicates across accounts
 // are caught whichever origin each has.
-func (f *File) validateTenant(where string, t *Tenant, slugs, connections map[string]string) error {
+func (f *File) validateAccount(where string, t *Account, slugs, connections map[string]string) error {
 	if !nameRe.MatchString(t.Slug) {
 		return fmt.Errorf("configfile: %s.slug %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", where, t.Slug)
 	}
@@ -329,7 +329,7 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, connections map[st
 	if err := checkLimits(where+".limits", t.Limits); err != nil {
 		return err
 	}
-	if err := f.validateTenantProviders(where, t); err != nil {
+	if err := f.validateAccountProviders(where, t); err != nil {
 		return err
 	}
 	if err := f.validateOverrides(where, t, &t.Overrides); err != nil {
@@ -349,11 +349,11 @@ func (f *File) validateTenant(where string, t *Tenant, slugs, connections map[st
 			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", iwhere, in.Name)
 		}
 		if owner, dup := connections[in.Name]; dup {
-			return fmt.Errorf("configfile: %s.name %q duplicates a connection in tenant %q; names are hook paths and must be unique",
+			return fmt.Errorf("configfile: %s.name %q duplicates a connection in account %q; names are hook paths and must be unique",
 				iwhere, in.Name, owner)
 		}
 		connections[in.Name] = t.Slug
-		if err := validateAccounts(in.Accounts, iwhere); err != nil {
+		if err := validateAccountNames(in.Accounts, iwhere); err != nil {
 			return err
 		}
 		if err := in.validate(iwhere); err != nil {
@@ -395,9 +395,9 @@ func (o *Overrides) compile() (err error) {
 }
 
 // validateOverrides checks the settings one scope writes: its models name
-// providers declared for tenant t (nil for the defaults), and its settle,
+// providers declared for account t (nil for the defaults), and its settle,
 // ignore globs, mode, agent, incremental and review keys are in range.
-func (f *File) validateOverrides(where string, t *Tenant, r *Overrides) error {
+func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	if err := f.checkModels(where+".models", t, r.Models); err != nil {
 		return err
 	}
@@ -542,7 +542,7 @@ func (in Connection) validate(where string) error {
 	return nil
 }
 
-func (f *File) checkModels(where string, t *Tenant, m ModelsSpec) error {
+func (f *File) checkModels(where string, t *Account, m ModelsSpec) error {
 	for role, r := range map[string]*ModelRef{"review": m.Review, "fallback": m.Fallback} {
 		if r == nil || *r == "" {
 			continue
@@ -555,8 +555,8 @@ func (f *File) checkModels(where string, t *Tenant, m ModelsSpec) error {
 }
 
 // checkModelRef rejects a model reference that is not
-// "<provider>/<model>" of a provider declared for tenant t or in the file.
-func (f *File) checkModelRef(where string, t *Tenant, ref ModelRef) error {
+// "<provider>/<model>" of a provider declared for account t or in the file.
+func (f *File) checkModelRef(where string, t *Account, ref ModelRef) error {
 	p := ref.Provider()
 	if p == "" || ref.Model() == "" {
 		return fmt.Errorf("configfile: %s must be \"<provider>/<model>\", got %q", where, ref)
@@ -570,7 +570,7 @@ func (f *File) checkModelRef(where string, t *Tenant, ref ModelRef) error {
 // validateAllow checks one scope's bounds name what a repository could
 // choose: review modes, models of declared providers, bare command names,
 // positive limits and a settle time that is not negative.
-func (f *File) validateAllow(where string, t *Tenant, a *Allow) error {
+func (f *File) validateAllow(where string, t *Account, a *Allow) error {
 	for i, m := range a.Modes {
 		if !m.Valid() {
 			return fmt.Errorf("configfile: %s.modes[%d] must be %s or %s, got %q", where, i, ReviewSingle, ReviewAgentic, m)
@@ -696,7 +696,7 @@ func (r SecretRef) empty() bool { return r.Env == "" && r.File == "" && r.Sealed
 
 // refPolicy is where a SecretRef may come from. The operator's file may read
 // the environment and filesystem but carries no sealed values; a
-// dashboard-managed tenant carries only sealed values, opened with open.
+// dashboard-managed account carries only sealed values, opened with open.
 type refPolicy struct {
 	dashboard bool
 	open      Opener
@@ -715,9 +715,9 @@ func (r SecretRef) resolve(refs refPolicy) (Secret, error) {
 	case r.Env != "" && r.File != "":
 		return Secret{}, errors.New("set either env or file, not both")
 	case r.Sealed != "" && !refs.dashboard:
-		return Secret{}, errors.New("sealed values are only valid in dashboard-managed tenants")
+		return Secret{}, errors.New("sealed values are only valid in dashboard-managed accounts")
 	case refs.dashboard && (r.Env != "" || r.File != ""):
-		return Secret{}, errors.New("dashboard-managed tenants take sealed values, not env or file references")
+		return Secret{}, errors.New("dashboard-managed accounts take sealed values, not env or file references")
 	case r.Sealed != "":
 		if refs.open == nil {
 			return Secret{}, errors.New("no key to open sealed values is configured")

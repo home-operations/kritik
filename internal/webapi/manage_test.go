@@ -57,21 +57,21 @@ func TestManagementRefusals(t *testing.T) {
 		status int
 		code   ErrorCode
 	}{
-		{"create needs an operator", member, mutate("POST", "/api/v1/tenants", spec), 403, CodeForbidden},
-		{"create needs the sealing key", operator, mutate("POST", "/api/v1/tenants", spec), 503, CodeManagementDisabled},
-		{"update of a file tenant", member, mutate("PUT", "/api/v1/tenants/alpha/config", `{"revision":1,"spec":{}}`), 403, CodeFileManaged},
-		{"update of a file tenant by an operator", operator, mutate("PUT", "/api/v1/tenants/alpha/config", `{}`), 403, CodeFileManaged},
-		{"update of an unreadable tenant", member, mutate("PUT", "/api/v1/tenants/beta/config", `{}`), 404, CodeNotFound},
-		{"update of an unknown tenant", member, mutate("PUT", "/api/v1/tenants/gamma/config", `{}`), 404, CodeNotFound},
-		{"update needs the sealing key", operator, mutate("PUT", "/api/v1/tenants/gamma/config", `{}`), 503, CodeManagementDisabled},
-		{"delete needs an operator", member, mutate("DELETE", "/api/v1/tenants/gamma?revision=1", ""), 403, CodeForbidden},
-		{"delete of a file tenant", operator, mutate("DELETE", "/api/v1/tenants/alpha?revision=1", ""), 403, CodeFileManaged},
-		{"config of an unreadable tenant", member, httptest.NewRequest("GET", "/api/v1/tenants/beta/config", nil), 404, CodeNotFound},
-		{"rerun as a member", member, mutate("POST", "/api/v1/tenants/alpha/pulls/o/r/1/rerun", ""), 403, CodeForbidden},
-		{"cancel as a member", member, mutate("POST", "/api/v1/tenants/alpha/reviews/x/cancel", ""), 403, CodeForbidden},
-		{"reindex as a member", member, mutate("POST", "/api/v1/tenants/alpha/repos/o/r/reindex", ""), 403, CodeForbidden},
-		{"rerun without actions", operator, mutate("POST", "/api/v1/tenants/alpha/pulls/o/r/1/rerun", ""), 503, CodeActionsDisabled},
-		{"tenant audit as a member", member, httptest.NewRequest("GET", "/api/v1/tenants/alpha/audit", nil), 403, CodeForbidden},
+		{"create needs an operator", member, mutate("POST", "/api/v1/accounts", spec), 403, CodeForbidden},
+		{"create needs the sealing key", operator, mutate("POST", "/api/v1/accounts", spec), 503, CodeManagementDisabled},
+		{"update of a file account", member, mutate("PUT", "/api/v1/accounts/alpha/config", `{"revision":1,"spec":{}}`), 403, CodeFileManaged},
+		{"update of a file account by an operator", operator, mutate("PUT", "/api/v1/accounts/alpha/config", `{}`), 403, CodeFileManaged},
+		{"update of an unreadable account", member, mutate("PUT", "/api/v1/accounts/beta/config", `{}`), 404, CodeNotFound},
+		{"update of an unknown account", member, mutate("PUT", "/api/v1/accounts/gamma/config", `{}`), 404, CodeNotFound},
+		{"update needs the sealing key", operator, mutate("PUT", "/api/v1/accounts/gamma/config", `{}`), 503, CodeManagementDisabled},
+		{"delete needs an operator", member, mutate("DELETE", "/api/v1/accounts/gamma?revision=1", ""), 403, CodeForbidden},
+		{"delete of a file account", operator, mutate("DELETE", "/api/v1/accounts/alpha?revision=1", ""), 403, CodeFileManaged},
+		{"config of an unreadable account", member, httptest.NewRequest("GET", "/api/v1/accounts/beta/config", nil), 404, CodeNotFound},
+		{"rerun as a member", member, mutate("POST", "/api/v1/accounts/alpha/pulls/o/r/1/rerun", ""), 403, CodeForbidden},
+		{"cancel as a member", member, mutate("POST", "/api/v1/accounts/alpha/reviews/x/cancel", ""), 403, CodeForbidden},
+		{"reindex as a member", member, mutate("POST", "/api/v1/accounts/alpha/repos/o/r/reindex", ""), 403, CodeForbidden},
+		{"rerun without actions", operator, mutate("POST", "/api/v1/accounts/alpha/pulls/o/r/1/rerun", ""), 503, CodeActionsDisabled},
+		{"account audit as a member", member, httptest.NewRequest("GET", "/api/v1/accounts/alpha/audit", nil), 403, CodeForbidden},
 		{"admin audit as a member", member, httptest.NewRequest("GET", "/api/v1/operator/audit", nil), 403, CodeForbidden},
 	}
 	for _, tt := range tests {
@@ -95,7 +95,7 @@ func TestCreateRefusesAFileSlug(t *testing.T) {
 		t.Fatal(err)
 	}
 	ts.srv.keyring = kr
-	w := ts.as(&auth.Principal{Operator: true}, mutate("POST", "/api/v1/tenants", `{"slug":"alpha","spec":{"slug":"alpha"}}`))
+	w := ts.as(&auth.Principal{Operator: true}, mutate("POST", "/api/v1/accounts", `{"slug":"alpha","spec":{"slug":"alpha"}}`))
 	if w.Code != http.StatusConflict || decodeError(t, w).Code != CodeSlugTaken {
 		t.Fatalf("status = %d: %s, want 409 slug_taken", w.Code, w.Body)
 	}
@@ -105,9 +105,9 @@ func TestManagementNeedsSameOrigin(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
 	operator := &auth.Principal{Operator: true}
 	for _, route := range []struct{ method, path string }{
-		{"POST", "/api/v1/tenants"}, {"PUT", "/api/v1/tenants/alpha/config"}, {"DELETE", "/api/v1/tenants/alpha"},
-		{"POST", "/api/v1/tenants/alpha/pulls/o/r/1/rerun"}, {"POST", "/api/v1/tenants/alpha/reviews/x/cancel"},
-		{"POST", "/api/v1/tenants/alpha/repos/o/r/reindex"},
+		{"POST", "/api/v1/accounts"}, {"PUT", "/api/v1/accounts/alpha/config"}, {"DELETE", "/api/v1/accounts/alpha"},
+		{"POST", "/api/v1/accounts/alpha/pulls/o/r/1/rerun"}, {"POST", "/api/v1/accounts/alpha/reviews/x/cancel"},
+		{"POST", "/api/v1/accounts/alpha/repos/o/r/reindex"},
 	} {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
 			req := httptest.NewRequest(route.method, route.path, strings.NewReader("{}"))
@@ -119,13 +119,13 @@ func TestManagementNeedsSameOrigin(t *testing.T) {
 	}
 }
 
-func TestFileTenantConfigIsRedacted(t *testing.T) {
+func TestFileAccountConfigIsRedacted(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	w := ts.as(memberOf(t, ts.file, "alpha"), httptest.NewRequest("GET", "/api/v1/tenants/alpha/config", nil))
+	w := ts.as(memberOf(t, ts.file, "alpha"), httptest.NewRequest("GET", "/api/v1/accounts/alpha/config", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
-	var c TenantConfig
+	var c AccountConfig
 	if err := json.Unmarshal(w.Body.Bytes(), &c); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestFileTenantConfigIsRedacted(t *testing.T) {
 	if body := w.Body.String(); strings.Contains(body, "KRITIK_TEST_TOKEN") || !strings.Contains(body, `"privateKey":{"set":true}`) {
 		t.Errorf("spec is not redacted: %s", body)
 	}
-	if in := c.Inherited; in.Tenant.Mode != configfile.ReviewSingle || in.TenantSources["mode"] != configfile.SourceDefault ||
+	if in := c.Inherited; in.Account.Mode != configfile.ReviewSingle || in.AccountSources["mode"] != configfile.SourceDefault ||
 		in.Repository.Limits.Concurrency != configfile.DefaultConcurrency || in.RepositorySources["limits"] != configfile.SourceDefault {
 		t.Errorf("inherited = %+v", in)
 	}

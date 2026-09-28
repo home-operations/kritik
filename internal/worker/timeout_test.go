@@ -25,7 +25,7 @@ providers:
 defaults:
   models:
     review: gateway/review-model
-tenants:
+accounts:
   - slug: acme
     connections:
       - name: acme-bot
@@ -64,8 +64,8 @@ func TestJobTimeouts(t *testing.T) {
 		t.Fatal(err)
 	}
 	current := configfile.NewCurrent(file)
-	acme, _ := file.Tenant("acme")
-	globex, _ := file.Tenant("globex")
+	acme, _ := file.Account("acme")
+	globex, _ := file.Account("globex")
 	acmeRepo := func(name string) string { return configfile.RepositoryID(acme.Connections[0].ID(), name) }
 	globexRepo := configfile.RepositoryID(globex.Connections[0].ID(), "globex/app")
 
@@ -74,38 +74,38 @@ func TestJobTimeouts(t *testing.T) {
 	followUp := &FollowUp{}
 	tests := []struct {
 		name         string
-		tenantID     string
+		accountID    string
 		repositoryID string
 		review       time.Duration
 		index        time.Duration
 		followUp     time.Duration
 	}{
 		// 15m runner + 15m lease wait + 15m publish; 15m + 60m to embed.
-		{name: "single mode", tenantID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: 45 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
+		{name: "single mode", accountID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: 45 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 		// The agent's 20m plus 5m of fetch headroom outlasts the runner deadline.
-		{name: "agentic mode", tenantID: acme.ID(), repositoryID: acmeRepo("acme/agentic"), review: 55 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
-		{name: "agentic with a longer agent timeout", tenantID: acme.ID(), repositoryID: acmeRepo("acme/slow-agent"),
+		{name: "agentic mode", accountID: acme.ID(), repositoryID: acmeRepo("acme/agentic"), review: 55 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
+		{name: "agentic with a longer agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/slow-agent"),
 			review: 85 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
-		// The tenant's runner deadline is configfile's max allowed value; index lands exactly on MaxJobTimeout.
-		{name: "tenant runner deadline at the max", tenantID: globex.ID(), repositoryID: globexRepo,
+		// The account's runner deadline is configfile's max allowed value; index lands exactly on MaxJobTimeout.
+		{name: "account runner deadline at the max", accountID: globex.ID(), repositoryID: globexRepo,
 			review: jobtimeout.MaxRunnerDeadline + jobtimeout.LeaseWaitHeadroom + jobtimeout.PublishHeadroom,
 			index:  jobtimeout.MaxRunnerDeadline + jobtimeout.IndexWriteHeadroom, followUp: 30 * time.Minute},
-		{name: "unknown tenant", tenantID: "missing", repositoryID: "missing", review: 45 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
+		{name: "unknown account", accountID: "missing", repositoryID: "missing", review: 45 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.review <= time.Minute || tt.index <= time.Minute || tt.followUp <= time.Minute {
 				t.Fatal("a job timeout must outlast River's one-minute default")
 			}
-			got := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{TenantID: tt.tenantID, RepositoryID: tt.repositoryID}})
+			got := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: tt.accountID, RepositoryID: tt.repositoryID}})
 			if got != tt.review {
 				t.Errorf("review timeout = %s, want %s", got, tt.review)
 			}
-			got = index.Timeout(&river.Job[jobs.IndexArgs]{Args: jobs.IndexArgs{TenantID: tt.tenantID, RepositoryID: tt.repositoryID}})
+			got = index.Timeout(&river.Job[jobs.IndexArgs]{Args: jobs.IndexArgs{AccountID: tt.accountID, RepositoryID: tt.repositoryID}})
 			if got != tt.index {
 				t.Errorf("index timeout = %s, want %s", got, tt.index)
 			}
-			got = followUp.Timeout(&river.Job[jobs.FollowUpArgs]{Args: jobs.FollowUpArgs{TenantID: tt.tenantID, RepositoryID: tt.repositoryID}})
+			got = followUp.Timeout(&river.Job[jobs.FollowUpArgs]{Args: jobs.FollowUpArgs{AccountID: tt.accountID, RepositoryID: tt.repositoryID}})
 			if got != tt.followUp {
 				t.Errorf("follow-up timeout = %s, want %s", got, tt.followUp)
 			}

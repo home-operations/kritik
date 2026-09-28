@@ -31,7 +31,7 @@ var goldenReview = Review{
 	CreatedAt: t0, FinishedAt: &t1, SkipReason: repoconfig.SkipFiltered, Error: "",
 }
 
-var goldenSummary = TenantSummary{
+var goldenSummary = AccountSummary{
 	Slug: "alpha", ManagedBy: configfile.OriginDashboard, Role: auth.RoleAdmin, Connections: 1, Repositories: 3, Reviews7d: 9,
 	Usage: MonthUsage{Tokens: 5000, CostUSD: 1.5, TokensPerMonth: 1000000, ReviewsToday: 2, ReviewsPerDay: 50},
 }
@@ -88,11 +88,11 @@ var goldens = map[string]any{
 	"page": Page[Repository]{Items: []Repository{goldenRepo}, NextCursor: new("opaque")},
 	"me": Me{
 		User:     User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"},
-		Operator: true, Tenants: []TenantMembership{{Slug: "alpha", Role: auth.RoleMember, ManagedBy: configfile.OriginFile}},
+		Operator: true, Accounts: []AccountMembership{{Slug: "alpha", Role: auth.RoleMember, ManagedBy: configfile.OriginFile}},
 	},
-	"tenant_summary":  goldenSummary,
-	"operator_tenant": OperatorTenant{TenantSummary: goldenSummary, Live: false, Revision: 3},
-	"tenant_detail": TenantDetail{
+	"account_summary":  goldenSummary,
+	"operator_account": OperatorAccount{AccountSummary: goldenSummary, Live: false, Revision: 3},
+	"account_detail": AccountDetail{
 		Slug: "alpha", ManagedBy: configfile.OriginFile, Role: auth.RoleMember,
 		Connections: []Connection{{
 			Name: "alpha-bot", Forge: configfile.ForgeGitHub, Accounts: []string{"alpha"},
@@ -196,8 +196,8 @@ var goldens = map[string]any{
 		AttemptedAt: &t0, FinalizedAt: nil, LastError: "boom",
 		Args: JobArgs{Repository: "alpha/one", Number: 7, Head: "abc123", Trigger: "push", CommentID: 0},
 	},
-	"event": Event{Kind: store.EventReview, Tenant: "alpha", ID: "rev-1", ReviewID: new("rev-1")},
-	"error": ErrorBody{Code: CodeNotFound, Message: "tenant not found", Details: json.RawMessage(`{"slug":"x"}`)},
+	"event": Event{Kind: store.EventReview, Account: "alpha", ID: "rev-1", ReviewID: new("rev-1")},
+	"error": ErrorBody{Code: CodeNotFound, Message: "account not found", Details: json.RawMessage(`{"slug":"x"}`)},
 }
 
 func TestDTOGolden(t *testing.T) {

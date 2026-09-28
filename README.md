@@ -37,13 +37,13 @@ Kubernetes Job pod that holds no secrets.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
   answer in the thread.
 - **Providers and limits.** OpenRouter, OpenAI and Anthropic adapters, with
-  per-tenant concurrency, daily review and monthly token caps. The provider
+  per-account concurrency, daily review and monthly token caps. The provider
   key never enters a runner pod: the agent reaches its model through the
   worker's gateway.
 - **Repository overrides.** A `.kritik.yaml`, read from the merge-base, can
   narrow the operator's settings and bring its own instructions and comment
   templates.
-- **Dashboard.** Sign-in, dashboard-managed tenants, live review state, full
+- **Dashboard.** Sign-in, dashboard-managed accounts, live review state, full
   model transcripts and an audit log.
 
 ## Installing

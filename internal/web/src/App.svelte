@@ -77,14 +77,14 @@
     navigate({ name: 'signin' });
   }
 
-  // currentSlug reads the tenant slug off whatever route is active, falling
-  // back to the first tenant so the nav has somewhere to point before the
+  // currentSlug reads the account slug off whatever route is active, falling
+  // back to the first account so the nav has somewhere to point before the
   // user has ever picked one explicitly.
-  const currentSlug = $derived('slug' in router.route ? router.route.slug : me?.tenants[0]?.slug);
-  const currentTenant = $derived(me?.tenants.find((t) => t.slug === currentSlug));
+  const currentSlug = $derived('slug' in router.route ? router.route.slug : me?.accounts[0]?.slug);
+  const currentAccount = $derived(me?.accounts.find((t) => t.slug === currentSlug));
 
-  function switchTenant(slug: string): void {
-    navigate({ name: 'tenant', slug });
+  function switchAccount(slug: string): void {
+    navigate({ name: 'account', slug });
   }
 
   const themeIconPath = $derived(
@@ -172,28 +172,28 @@
               aria-current={router.route.name === 'overview' ? 'page' : undefined}
               href={href({ name: 'overview' })}
             >
-              <Icon path={mdiViewGridOutline} size={15} /> All tenants
+              <Icon path={mdiViewGridOutline} size={15} /> All accounts
             </a>
           </nav>
-          {#if me.tenants.length > 0}
+          {#if me.accounts.length > 0}
             <select
-              class="tenant-switch"
-              aria-label="Switch tenant"
+              class="account-switch"
+              aria-label="Switch account"
               value={currentSlug}
-              onchange={(e) => switchTenant(e.currentTarget.value)}
+              onchange={(e) => switchAccount(e.currentTarget.value)}
             >
-              {#each me.tenants as t (t.slug)}
+              {#each me.accounts as t (t.slug)}
                 <option value={t.slug}>{t.slug}</option>
               {/each}
             </select>
           {/if}
 
           {#if currentSlug}
-            <nav class="nav" aria-label="Tenant">
+            <nav class="nav" aria-label="Account">
               <a
-                class:active={router.route.name === 'tenant'}
-                aria-current={router.route.name === 'tenant' ? 'page' : undefined}
-                href={href({ name: 'tenant', slug: currentSlug })}
+                class:active={router.route.name === 'account'}
+                aria-current={router.route.name === 'account' ? 'page' : undefined}
+                href={href({ name: 'account', slug: currentSlug })}
               >
                 <Icon path={mdiViewDashboardOutline} size={15} /> Overview
               </a>
@@ -232,7 +232,7 @@
               >
                 <Icon path={mdiClipboardTextClockOutline} size={15} /> Follow-ups
               </a>
-              {#if currentTenant?.role === 'admin' || me?.operator}
+              {#if currentAccount?.role === 'admin' || me?.operator}
                 <a
                   class:active={router.route.name === 'admin'}
                   aria-current={router.route.name === 'admin' ? 'page' : undefined}

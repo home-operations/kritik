@@ -38,18 +38,18 @@ func (k EventKind) String() string { return string(k) }
 // ReviewID is nil for a row whose table has no review_id column, or whose
 // review_id is NULL.
 type Event struct {
-	TenantID string
-	Kind     EventKind
-	ID       string
-	ReviewID *string
+	AccountID string
+	Kind      EventKind
+	ID        string
+	ReviewID  *string
 }
 
 // eventPayload mirrors the JSON kritik_notify_event() publishes.
 type eventPayload struct {
-	TenantID string  `json:"tenant_id"`
-	Kind     string  `json:"kind"`
-	ID       string  `json:"id"`
-	ReviewID *string `json:"review_id"`
+	AccountID string  `json:"account_id"`
+	Kind      string  `json:"kind"`
+	ID        string  `json:"id"`
+	ReviewID  *string `json:"review_id"`
 }
 
 // parseEvent decodes one kritik_events notification payload.
@@ -62,10 +62,10 @@ func parseEvent(payload string) (Event, error) {
 	if !kind.Valid() {
 		return Event{}, fmt.Errorf("store: parse event payload: unknown kind %q", p.Kind)
 	}
-	if p.TenantID == "" || p.ID == "" {
-		return Event{}, fmt.Errorf("store: parse event payload: missing tenant_id or id")
+	if p.AccountID == "" || p.ID == "" {
+		return Event{}, fmt.Errorf("store: parse event payload: missing account_id or id")
 	}
-	return Event{TenantID: p.TenantID, Kind: kind, ID: p.ID, ReviewID: p.ReviewID}, nil
+	return Event{AccountID: p.AccountID, Kind: kind, ID: p.ID, ReviewID: p.ReviewID}, nil
 }
 
 // ListenHandlers bundles the callbacks Listen drives. OnEvent, OnConfig and
@@ -91,7 +91,7 @@ func parseEvent(payload string) (Event, error) {
 // connected is lost, so consumers use OnReconnect to re-fetch whatever
 // state they'd otherwise have learned about incrementally: e.g. the web
 // SSE broadcaster telling browsers to resync, or a config source
-// re-merging tenant specs.
+// re-merging account specs.
 type ListenHandlers struct {
 	OnEvent     func(Event)
 	OnConfig    func(slug string)
@@ -158,7 +158,7 @@ func (w *dropWarner) drop() {
 // resulting callback contract.
 //
 // A malformed kritik_events payload is logged and skipped rather than
-// ending the listener. kritik_config payloads are raw tenant slugs, passed
+// ending the listener. kritik_config payloads are raw account slugs, passed
 // to OnConfig unparsed.
 func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
 	notifications := make(chan func(), listenBufferSize)

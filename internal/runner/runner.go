@@ -115,12 +115,12 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		next = "reviewing"
 	}
 	err = st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
-		// tenant_id is copied from the run row: the runner never receives it
+		// account_id is copied from the run row: the runner never receives it
 		// and cannot invent one, and the policy only opens its own run.
 		_, err := tx.Exec(ctx, `
-			INSERT INTO context_packs (runner_run_id, tenant_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes,
+			INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes,
 				prior_head_sha, delta_diff, delta_paths)
-			SELECT id, tenant_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM runner_runs WHERE id = $1`,
+			SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM runner_runs WHERE id = $1`,
 			p.RunID, p.Head, p.Base, res.PatchID, res.Diff, res.Changed, stagesJSON, filesJSON, repoNotes,
 			priorHead, res.DeltaDiff, deltaPaths)
 		if err != nil {

@@ -21,7 +21,7 @@
 
   let { slug, id, tab = 'summary' }: { slug: string; id: string; tab?: ReviewTab } = $props();
 
-  const base = $derived(`/api/v1/tenants/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(id)}`);
+  const base = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(id)}`);
   const res = new Resource(() => getJSON<ReviewDetail>(base));
   // Bumped on every live refresh so the lazily-loaded tab data refetches too.
   let version = $state(0);
@@ -31,7 +31,7 @@
   });
   $effect(() =>
     live(
-      (e) => e.tenant === slug && e.reviewId === id && !!res.data && isActive(res.data.review.status),
+      (e) => e.account === slug && e.reviewId === id && !!res.data && isActive(res.data.review.status),
       () => {
         void res.load();
         version++;

@@ -28,7 +28,7 @@ import (
 // Sandbox bounds for templates. A repository template is trusted to be
 // written by the repository's maintainers, not to be well behaved: these
 // keep a mistake in one repository's template from stalling or exhausting
-// a worker that serves every tenant. text/template has no operators, so
+// a worker that serves every account. text/template has no operators, so
 // every value a template builds passes through a function, and the
 // bounds are enforced there and on loops.
 const (

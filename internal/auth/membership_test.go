@@ -10,9 +10,9 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
-// tenantsYAML is the tenants the grant tests read forge accounts from.
-const tenantsYAML = `
-tenants:
+// accountsYAML is the accounts the grant tests read forge accounts from.
+const accountsYAML = `
+accounts:
   - slug: personal
     connections:
       - { name: personal-bot, forge: github, accounts: [Alice], app: &app { clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } } }
@@ -31,11 +31,11 @@ tenants:
 // have no mapping still has a way to an admin.
 const adminPassword = "  admin: { password: { env: TEST_AUTH_SECRET } }\n"
 
-// testFile parses an auth block over tenantsYAML.
+// testFile parses an auth block over accountsYAML.
 func testFile(t *testing.T, auth string) *configfile.File {
 	t.Helper()
 	t.Setenv("TEST_AUTH_SECRET", "s3cret")
-	f, err := configfile.Parse([]byte(auth + tenantsYAML))
+	f, err := configfile.Parse([]byte(auth + accountsYAML))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestGrantKey(t *testing.T) {
 		t.Fatal("renaming the admin kept the key")
 	}
 	t.Setenv("TEST_AUTH_SECRET", "rotated")
-	f, err := configfile.Parse([]byte(base + tenantsYAML))
+	f, err := configfile.Parse([]byte(base + accountsYAML))
 	if err != nil {
 		t.Fatal(err)
 	}

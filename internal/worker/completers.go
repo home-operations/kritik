@@ -25,14 +25,14 @@ type stepperEntry struct {
 	stepper model.Stepper
 }
 
-// Stepper returns the adapter for the named provider of tenant t in f: the
-// tenant's own when it declares one by that name, else the file's.
-func (c *Completers) Stepper(f *configfile.File, t *configfile.Tenant, name string) (model.Stepper, error) {
+// Stepper returns the adapter for the named provider of account t in f: the
+// account's own when it declares one by that name, else the file's.
+func (c *Completers) Stepper(f *configfile.File, t *configfile.Account, name string) (model.Stepper, error) {
 	spec, ok := f.Provider(t, name)
 	if !ok {
 		return nil, fmt.Errorf("worker: provider %q is not in the configuration", name)
 	}
-	// Two tenants may each name a provider of their own alike.
+	// Two accounts may each name a provider of their own alike.
 	key := name
 	if t != nil {
 		if _, own := t.Providers[name]; own {

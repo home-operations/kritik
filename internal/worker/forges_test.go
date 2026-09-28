@@ -15,7 +15,7 @@ import (
 func appConnection(t *testing.T, clientID string) *configfile.Connection {
 	t.Helper()
 	file, err := configfile.Parse([]byte(`
-tenants:
+accounts:
   - slug: acme
     connections:
       - name: acme-bot

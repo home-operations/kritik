@@ -16,7 +16,7 @@ import (
 )
 
 const testConfig = `
-tenants:
+accounts:
   - slug: alpha
     connections:
       - name: alpha-bot
@@ -41,11 +41,11 @@ func testFile(t *testing.T) *configfile.File {
 	return f
 }
 
-func tenantIDOf(t *testing.T, f *configfile.File, slug string) string {
+func accountIDOf(t *testing.T, f *configfile.File, slug string) string {
 	t.Helper()
-	tn, ok := f.Tenant(slug)
+	tn, ok := f.Account(slug)
 	if !ok {
-		t.Fatalf("no tenant %s", slug)
+		t.Fatalf("no account %s", slug)
 	}
 	return tn.ID()
 }
@@ -88,12 +88,12 @@ func (ts *testServer) as(p *auth.Principal, r *http.Request) *httptest.ResponseR
 	return w
 }
 
-// memberOf is a member who reads the tenant slug.
+// memberOf is a member who reads the account slug.
 func memberOf(t *testing.T, f *configfile.File, slug string) *auth.Principal {
 	t.Helper()
 	return &auth.Principal{
-		User:    auth.User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com"},
-		Tenants: map[string]bool{tenantIDOf(t, f, slug): true},
+		User:     auth.User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com"},
+		Accounts: map[string]bool{accountIDOf(t, f, slug): true},
 	}
 }
 
@@ -108,7 +108,7 @@ func decodeError(t *testing.T, w *httptest.ResponseRecorder) ErrorBody {
 
 func TestAPIRequiresPrincipal(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	for _, path := range []string{"/api/v1/me", "/api/v1/tenants", "/api/v1/tenants/alpha/repos", "/api/events", "/api/nope"} {
+	for _, path := range []string{"/api/v1/me", "/api/v1/accounts", "/api/v1/accounts/alpha/repos", "/api/events", "/api/nope"} {
 		t.Run(path, func(t *testing.T) {
 			w := ts.as(nil, httptest.NewRequest("GET", path, nil))
 			if w.Code != http.StatusUnauthorized {
@@ -121,15 +121,15 @@ func TestAPIRequiresPrincipal(t *testing.T) {
 	}
 }
 
-func TestTenantScopeHidesUnreadableTenants(t *testing.T) {
+func TestAccountScopeHidesUnreadableAccounts(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
 	alphaMember := memberOf(t, ts.file, "alpha")
 	paths := []string{
-		"/api/v1/tenants/%s", "/api/v1/tenants/%s/repos", "/api/v1/tenants/%s/repos/o/r", "/api/v1/tenants/%s/pulls",
-		"/api/v1/tenants/%s/pulls/o/r/1", "/api/v1/tenants/%s/reviews/x", "/api/v1/tenants/%s/reviews/x/diff",
-		"/api/v1/tenants/%s/reviews/x/transcript", "/api/v1/tenants/%s/reviews/x/raw", "/api/v1/tenants/%s/index-runs",
-		"/api/v1/tenants/%s/followups", "/api/v1/tenants/%s/followups/1/transcript", "/api/v1/tenants/%s/usage",
-		"/api/v1/tenants/%s/queue",
+		"/api/v1/accounts/%s", "/api/v1/accounts/%s/repos", "/api/v1/accounts/%s/repos/o/r", "/api/v1/accounts/%s/pulls",
+		"/api/v1/accounts/%s/pulls/o/r/1", "/api/v1/accounts/%s/reviews/x", "/api/v1/accounts/%s/reviews/x/diff",
+		"/api/v1/accounts/%s/reviews/x/transcript", "/api/v1/accounts/%s/reviews/x/raw", "/api/v1/accounts/%s/index-runs",
+		"/api/v1/accounts/%s/followups", "/api/v1/accounts/%s/followups/1/transcript", "/api/v1/accounts/%s/usage",
+		"/api/v1/accounts/%s/queue",
 	}
 	for _, slug := range []string{"beta", "nope"} {
 		for _, p := range paths {
@@ -147,9 +147,9 @@ func TestTenantScopeHidesUnreadableTenants(t *testing.T) {
 	}
 }
 
-func TestResolveTenant(t *testing.T) {
+func TestResolveAccount(t *testing.T) {
 	f := testFile(t)
-	alpha := tenantIDOf(t, f, "alpha")
+	alpha := accountIDOf(t, f, "alpha")
 	tests := []struct {
 		name     string
 		p        *auth.Principal
@@ -157,16 +157,16 @@ func TestResolveTenant(t *testing.T) {
 		wantRole auth.Role
 		wantErr  bool
 	}{
-		{"member reads own tenant", &auth.Principal{Tenants: map[string]bool{alpha: true}}, "alpha", auth.RoleMember, false},
-		{"member of every tenant", &auth.Principal{AllTenants: true}, "beta", auth.RoleMember, false},
-		{"member of another tenant", &auth.Principal{Tenants: map[string]bool{alpha: true}}, "beta", "", true},
-		{"unknown tenant", &auth.Principal{Operator: true}, "gamma", "", true},
-		{"operator reads any tenant as admin", &auth.Principal{Operator: true}, "beta", auth.RoleAdmin, false},
+		{"member reads own account", &auth.Principal{Accounts: map[string]bool{alpha: true}}, "alpha", auth.RoleMember, false},
+		{"member of every account", &auth.Principal{AllAccounts: true}, "beta", auth.RoleMember, false},
+		{"member of another account", &auth.Principal{Accounts: map[string]bool{alpha: true}}, "beta", "", true},
+		{"unknown account", &auth.Principal{Operator: true}, "gamma", "", true},
+		{"operator reads any account as admin", &auth.Principal{Operator: true}, "beta", auth.RoleAdmin, false},
 		{"no memberships", &auth.Principal{}, "alpha", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sc, err := resolveTenant(f, tt.p, tt.slug)
+			sc, err := resolveAccount(f, tt.p, tt.slug)
 			if tt.wantErr {
 				e, ok := err.(*apiError)
 				if !ok || e.status != http.StatusNotFound {
@@ -175,10 +175,10 @@ func TestResolveTenant(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("resolveTenant: %v", err)
+				t.Fatalf("resolveAccount: %v", err)
 			}
-			if sc.tenant.Slug != tt.slug || sc.role() != tt.wantRole {
-				t.Errorf("scope = %s as %q, want %s as %q", sc.tenant.Slug, sc.role(), tt.slug, tt.wantRole)
+			if sc.account.Slug != tt.slug || sc.role() != tt.wantRole {
+				t.Errorf("scope = %s as %q, want %s as %q", sc.account.Slug, sc.role(), tt.slug, tt.wantRole)
 			}
 		})
 	}
@@ -190,15 +190,15 @@ func TestMe(t *testing.T) {
 		name     string
 		p        *auth.Principal
 		operator bool
-		tenants  []TenantMembership
+		accounts []AccountMembership
 	}{
 		{"member", memberOf(t, ts.file, "beta"), false,
-			[]TenantMembership{{Slug: "beta", Role: auth.RoleMember, ManagedBy: configfile.OriginFile}}},
-		{"operator sees every tenant as admin", &auth.Principal{Operator: true}, true, []TenantMembership{
+			[]AccountMembership{{Slug: "beta", Role: auth.RoleMember, ManagedBy: configfile.OriginFile}}},
+		{"operator sees every account as admin", &auth.Principal{Operator: true}, true, []AccountMembership{
 			{Slug: "alpha", Role: auth.RoleAdmin, ManagedBy: configfile.OriginFile},
 			{Slug: "beta", Role: auth.RoleAdmin, ManagedBy: configfile.OriginFile},
 		}},
-		{"no tenants", &auth.Principal{}, false, []TenantMembership{}},
+		{"no accounts", &auth.Principal{}, false, []AccountMembership{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -210,21 +210,21 @@ func TestMe(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &me); err != nil {
 				t.Fatal(err)
 			}
-			if me.Operator != tt.operator || len(me.Tenants) != len(tt.tenants) {
-				t.Fatalf("me = %+v, want operator %v tenants %+v", me, tt.operator, tt.tenants)
+			if me.Operator != tt.operator || len(me.Accounts) != len(tt.accounts) {
+				t.Fatalf("me = %+v, want operator %v accounts %+v", me, tt.operator, tt.accounts)
 			}
-			for i := range tt.tenants {
-				if me.Tenants[i] != tt.tenants[i] {
-					t.Errorf("tenant %d = %+v, want %+v", i, me.Tenants[i], tt.tenants[i])
+			for i := range tt.accounts {
+				if me.Accounts[i] != tt.accounts[i] {
+					t.Errorf("account %d = %+v, want %+v", i, me.Accounts[i], tt.accounts[i])
 				}
 			}
 		})
 	}
 }
 
-func TestListTenantsWithNoneReadable(t *testing.T) {
+func TestListAccountsWithNoneReadable(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	w := ts.as(&auth.Principal{}, httptest.NewRequest("GET", "/api/v1/tenants", nil))
+	w := ts.as(&auth.Principal{}, httptest.NewRequest("GET", "/api/v1/accounts", nil))
 	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != "[]" {
 		t.Fatalf("got %d %q, want 200 []", w.Code, w.Body)
 	}
@@ -232,7 +232,7 @@ func TestListTenantsWithNoneReadable(t *testing.T) {
 
 func TestOperatorRouteHiddenFromNonOperators(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	w := ts.as(memberOf(t, ts.file, "alpha"), httptest.NewRequest("GET", "/api/v1/operator/tenants", nil))
+	w := ts.as(memberOf(t, ts.file, "alpha"), httptest.NewRequest("GET", "/api/v1/operator/accounts", nil))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
@@ -245,13 +245,13 @@ func TestRequestValidation(t *testing.T) {
 		path string
 		code ErrorCode
 	}{
-		{"/api/v1/tenants/alpha/repos?limit=0", CodeBadRequest},
-		{"/api/v1/tenants/alpha/repos?cursor=@@", CodeInvalidCursor},
-		{"/api/v1/tenants/alpha/pulls?state=merged", CodeBadRequest},
-		{"/api/v1/tenants/alpha/pulls?outcome=great", CodeBadRequest},
-		{"/api/v1/tenants/alpha/usage?group=week", CodeBadRequest},
-		{"/api/v1/tenants/alpha/usage?from=yesterday", CodeBadRequest},
-		{"/api/v1/tenants/alpha/usage?from=2026-02-01&to=2026-01-01", CodeBadRequest},
+		{"/api/v1/accounts/alpha/repos?limit=0", CodeBadRequest},
+		{"/api/v1/accounts/alpha/repos?cursor=@@", CodeInvalidCursor},
+		{"/api/v1/accounts/alpha/pulls?state=merged", CodeBadRequest},
+		{"/api/v1/accounts/alpha/pulls?outcome=great", CodeBadRequest},
+		{"/api/v1/accounts/alpha/usage?group=week", CodeBadRequest},
+		{"/api/v1/accounts/alpha/usage?from=yesterday", CodeBadRequest},
+		{"/api/v1/accounts/alpha/usage?from=2026-02-01&to=2026-01-01", CodeBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -269,7 +269,7 @@ func TestRequestValidation(t *testing.T) {
 func TestUnknownRoutes(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
 	p := &auth.Principal{Operator: true}
-	for _, path := range []string{"/api/v1/nope", "/api/v2/tenants", "/auth/nope"} {
+	for _, path := range []string{"/api/v1/nope", "/api/v2/accounts", "/auth/nope"} {
 		t.Run(path, func(t *testing.T) {
 			w := ts.as(p, httptest.NewRequest("GET", path, nil))
 			if w.Code != http.StatusNotFound || decodeError(t, w).Code != CodeNotFound {

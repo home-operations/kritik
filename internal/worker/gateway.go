@@ -22,8 +22,8 @@ import (
 // pods reach the outside through (ADR-0008), and the model endpoint an
 // agentic runner calls with its run token (ADR-0004). No provider key
 // enters a runner pod: the gateway reserves each step against the run's
-// budget and checks the tenant's monthly cap, answers it through the
-// tenant's provider, and records what it spent where the caps see it.
+// budget and checks the account's monthly cap, answers it through the
+// account's provider, and records what it spent where the caps see it.
 type Gateway struct {
 	Base
 	// Proxy serves CONNECT and absolute-URI requests.
@@ -102,13 +102,13 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	file := g.Current.Get()
-	tenant := tenantByID(file, grant.TenantID)
-	if tenant == nil {
-		refuse(w, http.StatusForbidden, "invalid_token", "the run's tenant is not in the configuration")
+	account := accountByID(file, grant.AccountID)
+	if account == nil {
+		refuse(w, http.StatusForbidden, "invalid_token", "the run's account is not in the configuration")
 		return
 	}
-	logger := g.Logger.With("tenant", tenant.Slug, "run", short(grant.RunID))
-	capped, err := g.monthCapped(ctx, file, tenant)
+	logger := g.Logger.With("account", account.Slug, "run", short(grant.RunID))
+	capped, err := g.monthCapped(ctx, file, account)
 	if err != nil {
 		logger.Error("gateway: caps not read", "error", err)
 		refuse(w, http.StatusInternalServerError, "server_error", "the caps could not be checked")
@@ -121,8 +121,8 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ref := configfile.ModelRef(grant.Model)
-	provider, _ := file.Provider(tenant, ref.Provider())
-	stepper, err := g.Steppers.Stepper(file, tenant, ref.Provider())
+	provider, _ := file.Provider(account, ref.Provider())
+	stepper, err := g.Steppers.Stepper(file, account, ref.Provider())
 	if err != nil {
 		logger.Error("gateway: no model adapter", "error", err)
 		refuse(w, http.StatusInternalServerError, "server_error", "the run's model is not configured")
@@ -155,7 +155,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	resp, err := stepper.Step(ctx, req)
 	took := time.Since(start)
-	g.Metrics.ModelCall(tenant.Slug, grant.Model, roleReview, callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
+	g.Metrics.ModelCall(account.Slug, grant.Model, roleReview, callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
 		resp.Usage.Output, resp.CostUSD)
 	if cerr := g.charge(ctx, grant, token, reserved, resp, err == nil); cerr != nil {
 		// A step that was answered is paid for either way; the run still
@@ -165,7 +165,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	// Recorded before the runner gets its answer, so the next step's delta
 	// is taken against this one; recordModelCall bounds how long it waits.
 	g.recordModelCall(ctx, logger, store.ModelCall{
-		TenantID: grant.TenantID, ReviewID: grant.ReviewID, RunnerRunID: grant.RunID, Kind: store.ModelCallAgentStep, Duration: took,
+		AccountID: grant.AccountID, ReviewID: grant.ReviewID, RunnerRunID: grant.RunID, Kind: store.ModelCallAgentStep, Duration: took,
 	}, req, resp, err, transcriptMask(file, provider, token))
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;
@@ -187,15 +187,15 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(out)
 }
 
-// monthCapped says why the tenant may not take another step this month,
+// monthCapped says why the account may not take another step this month,
 // or "".
-func (g *Gateway) monthCapped(ctx context.Context, file *configfile.File, tenant *configfile.Tenant) (string, error) {
-	limits := file.Settings(tenant, "", "").Limits
+func (g *Gateway) monthCapped(ctx context.Context, file *configfile.File, account *configfile.Account) (string, error) {
+	limits := file.Settings(account, "", "").Limits
 	if limits.TokensPerMonth <= 0 {
 		return "", nil
 	}
 	var m store.MonthUsage
-	err := g.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
+	err := g.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var err error
 		m, err = store.ReadMonthUsage(ctx, tx)
 		return err
@@ -222,9 +222,9 @@ func (g *Gateway) charge(
 	}
 	spent := resp.Usage.Prompt() + resp.Usage.Output
 	budgetErr := g.Store.ChargeGatewayToken(ctx, token, spent-reserved)
-	usageErr := g.Store.WithTenant(ctx, grant.TenantID, func(tx pgx.Tx) error {
+	usageErr := g.Store.WithAccount(ctx, grant.AccountID, func(tx pgx.Tx) error {
 		return insertUsage(ctx, tx, reviewUsage{
-			tenantID: grant.TenantID, repositoryID: grant.RepositoryID, reviewID: grant.ReviewID, role: roleReview, model: resp.Model,
+			accountID: grant.AccountID, repositoryID: grant.RepositoryID, reviewID: grant.ReviewID, role: roleReview, model: resp.Model,
 			upstream: resp.Upstream, input: resp.Usage.Prompt(), output: resp.Usage.Output, costUSD: resp.CostUSD,
 		})
 	})

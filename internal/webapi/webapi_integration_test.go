@@ -44,7 +44,7 @@ auth:
     clientId: kritik
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: '"kritik-admin" in roles ? "admin" : ""'
-tenants:
+accounts:
   - slug: webapi-a
     connections:
       - name: webapi-a-bot
@@ -64,16 +64,16 @@ tenants:
       - name: wb/one
 `
 
-// followupComment is answered in both tenants, as comment ids from two
-// forges may collide; onlyBComment is answered only in tenant B.
+// followupComment is answered in both accounts, as comment ids from two
+// forges may collide; onlyBComment is answered only in account B.
 const (
 	followupComment = 4242
 	onlyBComment    = 4343
 )
 
-// seeded is what seedTenant wrote for one tenant.
+// seeded is what seedAccount wrote for one account.
 type seeded struct {
-	tenantID, repoID, prID, reviewID, runID string
+	accountID, repoID, prID, reviewID, runID string
 }
 
 type apiEnv struct {
@@ -125,9 +125,9 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	e.srv = New(Config{Store: st, Current: cur, Auth: h, WebURL: webURL, Logger: logger})
 	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(e.http.Close)
-	e.a, e.b = e.seedTenant("webapi-a", "wa/one"), e.seedTenant("webapi-b", "wb/one")
-	e.exec(`INSERT INTO followups (tenant_id, pull_request_id, comment_id, author, status)
-		VALUES ($1, $2, $3, 'carol', 'answered')`, e.b.tenantID, e.b.prID, onlyBComment)
+	e.a, e.b = e.seedAccount("webapi-a", "wa/one"), e.seedAccount("webapi-b", "wb/one")
+	e.exec(`INSERT INTO followups (account_id, pull_request_id, comment_id, author, status)
+		VALUES ($1, $2, $3, 'carol', 'answered')`, e.b.accountID, e.b.prID, onlyBComment)
 	e.signIn("member-a", "alice", memberOfAccounts("github/wa"))
 	e.signIn("member-b", "bob", memberOfAccounts("github/wb"))
 	e.signIn("operator", "op-sub", store.SessionGrant{Role: store.RoleAdmin})
@@ -155,42 +155,42 @@ func (e *apiEnv) scalar(sql string, args ...any) string {
 	return v
 }
 
-// seedTenant writes a pull request with a finished agentic review, its
+// seedAccount writes a pull request with a finished agentic review, its
 // runner and agent runs, context pack, findings, usage, model calls, an
 // index run, a follow-up and a queued job, all as the owner so no policy
 // stands in the way.
-func (e *apiEnv) seedTenant(slug, repo string) seeded {
+func (e *apiEnv) seedAccount(slug, repo string) seeded {
 	e.t.Helper()
-	tn, _ := e.file.Tenant(slug)
-	s := seeded{tenantID: tn.ID()}
+	tn, _ := e.file.Account(slug)
+	s := seeded{accountID: tn.ID()}
 	s.repoID = configfile.RepositoryID(tn.Connections[0].ID(), repo)
 	e.exec(`UPDATE repositories SET default_branch = 'main' WHERE id = $1`, s.repoID)
-	s.prID = e.scalar(`INSERT INTO pull_requests (tenant_id, repository_id, number, title, author, head_sha, labels)
-		VALUES ($1, $2, 7, $3, 'ada', 'head7', '[{"name":"bug","color":"f00"}]') RETURNING id::text`, s.tenantID, s.repoID, "PR of "+slug)
-	s.reviewID = e.scalar(`INSERT INTO reviews (tenant_id, pull_request_id, head_sha, status, trigger, mode, model, finished_at, summary)
+	s.prID = e.scalar(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha, labels)
+		VALUES ($1, $2, 7, $3, 'ada', 'head7', '[{"name":"bug","color":"f00"}]') RETURNING id::text`, s.accountID, s.repoID, "PR of "+slug)
+	s.reviewID = e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status, trigger, mode, model, finished_at, summary)
 		VALUES ($1, $2, 'head7', 'completed', 'push', 'agentic', 'acme/large', now(), '{"take":"ok","praise":["tests"]}')
-		RETURNING id::text`, s.tenantID, s.prID)
-	e.exec(`INSERT INTO findings (tenant_id, review_id, path, line, severity, title, explanation)
-		VALUES ($1, $2, 'a.go', 3, 'blocking', 'nil deref', 'x'), ($1, $2, 'b.go', 9, 'nit', 'naming', 'y')`, s.tenantID, s.reviewID)
-	s.runID = e.scalar(`INSERT INTO runner_runs (tenant_id, review_id, kind, phase, log_tail)
-		VALUES ($1, $2, 'review', 'done', $3) RETURNING id::text`, s.tenantID, s.reviewID, "tail of "+slug)
-	e.exec(`INSERT INTO context_packs (runner_run_id, tenant_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files)
+		RETURNING id::text`, s.accountID, s.prID)
+	e.exec(`INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation)
+		VALUES ($1, $2, 'a.go', 3, 'blocking', 'nil deref', 'x'), ($1, $2, 'b.go', 9, 'nit', 'naming', 'y')`, s.accountID, s.reviewID)
+	s.runID = e.scalar(`INSERT INTO runner_runs (account_id, review_id, kind, phase, log_tail)
+		VALUES ($1, $2, 'review', 'done', $3) RETURNING id::text`, s.accountID, s.reviewID, "tail of "+slug)
+	e.exec(`INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files)
 		VALUES ($1, $2, 'head7', 'base7', 'patch7', $3, '{a.go}',
 			'[{"stage":"definitions","path":"b.go","start_line":1,"end_line":2,"text":"func F() {}"}]',
-			'{".kritik.yaml":"mode: agentic\n"}')`, s.runID, s.tenantID, "diff of "+slug)
-	e.exec(`INSERT INTO agent_runs (runner_run_id, tenant_id, stop_reason, result, steps, tool_calls, timeline, model, sources)
+			'{".kritik.yaml":"mode: agentic\n"}')`, s.runID, s.accountID, "diff of "+slug)
+	e.exec(`INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline, model, sources)
 		VALUES ($1, $2, 'submitted', '{"findings":[]}', 2, '{"grep":1}',
 			'[{"index":0,"tools":["grep"],"duration_ms":5,"output_bytes":7,"input_tokens":10,"output_tokens":2}]', 'acme/large',
-			'["https://docs.example"]')`, s.runID, s.tenantID)
-	e.exec(`INSERT INTO usage (tenant_id, repository_id, review_id, role, model, input_tokens, output_tokens, cost_usd)
-		VALUES ($1, $2, $3, 'review', 'acme/large', 100, 10, 0.5)`, s.tenantID, s.repoID, s.reviewID)
-	ix := e.scalar(`INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, finished_at)
-		VALUES ($1, $2, 'commit7', 'embed', 8, 'full', 'completed', now()) RETURNING id::text`, s.tenantID, s.repoID)
+			'["https://docs.example"]')`, s.runID, s.accountID)
+	e.exec(`INSERT INTO usage (account_id, repository_id, review_id, role, model, input_tokens, output_tokens, cost_usd)
+		VALUES ($1, $2, $3, 'review', 'acme/large', 100, 10, 0.5)`, s.accountID, s.repoID, s.reviewID)
+	ix := e.scalar(`INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, finished_at)
+		VALUES ($1, $2, 'commit7', 'embed', 8, 'full', 'completed', now()) RETURNING id::text`, s.accountID, s.repoID)
 	e.exec(`UPDATE repositories SET active_index_run_id = $1 WHERE id = $2`, ix, s.repoID)
-	e.exec(`INSERT INTO followups (tenant_id, pull_request_id, comment_id, author, status, model)
-		VALUES ($1, $2, $3, 'bob', 'answered', 'acme/large')`, s.tenantID, s.prID, followupComment)
+	e.exec(`INSERT INTO followups (account_id, pull_request_id, comment_id, author, status, model)
+		VALUES ($1, $2, $3, 'bob', 'answered', 'acme/large')`, s.accountID, s.prID, followupComment)
 	args, _ := json.Marshal(map[string]any{
-		"tenant_id": s.tenantID, "repository_id": s.repoID, "number": 7, "head_sha": "head7", "trigger": "push",
+		"account_id": s.accountID, "repository_id": s.repoID, "number": 7, "head_sha": "head7", "trigger": "push",
 	})
 	e.exec(`INSERT INTO river_job (kind, args, max_attempts, state) VALUES ('review', $1, 5, 'available')`, args)
 	e.seedModelCalls(s, slug)
@@ -209,7 +209,7 @@ func (e *apiEnv) seedModelCalls(s seeded, slug string) {
 			msgs = append(msgs, model.Message{Role: model.RoleAssistant, Text: "looking"}, model.Message{Role: model.RoleUser, Text: "more"})
 		}
 		req := model.StepRequest{System: "sys of " + slug, Messages: msgs, Tools: tools}
-		err := e.st.WithTenant(ctx, s.tenantID, func(tx pgx.Tx) error {
+		err := e.st.WithAccount(ctx, s.accountID, func(tx pgx.Tx) error {
 			prev, n, err := store.AgentState(ctx, tx, s.runID)
 			if err != nil {
 				return err
@@ -217,7 +217,7 @@ func (e *apiEnv) seedModelCalls(s seeded, slug string) {
 			row := transcript.Delta(prev, req, nil)
 			row.Response = transcript.Response{Text: "ok", Stop: model.StopToolUse}
 			return store.InsertModelCall(ctx, tx, store.ModelCall{
-				TenantID: s.tenantID, ReviewID: s.reviewID, RunnerRunID: s.runID, Kind: store.ModelCallAgentStep, Step: n,
+				AccountID: s.accountID, ReviewID: s.reviewID, RunnerRunID: s.runID, Kind: store.ModelCallAgentStep, Step: n,
 				Model: "acme/large", Row: row.Encode(), Usage: model.Usage{Input: 10, CacheRead: 4, Output: 2}, CostUSD: 0.25,
 				Duration: time.Second,
 			})
@@ -226,11 +226,11 @@ func (e *apiEnv) seedModelCalls(s seeded, slug string) {
 			e.t.Fatal(err)
 		}
 	}
-	err := e.st.WithTenant(ctx, s.tenantID, func(tx pgx.Tx) error {
+	err := e.st.WithAccount(ctx, s.accountID, func(tx pgx.Tx) error {
 		row := transcript.Delta(transcript.State{}, model.StepRequest{System: "follow of " + slug, Messages: msgs[:1]}, nil)
 		row.Response = transcript.Response{Text: "reply", Stop: model.StopEndTurn}
 		return store.InsertModelCall(ctx, tx, store.ModelCall{
-			TenantID: s.tenantID, ReviewID: s.reviewID, FollowupCommentID: followupComment, Kind: store.ModelCallFollowUp,
+			AccountID: s.accountID, ReviewID: s.reviewID, FollowupCommentID: followupComment, Kind: store.ModelCallFollowUp,
 			Model: "acme/large", Row: row.Encode(),
 		})
 	})
@@ -285,18 +285,18 @@ func (e *apiEnv) getBody(who, path string) (int, []byte) {
 // and follow-ups are unique per repository, so it cannot run twice.
 func TestWebAPI(t *testing.T) {
 	e := newAPIEnv(t)
-	t.Run("read endpoints scope to the tenant", func(t *testing.T) { testReadEndpointsScopeToTenant(t, e) })
-	t.Run("tenant B's ids under tenant A", func(t *testing.T) { testCrossTenantIDs(t, e) })
-	t.Run("me and tenant lists", func(t *testing.T) { testMeAndTenantLists(t, e) })
-	t.Run("tenant detail shows each connection's last webhook", func(t *testing.T) { testLastWebhook(t, e) })
+	t.Run("read endpoints scope to the account", func(t *testing.T) { testReadEndpointsScopeToAccount(t, e) })
+	t.Run("account B's ids under account A", func(t *testing.T) { testCrossAccountIDs(t, e) })
+	t.Run("me and account lists", func(t *testing.T) { testMeAndAccountLists(t, e) })
+	t.Run("account detail shows each connection's last webhook", func(t *testing.T) { testLastWebhook(t, e) })
 	t.Run("transcripts equal Rebuild", func(t *testing.T) { testTranscriptsEqualRebuild(t, e) })
 	t.Run("repository pagination", func(t *testing.T) { testRepoPagination(t, e) })
-	t.Run("event stream scopes to the tenant", func(t *testing.T) { testEventStreamScopesToTenant(t, e) })
+	t.Run("event stream scopes to the account", func(t *testing.T) { testEventStreamScopesToAccount(t, e) })
 }
 
-func testReadEndpointsScopeToTenant(t *testing.T, e *apiEnv) {
-	a := "/api/v1/tenants/webapi-a"
-	// Each path of tenant A and a string only tenant A's answer contains.
+func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
+	a := "/api/v1/accounts/webapi-a"
+	// Each path of account A and a string only account A's answer contains.
 	endpoints := []struct{ path, marker string }{
 		{a, `"slug":"webapi-a"`},
 		{a + "/repos", `"fullName":"wa/one"`},
@@ -333,7 +333,7 @@ func testReadEndpointsScopeToTenant(t *testing.T, e *apiEnv) {
 				}
 				for _, leak := range e.bMarkers() {
 					if bytes.Contains(body, []byte(leak)) {
-						t.Errorf("%s: body leaks tenant B's %q: %s", tc.who, leak, body)
+						t.Errorf("%s: body leaks account B's %q: %s", tc.who, leak, body)
 					}
 				}
 			}
@@ -341,7 +341,7 @@ func testReadEndpointsScopeToTenant(t *testing.T, e *apiEnv) {
 	}
 }
 
-// bMarkers are strings only tenant B's rows contain.
+// bMarkers are strings only account B's rows contain.
 func (e *apiEnv) bMarkers() []string {
 	return []string{
 		"webapi-b", "wb/one", "PR of webapi-b", "tail of webapi-b", "diff of webapi-b", "sys of webapi-b", "follow of webapi-b",
@@ -349,11 +349,11 @@ func (e *apiEnv) bMarkers() []string {
 	}
 }
 
-// testCrossTenantIDs asks for tenant B's rows by id under tenant A's slug:
+// testCrossAccountIDs asks for account B's rows by id under account A's slug:
 // even an operator, who may read B, finds nothing, since the query runs
 // scoped to A.
-func testCrossTenantIDs(t *testing.T, e *apiEnv) {
-	a := "/api/v1/tenants/webapi-a"
+func testCrossAccountIDs(t *testing.T, e *apiEnv) {
+	a := "/api/v1/accounts/webapi-a"
 	paths := []string{
 		a + "/reviews/" + e.b.reviewID, a + "/reviews/" + e.b.reviewID + "/diff",
 		a + "/reviews/" + e.b.reviewID + "/transcript", a + "/reviews/" + e.b.reviewID + "/raw",
@@ -370,7 +370,7 @@ func testCrossTenantIDs(t *testing.T, e *apiEnv) {
 	}
 }
 
-func testMeAndTenantLists(t *testing.T, e *apiEnv) {
+func testMeAndAccountLists(t *testing.T, e *apiEnv) {
 	tests := []struct {
 		who, path string
 		status    int
@@ -379,11 +379,11 @@ func testMeAndTenantLists(t *testing.T, e *apiEnv) {
 	}{
 		{"member-a", "/api/v1/me", 200, []string{`"slug":"webapi-a","role":"member"`}, []string{"webapi-b"}},
 		{"operator", "/api/v1/me", 200, []string{`"operator":true`, `"slug":"webapi-a","role":"admin"`, `"slug":"webapi-b"`}, nil},
-		{"member-a", "/api/v1/tenants", 200, []string{`"slug":"webapi-a"`, `"repositories":2`, `"reviews7d":1`}, []string{"webapi-b"}},
-		{"member-b", "/api/v1/tenants", 200, []string{`"slug":"webapi-b"`}, []string{"webapi-a"}},
-		{"operator", "/api/v1/operator/tenants", 200, []string{`"slug":"webapi-a"`, `"slug":"webapi-b"`, `"live":true`}, nil},
-		{"member-a", "/api/v1/operator/tenants", 404, nil, nil},
-		{"nobody", "/api/v1/tenants", 401, nil, nil},
+		{"member-a", "/api/v1/accounts", 200, []string{`"slug":"webapi-a"`, `"repositories":2`, `"reviews7d":1`}, []string{"webapi-b"}},
+		{"member-b", "/api/v1/accounts", 200, []string{`"slug":"webapi-b"`}, []string{"webapi-a"}},
+		{"operator", "/api/v1/operator/accounts", 200, []string{`"slug":"webapi-a"`, `"slug":"webapi-b"`, `"live":true`}, nil},
+		{"member-a", "/api/v1/operator/accounts", 404, nil, nil},
+		{"nobody", "/api/v1/accounts", 401, nil, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.who+" "+tt.path, func(t *testing.T) {
@@ -409,7 +409,7 @@ func testLastWebhook(t *testing.T, e *apiEnv) {
 	ctx := context.Background()
 	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	in, _, _ := e.file.Connection("webapi-a-bot")
-	if err := e.st.WithTenant(ctx, e.a.tenantID, func(tx pgx.Tx) error {
+	if err := e.st.WithAccount(ctx, e.a.accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE connections SET last_webhook_at = $2 WHERE id = $1`, in.ID(), at)
 		return err
 	}); err != nil {
@@ -422,8 +422,8 @@ func testLastWebhook(t *testing.T, e *apiEnv) {
 		{"member-a", "webapi-a", &at},
 		{"member-b", "webapi-b", nil},
 	} {
-		status, body := e.getBody(tt.who, "/api/v1/tenants/"+tt.slug)
-		var d TenantDetail
+		status, body := e.getBody(tt.who, "/api/v1/accounts/"+tt.slug)
+		var d AccountDetail
 		if status != 200 || json.Unmarshal(body, &d) != nil || len(d.Connections) != 1 {
 			t.Fatalf("%s: status %d: %s", tt.who, status, body)
 		}
@@ -437,7 +437,7 @@ func testLastWebhook(t *testing.T, e *apiEnv) {
 func testTranscriptsEqualRebuild(t *testing.T, e *apiEnv) {
 	ctx := context.Background()
 	var steps, followups []transcript.StoredRow
-	if err := e.st.WithTenant(ctx, e.a.tenantID, func(tx pgx.Tx) error {
+	if err := e.st.WithAccount(ctx, e.a.accountID, func(tx pgx.Tx) error {
 		var err error
 		if steps, err = store.ModelCalls(ctx, tx, store.ModelCallFilter{RunnerRunID: e.a.runID}); err != nil {
 			return err
@@ -454,8 +454,8 @@ func testTranscriptsEqualRebuild(t *testing.T, e *apiEnv) {
 		path string
 		rows []transcript.StoredRow
 	}{
-		{"/api/v1/tenants/webapi-a/reviews/" + e.a.reviewID + "/transcript", steps},
-		{"/api/v1/tenants/webapi-a/followups/4242/transcript", followups},
+		{"/api/v1/accounts/webapi-a/reviews/" + e.a.reviewID + "/transcript", steps},
+		{"/api/v1/accounts/webapi-a/followups/4242/transcript", followups},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			status, body := e.getBody("member-a", tc.path)
@@ -472,7 +472,7 @@ func testTranscriptsEqualRebuild(t *testing.T, e *apiEnv) {
 
 func testRepoPagination(t *testing.T, e *apiEnv) {
 	var names []string
-	path := "/api/v1/tenants/webapi-a/repos?limit=1"
+	path := "/api/v1/accounts/webapi-a/repos?limit=1"
 	for range 5 {
 		status, body := e.getBody("member-a", path)
 		if status != 200 {
@@ -488,7 +488,7 @@ func testRepoPagination(t *testing.T, e *apiEnv) {
 		if page.NextCursor == nil {
 			break
 		}
-		path = "/api/v1/tenants/webapi-a/repos?limit=1&cursor=" + *page.NextCursor
+		path = "/api/v1/accounts/webapi-a/repos?limit=1&cursor=" + *page.NextCursor
 	}
 	if strings.Join(names, ",") != "wa/one,wa/two" {
 		t.Errorf("paged repositories = %v, want wa/one, wa/two", names)
@@ -520,7 +520,7 @@ func (e *apiEnv) stream(ctx context.Context, who string) <-chan Event {
 			}
 			if data, ok := strings.CutPrefix(strings.TrimSpace(line), "data: "); ok {
 				var ev Event
-				if json.Unmarshal([]byte(data), &ev) == nil && ev.Tenant != "" {
+				if json.Unmarshal([]byte(data), &ev) == nil && ev.Account != "" {
 					out <- ev
 				}
 			}
@@ -529,7 +529,7 @@ func (e *apiEnv) stream(ctx context.Context, who string) <-chan Event {
 	return out
 }
 
-func testEventStreamScopesToTenant(t *testing.T, e *apiEnv) {
+func testEventStreamScopesToAccount(t *testing.T, e *apiEnv) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runCtx, stopRun := context.WithCancel(ctx)
@@ -553,15 +553,15 @@ wait:
 		case got = <-aEvents:
 			break wait
 		case <-tick.C:
-			e.exec(`INSERT INTO runner_runs (tenant_id, kind) VALUES ($1, 'index')`, e.a.tenantID)
+			e.exec(`INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'index')`, e.a.accountID)
 		case <-deadline:
 			t.Fatal("member of A received no event")
 		}
 	}
-	if got.Tenant != "webapi-a" || got.Kind != store.EventRunnerRun {
+	if got.Account != "webapi-a" || got.Kind != store.EventRunnerRun {
 		t.Errorf("event = %+v, want a runner_run of webapi-a", got)
 	}
-	e.exec(`INSERT INTO runner_runs (tenant_id, kind) VALUES ($1, 'index')`, e.a.tenantID)
+	e.exec(`INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'index')`, e.a.accountID)
 	select {
 	case ev := <-bEvents:
 		t.Errorf("member of B received %+v", ev)

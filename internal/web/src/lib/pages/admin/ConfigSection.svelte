@@ -5,15 +5,15 @@
   import { describe, errorPath, fieldEditable, isCode } from '../../manage';
   import { MANAGEMENT_OFF, management } from '../../session.svelte';
   import { toast } from '../../toast.svelte';
-  import type { TenantConfig, TenantWriteResult } from '../../types';
+  import type { AccountConfig, AccountWriteResult } from '../../types';
   import StateView from '../../components/StateView.svelte';
   import ConfigEditor from './ConfigEditor.svelte';
   import SpecView from './SpecView.svelte';
   import GeneratedSecrets from './GeneratedSecrets.svelte';
 
   let { slug }: { slug: string } = $props();
-  const path = $derived(`/api/v1/tenants/${encodeURIComponent(slug)}/config`);
-  const res = new Resource(() => getJSON<TenantConfig>(path));
+  const path = $derived(`/api/v1/accounts/${encodeURIComponent(slug)}/config`);
+  const res = new Resource(() => getJSON<AccountConfig>(path));
   $effect(() => {
     void res.load();
   });
@@ -46,11 +46,11 @@
     epoch++;
   }
 
-  async function save(cfg: TenantConfig, spec: Record<string, unknown>): Promise<void> {
+  async function save(cfg: AccountConfig, spec: Record<string, unknown>): Promise<void> {
     saving = true;
     resetError();
     try {
-      const r = await sendJSON<TenantWriteResult>('PUT', path, { revision: cfg.revision, spec });
+      const r = await sendJSON<AccountWriteResult>('PUT', path, { revision: cfg.revision, spec });
       toast(`Saved: revision ${r.revision}`);
       if (r.generated && Object.keys(r.generated).length) generated = r.generated;
       await reload();
@@ -64,8 +64,8 @@
     }
   }
 
-  function readOnlyReason(cfg: TenantConfig): string {
-    if (cfg.managedBy === 'file') return 'This tenant is declared in the configuration file; change it there.';
+  function readOnlyReason(cfg: AccountConfig): string {
+    if (cfg.managedBy === 'file') return 'This account is declared in the configuration file; change it there.';
     if (!management()) return MANAGEMENT_OFF;
     if (!cfg.editable) return 'You can view this configuration but not change it.';
     return '';

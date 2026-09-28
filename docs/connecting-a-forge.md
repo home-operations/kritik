@@ -5,9 +5,9 @@ reach kritik through the App's own webhook, which covers every repository
 the App is installed on. No repository needs a file: a
 [`.kritik.yaml`](repository-config.md) is optional.
 
-A connection is one entry under a tenant's `connections` in the
+A connection is one entry under an account's `connections` in the
 configuration file, or one added in the dashboard for a dashboard-managed
-tenant, serving the users and organizations its `accounts` lists. Its
+account, serving the users and organizations its `accounts` lists. Its
 webhook address is kritik's webhook listener followed by
 `/hooks/<connection name>`.
 
@@ -55,7 +55,7 @@ answer.
 ### Configure the connection
 
 ```yaml
-tenants:
+accounts:
   - slug: example
     connections:
       - name: example-github
@@ -68,7 +68,7 @@ tenants:
 ```
 
 `webhookSecret` holds the same value as the App's webhook secret. In the
-dashboard, a dashboard-managed tenant's connection form takes the same
+dashboard, a dashboard-managed account's connection form takes the same
 three values, and can generate the webhook secret for you to copy into the
 App.
 
@@ -76,13 +76,13 @@ App.
 
 Install the App on each account in `accounts`, for all repositories or
 selected ones. Each pull request in them is reviewed when it opens and
-after each push, under the tenant's settings.
+after each push, under the account's settings.
 
 ## Check that it works
 
 GitHub keeps the App webhook's recent deliveries with kritik's response:
 204 for a ping, 202 for anything accepted, 401 when the secrets differ,
-and 404 when the path names no connection. The tenant overview's
+and 404 when the path names no connection. The account overview's
 Connections panel shows when each connection last had a delivery, and
 explains where its webhook goes while none has.
 `kritik_webhooks_total{connection,outcome}` counts deliveries by outcome.
