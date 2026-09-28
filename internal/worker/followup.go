@@ -162,12 +162,13 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	if err != nil {
 		return followUpFailed, err
 	}
+	instructions, _ := repoconfig.Instructions(f.instructionFiles, repoconfig.Active(f.settings.Review.Instructions, f.scoped, rec.changed))
+	system := review.FollowUpSystemPrompt(instructions)
 	msg := review.BuildFollowUp(review.Input{
 		Repository: f.pr.repository, Number: f.pr.number, Title: f.pr.title, Author: f.pr.author, BaseRef: f.pr.baseRef,
-		Body: rec.body, Changed: rec.changed, Diff: rec.diff, Context: rec.context,
+		Body: rec.body, Changed: rec.changed, Diff: rec.diff, Context: rec.context, BudgetTokens: review.UserBudget(system),
 	}, rec.findings, thread)
-	instructions, _ := repoconfig.Instructions(f.instructionFiles, repoconfig.Active(f.settings.Review.Instructions, f.scoped, rec.changed))
-	resp, err := f.complete(ctx, msg, rec.id, instructions)
+	resp, err := f.complete(ctx, system, msg, rec.id)
 	if err != nil {
 		return followUpFailed, err
 	}
@@ -392,7 +393,7 @@ func (f *followUp) repoConfig(ctx context.Context) (string, error) {
 // complete asks the review model for the reply, with the repository's
 // instructions, recording the call against the comment and, when there is
 // one, reviewID.
-func (f *followUp) complete(ctx context.Context, msg, reviewID string, instructions []string) (model.CompletionResponse, error) {
+func (f *followUp) complete(ctx context.Context, system, msg, reviewID string) (model.CompletionResponse, error) {
 	ref := f.settings.Models.Review
 	if ref == "" {
 		return model.CompletionResponse{}, errors.New("worker: no review model is configured for this repository")
@@ -406,7 +407,7 @@ func (f *followUp) complete(ctx context.Context, msg, reviewID string, instructi
 		AccountID: f.account.ID(), ReviewID: reviewID, FollowupCommentID: f.comment.ID, Kind: store.ModelCallFollowUp,
 	}, transcriptMask(f.file, spec))}
 	req := model.CompletionRequest{
-		System: review.FollowUpSystemPrompt(instructions), User: msg, Model: ref.Model(),
+		System: system, User: msg, Model: ref.Model(),
 		Schema: review.FollowUpSchema(), SchemaName: "reply", MaxTokens: maxOutputTokens,
 	}
 	if fb := f.settings.Models.Fallback; fb != "" && fb.Provider() == ref.Provider() {

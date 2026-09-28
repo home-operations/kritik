@@ -234,6 +234,10 @@ func NewStepper(t ProviderType, baseURL, apiKey string, pricing Pricing, client 
 		}
 		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, OpenRouter: true, Pricing: pricing})
 	case ProviderOpenAI:
+		// Set, so the client never falls back to OPENAI_BASE_URL.
+		if baseURL == "" {
+			baseURL = OpenAIBaseURL
+		}
 		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, Pricing: pricing})
 	case ProviderAnthropic:
 		return NewAnthropic(AnthropicConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, Pricing: pricing})
@@ -242,8 +246,11 @@ func NewStepper(t ProviderType, baseURL, apiKey string, pricing Pricing, client 
 	}
 }
 
-// OpenRouterBaseURL is where an openrouter provider without a baseUrl goes.
-const OpenRouterBaseURL = "https://openrouter.ai/api/v1"
+// Where an openrouter or openai provider without a baseUrl goes.
+const (
+	OpenRouterBaseURL = "https://openrouter.ai/api/v1"
+	OpenAIBaseURL     = "https://api.openai.com/v1"
+)
 
 // checkRequest rejects a request no provider could serve.
 func checkRequest(req StepRequest) error {

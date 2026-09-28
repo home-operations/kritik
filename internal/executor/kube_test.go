@@ -44,7 +44,7 @@ func spec() Spec {
 func TestJobSpec(t *testing.T) {
 	k := &Kube{Namespace: "kritik", Image: "ttl.sh/x:1h", ServiceAccount: "kritik-runner", DatabaseSecret: "kritik-postgres-runner", DatabaseSecretKey: "uri",
 		GatewayURL: "http://kritik-gateway:8082", RuntimeClass: "gvisor", TTL: 10 * time.Minute}
-	j := k.job(spec())
+	j := mustJob(t, k, spec())
 	if j.Name != "kritik-run-01234567" || j.Namespace != "kritik" {
 		t.Fatalf("name/namespace = %s/%s", j.Name, j.Namespace)
 	}
@@ -66,7 +66,7 @@ func TestJobSpec(t *testing.T) {
 	checkRunnerEnv(t, c.Env)
 	checkProxyEnv(t, c.Env, "http://kritik-gateway:8082")
 	checkSpecMount(t, pod, c)
-	if env := (&Kube{Namespace: "kritik", Image: "x"}).job(spec()).Spec.Template.Spec.Containers[0].Env; slices.ContainsFunc(env,
+	if env := mustJob(t, &Kube{Namespace: "kritik", Image: "x"}, spec()).Spec.Template.Spec.Containers[0].Env; slices.ContainsFunc(env,
 		func(e corev1.EnvVar) bool { return e.Name == "HTTPS_PROXY" }) {
 		t.Fatal("a Kube without a gateway must hand the runner no proxy")
 	}
@@ -79,9 +79,31 @@ func TestJobSpec(t *testing.T) {
 	if pod.RuntimeClassName == nil || *pod.RuntimeClassName != "gvisor" {
 		t.Fatalf("runtimeClassName = %v, want gvisor", pod.RuntimeClassName)
 	}
-	if bare := (&Kube{Namespace: "kritik", Image: "x"}).job(spec()).Spec.Template.Spec; bare.RuntimeClassName != nil {
+	if bare := mustJob(t, &Kube{Namespace: "kritik", Image: "x"}, spec()).Spec.Template.Spec; bare.RuntimeClassName != nil {
 		t.Fatal("a Kube without a RuntimeClass must leave the pod on the default runtime")
 	}
+}
+
+func TestJobSpecRefusesBadResources(t *testing.T) {
+	for _, r := range []map[string]any{
+		{"limits": map[string]any{"memory": "lots"}},
+		{"limit": map[string]any{"memory": "2Gi"}},
+	} {
+		s := spec()
+		s.Resources = r
+		if _, err := (&Kube{Namespace: "kritik", Image: "x"}).job(s); err == nil || !strings.Contains(err.Error(), "runner.resources") {
+			t.Fatalf("job(%v) = %v, want a runner.resources error", r, err)
+		}
+	}
+}
+
+func mustJob(t *testing.T, k *Kube, s Spec) *batchv1.Job {
+	t.Helper()
+	j, err := k.job(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return j
 }
 
 // TestJobSpecMountsTools checks each tool becomes a read-only image volume
@@ -93,7 +115,7 @@ func TestJobSpecMountsTools(t *testing.T) {
 		{Name: "helm", Image: "registry.example/helm:3", Path: "/usr/bin"},
 		{Name: "flate", Image: "registry.example/flate@sha256:0123"},
 	}
-	pod := (&Kube{Namespace: "kritik", Image: "x"}).job(s).Spec.Template.Spec
+	pod := mustJob(t, &Kube{Namespace: "kritik", Image: "x"}, s).Spec.Template.Spec
 	images := map[string]string{}
 	for _, v := range pod.Volumes {
 		if v.Image != nil {
@@ -118,7 +140,7 @@ func TestJobSpecMountsTools(t *testing.T) {
 	if i := slices.IndexFunc(c.Env, func(e corev1.EnvVar) bool { return e.Name == "PATH" }); i < 0 || c.Env[i].Value != want {
 		t.Fatalf("PATH = %v, want %s", c.Env, want)
 	}
-	bare := (&Kube{Namespace: "kritik", Image: "x"}).job(spec()).Spec.Template.Spec.Containers[0]
+	bare := mustJob(t, &Kube{Namespace: "kritik", Image: "x"}, spec()).Spec.Template.Spec.Containers[0]
 	if slices.ContainsFunc(bare.Env, func(e corev1.EnvVar) bool { return e.Name == "PATH" }) {
 		t.Fatal("a run without tools must keep the image's own PATH")
 	}
