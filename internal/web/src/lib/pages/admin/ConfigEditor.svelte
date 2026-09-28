@@ -9,7 +9,7 @@
     buildSpec,
     draftOf,
     hasTypedSecret,
-    newInstallation,
+    newConnection,
     newProvider,
     newRepository,
     pathMatches,
@@ -19,7 +19,7 @@
   import { duration } from '../../format';
   import { inheritsHint } from '../../manage';
   import type { Inherited } from '../../types';
-  import InstallationFields from './InstallationFields.svelte';
+  import ConnectionFields from './ConnectionFields.svelte';
   import ProviderFields from './ProviderFields.svelte';
   import RepositoryFields from './RepositoryFields.svelte';
 
@@ -255,18 +255,18 @@
     </fieldset>
 
     <fieldset>
-      <legend>Installations</legend>
-      {#each draft.installations as inst, i (inst.key)}
-        <InstallationFields
-          bind:inst={draft.installations[i]!}
+      <legend>Connections</legend>
+      {#each draft.connections as inst, i (inst.key)}
+        <ConnectionFields
+          bind:inst={draft.connections[i]!}
           index={i}
           {inv}
-          onremove={() => structural(() => (draft.installations = draft.installations.filter((x) => x.key !== inst.key)))}
+          onremove={() => structural(() => (draft.connections = draft.connections.filter((x) => x.key !== inst.key)))}
         />
       {:else}
-        <p class="field-hint">No installations yet.</p>
+        <p class="field-hint">No connections yet.</p>
       {/each}
-      <div><button type="button" class="btn" onclick={() => structural(() => draft.installations.push(newInstallation()))}>Add installation</button></div>
+      <div><button type="button" class="btn" onclick={() => structural(() => draft.connections.push(newConnection()))}>Add connection</button></div>
     </fieldset>
 
     <fieldset>

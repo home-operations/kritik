@@ -51,7 +51,7 @@ func TestEgressRules(t *testing.T) {
 	if rules.Credentials["api.github.com"] != "Bearer ghp_x" {
 		t.Fatalf("credentials = %v", rules.Credentials)
 	}
-	// An installation's forge is allowed implicitly, a provider's baseUrl
+	// A connection's forge is allowed implicitly, a provider's baseUrl
 	// is not, and a credential's value never leaks into the host list.
 	h, err := Parse([]byte("providers:\n  p:\n    type: openai\n    baseUrl: https://llm.example:8443/v1\n    apiKey: { env: TEST_GH_TOKEN }\n" + minimal))
 	if err != nil {

@@ -22,10 +22,10 @@ export interface SecretDraft {
 // '' is "not set": the file's default applies.
 export type TriBool = '' | 'true' | 'false';
 
-export interface InstallationDraft {
+export interface ConnectionDraft {
   key: number;
-  // The name the installation was loaded under, '' for a new one. The
-  // server keeps a secret by the installation's name, so a renamed one
+  // The name the connection was loaded under, '' for a new one. The
+  // server keeps a secret by the connection's name, so a renamed one
   // must not keep: it would adopt whatever is stored under the new name.
   origName: string;
   name: string;
@@ -93,7 +93,7 @@ export interface TenantDraft {
   // JSON text of the runner block, '' for none.
   runner: string;
   providers: ProviderDraft[];
-  installations: InstallationDraft[];
+  connections: ConnectionDraft[];
   repositories: RepositoryDraft[];
   rest: Obj;
 }
@@ -147,8 +147,8 @@ export function newSecret(mode: SecretMode): SecretDraft {
   return { wasSet: false, mode, value: '' };
 }
 
-export function newInstallation(): InstallationDraft {
-  return installationOf({});
+export function newConnection(): ConnectionDraft {
+  return connectionOf({});
 }
 
 function providerOf(name: string, v: unknown): ProviderDraft {
@@ -184,7 +184,7 @@ export function providerEndpoint(d: Pick<ProviderDraft, 'type' | 'baseUrl'>): st
   return `${d.type} ${d.baseUrl.trim().toLowerCase().replace(/\/+$/, '')}`;
 }
 
-function installationOf(v: unknown): InstallationDraft {
+function connectionOf(v: unknown): ConnectionDraft {
   const o = obj(v);
   const app = obj(o.app);
   return {
@@ -246,9 +246,9 @@ export function draftOf(spec: Obj): TenantDraft {
     limitsRest: take(limits, 'concurrency', 'reviewsPerDay', 'tokensPerMonth'),
     runner: json(o.runner),
     providers: Object.entries(obj(o.providers)).map(([name, v]) => providerOf(name, v)),
-    installations: Array.isArray(o.installations) ? o.installations.map(installationOf) : [],
+    connections: Array.isArray(o.connections) ? o.connections.map(connectionOf) : [],
     repositories: Array.isArray(o.repositories) ? o.repositories.map(repositoryOf) : [],
-    rest: take(o, 'slug', 'models', 'filter', 'forks', 'settle', 'limits', 'runner', 'providers', 'installations', 'repositories'),
+    rest: take(o, 'slug', 'models', 'filter', 'forks', 'settle', 'limits', 'runner', 'providers', 'connections', 'repositories'),
   };
 }
 
@@ -330,9 +330,9 @@ function nonEmpty(o: Obj): boolean {
   return Object.keys(o).length > 0;
 }
 
-// canKeep reports whether an installation's stored secrets may be kept:
+// canKeep reports whether a connection's stored secrets may be kept:
 // only while it still has the name it was loaded under.
-export function canKeep(d: InstallationDraft): boolean {
+export function canKeep(d: ConnectionDraft): boolean {
   return d.origName !== '' && d.name.trim() === d.origName;
 }
 
@@ -341,7 +341,7 @@ export function canKeep(d: InstallationDraft): boolean {
 export function hasTypedSecret(d: TenantDraft): boolean {
   const typed = (sd: SecretDraft) => sd.mode === 'replace' && sd.value !== '';
   return (
-    d.installations.some((x) => [x.clientIdFrom, x.privateKey, x.appWebhookSecret].some(typed)) ||
+    d.connections.some((x) => [x.clientIdFrom, x.privateKey, x.appWebhookSecret].some(typed)) ||
     d.providers.some((x) => typed(x.apiKey))
   );
 }
@@ -370,12 +370,12 @@ function providersSpec(b: Builder, list: ProviderDraft[]): Obj {
   return out;
 }
 
-function installationSpec(b: Builder, d: InstallationDraft, i: number): Obj {
-  const p = `installations[${i}]`;
+function connectionSpec(b: Builder, d: ConnectionDraft, i: number): Obj {
+  const p = `connections[${i}]`;
   const out: Obj = { ...d.rest };
   const keep = canKeep(d);
   const secret = (o: Obj, key: string, sd: SecretDraft, path: string, required: boolean) => {
-    if (!keep && sd.mode === 'keep') b.fail(path, 'the installation was renamed: enter this secret again');
+    if (!keep && sd.mode === 'keep') b.fail(path, 'the connection was renamed: enter this secret again');
     b.secret(o, key, sd, path, required);
   };
   if (d.name.trim() === '') b.fail(`${p}.name`, 'a name is required');
@@ -429,7 +429,7 @@ export function buildSpec(d: TenantDraft, redact = false): Built {
   out.slug = d.slug.trim();
   b.object(out, 'runner', d.runner, 'runner');
   if (d.providers.length) out.providers = providersSpec(b, d.providers);
-  out.installations = d.installations.map((x, i) => installationSpec(b, x, i));
+  out.connections = d.connections.map((x, i) => connectionSpec(b, x, i));
   const models: Obj = { ...d.modelsRest };
   set(models, 'review', d.reviewModel);
   set(models, 'fallback', d.fallbackModel);
@@ -454,9 +454,9 @@ export function pathMatches(field: string, err: string): boolean {
   return under(err, field) || under(field, err);
 }
 
-// hookName is the installation a generated secret's key
-// ("installations[<name>].<key>") belongs to.
+// hookName is the connection a generated secret's key
+// ("connections[<name>].<key>") belongs to.
 export function hookName(key: string): string {
-  const m = /^installations\[(.*)\]\./.exec(key);
+  const m = /^connections\[(.*)\]\./.exec(key);
   return m ? m[1]! : '';
 }

@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// Serves reports whether account is one the installation serves.
-func (i *Installation) Serves(account string) bool {
+// Serves reports whether account is one the connection serves.
+func (i *Connection) Serves(account string) bool {
 	return slices.ContainsFunc(i.Accounts, func(a string) bool { return strings.EqualFold(a, account) })
 }
 

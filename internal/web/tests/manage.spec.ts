@@ -12,13 +12,13 @@ const memberMe: T.Me = { ...g.me, operator: false, tenants: [{ slug: S, role: 'm
 const operatorMe: T.Me = { ...g.me, operator: true };
 
 // The golden config, with enough spec to exercise every part of the form.
-const inst0 = g.tenantConfig.spec.installations as Record<string, unknown>[];
+const inst0 = g.tenantConfig.spec.connections as Record<string, unknown>[];
 const dashboardConfig: T.TenantConfig = {
   ...g.tenantConfig,
   spec: {
     ...g.tenantConfig.spec,
     limits: { concurrency: 2 },
-    installations: [
+    connections: [
       { ...inst0[0], forge: 'github', accounts: ['bot'], app: { clientId: 'Iv1.bot', privateKey: { set: true }, webhookSecret: { set: true } } },
     ],
     repositories: [{ name: 'alpha/one', mode: 'agentic', agent: { maxSteps: 10 }, konflate: 'keep-me' }],
@@ -52,7 +52,7 @@ test.describe('tenant configuration', () => {
     const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: g.tenantWriteResult }]]);
     await page.goto(`/${ADMIN}/config`);
 
-    const key = page.locator('[data-path="installations[0].app.privateKey"]');
+    const key = page.locator('[data-path="connections[0].app.privateKey"]');
     await expect(key.getByLabel('Keep current')).toBeChecked();
     // A password field is never pre-filled, including after switching away and back.
     await key.getByLabel('Replace with a new value').check();
@@ -61,13 +61,13 @@ test.describe('tenant configuration', () => {
     await key.getByLabel('Replace with a new value').check();
     await expect(key.getByLabel('App private key: new value')).toHaveValue('');
     await key.getByLabel('App private key: new value').fill('key-new');
-    await page.locator('[data-path="installations[0].app.webhookSecret"]').getByLabel('Generate').check();
+    await page.locator('[data-path="connections[0].app.webhookSecret"]').getByLabel('Generate').check();
 
     await page.getByRole('button', { name: 'Save' }).click();
     await expect.poll(() => sent.length).toBe(1);
     const body = sent[0]!.body as T.UpdateTenantRequest;
     expect(body.revision).toBe(3);
-    const app = (body.spec.installations as Record<string, unknown>[])[0]!.app as Record<string, unknown>;
+    const app = (body.spec.connections as Record<string, unknown>[])[0]!.app as Record<string, unknown>;
     expect(app.privateKey).toEqual({ value: 'key-new' });
     expect(app.webhookSecret).toEqual({ generate: true });
     expect(app).not.toHaveProperty('clientIdFrom');
@@ -87,7 +87,7 @@ test.describe('tenant configuration', () => {
     // Saved: the config reloads and the typed secret is gone with the old draft.
     await expect(page.locator('#admin-config').locator('..')).toContainText('revision 4');
     expect(seen.filter((u) => u.pathname.endsWith('/config')).length).toBeGreaterThanOrEqual(2);
-    await expect(page.locator('[data-path="installations[0].app.privateKey"]').getByLabel('Keep current')).toBeChecked();
+    await expect(page.locator('[data-path="connections[0].app.privateKey"]').getByLabel('Keep current')).toBeChecked();
     await expect(page.locator('input[type=password]')).toHaveCount(0);
   });
 
@@ -103,7 +103,7 @@ test.describe('tenant configuration', () => {
 
   test('a 422 highlights and focuses the field its path names', async ({ page }) => {
     await setup(page, adminMe, [configRow(dashboardConfig)]);
-    const accounts = 'installations[0].accounts';
+    const accounts = 'connections[0].accounts';
     const sent = await g.mockWrites(page, [
       [
         'PUT',
@@ -111,7 +111,7 @@ test.describe('tenant configuration', () => {
         () =>
           sent.length <= 2
             ? g.apiError(422, 'invalid_spec', `${accounts}: the account is not allowed`, { path: accounts })
-            : g.apiError(422, 'reenter_secret', 'enter this secret again', { path: 'installations[0].app.privateKey' }),
+            : g.apiError(422, 'reenter_secret', 'enter this secret again', { path: 'connections[0].app.privateKey' }),
       ],
     ]);
     await page.goto(`/${ADMIN}/config`);
@@ -128,11 +128,11 @@ test.describe('tenant configuration', () => {
 
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByRole('alert')).toContainText('must be entered again');
-    await expect(page.locator('[data-path="installations[0].app.privateKey"]')).toHaveClass(/invalid/);
+    await expect(page.locator('[data-path="connections[0].app.privateKey"]')).toHaveClass(/invalid/);
     await expect(page.locator(`[data-path="${accounts}"]`)).not.toHaveAttribute('aria-invalid', 'true');
     // Adding or removing an item shifts indexes, so it dismisses a path error.
     await page.getByRole('button', { name: 'Add repository' }).click();
-    await expect(page.locator('[data-path="installations[0].app.privateKey"]')).not.toHaveClass(/invalid/);
+    await expect(page.locator('[data-path="connections[0].app.privateKey"]')).not.toHaveClass(/invalid/);
     await expect(page.locator('.form-alert')).toHaveCount(0);
   });
 
@@ -167,25 +167,25 @@ test.describe('tenant configuration', () => {
     await expect(page.getByRole('note').filter({ hasText: 'cannot be kept' })).toBeVisible();
   });
 
-  test('a renamed installation cannot keep the secrets stored under its new name', async ({ page }) => {
-    const b = (dashboardConfig.spec.installations as Record<string, unknown>[])[0]!;
+  test('a renamed connection cannot keep the secrets stored under its new name', async ({ page }) => {
+    const b = (dashboardConfig.spec.connections as Record<string, unknown>[])[0]!;
     const two: T.TenantConfig = {
       ...dashboardConfig,
-      spec: { ...dashboardConfig.spec, installations: [b, { ...b, name: 'beta-bot' }] },
+      spec: { ...dashboardConfig.spec, connections: [b, { ...b, name: 'beta-bot' }] },
     };
     await setup(page, adminMe, [configRow(two)]);
     const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { slug: S, revision: 4 } }]]);
     await page.goto(`/${ADMIN}/config`);
-    await page.getByRole('button', { name: 'Remove installation' }).first().click();
-    await page.locator('[data-path="installations[0].name"]').fill('alpha-bot');
+    await page.getByRole('button', { name: 'Remove connection' }).first().click();
+    await page.locator('[data-path="connections[0].name"]').fill('alpha-bot');
     await expect(page.getByRole('note').filter({ hasText: 'Renamed from' })).toContainText('beta-bot');
-    const key = page.locator('[data-path="installations[0].app.privateKey"]');
+    const key = page.locator('[data-path="connections[0].app.privateKey"]');
     await expect(key.getByLabel('Keep current')).toHaveCount(0);
-    await expect(page.locator('[data-path="installations[0].app.webhookSecret"]').getByLabel('Generate')).toBeChecked();
+    await expect(page.locator('[data-path="connections[0].app.webhookSecret"]').getByLabel('Generate')).toBeChecked();
     await key.getByLabel('App private key: new value').fill('fresh');
     await page.getByRole('button', { name: 'Save' }).click();
     await expect.poll(() => sent.length).toBe(1);
-    const insts = (sent[0]!.body as T.UpdateTenantRequest).spec.installations as Record<string, unknown>[];
+    const insts = (sent[0]!.body as T.UpdateTenantRequest).spec.connections as Record<string, unknown>[];
     expect(insts).toHaveLength(1);
     expect(insts[0]!.name).toBe('alpha-bot');
     const app = insts[0]!.app as Record<string, unknown>;
@@ -198,7 +198,7 @@ test.describe('tenant configuration', () => {
     await setup(page, adminMe, [configRow(dashboardConfig)]);
     const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { slug: S, revision: 4 } }]]);
     await page.goto(`/${ADMIN}/config`);
-    const key = page.locator('[data-path="installations[0].app.privateKey"]');
+    const key = page.locator('[data-path="connections[0].app.privateKey"]');
     await key.getByLabel('Replace with a new value').check();
     await key.getByLabel('App private key: new value').fill('typed');
     await page.getByRole('button', { name: 'Advanced: edit JSON' }).click();
@@ -206,7 +206,7 @@ test.describe('tenant configuration', () => {
     await expect(page.getByLabel('Spec JSON')).toHaveCount(0);
     await page.getByRole('button', { name: 'Save' }).click();
     await expect.poll(() => sent.length).toBe(1);
-    const inst = ((sent[0]!.body as T.UpdateTenantRequest).spec.installations as Record<string, unknown>[])[0]!;
+    const inst = ((sent[0]!.body as T.UpdateTenantRequest).spec.connections as Record<string, unknown>[])[0]!;
     expect((inst.app as Record<string, unknown>).privateKey).toEqual({ value: 'typed' });
   });
 
@@ -228,13 +228,13 @@ test.describe('tenant configuration', () => {
     await setup(page, adminMe, [configRow(dashboardConfig)]);
     const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { slug: S, revision: 4 } }]]);
     await page.goto(`/${ADMIN}/config`);
-    const key = page.locator('[data-path="installations[0].app.privateKey"]');
+    const key = page.locator('[data-path="connections[0].app.privateKey"]');
     await key.getByLabel('Replace with a new value').check();
     await page.getByRole('button', { name: 'Advanced: edit JSON' }).click();
     const box = page.getByLabel('Spec JSON');
     const text = await box.inputValue();
     const spec = JSON.parse(text) as Record<string, unknown>;
-    expect(((spec.installations as Record<string, unknown>[])[0]!.app as Record<string, unknown>).privateKey).toEqual({ keep: true });
+    expect(((spec.connections as Record<string, unknown>[])[0]!.app as Record<string, unknown>).privateKey).toEqual({ keep: true });
 
     await box.fill('{ not json');
     await page.getByRole('button', { name: 'Save' }).click();
@@ -355,18 +355,18 @@ test.describe('admin console', () => {
   test('creates a tenant', async ({ page }) => {
     await setup(page, operatorMe);
     const sent = await g.mockWrites(page, [
-      ['POST', /\/api\/v1\/tenants$/, { status: 201, body: { ...g.tenantWriteResult, slug: 'beta', generated: { 'installations[beta-bot].app.webhookSecret': 'abcd' } } }],
+      ['POST', /\/api\/v1\/tenants$/, { status: 201, body: { ...g.tenantWriteResult, slug: 'beta', generated: { 'connections[beta-bot].app.webhookSecret': 'abcd' } } }],
     ]);
     await page.goto('/#/operator');
     await page.getByRole('button', { name: 'New tenant' }).click();
     await page.getByLabel('Slug').fill('beta');
-    await page.getByRole('button', { name: 'Add installation' }).click();
+    await page.getByRole('button', { name: 'Add connection' }).click();
     await page.getByLabel('Name', { exact: true }).fill('beta-bot');
     await expect(page.getByLabel('Forge')).toHaveValue('github');
     for (const other of ['github-enterprise', 'gitlab', 'forgejo', 'gitea']) {
       await expect(page.getByLabel('Forge').locator(`option[value="${other}"]`)).toHaveJSProperty('disabled', true);
     }
-    await page.locator('[data-path="installations[0].accounts"]').fill('bot\n  other-org \n\n');
+    await page.locator('[data-path="connections[0].accounts"]').fill('bot\n  other-org \n\n');
     await page.getByLabel('App client ID', { exact: true }).fill('Iv1.beta');
     await page.getByLabel('App private key: new value').fill('key');
     await page.getByLabel('Concurrency').fill('3');
@@ -377,7 +377,7 @@ test.describe('admin console', () => {
     expect(body.slug).toBe('beta');
     expect(body.spec).toEqual({
       slug: 'beta',
-      installations: [
+      connections: [
         {
           name: 'beta-bot',
           forge: 'github',

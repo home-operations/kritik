@@ -35,7 +35,7 @@ auth:
     roleMapping: '"kritik-admin" in roles ? "admin" : ""'
 tenants:
   - slug: aj-tenant
-    installations:
+    connections:
       - name: aj-bot
         forge: github
         accounts: [aj]
@@ -105,7 +105,7 @@ func newActionsEnv(t *testing.T) *actionsEnv {
 
 	tn, _ := file.Tenant("aj-tenant")
 	e.tenantID = tn.ID()
-	e.repoID = configfile.RepositoryID(tn.Installations[0].ID(), "aj/one")
+	e.repoID = configfile.RepositoryID(tn.Connections[0].ID(), "aj/one")
 	e.prID = e.scalar(`INSERT INTO pull_requests (tenant_id, repository_id, number, title, author, head_sha)
 		VALUES ($1, $2, 11, 'rerun me', 'ada', 'headA') RETURNING id::text`, e.tenantID, e.repoID)
 

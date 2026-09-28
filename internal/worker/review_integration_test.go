@@ -67,7 +67,7 @@ defaults:
     concurrency: 1
 tenants:
   - slug: onedr0p
-    installations:
+    connections:
       - name: bot-ross
         forge: github
         accounts: [onedr0p]
@@ -381,7 +381,7 @@ func (c *completers) Stepper(*configfile.File, *configfile.Tenant, string) (mode
 
 type forges struct{ f forge.Client }
 
-func (f *forges) For(context.Context, *configfile.Installation, string) (forge.Client, error) {
+func (f *forges) For(context.Context, *configfile.Connection, string) (forge.Client, error) {
 	return f.f, nil
 }
 
@@ -954,10 +954,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := ingest.NewService(appStore, insertOnly)
-	in, tenant, _ := file.Installation("bot-ross")
+	in, tenant, _ := file.Connection("bot-ross")
 	dispatchPR := func(number int, headSHA string, bot bool, labels ...string) {
 		t.Helper()
-		out, err := svc.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Installation: in, Event: webhook.Event{
+		out, err := svc.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Connection: in, Event: webhook.Event{
 			Kind: webhook.KindPullRequest, Action: "synchronize", Account: "onedr0p",
 			Repository:  &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
 			PullRequest: &webhook.PullRequest{Number: number, Title: "t", Body: "Adds b.", Author: "renovate[bot]", AuthorIsBot: bot, State: "open", HeadRef: "f", HeadSHA: headSHA, BaseRef: "main", Labels: labelled(labels)},
@@ -1067,7 +1067,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("follow-up answers a qualifying mention and rate-limits the thread", func(t *testing.T) {
-		checkFollowUps(ctx, t, appStore, svc, lf, fc, ingest.Request{File: file, Tenant: tenant, Installation: in}, tenant.ID())
+		checkFollowUps(ctx, t, appStore, svc, lf, fc, ingest.Request{File: file, Tenant: tenant, Connection: in}, tenant.ID())
 	})
 
 	t.Run("bot PR with the same patch id is skipped", func(t *testing.T) {

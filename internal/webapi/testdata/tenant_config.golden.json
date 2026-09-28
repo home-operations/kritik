@@ -269,7 +269,7 @@
   },
   "spec": {
     "slug": "alpha",
-    "installations": [
+    "connections": [
       {
         "name": "alpha-bot",
         "app": {

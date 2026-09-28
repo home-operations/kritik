@@ -76,7 +76,7 @@ func listDashboardTenants(
 // LockDashboardWrites serialises, until tx ends, every dashboard tenant
 // write, so each is validated against all the others that committed
 // before it: dashboard_tenants has no constraint across rows, and two
-// tenants claiming one installation name would each merge on their own.
+// tenants claiming one connection name would each merge on their own.
 func LockDashboardWrites(ctx context.Context, tx pgx.Tx) error {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('kritik:dashboard-tenants', 0))`); err != nil {
 		return fmt.Errorf("store: lock dashboard tenants: %w", err)

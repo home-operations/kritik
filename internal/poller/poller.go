@@ -1,10 +1,10 @@
 // Package poller backstops missed webhooks: on the leader, every interval
-// and per installation, it lists the open pull requests updated since the
+// and per connection, it lists the open pull requests updated since the
 // last poll and hands them to the ingest dispatcher as if a webhook had
 // delivered them. Review jobs are unique on the head SHA, so a head the
 // webhook already enqueued is skipped as a duplicate, never reviewed twice.
-// An installation's first poll records the pull requests last updated
-// before kritik knew the installation as a baseline instead of reviewing
+// A connection's first poll records the pull requests last updated
+// before kritik knew the connection as a baseline instead of reviewing
 // them: no webhook for them was missed, and on a large install reviewing
 // them all would be one burst of model calls nobody asked for.
 package poller
@@ -26,10 +26,10 @@ import (
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
-// Forges builds a forge client per installation and repository owner, as
+// Forges builds a forge client per connection and repository owner, as
 // the worker does.
 type Forges interface {
-	For(ctx context.Context, in *configfile.Installation, repo string) (forge.Client, error)
+	For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error)
 }
 
 // Poller lists open pull requests on a schedule.
@@ -71,21 +71,21 @@ func (p *Poller) Run(ctx context.Context) error {
 	}
 }
 
-// PollAll polls every installation in the current configuration whose forge
+// PollAll polls every connection in the current configuration whose forge
 // the worker can build a client for.
 func (p *Poller) PollAll(ctx context.Context) {
 	file := p.Current.Get()
 	for ti := range file.Tenants {
 		tenant := &file.Tenants[ti]
-		for ii := range tenant.Installations {
-			in := &tenant.Installations[ii]
+		for ii := range tenant.Connections {
+			in := &tenant.Connections[ii]
 			if ctx.Err() != nil {
 				return
 			}
 			n, err := p.Poll(ctx, file, tenant, in)
 			switch {
 			case err != nil:
-				p.Logger.Warn("poll failed", "installation", in.Name, "error", err)
+				p.Logger.Warn("poll failed", "connection", in.Name, "error", err)
 				p.Metrics.Poll(in.Name, "error", 0)
 			default:
 				p.Metrics.Poll(in.Name, "ok", n)
@@ -100,18 +100,18 @@ type pollRepo struct {
 	name, defaultBranch, indexed string
 }
 
-// Poll lists one installation's repositories and returns how many pull
-// requests were handed to the dispatcher. For an installation no webhook
+// Poll lists one connection's repositories and returns how many pull
+// requests were handed to the dispatcher. For a connection no webhook
 // has reached lately, it also checks each indexed repository's default
 // branch, since no push webhook will say it moved.
-func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *configfile.Tenant, in *configfile.Installation) (int, error) {
+func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *configfile.Tenant, in *configfile.Connection) (int, error) {
 	var repos []pollRepo
 	var known time.Time
 	var polled, delivered *time.Time
 	err := p.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, '')
 			FROM repositories r LEFT JOIN index_runs g ON g.id = r.active_index_run_id
-			WHERE r.installation_id = $1 AND r.enabled ORDER BY r.name`, in.ID())
+			WHERE r.connection_id = $1 AND r.enabled ORDER BY r.name`, in.ID())
 		if err != nil {
 			return err
 		}
@@ -122,8 +122,8 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *config
 		}); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, `SELECT i.created_at, s.last_polled_at, i.last_webhook_at FROM installations i
-			LEFT JOIN poll_state s ON s.installation_id = i.id WHERE i.id = $1`, in.ID()).Scan(&known, &polled, &delivered)
+		return tx.QueryRow(ctx, `SELECT i.created_at, s.last_polled_at, i.last_webhook_at FROM connections i
+			LEFT JOIN poll_state s ON s.connection_id = i.id WHERE i.id = $1`, in.ID()).Scan(&known, &polled, &delivered)
 	})
 	if err != nil {
 		return 0, fmt.Errorf("poller: read state: %w", err)
@@ -163,17 +163,17 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *config
 				Kind: webhook.KindPullRequest, Action: action, Delivery: fmt.Sprintf("poll-%s-%d", started.UTC().Format("20060102T150405"), pr.Number),
 				Repository: &webhook.Repository{FullName: repo, DefaultBranch: pr.DefaultBranch}, Account: owner, PullRequest: &pr.PullRequest,
 			}
-			out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Installation: in, Event: ev})
+			out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Connection: in, Event: ev})
 			if err != nil {
 				return handled, err
 			}
 			handled++
-			p.Logger.Info("polled pull request "+out.Status, "installation", in.Name, "repository", repo, "pr", pr.Number, "reason", out.Reason)
+			p.Logger.Info("polled pull request "+out.Status, "connection", in.Name, "repository", repo, "pr", pr.Number, "reason", out.Reason)
 		}
 	}
 	err = p.Store.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO poll_state (installation_id, tenant_id, last_polled_at) VALUES ($1, $2, $3)
-			ON CONFLICT (installation_id) DO UPDATE SET last_polled_at = excluded.last_polled_at, updated_at = now()`, in.ID(), tenant.ID(), started)
+		_, err := tx.Exec(ctx, `INSERT INTO poll_state (connection_id, tenant_id, last_polled_at) VALUES ($1, $2, $3)
+			ON CONFLICT (connection_id) DO UPDATE SET last_polled_at = excluded.last_polled_at, updated_at = now()`, in.ID(), tenant.ID(), started)
 		return err
 	})
 	if err != nil {
@@ -186,7 +186,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, tenant *config
 // not the commit r's index covers, so the index follows the branch as a
 // push webhook would have made it.
 func (p *Poller) pollTip(
-	ctx context.Context, file *configfile.File, tenant *configfile.Tenant, in *configfile.Installation, client forge.Client, r pollRepo,
+	ctx context.Context, file *configfile.File, tenant *configfile.Tenant, in *configfile.Connection, client forge.Client, r pollRepo,
 	started time.Time,
 ) error {
 	owner, name, _ := strings.Cut(r.name, "/")
@@ -202,10 +202,10 @@ func (p *Poller) pollTip(
 		Repository: &webhook.Repository{FullName: r.name, DefaultBranch: branch}, Account: owner,
 		Push: &webhook.Push{Ref: "refs/heads/" + branch, After: tip},
 	}
-	out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Installation: in, Event: ev})
+	out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Tenant: tenant, Connection: in, Event: ev})
 	if err != nil {
 		return err
 	}
-	p.Logger.Info("polled default branch "+out.Status, "installation", in.Name, "repository", r.name, "tip", tip, "reason", out.Reason)
+	p.Logger.Info("polled default branch "+out.Status, "connection", in.Name, "repository", r.name, "tip", tip, "reason", out.Reason)
 	return nil
 }

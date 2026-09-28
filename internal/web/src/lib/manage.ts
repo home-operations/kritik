@@ -6,7 +6,7 @@ import type { ConfigSource, ErrorCode, FieldPolicy, ManagementErrorCode, PathDet
 
 const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
   revision_conflict: 'Someone else saved this tenant since you loaded it.',
-  reenter_secret: "The installation's forge, host or accounts changed, so this secret must be entered again.",
+  reenter_secret: "The connection's forge, host or accounts changed, so this secret must be entered again.",
   slug_taken: 'That name is already in use.',
   config_blocked: 'The running configuration is invalid elsewhere; an admin must fix it before this can be saved.',
   file_managed: 'This tenant is declared in the configuration file and cannot be changed here.',

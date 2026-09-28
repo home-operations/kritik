@@ -22,11 +22,11 @@ export class ApiError extends Error {
   }
 }
 
-// ambiguousInstallations returns the installations a 409 "ambiguous"
+// ambiguousConnections returns the connections a 409 "ambiguous"
 // repository error offers to choose from, or undefined for any other error.
-export function ambiguousInstallations(err: unknown): string[] | undefined {
+export function ambiguousConnections(err: unknown): string[] | undefined {
   if (!(err instanceof ApiError) || err.code !== 'ambiguous') return undefined;
-  const list = (err.details as { installations?: unknown } | undefined)?.installations;
+  const list = (err.details as { connections?: unknown } | undefined)?.connections;
   return Array.isArray(list) && list.every((x) => typeof x === 'string') ? list : undefined;
 }
 

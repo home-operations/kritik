@@ -133,7 +133,7 @@ func TestPrincipalCanRead(t *testing.T) {
 	}
 }
 
-// TestPrincipalFor: a member reads the tenants whose installations serve an
+// TestPrincipalFor: a member reads the tenants whose connections serve an
 // account the grant names, among those the file still declares.
 func TestPrincipalFor(t *testing.T) {
 	file := testFile(t, "auth:\n"+adminPassword)

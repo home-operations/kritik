@@ -25,7 +25,7 @@
   });
   $effect(() => live((e) => e.tenant === slug && e.kind === 'index_run', () => void paged.load()));
 
-  // A name several installations hold links with its installation, so the
+  // A name several connections hold links with its connection, so the
   // repository page does not have to ask which one.
   const shared = $derived.by(() => {
     const seen = new Set<string>();
@@ -40,7 +40,7 @@
   function visible(): Repository[] {
     const needle = filter.trim().toLowerCase();
     const all = paged.items;
-    return needle ? all.filter((r) => r.fullName.toLowerCase().includes(needle) || r.installation.toLowerCase().includes(needle)) : all;
+    return needle ? all.filter((r) => r.fullName.toLowerCase().includes(needle) || r.connection.toLowerCase().includes(needle)) : all;
   }
 </script>
 
@@ -50,7 +50,7 @@
     <div class="toolbar">
       <label class="search-box">
         <span class="sr-only">Filter repositories</span>
-        <input type="search" placeholder="Filter by name or installation" bind:value={filter} />
+        <input type="search" placeholder="Filter by name or connection" bind:value={filter} />
       </label>
     </div>
     <StateView {res} retry={() => res.load()} isEmpty={(d) => d.items.length === 0} empty="No repositories yet.">
@@ -64,7 +64,7 @@
               <thead>
                 <tr>
                   <th scope="col">Repository</th>
-                  <th scope="col">Installation</th>
+                  <th scope="col">Connection</th>
                   <th scope="col">Enabled</th>
                   <th scope="col">Index</th>
                   <th scope="col">Indexed commit</th>
@@ -74,8 +74,8 @@
               <tbody>
                 {#each rows as repo (repo.id)}
                   <tr>
-                    <td class="mono"><a href={href(repoRoute(slug, repo.fullName, shared.has(repo.fullName) ? repo.installation : undefined))}>{repo.fullName}</a></td>
-                    <td class="mono small">{repo.installation}</td>
+                    <td class="mono"><a href={href(repoRoute(slug, repo.fullName, shared.has(repo.fullName) ? repo.connection : undefined))}>{repo.fullName}</a></td>
+                    <td class="mono small">{repo.connection}</td>
                     <td>{#if repo.enabled}<Pill tone="ok" label="on" />{:else}<Pill label="off" />{/if}</td>
                     <td>
                       {#if repo.index.lastRunStatus}

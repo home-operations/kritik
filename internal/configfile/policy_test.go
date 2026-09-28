@@ -60,7 +60,7 @@ func TestSources(t *testing.T) {
 	if _, ok := s["skip.onlyPaths"]; ok {
 		t.Error("a setting only the repository has has no operator source")
 	}
-	dash, err := DecodeTenant(DashboardTenant{Slug: "beta", Spec: []byte(`{"slug":"beta","filter":"true","installations":[{"name":"b"}]}`)})
+	dash, err := DecodeTenant(DashboardTenant{Slug: "beta", Spec: []byte(`{"slug":"beta","filter":"true","connections":[{"name":"b"}]}`)})
 	if err != nil {
 		t.Fatal(err)
 	}

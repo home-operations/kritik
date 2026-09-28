@@ -52,9 +52,9 @@ type Index struct {
 }
 
 type indexRepo struct {
-	name, installation, defaultBranch string
-	enabled                           bool
-	activeRun                         string
+	name, connection, defaultBranch string
+	enabled                         bool
+	activeRun                       string
 }
 
 type activeGeneration struct {
@@ -78,12 +78,12 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	logger := w.Logger.With("tenant", tenant.Slug, "repository", repo.name, "trigger", args.Trigger)
-	settings := file.Settings(tenant, repo.installation, repo.name)
+	settings := file.Settings(tenant, repo.connection, repo.name)
 	if !repo.enabled || !settings.Enabled {
 		logger.Info("index skipped, repository disabled")
 		return nil
 	}
-	client, err := w.client(ctx, file, repo.installation, repo.name)
+	client, err := w.client(ctx, file, repo.connection, repo.name)
 	if err != nil {
 		return err
 	}
@@ -196,8 +196,8 @@ func (w *Index) loadRepo(ctx context.Context, args jobs.IndexArgs) (*indexRepo, 
 	err := w.Store.WithTenant(ctx, args.TenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT r.name, i.name, r.default_branch, r.enabled, r.active_index_run_id::text
-			FROM repositories r JOIN installations i ON i.id = r.installation_id WHERE r.id = $1`, args.RepositoryID).
-			Scan(&r.name, &r.installation, &r.defaultBranch, &r.enabled, &active)
+			FROM repositories r JOIN connections i ON i.id = r.connection_id WHERE r.id = $1`, args.RepositoryID).
+			Scan(&r.name, &r.connection, &r.defaultBranch, &r.enabled, &active)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, river.JobCancel(fmt.Errorf("worker: repository %s is unknown", args.RepositoryID))

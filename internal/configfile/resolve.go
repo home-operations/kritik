@@ -16,27 +16,27 @@ func (f *File) Tenant(slug string) (*Tenant, bool) {
 	return nil, false
 }
 
-// Installation returns the installation with the given name and the tenant
+// Connection returns the connection with the given name and the tenant
 // that owns it. Names are unique across the file, so this is how the ingest
 // role turns a hook path into a webhook secret.
-func (f *File) Installation(name string) (*Installation, *Tenant, bool) {
+func (f *File) Connection(name string) (*Connection, *Tenant, bool) {
 	for ti := range f.Tenants {
 		t := &f.Tenants[ti]
-		for ii := range t.Installations {
-			if t.Installations[ii].Name == name {
-				return &t.Installations[ii], t, true
+		for ii := range t.Connections {
+			if t.Connections[ii].Name == name {
+				return &t.Connections[ii], t, true
 			}
 		}
 	}
 	return nil, nil, false
 }
 
-// InstallationFor returns the tenant's installation a repository entry
+// ConnectionFor returns the tenant's connection a repository entry
 // belongs to: the one it names, or else the only one whose account owns
 // it. It is nil when none matches, or when several do and the entry names
 // none of them.
-func (f *File) InstallationFor(t *Tenant, r *Repository) *Installation {
-	in, err := t.repositoryInstallation(r, "")
+func (f *File) ConnectionFor(t *Tenant, r *Repository) *Connection {
+	in, err := t.repositoryConnection(r, "")
 	if err != nil {
 		return nil
 	}
@@ -44,12 +44,12 @@ func (f *File) InstallationFor(t *Tenant, r *Repository) *Installation {
 }
 
 // Settings resolves the effective settings for the repository "owner/repo"
-// of a tenant, reached through the named installation. Layers apply in one
+// of a tenant, reached through the named connection. Layers apply in one
 // direction: defaults, then the tenant, then the repository entry bound to
-// that installation, if one exists. A repository not listed under the
-// tenant gets the tenant's settings and is enabled; empty installation and
+// that connection, if one exists. A repository not listed under the
+// tenant gets the tenant's settings and is enabled; empty connection and
 // repo give the tenant's settings alone.
-func (f *File) Settings(t *Tenant, installation, repo string) Settings {
+func (f *File) Settings(t *Tenant, connection, repo string) Settings {
 	s := Settings{
 		Enabled:     true,
 		Ignore:      append([]string(nil), DefaultIgnore...),
@@ -62,7 +62,7 @@ func (f *File) Settings(t *Tenant, installation, repo string) Settings {
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
 	s.apply(&t.Overrides)
 	s.Limits = s.Limits.overlay(t.Limits)
-	if r := f.repositoryEntry(t, installation, repo); r != nil {
+	if r := f.repositoryEntry(t, connection, repo); r != nil {
 		if r.Enabled != nil {
 			s.Enabled = *r.Enabled
 		}
@@ -75,14 +75,14 @@ func (f *File) Settings(t *Tenant, installation, repo string) Settings {
 }
 
 // repositoryEntry is the tenant's entry for the repository "owner/repo"
-// reached through the named installation, nil when it lists none.
-func (f *File) repositoryEntry(t *Tenant, installation, repo string) *Repository {
+// reached through the named connection, nil when it lists none.
+func (f *File) repositoryEntry(t *Tenant, connection, repo string) *Repository {
 	for i := range t.Repositories {
 		r := &t.Repositories[i]
 		if r.Name != repo {
 			continue
 		}
-		if in := f.InstallationFor(t, r); in != nil && in.Name == installation {
+		if in := f.ConnectionFor(t, r); in != nil && in.Name == connection {
 			return r
 		}
 	}
@@ -106,14 +106,14 @@ const (
 // from: the author of the narrowest scope that writes it, the file for
 // the defaults, or the built-in default. Ignore globs come from every
 // scope; the narrowest that adds some is given.
-func (f *File) Sources(t *Tenant, installation, repo string) map[string]Source {
+func (f *File) Sources(t *Tenant, connection, repo string) map[string]Source {
 	type scope struct {
 		spec   any
 		source Source
 	}
 	origin := Source(t.Origin())
 	scopes := []scope{{&f.Defaults, SourceFile}, {t, origin}}
-	if r := f.repositoryEntry(t, installation, repo); r != nil {
+	if r := f.repositoryEntry(t, connection, repo); r != nil {
 		scopes = append(scopes, scope{r, origin})
 	}
 	out := map[string]Source{}

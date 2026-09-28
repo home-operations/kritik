@@ -99,7 +99,7 @@ func (s *Server) tenantSummary(ctx context.Context, file *configfile.File, t *co
 		return TenantSummary{}, err
 	}
 	return TenantSummary{
-		Slug: t.Slug, ManagedBy: t.Origin(), Role: role, Installations: stats.Installations, Repositories: stats.Repositories,
+		Slug: t.Slug, ManagedBy: t.Origin(), Role: role, Connections: stats.Connections, Repositories: stats.Repositories,
 		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "", "").Limits),
 	}, nil
 }
@@ -170,23 +170,23 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request, t *tenantScop
 	}
 	settings := t.file.Settings(t.tenant, "", "")
 	d := TenantDetail{
-		Slug: t.tenant.Slug, ManagedBy: t.tenant.Origin(), Role: t.role(), Installations: []Installation{},
+		Slug: t.tenant.Slug, ManagedBy: t.tenant.Origin(), Role: t.role(), Connections: []Connection{},
 		Models: models(settings.Models), Limits: limits(settings.Limits), Filter: filterSource(settings),
 		Usage: monthUsage(month, settings.Limits),
 	}
-	for i := range t.tenant.Installations {
-		in := installation(&t.tenant.Installations[i])
-		if at, ok := webhooks[t.tenant.Installations[i].ID()]; ok {
+	for i := range t.tenant.Connections {
+		in := connection(&t.tenant.Connections[i])
+		if at, ok := webhooks[t.tenant.Connections[i].ID()]; ok {
 			in.LastWebhookAt = &at
 		}
-		d.Installations = append(d.Installations, in)
+		d.Connections = append(d.Connections, in)
 	}
 	writeJSON(w, http.StatusOK, d)
 	return nil
 }
 
-func installation(in *configfile.Installation) Installation {
-	return Installation{
+func connection(in *configfile.Connection) Connection {
+	return Connection{
 		Name: in.Name, Forge: in.Forge, Accounts: in.Accounts, HookPath: "/hooks/" + in.Name,
 		Credentials: CredentialsSet{
 			ClientID: in.App.ClientIDValue() != "", PrivateKey: in.App.PrivateKeyValue().Value() != "",
@@ -232,7 +232,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *tenantScop
 
 func repository(r store.RepoRow) Repository {
 	out := Repository{
-		ID: r.ID, FullName: r.FullName, Installation: r.Installation, Enabled: r.Enabled, ManagedBy: r.ManagedBy,
+		ID: r.ID, FullName: r.FullName, Connection: r.Connection, Enabled: r.Enabled, ManagedBy: r.ManagedBy,
 		DefaultBranch: r.DefaultBranch,
 		Index:         IndexState{ActiveCommit: r.ActiveCommit, ActiveAt: r.ActiveAt, LastRunStatus: r.LastIndexStatus, LastRunAt: r.LastIndexAt},
 	}
@@ -242,23 +242,23 @@ func repository(r store.RepoRow) Repository {
 	return out
 }
 
-// findRepo resolves {owner}/{repo}, and ?installation= when a tenant has
-// the same repository under two installations.
+// findRepo resolves {owner}/{repo}, and ?connection= when a tenant has
+// the same repository under two connections.
 func findRepo(ctx context.Context, tx pgx.Tx, r *http.Request) (store.RepoRow, error) {
-	return lookupRepo(ctx, tx, r.PathValue("owner")+"/"+r.PathValue("repo"), r.URL.Query().Get("installation"))
+	return lookupRepo(ctx, tx, r.PathValue("owner")+"/"+r.PathValue("repo"), r.URL.Query().Get("connection"))
 }
 
-// lookupRepo resolves a repository by name and, when several installations
-// hold it, by installation: a name that stays ambiguous is a 409 listing
+// lookupRepo resolves a repository by name and, when several connections
+// hold it, by connection: a name that stays ambiguous is a 409 listing
 // them, never a guess.
-func lookupRepo(ctx context.Context, tx pgx.Tx, name, installation string) (store.RepoRow, error) {
-	row, err := store.FindRepo(ctx, tx, name, installation)
+func lookupRepo(ctx context.Context, tx pgx.Tx, name, connection string) (store.RepoRow, error) {
+	row, err := store.FindRepo(ctx, tx, name, connection)
 	if errors.Is(err, store.ErrNotFound) {
 		return row, errNotFound("repository")
 	}
 	if e, ok := errors.AsType[*store.AmbiguousRepoError](err); ok {
-		return row, errStatus(http.StatusConflict, CodeAmbiguous, "several installations hold this repository; pass ?installation=",
-			ambiguousRepoDetails{Installations: e.Installations})
+		return row, errStatus(http.StatusConflict, CodeAmbiguous, "several connections hold this repository; pass ?connection=",
+			ambiguousRepoDetails{Connections: e.Connections})
 	}
 	return row, err
 }
@@ -287,9 +287,9 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *tenantScope)
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.tenant, row.Installation, row.FullName)
+	settings := t.file.Settings(t.tenant, row.Connection, row.FullName)
 	d := RepoDetail{
-		Repository: repository(row), Settings: repoSettings(settings), Sources: t.file.Sources(t.tenant, row.Installation, row.FullName),
+		Repository: repository(row), Settings: repoSettings(settings), Sources: t.file.Sources(t.tenant, row.Connection, row.FullName),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
 	}
 	writeJSON(w, http.StatusOK, d)
@@ -371,7 +371,7 @@ func repoFilter(ctx context.Context, tx pgx.Tx, r *http.Request) (string, error)
 	if name == "" {
 		return "", nil
 	}
-	row, err := lookupRepo(ctx, tx, name, r.URL.Query().Get("installation"))
+	row, err := lookupRepo(ctx, tx, name, r.URL.Query().Get("connection"))
 	return row.ID, err
 }
 

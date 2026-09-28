@@ -20,7 +20,7 @@ config:
       filter: "!pr.draft"
     tenants:
       - slug: example
-        installations:
+        connections:
           - name: example-github
             forge: github
             accounts: [example]

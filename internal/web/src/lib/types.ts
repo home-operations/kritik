@@ -93,7 +93,7 @@ export interface TenantSummary {
   slug: string;
   managedBy: TenantManagedBy;
   role: TenantRole;
-  installations: number;
+  connections: number;
   repositories: number;
   reviews7d: number;
   usage: MonthUsage;
@@ -114,13 +114,13 @@ export interface CredentialsSet {
   webhookSecret: boolean;
 }
 
-export interface Installation {
+export interface Connection {
   name: string;
   forge: Forge;
   accounts: string[];
   credentials: CredentialsSet;
   hookPath: string;
-  // lastWebhookAt is null until a webhook for the installation reaches
+  // lastWebhookAt is null until a webhook for the connection reaches
   // kritik; until then kritik only polls it.
   lastWebhookAt: string | null;
 }
@@ -140,7 +140,7 @@ export interface TenantDetail {
   slug: string;
   managedBy: TenantManagedBy;
   role: TenantRole;
-  installations: Installation[];
+  connections: Connection[];
   models: Models;
   limits: Limits;
   filter: string;
@@ -163,7 +163,7 @@ export interface ReviewRef {
 export interface Repository {
   id: string;
   fullName: string;
-  installation: string;
+  connection: string;
   enabled: boolean;
   managedBy: 'file' | 'dashboard' | 'forge';
   defaultBranch: string;
@@ -726,7 +726,7 @@ export interface UpdateTenantRequest {
 export interface TenantWriteResult {
   slug: string;
   revision: number;
-  // Each server-generated secret, keyed "installations[<name>].<key>";
+  // Each server-generated secret, keyed "connections[<name>].<key>";
   // shown once, never again.
   generated?: Record<string, string>;
 }

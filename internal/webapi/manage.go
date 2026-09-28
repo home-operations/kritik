@@ -307,14 +307,14 @@ func (s *Server) checkSpec(
 }
 
 // checkTakeover refuses a write that would claim a live tenant or
-// installation row another origin manages (one the file dropped that the
-// leader has not disabled yet, say) or an installation name another
+// connection row another origin manages (one the file dropped that the
+// leader has not disabled yet, say) or a connection name another
 // tenant holds in any state, which the leader would refuse to hand over.
 // The merge check already refuses anything the file still declares.
 func (s *Server) checkTakeover(ctx context.Context, tx pgx.Tx, tenantID string, t *configfile.Tenant) error {
-	names := make([]string, len(t.Installations))
-	for i := range t.Installations {
-		names[i] = t.Installations[i].Name
+	names := make([]string, len(t.Connections))
+	for i := range t.Connections {
+		names[i] = t.Connections[i].Name
 	}
 	taken, err := store.LiveNonDashboard(ctx, tx, tenantID, names)
 	if err != nil {
@@ -322,7 +322,7 @@ func (s *Server) checkTakeover(ctx context.Context, tx pgx.Tx, tenantID string, 
 	}
 	msg := " is still in use by a tenant the configuration file manages"
 	if len(taken) == 0 {
-		if taken, err = store.InstallationsHeldElsewhere(ctx, tx, tenantID, names); err != nil {
+		if taken, err = store.ConnectionsHeldElsewhere(ctx, tx, tenantID, names); err != nil {
 			return err
 		}
 		msg = " belongs to another tenant"
@@ -332,9 +332,9 @@ func (s *Server) checkTakeover(ctx context.Context, tx pgx.Tx, tenantID string, 
 	}
 	path := slugPath.Path
 	if taken[0] != slugPath.Path {
-		for i := range t.Installations {
-			if t.Installations[i].Name == taken[0] {
-				path = "installations[" + strconv.Itoa(i) + "].name"
+		for i := range t.Connections {
+			if t.Connections[i].Name == taken[0] {
+				path = "connections[" + strconv.Itoa(i) + "].name"
 			}
 		}
 	}

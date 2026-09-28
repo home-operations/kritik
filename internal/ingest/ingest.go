@@ -1,6 +1,6 @@
 // Package ingest is the only surface a forge reaches. It looks the
-// installation up by hook path, verifies the signature with that
-// installation's secret, parses the payload into a forge-neutral event, and
+// connection up by hook path, verifies the signature with that
+// connection's secret, parses the payload into a forge-neutral event, and
 // hands it to a Dispatcher. It never does work itself.
 package ingest
 
@@ -18,10 +18,10 @@ import (
 
 // Request is a verified, parsed webhook with the configuration it applies to.
 type Request struct {
-	File         *configfile.File
-	Tenant       *configfile.Tenant
-	Installation *configfile.Installation
-	Event        webhook.Event
+	File       *configfile.File
+	Tenant     *configfile.Tenant
+	Connection *configfile.Connection
+	Event      webhook.Event
 }
 
 // Outcome is what the dispatcher did with a request, for the response and
@@ -48,13 +48,13 @@ type Dispatcher interface {
 	Dispatch(ctx context.Context, req Request) (Outcome, error)
 }
 
-// DeliveryRecorder notes that an installation's webhook delivered a request
+// DeliveryRecorder notes that a connection's webhook delivered a request
 // kritik verified. The store-backed implementation is Service.
 type DeliveryRecorder interface {
-	RecordDelivery(ctx context.Context, tenantID, installationID string) error
+	RecordDelivery(ctx context.Context, tenantID, connectionID string) error
 }
 
-// Handler serves POST /hooks/{installation}.
+// Handler serves POST /hooks/{connection}.
 type Handler struct {
 	current *configfile.Current
 	disp    Dispatcher
@@ -71,23 +71,23 @@ func NewHandler(current *configfile.Current, disp Dispatcher, logger *slog.Logge
 }
 
 // ServeHTTP verifies, parses and dispatches. Status codes: 404 for an
-// unknown installation, 401 for a bad signature, 400 for an unparsable
+// unknown connection, 401 for a bad signature, 400 for an unparsable
 // payload, 413 for an oversized one, 204 for a ping, 202 for anything
 // accepted (enqueued, skipped or ignored: the forge only needs to know the
 // delivery landed), 500 when the dispatcher failed and the forge should
 // redeliver.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("installation")
+	name := r.PathValue("connection")
 	file := h.current.Get()
-	in, tenant, ok := file.Installation(name)
+	in, tenant, ok := file.Connection(name)
 	if !ok {
 		// The name is the caller's, not ours: labelling by it would let any
 		// request mint a new series.
-		h.Metrics.Webhook("", "unknown_installation")
-		http.Error(w, "unknown installation", http.StatusNotFound)
+		h.Metrics.Webhook("", "unknown_connection")
+		http.Error(w, "unknown connection", http.StatusNotFound)
 		return
 	}
-	logger := h.logger.With("installation", name, "tenant", tenant.Slug)
+	logger := h.logger.With("connection", name, "tenant", tenant.Slug)
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, webhook.MaxBody))
 	if err != nil {
@@ -141,7 +141,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := h.disp.Dispatch(r.Context(), Request{File: file, Tenant: tenant, Installation: in, Event: ev})
+	out, err := h.disp.Dispatch(r.Context(), Request{File: file, Tenant: tenant, Connection: in, Event: ev})
 	if err != nil {
 		logger.Error("webhook dispatch failed", "error", err)
 		h.Metrics.Webhook(name, "error")

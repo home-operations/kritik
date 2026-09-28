@@ -8,7 +8,7 @@ import (
 	"github.com/home-operations/kritik/internal/egress"
 )
 
-// GitHubHost is the forge every installation and GitHub sign-in talks to.
+// GitHubHost is the forge every connection and GitHub sign-in talks to.
 const GitHubHost = "github.com"
 
 // validateEgress checks the allowlist entries are bare hostnames and each
@@ -45,7 +45,7 @@ func checkHost(h string) error {
 }
 
 // EgressRules is what the gateway allows for this file: the configured
-// hosts and, once any installation exists, GitHub, since runners fetch from
+// hosts and, once any connection exists, GitHub, since runners fetch from
 // it, plus the credentials as Authorization header values. Provider endpoints
 // are not among them: a runner reaches its model through the gateway's
 // model endpoint, and the worker calls the provider (ADR-0004).
@@ -58,7 +58,7 @@ func (f *File) EgressRules() egress.Rules {
 		}
 	}
 	for _, t := range f.Tenants {
-		if len(t.Installations) > 0 {
+		if len(t.Connections) > 0 {
 			add(GitHubHost)
 		}
 	}

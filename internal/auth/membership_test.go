@@ -14,16 +14,16 @@ import (
 const tenantsYAML = `
 tenants:
   - slug: personal
-    installations:
+    connections:
       - { name: personal-bot, forge: github, accounts: [Alice], app: &app { clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } } }
   - slug: org
-    installations:
+    connections:
       - { name: org-bot, forge: github, accounts: [acme], app: *app }
   - slug: adminorg
-    installations:
+    connections:
       - { name: adminorg-bot, forge: github, accounts: [widgets], app: *app }
   - slug: several
-    installations:
+    connections:
       - { name: several-bot, forge: github, accounts: [nobody, Widgets], app: *app }
 `
 

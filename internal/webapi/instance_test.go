@@ -19,7 +19,7 @@ func TestInstanceSettings(t *testing.T) {
 polling: { interval: 2m }
 tenants:
   - slug: acme
-    installations:
+    connections:
       - { name: acme-bot, forge: github, accounts: [acme], app: { clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } } }
 `))
 	if err != nil {

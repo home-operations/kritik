@@ -162,7 +162,7 @@
                 <th scope="col">Managed by</th>
                 <th scope="col">State</th>
                 <th scope="col" class="num">Revision</th>
-                <th scope="col" class="num">Installations</th>
+                <th scope="col" class="num">Connections</th>
                 <th scope="col" class="num">Repos</th>
                 <th scope="col" class="num">Reviews 7d</th>
                 <th scope="col" class="num">Tokens (month)</th>
@@ -190,7 +190,7 @@
                     {/if}
                   </td>
                   <td class="num">{t.revision || '—'}</td>
-                  <td class="num">{t.installations}</td>
+                  <td class="num">{t.connections}</td>
                   <td class="num">{t.repositories}</td>
                   <td class="num">{t.reviews7d}</td>
                   <td class="num">{tokens(t.usage.tokens)}</td>

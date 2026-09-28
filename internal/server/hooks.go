@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-// Hooks is the only surface a forge can reach: /hooks/{installation}.
+// Hooks is the only surface a forge can reach: /hooks/{connection}.
 type Hooks struct {
 	addr    string
 	handler http.Handler
@@ -19,11 +19,11 @@ func NewHooks(addr string, h http.Handler, logger *slog.Logger) *Hooks {
 }
 
 // Handler returns the hook mux, exported so tests can drive it without
-// binding a port. Only POST /hooks/{installation} exists; everything else
+// binding a port. Only POST /hooks/{connection} exists; everything else
 // is a 404 so the listener exposes nothing to probe.
 func (h *Hooks) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("POST /hooks/{installation}", h.handler)
+	mux.Handle("POST /hooks/{connection}", h.handler)
 	return mux
 }
 

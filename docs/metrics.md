@@ -2,12 +2,12 @@
 
 The management port serves `/metrics` alongside `/healthz` and `/readyz`.
 Beyond the Go runtime, every series is prefixed `kritik_` and labelled by
-tenant, installation or model, never by pull request or commit:
+tenant, connection or model, never by pull request or commit:
 
 | Series                                                                                 | Labels                | What it counts                                                                |
 | -------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------- |
-| `kritik_webhooks_total`                                                                | installation, outcome | deliveries: enqueued, skipped, ignored, ping, unauthorized, unparsable, error |
-| `kritik_polls_total`, `kritik_polled_pull_requests_total`                              | installation, outcome | backstop polls and the open pull requests they handed to ingest               |
+| `kritik_webhooks_total`                                                                | connection, outcome   | deliveries: enqueued, skipped, ignored, ping, unauthorized, unparsable, error |
+| `kritik_polls_total`, `kritik_polled_pull_requests_total`                              | connection, outcome   | backstop polls and the open pull requests they handed to ingest               |
 | `kritik_reviews_total`, `kritik_review_duration_seconds`                               | tenant, status        | reviews by terminal status and wall time                                      |
 | `kritik_findings_total`                                                                | tenant, severity      | findings posted                                                               |
 | `kritik_followups_total`                                                               | tenant, outcome       | mentions handled: answered, limited, ignored, failed                          |

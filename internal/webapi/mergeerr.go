@@ -16,7 +16,7 @@ var (
 	// a message about the one being written never names another.
 	otherTenantRe = regexp.MustCompile(`dashboard\[([^\]]*)\]|tenants\[\d+\]|tenant "([^"]*)"`)
 	quotedRe      = regexp.MustCompile(`"([^"]*)"`)
-	installNameRe = regexp.MustCompile(`^installations\[\d+\]\.name$`)
+	installNameRe = regexp.MustCompile(`^connections\[\d+\]\.name$`)
 	yamlLineRe    = regexp.MustCompile(`^line \d+: `)
 	yamlFieldRe   = regexp.MustCompile(`field (\S+) not found`)
 	yamlTypeRe    = regexp.MustCompile(` in type [\w.*\[\]]+`)
@@ -86,7 +86,7 @@ func splitPath(msg, slug string) (path, rest string) {
 }
 
 // candidatePath maps the path of another tenant's clash onto the
-// candidate's spec: the slug, or an installation by the name it shares.
+// candidate's spec: the slug, or a connection by the name it shares.
 func candidatePath(candidate *configfile.Tenant, theirPath, detail string) string {
 	switch {
 	case theirPath == slugPath.Path:
@@ -96,9 +96,9 @@ func candidatePath(candidate *configfile.Tenant, theirPath, detail string) strin
 		if m == nil {
 			return ""
 		}
-		for i := range candidate.Installations {
-			if candidate.Installations[i].Name == m[1] {
-				return "installations[" + strconv.Itoa(i) + "].name"
+		for i := range candidate.Connections {
+			if candidate.Connections[i].Name == m[1] {
+				return "connections[" + strconv.Itoa(i) + "].name"
 			}
 		}
 	}

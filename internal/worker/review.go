@@ -30,11 +30,11 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// Forges builds and caches a forge client per installation and repository
+// Forges builds and caches a forge client per connection and repository
 // owner. repo is the repository the client is for: a GitHub App's
-// installation, and with it the token, is its owner's.
+// connection, and with it the token, is its owner's.
 type Forges interface {
-	For(ctx context.Context, in *configfile.Installation, repo string) (forge.Client, error)
+	For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error)
 }
 
 // Review works the review queue.
@@ -74,7 +74,7 @@ type pullRequest struct {
 	id, repositoryID string
 	repository       string
 	number           int
-	installation     string
+	connection       string
 	headSHA, baseRef string
 	title, author    string
 	authorIsBot      bool
@@ -356,9 +356,9 @@ func loadPullRequest(ctx context.Context, st *store.Store, tenantID, repositoryI
 	err := st.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT p.id, p.repository_id, r.name, p.number, i.name, p.head_sha, p.base_ref, p.title, p.author, p.author_is_bot
-			FROM pull_requests p JOIN repositories r ON r.id = p.repository_id JOIN installations i ON i.id = r.installation_id
+			FROM pull_requests p JOIN repositories r ON r.id = p.repository_id JOIN connections i ON i.id = r.connection_id
 			WHERE p.repository_id = $1 AND p.number = $2`, repositoryID, number).
-			Scan(&pr.id, &pr.repositoryID, &pr.repository, &pr.number, &pr.installation,
+			Scan(&pr.id, &pr.repositoryID, &pr.repository, &pr.number, &pr.connection,
 				&pr.headSHA, &pr.baseRef, &pr.title, &pr.author, &pr.authorIsBot)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -447,11 +447,11 @@ func (w *Review) begin(
 		logger.Info("review superseded before start", "current_head", short(pr.headSHA))
 		return begun{}, true, w.end(ctx, e, statusSuperseded, "")
 	}
-	settings := file.Settings(tenant, pr.installation, pr.repository)
+	settings := file.Settings(tenant, pr.connection, pr.repository)
 	if held, err := w.slotsHeld(ctx, e, job, tenant.ID(), settings); held {
 		return begun{}, true, err
 	}
-	client, err := w.client(ctx, file, pr.installation, pr.repository)
+	client, err := w.client(ctx, file, pr.connection, pr.repository)
 	if err != nil {
 		return begun{}, true, err
 	}
@@ -736,10 +736,10 @@ func errText(err error) string {
 }
 
 // ForgeCache is the Forges implementation over configured GitHub Apps. One
-// client per installation and repository owner, built on first use and
-// rebuilt when the installation's credentials change.
+// client per connection and repository owner, built on first use and
+// rebuilt when the connection's credentials change.
 type ForgeCache struct {
-	Build func(ctx context.Context, in *configfile.Installation, repo string) (forge.Client, error)
+	Build func(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error)
 
 	mu      sync.Mutex
 	clients map[string]cachedForge
@@ -751,7 +751,7 @@ type cachedForge struct {
 }
 
 // For implements Forges.
-func (c *ForgeCache) For(ctx context.Context, in *configfile.Installation, repo string) (forge.Client, error) {
+func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
 	fp := credentialFingerprint(in)
 	owner, _, _ := strings.Cut(repo, "/")
 	key := in.Name + "/" + strings.ToLower(owner)

@@ -1,16 +1,16 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { accountKey, canKeep, type InstallationDraft, type SecretDraft } from '../../spec';
+  import { accountKey, canKeep, type ConnectionDraft, type SecretDraft } from '../../spec';
   import SecretField from './SecretField.svelte';
 
   interface Props {
-    inst: InstallationDraft;
+    inst: ConnectionDraft;
     index: number;
     inv: (path: string) => boolean;
     onremove: () => void;
   }
   let { inst = $bindable(), index, inv, onremove }: Props = $props();
-  const p = $derived(`installations[${index}]`);
+  const p = $derived(`connections[${index}]`);
 
   // A kept key only stays valid for the forge and accounts it was issued
   // for; the server refuses the save otherwise (reenter_secret).
@@ -23,8 +23,8 @@
 
 <div class="item-card">
   <div class="item-head">
-    <span class="mono">{inst.name || 'New installation'}</span>
-    <button type="button" class="btn btn-small btn-danger" onclick={onremove}>Remove installation</button>
+    <span class="mono">{inst.name || 'New connection'}</span>
+    <button type="button" class="btn btn-small btn-danger" onclick={onremove}>Remove connection</button>
   </div>
   {#if inst.origName && !keepable}
     <p class="field-hint" role="note">Renamed from <span class="mono">{inst.origName}</span>: its stored secrets cannot be kept, so enter or generate each again.</p>

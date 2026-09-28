@@ -23,7 +23,7 @@ helm install kritik oci://ghcr.io/home-operations/charts/kritik \
 ```
 
 where `my-values.yaml` carries `config.file` (the declarative configuration:
-providers, defaults, tenants with installations and repositories) and
+providers, defaults, tenants with connections and repositories) and
 `secretMounts` for the GitHub App keys, webhook secrets and provider API
 keys the file references by path. Set `embedding.model` and a key to turn
 on the vector index and the similar-code context stage.
@@ -109,7 +109,7 @@ are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
 destination by hostname only. github.com is always allowed once the file
-declares an installation; `egress.allowHosts` in the configuration file adds
+declares a connection; `egress.allowHosts` in the configuration file adds
 the rest (registries, release APIs), and `egress.credentials` names hosts the
 gateway adds a bearer token to when a runner sends it a plain `http://`
 request, so the runner never holds the token:
@@ -147,7 +147,7 @@ The chart's image has none of them, so no command is offered; point
 `runner.image` at the release's `-tools` tag, an Alpine image with all
 three. Every host `curl` reaches must pass the gateway, so add the
 release APIs and registries to `egress.allowHosts` (a GitHub
-installation already allows `github.com`):
+connection already allows `github.com`):
 
 ```yaml
 runner:
@@ -315,7 +315,7 @@ Kubernetes: `>=1.25.0-0`
 | secretMounts | list | `[]` | Secrets mounted as files for the configuration file to reference. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container securityContext (no privilege escalation, read-only root filesystem, drops ALL capabilities). |
 | service.metricsPort | int | `8081` | Metrics and probe port, served by every pod. |
-| service.port | int | `8080` | Webhook port (`POST /hooks/{installation}`), served by `all` and `ingest` pods. |
+| service.port | int | `8080` | Webhook port (`POST /hooks/{connection}`), served by `all` and `ingest` pods. |
 | service.type | string | `"ClusterIP"` | Service type for the webhook listener. |
 | service.webPort | int | `8083` | Dashboard port, served by `all` (once `web.url` is set) and `web` pods. |
 | serviceAccount.annotations | object | `{}` | Annotations for the ServiceAccount. |

@@ -102,7 +102,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 const twoTenants = `
 tenants:
   - slug: alpha
-    installations:
+    connections:
       - name: alpha-bot
         forge: github
         accounts: [alpha]
@@ -112,7 +112,7 @@ tenants:
       - name: alpha/two
         enabled: false
   - slug: beta
-    installations:
+    connections:
       - name: beta-bot
         forge: github
         accounts: [beta]
@@ -163,16 +163,16 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 	}
 
 	t.Run("each tenant sees only its own rows", func(t *testing.T) {
-		if count(t, alpha, "tenants") != 1 || count(t, alpha, "installations") != 1 || count(t, alpha, "repositories") != 2 {
-			t.Fatal("alpha should see its own tenant, installation and two repositories")
+		if count(t, alpha, "tenants") != 1 || count(t, alpha, "connections") != 1 || count(t, alpha, "repositories") != 2 {
+			t.Fatal("alpha should see its own tenant, connection and two repositories")
 		}
-		if count(t, beta, "repositories") != 0 || count(t, beta, "installations") != 1 {
-			t.Fatal("beta should see one installation and no repositories")
+		if count(t, beta, "repositories") != 0 || count(t, beta, "connections") != 1 {
+			t.Fatal("beta should see one connection and no repositories")
 		}
 	})
 
 	t.Run("no tenant set sees nothing", func(t *testing.T) {
-		for _, table := range []string{"tenants", "installations", "repositories", "model_leases"} {
+		for _, table := range []string{"tenants", "connections", "repositories", "model_leases"} {
 			var n int
 			if err := s.app.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&n); err != nil {
 				t.Fatalf("%s: %v", table, err)
@@ -224,14 +224,14 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 		}
 		var enabled bool
 		var rows int
-		if err := s.owner.QueryRow(ctx, `SELECT enabled, (SELECT count(*) FROM installations WHERE tenant_id = tenants.id) FROM tenants WHERE slug = 'beta'`).Scan(&enabled, &rows); err != nil {
+		if err := s.owner.QueryRow(ctx, `SELECT enabled, (SELECT count(*) FROM connections WHERE tenant_id = tenants.id) FROM tenants WHERE slug = 'beta'`).Scan(&enabled, &rows); err != nil {
 			t.Fatal(err)
 		}
 		if enabled || rows != 1 {
-			t.Fatalf("beta enabled=%v installations=%d; want disabled with rows kept", enabled, rows)
+			t.Fatalf("beta enabled=%v connections=%d; want disabled with rows kept", enabled, rows)
 		}
 		var instEnabled bool
-		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM installations WHERE name = 'beta-bot'`).Scan(&instEnabled); err != nil || instEnabled {
+		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM connections WHERE name = 'beta-bot'`).Scan(&instEnabled); err != nil || instEnabled {
 			t.Fatalf("beta-bot enabled=%v err=%v; want disabled", instEnabled, err)
 		}
 		if err := s.ApplyConfig(ctx, f, "test"); err != nil {
@@ -511,17 +511,17 @@ func TestSweepDisabledIndexes(t *testing.T) {
 	sweep(0)
 }
 
-// TestFindRepoAcrossInstallations checks that a repository name two
-// installations of a tenant hold is ambiguous without an installation,
-// resolves with one, and stops being ambiguous once one installation is
+// TestFindRepoAcrossConnections checks that a repository name two
+// connections of a tenant hold is ambiguous without a connection,
+// resolves with one, and stops being ambiguous once one connection is
 // gone and only its disabled repository is left.
-func TestFindRepoAcrossInstallations(t *testing.T) {
+func TestFindRepoAcrossConnections(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
 	const twoApps = `
 tenants:
   - slug: gamma
-    installations:
+    connections:
       - name: gamma-one
         forge: github
         accounts: [gamma]
@@ -531,19 +531,19 @@ tenants:
         accounts: [gamma]
         app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
     repositories:
-      - { name: gamma/x, installation: gamma-one }
-      - { name: gamma/x, installation: gamma-two }
+      - { name: gamma/x, connection: gamma-one }
+      - { name: gamma/x, connection: gamma-two }
 `
 	if err := s.ApplyConfig(ctx, parse(t, twoApps), "test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	gamma := tenantID(t, s, "gamma")
-	find := func(name, installation string) (RepoRow, error) {
+	find := func(name, connection string) (RepoRow, error) {
 		t.Helper()
 		var row RepoRow
 		err := s.WithTenant(ctx, gamma, func(tx pgx.Tx) error {
 			var err error
-			row, err = FindRepo(ctx, tx, name, installation)
+			row, err = FindRepo(ctx, tx, name, connection)
 			return err
 		})
 		return row, err
@@ -551,17 +551,17 @@ tenants:
 
 	_, err := find("gamma/x", "")
 	e, ok := errors.AsType[*AmbiguousRepoError](err)
-	if !ok || !slices.Equal(slices.Sorted(slices.Values(e.Installations)), []string{"gamma-one", "gamma-two"}) {
-		t.Fatalf("FindRepo without installation = %v, want ambiguous over gamma-one and gamma-two", err)
+	if !ok || !slices.Equal(slices.Sorted(slices.Values(e.Connections)), []string{"gamma-one", "gamma-two"}) {
+		t.Fatalf("FindRepo without connection = %v, want ambiguous over gamma-one and gamma-two", err)
 	}
-	if row, err := find("gamma/x", "gamma-two"); err != nil || row.Installation != "gamma-two" {
+	if row, err := find("gamma/x", "gamma-two"); err != nil || row.Connection != "gamma-two" {
 		t.Fatalf("FindRepo(gamma-two) = %+v, %v", row, err)
 	}
 	if _, err := find("gamma/nope", ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("FindRepo(unknown) = %v, want ErrNotFound", err)
 	}
 
-	oneLeft := strings.Replace(strings.Replace(twoApps, `      - { name: gamma/x, installation: gamma-two }
+	oneLeft := strings.Replace(strings.Replace(twoApps, `      - { name: gamma/x, connection: gamma-two }
 `, "", 1), `      - name: gamma-two
         forge: github
         accounts: [gamma]
@@ -570,7 +570,7 @@ tenants:
 	if err := s.ApplyConfig(ctx, parse(t, oneLeft), "test"); err != nil {
 		t.Fatalf("ApplyConfig without gamma-two: %v", err)
 	}
-	if row, err := find("gamma/x", ""); err != nil || row.Installation != "gamma-one" || !row.Enabled {
+	if row, err := find("gamma/x", ""); err != nil || row.Connection != "gamma-one" || !row.Enabled {
 		t.Fatalf("FindRepo after gamma-two went = %+v, %v; want gamma-one's enabled repository", row, err)
 	}
 }

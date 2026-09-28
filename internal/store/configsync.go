@@ -37,13 +37,13 @@ func IsConfigContentError(err error) bool {
 	return strings.HasPrefix(pgErr.Code, "22") || pgErr.Code == "23502" || pgErr.Code == "23514"
 }
 
-// ApplyConfig upserts the file's tenants, installations and listed
+// ApplyConfig upserts the file's tenants, connections and listed
 // repositories as rows managed by each tenant's origin, disables file and
 // dashboard rows the file no longer declares, and records the applied hash.
 // A row declared again by another origin (a file tenant removed and a
 // dashboard tenant of the same slug added, or the reverse) is disabled and
-// then taken over; an enabled row is never taken over, and neither is an
-// installation another tenant holds (both ErrManagedBy). It runs as the
+// then taken over; an enabled row is never taken over, and neither is a
+// connection another tenant holds (both ErrManagedBy). It runs as the
 // owner in one transaction, so a replica reading config_state never sees a
 // half-applied file. Only the leader calls it.
 func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader string) error {
@@ -65,19 +65,19 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 		if err != nil {
 			return err
 		}
-		installationIDs := map[string]string{}
-		for j := range t.Installations {
-			in := &t.Installations[j]
-			id, err := upsertInstallation(ctx, tx, tenantID, t.Origin(), in)
+		connectionIDs := map[string]string{}
+		for j := range t.Connections {
+			in := &t.Connections[j]
+			id, err := upsertConnection(ctx, tx, tenantID, t.Origin(), in)
 			if err != nil {
 				return err
 			}
-			installationIDs[in.Name] = id
+			connectionIDs[in.Name] = id
 		}
 		for j := range t.Repositories {
 			r := &t.Repositories[j]
-			in := f.InstallationFor(t, r)
-			if err := upsertRepository(ctx, tx, tenantID, installationIDs[in.Name], t.Origin(), r); err != nil {
+			in := f.ConnectionFor(t, r)
+			if err := upsertRepository(ctx, tx, tenantID, connectionIDs[in.Name], t.Origin(), r); err != nil {
 				return err
 			}
 		}
@@ -94,9 +94,9 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 	return nil
 }
 
-// disableUndeclared disables every file or dashboard tenant and installation
+// disableUndeclared disables every file or dashboard tenant and connection
 // f does not declare with that same origin, then every file or dashboard
-// repository under a disabled tenant or installation or no longer listed by
+// repository under a disabled tenant or connection or no longer listed by
 // its tenant. The upserts that follow re-enable what f still declares.
 // Forge-discovered repositories are left alone.
 func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error {
@@ -105,8 +105,8 @@ func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error
 	for i := range f.Tenants {
 		t := &f.Tenants[i]
 		slugs, slugOrigins = append(slugs, t.Slug), append(slugOrigins, string(t.Origin()))
-		for j := range t.Installations {
-			names, nameOrigins = append(names, t.Installations[j].Name), append(nameOrigins, string(t.Origin()))
+		for j := range t.Connections {
+			names, nameOrigins = append(names, t.Connections[j].Name), append(nameOrigins, string(t.Origin()))
 		}
 	}
 	if _, err := tx.Exec(ctx, `
@@ -116,17 +116,17 @@ func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error
 		return fmt.Errorf("store: disable removed tenants: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
-		UPDATE installations SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
+		UPDATE connections SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
 		WHERE managed_by IN ('file', 'dashboard') AND enabled
 			AND (name, managed_by) NOT IN (SELECT * FROM unnest($1::text[], $2::text[]))`, names, nameOrigins); err != nil {
-		return fmt.Errorf("store: disable removed installations: %w", err)
+		return fmt.Errorf("store: disable removed connections: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE repositories r SET enabled = false, disabled_at = coalesce(r.disabled_at, now()), updated_at = now()
 		WHERE r.managed_by IN ('file', 'dashboard') AND r.enabled AND (
 			EXISTS (SELECT 1 FROM tenants t WHERE t.id = r.tenant_id AND NOT t.enabled)
-			OR EXISTS (SELECT 1 FROM installations i WHERE i.id = r.installation_id AND NOT i.enabled))`); err != nil {
-		return fmt.Errorf("store: disable repositories of removed tenants and installations: %w", err)
+			OR EXISTS (SELECT 1 FROM connections i WHERE i.id = r.connection_id AND NOT i.enabled))`); err != nil {
+		return fmt.Errorf("store: disable repositories of removed tenants and connections: %w", err)
 	}
 	for i := range f.Tenants {
 		t := &f.Tenants[i]
@@ -171,29 +171,29 @@ func upsertTenant(ctx context.Context, tx pgx.Tx, t *configfile.Tenant) (string,
 	return id, nil
 }
 
-func upsertInstallation(
-	ctx context.Context, tx pgx.Tx, tenantID string, origin configfile.Origin, in *configfile.Installation,
+func upsertConnection(
+	ctx context.Context, tx pgx.Tx, tenantID string, origin configfile.Origin, in *configfile.Connection,
 ) (string, error) {
 	var id string
 	err := tx.QueryRow(ctx, `
-		INSERT INTO installations (id, tenant_id, name, forge, accounts, managed_by)
+		INSERT INTO connections (id, tenant_id, name, forge, accounts, managed_by)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (name) DO UPDATE SET
 			tenant_id = EXCLUDED.tenant_id, forge = EXCLUDED.forge, accounts = EXCLUDED.accounts,
 			managed_by = EXCLUDED.managed_by, enabled = true, disabled_at = NULL,
 			updated_at = now()
-		WHERE installations.tenant_id = EXCLUDED.tenant_id AND (installations.managed_by = EXCLUDED.managed_by OR NOT installations.enabled)
+		WHERE connections.tenant_id = EXCLUDED.tenant_id AND (connections.managed_by = EXCLUDED.managed_by OR NOT connections.enabled)
 		RETURNING id`, in.ID(), tenantID, in.Name, string(in.Forge), in.Accounts, string(origin)).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Another tenant's row keeps its history (pull requests, reviews,
 		// repositories) under its own tenant id; handing the name over would
 		// mix the two, so it stays with its tenant, enabled or not.
-		return "", managedByConflict(ctx, tx, "installation "+in.Name, origin,
-			`SELECT CASE WHEN tenant_id = $2 THEN managed_by ELSE 'another tenant' END FROM installations WHERE name = $1`,
+		return "", managedByConflict(ctx, tx, "connection "+in.Name, origin,
+			`SELECT CASE WHEN tenant_id = $2 THEN managed_by ELSE 'another tenant' END FROM connections WHERE name = $1`,
 			in.Name, tenantID)
 	}
 	if err != nil {
-		return "", fmt.Errorf("store: upsert installation %s: %w", in.Name, err)
+		return "", fmt.Errorf("store: upsert connection %s: %w", in.Name, err)
 	}
 	return id, nil
 }
@@ -201,21 +201,21 @@ func upsertInstallation(
 // upsertRepository also takes over a forge-discovered row: listing a
 // repository the poller or a webhook already found makes it declared.
 func upsertRepository(
-	ctx context.Context, tx pgx.Tx, tenantID, installationID string, origin configfile.Origin, r *configfile.Repository,
+	ctx context.Context, tx pgx.Tx, tenantID, connectionID string, origin configfile.Origin, r *configfile.Repository,
 ) error {
 	enabled := r.Enabled == nil || *r.Enabled
 	tag, err := tx.Exec(ctx, `
-		INSERT INTO repositories (id, tenant_id, installation_id, name, managed_by, enabled, disabled_at)
+		INSERT INTO repositories (id, tenant_id, connection_id, name, managed_by, enabled, disabled_at)
 		VALUES ($1, $2, $3, $4, $6, $5, CASE WHEN $5 THEN NULL ELSE now() END)
-		ON CONFLICT (installation_id, name) DO UPDATE SET
+		ON CONFLICT (connection_id, name) DO UPDATE SET
 			tenant_id = EXCLUDED.tenant_id, managed_by = EXCLUDED.managed_by, enabled = EXCLUDED.enabled,
 			disabled_at = CASE WHEN EXCLUDED.enabled THEN NULL ELSE coalesce(repositories.disabled_at, now()) END,
 			updated_at = now()
 		WHERE repositories.managed_by IN (EXCLUDED.managed_by, 'forge') OR NOT repositories.enabled`,
-		configfile.RepositoryID(installationID, r.Name), tenantID, installationID, r.Name, enabled, string(origin))
+		configfile.RepositoryID(connectionID, r.Name), tenantID, connectionID, r.Name, enabled, string(origin))
 	if err == nil && tag.RowsAffected() == 0 {
 		return managedByConflict(ctx, tx, "repository "+r.Name, origin,
-			`SELECT managed_by FROM repositories WHERE installation_id = $1 AND name = $2`, installationID, r.Name)
+			`SELECT managed_by FROM repositories WHERE connection_id = $1 AND name = $2`, connectionID, r.Name)
 	}
 	if err != nil {
 		return fmt.Errorf("store: upsert repository %s: %w", r.Name, err)

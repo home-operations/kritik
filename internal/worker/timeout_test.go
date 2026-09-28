@@ -27,7 +27,7 @@ defaults:
     review: gateway/review-model
 tenants:
   - slug: acme
-    installations:
+    connections:
       - name: acme-bot
         forge: github
         accounts: [acme]
@@ -45,7 +45,7 @@ tenants:
   - slug: globex
     runner:
       activeDeadlineSeconds: %d
-    installations:
+    connections:
       - name: globex-bot
         forge: github
         accounts: [globex]
@@ -66,8 +66,8 @@ func TestJobTimeouts(t *testing.T) {
 	current := configfile.NewCurrent(file)
 	acme, _ := file.Tenant("acme")
 	globex, _ := file.Tenant("globex")
-	acmeRepo := func(name string) string { return configfile.RepositoryID(acme.Installations[0].ID(), name) }
-	globexRepo := configfile.RepositoryID(globex.Installations[0].ID(), "globex/app")
+	acmeRepo := func(name string) string { return configfile.RepositoryID(acme.Connections[0].ID(), name) }
+	globexRepo := configfile.RepositoryID(globex.Connections[0].ID(), "globex/app")
 
 	review := &Review{Current: current}
 	index := &Index{Current: current}

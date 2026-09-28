@@ -74,8 +74,8 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 }
 
 func request(f *configfile.File, ev webhook.Event) Request {
-	in, tenant, _ := f.Installation("bot-ross")
-	return Request{File: f, Tenant: tenant, Installation: in, Event: ev}
+	in, tenant, _ := f.Connection("bot-ross")
+	return Request{File: f, Tenant: tenant, Connection: in, Event: ev}
 }
 
 func repo(name string) *webhook.Repository {
@@ -249,7 +249,7 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 		if out, err := svc.Dispatch(ctx, request(f, main)); err != nil || out.Reason != "not-indexed" || count("index") != 0 {
 			t.Fatalf("push before an index = %+v, %v; index jobs = %d", out, err, count("index"))
 		}
-		in, _, _ := f.Installation("bot-ross")
+		in, _, _ := f.Connection("bot-ross")
 		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `WITH g AS (
 					INSERT INTO index_runs (tenant_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
@@ -276,7 +276,7 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 		}
 	})
 
-	t.Run("installation adds and removes forge-managed repositories", func(t *testing.T) {
+	t.Run("connection adds and removes forge-managed repositories", func(t *testing.T) {
 		added := webhook.Event{Kind: webhook.KindInstallation, Action: "added", Account: "onedr0p",
 			Installation: &webhook.Installation{Repositories: []string{"onedr0p/new-repo", "onedr0p/disabled"}}}
 		if _, err := svc.Dispatch(ctx, request(f, added)); err != nil {
@@ -350,7 +350,7 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 func TestRecordDelivery(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
-	in, tenant, _ := f.Installation("bot-ross")
+	in, tenant, _ := f.Connection("bot-ross")
 	exec := func(sql string) {
 		t.Helper()
 		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
@@ -364,7 +364,7 @@ func TestRecordDelivery(t *testing.T) {
 		t.Helper()
 		var at *time.Time
 		if err := st.WithTenant(ctx, tenant.ID(), func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT last_webhook_at FROM installations WHERE id = $1`, in.ID()).Scan(&at)
+			return tx.QueryRow(ctx, `SELECT last_webhook_at FROM connections WHERE id = $1`, in.ID()).Scan(&at)
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -379,14 +379,14 @@ func TestRecordDelivery(t *testing.T) {
 			t.Fatalf("RecordDelivery: %v", err)
 		}
 	}
-	exec(`UPDATE installations SET last_webhook_at = NULL WHERE id = $1`)
+	exec(`UPDATE connections SET last_webhook_at = NULL WHERE id = $1`)
 	record()
 	first := last()
 	record()
 	if again := last(); !again.Equal(first) {
 		t.Fatalf("a delivery within the minute moved the time from %s to %s", first, again)
 	}
-	exec(`UPDATE installations SET last_webhook_at = now() - interval '2 minutes' WHERE id = $1`)
+	exec(`UPDATE connections SET last_webhook_at = now() - interval '2 minutes' WHERE id = $1`)
 	stale := last()
 	record()
 	if now := last(); !now.After(stale.Add(time.Minute)) {

@@ -2,7 +2,7 @@
   "slug": "alpha",
   "managedBy": "dashboard",
   "role": "admin",
-  "installations": 1,
+  "connections": 1,
   "repositories": 3,
   "reviews7d": 9,
   "usage": {

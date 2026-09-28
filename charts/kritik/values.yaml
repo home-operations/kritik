@@ -68,7 +68,7 @@ web:
   port: 8083
 
 # The declarative configuration file (providers, defaults, tenants with their
-# installations and repositories). Either inline as `file`, rendered into a
+# connections and repositories). Either inline as `file`, rendered into a
 # chart-managed ConfigMap, or an existing ConfigMap with a `config.yaml` key.
 # Secret material never goes in the file: it references files under
 # `secretMounts` or environment variables. Every replica re-reads the file on
@@ -116,7 +116,7 @@ config:
   #   - { name: helm, image: ghcr.io/example/helm:3@sha256:..., path: /usr/local/bin }
   # tenants:
   #   - slug: example
-  #     installations:
+  #     connections:
   #       - name: example-github
   #         forge: github
   #         accounts: [example]
@@ -288,7 +288,7 @@ securityContext:
 service:
   # -- Service type for the webhook listener.
   type: ClusterIP
-  # -- Webhook port (`POST /hooks/{installation}`), served by `all` and `ingest` pods.
+  # -- Webhook port (`POST /hooks/{connection}`), served by `all` and `ingest` pods.
   port: 8080
   # -- Metrics and probe port, served by every pod.
   metricsPort: 8081

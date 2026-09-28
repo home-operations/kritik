@@ -20,7 +20,7 @@ import (
 const configYAML = `
 tenants:
   - slug: onedr0p
-    installations:
+    connections:
       - name: bot-ross
         forge: github
         accounts: [onedr0p, home-operations]
@@ -43,8 +43,8 @@ func (f *fakeDispatcher) Dispatch(_ context.Context, req Request) (Outcome, erro
 	return f.out, f.err
 }
 
-func (f *fakeDispatcher) RecordDelivery(_ context.Context, _, installationID string) error {
-	f.delivered = append(f.delivered, installationID)
+func (f *fakeDispatcher) RecordDelivery(_ context.Context, _, connectionID string) error {
+	f.delivered = append(f.delivered, connectionID)
 	return f.recordErr
 }
 
@@ -72,7 +72,7 @@ func setup(t *testing.T, disp Dispatcher) *httptest.Server {
 		h.Deliveries = r
 	}
 	mux := http.NewServeMux()
-	mux.Handle("POST /hooks/{installation}", h)
+	mux.Handle("POST /hooks/{connection}", h)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -109,7 +109,7 @@ func TestHandler(t *testing.T) {
 		// recorded: any delivery that passes the signature check counts.
 		recorded bool
 	}{
-		{"unknown installation", "/hooks/nope", "pull_request", "s3cret", prBody, Outcome{}, nil, http.StatusNotFound, false, false},
+		{"unknown connection", "/hooks/nope", "pull_request", "s3cret", prBody, Outcome{}, nil, http.StatusNotFound, false, false},
 		{"bad signature", "/hooks/bot-ross", "pull_request", "wrong", prBody, Outcome{}, nil, http.StatusUnauthorized, false, false},
 		{"missing signature", "/hooks/bot-ross", "pull_request", "", prBody, Outcome{}, nil, http.StatusUnauthorized, false, false},
 		{"unparsable", "/hooks/bot-ross", "pull_request", "s3cret", "{nope", Outcome{}, nil, http.StatusBadRequest, false, true},
@@ -138,7 +138,7 @@ func TestHandler(t *testing.T) {
 			}
 			if tt.dispatched {
 				req := disp.got[0]
-				if req.Tenant.Slug != "onedr0p" || req.Installation.Name != "bot-ross" || req.Event.Kind != webhook.KindPullRequest {
+				if req.Tenant.Slug != "onedr0p" || req.Connection.Name != "bot-ross" || req.Event.Kind != webhook.KindPullRequest {
 					t.Fatalf("request = %+v", req)
 				}
 			}

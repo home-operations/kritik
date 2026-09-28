@@ -423,7 +423,7 @@ func lead(
 			return err
 		}
 	}
-	// The backstop poll is a leader duty: one lister per installation.
+	// The backstop poll is a leader duty: one lister per connection.
 	pollCtx, stopPoll := context.WithCancel(ctx)
 	defer stopPoll()
 	go func() {
@@ -599,11 +599,11 @@ func reportDrift(
 }
 
 func logConfig(logger *slog.Logger, f *configfile.File, msg string) {
-	installations := 0
+	connections := 0
 	for _, t := range f.Tenants {
-		installations += len(t.Installations)
+		connections += len(t.Connections)
 	}
-	logger.Info(msg, "providers", len(f.Providers), "tenants", len(f.Tenants), "installations", installations)
+	logger.Info(msg, "providers", len(f.Providers), "tenants", len(f.Tenants), "connections", connections)
 }
 
 func newLogger(cfg *config.Config) (*slog.Logger, error) {

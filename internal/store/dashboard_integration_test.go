@@ -28,7 +28,7 @@ func (plainOpener) Open(sealed string) ([]byte, error) {
 }
 
 func dashboardSpec(slug, inst string) json.RawMessage {
-	return json.RawMessage(`{"slug":"` + slug + `","installations":[{"name":"` + inst + `","forge":"github","accounts":["` + slug + `"],` +
+	return json.RawMessage(`{"slug":"` + slug + `","connections":[{"name":"` + inst + `","forge":"github","accounts":["` + slug + `"],` +
 		`"app":{"clientId":"Iv1.test","privateKey":{"sealed":"sealed:key"},"webhookSecret":{"sealed":"sealed:wh"}}}],"repositories":[{"name":"` + slug + `/one"}]}`)
 }
 
@@ -183,7 +183,7 @@ func TestApplyConfigManagedBy(t *testing.T) {
 	}
 	const (
 		tenantQ = `SELECT managed_by, enabled FROM tenants WHERE slug = 'gamma'`
-		instQ   = `SELECT managed_by, enabled FROM installations WHERE name = 'gamma-bot'`
+		instQ   = `SELECT managed_by, enabled FROM connections WHERE name = 'gamma-bot'`
 		repoQ   = `SELECT managed_by, enabled FROM repositories WHERE name = 'gamma/one'`
 	)
 
@@ -229,10 +229,10 @@ func TestApplyConfigManagedBy(t *testing.T) {
 }
 
 // swapFileTenant is a file tenant declaring what dashboardSpec("swap",
-// "swap-bot") does: the same slug, installation and repository.
+// "swap-bot") does: the same slug, connection and repository.
 const swapFileTenant = `
   - slug: swap
-    installations:
+    connections:
       - name: swap-bot
         forge: github
         accounts: [swap]
@@ -258,7 +258,7 @@ func TestApplyConfigCrossOriginReAdd(t *testing.T) {
 		var te, ie, re bool
 		err := s.owner.QueryRow(ctx, `
 			SELECT t.managed_by, t.enabled, i.managed_by, i.enabled, r.managed_by, r.enabled
-			FROM tenants t JOIN installations i ON i.tenant_id = t.id JOIN repositories r ON r.installation_id = i.id
+			FROM tenants t JOIN connections i ON i.tenant_id = t.id JOIN repositories r ON r.connection_id = i.id
 			WHERE t.slug = 'swap' AND i.name = 'swap-bot' AND r.name = 'swap/one'`).Scan(&tb, &te, &ib, &ie, &rb, &re)
 		if err != nil {
 			t.Fatalf("read swap rows: %v", err)
@@ -288,7 +288,7 @@ func TestApplyConfigCrossOriginReAdd(t *testing.T) {
 				}
 			}
 			if got := states(t); !slices.Equal(got, tt.want) {
-				t.Fatalf("swap tenant, installation, repository = %v, want %v", got, tt.want)
+				t.Fatalf("swap tenant, connection, repository = %v, want %v", got, tt.want)
 			}
 		})
 	}

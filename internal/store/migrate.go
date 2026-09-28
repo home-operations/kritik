@@ -137,7 +137,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 	stmts := []string{
 		`GRANT USAGE ON SCHEMA public TO ` + app + `, ` + runner,
 		`GRANT SELECT ON tenants, config_state, schema_migrations TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON installations, repositories, model_leases, pull_requests TO ` + app,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON connections, repositories, model_leases, pull_requests TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, followups, poll_state TO ` + app,
 		`GRANT SELECT ON index_schema, agent_runs TO ` + app,

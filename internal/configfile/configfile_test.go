@@ -114,7 +114,7 @@ func TestLoadFull(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				s := f.Settings(tt.tenant, tt.tenant.Installations[0].Name, tt.repo)
+				s := f.Settings(tt.tenant, tt.tenant.Connections[0].Name, tt.repo)
 				if s.Enabled != tt.enabled || s.Models.Review != tt.review || s.Forks != tt.forks ||
 					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay ||
 					s.Settle != tt.settle {
@@ -145,28 +145,28 @@ func TestLoadFull(t *testing.T) {
 	})
 }
 
-func TestInstallationCredentials(t *testing.T) {
+func TestConnectionCredentials(t *testing.T) {
 	f, err := Load(fixture(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	in, tenant, ok := f.Installation("sticky-gecko")
+	in, tenant, ok := f.Connection("sticky-gecko")
 	if !ok || tenant.Slug != "home-operations" {
-		t.Fatalf("Installation(sticky-gecko) = %v, %v, %v", in, tenant, ok)
+		t.Fatalf("Connection(sticky-gecko) = %v, %v, %v", in, tenant, ok)
 	}
 	if in.App.PrivateKeyValue().Value() == "" || in.WebhookSecretValue().Value() != "whsec" || in.App.ClientIDValue() != "Iv1.xxxxxxxx" {
 		t.Fatal("github app credentials not resolved")
 	}
-	br, _, _ := f.Installation("bot-ross")
+	br, _, _ := f.Connection("bot-ross")
 	if br.App.ClientIDValue() != "Iv1.fromenv" {
 		t.Fatalf("clientIdFrom not resolved: %q", br.App.ClientIDValue())
 	}
-	if _, _, ok := f.Installation("nope"); ok {
-		t.Fatal("unknown installation should not resolve")
+	if _, _, ok := f.Connection("nope"); ok {
+		t.Fatal("unknown connection should not resolve")
 	}
 }
 
-func TestHashAndInstallationLookup(t *testing.T) {
+func TestHashAndConnectionLookup(t *testing.T) {
 	f, err := Load(fixture(t))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -175,10 +175,10 @@ func TestHashAndInstallationLookup(t *testing.T) {
 		t.Fatalf("hash = %q", f.Hash())
 	}
 	ho, _ := f.Tenant("home-operations")
-	if in := f.InstallationFor(ho, &Repository{Name: "home-operations/flate"}); in == nil || in.Name != "sticky-gecko" {
-		t.Fatalf("InstallationFor = %v", in)
+	if in := f.ConnectionFor(ho, &Repository{Name: "home-operations/flate"}); in == nil || in.Name != "sticky-gecko" {
+		t.Fatalf("ConnectionFor = %v", in)
 	}
-	if f.InstallationFor(ho, &Repository{Name: "someone-else/repo"}) != nil || f.InstallationFor(ho, &Repository{Name: "noslash"}) != nil {
+	if f.ConnectionFor(ho, &Repository{Name: "someone-else/repo"}) != nil || f.ConnectionFor(ho, &Repository{Name: "noslash"}) != nil {
 		t.Fatal("unknown owner must not resolve")
 	}
 }
@@ -228,13 +228,13 @@ func with(pr map[string]any, k string, v any) map[string]any {
 // minimal is the smallest valid file; cases mutate it.
 var minimal = githubMinimal("clientId: Iv1.acme, ")
 
-// githubMinimal is the smallest installation; clientFields is spliced into
+// githubMinimal is the smallest connection; clientFields is spliced into
 // the app block.
 func githubMinimal(clientFields string) string {
 	return `
 tenants:
   - slug: acme
-    installations:
+    connections:
       - name: acme-bot
         forge: github
         accounts: [acme]
@@ -348,8 +348,8 @@ func TestParseRejects(t *testing.T) {
 		{"no tenants", "tenants: []\n", "at least one tenant"},
 		{"bad slug", strings.Replace(minimal, "slug: acme", "slug: Acme Corp", 1), "lowercase"},
 		{"duplicate slug", minimal + strings.TrimPrefix(strings.Replace(minimal, "acme-bot", "acme-bot-2", 1), "\ntenants:\n"), "duplicates tenants[0]"},
-		{"duplicate installation across tenants", minimal + strings.TrimPrefix(strings.Replace(minimal, "slug: acme", "slug: other", 1), "\ntenants:\n"), "names are hook paths"},
-		{"no installations", "tenants:\n  - slug: acme\n    installations: []\n", "at least one installation"},
+		{"duplicate connection across tenants", minimal + strings.TrimPrefix(strings.Replace(minimal, "slug: acme", "slug: other", 1), "\ntenants:\n"), "names are hook paths"},
+		{"no connections", "tenants:\n  - slug: acme\n    connections: []\n", "at least one connection"},
 		{"missing accounts", strings.Replace(minimal, "        accounts: [acme]\n", "", 1), "accounts must list at least one account"},
 		{"blank account", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ' ']", 1), "accounts[1] is empty"},
 		{"account listed twice", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ACME]", 1), `accounts[1] "ACME" is listed twice`},
@@ -390,7 +390,7 @@ func TestParseRejects(t *testing.T) {
 		{"filter fails smoke test", "defaults:\n  filter: 'pr.labels[5].name == \"x\"'\n" + minimal, "smoke test"},
 		{"repository filter error", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x, filter: 'pr.title' }]", 1), "repositories[0].filter"},
 		{"repository without owner", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: x }]", 1), "owner/repo"},
-		{"repository owner without installation", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: other/x }]", 1), "no installation in tenant"},
+		{"repository owner without connection", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: other/x }]", 1), "no connection in tenant"},
 		{"duplicate repository", strings.Replace(minimal, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x }, { name: acme/x }]", 1), "duplicates repositories[0]"},
 	}
 	for _, tt := range tests {
@@ -513,11 +513,11 @@ func TestWatch(t *testing.T) {
 	expectApply("acme-three")
 }
 
-// TestRepositoryInstallation checks that a repository entry binds to one
-// installation when its owner's account has several, and that settings
-// are looked up by installation and name, so the same owner/repo under two
+// TestRepositoryConnection checks that a repository entry binds to one
+// connection when its owner's account has several, and that settings
+// are looked up by connection and name, so the same owner/repo under two
 // Apps is two repositories.
-func TestRepositoryInstallation(t *testing.T) {
+func TestRepositoryConnection(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	twoApps := func(repos string) string {
@@ -530,10 +530,10 @@ func TestRepositoryInstallation(t *testing.T) {
 	refused := []struct {
 		name, repos, want string
 	}{
-		{"an owner with several installations must name one", "{ name: acme/x }", "set installation to one of them"},
-		{"the named installation must exist", "{ name: acme/x, installation: nope }", `installation "nope" is not an installation`},
-		{"one installation may not list a repository twice", "{ name: acme/x, installation: acme-bot }, { name: acme/x, installation: acme-bot }",
-			`duplicates repositories[0] of installation "acme-bot"`},
+		{"an owner with several connections must name one", "{ name: acme/x }", "set connection to one of them"},
+		{"the named connection must exist", "{ name: acme/x, connection: nope }", `connection "nope" is not a connection`},
+		{"one connection may not list a repository twice", "{ name: acme/x, connection: acme-bot }, { name: acme/x, connection: acme-bot }",
+			`duplicates repositories[0] of connection "acme-bot"`},
 	}
 	for _, tt := range refused {
 		t.Run(tt.name, func(t *testing.T) {
@@ -543,14 +543,14 @@ func TestRepositoryInstallation(t *testing.T) {
 		})
 	}
 
-	t.Run("the same name under two installations is two repositories", func(t *testing.T) {
-		f, err := Parse([]byte(twoApps("{ name: acme/x, installation: acme-other, mode: agentic }, { name: acme/x, installation: acme-bot }")))
+	t.Run("the same name under two connections is two repositories", func(t *testing.T) {
+		f, err := Parse([]byte(twoApps("{ name: acme/x, connection: acme-other, mode: agentic }, { name: acme/x, connection: acme-bot }")))
 		if err != nil {
 			t.Fatal(err)
 		}
 		ten := &f.Tenants[0]
-		if in := f.InstallationFor(ten, &ten.Repositories[0]); in == nil || in.Name != "acme-other" {
-			t.Fatalf("InstallationFor = %v, want acme-other", in)
+		if in := f.ConnectionFor(ten, &ten.Repositories[0]); in == nil || in.Name != "acme-other" {
+			t.Fatalf("ConnectionFor = %v, want acme-other", in)
 		}
 		if got := f.Settings(ten, "acme-other", "acme/x").Mode; got != ReviewAgentic {
 			t.Fatalf("acme-other mode = %q, want agentic", got)
@@ -560,7 +560,7 @@ func TestRepositoryInstallation(t *testing.T) {
 		}
 	})
 
-	t.Run("an installation owns the repositories of every account it serves", func(t *testing.T) {
+	t.Run("a connection owns the repositories of every account it serves", func(t *testing.T) {
 		several := strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, Globex]", 1)
 		f, err := Parse([]byte(strings.Replace(several, "slug: acme", "slug: acme\n    repositories: [{ name: acme/x }, { name: globex/y }]", 1)))
 		if err != nil {
@@ -568,18 +568,18 @@ func TestRepositoryInstallation(t *testing.T) {
 		}
 		ten := &f.Tenants[0]
 		for i := range ten.Repositories {
-			if in := f.InstallationFor(ten, &ten.Repositories[i]); in == nil || in.Name != "acme-bot" {
-				t.Fatalf("InstallationFor(%s) = %v, want acme-bot", ten.Repositories[i].Name, in)
+			if in := f.ConnectionFor(ten, &ten.Repositories[i]); in == nil || in.Name != "acme-bot" {
+				t.Fatalf("ConnectionFor(%s) = %v, want acme-bot", ten.Repositories[i].Name, in)
 			}
 		}
 		if _, err := Parse([]byte(strings.Replace(several, "slug: acme", "slug: acme\n    repositories: [{ name: initech/z }]", 1))); err == nil ||
 			!strings.Contains(err.Error(), `serves account "initech"`) {
-			t.Fatalf("Parse = %v, want no installation serving initech", err)
+			t.Fatalf("Parse = %v, want no connection serving initech", err)
 		}
 	})
 
-	t.Run("an entry for one installation leaves the other forge's repository unlisted", func(t *testing.T) {
-		f, err := Parse([]byte(twoApps("{ name: acme/x, installation: acme-other, enabled: false }")))
+	t.Run("an entry for one connection leaves the other forge's repository unlisted", func(t *testing.T) {
+		f, err := Parse([]byte(twoApps("{ name: acme/x, connection: acme-other, enabled: false }")))
 		if err != nil {
 			t.Fatal(err)
 		}

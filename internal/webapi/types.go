@@ -56,13 +56,13 @@ type MonthUsage struct {
 
 // TenantSummary is one row of the tenant list.
 type TenantSummary struct {
-	Slug          string            `json:"slug"`
-	ManagedBy     configfile.Origin `json:"managedBy"`
-	Role          auth.Role         `json:"role"`
-	Installations int               `json:"installations"`
-	Repositories  int               `json:"repositories"`
-	Reviews7d     int               `json:"reviews7d"`
-	Usage         MonthUsage        `json:"usage"`
+	Slug         string            `json:"slug"`
+	ManagedBy    configfile.Origin `json:"managedBy"`
+	Role         auth.Role         `json:"role"`
+	Connections  int               `json:"connections"`
+	Repositories int               `json:"repositories"`
+	Reviews7d    int               `json:"reviews7d"`
+	Usage        MonthUsage        `json:"usage"`
 }
 
 // OperatorTenant is one tenant as an operator sees it: Live is false for
@@ -74,7 +74,7 @@ type OperatorTenant struct {
 	Live     bool  `json:"live"`
 	Revision int64 `json:"revision"`
 	// Conflict is why the running configuration leaves out a file tenant:
-	// a dashboard tenant holds its slug or one of its installation names.
+	// a dashboard tenant holds its slug or one of its connection names.
 	Conflict string `json:"conflict,omitempty"`
 }
 
@@ -89,7 +89,7 @@ type InstanceSetting struct {
 	Source  configfile.Source `json:"source"`
 }
 
-// CredentialsSet says which of an installation's secrets resolve to a
+// CredentialsSet says which of a connection's secrets resolve to a
 // value; the values themselves are never exposed.
 type CredentialsSet struct {
 	ClientID      bool `json:"clientId"`
@@ -97,16 +97,16 @@ type CredentialsSet struct {
 	WebhookSecret bool `json:"webhookSecret"`
 }
 
-// Installation is one GitHub App and the accounts it serves. HookPath
+// Connection is one GitHub App and the accounts it serves. HookPath
 // is relative to the ingest endpoint, whose origin the dashboard does not
 // know.
-type Installation struct {
+type Connection struct {
 	Name        string           `json:"name"`
 	Forge       configfile.Forge `json:"forge"`
 	Accounts    []string         `json:"accounts"`
 	Credentials CredentialsSet   `json:"credentials"`
 	HookPath    string           `json:"hookPath"`
-	// LastWebhookAt is when a webhook for the installation last passed
+	// LastWebhookAt is when a webhook for the connection last passed
 	// signature verification, to the minute; null when none ever has, and
 	// kritik only polls it.
 	LastWebhookAt *time.Time `json:"lastWebhookAt"`
@@ -127,14 +127,14 @@ type Limits struct {
 
 // TenantDetail is one tenant's configuration and usage.
 type TenantDetail struct {
-	Slug          string            `json:"slug"`
-	ManagedBy     configfile.Origin `json:"managedBy"`
-	Role          auth.Role         `json:"role"`
-	Installations []Installation    `json:"installations"`
-	Models        Models            `json:"models"`
-	Limits        Limits            `json:"limits"`
-	Filter        string            `json:"filter"`
-	Usage         MonthUsage        `json:"usage"`
+	Slug        string            `json:"slug"`
+	ManagedBy   configfile.Origin `json:"managedBy"`
+	Role        auth.Role         `json:"role"`
+	Connections []Connection      `json:"connections"`
+	Models      Models            `json:"models"`
+	Limits      Limits            `json:"limits"`
+	Filter      string            `json:"filter"`
+	Usage       MonthUsage        `json:"usage"`
 }
 
 // IndexState is a repository's embedding index: the active generation and
@@ -157,7 +157,7 @@ type ReviewRef struct {
 type Repository struct {
 	ID            string     `json:"id"`
 	FullName      string     `json:"fullName"`
-	Installation  string     `json:"installation"`
+	Connection    string     `json:"connection"`
 	Enabled       bool       `json:"enabled"`
 	ManagedBy     string     `json:"managedBy"`
 	DefaultBranch string     `json:"defaultBranch"`

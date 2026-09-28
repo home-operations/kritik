@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ambiguousInstallations, getJSON } from '../api.svelte';
+  import { ambiguousConnections, getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { duration, indexTone, shortSha, bytes } from '../format';
@@ -9,23 +9,23 @@
   import Time from '../components/Time.svelte';
   import PullRows from '../components/PullRows.svelte';
   import ActionButton from '../components/ActionButton.svelte';
-  import InstallationChoice from '../components/InstallationChoice.svelte';
-  import { installationQuery, reindexPath, repoRoute } from '../links';
+  import ConnectionChoice from '../components/ConnectionChoice.svelte';
+  import { connectionQuery, reindexPath, repoRoute } from '../links';
   import { canAdmin } from '../session.svelte';
 
-  let { slug, owner, repo, installation }: { slug: string; owner: string; repo: string; installation?: string } = $props();
+  let { slug, owner, repo, connection }: { slug: string; owner: string; repo: string; connection?: string } = $props();
   const fullName = $derived(`${owner}/${repo}`);
   const tenant = $derived(`/api/v1/tenants/${encodeURIComponent(slug)}`);
 
   const res = new Resource(() =>
-    getJSON<RepoDetail>(`${tenant}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${installationQuery(installation)}`),
+    getJSON<RepoDetail>(`${tenant}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${connectionQuery(connection)}`),
   );
   const pulls = new Resource(() =>
     getJSON<Page<Pull>>(
-      `${tenant}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}${installation ? `&installation=${encodeURIComponent(installation)}` : ''}`,
+      `${tenant}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}${connection ? `&connection=${encodeURIComponent(connection)}` : ''}`,
     ),
   );
-  const choices = $derived(ambiguousInstallations(res.error));
+  const choices = $derived(ambiguousConnections(res.error));
 
   $effect(() => {
     void res.load();
@@ -134,7 +134,7 @@
             label="Reindex"
             title="Reindex the repository?"
             body={`Rebuild the code index of ${fullName} from scratch at its default branch.`}
-            path={reindexPath(slug, fullName, installation)}
+            path={reindexPath(slug, fullName, connection)}
             done="Reindex queued"
             ondone={() => res.load()}
           />
@@ -142,7 +142,7 @@
       {/if}
     </header>
     {#if choices}
-      <InstallationChoice name={fullName} installations={choices} route={(i) => repoRoute(slug, fullName, i)} />
+      <ConnectionChoice name={fullName} connections={choices} route={(i) => repoRoute(slug, fullName, i)} />
     {:else}
       <StateView {res} retry={() => res.load()}>
         {#snippet children(d)}
@@ -153,7 +153,7 @@
               <header class="panel-head"><h2 id="repo-settings">Effective settings</h2></header>
               <dl class="deflist">
                 <dt>Enabled</dt><dd>{s.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'} <span class="muted small">({d.managedBy})</span></dd>
-                <dt>Installation</dt><dd class="mono">{d.installation}</dd>
+                <dt>Connection</dt><dd class="mono">{d.connection}</dd>
                 <dt>Default branch</dt><dd class="mono">{d.defaultBranch}</dd>
                 {#each settingRows as r (r.label)}
                   {@render setting(d, r)}
@@ -251,7 +251,7 @@
         <header class="panel-head"><h2 id="repo-pulls">Pull requests</h2></header>
         <StateView res={pulls} retry={() => pulls.load()} isEmpty={(p) => p.items.length === 0} empty="No pull requests seen yet.">
           {#snippet children(p)}
-            <PullRows {slug} items={p.items} {installation} />
+            <PullRows {slug} items={p.items} {connection} />
           {/snippet}
         </StateView>
       </section>

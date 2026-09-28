@@ -39,7 +39,7 @@ const (
 )
 
 // ActionBaseline is the poller's synthetic action for a pull request that
-// predates kritik's knowing its installation: it is recorded, not reviewed.
+// predates kritik's knowing its connection: it is recorded, not reviewed.
 const ActionBaseline = "baseline"
 
 // pullRequestActions are the pull request actions that record the pull
@@ -57,12 +57,12 @@ var pullRequestActions = map[string]bool{
 }
 
 // RecordDelivery implements DeliveryRecorder. It writes at most once a
-// minute per installation: the dashboard needs to know deliveries arrive,
+// minute per connection: the dashboard needs to know deliveries arrive,
 // not to count them.
-func (s *Service) RecordDelivery(ctx context.Context, tenantID, installationID string) error {
+func (s *Service) RecordDelivery(ctx context.Context, tenantID, connectionID string) error {
 	err := s.store.WithTenant(ctx, tenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE installations SET last_webhook_at = now()
-			WHERE id = $1 AND (last_webhook_at IS NULL OR last_webhook_at < now() - interval '1 minute')`, installationID)
+		_, err := tx.Exec(ctx, `UPDATE connections SET last_webhook_at = now()
+			WHERE id = $1 AND (last_webhook_at IS NULL OR last_webhook_at < now() - interval '1 minute')`, connectionID)
 		return err
 	})
 	if err != nil {
@@ -105,7 +105,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		}
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
-	settings := req.File.Settings(req.Tenant, req.Installation.Name, ev.Repository.FullName)
+	settings := req.File.Settings(req.Tenant, req.Connection.Name, ev.Repository.FullName)
 	switch {
 	case !settings.Enabled:
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
@@ -173,11 +173,11 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	}
 	// The cheap gate: a bot never triggers a follow-up, and a comment with
 	// no mention at all is not one. The worker checks the mention against
-	// the installation's resolved bot identity and the author's access.
+	// the connection's resolved bot identity and the author's access.
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}
-	settings := req.File.Settings(req.Tenant, req.Installation.Name, ev.Repository.FullName)
+	settings := req.File.Settings(req.Tenant, req.Connection.Name, ev.Repository.FullName)
 	if !settings.Enabled {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	}
@@ -213,7 +213,7 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Push.After == "" || strings.Trim(ev.Push.After, "0") == "" {
 		return Outcome{Status: Skipped, Reason: "branch-deleted"}, nil
 	}
-	settings := req.File.Settings(req.Tenant, req.Installation.Name, ev.Repository.FullName)
+	settings := req.File.Settings(req.Tenant, req.Connection.Name, ev.Repository.FullName)
 	if !settings.Enabled {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	}
@@ -264,10 +264,10 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 	err := s.store.WithTenant(ctx, req.Tenant.ID(), func(tx pgx.Tx) error {
 		if disable && len(inst.Repositories) == 0 {
 			// The App left this account: its repositories go, not those of
-			// the other accounts the installation serves.
+			// the other accounts the connection serves.
 			_, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-				WHERE installation_id = $1 AND managed_by = 'forge' AND lower(split_part(name, '/', 1)) = lower($2)`,
-				req.Installation.ID(), ev.Account)
+				WHERE connection_id = $1 AND managed_by = 'forge' AND lower(split_part(name, '/', 1)) = lower($2)`,
+				req.Connection.ID(), ev.Account)
 			return err
 		}
 		for _, name := range inst.Repositories {
@@ -294,14 +294,14 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook.Repository) (string, error) {
 	id := repoID(req, repo.FullName)
 	_, err := tx.Exec(ctx, `
-		INSERT INTO repositories (id, tenant_id, installation_id, name, default_branch, managed_by, enabled)
+		INSERT INTO repositories (id, tenant_id, connection_id, name, default_branch, managed_by, enabled)
 		VALUES ($1, $2, $3, $4, $5, 'forge', true)
-		ON CONFLICT (installation_id, name) DO UPDATE SET
+		ON CONFLICT (connection_id, name) DO UPDATE SET
 			default_branch = CASE WHEN EXCLUDED.default_branch <> '' THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
 			enabled = CASE WHEN repositories.managed_by = 'forge' THEN true ELSE repositories.enabled END,
 			disabled_at = CASE WHEN repositories.managed_by = 'forge' THEN NULL ELSE repositories.disabled_at END,
 			updated_at = now()`,
-		id, req.Tenant.ID(), req.Installation.ID(), repo.FullName, repo.DefaultBranch)
+		id, req.Tenant.ID(), req.Connection.ID(), repo.FullName, repo.DefaultBranch)
 	if err != nil {
 		return "", fmt.Errorf("ingest: ensure repository %s: %w", repo.FullName, err)
 	}
@@ -309,7 +309,7 @@ func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook
 }
 
 func repoID(req Request, fullName string) string {
-	return configfile.RepositoryID(req.Installation.ID(), fullName)
+	return configfile.RepositoryID(req.Connection.ID(), fullName)
 }
 
 func nullTime(pr *webhook.PullRequest) any {

@@ -55,7 +55,7 @@ tools:
   - { name: kurl, image: registry.example/kurl:1, path: /usr/bin, commands: [curl] }
 tenants:
   - slug: acme
-    installations:
+    connections:
       - name: acme-bot
         forge: github
         accounts: [acme]
@@ -71,7 +71,7 @@ tenants:
           commands: [curl]
           commandTimeout: 5s
   - slug: globex
-    installations:
+    connections:
       - name: globex-bot
         forge: github
         accounts: [globex]
@@ -215,7 +215,7 @@ type agenticHarness struct {
 	st     *store.Store
 	svc    *ingest.Service
 	file   *configfile.File
-	in     *configfile.Installation
+	in     *configfile.Connection
 	tenant *configfile.Tenant
 	other  *configfile.Tenant
 	lf     *localForge
@@ -266,8 +266,8 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	if err := appStore.ApplyConfig(ctx, h.file, "test"); err != nil {
 		t.Fatal(err)
 	}
-	h.in, h.tenant, _ = h.file.Installation("acme-bot")
-	_, h.other, _ = h.file.Installation("globex-bot")
+	h.in, h.tenant, _ = h.file.Connection("acme-bot")
+	_, h.other, _ = h.file.Connection("globex-bot")
 	h.dir, h.base, h.head = testRepo(t)
 	// The run tool's curl: prints what it was given and fetches nothing.
 	bin := t.TempDir()
@@ -325,7 +325,7 @@ func (h *agenticHarness) dispatchBody(t *testing.T, headSHA, body string) {
 // bot is set.
 func (h *agenticHarness) dispatchAs(t *testing.T, headSHA, body string, bot bool) {
 	t.Helper()
-	out, err := h.svc.Dispatch(h.ctx, ingest.Request{File: h.file, Tenant: h.tenant, Installation: h.in, Event: webhook.Event{
+	out, err := h.svc.Dispatch(h.ctx, ingest.Request{File: h.file, Tenant: h.tenant, Connection: h.in, Event: webhook.Event{
 		Kind: webhook.KindPullRequest, Action: "synchronize", Account: "acme",
 		Repository: &webhook.Repository{FullName: "acme/widgets", DefaultBranch: "main"},
 		PullRequest: &webhook.PullRequest{Number: 1, Title: "Add b", Body: body, Author: "octocat", AuthorIsBot: bot, State: "open",

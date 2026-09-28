@@ -95,12 +95,12 @@ func DecodeTenant(d DashboardTenant) (Tenant, error) {
 
 // Merge returns a File holding file's tenants plus every dashboard tenant,
 // its secrets opened with open and its filters compiled, validated as a
-// whole so a slug or installation name two dashboard tenants share is
+// whole so a slug or connection name two dashboard tenants share is
 // rejected as a duplicate in the file would be. An error about a dashboard
 // tenant is a *MergeError. When file is itself a merged File, its dashboard
 // tenants are replaced, not added to. file is not modified.
 //
-// A file tenant whose slug or installation name a dashboard tenant already
+// A file tenant whose slug or connection name a dashboard tenant already
 // holds is left out, and listed by Skipped, rather than failing the merge
 // (ADR-0010 §2.3). No dashboard write can claim what the file holds
 // (ValidateDashboard refuses it), so the clash is a file edit's, and ids
@@ -167,7 +167,7 @@ func (f *File) Dashboard() []DashboardTenant { return slices.Clone(f.dashboard) 
 
 // ValidateDashboard reports whether d would merge into f: dash with d
 // added, or replacing the one with d's slug, merged onto the file f was
-// built from. It also refuses d a slug or installation name any file tenant
+// built from. It also refuses d a slug or connection name any file tenant
 // declares, running or skipped, unless d's stored version already held it:
 // the file claims its names first, but a later file edit does not take
 // them from the dashboard tenant holding them. dash is not modified.
@@ -184,7 +184,7 @@ func ValidateDashboard(f *File, dash []DashboardTenant, d DashboardTenant, open 
 	return err
 }
 
-// claimsFileNames is the error for the first slug or installation name d
+// claimsFileNames is the error for the first slug or connection name d
 // takes that a tenant of file declares and d's stored version in dash did
 // not hold, in the words validateTenant uses for a duplicate. A spec that
 // does not decode is left for Merge to report.
@@ -209,10 +209,10 @@ func claimsFileNames(file *File, dash []DashboardTenant, d DashboardTenant) erro
 		if t.Slug == next.Slug && !had["slug "+next.Slug] {
 			return &MergeError{Slug: d.Slug, Err: fmt.Errorf("configfile: %s.slug %q duplicates tenants[%d]", next.where(0), next.Slug, i)}
 		}
-		for ii, in := range next.Installations {
-			if !had["installation "+in.Name] && slices.ContainsFunc(t.Installations, func(x Installation) bool { return x.Name == in.Name }) {
+		for ii, in := range next.Connections {
+			if !had["connection "+in.Name] && slices.ContainsFunc(t.Connections, func(x Connection) bool { return x.Name == in.Name }) {
 				return &MergeError{Slug: d.Slug, Err: fmt.Errorf(
-					"configfile: %s.installations[%d].name %q duplicates an installation in tenant %q; names are hook paths and must be unique",
+					"configfile: %s.connections[%d].name %q duplicates a connection in tenant %q; names are hook paths and must be unique",
 					next.where(0), ii, in.Name, t.Slug)}
 			}
 		}
@@ -222,7 +222,7 @@ func claimsFileNames(file *File, dash []DashboardTenant, d DashboardTenant) erro
 
 // SkippedTenant is a file tenant the running configuration leaves out
 // because a dashboard tenant already holds its slug or one of its
-// installation names.
+// connection names.
 type SkippedTenant struct {
 	Slug   string
 	Reason string
@@ -241,12 +241,12 @@ func (f *File) Declares(slug string) bool {
 }
 
 // names are the instance-wide names a tenant holds: its slug and its
-// installations' names, which are hook paths.
+// connections' names, which are hook paths.
 func (t *Tenant) names() []string {
-	out := make([]string, 0, 1+len(t.Installations))
+	out := make([]string, 0, 1+len(t.Connections))
 	out = append(out, "slug "+t.Slug)
-	for _, in := range t.Installations {
-		out = append(out, "installation "+in.Name)
+	for _, in := range t.Connections {
+		out = append(out, "connection "+in.Name)
 	}
 	return out
 }
@@ -257,9 +257,9 @@ func (t *Tenant) clash(held map[string]string) string {
 	if d, ok := held["slug "+t.Slug]; ok {
 		return fmt.Sprintf("dashboard tenant %q already holds the slug", d)
 	}
-	for _, in := range t.Installations {
-		if d, ok := held["installation "+in.Name]; ok {
-			return fmt.Sprintf("dashboard tenant %q already holds installation name %q", d, in.Name)
+	for _, in := range t.Connections {
+		if d, ok := held["connection "+in.Name]; ok {
+			return fmt.Sprintf("dashboard tenant %q already holds connection name %q", d, in.Name)
 		}
 	}
 	return ""

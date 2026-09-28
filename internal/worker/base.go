@@ -35,11 +35,11 @@ func (b *Base) tenant(file *configfile.File, id string) (*configfile.Tenant, err
 	return nil, river.JobCancel(fmt.Errorf("worker: tenant %s is not in the configuration", id))
 }
 
-// client resolves an installation by name to its forge client for repo.
-func (b *Base) client(ctx context.Context, file *configfile.File, installation, repo string) (forge.Client, error) {
-	in, _, ok := file.Installation(installation)
+// client resolves a connection by name to its forge client for repo.
+func (b *Base) client(ctx context.Context, file *configfile.File, connection, repo string) (forge.Client, error) {
+	in, _, ok := file.Connection(connection)
 	if !ok {
-		return nil, river.JobCancel(fmt.Errorf("worker: installation %s is not in the configuration", installation))
+		return nil, river.JobCancel(fmt.Errorf("worker: connection %s is not in the configuration", connection))
 	}
 	return b.Forges.For(ctx, in, repo)
 }
