@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
 // MaxCheckoutBytes bounds a checkout's total size on the pod's scratch
@@ -44,7 +44,7 @@ func (t *Tree) Checkout(ctx context.Context, dir string, maxBytes int64) (Checko
 		}
 		if stats.Bytes+f.Size > maxBytes {
 			stats.Truncated = true
-			return errStopWalk
+			return storer.ErrStop
 		}
 		name, err := cleanPath(f.Name)
 		if err != nil {
@@ -57,7 +57,7 @@ func (t *Tree) Checkout(ctx context.Context, dir string, maxBytes int64) (Checko
 		stats.Bytes += f.Size
 		return nil
 	})
-	if err != nil && !errors.Is(err, errStopWalk) {
+	if err != nil {
 		return stats, fmt.Errorf("agent: checkout: %w", err)
 	}
 	return stats, nil

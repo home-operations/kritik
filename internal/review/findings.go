@@ -35,6 +35,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/home-operations/kritik/internal/contextpack"
 )
 
 // Severity of a finding, in the order the summary lists them.
@@ -379,60 +381,8 @@ func Fingerprint(f Finding) string {
 
 // Anchors reads a unified diff and returns, per head-side path, the set of
 // new-file line numbers the diff shows (added and context lines). A finding
-// may only be attached to one of these, which is also the set of lines a
-// forge accepts an inline comment on.
+// may only be attached to one of these, which is also the set of lines
+// GitHub accepts an inline comment on.
 func Anchors(diff string) map[string]map[int]bool {
-	out := map[string]map[int]bool{}
-	var path string
-	var line int
-	inHunk := false
-	for l := range strings.SplitSeq(diff, "\n") {
-		switch {
-		case strings.HasPrefix(l, "+++ "):
-			path = strings.TrimPrefix(l, "+++ ")
-			path = strings.TrimPrefix(path, "b/")
-			if path == "/dev/null" {
-				path = ""
-			}
-			inHunk = false
-		case strings.HasPrefix(l, "@@"):
-			// @@ -a,b +c,d @@ : c is the first new-file line of the hunk.
-			line = hunkStart(l)
-			inHunk = line > 0
-		case !inHunk || path == "":
-		case strings.HasPrefix(l, "+"), strings.HasPrefix(l, " "):
-			if out[path] == nil {
-				out[path] = map[int]bool{}
-			}
-			out[path][line] = true
-			line++
-		case strings.HasPrefix(l, "-"):
-			// removed lines do not advance the new-file counter
-		case strings.HasPrefix(l, "\\"):
-			// "\ No newline at end of file"
-		default:
-			inHunk = false
-		}
-	}
-	return out
-}
-
-func hunkStart(header string) int {
-	// header looks like "@@ -12,7 +12,8 @@ optional text"
-	_, rest, ok := strings.Cut(header, "+")
-	if !ok {
-		return 0
-	}
-	end := strings.IndexAny(rest, ", @")
-	if end < 0 {
-		end = len(rest)
-	}
-	n := 0
-	for _, c := range rest[:end] {
-		if c < '0' || c > '9' {
-			return 0
-		}
-		n = n*10 + int(c-'0')
-	}
-	return n
+	return contextpack.ShownLines(diff)
 }

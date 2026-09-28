@@ -14,49 +14,96 @@ type diffLines struct {
 	removed map[string][]int
 }
 
+// diffLine is one line of a hunk: its kind ('+', '-' or ' '), its text
+// without the marker, the paths of the file's two sides ("" for a side
+// that does not exist) and the line's number on each side.
+type diffLine struct {
+	kind             byte
+	text             string
+	oldPath, newPath string
+	oldLine, newLine int
+	// hunk numbers the diff's hunks from 0.
+	hunk int
+}
+
+// walkDiff calls fn for each line of each hunk of a unified diff. A hunk's
+// lines are counted from its header, so a removed "-- x" or an added
+// "++ x", which read like file headers, stay lines of the hunk.
+func walkDiff(diff string, fn func(diffLine)) {
+	cur := diffLine{hunk: -1}
+	var oldLeft, newLeft int
+	for l := range strings.SplitSeq(diff, "\n") {
+		if oldLeft > 0 || newLeft > 0 {
+			if l == "" {
+				// A context line whose leading space was stripped.
+				l = " "
+			}
+			cur.kind, cur.text = l[0], l[1:]
+			switch cur.kind {
+			case '+':
+				fn(cur)
+				cur.newLine++
+				newLeft--
+				continue
+			case '-':
+				fn(cur)
+				cur.oldLine++
+				oldLeft--
+				continue
+			case ' ':
+				fn(cur)
+				cur.oldLine++
+				cur.newLine++
+				oldLeft--
+				newLeft--
+				continue
+			case '\\':
+				// "\ No newline at end of file"
+				continue
+			}
+			// Not a hunk line: the hunk ended short of its counts, and the
+			// line is read as a header.
+			oldLeft, newLeft = 0, 0
+		}
+		switch {
+		case strings.HasPrefix(l, "diff --git "):
+			cur.oldPath, cur.newPath = "", ""
+		case strings.HasPrefix(l, "--- "):
+			cur.oldPath = stripPrefix(l[4:], "a/")
+		case strings.HasPrefix(l, "+++ "):
+			cur.newPath = stripPrefix(l[4:], "b/")
+		case strings.HasPrefix(l, "@@"):
+			if h, ok := parseHunkHeader(l); ok {
+				cur.oldLine, oldLeft, cur.newLine, newLeft = h.oldStart, h.oldCount, h.newStart, h.newCount
+				cur.hunk++
+			}
+		}
+	}
+}
+
 // parseDiff walks a unified diff once. Paths are head-side for added and
 // shown, base-side for removed; a rename therefore keys the two sides
 // differently, which is what the two trees need.
 func parseDiff(diff string) diffLines {
 	d := diffLines{added: map[string][]int{}, shown: map[string]map[int]bool{}, removed: map[string][]int{}}
-	var oldPath, newPath string
-	var oldLine, newLine int
-	inHunk := false
-	for l := range strings.SplitSeq(diff, "\n") {
+	walkDiff(diff, func(l diffLine) {
 		switch {
-		case strings.HasPrefix(l, "--- "):
-			oldPath = stripPrefix(l[4:], "a/")
-			inHunk = false
-		case strings.HasPrefix(l, "+++ "):
-			newPath = stripPrefix(l[4:], "b/")
-			inHunk = false
-		case strings.HasPrefix(l, "@@"):
-			oldLine, newLine = hunkStarts(l)
-			inHunk = oldLine > 0 && newLine > 0
-		case !inHunk:
-		case strings.HasPrefix(l, "+"):
-			if newPath != "" {
-				d.added[newPath] = append(d.added[newPath], newLine)
-				d.show(newPath, newLine)
-			}
-			newLine++
-		case strings.HasPrefix(l, "-"):
-			if oldPath != "" {
-				d.removed[oldPath] = append(d.removed[oldPath], oldLine)
-			}
-			oldLine++
-		case strings.HasPrefix(l, " "):
-			if newPath != "" {
-				d.show(newPath, newLine)
-			}
-			oldLine++
-			newLine++
-		case strings.HasPrefix(l, "\\"):
-		default:
-			inHunk = false
+		case l.kind == '-' && l.oldPath != "":
+			d.removed[l.oldPath] = append(d.removed[l.oldPath], l.oldLine)
+		case l.kind == '+' && l.newPath != "":
+			d.added[l.newPath] = append(d.added[l.newPath], l.newLine)
+			d.show(l.newPath, l.newLine)
+		case l.kind == ' ' && l.newPath != "":
+			d.show(l.newPath, l.newLine)
 		}
-	}
+	})
 	return d
+}
+
+// ShownLines returns, per head-side path, the head-side lines a unified
+// diff shows: its added and context lines.
+func ShownLines(diff string) map[string]map[int]bool {
+	return parseDiff(diff).shown
 }
 
 func (d *diffLines) show(path string, line int) {
@@ -74,25 +121,35 @@ func stripPrefix(p, prefix string) string {
 	return strings.TrimPrefix(p, prefix)
 }
 
-// hunkStarts reads "@@ -a,b +c,d @@" and returns a and c.
-func hunkStarts(header string) (oldStart, newStart int) {
-	fields := strings.Fields(header)
-	if len(fields) < 3 {
-		return 0, 0
-	}
-	return startOf(fields[1]), startOf(fields[2])
+// hunkHeader is a hunk header's "@@ -oldStart,oldCount +newStart,newCount @@".
+type hunkHeader struct {
+	oldStart, oldCount, newStart, newCount int
 }
 
-func startOf(field string) int {
-	field = strings.TrimLeft(field, "-+")
-	if i := strings.IndexByte(field, ','); i >= 0 {
-		field = field[:i]
+// parseHunkHeader reads a hunk header; a count left out is 1.
+func parseHunkHeader(l string) (hunkHeader, bool) {
+	fields := strings.Fields(l)
+	if len(fields) < 3 || !strings.HasPrefix(fields[1], "-") || !strings.HasPrefix(fields[2], "+") {
+		return hunkHeader{}, false
 	}
-	n, err := strconv.Atoi(field)
+	oldStart, oldCount, ok1 := hunkRange(fields[1][1:])
+	newStart, newCount, ok2 := hunkRange(fields[2][1:])
+	return hunkHeader{oldStart, oldCount, newStart, newCount}, ok1 && ok2
+}
+
+func hunkRange(s string) (start, count int, ok bool) {
+	first, rest, hasCount := strings.Cut(s, ",")
+	start, err := strconv.Atoi(first)
 	if err != nil {
-		return 0
+		return 0, 0, false
 	}
-	return n
+	count = 1
+	if hasCount {
+		if count, err = strconv.Atoi(rest); err != nil {
+			return 0, 0, false
+		}
+	}
+	return start, count, true
 }
 
 // runs groups sorted line numbers into ranges, merging neighbours closer
@@ -111,38 +168,30 @@ func runs(lines []int, gap int) [][2]int {
 
 // Hunks returns the head-side text of each hunk in a unified diff: added
 // and context lines, without the removed ones, so each string reads like
-// the region as it now is. Hunks are keyed by their head path.
+// the region as it now is. Hunks are keyed by their head path; a deleted
+// file's have none and are left out.
 func Hunks(diff string) []Hunk {
 	var out []Hunk
-	var path string
-	var cur *Hunk
+	last := -1
+	var cur Hunk
 	var text strings.Builder
 	flush := func() {
-		if cur != nil && strings.TrimSpace(text.String()) != "" {
+		if cur.Path != "" && strings.TrimSpace(text.String()) != "" {
 			cur.Text = text.String()
-			out = append(out, *cur)
+			out = append(out, cur)
 		}
-		cur = nil
 		text.Reset()
 	}
-	for l := range strings.SplitSeq(diff, "\n") {
-		switch {
-		case strings.HasPrefix(l, "+++ "):
+	walkDiff(diff, func(l diffLine) {
+		if l.hunk != last {
 			flush()
-			path = stripPrefix(l[4:], "b/")
-		case strings.HasPrefix(l, "--- "), strings.HasPrefix(l, "diff --git "):
-			flush()
-		case strings.HasPrefix(l, "@@"):
-			flush()
-			if path != "" {
-				cur = &Hunk{Path: path}
-			}
-		case cur == nil:
-		case strings.HasPrefix(l, "+"), strings.HasPrefix(l, " "):
-			text.WriteString(l[1:])
+			last, cur = l.hunk, Hunk{Path: l.newPath}
+		}
+		if l.kind != '-' {
+			text.WriteString(l.text)
 			text.WriteByte('\n')
 		}
-	}
+	})
 	flush()
 	return out
 }
