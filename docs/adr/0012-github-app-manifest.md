@@ -2,6 +2,11 @@
 
 - **Status:** Proposed
 - **Date:** 2026-09-26
+- **Amended by:** [ADR-0014](0014-github-app-only-self-hosted.md), which
+  runs the flow for the instance rather than a tenant, lets the admin
+  choose a private or public App, shows the `client_secret` once for the
+  App to double as the GitHub sign-in, and drops `KRITIK_HOOKS_URL` of
+  §2.3 for `/hooks` under the dashboard's URL.
 - **Authors:** onedr0p.
 
 > Scope: how a dashboard-managed tenant's GitHub installation gets its
