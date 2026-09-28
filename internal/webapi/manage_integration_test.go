@@ -74,11 +74,11 @@ func (f *fakeActions) Rerun(ctx context.Context, tx pgx.Tx, accountID, repositor
 	return 101, f.note(ctx, tx, "rerun %s %s %d", accountID, repositoryID, number)
 }
 
-func (f *fakeActions) Cancel(ctx context.Context, tx pgx.Tx, reviewID, by string) error {
+func (f *fakeActions) Cancel(ctx context.Context, tx pgx.Tx, reviewID string) error {
 	if reviewID == f.notCancelable {
 		return jobs.ErrNotCancelable
 	}
-	return f.note(ctx, tx, "cancel %s by %s", reviewID, by)
+	return f.note(ctx, tx, "cancel %s", reviewID)
 }
 
 func (f *fakeActions) Reindex(ctx context.Context, tx pgx.Tx, accountID, repositoryID string) (int64, error) {
@@ -152,7 +152,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if err := st.ApplyConfig(ctx, file, "manage-test"); err != nil {
+	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	go e.src.Run(ctx, path, time.Hour)
@@ -194,7 +194,7 @@ func (e *manageEnv) signIn(name, subject string, g store.SessionGrant) {
 	ctx, now, origin := context.Background(), time.Now(), "oidc:https://idp.example"
 	user, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{
 		Provider: "oidc", Origin: origin, Subject: subject, DisplayName: name, Email: name + "@example.com", EmailVerified: true,
-	}, now)
+	})
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -530,7 +530,7 @@ func testFileClaims(t *testing.T, e *manageEnv) {
 
 func testActions(t *testing.T, e *manageEnv, md string) {
 	// The leader applies what the dashboard wrote; this test is the leader.
-	if err := e.st.ApplyConfig(context.Background(), e.src.Current.Get(), "manage-test"); err != nil {
+	if err := e.st.ApplyConfig(context.Background(), e.src.Current.Get()); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	repoID := configfile.RepositoryID(md, "md/one")
@@ -559,7 +559,7 @@ func testActions(t *testing.T, e *manageEnv, md string) {
 	e.expect(status, body, http.StatusConflict, CodeNotCancelable)
 	status, body = e.do("operator", "POST", mdPath+"/reviews/"+review+"/cancel", nil)
 	e.expect(status, body, http.StatusAccepted, "")
-	if e.actions.last() != fmt.Sprintf("cancel %s by %s in %s", review, e.user["operator"], md) {
+	if e.actions.last() != fmt.Sprintf("cancel %s in %s", review, md) {
 		t.Errorf("cancel call %q", e.actions.last())
 	}
 	if e.audits(AuditReviewCancel, review) != 1 || e.audits(AuditReviewCancel, e.actions.notCancelable) != 0 {
@@ -635,11 +635,11 @@ func testFileConnectionLeftOut(t *testing.T, e *manageEnv) {
 	}}})
 	write := func(spec json.RawMessage) {
 		err := e.st.WithAccount(ctx, "", func(tx pgx.Tx) error {
-			stored, _, err := store.InstanceSpecIn(ctx, tx)
+			stored, err := store.InstanceSpecIn(ctx, tx)
 			if err != nil {
 				return err
 			}
-			_, err = e.st.PutInstanceSpec(ctx, tx, spec, stored.Revision, "")
+			_, err = e.st.PutInstanceSpec(ctx, tx, spec, stored.Revision)
 			return err
 		})
 		if err != nil {

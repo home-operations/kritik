@@ -17,7 +17,7 @@ import (
 func TestModelCalls(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
@@ -127,7 +127,7 @@ func deleteModelCalls(t *testing.T, s *Store, where string, args ...any) {
 func TestSweepModelCalls(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	alpha := accountID(t, s, "alpha")

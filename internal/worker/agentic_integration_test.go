@@ -262,7 +262,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	if h.file, err = configfiletest.Parse(t, fmt.Sprintf(agenticConfigYAML, providerURL)); err != nil {
 		t.Fatal(err)
 	}
-	if err := appStore.ApplyConfig(ctx, h.file, "test"); err != nil {
+	if err := appStore.ApplyConfig(ctx, h.file); err != nil {
 		t.Fatal(err)
 	}
 	h.account, _ = h.file.Account(configfile.ForgeGitHub, "acme")

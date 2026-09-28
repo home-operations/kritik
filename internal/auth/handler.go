@@ -258,7 +258,7 @@ func (h *Handler) replaceSession(r *http.Request, id Identity, g store.SessionGr
 			return "", time.Time{}, err
 		}
 	}
-	user, err := h.store.UpsertIdentity(ctx, store.SignInIdentity(id), now)
+	user, err := h.store.UpsertIdentity(ctx, store.SignInIdentity(id))
 	if err != nil {
 		return "", time.Time{}, err
 	}

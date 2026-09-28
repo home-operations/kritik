@@ -317,7 +317,7 @@ func openPullRequest(pr *gh.PullRequest) forge.OpenPullRequest {
 		// A deleted fork leaves head.repo null, which is not the base repo
 		// either, as the webhook parser rules.
 		Fork:    head.GetRepo() == nil || head.GetRepo().GetFullName() != base.GetRepo().GetFullName(),
-		HeadRef: head.GetRef(), HeadSHA: head.GetSHA(), BaseRef: base.GetRef(), BaseSHA: base.GetSHA(),
+		HeadRef: head.GetRef(), HeadSHA: head.GetSHA(), BaseRef: base.GetRef(),
 		URL: pr.GetHTMLURL(), Body: pr.GetBody(), CreatedAt: pr.GetCreatedAt().Time,
 		UpdatedAt: pr.GetUpdatedAt().Time, DefaultBranch: base.GetRepo().GetDefaultBranch(),
 	}

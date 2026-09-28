@@ -71,11 +71,11 @@ func putSpec(t *testing.T, st *store.Store, spec configfile.InstanceSpec) {
 	t.Helper()
 	ctx := context.Background()
 	withTx(t, st, func(tx pgx.Tx) error {
-		stored, _, err := store.InstanceSpecIn(ctx, tx)
+		stored, err := store.InstanceSpecIn(ctx, tx)
 		if err != nil {
 			return err
 		}
-		_, err = st.PutInstanceSpec(ctx, tx, spec.Spec, stored.Revision, "")
+		_, err = st.PutInstanceSpec(ctx, tx, spec.Spec, stored.Revision)
 		return err
 	})
 }
@@ -146,7 +146,7 @@ func TestInstanceSpecEndToEnd(t *testing.T) {
 	}
 
 	t.Run("ApplyConfig writes the spec's connection and its account", func(t *testing.T) {
-		if err := st.ApplyConfig(ctx, s.Current.Get(), "test"); err != nil {
+		if err := st.ApplyConfig(ctx, s.Current.Get()); err != nil {
 			t.Fatalf("ApplyConfig: %v", err)
 		}
 		if on, by, connOn := accountState(t); !on || by != "dashboard" || !connOn {
@@ -188,7 +188,7 @@ func TestInstanceSpecEndToEnd(t *testing.T) {
 	t.Run("dropping the connection disables it and its account on the next apply", func(t *testing.T) {
 		putSpec(t, st, configfile.InstanceSpec{Spec: []byte(`{}`)})
 		waitFor(t, "dash-bot gone", func() bool { return !hasConnection(s.Current.Get(), "dash-bot") })
-		if err := st.ApplyConfig(ctx, s.Current.Get(), "test"); err != nil {
+		if err := st.ApplyConfig(ctx, s.Current.Get()); err != nil {
 			t.Fatalf("ApplyConfig: %v", err)
 		}
 		if on, _, connOn := accountState(t); on || connOn {

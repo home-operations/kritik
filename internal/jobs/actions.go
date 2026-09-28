@@ -99,17 +99,14 @@ func EnqueueRerun(
 // nothing a cancel can reach.
 // The row update and the JobCancelTx call share tx, so a rollback undoes
 // both together.
-func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], reviewID string, by string) error {
+func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], reviewID string) error {
 	if _, err := uuid.Parse(reviewID); err != nil {
 		return ErrNotCancelable
 	}
-	if _, err := uuid.Parse(by); err != nil {
-		return ErrNotCancelable
-	}
 	var jobID int64
-	err := tx.QueryRow(ctx, `UPDATE reviews SET cancel_requested_at = now(), canceled_by = $2
+	err := tx.QueryRow(ctx, `UPDATE reviews SET cancel_requested_at = now()
 		WHERE id = $1 AND status IN ('running', 'prepared') AND river_job_id IS NOT NULL
-		RETURNING river_job_id`, reviewID, by).Scan(&jobID)
+		RETURNING river_job_id`, reviewID).Scan(&jobID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotCancelable
 	}

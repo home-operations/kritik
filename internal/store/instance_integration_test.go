@@ -39,10 +39,6 @@ func TestInstanceSpec(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	resetInstanceSpec(t, s)
-	var user string
-	if err := s.app.QueryRow(ctx, `INSERT INTO users (display_name) VALUES ('op') RETURNING id`).Scan(&user); err != nil {
-		t.Fatalf("insert user: %v", err)
-	}
 	fingerprint := func(t *testing.T) string {
 		t.Helper()
 		fp, err := s.InstanceSpecFingerprint(ctx)
@@ -62,7 +58,7 @@ func TestInstanceSpec(t *testing.T) {
 				return err
 			}
 			var err error
-			rev, err = s.PutInstanceSpec(ctx, tx, json.RawMessage(spec), expected, user)
+			rev, err = s.PutInstanceSpec(ctx, tx, json.RawMessage(spec), expected)
 			return err
 		})
 		return rev, err
@@ -97,12 +93,12 @@ func TestInstanceSpec(t *testing.T) {
 		t.Fatalf("stored spec = %s, %v", spec.Spec, err)
 	}
 	err = inTx(t, s, func(tx pgx.Tx) error {
-		in, meta, err := InstanceSpecIn(ctx, tx)
+		in, err := InstanceSpecIn(ctx, tx)
 		if err != nil {
 			return err
 		}
-		if in.Revision != 2 || meta.UpdatedBy != user || meta.UpdatedAt.IsZero() {
-			t.Fatalf("in tx = %+v %+v", in, meta)
+		if in.Revision != 2 {
+			t.Fatalf("in tx = %+v", in)
 		}
 		return nil
 	})
@@ -120,7 +116,7 @@ func TestRecordWebhookDelivery(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	f := parse(t, twoAccounts)
-	if err := s.ApplyConfig(ctx, f, "test"); err != nil {
+	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	in, _ := f.Connection("alpha-bot")

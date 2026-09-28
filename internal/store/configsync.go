@@ -46,7 +46,7 @@ func IsConfigContentError(err error) bool {
 // taken over (ErrManagedBy). It runs as the owner in one transaction, so a
 // replica reading config_state never sees a half-applied configuration.
 // Only the leader calls it.
-func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader string) error {
+func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File) error {
 	if s.owner == nil {
 		return errors.New("store: applying configuration needs the owner DSN")
 	}
@@ -76,9 +76,9 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 		}
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO config_state (id, applied_hash, applied_at, leader) VALUES (1, $1, now(), $2)
-		ON CONFLICT (id) DO UPDATE SET applied_hash = EXCLUDED.applied_hash, applied_at = now(), leader = EXCLUDED.leader`,
-		f.Hash(), leader); err != nil {
+		INSERT INTO config_state (id, applied_hash) VALUES (1, $1)
+		ON CONFLICT (id) DO UPDATE SET applied_hash = EXCLUDED.applied_hash`,
+		f.Hash()); err != nil {
 		return fmt.Errorf("store: record config state: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {

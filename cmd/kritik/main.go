@@ -153,7 +153,6 @@ func run() error {
 				return err
 			}
 			sweeper, _ := exec.(*executor.Kube)
-			hostname, _ := os.Hostname()
 			// Insert-only client: the leader enqueues onboarding index jobs.
 			leaderQueue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
 			if err != nil {
@@ -161,7 +160,7 @@ func run() error {
 			}
 			g.Go(func() error {
 				return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
-					return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, configErrors, hostname, logger)
+					return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, configErrors, logger)
 				})
 			})
 		} else if role != config.RoleIngest && role != config.RoleWeb {
@@ -411,7 +410,7 @@ const secretSweepInterval = 5 * time.Minute
 // and enqueues an onboarding index job for every repository that has none.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	sweeper *executor.Kube, m *metrics.Metrics, configErrors *server.ConfigErrorGauge, leader string, logger *slog.Logger,
+	sweeper *executor.Kube, m *metrics.Metrics, configErrors *server.ConfigErrorGauge, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
@@ -453,7 +452,7 @@ func lead(
 	// sessions (app pool).
 	duties.Go(func() { retentionSweep(pollCtx, st, current, retentionSweepInterval, logger) })
 	return applyLoop(ctx, current, func(ctx context.Context, f *configfile.File) error {
-		if err := st.ApplyConfig(ctx, f, leader); err != nil {
+		if err := st.ApplyConfig(ctx, f); err != nil {
 			return err
 		}
 		return ensureIndexSchema(ctx, st, cfg.DatabaseAppRole, f.Embedding, logger)

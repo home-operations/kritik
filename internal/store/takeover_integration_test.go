@@ -19,7 +19,7 @@ func TestApplyConfigTakesOverAConnection(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	base := parse(t, twoAccounts)
-	if err := s.ApplyConfig(ctx, base, "test"); err != nil {
+	if err := s.ApplyConfig(ctx, base); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	withSpec, err := configfile.Merge(base, configfile.InstanceSpec{Revision: 1, Spec: json.RawMessage(`{"connections":[{"name":"alpha-bot",` +
@@ -42,7 +42,7 @@ func TestApplyConfigTakesOverAConnection(t *testing.T) {
 		}
 	})
 
-	if err := s.ApplyConfig(ctx, withSpec, "test"); err != nil {
+	if err := s.ApplyConfig(ctx, withSpec); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	var origin string
@@ -53,7 +53,7 @@ func TestApplyConfigTakesOverAConnection(t *testing.T) {
 	if origin != "dashboard" || !enabled {
 		t.Fatalf("alpha-bot managed_by %s, enabled %v; want the dashboard's, enabled", origin, enabled)
 	}
-	if err := s.ApplyConfig(ctx, base, "test"); err != nil {
+	if err := s.ApplyConfig(ctx, base); err != nil {
 		t.Fatalf("ApplyConfig back to the file: %v", err)
 	}
 	if err := s.owner.QueryRow(ctx, `SELECT managed_by FROM connections WHERE name = 'alpha-bot'`).Scan(&origin); err != nil || origin != "file" {

@@ -127,17 +127,19 @@ func (s *Store) WaitForSchema(ctx context.Context, every time.Duration) error {
 	}
 }
 
-// grant gives the application role what requests and jobs need and the
-// runner role nothing yet beyond connecting; the runner's tables arrive with
-// the runner. Role names come from configuration, so they are quoted as
-// identifiers rather than interpolated raw.
+// grant gives the application role what requests and jobs need, and the
+// runner role what one runner's job writes. Role names come from
+// configuration, so they are quoted as identifiers rather than interpolated
+// raw.
 func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 	app := pgx.Identifier{appRole}.Sanitize()
 	runner := pgx.Identifier{runnerRole}.Sanitize()
 	stmts := []string{
 		`GRANT USAGE ON SCHEMA public TO ` + app + `, ` + runner,
 		`GRANT SELECT ON accounts, config_state, schema_migrations TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON connections, repositories, model_leases, pull_requests TO ` + app,
+		// Only the leader writes connections; a request stamps a delivery.
+		`GRANT SELECT, UPDATE (last_webhook_at) ON connections TO ` + app,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON repositories, model_leases, pull_requests TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, followups, poll_state TO ` + app,
 		`GRANT SELECT ON index_schema, agent_runs TO ` + app,
@@ -146,7 +148,8 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		// RLS, access control lives in web code) except model_calls, which is
 		// account content gated by its own account_isolation policy.
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON users, identities, sessions, login_states, app_manifests TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON audit_events, instance_config TO ` + app,
+		`GRANT SELECT, INSERT ON audit_events TO ` + app,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON instance_config TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON model_calls TO ` + app,
 		// The runner role sees only its own job through the runner_job
 		// policies; it needs the table privileges those policies gate. On

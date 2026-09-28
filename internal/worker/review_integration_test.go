@@ -940,7 +940,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	// they are checked against intact.
 	t.Setenv("TEST_SECRET", "test-provider-key")
 	file := configfiletest.Load(t, configYAML)
-	if err := appStore.ApplyConfig(ctx, file, "test"); err != nil {
+	if err := appStore.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
 	current := configfile.NewCurrent(file)
@@ -1667,20 +1667,6 @@ func latestReviewID(ctx context.Context, t *testing.T, appStore *store.Store, ac
 	return id
 }
 
-// newTestUser inserts a bare accounts row and returns its id, standing in
-// for whichever human account RequestCancel's by should record.
-func newTestUser(ctx context.Context, t *testing.T, appStore *store.Store, accountID string) string {
-	t.Helper()
-	var id string
-	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `INSERT INTO users DEFAULT VALUES RETURNING id`).Scan(&id)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return id
-}
-
 // commitOnBase resets dir's worktree to base, writes body to main.go, and
 // commits it, returning the new commit's SHA.
 func commitOnBase(t *testing.T, dir, base, msg, body string) string {
@@ -1759,9 +1745,8 @@ func checkEnqueueRerun(
 func checkRequestCancelRejected(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, headSHA string) {
 	t.Helper()
 	id := latestReviewID(ctx, t, appStore, accountID, headSHA)
-	by := newTestUser(ctx, t, appStore, accountID)
 	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
+		return jobs.RequestCancel(ctx, tx, insertOnly, id)
 	})
 	if !errors.Is(err, jobs.ErrNotCancelable) {
 		t.Fatalf("RequestCancel on a completed review = %v, want ErrNotCancelable", err)
@@ -1775,10 +1760,9 @@ func checkRequestCancelRejected(ctx context.Context, t *testing.T, appStore *sto
 func checkRequestCancelCrossAccount(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, headSHA string) {
 	t.Helper()
 	id := latestReviewID(ctx, t, appStore, accountID, headSHA)
-	by := newTestUser(ctx, t, appStore, accountID)
 	other := uuid.NewString()
 	err := appStore.WithAccount(ctx, other, func(tx pgx.Tx) error {
-		return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
+		return jobs.RequestCancel(ctx, tx, insertOnly, id)
 	})
 	if !errors.Is(err, jobs.ErrNotCancelable) {
 		t.Fatalf("RequestCancel from another account = %v, want ErrNotCancelable", err)
@@ -1806,9 +1790,8 @@ func checkRequestCancelRunning(
 	}
 
 	id := latestReviewID(ctx, t, appStore, accountID, canceling)
-	by := newTestUser(ctx, t, appStore, accountID)
 	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
+		return jobs.RequestCancel(ctx, tx, insertOnly, id)
 	})
 	if err != nil {
 		t.Fatalf("RequestCancel: %v", err)
@@ -1857,19 +1840,14 @@ func checkRequestCancelRunning(
 	}
 
 	var requestedAt sql.NullTime
-	var canceledBy sql.NullString
 	err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT cancel_requested_at, canceled_by FROM reviews WHERE id = $1`, id).
-			Scan(&requestedAt, &canceledBy)
+		return tx.QueryRow(ctx, `SELECT cancel_requested_at FROM reviews WHERE id = $1`, id).Scan(&requestedAt)
 	})
 	if err != nil {
 		t.Fatalf("query reviews: %v", err)
 	}
 	if !requestedAt.Valid {
 		t.Fatal("cancel_requested_at = NULL, want set")
-	}
-	if canceledBy.String != by {
-		t.Fatalf("canceled_by = %q, want %q", canceledBy.String, by)
 	}
 
 	var phase, runErr string
@@ -1907,9 +1885,8 @@ func checkRequestCancelPrepared(
 	}
 
 	id := latestReviewID(ctx, t, appStore, accountID, head)
-	by := newTestUser(ctx, t, appStore, accountID)
 	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
+		return jobs.RequestCancel(ctx, tx, insertOnly, id)
 	})
 	if err != nil {
 		t.Fatalf("RequestCancel: %v", err)
@@ -2171,11 +2148,10 @@ func checkJobEnded(
 
 	t.Run("a cancel after the model answered keeps the review completed", func(t *testing.T) {
 		head := commitOnBase(t, dir, base, "canceled after the answer", "package main\n\nfunc answered() {}\n")
-		by := newTestUser(ctx, t, appStore, accountID)
 		fc.setAnswered(func(cctx context.Context) {
 			id := latestReviewID(ctx, t, appStore, accountID, head)
 			err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-				return jobs.RequestCancel(ctx, tx, insertOnly, id, by)
+				return jobs.RequestCancel(ctx, tx, insertOnly, id)
 			})
 			if err != nil {
 				t.Errorf("RequestCancel: %v", err)
@@ -2303,7 +2279,7 @@ func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "test-provider-key")
 	file := configfiletest.Load(t, configYAML)
-	if err := st.ApplyConfig(ctx, file, "test"); err != nil {
+	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
 	insertOnly, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})

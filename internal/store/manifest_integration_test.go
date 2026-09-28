@@ -16,7 +16,7 @@ func TestAppManifestFlow(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	user, err := s.UpsertIdentity(ctx, SignInIdentity{Provider: "local", Origin: "local",
-		Subject: "manifest-test-" + now.Format(time.RFC3339Nano), Login: "admin"}, now)
+		Subject: "manifest-test-" + now.Format(time.RFC3339Nano), Login: "admin"})
 	if err != nil {
 		t.Fatalf("UpsertIdentity: %v", err)
 	}

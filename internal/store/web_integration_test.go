@@ -46,7 +46,7 @@ func insertReview(t *testing.T, ctx context.Context, s *Store, account string) s
 func TestListenPublishesReviewEvents(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	alpha := accountID(t, s, "alpha")
@@ -83,7 +83,7 @@ func TestListenPublishesReviewEvents(t *testing.T) {
 func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	alpha := accountID(t, s, "alpha")
@@ -170,7 +170,7 @@ func TestListenPublishesConfigEvents(t *testing.T) {
 func TestModelCallsRowLevelSecurity(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")

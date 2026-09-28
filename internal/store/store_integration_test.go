@@ -151,7 +151,7 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	f := parse(t, twoAccounts)
-	if err := s.ApplyConfig(ctx, f, "test"); err != nil {
+	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	if got, _ := s.AppliedConfigHash(ctx); got != f.Hash() {
@@ -228,7 +228,7 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 
 	t.Run("an account no connection serves any more is disabled and keeps its rows", func(t *testing.T) {
 		f2 := parse(t, alphaAccount)
-		if err := s.ApplyConfig(ctx, f2, "test"); err != nil {
+		if err := s.ApplyConfig(ctx, f2); err != nil {
 			t.Fatalf("ApplyConfig: %v", err)
 		}
 		var enabled bool
@@ -242,7 +242,7 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM connections WHERE name = 'beta-bot'`).Scan(&instEnabled); err != nil || instEnabled {
 			t.Fatalf("beta-bot enabled=%v err=%v; want disabled", instEnabled, err)
 		}
-		if err := s.ApplyConfig(ctx, f, "test"); err != nil {
+		if err := s.ApplyConfig(ctx, f); err != nil {
 			t.Fatalf("re-apply: %v", err)
 		}
 		if err := s.owner.QueryRow(ctx, `SELECT enabled FROM accounts WHERE name = 'beta'`).Scan(&enabled); err != nil || !enabled {
@@ -258,7 +258,7 @@ func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	listed := parse(t, twoAccounts)
-	if err := s.ApplyConfig(ctx, listed, "test"); err != nil {
+	if err := s.ApplyConfig(ctx, listed); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	unlisted := parse(t, strings.Replace(twoAccounts, "      - name: two\n        enabled: false\n", "", 1))
@@ -275,11 +275,11 @@ func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
 			t.Fatalf("alpha/two managed_by=%s enabled=%v disabled_at=%v; want %s, enabled %v", origin, enabled, disabledAt, wantOrigin, wantEnabled)
 		}
 	}
-	if err := s.ApplyConfig(ctx, unlisted, "test"); err != nil {
+	if err := s.ApplyConfig(ctx, unlisted); err != nil {
 		t.Fatalf("ApplyConfig unlisted: %v", err)
 	}
 	check("forge", true)
-	if err := s.ApplyConfig(ctx, listed, "test"); err != nil {
+	if err := s.ApplyConfig(ctx, listed); err != nil {
 		t.Fatalf("ApplyConfig listed: %v", err)
 	}
 	check("dashboard", false)
@@ -288,7 +288,7 @@ func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
 func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
@@ -345,7 +345,7 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 func TestRunSecretsToSweep(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
@@ -490,7 +490,7 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	t.Cleanup(func() {
@@ -560,7 +560,7 @@ func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 func TestSweepDisabledIndexes(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	// The suites share one database: leave no index schema behind.
@@ -628,7 +628,7 @@ func TestSweepDisabledIndexes(t *testing.T) {
 func TestFindRepo(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	find := func(account, name string) (RepoRow, error) {
@@ -661,7 +661,7 @@ func changeLast(s string) string {
 func TestGatewayTokens(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	alpha := accountID(t, s, "alpha")

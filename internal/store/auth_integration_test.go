@@ -16,7 +16,7 @@ func TestSessionGrant(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	acct, err := s.UpsertIdentity(ctx, SignInIdentity{Provider: "github", Origin: "github:https://github.com",
-		Subject: "store-test-" + now.Format(time.RFC3339Nano), Login: "x"}, now)
+		Subject: "store-test-" + now.Format(time.RFC3339Nano), Login: "x"})
 	if err != nil {
 		t.Fatalf("UpsertIdentity: %v", err)
 	}
