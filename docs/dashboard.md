@@ -163,6 +163,9 @@ provider keys and repository entries.
   the embedder.
   "Advanced: edit JSON" edits the whole document.
 - An account's admin page edits that account's entry alone.
+- The command palette, `Ctrl`/`⌘` `K`, finds a setting by name and jumps
+  to its field, in the admin console or an account's admin page. A
+  repository's page filters its effective settings.
 - A save names the revision it was loaded at. A save over a newer
   revision is refused with `409 revision_conflict`, and the form offers to
   reload.

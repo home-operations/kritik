@@ -225,8 +225,8 @@ test.describe('keyboard shortcuts', () => {
     await expect(page.locator('.palette-input input')).toBeFocused();
 
     await page.keyboard.type('console');
-    await expect(page.locator('.palette-row')).toHaveCount(1);
-    await expect(page.locator('.row-title')).toHaveText('Admin console');
+    // The console's sections match too, after the console itself.
+    await expect(page.locator('.row-title').first()).toHaveText('Admin console');
 
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/#\/operator$/);

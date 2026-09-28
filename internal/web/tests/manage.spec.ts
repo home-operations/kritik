@@ -691,3 +691,39 @@ test.describe('admin console', () => {
     await expect(unserved.getByRole('link')).toHaveCount(0);
   });
 });
+
+test.describe('settings search', () => {
+  test('the palette finds a setting only when searching, and focuses it', async ({ page }) => {
+    const adminOperator: T.Me = { ...g.me, operator: true, accounts: [{ slug: S, role: 'admin' }] };
+    await setup(page, adminOperator, [accountRow(accountConfig), [/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    await page.goto('/#/');
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(page.locator('.row-title').filter({ hasText: 'Tokens per month' })).toHaveCount(0);
+    await page.keyboard.type('budget');
+    await expect(page.locator('.palette-row')).toHaveCount(1);
+    await expect(page.locator('.palette-row')).toContainText(`${S} settings`);
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`${ADMIN}/config$`));
+    await expect(page.locator('[data-path="limits.tokensPerMonth"]')).toBeFocused();
+
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.type('embedder');
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/#\/operator$/);
+    await expect(page.locator('#instance-embedding')).toBeFocused();
+  });
+
+  test("a repository's settings filter to what matches", async ({ page }) => {
+    await setup(page, adminMe);
+    await page.goto(`/#/a/${S}/repos/alpha/one`);
+    const settings = page.locator('#repo-settings').locator('../..');
+    await expect(settings.getByText('Review model')).toBeVisible();
+    await settings.getByLabel('Filter settings').fill('settle');
+    await expect(settings.locator('dt')).toHaveText(['Settle']);
+    await expect(page.locator('#repo-agent').locator('../..').locator('dt')).toHaveCount(0);
+    await settings.getByLabel('Filter settings').fill('agentic');
+    await expect(settings.locator('dt')).toHaveText(['Mode']);
+    await settings.getByLabel('Filter settings').fill('nothing-like-it');
+    await expect(settings).toContainText('No setting matches');
+  });
+});
