@@ -39,7 +39,7 @@ func TestRenderSummaryDefault(t *testing.T) {
 		"- **[blocking]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write",
 		"- **[nit]** `README.md:2` typo",
 		"_1 file(s) were omitted from the diff to fit the context budget._",
-		"Reviewed `0123456` by kritik with vendor/model-x. Reviews never block a merge.",
+		"<sub>Reviewed `0123456` by kritik with vendor/model-x.</sub>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)
