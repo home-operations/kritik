@@ -11,7 +11,10 @@ The top bar switches between the accounts you can read, or all of them
 at once, and holds a tab for each of an account's sections
 ([ADR-0017](adr/0017-dashboard-sections.md)):
 
-- **Overview:** the account at a glance, and its usage.
+- **Overview:** the account at a glance; its findings, each listed once
+  per pull request however many reviews repeated it, and addressed once a
+  later review of the pull request, at a newer head, no longer reports
+  it; and its usage.
 - **Pull requests:** its pull requests and their reviews, the run queue
   and the follow-up questions. The search box takes text, or narrows the
   list with `repo:owner/name`, `author:login` and `status:` a last review

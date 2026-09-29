@@ -12,6 +12,7 @@
 //   #/a/<slug>/pulls[?<filter>]               account's pull list; filter is a PullFilter
 //   #/a/<slug>/pulls/<owner>/<repo>/<n>       one pull request
 //   #/a/<slug>/reviews/<id>[/<tab>]           one review, optional tab
+//   #/a/<slug>/findings[?<filter>]            account's findings; filter is a FindingFilter
 //   #/a/<slug>/queue                          run queue
 //   #/a/<slug>/usage                          usage/cost dashboard
 //   #/a/<slug>/followups                      follow-up tracker
@@ -29,7 +30,8 @@
 // otherwise, including when the malformation is what prevents the slug
 // itself from being parsed (e.g. "#/a//acme").
 
-import type { ReviewStatus } from './types';
+import type { FindingStatus, ReviewStatus, Severity } from './types';
+import { SEVERITIES } from './format';
 
 export const REVIEW_TABS = ['summary', 'diff', 'conversation', 'timeline', 'raw', 'usage'] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
@@ -65,6 +67,30 @@ export function pullFilter(f: { state?: string; outcome?: string; repo?: string;
   return Object.keys(out).length ? out : undefined;
 }
 
+// FindingFilter is the findings list's filters, in the hash's query like a
+// PullFilter's; a field is present only when it narrows the list.
+export interface FindingFilter {
+  severity?: Severity;
+  status?: FindingStatus;
+  repo?: string;
+  q?: string;
+}
+
+export const FINDING_STATUSES: readonly FindingStatus[] = ['open', 'addressed'];
+
+// findingFilter drops the fields of f that match everything; undefined when
+// nothing is left.
+export function findingFilter(f: { severity?: string; status?: string; repo?: string; q?: string }): FindingFilter | undefined {
+  const out: FindingFilter = {};
+  const severity = SEVERITIES.find((s) => s === f.severity);
+  if (severity) out.severity = severity;
+  const status = FINDING_STATUSES.find((s) => s === f.status);
+  if (status) out.status = status;
+  if (f.repo) out.repo = f.repo;
+  if (f.q) out.q = f.q;
+  return Object.keys(out).length ? out : undefined;
+}
+
 export type Route =
   | { name: 'overview' }
   | { name: 'signin' }
@@ -75,6 +101,7 @@ export type Route =
   | { name: 'pulls'; slug: string; filter?: PullFilter }
   | { name: 'pull'; slug: string; owner: string; repo: string; number: number }
   | { name: 'review'; slug: string; id: string; tab?: ReviewTab }
+  | { name: 'findings'; slug: string; filter?: FindingFilter }
   | { name: 'queue'; slug: string }
   | { name: 'usage'; slug: string }
   | { name: 'followups'; slug: string }
@@ -133,6 +160,12 @@ function parseAccountRoute(slug: string, rest: string[], query: URLSearchParams)
     case 'reviews':
       if (tail.length === 1) return { name: 'review', slug, id: tail[0]! };
       if (tail.length === 2) return { name: 'review', slug, id: tail[0]!, tab: isReviewTab(tail[1]) ? tail[1] : undefined };
+      break;
+    case 'findings':
+      if (tail.length === 0) {
+        const filter = findingFilter(Object.fromEntries(query));
+        return filter ? { name: 'findings', slug, filter } : { name: 'findings', slug };
+      }
       break;
     case 'queue':
       if (tail.length === 0) return { name: 'queue', slug };
@@ -199,6 +232,10 @@ export function href(r: Route): string {
       return `#/a/${slugPath(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}`;
     case 'review':
       return r.tab ? `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}` : `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}`;
+    case 'findings': {
+      const query = new URLSearchParams(Object.entries(r.filter ?? {})).toString();
+      return `#/a/${slugPath(r.slug)}/findings${query ? `?${query}` : ''}`;
+    }
     case 'queue':
       return `#/a/${slugPath(r.slug)}/queue`;
     case 'usage':

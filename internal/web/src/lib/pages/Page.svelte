@@ -12,6 +12,7 @@
   import Pull from './Pull.svelte';
   import Review from './review/Review.svelte';
   import Queue from './Queue.svelte';
+  import Findings from './Findings.svelte';
   import Usage from './Usage.svelte';
   import Followups from './Followups.svelte';
   import Admin from './admin/Admin.svelte';
@@ -23,7 +24,7 @@
 
   function keyOf(r: Route): string {
     if (r.name === 'review') return JSON.stringify({ n: r.name, s: r.slug, id: r.id });
-    if (r.name === 'pulls') return JSON.stringify({ n: r.name, s: r.slug });
+    if (r.name === 'pulls' || r.name === 'findings') return JSON.stringify({ n: r.name, s: r.slug });
     return JSON.stringify(r);
   }
   const key = $derived(keyOf(route));
@@ -49,6 +50,8 @@
     <Pull slug={route.slug} owner={route.owner} repo={route.repo} number={route.number} />
   {:else if route.name === 'review'}
     <Review slug={route.slug} id={route.id} tab={route.tab} />
+  {:else if route.name === 'findings'}
+    <Findings slug={route.slug} filter={route.filter} />
   {:else if route.name === 'queue'}
     <Queue slug={route.slug} />
   {:else if route.name === 'usage'}

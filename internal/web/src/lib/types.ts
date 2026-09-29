@@ -362,6 +362,7 @@ export interface PullRef {
   repository: string;
   number: number;
   title: string;
+  url: string;
 }
 
 export interface ReviewInfo extends Review {
@@ -393,6 +394,18 @@ export interface Finding {
   postedInline: boolean;
   forgeCommentId: number | null;
   createdAt: string;
+}
+
+export type FindingStatus = 'open' | 'addressed';
+
+// AccountFinding is one finding of a pull request, however many of its
+// reviews reported it, as the latest of them did.
+export interface AccountFinding extends Finding {
+  reviewId: string;
+  pull: PullRef;
+  status: FindingStatus;
+  firstSeenAt: string;
+  lastSeenAt: string;
 }
 
 export interface RunnerRun {

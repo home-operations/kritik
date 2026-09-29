@@ -32,6 +32,8 @@ var goldenReview = Review{
 	CreatedAt: t0, FinishedAt: &t1, SkipReason: repoconfig.SkipFiltered, Error: "",
 }
 
+var goldenPullRef = PullRef{Repository: "alpha/one", Number: 7, Title: "Add widgets", URL: "https://git.example/alpha/one/pulls/7"}
+
 var goldenSummary = AccountSummary{
 	Slug: "github/alpha", Connection: "alpha-bot", Repositories: 3, Reviews7d: 9,
 	Usage: MonthUsage{Tokens: 5000, CostUSD: 1.5, TokensPerMonth: 1000000, ReviewsToday: 2, ReviewsPerDay: 50},
@@ -134,7 +136,7 @@ var goldens = map[string]any{
 	},
 	"review_detail": ReviewDetail{
 		Review: ReviewInfo{
-			Review: goldenReview, Pull: PullRef{Repository: "alpha/one", Number: 7, Title: "Add widgets"}, ScopeReason: "delta",
+			Review: goldenReview, Pull: goldenPullRef, ScopeReason: "delta",
 			MergeBaseSHA: "base1", PatchID: "patch1", PriorReviewID: new("rev-0"), CancelRequestedAt: nil,
 		},
 		Summary: &Summary{Take: "Looks fine.", Praise: []string{"tests"}},
@@ -164,6 +166,14 @@ var goldens = map[string]any{
 			}},
 			RepoNotes: []string{"docs/missing.md: not found"}, RepoFiles: []RepoFile{{Path: ".kritik.yaml", Size: 42}}, CreatedAt: t0,
 		},
+	},
+	"account_finding": AccountFinding{
+		Finding: Finding{
+			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityBlocking, Title: "nil deref",
+			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "", AgentPrompt: "", Fingerprint: "fp",
+			PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0,
+		},
+		ReviewID: "rev-1", Pull: goldenPullRef, Status: store.FindingAddressed, FirstSeenAt: t0, LastSeenAt: t1,
 	},
 	"review_diff": ReviewDiff{Diff: "diff --git a/a.go b/a.go\n", DeltaDiff: ""},
 	"review_raw": ReviewRaw{

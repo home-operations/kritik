@@ -15,7 +15,7 @@ interface SectionDef {
 }
 
 export const SECTIONS: Record<Section, SectionDef> = {
-  overview: { label: 'Overview', names: ['account', 'usage'], home: (slug) => ({ name: 'account', slug }) },
+  overview: { label: 'Overview', names: ['account', 'findings', 'usage'], home: (slug) => ({ name: 'account', slug }) },
   pulls: { label: 'Pull requests', names: ['pulls', 'pull', 'review', 'queue', 'followups'], home: (slug) => ({ name: 'pulls', slug }) },
   settings: { label: 'Settings', names: ['repos', 'repo', 'admin', 'console'], home: (slug) => ({ name: 'repos', slug }) },
 };
@@ -37,6 +37,7 @@ export interface SubTab {
 export const SUB_TABS: Partial<Record<Section, readonly SubTab[]>> = {
   overview: [
     { label: 'Overview', name: 'account', route: (slug) => ({ name: 'account', slug }) },
+    { label: 'Findings', name: 'findings', route: (slug) => ({ name: 'findings', slug }) },
     { label: 'Usage', name: 'usage', route: (slug) => ({ name: 'usage', slug }) },
   ],
   pulls: [

@@ -314,6 +314,7 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/reviews/" + e.a.reviewID + "/transcript", `"system":"sys of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/raw", `"logTail":"tail of webapi-a"`},
 		{a + "/index-runs?repo=wa/one", `"commitSha":"commit7"`},
+		{a + "/findings?repo=wa/one&severity=blocking&status=open", `"title":"nil deref"`},
 		{a + "/followups?repo=wa/one", `"commentId":4242`},
 		{a + "/followups/4242/transcript", `"system":"follow of webapi-a"`},
 		{a + "/usage?group=repo", `"key":"wa/one"`},
