@@ -34,8 +34,9 @@
 }
 .page-head h1 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 650;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   word-break: break-word;
 }
 .page-head p {
@@ -125,13 +126,13 @@ input:focus-visible {
   font-weight: 600;
   line-height: 1.5;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0 8px;
+  border-radius: 4px;
+  padding: 0 7px;
   color: var(--muted);
   white-space: nowrap;
 }
 .badge {
-  border-radius: 4px;
+  border-radius: 3px;
   font-weight: 500;
 }
 .tone-ok {
@@ -179,9 +180,6 @@ input:focus-visible {
   color: var(--sev);
   border-color: color-mix(in srgb, var(--sev) 45%, var(--border));
   background: color-mix(in srgb, var(--sev) 8%, transparent);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 10px;
 }
 .sev-counts {
   display: inline-flex;
@@ -264,14 +262,12 @@ kbd {
   gap: 4px;
 }
 .tile-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 .tile-value {
-  font-size: 22px;
-  font-weight: 650;
+  font-size: 24px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .meter {
@@ -333,9 +329,6 @@ table.data td.error-cell {
 table.data thead th {
   color: var(--muted);
   font-weight: 600;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   background: var(--panel-alt);
 }
 table.data tfoot th,
@@ -449,8 +442,8 @@ table.data tbody tr:hover {
   border-bottom: none;
 }
 .row.selected {
-  background: var(--panel-alt);
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--mark-wash);
+  box-shadow: inset 3px 0 0 var(--edge);
 }
 .row-link {
   flex: 1 1 auto;
@@ -563,8 +556,9 @@ table.data tbody tr:hover {
 }
 .tab-count {
   font-size: 11px;
-  background: var(--panel-alt);
-  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
   padding: 0 6px;
 }
 .tab-panel {
@@ -618,10 +612,9 @@ table.data tbody tr:hover {
 }
 .finding-label {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .praise {
   margin: 0 12px 10px;
@@ -810,10 +803,8 @@ table.data tbody tr:hover {
   border-left-color: var(--accent);
 }
 .role-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 650;
   color: var(--muted);
 }
 .tool-call {
@@ -911,6 +902,13 @@ table.diff td.code {
 }
 .dl-del .sign {
   color: var(--del-bar);
+}
+/* The line a finding is anchored to has its number highlighted, as a
+   proofreader marks a line in the margin. */
+.dl-marked td.ln + td.ln {
+  background: var(--mark);
+  color: var(--text);
+  font-weight: 600;
 }
 .dl-hunk td {
   background: var(--panel-alt);

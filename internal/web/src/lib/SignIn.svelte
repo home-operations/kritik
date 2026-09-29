@@ -67,7 +67,7 @@
 <div class="signin">
   <div class="signin-card">
     <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />
-    <h1>kritik</h1>
+    <h1><span class="marked">kritik</span></h1>
     <p class="signin-sub">Sign in to continue</p>
 
     {#if loading}

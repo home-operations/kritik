@@ -41,15 +41,16 @@
           <table class="diff">
             <tbody>
               {#each file.lines as l, i (i)}
-                <tr class="dl dl-{l.kind}">
+                {@const anchored = l.newNo !== null && l.kind !== 'del' ? byLine.get(l.newNo) : undefined}
+                <tr class="dl dl-{l.kind}" class:dl-marked={anchored}>
                   <td class="ln" aria-hidden="true">{l.oldNo ?? ''}</td>
                   <td class="ln" aria-hidden="true">{l.newNo ?? ''}</td>
                   <td class="code"><span class="sign" aria-hidden="true">{l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}</span>{l.text}</td>
                 </tr>
-                {#if l.newNo !== null && l.kind !== 'del' && byLine.has(l.newNo)}
+                {#if anchored}
                   <tr class="dl-finding">
                     <td colspan="3">
-                      {#each byLine.get(l.newNo) ?? [] as f (f.id)}<div class="diff-finding"><FindingCard {f} compact /></div>{/each}
+                      {#each anchored as f (f.id)}<div class="diff-finding"><FindingCard {f} compact /></div>{/each}
                     </td>
                   </tr>
                 {/if}
