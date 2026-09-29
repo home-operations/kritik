@@ -2,28 +2,27 @@
   import { tick, untrack } from 'svelte';
   import { getJSON } from '../api.svelte';
   import { navigate, replace } from '../router.svelte';
-  import { PULL_OUTCOMES, pullFilter, type PullFilter } from '../routes';
+  import { pullFilter, type PullFilter } from '../routes';
   import { Paged, Resource, live } from '../resource.svelte';
   import { pullRoute, accountApi } from '../links';
   import { listKeys } from '../listkeys';
+  import { parseSearch, formatSearch, suggest, complete, type Suggestion } from '../pullquery';
   import type { Page, Pull, Repository } from '../types';
   import StateView from '../components/StateView.svelte';
-  import PullRows from '../components/PullRows.svelte';
+  import PullTable from '../components/PullTable.svelte';
   import LoadMore from '../components/LoadMore.svelte';
   import SectionTabs from '../components/SectionTabs.svelte';
+  import Segmented from '../components/Segmented.svelte';
 
   let { slug, filter }: { slug: string; filter?: PullFilter } = $props();
 
   const prState = $derived(filter?.state ?? 'open');
-  const outcome = $derived(filter?.outcome ?? '');
-  const repoName = $derived(filter?.repo ?? '');
-  const q = $derived(filter?.q ?? '');
   let searchEl = $state<HTMLInputElement | undefined>(undefined);
 
-  // setFilter changes one filter in the URL, replacing the history entry so
-  // Back leaves the list instead of stepping through its filters.
-  function setFilter(change: { state?: string; outcome?: string; repo?: string; q?: string }): void {
-    replace({ name: 'pulls', slug, filter: pullFilter({ ...filter, ...change }) });
+  // setFilter replaces the history entry, so Back leaves the list instead of
+  // stepping through its filters.
+  function setFilter(f: Parameters<typeof pullFilter>[0]): void {
+    replace({ name: 'pulls', slug, filter: pullFilter(f) });
   }
 
   function clearFilters(): void {
@@ -35,9 +34,10 @@
 
   function query(after?: string): string {
     const p = new URLSearchParams({ state: prState, limit: '50' });
-    if (outcome) p.set('outcome', outcome);
-    if (repoName) p.set('repo', repoName);
-    if (q) p.set('q', q);
+    for (const k of ['outcome', 'repo', 'author', 'q'] as const) {
+      const v = filter?.[k];
+      if (v) p.set(k, v);
+    }
     if (after) p.set('cursor', after);
     return `${account}/pulls?${p}`;
   }
@@ -46,6 +46,7 @@
   const paged = new Paged<Pull>(query, pullKey);
   const res = paged.first;
   const repos = new Resource(() => getJSON<Page<Repository>>(`${account}/repos?limit=100`));
+  const repoNames = $derived((repos.data?.items ?? []).map((r) => r.fullName));
 
   $effect(() => {
     void paged.load();
@@ -54,26 +55,70 @@
     void repos.load();
   });
   $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void paged.load()));
+
   // The search box reaches the URL once typing pauses, so typing doesn't
-  // fire a request per keystroke. sent is the last search it wrote there:
-  // any other change to q, such as following a link to the unfiltered list,
-  // replaces the box's text.
-  let qInput = $state(untrack(() => q));
-  let sent = untrack(() => q);
-  $effect(() => {
-    const v = qInput.trim();
-    if (v === sent) return;
-    const t = setTimeout(() => {
-      sent = v;
-      setFilter({ q: v });
+  // fire a request per keystroke. written is the box's text for the filter
+  // it last wrote there: any other change to the filter, such as following
+  // a link to the unfiltered list, rewrites the box.
+  let text = $state(untrack(() => formatSearch(filter)));
+  let written = untrack(() => formatSearch(filter));
+  let pending: ReturnType<typeof setTimeout> | undefined;
+
+  function apply(): void {
+    clearTimeout(pending);
+    pending = setTimeout(() => {
+      const { fields } = parseSearch(text, repoNames);
+      written = formatSearch(fields);
+      setFilter({ state: filter?.state, ...fields });
     }, 250);
-    return () => clearTimeout(t);
-  });
+  }
+  $effect(() => () => clearTimeout(pending));
   $effect(() => {
-    if (q === sent) return;
-    sent = q;
-    qInput = q;
+    const f = formatSearch(filter);
+    if (f === written) return;
+    written = f;
+    text = f;
   });
+
+  // unknown names the tokens the list is not filtered by, once the
+  // repositories they are checked against have loaded.
+  const unknown = $derived(repos.data ? parseSearch(text, repoNames).unknown : []);
+
+  // The box suggests the token being typed and its values: a combobox whose
+  // list opens while the box has focus and something matches.
+  let focused = $state(false);
+  let dismissed = $state(false);
+  let active = $state(-1);
+  const authors = $derived([...new Set(paged.items.map((p) => p.author))].sort());
+  const suggestions = $derived(suggest(text, { repos: repoNames, authors }));
+  const listOpen = $derived(focused && !dismissed && suggestions.length > 0);
+
+  function accept(s: Suggestion): void {
+    text = complete(text, s);
+    active = -1;
+    apply();
+    searchEl?.focus();
+  }
+
+  function onSearchKeydown(e: KeyboardEvent): void {
+    if (!listOpen) return;
+    const n = suggestions.length;
+    if (e.key === 'ArrowDown') {
+      active = (active + 1) % n;
+    } else if (e.key === 'ArrowUp') {
+      active = active <= 0 ? n - 1 : active - 1;
+    } else if (e.key === 'Enter' && active >= 0) {
+      accept(suggestions[active]!);
+    } else if (e.key === 'Tab' && !e.shiftKey) {
+      accept(suggestions[Math.max(active, 0)]!);
+    } else if (e.key === 'Escape') {
+      dismissed = true;
+      e.stopPropagation();
+    } else {
+      return;
+    }
+    e.preventDefault();
+  }
 
   const items = $derived(paged.items);
   // The cursor follows its pull rather than its position, which a live
@@ -101,6 +146,12 @@
       focusSearch: () => searchEl?.focus(),
     }),
   );
+
+  const STATES = [
+    { value: 'open', label: 'Open' },
+    { value: 'closed', label: 'Closed' },
+    { value: 'all', label: 'All' },
+  ] as const;
 </script>
 
 <svelte:head><title>Pull requests · {slug} · kritik</title></svelte:head>
@@ -108,37 +159,55 @@
 <main class="page">
   <div class="page-inner">
     <SectionTabs section="pulls" {slug} current="pulls" />
-    <p class="muted small"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
     <div class="toolbar" role="search">
-      <label class="search-box">
-        <span class="sr-only">Search pull requests</span>
-        <input type="search" placeholder="Search title, author, number" bind:value={qInput} bind:this={searchEl} />
-      </label>
-      <label class="select">
-        <span class="sr-only">Repository</span>
-        <select bind:value={() => repoName, (repo) => setFilter({ repo })} aria-label="Repository">
-          <option value="">All repositories</option>
-          {#each repos.data?.items ?? [] as r (r.id)}
-            <option value={r.fullName}>{r.fullName}</option>
-          {/each}
-        </select>
-      </label>
-      <label class="select">
-        <span class="sr-only">State</span>
-        <select bind:value={() => prState, (state) => setFilter({ state })} aria-label="State">
-          <option value="open">Open</option>
-          <option value="closed">Closed</option>
-          <option value="all">All</option>
-        </select>
-      </label>
-      <label class="select">
-        <span class="sr-only">Last review outcome</span>
-        <select bind:value={() => outcome, (outcome) => setFilter({ outcome })} aria-label="Last review outcome">
-          <option value="">Any outcome</option>
-          {#each PULL_OUTCOMES as o (o)}<option value={o}>{o}</option>{/each}
-        </select>
-      </label>
+      <div class="search-box search-combo">
+        <label class="sr-only" for="pull-search">Search pull requests</label>
+        <input
+          id="pull-search"
+          type="search"
+          role="combobox"
+          autocomplete="off"
+          aria-autocomplete="list"
+          aria-expanded={listOpen}
+          aria-controls="pull-suggest"
+          aria-activedescendant={listOpen && active >= 0 ? `pull-suggest-${active}` : undefined}
+          placeholder="Search, or filter by repo:, author: or status:"
+          bind:value={text}
+          bind:this={searchEl}
+          oninput={() => {
+            dismissed = false;
+            active = -1;
+            apply();
+          }}
+          onfocus={() => (focused = true)}
+          onblur={() => (focused = false)}
+          onkeydown={onSearchKeydown}
+        />
+        {#if listOpen}
+          <ul class="suggest" id="pull-suggest" role="listbox" aria-label="Suggestions">
+            {#each suggestions as s, i (s.label)}
+              <!-- The box keeps focus: the list is picked with the arrow keys, Enter or Tab, or the pointer. -->
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <li
+                id="pull-suggest-{i}"
+                role="option"
+                aria-selected={i === active}
+                class:active={i === active}
+                onmousedown={(e) => e.preventDefault()}
+                onclick={() => accept(s)}
+              >
+                <span class="mono">{s.label}</span>
+                {#if s.hint}<span class="muted small">{s.hint}</span>{/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+      <Segmented label="State" options={STATES} value={prState} onchange={(state) => setFilter({ ...filter, state })} />
     </div>
+    {#if unknown.length}
+      <p class="small muted" role="note">Not filtering by {unknown.join(', ')}: no such repository or status.</p>
+    {/if}
     <StateView {res} retry={() => res.load()}>
       {#snippet children()}
         {#if items.length === 0 && filter}
@@ -149,10 +218,11 @@
         {:else if items.length === 0}
           <p class="state-msg">No open pull requests.</p>
         {:else}
-          <PullRows {slug} {items} {selected} />
+          <PullTable {slug} {items} {selected} />
           <LoadMore {paged} />
         {/if}
       {/snippet}
     </StateView>
+    <p class="muted small key-hints"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
   </div>
 </main>

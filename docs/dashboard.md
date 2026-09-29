@@ -13,7 +13,9 @@ at once, and holds a tab for each of an account's sections
 
 - **Overview:** the account at a glance, and its usage.
 - **Pull requests:** its pull requests and their reviews, the run queue
-  and the follow-up questions.
+  and the follow-up questions. The search box takes text, or narrows the
+  list with `repo:owner/name`, `author:login` and `status:` a last review
+  status, and suggests each as you type.
 - **Settings:** its repositories, and for an admin its configuration and
   audit log, and the admin console.
 

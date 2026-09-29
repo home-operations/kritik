@@ -56,7 +56,7 @@ test('account overview links the open pulls whose last review failed or was capp
   await expect(attention.getByRole('listitem')).toHaveText([/2\+ open pull requests whose last review failed/, /1\+ open pull requests whose last review hit a limit/]);
   await attention.getByRole('link', { name: /hit a limit/ }).click();
   await expect(page).toHaveURL(new RegExp(`${T}/pulls\\?outcome=capped$`));
-  await expect(page.getByRole('combobox', { name: 'Last review outcome' })).toHaveValue('capped');
+  await expect(page.getByRole('combobox', { name: 'Search pull requests' })).toHaveValue('status:capped');
 });
 
 test('account overview says whether its connection receives webhooks', async ({ page }) => {
@@ -119,62 +119,110 @@ test.describe('pulls list', () => {
   test('filters, load more and keyboard navigation', async ({ page }) => {
     const seen = await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/pulls`);
-    const rows = page.locator('.pull-rows .row');
+    const rows = page.locator('.pull-rows .pull-row');
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText(`${g.pull.repository}#${g.pull.number}`);
+    await expect(rows.first()).toContainText(`${g.pull.repository} · #${g.pull.number} · ${g.pull.author}`);
     await expect(rows.first()).toContainText(`${g.pull.lastReview!.findings.blocking} blocking`);
 
-    await page.getByRole('combobox', { name: 'State' }).selectOption('closed');
+    await page.getByRole('radio', { name: 'Closed' }).click();
     await expect.poll(() => seen.some((u) => u.pathname.endsWith('/pulls') && u.searchParams.get('state') === 'closed')).toBe(true);
-    await page.getByRole('combobox', { name: 'Last review outcome' }).selectOption('failed');
-    await expect.poll(() => seen.some((u) => u.searchParams.get('outcome') === 'failed')).toBe(true);
-    await page.getByPlaceholder('Search title').fill('widgets');
-    await expect.poll(() => seen.some((u) => u.searchParams.get('q') === 'widgets')).toBe(true);
+    await expect(page.getByRole('radio', { name: 'Closed' })).toHaveAttribute('aria-checked', 'true');
+    await page.getByRole('combobox', { name: 'Search pull requests' }).fill('status:failed author:ada widgets');
+    await expect.poll(() => seen.some((u) => u.searchParams.get('outcome') === 'failed' && u.searchParams.get('author') === 'ada' && u.searchParams.get('q') === 'widgets')).toBe(true);
 
     await page.getByRole('button', { name: 'Load more' }).click();
     await expect.poll(() => seen.some((u) => u.searchParams.get('cursor') === g.repoPage.nextCursor)).toBe(true);
     await expect(rows).toHaveCount(2);
 
-    // '?' in a focused select is the select's, not the help overlay's.
-    await page.getByRole('combobox', { name: 'State' }).focus();
+    // '?' in the search box is the box's, not the help overlay's.
+    await page.getByRole('combobox', { name: 'Search pull requests' }).focus();
     await page.keyboard.press('?');
     await expect(page.locator('.help-overlay')).toHaveCount(0);
 
-    await page.locator('.pull-rows').click({ position: { x: 1, y: 1 } });
+    await page.locator('.key-hints').click();
     await page.keyboard.press('j');
     await expect(rows.first()).toHaveClass(/selected/);
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7$`));
   });
 
+  test('the search box suggests filter tokens and their values', async ({ page }) => {
+    const seen = await g.mockApi(page, g.defaultApi());
+    await page.goto(`/${T}/pulls`);
+    const search = page.getByRole('combobox', { name: 'Search pull requests' });
+    const options = page.getByRole('listbox', { name: 'Suggestions' }).getByRole('option');
+    await search.focus();
+    await expect(options).toHaveText([/^repo:/, /^author:/, /^status:/]);
+    await expect(search).toHaveAttribute('aria-expanded', 'true');
+
+    await search.pressSequentially('st');
+    await expect(options).toHaveText([/^status:/]);
+    await page.keyboard.press('Tab');
+    await expect(search).toHaveValue('status:');
+    await search.pressSequentially('fai');
+    await expect(options).toHaveText(['status:failed']);
+    await page.keyboard.press('ArrowDown');
+    await expect(search).toHaveAttribute('aria-activedescendant', 'pull-suggest-0');
+    await page.keyboard.press('Enter');
+    await expect(search).toHaveValue('status:failed ');
+    await expect.poll(() => seen.some((u) => u.pathname.endsWith('/pulls') && u.searchParams.get('outcome') === 'failed')).toBe(true);
+
+    await search.pressSequentially('repo:');
+    await options.filter({ hasText: g.repoPage.items[0]!.fullName }).click();
+    await expect(search).toHaveValue(`status:failed repo:${g.repoPage.items[0]!.fullName} `);
+    await expect.poll(() => seen.some((u) => u.searchParams.get('repo') === g.repoPage.items[0]!.fullName)).toBe(true);
+
+    await page.keyboard.press('Escape');
+    await expect(search).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('a token that names no repository or status is not applied, and says so', async ({ page }) => {
+    const seen = await g.mockApi(page, g.defaultApi());
+    await page.goto(`/${T}/pulls`);
+    await page.getByRole('combobox', { name: 'Search pull requests' }).fill('repo:nope/nope status:great');
+    await expect(page.getByRole('note')).toHaveText('Not filtering by repo:nope/nope, status:great: no such repository or status.');
+    await page.waitForTimeout(400);
+    expect(seen.some((u) => u.searchParams.has('repo') || u.searchParams.has('outcome'))).toBe(false);
+    await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
+  });
+
+  test('a click anywhere on a row opens its pull request', async ({ page }) => {
+    await g.mockApi(page, g.defaultApi());
+    await page.goto(`/${T}/pulls`);
+    await page.locator('.pull-rows .pull-row').first().getByText('ada', { exact: false }).click();
+    await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7$`));
+  });
+
   test('filters live in the URL: a reload keeps them, and Back from a pull returns to them', async ({ page }) => {
     const seen = await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/pulls`);
-    await page.getByRole('combobox', { name: 'State' }).selectOption('all');
-    await page.getByRole('combobox', { name: 'Last review outcome' }).selectOption('failed');
-    await page.getByPlaceholder('Search title').fill('wid gets');
+    const search = page.getByRole('combobox', { name: 'Search pull requests' });
+    await page.getByRole('radio', { name: 'All' }).click();
+    await search.fill('wid gets status:failed');
     await expect(page).toHaveURL(new RegExp(`${T}/pulls\\?state=all&outcome=failed&q=wid\\+gets$`));
 
+    // The box keeps what was typed rather than the URL's order.
+    await expect(search).toHaveValue('wid gets status:failed');
+
     await page.reload();
-    await expect(page.getByRole('combobox', { name: 'State' })).toHaveValue('all');
-    await expect(page.getByRole('combobox', { name: 'Last review outcome' })).toHaveValue('failed');
-    await expect(page.getByPlaceholder('Search title')).toHaveValue('wid gets');
+    await expect(page.getByRole('radio', { name: 'All' })).toHaveAttribute('aria-checked', 'true');
+    await expect(search).toHaveValue('status:failed wid gets');
     const last = () => seen.filter((u) => u.pathname.endsWith('/pulls')).at(-1)?.searchParams;
     await expect.poll(() => last()?.get('q')).toBe('wid gets');
     expect(last()?.get('state')).toBe('all');
     expect(last()?.get('outcome')).toBe('failed');
 
-    await page.locator('.pull-rows .row-link').first().click();
+    await page.locator('.pull-rows .pull-title').first().click();
     await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7$`));
     await page.goBack();
     await expect(page).toHaveURL(/\?state=all&outcome=failed&q=wid\+gets$/);
-    await expect(page.getByPlaceholder('Search title')).toHaveValue('wid gets');
+    await expect(search).toHaveValue('status:failed wid gets');
 
     // The section's tab is the unfiltered list, search box included.
     await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Pull requests' }).click();
     await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
-    await expect(page.getByPlaceholder('Search title')).toHaveValue('');
-    await expect(page.getByRole('combobox', { name: 'State' })).toHaveValue('open');
+    await expect(search).toHaveValue('');
+    await expect(page.getByRole('radio', { name: 'Open' })).toHaveAttribute('aria-checked', 'true');
   });
 
   test('an empty list says whether its filters emptied it, and clears them', async ({ page }) => {
@@ -183,8 +231,8 @@ test.describe('pulls list', () => {
     await expect(page.locator('.state-msg')).toHaveText(/No pull requests match these filters\./);
     await page.getByRole('button', { name: 'Clear filters' }).click();
     await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
-    await expect(page.locator('.pull-rows .row')).toHaveCount(1);
-    await expect(page.getByPlaceholder('Search title')).toBeFocused();
+    await expect(page.locator('.pull-rows .pull-row')).toHaveCount(1);
+    await expect(page.getByRole('combobox', { name: 'Search pull requests' })).toBeFocused();
 
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([])], ...g.defaultApi()]);
     await page.reload();
@@ -196,7 +244,7 @@ test.describe('pulls list', () => {
     const fork = { ...g.pull, number: 12, url: g.pull.url.replace(/\d+$/, '12'), fork: true, lastReview: null };
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([fork, { ...g.pull, lastReview: null }])], ...g.defaultApi()]);
     await page.goto(`/${T}/pulls`);
-    const rows = page.locator('.pull-rows .row');
+    const rows = page.locator('.pull-rows .pull-row');
     await expect(rows.nth(0)).toContainText('fork, reviewed on request');
     await expect(rows.nth(0).getByText('fork, reviewed on request')).toHaveAttribute('title', 'A pull request from a fork is reviewed when a maintainer comments "@<bot> review" on it');
     await expect(rows.nth(1)).toContainText('not reviewed');
@@ -207,9 +255,9 @@ test.describe('pulls list', () => {
     let added = false;
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), () => g.pageOf(added ? [newer, g.pull] : [g.pull])], ...g.defaultApi()]);
     await page.goto(`/${T}/pulls`);
-    const rows = page.locator('.pull-rows .row');
+    const rows = page.locator('.pull-rows .pull-row');
     await expect(rows).toHaveCount(1);
-    await page.locator('.pull-rows').click({ position: { x: 1, y: 1 } });
+    await page.locator('.key-hints').click();
     await page.keyboard.press('j');
     await expect(rows.first()).toHaveClass(/selected/);
 
@@ -405,15 +453,15 @@ test.describe('pulls load more', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(g.pageOf([{ ...g.pull, number: 8, title: 'More widgets' }])) });
     });
     await page.goto(`/${T}/pulls`);
-    await expect(page.locator('.pull-rows .row')).toHaveCount(1);
+    await expect(page.locator('.pull-rows .pull-row')).toHaveCount(1);
     await page.getByRole('button', { name: 'Load more' }).click();
     await expect.poll(() => held).toBe(true);
-    await page.getByRole('combobox', { name: 'State' }).selectOption('all');
-    await expect(page.locator('.pull-rows .row')).toHaveCount(1);
+    await page.getByRole('radio', { name: 'All' }).click();
+    await expect(page.locator('.pull-rows .pull-row')).toHaveCount(1);
     release();
     await page.waitForTimeout(300);
     await expect(page.locator('.pull-rows')).not.toContainText('More widgets');
-    await expect(page.locator('.pull-rows .row')).toHaveCount(1);
+    await expect(page.locator('.pull-rows .pull-row')).toHaveCount(1);
   });
 
   test('a live refetch keeps the pages already loaded', async ({ page }) => {
@@ -430,12 +478,12 @@ test.describe('pulls load more', () => {
     });
     await page.goto(`/${T}/pulls`);
     await page.getByRole('button', { name: 'Load more' }).click();
-    await expect(page.locator('.pull-rows .row')).toHaveCount(2);
+    await expect(page.locator('.pull-rows .pull-row')).toHaveCount(2);
     const firstPages = () => seen.filter((u) => u.pathname.endsWith('/pulls') && !u.searchParams.has('cursor')).length;
     const before = firstPages();
     release();
     await expect.poll(firstPages).toBeGreaterThan(before);
-    await expect(page.locator('.pull-rows .row')).toHaveCount(2);
+    await expect(page.locator('.pull-rows .pull-row')).toHaveCount(2);
     await expect(page.locator('.pull-rows')).toContainText('More widgets');
   });
 });

@@ -12,7 +12,7 @@
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
-  import ReviewStatusPill from '../components/ReviewStatusPill.svelte';
+  import ReviewStatusTile from '../components/ReviewStatusTile.svelte';
   import LoadMore from '../components/LoadMore.svelte';
   import RepoTraits from '../components/RepoTraits.svelte';
   import Dialog from '../components/Dialog.svelte';
@@ -258,7 +258,7 @@
                     <td class="mono small">{repo.index.activeCommit.slice(0, 7) || '—'}</td>
                     <td>
                       {#if repo.lastReview}
-                        <a href={href({ name: 'review', slug, id: repo.lastReview.id })}><ReviewStatusPill status={repo.lastReview.status} /></a>
+                        <a href={href({ name: 'review', slug, id: repo.lastReview.id })}><ReviewStatusTile status={repo.lastReview.status} /></a>
                         <Time iso={repo.lastReview.createdAt} />
                       {:else}<span class="muted">—</span>{/if}
                     </td>

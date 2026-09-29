@@ -236,6 +236,79 @@ input:focus-visible {
   display: inline-flex;
   gap: 4px;
 }
+/* A count of findings of one severity: a tinted square, as on a proof. */
+.sev-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--sev);
+  border: 1px solid color-mix(in srgb, var(--sev) 40%, var(--border));
+  background: color-mix(in srgb, var(--sev) 10%, transparent);
+}
+
+/* ---- review status: an icon on a tinted tile, and a word -------------- */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.status-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--tone, var(--muted));
+  background: color-mix(in srgb, var(--tone, var(--muted)) 14%, transparent);
+}
+.status.tone-muted .status-word {
+  color: var(--muted);
+}
+
+/* ---- segmented control ------------------------------------------------- */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-alt);
+}
+.segmented button {
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.segmented button:hover {
+  color: var(--text);
+}
+.segmented button[aria-checked='true'] {
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.segmented button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .label-chip {
   font-size: 11px;
   padding: 0 7px;
@@ -393,6 +466,100 @@ table.data .num {
 }
 table.data tbody tr:hover {
   background: var(--panel-alt);
+}
+
+/* ---- pull request table ----------------------------------------------- */
+.table-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.table-card table.data tbody tr:last-child td {
+  border-bottom: none;
+}
+.table-card table.data thead th:first-child {
+  border-top-left-radius: 8px;
+}
+.table-card table.data thead th:last-child {
+  border-top-right-radius: 8px;
+}
+.pull-row {
+  cursor: pointer;
+}
+.pull-row.selected td {
+  background: var(--mark-wash);
+}
+.pull-row.selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--edge);
+}
+table.data td.pull-main {
+  width: 100%;
+  max-width: 0;
+  min-width: 240px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.pull-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 550;
+}
+.pull-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pull-sub {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--muted);
+}
+.lifecycle {
+  display: inline-flex;
+  color: var(--tone);
+}
+.key-hints {
+  margin: 0;
+}
+
+/* ---- search with suggestions ------------------------------------------- */
+.search-combo {
+  position: relative;
+}
+.suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 12%, transparent);
+}
+.suggest li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.suggest li:hover,
+.suggest li.active {
+  background: var(--mark-wash);
+}
+.suggest li.active {
+  box-shadow: inset 3px 0 0 var(--edge);
 }
 
 /* ---- toolbar + inputs --------------------------------------------------- */

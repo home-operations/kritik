@@ -7,7 +7,7 @@
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
-  import PullRows from '../components/PullRows.svelte';
+  import PullTable from '../components/PullTable.svelte';
   import ActionButton from '../components/ActionButton.svelte';
   import RepoTraits from '../components/RepoTraits.svelte';
   import { reindexPath, accountApi } from '../links';
@@ -274,7 +274,7 @@
         <header class="panel-head"><h2 id="repo-pulls">Pull requests</h2></header>
         <StateView res={pulls} retry={() => pulls.load()} isEmpty={(p) => p.items.length === 0} empty="No pull requests seen yet.">
           {#snippet children(p)}
-            <PullRows {slug} items={p.items} />
+            <PullTable {slug} items={p.items} />
           {/snippet}
         </StateView>
       </section>
