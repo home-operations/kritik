@@ -161,7 +161,8 @@
         {#snippet children(d)}
           {@const s = d.settings}
           {@const rc = d.repoConfig}
-          {@const enabled = s.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'}
+          {@const enabled = d.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'}
+          {@const why = d.archived ? 'archived on GitHub' : d.fork && !d.enabled ? 'a fork not turned on' : d.managedBy}
           {@const rows = shown(d, settingRows)}
           {@const agent = shown(d, agentRows)}
           <div class="grid-2">
@@ -172,7 +173,7 @@
               </header>
               <dl class="deflist">
                 {#if matches('Enabled', 'enabled', enabled)}
-                  <dt>Enabled</dt><dd>{enabled} <span class="muted small">({d.managedBy})</span></dd>
+                  <dt>Enabled</dt><dd>{enabled} <span class="muted small">({why})</span></dd>
                 {/if}
                 {#if matches('Default branch', d.defaultBranch)}<dt>Default branch</dt><dd class="mono">{d.defaultBranch}</dd>{/if}
                 {#each rows as r (r.label)}

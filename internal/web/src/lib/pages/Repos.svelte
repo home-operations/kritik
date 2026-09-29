@@ -8,7 +8,7 @@
   import { isAdmin, management } from '../session.svelte';
   import { withRepositoriesEnabled } from '../spec';
   import { toast } from '../toast.svelte';
-  import type { AccountConfig, Repository } from '../types';
+  import type { AccountConfig, AccountDetail, RegisterResult, Repository } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
@@ -19,6 +19,10 @@
 
   let { slug }: { slug: string } = $props();
   let filter = $state('');
+  // Which repositories the list shows: by default those kritik can run,
+  // neither archived nor forks but the forks turned on; or the forks, or
+  // the archived ones.
+  let kind = $state<'' | 'forks' | 'archived'>('');
   let filterEl = $state<HTMLInputElement | undefined>(undefined);
 
   function clearFilter(): void {
@@ -28,7 +32,7 @@
 
   const base = $derived(`${accountApi(slug)}/repos`);
   const paged = new Paged<Repository>(
-    (cursor) => `${base}?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+    (cursor) => `${base}?limit=100${kind ? `&type=${kind}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
     (r) => r.id,
   );
   const res = paged.first;
@@ -61,7 +65,7 @@
   }
 
   function pickAll(rows: Repository[], on: boolean): void {
-    const names = rows.map((r) => r.fullName);
+    const names = rows.filter((r) => !r.archived).map((r) => r.fullName);
     selected = on ? [...new Set([...selected, ...names])] : selected.filter((n) => !names.includes(n));
   }
 
@@ -72,11 +76,12 @@
     try {
       const path = `${accountApi(slug)}/config`;
       const cfg = await getJSON<AccountConfig>(path);
+      const forks = new Set(paged.items.filter((r) => r.fork).map((r) => splitRepo(r.fullName).repo.toLowerCase()));
       const built = withRepositoriesEnabled(
         cfg.spec,
         names.map((n) => splitRepo(n).repo),
         on,
-        cfg.inherited.repository.enabled,
+        (name) => !forks.has(name.toLowerCase()) && cfg.inherited.repository.enabled,
       );
       if (built.error) throw new Error(`${built.error.path}: ${built.error.message}`);
       await sendJSON('PUT', path, { revision: cfg.revision, spec: built.spec });
@@ -118,6 +123,31 @@
     toast(parts.join(', '), failed.length ? 'danger' : 'ok');
   }
 
+  // resync lists the repositories the account's App reaches again, which
+  // records any newly archived, unarchived or added since.
+  async function resync(): Promise<void> {
+    busy = true;
+    try {
+      const d = await getJSON<AccountDetail>(accountApi(slug));
+      const r = await sendJSON<RegisterResult>('POST', `/api/v1/admin/connections/${encodeURIComponent(d.connection.name)}/repositories`);
+      toast(r?.added ? `Resynced from GitHub: ${plural(r.added)} added` : 'Resynced from GitHub');
+      void paged.load();
+    } catch (err) {
+      toast(`Resync failed: ${describe(err)}`, 'danger');
+    } finally {
+      busy = false;
+    }
+  }
+
+  // show switches the list to another kind, dropping a selection made in
+  // the one it leaves.
+  function show(k: typeof kind): void {
+    kind = k;
+    selected = [];
+  }
+
+  const empty = $derived(kind === 'forks' ? 'No forks.' : kind === 'archived' ? 'No archived repositories.' : 'No repositories yet.');
+
   const selectedOff = $derived(paged.items.filter((r) => selected.includes(r.fullName) && !isOn(r)).length);
 </script>
 
@@ -131,6 +161,17 @@
         <span class="sr-only">Filter repositories</span>
         <input type="search" placeholder="Filter by name" bind:value={filter} bind:this={filterEl} />
       </label>
+      <label class="select">
+        <span class="sr-only">Type</span>
+        <select bind:value={() => kind, show} aria-label="Type">
+          <option value="">All repositories</option>
+          <option value="forks">Forks</option>
+          <option value="archived">Archived</option>
+        </select>
+      </label>
+      {#if isAdmin()}
+        <button class="btn btn-small" disabled={busy} onclick={resync} title="List the repositories the App reaches again">Resync from GitHub</button>
+      {/if}
       {#if manage && selected.length}
         <div class="bulk-actions" role="group" aria-label="Selected repositories">
           <span class="small">{selected.length} selected</span>
@@ -141,7 +182,12 @@
         </div>
       {/if}
     </div>
-    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.items.length === 0} empty="No repositories yet.">
+    {#if kind === 'forks'}
+      <p class="small muted">A fork is only reviewed and indexed once turned on here.</p>
+    {:else if kind === 'archived'}
+      <p class="small muted">An archived repository is never reviewed or indexed. Unarchive it on GitHub, then resync, to turn it on.</p>
+    {/if}
+    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.items.length === 0} {empty}>
       {#snippet children()}
         {@const rows = visible()}
         {#if rows.length === 0}
@@ -156,12 +202,14 @@
                 <tr>
                   {#if manage}
                     <th scope="col">
-                      <input
-                        type="checkbox"
-                        aria-label="Select every repository shown"
-                        checked={rows.every((r) => selected.includes(r.fullName))}
-                        onchange={(e) => pickAll(rows, e.currentTarget.checked)}
-                      />
+                      {#if rows.some((r) => !r.archived)}
+                        <input
+                          type="checkbox"
+                          aria-label="Select every repository shown"
+                          checked={rows.every((r) => r.archived || selected.includes(r.fullName))}
+                          onchange={(e) => pickAll(rows, e.currentTarget.checked)}
+                        />
+                      {/if}
                     </th>
                   {/if}
                   <th scope="col">Repository</th>
@@ -176,24 +224,26 @@
                   <tr>
                     {#if manage}
                       <td>
-                        <input
-                          type="checkbox"
-                          aria-label={`Select ${repo.fullName}`}
-                          checked={selected.includes(repo.fullName)}
-                          onchange={(e) => pick(repo.fullName, e.currentTarget.checked)}
-                        />
+                        {#if !repo.archived}
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${repo.fullName}`}
+                            checked={selected.includes(repo.fullName)}
+                            onchange={(e) => pick(repo.fullName, e.currentTarget.checked)}
+                          />
+                        {/if}
                       </td>
                     {/if}
                     <td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a> <RepoTraits r={repo} /></td>
                     <td>
                       {#if manage}
-                        <label class="toggle">
+                        <label class="toggle" title={repo.archived ? 'Archived on GitHub: unarchive it there first' : undefined}>
                           <input
                             type="checkbox"
                             role="switch"
                             aria-label={`Review and index ${repo.fullName}`}
                             checked={isOn(repo)}
-                            disabled={busy}
+                            disabled={busy || repo.archived}
                             onchange={(e) => setEnabled([repo.fullName], e.currentTarget.checked)}
                           />
                           <span>{isOn(repo) ? 'on' : 'off'}</span>

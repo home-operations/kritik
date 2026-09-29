@@ -53,6 +53,7 @@ type indexRepo struct {
 	name, defaultBranch string
 	enabled             bool
 	activeRun           string
+	traits              configfile.RepoTraits
 }
 
 type activeGeneration struct {
@@ -78,7 +79,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	logger := w.Logger.With("account", account.Key(), "repository", repo.name, "trigger", args.Trigger)
 	settings := file.Settings(account, repo.name)
-	if !repo.enabled || !settings.Enabled {
+	if !repo.enabled || !file.Runs(account, repo.name, repo.traits) {
 		logger.Info("index skipped, repository disabled")
 		return nil
 	}
@@ -198,9 +199,9 @@ func (w *Index) loadRepo(ctx context.Context, args jobs.IndexArgs) (*indexRepo, 
 	var active *string
 	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			SELECT name, default_branch, enabled, active_index_run_id::text
+			SELECT name, default_branch, enabled, active_index_run_id::text, archived, fork
 			FROM repositories WHERE id = $1`, args.RepositoryID).
-			Scan(&r.name, &r.defaultBranch, &r.enabled, &active)
+			Scan(&r.name, &r.defaultBranch, &r.enabled, &active, &r.traits.Archived, &r.traits.Fork)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, river.JobCancel(fmt.Errorf("worker: repository %s is unknown", args.RepositoryID))

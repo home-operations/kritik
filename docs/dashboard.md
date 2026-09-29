@@ -28,11 +28,12 @@ other:
 3. **Model provider:** the instance's key, tested before it is saved, and
    the default review model.
 4. **Embeddings:** the embedder, which can be skipped.
-5. **Repositories:** a checklist of every repository the App reaches.
-   The checked ones are reviewed, and indexed with an embedder; the rest
-   are registered off, and so are the ones the App reaches later unless
-   the step is told to turn those on. The account's entry is saved before
-   the repositories are registered, so none is polled or indexed first.
+5. **Repositories:** a checklist of the repositories the App reaches,
+   all checked, leaving out forks and archived repositories. The checked
+   ones are reviewed, and indexed with an embedder; the rest are
+   registered off. The ones the App reaches later start on, unless the
+   step is told otherwise. The account's entry is saved before the
+   repositories are registered, so none is polled or indexed first.
 
 Each step saves through the same API as the admin console, so closing the
 wizard loses nothing. It reopens at the first step not done, and a banner
@@ -92,10 +93,24 @@ App reaches is registered but nothing runs for it until its own entry says
 `"enabled": true`. A repository that is off is neither polled nor
 indexed.
 
+Forks and archived repositories are the exceptions. A fork only runs once
+its own entry says `"enabled": true`, whatever the defaults and the
+account say, since an account can reach many forks it never meant to
+review. An archived repository never runs: unarchive it on GitHub first.
+kritik learns both from GitHub: from the App's repository listing, from
+the repository each pull request, comment and push webhook names, and
+from the App's repository events, which say when one is archived or
+unarchived.
+
 An admin switches repositories on and off on an account's Repositories
 page, one at a time or a selection together, and reindexes a selection
 from there too. Each switch saves the account's entry, adding a
-repository entry only where it differs from what the account gives.
+repository entry only where it differs from what the repository gets
+without one. The page lists the repositories that can run, with any fork
+turned on; its Type filter lists the forks, or the archived repositories,
+instead. "Resync from GitHub" lists the repositories the App reaches
+again, such as after unarchiving one. An account's repository count is of
+the ones that run.
 
 ## Secrets
 

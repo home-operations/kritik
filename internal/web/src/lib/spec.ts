@@ -539,19 +539,21 @@ export function buildSpec(d: AccountDraft, redact = false): Built {
 
 // turnRepositories turns each repository in names, given without its
 // owner, on or off in d. A repository with no entry gets one only when on
-// differs from inherited, what an entry that leaves enabled out takes.
-function turnRepositories(d: AccountDraft, names: string[], on: boolean, inherited: boolean): void {
+// differs from what it inherits without one: false for a fork, which only
+// its own entry turns on, and else what an entry that leaves enabled out
+// takes.
+function turnRepositories(d: AccountDraft, names: string[], on: boolean, inherited: (name: string) => boolean): void {
   const value: TriBool = on ? 'true' : 'false';
   for (const name of names) {
     const entry = d.repositories.find((r) => r.name.toLowerCase() === name.toLowerCase());
     if (entry) entry.enabled = value;
-    else if (on !== inherited) d.repositories.push({ ...newRepository(), name, enabled: value });
+    else if (on !== inherited(name)) d.repositories.push({ ...newRepository(), name, enabled: value });
   }
 }
 
 // withRepositoriesEnabled is the account spec with each repository in
 // names turned on or off, as turnRepositories does.
-export function withRepositoriesEnabled(spec: Obj, names: string[], on: boolean, inherited: boolean): Built {
+export function withRepositoriesEnabled(spec: Obj, names: string[], on: boolean, inherited: (name: string) => boolean): Built {
   const d = draftOf(spec);
   turnRepositories(d, names, on, inherited);
   return buildSpec(d);
@@ -563,8 +565,8 @@ export function withRepositoriesEnabled(spec: Obj, names: string[], on: boolean,
 export function withRepositoryChoice(spec: Obj, later: boolean, on: string[], off: string[]): Built {
   const d = draftOf(spec);
   d.enabled = later ? 'true' : 'false';
-  turnRepositories(d, on, true, later);
-  turnRepositories(d, off, false, later);
+  turnRepositories(d, on, true, () => later);
+  turnRepositories(d, off, false, () => later);
   return buildSpec(d);
 }
 

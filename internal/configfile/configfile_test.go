@@ -286,6 +286,43 @@ func TestEnabledDefault(t *testing.T) {
 	}
 }
 
+// TestRuns checks which repositories run once the forge says what they
+// are: an archived one never, a fork only when its own entry turns it on,
+// and the rest as enabled resolves.
+func TestRuns(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	archived, fork := RepoTraits{Archived: true}, RepoTraits{Fork: true}
+	tests := []struct {
+		name, doc, repo string
+		traits          RepoTraits
+		want            bool
+	}{
+		{"a source repository", acme(""), "acme/app", RepoTraits{}, true},
+		{"a source repository turned off", acme("    enabled: false\n"), "acme/app", RepoTraits{}, false},
+		{"a fork", acme(""), "acme/copy", fork, false},
+		{"a fork the account turns on", acme("    enabled: true\n"), "acme/copy", fork, false},
+		{"a fork with an entry that leaves enabled out", acme("    repositories: [{ name: copy, mode: agentic }]\n"), "acme/copy", fork, false},
+		{"a fork its own entry turns on", acme("    repositories: [{ name: Copy, enabled: true }]\n"), "acme/copy", fork, true},
+		{"a fork its own entry turns off", acme("    repositories: [{ name: copy, enabled: false }]\n"), "acme/copy", fork, false},
+		{"an archived repository", acme(""), "acme/old", archived, false},
+		{"an archived repository its own entry turns on", acme("    repositories: [{ name: old, enabled: true }]\n"), "acme/old", archived, false},
+		{"an archived fork turned on", acme("    repositories: [{ name: old, enabled: true }]\n"), "acme/old", RepoTraits{Archived: true, Fork: true}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := mustLoad(t, tt.doc)
+			if got := f.Runs(&f.Accounts[0], tt.repo, tt.traits); got != tt.want {
+				t.Errorf("Runs(%s, %+v) = %v, want %v", tt.repo, tt.traits, got, tt.want)
+			}
+		})
+	}
+	f := mustLoad(t, acme("    repositories: [{ name: on, enabled: true }, { name: off, enabled: false }, { name: left }]\n"))
+	if got := f.Accounts[0].TurnedOn(); len(got) != 1 || got[0] != "acme/on" {
+		t.Errorf("TurnedOn = %v, want [acme/on]", got)
+	}
+}
+
 func TestProviders(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")

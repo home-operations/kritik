@@ -87,7 +87,7 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 	var stats store.AccountStats
 	err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
 		var err error
-		stats, err = store.ReadAccountStats(ctx, tx, func(name string) bool { return file.Settings(t, name).Enabled })
+		stats, err = store.ReadAccountStats(ctx, tx, func(name string, traits configfile.RepoTraits) bool { return file.Runs(t, name, traits) })
 		return err
 	})
 	if err != nil {
@@ -189,25 +189,29 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 	if err != nil {
 		return err
 	}
+	f := store.RepoFilter{Kind: store.RepoKind(r.URL.Query().Get("type")), TurnedOn: t.account.TurnedOn()}
+	if !f.Kind.Valid() {
+		return errBadRequest(CodeBadRequest, "type must be forks or archived")
+	}
 	ctx := r.Context()
 	var rows []store.RepoRow
 	var next *store.Cursor
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
-		rows, next, err = store.ListRepos(ctx, tx, page)
+		rows, next, err = store.ListRepos(ctx, tx, f, page)
 		return err
 	}); err != nil {
 		return err
 	}
 	items := make([]Repository, len(rows))
 	for i, row := range rows {
-		items[i] = repository(row, t.file.Settings(t.account, row.FullName).Enabled)
+		items[i] = repository(row, t.file.Runs(t.account, row.FullName, row.RepoTraits))
 	}
 	writeJSON(w, http.StatusOK, newPage(items, next))
 	return nil
 }
 
 // repository is r as the API shows it: enabled when the App reaches it and
-// its settings leave it on.
+// it runs.
 func repository(r store.RepoRow, on bool) Repository {
 	out := Repository{
 		ID: r.ID, FullName: r.FullName, Enabled: r.Enabled && on, ManagedBy: r.ManagedBy,
@@ -260,7 +264,8 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 	}
 	settings := t.file.Settings(t.account, row.FullName)
 	d := RepoDetail{
-		Repository: repository(row, settings.Enabled), Settings: repoSettings(settings), Sources: t.file.Sources(t.account, row.FullName),
+		Repository: repository(row, t.file.Runs(t.account, row.FullName, row.RepoTraits)),
+		Settings:   repoSettings(settings), Sources: t.file.Sources(t.account, row.FullName),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
 	}
 	writeJSON(w, http.StatusOK, d)

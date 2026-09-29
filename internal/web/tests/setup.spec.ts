@@ -61,8 +61,13 @@ test.describe('setup wizard', () => {
   test('saves the model key and review model, then registers the repositories', async ({ page }) => {
     let saved = false;
     await flags(page, { listener: true, installed: true });
+    const reached = g.golden<T.AccountRepositories>('account_repositories');
+    const one = reached.repositories[0]!;
+    const two = { ...one, name: 'two', fullName: 'alpha/two' };
+    const copy = { ...one, name: 'copy', fullName: 'alpha/copy', fork: true };
+    const old = { ...one, name: 'old', fullName: 'alpha/old', archived: true };
     await setup(page, () => ({ ...fresh, connections: ['alpha-bot'], reviewModel: saved ? 'or/acme-large' : '' }), [
-      [/\/api\/v1\/admin\/connections\/alpha-bot\/repositories$/, [g.golden<T.AccountRepositories>('account_repositories')]],
+      [/\/api\/v1\/admin\/connections\/alpha-bot\/repositories$/, [{ ...reached, repositories: [one, two, copy, old] }]],
       [new RegExp(`/api/v1/accounts/${g.SLUG}/config$`), g.accountConfig],
     ]);
     const sent = await g.mockWrites(page, [
@@ -99,13 +104,16 @@ test.describe('setup wizard', () => {
 
     await wizard.getByRole('button', { name: 'Skip' }).click();
     await expect(wizard.locator('[aria-current="step"]')).toHaveText('Repositories');
-    await expect(wizard).toContainText('0 of 1 checked');
-    await wizard.getByRole('button', { name: 'Check all' }).click();
-    await expect(wizard.getByRole('checkbox', { name: 'one' })).toBeChecked();
+    // A fork and an archived repository are left out, and the rest start
+    // checked.
+    await expect(wizard).toContainText('2 of 2 checked');
+    await expect(wizard.getByRole('list', { name: "alpha's repositories" }).getByRole('checkbox')).toHaveCount(2);
+    await expect(wizard).toContainText('Left out: 1 fork and 1 archived repository.');
+    await wizard.getByRole('checkbox', { name: 'two' }).uncheck();
     await wizard.getByRole('button', { name: 'Register and continue' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Registered 1 new repository' })).toBeVisible();
     // The account's choice is saved before its repositories are registered:
-    // the ones the App reaches later start off, and the checked one is on.
+    // the ones the App reaches later start on, and the unchecked one is off.
     expect(sent.slice(-2).map((s) => `${s.method} ${s.url.pathname}`)).toEqual([
       `PUT /api/v1/accounts/${g.SLUG}/config`,
       'POST /api/v1/admin/connections/alpha-bot/repositories',
@@ -116,8 +124,8 @@ test.describe('setup wizard', () => {
         forge: 'github',
         name: 'alpha',
         providers: { own: { type: 'openai', apiKey: { keep: true } } },
-        enabled: false,
-        repositories: [{ name: 'one', enabled: true }],
+        enabled: true,
+        repositories: [{ name: 'two', enabled: false }],
       },
     });
     await expect(wizard.locator('[aria-current="step"]')).toHaveText('Done');
