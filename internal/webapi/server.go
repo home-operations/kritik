@@ -228,9 +228,10 @@ func isBareDir(ui fs.FS, urlPath string) bool {
 }
 
 // contentSecurityPolicy allows only the dashboard's own scripts, styles
-// and connections; img-src also admits https for forge avatars.
+// and connections; img-src also admits https for forge avatars, and
+// form-action GitHub, where the App manifest form posts.
 const contentSecurityPolicy = "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; " +
-	"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+	"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://github.com"
 
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
