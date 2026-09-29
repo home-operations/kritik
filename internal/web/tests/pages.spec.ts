@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import * as g from './golden';
-import type { AccountDetail } from '../src/lib/types';
+import type { AccountDetail, Pull, ReviewStatus } from '../src/lib/types';
 
 const T = `#/a/${g.SLUG}`;
 
@@ -39,6 +39,24 @@ test('account overview shows tiles, recent reviews, queue and repositories', asy
   await expect(page.locator('#ov-recent').locator('..').locator('..')).toContainText(g.pull.title);
   await expect(page.locator('.chips')).toContainText(`1 ${g.job.state}`);
   await expect(page.getByRole('region', { name: 'Repositories', exact: true }).locator('table.data')).toContainText(g.repoPage.items[0]!.fullName);
+});
+
+test('account overview links the open pulls whose last review failed or was capped', async ({ page }) => {
+  const as = (n: number, status: ReviewStatus): Pull => ({ ...g.pull, number: n, url: g.pull.url.replace(/\d+$/, String(n)), lastReview: { ...g.pull.lastReview!, status } });
+  const attention = page.getByRole('region', { name: 'Needs attention' });
+  await page.goto(`/${T}`);
+  await expect(page.getByRole('region', { name: 'Repositories', exact: true })).toBeVisible();
+  await expect(attention).toHaveCount(0);
+
+  await g.mockApi(page, [
+    [new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), (u: URL) => (u.searchParams.get('state') === 'open' ? g.pageOf([as(1, 'failed'), as(2, 'failed'), as(3, 'capped'), g.pull], 'next') : g.pageOf([g.pull]))],
+    ...g.defaultApi(),
+  ]);
+  await page.reload();
+  await expect(attention.getByRole('listitem')).toHaveText([/2\+ open pull requests whose last review failed/, /1\+ open pull requests whose last review hit a limit/]);
+  await attention.getByRole('link', { name: /hit a limit/ }).click();
+  await expect(page).toHaveURL(new RegExp(`${T}/pulls\\?outcome=capped$`));
+  await expect(page.getByRole('combobox', { name: 'Last review outcome' })).toHaveValue('capped');
 });
 
 test('account overview says whether its connection receives webhooks', async ({ page }) => {
