@@ -46,6 +46,8 @@
     return r ? `${r.status} · ${r.pull.repository}#${r.pull.number} review` : 'Review';
   });
 
+  const RUN_TABS: readonly ReviewTab[] = ['conversation', 'timeline', 'raw', 'usage'];
+
   const labels: Record<ReviewTab, string> = {
     summary: 'Summary',
     diff: 'Diff',
@@ -71,15 +73,12 @@
           <h1>{r.pull.title}</h1>
           <p class="meta-line">
             <ReviewStatusTile status={r.status} />
-            <Time iso={r.createdAt} />
-            <ReviewMeta {r} />
+            <span>started <Time iso={r.createdAt} /></span>
+            {#if r.priorReviewId}
+              <span>after <a href={href({ name: 'review', slug, id: r.priorReviewId })}>the review before</a></span>
+            {/if}
           </p>
-          {#if r.scopeReason}<p class="small muted">scope: {r.scope} ({r.scopeReason})</p>{/if}
-          {#if r.priorReviewId}
-            <p class="small muted">
-              follows <a class="mono" href={href({ name: 'review', slug, id: r.priorReviewId })}>{r.priorReviewId}</a>
-            </p>
-          {/if}
+          <ReviewMeta {r} scopeReason={r.scopeReason} />
           {#if r.error}<p class="error-text" role="note">{r.error}</p>{/if}
           {#if r.cancelRequestedAt}<p class="small muted">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}
           {#if isAdmin()}
@@ -107,8 +106,10 @@
           {/if}
         </header>
 
+        <!-- What the review said comes first; how it ran sits apart, to the right. -->
         <nav class="tabs" aria-label="Review sections">
           {#each REVIEW_TABS as t (t)}
+            {#if t === RUN_TABS[0]}<span class="tabs-group-label">Run</span>{/if}
             <a class="tab" class:active={t === tab} aria-current={t === tab ? 'page' : undefined} href={href({ name: 'review', slug, id, tab: t })}>
               {labels[t]}{#if t === 'summary' && d.findings.length}<span class="tab-count">{d.findings.length}</span>{/if}
             </a>

@@ -136,6 +136,41 @@ input:focus-visible {
   color: var(--muted);
   font-size: 12px;
 }
+/* A record's facts, each named: "Mode agentic", "Cost $0.42". */
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 12px;
+}
+.facts > div {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.facts dt {
+  color: var(--muted);
+}
+.facts dd {
+  margin: 0;
+}
+a.external {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.lifecycle-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+}
 .error-text {
   color: var(--danger);
   font-size: 12px;
@@ -772,6 +807,14 @@ table.data td.pull-main {
   border-bottom-color: var(--accent);
   font-weight: 600;
 }
+.tabs-group-label {
+  margin-left: auto;
+  padding: 7px 6px 7px 16px;
+  align-self: center;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .tab-count {
   font-size: 11px;
   background: var(--panel);
@@ -787,6 +830,28 @@ table.data td.pull-main {
 }
 
 /* ---- findings -------------------------------------------------------------- */
+.latest-review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.latest-take {
+  font-size: 14px;
+}
+.finding-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.finding-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
 .finding-group {
   display: flex;
   flex-direction: column;
