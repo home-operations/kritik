@@ -135,10 +135,10 @@ key, `KRITIK_DASHBOARD_KEY` / `dashboard.keySecret`: generate one with
 kritik refuses to start once a configuration is stored. To rotate it, move the old value into
 `KRITIK_DASHBOARD_OLD_KEYS` / `dashboard.oldKeysSecret` (comma-separated,
 accepted only to open values already sealed under it), and set a freshly
-generated value as `KRITIK_DASHBOARD_KEY`. A value sealed under an old key
-is re-sealed under the current one the next time it is written, not
-eagerly on rotation, so keep an old key listed until every value under it
-has been touched at least once.
+generated value as `KRITIK_DASHBOARD_KEY`. Every save of the configuration
+re-seals the values still under an old key with the current one, so after a
+rotation save the instance configuration once from the admin console, even
+unchanged, and then the old key can be dropped.
 
 ## `retention.transcripts`
 

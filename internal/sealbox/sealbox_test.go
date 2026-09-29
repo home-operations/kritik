@@ -304,6 +304,36 @@ func TestOldKeyOpensAndNeedsRotation(t *testing.T) {
 	}
 }
 
+// TestReseal: a value under an old key comes back under the current one,
+// and one already under it comes back as it was.
+func TestReseal(t *testing.T) {
+	oldKeyring, err := NewKeyring(testKey(t, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := oldKeyring.Seal([]byte("rotate me"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := NewKeyring(testKey(t, 2), testKey(t, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resealed, err := rotated.Reseal(old)
+	if err != nil {
+		t.Fatalf("Reseal() err: %v", err)
+	}
+	if rotated.NeedsRotation(resealed) {
+		t.Fatal("Reseal() left the value under the old key")
+	}
+	if opened, err := rotated.Open(resealed); err != nil || string(opened) != "rotate me" {
+		t.Fatalf("Open(Reseal()) = %q, %v", opened, err)
+	}
+	if again, err := rotated.Reseal(resealed); err != nil || again != resealed {
+		t.Fatalf("Reseal() of a current value = %q, %v; want it unchanged", again, err)
+	}
+}
+
 func TestNeedsRotationMalformed(t *testing.T) {
 	kr, err := NewKeyring(testKey(t, 1))
 	if err != nil {

@@ -200,10 +200,18 @@ type sealedSpec struct {
 	changed []string
 }
 
+// sealer seals a secret for the stored spec, and brings one kept from the
+// stored spec under the current key; *sealbox.Keyring is one.
+type sealer interface {
+	Seal(plaintext []byte) (string, error)
+	Reseal(sealed string) (string, error)
+}
+
 // sealSpec turns a client's spec into the stored form: each secret given
-// a value or generated is sealed with seal, and each kept one is copied
-// from stored, the spec it replaces (empty for none).
-func sealSpec(spec, stored json.RawMessage, seal func([]byte) (string, error), generate func() string) (sealedSpec, error) {
+// a value or generated is sealed with k, and each kept one is copied from
+// stored, the spec it replaces (empty for none), re-sealed when a key
+// rotation left it under an old key.
+func sealSpec(spec, stored json.RawMessage, k sealer, generate func() string) (sealedSpec, error) {
 	var out sealedSpec
 	root, err := decodeObject(spec)
 	if err != nil {
@@ -233,10 +241,18 @@ func sealSpec(spec, stored json.RawMessage, seal func([]byte) (string, error), g
 			}
 			out.generated[pos.logical] = plain
 		case in.kept != nil:
+			ref, _ := in.kept.(map[string]any)
+			if sealed, ok := ref[sealedKey].(string); ok {
+				resealed, err := k.Reseal(sealed)
+				if err != nil {
+					return out, fmt.Errorf("webapi: reseal %s: %w", pos.logical, err)
+				}
+				in.kept = map[string]any{sealedKey: resealed}
+			}
 			pos.parent[pos.leaf] = in.kept
 			continue
 		}
-		sealed, err := seal([]byte(in.value))
+		sealed, err := k.Seal([]byte(in.value))
 		if err != nil {
 			return out, fmt.Errorf("webapi: seal %s: %w", pos.logical, err)
 		}

@@ -9,7 +9,18 @@ import (
 	"testing"
 )
 
-func fakeSeal(b []byte) (string, error) { return "sealed:" + string(b), nil }
+// fakeSealer seals as "sealed:<value>"; a value stored as "rotated:<value>"
+// is under a key since rotated out.
+type fakeSealer struct{}
+
+func (fakeSealer) Seal(b []byte) (string, error) { return "sealed:" + string(b), nil }
+
+func (fakeSealer) Reseal(s string) (string, error) {
+	if v, ok := strings.CutPrefix(s, "rotated:"); ok {
+		return "sealed:" + v, nil
+	}
+	return s, nil
+}
 
 func fakeGenerate() string { return "g3n" }
 
@@ -48,6 +59,12 @@ func TestSealSpec(t *testing.T) {
 				`{"accounts":["alpha"],"app":{"clientId":"cid","privateKey":{"sealed":"old-key"},` +
 				`"webhookSecret":{"sealed":"sealed:new"}},"forge":"github","name":"alpha-bot"}]}`,
 			changed: []string{"connections[alpha-bot].app.webhookSecret"},
+		},
+		{
+			name:   "a kept value under a rotated key is sealed under the current one",
+			stored: `{"egress":{"credentials":{"x.example.com":{"sealed":"rotated:t0k"}}}}`,
+			spec:   `{"egress":{"credentials":{"x.example.com":{"keep":true}}}}`,
+			want:   `{"egress":{"credentials":{"x.example.com":{"sealed":"sealed:t0k"}}}}`,
 		},
 		{
 			name:   "a webhook secret stays keepable when the accounts change",
@@ -212,7 +229,7 @@ func TestSealSpec(t *testing.T) {
 			if tt.stored != "" {
 				stored = json.RawMessage(tt.stored)
 			}
-			got, err := sealSpec(json.RawMessage(tt.spec), stored, fakeSeal, fakeGenerate)
+			got, err := sealSpec(json.RawMessage(tt.spec), stored, fakeSealer{}, fakeGenerate)
 			if tt.errPath != "" || tt.want == "" {
 				se, ok := errors.AsType[*specError](err)
 				if !ok {

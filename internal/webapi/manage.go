@@ -168,7 +168,7 @@ func (s *Server) writeSpec(
 		if err != nil {
 			return refusal(err)
 		}
-		sealed, err := sealSpec(candidate, stored.Spec, s.keyring.Seal, generateWebhookSecret)
+		sealed, err := sealSpec(candidate, stored.Spec, s.keyring, generateWebhookSecret)
 		if err != nil {
 			return refusal(err)
 		}
