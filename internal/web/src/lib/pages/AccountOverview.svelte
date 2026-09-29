@@ -5,7 +5,7 @@
   import { href } from '../router.svelte';
   import { hookURL } from '../session.svelte';
   import { Resource, live, type Dirty } from '../resource.svelte';
-  import { tokens, usd, wholeNumber, indexTone, jobTone, splitRepo } from '../format';
+  import { tokens, usd, wholeNumber, indexTone, jobTone, reviewTone, splitRepo } from '../format';
   import type { Job, JobState, Page, Pull, Repository, AccountDetail, AccountSummary } from '../types';
   import StateView from '../components/StateView.svelte';
   import Meter from '../components/Meter.svelte';
@@ -95,6 +95,22 @@
   function queueCounts(jobs: Job[]): { state: JobState; n: number }[] {
     return INFLIGHT.map((state) => ({ state, n: jobs.filter((j) => j.state === state).length })).filter((c) => c.n > 0);
   }
+
+  // The open pulls whose last review did not get done, by why. Only the
+  // first page of open pulls is loaded, so while there are more a count is
+  // a floor.
+  const STUCK = [
+    { outcome: 'failed', why: 'last review failed' },
+    { outcome: 'capped', why: 'last review hit a limit' },
+  ] as const;
+
+  function stuck(open: Page<Pull>) {
+    const more = open.nextCursor ? '+' : '';
+    return STUCK.flatMap(({ outcome, why }) => {
+      const n = open.items.filter((p) => p.lastReview?.status === outcome).length;
+      return n ? [{ outcome, text: `${n}${more} open ${n === 1 && !more ? 'pull request' : 'pull requests'} whose ${why}` }] : [];
+    });
+  }
 </script>
 
 <main class="page">
@@ -131,6 +147,23 @@
             {/if}
           </div>
         </section>
+
+        {@const attention = stuck(d.open)}
+        {#if attention.length}
+          <section class="panel" aria-labelledby="ov-attention">
+            <header class="panel-head"><h2 id="ov-attention">Needs attention</h2></header>
+            <ul class="rows">
+              {#each attention as a (a.outcome)}
+                <li class="row">
+                  <a class="row-link" href={href({ name: 'pulls', slug, filter: { outcome: a.outcome } })}>
+                    <Pill tone={reviewTone[a.outcome]} label={a.outcome} />
+                    <span class="row-text">{a.text}</span>
+                  </a>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
 
         <div class="grid-2">
           <section class="panel" aria-labelledby="ov-recent">
