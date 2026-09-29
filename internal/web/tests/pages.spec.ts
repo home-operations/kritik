@@ -162,7 +162,7 @@ test.describe('pulls list', () => {
     await search.pressSequentially('fai');
     await expect(options).toHaveText(['status:failed']);
     await page.keyboard.press('ArrowDown');
-    await expect(search).toHaveAttribute('aria-activedescendant', 'pull-suggest-0');
+    await expect(search).toHaveAttribute('aria-activedescendant', 'pull-search-suggest-0');
     await page.keyboard.press('Enter');
     await expect(search).toHaveValue('status:failed ');
     await expect.poll(() => seen.some((u) => u.pathname.endsWith('/pulls') && u.searchParams.get('outcome') === 'failed')).toBe(true);
@@ -180,7 +180,7 @@ test.describe('pulls list', () => {
     const seen = await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/pulls`);
     await page.getByRole('combobox', { name: 'Search pull requests' }).fill('repo:nope/nope status:great');
-    await expect(page.getByRole('note')).toHaveText('Not filtering by repo:nope/nope, status:great: no such repository or status.');
+    await expect(page.getByRole('note')).toHaveText('Not filtering by repo:nope/nope, status:great: nothing by that name.');
     await page.waitForTimeout(400);
     expect(seen.some((u) => u.searchParams.has('repo') || u.searchParams.has('outcome'))).toBe(false);
     await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
@@ -268,6 +268,47 @@ test.describe('pulls list', () => {
     await expect(rows.nth(1)).toHaveClass(/selected/);
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7$`));
+  });
+});
+
+test.describe('findings', () => {
+  test('lists each finding with its pull request and whether it was addressed', async ({ page }) => {
+    await g.mockApi(page, g.defaultApi());
+    await page.goto(`/${T}/findings`);
+    const f = g.accountFinding;
+    const row = page.locator('.finding-row').first();
+    await expect(row).toContainText(f.title);
+    await expect(row).toContainText(f.explanation);
+    await expect(row.locator('.sev')).toHaveText(f.severity);
+    await expect(row.getByRole('link', { name: `${f.pull.repository} #${f.pull.number}` })).toHaveAttribute('href', `#/a/${g.SLUG}/pulls/alpha/one/7`);
+    await expect(row.locator('.status-word')).toHaveText(f.status);
+    await expect(page.locator('.sections .section-tab.active')).toHaveText('Overview');
+    await expect(page.getByRole('navigation', { name: 'Overview' }).getByRole('link', { name: 'Findings' })).toHaveAttribute('aria-current', 'page');
+
+    await row.locator('.finding-sub').first().click();
+    await expect(page).toHaveURL(new RegExp(`${T}/reviews/${f.reviewId}$`));
+  });
+
+  test('filters by severity, status and repository tokens, in the URL', async ({ page }) => {
+    const seen = await g.mockApi(page, g.defaultApi());
+    await page.goto(`/${T}/findings`);
+    const search = page.getByRole('combobox', { name: 'Search findings' });
+    await search.fill(`severity:blocking status:addressed repo:${g.repoPage.items[0]!.fullName} deref`);
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?severity=blocking&status=addressed&repo=alpha%2Fone&q=deref$`));
+    const last = () => seen.filter((u) => u.pathname.endsWith('/findings')).at(-1)?.searchParams;
+    await expect.poll(() => last()?.get('severity')).toBe('blocking');
+    expect(last()?.get('status')).toBe('addressed');
+    expect(last()?.get('repo')).toBe(g.repoPage.items[0]!.fullName);
+    expect(last()?.get('q')).toBe('deref');
+
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/findings$`), g.pageOf([])], ...g.defaultApi()]);
+    await page.reload();
+    await expect(search).toHaveValue(`repo:${g.repoPage.items[0]!.fullName} severity:blocking status:addressed deref`);
+    await expect(page.locator('.state-msg')).toContainText('No findings match these filters.');
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(page).toHaveURL(new RegExp(`${T}/findings$`));
+    await expect(search).toHaveValue('');
+    await expect(search).toBeFocused();
   });
 });
 

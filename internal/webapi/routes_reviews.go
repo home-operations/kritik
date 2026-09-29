@@ -99,11 +99,19 @@ func (s *Server) getReview(w http.ResponseWriter, r *http.Request, t *accountSco
 	return nil
 }
 
+func finding(f store.FindingRow) Finding {
+	return Finding{
+		ID: f.ID, Path: f.Path, Line: f.Line, EndLine: f.EndLine, Severity: f.Severity, Title: f.Title, Explanation: f.Explanation,
+		SuggestedFix: f.SuggestedFix, Replacement: f.Replacement, AgentPrompt: f.AgentPrompt, Fingerprint: f.Fingerprint,
+		PostedInline: f.PostedInline, ForgeCommentID: f.ForgeCommentID, CreatedAt: f.CreatedAt,
+	}
+}
+
 func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.UsageRow) ReviewDetail {
 	v := rec.review
 	d := ReviewDetail{
 		Review: ReviewInfo{
-			Review: reviewItem(v), Pull: PullRef{Repository: v.Repository, Number: v.Number, Title: v.Title},
+			Review: reviewItem(v), Pull: PullRef{Repository: v.Repository, Number: v.Number, Title: v.Title, URL: v.URL},
 			ScopeReason: v.ScopeReason, MergeBaseSHA: v.MergeBaseSHA, PatchID: v.PatchID, PriorReviewID: v.PriorReviewID,
 			CancelRequestedAt: v.CancelRequestedAt,
 		},
@@ -113,11 +121,7 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 		d.Summary = &Summary{Take: v.Summary.Take, Praise: nonNil(v.Summary.Praise)}
 	}
 	for i, f := range findings {
-		d.Findings[i] = Finding{
-			ID: f.ID, Path: f.Path, Line: f.Line, EndLine: f.EndLine, Severity: f.Severity, Title: f.Title, Explanation: f.Explanation,
-			SuggestedFix: f.SuggestedFix, Replacement: f.Replacement, AgentPrompt: f.AgentPrompt, Fingerprint: f.Fingerprint,
-			PostedInline: f.PostedInline, ForgeCommentID: f.ForgeCommentID, CreatedAt: f.CreatedAt,
-		}
+		d.Findings[i] = finding(f)
 	}
 	for i, u := range usage {
 		d.Usage[i] = UsageRow{

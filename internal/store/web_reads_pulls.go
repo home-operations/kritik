@@ -173,6 +173,7 @@ type ReviewRow struct {
 	Repository        string
 	Number            int
 	Title             string
+	URL               string
 	Status            ReviewStatus
 	Trigger           string
 	Mode              configfile.ReviewMode
@@ -195,7 +196,7 @@ type ReviewRow struct {
 	OutputTokens int64
 }
 
-const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, v.status, v.trigger, v.mode, v.scope, v.scope_reason,
+const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url, v.status, v.trigger, v.mode, v.scope, v.scope_reason,
 	v.model, v.head_sha, v.merge_base_sha, v.patch_id, v.prior_review_id, v.skip_reason, v.error, v.created_at, v.finished_at,
 	v.cancel_requested_at, v.summary, coalesce(u.cost, 0), coalesce(u.input, 0), coalesce(u.output, 0)
 	FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id JOIN repositories r ON r.id = p.repository_id
@@ -206,7 +207,7 @@ func scanReview(row pgx.CollectableRow) (ReviewRow, error) {
 	var v ReviewRow
 	var status, mode, scope, skip string
 	var summary []byte
-	if err := row.Scan(&v.ID, &v.PullRequestID, &v.Repository, &v.Number, &v.Title, &status, &v.Trigger, &mode, &scope, &v.ScopeReason,
+	if err := row.Scan(&v.ID, &v.PullRequestID, &v.Repository, &v.Number, &v.Title, &v.URL, &status, &v.Trigger, &mode, &scope, &v.ScopeReason,
 		&v.Model, &v.HeadSHA, &v.MergeBaseSHA, &v.PatchID, &v.PriorReviewID, &skip, &v.Error, &v.CreatedAt, &v.FinishedAt,
 		&v.CancelRequestedAt, &summary, &v.CostUSD, &v.InputTokens, &v.OutputTokens); err != nil {
 		return v, err

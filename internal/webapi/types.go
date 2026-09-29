@@ -357,11 +357,12 @@ type PullDetail struct {
 	Followups []Followup `json:"followups"`
 }
 
-// PullRef names a pull request.
+// PullRef names a pull request, and where it is on the forge.
 type PullRef struct {
 	Repository string `json:"repository"`
 	Number     int    `json:"number"`
 	Title      string `json:"title"`
+	URL        string `json:"url"`
 }
 
 // ReviewInfo is a review row in full.
@@ -397,6 +398,18 @@ type Finding struct {
 	PostedInline   bool            `json:"postedInline"`
 	ForgeCommentID *int64          `json:"forgeCommentId"`
 	CreatedAt      time.Time       `json:"createdAt"`
+}
+
+// AccountFinding is one finding of a pull request, however many of its
+// reviews reported it, as the latest of them did. Status is whether a
+// later review no longer reported it.
+type AccountFinding struct {
+	Finding
+	ReviewID    string              `json:"reviewId"`
+	Pull        PullRef             `json:"pull"`
+	Status      store.FindingStatus `json:"status"`
+	FirstSeenAt time.Time           `json:"firstSeenAt"`
+	LastSeenAt  time.Time           `json:"lastSeenAt"`
 }
 
 // RunnerRun is the Kubernetes Job that prepared a review.

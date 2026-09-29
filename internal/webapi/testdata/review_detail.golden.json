@@ -20,7 +20,8 @@
     "pull": {
       "repository": "alpha/one",
       "number": 7,
-      "title": "Add widgets"
+      "title": "Add widgets",
+      "url": "https://git.example/alpha/one/pulls/7"
     },
     "scopeReason": "delta",
     "mergeBaseSha": "base1",

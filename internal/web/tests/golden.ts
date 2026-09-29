@@ -29,6 +29,7 @@ export const reviewRaw = golden<T.ReviewRaw>('review_raw');
 export const transcript = golden<T.Transcript>('transcript');
 export const job = golden<T.Job>('job');
 export const followup = golden<T.Followup>('followup');
+export const accountFinding = golden<T.AccountFinding>('account_finding');
 export const usageSeries = golden<T.UsageSeries>('usage_series');
 export const liveEvent = golden<T.LiveEvent>('event');
 export const meta = golden<T.Meta>('meta');
@@ -97,6 +98,7 @@ export function defaultApi(): [RegExp, Body][] {
       (u: URL) => (u.searchParams.get('cursor') ? pageOf([{ ...pull, number: 8, title: 'More widgets', url: pull.url.replace(/\d+$/, '8') }]) : pageOf([pull], repoPage.nextCursor)),
     ],
     [new RegExp(`${t}/pulls/alpha/one/7$`), pullDetail],
+    [new RegExp(`${t}/findings$`), pageOf([accountFinding])],
     [new RegExp(`${t}/followups$`), pageOf([followup])],
     [new RegExp(`${t}/followups/\\d+/transcript$`), transcript],
     [new RegExp(`${t}/reviews/rev-1$`), reviewDetail],

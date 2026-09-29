@@ -24,6 +24,7 @@
     mdiCogOutline,
     mdiViewGridOutline,
     mdiTuneVariant,
+    mdiBugOutline,
   } from './icons';
 
   let { me }: { me: Me | undefined } = $props();
@@ -98,6 +99,7 @@
         { label: 'Overview', hint: slug, route: { name: 'account', slug }, icon: mdiViewDashboardOutline },
         { label: 'Repositories', hint: slug, route: { name: 'repos', slug }, icon: mdiSourceRepository },
         { label: 'Pull requests', hint: slug, route: { name: 'pulls', slug }, icon: mdiSourcePull },
+        { label: 'Findings', hint: slug, route: { name: 'findings', slug }, icon: mdiBugOutline, keywords: 'bugs caught addressed' },
         { label: 'Queue', hint: slug, route: { name: 'queue', slug }, icon: mdiTrayFull },
         { label: 'Usage', hint: slug, route: { name: 'usage', slug }, icon: mdiCurrencyUsd },
         { label: 'Follow-ups', hint: slug, route: { name: 'followups', slug }, icon: mdiClipboardTextClockOutline },

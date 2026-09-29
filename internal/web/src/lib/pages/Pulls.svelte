@@ -2,17 +2,18 @@
   import { tick, untrack } from 'svelte';
   import { getJSON } from '../api.svelte';
   import { navigate, replace } from '../router.svelte';
-  import { pullFilter, type PullFilter } from '../routes';
+  import { PULL_OUTCOMES, pullFilter, type PullFilter } from '../routes';
   import { Paged, Resource, live } from '../resource.svelte';
   import { pullRoute, accountApi } from '../links';
   import { listKeys } from '../listkeys';
-  import { parseSearch, formatSearch, suggest, complete, type Suggestion } from '../pullquery';
+  import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
   import type { Page, Pull, Repository } from '../types';
   import StateView from '../components/StateView.svelte';
   import PullTable from '../components/PullTable.svelte';
   import LoadMore from '../components/LoadMore.svelte';
   import SectionTabs from '../components/SectionTabs.svelte';
   import Segmented from '../components/Segmented.svelte';
+  import TokenSearch from '../components/TokenSearch.svelte';
 
   let { slug, filter }: { slug: string; filter?: PullFilter } = $props();
 
@@ -56,69 +57,31 @@
   });
   $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void paged.load()));
 
-  // The search box reaches the URL once typing pauses, so typing doesn't
-  // fire a request per keystroke. written is the box's text for the filter
-  // it last wrote there: any other change to the filter, such as following
-  // a link to the unfiltered list, rewrites the box.
-  let text = $state(untrack(() => formatSearch(filter)));
-  let written = untrack(() => formatSearch(filter));
-  let pending: ReturnType<typeof setTimeout> | undefined;
-
-  function apply(): void {
-    clearTimeout(pending);
-    pending = setTimeout(() => {
-      const { fields } = parseSearch(text, repoNames);
-      written = formatSearch(fields);
-      setFilter({ state: filter?.state, ...fields });
-    }, 250);
-  }
-  $effect(() => () => clearTimeout(pending));
-  $effect(() => {
-    const f = formatSearch(filter);
-    if (f === written) return;
-    written = f;
-    text = f;
-  });
-
-  // unknown names the tokens the list is not filtered by, once the
-  // repositories they are checked against have loaded.
-  const unknown = $derived(repos.data ? parseSearch(text, repoNames).unknown : []);
-
-  // The box suggests the token being typed and its values: a combobox whose
-  // list opens while the box has focus and something matches.
-  let focused = $state(false);
-  let dismissed = $state(false);
-  let active = $state(-1);
+  // The box's tokens: status: is the last review's outcome.
   const authors = $derived([...new Set(paged.items.map((p) => p.author))].sort());
-  const suggestions = $derived(suggest(text, { repos: repoNames, authors }));
-  const listOpen = $derived(focused && !dismissed && suggestions.length > 0);
+  const specs = $derived<TokenSpec[]>([
+    { key: 'repo', hint: 'a repository', values: repoNames },
+    { key: 'author', hint: "an author's login", values: authors, open: true },
+    { key: 'status', hint: "the last review's status", values: PULL_OUTCOMES },
+  ]);
+  const boxText = (f: PullFilter | undefined) => formatTokens(specs, { repo: f?.repo, author: f?.author, status: f?.outcome }, f?.q);
 
-  function accept(s: Suggestion): void {
-    text = complete(text, s);
-    active = -1;
-    apply();
-    searchEl?.focus();
+  // written is the box's text for the filter it last wrote to the URL: any
+  // other change to the filter, such as following a link to the unfiltered
+  // list, rewrites the box.
+  let text = $state(untrack(() => boxText(filter)));
+  let written = untrack(() => boxText(filter));
+  function onapply(p: Parsed): void {
+    const f = { state: filter?.state, repo: p.tokens.repo, author: p.tokens.author, outcome: p.tokens.status, q: p.q };
+    written = boxText(pullFilter(f));
+    setFilter(f);
   }
-
-  function onSearchKeydown(e: KeyboardEvent): void {
-    if (!listOpen) return;
-    const n = suggestions.length;
-    if (e.key === 'ArrowDown') {
-      active = (active + 1) % n;
-    } else if (e.key === 'ArrowUp') {
-      active = active <= 0 ? n - 1 : active - 1;
-    } else if (e.key === 'Enter' && active >= 0) {
-      accept(suggestions[active]!);
-    } else if (e.key === 'Tab' && !e.shiftKey) {
-      accept(suggestions[Math.max(active, 0)]!);
-    } else if (e.key === 'Escape') {
-      dismissed = true;
-      e.stopPropagation();
-    } else {
-      return;
-    }
-    e.preventDefault();
-  }
+  $effect(() => {
+    const t = boxText(filter);
+    if (t === written) return;
+    written = t;
+    text = t;
+  });
 
   const items = $derived(paged.items);
   // The cursor follows its pull rather than its position, which a live
@@ -160,54 +123,18 @@
   <div class="page-inner">
     <SectionTabs section="pulls" {slug} current="pulls" />
     <div class="toolbar" role="search">
-      <div class="search-box search-combo">
-        <label class="sr-only" for="pull-search">Search pull requests</label>
-        <input
-          id="pull-search"
-          type="search"
-          role="combobox"
-          autocomplete="off"
-          aria-autocomplete="list"
-          aria-expanded={listOpen}
-          aria-controls="pull-suggest"
-          aria-activedescendant={listOpen && active >= 0 ? `pull-suggest-${active}` : undefined}
-          placeholder="Search, or filter by repo:, author: or status:"
-          bind:value={text}
-          bind:this={searchEl}
-          oninput={() => {
-            dismissed = false;
-            active = -1;
-            apply();
-          }}
-          onfocus={() => (focused = true)}
-          onblur={() => (focused = false)}
-          onkeydown={onSearchKeydown}
-        />
-        {#if listOpen}
-          <ul class="suggest" id="pull-suggest" role="listbox" aria-label="Suggestions">
-            {#each suggestions as s, i (s.label)}
-              <!-- The box keeps focus: the list is picked with the arrow keys, Enter or Tab, or the pointer. -->
-              <!-- svelte-ignore a11y_click_events_have_key_events -->
-              <li
-                id="pull-suggest-{i}"
-                role="option"
-                aria-selected={i === active}
-                class:active={i === active}
-                onmousedown={(e) => e.preventDefault()}
-                onclick={() => accept(s)}
-              >
-                <span class="mono">{s.label}</span>
-                {#if s.hint}<span class="muted small">{s.hint}</span>{/if}
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </div>
+      <TokenSearch
+        id="pull-search"
+        label="Search pull requests"
+        placeholder="Search, or filter by repo:, author: or status:"
+        {specs}
+        bind:text
+        bind:input={searchEl}
+        ready={!!repos.data}
+        {onapply}
+      />
       <Segmented label="State" options={STATES} value={prState} onchange={(state) => setFilter({ ...filter, state })} />
     </div>
-    {#if unknown.length}
-      <p class="small muted" role="note">Not filtering by {unknown.join(', ')}: no such repository or status.</p>
-    {/if}
     <StateView {res} retry={() => res.load()}>
       {#snippet children()}
         {#if items.length === 0 && filter}

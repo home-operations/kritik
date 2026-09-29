@@ -564,6 +564,37 @@ table.data td.pull-main {
   margin: 0;
 }
 
+/* ---- findings table ----------------------------------------------------- */
+.finding-row {
+  cursor: pointer;
+}
+table.data td.finding-main {
+  width: 100%;
+  max-width: 0;
+  min-width: 260px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.finding-link {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 550;
+}
+.finding-sub {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--muted);
+}
+.finding-pull .finding-sub {
+  max-width: 220px;
+}
+
 /* ---- search with suggestions ------------------------------------------- */
 .search-combo {
   position: relative;
@@ -595,6 +626,11 @@ table.data td.pull-main {
 }
 .suggest li.active {
   box-shadow: inset 3px 0 0 var(--edge);
+}
+.token-note {
+  flex-basis: 100%;
+  order: 1;
+  margin: 0;
 }
 
 /* ---- toolbar + inputs --------------------------------------------------- */

@@ -36,6 +36,8 @@ export {
   mdiSourceMerge,
   mdiSourceBranchRemove,
   mdiFileDocumentEditOutline,
+  mdiCircleOutline,
+  mdiBugOutline,
 } from '@mdi/js';
 
 import { siGithub } from 'simple-icons';
