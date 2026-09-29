@@ -102,6 +102,8 @@
   );
 </script>
 
+<svelte:head><title>Pull requests · {slug} · kritik</title></svelte:head>
+
 <main class="page">
   <div class="page-inner">
     <header class="page-head">

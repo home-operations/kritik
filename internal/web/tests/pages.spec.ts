@@ -321,6 +321,34 @@ test('the sidebar shows the version the server reports, below the admin console'
   expect(consoleLink && box && box.y >= consoleLink.y + consoleLink.height).toBe(true);
 });
 
+test('each page names itself in the browser tab', async ({ page }) => {
+  const r = g.reviewDetail.review;
+  for (const [h, title] of [
+    ['#/', 'All accounts · kritik'],
+    [T, `Overview · ${g.SLUG} · kritik`],
+    [`${T}/repos/alpha/one`, 'alpha/one · kritik'],
+    [`${T}/pulls?outcome=failed`, `Pull requests · ${g.SLUG} · kritik`],
+    [`${T}/pulls/alpha/one/7`, `${g.pullDetail.pull.title} · alpha/one#7 · kritik`],
+    [`${T}/reviews/rev-1/diff`, `${r.status} · ${r.pull.repository}#${r.pull.number} review · kritik`],
+    [`${T}/queue`, `Queue · ${g.SLUG} · kritik`],
+    ['#/admin', 'Admin console · kritik'],
+  ]) {
+    await page.goto(`/${h}`);
+    await expect(page).toHaveTitle(title);
+  }
+});
+
+test("a running review's tab title says when it is done", async ({ page }) => {
+  let done = false;
+  const review = (status: ReviewStatus) => ({ ...g.reviewDetail, review: { ...g.reviewDetail.review, status } });
+  await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/reviews/rev-1$`), () => review(done ? 'completed' : 'running')], ...g.defaultApi()]);
+  await page.goto(`/${T}/reviews/rev-1`);
+  await expect(page).toHaveTitle(/^running · /);
+  // The fixture's stream reopens, and every reopen refetches.
+  done = true;
+  await expect(page).toHaveTitle(/^completed · /);
+});
+
 test('a signed-in user navigating to sign-in is sent back', async ({ page, mockProviders }) => {
   await mockProviders();
   await page.goto(`/${T}/queue`);

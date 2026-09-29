@@ -120,6 +120,8 @@
   const selectedOff = $derived(paged.items.filter((r) => selected.includes(r.fullName) && !isOn(r)).length);
 </script>
 
+<svelte:head><title>Repositories · {slug} · kritik</title></svelte:head>
+
 <main class="page">
   <div class="page-inner">
     <header class="page-head"><h1>Repositories</h1></header>

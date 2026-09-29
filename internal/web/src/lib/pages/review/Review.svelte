@@ -39,6 +39,13 @@
     ),
   );
 
+  // The status leads, so a tab left open on a running review shows when it
+  // is done.
+  const title = $derived.by(() => {
+    const r = res.data?.review;
+    return r ? `${r.status} · ${r.pull.repository}#${r.pull.number} review` : 'Review';
+  });
+
   const labels: Record<ReviewTab, string> = {
     summary: 'Summary',
     diff: 'Diff',
@@ -48,6 +55,8 @@
     usage: 'Usage',
   };
 </script>
+
+<svelte:head><title>{title} · kritik</title></svelte:head>
 
 <main class="page">
   <div class="page-inner">

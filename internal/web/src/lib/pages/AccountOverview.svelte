@@ -113,6 +113,8 @@
   }
 </script>
 
+<svelte:head><title>Overview · {slug} · kritik</title></svelte:head>
+
 <main class="page">
   <div class="page-inner">
     <header class="page-head"><h1><span class="mono">{slug}</span> overview</h1></header>
