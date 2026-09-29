@@ -84,7 +84,7 @@ func newActionsEnv(t *testing.T) *actionsEnv {
 	t.Cleanup(owner.Close)
 	t.Setenv("KRITIK_TEST_TOKEN", "tok")
 	file := configfiletest.Load(t, actionsConfig)
-	if err := st.ApplyConfig(ctx, file, "actions-jobs-test"); err != nil {
+	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	cur := configfile.NewCurrent(file)
@@ -126,7 +126,7 @@ func (e *actionsEnv) signIn(name, subject string, g store.SessionGrant) {
 	ctx, now, origin := context.Background(), time.Now(), "oidc:https://idp.example"
 	user, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{
 		Provider: "oidc", Origin: origin, Subject: subject, DisplayName: name,
-	}, now)
+	})
 	if err != nil {
 		e.t.Fatal(err)
 	}

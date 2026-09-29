@@ -20,9 +20,9 @@ type Actions interface {
 	// jobs.ErrNoHead when none is known, jobs.ErrRerunQueued when one is
 	// already queued or running.
 	Rerun(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, number int) (int64, error)
-	// Cancel asks a running review to stop, recording by as the user
-	// that asked; jobs.ErrNotCancelable when it is not running.
-	Cancel(ctx context.Context, tx pgx.Tx, reviewID, by string) error
+	// Cancel asks a running review to stop; jobs.ErrNotCancelable when it
+	// is not running.
+	Cancel(ctx context.Context, tx pgx.Tx, reviewID string) error
 	// Reindex queues a full reindex of the repository;
 	// jobs.ErrRepositoryNotFound when it no longer exists (findRepo already
 	// resolved it in the same transaction, so this is defense in depth),
@@ -84,7 +84,7 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *accountScope)
 		return errNotFound("review")
 	}
 	err := s.read(ctx, t, func(tx pgx.Tx) error {
-		err := s.actions.Cancel(ctx, tx, id, t.principal.User.ID)
+		err := s.actions.Cancel(ctx, tx, id)
 		if errors.Is(err, jobs.ErrNotCancelable) {
 			return errStatus(http.StatusConflict, CodeNotCancelable, "the review is not running", nil)
 		}

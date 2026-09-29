@@ -61,7 +61,7 @@ accounts:
 func TestOnboardCandidates(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, onboardAccounts), "test"); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, onboardAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	ids := map[string]string{}

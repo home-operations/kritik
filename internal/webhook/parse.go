@@ -79,7 +79,6 @@ type PullRequest struct {
 	HeadRef     string
 	HeadSHA     string
 	BaseRef     string
-	BaseSHA     string
 	URL         string
 	Body        string
 	CreatedAt   time.Time
@@ -230,7 +229,6 @@ type ghPR struct {
 	} `json:"head"`
 	Base struct {
 		Ref  string `json:"ref"`
-		SHA  string `json:"sha"`
 		Repo struct {
 			FullName string `json:"full_name"`
 		} `json:"repo"`
@@ -245,7 +243,7 @@ func (p ghPR) event() *PullRequest {
 	pr := &PullRequest{
 		Number: p.Number, Title: p.Title, Author: p.User.Login, AuthorIsBot: p.User.isBot(),
 		State: cmp.Or(p.State, stateOpen), Merged: p.Merged, Draft: p.Draft,
-		HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, BaseRef: p.Base.Ref, BaseSHA: p.Base.SHA,
+		HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, BaseRef: p.Base.Ref,
 		URL: p.HTMLURL, Body: p.Body, CreatedAt: p.CreatedAt,
 	}
 	// A fork PR's head lives in a different repository than its base. A

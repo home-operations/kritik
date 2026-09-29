@@ -86,7 +86,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
 	file := configfiletest.Load(t, configYAML)
-	if err := st.ApplyConfig(ctx, file, "test"); err != nil {
+	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
 	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
@@ -249,7 +249,7 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
 	file := configfiletest.Load(t, configYAML)
-	if err := st.ApplyConfig(ctx, file, "test"); err != nil {
+	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
 	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})

@@ -60,10 +60,9 @@ type SignInIdentity struct {
 // Session is a live dashboard session, whom it belongs to and what its
 // sign-in allowed.
 type Session struct {
-	User      User
-	Identity  SignInIdentity
-	Grant     SessionGrant
-	ExpiresAt time.Time
+	User     User
+	Identity SignInIdentity
+	Grant    SessionGrant
 }
 
 // LoginState is one in-flight OAuth authorization request.
@@ -83,10 +82,6 @@ const LoginStateTTL = 10 * time.Minute
 // bound for LoginStateTTL; far more than any real dashboard's users start
 // in ten minutes.
 const MaxLoginStates = 10_000
-
-// sessionTouchInterval bounds how often a session's last_seen_at is written,
-// so an active dashboard does not write on every request.
-const sessionTouchInterval = time.Minute
 
 var (
 	// ErrSession is a session cookie that is unknown or expired.
@@ -115,7 +110,7 @@ func randomToken() (string, error) {
 // profile. Identities are keyed by provider, origin and subject only: an
 // email seen on two providers never links their users, since either
 // provider may let anyone claim any address.
-func (s *Store) UpsertIdentity(ctx context.Context, id SignInIdentity, now time.Time) (User, error) {
+func (s *Store) UpsertIdentity(ctx context.Context, id SignInIdentity) (User, error) {
 	tx, err := s.app.Begin(ctx)
 	if err != nil {
 		return User{}, fmt.Errorf("store: upsert identity: %w", err)
@@ -125,14 +120,14 @@ func (s *Store) UpsertIdentity(ctx context.Context, id SignInIdentity, now time.
 	if err != nil {
 		return User{}, fmt.Errorf("store: upsert identity: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE identities SET login = $4, email = $5 WHERE provider = $1 AND origin = $2 AND subject = $3`,
-		id.Provider, id.Origin, id.Subject, id.Login, id.Email); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE identities SET login = $4 WHERE provider = $1 AND origin = $2 AND subject = $3`,
+		id.Provider, id.Origin, id.Subject, id.Login); err != nil {
 		return User{}, fmt.Errorf("store: upsert identity: %w", err)
 	}
 	u := User{ID: userID}
-	if err := tx.QueryRow(ctx, `UPDATE users SET display_name = $2, email = $3, email_verified = $4, avatar_url = $5, last_seen_at = $6
+	if err := tx.QueryRow(ctx, `UPDATE users SET display_name = $2, email = $3, email_verified = $4, avatar_url = $5
 		WHERE id = $1 RETURNING display_name, email, email_verified, avatar_url`,
-		userID, id.DisplayName, id.Email, id.EmailVerified, id.AvatarURL, now).
+		userID, id.DisplayName, id.Email, id.EmailVerified, id.AvatarURL).
 		Scan(&u.DisplayName, &u.Email, &u.EmailVerified, &u.AvatarURL); err != nil {
 		return User{}, fmt.Errorf("store: upsert identity: %w", err)
 	}
@@ -196,8 +191,8 @@ func (s *Store) CreateSession(
 		return "", fmt.Errorf("store: create session: %w", err)
 	}
 	if _, err := s.app.Exec(ctx, `INSERT INTO sessions
-		(token_hash, user_id, provider, provider_origin, role, all_accounts, accounts, grant_key, created_at, expires_at, last_seen_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $9)`,
+		(token_hash, user_id, provider, provider_origin, role, all_accounts, accounts, grant_key, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		tokenHash(token), userID, provider, origin, g.Role, g.AllAccounts, g.Accounts, g.Key, now, expires); err != nil {
 		return "", fmt.Errorf("store: create session: %w", err)
 	}
@@ -205,15 +200,14 @@ func (s *Store) CreateSession(
 }
 
 // LookupSession returns the unexpired session a cookie value names, or
-// ErrSession, and records that it was seen at most once a minute.
+// ErrSession.
 func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) (Session, error) {
 	if token == "" {
 		return Session{}, ErrSession
 	}
 	hash := tokenHash(token)
 	var sess Session
-	var lastSeen *time.Time
-	err := s.app.QueryRow(ctx, `SELECT s.user_id, s.provider, s.provider_origin, s.expires_at, s.last_seen_at,
+	err := s.app.QueryRow(ctx, `SELECT s.user_id, s.provider, s.provider_origin,
 			s.role, s.all_accounts, s.accounts, s.grant_key,
 			u.display_name, u.email, u.email_verified, u.avatar_url, i.subject, i.login
 		FROM sessions s
@@ -221,7 +215,7 @@ func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) 
 		JOIN identities i ON i.user_id = s.user_id AND i.provider = s.provider AND i.origin = s.provider_origin
 		WHERE s.token_hash = $1 AND s.expires_at > $2
 		ORDER BY i.created_at LIMIT 1`, hash, now).
-		Scan(&sess.User.ID, &sess.Identity.Provider, &sess.Identity.Origin, &sess.ExpiresAt, &lastSeen,
+		Scan(&sess.User.ID, &sess.Identity.Provider, &sess.Identity.Origin,
 			&sess.Grant.Role, &sess.Grant.AllAccounts, &sess.Grant.Accounts, &sess.Grant.Key,
 			&sess.User.DisplayName, &sess.User.Email, &sess.User.EmailVerified, &sess.User.AvatarURL,
 			&sess.Identity.Subject, &sess.Identity.Login)
@@ -235,14 +229,6 @@ func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) 
 	sess.Identity.EmailVerified = sess.User.EmailVerified
 	sess.Identity.DisplayName = sess.User.DisplayName
 	sess.Identity.AvatarURL = sess.User.AvatarURL
-	if lastSeen == nil || now.Sub(*lastSeen) >= sessionTouchInterval {
-		if _, err := s.app.Exec(ctx, `WITH touched AS (
-				UPDATE sessions SET last_seen_at = $2 WHERE token_hash = $1 RETURNING user_id
-			)
-			UPDATE users SET last_seen_at = $2 WHERE id IN (SELECT user_id FROM touched)`, hash, now); err != nil {
-			return Session{}, fmt.Errorf("store: touch session: %w", err)
-		}
-	}
 	return sess, nil
 }
 

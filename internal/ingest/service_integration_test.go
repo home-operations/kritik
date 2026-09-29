@@ -64,7 +64,7 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
       - name: opened-only
         filter: 'pr.event == "opened"'
 `)
-	if err := st.ApplyConfig(ctx, f, "test"); err != nil {
+	if err := st.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})

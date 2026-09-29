@@ -157,7 +157,7 @@ func (s *Server) writeSpec(
 		if err := store.LockInstanceSpec(ctx, tx); err != nil {
 			return err
 		}
-		stored, _, err := store.InstanceSpecIn(ctx, tx)
+		stored, err := store.InstanceSpecIn(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -187,7 +187,7 @@ func (s *Server) writeSpec(
 		if reindex && !confirmReindex {
 			return errReindexRequired
 		}
-		rev, err := s.store.PutInstanceSpec(ctx, tx, sealed.spec, expected, p.User.ID)
+		rev, err := s.store.PutInstanceSpec(ctx, tx, sealed.spec, expected)
 		if errors.Is(err, store.ErrSpecConflict) {
 			return errRevisionConflict
 		}

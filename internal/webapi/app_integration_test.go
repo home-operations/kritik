@@ -312,7 +312,7 @@ func TestReachedRepositories(t *testing.T) {
 	e.collect("operator")
 	e.waitFor("the App's connection", func(f *configfile.File) bool { _, ok := f.Connection("mgr-app"); return ok })
 	// The leader would apply the new account; this suite has none.
-	if err := e.st.ApplyConfig(t.Context(), e.src.Current.Get(), "manage-test"); err != nil {
+	if err := e.st.ApplyConfig(t.Context(), e.src.Current.Get()); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 

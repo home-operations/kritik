@@ -60,9 +60,9 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 	}
 	err = st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO index_packs (runner_run_id, account_id, commit_sha, base_sha, mode, changed_paths, chunk_count)
-			SELECT id, account_id, $2, $3, $4, $5, $6 FROM runner_runs WHERE id = $1`,
-			p.RunID, p.Head, baseFor(mode, p.Base), mode, changed, len(chunks)); err != nil {
+			INSERT INTO index_packs (runner_run_id, account_id, base_sha, mode, changed_paths, chunk_count)
+			SELECT id, account_id, $2, $3, $4, $5 FROM runner_runs WHERE id = $1`,
+			p.RunID, baseFor(mode, p.Base), mode, changed, len(chunks)); err != nil {
 			return fmt.Errorf("runner: write index pack: %w", err)
 		}
 		for start := 0; start < len(chunks); start += stagingBatch {

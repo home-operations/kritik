@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -18,13 +17,6 @@ var ErrSpecConflict = errors.New("store: the instance spec was changed by anothe
 
 // ErrNotFound is a lookup for a row that does not exist.
 var ErrNotFound = errors.New("store: not found")
-
-// InstanceSpecMeta is who last wrote the instance spec and when. The user
-// id is "" once the user is deleted, and for a spec never written.
-type InstanceSpecMeta struct {
-	UpdatedBy string
-	UpdatedAt time.Time
-}
 
 // instanceConfigExists reports whether instance_config exists: on a
 // database the leader has not yet migrated there is no spec rather than an
@@ -43,13 +35,12 @@ func (s *Store) InstanceSpec(ctx context.Context) (configfile.InstanceSpec, erro
 	if ok, err := s.instanceConfigExists(ctx); err != nil || !ok {
 		return configfile.InstanceSpec{}, err
 	}
-	spec, _, err := readInstanceSpec(ctx, s.app)
-	return spec, err
+	return readInstanceSpec(ctx, s.app)
 }
 
-// InstanceSpecIn returns the stored instance spec as tx sees it, with who
-// wrote it: under LockInstanceSpec, the latest committed write.
-func InstanceSpecIn(ctx context.Context, tx pgx.Tx) (configfile.InstanceSpec, InstanceSpecMeta, error) {
+// InstanceSpecIn returns the stored instance spec as tx sees it: under
+// LockInstanceSpec, the latest committed write.
+func InstanceSpecIn(ctx context.Context, tx pgx.Tx) (configfile.InstanceSpec, error) {
 	return readInstanceSpec(ctx, tx)
 }
 
@@ -57,24 +48,16 @@ func readInstanceSpec(
 	ctx context.Context, q interface {
 		QueryRow(context.Context, string, ...any) pgx.Row
 	},
-) (configfile.InstanceSpec, InstanceSpecMeta, error) {
-	var (
-		spec      configfile.InstanceSpec
-		meta      InstanceSpecMeta
-		updatedBy *string
-	)
-	err := q.QueryRow(ctx, `SELECT spec, revision, updated_by, updated_at FROM instance_config WHERE id = 1`).
-		Scan(&spec.Spec, &spec.Revision, &updatedBy, &meta.UpdatedAt)
+) (configfile.InstanceSpec, error) {
+	var spec configfile.InstanceSpec
+	err := q.QueryRow(ctx, `SELECT spec, revision FROM instance_config WHERE id = 1`).Scan(&spec.Spec, &spec.Revision)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return configfile.InstanceSpec{}, InstanceSpecMeta{}, nil
+		return configfile.InstanceSpec{}, nil
 	}
 	if err != nil {
-		return spec, meta, fmt.Errorf("store: read instance spec: %w", err)
+		return spec, fmt.Errorf("store: read instance spec: %w", err)
 	}
-	if updatedBy != nil {
-		meta.UpdatedBy = *updatedBy
-	}
-	return spec, meta, nil
+	return spec, nil
 }
 
 // LockInstanceSpec serialises, until tx ends, every instance spec write, so
@@ -104,9 +87,8 @@ func (s *Store) InstanceSpecFingerprint(ctx context.Context) (string, error) {
 
 // PutInstanceSpec writes the instance spec in tx while the stored one is
 // still at expectedRevision, 0 for none stored, and returns the new
-// revision; a mismatch is ErrSpecConflict. user is the writer's user id, ""
-// for none.
-func (s *Store) PutInstanceSpec(ctx context.Context, tx pgx.Tx, spec json.RawMessage, expectedRevision int64, user string) (int64, error) {
+// revision; a mismatch is ErrSpecConflict.
+func (s *Store) PutInstanceSpec(ctx context.Context, tx pgx.Tx, spec json.RawMessage, expectedRevision int64) (int64, error) {
 	if expectedRevision < 0 {
 		return 0, fmt.Errorf("store: instance spec: expected revision %d is negative", expectedRevision)
 	}
@@ -115,12 +97,12 @@ func (s *Store) PutInstanceSpec(ctx context.Context, tx pgx.Tx, spec json.RawMes
 		err error
 	)
 	if expectedRevision == 0 {
-		err = tx.QueryRow(ctx, `INSERT INTO instance_config (id, spec, revision, updated_by) VALUES (1, $1, 1, nullif($2, '')::uuid)
-			ON CONFLICT (id) DO NOTHING RETURNING revision`, spec, user).Scan(&rev)
+		err = tx.QueryRow(ctx, `INSERT INTO instance_config (id, spec, revision) VALUES (1, $1, 1)
+			ON CONFLICT (id) DO NOTHING RETURNING revision`, spec).Scan(&rev)
 	} else {
 		err = tx.QueryRow(ctx, `UPDATE instance_config
-			SET spec = $1, revision = revision + 1, updated_by = nullif($3, '')::uuid, updated_at = now()
-			WHERE id = 1 AND revision = $2 RETURNING revision`, spec, expectedRevision, user).Scan(&rev)
+			SET spec = $1, revision = revision + 1, updated_at = now()
+			WHERE id = 1 AND revision = $2 RETURNING revision`, spec, expectedRevision).Scan(&rev)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, fmt.Errorf("store: instance spec: %w", ErrSpecConflict)

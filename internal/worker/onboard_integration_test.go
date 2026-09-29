@@ -41,7 +41,7 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.ApplyConfig(ctx, file, "test"); err != nil {
+	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
 	// The suites share one database: count from what is already there,

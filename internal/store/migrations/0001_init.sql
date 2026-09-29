@@ -10,9 +10,9 @@
 -- policies without BYPASSRLS. Every request and job runs as the application
 -- role, which owns nothing; a runner runs as the runner role.
 --
--- index_chunks, the vector table, is not here: its column dimension is
--- deployment configuration, so the leader creates it at startup (see
--- EnsureIndexSchema).
+-- index_chunks, the vector table, is not here: its column dimension is the
+-- configured embedder's, so the leader creates it once one is configured
+-- (see EnsureIndexSchema).
 
 -- An account is a forge account, github/<name> (ADR-0014 §2.4). Its id
 -- derives from the forge and the lowercased name, so every role can address
@@ -60,7 +60,6 @@ CREATE TABLE repositories (
     updated_at      timestamptz NOT NULL DEFAULT now(),
     UNIQUE (account_id, name)
 );
-CREATE INDEX repositories_account_id_idx ON repositories (account_id);
 -- The repository list, and a repository looked up by its full name.
 CREATE INDEX repositories_account_name_idx ON repositories (account_id, name, id);
 
@@ -76,10 +75,8 @@ CREATE TABLE model_leases (
 -- One row. Not account-scoped: written by the leader, read by every replica
 -- to report configuration drift.
 CREATE TABLE config_state (
-    id           int         PRIMARY KEY CHECK (id = 1),
-    applied_hash text        NOT NULL,
-    applied_at   timestamptz NOT NULL DEFAULT now(),
-    leader       text        NOT NULL
+    id           int  PRIMARY KEY CHECK (id = 1),
+    applied_hash text NOT NULL
 );
 
 -- body, labels ([{name, color}]) and merged feed the .kritik.yaml filter's
@@ -99,7 +96,6 @@ CREATE TABLE pull_requests (
     head_ref      text        NOT NULL DEFAULT '',
     head_sha      text        NOT NULL,
     base_ref      text        NOT NULL DEFAULT '',
-    base_sha      text        NOT NULL DEFAULT '',
     url           text        NOT NULL DEFAULT '',
     opened_at     timestamptz,
     updated_at    timestamptz NOT NULL DEFAULT now(),
@@ -108,7 +104,6 @@ CREATE TABLE pull_requests (
     merged        boolean     NOT NULL DEFAULT false,
     UNIQUE (repository_id, number)
 );
-CREATE INDEX pull_requests_account_id_idx ON pull_requests (account_id);
 CREATE INDEX pull_requests_account_updated_idx ON pull_requests (account_id, updated_at DESC, id DESC);
 
 -- users, identities, sessions and login_states are all looked up before any
@@ -122,8 +117,7 @@ CREATE TABLE users (
     email          text        NOT NULL DEFAULT '',
     email_verified boolean     NOT NULL DEFAULT false,
     avatar_url     text        NOT NULL DEFAULT '',
-    created_at     timestamptz NOT NULL DEFAULT now(),
-    last_seen_at   timestamptz
+    created_at     timestamptz NOT NULL DEFAULT now()
 );
 
 -- A review is one pass over one head of one pull request: a single
@@ -134,8 +128,8 @@ CREATE TABLE users (
 -- pull request's diff as its forge reports it, so a rebase that changed
 -- nothing is skipped before a runner is made for it; it is compared only
 -- with other forge patch ids, since the forge's diff is not the runner's
--- byte for byte. The dashboard can cancel a running review and records who
--- did and when.
+-- byte for byte. The dashboard can cancel a running review and records
+-- when; the audit log records who.
 CREATE TABLE reviews (
     id                  uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     account_id          uuid        NOT NULL REFERENCES accounts (id),
@@ -158,8 +152,7 @@ CREATE TABLE reviews (
     skip_reason         text        NOT NULL DEFAULT '' CHECK (skip_reason IN ('', 'disabled', 'filtered', 'only_skipped_paths')),
     forge_patch_id      text        NOT NULL DEFAULT '',
     river_job_id        bigint,
-    cancel_requested_at timestamptz,
-    canceled_by         uuid        REFERENCES users (id) ON DELETE SET NULL
+    cancel_requested_at timestamptz
 );
 CREATE INDEX reviews_account_id_idx ON reviews (account_id);
 CREATE INDEX reviews_pull_request_idx ON reviews (pull_request_id, created_at DESC);
@@ -295,7 +288,6 @@ CREATE TABLE index_runs (
     created_at    timestamptz NOT NULL DEFAULT now(),
     finished_at   timestamptz
 );
-CREATE INDEX index_runs_account_id_idx ON index_runs (account_id);
 CREATE INDEX index_runs_repository_idx ON index_runs (repository_id, created_at DESC);
 CREATE INDEX index_runs_account_created_idx ON index_runs (account_id, created_at DESC, id DESC);
 
@@ -305,7 +297,6 @@ ALTER TABLE runner_runs  ADD COLUMN index_run_id uuid REFERENCES index_runs (id)
 CREATE TABLE index_packs (
     runner_run_id uuid        PRIMARY KEY REFERENCES runner_runs (id),
     account_id    uuid        NOT NULL REFERENCES accounts (id),
-    commit_sha    text        NOT NULL,
     base_sha      text        NOT NULL DEFAULT '',
     mode          text        NOT NULL CHECK (mode IN ('full', 'incremental')),
     changed_paths text[]      NOT NULL DEFAULT '{}',
@@ -358,7 +349,6 @@ CREATE TABLE followups (
     created_at       timestamptz NOT NULL DEFAULT now(),
     UNIQUE (pull_request_id, comment_id)
 );
-CREATE INDEX followups_account_id_idx ON followups (account_id);
 CREATE INDEX followups_pr_created_idx ON followups (pull_request_id, created_at DESC);
 CREATE INDEX followups_account_created_idx ON followups (account_id, created_at DESC, id DESC);
 -- A follow-up looked up by the comment it answered.
@@ -432,7 +422,6 @@ CREATE TABLE identities (
     subject    text        NOT NULL,
     user_id    uuid        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     login      text        NOT NULL DEFAULT '',
-    email      text        NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (provider, origin, subject)
 );
@@ -456,8 +445,7 @@ CREATE TABLE sessions (
     accounts        text[]      NOT NULL,
     grant_key       text        NOT NULL,
     created_at      timestamptz NOT NULL DEFAULT now(),
-    expires_at      timestamptz NOT NULL,
-    last_seen_at    timestamptz
+    expires_at      timestamptz NOT NULL
 );
 CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
 CREATE INDEX sessions_user_id_idx ON sessions (user_id);
@@ -509,7 +497,7 @@ CREATE TABLE audit_events (
     target     text        NOT NULL DEFAULT '',
     detail     jsonb       NOT NULL DEFAULT '{}'::jsonb
 );
-CREATE INDEX audit_events_account_at_idx ON audit_events (account_id, at DESC);
+CREATE INDEX audit_events_account_id_idx ON audit_events (account_id, id DESC);
 
 -- One row: the instance spec the dashboard edits (ADR-0014 §2.2), every
 -- setting but sign-in and the file's connections, with its secrets sealed.
@@ -519,7 +507,6 @@ CREATE TABLE instance_config (
     id         int         PRIMARY KEY CHECK (id = 1),
     spec       jsonb       NOT NULL,
     revision   bigint      NOT NULL,
-    updated_by uuid        REFERENCES users (id) ON DELETE SET NULL,
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 

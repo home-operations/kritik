@@ -111,7 +111,7 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	t.Cleanup(owner.Close)
 	t.Setenv("KRITIK_TEST_TOKEN", "tok")
 	file := configfiletest.Load(t, integrationConfig)
-	if err := st.ApplyConfig(ctx, file, "webapi-test"); err != nil {
+	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	cur := configfile.NewCurrent(file)
@@ -244,7 +244,7 @@ func (e *apiEnv) signIn(name, subject string, g store.SessionGrant) {
 	ctx, now, origin := context.Background(), time.Now(), "oidc:https://idp.example"
 	user, err := e.st.UpsertIdentity(ctx, store.SignInIdentity{
 		Provider: "oidc", Origin: origin, Subject: subject, DisplayName: name,
-	}, now)
+	})
 	if err != nil {
 		e.t.Fatal(err)
 	}

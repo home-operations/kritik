@@ -110,7 +110,7 @@ func newAuthEnv(t *testing.T) *authEnv {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if err := st.ApplyConfig(ctx, e.file, "auth-test"); err != nil {
+	if err := st.ApplyConfig(ctx, e.file); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	for i := range e.file.Accounts {
@@ -455,31 +455,11 @@ func TestLocalAdminSignIn(t *testing.T) {
 
 func TestSessionLifecycle(t *testing.T) {
 	e := newAuthEnv(t)
-	ctx := context.Background()
 	user := &fakeUser{ID: 4001, Login: "erin-" + randomHex(t), Email: "erin@gh.example", Orgs: map[string]string{"acme": "member"}}
 	cookie := e.mustSignIn("github", e.gh, user)
 	p := e.principal(cookie)
 	if p == nil {
 		t.Fatal("no principal for a fresh session")
-	}
-	lastSeen := func() time.Time {
-		t.Helper()
-		var ts time.Time
-		if err := e.st.App().QueryRow(ctx, `SELECT last_seen_at FROM sessions WHERE user_id = $1`, p.User.ID).Scan(&ts); err != nil {
-			t.Fatalf("last_seen_at: %v", err)
-		}
-		return ts
-	}
-	first := lastSeen()
-	e.now = e.now.Add(30 * time.Second)
-	e.principal(cookie)
-	if !lastSeen().Equal(first) {
-		t.Fatal("last_seen_at written within a minute of the last write")
-	}
-	e.now = e.now.Add(time.Minute)
-	e.principal(cookie)
-	if !lastSeen().After(first) {
-		t.Fatal("last_seen_at not refreshed after a minute")
 	}
 
 	t.Run("a sign-in removed from the file ends its sessions", func(t *testing.T) {
