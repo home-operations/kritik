@@ -151,7 +151,11 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		Secrets:  runner.Secrets{GitToken: token},
 		Deadline: deadline, Resources: resources,
 	})
-	if err := recordRun(ctx, w.Store, w.Metrics, account.Key(), args.AccountID, runnerRunID, jobs.QueueIndex, res); err != nil {
+	// The run's record and a failed run's end must land even once River's
+	// timeout has ended ctx, the likeliest reason the run failed.
+	dctx, cancel := detach(ctx)
+	defer cancel()
+	if err := recordRun(dctx, w.Store, w.Metrics, account.Key(), args.AccountID, runnerRunID, jobs.QueueIndex, res); err != nil {
 		return err
 	}
 	if res.Err != nil {
@@ -163,14 +167,15 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		w.Metrics.IndexRun(account.Key(), mode, "failed", 0)
 		// An error, so River tries again: most runner failures (a fetch
 		// timeout, a node going away) do not repeat.
-		return errors.Join(fmt.Errorf("worker: index runner failed: %s", reason), w.finish(ctx, args.AccountID, runID, "failed", 0, reason))
+		return errors.Join(fmt.Errorf("worker: index runner failed: %s", reason), w.finish(dctx, args.AccountID, runID, "failed", 0, reason))
 	}
 	n, mode, err := w.embed(ctx, args, account, embedder, emb.Model, commit, runID, runnerRunID, active, settings, job.ID)
 	if err != nil {
 		logger.Error("index embedding failed", "error", err)
 		w.Metrics.IndexRun(account.Key(), mode, "failed", 0)
-		_ = w.finish(ctx, args.AccountID, runID, "failed", 0, err.Error())
-		return err
+		fctx, fcancel := detach(ctx)
+		defer fcancel()
+		return errors.Join(err, w.finish(fctx, args.AccountID, runID, "failed", 0, err.Error()))
 	}
 	logger.Info("index completed", "mode", mode, "chunks", n)
 	w.Metrics.IndexRun(account.Key(), mode, "completed", n)

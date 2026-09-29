@@ -2289,3 +2289,68 @@ func checkEnqueueReindexSentinels(
 		}
 	})
 }
+
+// TestRetriedJobEndsItsEarlierReview: an attempt of a review job ends the
+// review an earlier attempt of the same job left running, and no other.
+func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	st, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"), Logger: logger})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(st.Close)
+	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "test-provider-key")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file, "test"); err != nil {
+		t.Fatal(err)
+	}
+	insertOnly, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _ := file.Connection("bot-ross")
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	out, err := ingest.NewService(st, insertOnly).Dispatch(ctx, ingest.Request{File: file, Account: account, Connection: in, Event: webhook.Event{
+		Kind: webhook.KindPullRequest, Action: "opened", Account: "onedr0p",
+		Repository:  &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
+		PullRequest: &webhook.PullRequest{Number: 4242, Title: "t", Author: "a", State: "open", HeadRef: "f", HeadSHA: "abc4242", BaseRef: "main"},
+	}})
+	if err != nil || out.Status != ingest.Enqueued {
+		t.Fatalf("dispatch = %+v, %v", out, err)
+	}
+	repoID := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
+	pr, err := loadPullRequest(ctx, st, account.ID(), repoID, 4242)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &Review{Store: st, Current: configfile.NewCurrent(file), Logger: logger}
+	args := jobs.ReviewArgs{AccountID: account.ID(), RepositoryID: repoID, Number: 4242, HeadSHA: "abc4242"}
+	attempt := func(jobID int64) string {
+		t.Helper()
+		id, _, _, err := w.start(ctx, args, pr, "base", "", configfile.ReviewSingle, jobID)
+		if err != nil {
+			t.Fatalf("start(%d): %v", jobID, err)
+		}
+		return id
+	}
+	status := func(id string) string {
+		t.Helper()
+		var s string
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT status FROM reviews WHERE id = $1`, id).Scan(&s)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	first, other := attempt(7001), attempt(7002)
+	retry := attempt(7001)
+	if got := []string{status(first), status(other), status(retry)}; got[0] != "failed" || got[1] != "running" || got[2] != "running" {
+		t.Fatalf("statuses = %v, want the first attempt failed and the others running", got)
+	}
+}

@@ -154,9 +154,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	// on so a cancel that arrives during afterRun/publish (review status
 	// "prepared") still takes effect there, and a hung model call in publish
 	// still respects River's job timeout. cctx is a detached copy for the
-	// terminal writes below, which must still land once ctx itself has ended.
+	// terminal writes up to afterRun, which must still land once ctx itself
+	// has ended.
 	canceled := errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely)
-	cctx := context.WithoutCancel(ctx)
+	cctx, cancel := detach(ctx)
+	defer cancel()
 	ended.jobName = res.JobName
 	if err := recordRun(cctx, w.Store, w.Metrics, account.Key(), args.AccountID, runID, jobs.QueueReview, res); err != nil {
 		if !canceled {
@@ -231,7 +233,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	logger.Info("review " + status)
 	w.Metrics.Review(account.Key(), status, time.Since(started))
-	return w.finishReview(cctx, args.AccountID, reviewID, status, patchID, errText(perr))
+	fctx, fcancel := detach(ctx)
+	defer fcancel()
+	return w.finishReview(fctx, args.AccountID, reviewID, status, patchID, errText(perr))
 }
 
 // prepared is what afterRun hands the model phase: the patch id, the
@@ -587,6 +591,13 @@ func (w *Review) start(
 		var err error
 		if prior, err = lastCompleted(ctx, tx, pr.id); err != nil {
 			return err
+		}
+		// An earlier attempt of this job that never finished its review (a
+		// write that failed and was retried, a worker that died) left it
+		// running, and a running review blocks every re-run of its head.
+		if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = 'its job was retried', finished_at = now()
+			WHERE pull_request_id = $1 AND river_job_id = $2 AND finished_at IS NULL`, pr.id, jobID); err != nil {
+			return fmt.Errorf("worker: end an earlier attempt's review: %w", err)
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO reviews
 			(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, trigger, mode, river_job_id)

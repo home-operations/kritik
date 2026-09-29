@@ -216,7 +216,8 @@ func (g *Gateway) monthCapped(ctx context.Context, file *configfile.File, accoun
 func (g *Gateway) charge(
 	ctx context.Context, grant store.GatewayGrant, token string, reserved int64, resp model.StepResponse, answered bool,
 ) error {
-	ctx = context.WithoutCancel(ctx)
+	ctx, cancel := detach(ctx)
+	defer cancel()
 	if !answered {
 		return g.Store.ChargeGatewayToken(ctx, token, -reserved)
 	}

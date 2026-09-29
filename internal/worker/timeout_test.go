@@ -51,6 +51,10 @@ accounts:
         mode: agentic
         agent:
           timeout: 50m
+      - name: may-go-agentic
+        allow:
+          modes: [single, agentic]
+          agent: { timeout: 40m }
   - forge: github
     name: globex
     runner:
@@ -85,6 +89,10 @@ func TestJobTimeouts(t *testing.T) {
 		{name: "agentic mode", accountID: acme.ID(), repositoryID: acmeRepo("acme/agentic"), review: 55 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 		{name: "agentic with a longer agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/slow-agent"),
 			review: 85 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
+		// Single mode, but its .kritik.yaml may choose agentic with an agent
+		// timeout of up to 40m: 40m + 5m of fetch headroom, then the rest.
+		{name: "single mode that may choose agentic", accountID: acme.ID(), repositoryID: acmeRepo("acme/may-go-agentic"),
+			review: 75 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 		// The account's runner deadline is configfile's max allowed value; index lands exactly on MaxJobTimeout.
 		{name: "account runner deadline at the max", accountID: globex.ID(), repositoryID: globexRepo,
 			review: jobtimeout.MaxRunnerDeadline + jobtimeout.LeaseWaitHeadroom + jobtimeout.PublishHeadroom,
