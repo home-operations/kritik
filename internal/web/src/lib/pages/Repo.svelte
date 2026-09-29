@@ -67,6 +67,7 @@
     { label: 'Context files', key: 'review.context', value: (s) => list(s.review.context.map((c) => c.path)), mono: true },
     { label: 'Require suggested fix', key: 'review.requireSuggestedFix', value: (s) => yes(s.review.requireSuggestedFix) },
     { label: 'Inline comments', key: 'review.inlineComments', value: (s) => yes(s.review.inlineComments) },
+    { label: 'Thoroughness', key: 'review.thoroughness', value: (s) => s.review.thoroughness },
     { label: 'Inline severity floor', key: 'review.minSeverity', value: (s) => s.review.minSeverity || 'every finding' },
     { label: 'Concurrency', key: 'limits', value: (s) => unlimited(s.limits.concurrency) },
     { label: 'Reviews / day', key: 'limits', value: (s) => unlimited(s.limits.reviewsPerDay) },

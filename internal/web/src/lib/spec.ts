@@ -3,7 +3,7 @@
 // a form edits plus `rest`, every key it does not know, carried through
 // unchanged so a save never drops a setting the form has no control for.
 // Pure, so a form's request body follows from the draft alone.
-import type { Forge, ReviewMode, SecretInput } from './types';
+import type { Forge, ReviewMode, SecretInput, Thoroughness } from './types';
 
 type Obj = Record<string, unknown>;
 
@@ -74,6 +74,7 @@ export interface RepositoryDraft {
   // One per line.
   instructions: string;
   requireSuggestedFix: boolean;
+  thoroughness: Thoroughness | '';
   reviewRest: Obj;
   rest: Obj;
 }
@@ -85,6 +86,8 @@ export interface AccountDraft {
   reviewModel: string;
   fallbackModel: string;
   modelsRest: Obj;
+  thoroughness: Thoroughness | '';
+  reviewRest: Obj;
   filter: string;
   forks: TriBool;
   // enabled is where the account's repositories without an entry of their
@@ -274,7 +277,8 @@ function repositoryOf(v: unknown): RepositoryDraft {
     incrementalRest: take(inc, 'maxDeltaFiles'),
     instructions: lines(review.instructions),
     requireSuggestedFix: review.requireSuggestedFix === true,
-    reviewRest: take(review, 'instructions', 'requireSuggestedFix'),
+    thoroughness: str(review.thoroughness) as Thoroughness | '',
+    reviewRest: take(review, 'instructions', 'requireSuggestedFix', 'thoroughness'),
     rest: take(o, 'name', 'enabled', 'filter', 'ignore', 'settle', 'mode', 'agent', 'incremental', 'review'),
   };
 }
@@ -282,6 +286,7 @@ function repositoryOf(v: unknown): RepositoryDraft {
 export function draftOf(spec: Obj): AccountDraft {
   const o = obj(spec);
   const models = obj(o.models);
+  const review = obj(o.review);
   const limits = obj(o.limits);
   return {
     forge: (str(o.forge) || 'github') as Forge,
@@ -289,6 +294,8 @@ export function draftOf(spec: Obj): AccountDraft {
     reviewModel: str(models.review),
     fallbackModel: str(models.fallback),
     modelsRest: take(models, 'review', 'fallback'),
+    thoroughness: str(review.thoroughness) as Thoroughness | '',
+    reviewRest: take(review, 'thoroughness'),
     filter: str(o.filter),
     forks: tri(o.forks),
     enabled: tri(o.enabled),
@@ -300,7 +307,7 @@ export function draftOf(spec: Obj): AccountDraft {
     runner: json(o.runner),
     providers: Object.entries(obj(o.providers)).map(([name, v]) => providerOf(name, v)),
     repositories: Array.isArray(o.repositories) ? o.repositories.map(repositoryOf) : [],
-    rest: take(o, 'forge', 'name', 'models', 'filter', 'forks', 'enabled', 'settle', 'limits', 'runner', 'providers', 'repositories'),
+    rest: take(o, 'forge', 'name', 'models', 'review', 'filter', 'forks', 'enabled', 'settle', 'limits', 'runner', 'providers', 'repositories'),
   };
 }
 
@@ -506,6 +513,7 @@ function repositorySpec(b: Builder, d: RepositoryDraft, i: number): Obj {
   const instructions = list(d.instructions);
   if (instructions.length) review.instructions = instructions;
   if (d.requireSuggestedFix) review.requireSuggestedFix = true;
+  if (d.thoroughness) review.thoroughness = d.thoroughness;
   if (nonEmpty(review)) out.review = review;
   return out;
 }
@@ -524,6 +532,9 @@ export function buildSpec(d: AccountDraft, redact = false): Built {
   set(models, 'review', d.reviewModel);
   set(models, 'fallback', d.fallbackModel);
   if (nonEmpty(models)) out.models = models;
+  const review: Obj = { ...d.reviewRest };
+  if (d.thoroughness) review.thoroughness = d.thoroughness;
+  if (nonEmpty(review)) out.review = review;
   set(out, 'filter', d.filter);
   if (d.forks !== '') out.forks = d.forks === 'true';
   if (d.enabled !== '') out.enabled = d.enabled === 'true';

@@ -187,7 +187,12 @@ export interface ReviewBlock {
   minSeverity: '' | 'nit' | 'important';
   inlineComments: boolean;
   context: ContextFile[];
+  thoroughness: Thoroughness;
 }
+
+// What a review reports: anything a maintainer could act on, or only what
+// would stop the review.
+export type Thoroughness = 'thorough' | 'focused';
 
 // What a repository's .kritik.yaml may choose; a null bound leaves it the
 // admin's own value, or a limit or settle time at or below it.

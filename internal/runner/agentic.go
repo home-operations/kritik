@@ -53,7 +53,7 @@ const SkipUnchangedPatch = "unchanged_patch"
 // the contract requires a suggested fix.
 func agentPrompt(p Spec, files repoconfig.Files, pack packView, commands []string) (system, user string, strict bool) {
 	instructions, _ := repoconfig.Instructions(files, repoconfig.Active(p.Prompt.Instructions, p.Prompt.InstructionScopes, pack.Changed))
-	system = review.AgenticSystemPrompt(instructions, commands)
+	system = review.AgenticSystemPrompt(instructions, commands, p.Prompt.Focused)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior}

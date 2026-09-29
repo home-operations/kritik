@@ -156,8 +156,8 @@ func (w *Review) agentPrompt(
 ) (*runner.Prompt, error) {
 	p := &runner.Prompt{
 		Repository: pr.repository, Instructions: eff.Review.Instructions, InstructionScopes: eff.Scoped, Context: eff.Review.Context,
-		RequireSuggestedFix: eff.Review.RequireSuggestedFix,
-		SkipPaths:           eff.Skip.OnlyPaths, MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
+		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Focused: eff.Review.Thoroughness == configfile.ThoroughnessFocused,
+		SkipPaths: eff.Skip.OnlyPaths, MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
 	}
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error

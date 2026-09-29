@@ -54,6 +54,7 @@
     ['Fallback model', '[data-path="models.fallback"]', 'models.fallback'],
     ['Filter', '[data-path="filter"]', 'cel'],
     ['Forks', '[data-path="forks"]', ''],
+    ['Thoroughness', '[data-path="review.thoroughness"]', 'review focused thorough nits line comments'],
     ['Settle', '[data-path="settle"]', 'delay'],
     ['Concurrency', '[data-path="limits.concurrency"]', 'limits'],
     ['Reviews per day', '[data-path="limits.reviewsPerDay"]', 'limits'],

@@ -303,6 +303,7 @@ func repoSettings(s configfile.Settings) RepoSettings {
 		Review: ReviewBlock{
 			Instructions: nonNil(s.Review.Instructions), RequireSuggestedFix: s.Review.RequireSuggestedFix, Templates: s.Review.Templates,
 			MinSeverity: s.Review.MinSeverity, InlineComments: s.Review.InlineComments, Context: nonNil(s.Review.Context),
+			Thoroughness: s.Review.Thoroughness,
 		},
 		Agent: AgentLimits{
 			MaxSteps: s.Agent.MaxSteps, MaxToolOutputBytes: s.Agent.MaxToolOutputBytes, MaxTokens: s.Agent.MaxTokens,

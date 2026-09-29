@@ -458,7 +458,8 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 }
 
 // validateReview checks the review block one scope writes: its paths stay
-// inside the repository and its severity floor is one of the two.
+// inside the repository, and its severity floor and thoroughness are each
+// one of the two.
 func validateReview(where string, r *ReviewSpec) error {
 	for i, p := range r.Instructions {
 		if err := checkRepoPath(p); err != nil {
@@ -467,6 +468,9 @@ func validateReview(where string, r *ReviewSpec) error {
 	}
 	if m := r.MinSeverity; m != nil && !ValidMinSeverity(*m) {
 		return fmt.Errorf("configfile: %s.minSeverity must be %s or %s, got %q", where, SeverityNit, SeverityImportant, *m)
+	}
+	if th := r.Thoroughness; th != nil && !ValidThoroughness(*th) {
+		return fmt.Errorf("configfile: %s.thoroughness must be %s or %s, got %q", where, ThoroughnessThorough, ThoroughnessFocused, *th)
 	}
 	for i, c := range r.Context {
 		if err := c.Check(); err != nil {
@@ -507,6 +511,9 @@ func (c ContextFile) Check() error {
 // ValidMinSeverity reports whether s is an inline severity floor; empty is
 // none.
 func ValidMinSeverity(s string) bool { return s == "" || s == SeverityNit || s == SeverityImportant }
+
+// ValidThoroughness reports whether s is a review thoroughness.
+func ValidThoroughness(s string) bool { return s == ThoroughnessThorough || s == ThoroughnessFocused }
 
 // checkRepoPath rejects a repository path that is empty, absolute or
 // escapes the repository root.

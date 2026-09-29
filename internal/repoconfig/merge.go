@@ -94,6 +94,13 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if f.Review.InlineComments != nil {
 		m.Review.InlineComments = *f.Review.InlineComments
 	}
+	switch {
+	case f.Review.Thoroughness == "":
+	case configfile.ValidThoroughness(f.Review.Thoroughness):
+		m.Review.Thoroughness = f.Review.Thoroughness
+	default:
+		m.drop("review.thoroughness", strconv.Quote(f.Review.Thoroughness), configfile.ThoroughnessThorough+", "+configfile.ThoroughnessFocused)
+	}
 	for _, c := range f.Review.Context {
 		if !slices.ContainsFunc(m.Review.Context, func(o configfile.ContextFile) bool { return o.Path == c.Path }) {
 			m.Review.Context = append(m.Review.Context, c)
