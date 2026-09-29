@@ -57,7 +57,7 @@ test.describe('account configuration', () => {
     const seen = await setup(page, adminMe, [accountRow(() => (reads++ === 0 ? accountConfig : { ...accountConfig, revision: 4 }))]);
     const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }]]);
     await page.goto(`/${ADMIN}/config`);
-    await expect(page.getByRole('group', { name: `Account ${S}` })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Reviews' })).toContainText(`How kritik reviews ${S}'s pull requests`);
     await page.locator('[data-path="limits.concurrency"]').fill('3');
     await page.getByRole('button', { name: 'Save' }).click();
 
@@ -79,16 +79,50 @@ test.describe('account configuration', () => {
     await setup(page, adminMe, [accountRow(accountConfig)]);
     const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }]]);
     await page.goto(`/${ADMIN}/config`);
-    const account = page.locator('[data-path="review.thoroughness"]');
+    const account = page.getByRole('radiogroup', { name: 'Thoroughness' });
     const repo = page.locator('[data-path="repositories[0].review.thoroughness"]');
-    await expect(account.locator('option[value=""]')).toHaveText(`default: ${g.accountConfig.inherited.account.review.thoroughness}`);
-    await account.selectOption('focused');
+    await expect(account.getByRole('radio', { checked: true })).toHaveText(`Default (${g.accountConfig.inherited.account.review.thoroughness})`);
+    const row = page.locator('.setting-row').filter({ has: account });
+    await expect(row.locator('.setting-note')).toHaveText('Comments on anything a maintainer could act on, nits and questions included.');
+    await account.getByRole('radio', { name: 'Focused' }).click();
+    await expect(row.locator('.setting-note')).toHaveText('Comments only on what would stop the review.');
     await repo.selectOption('thorough');
     await page.getByRole('button', { name: 'Save' }).click();
     await expect.poll(() => sent.length).toBe(1);
     const body = sent[0]!.body as T.UpdateConfigRequest;
     expect(body.spec.review).toEqual({ thoroughness: 'focused' });
     expect((body.spec.repositories as Record<string, unknown>[])[0]!.review).toEqual({ thoroughness: 'thorough' });
+  });
+
+  test('unsaved changes show in the save bar, and Discard puts the form back', async ({ page }) => {
+    await setup(page, adminMe, [accountRow(accountConfig)]);
+    await page.goto(`/${ADMIN}/config`);
+    const bar = page.locator('.savebar');
+    await expect(bar).not.toContainText('Unsaved changes');
+    await page.getByRole('radiogroup', { name: 'Forks' }).getByRole('radio', { name: 'Review' }).click();
+    await page.locator('[data-path="settle"]').fill('1m');
+    await expect(bar).toContainText('Unsaved changes');
+    await bar.getByRole('button', { name: 'Discard' }).click();
+    await expect(bar).not.toContainText('Unsaved changes');
+    await expect(page.locator('[data-path="settle"]')).toHaveValue('');
+    await expect(page.getByRole('radiogroup', { name: 'Forks' }).getByRole('radio', { checked: true })).toHaveText(/^Default/);
+  });
+
+  test("the settings navigation lists the page's sections and finds a setting by name", async ({ page }) => {
+    await setup(page, adminMe, [accountRow(accountConfig)]);
+    await page.goto(`/${ADMIN}/config`);
+    const nav = page.getByRole('navigation', { name: 'Settings' });
+    await expect(nav.getByRole('list', { name: 'Configuration sections' }).getByRole('link')).toHaveText(['Reviews', 'Limits', 'Provider keys', 'Repositories']);
+    await nav.getByRole('link', { name: 'Limits' }).click();
+    await expect(page.locator('#account-limits')).toBeFocused();
+
+    await nav.getByRole('searchbox', { name: 'Search settings' }).fill('thorough');
+    await expect(nav.locator('.subnav-hit')).toHaveCount(1);
+    await nav.locator('.subnav-hit').click();
+    await expect(page.getByRole('radiogroup', { name: 'Thoroughness' }).getByRole('radio', { checked: true })).toBeFocused();
+    await nav.getByRole('searchbox', { name: 'Search settings' }).fill('embedder');
+    await nav.locator('.subnav-hit').click();
+    await expect(page).toHaveURL(/#\/admin$/);
   });
 
   test('a configuration the caller cannot change renders read-only with secrets as set/not set', async ({ page }) => {

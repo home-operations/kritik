@@ -80,7 +80,9 @@
     if (!path || !formEl) return;
     for (const el of formEl.querySelectorAll<HTMLElement>('[data-path]')) {
       if (!pathMatches(el.dataset.path ?? '', path)) continue;
-      const target = el.matches('input, select, textarea') ? el : el.querySelector<HTMLElement>('input, select, textarea');
+      const target = el.matches('input, select, textarea')
+        ? el
+        : el.querySelector<HTMLElement>('input, select, textarea, [role="radio"][aria-checked="true"]');
       target?.focus();
       target?.scrollIntoView({ block: 'center' });
       return;
@@ -128,6 +130,14 @@
     jsonText = '';
   }
 
+  // discard puts the form back to what was loaded.
+  function discard(): void {
+    draft = draftOf(initial);
+    jsonMode = false;
+    jsonText = '';
+    clientError = undefined;
+  }
+
   async function submit(e: SubmitEvent): Promise<void> {
     e.preventDefault();
     clientError = undefined;
@@ -173,8 +183,11 @@
     {/if}
   </div>
 
-  <div class="form-actions">
+  <!-- The save stays in view while the form scrolls, and says when there is something to save. -->
+  <div class="form-actions savebar" class:dirty>
+    {#if dirty}<span class="savebar-note">Unsaved changes</span>{/if}
+    <span class="spacer"></span>
+    {#if dirty}<button type="button" class="btn" disabled={saving} onclick={discard}>Discard</button>{/if}
     <button type="submit" class="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-    {#if dirty}<span class="field-hint">Unsaved changes</span>{/if}
   </div>
 </form>

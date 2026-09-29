@@ -79,9 +79,14 @@ file's.
   "Advanced: edit JSON" edits the whole document.
 - An account's Configuration page, under Settings, edits that account's
   entry alone.
-- The command palette, `Ctrl`/`⌘` `K`, finds a setting by name and jumps
-  to its field, in the admin console or an account's Configuration page. A
-  repository's page filters its effective settings.
+- The command palette, `Ctrl`/`⌘` `K`, and the search at the top of the
+  Settings navigation find a setting by name and jump to its field, in
+  the admin console or an account's Configuration page, whose sections
+  the navigation lists while it is open. A repository's page filters its
+  effective settings.
+- A setting is a row: what it does, its control, and for a choice, what
+  the current one does. Nothing is saved until Save, which stays at the
+  bottom of the view with Discard while there are unsaved changes.
 - A save names the revision it was loaded at. A save over a newer
   revision is refused with `409 revision_conflict`, and the form offers to
   reload.
