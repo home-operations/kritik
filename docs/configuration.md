@@ -206,7 +206,9 @@ dashboard's does: `baseUrl`, `apiKey`, `model`, `dims`, and the optional
 provider the file or the dashboard declares, as `<provider>/<model>`.
 `mode` is `single` or `agentic`, `review.thoroughness` is `thorough` or
 `focused` ([repository settings](repository-config.md)), `forks: true`
-reviews pull requests from forks without being asked, and `settle` delays
+reviews pull requests from forks without being asked (by default one is
+reviewed only when a maintainer comments `@<app slug> review`), and
+`settle` delays
 a review after a push so a burst of pushes is reviewed once.
 
 The same defaults can come from the environment:

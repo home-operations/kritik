@@ -88,7 +88,10 @@ Register a GitHub App under the account whose repositories kritik reviews
 
 Then generate a private key and note the App's client ID. Comments mention
 the bot as `@<app slug>`, and only someone with write access gets an
-answer. Add the App as a connection in the admin console, whose "Add
+answer. `@<app slug> review` queues a review of the pull request's head
+instead of asking a question: a pull request from a fork is not reviewed on
+its own, since its code comes from outside the organization, and this is
+how a maintainer gets it one. Add the App as a connection in the admin console, whose "Add
 connection" takes these three values and can generate the webhook secret,
 or declare it in the configuration file or the environment
 ([`connections`](configuration.md#connections)).

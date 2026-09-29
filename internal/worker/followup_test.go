@@ -64,3 +64,24 @@ func TestFollowUpThread(t *testing.T) {
 		})
 	}
 }
+
+func TestRequestsReview(t *testing.T) {
+	for _, tt := range []struct {
+		body string
+		want bool
+	}{
+		{"@kritik review", true},
+		{"Looks fine to me. @Kritik Review please", true},
+		{"@kritik review?", true},
+		{"@kritik  review\nthe auth change", true},
+		{"@kritik reviewed this already?", false},
+		{"@kritik why is b here? a review would help", false},
+		{"@kritikbot review", false},
+		{"someone@kritik review", false},
+		{"review @kritik", false},
+	} {
+		if got := requestsReview(tt.body, "kritik"); got != tt.want {
+			t.Errorf("requestsReview(%q) = %v, want %v", tt.body, got, tt.want)
+		}
+	}
+}

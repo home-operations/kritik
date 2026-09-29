@@ -118,3 +118,12 @@ func FollowUpBody(reply, model string) string {
 
 // LimitBody is posted once when a thread hits its follow-up rate limit.
 const LimitBody = "kritik has answered the limit of follow-ups for this pull request in the past hour and will pick up again later.\n"
+
+// ReviewQueuedBody is the reply to a request for a review of headSHA:
+// queued, or already queued or running.
+func ReviewQueuedBody(headSHA string, already bool) string {
+	if already {
+		return fmt.Sprintf("A review of `%s` is already queued or running.\n", shortSHA(headSHA))
+	}
+	return fmt.Sprintf("Reviewing `%s`; the summary lands on this pull request when it is done.\n", shortSHA(headSHA))
+}

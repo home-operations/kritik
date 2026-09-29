@@ -300,6 +300,9 @@ export interface Pull {
   author: string;
   state: 'open' | 'closed';
   draft: boolean;
+  // fork is whether the head is in another repository: such a pull request
+  // is reviewed when a maintainer asks.
+  fork: boolean;
   merged: boolean;
   headSha: string;
   headRef: string;

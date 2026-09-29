@@ -808,13 +808,13 @@ func checkIndexEmbedFailure(
 	}
 }
 
-// checkFollowUps posts mentions as the forge would deliver them and checks
-// qualification, the reply, the thread in the prompt, and the rate limit.
-func checkFollowUps(
-	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, fc *fakeCompleter, req ingest.Request, accountID string,
-) {
-	t.Helper()
-	mention := func(author, body string) int64 {
+// followUpHelpers post a mention on pull request 1 as the forge would
+// deliver it, wait for its follow-up's status and reason, and read the
+// last comment on the pull request.
+func followUpHelpers(
+	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, req ingest.Request, accountID string,
+) (mention func(author, body string) int64, waitFollowUp func(id int64) (string, string), lastComment func() (int, string)) {
+	mention = func(author, body string) int64 {
 		t.Helper()
 		lf.mu.Lock()
 		id := lf.addComment(author, body)
@@ -830,7 +830,7 @@ func checkFollowUps(
 		}
 		return id
 	}
-	waitFollowUp := func(id int64) (status, reason string) {
+	waitFollowUp = func(id int64) (status, reason string) {
 		t.Helper()
 		deadline := time.Now().Add(20 * time.Second)
 		for time.Now().Before(deadline) {
@@ -845,12 +845,21 @@ func checkFollowUps(
 		t.Fatalf("follow-up for comment %d never recorded", id)
 		return "", ""
 	}
-	lastComment := func() (int, string) {
+	lastComment = func() (int, string) {
 		lf.mu.Lock()
 		defer lf.mu.Unlock()
 		return len(lf.comments), lf.comments[commentBase+int64(len(lf.comments))]
 	}
+	return mention, waitFollowUp, lastComment
+}
 
+// checkFollowUps posts mentions as the forge would deliver them and checks
+// qualification, the reply, the thread in the prompt, and the rate limit.
+func checkFollowUps(
+	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, fc *fakeCompleter, req ingest.Request, accountID string,
+) {
+	t.Helper()
+	mention, waitFollowUp, lastComment := followUpHelpers(ctx, t, st, svc, lf, req, accountID)
 	id := mention("onedr0p", "@kritik why is b here?")
 	if status, reason := waitFollowUp(id); status != "answered" {
 		t.Fatalf("status = %s (%s), want answered", status, reason)
@@ -909,6 +918,62 @@ func checkFollowUps(
 	// The mention itself is one comment; no notice follows it.
 	if status != "limited" || after != before+1 {
 		t.Fatalf("second limited mention: status = %s, comments %d -> %d", status, before, after)
+	}
+}
+
+// checkReviewRequest: "@kritik review" queues a review of the head for
+// someone with write access, and replies; anyone else is ignored as for a
+// question. It runs last, as the review it queues changes pull request 1's
+// last review, and first clears the thread's follow-ups, so the hourly
+// limit earlier checks spent does not apply, and reopens the pull request.
+func checkReviewRequest(
+	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, req ingest.Request, accountID string,
+) {
+	t.Helper()
+	mention, waitFollowUp, lastComment := followUpHelpers(ctx, t, st, svc, lf, req, accountID)
+	// Earlier checks close the pull request; a closed one has no head to
+	// review, and the request is ignored as such.
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM followups`); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'open' WHERE number = 1`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manual := func() (all, unfinished int) {
+		t.Helper()
+		if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE finalized_at IS NULL) FROM river_job
+				WHERE kind = 'review' AND args->>'trigger' = 'manual' AND (args->>'number')::int = 1`).Scan(&all, &unfinished)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return all, unfinished
+	}
+	// Earlier checks' manual reviews run out first, so the request queues
+	// its own.
+	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if _, unfinished := manual(); unfinished == 0 {
+			break
+		}
+	}
+	before, _ := manual()
+
+	id := mention("outsider", "@kritik review")
+	if status, reason := waitFollowUp(id); status != "ignored" || !strings.Contains(reason, "write is required") {
+		t.Fatalf("outsider's review request: status = %s (%s)", status, reason)
+	}
+	id = mention("onedr0p", "Can you take another look? @kritik review")
+	if status, reason := waitFollowUp(id); status != "answered" || reason != "review requested" {
+		t.Fatalf("review request: status = %s (%s)", status, reason)
+	}
+	if _, body := lastComment(); !strings.Contains(body, "Reviewing `") {
+		t.Fatalf("reply to the review request = %q", body)
+	}
+	if after, _ := manual(); after != before+1 {
+		t.Fatalf("manual review jobs %d -> %d; want the request to queue one", before, after)
 	}
 }
 
@@ -1108,6 +1173,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	t.Run("worker actions: rerun, cancel and forced reindex", func(t *testing.T) {
 		checkActions(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, dir, base, head, account.ID(), repoID, lf, fc)
+	})
+
+	t.Run("a maintainer's @kritik review queues a review", func(t *testing.T) {
+		checkReviewRequest(ctx, t, appStore, svc, lf, ingest.Request{File: file, Account: account}, account.ID())
 	})
 }
 
