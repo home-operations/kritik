@@ -43,7 +43,7 @@ const GatewayDrain = 2 * time.Minute
 
 // maxStepOutput caps the answer to one step, whatever the runner asks: the
 // agent loop's own cap.
-var maxStepOutput = agent.Limits{}.WithDefaults().MaxOutputTokensPerStep
+var maxStepOutput = agent.DefaultLimits.MaxOutputTokensPerStep
 
 // ServeHTTP implements http.Handler.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
