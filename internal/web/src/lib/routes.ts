@@ -9,7 +9,7 @@
 //   #/a/<slug>                                account overview; slug is <forge>/<name>
 //   #/a/<slug>/repos                          account's repo list
 //   #/a/<slug>/repos/<owner>/<repo>           one repo
-//   #/a/<slug>/pulls                          account's pull list
+//   #/a/<slug>/pulls[?<filter>]               account's pull list; filter is a PullFilter
 //   #/a/<slug>/pulls/<owner>/<repo>/<n>       one pull request
 //   #/a/<slug>/reviews/<id>[/<tab>]           one review, optional tab
 //   #/a/<slug>/queue                          run queue
@@ -29,11 +29,38 @@
 // otherwise, including when the malformation is what prevents the slug
 // itself from being parsed (e.g. "#/a//acme").
 
+import type { ReviewStatus } from './types';
+
 export const REVIEW_TABS = ['summary', 'diff', 'conversation', 'timeline', 'raw', 'usage'] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 
 function isReviewTab(v: string | undefined): v is ReviewTab {
   return v !== undefined && (REVIEW_TABS as readonly string[]).includes(v);
+}
+
+export const PULL_OUTCOMES: readonly ReviewStatus[] = ['running', 'prepared', 'completed', 'superseded', 'skipped', 'capped', 'failed', 'canceled'];
+
+// PullFilter is the pull list's filters, carried in the hash's query so a
+// filtered list can be linked and comes back with Back. A field is present
+// only when it differs from the default: open pulls, any last review
+// outcome, every repository, no search.
+export interface PullFilter {
+  state?: 'closed' | 'all';
+  outcome?: ReviewStatus;
+  repo?: string;
+  q?: string;
+}
+
+// pullFilter drops the fields of f that are a default, so each filter has
+// one Route and one URL; undefined when nothing is left.
+export function pullFilter(f: { state?: string; outcome?: string; repo?: string; q?: string }): PullFilter | undefined {
+  const out: PullFilter = {};
+  if (f.state === 'closed' || f.state === 'all') out.state = f.state;
+  const outcome = PULL_OUTCOMES.find((o) => o === f.outcome);
+  if (outcome) out.outcome = outcome;
+  if (f.repo) out.repo = f.repo;
+  if (f.q) out.q = f.q;
+  return Object.keys(out).length ? out : undefined;
 }
 
 export type Route =
@@ -43,7 +70,7 @@ export type Route =
   | { name: 'account'; slug: string }
   | { name: 'repos'; slug: string }
   | { name: 'repo'; slug: string; owner: string; repo: string }
-  | { name: 'pulls'; slug: string }
+  | { name: 'pulls'; slug: string; filter?: PullFilter }
   | { name: 'pull'; slug: string; owner: string; repo: string; number: number }
   | { name: 'review'; slug: string; id: string; tab?: ReviewTab }
   | { name: 'queue'; slug: string }
@@ -83,7 +110,7 @@ function segments(hash: string): { parts: string[]; ok: boolean } {
 // including an extra trailing segment -- falls back to that account's
 // overview rather than the global overview, so a bad deep link still lands
 // the user in-account.
-function parseAccountRoute(slug: string, rest: string[]): Route {
+function parseAccountRoute(slug: string, rest: string[], query: URLSearchParams): Route {
   const [section, ...tail] = rest;
   switch (section) {
     case undefined:
@@ -93,7 +120,10 @@ function parseAccountRoute(slug: string, rest: string[]): Route {
       if (tail.length === 2) return { name: 'repo', slug, owner: tail[0]!, repo: tail[1]! };
       break;
     case 'pulls':
-      if (tail.length === 0) return { name: 'pulls', slug };
+      if (tail.length === 0) {
+        const filter = pullFilter(Object.fromEntries(query));
+        return filter ? { name: 'pulls', slug, filter } : { name: 'pulls', slug };
+      }
       if (tail.length === 3 && PULL_NUMBER.test(tail[2]!)) {
         return { name: 'pull', slug, owner: tail[0]!, repo: tail[1]!, number: Number(tail[2]) };
       }
@@ -134,7 +164,7 @@ export function parse(hash: string): Route {
   if (parts.length === 0) return { name: 'overview' };
   if (parts.length === 1 && parts[0] === 'signin') return { name: 'signin' };
   if (parts.length === 1 && parts[0] === 'admin') return { name: 'console' };
-  if (slug) return parseAccountRoute(slug, parts.slice(3));
+  if (slug) return parseAccountRoute(slug, parts.slice(3), new URLSearchParams(q < 0 ? '' : hash.slice(q + 1)));
   return { name: 'overview' };
 }
 
@@ -159,8 +189,10 @@ export function href(r: Route): string {
       return `#/a/${slugPath(r.slug)}/repos`;
     case 'repo':
       return `#/a/${slugPath(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}`;
-    case 'pulls':
-      return `#/a/${slugPath(r.slug)}/pulls`;
+    case 'pulls': {
+      const query = new URLSearchParams(Object.entries(r.filter ?? {})).toString();
+      return `#/a/${slugPath(r.slug)}/pulls${query ? `?${query}` : ''}`;
+    }
     case 'pull':
       return `#/a/${slugPath(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}`;
     case 'review':

@@ -1,7 +1,7 @@
 <script lang="ts">
   // Maps the active route to its page. Keyed so switching account or record
   // starts the page fresh (filters, cursors), while switching review tabs
-  // keeps the review page mounted.
+  // or the pull list's filters keeps the page mounted.
   import type { Route } from '../routes';
   import Overview from './Overview.svelte';
   import Console from './Console.svelte';
@@ -20,6 +20,7 @@
 
   function keyOf(r: Route): string {
     if (r.name === 'review') return JSON.stringify({ n: r.name, s: r.slug, id: r.id });
+    if (r.name === 'pulls') return JSON.stringify({ n: r.name, s: r.slug });
     return JSON.stringify(r);
   }
   const key = $derived(keyOf(route));
@@ -39,7 +40,7 @@
   {:else if route.name === 'repo'}
     <Repo slug={route.slug} owner={route.owner} repo={route.repo} />
   {:else if route.name === 'pulls'}
-    <Pulls slug={route.slug} />
+    <Pulls slug={route.slug} filter={route.filter} />
   {:else if route.name === 'pull'}
     <Pull slug={route.slug} owner={route.owner} repo={route.repo} number={route.number} />
   {:else if route.name === 'review'}

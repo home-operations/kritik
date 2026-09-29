@@ -117,6 +117,36 @@ test.describe('pulls list', () => {
     await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7$`));
   });
 
+  test('filters live in the URL: a reload keeps them, and Back from a pull returns to them', async ({ page }) => {
+    const seen = await g.mockApi(page, g.defaultApi());
+    await page.goto(`/${T}/pulls`);
+    await page.getByRole('combobox', { name: 'State' }).selectOption('all');
+    await page.getByRole('combobox', { name: 'Last review outcome' }).selectOption('failed');
+    await page.getByPlaceholder('Search title').fill('wid gets');
+    await expect(page).toHaveURL(new RegExp(`${T}/pulls\\?state=all&outcome=failed&q=wid\\+gets$`));
+
+    await page.reload();
+    await expect(page.getByRole('combobox', { name: 'State' })).toHaveValue('all');
+    await expect(page.getByRole('combobox', { name: 'Last review outcome' })).toHaveValue('failed');
+    await expect(page.getByPlaceholder('Search title')).toHaveValue('wid gets');
+    const last = () => seen.filter((u) => u.pathname.endsWith('/pulls')).at(-1)?.searchParams;
+    await expect.poll(() => last()?.get('q')).toBe('wid gets');
+    expect(last()?.get('state')).toBe('all');
+    expect(last()?.get('outcome')).toBe('failed');
+
+    await page.locator('.pull-rows .row-link').first().click();
+    await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7$`));
+    await page.goBack();
+    await expect(page).toHaveURL(/\?state=all&outcome=failed&q=wid\+gets$/);
+    await expect(page.getByPlaceholder('Search title')).toHaveValue('wid gets');
+
+    // The sidebar's link is the unfiltered list, search box included.
+    await page.getByRole('navigation', { name: 'Account' }).getByRole('link', { name: 'Pulls' }).click();
+    await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
+    await expect(page.getByPlaceholder('Search title')).toHaveValue('');
+    await expect(page.getByRole('combobox', { name: 'State' })).toHaveValue('open');
+  });
+
   test('the keyboard cursor stays on its pull when a live refetch adds one above it', async ({ page }) => {
     const newer = { ...g.pull, number: 9, title: 'Newer widgets', url: g.pull.url.replace(/\d+$/, '9') };
     let added = false;
