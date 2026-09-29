@@ -280,7 +280,7 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 		}
 		return nil
 	})
-	return Outcome{Status: Enqueued, Job: "installation", Reason: ev.Action}, err
+	return Outcome{Status: Recorded, Reason: ev.Action}, err
 }
 
 func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook.Repository) (string, error) {

@@ -26,7 +26,7 @@ type Request struct {
 // Outcome is what the dispatcher did with a request, for the response and
 // the log line.
 type Outcome struct {
-	// Status is enqueued, skipped or ignored.
+	// Status is enqueued, recorded, skipped or ignored.
 	Status string
 	// Reason explains a skip or ignore, such as filter, fork, disabled,
 	// duplicate, not-default-branch, no-mention or action, and for an
@@ -38,6 +38,8 @@ type Outcome struct {
 // Outcome statuses.
 const (
 	Enqueued = "enqueued"
+	// Recorded is an event applied as it arrived, with no job queued.
+	Recorded = "recorded"
 	Skipped  = "skipped"
 	Ignored  = "ignored"
 )
