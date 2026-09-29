@@ -16,6 +16,7 @@
     mdiChartBoxOutline,
     mdiViewGridOutline,
     mdiSourcePull,
+    mdiScaleBalance,
     mdiCogOutline,
     mdiAccountOutline,
     mdiLogout,
@@ -85,6 +86,7 @@
   const sectionIcon: Record<Section, string> = {
     analytics: mdiChartBoxOutline,
     pulls: mdiSourcePull,
+    rules: mdiScaleBalance,
     settings: mdiCogOutline,
   };
 

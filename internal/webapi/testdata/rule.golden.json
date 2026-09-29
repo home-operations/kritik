@@ -1,0 +1,8 @@
+{
+  "kind": "context",
+  "path": "db/schema.sql",
+  "description": "the schema",
+  "paths": ["**/*.sql"],
+  "source": "repository",
+  "repositories": ["alpha/one"]
+}

@@ -13,6 +13,7 @@
 //   #/a/<slug>/pulls/<owner>/<repo>/<n>       one pull request
 //   #/a/<slug>/reviews/<id>[/<tab>]           one review, optional tab
 //   #/a/<slug>/findings[?<filter>]            account's findings; filter is a FindingFilter
+//   #/a/<slug>/rules                          the files reviews read
 //   #/a/<slug>/queue                          run queue
 //   #/a/<slug>/usage                          usage/cost dashboard
 //   #/a/<slug>/followups                      follow-up tracker
@@ -102,6 +103,7 @@ export type Route =
   | { name: 'pull'; slug: string; owner: string; repo: string; number: number }
   | { name: 'review'; slug: string; id: string; tab?: ReviewTab }
   | { name: 'findings'; slug: string; filter?: FindingFilter }
+  | { name: 'rules'; slug: string }
   | { name: 'queue'; slug: string }
   | { name: 'usage'; slug: string }
   | { name: 'followups'; slug: string }
@@ -166,6 +168,9 @@ function parseAccountRoute(slug: string, rest: string[], query: URLSearchParams)
         const filter = findingFilter(Object.fromEntries(query));
         return filter ? { name: 'findings', slug, filter } : { name: 'findings', slug };
       }
+      break;
+    case 'rules':
+      if (tail.length === 0) return { name: 'rules', slug };
       break;
     case 'queue':
       if (tail.length === 0) return { name: 'queue', slug };
@@ -236,6 +241,8 @@ export function href(r: Route): string {
       const query = new URLSearchParams(Object.entries(r.filter ?? {})).toString();
       return `#/a/${slugPath(r.slug)}/findings${query ? `?${query}` : ''}`;
     }
+    case 'rules':
+      return `#/a/${slugPath(r.slug)}/rules`;
     case 'queue':
       return `#/a/${slugPath(r.slug)}/queue`;
     case 'usage':

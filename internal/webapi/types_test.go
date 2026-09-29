@@ -215,6 +215,10 @@ var goldens = map[string]any{
 			{Repository: "alpha/one", Reviews: 5, Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, Addressed: 2},
 		},
 	},
+	"rule": Rule{
+		Kind: RuleContext, Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}, Source: RuleFromRepository,
+		Repositories: []string{"alpha/one"},
+	},
 	"job": Job{
 		ID: 42, Kind: "review", State: rivertype.JobStateRetryable, Attempt: 2, MaxAttempts: 5, CreatedAt: t0, ScheduledAt: t1,
 		AttemptedAt: &t0, FinalizedAt: nil, LastError: "boom",

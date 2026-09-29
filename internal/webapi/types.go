@@ -642,6 +642,36 @@ type UsageSeries struct {
 	Rows  []UsagePoint     `json:"rows"`
 }
 
+// RuleKind is what a rule is to a review: instructions it follows, or a
+// context file that explains the code.
+type RuleKind string
+
+// Rule kinds.
+const (
+	RuleInstructions RuleKind = "instructions"
+	RuleContext      RuleKind = "context"
+)
+
+// RuleSource is where a rule is set: a layer of the configuration, as
+// configfile.Source names it, or RuleFromRepository, the repository's own
+// .kritik.yaml.
+type RuleSource string
+
+// RuleFromRepository is a rule a repository's .kritik.yaml adds.
+const RuleFromRepository RuleSource = "repository"
+
+// Rule is one file reviews read, with where it is set, the paths it
+// applies to (every change when empty), and the running repositories
+// whose reviews read it.
+type Rule struct {
+	Kind         RuleKind   `json:"kind"`
+	Path         string     `json:"path"`
+	Description  string     `json:"description"`
+	Paths        []string   `json:"paths"`
+	Source       RuleSource `json:"source"`
+	Repositories []string   `json:"repositories"`
+}
+
 // AnalyticsTotals is what the account's reviews came to over a window:
 // completed reviews and the pull requests they reviewed, failed reviews,
 // the findings first reported in it and how many were addressed since,

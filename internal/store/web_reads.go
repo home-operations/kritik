@@ -387,6 +387,37 @@ type RepoFileRow struct {
 	Doc      *string
 }
 
+// LastRepoFiles reads, for each of the account's repositories that has one,
+// the .kritik.yaml its last review with a context pack read, keyed by
+// repository id.
+func LastRepoFiles(ctx context.Context, tx pgx.Tx) (map[string]RepoFileRow, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT ON (p.repository_id) p.repository_id, r.id, c.base_sha, c.repo_files ->> '.kritik.yaml'
+		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
+		JOIN runner_runs rr ON rr.review_id = r.id JOIN context_packs c ON c.runner_run_id = rr.id
+		ORDER BY p.repository_id, c.created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("store: last repository files: %w", err)
+	}
+	type keyed struct {
+		repoID string
+		row    RepoFileRow
+	}
+	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (keyed, error) {
+		var k keyed
+		err := r.Scan(&k.repoID, &k.row.ReviewID, &k.row.Commit, &k.row.Doc)
+		return k, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: last repository files: %w", err)
+	}
+	out := make(map[string]RepoFileRow, len(list))
+	for _, k := range list {
+		out[k.repoID] = k.row
+	}
+	return out, nil
+}
+
 // LastRepoFile reads the .kritik.yaml the repository's last review with a
 // context pack read; ErrNotFound when no review has one yet.
 func LastRepoFile(ctx context.Context, tx pgx.Tx, repositoryID string) (RepoFileRow, error) {

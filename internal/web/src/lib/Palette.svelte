@@ -27,6 +27,7 @@
     mdiTuneVariant,
     mdiBugOutline,
     mdiChartBoxOutline,
+    mdiScaleBalance,
   } from './icons';
 
   let { me }: { me: Me | undefined } = $props();
@@ -74,6 +75,7 @@
         { label: 'Repositories', hint: slug, route: { name: 'repos', slug }, icon: mdiSourceRepository },
         { label: 'Pull requests', hint: slug, route: { name: 'pulls', slug }, icon: mdiSourcePull },
         { label: 'Findings', hint: slug, route: { name: 'findings', slug }, icon: mdiBugOutline, keywords: 'bugs caught addressed' },
+        { label: 'Rules', hint: slug, route: { name: 'rules', slug }, icon: mdiScaleBalance, keywords: 'instructions context kritik.yaml' },
         { label: 'Queue', hint: slug, route: { name: 'queue', slug }, icon: mdiTrayFull },
         { label: 'Spend', hint: slug, route: { name: 'usage', slug }, icon: mdiCurrencyUsd, keywords: 'usage cost tokens' },
         { label: 'Follow-ups', hint: slug, route: { name: 'followups', slug }, icon: mdiClipboardTextClockOutline },

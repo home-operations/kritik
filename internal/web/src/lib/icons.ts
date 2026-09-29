@@ -38,6 +38,9 @@ export {
   mdiCircleOutline,
   mdiBugOutline,
   mdiChartBoxOutline,
+  mdiScaleBalance,
+  mdiTextBoxCheckOutline,
+  mdiFileDocumentOutline,
 } from '@mdi/js';
 
 import { siGithub } from 'simple-icons';

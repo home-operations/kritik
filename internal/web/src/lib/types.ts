@@ -432,6 +432,20 @@ export interface Analytics {
   repositories: RepoActivity[];
 }
 
+export type RuleKind = 'instructions' | 'context';
+export type RuleSource = 'default' | 'env' | 'file' | 'dashboard' | 'defaults' | 'account' | 'repository';
+
+// Rule is one file reviews read, with where it is set, the paths it
+// applies to (every change when empty), and the repositories that read it.
+export interface Rule {
+  kind: RuleKind;
+  path: string;
+  description: string;
+  paths: string[];
+  source: RuleSource;
+  repositories: string[];
+}
+
 export type FindingStatus = 'open' | 'addressed';
 
 // AccountFinding is one finding of a pull request, however many of its

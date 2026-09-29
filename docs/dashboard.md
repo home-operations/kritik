@@ -23,6 +23,12 @@ at once, and holds a tab for each of an account's sections
   and the follow-up questions. The search box takes text, or narrows the
   list with `repo:owner/name`, `author:login` and `status:` a last review
   status, and suggests each as you type.
+- **Rules:** the files its reviews read, instructions they follow and
+  context files that explain the code, each with where it is named (a
+  layer of the configuration, or a repository's `.kritik.yaml` as its last
+  review read it), the paths it applies to, and the repositories that
+  read it. Rules stay files in the repositories; this page only lists
+  them.
 - **Settings:** its repositories, and for an admin its configuration and
   audit log, and the admin console.
 

@@ -13,6 +13,7 @@
   import Review from './review/Review.svelte';
   import Queue from './Queue.svelte';
   import Findings from './Findings.svelte';
+  import Rules from './Rules.svelte';
   import Usage from './Usage.svelte';
   import Followups from './Followups.svelte';
   import Admin from './admin/Admin.svelte';
@@ -52,6 +53,8 @@
     <Review slug={route.slug} id={route.id} tab={route.tab} />
   {:else if route.name === 'findings'}
     <Findings slug={route.slug} filter={route.filter} />
+  {:else if route.name === 'rules'}
+    <Rules slug={route.slug} />
   {:else if route.name === 'queue'}
     <Queue slug={route.slug} />
   {:else if route.name === 'usage'}
