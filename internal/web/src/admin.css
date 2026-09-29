@@ -2,7 +2,7 @@
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .btn-danger {
   color: var(--danger);
@@ -11,7 +11,7 @@
 .btn-primary.btn-danger {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .dialog {

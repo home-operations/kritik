@@ -1,53 +1,69 @@
 @import 'tailwindcss';
 
 /* ---- theme tokens ---------------------------------------------------- */
+/* A marked-up proof: ink on proof paper, a pen-blue for what can be
+   followed, red pencil for what blocks, and a highlighter (--mark) for what
+   kritik has something to say about. --mark only ever sits behind --text,
+   dimmed in the dark theme as an e-reader's night highlight is; the state
+   it marks carries an --edge that contrasts on its own, since the
+   highlighter itself does not reach 3:1 on the light sheet. */
 :root,
 .light {
-  --bg: #f5f7fa;
-  --panel: #ffffff;
-  --panel-alt: #eef1f5;
-  --border: #d4dae2;
-  --text: #1f2328;
-  --muted: #59636e; /* ≥5.4:1 on panel/bg/panel-alt — much of the UI is 11–12px muted text */
-  --accent: #2563d9;
-  --add-bg: #e9f7ee;
-  --add-bar: #1a7f37;
-  --del-bg: #fdeeec;
-  --del-bar: #cf222e;
-  --danger: #cf222e;
-  --caution: #9a6700; /* amber accent, a notch below --danger */
-  --warn: #9a6700; /* amber accent for warnings */
-  --ok: #1a7f37;
-  --merged: #8250df;
-  --warn-bg: #fff8c5;
+  --bg: #eceee9;
+  --panel: #fbfbf8;
+  --panel-alt: #f1f2ee;
+  --border: #d3d7ce;
+  --text: #1b2130;
+  --muted: #555c6a; /* ≥5.7:1 on panel/bg/panel-alt and the mark wash — much of the UI is 11–12px muted text */
+  --accent: #2447b8;
+  --on-accent: #ffffff;
+  --mark: #f5df4d;
+  --mark-wash: #f9f1bc;
+  --edge: #1b2130;
+  --add-bg: #e3f1e5;
+  --add-bar: #1d7436;
+  --del-bg: #f9e7e3;
+  --del-bar: #b3261e;
+  --danger: #b3261e;
+  --caution: #875800; /* ochre, a notch below --danger */
+  --warn: #875800; /* ochre for warnings */
+  --ok: #1d7436;
+  --merged: #6b43b5;
+  --warn-bg: #faf1bf;
 }
 .dark {
-  --bg: #0b0e14;
-  --panel: #11151c;
-  --panel-alt: #161b24;
-  --border: #232a36;
-  --text: #e6edf3;
-  --muted: #9198a1; /* ≥5.9:1 on panel/bg — much of the UI is 11–12px muted text */
-  --accent: #5b8cff;
-  --add-bg: #0d1f15;
-  --add-bar: #2ea043;
-  --del-bg: #221015;
-  --del-bar: #f85149;
-  --danger: #f85149;
-  --caution: #d29922; /* amber accent, a notch below --danger */
-  --warn: #d29922; /* amber accent for warnings */
-  --ok: #3fb950;
-  --merged: #a371f7;
-  --warn-bg: #272115;
+  --bg: #131922;
+  --panel: #1a202b;
+  --panel-alt: #212835;
+  --border: #2f3846;
+  --text: #e4e7ec;
+  --muted: #9aa2af; /* ≥4.5:1 on panel/bg/panel-alt and the mark wash */
+  --accent: #8fa6ff;
+  --on-accent: #131922;
+  --mark: #6b5a10;
+  --mark-wash: #37392f;
+  --edge: #e9d14a;
+  --add-bg: #15291d;
+  --add-bar: #62c27e;
+  --del-bg: #301a1b;
+  --del-bar: #ff8170;
+  --danger: #ff8170;
+  --caution: #e3a84a; /* ochre, a notch below --danger */
+  --warn: #e3a84a; /* ochre for warnings */
+  --ok: #62c27e;
+  --merged: #b99cf5;
+  --warn-bg: #2c2716;
 }
 
-/* Font families: UI/prose in Geist (sans), code + identifiers in Geist Mono.
-   Both are bundled via @fontsource-variable (imported in main.ts); the system
-   stacks are the fallback until the woff2 loads (or if it fails). Theme-
-   independent, so they live on :root rather than the .light/.dark token blocks. */
+/* Font families: UI/prose in Schibsted Grotesk, a news grotesk for a
+   critic's column; code and identifiers in Red Hat Mono, which draws ==
+   and <= as typed rather than as ligatures. Both are bundled via
+   @fontsource-variable (imported in main.ts); the system stacks are the
+   fallback until the woff2 loads (or if it fails). Theme-independent, so
+   they live on :root rather than the .light/.dark token blocks. */
 :root {
-  --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: 'Schibsted Grotesk Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: 'Red Hat Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 * {
@@ -61,8 +77,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  /* Sans (Geist) for the UI chrome and prose; code and identifiers — diffs,
-     SHAs, resource names, image refs — use mono (Geist Mono) where defined. */
+  /* Sans for the UI chrome and prose; code and identifiers — diffs, SHAs,
+     resource names, image refs — use mono where defined. */
   font-family: var(--font-sans);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
@@ -90,7 +106,7 @@ body {
   align-items: center;
   gap: 14px;
   padding: 8px 14px;
-  background: var(--panel);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
@@ -98,9 +114,6 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: 0.02em;
   color: inherit;
   text-decoration: none;
 }
@@ -119,7 +132,7 @@ body {
   flex-direction: column;
   gap: 12px;
   padding: 12px 10px;
-  background: var(--panel);
+  background: var(--bg);
   border-right: 1px solid var(--border);
   overflow-y: auto;
 }
@@ -192,11 +205,8 @@ body {
 }
 .help-card h2 {
   margin: 0 0 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 15px;
+  font-weight: 650;
 }
 .help-keys {
   display: grid;
@@ -285,8 +295,8 @@ kbd {
   cursor: pointer;
 }
 .palette-row.active {
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--mark-wash);
+  box-shadow: inset 3px 0 0 var(--edge);
 }
 .row-main {
   flex: 1 1 auto;
@@ -330,8 +340,18 @@ kbd {
 }
 
 /* ---- brand + nav (kritik-specific: no konflate equivalent) ------------ */
+/* The highlighter stroke: a band over the lower two thirds of the text,
+   with the slightly uneven ends of a felt tip. */
+.marked {
+  padding: 0 0.2em;
+  border-radius: 0.15em 0.35em 0.2em 0.4em / 0.4em 0.2em 0.35em 0.15em;
+  background: linear-gradient(transparent 38%, var(--mark) 38%, var(--mark) 94%, transparent 94%);
+  box-decoration-break: clone;
+}
 .wordmark {
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 .nav {
   display: flex;
@@ -356,12 +376,13 @@ kbd {
 }
 .nav a:hover {
   color: var(--text);
-  background: var(--panel-alt);
+  background: var(--panel);
 }
 .nav a.active {
   color: var(--text);
-  background: var(--panel-alt);
-  box-shadow: inset 2px 0 0 var(--accent);
+  font-weight: 600;
+  background: var(--mark-wash);
+  box-shadow: inset 3px 0 0 var(--edge);
 }
 .sidebar-version {
   margin: auto 0 0;
@@ -474,7 +495,9 @@ kbd {
 }
 .signin-card h1 {
   margin: 4px 0 0;
-  font-size: 20px;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 .signin-sub {
   margin: 0 0 12px;

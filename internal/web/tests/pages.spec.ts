@@ -262,8 +262,10 @@ test.describe('review', () => {
     const anchored = page.locator('tr.dl-finding');
     await expect(anchored).toHaveCount(1);
     await expect(anchored).toContainText(g.reviewDetail.findings[0]!.title);
-    // The row right above the finding is new-side line 3.
+    // The row right above the finding is new-side line 3, and the only one marked.
     await expect(anchored.locator('xpath=preceding-sibling::tr[1]')).toContainText('var x *int');
+    await expect(page.locator('tr.dl-marked')).toHaveCount(1);
+    await expect(page.locator('tr.dl-marked')).toContainText('var x *int');
     await page.getByRole('button', { name: /a\.go/ }).click();
     await expect(page.locator('table.diff')).toHaveCount(0);
   });

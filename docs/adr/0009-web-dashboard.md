@@ -5,12 +5,14 @@
 - **Amended by:** [ADR-0010](0010-configuration-layers.md), which settles
   §6's question of editing file-managed tenants (it may not), leaves out
   the file tenant in a collision of §2.12 instead of blocking the whole
-  reload, and replaces §2.15's list with one policy table, and
+  reload, and replaces §2.15's list with one policy table;
   [ADR-0014](0014-github-app-only-self-hosted.md), which replaces the
   sign-in and operators of §2.3 with a local admin and role-mapped OIDC
   and GitHub sign-in, reduces the roles of §2.4 to admin and member, and
   replaces the dashboard tenants of §2.5 with one instance spec whose
-  tenants are forge accounts.
+  tenants are forge accounts; and
+  [ADR-0016](0016-dashboard-identity.md), which replaces §2.1's Geist and
+  Geist Mono and the palette with the dashboard's own.
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.17 and
   [ADR-0001](0001-kritik-pr-review-service.md) §2.14, the deferred v2
   dashboard sketch in both: this ADR is that dashboard, built.
