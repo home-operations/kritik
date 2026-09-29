@@ -285,6 +285,58 @@ func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
 	check("dashboard", false)
 }
 
+// TestRepositoryNamesIgnoreCase: GitHub's spelling of a listed repository
+// names the same row, which takes that spelling, stays listed through the
+// next apply, and is found in any case.
+func TestRepositoryNamesIgnoreCase(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	f := parse(t, twoAccounts)
+	if err := s.ApplyConfig(ctx, f); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := accountID(t, s, "alpha")
+	spell := func(name string) (id string, isNew bool) {
+		t.Helper()
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			var err error
+			id, isNew, err = EnsureRepository(ctx, tx, alpha, name, "")
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return id, isNew
+	}
+	// The suites share the database, and later ones look the row up as
+	// alpha/one.
+	t.Cleanup(func() { spell("alpha/one") })
+	id, isNew := spell("Alpha/ONE")
+	if isNew || id != configfile.RepositoryID(alpha, "alpha/one") {
+		t.Fatalf("EnsureRepository = %s, new %v; want the listed row", id, isNew)
+	}
+	if err := s.ApplyConfig(ctx, f); err != nil {
+		t.Fatalf("re-apply: %v", err)
+	}
+	var name, origin string
+	var rows int
+	if err := s.owner.QueryRow(ctx, `SELECT name, managed_by, (SELECT count(*) FROM repositories WHERE account_id = $1)
+		FROM repositories WHERE id = $2`, alpha, id).Scan(&name, &origin, &rows); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Alpha/ONE" || origin != "dashboard" || rows != 2 {
+		t.Fatalf("name %q, managed_by %s, %d rows; want GitHub's spelling on the one listed row", name, origin, rows)
+	}
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		row, err := FindRepo(ctx, tx, "alpha/one")
+		if err == nil && row.ID != id {
+			err = fmt.Errorf("found %s", row.ID)
+		}
+		return err
+	}); err != nil {
+		t.Fatalf("FindRepo in another case: %v", err)
+	}
+}
+
 func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()

@@ -36,15 +36,17 @@ func (s *Store) RegisterRepositories(ctx context.Context, accountID string, repo
 }
 
 // EnsureRepository records repository fullName of account accountID as
-// the forge names it, and returns its id and whether it is new. A row the
-// forge manages is enabled, since the forge just named it; one the spec
-// lists keeps its enabled flag. A defaultBranch of "" leaves the known one.
+// the forge names it, spelling included, and returns its id and whether it
+// is new. A row the forge manages is enabled, since the forge just named
+// it; one the spec lists keeps its enabled flag. A defaultBranch of ""
+// leaves the known one.
 func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID, fullName, defaultBranch string) (id string, isNew bool, err error) {
 	// xmax is 0 only on a row the statement inserted, not one it updated.
 	err = tx.QueryRow(ctx, `
 		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled)
 		VALUES ($1, $2, $3, $4, 'forge', true)
-		ON CONFLICT (account_id, name) DO UPDATE SET
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
 			default_branch = CASE WHEN EXCLUDED.default_branch <> '' THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
 			enabled = CASE WHEN repositories.managed_by = 'forge' THEN true ELSE repositories.enabled END,
 			disabled_at = CASE WHEN repositories.managed_by = 'forge' THEN NULL ELSE repositories.disabled_at END,

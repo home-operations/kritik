@@ -57,10 +57,13 @@ CREATE TABLE repositories (
     enabled         boolean     NOT NULL DEFAULT true,
     disabled_at     timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
-    updated_at      timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (account_id, name)
+    updated_at      timestamptz NOT NULL DEFAULT now()
 );
--- The repository list, and a repository looked up by its full name.
+-- GitHub names are not case sensitive: one row per name however it is
+-- spelled, which the id, derived from the lowercased name, also keys. The
+-- row keeps the spelling GitHub last reported.
+CREATE UNIQUE INDEX repositories_account_lower_name_key ON repositories (account_id, lower(name));
+-- The repository list, in name order.
 CREATE INDEX repositories_account_name_idx ON repositories (account_id, name, id);
 
 CREATE TABLE model_leases (
