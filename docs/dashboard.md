@@ -50,7 +50,7 @@ provider keys, its `embedding`, `defaults`, `polling`, `indexing`, `tools`,
 `retention`, `egress`, and `accounts`, each account's own settings,
 provider keys and repository entries. The configuration file may set the
 instance's providers, default models and embedder as well
-([instance defaults](configuration.md#instance-defaults-providers-defaultsmodels-and-embedding)):
+([instance defaults](configuration.md#instance-defaults-providers-defaults-and-embedding)):
 the instance configuration's own, where it sets them, override the
 file's.
 

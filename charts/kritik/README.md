@@ -253,7 +253,7 @@ Kubernetes: `>=1.25.0-0`
 | auth.sessionTTL | string | `""` | How long a dashboard session lasts (Go duration, 5m to 720h); empty is 12h. |
 | config.existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. |
 | config.extraEnv | list | `[]` | Extra raw env vars merged into every role's container (advanced). |
-| config.file | optional | `{}` | The configuration file, as YAML: `auth`, `connections`, `providers`, `defaults.models` and `embedding`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
+| config.file | optional | `{}` | The configuration file, as YAML: `auth`, `connections`, `providers`, part of `defaults` and `embedding`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
 | config.indexWorkers | int | `1` | Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews. |
 | config.logFormat | string | `"json"` | Log format: json or text. |
 | config.logLevel | string | `"info"` | Log level: debug, info, warn or error. |

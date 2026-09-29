@@ -93,7 +93,7 @@ func Parse(raw []byte) (*File, error) {
 		Auth: doc.Auth, Connections: doc.Connections, Providers: doc.Providers, Embedding: doc.Embedding,
 		envConnection: envConnection, envProvider: envProvider, envKeys: envKeys,
 	}
-	f.Defaults.Models = doc.Defaults.Models
+	f.Defaults = doc.Defaults.defaults()
 	if err := f.Auth.resolve(); err != nil {
 		return nil, err
 	}
@@ -677,7 +677,7 @@ func checkWithinAllow(where string, s Settings) error {
 	case bound.Timeout != nil && ag.Timeout > *bound.Timeout:
 		over = keyTimeout
 	case a.Settle != nil && s.Settle > *a.Settle:
-		over = "settle"
+		over = keySettle
 	}
 	if over != "" {
 		return fmt.Errorf("configfile: %s: %s is above allow.%s; set it at or below the bound", where, over, over)

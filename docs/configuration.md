@@ -2,15 +2,16 @@
 
 kritik takes its settings from three places, each for what it suits:
 
-| Where                                                                                                                                                 | What                                                                                                                                                             | Changed by                                         |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| The environment                                                                                                                                       | Process wiring: addresses, the database, logging, the sealing key and `KRITIK_WEB_URL`                                                                           | a restart                                          |
-| The configuration file, and its `KRITIK_AUTH_*`, `KRITIK_CONNECTIONS_*`, `KRITIK_PROVIDERS_*`, `KRITIK_DEFAULTS_*` and `KRITIK_EMBEDDING_*` variables | How people sign in (`auth`), GitHub Apps fixed at deploy time (`connections`), and the instance's defaults: model providers, the default models and the embedder | a file edit, reloaded, or a restart for a variable |
-| The instance configuration                                                                                                                            | Everything else: accounts, repositories, the dashboard's connections, and the dashboard's own providers, defaults and embedder, which override the file's        | the [dashboard](dashboard.md)                      |
+| Where                                                                                                                                                 | What                                                                                                                                                                                  | Changed by                                         |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| The environment                                                                                                                                       | Process wiring: addresses, the database, logging, the sealing key and `KRITIK_WEB_URL`                                                                                                | a restart                                          |
+| The configuration file, and its `KRITIK_AUTH_*`, `KRITIK_CONNECTIONS_*`, `KRITIK_PROVIDERS_*`, `KRITIK_DEFAULTS_*` and `KRITIK_EMBEDDING_*` variables | How people sign in (`auth`), GitHub Apps fixed at deploy time (`connections`), and the instance's defaults: model providers, the default models and review settings, and the embedder | a file edit, reloaded, or a restart for a variable |
+| The instance configuration                                                                                                                            | Everything else: accounts, repositories, the dashboard's connections, and the dashboard's own providers, defaults and embedder, which override the file's                             | the [dashboard](dashboard.md)                      |
 
 The file is optional: `KRITIK_CONFIG_FILE` names it, and the chart's
 `config.file` renders it. It holds `auth`, `connections`, `providers`,
-`defaults.models` and `embedding`, and nothing else. Every key in it also
+part of `defaults` (`models`, `mode`, `review.thoroughness`, `forks` and
+`settle`) and `embedding`, and nothing else. Every key in it also
 has a variable, and a variable wins over the file, so a deployment can be
 configured from the environment alone. In
 the file a secret is `{ env: NAME }` or `{ file: path }`; its variable
@@ -166,16 +167,17 @@ not take a name or an account that a file connection declares. When a
 later file edit declares one that a dashboard connection already holds,
 the file's connection is left out, and the admin console says why.
 
-## Instance defaults: `providers`, `defaults.models` and `embedding`
+## Instance defaults: `providers`, `defaults` and `embedding`
 
-The file can set the instance's model providers, the review and fallback
-models every account and repository inherits, and the embedder, so an
+The file can set the instance's model providers, the defaults every
+account and repository inherits (the review and fallback models, `mode`,
+`review.thoroughness`, `forks` and `settle`), and the embedder, so an
 instance reviews from its first start without a trip through the setup
 wizard. Each is a default the dashboard may override: a provider the
 instance configuration declares by the same name replaces the file's, a
-default model it sets replaces the file's of that key, and an embedder it
-sets replaces the file's whole. An account and a repository entry still
-override the default models as usual.
+default it sets replaces the file's of that key, and an embedder it sets
+replaces the file's whole. An account and a repository entry still
+override the defaults as usual.
 
 ```yaml
 providers:
@@ -186,6 +188,10 @@ defaults:
   models:
     review: openrouter/vendor/large-model
     fallback: openrouter/vendor/small-model
+  mode: agentic
+  review: { thoroughness: thorough }
+  forks: false
+  settle: 30s
 embedding:
   baseUrl: https://openrouter.ai/api/v1
   apiKey: { file: /var/run/secrets/kritik/openrouter/api-key }
@@ -198,21 +204,29 @@ A provider is `type` (`openrouter`, `openai` or `anthropic`), an optional
 dashboard's does: `baseUrl`, `apiKey`, `model`, `dims`, and the optional
 `maxBatch`, `maxBatchChars` and `maxItemChars`. A default model names a
 provider the file or the dashboard declares, as `<provider>/<model>`.
+`mode` is `single` or `agentic`, `review.thoroughness` is `thorough` or
+`focused` ([repository settings](repository-config.md)), `forks: true`
+reviews pull requests from forks without being asked, and `settle` delays
+a review after a push so a burst of pushes is reviewed once.
 
 The same defaults can come from the environment:
 
-| Variable                          | Key                                                                                   |
-| --------------------------------- | ------------------------------------------------------------------------------------- |
-| `KRITIK_PROVIDERS_NAME`           | the provider's name, `openrouter` unless set                                          |
-| `KRITIK_PROVIDERS_TYPE`           | `type`, which defaults to the name when that is `openrouter`, `openai` or `anthropic` |
-| `KRITIK_PROVIDERS_BASE_URL`       | `baseUrl`                                                                             |
-| `KRITIK_PROVIDERS_API_KEY[_FILE]` | `apiKey`, or a file's path                                                            |
-| `KRITIK_DEFAULTS_MODELS_REVIEW`   | `defaults.models.review`                                                              |
-| `KRITIK_DEFAULTS_MODELS_FALLBACK` | `defaults.models.fallback`                                                            |
-| `KRITIK_EMBEDDING_BASE_URL`       | `embedding.baseUrl`                                                                   |
-| `KRITIK_EMBEDDING_API_KEY[_FILE]` | `embedding.apiKey`, or a file's path                                                  |
-| `KRITIK_EMBEDDING_MODEL`          | `embedding.model`                                                                     |
-| `KRITIK_EMBEDDING_DIMS`           | `embedding.dims`                                                                      |
+| Variable                              | Key                                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------------------- |
+| `KRITIK_PROVIDERS_NAME`               | the provider's name, `openrouter` unless set                                          |
+| `KRITIK_PROVIDERS_TYPE`               | `type`, which defaults to the name when that is `openrouter`, `openai` or `anthropic` |
+| `KRITIK_PROVIDERS_BASE_URL`           | `baseUrl`                                                                             |
+| `KRITIK_PROVIDERS_API_KEY[_FILE]`     | `apiKey`, or a file's path                                                            |
+| `KRITIK_DEFAULTS_MODELS_REVIEW`       | `defaults.models.review`                                                              |
+| `KRITIK_DEFAULTS_MODELS_FALLBACK`     | `defaults.models.fallback`                                                            |
+| `KRITIK_DEFAULTS_MODE`                | `defaults.mode`                                                                       |
+| `KRITIK_DEFAULTS_REVIEW_THOROUGHNESS` | `defaults.review.thoroughness`                                                        |
+| `KRITIK_DEFAULTS_FORKS`               | `defaults.forks`, `true` or `false`                                                   |
+| `KRITIK_DEFAULTS_SETTLE`              | `defaults.settle`, a duration such as `30s`                                           |
+| `KRITIK_EMBEDDING_BASE_URL`           | `embedding.baseUrl`                                                                   |
+| `KRITIK_EMBEDDING_API_KEY[_FILE]`     | `embedding.apiKey`, or a file's path                                                  |
+| `KRITIK_EMBEDDING_MODEL`              | `embedding.model`                                                                     |
+| `KRITIK_EMBEDDING_DIMS`               | `embedding.dims`                                                                      |
 
 The environment declares at most one provider, which replaces the file's
 of the same name whole or is added to the file's. The embedding variables

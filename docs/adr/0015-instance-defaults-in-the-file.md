@@ -22,22 +22,24 @@ and what an admin most often wants to adjust later without a redeploy.
 
 ## 2. Decision
 
-The file, and its environment, may also set `providers`, `defaults.models`
-(`review` and `fallback`) and `embedding`. They are the instance's
-defaults, under the spec's:
+The file, and its environment, may also set `providers`, part of
+`defaults` (`models.review`, `models.fallback`, `mode`,
+`review.thoroughness`, `forks` and `settle`) and `embedding`. They are the
+instance's defaults, under the spec's:
 
 - a provider the spec declares by the same name replaces the file's
   whole, and the spec may add others;
-- a default model the spec sets replaces the file's of that key, and an
-  account or repository entry overrides either as before;
+- a default the spec sets replaces the file's of that key, and an account
+  or repository entry overrides either as before;
 - an embedder the spec sets replaces the file's whole.
 
 The environment follows ADR-0014's rule for connections: it declares at
 most one provider, `KRITIK_PROVIDERS_NAME` (default `openrouter`),
 `_TYPE` (defaulting to the name when that is a provider type),
 `_BASE_URL` and `_API_KEY[_FILE]`, which replaces the file's provider of
-that name or joins them. `KRITIK_DEFAULTS_MODELS_REVIEW` and `_FALLBACK`
-set the default models, and `KRITIK_EMBEDDING_BASE_URL`,
+that name or joins them. `KRITIK_DEFAULTS_MODELS_REVIEW`, `_FALLBACK`,
+`_MODE`, `_REVIEW_THOROUGHNESS`, `_FORKS` and `_SETTLE` set the defaults,
+and `KRITIK_EMBEDDING_BASE_URL`,
 `_API_KEY[_FILE]`, `_MODEL` and `_DIMS` the embedder key by key. A
 variable under these prefixes that names no key fails startup.
 

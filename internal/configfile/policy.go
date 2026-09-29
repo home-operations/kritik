@@ -69,23 +69,31 @@ const (
 	keyTimeout            = "agent.timeout"
 )
 
+// The keys the file's defaults set as well (instance.go).
+const (
+	keyMode         = "mode"
+	keyThoroughness = "review.thoroughness"
+	keyForks        = "forks"
+	keySettle       = "settle"
+)
+
 // Policies is the table.
 var Policies = []Policy{
 	{Key: "enabled", Scopes: everyScope, Repository: RepoTurnOff},
 	{Key: "filter", Scopes: everyScope, Repository: RepoAnd},
 	{Key: "ignore", Scopes: everyScope, Repository: RepoUnion},
 	{Key: "skip.onlyPaths", Scopes: []Scope{}, Repository: RepoOwn},
-	{Key: "forks", Scopes: everyScope},
+	{Key: keyForks, Scopes: everyScope},
 	{Key: "models.review", Scopes: everyScope, Repository: RepoChoose},
 	{Key: "models.fallback", Scopes: everyScope, Repository: RepoChoose},
-	{Key: "mode", Scopes: everyScope, Repository: RepoChoose},
+	{Key: keyMode, Scopes: everyScope, Repository: RepoChoose},
 	{Key: keyMaxSteps, Scopes: everyScope, Repository: RepoAtMost},
 	{Key: keyMaxToolOutputBytes, Scopes: everyScope, Repository: RepoAtMost},
 	{Key: keyMaxTokens, Scopes: everyScope, Repository: RepoAtMost},
 	{Key: keyTimeout, Scopes: everyScope, Repository: RepoAtMost},
 	{Key: "agent.commands", Scopes: everyScope, Repository: RepoSubset},
 	{Key: "agent.commandTimeout", Scopes: everyScope},
-	{Key: "settle", Scopes: everyScope, Repository: RepoAtMost},
+	{Key: keySettle, Scopes: everyScope, Repository: RepoAtMost},
 	{Key: "incremental.maxDeltaFiles", Scopes: everyScope},
 	{Key: "review.instructions", Scopes: everyScope, Repository: RepoAppend},
 	{Key: "review.requireSuggestedFix", Scopes: everyScope, Repository: RepoTurnOn},
@@ -93,7 +101,7 @@ var Policies = []Policy{
 	{Key: "review.context", Scopes: everyScope, Repository: RepoAppend},
 	{Key: "review.minSeverity", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "review.inlineComments", Scopes: everyScope, Repository: RepoReplace},
-	{Key: "review.thoroughness", Scopes: everyScope, Repository: RepoReplace},
+	{Key: keyThoroughness, Scopes: everyScope, Repository: RepoReplace},
 	{Key: "allow", Scopes: everyScope},
 	{Key: "limits", Scopes: accountScopes},
 	{Key: "runner", Scopes: accountScopes},
