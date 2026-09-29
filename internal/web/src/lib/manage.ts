@@ -32,9 +32,14 @@ const inheritedFrom: Record<ConfigSource, string> = {
   repository: '.kritik.yaml',
 };
 
+// sourceName is where a setting comes from, as a hint names it.
+export function sourceName(source: ConfigSource | undefined): string {
+  return inheritedFrom[source ?? 'default'];
+}
+
 // inheritsHint is what a field left empty takes, and from where.
 export function inheritsHint(value: string, source: ConfigSource | undefined): string {
-  return `inherits ${value} from ${inheritedFrom[source ?? 'default']}`;
+  return `inherits ${value} from ${sourceName(source)}`;
 }
 
 // describe is one line for a failed management call.
