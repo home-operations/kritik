@@ -10,6 +10,7 @@
   import StateView from '../components/StateView.svelte';
   import PullRows from '../components/PullRows.svelte';
   import LoadMore from '../components/LoadMore.svelte';
+  import SectionTabs from '../components/SectionTabs.svelte';
 
   let { slug, filter }: { slug: string; filter?: PullFilter } = $props();
 
@@ -106,10 +107,8 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head">
-      <h1>Pull requests</h1>
-      <p class="muted small"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
-    </header>
+    <SectionTabs section="pulls" {slug} current="pulls" />
+    <p class="muted small"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
     <div class="toolbar" role="search">
       <label class="search-box">
         <span class="sr-only">Search pull requests</span>

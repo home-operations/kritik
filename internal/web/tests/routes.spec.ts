@@ -4,6 +4,7 @@
 // a real page -- this file calls them directly and needs no browser.
 import { test, expect } from '@playwright/test';
 import { href, parse, type Route } from '../src/lib/routes';
+import { sectionOf, SUB_TABS } from '../src/lib/sections';
 
 const ROUTES: Route[] = [
   { name: 'overview' },
@@ -85,5 +86,15 @@ test.describe('routes: parse() on unknown/malformed hashes', () => {
     test(`parse(${JSON.stringify(hash)})`, () => {
       expect(parse(hash)).toEqual(expected);
     });
+  }
+});
+
+test('every account page belongs to one section, and each sub-tab to its own', () => {
+  for (const r of ROUTES) {
+    const want = r.name === 'overview' || r.name === 'signin' ? undefined : expect.any(String);
+    expect(sectionOf(r), r.name).toEqual(want);
+  }
+  for (const [section, tabs] of Object.entries(SUB_TABS)) {
+    for (const t of tabs) expect(sectionOf(t.route('github/acme')), t.label).toBe(section);
   }
 });

@@ -12,6 +12,54 @@
 .route-host {
   display: contents;
 }
+/* Settings pages sit beside the section's own navigation. */
+.route-host.with-subnav {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.subnav {
+  flex: 0 0 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 10px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+.subnav-group {
+  margin: 12px 10px 4px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subnav-group:first-child {
+  margin-top: 0;
+}
+.subnav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.subnav-item:hover {
+  color: var(--text);
+  background: var(--panel);
+  text-decoration: none;
+}
+.subnav-item.active {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--mark-wash);
+  box-shadow: inset 3px 0 0 var(--edge);
+}
 .page {
   flex: 1 1 auto;
   min-width: 0;
@@ -41,6 +89,9 @@
 }
 .page-head p {
   margin: 0;
+}
+.section-head {
+  gap: 0;
 }
 .page-actions:empty {
   display: none;
@@ -984,6 +1035,21 @@ table.diff td.code {
 @media (max-width: 640px) {
   .page-inner {
     padding: 12px 12px 32px;
+  }
+  .route-host.with-subnav {
+    flex-direction: column;
+  }
+  .subnav {
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    padding: 6px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .subnav-group {
+    margin: 0 6px;
   }
   .row {
     flex-wrap: wrap;

@@ -5,6 +5,7 @@
   import StateView from '../components/StateView.svelte';
   import FollowupItem from '../components/FollowupItem.svelte';
   import LoadMore from '../components/LoadMore.svelte';
+  import SectionTabs from '../components/SectionTabs.svelte';
 
   let { slug }: { slug: string } = $props();
   const base = $derived(`${accountApi(slug)}/followups`);
@@ -24,7 +25,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head"><h1>Follow-ups</h1></header>
+    <SectionTabs section="pulls" {slug} current="followups" />
     <StateView {res} retry={() => res.load()} isEmpty={(d) => d.items.length === 0} empty="No follow-up questions yet.">
       {#snippet children()}
         <ul class="followups">

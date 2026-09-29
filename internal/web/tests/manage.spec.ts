@@ -258,7 +258,7 @@ test.describe('account configuration', () => {
     await setup(page, memberMe);
     await page.goto(`/${ADMIN}/config`);
     await expect(page.getByRole('alert')).toContainText('Only an admin');
-    await expect(page.getByRole('link', { name: 'Admin' })).toHaveCount(0);
+    await expect(page.getByRole('navigation', { name: 'Settings' }).getByRole('link')).toHaveText(['Repositories']);
   });
 });
 

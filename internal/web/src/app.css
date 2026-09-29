@@ -95,6 +95,8 @@ body {
 }
 
 /* ---- shell + topbar -------------------------------------------------- */
+/* The top bar holds the brand, the account switcher and the actions, and
+   under them the section tabs (ADR-0017); the routed page fills the rest. */
 .app {
   display: flex;
   flex-direction: column;
@@ -103,12 +105,16 @@ body {
 }
 .topbar {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 14px;
+  flex-direction: column;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
+}
+.topbar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
 }
 .brand {
   display: flex;
@@ -119,22 +125,6 @@ body {
 }
 .spacer {
   flex: 1 1 auto;
-}
-/* Below the topbar: the sidebar's navigation beside the routed page. */
-.shell {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-.sidebar {
-  flex: 0 0 200px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px 10px;
-  background: var(--bg);
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
 }
 .actions {
   display: flex;
@@ -353,58 +343,113 @@ kbd {
   font-weight: 800;
   letter-spacing: -0.01em;
 }
-.nav {
+/* The section tabs: the current one is marked with the highlighter over
+   an ink rule, which carries the state where the highlighter alone would
+   not contrast. */
+.sections {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  padding: 0 10px;
+  overflow-x: auto;
 }
-.nav-instance {
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-.nav a {
-  display: flex;
+.section-tab {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: 6px 8px 8px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   color: var(--muted);
   text-decoration: none;
   font-size: 13px;
   white-space: nowrap;
 }
-.nav a:hover {
+.section-tab:hover {
   color: var(--text);
-  background: var(--panel);
+  text-decoration: none;
 }
-.nav a.active {
+.section-tab.active {
   color: var(--text);
   font-weight: 600;
-  background: var(--mark-wash);
-  box-shadow: inset 3px 0 0 var(--edge);
+  border-bottom-color: var(--edge);
 }
-.sidebar-version {
-  margin: auto 0 0;
-  padding: 0 10px;
-  font-size: 11px;
-  color: var(--muted);
+.section-tab.active .section-label {
+  padding: 0 0.2em;
+  border-radius: 0.15em 0.35em 0.2em 0.4em / 0.4em 0.2em 0.35em 0.15em;
+  background: linear-gradient(transparent 38%, var(--mark) 38%, var(--mark) 94%, transparent 94%);
+}
+
+/* ---- menus (account switcher, user) ------------------------------------ */
+.menu {
+  position: relative;
+}
+.menu summary {
+  list-style: none;
+}
+.menu summary::-webkit-details-marker {
+  display: none;
+}
+.menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 15%, transparent);
+}
+.account-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.account-button > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.nav-instance + .sidebar-version {
-  margin-top: 0;
+.account-button:hover {
+  background: var(--panel);
 }
-.account-switch {
-  border: 1px solid var(--border);
-  background: var(--panel-alt);
+.account-button .icon {
+  color: var(--muted);
+}
+.account-panel {
+  left: 0;
+  min-width: 220px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
   color: var(--text);
-  border-radius: 6px;
-  padding: 6px 10px;
   font-size: 13px;
-  font: inherit;
-  width: 100%;
+  white-space: nowrap;
+}
+.menu-item:hover {
+  background: var(--panel-alt);
+  text-decoration: none;
+}
+.menu-item[aria-current] {
+  font-weight: 600;
+}
+.menu-check {
+  display: inline-flex;
+  width: 15px;
+  flex: 0 0 auto;
 }
 .mono {
   font-family: var(--font-mono);
@@ -434,42 +479,31 @@ kbd {
 }
 
 /* ---- user menu --------------------------------------------------------- */
-.user-menu {
-  position: relative;
-}
-.user-menu summary {
-  list-style: none;
-}
-.user-menu summary::-webkit-details-marker {
-  display: none;
-}
 .user-panel {
-  position: absolute;
-  top: calc(100% + 6px);
   right: 0;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
   gap: 8px;
   min-width: 200px;
   padding: 12px 14px;
-  background: var(--panel);
-  border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 15%, transparent);
 }
 .user-name {
   margin: 0;
   font-weight: 600;
   font-size: 13px;
 }
-.user-email {
+.user-email,
+.user-version {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.user-version {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
 }
 
 /* ---- sign-in ------------------------------------------------------------ */
@@ -546,32 +580,11 @@ kbd {
     min-height: 40px;
     justify-content: center;
   }
-  /* The sidebar folds into a scrolling strip under the topbar. */
-  .shell {
-    flex-direction: column;
+  .topbar-row {
+    gap: 8px;
+    padding: 6px 10px;
   }
-  .sidebar {
-    flex: 0 0 auto;
-    flex-direction: row;
-    align-items: center;
-    overflow-x: auto;
-    overflow-y: hidden;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .nav {
-    flex-direction: row;
-  }
-  .nav-instance {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: 0;
-  }
-  .sidebar-version {
-    display: none;
-  }
-  .account-switch {
-    width: auto;
-    max-width: 160px;
+  .account-button {
+    max-width: 140px;
   }
 }

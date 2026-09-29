@@ -13,6 +13,7 @@
   import Time from '../components/Time.svelte';
   import ReviewStatusPill from '../components/ReviewStatusPill.svelte';
   import SeverityCounts from '../components/SeverityCounts.svelte';
+  import SectionTabs from '../components/SectionTabs.svelte';
 
   let { slug }: { slug: string } = $props();
 
@@ -117,7 +118,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head"><h1><span class="mono">{slug}</span> overview</h1></header>
+    <SectionTabs section="overview" {slug} current="account" />
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
         <section class="tiles" aria-label="At a glance">

@@ -101,7 +101,7 @@ or declare it in the configuration file or the environment
 Install the App on each account in `accounts`, for all repositories or
 selected ones. Each pull request in them is reviewed when it opens and
 after each push, under the account's settings, which an admin sets on the
-account's admin page.
+account's Configuration page, under Settings.
 
 Anyone can install a public App by its slug. The admin console's
 Connections panel lists every account each connection's App is installed

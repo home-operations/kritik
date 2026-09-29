@@ -76,7 +76,7 @@
       <legend>Provider keys</legend>
       <p class="field-hint">
         The instance's model keys. A model named <span class="mono">&lt;key name&gt;/&lt;model&gt;</span> runs on its key; an
-        account's own keys, set on its admin page, come first.
+        account's own keys, set on its Configuration page, come first.
       </p>
       {#if fileProviders.length}
         <ul class="setup-list" aria-label="Provider keys the configuration file sets">

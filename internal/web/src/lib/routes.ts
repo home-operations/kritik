@@ -15,7 +15,7 @@
 //   #/a/<slug>/queue                          run queue
 //   #/a/<slug>/usage                          usage/cost dashboard
 //   #/a/<slug>/followups                      follow-up tracker
-//   #/a/<slug>/admin[/<section>]              an account's admin page, optional section
+//   #/a/<slug>/admin[/<section>]              an account's settings: its configuration or audit log
 //
 // Segments round-trip through encodeURIComponent/decodeURIComponent, so a
 // slug/owner/repo/id/section containing a literal "/" or other reserved

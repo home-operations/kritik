@@ -140,7 +140,7 @@ test.describe('pulls list', () => {
     await page.keyboard.press('?');
     await expect(page.locator('.help-overlay')).toHaveCount(0);
 
-    await page.locator('h1').click();
+    await page.locator('.pull-rows').click({ position: { x: 1, y: 1 } });
     await page.keyboard.press('j');
     await expect(rows.first()).toHaveClass(/selected/);
     await page.keyboard.press('Enter');
@@ -170,8 +170,8 @@ test.describe('pulls list', () => {
     await expect(page).toHaveURL(/\?state=all&outcome=failed&q=wid\+gets$/);
     await expect(page.getByPlaceholder('Search title')).toHaveValue('wid gets');
 
-    // The sidebar's link is the unfiltered list, search box included.
-    await page.getByRole('navigation', { name: 'Account' }).getByRole('link', { name: 'Pulls' }).click();
+    // The section's tab is the unfiltered list, search box included.
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Pull requests' }).click();
     await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
     await expect(page.getByPlaceholder('Search title')).toHaveValue('');
     await expect(page.getByRole('combobox', { name: 'State' })).toHaveValue('open');
@@ -209,7 +209,7 @@ test.describe('pulls list', () => {
     await page.goto(`/${T}/pulls`);
     const rows = page.locator('.pull-rows .row');
     await expect(rows).toHaveCount(1);
-    await page.locator('h1').click();
+    await page.locator('.pull-rows').click({ position: { x: 1, y: 1 } });
     await page.keyboard.press('j');
     await expect(rows.first()).toHaveClass(/selected/);
 
@@ -333,13 +333,10 @@ test('a stream that (re)opens refetches the page, event or not', async ({ page }
   await expect.poll(queues).toBeGreaterThanOrEqual(3);
 });
 
-test('the sidebar shows the version the server reports, below the admin console', async ({ page }) => {
+test('the user menu shows the version the server reports', async ({ page }) => {
   await page.goto(`/${T}`);
-  const version = page.locator('aside.sidebar .sidebar-version');
-  await expect(version).toHaveText(`kritik ${g.meta.version}`);
-  const consoleLink = await page.getByRole('navigation', { name: 'Instance' }).boundingBox();
-  const box = await version.boundingBox();
-  expect(consoleLink && box && box.y >= consoleLink.y + consoleLink.height).toBe(true);
+  await page.locator('.user-menu summary').click();
+  await expect(page.locator('.user-panel .user-version')).toHaveText(`kritik ${g.meta.version}`);
 });
 
 test('each page names itself in the browser tab', async ({ page }) => {

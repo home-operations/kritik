@@ -121,18 +121,24 @@ test.describe('sign-in page', () => {
 });
 
 test.describe('signed-in shell', () => {
-  test('shows account nav, the admin link, and the user menu for an admin', async ({ page, signIn }) => {
+  test('shows the account switcher, the section tabs and the user menu', async ({ page, signIn }) => {
     await signIn({ ...DEFAULT_ME, admin: true });
     await page.goto('/');
 
-    await expect(page.locator('.account-switch option')).toHaveText(['github/acme']);
-    // All accounts, then Overview/Repos/Pulls/Queue/Usage/Follow-ups/Admin, then the Admin console.
-    await expect(page.locator('.nav a')).toHaveCount(9);
-    // The sections are a sidebar left of the page, not part of the topbar.
-    await expect(page.locator('.topbar .nav')).toHaveCount(0);
-    const side = await page.locator('aside.sidebar').boundingBox();
+    await expect(page.locator('.account-button')).toHaveText('All accounts');
+    await page.locator('.account-button').click();
+    await expect(page.getByRole('navigation', { name: 'Accounts' }).getByRole('link')).toHaveText(['All accounts', 'github/acme']);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('navigation', { name: 'Accounts' })).toBeHidden();
+
+    // The sections are tabs under the topbar's first row, above the page.
+    const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Sections' }).getByRole('link');
+    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Settings']);
+    await expect(tabs.first()).toHaveAttribute('href', '#/a/github/acme');
+    await expect(page.locator('.sections [aria-current]')).toHaveCount(0);
+    const bar = await page.locator('.topbar').boundingBox();
     const main = await page.locator('main.page').boundingBox();
-    expect(side && main && side.x + side.width <= main.x).toBe(true);
+    expect(bar && main && bar.y + bar.height <= main.y).toBe(true);
     await expect(page.locator('.user-menu summary')).toHaveAttribute('title', DEFAULT_ME.user.displayName);
 
     await page.locator('.user-menu summary').click();
@@ -140,26 +146,37 @@ test.describe('signed-in shell', () => {
     await expect(page.locator('.user-email')).toHaveText(DEFAULT_ME.user.email);
   });
 
-  test('hides the admin link for a non-admin member', async ({ page, signIn }) => {
+  test("settings lists a member only the account's repositories", async ({ page, signIn }) => {
     await signIn(DEFAULT_ME);
-    await page.goto('/');
-    await expect(page.locator('.nav a')).toHaveCount(7);
+    await page.goto('/#/a/github/acme/repos');
+    const nav = page.getByRole('navigation', { name: 'Settings' });
+    await expect(nav.getByRole('link')).toHaveText(['Repositories']);
+    await expect(page.locator('.sections .section-tab.active')).toHaveText('Settings');
   });
 
-  test('shows the admin console link for an admin', async ({ page, signIn }) => {
+  test("settings lists an admin the account's configuration and the admin console", async ({ page, signIn }) => {
     await signIn({ ...DEFAULT_ME, admin: true });
-    await page.goto('/');
-    await expect(page.getByRole('navigation', { name: 'Instance' }).getByRole('link', { name: 'Admin console' })).toBeVisible();
+    await page.goto('/#/a/github/acme/repos');
+    const nav = page.getByRole('navigation', { name: 'Settings' });
+    await expect(nav.getByRole('link')).toHaveText(['Repositories', 'Configuration', 'Audit log', 'Admin console']);
+    await nav.getByRole('link', { name: 'Admin console' }).click();
+    await expect(page).toHaveURL(/#\/admin$/);
+    await expect(nav.getByRole('link', { name: 'Admin console' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('.sections .section-tab.active')).toHaveText('Settings');
   });
 
-  test('switching accounts in the dropdown navigates to that account', async ({ page, signIn }) => {
+  test('switching accounts in the menu navigates to that account', async ({ page, signIn }) => {
     await signIn({
       ...DEFAULT_ME,
       accounts: ['github/acme', 'github/globex'],
     });
-    await page.goto('/');
-    await page.locator('.account-switch').selectOption('github/globex');
+    await page.goto('/#/a/github/acme/pulls');
+    await expect(page.locator('.account-button')).toHaveText('github/acme');
+    await page.locator('.account-button').click();
+    await page.getByRole('navigation', { name: 'Accounts' }).getByRole('link', { name: 'github/globex' }).click();
     await expect(page).toHaveURL(/#\/a\/github\/globex$/);
+    await expect(page.getByRole('navigation', { name: 'Accounts' })).toBeHidden();
+    await expect(page.locator('.account-button')).toHaveText('github/globex');
   });
 
   test('a signed-in visit to #/signin redirects to the overview', async ({ page, signIn, mockProviders }) => {
@@ -168,7 +185,7 @@ test.describe('signed-in shell', () => {
     await page.goto('/#/signin');
     await expect(page).toHaveURL(/#\/$/);
     await expect(page.locator('.signin-card')).toHaveCount(0);
-    await expect(page.locator('.account-switch')).toBeVisible();
+    await expect(page.locator('.account-button')).toBeVisible();
   });
 
   test('signing out clears the shell and returns to sign-in', async ({ page, signIn }) => {
@@ -180,7 +197,7 @@ test.describe('signed-in shell', () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
 
     await expect(page).toHaveURL(/#\/signin$/);
-    await expect(page.locator('.account-switch')).toHaveCount(0);
+    await expect(page.locator('.account-button')).toHaveCount(0);
   });
 });
 
@@ -302,5 +319,5 @@ test('a 401 from a page while signed in stays on sign-in', async ({ page, signIn
   await expect(page).toHaveURL(/#\/signin$/);
   await page.waitForTimeout(500);
   await expect(page).toHaveURL(/#\/signin$/);
-  await expect(page.locator('.account-switch')).toHaveCount(0);
+  await expect(page.locator('.account-button')).toHaveCount(0);
 });
