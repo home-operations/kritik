@@ -60,6 +60,9 @@ test('repositories filter and repository detail', async ({ page }) => {
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await page.getByPlaceholder('Filter by name').fill('nomatch');
   await expect(page.locator('.state-msg')).toContainText('Nothing matches');
+  await page.getByRole('button', { name: 'Clear filter' }).click();
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect(page.getByPlaceholder('Filter by name')).toBeFocused();
   await page.getByPlaceholder('Filter by name').fill('alpha');
   await page.getByRole('link', { name: 'alpha/one' }).click();
   await expect(page).toHaveURL(new RegExp(`${T}/repos/alpha/one$`));
@@ -145,6 +148,21 @@ test.describe('pulls list', () => {
     await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
     await expect(page.getByPlaceholder('Search title')).toHaveValue('');
     await expect(page.getByRole('combobox', { name: 'State' })).toHaveValue('open');
+  });
+
+  test('an empty list says whether its filters emptied it, and clears them', async ({ page }) => {
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), (u: URL) => g.pageOf(u.searchParams.has('outcome') ? [] : [g.pull])], ...g.defaultApi()]);
+    await page.goto(`/${T}/pulls?outcome=failed`);
+    await expect(page.locator('.state-msg')).toHaveText(/No pull requests match these filters\./);
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
+    await expect(page.locator('.pull-rows .row')).toHaveCount(1);
+    await expect(page.getByPlaceholder('Search title')).toBeFocused();
+
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([])], ...g.defaultApi()]);
+    await page.reload();
+    await expect(page.locator('.state-msg')).toHaveText('No open pull requests.');
+    await expect(page.getByRole('button', { name: 'Clear filters' })).toHaveCount(0);
   });
 
   test('the keyboard cursor stays on its pull when a live refetch adds one above it', async ({ page }) => {

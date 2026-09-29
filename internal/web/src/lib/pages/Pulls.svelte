@@ -25,6 +25,11 @@
     replace({ name: 'pulls', slug, filter: pullFilter({ ...filter, ...change }) });
   }
 
+  function clearFilters(): void {
+    replace({ name: 'pulls', slug });
+    searchEl?.focus();
+  }
+
   const account = $derived(`${accountApi(slug)}`);
 
   function query(after?: string): string {
@@ -133,10 +138,19 @@
         </select>
       </label>
     </div>
-    <StateView {res} retry={() => res.load()} isEmpty={() => items.length === 0} empty="No pull requests match.">
+    <StateView {res} retry={() => res.load()}>
       {#snippet children()}
-        <PullRows {slug} {items} {selected} />
-        <LoadMore {paged} />
+        {#if items.length === 0 && filter}
+          <div class="state-msg">
+            <span>No pull requests match these filters.</span>
+            <button class="btn btn-small" onclick={clearFilters}>Clear filters</button>
+          </div>
+        {:else if items.length === 0}
+          <p class="state-msg">No open pull requests.</p>
+        {:else}
+          <PullRows {slug} {items} {selected} />
+          <LoadMore {paged} />
+        {/if}
       {/snippet}
     </StateView>
   </div>
