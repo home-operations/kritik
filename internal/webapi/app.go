@@ -39,7 +39,7 @@ func (s *Server) registerAppPages(mux *http.ServeMux) {
 }
 
 // consolePath is the admin console in the dashboard.
-func (s *Server) consolePath() string { return s.basePath + "/#/operator" }
+func (s *Server) consolePath() string { return s.basePath + "/#/admin" }
 
 // sessionToken is the request's session cookie, which a manifest flow is
 // bound to.
@@ -54,7 +54,7 @@ func (s *Server) sessionToken(r *http.Request) string {
 func (s *Server) createAppManifest(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	switch {
-	case !p.Operator:
+	case !p.Admin:
 		return errForbidden
 	case s.keyring == nil:
 		return errManagementDisabled
@@ -111,7 +111,7 @@ func (s *Server) checkNewConnection(name string) error {
 func (s *Server) appCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	p := auth.PrincipalFrom(ctx)
-	if p == nil || !p.Operator || s.keyring == nil {
+	if p == nil || !p.Admin || s.keyring == nil {
 		http.Error(w, "Sign in to kritik as an admin to finish registering the GitHub App.", http.StatusForbidden)
 		return
 	}
@@ -198,7 +198,7 @@ func errorMessage(err error) string {
 func (s *Server) collectAppManifests(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	switch {
-	case !p.Operator:
+	case !p.Admin:
 		return errForbidden
 	case s.keyring == nil:
 		return errManagementDisabled

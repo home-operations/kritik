@@ -1,7 +1,7 @@
 <script lang="ts">
   import { accountApi } from '../../links';
   import { href } from '../../router.svelte';
-  import { canAdmin, session } from '../../session.svelte';
+  import { isAdmin, session } from '../../session.svelte';
   import AuditTable from '../../components/AuditTable.svelte';
   import ConfigSection from './ConfigSection.svelte';
 
@@ -22,7 +22,7 @@
     </header>
     {#if !session.me}
       <p class="state-msg" aria-live="polite">Loading…</p>
-    {:else if !canAdmin(slug)}
+    {:else if !isAdmin()}
       <p class="state-msg" role="alert">Only an admin can see this page.</p>
     {:else}
       <nav class="tabs" aria-label="Admin sections">

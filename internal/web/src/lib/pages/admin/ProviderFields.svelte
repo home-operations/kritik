@@ -49,7 +49,7 @@
     <SecretField label="API key" path="{p}.apiKey" bind:secret={prov.apiKey} {keepable} invalid={inv(`${p}.apiKey`)} />
   </div>
   <KeyTest
-    path="/api/v1/operator/providers/test"
+    path="/api/v1/admin/providers/test"
     secret={prov.apiKey}
     {keepable}
     {onmodels}

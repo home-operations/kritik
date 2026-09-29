@@ -8,7 +8,7 @@ import { href, parse, type Route } from '../src/lib/routes';
 const ROUTES: Route[] = [
   { name: 'overview' },
   { name: 'signin' },
-  { name: 'operator' },
+  { name: 'console' },
   { name: 'account', slug: 'github/acme' },
   { name: 'repos', slug: 'github/acme' },
   { name: 'repo', slug: 'github/acme', owner: 'kritik', repo: 'kritik' },
@@ -41,7 +41,7 @@ const MALFORMED: [string, Route][] = [
   ['#/', { name: 'overview' }],
   ['#/nonsense', { name: 'overview' }],
   ['#/signin/extra', { name: 'overview' }],
-  ['#/operator/extra', { name: 'overview' }],
+  ['#/admin/extra', { name: 'overview' }],
   ['#/a', { name: 'overview' }],
   ['#/a/', { name: 'overview' }],
   ['#/a//repos', { name: 'overview' }],

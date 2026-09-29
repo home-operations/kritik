@@ -5,11 +5,6 @@
     "email": "ada@example.com",
     "avatarUrl": "https://img.example/a.png"
   },
-  "operator": true,
-  "accounts": [
-    {
-      "slug": "github/alpha",
-      "role": "member"
-    }
-  ]
+  "admin": true,
+  "accounts": ["github/alpha"]
 }

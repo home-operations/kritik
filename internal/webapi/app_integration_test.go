@@ -87,10 +87,10 @@ func (e *manageEnv) visit(who, path string) *http.Response {
 	return resp
 }
 
-// startManifest starts a flow as the operator and returns its state.
+// startManifest starts a flow as the admin and returns its state.
 func (e *manageEnv) startManifest(req AppManifestRequest) (string, AppManifestForm) {
 	e.t.Helper()
-	status, body := e.do("operator", "POST", "/api/v1/app/manifests", req)
+	status, body := e.do("admin", "POST", "/api/v1/app/manifests", req)
 	e.expect(status, body, http.StatusOK, "")
 	var form AppManifestForm
 	if err := json.Unmarshal(body, &form); err != nil {
@@ -118,7 +118,7 @@ func (e *manageEnv) collect(who string) []AppManifestResult {
 // GitHub's App was added as, its secrets stored.
 func checkAppConnection(t *testing.T, e *manageEnv) {
 	t.Helper()
-	status, body := e.do("operator", "GET", instancePath, nil)
+	status, body := e.do("admin", "GET", instancePath, nil)
 	e.expect(status, body, http.StatusOK, "")
 	var cfg struct{ Spec map[string]any }
 	if err := json.Unmarshal(body, &cfg); err != nil {
@@ -140,7 +140,7 @@ func checkAppConnection(t *testing.T, e *manageEnv) {
 // console to the connection it adds and the client secret shown once.
 func TestAppManifestFlow(t *testing.T) {
 	e := newManageEnv(t)
-	e.signIn("operator-2", "mgr-op-2", store.SessionGrant{Role: store.RoleAdmin})
+	e.signIn("admin-2", "mgr-op-2", store.SessionGrant{Role: store.RoleAdmin})
 
 	t.Run("refusals", func(t *testing.T) {
 		for _, tt := range []struct {
@@ -149,9 +149,9 @@ func TestAppManifestFlow(t *testing.T) {
 			status    int
 		}{
 			{"a member", "outsider", AppManifestRequest{Connection: "mgr-app"}, http.StatusForbidden},
-			{"a bad name", "operator", AppManifestRequest{Connection: "Mgr App"}, http.StatusUnprocessableEntity},
-			{"the file's connection", "operator", AppManifestRequest{Connection: "mgr-file-bot"}, http.StatusUnprocessableEntity},
-			{"a bad organization", "operator", AppManifestRequest{Connection: "mgr-app", Organization: "org/9"}, http.StatusUnprocessableEntity},
+			{"a bad name", "admin", AppManifestRequest{Connection: "Mgr App"}, http.StatusUnprocessableEntity},
+			{"the file's connection", "admin", AppManifestRequest{Connection: "mgr-file-bot"}, http.StatusUnprocessableEntity},
+			{"a bad organization", "admin", AppManifestRequest{Connection: "mgr-app", Organization: "org/9"}, http.StatusUnprocessableEntity},
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				status, body := e.do(tt.who, "POST", "/api/v1/app/manifests", tt.req)
@@ -174,16 +174,16 @@ func TestAppManifestFlow(t *testing.T) {
 	}
 
 	callback := "/app/callback?code=good&state=" + url.QueryEscape(state)
-	for who, want := range map[string]int{"outsider": http.StatusForbidden, "operator-2": http.StatusBadRequest} {
+	for who, want := range map[string]int{"outsider": http.StatusForbidden, "admin-2": http.StatusBadRequest} {
 		if resp := e.visit(who, callback); resp.StatusCode != want {
 			t.Fatalf("callback as %s = %d, want %d", who, resp.StatusCode, want)
 		}
 	}
-	resp := e.visit("operator", callback)
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/#/operator" {
+	resp := e.visit("admin", callback)
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/#/admin" {
 		t.Fatalf("callback = %d to %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
-	if resp := e.visit("operator", callback); resp.StatusCode != http.StatusBadRequest {
+	if resp := e.visit("admin", callback); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("a second callback = %d, want 400", resp.StatusCode)
 	}
 
@@ -193,36 +193,36 @@ func TestAppManifestFlow(t *testing.T) {
 	}
 	e.waitFor("the App's connection", func(f *configfile.File) bool { _, ok := f.Connection("mgr-app"); return ok })
 
-	if got := e.collect("operator-2"); len(got) != 0 {
+	if got := e.collect("admin-2"); len(got) != 0 {
 		t.Fatalf("another admin collected %+v", got)
 	}
 	want := AppManifestResult{
 		Connection: "mgr-app", Slug: "kritik-org-9", InstallURL: "https://github.com/apps/kritik-org-9/installations/new",
 		ClientID: "Iv1.org9", ClientSecret: "client-secret",
 	}
-	if got := e.collect("operator"); len(got) != 1 || got[0] != want {
+	if got := e.collect("admin"); len(got) != 1 || got[0] != want {
 		t.Fatalf("collect = %+v, want %+v", got, want)
 	}
-	if got := e.collect("operator"); len(got) != 0 {
+	if got := e.collect("admin"); len(got) != 0 {
 		t.Fatalf("a result is shown once, got %+v", got)
 	}
 
 	t.Run("a name taken meanwhile", func(t *testing.T) {
-		if status, body := e.do("operator", "POST", "/api/v1/app/manifests", AppManifestRequest{Connection: "mgr-app"}); status != http.StatusUnprocessableEntity {
+		if status, body := e.do("admin", "POST", "/api/v1/app/manifests", AppManifestRequest{Connection: "mgr-app"}); status != http.StatusUnprocessableEntity {
 			t.Fatalf("status = %d: %s", status, body)
 		}
 	})
 	t.Run("an expired code", func(t *testing.T) {
 		state, _ := e.startManifest(AppManifestRequest{Connection: "mgr-late"})
-		if resp := e.visit("operator", "/app/callback?code=stale&state="+url.QueryEscape(state)); resp.StatusCode != http.StatusSeeOther {
+		if resp := e.visit("admin", "/app/callback?code=stale&state="+url.QueryEscape(state)); resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("callback = %d", resp.StatusCode)
 		}
-		got := e.collect("operator")
+		got := e.collect("admin")
 		if len(got) != 1 || got[0].Slug != "" || !strings.Contains(got[0].Error, "GitHub did not return the App's credentials") {
 			t.Fatalf("collect = %+v", got)
 		}
 	})
-	if resp := e.visit("operator", "/app/installed?installation_id=1&setup_action=install"); resp.Header.Get("Location") != "/#/operator" {
+	if resp := e.visit("admin", "/app/installed?installation_id=1&setup_action=install"); resp.Header.Get("Location") != "/#/admin" {
 		t.Fatalf("setup URL redirects to %q", resp.Header.Get("Location"))
 	}
 }
@@ -233,13 +233,13 @@ func TestAppManifestFlow(t *testing.T) {
 func TestAppInstallations(t *testing.T) {
 	e := newManageEnv(t)
 	state, _ := e.startManifest(AppManifestRequest{Connection: "mgr-app", Organization: "org-9"})
-	if resp := e.visit("operator", "/app/callback?code=good&state="+url.QueryEscape(state)); resp.StatusCode != http.StatusSeeOther {
+	if resp := e.visit("admin", "/app/callback?code=good&state="+url.QueryEscape(state)); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("callback = %d", resp.StatusCode)
 	}
-	e.collect("operator")
+	e.collect("admin")
 	e.waitFor("the App's connection", func(f *configfile.File) bool { _, ok := f.Connection("mgr-app"); return ok })
 
-	status, body := e.do("operator", "GET", "/api/v1/operator/connections", nil)
+	status, body := e.do("admin", "GET", "/api/v1/admin/connections", nil)
 	e.expect(status, body, http.StatusOK, "")
 	var conns []Connection
 	if err := json.Unmarshal(body, &conns); err != nil {
@@ -253,8 +253,8 @@ func TestAppInstallations(t *testing.T) {
 		t.Fatalf("connections = %+v", conns)
 	}
 
-	path := "/api/v1/operator/connections/mgr-app/installations"
-	status, body = e.do("operator", "GET", path, nil)
+	path := "/api/v1/admin/connections/mgr-app/installations"
+	status, body = e.do("admin", "GET", path, nil)
 	e.expect(status, body, http.StatusOK, "")
 	var insts []AppInstallation
 	if err := json.Unmarshal(body, &insts); err != nil {
@@ -271,7 +271,7 @@ func TestAppInstallations(t *testing.T) {
 		code            ErrorCode
 	}{
 		{"a member", "outsider", path, http.StatusNotFound, ""},
-		{"an unknown connection", "operator", "/api/v1/operator/connections/nope/installations", http.StatusNotFound, CodeNotFound},
+		{"an unknown connection", "admin", "/api/v1/admin/connections/nope/installations", http.StatusNotFound, CodeNotFound},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			status, body := e.do(tt.who, "GET", tt.path, nil)
@@ -288,7 +288,7 @@ func TestAppInstallations(t *testing.T) {
 		{"an unserved account", "2", http.StatusNoContent, ""},
 	} {
 		t.Run("uninstall "+tt.name, func(t *testing.T) {
-			status, body := e.do("operator", "DELETE", path+"/"+tt.id, nil)
+			status, body := e.do("admin", "DELETE", path+"/"+tt.id, nil)
 			e.expect(status, body, tt.status, tt.code)
 		})
 	}
@@ -308,16 +308,16 @@ func TestAppInstallations(t *testing.T) {
 func TestReachedRepositories(t *testing.T) {
 	e := newManageEnv(t)
 	state, _ := e.startManifest(AppManifestRequest{Connection: "mgr-app", Organization: "org-9"})
-	e.visit("operator", "/app/callback?code=good&state="+url.QueryEscape(state))
-	e.collect("operator")
+	e.visit("admin", "/app/callback?code=good&state="+url.QueryEscape(state))
+	e.collect("admin")
 	e.waitFor("the App's connection", func(f *configfile.File) bool { _, ok := f.Connection("mgr-app"); return ok })
 	// The leader would apply the new account; this suite has none.
 	if err := e.st.ApplyConfig(t.Context(), e.src.Current.Get()); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 
-	path := "/api/v1/operator/connections/mgr-app/repositories"
-	status, body := e.do("operator", "GET", path, nil)
+	path := "/api/v1/admin/connections/mgr-app/repositories"
+	status, body := e.do("admin", "GET", path, nil)
 	e.expect(status, body, http.StatusOK, "")
 	var reached []AccountRepositories
 	if err := json.Unmarshal(body, &reached); err != nil {
@@ -328,7 +328,7 @@ func TestReachedRepositories(t *testing.T) {
 		t.Fatalf("reached = %+v", reached)
 	}
 	for i, want := range []int{1, 0} {
-		status, body := e.do("operator", "POST", path, nil)
+		status, body := e.do("admin", "POST", path, nil)
 		e.expect(status, body, http.StatusOK, "")
 		var res RegisterResult
 		if err := json.Unmarshal(body, &res); err != nil || res.Added != want {

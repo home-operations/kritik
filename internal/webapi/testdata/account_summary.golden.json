@@ -1,6 +1,5 @@
 {
   "slug": "github/alpha",
-  "role": "admin",
   "connection": "alpha-bot",
   "repositories": 3,
   "reviews7d": 9,

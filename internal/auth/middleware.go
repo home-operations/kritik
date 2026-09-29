@@ -20,9 +20,9 @@ type User = store.User
 type Principal struct {
 	User     User
 	Identity Identity
-	// Operator administers the instance: the admin role, which reads and
-	// changes everything.
-	Operator bool
+	// Admin administers the instance: it reads and changes every account
+	// and the instance's configuration.
+	Admin bool
 	// AllAccounts is a member who reads every account.
 	AllAccounts bool
 	// Accounts are the accounts a member reads, by id: those among the
@@ -32,7 +32,7 @@ type Principal struct {
 
 // CanRead reports whether p may read the account's content.
 func (p *Principal) CanRead(accountID string) bool {
-	return p != nil && (p.Operator || p.AllAccounts || p.Accounts[accountID])
+	return p != nil && (p.Admin || p.AllAccounts || p.Accounts[accountID])
 }
 
 type principalKey struct{}
@@ -104,9 +104,9 @@ func principalFor(file *configfile.File, sess store.Session) *Principal {
 	g := sess.Grant
 	p := &Principal{
 		User: sess.User, Identity: Identity(sess.Identity),
-		Operator: g.Role == RoleAdmin, AllAccounts: g.AllAccounts, Accounts: map[string]bool{},
+		Admin: g.Role == RoleAdmin, AllAccounts: g.AllAccounts, Accounts: map[string]bool{},
 	}
-	if p.Operator || p.AllAccounts {
+	if p.Admin || p.AllAccounts {
 		return p
 	}
 	granted := map[string]bool{}

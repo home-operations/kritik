@@ -121,7 +121,7 @@ func TestPrincipalCanRead(t *testing.T) {
 		{"a member of the account", member, true},
 		{"a member of another", &Principal{Accounts: map[string]bool{"t2": true}}, false},
 		{"a member of every account", &Principal{AllAccounts: true}, true},
-		{"an operator", &Principal{Operator: true}, true},
+		{"an admin", &Principal{Admin: true}, true},
 		{"nil principal", nil, false},
 	}
 	for _, tt := range tests {
@@ -150,14 +150,14 @@ func TestPrincipalFor(t *testing.T) {
 		Grant:    store.SessionGrant{Role: RoleMember, Accounts: []string{"github/widgets", "github/initech", "github/gone"}},
 	}
 	p := principalFor(file, sess)
-	if p.Operator || p.AllAccounts || p.User.ID != "acct" || p.Identity.Login != "Alice" {
+	if p.Admin || p.AllAccounts || p.User.ID != "acct" || p.Identity.Login != "Alice" {
 		t.Fatalf("principal = %+v", p)
 	}
 	if len(p.Accounts) != 2 || !p.Accounts[tid("widgets")] || !p.Accounts[tid("Initech")] {
 		t.Fatalf("accounts = %v, want widgets and initech", p.Accounts)
 	}
 	sess.Grant = store.SessionGrant{Role: RoleAdmin}
-	if p := principalFor(file, sess); !p.Operator || !p.CanRead(tid("acme")) {
+	if p := principalFor(file, sess); !p.Admin || !p.CanRead(tid("acme")) {
 		t.Fatalf("admin principal = %+v", p)
 	}
 }

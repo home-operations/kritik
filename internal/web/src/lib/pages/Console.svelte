@@ -3,7 +3,7 @@
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { tokens, usd } from '../format';
-  import type { InstanceSetting, OperatorAccount } from '../types';
+  import type { InstanceSetting, AdminAccount } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import AuditTable from '../components/AuditTable.svelte';
@@ -12,8 +12,8 @@
   import ConnectionsSection from './admin/ConnectionsSection.svelte';
   import { management } from '../session.svelte';
 
-  const res = new Resource(() => getJSON<OperatorAccount[]>('/api/v1/operator/accounts'));
-  const instance = new Resource(() => getJSON<InstanceSetting[]>('/api/v1/operator/instance'));
+  const res = new Resource(() => getJSON<AdminAccount[]>('/api/v1/admin/accounts'));
+  const instance = new Resource(() => getJSON<InstanceSetting[]>('/api/v1/admin/instance'));
   $effect(() => {
     void res.load();
   });
@@ -122,7 +122,7 @@
 
     <section class="panel" aria-labelledby="op-audit">
       <header class="panel-head"><h2 id="op-audit">Admin audit log</h2></header>
-      <AuditTable path="/api/v1/operator/audit" showAccount />
+      <AuditTable path="/api/v1/admin/audit" showAccount />
     </section>
   </div>
 </main>

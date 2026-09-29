@@ -51,18 +51,18 @@ connections:
 	}
 }
 
-func TestInstanceSettingsAreOperatorOnly(t *testing.T) {
+func TestInstanceSettingsAreAdminOnly(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
 	ts.srv.env = []config.EnvVar{{Name: "KRITIK_ADDR", Value: ":8080"}}
 	get := func(p *auth.Principal) *httptest.ResponseRecorder {
-		return ts.as(p, httptest.NewRequest("GET", "/api/v1/operator/instance", nil))
+		return ts.as(p, httptest.NewRequest("GET", "/api/v1/admin/instance", nil))
 	}
 	if w := get(memberOf(t, ts.file, "alpha")); w.Code != http.StatusNotFound {
 		t.Fatalf("account admin: status = %d, want 404", w.Code)
 	}
-	w := get(&auth.Principal{Operator: true})
+	w := get(&auth.Principal{Admin: true})
 	var rows []InstanceSetting
 	if err := json.Unmarshal(w.Body.Bytes(), &rows); w.Code != http.StatusOK || err != nil || rows[0].Key != "KRITIK_ADDR" {
-		t.Fatalf("operator: %d %s", w.Code, w.Body)
+		t.Fatalf("admin: %d %s", w.Code, w.Body)
 	}
 }

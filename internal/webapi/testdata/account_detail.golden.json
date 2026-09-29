@@ -1,6 +1,5 @@
 {
   "slug": "github/alpha",
-  "role": "member",
   "connection": {
     "name": "alpha-bot",
     "forge": "github",

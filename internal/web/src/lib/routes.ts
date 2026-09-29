@@ -5,7 +5,7 @@
 //
 //   #/                                        overview (account picker / landing)
 //   #/signin                                  sign-in page
-//   #/operator                                admin console (cross-account)
+//   #/admin                                   admin console (cross-account)
 //   #/a/<slug>                                account overview; slug is <forge>/<name>
 //   #/a/<slug>/repos                          account's repo list
 //   #/a/<slug>/repos/<owner>/<repo>           one repo
@@ -39,7 +39,7 @@ function isReviewTab(v: string | undefined): v is ReviewTab {
 export type Route =
   | { name: 'overview' }
   | { name: 'signin' }
-  | { name: 'operator' }
+  | { name: 'console' }
   | { name: 'account'; slug: string }
   | { name: 'repos'; slug: string }
   | { name: 'repo'; slug: string; owner: string; repo: string }
@@ -133,7 +133,7 @@ export function parse(hash: string): Route {
   }
   if (parts.length === 0) return { name: 'overview' };
   if (parts.length === 1 && parts[0] === 'signin') return { name: 'signin' };
-  if (parts.length === 1 && parts[0] === 'operator') return { name: 'operator' };
+  if (parts.length === 1 && parts[0] === 'admin') return { name: 'console' };
   if (slug) return parseAccountRoute(slug, parts.slice(3));
   return { name: 'overview' };
 }
@@ -151,8 +151,8 @@ export function href(r: Route): string {
       return '#/';
     case 'signin':
       return '#/signin';
-    case 'operator':
-      return '#/operator';
+    case 'console':
+      return '#/admin';
     case 'account':
       return `#/a/${slugPath(r.slug)}`;
     case 'repos':

@@ -12,7 +12,7 @@
     },
     "mode": {
       "enum": ["single", "agentic"],
-      "description": "How the repository is reviewed, one of the operator's allow.modes."
+      "description": "How the repository is reviewed, one of the admin's allow.modes."
     },
     "models": {
       "type": "object",
@@ -25,7 +25,7 @@
     "agent": {
       "type": "object",
       "additionalProperties": false,
-      "description": "An agentic review's limits, each at most the operator's allow.agent bound.",
+      "description": "An agentic review's limits, each at most the admin's allow.agent bound.",
       "properties": {
         "maxSteps": { "type": "integer", "minimum": 1 },
         "maxToolOutputBytes": { "type": "integer", "minimum": 1 },
@@ -33,22 +33,22 @@
         "timeout": { "$ref": "#/$defs/duration" },
         "commands": {
           "type": "array",
-          "description": "Commands the agent may run, a subset of the operator's allow.commands.",
+          "description": "Commands the agent may run, a subset of the admin's allow.commands.",
           "items": { "type": "string", "pattern": "^[^/]+$" }
         }
       }
     },
     "settle": {
       "$ref": "#/$defs/duration",
-      "description": "How long a new head waits before its review starts, at most the operator's allow.settle."
+      "description": "How long a new head waits before its review starts, at most the admin's allow.settle."
     },
     "filter": {
       "type": "string",
-      "description": "A CEL expression over pr, ANDed with the operator's filter."
+      "description": "A CEL expression over pr, ANDed with the admin's filter."
     },
     "ignore": {
       "type": "array",
-      "description": "Path globs added to the operator's ignore list.",
+      "description": "Path globs added to the admin's ignore list.",
       "items": { "$ref": "#/$defs/glob" }
     },
     "skip": {
@@ -68,7 +68,7 @@
       "properties": {
         "instructions": {
           "type": "array",
-          "description": "Files appended to the reviewer's instructions, after the operator's.",
+          "description": "Files appended to the reviewer's instructions, after the admin's.",
           "items": {
             "oneOf": [
               { "$ref": "#/$defs/path" },
@@ -90,7 +90,7 @@
         },
         "requireSuggestedFix": {
           "type": "boolean",
-          "description": "true requires a suggested fix on every finding; false cannot lift the operator's requirement."
+          "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."
         },
         "templates": {
           "type": "object",
@@ -110,7 +110,7 @@
         },
         "context": {
           "type": "array",
-          "description": "Files that explain the code, added after the operator's.",
+          "description": "Files that explain the code, added after the admin's.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -138,7 +138,7 @@
     "model": {
       "type": "string",
       "pattern": "^[^/]+/.+$",
-      "description": "A <provider>/<model> reference the operator allows."
+      "description": "A <provider>/<model> reference an admin allows."
     },
     "path": {
       "type": "string",

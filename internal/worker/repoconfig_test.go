@@ -19,7 +19,7 @@ import (
 	"github.com/home-operations/kritik/internal/review"
 )
 
-func operatorSettings(t *testing.T) configfile.Settings {
+func adminSettings(t *testing.T) configfile.Settings {
 	t.Helper()
 	filter, err := prfilter.Compile("!pr.draft")
 	if err != nil {
@@ -35,14 +35,14 @@ func operatorSettings(t *testing.T) configfile.Settings {
 }
 
 func TestEffective(t *testing.T) {
-	operatorFiles := repoconfig.Files{"ops/rules.md": "operator rules", "ops/summary.tmpl": "op summary", "ops/inline.tmpl": "op inline"}
+	adminFiles := repoconfig.Files{"ops/rules.md": "admin rules", "ops/summary.tmpl": "op summary", "ops/inline.tmpl": "op inline"}
 	with := func(extra repoconfig.Files) repoconfig.Files {
-		files := maps.Clone(operatorFiles)
+		files := maps.Clone(adminFiles)
 		maps.Copy(files, extra)
 		return files
 	}
-	operatorDefaults := review.Templates{Summary: "op summary", Inline: "op inline"}
-	operatorPaths := []string{"ops/rules.md", "ops/summary.tmpl", "ops/inline.tmpl"}
+	adminDefaults := review.Templates{Summary: "op summary", Inline: "op inline"}
+	adminPaths := []string{"ops/rules.md", "ops/summary.tmpl", "ops/inline.tmpl"}
 
 	tests := []struct {
 		name string
@@ -62,86 +62,86 @@ func TestEffective(t *testing.T) {
 		notes        []string
 	}{
 		{
-			name: "no file keeps the operator's settings", files: operatorFiles, enabled: true, ignore: []string{"vendor/**"},
-			repoFiles: operatorPaths, instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
+			name: "no file keeps the admin's settings", files: adminFiles, enabled: true, ignore: []string{"vendor/**"},
+			repoFiles: adminPaths, instructions: []string{"admin rules"}, templates: adminDefaults, strict: true,
 		},
 		{
-			name: "disable", doc: "enabled: false\n", files: operatorFiles, ignore: []string{"vendor/**"},
-			repoFiles: append(operatorPaths, repoconfig.FileName), instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
+			name: "disable", doc: "enabled: false\n", files: adminFiles, ignore: []string{"vendor/**"},
+			repoFiles: append(adminPaths, repoconfig.FileName), instructions: []string{"admin rules"}, templates: adminDefaults, strict: true,
 		},
 		{
-			name: "filter is kept apart to be ANDed", doc: "filter: '!pr.body.contains(\"[skip-review]\")'\n", files: operatorFiles,
-			enabled: true, inRepoFilter: true, ignore: []string{"vendor/**"}, repoFiles: append(operatorPaths, repoconfig.FileName),
-			instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
+			name: "filter is kept apart to be ANDed", doc: "filter: '!pr.body.contains(\"[skip-review]\")'\n", files: adminFiles,
+			enabled: true, inRepoFilter: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
+			instructions: []string{"admin rules"}, templates: adminDefaults, strict: true,
 		},
 		{
-			name: "ignore and skip paths add to the operator's", doc: "ignore: [gen/**, vendor/**]\nskip:\n  onlyPaths: [docs/**]\n",
-			files: operatorFiles, enabled: true, ignore: []string{"vendor/**", "gen/**"}, onlyPaths: []string{"docs/**"},
-			repoFiles: append(operatorPaths, repoconfig.FileName), instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
+			name: "ignore and skip paths add to the admin's", doc: "ignore: [gen/**, vendor/**]\nskip:\n  onlyPaths: [docs/**]\n",
+			files: adminFiles, enabled: true, ignore: []string{"vendor/**", "gen/**"}, onlyPaths: []string{"docs/**"},
+			repoFiles: append(adminPaths, repoconfig.FileName), instructions: []string{"admin rules"}, templates: adminDefaults, strict: true,
 		},
 		{
-			name: "requireSuggestedFix may only turn on", doc: "review:\n  requireSuggestedFix: false\n", files: operatorFiles,
-			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(operatorPaths, repoconfig.FileName),
-			instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
-			notes: []string{".kritik.yaml: review.requireSuggestedFix false was dropped; allowed: true, since the operator requires a suggested fix"},
+			name: "requireSuggestedFix may only turn on", doc: "review:\n  requireSuggestedFix: false\n", files: adminFiles,
+			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
+			instructions: []string{"admin rules"}, templates: adminDefaults, strict: true,
+			notes: []string{".kritik.yaml: review.requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},
 		{
-			name:    "repository instructions follow the operator's, and its summary template replaces the operator's",
+			name:    "repository instructions follow the admin's, and its summary template replaces the admin's",
 			doc:     "review:\n  instructions: [.kritik/rules.md]\n  templates:\n    summary: .kritik/summary.tmpl\n",
 			files:   with(repoconfig.Files{".kritik/rules.md": "repo rules", ".kritik/summary.tmpl": "repo summary"}),
 			enabled: true, ignore: []string{"vendor/**"},
 			repoFiles:    []string{"ops/rules.md", ".kritik/rules.md", ".kritik/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			instructions: []string{"operator rules", "repo rules"}, templates: review.Templates{Summary: "repo summary", Inline: "op inline"}, strict: true,
+			instructions: []string{"admin rules", "repo rules"}, templates: review.Templates{Summary: "repo summary", Inline: "op inline"}, strict: true,
 		},
 		{
 			name: "a missing instruction file is noted", doc: "review:\n  instructions: [.kritik/rules.md, .kritik/gone.md]\n",
 			files: with(repoconfig.Files{".kritik/rules.md": "repo rules"}), enabled: true, ignore: []string{"vendor/**"},
 			repoFiles:    []string{"ops/rules.md", ".kritik/rules.md", ".kritik/gone.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			instructions: []string{"operator rules", "repo rules"}, templates: operatorDefaults, strict: true,
+			instructions: []string{"admin rules", "repo rules"}, templates: adminDefaults, strict: true,
 			notes: []string{".kritik/gone.md: referenced but not found"},
 		},
 		{
 			name: "a file the runner noted is not noted again", doc: "review:\n  instructions: [.kritik/big.md, .kritik/gone.md]\n",
-			files: operatorFiles,
+			files: adminFiles,
 			runnerNotes: []string{
 				".kritik/big.md: skipped, it exceeds the 262144 byte per-file limit", ".kritik/gone.md: referenced but not found",
 			},
 			enabled: true, ignore: []string{"vendor/**"},
 			repoFiles:    []string{"ops/rules.md", ".kritik/big.md", ".kritik/gone.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
+			instructions: []string{"admin rules"}, templates: adminDefaults, strict: true,
 			notes: []string{
 				".kritik/big.md: skipped, it exceeds the 262144 byte per-file limit", ".kritik/gone.md: referenced but not found",
 			},
 		},
 		{
-			// The operator's 14 bytes and a separator leave the repository's
+			// The admin's 11 bytes and a separator leave the repository's
 			// file room for all but its last character, whose first byte
 			// would still fit.
 			name: "instructions are capped at a UTF-8 boundary", doc: "review:\n  instructions: [.kritik/a.md, .kritik/b.md]\n",
-			files:   with(repoconfig.Files{".kritik/a.md": strings.Repeat("a", repoconfig.MaxInstructionBytes-17) + "é", ".kritik/b.md": "never seen"}),
+			files:   with(repoconfig.Files{".kritik/a.md": strings.Repeat("a", repoconfig.MaxInstructionBytes-14) + "é", ".kritik/b.md": "never seen"}),
 			enabled: true, ignore: []string{"vendor/**"},
 			repoFiles: []string{"ops/rules.md", ".kritik/a.md", ".kritik/b.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			templates: operatorDefaults, strict: true,
-			instructions: []string{"operator rules", strings.Repeat("a", repoconfig.MaxInstructionBytes-17)},
+			templates: adminDefaults, strict: true,
+			instructions: []string{"admin rules", strings.Repeat("a", repoconfig.MaxInstructionBytes-14)},
 			notes:        []string{"repository instructions truncated to 32 KiB"},
 		},
 		{
-			name: "invalid yaml is noted and the operator's settings apply", doc: "enabled: false\nunknown: 1\n", files: operatorFiles,
-			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(operatorPaths, repoconfig.FileName),
-			instructions: []string{"operator rules"}, templates: operatorDefaults, strict: true,
+			name: "invalid yaml is noted and the admin's settings apply", doc: "enabled: false\nunknown: 1\n", files: adminFiles,
+			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
+			instructions: []string{"admin rules"}, templates: adminDefaults, strict: true,
 			notes: []string{".kritik.yaml was ignored: repoconfig: parse: yaml: unmarshal errors:\n  line 2: field unknown not found in type repoconfig.File"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			settings := operatorSettings(t)
+			settings := adminSettings(t)
 			var doc []byte
 			if tt.doc != "" {
 				doc = []byte(tt.doc)
 			}
 			e, notes := effective(settings, doc)
 			if e.Enabled != tt.enabled || (e.InRepoFilter != nil) != tt.inRepoFilter || e.Filter != settings.Filter {
-				t.Fatalf("enabled=%v inRepoFilter=%v operator filter kept=%v", e.Enabled, e.InRepoFilter != nil, e.Filter == settings.Filter)
+				t.Fatalf("enabled=%v inRepoFilter=%v admin filter kept=%v", e.Enabled, e.InRepoFilter != nil, e.Filter == settings.Filter)
 			}
 			if !slices.Equal(e.Ignore, tt.ignore) || !slices.Equal(e.Skip.OnlyPaths, tt.onlyPaths) {
 				t.Fatalf("ignore=%v onlyPaths=%v", e.Ignore, e.Skip.OnlyPaths)
@@ -157,7 +157,7 @@ func TestEffective(t *testing.T) {
 				t.Fatalf("notes = %q, want %q", notes, tt.notes)
 			}
 			if !slices.Equal(settings.Ignore, []string{"vendor/**"}) || !slices.Equal(settings.Review.Instructions, []string{"ops/rules.md"}) {
-				t.Fatalf("the operator's settings were modified: %v %v", settings.Ignore, settings.Review.Instructions)
+				t.Fatalf("the admin's settings were modified: %v %v", settings.Ignore, settings.Review.Instructions)
 			}
 		})
 	}
@@ -288,7 +288,7 @@ func (f fileForge) MergeBase(context.Context, string, string, string, string) (s
 }
 
 func TestFollowUpRepoConfig(t *testing.T) {
-	files := map[string]string{"ops/rules.md": "operator rules", ".kritik/rules.md": "repo rules"}
+	files := map[string]string{"ops/rules.md": "admin rules", ".kritik/rules.md": "repo rules"}
 	with := func(doc string) map[string]string {
 		m := maps.Clone(files)
 		m[repoconfig.FileName] = doc
@@ -301,17 +301,17 @@ func TestFollowUpRepoConfig(t *testing.T) {
 		model        configfile.ModelRef
 		instructions []string
 	}{
-		{name: "no file", files: files, model: "p/big", instructions: []string{"operator rules"}},
+		{name: "no file", files: files, model: "p/big", instructions: []string{"admin rules"}},
 		{
 			name: "the repository's model and instructions", files: with("models: { review: p/small }\nreview: { instructions: [.kritik/rules.md] }\n"),
-			model: "p/small", instructions: []string{"operator rules", "repo rules"},
+			model: "p/small", instructions: []string{"admin rules", "repo rules"},
 		},
-		{name: "a model outside the bounds is dropped", files: with("models: { review: p/huge }\n"), model: "p/big", instructions: []string{"operator rules"}},
+		{name: "a model outside the bounds is dropped", files: with("models: { review: p/huge }\n"), model: "p/big", instructions: []string{"admin rules"}},
 		{name: "disabled", files: with("enabled: false\n"), reason: "disabled in .kritik.yaml", model: "p/big"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			settings := operatorSettings(t)
+			settings := adminSettings(t)
 			settings.Models.Review = "p/big"
 			settings.Allow.Models = []configfile.ModelRef{"p/big", "p/small"}
 			f := &followUp{client: fileForge{files: tt.files}, owner: "o", repo: "r", pr: &pullRequest{number: 1}, settings: settings}
@@ -353,14 +353,14 @@ func TestPostsInline(t *testing.T) {
 }
 
 func TestFillScopesInstructions(t *testing.T) {
-	e, _ := effective(operatorSettings(t), []byte("review:\n  instructions: [{ path: .kritik/sql.md, paths: ['**/*.sql'] }]\n"))
-	files := repoconfig.Files{"ops/rules.md": "operator rules", ".kritik/sql.md": "sql rules"}
+	e, _ := effective(adminSettings(t), []byte("review:\n  instructions: [{ path: .kritik/sql.md, paths: ['**/*.sql'] }]\n"))
+	files := repoconfig.Files{"ops/rules.md": "admin rules", ".kritik/sql.md": "sql rules"}
 	for _, tt := range []struct {
 		changed []string
 		want    []string
 	}{
-		{[]string{"main.go"}, []string{"operator rules"}},
-		{[]string{"main.go", "db/0001.sql"}, []string{"operator rules", "sql rules"}},
+		{[]string{"main.go"}, []string{"admin rules"}},
+		{[]string{"main.go", "db/0001.sql"}, []string{"admin rules", "sql rules"}},
 	} {
 		e.fill(files, nil, tt.changed)
 		if !slices.Equal(e.Instructions, tt.want) {
@@ -370,12 +370,12 @@ func TestFillScopesInstructions(t *testing.T) {
 }
 
 func TestFillReferences(t *testing.T) {
-	settings := operatorSettings(t)
+	settings := adminSettings(t)
 	settings.Review.Context = []configfile.ContextFile{{Path: "docs/arch.md", Description: "how the parts fit"}}
 	e, _ := effective(settings, []byte("review:\n  context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }, "+
 		"{ path: docs/gone.md, description: gone }]\n"))
 	files := repoconfig.Files{
-		"ops/rules.md": "operator rules", "ops/summary.tmpl": "s", "ops/inline.tmpl": "i", "docs/arch.md": "arch", "db/schema.sql": "schema",
+		"ops/rules.md": "admin rules", "ops/summary.tmpl": "s", "ops/inline.tmpl": "i", "docs/arch.md": "arch", "db/schema.sql": "schema",
 	}
 	notes := e.fill(files, nil, []string{"main.go"})
 	want := []review.Reference{{Path: "docs/arch.md", Description: "how the parts fit", Content: "arch"}}

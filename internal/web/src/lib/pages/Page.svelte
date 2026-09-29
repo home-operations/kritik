@@ -4,7 +4,7 @@
   // keeps the review page mounted.
   import type { Route } from '../routes';
   import Overview from './Overview.svelte';
-  import Operator from './Operator.svelte';
+  import Console from './Console.svelte';
   import AccountOverview from './AccountOverview.svelte';
   import Repos from './Repos.svelte';
   import Repo from './Repo.svelte';
@@ -30,8 +30,8 @@
 {#key key}
   {#if route.name === 'overview'}
     <Overview />
-  {:else if route.name === 'operator'}
-    <Operator />
+  {:else if route.name === 'console'}
+    <Console />
   {:else if route.name === 'account'}
     <AccountOverview slug={route.slug} />
   {:else if route.name === 'repos'}

@@ -285,7 +285,7 @@ func TestOIDCSignIn(t *testing.T) {
 	}
 	p := e.principal(cookie)
 	if p == nil || p.Identity.Provider != "oidc" || p.Identity.Subject != alice.Login || p.Identity.Login != alice.Login ||
-		!p.User.EmailVerified || p.User.Email != alice.Email || p.Operator || !p.AllAccounts {
+		!p.User.EmailVerified || p.User.Email != alice.Email || p.Admin || !p.AllAccounts {
 		t.Fatalf("principal = %+v", p)
 	}
 
@@ -353,7 +353,7 @@ func TestOIDCSignIn(t *testing.T) {
 	})
 	t.Run("an admin by role", func(t *testing.T) {
 		op := &fakeUser{Login: "op-oidc-" + randomHex(t), Email: "op@oidc.example", Groups: []string{"ops"}}
-		if p := e.principal(e.mustSignIn("oidc", e.oidc, op)); p == nil || !p.Operator {
+		if p := e.principal(e.mustSignIn("oidc", e.oidc, op)); p == nil || !p.Admin {
 			t.Fatalf("principal = %+v, want an admin", p)
 		}
 	})
@@ -371,7 +371,7 @@ func TestGitHubSignInGrants(t *testing.T) {
 	p := e.principal(firstCookie)
 	assertAccounts(t, e.accounts(p), "alice-gh", "acme", "Widgets")
 	if p.Identity.Subject != "1001" || p.Identity.Login != "Alice-GH" || p.User.Email != "alice@gh.example" || !p.User.EmailVerified ||
-		p.Operator || p.AllAccounts {
+		p.Admin || p.AllAccounts {
 		t.Fatalf("principal = %+v", p)
 	}
 
@@ -386,7 +386,7 @@ func TestGitHubSignInGrants(t *testing.T) {
 
 	t.Run("an admin by login", func(t *testing.T) {
 		op := &fakeUser{ID: 1002, Login: "opgh", Email: "op@gh.example"}
-		if p := e.principal(e.mustSignIn("github", e.gh, op)); !p.Operator || !p.CanRead(e.accountID["acme"]) {
+		if p := e.principal(e.mustSignIn("github", e.gh, op)); !p.Admin || !p.CanRead(e.accountID["acme"]) {
 			t.Fatalf("principal = %+v, want an admin", p)
 		}
 	})
@@ -431,7 +431,7 @@ func TestLocalAdminSignIn(t *testing.T) {
 	}
 	cookie := sessionFrom(t, w, e.h.webURL)
 	p := e.principal(cookie)
-	if p == nil || !p.Operator || p.Identity.Provider != "local" || p.Identity.Login != "admin" || p.User.DisplayName != "admin" {
+	if p == nil || !p.Admin || p.Identity.Provider != "local" || p.Identity.Login != "admin" || p.User.DisplayName != "admin" {
 		t.Fatalf("principal = %+v", p)
 	}
 	again := e.principal(sessionFrom(t, e.localSignIn("admin", adminTestPassword), e.h.webURL))

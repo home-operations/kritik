@@ -5,7 +5,7 @@
   import { Resource, live } from '../../resource.svelte';
   import { isActive } from '../../format';
   import { pullRoute, rerunPath, cancelPath, accountApi } from '../../links';
-  import { canAdmin } from '../../session.svelte';
+  import { isAdmin } from '../../session.svelte';
   import ActionButton from '../../components/ActionButton.svelte';
   import type { ReviewDetail } from '../../types';
   import StateView from '../../components/StateView.svelte';
@@ -73,7 +73,7 @@
           {/if}
           {#if r.error}<p class="error-text" role="note">{r.error}</p>{/if}
           {#if r.cancelRequestedAt}<p class="small muted">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}
-          {#if canAdmin(slug)}
+          {#if isAdmin()}
             <div class="page-actions">
               <ActionButton
                 label="Re-run"

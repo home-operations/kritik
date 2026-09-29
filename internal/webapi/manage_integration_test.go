@@ -168,7 +168,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 	})
 	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(e.http.Close)
-	e.signIn("operator", "mgr-op", store.SessionGrant{Role: store.RoleAdmin})
+	e.signIn("admin", "mgr-op", store.SessionGrant{Role: store.RoleAdmin})
 	e.signIn("outsider", "mgr-outsider", memberOfAccounts("github/nobody"))
 	return e
 }
@@ -342,12 +342,12 @@ func testWriteSpec(t *testing.T, e *manageEnv) string {
 	e.expect(status, body, http.StatusUnauthorized, "")
 	status, body = e.do("outsider", "PUT", instancePath, req)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	status, body = e.do("operator", "PUT", instancePath, UpdateConfigRequest{Revision: 3, Spec: req.Spec})
+	status, body = e.do("admin", "PUT", instancePath, UpdateConfigRequest{Revision: 3, Spec: req.Spec})
 	e.expect(status, body, http.StatusConflict, CodeRevisionConflict)
 	if e.totalAudits() != before {
 		t.Fatal("a refused write left an audit row")
 	}
-	status, body = e.do("operator", "PUT", instancePath, req)
+	status, body = e.do("admin", "PUT", instancePath, req)
 	e.expect(status, body, http.StatusOK, "")
 	var res ConfigWriteResult
 	if err := json.Unmarshal(body, &res); err != nil {
@@ -399,7 +399,7 @@ func testHookVerifies(t *testing.T, e *manageEnv, secret string) {
 }
 
 func testConfigRedacted(t *testing.T, e *manageEnv) {
-	status, body := e.do("operator", "GET", instancePath, nil)
+	status, body := e.do("admin", "GET", instancePath, nil)
 	e.expect(status, body, http.StatusOK, "")
 	var ic InstanceConfig
 	if err := json.Unmarshal(body, &ic); err != nil || ic.Revision != 1 || !ic.Editable {
@@ -410,7 +410,7 @@ func testConfigRedacted(t *testing.T, e *manageEnv) {
 	}
 	status, body = e.do("member", "GET", instancePath, nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	for _, who := range []string{"operator", "member"} {
+	for _, who := range []string{"admin", "member"} {
 		t.Run(who, func(t *testing.T) {
 			status, body := e.do(who, "GET", mdPath+"/config", nil)
 			e.expect(status, body, http.StatusOK, "")
@@ -418,14 +418,14 @@ func testConfigRedacted(t *testing.T, e *manageEnv) {
 			if err := json.Unmarshal(body, &c); err != nil {
 				t.Fatal(err)
 			}
-			if c.Revision != 1 || c.Editable != (who == "operator") || !strings.Contains(string(c.Spec), `"name":"md"`) {
+			if c.Revision != 1 || c.Editable != (who == "admin") || !strings.Contains(string(c.Spec), `"name":"md"`) {
 				t.Errorf("config = %s", body)
 			}
 		})
 	}
 	status, body = e.do("outsider", "GET", mdPath+"/config", nil)
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
-	status, body = e.do("operator", "GET", "/api/v1/accounts/github/mf/config", nil)
+	status, body = e.do("admin", "GET", "/api/v1/accounts/github/mf/config", nil)
 	e.expect(status, body, http.StatusOK, "")
 	if !strings.Contains(string(body), `"spec":{"forge":"github","name":"mf"}`) {
 		t.Errorf("an account without an entry = %s", body)
@@ -436,20 +436,20 @@ func testAccountUpdate(t *testing.T, e *manageEnv) {
 	before := e.totalAudits()
 	sealedKey := e.scalar(`SELECT spec->'connections'->0->'app'->'privateKey'->>'sealed' FROM instance_config`)
 	stale := UpdateConfigRequest{Revision: 7, Spec: mustJSON(t, mdEntry(nil))}
-	status, body := e.do("operator", "PUT", mdPath+"/config", stale)
+	status, body := e.do("admin", "PUT", mdPath+"/config", stale)
 	e.expect(status, body, http.StatusConflict, CodeRevisionConflict)
 	badModel := UpdateConfigRequest{Revision: 1, Spec: mustJSON(t, mdEntry(map[string]any{"models": map[string]any{"review": "nope/x"}}))}
-	status, body = e.do("operator", "PUT", mdPath+"/config", badModel)
+	status, body = e.do("admin", "PUT", mdPath+"/config", badModel)
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
 	if !strings.Contains(string(body), `"path":"models.review"`) {
 		t.Errorf("bad model = %s", body)
 	}
 	envKey := UpdateConfigRequest{Revision: 1, Spec: mustJSON(t, mdEntry(map[string]any{
 		"providers": map[string]any{"mine": map[string]any{"type": "openai", "apiKey": map[string]any{"env": "HOME"}}}}))}
-	status, body = e.do("operator", "PUT", mdPath+"/config", envKey)
+	status, body = e.do("admin", "PUT", mdPath+"/config", envKey)
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
 	other := UpdateConfigRequest{Revision: 1, Spec: mustJSON(t, map[string]any{"forge": "github", "name": "mf"})}
-	status, body = e.do("operator", "PUT", mdPath+"/config", other)
+	status, body = e.do("admin", "PUT", mdPath+"/config", other)
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
 	good := UpdateConfigRequest{Revision: 1, Spec: mustJSON(t, mdEntry(map[string]any{
 		"filter":    "true",
@@ -460,12 +460,12 @@ func testAccountUpdate(t *testing.T, e *manageEnv) {
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
 	status, body = e.do("outsider", "PUT", mdPath+"/config", good)
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
-	status, body = e.do("operator", "PUT", mdPath+"/config", good, false)
+	status, body = e.do("admin", "PUT", mdPath+"/config", good, false)
 	e.expect(status, body, http.StatusForbidden, "")
 	if e.totalAudits() != before {
 		t.Fatalf("refused writes left %d audit rows", e.totalAudits()-before)
 	}
-	status, body = e.do("operator", "PUT", mdPath+"/config", good)
+	status, body = e.do("admin", "PUT", mdPath+"/config", good)
 	e.expect(status, body, http.StatusOK, "")
 	if !strings.Contains(string(body), `"revision":2`) {
 		t.Errorf("update = %s", body)
@@ -488,7 +488,7 @@ func testAccountUpdate(t *testing.T, e *manageEnv) {
 		p, ok := f.Provider(a, "mine")
 		return ok && p.APIKeyValue().Value() == "sk-mine" && f.Settings(a, "").Models.Review == "mine/gpt"
 	})
-	status, body = e.do("operator", "GET", mdPath+"/config", nil)
+	status, body = e.do("admin", "GET", mdPath+"/config", nil)
 	if status != http.StatusOK || strings.Contains(string(body), "sk-mine") || !strings.Contains(string(body), `"apiKey":{"set":true}`) {
 		t.Errorf("config read = %d %s", status, body)
 	}
@@ -497,7 +497,7 @@ func testAccountUpdate(t *testing.T, e *manageEnv) {
 	moved["connections"].([]any)[0].(map[string]any)["accounts"] = []string{"md", "other"}
 	moved["accounts"] = []any{mdEntry(map[string]any{"filter": "true", "models": map[string]any{"review": "mine/gpt"},
 		"providers": map[string]any{"mine": map[string]any{"type": "openai", "apiKey": keep}}})}
-	status, body = e.do("operator", "PUT", instancePath, UpdateConfigRequest{Revision: 2, Spec: mustJSON(t, moved)})
+	status, body = e.do("admin", "PUT", instancePath, UpdateConfigRequest{Revision: 2, Spec: mustJSON(t, moved)})
 	e.expect(status, body, http.StatusUnprocessableEntity, CodeReenterSecret)
 	if !strings.Contains(string(body), `"path":"connections[0].app.privateKey"`) {
 		t.Errorf("reenter_secret details = %s", body)
@@ -519,7 +519,7 @@ func testFileClaims(t *testing.T, e *manageEnv) {
 				"name": tt.conn, "forge": "github", "accounts": []string{tt.account},
 				"app": map[string]any{"clientId": "Iv1.test", "privateKey": map[string]any{"value": "k"}, "webhookSecret": map[string]any{"value": "w"}},
 			})
-			status, body := e.do("operator", "PUT", instancePath, UpdateConfigRequest{Revision: 2, Spec: mustJSON(t, spec)})
+			status, body := e.do("admin", "PUT", instancePath, UpdateConfigRequest{Revision: 2, Spec: mustJSON(t, spec)})
 			e.expect(status, body, http.StatusUnprocessableEntity, CodeInvalidSpec)
 			if !strings.Contains(string(body), tt.want) {
 				t.Errorf("claim = %s, want %s", body, tt.want)
@@ -539,12 +539,12 @@ func testActions(t *testing.T, e *manageEnv, md string) {
 
 	status, body := e.do("member", "POST", mdPath+"/pulls/md/one/3/rerun", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	status, body = e.do("operator", "POST", mdPath+"/pulls/md/one/3/rerun", nil, false)
+	status, body = e.do("admin", "POST", mdPath+"/pulls/md/one/3/rerun", nil, false)
 	e.expect(status, body, http.StatusForbidden, "")
-	status, body = e.do("operator", "POST", mdPath+"/pulls/md/one/99/rerun", nil)
+	status, body = e.do("admin", "POST", mdPath+"/pulls/md/one/99/rerun", nil)
 	e.expect(status, body, http.StatusNotFound, CodeNotFound)
 
-	status, body = e.do("operator", "POST", mdPath+"/pulls/md/one/3/rerun", nil)
+	status, body = e.do("admin", "POST", mdPath+"/pulls/md/one/3/rerun", nil)
 	e.expect(status, body, http.StatusAccepted, "")
 	if string(bytes.TrimSpace(body)) != `{"jobId":101}` || e.actions.last() != fmt.Sprintf("rerun %s %s 3 in %s", md, repoID, md) {
 		t.Errorf("rerun = %s, call %q", body, e.actions.last())
@@ -555,9 +555,9 @@ func testActions(t *testing.T, e *manageEnv, md string) {
 
 	review := "00000000-0000-4000-8000-000000000001"
 	e.actions.notCancelable = "00000000-0000-4000-8000-000000000002"
-	status, body = e.do("operator", "POST", mdPath+"/reviews/"+e.actions.notCancelable+"/cancel", nil)
+	status, body = e.do("admin", "POST", mdPath+"/reviews/"+e.actions.notCancelable+"/cancel", nil)
 	e.expect(status, body, http.StatusConflict, CodeNotCancelable)
-	status, body = e.do("operator", "POST", mdPath+"/reviews/"+review+"/cancel", nil)
+	status, body = e.do("admin", "POST", mdPath+"/reviews/"+review+"/cancel", nil)
 	e.expect(status, body, http.StatusAccepted, "")
 	if e.actions.last() != fmt.Sprintf("cancel %s in %s", review, md) {
 		t.Errorf("cancel call %q", e.actions.last())
@@ -566,7 +566,7 @@ func testActions(t *testing.T, e *manageEnv, md string) {
 		t.Errorf("review.cancel audit rows are wrong")
 	}
 
-	status, body = e.do("operator", "POST", mdPath+"/repos/md/one/reindex", nil)
+	status, body = e.do("admin", "POST", mdPath+"/repos/md/one/reindex", nil)
 	e.expect(status, body, http.StatusAccepted, "")
 	if e.actions.last() != fmt.Sprintf("reindex %s %s in %s", md, repoID, md) || e.audits(AuditRepoReindex, "md/one") != 1 {
 		t.Errorf("reindex = %s, call %q", body, e.actions.last())
@@ -576,13 +576,13 @@ func testActions(t *testing.T, e *manageEnv, md string) {
 func testAuditLog(t *testing.T, e *manageEnv, md string) {
 	status, body := e.do("member", "GET", mdPath+"/audit", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
-	status, body = e.do("member", "GET", "/api/v1/operator/audit", nil)
+	status, body = e.do("member", "GET", "/api/v1/admin/audit", nil)
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
 
 	var seen []AuditEvent
 	path := mdPath + "/audit?limit=2"
 	for range 20 {
-		status, body = e.do("operator", "GET", path, nil)
+		status, body = e.do("admin", "GET", path, nil)
 		e.expect(status, body, http.StatusOK, "")
 		var page Page[AuditEvent]
 		if err := json.Unmarshal(body, &page); err != nil {
@@ -609,7 +609,7 @@ func testAuditLog(t *testing.T, e *manageEnv, md string) {
 		}
 		prev = id
 	}
-	status, body = e.do("operator", "GET", "/api/v1/operator/audit?limit=200", nil)
+	status, body = e.do("admin", "GET", "/api/v1/admin/audit?limit=200", nil)
 	e.expect(status, body, http.StatusOK, "")
 	if !strings.Contains(string(body), `"account":"","action":"config.update","target":"instance"`) {
 		t.Errorf("admin audit lacks the instance write: %s", body)
@@ -648,7 +648,7 @@ func testFileConnectionLeftOut(t *testing.T, e *manageEnv) {
 	}
 	write(spec)
 	e.waitFor("mgr-file-bot to be left out", func(f *configfile.File) bool { return len(f.Skipped()) == 1 })
-	status, body := e.do("operator", "GET", "/api/v1/operator/instance", nil)
+	status, body := e.do("admin", "GET", "/api/v1/admin/instance", nil)
 	e.expect(status, body, http.StatusOK, "")
 	if !strings.Contains(string(body), `"key":"mgr-file-bot","value":"left out: the dashboard's connection \"mgr-file-bot\" already holds the name"`) {
 		t.Fatalf("instance settings = %s", body)
@@ -678,7 +678,7 @@ func TestConcurrentSpecWrites(t *testing.T) {
 	statuses := make([]int, writers)
 	var wg sync.WaitGroup
 	for i := range writers {
-		wg.Go(func() { statuses[i], _ = e.do("operator", "PUT", instancePath, UpdateConfigRequest{Spec: spec}) })
+		wg.Go(func() { statuses[i], _ = e.do("admin", "PUT", instancePath, UpdateConfigRequest{Spec: spec}) })
 	}
 	wg.Wait()
 	counts := map[int]int{}
@@ -702,7 +702,7 @@ func TestReindexConfirmation(t *testing.T) {
 	revision := int64(0)
 	put := func(path string, spec map[string]any, confirm bool, wantStatus int, wantCode ErrorCode) {
 		t.Helper()
-		status, body := e.do("operator", "PUT", path, UpdateConfigRequest{Revision: revision, Spec: mustJSON(t, spec), ConfirmReindex: confirm})
+		status, body := e.do("admin", "PUT", path, UpdateConfigRequest{Revision: revision, Spec: mustJSON(t, spec), ConfirmReindex: confirm})
 		e.expect(status, body, wantStatus, wantCode)
 		if status == http.StatusOK {
 			revision++

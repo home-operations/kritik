@@ -69,16 +69,16 @@
     return 'slug' in r ? r.slug : undefined;
   }
 
-  // Gated the same way as the top-bar (App.svelte): admin console and
-  // per-account admin are role-restricted, and "Sign in" only makes sense
-  // when there's no session yet.
+  // Gated the same way as the top-bar (App.svelte): the admin console and
+  // each account's admin pages are for admins, and "Sign in" only makes
+  // sense when there's no session yet.
   function buildEntries(r: Route, searching: boolean): Entry[] {
     const entries: Entry[] = [{ label: 'Overview', route: { name: 'overview' }, icon: mdiViewDashboardOutline }];
-    if (me?.operator) {
-      entries.push({ label: 'Admin console', route: { name: 'operator' }, icon: mdiConsoleLine });
+    if (me?.admin) {
+      entries.push({ label: 'Admin console', route: { name: 'console' }, icon: mdiConsoleLine });
       if (searching) {
         for (const [label, target, keywords] of consoleSettings) {
-          entries.push({ label, hint: 'admin console', route: { name: 'operator' }, icon: mdiCogOutline, target, keywords });
+          entries.push({ label, hint: 'admin console', route: { name: 'console' }, icon: mdiCogOutline, target, keywords });
         }
       }
     }
@@ -88,7 +88,7 @@
     // Every account the user can see gets its pages, current account first,
     // so any page of any account is a few keystrokes away.
     const current = currentSlug(r);
-    const slugs = [...new Set([...(current ? [current] : []), ...(me?.accounts.map((t) => t.slug) ?? [])])];
+    const slugs = [...new Set([...(current ? [current] : []), ...(me?.accounts ?? [])])];
     for (const slug of slugs) {
       entries.push(
         { label: 'Account overview', hint: slug, route: { name: 'account', slug }, icon: mdiViewDashboardOutline },
@@ -98,7 +98,7 @@
         { label: 'Usage', hint: slug, route: { name: 'usage', slug }, icon: mdiCurrencyUsd },
         { label: 'Follow-ups', hint: slug, route: { name: 'followups', slug }, icon: mdiClipboardTextClockOutline },
       );
-      if (me?.accounts.find((t) => t.slug === slug)?.role === 'admin') {
+      if (me?.admin) {
         entries.push({ label: 'Admin', hint: slug, route: { name: 'admin', slug }, icon: mdiCogOutline });
         if (searching) {
           for (const [label, target, keywords] of accountSettings) {
@@ -135,7 +135,7 @@
   }
 
   $effect(() => {
-    const slug = currentSlug(router.route) ?? me?.accounts[0]?.slug;
+    const slug = currentSlug(router.route) ?? me?.accounts[0];
     if (palette.open && slug) void loadRecent(slug);
   });
 

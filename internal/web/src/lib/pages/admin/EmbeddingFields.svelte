@@ -40,7 +40,7 @@
     <SecretField label="Embedding API key" path="embedding.apiKey" bind:secret={emb.apiKey} {keepable} invalid={inv('embedding.apiKey')} />
   </div>
   <KeyTest
-    path="/api/v1/operator/embedding/test"
+    path="/api/v1/admin/embedding/test"
     secret={emb.apiKey}
     {keepable}
     request={(apiKey) => ({ baseUrl: emb.baseUrl.trim(), model: emb.model.trim(), dims: Number(emb.dims.trim()), apiKey })}

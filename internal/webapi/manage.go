@@ -47,7 +47,7 @@ var (
 
 func (s *Server) getInstanceConfig(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
-	if !p.Operator {
+	if !p.Admin {
 		return errForbidden
 	}
 	stored, err := s.store.InstanceSpec(r.Context())
@@ -65,7 +65,7 @@ func (s *Server) getInstanceConfig(w http.ResponseWriter, r *http.Request) error
 func (s *Server) updateInstanceConfig(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
 	switch {
-	case !p.Operator:
+	case !p.Admin:
 		return errForbidden
 	case s.keyring == nil:
 		return errManagementDisabled
@@ -95,7 +95,7 @@ func (s *Server) getAccountConfig(w http.ResponseWriter, r *http.Request, t *acc
 	if err != nil {
 		return err
 	}
-	out := AccountConfig{Revision: stored.Revision, Editable: s.keyring != nil && t.principal.Operator, Inherited: s.inherited(t.account)}
+	out := AccountConfig{Revision: stored.Revision, Editable: s.keyring != nil && t.principal.Admin, Inherited: s.inherited(t.account)}
 	if out.Spec, err = redactSpec(entry); err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func (s *Server) getAccountConfig(w http.ResponseWriter, r *http.Request, t *acc
 
 func (s *Server) updateAccountConfig(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	switch {
-	case !t.principal.Operator:
+	case !t.principal.Admin:
 		return errForbidden
 	case s.keyring == nil:
 		return errManagementDisabled

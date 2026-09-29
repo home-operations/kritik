@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import * as g from './golden';
 import type * as T from '../src/lib/types';
 
-const operatorMe: T.Me = { ...g.me, operator: true };
+const adminMe: T.Me = { ...g.me, admin: true };
 
 const fresh: T.SetupStatus = {
   ...g.setupStatus,
@@ -14,7 +14,7 @@ const fresh: T.SetupStatus = {
 };
 
 async function setup(page: Page, status: T.SetupStatus | (() => T.SetupStatus), rows: [RegExp, unknown][] = []): Promise<void> {
-  await g.mockApi(page, [[/\/api\/v1\/me$/, operatorMe], [/\/api\/v1\/operator\/setup$/, status], ...rows, ...g.defaultApi()]);
+  await g.mockApi(page, [[/\/api\/v1\/me$/, adminMe], [/\/api\/v1\/admin\/setup$/, status], ...rows, ...g.defaultApi()]);
 }
 
 // flags presets what the wizard remembers in this browser.
@@ -52,10 +52,10 @@ test.describe('setup wizard', () => {
     let saved = false;
     await flags(page, { listener: true, installed: true });
     await setup(page, () => ({ ...fresh, connections: ['alpha-bot'], reviewModel: saved ? 'or/acme-large' : '' }), [
-      [/\/api\/v1\/operator\/connections\/alpha-bot\/repositories$/, [g.golden<T.AccountRepositories>('account_repositories')]],
+      [/\/api\/v1\/admin\/connections\/alpha-bot\/repositories$/, [g.golden<T.AccountRepositories>('account_repositories')]],
     ]);
     const sent = await g.mockWrites(page, [
-      ['POST', /\/api\/v1\/operator\/providers\/test$/, { status: 200, body: g.testResult }],
+      ['POST', /\/api\/v1\/admin\/providers\/test$/, { status: 200, body: g.testResult }],
       [
         'PUT',
         /\/api\/v1\/config$/,
@@ -64,7 +64,7 @@ test.describe('setup wizard', () => {
           return { status: 200, body: { revision: 4 } };
         },
       ],
-      ['POST', /\/api\/v1\/operator\/connections\/alpha-bot\/repositories$/, { status: 200, body: { added: 1 } }],
+      ['POST', /\/api\/v1\/admin\/connections\/alpha-bot\/repositories$/, { status: 200, body: { added: 1 } }],
     ]);
     await page.goto('/#/');
     const wizard = page.getByRole('dialog', { name: 'Set up kritik' });
@@ -102,7 +102,7 @@ test.describe('setup wizard', () => {
     const conn = g.golden<T.AccountDetail>('account_detail').connection;
     await setup(page, { ...fresh, connections: [conn.name] }, [
       [
-        new RegExp(`/api/v1/operator/connections/${conn.name}/installations$`),
+        new RegExp(`/api/v1/admin/connections/${conn.name}/installations$`),
         () => (installed ? [{ ...g.appInstallation, account: conn.accounts[0]!, served: true }] : []),
       ],
     ]);
@@ -119,7 +119,7 @@ test.describe('setup wizard', () => {
   test('shows a finished App registration over the wizard', async ({ page }) => {
     await setup(page, fresh);
     await g.mockWrites(page, [['POST', /\/api\/v1\/app\/manifests\/collect$/, { status: 200, body: [g.appManifestResult] }]]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     const results = page.getByRole('dialog', { name: 'GitHub App registration' });
     await expect(results).toBeVisible();
     await results.getByRole('button', { name: 'Done' }).click();

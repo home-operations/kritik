@@ -28,14 +28,14 @@ func TestHubPublishFiltersByAccount(t *testing.T) {
 	alpha, beta := accountIDOf(t, f, "alpha"), accountIDOf(t, f, "beta")
 	a := h.subscribe(&auth.Principal{Accounts: map[string]bool{alpha: true}})
 	b := h.subscribe(&auth.Principal{Accounts: map[string]bool{beta: true}})
-	op := h.subscribe(&auth.Principal{Operator: true})
+	op := h.subscribe(&auth.Principal{Admin: true})
 	rid := "r-1"
 
 	h.publish(store.Event{AccountID: alpha, Kind: store.EventReview, ID: "e-1", ReviewID: &rid})
 	h.publish(store.Event{AccountID: "not-in-the-file", Kind: store.EventReview, ID: "e-2"})
 
 	want := Event{Kind: store.EventReview, Account: "github/alpha", ID: "e-1", ReviewID: &rid}
-	for name, c := range map[string]*client{"member of alpha": a, "operator": op} {
+	for name, c := range map[string]*client{"member of alpha": a, "admin": op} {
 		select {
 		case got := <-c.events:
 			if got.Kind != want.Kind || got.Account != want.Account || got.ID != want.ID || *got.ReviewID != rid {
@@ -181,7 +181,7 @@ func TestHubServe(t *testing.T) {
 
 func TestHubCloseEndsStreams(t *testing.T) {
 	h, _ := testHub(t)
-	p := &auth.Principal{Operator: true}
+	p := &auth.Principal{Admin: true}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.serve(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	}))

@@ -65,7 +65,6 @@
               <thead>
                 <tr>
                   <th scope="col">Account</th>
-                  <th scope="col">Role</th>
                   <th scope="col">Connection</th>
                   <th scope="col" class="num">Repositories</th>
                   <th scope="col" class="num">Reviews 7d</th>
@@ -77,7 +76,6 @@
                 {#each list as t (t.slug)}
                   <tr>
                     <td class="mono"><a href={href({ name: 'account', slug: t.slug })}>{t.slug}</a></td>
-                    <td>{t.role}</td>
                     <td class="mono small">{t.connection}</td>
                     <td class="num">{wholeNumber(t.repositories)}</td>
                     <td class="num">{wholeNumber(t.reviews7d)}</td>

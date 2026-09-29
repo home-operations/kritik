@@ -8,9 +8,8 @@ const API = `/api/v1/accounts/${S}`;
 const ADMIN = `#/a/${S}/admin`;
 const CONFIG = /\/api\/v1\/config$/;
 
-const adminMe: T.Me = { ...g.me, operator: false, accounts: [{ slug: S, role: 'admin' }] };
-const memberMe: T.Me = { ...g.me, operator: false, accounts: [{ slug: S, role: 'member' }] };
-const operatorMe: T.Me = { ...g.me, operator: true };
+const adminMe: T.Me = { ...g.me, admin: true };
+const memberMe: T.Me = { ...g.me, admin: false, accounts: [S] };
 
 // The golden account entry, with enough of it to exercise every part of
 // the form.
@@ -223,11 +222,11 @@ test.describe('account configuration', () => {
   });
 
   test('management disabled makes the account and instance configuration read-only', async ({ page }) => {
-    await setup(page, operatorMe, [[/\/api\/v1\/meta$/, { ...g.meta, management: false }], accountRow(accountConfig)]);
+    await setup(page, adminMe, [[/\/api\/v1\/meta$/, { ...g.meta, management: false }], accountRow(accountConfig)]);
     await page.goto(`/${ADMIN}/config`);
     await expect(page.getByRole('note')).toContainText('no sealing key configured');
     await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     await expect(page.getByRole('note')).toContainText('no sealing key configured');
     await expect(page.locator('.spec-view')).toContainText('alpha-bot');
     await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0);
@@ -318,9 +317,9 @@ test.describe('actions', () => {
 test.describe('admin console', () => {
   test('keep, replace and generate secret controls shape the PUT, and the generated secret shows once', async ({ page }) => {
     let reads = 0;
-    const seen = await setup(page, operatorMe, [instanceRow(() => (reads++ === 0 ? instanceConfig : { ...instanceConfig, revision: 4 }))]);
+    const seen = await setup(page, adminMe, [instanceRow(() => (reads++ === 0 ? instanceConfig : { ...instanceConfig, revision: 4 }))]);
     const sent = await g.mockWrites(page, [['PUT', CONFIG, { status: 200, body: g.configWriteResult }]]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
 
     const key = page.locator('[data-path="connections[0].app.privateKey"]');
     await expect(key.getByLabel('Keep current')).toBeChecked();
@@ -360,16 +359,16 @@ test.describe('admin console', () => {
     await expect(page.locator('[data-path="connections[0].app.privateKey"]').getByLabel('Keep current')).toBeChecked();
     await expect(page.locator('input[type=password]')).toHaveCount(0);
     // A save changes which accounts and connections run, so their lists reload too.
-    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/operator/accounts')).length).toBeGreaterThanOrEqual(2);
-    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/operator/connections')).length).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/admin/accounts')).length).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/admin/connections')).length).toBeGreaterThanOrEqual(2);
   });
 
   test('adds a connection to a fresh instance', async ({ page }) => {
-    await setup(page, operatorMe, [instanceRow({ revision: 0, editable: true, spec: {} })]);
+    await setup(page, adminMe, [instanceRow({ revision: 0, editable: true, spec: {} })]);
     const sent = await g.mockWrites(page, [
       ['PUT', CONFIG, { status: 200, body: { revision: 1, generated: { 'connections[beta-bot].app.webhookSecret': 'abcd' } } }],
     ]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     await expect(page.getByText('No connections in the dashboard.')).toBeVisible();
     await page.getByRole('button', { name: 'Add connection' }).click();
     await page.getByLabel('Name', { exact: true }).fill('beta-bot');
@@ -400,7 +399,7 @@ test.describe('admin console', () => {
   });
 
   test('a 422 highlights the connection field its path names', async ({ page }) => {
-    await setup(page, operatorMe, [instanceRow(instanceConfig), [/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    await setup(page, adminMe, [instanceRow(instanceConfig), [/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
     const accounts = 'connections[0].accounts';
     const sent = await g.mockWrites(page, [
       [
@@ -414,7 +413,7 @@ test.describe('admin console', () => {
             : g.apiError(422, 'reenter_secret', 'enter this secret again', { path: 'connections[0].app.privateKey' }),
       ],
     ]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     await page.locator(`[data-path="${accounts}"]`).fill('alpha\norg-2');
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByRole('alert')).toContainText('is served by connection "file-bot"');
@@ -432,9 +431,9 @@ test.describe('admin console', () => {
 
   test('a renamed connection cannot keep the secrets stored under its new name', async ({ page }) => {
     const two: T.InstanceConfig = { ...g.instanceConfig, spec: { connections: [alphaBot, { ...alphaBot, name: 'beta-bot', accounts: ['beta'] }] } };
-    await setup(page, operatorMe, [instanceRow(two)]);
+    await setup(page, adminMe, [instanceRow(two)]);
     const sent = await g.mockWrites(page, [['PUT', CONFIG, { status: 200, body: { revision: 4 } }]]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     await page.getByRole('button', { name: 'Remove connection' }).first().click();
     await page.locator('[data-path="connections[0].name"]').fill('alpha-bot');
     await expect(page.getByRole('note').filter({ hasText: 'Renamed from' })).toContainText('beta-bot');
@@ -454,9 +453,9 @@ test.describe('admin console', () => {
   });
 
   test('the JSON editor holds the whole spec, secrets as keep, and saves it as written', async ({ page }) => {
-    await setup(page, operatorMe, [instanceRow(instanceConfig)]);
+    await setup(page, adminMe, [instanceRow(instanceConfig)]);
     const sent = await g.mockWrites(page, [['PUT', CONFIG, { status: 200, body: { revision: 4 } }]]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     const key = page.locator('[data-path="connections[0].app.privateKey"]');
     await key.getByLabel('Replace with a new value').check();
     await key.getByLabel('App private key: new value').fill('typed');
@@ -482,12 +481,12 @@ test.describe('admin console', () => {
 
   test('a revision conflict offers to reload the latest instance spec', async ({ page }) => {
     let reads = 0;
-    await setup(page, operatorMe, [
+    await setup(page, adminMe, [
       instanceRow(() => (reads++ === 0 ? instanceConfig : { ...instanceConfig, revision: 9 })),
-      [/\/api\/v1\/operator\/audit$/, g.pageOf([])],
+      [/\/api\/v1\/admin\/audit$/, g.pageOf([])],
     ]);
     await g.mockWrites(page, [['PUT', CONFIG, g.apiError(409, 'revision_conflict', 'the configuration was changed')]]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     const accounts = page.locator('[data-path="connections[0].accounts"]');
     await accounts.fill('alpha\nbeta');
     await page.getByRole('button', { name: 'Save' }).click();
@@ -499,9 +498,9 @@ test.describe('admin console', () => {
   });
 
   test('adds an embedder to the instance', async ({ page }) => {
-    await setup(page, operatorMe, [instanceRow(instanceConfig)]);
+    await setup(page, adminMe, [instanceRow(instanceConfig)]);
     const sent = await g.mockWrites(page, [['PUT', CONFIG, { status: 200, body: { revision: 4 } }]]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     await page.getByRole('button', { name: 'Add embedder' }).click();
     await page.getByLabel('Endpoint').fill('https://openrouter.ai/api/v1');
     await page.getByLabel('Model', { exact: true }).fill('voyage-code-3');
@@ -515,7 +514,7 @@ test.describe('admin console', () => {
   });
 
   test('a new embedding model asks before rebuilding every index', async ({ page }) => {
-    await setup(page, operatorMe, [instanceRow(embedded), [/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    await setup(page, adminMe, [instanceRow(embedded), [/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
     const sent = await g.mockWrites(page, [
       [
         'PUT',
@@ -526,7 +525,7 @@ test.describe('admin console', () => {
             : g.apiError(409, 'reindex_required', 'confirm the reindex to save', { path: 'embedding.model' }),
       ],
     ]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     await expect(page.locator('[data-path="embedding.apiKey"]').getByLabel('Keep current')).toBeChecked();
     await page.locator('[data-path="embedding.model"]').fill('n');
     await page.getByRole('button', { name: 'Save' }).click();
@@ -548,8 +547,8 @@ test.describe('admin console', () => {
   });
 
   test("the embedder's key is not kept once its endpoint changes", async ({ page }) => {
-    await setup(page, operatorMe, [instanceRow(embedded)]);
-    await page.goto('/#/operator');
+    await setup(page, adminMe, [instanceRow(embedded)]);
+    await page.goto('/#/admin');
     const key = page.locator('[data-path="embedding.apiKey"]');
     await page.locator('[data-path="embedding.baseUrl"]').fill('https://elsewhere.example/v1');
     await expect(key.getByLabel('Keep current')).toHaveCount(0);
@@ -557,7 +556,7 @@ test.describe('admin console', () => {
   });
 
   test('registers a GitHub App by posting its manifest to GitHub', async ({ page }) => {
-    await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
     const target = 'https://github.com/organizations/org-1/settings/apps/new?state=s1';
     const sent = await g.mockWrites(page, [
       ['POST', /\/api\/v1\/app\/manifests$/, { status: 200, body: { url: target, manifest: g.appManifestForm.manifest } }],
@@ -567,7 +566,7 @@ test.describe('admin console', () => {
       posted = route.request().postData() ?? '';
       await route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>GitHub</h1>' });
     });
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     const panel = page.locator('#op-app').locator('../..');
     await panel.getByLabel('Connection name').fill('org-1-bot');
     await panel.getByLabel('An organization').check();
@@ -580,27 +579,27 @@ test.describe('admin console', () => {
   });
 
   test('a refused registration names the field', async ({ page }) => {
-    await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
     await g.mockWrites(page, [
       ['POST', /\/api\/v1\/app\/manifests$/, g.apiError(422, 'invalid_spec', 'a connection named alpha-bot already exists', { path: 'connection' })],
     ]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     const panel = page.locator('#op-app').locator('../..');
     await panel.getByLabel('Connection name').fill('alpha-bot');
     await panel.getByRole('button', { name: 'Create on GitHub' }).click();
     await expect(panel.getByRole('alert')).toContainText('already exists');
     await expect(panel.getByLabel('Connection name')).toHaveAttribute('aria-invalid', 'true');
-    await expect(page).toHaveURL(/#\/operator$/);
+    await expect(page).toHaveURL(/#\/admin$/);
   });
 
   test("shows a registered App and its client secret once", async ({ page }) => {
     let collects = 0;
-    await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
     const failed: T.AppManifestResult = { connection: 'late-bot', error: "GitHub did not return the App's credentials: expired" };
     await g.mockWrites(page, [
       ['POST', /\/api\/v1\/app\/manifests\/collect$/, () => ({ status: 200, body: collects++ === 0 ? [g.appManifestResult, failed] : [] })],
     ]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     const dialog = page.getByRole('dialog', { name: 'GitHub App registration' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByTestId('app-client-secret')).toHaveText(g.appManifestResult.clientSecret!);
@@ -618,15 +617,15 @@ test.describe('admin console', () => {
 
   test("lists an App's installations and uninstalls it from an account nobody serves", async ({ page }) => {
     const conn = g.golden<T.AccountDetail>('account_detail').connection;
-    const path = `/api/v1/operator/connections/${conn.name}/installations`;
+    const path = `/api/v1/admin/connections/${conn.name}/installations`;
     const served: T.AppInstallation = { ...g.appInstallation, id: 1, account: 'alpha', accountType: 'Organization', allRepositories: true, served: true };
     let reads = 0;
-    await setup(page, operatorMe, [
-      [/\/api\/v1\/operator\/audit$/, g.pageOf([])],
+    await setup(page, adminMe, [
+      [/\/api\/v1\/admin\/audit$/, g.pageOf([])],
       [new RegExp(`${path}$`), () => (reads++ === 0 ? [served, g.appInstallation] : [served])],
     ]);
     const sent = await g.mockWrites(page, [['DELETE', new RegExp(`${path}/${g.appInstallation.id}$`), { status: 204 }]]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     const panel = page.locator('#op-connections').locator('../..');
     await expect(panel.getByRole('row').filter({ hasText: conn.name })).toContainText('config file');
     await panel.getByRole('button', { name: 'Installations' }).click();
@@ -643,19 +642,19 @@ test.describe('admin console', () => {
   });
 
   test("tests a provider's key, and the embedder's, before saving", async ({ page }) => {
-    await setup(page, operatorMe, [instanceRow(embedded), [/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    await setup(page, adminMe, [instanceRow(embedded), [/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
     const sent = await g.mockWrites(page, [
       [
         'POST',
-        /\/api\/v1\/operator\/providers\/test$/,
+        /\/api\/v1\/admin\/providers\/test$/,
         (s) =>
           'value' in (s.body as T.ProviderTestRequest).apiKey
             ? { status: 200, body: { ok: false, error: 'POST "https://openrouter.ai/api/v1/key": 401 Unauthorized' } }
             : { status: 200, body: g.testResult },
       ],
-      ['POST', /\/api\/v1\/operator\/embedding\/test$/, { status: 200, body: { ok: true } }],
+      ['POST', /\/api\/v1\/admin\/embedding\/test$/, { status: 200, body: { ok: true } }],
     ]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     await page.getByRole('button', { name: 'Add provider key' }).click();
     const prov = page.locator('.item-card').filter({ has: page.locator('[data-path="providers..name"]') });
     await prov.getByRole('button', { name: 'Test key' }).click();
@@ -672,8 +671,8 @@ test.describe('admin console', () => {
   });
 
   test('lists the instance settings read-only with their sources', async ({ page }) => {
-    await setup(page, operatorMe, [[/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
-    await page.goto('/#/operator');
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
+    await page.goto('/#/admin');
     const panel = page.locator('#op-instance').locator('../..');
     const row = panel.getByRole('row').filter({ hasText: g.instanceSetting.key });
     await expect(row).toContainText(g.instanceSetting.value);
@@ -682,25 +681,24 @@ test.describe('admin console', () => {
   });
 
   test('lists an account no connection serves without a link, and why', async ({ page }) => {
-    await setup(page, operatorMe, [
-      [/\/api\/v1\/operator\/audit$/, g.pageOf([])],
-      [/\/api\/v1\/operator\/accounts$/, [{ ...g.operatorAccount, live: true, conflict: undefined }, { ...g.operatorAccount, slug: 'github/beta', connection: '' }]],
+    await setup(page, adminMe, [
+      [/\/api\/v1\/admin\/audit$/, g.pageOf([])],
+      [/\/api\/v1\/admin\/accounts$/, [{ ...g.adminAccount, live: true, conflict: undefined }, { ...g.adminAccount, slug: 'github/beta', connection: '' }]],
     ]);
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     const live = page.getByRole('row').filter({ hasText: S });
     await expect(live).toHaveCount(1);
     await expect(live.getByRole('link', { name: S })).toBeVisible();
-    await expect(live).toContainText(g.operatorAccount.connection);
+    await expect(live).toContainText(g.adminAccount.connection);
     const unserved = page.getByRole('row').filter({ hasText: 'github/beta' });
-    await expect(unserved).toContainText(g.operatorAccount.conflict!);
+    await expect(unserved).toContainText(g.adminAccount.conflict!);
     await expect(unserved.getByRole('link')).toHaveCount(0);
   });
 });
 
 test.describe('settings search', () => {
   test('the palette finds a setting only when searching, and focuses it', async ({ page }) => {
-    const adminOperator: T.Me = { ...g.me, operator: true, accounts: [{ slug: S, role: 'admin' }] };
-    await setup(page, adminOperator, [accountRow(accountConfig), [/\/api\/v1\/operator\/audit$/, g.pageOf([])]]);
+    await setup(page, adminMe, [accountRow(accountConfig), [/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
     await page.goto('/#/');
     await page.keyboard.press('ControlOrMeta+k');
     await expect(page.locator('.row-title').filter({ hasText: 'Tokens per month' })).toHaveCount(0);
@@ -714,7 +712,7 @@ test.describe('settings search', () => {
     await page.keyboard.press('ControlOrMeta+k');
     await page.keyboard.type('embedder');
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/#\/operator$/);
+    await expect(page).toHaveURL(/#\/admin$/);
     await expect(page.locator('#instance-embedding')).toBeFocused();
   });
 

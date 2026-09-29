@@ -22,11 +22,11 @@ import (
 const probeTimeout = 20 * time.Second
 
 func (s *Server) registerSetup(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/operator/setup", s.operator(s.getSetup))
-	mux.HandleFunc("POST /api/v1/operator/providers/test", s.operator(s.testProvider))
-	mux.HandleFunc("POST /api/v1/operator/embedding/test", s.operator(s.testEmbedding))
-	mux.HandleFunc("GET /api/v1/operator/connections/{name}/repositories", s.operator(s.listReached))
-	mux.HandleFunc("POST /api/v1/operator/connections/{name}/repositories", s.operator(s.registerReached))
+	mux.HandleFunc("GET /api/v1/admin/setup", s.admin(s.getSetup))
+	mux.HandleFunc("POST /api/v1/admin/providers/test", s.admin(s.testProvider))
+	mux.HandleFunc("POST /api/v1/admin/embedding/test", s.admin(s.testEmbedding))
+	mux.HandleFunc("GET /api/v1/admin/connections/{name}/repositories", s.admin(s.listReached))
+	mux.HandleFunc("POST /api/v1/admin/connections/{name}/repositories", s.admin(s.registerReached))
 }
 
 func (s *Server) getSetup(w http.ResponseWriter, r *http.Request) error {

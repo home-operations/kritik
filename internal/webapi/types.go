@@ -6,7 +6,6 @@ import (
 
 	"github.com/riverqueue/river/rivertype"
 
-	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
@@ -33,18 +32,13 @@ type User struct {
 	AvatarURL   string `json:"avatarUrl"`
 }
 
-// AccountMembership is an account the principal may read and its role
-// there. Slug is "<forge>/<name>".
-type AccountMembership struct {
-	Slug string    `json:"slug"`
-	Role auth.Role `json:"role"`
-}
-
-// Me is who the session acts as.
+// Me is who the session acts as: an admin, who reads and changes
+// everything, or a member of Accounts, the slugs ("<forge>/<name>") of the
+// accounts it may read.
 type Me struct {
-	User     User                `json:"user"`
-	Operator bool                `json:"operator"`
-	Accounts []AccountMembership `json:"accounts"`
+	User     User     `json:"user"`
+	Admin    bool     `json:"admin"`
+	Accounts []string `json:"accounts"`
 }
 
 // MonthUsage is an account's usage against its caps; a zero cap is unset.
@@ -60,17 +54,16 @@ type MonthUsage struct {
 // connection serving it.
 type AccountSummary struct {
 	Slug         string     `json:"slug"`
-	Role         auth.Role  `json:"role"`
 	Connection   string     `json:"connection"`
 	Repositories int        `json:"repositories"`
 	Reviews7d    int        `json:"reviews7d"`
 	Usage        MonthUsage `json:"usage"`
 }
 
-// OperatorAccount is one account as an admin sees it: Live is false for an
+// AdminAccount is one account as an admin sees it: Live is false for an
 // entry of the instance spec that no connection serves, which Conflict
 // explains.
-type OperatorAccount struct {
+type AdminAccount struct {
 	AccountSummary
 	Live     bool   `json:"live"`
 	Conflict string `json:"conflict,omitempty"`
@@ -128,7 +121,6 @@ type Limits struct {
 // connection serving it.
 type AccountDetail struct {
 	Slug       string     `json:"slug"`
-	Role       auth.Role  `json:"role"`
 	Connection Connection `json:"connection"`
 	Models     Models     `json:"models"`
 	Limits     Limits     `json:"limits"`

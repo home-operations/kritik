@@ -17,7 +17,7 @@ export function golden<V>(name: string): V {
 
 export const me = golden<T.Me>('me');
 export const accountSummary = golden<T.AccountSummary>('account_summary');
-export const operatorAccount = golden<T.OperatorAccount>('operator_account');
+export const adminAccount = golden<T.AdminAccount>('admin_account');
 export const instanceSetting = golden<T.InstanceSetting>('instance_setting');
 export const repoPage = golden<T.Page<T.Repository>>('page');
 export const repoDetail = golden<T.RepoDetail>('repo_detail');
@@ -43,7 +43,7 @@ export const setupStatus = golden<T.SetupStatus>('setup_status');
 export const auditEvent = golden<T.AuditEvent>('audit_event');
 export const accepted = golden<T.Accepted>('accepted');
 
-export const SLUG = me.accounts[0]!.slug;
+export const SLUG = me.accounts[0]!;
 
 // The golden diff is only the file header; add a hunk whose new-side line
 // 3 is where the golden finding (a.go:3) points.
@@ -84,10 +84,10 @@ export function defaultApi(): [RegExp, Body][] {
     [/\/api\/v1\/meta$/, meta],
     [/\/api\/v1\/me$/, me],
     [/\/api\/v1\/accounts$/, [accountSummary]],
-    [/\/api\/v1\/operator\/accounts$/, [operatorAccount]],
-    [/\/api\/v1\/operator\/instance$/, [instanceSetting]],
-    [/\/api\/v1\/operator\/connections$/, [golden<T.AccountDetail>('account_detail').connection]],
-    [/\/api\/v1\/operator\/setup$/, setupStatus],
+    [/\/api\/v1\/admin\/accounts$/, [adminAccount]],
+    [/\/api\/v1\/admin\/instance$/, [instanceSetting]],
+    [/\/api\/v1\/admin\/connections$/, [golden<T.AccountDetail>('account_detail').connection]],
+    [/\/api\/v1\/admin\/setup$/, setupStatus],
     [/\/api\/v1\/app\/manifests\/collect$/, []],
     [/\/api\/v1\/config$/, instanceConfig],
     [new RegExp(`${t}/repos$`), repoPage],

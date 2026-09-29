@@ -3,7 +3,7 @@
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { repoRoute, rerunPath, accountApi } from '../links';
-  import { canAdmin } from '../session.svelte';
+  import { isAdmin } from '../session.svelte';
   import ActionButton from '../components/ActionButton.svelte';
   import { shortSha } from '../format';
   import { safeHref } from '../markdown';
@@ -63,7 +63,7 @@
                 <a href={forgeUrl} target="_blank" rel="noopener noreferrer">View on GitHub <Icon path={mdiOpenInNew} size={12} /></a>
               {/if}
             </p>
-            {#if canAdmin(slug)}
+            {#if isAdmin()}
               <div class="page-actions">
                 <ActionButton
                   label="Re-run"

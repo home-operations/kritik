@@ -76,7 +76,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if v := f.Review.RequireSuggestedFix; v != nil && *v {
 		m.Review.RequireSuggestedFix = true
 	} else if v != nil && op.Review.RequireSuggestedFix {
-		m.drop("review.requireSuggestedFix", "false", "true, since the operator requires a suggested fix")
+		m.drop("review.requireSuggestedFix", "false", "true, since an admin requires a suggested fix")
 	}
 	if f.Review.Templates.Summary != "" {
 		m.Review.Templates.Summary = f.Review.Templates.Summary

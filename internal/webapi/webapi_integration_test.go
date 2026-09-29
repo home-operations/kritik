@@ -129,7 +129,7 @@ func newAPIEnv(t *testing.T) *apiEnv {
 		VALUES ($1, $2, $3, 'carol', 'answered')`, e.b.accountID, e.b.prID, onlyBComment)
 	e.signIn("member-a", "alice", memberOfAccounts("github/wa"))
 	e.signIn("member-b", "bob", memberOfAccounts("github/wb"))
-	e.signIn("operator", "op-sub", store.SessionGrant{Role: store.RoleAdmin})
+	e.signIn("admin", "op-sub", store.SessionGrant{Role: store.RoleAdmin})
 	return e
 }
 
@@ -320,7 +320,7 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 			for _, tc := range []struct {
 				who    string
 				status int
-			}{{"member-a", 200}, {"operator", 200}, {"member-b", 404}, {"nobody", 401}} {
+			}{{"member-a", 200}, {"admin", 200}, {"member-b", 404}, {"nobody", 401}} {
 				status, body := e.getBody(tc.who, ep.path)
 				if status != tc.status {
 					t.Fatalf("%s: status = %d, want %d: %s", tc.who, status, tc.status, body)
@@ -350,7 +350,7 @@ func (e *apiEnv) bMarkers() []string {
 }
 
 // testCrossAccountIDs asks for account B's rows by id under account A's slug:
-// even an operator, who may read B, finds nothing, since the query runs
+// even an admin, who may read B, finds nothing, since the query runs
 // scoped to A.
 func testCrossAccountIDs(t *testing.T, e *apiEnv) {
 	a := "/api/v1/accounts/github/wa"
@@ -360,7 +360,7 @@ func testCrossAccountIDs(t *testing.T, e *apiEnv) {
 		a + fmt.Sprintf("/followups/%d/transcript", onlyBComment), a + "/pulls/wb/one/7", a + "/repos/wb/one",
 	}
 	for _, path := range paths {
-		for _, who := range []string{"member-a", "operator"} {
+		for _, who := range []string{"member-a", "admin"} {
 			t.Run(who+" "+path, func(t *testing.T) {
 				if status, body := e.getBody(who, path); status != 404 {
 					t.Errorf("status = %d, want 404: %s", status, body)
@@ -377,12 +377,12 @@ func testMeAndAccountLists(t *testing.T, e *apiEnv) {
 		want      []string
 		not       []string
 	}{
-		{"member-a", "/api/v1/me", 200, []string{`"slug":"github/wa","role":"member"`}, []string{"webapi-b"}},
-		{"operator", "/api/v1/me", 200, []string{`"operator":true`, `"slug":"github/wa","role":"admin"`, `"slug":"github/wb"`}, nil},
+		{"member-a", "/api/v1/me", 200, []string{`"admin":false`, `"accounts":["github/wa"]`}, []string{"webapi-b"}},
+		{"admin", "/api/v1/me", 200, []string{`"admin":true`, `"accounts":["github/wa","github/wb"]`}, nil},
 		{"member-a", "/api/v1/accounts", 200, []string{`"slug":"github/wa"`, `"repositories":2`, `"reviews7d":1`}, []string{"webapi-b"}},
 		{"member-b", "/api/v1/accounts", 200, []string{`"slug":"github/wb"`}, []string{"webapi-a"}},
-		{"operator", "/api/v1/operator/accounts", 200, []string{`"slug":"github/wa"`, `"slug":"github/wb"`, `"live":true`}, nil},
-		{"member-a", "/api/v1/operator/accounts", 404, nil, nil},
+		{"admin", "/api/v1/admin/accounts", 200, []string{`"slug":"github/wa"`, `"slug":"github/wb"`, `"live":true`}, nil},
+		{"member-a", "/api/v1/admin/accounts", 404, nil, nil},
 		{"nobody", "/api/v1/accounts", 401, nil, nil},
 	}
 	for _, tt := range tests {

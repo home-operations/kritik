@@ -10,7 +10,7 @@
   import PullRows from '../components/PullRows.svelte';
   import ActionButton from '../components/ActionButton.svelte';
   import { reindexPath, accountApi } from '../links';
-  import { canAdmin } from '../session.svelte';
+  import { isAdmin } from '../session.svelte';
 
   let { slug, owner, repo }: { slug: string; owner: string; repo: string } = $props();
   const fullName = $derived(`${owner}/${repo}`);
@@ -140,7 +140,7 @@
     <header class="page-head">
       <p class="crumbs"><a href={href({ name: 'repos', slug })}>Repositories</a> /</p>
       <h1 class="mono">{fullName}</h1>
-      {#if canAdmin(slug)}
+      {#if isAdmin()}
         <div class="page-actions">
           <ActionButton
             label="Reindex"

@@ -14,8 +14,8 @@ import (
 
 // registerAudit mounts the audit log reads.
 func (s *Server) registerAudit(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/audit", s.admin(s.listAccountAudit))
-	mux.HandleFunc("GET /api/v1/operator/audit", s.handler(s.listOperatorAudit))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/audit", s.accountAdmin(s.listAccountAudit))
+	mux.HandleFunc("GET /api/v1/admin/audit", s.handler(s.listAdminAudit))
 }
 
 // record writes an audit event for a write p made, in the write's own
@@ -33,9 +33,9 @@ func record(ctx context.Context, tx pgx.Tx, p *auth.Principal, accountID string,
 
 // admin adapts h like account, and also requires p to administer the
 // account.
-func (s *Server) admin(h accountHandler) http.HandlerFunc {
+func (s *Server) accountAdmin(h accountHandler) http.HandlerFunc {
 	return s.account(func(w http.ResponseWriter, r *http.Request, t *accountScope) error {
-		if !t.principal.Operator {
+		if !t.principal.Admin {
 			return errForbidden
 		}
 		return h(w, r, t)
@@ -46,8 +46,8 @@ func (s *Server) listAccountAudit(w http.ResponseWriter, r *http.Request, t *acc
 	return s.writeAudit(w, r, t.account.ID())
 }
 
-func (s *Server) listOperatorAudit(w http.ResponseWriter, r *http.Request) error {
-	if !auth.PrincipalFrom(r.Context()).Operator {
+func (s *Server) listAdminAudit(w http.ResponseWriter, r *http.Request) error {
+	if !auth.PrincipalFrom(r.Context()).Admin {
 		return errForbidden
 	}
 	return s.writeAudit(w, r, "")

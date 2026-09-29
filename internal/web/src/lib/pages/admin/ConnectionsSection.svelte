@@ -12,13 +12,13 @@
   import Time from '../../components/Time.svelte';
   import Dialog from '../../components/Dialog.svelte';
 
-  const conns = new Resource(() => getJSON<Connection[]>('/api/v1/operator/connections'));
+  const conns = new Resource(() => getJSON<Connection[]>('/api/v1/admin/connections'));
   $effect(() => {
     void conns.load();
   });
 
   let selected = $state('');
-  const installationsPath = $derived(`/api/v1/operator/connections/${encodeURIComponent(selected)}/installations`);
+  const installationsPath = $derived(`/api/v1/admin/connections/${encodeURIComponent(selected)}/installations`);
   const installs = new Resource(() => getJSON<AppInstallation[]>(installationsPath));
 
   function show(name: string): void {
