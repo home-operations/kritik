@@ -25,8 +25,8 @@ const recentIndexRuns = 20
 func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me", s.handler(s.getMe))
 	mux.HandleFunc("GET /api/v1/accounts", s.handler(s.listAccounts))
-	mux.HandleFunc("GET /api/v1/operator/accounts", s.handler(s.listOperatorAccounts))
-	mux.HandleFunc("GET /api/v1/operator/instance", s.handler(s.listInstanceSettings))
+	mux.HandleFunc("GET /api/v1/operator/accounts", s.operator(s.listOperatorAccounts))
+	mux.HandleFunc("GET /api/v1/operator/instance", s.operator(s.listInstanceSettings))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}", s.account(s.getAccount))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos", s.account(s.listRepos))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}", s.account(s.getRepo))
@@ -117,10 +117,6 @@ func monthUsage(m store.MonthUsage, l configfile.Limits) MonthUsage {
 // instance spec no connection serves. It is reported as a missing route to
 // anyone but an admin.
 func (s *Server) listOperatorAccounts(w http.ResponseWriter, r *http.Request) error {
-	p := auth.PrincipalFrom(r.Context())
-	if !p.Operator {
-		return errNotFound("route")
-	}
 	ctx := r.Context()
 	file := s.current.Get()
 	out := []OperatorAccount{}
@@ -377,9 +373,6 @@ func (s *Server) listIndexRuns(w http.ResponseWriter, r *http.Request, t *accoun
 }
 
 func (s *Server) listInstanceSettings(w http.ResponseWriter, r *http.Request) error {
-	if !auth.PrincipalFrom(r.Context()).Operator {
-		return errNotFound("route")
-	}
 	writeJSON(w, http.StatusOK, instanceSettings(s.current.Get(), s.env))
 	return nil
 }

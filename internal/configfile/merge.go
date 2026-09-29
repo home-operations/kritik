@@ -79,13 +79,7 @@ func Merge(file *File, spec InstanceSpec, open Opener) (*File, error) {
 		Tools: s.Tools, Retention: s.Retention, Egress: s.Egress, Embedding: s.Embedding,
 		hash: mergedHash(file.hash, spec), base: file, spec: spec, envConnection: file.envConnection,
 	}
-	held := map[string]string{}
-	for _, in := range s.Connections {
-		held["connection "+in.Name] = in.Name
-		for _, a := range in.Accounts {
-			held["account "+AccountKey(in.Forge, a)] = in.Name
-		}
-	}
+	held := claims(s.Connections)
 	for _, in := range file.Connections {
 		if reason := in.clash(held); reason != "" {
 			out.skipped = append(out.skipped, SkippedConnection{Name: in.Name, Reason: reason})
@@ -174,22 +168,17 @@ func claimsFileConnections(file *File, stored, next InstanceSpec) error {
 	if err != nil {
 		return nil
 	}
-	had := map[string]bool{}
+	var had map[string]string
 	if prev, err := DecodeSpec(stored.Spec); err == nil {
-		for _, in := range prev.Connections {
-			had["connection "+in.Name] = true
-			for _, a := range in.Accounts {
-				had["account "+AccountKey(in.Forge, a)] = true
-			}
-		}
+		had = claims(prev.Connections)
 	}
 	for i, in := range s.Connections {
 		for _, fc := range file.Connections {
-			if fc.Name == in.Name && !had["connection "+in.Name] {
+			if fc.Name == in.Name && had["connection "+in.Name] == "" {
 				return &MergeError{Err: fmt.Errorf("configfile: connections[%d].name %q is declared in the configuration file", i, in.Name)}
 			}
 			for ai, a := range in.Accounts {
-				if fc.Serves(a) && fc.Forge == in.Forge && !had["account "+AccountKey(in.Forge, a)] {
+				if fc.Serves(a) && fc.Forge == in.Forge && had["account "+AccountKey(in.Forge, a)] == "" {
 					return &MergeError{Err: fmt.Errorf(
 						"configfile: connections[%d].accounts[%d] %q is served by connection %q of the configuration file", i, ai, a, fc.Name)}
 				}
@@ -197,6 +186,19 @@ func claimsFileConnections(file *File, stored, next InstanceSpec) error {
 		}
 	}
 	return nil
+}
+
+// claims maps each connection name and account key conns hold, as
+// "connection <name>" and "account <key>", to the connection holding it.
+func claims(conns []Connection) map[string]string {
+	held := map[string]string{}
+	for _, in := range conns {
+		held["connection "+in.Name] = in.Name
+		for _, a := range in.Accounts {
+			held["account "+AccountKey(in.Forge, a)] = in.Name
+		}
+	}
+	return held
 }
 
 // SkippedConnection is a file connection the running configuration leaves

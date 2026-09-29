@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/runner"
 )
 
@@ -333,7 +334,7 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 	name := jobName(spec.Job.RunID)
 	deadline := int64(spec.Deadline / time.Second)
 	if deadline <= 0 {
-		deadline = 900
+		deadline = int64(configfile.DefaultRunnerDeadline / time.Second)
 	}
 	ttl := int32(k.TTL / time.Second)
 	if ttl <= 0 {

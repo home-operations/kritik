@@ -309,20 +309,14 @@ type Embedding struct {
 // APIKeyValue returns the resolved API key.
 func (e *Embedding) APIKeyValue() Secret { return e.apiKey }
 
-// Embedding request bounds, when the spec sets none, and the largest
-// dimension the index's halfvec column takes.
-const (
-	DefaultEmbedMaxBatch      = 64
-	DefaultEmbedMaxBatchChars = 200_000
-	DefaultEmbedMaxItemChars  = 16_000
-	MaxEmbedDims              = 4000
-)
+// MaxEmbedDims is the largest dimension the index's halfvec column takes.
+const MaxEmbedDims = 4000
 
-// Bounds returns MaxBatch, MaxBatchChars and MaxItemChars, each its
-// default when unset.
+// Bounds returns MaxBatch, MaxBatchChars and MaxItemChars, each the
+// embedder's default when unset.
 func (e *Embedding) Bounds() (batch, batchChars, itemChars int) {
-	return cmp.Or(e.MaxBatch, DefaultEmbedMaxBatch), cmp.Or(e.MaxBatchChars, DefaultEmbedMaxBatchChars),
-		cmp.Or(e.MaxItemChars, DefaultEmbedMaxItemChars)
+	return cmp.Or(e.MaxBatch, model.DefaultEmbedMaxBatch), cmp.Or(e.MaxBatchChars, model.DefaultEmbedMaxBatchChars),
+		cmp.Or(e.MaxItemChars, model.DefaultEmbedMaxItemChars)
 }
 
 // Retention controls what is deleted and when. Reviews, findings and usage

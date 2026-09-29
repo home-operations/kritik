@@ -248,7 +248,7 @@ func openAIMessages(m Message) []openai.ChatCompletionMessageParamUnion {
 		content := r.Content
 		if r.IsError {
 			// Chat completions has no error flag on a tool message.
-			content = "Error: " + content
+			content = toolErrorPrefix + content
 		}
 		out = append(out, openai.ToolMessage(content, r.CallID))
 	}

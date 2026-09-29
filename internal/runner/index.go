@@ -71,8 +71,7 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 				return err
 			}
 		}
-		_, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'done' WHERE id = $1`, p.RunID)
-		return err
+		return setPhaseTx(ctx, tx, p.RunID, "done")
 	})
 	if err != nil {
 		return err
