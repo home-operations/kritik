@@ -13,7 +13,7 @@
     mdiWhiteBalanceSunny,
     mdiKeyboardOutline,
     mdiMagnify,
-    mdiViewDashboardOutline,
+    mdiChartBoxOutline,
     mdiViewGridOutline,
     mdiSourcePull,
     mdiCogOutline,
@@ -83,7 +83,7 @@
   const currentSection = $derived(sectionOf(router.route));
 
   const sectionIcon: Record<Section, string> = {
-    overview: mdiViewDashboardOutline,
+    analytics: mdiChartBoxOutline,
     pulls: mdiSourcePull,
     settings: mdiCogOutline,
   };

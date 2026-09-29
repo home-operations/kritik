@@ -318,6 +318,7 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/followups?repo=wa/one", `"commentId":4242`},
 		{a + "/followups/4242/transcript", `"system":"follow of webapi-a"`},
 		{a + "/usage?group=repo", `"key":"wa/one"`},
+		{a + "/analytics?group=week", `"repository":"wa/one"`},
 		{a + "/queue", `"repository":"wa/one"`},
 	}
 	for _, ep := range endpoints {

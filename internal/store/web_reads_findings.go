@@ -58,11 +58,13 @@ type FindingFilter struct {
 	Query        string
 }
 
-// accountFindings is every finding of the account's completed reviews,
+// findingIssues are the common table expressions over every finding of
+// the account's completed reviews: seen is each report of one, and latest
 // one row per pull request and fingerprint, as its latest review reported
-// it, with whether a later completed review at another head dropped it.
-// A finding stored without a fingerprint is its own.
-const accountFindings = `WITH seen AS (
+// it, with when it was first reported and whether a later completed review
+// at another head dropped it. A finding stored without a fingerprint is
+// its own.
+const findingIssues = `seen AS (
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix, f.replacement,
 			f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at,
 			v.id AS review_id, v.pull_request_id, v.head_sha, v.created_at AS seen_at,
@@ -74,7 +76,9 @@ const accountFindings = `WITH seen AS (
 	latest AS (
 		SELECT s.*, EXISTS (SELECT 1 FROM reviews n WHERE n.pull_request_id = s.pull_request_id AND n.status = 'completed'
 			AND n.created_at > s.seen_at AND n.head_sha <> s.head_sha) AS addressed
-		FROM seen s WHERE s.nth = 1)
+		FROM seen s WHERE s.nth = 1)`
+
+const accountFindings = `WITH ` + findingIssues + `
 	SELECT l.id, l.path, l.line, l.end_line, l.severity, l.title, l.explanation, l.suggested_fix, l.replacement,
 		l.agent_prompt, l.fingerprint, l.posted_inline, l.forge_comment_id, l.created_at,
 		l.review_id, r.name, p.number, p.title, p.url, l.addressed, l.first_at, l.seen_at

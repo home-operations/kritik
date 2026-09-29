@@ -30,6 +30,7 @@ export const transcript = golden<T.Transcript>('transcript');
 export const job = golden<T.Job>('job');
 export const followup = golden<T.Followup>('followup');
 export const accountFinding = golden<T.AccountFinding>('account_finding');
+export const analytics = golden<T.Analytics>('analytics');
 export const usageSeries = golden<T.UsageSeries>('usage_series');
 export const liveEvent = golden<T.LiveEvent>('event');
 export const meta = golden<T.Meta>('meta');
@@ -99,6 +100,7 @@ export function defaultApi(): [RegExp, Body][] {
     ],
     [new RegExp(`${t}/pulls/alpha/one/7$`), pullDetail],
     [new RegExp(`${t}/findings$`), pageOf([accountFinding])],
+    [new RegExp(`${t}/analytics$`), analytics],
     [new RegExp(`${t}/followups$`), pageOf([followup])],
     [new RegExp(`${t}/followups/\\d+/transcript$`), transcript],
     [new RegExp(`${t}/reviews/rev-1$`), reviewDetail],

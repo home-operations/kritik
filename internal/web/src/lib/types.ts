@@ -396,6 +396,42 @@ export interface Finding {
   createdAt: string;
 }
 
+export type AnalyticsGroup = 'day' | 'week' | 'month';
+
+export interface AnalyticsTotals {
+  pullRequests: number;
+  reviews: number;
+  failed: number;
+  findings: SeverityCounts;
+  addressed: number;
+  costUsd: number;
+  medianReviewMs: number | null;
+}
+
+export interface AnalyticsPoint {
+  key: string;
+  reviews: number;
+  findings: SeverityCounts;
+  costUsd: number;
+}
+
+export interface RepoActivity {
+  repository: string;
+  reviews: number;
+  findings: SeverityCounts;
+  addressed: number;
+}
+
+export interface Analytics {
+  group: AnalyticsGroup;
+  from: string;
+  to: string;
+  current: AnalyticsTotals;
+  previous: AnalyticsTotals;
+  series: AnalyticsPoint[];
+  repositories: RepoActivity[];
+}
+
 export type FindingStatus = 'open' | 'addressed';
 
 // AccountFinding is one finding of a pull request, however many of its

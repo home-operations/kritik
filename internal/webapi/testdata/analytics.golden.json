@@ -1,0 +1,55 @@
+{
+  "group": "day",
+  "from": "2026-09-01T12:00:00Z",
+  "to": "2026-09-01T12:01:30Z",
+  "current": {
+    "pullRequests": 3,
+    "reviews": 5,
+    "failed": 1,
+    "findings": {
+      "blocking": 1,
+      "important": 2,
+      "nit": 3
+    },
+    "addressed": 2,
+    "costUsd": 1.25,
+    "medianReviewMs": 90000
+  },
+  "previous": {
+    "pullRequests": 0,
+    "reviews": 0,
+    "failed": 0,
+    "findings": {
+      "blocking": 0,
+      "important": 0,
+      "nit": 0
+    },
+    "addressed": 0,
+    "costUsd": 0,
+    "medianReviewMs": null
+  },
+  "series": [
+    {
+      "key": "2026-09-01",
+      "reviews": 5,
+      "findings": {
+        "blocking": 1,
+        "important": 2,
+        "nit": 3
+      },
+      "costUsd": 1.25
+    }
+  ],
+  "repositories": [
+    {
+      "repository": "alpha/one",
+      "reviews": 5,
+      "findings": {
+        "blocking": 1,
+        "important": 2,
+        "nit": 3
+      },
+      "addressed": 2
+    }
+  ]
+}

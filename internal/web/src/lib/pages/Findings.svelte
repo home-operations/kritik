@@ -82,7 +82,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <SectionTabs section="overview" {slug} current="findings" />
+    <SectionTabs section="analytics" {slug} current="findings" />
     <div class="toolbar" role="search">
       <TokenSearch
         id="finding-search"

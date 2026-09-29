@@ -5,7 +5,7 @@
   import type { Route } from '../routes';
   import Overview from './Overview.svelte';
   import Console from './Console.svelte';
-  import AccountOverview from './AccountOverview.svelte';
+  import Analytics from './Analytics.svelte';
   import Repos from './Repos.svelte';
   import Repo from './Repo.svelte';
   import Pulls from './Pulls.svelte';
@@ -39,7 +39,7 @@
   {:else if route.name === 'console'}
     <Console />
   {:else if route.name === 'account'}
-    <AccountOverview slug={route.slug} />
+    <Analytics slug={route.slug} />
   {:else if route.name === 'repos'}
     <Repos slug={route.slug} />
   {:else if route.name === 'repo'}

@@ -11,10 +11,14 @@ The top bar switches between the accounts you can read, or all of them
 at once, and holds a tab for each of an account's sections
 ([ADR-0017](adr/0017-dashboard-sections.md)):
 
-- **Overview:** the account at a glance; its findings, each listed once
-  per pull request however many reviews repeated it, and addressed once a
-  later review of the pull request, at a newer head, no longer reports
-  it; and its usage.
+- **Analytics:** the account's reviews over the last 7, 30 or 90 days
+  against the same span before: pull requests reviewed, reviews,
+  findings, the share addressed, the median review time and spend, by
+  day or week, and the most reviewed repositories. Its Findings list has
+  each finding once per pull request however many reviews repeated it,
+  addressed once a later review of the pull request, at a newer head, no
+  longer reports it. Spend has the month so far against the account's
+  caps, and usage by day, model, repository or role.
 - **Pull requests:** its pull requests and their reviews, the run queue
   and the follow-up questions. The search box takes text, or narrows the
   list with `repo:owner/name`, `author:login` and `status:` a last review

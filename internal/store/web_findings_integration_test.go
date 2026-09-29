@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -18,22 +19,22 @@ import (
 func TestListAccountFindings(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
-	if err := s.ApplyConfig(ctx, parse(t, alphaAccount)); err != nil {
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("findings"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	alpha := accountID(t, s, "alpha")
+	account := accountID(t, s, "findings")
 	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 
 	var first, second string
-	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		var repoID string
-		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'alpha/one'`, alpha).Scan(&repoID); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'findings/one'`, account).Scan(&repoID); err != nil {
 			return err
 		}
 		pull := func(number int, title string) string {
 			var id string
 			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, title, head_sha, url)
-				VALUES ($1, $2, $3, $4, 'h', 'https://git.example/pr') RETURNING id`, alpha, repoID, number, title).Scan(&id); err != nil {
+				VALUES ($1, $2, $3, $4, 'h', 'https://git.example/pr') RETURNING id`, account, repoID, number, title).Scan(&id); err != nil {
 				t.Fatal(err)
 			}
 			return id
@@ -41,12 +42,12 @@ func TestListAccountFindings(t *testing.T) {
 		reviewAt := func(pr, head, status string, at time.Time, findings ...[3]string) {
 			var id string
 			if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at)
-				VALUES ($1, $2, $3, $4, $5) RETURNING id`, alpha, pr, head, status, at).Scan(&id); err != nil {
+				VALUES ($1, $2, $3, $4, $5) RETURNING id`, account, pr, head, status, at).Scan(&id); err != nil {
 				t.Fatal(err)
 			}
 			for _, f := range findings {
 				if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation, fingerprint)
-					VALUES ($1, $2, 'a.go', 3, $3, $4, 'why', $5)`, alpha, id, f[0], f[1], f[2]); err != nil {
+					VALUES ($1, $2, 'a.go', 3, $3, $4, 'why', $5)`, account, id, f[0], f[1], f[2]); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -67,7 +68,7 @@ func TestListAccountFindings(t *testing.T) {
 		t.Helper()
 		var out []AccountFinding
 		var next *Cursor
-		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			var err error
 			out, next, err = ListAccountFindings(ctx, tx, f, p)
 			return err
@@ -130,4 +131,21 @@ func TestListAccountFindings(t *testing.T) {
 	}
 	page2, _ := list(FindingFilter{}, Page{Limit: 2, After: *next})
 	check("paged", append(page1, page2...), rows(all)[0], rows(all)[1], rows(all)[2])
+}
+
+// soloAccount serves one account of its own, with one repository, so a
+// test's rows are the only ones its account reads in the shared database.
+func soloAccount(name string) string {
+	return fmt.Sprintf(`
+connections:
+  - name: %[1]s-bot
+    forge: github
+    accounts: [%[1]s]
+    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+accounts:
+  - forge: github
+    name: %[1]s
+    repositories:
+      - name: one
+`, name)
 }

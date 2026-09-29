@@ -124,7 +124,7 @@ func TestAccountScopeHidesUnreadableAccounts(t *testing.T) {
 		"/api/v1/accounts/%s/pulls/o/r/1", "/api/v1/accounts/%s/reviews/x", "/api/v1/accounts/%s/reviews/x/diff",
 		"/api/v1/accounts/%s/reviews/x/transcript", "/api/v1/accounts/%s/reviews/x/raw", "/api/v1/accounts/%s/index-runs",
 		"/api/v1/accounts/%s/followups", "/api/v1/accounts/%s/followups/1/transcript", "/api/v1/accounts/%s/usage",
-		"/api/v1/accounts/%s/queue", "/api/v1/accounts/%s/findings",
+		"/api/v1/accounts/%s/queue", "/api/v1/accounts/%s/findings", "/api/v1/accounts/%s/analytics",
 	}
 	for _, slug := range []string{"beta", "nope"} {
 		for _, p := range paths {
@@ -238,6 +238,8 @@ func TestRequestValidation(t *testing.T) {
 		{"/api/v1/accounts/github/alpha/findings?severity=great", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/findings?status=fixed", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/usage?group=week", CodeBadRequest},
+		{"/api/v1/accounts/github/alpha/analytics?group=year", CodeBadRequest},
+		{"/api/v1/accounts/github/alpha/analytics?from=2026-02-01&to=2026-01-01", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/usage?from=yesterday", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/usage?from=2026-02-01&to=2026-01-01", CodeBadRequest},
 	}

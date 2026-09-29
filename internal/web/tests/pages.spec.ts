@@ -31,21 +31,53 @@ test.describe('overview', () => {
   });
 });
 
-test('account overview shows tiles, recent reviews, queue and repositories', async ({ page }) => {
+test('analytics shows the totals against the window before, the charts and the repositories', async ({ page }) => {
+  const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}`);
-  await expect(page.locator('.tile').first()).toContainText(String(g.accountSummary.reviews7d));
-  await expect(page.locator('.tiles')).toContainText('$1.50');
-  await expect(page.getByRole('meter', { name: 'Monthly tokens used' })).toHaveAttribute('aria-valuemax', String(g.accountSummary.usage.tokensPerMonth));
-  await expect(page.locator('#ov-recent').locator('..').locator('..')).toContainText(g.pull.title);
-  await expect(page.locator('.chips')).toContainText(`1 ${g.job.state}`);
-  await expect(page.getByRole('region', { name: 'Repositories', exact: true }).locator('table.data')).toContainText(g.repoPage.items[0]!.fullName);
+  const stats = page.getByRole('region', { name: 'Totals' });
+  const stat = (label: string) => stats.locator('.stat').filter({ has: page.getByText(label, { exact: true }) });
+  const c = g.analytics.current;
+  await expect(stat('Reviews').locator('.stat-value')).toHaveText(String(c.reviews));
+  await expect(stat('Reviews').locator('.delta')).toHaveText('new');
+  await expect(stat('Reviews').locator('.stat-sub')).toHaveText(`${c.failed} failed`);
+  await expect(stat('Findings').locator('.stat-sub')).toHaveText(`${c.findings.blocking} blocking`);
+  // 2 of 6 findings, where the window before had none to compare.
+  await expect(stat('Addressed').locator('.stat-value')).toHaveText('33%');
+  await expect(stat('Addressed').locator('.stat-sub')).toHaveText('2 of 6');
+  await expect(stat('Addressed').locator('.delta')).toHaveCount(0);
+  await expect(stat('Median review').locator('.stat-value')).toHaveText('1m 30s');
+  await expect(stat('Spend').locator('.delta')).toHaveText('new');
+  await expect(stat('Spend').locator('.delta')).toHaveClass(/tone-danger/);
+  await expect(page.getByRole('img', { name: /^Completed reviews per day/ })).toBeVisible();
+  const findings = page.getByRole('region', { name: 'Findings by severity' });
+  await expect(findings.getByRole('list', { name: /legend/ }).getByRole('listitem')).toHaveText(['Blocking', 'Important', 'Nit']);
+  await findings.getByRole('radio', { name: 'Table' }).click();
+  await expect(findings.locator('tbody tr')).toHaveText([/Sep 1\s*1\s*2\s*3\s*6/]);
+  await expect(page.getByRole('region', { name: 'Most reviewed repositories' }).locator('tbody tr')).toContainText(g.analytics.repositories[0]!.repository);
+
+  await page.getByRole('radio', { name: '90 days' }).click();
+  await expect.poll(() => seen.some((u) => u.pathname.endsWith('/analytics') && u.searchParams.get('group') === 'week')).toBe(true);
+});
+
+test('a chart reads one column at a time, by pointer or by keyboard', async ({ page }) => {
+  await page.goto(`/${T}`);
+  const chart = page.getByRole('img', { name: /^Completed reviews per day/ });
+  await chart.focus();
+  await page.keyboard.press('ArrowRight');
+  const tip = page.locator('.chart-tip');
+  await expect(tip).toContainText('Sep 1');
+  await expect(tip).toContainText(new RegExp(`${g.analytics.series[0]!.reviews}\\s+Reviews`));
+  await page.keyboard.press('Escape');
+  await expect(tip).toHaveCount(0);
+  await chart.hover();
+  await expect(tip).toContainText('Sep 1');
 });
 
 test('account overview links the open pulls whose last review failed or was capped', async ({ page }) => {
   const as = (n: number, status: ReviewStatus): Pull => ({ ...g.pull, number: n, url: g.pull.url.replace(/\d+$/, String(n)), lastReview: { ...g.pull.lastReview!, status } });
   const attention = page.getByRole('region', { name: 'Needs attention' });
   await page.goto(`/${T}`);
-  await expect(page.getByRole('region', { name: 'Repositories', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Most reviewed repositories' })).toBeVisible();
   await expect(attention).toHaveCount(0);
 
   await g.mockApi(page, [
@@ -59,17 +91,15 @@ test('account overview links the open pulls whose last review failed or was capp
   await expect(page.getByRole('combobox', { name: 'Search pull requests' })).toHaveValue('status:capped');
 });
 
-test('account overview says whether its connection receives webhooks', async ({ page }) => {
+test('analytics says when no webhook has reached the connection', async ({ page }) => {
   const detail = g.golden<AccountDetail>('account_detail');
   const panel = page.getByRole('region', { name: 'Connection', exact: true });
   await page.goto(`/${T}`);
-  await expect(panel).toContainText(detail.connection.name);
-  await expect(panel).toContainText('receiving');
-  await expect(panel.getByRole('note')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Totals' })).toBeVisible();
+  await expect(panel).toHaveCount(0);
 
   await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connection: { ...detail.connection, lastWebhookAt: null } }], ...g.defaultApi()]);
   await page.reload();
-  await expect(panel).toContainText('none yet');
   await expect(panel.getByRole('note')).toContainText(`GitHub App's webhook at ${g.meta.webUrl}${detail.connection.hookPath}`);
 });
 
@@ -282,8 +312,8 @@ test.describe('findings', () => {
     await expect(row.locator('.sev')).toHaveText(f.severity);
     await expect(row.getByRole('link', { name: `${f.pull.repository} #${f.pull.number}` })).toHaveAttribute('href', `#/a/${g.SLUG}/pulls/alpha/one/7`);
     await expect(row.locator('.status-word')).toHaveText(f.status);
-    await expect(page.locator('.sections .section-tab.active')).toHaveText('Overview');
-    await expect(page.getByRole('navigation', { name: 'Overview' }).getByRole('link', { name: 'Findings' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('.sections .section-tab.active')).toHaveText('Analytics');
+    await expect(page.getByRole('navigation', { name: 'Analytics' }).getByRole('link', { name: 'Findings' })).toHaveAttribute('aria-current', 'page');
 
     await row.locator('.finding-sub').first().click();
     await expect(page).toHaveURL(new RegExp(`${T}/reviews/${f.reviewId}$`));
@@ -394,8 +424,10 @@ test('queue, usage, follow-ups and admin console pages render their fixtures', a
   await page.goto(`/${T}/usage`);
   await expect(page.locator('tbody tr')).toContainText(g.usageSeries.rows[0]!.key);
   await expect(page.getByRole('img', { name: /Cost by day/ })).toBeVisible();
-  await page.getByRole('button', { name: '7d' }).click();
-  await page.getByRole('button', { name: 'model' }).click();
+  await expect(page.getByRole('meter', { name: 'Monthly tokens used' })).toHaveAttribute('aria-valuemax', String(g.accountSummary.usage.tokensPerMonth));
+  await expect(page.getByRole('region', { name: 'This month' })).toContainText('$1.50');
+  await page.getByRole('radio', { name: '7 days' }).click();
+  await page.getByRole('radio', { name: 'Model' }).click();
   await expect.poll(() => seen.some((u) => u.pathname.endsWith('/usage') && u.searchParams.get('group') === 'model')).toBe(true);
 
   await page.goto(`/${T}/followups`);
@@ -443,7 +475,7 @@ test('each page names itself in the browser tab', async ({ page }) => {
   const r = g.reviewDetail.review;
   for (const [h, title] of [
     ['#/', 'All accounts · kritik'],
-    [T, `Overview · ${g.SLUG} · kritik`],
+    [T, `Analytics · ${g.SLUG} · kritik`],
     [`${T}/repos/alpha/one`, 'alpha/one · kritik'],
     [`${T}/pulls?outcome=failed`, `Pull requests · ${g.SLUG} · kritik`],
     [`${T}/pulls/alpha/one/7`, `${g.pullDetail.pull.title} · alpha/one#7 · kritik`],

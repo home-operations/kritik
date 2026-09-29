@@ -3,7 +3,7 @@
   import { between, duration, tokens, usd, wholeNumber, bytes } from '../../format';
   import { absolute, clock } from '../../time.svelte';
   import Time from '../../components/Time.svelte';
-  import BarChart from '../../components/BarChart.svelte';
+  import ColumnChart from '../../components/ColumnChart.svelte';
 
   let { d }: { d: ReviewDetail } = $props();
 
@@ -31,8 +31,9 @@
   const totalMs = $derived(segs.reduce((a, s) => a + s.ms, 0));
   const steps = $derived(
     (d.agentRun?.timeline ?? []).map((s) => ({
+      key: String(s.index),
       label: String(s.index),
-      value: s.inputTokens + s.outputTokens,
+      values: [s.inputTokens + s.outputTokens],
       title: `step ${s.index}: ${wholeNumber(s.inputTokens)} in, ${wholeNumber(s.outputTokens)} out, ${duration(s.durationMs)}, ${bytes(s.outputBytes)} tool output${s.tools.length ? `, ${s.tools.join(', ')}` : ''}`,
     })),
   );
@@ -84,7 +85,7 @@
       <span class="small muted">{a.steps} steps · {a.stopReason} · {usd(a.costUsd)}</span>
     </header>
     {#if steps.length}
-      <BarChart bars={steps} label="Tokens per agent step" format={tokens} />
+      <ColumnChart label="Tokens per agent step" series={[{ label: 'Tokens', color: 'var(--chart-ink)' }]} rows={steps} format={tokens} />
     {/if}
     <dl class="deflist">
       <dt>Model</dt><dd class="mono">{a.model}</dd>
