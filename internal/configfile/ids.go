@@ -37,10 +37,11 @@ func (i *Connection) ID() string {
 }
 
 // RepositoryID is the stable identifier of a repository of an account,
-// derived from the account's id and the repository's full name, so ingest
-// can upsert it without first reading it back.
+// derived from the account's id and the repository's full name, lowercased
+// since GitHub names are not case sensitive, so ingest can upsert it
+// without first reading it back, however a name is spelled.
 func RepositoryID(accountID, fullName string) string {
-	return uuid.NewSHA1(namespace, []byte("repository:"+accountID+":"+fullName)).String()
+	return uuid.NewSHA1(namespace, []byte("repository:"+accountID+":"+strings.ToLower(fullName))).String()
 }
 
 // Slug is how the dashboard names the account in its URLs and lists:

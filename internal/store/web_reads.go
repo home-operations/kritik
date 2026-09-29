@@ -264,10 +264,10 @@ func ListRepos(ctx context.Context, tx pgx.Tx, p Page) ([]RepoRow, *Cursor, erro
 	return items, next, nil
 }
 
-// FindRepo returns the account's repository named fullName.
+// FindRepo returns the account's repository named fullName, in any case.
 func FindRepo(ctx context.Context, tx pgx.Tx, fullName string) (RepoRow, error) {
 	rows, err := tx.Query(ctx, `SELECT `+repoColumns+`
-		WHERE r.name = $1`, fullName)
+		WHERE lower(r.name) = lower($1)`, fullName)
 	if err != nil {
 		return RepoRow{}, fmt.Errorf("store: find repository: %w", err)
 	}

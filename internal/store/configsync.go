@@ -122,7 +122,7 @@ func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error
 		a := &f.Accounts[i]
 		if _, err := tx.Exec(ctx, `
 			UPDATE repositories SET managed_by = 'forge', enabled = true, disabled_at = NULL, updated_at = now()
-			WHERE account_id = $1 AND managed_by = 'dashboard' AND name <> ALL($2)`,
+			WHERE account_id = $1 AND managed_by = 'dashboard' AND lower(name) <> ALL($2)`,
 			a.ID(), repoNames(a)); err != nil {
 			return fmt.Errorf("store: hand back unlisted repositories: %w", err)
 		}
@@ -175,14 +175,15 @@ func upsertConnection(ctx context.Context, tx pgx.Tx, in *configfile.Connection)
 }
 
 // upsertRepository also takes over a forge-discovered row: listing a
-// repository the poller or a webhook already found makes it declared.
+// repository the poller or a webhook already found makes it declared. A
+// known row keeps its spelling, which is GitHub's once it reported one.
 func upsertRepository(ctx context.Context, tx pgx.Tx, a *configfile.Account, r *configfile.Repository) error {
 	enabled := r.Enabled == nil || *r.Enabled
 	name := a.Name + "/" + r.Name
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO repositories (id, account_id, name, managed_by, enabled, disabled_at)
 		VALUES ($1, $2, $3, 'dashboard', $4, CASE WHEN $4 THEN NULL ELSE now() END)
-		ON CONFLICT (account_id, name) DO UPDATE SET
+		ON CONFLICT (id) DO UPDATE SET
 			managed_by = 'dashboard', enabled = EXCLUDED.enabled,
 			disabled_at = CASE WHEN EXCLUDED.enabled THEN NULL ELSE coalesce(repositories.disabled_at, now()) END,
 			updated_at = now()`,
@@ -202,10 +203,11 @@ func managedByConflict(ctx context.Context, tx pgx.Tx, what string, origin confi
 	return fmt.Errorf("store: %s is managed by %s, not taking it over as %s: %w", what, holder, origin, ErrManagedBy)
 }
 
+// repoNames are the full names a lists, lowercased.
 func repoNames(a *configfile.Account) []string {
 	names := make([]string, 0, len(a.Repositories))
 	for _, r := range a.Repositories {
-		names = append(names, a.Name+"/"+r.Name)
+		names = append(names, strings.ToLower(a.Name+"/"+r.Name))
 	}
 	return names
 }
