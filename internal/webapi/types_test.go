@@ -203,6 +203,18 @@ var goldens = map[string]any{
 		Group: store.UsageByDay, From: t0, To: t1,
 		Rows: []UsagePoint{{Key: "2026-09-01", InputTokens: 100, CacheReadTokens: 50, CacheWriteTokens: 5, OutputTokens: 20, CostUSD: 0.1, Calls: 2}},
 	},
+	"analytics": Analytics{
+		Group: store.AnalyticsByDay, From: t0, To: t1,
+		Current: AnalyticsTotals{
+			PullRequests: 3, Reviews: 5, Failed: 1, Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, Addressed: 2,
+			CostUSD: 1.25, MedianReviewMs: new(int64(90000)),
+		},
+		Previous: AnalyticsTotals{Findings: SeverityCounts{}},
+		Series:   []AnalyticsPoint{{Key: "2026-09-01", Reviews: 5, Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, CostUSD: 1.25}},
+		Repositories: []RepoActivity{
+			{Repository: "alpha/one", Reviews: 5, Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, Addressed: 2},
+		},
+	},
 	"job": Job{
 		ID: 42, Kind: "review", State: rivertype.JobStateRetryable, Attempt: 2, MaxAttempts: 5, CreatedAt: t0, ScheduledAt: t1,
 		AttemptedAt: &t0, FinalizedAt: nil, LastError: "boom",

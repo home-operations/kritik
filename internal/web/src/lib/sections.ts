@@ -2,7 +2,7 @@
 // pages each holds. Rune-free, like routes.ts, so tests can import it.
 import type { Route } from './routes';
 
-export type Section = 'overview' | 'pulls' | 'settings';
+export type Section = 'analytics' | 'pulls' | 'settings';
 
 type Name = Route['name'];
 
@@ -15,12 +15,12 @@ interface SectionDef {
 }
 
 export const SECTIONS: Record<Section, SectionDef> = {
-  overview: { label: 'Overview', names: ['account', 'findings', 'usage'], home: (slug) => ({ name: 'account', slug }) },
+  analytics: { label: 'Analytics', names: ['account', 'findings', 'usage'], home: (slug) => ({ name: 'account', slug }) },
   pulls: { label: 'Pull requests', names: ['pulls', 'pull', 'review', 'queue', 'followups'], home: (slug) => ({ name: 'pulls', slug }) },
   settings: { label: 'Settings', names: ['repos', 'repo', 'admin', 'console'], home: (slug) => ({ name: 'repos', slug }) },
 };
 
-export const SECTION_ORDER: readonly Section[] = ['overview', 'pulls', 'settings'];
+export const SECTION_ORDER: readonly Section[] = ['analytics', 'pulls', 'settings'];
 
 export function sectionOf(r: Route): Section | undefined {
   return SECTION_ORDER.find((s) => SECTIONS[s].names.includes(r.name));
@@ -35,10 +35,10 @@ export interface SubTab {
 }
 
 export const SUB_TABS: Partial<Record<Section, readonly SubTab[]>> = {
-  overview: [
-    { label: 'Overview', name: 'account', route: (slug) => ({ name: 'account', slug }) },
+  analytics: [
+    { label: 'Reviews', name: 'account', route: (slug) => ({ name: 'account', slug }) },
     { label: 'Findings', name: 'findings', route: (slug) => ({ name: 'findings', slug }) },
-    { label: 'Usage', name: 'usage', route: (slug) => ({ name: 'usage', slug }) },
+    { label: 'Spend', name: 'usage', route: (slug) => ({ name: 'usage', slug }) },
   ],
   pulls: [
     { label: 'Pull requests', name: 'pulls', route: (slug) => ({ name: 'pulls', slug }) },

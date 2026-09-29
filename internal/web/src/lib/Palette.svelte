@@ -13,7 +13,6 @@
   import { pullRoute, accountApi } from './links';
   import {
     mdiMagnify,
-    mdiViewDashboardOutline,
     mdiLogin,
     mdiConsoleLine,
     mdiSourceRepository,
@@ -25,6 +24,7 @@
     mdiViewGridOutline,
     mdiTuneVariant,
     mdiBugOutline,
+    mdiChartBoxOutline,
   } from './icons';
 
   let { me }: { me: Me | undefined } = $props();
@@ -96,12 +96,12 @@
     const slugs = [...new Set([...(current ? [current] : []), ...(me?.accounts ?? [])])];
     for (const slug of slugs) {
       entries.push(
-        { label: 'Overview', hint: slug, route: { name: 'account', slug }, icon: mdiViewDashboardOutline },
+        { label: 'Analytics', hint: slug, route: { name: 'account', slug }, icon: mdiChartBoxOutline, keywords: 'overview reviews dashboard' },
         { label: 'Repositories', hint: slug, route: { name: 'repos', slug }, icon: mdiSourceRepository },
         { label: 'Pull requests', hint: slug, route: { name: 'pulls', slug }, icon: mdiSourcePull },
         { label: 'Findings', hint: slug, route: { name: 'findings', slug }, icon: mdiBugOutline, keywords: 'bugs caught addressed' },
         { label: 'Queue', hint: slug, route: { name: 'queue', slug }, icon: mdiTrayFull },
-        { label: 'Usage', hint: slug, route: { name: 'usage', slug }, icon: mdiCurrencyUsd },
+        { label: 'Spend', hint: slug, route: { name: 'usage', slug }, icon: mdiCurrencyUsd, keywords: 'usage cost tokens' },
         { label: 'Follow-ups', hint: slug, route: { name: 'followups', slug }, icon: mdiClipboardTextClockOutline },
       );
       if (me?.admin) {

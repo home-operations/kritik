@@ -25,32 +25,13 @@ func parseTime(s string) (time.Time, bool) {
 // usageQuery reads ?group=, ?from= and ?to=: by day over the last 30 days
 // unless given.
 func (s *Server) usageQuery(r *http.Request) (store.UsageGroup, time.Time, time.Time, error) {
-	q := r.URL.Query()
-	group := store.UsageGroup(q.Get("group"))
+	group := store.UsageGroup(r.URL.Query().Get("group"))
 	group = cmp.Or(group, store.UsageByDay)
 	if !group.Valid() {
 		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "group must be day, model, repo or role")
 	}
-	to := s.now().UTC()
-	if v := q.Get("to"); v != "" {
-		t, ok := parseTime(v)
-		if !ok {
-			return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "to must be RFC 3339 or YYYY-MM-DD")
-		}
-		to = t
-	}
-	from := to.Add(-defaultUsageWindow)
-	if v := q.Get("from"); v != "" {
-		t, ok := parseTime(v)
-		if !ok {
-			return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "from must be RFC 3339 or YYYY-MM-DD")
-		}
-		from = t
-	}
-	if !from.Before(to) {
-		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "from must be before to")
-	}
-	return group, from, to, nil
+	from, to, err := s.window(r)
+	return group, from, to, err
 }
 
 func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScope) error {

@@ -14,7 +14,6 @@ export {
   mdiKeyboardOutline,
   mdiLogout,
   mdiConsoleLine,
-  mdiViewDashboardOutline,
   mdiViewGridOutline,
   mdiSourceRepository,
   mdiCurrencyUsd,
@@ -38,6 +37,7 @@ export {
   mdiFileDocumentEditOutline,
   mdiCircleOutline,
   mdiBugOutline,
+  mdiChartBoxOutline,
 } from '@mdi/js';
 
 import { siGithub } from 'simple-icons';

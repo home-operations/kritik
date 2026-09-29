@@ -30,6 +30,13 @@
   --ok: #1d7436;
   --merged: #6b43b5;
   --warn-bg: #faf1bf;
+  /* Charts are ink and greys (ADR-0017). Severity is an ordinal ramp of
+     the ink, darkest for blocking: red pencil and ochre stacked side by
+     side are alike to a deuteranope. */
+  --chart-ink: #3d4556;
+  --chart-sev-blocking: #1b2130;
+  --chart-sev-important: #636b7b;
+  --chart-sev-nit: #a5acb8;
 }
 .dark {
   --bg: #131922;
@@ -53,6 +60,10 @@
   --ok: #62c27e;
   --merged: #b99cf5;
   --warn-bg: #2c2716;
+  --chart-ink: #c3c8d1;
+  --chart-sev-blocking: #e4e7ec;
+  --chart-sev-important: #8a93a3;
+  --chart-sev-nit: #4f5868;
 }
 
 /* Font families: UI/prose in Schibsted Grotesk, a news grotesk for a
