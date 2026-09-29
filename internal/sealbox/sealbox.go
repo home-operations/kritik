@@ -239,6 +239,21 @@ func (k *Keyring) NeedsRotation(sealed string) bool {
 	return id != k.currentID
 }
 
+// Reseal returns sealed under the current key: sealed itself when it
+// already is, else its plaintext sealed afresh, so a write finishes a key
+// rotation for every value it keeps.
+func (k *Keyring) Reseal(sealed string) (string, error) {
+	if !k.NeedsRotation(sealed) {
+		return sealed, nil
+	}
+	plain, err := k.Open(sealed)
+	if err != nil {
+		return "", err
+	}
+	defer clear(plain)
+	return k.Seal(plain)
+}
+
 // parseSealed validates the wire format and returns the key id and decoded
 // payload, without touching any key material.
 func parseSealed(sealed string) (id string, blob []byte, err error) {

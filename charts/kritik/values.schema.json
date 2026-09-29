@@ -220,7 +220,7 @@
       "type": "object"
     },
     "dashboard": {
-      "description": "KRITIK_DASHBOARD_KEY is the AES-256 key that seals the instance\nconfiguration's credentials (App keys, webhook secrets, provider keys) at\nrest; it has nothing to do with sessions. Wired onto every non-runner role\nand required there once an instance configuration is stored. To rotate\nit, move the old value into oldKeysSecret (KRITIK_DASHBOARD_OLD_KEYS),\nwhich only opens values sealed under it, and keep it there until every\nvalue has been written again. Losing a key that still seals a value makes those\ncredentials unreadable, and the pod then fails to start.",
+      "description": "KRITIK_DASHBOARD_KEY is the AES-256 key that seals the instance\nconfiguration's credentials (App keys, webhook secrets, provider keys) at\nrest; it has nothing to do with sessions. Wired onto every non-runner role\nand required there once an instance configuration is stored. To rotate\nit, move the old value into oldKeysSecret (KRITIK_DASHBOARD_OLD_KEYS),\nwhich only opens values sealed under it, and keep it there until the\nconfiguration has been saved once, which re-seals every value under the\nnew key. Losing a key that still seals a value makes those credentials\nunreadable, and the pod then fails to start.",
       "properties": {
         "keySecret": {
           "properties": {
