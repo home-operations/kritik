@@ -1,10 +1,9 @@
 <script lang="ts">
-  // The Cmd/Ctrl+K command palette: jump to any page from anywhere. Starts as
-  // a static registry of routes (global pages, plus the current account's
-  // pages when the active route is inside one); later tasks can extend the
-  // registry with real search results (repos, pulls, reviews). A search also
-  // finds the settings an admin edits: each section and field, which the
-  // palette focuses once its page shows it.
+  // The Cmd/Ctrl+K command palette: jump to any page from anywhere, from a
+  // registry of routes (global pages, plus the current account's pages when
+  // the active route is inside one). A search also finds the settings an
+  // admin edits: each section and field, which the palette focuses once its
+  // page shows it.
   import type { Route } from './router.svelte';
   import { router, navigate } from './router.svelte';
   import { palette, togglePalette } from './keyboard.svelte';

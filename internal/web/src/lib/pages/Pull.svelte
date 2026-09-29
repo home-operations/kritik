@@ -60,7 +60,7 @@
               <span>updated <Time iso={p.updatedAt} /></span>
               {#each p.labels as l, i (i)}<span class="label-chip" style:--label={labelColor(l.color)}>{l.name}</span>{/each}
               {#if forgeUrl}
-                <a href={forgeUrl} target="_blank" rel="noopener noreferrer">View on forge <Icon path={mdiOpenInNew} size={12} /></a>
+                <a href={forgeUrl} target="_blank" rel="noopener noreferrer">View on GitHub <Icon path={mdiOpenInNew} size={12} /></a>
               {/if}
             </p>
             {#if canAdmin(slug)}

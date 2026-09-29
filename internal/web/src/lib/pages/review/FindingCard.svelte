@@ -13,7 +13,7 @@
     <span class="sev sev-{f.severity}">{f.severity}</span>
     <span class="finding-title">{f.title}</span>
     {#if !compact}<span class="mono small muted">{where}</span>{/if}
-    {#if f.postedInline}<span class="badge" title="Posted as an inline comment on the forge">inline</span>{/if}
+    {#if f.postedInline}<span class="badge" title="Posted as an inline comment on GitHub">inline</span>{/if}
   </header>
   {#if f.explanation}<Markdown text={f.explanation} />{/if}
   {#if f.suggestedFix}

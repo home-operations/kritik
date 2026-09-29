@@ -4,7 +4,7 @@
   import { getJSON, sendJSON, signinState, ApiError } from './api.svelte';
   import { session } from './session.svelte';
   import Icon from './Icon.svelte';
-  import { mdiLogin, forgeIcon } from './icons';
+  import { mdiLogin, githubIcon } from './icons';
   import type { Me, SignInProvider } from './types';
 
   let providers = $state<SignInProvider[]>([]);
@@ -34,7 +34,7 @@
   }
 
   function iconFor(type: SignInProvider['type']): string {
-    return type === 'oidc' ? mdiLogin : (forgeIcon[type]?.path ?? mdiLogin);
+    return type === 'github' ? githubIcon : mdiLogin;
   }
 
   function loginHref(p: SignInProvider): string {

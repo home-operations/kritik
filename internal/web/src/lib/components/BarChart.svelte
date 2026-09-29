@@ -2,7 +2,7 @@
   // A minimal vertical bar chart in inline SVG: one series, a labelled
   // y-axis maximum and baseline, x labels under each bar, and a <title>
   // tooltip per bar. The whole chart carries an accessible description.
-  export interface Bar {
+  interface Bar {
     label: string;
     value: number;
     title: string;
@@ -11,9 +11,9 @@
     bars: Bar[];
     label: string;
     format: (n: number) => string;
-    height?: number;
   }
-  let { bars, label, format, height = 160 }: Props = $props();
+  let { bars, label, format }: Props = $props();
+  const height = 160;
 
   const pad = { top: 12, right: 8, bottom: 26, left: 52 };
   const barW = 22;

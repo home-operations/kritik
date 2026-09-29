@@ -73,9 +73,9 @@ test('repository settings say where each comes from and what .kritik.yaml chose'
   await page.goto(`/${T}/repos/alpha/one`);
   const settings = page.locator('#repo-settings').locator('../..');
   const rc = g.repoDetail.repoConfig!;
-  // The golden file chose another review model; the operator's is shown beside it.
+  // The golden file chose another review model; the admin's is shown beside it.
   await expect(settings.getByText(rc.settings.models.review, { exact: true })).toBeVisible();
-  await expect(settings).toContainText(`(.kritik.yaml; the operator's is ${g.repoDetail.settings.models.review})`);
+  await expect(settings).toContainText(`(.kritik.yaml; the admin's is ${g.repoDetail.settings.models.review})`);
   await expect(settings).toContainText(`${g.repoDetail.settings.mode} (account)`);
   await expect(settings).toContainText('Settle 30s (default)');
   const file = page.locator('#repo-file').locator('../..');

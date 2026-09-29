@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
@@ -16,9 +15,8 @@ type Meta struct {
 	Version string `json:"version"`
 	// Management is whether the configuration can be written: a sealing
 	// key is configured.
-	Management bool                `json:"management"`
-	SignIn     []auth.ProviderInfo `json:"signIn"`
-	WebURL     string              `json:"webUrl"`
+	Management bool   `json:"management"`
+	WebURL     string `json:"webUrl"`
 }
 
 // InstanceConfig is the instance spec as an admin sees it: every secret is

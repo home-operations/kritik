@@ -42,7 +42,8 @@ export interface ConnectionDraft {
 
 export type ProviderType = 'openrouter' | 'openai' | 'anthropic';
 
-// A model provider of the account's own: its key, for models it pays for.
+// A model provider, the instance's or an account's own: its key, for models
+// it pays for.
 export interface ProviderDraft {
   key: number;
   // The name and endpoint the provider was loaded under: the server keeps
@@ -163,10 +164,6 @@ function secretOf(v: unknown, fallback: SecretMode): SecretDraft {
   if (m.generate === true) return { wasSet: false, mode: 'generate', value: '' };
   if (typeof m.value === 'string') return { wasSet: false, mode: 'replace', value: m.value };
   return { wasSet: false, mode: fallback, value: '' };
-}
-
-export function newSecret(mode: SecretMode): SecretDraft {
-  return { wasSet: false, mode, value: '' };
 }
 
 export function newConnection(): ConnectionDraft {

@@ -11,7 +11,8 @@
     secret: SecretDraft;
     generatable?: boolean;
     optional?: boolean;
-    // false once the connection is renamed: the stored value can't be kept.
+    // false once the stored value can't be kept: what it was stored for,
+    // a connection's name or a provider's endpoint, changed.
     keepable?: boolean;
     invalid?: boolean;
     hint?: string;

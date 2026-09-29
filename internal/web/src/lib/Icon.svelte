@@ -5,14 +5,12 @@
     path: string;
     size?: number;
     label?: string; // when set, the icon is meaningful (role=img); otherwise decorative
-    spin?: boolean;
   }
-  let { path, size = 18, label, spin = false }: Props = $props();
+  let { path, size = 18, label }: Props = $props();
 </script>
 
 <svg
   class="icon"
-  class:spin
   width={size}
   height={size}
   viewBox="0 0 24 24"

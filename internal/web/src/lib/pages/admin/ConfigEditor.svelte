@@ -25,7 +25,7 @@
   interface Props {
     initial: Obj;
     // inherited is what fields left empty take.
-    inherited?: Inherited;
+    inherited: Inherited;
     saving: boolean;
     // The last failed save's message and the spec path it points at.
     errMessage?: string;
@@ -34,7 +34,6 @@
     errSeq?: number;
     alertAction?: Snippet;
     dirty?: boolean;
-    submitLabel?: string;
     onsave: (spec: Obj) => void | Promise<void>;
   }
   let {
@@ -46,7 +45,6 @@
     errSeq = 0,
     alertAction,
     dirty = $bindable(false),
-    submitLabel = 'Save',
     onsave,
   }: Props = $props();
 
@@ -78,9 +76,8 @@
     if (errPath) clearedSeq = errSeq;
   }
   const inv = (path: string) => pathMatches(path, activePath);
-  const own = $derived(inherited?.account);
-  const hint = (key: string, value: string, fallback = '') =>
-    inherited ? inheritsHint(value, inherited.accountSources[key]) : fallback;
+  const own = $derived(inherited.account);
+  const hint = (key: string, value: string) => inheritsHint(value, inherited.accountSources[key]);
 
   function focusPath(path: string): void {
     if (!path || !formEl) return;
@@ -163,8 +160,7 @@
   {#if jsonMode}
     <p class="notice">
       The spec as JSON. Secrets read as <span class="mono">{'{"keep": true}'}</span>; give a new one as
-      <span class="mono">{'{"value": "…"}'}</span> or, for a webhook secret, <span class="mono">{'{"generate": true}'}</span>. Values
-      typed into the form are not carried over.
+      <span class="mono">{'{"value": "…"}'}</span>. Values typed into the form are not carried over.
     </p>
     <label class="field">
       <span>Spec JSON</span>
@@ -176,15 +172,15 @@
       <div class="fields">
         <label class="field">
           <span>Review model</span>
-          <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder={hint('models.review', own?.models.review || 'no model', 'provider/model')} />
+          <input class="mono" data-path="models.review" aria-invalid={inv('models.review') || undefined} bind:value={draft.reviewModel} placeholder={hint('models.review', own.models.review || 'no model')} />
         </label>
         <label class="field">
           <span>Fallback model</span>
-          <input class="mono" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder={hint('models.fallback', own?.models.fallback || 'no fallback', 'provider/model')} />
+          <input class="mono" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder={hint('models.fallback', own.models.fallback || 'no fallback')} />
         </label>
         <label class="field">
           <span>Filter</span>
-          <input class="mono" data-path="filter" aria-invalid={inv('filter') || undefined} bind:value={draft.filter} placeholder={hint('filter', own?.filter || 'no filter')} />
+          <input class="mono" data-path="filter" aria-invalid={inv('filter') || undefined} bind:value={draft.filter} placeholder={hint('filter', own.filter || 'no filter')} />
         </label>
         <label class="field">
           <span>Forks</span>
@@ -196,7 +192,7 @@
         </label>
         <label class="field">
           <span>Settle</span>
-          <input data-path="settle" aria-invalid={inv('settle') || undefined} bind:value={draft.settle} placeholder={hint('settle', duration((own?.settleSeconds ?? 0) * 1000) || '0s', 'e.g. 2m')} />
+          <input data-path="settle" aria-invalid={inv('settle') || undefined} bind:value={draft.settle} placeholder={hint('settle', duration((own.settleSeconds ?? 0) * 1000) || '0s')} />
         </label>
       </div>
     </fieldset>
@@ -206,15 +202,15 @@
       <div class="fields">
         <label class="field">
           <span>Concurrency</span>
-          <input inputmode="numeric" data-path="limits.concurrency" aria-invalid={inv('limits.concurrency') || undefined} bind:value={draft.concurrency} placeholder={hint('limits', String(own?.limits.concurrency))} />
+          <input inputmode="numeric" data-path="limits.concurrency" aria-invalid={inv('limits.concurrency') || undefined} bind:value={draft.concurrency} placeholder={hint('limits', String(own.limits.concurrency))} />
         </label>
         <label class="field">
           <span>Reviews per day</span>
-          <input inputmode="numeric" data-path="limits.reviewsPerDay" aria-invalid={inv('limits.reviewsPerDay') || undefined} bind:value={draft.reviewsPerDay} placeholder={hint('limits', own?.limits.reviewsPerDay ? String(own.limits.reviewsPerDay) : 'unlimited')} />
+          <input inputmode="numeric" data-path="limits.reviewsPerDay" aria-invalid={inv('limits.reviewsPerDay') || undefined} bind:value={draft.reviewsPerDay} placeholder={hint('limits', own.limits.reviewsPerDay ? String(own.limits.reviewsPerDay) : 'unlimited')} />
         </label>
         <label class="field">
           <span>Tokens per month</span>
-          <input inputmode="numeric" data-path="limits.tokensPerMonth" aria-invalid={inv('limits.tokensPerMonth') || undefined} bind:value={draft.tokensPerMonth} placeholder={hint('limits', own?.limits.tokensPerMonth ? String(own.limits.tokensPerMonth) : 'unlimited')} />
+          <input inputmode="numeric" data-path="limits.tokensPerMonth" aria-invalid={inv('limits.tokensPerMonth') || undefined} bind:value={draft.tokensPerMonth} placeholder={hint('limits', own.limits.tokensPerMonth ? String(own.limits.tokensPerMonth) : 'unlimited')} />
         </label>
         <label class="field">
           <span>Runner (JSON)</span>
@@ -246,7 +242,7 @@
         <RepositoryFields
           bind:repo={draft.repositories[i]!}
           index={i}
-          inherited={inherited && { settings: inherited.repository, sources: inherited.repositorySources }}
+          inherited={{ settings: inherited.repository, sources: inherited.repositorySources }}
           {inv}
           onremove={() => structural(() => (draft.repositories = draft.repositories.filter((x) => x.key !== repo.key)))}
         />
@@ -267,7 +263,7 @@
   </div>
 
   <div class="form-actions">
-    <button type="submit" class="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : submitLabel}</button>
+    <button type="submit" class="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
     {#if dirty}<span class="field-hint">Unsaved changes</span>{/if}
   </div>
 </form>

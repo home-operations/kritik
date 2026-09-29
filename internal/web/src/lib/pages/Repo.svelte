@@ -102,19 +102,19 @@
   }
 
   // The bounds a repository's .kritik.yaml chooses within, each "own" when
-  // the operator set none.
+  // the admin set none.
   function bounds(s: RepoSettings): { label: string; value: string }[] {
     const a = s.allow;
-    const most = (n: number | null, own: string) => (n === null ? `at most the operator's ${own}` : `at most ${n}`);
+    const most = (n: number | null, own: string) => (n === null ? `at most the admin's ${own}` : `at most ${n}`);
     return [
-      { label: 'Modes', value: a.modes ? list(a.modes) : `the operator's own (${s.mode})` },
-      { label: 'Models', value: a.models ? list(a.models) : "the operator's own" },
-      { label: 'Commands', value: a.commands ? list(a.commands) : `some of the operator's (${list(s.agent.commands)})` },
+      { label: 'Modes', value: a.modes ? list(a.modes) : `the admin's own (${s.mode})` },
+      { label: 'Models', value: a.models ? list(a.models) : "the admin's own" },
+      { label: 'Commands', value: a.commands ? list(a.commands) : `some of the admin's (${list(s.agent.commands)})` },
       { label: 'Max steps', value: most(a.agent.maxSteps, String(s.agent.maxSteps)) },
       { label: 'Max tokens', value: most(a.agent.maxTokens, String(s.agent.maxTokens)) },
       {
         label: 'Settle',
-        value: a.settleSeconds === null ? `at most the operator's ${duration(s.settleSeconds * 1000) || '0s'}` : `at most ${duration(a.settleSeconds * 1000) || '0s'}`,
+        value: a.settleSeconds === null ? `at most the admin's ${duration(s.settleSeconds * 1000) || '0s'}` : `at most ${duration(a.settleSeconds * 1000) || '0s'}`,
       },
     ];
   }
@@ -128,7 +128,7 @@
   <dd>
     <span class:mono={r.mono}>{value}</span>
     {#if value !== own}
-      <span class="muted small">({sourceLabel.repository}; the operator's is <span class:mono={r.mono}>{own}</span>)</span>
+      <span class="muted small">({sourceLabel.repository}; the admin's is <span class:mono={r.mono}>{own}</span>)</span>
     {:else}
       <span class="muted small">({sourceLabel[d.sources[r.key] ?? 'default']})</span>
     {/if}
@@ -200,7 +200,7 @@
                     <span class="muted small">(merge base of <a href={href({ name: 'review', slug, id: rc.reviewId })}>the last review</a>)</span>
                   </dd>
                   {#if rc.found}
-                    <dt>Filter</dt><dd class="mono">{rc.filter || '—'} <span class="muted small">(ANDed with the operator's)</span></dd>
+                    <dt>Filter</dt><dd class="mono">{rc.filter || '—'} <span class="muted small">(ANDed with the admin's)</span></dd>
                     <dt>Skip when only these change</dt><dd class="mono">{list(rc.skipPaths)}</dd>
                   {/if}
                 </dl>
@@ -211,7 +211,7 @@
                   <p class="notice" role="note">Ignored as a whole: {rc.ignored}</p>
                 {/if}
                 {#if rc.dropped.length}
-                  <p class="small">Values outside the operator's bounds, where the operator's apply instead:</p>
+                  <p class="small">Values outside the admin's bounds, where the admin's apply instead:</p>
                   <ul class="small">
                     {#each rc.dropped as note (note)}<li>{note}</li>{/each}
                   </ul>

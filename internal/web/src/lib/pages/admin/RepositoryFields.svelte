@@ -8,14 +8,14 @@
     repo: RepositoryDraft;
     index: number;
     // inherited is what the entry's fields take from the account when left
-    // empty; none when creating.
-    inherited?: { settings: RepoSettings; sources: Record<string, ConfigSource> };
+    // empty.
+    inherited: { settings: RepoSettings; sources: Record<string, ConfigSource> };
     inv: (path: string) => boolean;
     onremove: () => void;
   }
   let { repo = $bindable(), index, inherited, inv, onremove }: Props = $props();
-  const own = $derived(inherited?.settings);
-  const hint = (key: string, value: string, fallback = '') => (inherited ? inheritsHint(value, inherited.sources[key]) : fallback);
+  const own = $derived(inherited.settings);
+  const hint = (key: string, value: string) => inheritsHint(value, inherited.sources[key]);
   const list = (xs: string[] | undefined) => (xs?.length ? xs.join(', ') : 'none');
   const p = $derived(`repositories[${index}]`);
 </script>
@@ -40,11 +40,11 @@
     </label>
     <label class="field">
       <span>Filter</span>
-      <input class="mono" data-path="{p}.filter" aria-invalid={inv(`${p}.filter`) || undefined} bind:value={repo.filter} placeholder={hint('filter', own?.filter || 'no filter')} />
+      <input class="mono" data-path="{p}.filter" aria-invalid={inv(`${p}.filter`) || undefined} bind:value={repo.filter} placeholder={hint('filter', own.filter || 'no filter')} />
     </label>
     <label class="field">
       <span>Settle</span>
-      <input data-path="{p}.settle" aria-invalid={inv(`${p}.settle`) || undefined} bind:value={repo.settle} placeholder={hint('settle', duration((own?.settleSeconds ?? 0) * 1000) || '0s', 'e.g. 2m')} />
+      <input data-path="{p}.settle" aria-invalid={inv(`${p}.settle`) || undefined} bind:value={repo.settle} placeholder={hint('settle', duration((own.settleSeconds ?? 0) * 1000) || '0s')} />
     </label>
     <label class="field">
       <span>Ignore globs (one per line)</span>
@@ -52,7 +52,7 @@
     </label>
     <label class="field">
       <span>Review instructions (one per line)</span>
-      <textarea rows="3" data-path="{p}.review.instructions" aria-invalid={inv(`${p}.review.instructions`) || undefined} bind:value={repo.instructions} placeholder={hint('review.instructions', list(own?.review.instructions))}></textarea>
+      <textarea rows="3" data-path="{p}.review.instructions" aria-invalid={inv(`${p}.review.instructions`) || undefined} bind:value={repo.instructions} placeholder={hint('review.instructions', list(own.review.instructions))}></textarea>
     </label>
     <label class="field field-check">
       <input type="checkbox" data-path="{p}.review.requireSuggestedFix" bind:checked={repo.requireSuggestedFix} />
@@ -70,7 +70,7 @@
     </label>
     <label class="field">
       <span>Incremental: max delta files</span>
-      <input inputmode="numeric" data-path="{p}.incremental" aria-invalid={inv(`${p}.incremental`) || undefined} bind:value={repo.maxDeltaFiles} placeholder={hint('incremental.maxDeltaFiles', String(own?.maxDeltaFiles))} />
+      <input inputmode="numeric" data-path="{p}.incremental" aria-invalid={inv(`${p}.incremental`) || undefined} bind:value={repo.maxDeltaFiles} placeholder={hint('incremental.maxDeltaFiles', String(own.maxDeltaFiles))} />
     </label>
     <label class="field">
       <span>Agent (JSON)</span>

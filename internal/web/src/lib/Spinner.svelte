@@ -1,7 +1,7 @@
 <script lang="ts">
   // A simple rotating-arc loading indicator. Inherits the surrounding text
   // colour via currentColor, so it tints muted in lists and accent at full size.
-  let { size = 18, label }: { size?: number; label?: string } = $props();
+  let { size = 18 }: { size?: number } = $props();
 </script>
 
 <svg
@@ -10,9 +10,7 @@
   height={size}
   viewBox="0 0 32 32"
   fill="none"
-  role={label ? 'img' : undefined}
-  aria-label={label}
-  aria-hidden={label ? undefined : 'true'}
+  aria-hidden="true"
 >
   <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="2.5" opacity="0.25" />
   <path

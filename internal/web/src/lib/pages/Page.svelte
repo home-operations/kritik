@@ -3,7 +3,6 @@
   // starts the page fresh (filters, cursors), while switching review tabs
   // keeps the review page mounted.
   import type { Route } from '../routes';
-  import Placeholder from '../Placeholder.svelte';
   import Overview from './Overview.svelte';
   import Operator from './Operator.svelte';
   import AccountOverview from './AccountOverview.svelte';
@@ -53,8 +52,6 @@
     <Followups slug={route.slug} />
   {:else if route.name === 'admin'}
     <Admin slug={route.slug} section={route.section} />
-  {:else}
-    <Placeholder {route} />
   {/if}
 {/key}
 </div>

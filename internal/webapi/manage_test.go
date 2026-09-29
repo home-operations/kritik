@@ -34,7 +34,7 @@ func TestMetaNeedsNoSession(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.Management || m.WebURL != "https://kritik.example" || m.SignIn == nil {
+	if m.Management || m.WebURL != "https://kritik.example" {
 		t.Errorf("meta = %+v", m)
 	}
 	if w.Header().Get("Cache-Control") != "no-store" {

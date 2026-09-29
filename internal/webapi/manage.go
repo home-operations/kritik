@@ -33,7 +33,7 @@ func (s *Server) registerManage(mux *http.ServeMux) {
 }
 
 func (s *Server) getMeta(w http.ResponseWriter, _ *http.Request) error {
-	writeJSON(w, http.StatusOK, Meta{Version: s.version, Management: s.keyring != nil, SignIn: s.auth.Providers(), WebURL: s.webURL.String()})
+	writeJSON(w, http.StatusOK, Meta{Version: s.version, Management: s.keyring != nil, WebURL: s.webURL.String()})
 	return nil
 }
 
