@@ -60,7 +60,15 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	window := before + 2
-	current := configfile.NewCurrent(&configfile.File{Indexing: configfile.Indexing{OnboardWindow: window}})
+	// running is the test's configuration with the window, and emb as its
+	// embedder: the feeder offers only repositories whose account it runs.
+	running := func(emb *configfile.Embedding) *configfile.File {
+		f := *file
+		f.Indexing = configfile.Indexing{OnboardWindow: window}
+		f.Embedding = emb
+		return &f
+	}
+	current := configfile.NewCurrent(running(nil))
 	o := &Onboarder{Store: st, Queue: queue, Current: current, Logger: logger}
 	queued := func() (jobs, repos int) {
 		t.Helper()
@@ -76,7 +84,7 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	if jobs, _ := queued(); jobs != 0 {
 		t.Fatalf("queued %d jobs with no embedder, want none", jobs)
 	}
-	current.Set(&configfile.File{Indexing: configfile.Indexing{OnboardWindow: window}, Embedding: &configfile.Embedding{Model: "m", Dims: 8}})
+	current.Set(running(&configfile.Embedding{Model: "m", Dims: 8}))
 	for range 2 {
 		if err := o.Offer(ctx); err != nil {
 			t.Fatalf("Offer: %v", err)
@@ -97,5 +105,20 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	}
 	if jobs, repos := queued(); jobs != 3 || repos != 3 {
 		t.Fatalf("after one finished: queued %d jobs for %d repositories, want 3 for 3", jobs, repos)
+	}
+
+	// With repositories off by default, a place that frees up stays empty.
+	off := running(&configfile.Embedding{Model: "m", Dims: 8})
+	off.Defaults.Enabled = new(false)
+	current.Set(off)
+	if _, err := st.App().Exec(ctx, `UPDATE river_job SET state = 'completed', finalized_at = now()
+		WHERE id = (SELECT min(id) FROM river_job WHERE id > $1 AND state <> 'completed')`, lastJob); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Offer(ctx); err != nil {
+		t.Fatalf("Offer: %v", err)
+	}
+	if jobs, _ := queued(); jobs != 3 {
+		t.Fatalf("with repositories off: queued %d jobs, want still 3", jobs)
 	}
 }

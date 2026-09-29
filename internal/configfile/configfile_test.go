@@ -255,6 +255,37 @@ func loadBytes(t *testing.T, raw []byte) (*File, error) {
 	return load(t, string(raw))
 }
 
+// TestEnabledDefault checks enabled resolves like the other overrides: the
+// defaults and an account set where a repository without an entry of its
+// own starts, and an entry decides for itself.
+func TestEnabledDefault(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	tests := []struct {
+		name, doc string
+		want      map[string]bool
+	}{
+		{"on unless turned off", acme("    repositories: [{ name: off, enabled: false }]\n"),
+			map[string]bool{"acme/new": true, "acme/off": false}},
+		{"off at the defaults", "defaults: { enabled: false }\n" + acme("    repositories: [{ name: on, enabled: true }, { name: listed }]\n"),
+			map[string]bool{"acme/new": false, "acme/on": true, "acme/listed": false}},
+		{"the account over the defaults", "defaults: { enabled: false }\n" + acme("    enabled: true\n"),
+			map[string]bool{"acme/new": true}},
+		{"off at the account", acme("    enabled: false\n    repositories: [{ name: on, enabled: true }]\n"),
+			map[string]bool{"acme/new": false, "acme/on": true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := mustLoad(t, tt.doc)
+			for repo, want := range tt.want {
+				if got := f.Settings(&f.Accounts[0], repo).Enabled; got != want {
+					t.Errorf("%s enabled = %v, want %v", repo, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestProviders(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")

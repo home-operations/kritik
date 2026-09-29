@@ -76,6 +76,15 @@ An account runs while a connection serves it. An entry for an account no
 connection serves is kept, but not run, and the admin console lists it as
 not served.
 
+Every repository the App reaches is reviewed and indexed unless it is
+turned off. `enabled` turns it off or on, and like the other settings it
+can be written at the defaults, an account or a repository entry. At the
+defaults or an account, it is where each repository without an entry of
+its own starts: with `"enabled": false` on the account, a repository the
+App reaches is registered but nothing runs for it until its own entry says
+`"enabled": true`. A repository that is off is neither polled nor
+indexed.
+
 ## Secrets
 
 A secret an admin submits, such as an App's private key or client ID, is

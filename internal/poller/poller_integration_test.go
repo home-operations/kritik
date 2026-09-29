@@ -195,6 +195,28 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		// the forge's word, so a new head is a new job.
 		t.Fatalf("after third poll: jobs=%d", jobs)
 	}
+	checkAccountOff(ctx, t, p, file, account, in, lf)
+}
+
+// checkAccountOff asserts a poll lists nothing for an account that leaves
+// its repositories off, though the App still reaches them.
+func checkAccountOff(
+	ctx context.Context, t *testing.T, p *Poller, file *configfile.File, account *configfile.Account, in *configfile.Connection, lf *listForge,
+) {
+	t.Helper()
+	off := *account
+	off.Enabled = new(false)
+	lf.mu.Lock()
+	listed := len(lf.sinces)
+	lf.mu.Unlock()
+	if n, err := p.Poll(ctx, file, &off, in); err != nil || n != 0 {
+		t.Fatalf("poll with the account off: n=%d err=%v", n, err)
+	}
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	if len(lf.sinces) != listed {
+		t.Fatalf("the forge was listed %d more times with the account off", len(lf.sinces)-listed)
+	}
 }
 
 // checkBaseline asserts the pull request numbered number was recorded at

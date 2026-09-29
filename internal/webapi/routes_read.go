@@ -87,7 +87,7 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 	var stats store.AccountStats
 	err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
 		var err error
-		stats, err = store.ReadAccountStats(ctx, tx)
+		stats, err = store.ReadAccountStats(ctx, tx, func(name string) bool { return file.Settings(t, name).Enabled })
 		return err
 	})
 	if err != nil {
@@ -200,15 +200,17 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 	}
 	items := make([]Repository, len(rows))
 	for i, row := range rows {
-		items[i] = repository(row)
+		items[i] = repository(row, t.file.Settings(t.account, row.FullName).Enabled)
 	}
 	writeJSON(w, http.StatusOK, newPage(items, next))
 	return nil
 }
 
-func repository(r store.RepoRow) Repository {
+// repository is r as the API shows it: enabled when the App reaches it and
+// its settings leave it on.
+func repository(r store.RepoRow, on bool) Repository {
 	out := Repository{
-		ID: r.ID, FullName: r.FullName, Enabled: r.Enabled, ManagedBy: r.ManagedBy,
+		ID: r.ID, FullName: r.FullName, Enabled: r.Enabled && on, ManagedBy: r.ManagedBy,
 		DefaultBranch: r.DefaultBranch,
 		Index:         IndexState{ActiveCommit: r.ActiveCommit, ActiveAt: r.ActiveAt, LastRunStatus: r.LastIndexStatus, LastRunAt: r.LastIndexAt},
 	}
@@ -258,7 +260,7 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 	}
 	settings := t.file.Settings(t.account, row.FullName)
 	d := RepoDetail{
-		Repository: repository(row), Settings: repoSettings(settings), Sources: t.file.Sources(t.account, row.FullName),
+		Repository: repository(row, settings.Enabled), Settings: repoSettings(settings), Sources: t.file.Sources(t.account, row.FullName),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
 	}
 	writeJSON(w, http.StatusOK, d)

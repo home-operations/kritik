@@ -100,6 +100,29 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
+// checkAccountEnabled applies twoAccounts with alpha's repositories off,
+// asserts alpha/one, listed without an enabled of its own, is recorded off,
+// and applies twoAccounts again.
+func checkAccountEnabled(ctx context.Context, t *testing.T, s *Store) {
+	t.Helper()
+	off := strings.Replace(twoAccounts, "    name: alpha\n", "    name: alpha\n    enabled: false\n", 1)
+	if err := s.ApplyConfig(ctx, parse(t, off)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	defer func() {
+		if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+			t.Fatalf("ApplyConfig: %v", err)
+		}
+	}()
+	var enabled bool
+	if err := s.owner.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'alpha/one'`).Scan(&enabled); err != nil {
+		t.Fatal(err)
+	}
+	if enabled {
+		t.Fatal("alpha/one is enabled, though alpha turns its repositories off")
+	}
+}
+
 const alphaEntry = `
 accounts:
   - forge: github
@@ -224,6 +247,10 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 		if enabled || disabledAt == nil {
 			t.Fatalf("alpha/two enabled=%v disabled_at=%v", enabled, disabledAt)
 		}
+	})
+
+	t.Run("a listed repository without its own enabled takes the account's", func(t *testing.T) {
+		checkAccountEnabled(ctx, t, s)
 	})
 
 	t.Run("an account no connection serves any more is disabled and keeps its rows", func(t *testing.T) {

@@ -70,7 +70,10 @@ func (o *Onboarder) Offer(ctx context.Context) error {
 	if room <= 0 {
 		return nil
 	}
-	refs, err := o.Store.OnboardCandidates(ctx, room, onboardRetryAfter)
+	refs, err := o.Store.OnboardCandidates(ctx, room, onboardRetryAfter, func(accountID, fullName string) bool {
+		a, ok := f.AccountByID(accountID)
+		return ok && f.Settings(a, fullName).Enabled
+	})
 	if err != nil || len(refs) == 0 {
 		return err
 	}

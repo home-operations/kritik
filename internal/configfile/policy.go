@@ -71,7 +71,7 @@ const (
 
 // Policies is the table.
 var Policies = []Policy{
-	{Key: "enabled", Scopes: []Scope{ScopeRepository}, Repository: RepoTurnOff},
+	{Key: "enabled", Scopes: everyScope, Repository: RepoTurnOff},
 	{Key: "filter", Scopes: everyScope, Repository: RepoAnd},
 	{Key: "ignore", Scopes: everyScope, Repository: RepoUnion},
 	{Key: "skip.onlyPaths", Scopes: []Scope{}, Repository: RepoOwn},
