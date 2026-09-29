@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/prfilter"
 )
@@ -448,10 +449,14 @@ type AgentSettings struct {
 }
 
 // DefaultAgent applies to every agent bound a repository leaves unset. Its
-// MaxTokens is the agent loop's own default budget. No command is allowed
-// by default: a repository is opted into the run tool.
+// steps, tool output and tokens are the agent loop's own defaults. No
+// command is allowed by default: a repository is opted into the run tool.
 var DefaultAgent = AgentSettings{
-	MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, Timeout: 20 * time.Minute, CommandTimeout: 30 * time.Second,
+	MaxSteps:           agent.DefaultLimits.MaxSteps,
+	MaxToolOutputBytes: agent.DefaultLimits.MaxToolOutputBytes,
+	MaxTokens:          agent.DefaultLimits.MaxTokens,
+	Timeout:            20 * time.Minute,
+	CommandTimeout:     30 * time.Second,
 }
 
 // Incremental tunes incremental re-review.

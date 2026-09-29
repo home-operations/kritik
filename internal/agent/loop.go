@@ -21,13 +21,17 @@ type Limits struct {
 	MaxOutputTokensPerStep int64
 }
 
-// WithDefaults fills every zero-valued field of l with the fleet default,
+// DefaultLimits are the fleet defaults. The configuration's agent defaults
+// take theirs from here.
+var DefaultLimits = Limits{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, MaxOutputTokensPerStep: 8192}
+
+// WithDefaults fills every zero-valued field of l from DefaultLimits,
 // leaving any field the caller already set untouched.
 func (l Limits) WithDefaults() Limits {
-	l.MaxSteps = cmp.Or(l.MaxSteps, 60)
-	l.MaxToolOutputBytes = cmp.Or(l.MaxToolOutputBytes, 32<<10)
-	l.MaxTokens = cmp.Or(l.MaxTokens, 4_000_000)
-	l.MaxOutputTokensPerStep = cmp.Or(l.MaxOutputTokensPerStep, 8192)
+	l.MaxSteps = cmp.Or(l.MaxSteps, DefaultLimits.MaxSteps)
+	l.MaxToolOutputBytes = cmp.Or(l.MaxToolOutputBytes, DefaultLimits.MaxToolOutputBytes)
+	l.MaxTokens = cmp.Or(l.MaxTokens, DefaultLimits.MaxTokens)
+	l.MaxOutputTokensPerStep = cmp.Or(l.MaxOutputTokensPerStep, DefaultLimits.MaxOutputTokensPerStep)
 	return l
 }
 
