@@ -188,6 +188,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	checkTips := delivered == nil || delivered.Before(time.Now().Add(-file.PollLookback()))
 	started := time.Now()
 	handled := 0
+	runs := map[string]bool{}
 	for _, r := range repos {
 		if ctx.Err() != nil {
 			return handled, ctx.Err()
@@ -198,6 +199,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		if !file.Runs(account, repo, r.RepoTraits) {
 			continue
 		}
+		runs[repo] = true
 		client, err := p.Forges.For(ctx, in, repo)
 		if err != nil {
 			return handled, err
@@ -230,6 +232,9 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 			p.Logger.Info("polled pull request "+out.Status, "connection", in.Name, "repository", repo, "pr", pr.Number, "reason", out.Reason)
 		}
 	}
+	if err := p.pollReactions(ctx, account, in, runs); err != nil {
+		p.Logger.Warn("reactions not read", "connection", in.Name, "account", account.Key(), "error", err)
+	}
 	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO poll_state (account_id, last_polled_at) VALUES ($1, $2)
 			ON CONFLICT (account_id) DO UPDATE SET last_polled_at = excluded.last_polled_at, updated_at = now()`, account.ID(), started)
@@ -239,6 +244,77 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		return handled, fmt.Errorf("poller: write state: %w", err)
 	}
 	return handled, nil
+}
+
+// reactionWindow is how long after its latest review a pull request's
+// reactions are read again: a finding is reacted to soon after it is
+// posted, if at all.
+const reactionWindow = 7 * 24 * time.Hour
+
+// reactionPulls bounds the pull requests one poll reads the reactions of,
+// per account, the most recently reviewed first, so an account with many
+// open pull requests does not spend its API quota on them every poll.
+const reactionPulls = 30
+
+// pollReactions reads the 👍 and 👎 on the inline comments kritik posted
+// on the account's recently reviewed pull requests, in the repositories
+// that run, into their findings. GitHub sends no webhook for a reaction.
+func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account, in *configfile.Connection, runs map[string]bool) error {
+	type pull struct {
+		id, repo string
+		number   int
+	}
+	var pulls []pull
+	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT p.id, r.name, p.number FROM findings f
+			JOIN reviews v ON v.id = f.review_id JOIN pull_requests p ON p.id = v.pull_request_id
+			JOIN repositories r ON r.id = p.repository_id
+			WHERE f.forge_comment_id IS NOT NULL AND v.created_at > $1
+			GROUP BY p.id, r.name, p.number ORDER BY max(v.created_at) DESC LIMIT $2`, time.Now().Add(-reactionWindow), reactionPulls)
+		if err != nil {
+			return err
+		}
+		pulls, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (pull, error) {
+			var x pull
+			err := row.Scan(&x.id, &x.repo, &x.number)
+			return x, err
+		})
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("poller: read reviewed pull requests: %w", err)
+	}
+	for _, pr := range pulls {
+		if !runs[pr.repo] || ctx.Err() != nil {
+			continue
+		}
+		client, err := p.Forges.For(ctx, in, pr.repo)
+		if err != nil {
+			return err
+		}
+		owner, name, _ := strings.Cut(pr.repo, "/")
+		comments, err := client.ListInline(ctx, owner, name, pr.number)
+		if err != nil {
+			return err
+		}
+		ids := make([]int64, len(comments))
+		up := make([]int, len(comments))
+		down := make([]int, len(comments))
+		for i, c := range comments {
+			ids[i], up[i], down[i] = c.ID, c.ReactionsUp, c.ReactionsDown
+		}
+		err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE findings f SET reactions_up = x.up, reactions_down = x.down
+				FROM reviews v, unnest($2::bigint[], $3::int[], $4::int[]) AS x(id, up, down)
+				WHERE v.id = f.review_id AND v.pull_request_id = $1 AND f.forge_comment_id = x.id
+					AND (f.reactions_up, f.reactions_down) IS DISTINCT FROM (x.up, x.down)`, pr.id, ids, up, down)
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("poller: write reactions of %s#%d: %w", pr.repo, pr.number, err)
+		}
+	}
+	return nil
 }
 
 // pollTip hands the dispatcher a push to r's default branch when its tip is

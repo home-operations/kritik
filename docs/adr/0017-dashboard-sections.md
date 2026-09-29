@@ -96,10 +96,12 @@ loaded at and audited; a bar says when there are unsaved changes.
   finding that a later completed review of the pull request no longer
   reports was addressed. This is derived when read; nothing new is
   stored.
-- **Reactions.** The 👍 and 👎 on each inline comment kritik posted, read
-  by the poller while its pull request is open.
+- **Reactions.** The 👍 and 👎 on each inline comment kritik posted, whose
+  id a review now records, read by the poller for a week after the pull
+  request's latest review, at most 30 pull requests an account a poll:
+  GitHub sends no webhook for a reaction.
 - **Time to merge.** When a pull request was merged or closed, from its
-  webhook or the poll.
+  webhook's `closed_at`.
 
 ### 2.7 Visual discipline
 

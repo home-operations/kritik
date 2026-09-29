@@ -104,6 +104,7 @@ func finding(f store.FindingRow) Finding {
 		ID: f.ID, Path: f.Path, Line: f.Line, EndLine: f.EndLine, Severity: f.Severity, Title: f.Title, Explanation: f.Explanation,
 		SuggestedFix: f.SuggestedFix, Replacement: f.Replacement, AgentPrompt: f.AgentPrompt, Fingerprint: f.Fingerprint,
 		PostedInline: f.PostedInline, ForgeCommentID: f.ForgeCommentID, CreatedAt: f.CreatedAt,
+		ReactionsUp: f.ReactionsUp, ReactionsDown: f.ReactionsDown,
 	}
 }
 

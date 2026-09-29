@@ -48,7 +48,9 @@
       "fingerprint": "fp",
       "postedInline": true,
       "forgeCommentId": 55,
-      "createdAt": "2026-09-01T12:00:00Z"
+      "createdAt": "2026-09-01T12:00:00Z",
+      "reactionsUp": 2,
+      "reactionsDown": 1
     }
   ],
   "runnerRun": {

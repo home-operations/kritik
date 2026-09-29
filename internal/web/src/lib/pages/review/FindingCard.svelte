@@ -6,6 +6,7 @@
   import Icon from '../../Icon.svelte';
   import { mdiOpenInNew } from '../../icons';
   import { threadUrl } from '../../links';
+  import Reactions from '../../components/Reactions.svelte';
 
   // pullUrl is the pull request on the forge, where an inline finding's
   // thread is.
@@ -19,6 +20,7 @@
     <span class="sev sev-{f.severity}">{f.severity}</span>
     <span class="finding-title">{f.title}</span>
     {#if !compact}<span class="mono small muted">{where}</span>{/if}
+    <Reactions up={f.reactionsUp} down={f.reactionsDown} />
     {#if thread}
       <a class="external small finding-thread" href={thread} target="_blank" rel="noopener noreferrer">Thread on GitHub <Icon path={mdiOpenInNew} size={12} /></a>
     {:else if f.postedInline}<span class="badge" title="Posted as an inline comment on GitHub">inline</span>{/if}

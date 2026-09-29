@@ -93,8 +93,9 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	if !ok {
 		if ev.Action == "closed" {
 			err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = $3, updated_at = now()
-					WHERE repository_id = $1 AND number = $2`, repoID(req, ev.Repository.FullName), pr.Number, pr.Merged); err != nil {
+				if _, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = $3, closed_at = coalesce($4, now()),
+					updated_at = now() WHERE repository_id = $1 AND number = $2`,
+					repoID(req, ev.Repository.FullName), pr.Number, pr.Merged, pr.ClosedAt); err != nil {
 					return fmt.Errorf("ingest: close pull request: %w", err)
 				}
 				return nil
@@ -139,7 +140,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 				title = EXCLUDED.title, author = EXCLUDED.author, author_is_bot = EXCLUDED.author_is_bot, draft = EXCLUDED.draft,
 				fork = EXCLUDED.fork, state = 'open', head_ref = EXCLUDED.head_ref, head_sha = EXCLUDED.head_sha,
 				base_ref = EXCLUDED.base_ref, url = EXCLUDED.url, body = EXCLUDED.body,
-				labels = EXCLUDED.labels, merged = EXCLUDED.merged, updated_at = now()`,
+				labels = EXCLUDED.labels, merged = EXCLUDED.merged, closed_at = NULL, updated_at = now()`,
 			req.Account.ID(), rid, pr.Number, pr.Title, pr.Author, pr.AuthorIsBot, pr.Draft, pr.Fork,
 			pr.HeadRef, pr.HeadSHA, pr.BaseRef, pr.URL, pr.Body, nullTime(pr), labels, pr.Merged); err != nil {
 			return fmt.Errorf("ingest: upsert pull request: %w", err)

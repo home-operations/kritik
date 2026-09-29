@@ -398,6 +398,10 @@ type Finding struct {
 	PostedInline   bool            `json:"postedInline"`
 	ForgeCommentID *int64          `json:"forgeCommentId"`
 	CreatedAt      time.Time       `json:"createdAt"`
+	// ReactionsUp and ReactionsDown count the 👍 and 👎 on its inline
+	// comment, as the poller last read them.
+	ReactionsUp   int `json:"reactionsUp"`
+	ReactionsDown int `json:"reactionsDown"`
 }
 
 // AccountFinding is one finding of a pull request, however many of its
@@ -675,15 +679,19 @@ type Rule struct {
 // AnalyticsTotals is what the account's reviews came to over a window:
 // completed reviews and the pull requests they reviewed, failed reviews,
 // the findings first reported in it and how many were addressed since,
-// spend, and the median time a completed review took.
+// the reactions to those posted inline, spend, the median time a
+// completed review took, and the median time from opening to merging.
 type AnalyticsTotals struct {
 	PullRequests   int            `json:"pullRequests"`
 	Reviews        int            `json:"reviews"`
 	Failed         int            `json:"failed"`
 	Findings       SeverityCounts `json:"findings"`
 	Addressed      int            `json:"addressed"`
+	ReactionsUp    int            `json:"reactionsUp"`
+	ReactionsDown  int            `json:"reactionsDown"`
 	CostUSD        float64        `json:"costUsd"`
 	MedianReviewMs *int64         `json:"medianReviewMs"`
+	MedianMergeMs  *int64         `json:"medianMergeMs"`
 }
 
 // AnalyticsPoint is one bucket of the series, keyed by its first date.

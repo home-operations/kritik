@@ -394,6 +394,8 @@ export interface Finding {
   postedInline: boolean;
   forgeCommentId: number | null;
   createdAt: string;
+  reactionsUp: number;
+  reactionsDown: number;
 }
 
 export type AnalyticsGroup = 'day' | 'week' | 'month';
@@ -404,8 +406,11 @@ export interface AnalyticsTotals {
   failed: number;
   findings: SeverityCounts;
   addressed: number;
+  reactionsUp: number;
+  reactionsDown: number;
   costUsd: number;
   medianReviewMs: number | null;
+  medianMergeMs: number | null;
 }
 
 export interface AnalyticsPoint {

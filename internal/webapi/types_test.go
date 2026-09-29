@@ -143,7 +143,7 @@ var goldens = map[string]any{
 		Findings: []Finding{{
 			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityBlocking, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "if x != nil {}", AgentPrompt: "fix it",
-			Fingerprint: "fp", PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0,
+			Fingerprint: "fp", PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0, ReactionsUp: 2, ReactionsDown: 1,
 		}},
 		RunnerRun: &RunnerRun{
 			ID: "run-1", Phase: "done", JobName: "job", PodName: "pod", NodeName: "node", CreatedAt: t0, ScheduledAt: &t0,
@@ -171,7 +171,7 @@ var goldens = map[string]any{
 		Finding: Finding{
 			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityBlocking, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "", AgentPrompt: "", Fingerprint: "fp",
-			PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0,
+			PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0, ReactionsUp: 2, ReactionsDown: 1,
 		},
 		ReviewID: "rev-1", Pull: goldenPullRef, Status: store.FindingAddressed, FirstSeenAt: t0, LastSeenAt: t1,
 	},
@@ -207,7 +207,7 @@ var goldens = map[string]any{
 		Group: store.AnalyticsByDay, From: t0, To: t1,
 		Current: AnalyticsTotals{
 			PullRequests: 3, Reviews: 5, Failed: 1, Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, Addressed: 2,
-			CostUSD: 1.25, MedianReviewMs: new(int64(90000)),
+			ReactionsUp: 4, ReactionsDown: 1, CostUSD: 1.25, MedianReviewMs: new(int64(90000)), MedianMergeMs: new(int64(129600000)),
 		},
 		Previous: AnalyticsTotals{Findings: SeverityCounts{}},
 		Series:   []AnalyticsPoint{{Key: "2026-09-01", Reviews: 5, Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, CostUSD: 1.25}},

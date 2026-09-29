@@ -301,6 +301,7 @@ func inlineComment(cm *gh.PullRequestComment) forge.Comment {
 		ID: cm.GetID(), Author: cm.GetUser().GetLogin(), AuthorIsBot: webhook.IsBot(cm.GetUser().GetType(), cm.GetUser().GetLogin()),
 		Body: cm.GetBody(), CreatedAt: cm.GetCreatedAt().Time,
 		Inline: true, Path: cm.GetPath(), Line: cm.GetLine(), InReplyTo: cm.GetInReplyTo(),
+		ReactionsUp: cm.GetReactions().GetPlusOne(), ReactionsDown: cm.GetReactions().GetMinusOne(),
 	}
 }
 

@@ -41,6 +41,8 @@ export {
   mdiScaleBalance,
   mdiTextBoxCheckOutline,
   mdiFileDocumentOutline,
+  mdiThumbUpOutline,
+  mdiThumbDownOutline,
 } from '@mdi/js';
 
 import { siGithub } from 'simple-icons';

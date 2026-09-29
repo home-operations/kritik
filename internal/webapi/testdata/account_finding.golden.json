@@ -13,6 +13,8 @@
   "postedInline": true,
   "forgeCommentId": 55,
   "createdAt": "2026-09-01T12:00:00Z",
+  "reactionsUp": 2,
+  "reactionsDown": 1,
   "reviewId": "rev-1",
   "pull": {
     "repository": "alpha/one",
