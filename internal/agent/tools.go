@@ -189,11 +189,11 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 	if !doublestar.ValidatePattern(glob) {
 		return "", fmt.Errorf("agent: grep: invalid path_glob %q", glob)
 	}
-	max := req.MaxResults
-	if max <= 0 {
-		max = defaultGrepMaxResults
-	} else if max > grepMaxResultsCap {
-		max = grepMaxResultsCap
+	limit := req.MaxResults
+	if limit <= 0 {
+		limit = defaultGrepMaxResults
+	} else if limit > grepMaxResultsCap {
+		limit = grepMaxResultsCap
 	}
 
 	var matches []grepMatch
@@ -202,7 +202,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if len(matches) >= max {
+		if len(matches) >= limit {
 			return storer.ErrStop
 		}
 		if gt.tree.ignored(f.Name) {
@@ -222,7 +222,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 			return nil
 		}
 		for i, line := range splitLines(content) {
-			if len(matches) >= max {
+			if len(matches) >= limit {
 				break
 			}
 			if re.MatchString(line) {
@@ -241,9 +241,6 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		}
 		return matches[i].line < matches[j].line
 	})
-	if len(matches) > max {
-		matches = matches[:max]
-	}
 
 	lines := make([]string, len(matches))
 	for i, m := range matches {

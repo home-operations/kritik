@@ -652,29 +652,6 @@ func TestRun(t *testing.T) {
 	}
 }
 
-func TestStopReasonValid(t *testing.T) {
-	tests := []struct {
-		reason StopReason
-		want   bool
-	}{
-		{StopSubmitted, true},
-		{StopMaxSteps, true},
-		{StopBudget, true},
-		{StopNoSubmit, true},
-		{StopCanceled, true},
-		{StopError, true},
-		{StopReason(""), false},
-		{StopReason("bogus"), false},
-	}
-	for _, tt := range tests {
-		t.Run(string(tt.reason), func(t *testing.T) {
-			if got := tt.reason.Valid(); got != tt.want {
-				t.Errorf("StopReason(%q).Valid() = %v, want %v", tt.reason, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestLimitsWithDefaults(t *testing.T) {
 	t.Run("all zero", func(t *testing.T) {
 		got := Limits{}.WithDefaults()

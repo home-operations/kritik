@@ -42,8 +42,6 @@ const (
 // Valid reports whether k is a kind of run the runner implements.
 func (k Kind) Valid() bool { return k == KindReview || k == KindIndex }
 
-func (k Kind) String() string { return string(k) }
-
 // Mode is how a review is carried out.
 type Mode string
 
@@ -55,8 +53,6 @@ const (
 
 // Valid reports whether m is a review mode; the empty mode is single.
 func (m Mode) Valid() bool { return m == "" || m == ModeSingle || m == ModeAgentic }
-
-func (m Mode) String() string { return string(m) }
 
 // ModelEndpoint is where an agentic run's model calls go: the worker's
 // gateway, which holds the provider key, picks the provider model and its

@@ -18,10 +18,9 @@ import (
 
 // Request is a verified, parsed webhook with the configuration it applies to.
 type Request struct {
-	File       *configfile.File
-	Account    *configfile.Account
-	Connection *configfile.Connection
-	Event      webhook.Event
+	File    *configfile.File
+	Account *configfile.Account
+	Event   webhook.Event
 }
 
 // Outcome is what the dispatcher did with a request, for the response and
@@ -146,7 +145,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger = logger.With("account", account.Key())
-	out, err := h.disp.Dispatch(r.Context(), Request{File: file, Account: account, Connection: in, Event: ev})
+	out, err := h.disp.Dispatch(r.Context(), Request{File: file, Account: account, Event: ev})
 	if err != nil {
 		logger.Error("webhook dispatch failed", "error", err)
 		h.Metrics.Webhook(name, "error")

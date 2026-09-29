@@ -138,7 +138,10 @@ func run() error {
 		}
 		logConfig(logger, file, "configuration loaded")
 		current = src.Current
-		g.Go(func() error { return src.Run(ctx, cfg.ConfigFile, cfg.ConfigReloadInterval) })
+		g.Go(func() error {
+			src.Run(ctx, cfg.ConfigFile, cfg.ConfigReloadInterval)
+			return nil
+		})
 		g.Go(func() error {
 			return reportDrift(ctx, st, current, drift, cfg.ConfigReloadInterval)
 		})
@@ -306,9 +309,6 @@ func startWeb(
 ) error {
 	if role != config.RoleAll && role != config.RoleWeb {
 		return nil
-	}
-	if role == config.RoleWeb && st.LeaderEligible() {
-		return errors.New("the web role must never hold the owner DSN")
 	}
 	if !current.Get().Auth.Configured() {
 		return errors.New("the dashboard has no way to sign in: set KRITIK_AUTH_ADMIN_PASSWORD, or auth in the configuration file")

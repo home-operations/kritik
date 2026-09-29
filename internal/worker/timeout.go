@@ -18,7 +18,7 @@ import (
 // that mode, with the longest agent timeout they allow.
 func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
 	file := w.Current.Get()
-	account := accountByID(file, job.Args.AccountID)
+	account, _ := file.AccountByID(job.Args.AccountID)
 	deadline, _ := file.RunnerFor(account)
 	if account != nil {
 		settings := repoSettings(file, account, job.Args.RepositoryID)
@@ -37,7 +37,8 @@ func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
 // and writing the generation, which waits on embedding leases.
 func (w *Index) Timeout(job *river.Job[jobs.IndexArgs]) time.Duration {
 	file := w.Current.Get()
-	deadline, _ := file.RunnerFor(accountByID(file, job.Args.AccountID))
+	account, _ := file.AccountByID(job.Args.AccountID)
+	deadline, _ := file.RunnerFor(account)
 	return min(deadline+jobtimeout.IndexWriteHeadroom, jobtimeout.MaxJobTimeout)
 }
 

@@ -182,7 +182,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.FollowUpArgs{
 			AccountID: req.Account.ID(), RepositoryID: rid, Number: c.Number, CommentID: c.ID,
-			Inline: c.Inline, Path: c.Path, Line: c.Line,
+			Inline: c.Inline,
 		}, nil)
 		if err != nil {
 			return fmt.Errorf("ingest: enqueue follow-up: %w", err)

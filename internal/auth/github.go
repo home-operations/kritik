@@ -49,7 +49,7 @@ func (githubAPI) identity(ctx context.Context, c apiClient) (Identity, error) {
 // member reads the user's own membership of org, which needs read:org, or
 // a GitHub App's members permission. A pending invitation, or any role but
 // admin and member (a billing manager), is not membership.
-func (githubAPI) member(ctx context.Context, c apiClient, _, org string) (bool, error) {
+func (githubAPI) member(ctx context.Context, c apiClient, org string) (bool, error) {
 	var m struct {
 		State string `json:"state"`
 		Role  string `json:"role"`

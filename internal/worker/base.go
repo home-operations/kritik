@@ -29,7 +29,7 @@ type Base struct {
 // account finds the job's account in the current file. An account that has
 // been removed cancels the job: it will not come back by retrying.
 func (b *Base) account(file *configfile.File, id string) (*configfile.Account, error) {
-	if t := accountByID(file, id); t != nil {
+	if t, ok := file.AccountByID(id); ok {
 		return t, nil
 	}
 	return nil, river.JobCancel(fmt.Errorf("worker: account %s is not in the configuration", id))

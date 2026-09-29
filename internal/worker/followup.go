@@ -65,7 +65,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		return err
 	}
 	owner, repo, _ := strings.Cut(pr.repository, "/")
-	comment, err := client.GetComment(ctx, owner, repo, args.Number, args.CommentID, args.Inline)
+	comment, err := client.GetComment(ctx, owner, repo, args.CommentID, args.Inline)
 	if err != nil {
 		return err
 	}
@@ -361,7 +361,7 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 // instructions, and reads the instruction files from the same commit. It
 // returns why the file stops the follow-up, or "".
 func (f *followUp) repoConfig(ctx context.Context) (string, error) {
-	base, err := f.client.MergeBase(ctx, f.owner, f.repo, f.pr.number, f.pr.baseRef, f.pr.headSHA)
+	base, err := f.client.MergeBase(ctx, f.owner, f.repo, f.pr.baseRef, f.pr.headSHA)
 	if err != nil {
 		return "", err
 	}

@@ -24,7 +24,7 @@ var ErrForgeAPI = errors.New("auth: forge API")
 type forgeAPI interface {
 	identity(ctx context.Context, c apiClient) (Identity, error)
 	// member reports whether the user is an active member of org.
-	member(ctx context.Context, c apiClient, login, org string) (bool, error)
+	member(ctx context.Context, c apiClient, org string) (bool, error)
 	// mappingVars fills the role mapping's variables for the user.
 	mappingVars(ctx context.Context, c apiClient, id Identity) (map[string]any, error)
 }
@@ -87,7 +87,7 @@ func (p *forgeProvider) Exchange(ctx context.Context, code, pkceVerifier, _ stri
 			return vars, nil
 		},
 		Membership: func(ctx context.Context, org string) (bool, error) {
-			ok, err := p.api.member(ctx, c, id.Login, org)
+			ok, err := p.api.member(ctx, c, org)
 			if err != nil {
 				return false, fmt.Errorf("auth: %s: organization %s: %w", name, org, err)
 			}

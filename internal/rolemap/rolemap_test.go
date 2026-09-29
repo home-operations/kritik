@@ -65,9 +65,6 @@ func TestEval(t *testing.T) {
 			if got.Role != tt.want.Role || !maps.Equal(got.Accounts, tt.want.Accounts) {
 				t.Fatalf("Eval = %+v, want %+v", got, tt.want)
 			}
-			if got.Empty() != tt.want.Empty() {
-				t.Fatalf("Empty = %v, want %v", got.Empty(), tt.want.Empty())
-			}
 		})
 	}
 }

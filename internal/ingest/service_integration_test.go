@@ -83,7 +83,7 @@ func request(f *configfile.File, ev webhook.Event) Request {
 		owner, _, _ = strings.Cut(ev.Repository.FullName, "/")
 	}
 	account, _ := f.Account(in.Forge, owner)
-	return Request{File: f, Account: account, Connection: in, Event: ev}
+	return Request{File: f, Account: account, Event: ev}
 }
 
 func repo(name string) *webhook.Repository {

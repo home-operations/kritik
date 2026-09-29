@@ -51,7 +51,6 @@ func setupStatus(f *configfile.File, webURL string) SetupStatus {
 		out.ReviewModel = string(*ref)
 	}
 	out.Embedding = f.Embedding != nil
-	out.CanReview = len(out.Connections) > 0 && out.ReviewModel != ""
 	return out
 }
 
@@ -184,7 +183,7 @@ func (s *Server) reached(r *http.Request) (*configfile.Connection, []AccountRepo
 			entry.Installed = true
 			for _, x := range repos {
 				entry.Repositories = append(entry.Repositories, AppRepository{
-					Name: x.Name, FullName: x.FullName, DefaultBranch: x.DefaultBranch, Private: x.Private, Archived: x.Archived,
+					Name: x.Name, FullName: x.FullName, DefaultBranch: x.DefaultBranch,
 				})
 			}
 		}

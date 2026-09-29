@@ -244,8 +244,11 @@ func TestRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx, path, 10*time.Millisecond) }()
+	done := make(chan struct{})
+	go func() {
+		s.Run(ctx, path, 10*time.Millisecond)
+		close(done)
+	}()
 	h := <-fs.handlers
 	current := func() *configfile.File { return s.Current.Get() }
 	revision := func() int64 { return current().Spec().Revision }
@@ -399,9 +402,7 @@ func TestRun(t *testing.T) {
 	})
 
 	cancel()
-	if err := <-done; err != nil {
-		t.Fatalf("Run = %v", err)
-	}
+	<-done
 }
 
 func TestRunPollsTheFingerprint(t *testing.T) {
@@ -412,7 +413,7 @@ func TestRunPollsTheFingerprint(t *testing.T) {
 	if _, err := s.Load(t.Context(), path); err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = s.Run(t.Context(), path, time.Hour) }()
+	go s.Run(t.Context(), path, time.Hour)
 	<-fs.handlers
 	fs.set("changed", specOf(t, k, 1, "beta-bot:beta"))
 	waitFor(t, "beta-bot via poll", func() bool { return hasConnection(s.Current.Get(), "beta-bot") })

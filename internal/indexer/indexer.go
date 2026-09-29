@@ -48,10 +48,10 @@ var DefaultOptions = Options{
 
 // Stats says what Build did.
 type Stats struct {
-	Files, Parsed, Skipped, Chunks int
-	Bytes                          int
-	Truncated                      bool
-	Elapsed                        time.Duration
+	Files, Parsed, Skipped int
+	Bytes                  int
+	Truncated              bool
+	Elapsed                time.Duration
 }
 
 // Build chunks head. With base set, only the paths that differ between
@@ -176,7 +176,6 @@ func (b *builder) file(f *object.File) error {
 			Path: f.Name, Language: pf.Language, Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope,
 			StartLine: d.StartLine, EndLine: d.EndLine, Text: text,
 		})
-		b.stats.Chunks++
 	}
 	return nil
 }

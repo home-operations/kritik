@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -365,14 +364,8 @@ func reviewNotes(omitted []string, dropped []review.Dropped) []string {
 func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, []bool, error) {
 	owner, repo, _ := strings.Cut(p.pr.repository, "/")
 	onForge := alreadyInline(res.Findings, p.prior.findings)
-	ranges := p.client.LineRanges()
 	for i := range res.Findings {
 		f := &res.Findings[i]
-		// A forge whose comments sit on one line would apply a multi-line
-		// replacement to that line alone, so it is shown but not offered.
-		if f.EndLine > 0 && !ranges {
-			f.SuggestedFix, f.Replacement = replacementAsText(f), ""
-		}
 		f.URL = p.client.FileURL(owner, repo, p.pr.headSHA, f.Path, f.Line, f.EndLine)
 	}
 	// Inline comments render first so a failing inline template is noted
@@ -391,7 +384,7 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 			notes = append(notes, inlineNotes...)
 		}
 		c := forge.InlineComment{Path: f.Path, Line: f.Line, Body: body}
-		if f.EndLine > 0 && ranges {
+		if f.EndLine > 0 {
 			c.StartLine, c.Line = f.Line, f.EndLine
 		}
 		inline = append(inline, c)
@@ -445,16 +438,6 @@ func (p *publishPhase) postsInline(f review.Finding) bool {
 	return f.Severity.Rank() <= review.Severity(r.MinSeverity).Rank()
 }
 
-// replacementAsText folds a replacement into the suggested fix as a code
-// block, for a forge that cannot offer it.
-func replacementAsText(f *review.Finding) string {
-	block := "Lines " + strconv.Itoa(f.Line) + "-" + strconv.Itoa(f.EndLine) + " should read:\n\n```\n" + f.Replacement + "\n```"
-	if f.SuggestedFix == "" {
-		return block
-	}
-	return f.SuggestedFix + "\n\n" + block
-}
-
 // upsertSticky edits the pull request's sticky comment to body, creating
 // it the first time, and returns its id.
 func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, error) {
@@ -473,7 +456,7 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 		}
 	}
 	if commentID != 0 {
-		err = p.client.UpdateComment(ctx, owner, repo, p.pr.number, commentID, body)
+		err = p.client.UpdateComment(ctx, owner, repo, commentID, body)
 	} else {
 		commentID, err = p.client.CreateComment(ctx, owner, repo, p.pr.number, body)
 	}

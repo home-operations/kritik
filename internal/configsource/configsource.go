@@ -16,8 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/sealbox"
 	"github.com/home-operations/kritik/internal/server"
@@ -110,7 +108,7 @@ func (s *Source) Load(ctx context.Context, path string) (*configfile.File, error
 // re-read every interval, a kritik_config notification or a reconnect of
 // the listener re-reads the spec, and so does a change in the spec's
 // fingerprint, checked every Poll. Call Load first.
-func (s *Source) Run(ctx context.Context, path string, interval time.Duration) error {
+func (s *Source) Run(ctx context.Context, path string, interval time.Duration) {
 	trigger := make(chan struct{}, 1)
 	kick := func() {
 		select {
@@ -118,43 +116,37 @@ func (s *Source) Run(ctx context.Context, path string, interval time.Duration) e
 		default:
 		}
 	}
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		if path == "" {
-			return nil
-		}
-		configfile.Watch(ctx, path, interval, s.logger(), func(f *configfile.File) {
-			s.mu.Lock()
-			s.file, s.fileErr = f, nil
-			s.mu.Unlock()
-			kick()
-		}, func(err error) {
-			s.mu.Lock()
-			s.fileErr = err
-			s.mu.Unlock()
-			s.Errors.Set(server.ConfigErrorMerge, true)
+	var wg sync.WaitGroup
+	if path != "" {
+		wg.Go(func() {
+			configfile.Watch(ctx, path, interval, s.logger(), func(f *configfile.File) {
+				s.mu.Lock()
+				s.file, s.fileErr = f, nil
+				s.mu.Unlock()
+				kick()
+			}, func(err error) {
+				s.mu.Lock()
+				s.fileErr = err
+				s.mu.Unlock()
+				s.Errors.Set(server.ConfigErrorMerge, true)
+			})
 		})
-		return nil
-	})
-	g.Go(func() error {
+	}
+	wg.Go(func() {
 		s.Store.Listen(ctx, store.ListenHandlers{OnConfig: func(string) { kick() }, OnReconnect: kick})
-		return nil
 	})
-	g.Go(func() error {
-		s.poll(ctx, kick)
-		return nil
-	})
-	g.Go(func() error {
+	wg.Go(func() { s.poll(ctx, kick) })
+	wg.Go(func() {
 		for {
 			select {
 			case <-ctx.Done():
-				return nil
+				return
 			case <-trigger:
 				s.refresh(ctx)
 			}
 		}
 	})
-	return g.Wait()
+	wg.Wait()
 }
 
 // LastError is why the latest refresh failed, nil once one succeeds.

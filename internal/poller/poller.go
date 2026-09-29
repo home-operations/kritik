@@ -162,7 +162,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 				Kind: webhook.KindPullRequest, Action: action, Delivery: fmt.Sprintf("poll-%s-%d", started.UTC().Format("20060102T150405"), pr.Number),
 				Repository: &webhook.Repository{FullName: repo, DefaultBranch: pr.DefaultBranch}, Account: owner, PullRequest: &pr.PullRequest,
 			}
-			out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Account: account, Connection: in, Event: ev})
+			out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Account: account, Event: ev})
 			if err != nil {
 				return handled, err
 			}
@@ -201,7 +201,7 @@ func (p *Poller) pollTip(
 		Repository: &webhook.Repository{FullName: r.name, DefaultBranch: branch}, Account: owner,
 		Push: &webhook.Push{Ref: "refs/heads/" + branch, After: tip},
 	}
-	out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Account: account, Connection: in, Event: ev})
+	out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Account: account, Event: ev})
 	if err != nil {
 		return err
 	}

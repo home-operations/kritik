@@ -19,21 +19,16 @@ func (s *Server) registerAudit(mux *http.ServeMux) {
 }
 
 // record writes an audit event for a write p made, in the write's own
-// transaction, so the two commit or fail together. detail must never hold
-// a secret.
-func record(ctx context.Context, tx pgx.Tx, p *auth.Principal, accountID *string, action AuditAction, target string, detail any) error {
-	if !action.Valid() {
-		return fmt.Errorf("webapi: audit action %q is not valid", action)
-	}
+// transaction, so the two commit or fail together. accountID is "" for an
+// event that names no account. detail must never hold a secret.
+func record(ctx context.Context, tx pgx.Tx, p *auth.Principal, accountID string, action AuditAction, target string, detail any) error {
 	raw, err := json.Marshal(detail)
 	if err != nil {
 		return fmt.Errorf("webapi: audit detail: %w", err)
 	}
-	e := store.AuditEntry{UserID: p.User.ID, Action: action.String(), Target: target, Detail: raw}
-	if accountID != nil {
-		e.AccountID = *accountID
-	}
-	return store.InsertAudit(ctx, tx, e)
+	return store.InsertAudit(ctx, tx, store.AuditEntry{
+		UserID: p.User.ID, AccountID: accountID, Action: string(action), Target: target, Detail: raw,
+	})
 }
 
 // admin adapts h like account, and also requires p to administer the

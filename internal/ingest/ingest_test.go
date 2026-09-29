@@ -134,7 +134,7 @@ func TestHandler(t *testing.T) {
 			}
 			if tt.dispatched {
 				req := disp.got[0]
-				if !strings.EqualFold(req.Account.Name, req.Event.Account) || req.Connection.Name != "bot-ross" || req.Event.Kind != webhook.KindPullRequest {
+				if !strings.EqualFold(req.Account.Name, req.Event.Account) || req.Event.Kind != webhook.KindPullRequest {
 					t.Fatalf("request = %+v", req)
 				}
 			}

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/riverqueue/river/rivertype"
+
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/model"
@@ -642,17 +644,17 @@ type JobArgs struct {
 
 // Job is one River job of the account.
 type Job struct {
-	ID          int64          `json:"id"`
-	Kind        string         `json:"kind"`
-	State       store.JobState `json:"state"`
-	Attempt     int            `json:"attempt"`
-	MaxAttempts int            `json:"maxAttempts"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	ScheduledAt time.Time      `json:"scheduledAt"`
-	AttemptedAt *time.Time     `json:"attemptedAt"`
-	FinalizedAt *time.Time     `json:"finalizedAt"`
-	Args        JobArgs        `json:"args"`
-	LastError   string         `json:"lastError"`
+	ID          int64              `json:"id"`
+	Kind        string             `json:"kind"`
+	State       rivertype.JobState `json:"state"`
+	Attempt     int                `json:"attempt"`
+	MaxAttempts int                `json:"maxAttempts"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	ScheduledAt time.Time          `json:"scheduledAt"`
+	AttemptedAt *time.Time         `json:"attemptedAt"`
+	FinalizedAt *time.Time         `json:"finalizedAt"`
+	Args        JobArgs            `json:"args"`
+	LastError   string             `json:"lastError"`
 }
 
 // Event is one server-sent event's data: a row of Kind changed in the

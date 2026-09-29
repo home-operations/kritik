@@ -139,7 +139,6 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	deadline, resources := file.RunnerFor(account)
 	sup := runSupervision(w.Store, args.AccountID, runnerRunID, "", "", w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
-		RunID: runnerRunID,
 		Labels: map[string]string{
 			"account": account.Key(), "repository": repo.name, "kind": jobs.QueueIndex,
 		},

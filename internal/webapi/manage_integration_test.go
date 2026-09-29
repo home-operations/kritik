@@ -155,7 +155,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 	if err := st.ApplyConfig(ctx, file, "manage-test"); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	go func() { _ = e.src.Run(ctx, path, time.Hour) }()
+	go e.src.Run(ctx, path, time.Hour)
 
 	webURL, _ := url.Parse("https://kritik.example")
 	h, err := auth.New(auth.Config{Store: st, Current: e.src.Current, WebURL: webURL, Logger: logger})

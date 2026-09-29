@@ -114,15 +114,6 @@ const (
 	StopOther     StopReason = "other"
 )
 
-// Valid reports whether s is a normalised stop reason.
-func (s StopReason) Valid() bool {
-	switch s {
-	case StopEndTurn, StopToolUse, StopMaxTokens, StopOther:
-		return true
-	}
-	return false
-}
-
 // Usage is the tokens one or more steps spent. Input is the uncached part of
 // the prompt; CacheRead and CacheWrite are the cached parts, which providers
 // bill differently.

@@ -11,10 +11,12 @@ package chunk
 
 import (
 	"bytes"
+	"cmp"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/odvcencio/gotreesitter"
@@ -40,15 +42,16 @@ func (d Decl) Lines() int { return d.EndLine - d.StartLine + 1 }
 // Contains reports whether line falls inside the declaration.
 func (d Decl) Contains(line int) bool { return line >= d.StartLine && line <= d.EndLine }
 
-// Limits bound one parse. Files over MaxBytes are not parsed at all;
-// ParseTimeout stops a pathological parse.
+// Limits bound one parse: a file over MaxBytes, defaultMaxBytes when zero,
+// is not parsed at all.
 type Limits struct {
-	MaxBytes       int
-	ParseTimeoutUs int
+	MaxBytes int
 }
 
-// DefaultLimits are used when a zero Limits is given.
-var DefaultLimits = Limits{MaxBytes: 1 << 20, ParseTimeoutUs: 5_000_000}
+const defaultMaxBytes = 1 << 20
+
+// parseTimeout stops a pathological parse.
+const parseTimeout = 5 * time.Second
 
 // Parser cuts files. It caches one tree-sitter parser per language and
 // serialises access to each, since parsers are not safe for concurrent use.
@@ -94,11 +97,7 @@ type File struct {
 // cases, not failures.
 func (p *Parser) Parse(path string, src []byte) *File {
 	f := &File{Path: path, Source: src}
-	lim := p.Limits
-	if lim.MaxBytes == 0 {
-		lim = DefaultLimits
-	}
-	if len(src) == 0 || len(src) > lim.MaxBytes || bytes.IndexByte(src, 0) >= 0 {
+	if len(src) == 0 || len(src) > cmp.Or(p.Limits.MaxBytes, defaultMaxBytes) || bytes.IndexByte(src, 0) >= 0 {
 		return f
 	}
 	lp := p.language(path)
@@ -130,13 +129,9 @@ func (p *Parser) language(path string) *languageParser {
 	if lp, ok := p.parsers[entry.Name]; ok {
 		return lp
 	}
-	lim := p.Limits
-	if lim.ParseTimeoutUs == 0 {
-		lim = DefaultLimits
-	}
 	lang := entry.Language()
 	parser := gotreesitter.NewParser(lang)
-	parser.SetTimeoutMicros(uint64(lim.ParseTimeoutUs))
+	parser.SetTimeoutMicros(uint64(parseTimeout.Microseconds()))
 	lp := &languageParser{entry: *entry, lang: lang, parser: parser}
 	if q := strings.TrimSpace(grammars.ResolveTagsQuery(*entry)); q != "" {
 		// A tags query that fails to compile leaves the language without

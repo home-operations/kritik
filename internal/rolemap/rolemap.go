@@ -52,9 +52,7 @@ const evalCostLimit = 1_000_000
 
 // Program is a compiled, type-checked role mapping.
 type Program struct {
-	prg  cel.Program
-	kind Kind
-	src  string
+	prg cel.Program
 }
 
 // Result is what a mapping decided. Accounts holds lowercased account keys,
@@ -63,9 +61,6 @@ type Result struct {
 	Role     Role
 	Accounts map[string]bool
 }
-
-// Empty reports whether the mapping placed the person nowhere.
-func (r Result) Empty() bool { return r.Role == RoleNone && len(r.Accounts) == 0 }
 
 // Compile parses and type-checks expr for kind. It fails when the
 // expression is not valid CEL, names a variable kind does not have, or
@@ -105,11 +100,8 @@ func Compile(kind Kind, expr string) (*Program, error) {
 	if err != nil {
 		return nil, fmt.Errorf("rolemap: program: %w", err)
 	}
-	return &Program{prg: prg, kind: kind, src: expr}, nil
+	return &Program{prg: prg}, nil
 }
-
-// Kind is the kind of sign-in the program was compiled for.
-func (p *Program) Kind() Kind { return p.kind }
 
 // Eval runs the mapping over vars, keyed by the names Compile declared for
 // the program's kind. A runtime error, or a value that is not a role or a

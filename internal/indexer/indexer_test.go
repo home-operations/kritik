@@ -78,7 +78,7 @@ func TestBuildFull(t *testing.T) {
 			t.Fatalf("symbols %v missing %s", symbols, want)
 		}
 	}
-	if stats.Files != 2 || stats.Parsed != 1 || stats.Skipped < 1 || stats.Chunks != len(chunks) {
+	if stats.Files != 2 || stats.Parsed != 1 || stats.Skipped < 1 {
 		t.Fatalf("stats = %+v", stats)
 	}
 }

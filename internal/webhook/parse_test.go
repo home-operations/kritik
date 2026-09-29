@@ -104,9 +104,6 @@ func TestParseGitHubComments(t *testing.T) {
 			if tt.kind == KindComment && (ev.Comment.Inline != tt.inline || ev.Comment.Number != tt.number) {
 				t.Fatalf("comment = %+v", ev.Comment)
 			}
-			if tt.inline && (ev.Comment.Path != "main.go" || ev.Comment.Line != 12) {
-				t.Fatalf("inline position = %+v", ev.Comment)
-			}
 		})
 	}
 }

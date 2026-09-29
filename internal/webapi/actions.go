@@ -66,7 +66,7 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *accountScope) 
 			return err
 		}
 		target := p.Repository + "#" + strconv.Itoa(p.Number)
-		return record(ctx, tx, t.principal, &tid, AuditReviewRerun, target, jobAudit{JobID: job})
+		return record(ctx, tx, t.principal, tid, AuditReviewRerun, target, jobAudit{JobID: job})
 	})
 	if err != nil {
 		return err
@@ -91,7 +91,7 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *accountScope)
 		if err != nil {
 			return err
 		}
-		return record(ctx, tx, t.principal, &tid, AuditReviewCancel, id, jobAudit{})
+		return record(ctx, tx, t.principal, tid, AuditReviewCancel, id, jobAudit{})
 	})
 	if err != nil {
 		return err
@@ -121,7 +121,7 @@ func (s *Server) reindex(w http.ResponseWriter, r *http.Request, t *accountScope
 		if err != nil {
 			return err
 		}
-		return record(ctx, tx, t.principal, &tid, AuditRepoReindex, repo.FullName, jobAudit{JobID: job})
+		return record(ctx, tx, t.principal, tid, AuditRepoReindex, repo.FullName, jobAudit{JobID: job})
 	})
 	if err != nil {
 		return err

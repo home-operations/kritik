@@ -67,13 +67,7 @@ func TestDecideScope(t *testing.T) {
 			if got != tc.want || reason != tc.wantReason {
 				t.Fatalf("DecideScope = %q, %q; want %q, %q", got, reason, tc.want, tc.wantReason)
 			}
-			if !got.Valid() {
-				t.Fatalf("%q is not a valid scope", got)
-			}
 		})
-	}
-	if Scope("partial").Valid() {
-		t.Fatal("an unknown scope must not be valid")
 	}
 }
 

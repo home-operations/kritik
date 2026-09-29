@@ -128,7 +128,6 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	sup := runSupervision(w.Store, args.AccountID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
-		RunID: runID,
 		Labels: map[string]string{
 			"account": account.Key(), "repository": pr.repository,
 			"pr": strconv.Itoa(args.Number), "kind": jobs.QueueReview,
@@ -458,7 +457,7 @@ func (w *Review) begin(
 		return begun{}, true, err
 	}
 	owner, repo, _ := strings.Cut(pr.repository, "/")
-	if e.mergeBase, err = client.MergeBase(ctx, owner, repo, pr.number, pr.baseRef, pr.headSHA); err != nil {
+	if e.mergeBase, err = client.MergeBase(ctx, owner, repo, pr.baseRef, pr.headSHA); err != nil {
 		return begun{}, true, err
 	}
 	doc, notes, err := readRepoConfig(ctx, client, owner, repo, e.mergeBase)
@@ -565,7 +564,7 @@ func (w *Review) snooze(e earlyEnd, job *river.Job[jobs.ReviewArgs], modelKey st
 func (w *Review) botPatch(
 	ctx context.Context, logger *slog.Logger, client forge.Client, owner, repo, accountID string, pr *pullRequest, mergeBase string,
 ) (patch string, unchanged bool) {
-	diff, err := client.PullRequestDiff(ctx, owner, repo, pr.number, mergeBase, pr.headSHA)
+	diff, err := client.PullRequestDiff(ctx, owner, repo, mergeBase, pr.headSHA)
 	if err != nil {
 		logger.Warn("forge diff not read; the runner checks the patch", "error", err)
 		return "", false
@@ -719,15 +718,6 @@ func (w *Review) finishSkipped(ctx context.Context, accountID, reviewID, patchID
 		}
 		return nil
 	})
-}
-
-func accountByID(f *configfile.File, id string) *configfile.Account {
-	for i := range f.Accounts {
-		if f.Accounts[i].ID() == id {
-			return &f.Accounts[i]
-		}
-	}
-	return nil
 }
 
 func short(sha string) string {

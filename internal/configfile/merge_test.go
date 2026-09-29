@@ -336,12 +336,7 @@ func TestValidateSpec(t *testing.T) {
 	}
 }
 
-func TestOriginValid(t *testing.T) {
-	for o, want := range map[Origin]bool{OriginFile: true, OriginDashboard: true, "": false, "git": false} {
-		if o.Valid() != want {
-			t.Errorf("%q.Valid() = %v", o, !want)
-		}
-	}
+func TestZeroConnectionOrigin(t *testing.T) {
 	var zero Connection
 	if zero.Origin() != OriginFile {
 		t.Fatal("zero connection origin is not file")

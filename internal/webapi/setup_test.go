@@ -34,14 +34,14 @@ func TestSetupStatus(t *testing.T) {
 			s.FileConnections, s.Connections = []string{"acme-bot"}, []string{"acme-bot"}
 		})},
 		{"ready", conn + "defaults: { models: { review: p/x } }\n" + provider, with(func(s *SetupStatus) {
-			s.FileConnections, s.Connections, s.ReviewModel, s.CanReview = []string{"acme-bot"}, []string{"acme-bot"}, "p/x", true
+			s.FileConnections, s.Connections, s.ReviewModel = []string{"acme-bot"}, []string{"acme-bot"}, "p/x"
 		})},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := setupStatus(configfiletest.Load(t, tt.doc), "https://kritik.example/")
 			if got.WebURL != tt.want.WebURL || got.HooksURL != tt.want.HooksURL || !slices.Equal(got.FileConnections, tt.want.FileConnections) ||
 				!slices.Equal(got.Connections, tt.want.Connections) || got.ReviewModel != tt.want.ReviewModel ||
-				got.Embedding != tt.want.Embedding || got.CanReview != tt.want.CanReview {
+				got.Embedding != tt.want.Embedding {
 				t.Fatalf("setupStatus = %+v, want %+v", got, tt.want)
 			}
 		})

@@ -79,7 +79,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	if err := spec.Job.Validate(); err != nil {
 		return Result{Err: fmt.Errorf("executor: %w", err)}
 	}
-	name := jobName(spec.RunID)
+	name := jobName(spec.Job.RunID)
 	runSpec, err := runner.EncodeSpec(spec.Job)
 	if err != nil {
 		return Result{Err: fmt.Errorf("executor: %w", err)}
@@ -316,7 +316,7 @@ func (k *Kube) secret(spec Spec, runSpec []byte) *corev1.Secret {
 		data[secretKeyGatewayToken] = []byte(spec.Secrets.GatewayToken)
 	}
 	return &corev1.Secret{
-		Name: jobName(spec.RunID), Namespace: k.Namespace, Labels: runnerLabels(spec),
+		Name: jobName(spec.Job.RunID), Namespace: k.Namespace, Labels: runnerLabels(spec),
 		Type: corev1.SecretTypeOpaque,
 		Data: data,
 	}
@@ -330,7 +330,7 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	name := jobName(spec.RunID)
+	name := jobName(spec.Job.RunID)
 	deadline := int64(spec.Deadline / time.Second)
 	if deadline <= 0 {
 		deadline = 900

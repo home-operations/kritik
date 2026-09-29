@@ -63,8 +63,6 @@ type Repository struct {
 	// FullName is "owner/repo".
 	FullName      string
 	DefaultBranch string
-	Private       bool
-	CloneURL      string
 }
 
 // PullRequest carries the fields the filter and the review pipeline need.
@@ -134,18 +132,14 @@ type Comment struct {
 	Author      string
 	AuthorIsBot bool
 	Body        string
-	// Inline is set for review comments on a diff line; Path and Line then
-	// identify the finding the reply belongs to.
+	// Inline is set for review comments on a diff line.
 	Inline bool
-	Path   string
-	Line   int
 }
 
 // Push is a branch update.
 type Push struct {
-	Ref    string // refs/heads/<branch>
-	Before string
-	After  string
+	Ref   string // refs/heads/<branch>
+	After string
 }
 
 // Installation is a GitHub App installation change: which repositories the
@@ -206,8 +200,6 @@ func (u ghUser) isBot() bool {
 type ghRepo struct {
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`
-	Private       bool   `json:"private"`
-	CloneURL      string `json:"clone_url"`
 	Owner         ghUser `json:"owner"`
 }
 
@@ -215,7 +207,7 @@ func (r ghRepo) event() *Repository {
 	if r.FullName == "" {
 		return nil
 	}
-	return &Repository{FullName: r.FullName, DefaultBranch: r.DefaultBranch, Private: r.Private, CloneURL: r.CloneURL}
+	return &Repository{FullName: r.FullName, DefaultBranch: r.DefaultBranch}
 }
 
 // ghPR is a pull request as GitHub payloads carry one.
@@ -341,8 +333,6 @@ func parseReviewComment(delivery string, body []byte) (Event, error) {
 		Comment struct {
 			ID   int64  `json:"id"`
 			Body string `json:"body"`
-			Path string `json:"path"`
-			Line int    `json:"line"`
 			User ghUser `json:"user"`
 		} `json:"comment"`
 	}
@@ -355,7 +345,7 @@ func parseReviewComment(delivery string, body []byte) (Event, error) {
 		Comment: &Comment{
 			ID: p.Comment.ID, Number: p.PullRequest.Number, Author: p.Comment.User.Login,
 			AuthorIsBot: p.Comment.User.isBot(), Body: p.Comment.Body,
-			Inline: true, Path: p.Comment.Path, Line: p.Comment.Line,
+			Inline: true,
 		},
 	}, nil
 }
@@ -363,7 +353,6 @@ func parseReviewComment(delivery string, body []byte) (Event, error) {
 func parsePush(delivery string, body []byte) (Event, error) {
 	var p struct {
 		Ref        string `json:"ref"`
-		Before     string `json:"before"`
 		After      string `json:"after"`
 		Repository ghRepo `json:"repository"`
 	}
@@ -373,7 +362,7 @@ func parsePush(delivery string, body []byte) (Event, error) {
 	return Event{
 		Kind: KindPush, Delivery: delivery,
 		Repository: p.Repository.event(), Account: p.Repository.Owner.Login,
-		Push: &Push{Ref: p.Ref, Before: p.Before, After: p.After},
+		Push: &Push{Ref: p.Ref, After: p.After},
 	}, nil
 }
 
