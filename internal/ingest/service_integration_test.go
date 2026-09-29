@@ -183,6 +183,29 @@ func TestDispatchPullRequest(t *testing.T) {
 	})
 }
 
+// TestDispatchForkRecorded: a fork's pull request is recorded, so a
+// maintainer can ask for its review, but no review is queued for it.
+func TestDispatchForkRecorded(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	fork := &webhook.PullRequest{Number: 70, Title: "t", Author: "someone", State: "open", HeadRef: "f", HeadSHA: "eee", BaseRef: "main", Fork: true}
+	out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo("onedr0p/home-ops"), PullRequest: fork}))
+	if err != nil || out != (Outcome{Status: Skipped, Reason: reasonFork}) {
+		t.Fatalf("out = %+v, %v; want skipped as a fork", out, err)
+	}
+	var isFork bool
+	var jobs int
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT fork FROM pull_requests WHERE number = 70`).Scan(&isFork); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'review' AND (args->>'number')::int = 70`).Scan(&jobs)
+	}); err != nil || !isFork || jobs != 0 {
+		t.Fatalf("fork = %v, review jobs = %d, %v; want the pull request recorded as a fork and no review queued", isFork, jobs, err)
+	}
+}
+
 // A new head is enqueued at once even where the repository settles: the
 // worker waits the settle time out, since .kritik.yaml may set it.
 // TestDispatchSkipsArchivedAndForks: nothing runs for an archived

@@ -192,6 +192,16 @@ test.describe('pulls list', () => {
     await expect(page.getByRole('button', { name: 'Clear filters' })).toHaveCount(0);
   });
 
+  test("a fork's pull request not reviewed says it is reviewed on request", async ({ page }) => {
+    const fork = { ...g.pull, number: 12, url: g.pull.url.replace(/\d+$/, '12'), fork: true, lastReview: null };
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([fork, { ...g.pull, lastReview: null }])], ...g.defaultApi()]);
+    await page.goto(`/${T}/pulls`);
+    const rows = page.locator('.pull-rows .row');
+    await expect(rows.nth(0)).toContainText('fork, reviewed on request');
+    await expect(rows.nth(0).getByText('fork, reviewed on request')).toHaveAttribute('title', 'A pull request from a fork is reviewed when a maintainer comments "@<bot> review" on it');
+    await expect(rows.nth(1)).toContainText('not reviewed');
+  });
+
   test('the keyboard cursor stays on its pull when a live refetch adds one above it', async ({ page }) => {
     const newer = { ...g.pull, number: 9, title: 'Newer widgets', url: g.pull.url.replace(/\d+$/, '9') };
     let added = false;

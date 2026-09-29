@@ -50,15 +50,17 @@ type PullRow struct {
 	Author       string
 	State        string
 	Draft        bool
-	Merged       bool
-	HeadSHA      string
-	HeadRef      string
-	BaseRef      string
-	URL          string
-	OpenedAt     *time.Time
-	UpdatedAt    time.Time
-	Labels       []Label
-	LastReview   *ReviewBrief
+	// Fork is whether the head is in another repository.
+	Fork       bool
+	Merged     bool
+	HeadSHA    string
+	HeadRef    string
+	BaseRef    string
+	URL        string
+	OpenedAt   *time.Time
+	UpdatedAt  time.Time
+	Labels     []Label
+	LastReview *ReviewBrief
 }
 
 // PullFilter narrows ListPulls. Zero fields match everything; Query
@@ -70,7 +72,7 @@ type PullFilter struct {
 	Query        string
 }
 
-const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.merged,
+const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.fork, p.merged,
 	p.head_sha, p.head_ref, p.base_ref, p.url, p.opened_at, p.updated_at, p.labels,
 	lr.id, lr.status, lr.mode, lr.scope, lr.created_at, lr.blocking, lr.important, lr.nit
 	FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
@@ -88,7 +90,7 @@ func scanPull(row pgx.CollectableRow) (PullRow, error) {
 	var id, status, mode, scope *string
 	var at *time.Time
 	var blocking, important, nit *int
-	if err := row.Scan(&p.ID, &p.RepositoryID, &p.Repository, &p.Number, &p.Title, &p.Author, &p.State, &p.Draft, &p.Merged,
+	if err := row.Scan(&p.ID, &p.RepositoryID, &p.Repository, &p.Number, &p.Title, &p.Author, &p.State, &p.Draft, &p.Fork, &p.Merged,
 		&p.HeadSHA, &p.HeadRef, &p.BaseRef, &p.URL, &p.OpenedAt, &p.UpdatedAt, &labels,
 		&id, &status, &mode, &scope, &at, &blocking, &important, &nit); err != nil {
 		return p, err

@@ -139,6 +139,9 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 		f.logger.Info("follow-up ignored", "reason", reason)
 		return followUpIgnored, f.record(ctx, followUpIgnored, reason, 0, "")
 	}
+	if requestsReview(f.comment.Body, strings.TrimSuffix(f.botLogin, "[bot]")) {
+		return f.requestReview(ctx)
+	}
 	reason, err := f.repoConfig(ctx)
 	if err != nil {
 		return followUpFailed, err
@@ -203,7 +206,66 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	return followUpAnswered, nil
 }
 
-var mentionPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)`)
+var (
+	mentionPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)`)
+	reviewPattern  = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+review\b`)
+)
+
+// requestsReview reports whether body asks slug for a review: "@<slug>
+// review", the word review right after the mention.
+func requestsReview(body, slug string) bool {
+	for _, m := range reviewPattern.FindAllStringSubmatch(body, -1) {
+		if strings.EqualFold(m[2], slug) {
+			return true
+		}
+	}
+	return false
+}
+
+// requestReview queues a review of the pull request's head, as the
+// dashboard's re-run does, for someone with write access who asked with
+// "@<bot> review": it is how a pull request from a fork, which is not
+// reviewed on its own, gets one. It replies that it did, and counts
+// against the hourly follow-up limit.
+func (f *followUp) requestReview(ctx context.Context) (string, error) {
+	limited, err := f.rateLimited(ctx)
+	if err != nil {
+		return followUpFailed, err
+	}
+	if limited {
+		return followUpLimited, nil
+	}
+	queue := river.ClientFromContext[pgx.Tx](ctx)
+	already := false
+	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
+		_, err := jobs.EnqueueRerun(ctx, tx, queue, f.account.ID(), f.pr.repositoryID, f.pr.number)
+		if errors.Is(err, jobs.ErrRerunQueued) {
+			already, err = true, nil
+		}
+		return err
+	})
+	if errors.Is(err, jobs.ErrNoHead) {
+		return followUpIgnored, f.record(ctx, followUpIgnored, "the pull request is closed", 0, "")
+	}
+	if err != nil {
+		return followUpFailed, fmt.Errorf("worker: queue the requested review: %w", err)
+	}
+	body := review.ReviewQueuedBody(f.pr.headSHA, already)
+	var replyID int64
+	if f.comment.Inline {
+		replyID, err = f.client.ReplyInline(ctx, f.owner, f.repo, f.pr.number, f.comment, body)
+	} else {
+		replyID, err = f.client.CreateComment(ctx, f.owner, f.repo, f.pr.number, body)
+	}
+	if err != nil {
+		return followUpFailed, err
+	}
+	f.logger.Info("review requested", "already_queued", already, "reply", replyID)
+	if err := f.record(ctx, followUpAnswered, "review requested", replyID, ""); err != nil {
+		f.logger.Error("follow-up not recorded", "error", err, "reply", replyID)
+	}
+	return followUpAnswered, nil
+}
 
 // mentioned reports whether body @-mentions slug as a whole word.
 func mentioned(body, slug string) bool {

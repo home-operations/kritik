@@ -36,6 +36,7 @@ const (
 	reasonDisabled     = "disabled"
 	reasonDuplicate    = "duplicate"
 	reasonNotIndexed   = "not-indexed"
+	reasonFork         = "fork"
 )
 
 // ActionBaseline is the poller's synthetic action for a pull request that
@@ -103,12 +104,14 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
 	settings := req.File.Settings(req.Account, ev.Repository.FullName)
+	// A fork's pull request is recorded but not reviewed unless the
+	// settings review forks: a maintainer asks for its review with
+	// "@<bot> review", which needs the pull request known.
+	fork := pr.Fork && !settings.Forks
 	switch {
 	case !req.File.Runs(req.Account, ev.Repository.FullName, ev.Repository.RepoTraits):
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
-	case pr.Fork && !settings.Forks:
-		return Outcome{Status: Skipped, Reason: "fork"}, nil
-	case settings.Filter != nil:
+	case !fork && settings.Filter != nil:
 		ok, err := settings.Filter.Eval(pr.FilterVars(ev.Action))
 		if err != nil {
 			return Outcome{}, fmt.Errorf("ingest: filter: %w", err)
@@ -141,7 +144,11 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			pr.HeadRef, pr.HeadSHA, pr.BaseRef, pr.URL, pr.Body, nullTime(pr), labels, pr.Merged); err != nil {
 			return fmt.Errorf("ingest: upsert pull request: %w", err)
 		}
-		if !review {
+		switch {
+		case fork:
+			out = Outcome{Status: Skipped, Reason: reasonFork}
+			return nil
+		case !review:
 			out = Outcome{Status: Skipped, Reason: ev.Action}
 			return nil
 		}

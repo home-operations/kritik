@@ -17,7 +17,8 @@
 
 kritik indexes a repository, reviews each pull request against that context,
 posts one sticky summary comment plus inline findings and a commit status, and
-answers follow-ups when the bot is @-mentioned. One deployment serves any
+answers follow-ups when the bot is @-mentioned. A pull request from a fork is
+reviewed when a maintainer asks with `@<bot> review`. One deployment serves any
 number of forge accounts, and every index and review job runs in its own
 Kubernetes Job pod that holds no secrets.
 

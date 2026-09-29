@@ -6,6 +6,7 @@
     "author": "ada",
     "state": "open",
     "draft": false,
+    "fork": false,
     "merged": false,
     "headSha": "abc123",
     "headRef": "widgets",

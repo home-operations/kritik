@@ -296,6 +296,7 @@ type Pull struct {
 	Author     string       `json:"author"`
 	State      string       `json:"state"`
 	Draft      bool         `json:"draft"`
+	Fork       bool         `json:"fork"`
 	Merged     bool         `json:"merged"`
 	HeadSHA    string       `json:"headSha"`
 	HeadRef    string       `json:"headRef"`
