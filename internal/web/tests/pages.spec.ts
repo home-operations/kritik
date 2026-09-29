@@ -312,6 +312,7 @@ test.describe('findings', () => {
     await expect(row.locator('.sev')).toHaveText(f.severity);
     await expect(row.getByRole('link', { name: `${f.pull.repository} #${f.pull.number}` })).toHaveAttribute('href', `#/a/${g.SLUG}/pulls/alpha/one/7`);
     await expect(row.locator('.status-word')).toHaveText(f.status);
+    await expect(row.getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute('href', `${f.pull.url}#discussion_r${f.forgeCommentId}`);
     await expect(page.locator('.sections .section-tab.active')).toHaveText('Analytics');
     await expect(page.getByRole('navigation', { name: 'Analytics' }).getByRole('link', { name: 'Findings' })).toHaveAttribute('aria-current', 'page');
 
@@ -377,7 +378,8 @@ test('pull detail leads with its latest review, then the history and follow-ups 
   const latest = page.getByRole('region', { name: 'Latest review' });
   await expect(latest).toContainText(g.reviewDetail.summary!.take);
   const f = g.reviewDetail.findings[0]!;
-  await expect(latest.getByRole('list', { name: 'Findings' }).getByRole('listitem')).toHaveText([`${f.severity} ${f.title} ${f.path}:${f.line}`]);
+  await expect(latest.getByRole('list', { name: 'Findings' }).getByRole('listitem')).toHaveText([`${f.severity} ${f.title} ${f.path}:${f.line} Thread`]);
+  await expect(latest.getByRole('link', { name: 'Thread' })).toHaveAttribute('href', `${p.url}#discussion_r${f.forgeCommentId}`);
   await expect(latest.getByRole('link', { name: 'Open the review' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/rev-1`);
   await expect(page.locator('.timeline-item')).toContainText('$0.42');
   await expect(page.locator('.timeline-item')).toContainText('excluded by filter');
@@ -397,6 +399,11 @@ test.describe('review', () => {
     await expect(page.locator('.finding')).toContainText(f.title);
     await expect(page.locator('.finding')).toContainText(`${f.path}:${f.line}-${f.endLine}`);
     await expect(page.locator('.finding .code-block')).toContainText(f.replacement);
+    // The golden finding was posted inline as comment 55 on the pull request.
+    await expect(page.locator('.finding').getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute(
+      'href',
+      `${g.reviewDetail.review.pull.url}#discussion_r${f.forgeCommentId}`,
+    );
     const r = g.reviewDetail.review;
     const fact = (name: string) => page.locator('.page-head .facts > div').filter({ has: page.getByRole('term').getByText(name, { exact: true }) }).getByRole('definition');
     await expect(fact('Scope')).toHaveText(new RegExp(`^${r.scope}\\s\\(${r.scopeReason}\\)$`));

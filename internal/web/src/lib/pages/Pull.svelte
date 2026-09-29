@@ -2,7 +2,7 @@
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
-  import { repoRoute, rerunPath, accountApi } from '../links';
+  import { repoRoute, rerunPath, accountApi, threadUrl } from '../links';
   import { isAdmin } from '../session.svelte';
   import ActionButton from '../components/ActionButton.svelte';
   import { shortSha, SEVERITIES } from '../format';
@@ -126,6 +126,11 @@
                         <span class="sev sev-{f.severity}">{f.severity}</span>
                         <a href={href({ name: 'review', slug, id: r.id })}>{f.title}</a>
                         <span class="mono small muted">{f.path}:{f.line}</span>
+                        {#if threadUrl(p.url, f.forgeCommentId)}
+                          <a class="external small" href={threadUrl(p.url, f.forgeCommentId)} target="_blank" rel="noopener noreferrer">
+                            Thread <Icon path={mdiOpenInNew} size={11} />
+                          </a>
+                        {/if}
                       </li>
                     {/each}
                   </ul>

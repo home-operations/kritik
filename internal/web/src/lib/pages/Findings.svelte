@@ -6,7 +6,7 @@
   import { href, navigate, replace } from '../router.svelte';
   import { FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
   import { Paged, Resource, live } from '../resource.svelte';
-  import { accountApi, pullRoute } from '../links';
+  import { accountApi, pullRoute, threadUrl } from '../links';
   import { SEVERITIES } from '../format';
   import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
   import type { AccountFinding, Page, Repository } from '../types';
@@ -16,7 +16,7 @@
   import TokenSearch from '../components/TokenSearch.svelte';
   import Time from '../components/Time.svelte';
   import Icon from '../Icon.svelte';
-  import { mdiCheck, mdiCircleOutline } from '../icons';
+  import { mdiCheck, mdiCircleOutline, mdiOpenInNew } from '../icons';
 
   let { slug, filter }: { slug: string; filter?: FindingFilter } = $props();
 
@@ -128,7 +128,14 @@
                     <td><span class="sev sev-{f.severity}">{f.severity}</span></td>
                     <td class="finding-pull">
                       <a href={href(pullRoute(slug, f.pull))} title={f.pull.title}><span class="mono">{f.pull.repository}</span> #{f.pull.number}</a>
-                      <span class="finding-sub mono">{f.path}:{f.line}</span>
+                      <span class="finding-sub mono">
+                        {f.path}:{f.line}
+                        {#if threadUrl(f.pull.url, f.forgeCommentId)}
+                          <a class="external" href={threadUrl(f.pull.url, f.forgeCommentId)} target="_blank" rel="noopener noreferrer" title="The finding's thread on GitHub">
+                            <Icon path={mdiOpenInNew} size={11} label="Thread on GitHub" />
+                          </a>
+                        {/if}
+                      </span>
                     </td>
                     <td>
                       <span class="status" class:tone-ok={f.status === 'addressed'} class:tone-muted={f.status === 'open'}>

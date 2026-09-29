@@ -177,10 +177,14 @@ func (c *Client) UpdateComment(ctx context.Context, owner, repo string, id int64
 }
 
 // CreateReview implements forge.Client with a COMMENT review: visible in
-// the Files tab, never a required approval or a request for changes.
-func (c *Client) CreateReview(ctx context.Context, owner, repo string, number int, headSHA string, comments []forge.InlineComment) error {
+// the Files tab, never a required approval or a request for changes. The
+// review's answer does not carry its comments, so they are listed after
+// and matched to the ones sent by path and body, in order.
+func (c *Client) CreateReview(
+	ctx context.Context, owner, repo string, number int, headSHA string, comments []forge.InlineComment,
+) ([]int64, error) {
 	if len(comments) == 0 {
-		return nil
+		return []int64{}, nil
 	}
 	req := &gh.PullRequestReviewRequest{CommitID: new(headSHA), Event: new("COMMENT")}
 	for _, cm := range comments {
@@ -190,10 +194,23 @@ func (c *Client) CreateReview(ctx context.Context, owner, repo string, number in
 		}
 		req.Comments = append(req.Comments, c)
 	}
-	if _, _, err := c.api.PullRequests.CreateReview(ctx, owner, repo, number, req); err != nil {
-		return fmt.Errorf("github: review #%d: %w", number, err)
+	review, _, err := c.api.PullRequests.CreateReview(ctx, owner, repo, number, req)
+	if err != nil {
+		return nil, fmt.Errorf("github: review #%d: %w", number, err)
 	}
-	return nil
+	ids := make([]int64, len(comments))
+	for cm, err := range c.api.PullRequests.ListReviewCommentsIter(ctx, owner, repo, number, review.GetID(), &gh.ListOptions{PerPage: 100}) {
+		if err != nil {
+			return ids, fmt.Errorf("github: list the comments of review %d on #%d: %w", review.GetID(), number, err)
+		}
+		for i, sent := range comments {
+			if ids[i] == 0 && cm.GetPath() == sent.Path && cm.GetBody() == sent.Body {
+				ids[i] = cm.GetID()
+				break
+			}
+		}
+	}
+	return ids, nil
 }
 
 // GetComment implements forge.Client. GitHub resolves a comment by id alone,

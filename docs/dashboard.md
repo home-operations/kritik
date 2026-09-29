@@ -17,7 +17,8 @@ at once, and holds a tab for each of an account's sections
   day or week, and the most reviewed repositories. Its Findings list has
   each finding once per pull request however many reviews repeated it,
   addressed once a later review of the pull request, at a newer head, no
-  longer reports it. Spend has the month so far against the account's
+  longer reports it. A finding kritik posted inline links to its thread
+  on GitHub, here and on its review. Spend has the month so far against the account's
   caps, and usage by day, model, repository or role.
 - **Pull requests:** its pull requests and their reviews, the run queue
   and the follow-up questions. The search box takes text, or narrows the

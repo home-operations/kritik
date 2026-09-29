@@ -290,11 +290,17 @@ func (l *localForge) UpdateComment(_ context.Context, _, _ string, id int64, bod
 	return nil
 }
 
-func (l *localForge) CreateReview(_ context.Context, _, _ string, _ int, _ string, comments []forge.InlineComment) error {
+// CreateReview numbers each comment by its place among every inline
+// comment posted, from 1001.
+func (l *localForge) CreateReview(_ context.Context, _, _ string, _ int, _ string, comments []forge.InlineComment) ([]int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	ids := make([]int64, len(comments))
+	for i := range comments {
+		ids[i] = int64(1001 + len(l.inline) + i)
+	}
 	l.inline = append(l.inline, comments...)
-	return nil
+	return ids, nil
 }
 
 func (l *localForge) FileURL(owner, repo, sha, path string, line, _ int) string {
@@ -1507,9 +1513,10 @@ func checkIncremental(
 	if strings.Contains(prompt, "Changed since the last review") {
 		t.Fatalf("a first review has no incremental sections:\n%s", prompt)
 	}
-	if p := postedInline(ctx, t, appStore, accountID, firstRow.id); len(p) != 1 || !p[0] {
-		t.Fatalf("posted_inline = %v", p)
+	if p := postedInline(ctx, t, appStore, accountID, firstRow.id); len(p) != 1 || !p[0].posted || p[0].id == 0 {
+		t.Fatalf("posted_inline, forge_comment_id = %+v", p)
 	}
+	thread := postedInline(ctx, t, appStore, accountID, firstRow.id)[0].id
 
 	second := commit("package main\n\nfunc f1() {}\n\nfunc f2() {}\n")
 	secondRow, prompt, inline := reviewHead(second)
@@ -1525,8 +1532,8 @@ func checkIncremental(
 			t.Fatalf("missing %q in the incremental prompt:\n%s", want, prompt)
 		}
 	}
-	if p := postedInline(ctx, t, appStore, accountID, secondRow.id); len(p) != 1 || !p[0] {
-		t.Fatalf("a finding carried from the last review keeps posted_inline, got %v", p)
+	if p := postedInline(ctx, t, appStore, accountID, secondRow.id); len(p) != 1 || !p[0].posted || p[0].id != thread {
+		t.Fatalf("a finding carried from the last review keeps posted_inline and its thread %d, got %+v", thread, p)
 	}
 	checkIncrementalRecord(ctx, t, appStore, lf, accountID, secondRow.id, first)
 
@@ -1557,15 +1564,19 @@ func scopeRow(ctx context.Context, t *testing.T, appStore *store.Store, accountI
 	return out
 }
 
-func postedInline(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID string) []bool {
+func postedInline(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID string) []inlineComment {
 	t.Helper()
-	var out []bool
+	var out []inlineComment
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT posted_inline FROM findings WHERE review_id = $1`, reviewID)
+		rows, err := tx.Query(ctx, `SELECT posted_inline, coalesce(forge_comment_id, 0) FROM findings WHERE review_id = $1`, reviewID)
 		if err != nil {
 			return err
 		}
-		out, err = pgx.CollectRows(rows, pgx.RowTo[bool])
+		out, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (inlineComment, error) {
+			var c inlineComment
+			err := row.Scan(&c.posted, &c.id)
+			return c, err
+		})
 		return err
 	}); err != nil {
 		t.Fatal(err)

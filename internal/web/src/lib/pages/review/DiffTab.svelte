@@ -43,13 +43,14 @@
     {#if outside.length}
       <section class="panel" aria-label="Findings outside this diff">
         <header class="panel-head"><h2>Outside this diff</h2></header>
-        {#each outside as f (f.id)}<FindingCard {f} />{/each}
+        {#each outside as f (f.id)}<FindingCard {f} pullUrl={d.review.pull.url} />{/each}
       </section>
     {/if}
     {#each files as file, i (`${delta}:${i}`)}
       <DiffFileView
         {file}
         findings={d.findings.filter((f) => f.path === file.path)}
+        pullUrl={d.review.pull.url}
         initiallyOpen={total <= TOTAL_LINES && file.lines.length <= FILE_LINES}
       />
     {/each}
