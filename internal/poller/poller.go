@@ -51,7 +51,7 @@ const pollOffRecheck = time.Minute
 // the time. The first poll happens after one interval, so a freshly
 // elected leader does not hammer the forge while ingest is already serving
 // webhooks.
-func (p *Poller) Run(ctx context.Context) error {
+func (p *Poller) Run(ctx context.Context) {
 	for {
 		interval := p.Current.Get().PollInterval()
 		wait := interval
@@ -62,7 +62,7 @@ func (p *Poller) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			t.Stop()
-			return nil
+			return
 		case <-t.C:
 			if interval > 0 {
 				p.PollAll(ctx)

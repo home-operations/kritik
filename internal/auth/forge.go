@@ -44,9 +44,6 @@ type forgeProvider struct {
 func newForgeProvider(
 	s *configfile.SignIn, web, apiBase, redirect string, scopes []string, client *http.Client, api forgeAPI,
 ) *forgeProvider {
-	if len(s.Scopes) > 0 {
-		scopes = s.Scopes
-	}
 	return &forgeProvider{
 		signIn: s,
 		conf: &oauth2.Config{

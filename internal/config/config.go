@@ -35,8 +35,8 @@ const (
 	RoleWorker Role = "worker"
 	RoleRunner Role = "runner"
 	// RoleWeb serves the operator dashboard (ADR-0009): sign-in, sessions,
-	// the accounts' pages and the instance configuration.
-	// "all" also serves it once WebURL is configured; see [Config.WebEnabled].
+	// the accounts' pages and the instance configuration. "all" serves it
+	// too.
 	RoleWeb Role = "web"
 )
 
@@ -95,9 +95,9 @@ type Config struct {
 	// dashboard builds absolute links (OIDC redirect URIs, session cookie
 	// scope) back to itself, so it must be required for the web role and
 	// must match how the ingress/HTTPRoute actually exposes it. A trailing
-	// slash is trimmed. Empty means no role serves the dashboard; see
-	// [Config.WebEnabled]. Parsed once into an unexported *url.URL, read
-	// back with [Config.WebURLParsed].
+	// slash is trimmed. Required for the all and web roles, which serve
+	// the dashboard. Parsed once into an unexported *url.URL, read back
+	// with [Config.WebURLParsed].
 	WebURL string `env:"KRITIK_WEB_URL"`
 
 	// ConfigFile is the path of the optional configuration file: sign-in
@@ -229,18 +229,13 @@ func (c *Config) ValidateRunner() error {
 	return nil
 }
 
-// ValidateWeb checks what the web role needs beyond the common set.
+// ValidateWeb checks what serving the dashboard needs beyond the common
+// set, for the all and web roles.
 func (c *Config) ValidateWeb() error {
 	if c.WebURL == "" {
-		return fmt.Errorf("config: KRITIK_WEB_URL is required for the web role")
+		return fmt.Errorf("config: KRITIK_WEB_URL is required for the all and web roles")
 	}
 	return nil
-}
-
-// WebEnabled reports whether role serves the operator dashboard: the web
-// role always does, and all does once WebURL is configured.
-func (c *Config) WebEnabled(role Role) bool {
-	return role == RoleWeb || (role == RoleAll && c.WebURL != "")
 }
 
 // WebURLParsed returns WebURL parsed into a *url.URL, or nil when WebURL is

@@ -2,6 +2,7 @@ package configfile
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -20,14 +21,14 @@ func (f *File) validateEgress() error {
 		}
 	}
 	rules := f.EgressRules()
-	for host, secret := range f.Egress.credentials {
+	for _, host := range slices.Sorted(maps.Keys(f.Egress.credentials)) {
 		if err := checkHost(host); err != nil {
 			return fmt.Errorf("configfile: egress.credentials.%s: %w", host, err)
 		}
 		if !rules.Allows(host) {
 			return fmt.Errorf("configfile: egress.credentials.%s: host is not in egress.allowHosts", host)
 		}
-		if secret.Value() == "" {
+		if f.Egress.credentials[host].Value() == "" {
 			return fmt.Errorf("configfile: egress.credentials.%s resolved to an empty value", host)
 		}
 	}

@@ -15,9 +15,9 @@ import (
 )
 
 // githubAuth is an auth block with a GitHub sign-in whose client id is
-// clientID, with scopes spliced in.
-func githubAuth(clientID, scopes string) string {
-	return "auth:\n" + adminPassword + "  github:\n    clientId: " + clientID + "\n    clientSecret: { env: TEST_AUTH_SECRET }\n" + scopes
+// clientID.
+func githubAuth(clientID string) string {
+	return "auth:\n" + adminPassword + "  github:\n    clientId: " + clientID + "\n    clientSecret: { env: TEST_AUTH_SECRET }\n"
 }
 
 // oidcAuth is an auth block with an OIDC sign-in at issuer.
@@ -26,47 +26,35 @@ func oidcAuth(issuer string) string {
 }
 
 func TestForgeProviderURLs(t *testing.T) {
-	tests := []struct {
-		name   string
-		scopes string
-		scope  string
-	}{
-		{"github.com", "", "read:user user:email read:org"},
-		{"github.com with its own scopes", "    scopes: [read:user]\n", "read:user"},
+	s, _ := testFile(t, githubAuth("cid")).Auth.SignInByType(configfile.SignInGitHub)
+	p, err := buildProvider(context.Background(), s, "https://kritik.example.com/auth/callback/github", http.DefaultClient, nil)
+	if err != nil {
+		t.Fatalf("buildProvider: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s, _ := testFile(t, githubAuth("cid", tt.scopes)).Auth.SignInByType(configfile.SignInGitHub)
-			p, err := buildProvider(context.Background(), s, "https://kritik.example.com/auth/callback/github", http.DefaultClient, nil)
-			if err != nil {
-				t.Fatalf("buildProvider: %v", err)
-			}
-			fp := p.(*forgeProvider)
-			if fp.conf.Endpoint.TokenURL != "https://github.com/login/oauth/access_token" || fp.apiBase != "https://api.github.com" {
-				t.Fatalf("token URL %q, API %q", fp.conf.Endpoint.TokenURL, fp.apiBase)
-			}
-			u, err := url.Parse(p.AuthCodeURL("st", "no", "verifier-verifier-verifier-verifier-verifier"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := u.Scheme + "://" + u.Host + u.Path; got != "https://github.com/login/oauth/authorize" {
-				t.Fatalf("authorize URL %q", got)
-			}
-			q := u.Query()
-			want := map[string]string{
-				"client_id": "cid", "state": "st", "response_type": "code", "scope": tt.scope,
-				"redirect_uri":          "https://kritik.example.com/auth/callback/github",
-				"code_challenge_method": "S256",
-			}
-			for k, v := range want {
-				if q.Get(k) != v {
-					t.Fatalf("query %s = %q, want %q (url %s)", k, q.Get(k), v, u)
-				}
-			}
-			if q.Get("code_challenge") == "" || q.Has("code_verifier") || q.Has("nonce") {
-				t.Fatalf("PKCE parameters wrong in %s", u)
-			}
-		})
+	fp := p.(*forgeProvider)
+	if fp.conf.Endpoint.TokenURL != "https://github.com/login/oauth/access_token" || fp.apiBase != "https://api.github.com" {
+		t.Fatalf("token URL %q, API %q", fp.conf.Endpoint.TokenURL, fp.apiBase)
+	}
+	u, err := url.Parse(p.AuthCodeURL("st", "no", "verifier-verifier-verifier-verifier-verifier"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := u.Scheme + "://" + u.Host + u.Path; got != "https://github.com/login/oauth/authorize" {
+		t.Fatalf("authorize URL %q", got)
+	}
+	q := u.Query()
+	want := map[string]string{
+		"client_id": "cid", "state": "st", "response_type": "code", "scope": "read:user user:email read:org",
+		"redirect_uri":          "https://kritik.example.com/auth/callback/github",
+		"code_challenge_method": "S256",
+	}
+	for k, v := range want {
+		if q.Get(k) != v {
+			t.Fatalf("query %s = %q, want %q (url %s)", k, q.Get(k), v, u)
+		}
+	}
+	if q.Get("code_challenge") == "" || q.Has("code_verifier") || q.Has("nonce") {
+		t.Fatalf("PKCE parameters wrong in %s", u)
 	}
 }
 
@@ -87,7 +75,7 @@ func TestRedirectURL(t *testing.T) {
 }
 
 func TestProvidersCacheRebuildsOnChange(t *testing.T) {
-	auth := testFile(t, githubAuth("one", "")).Auth
+	auth := testFile(t, githubAuth("one")).Auth
 	u, _ := url.Parse("https://kritik.example.com")
 	ps := newProviders(u, http.DefaultClient, nil)
 	a, _, err := ps.get(context.Background(), auth, "github")
@@ -98,7 +86,7 @@ func TestProvidersCacheRebuildsOnChange(t *testing.T) {
 	if a != b {
 		t.Fatal("unchanged config rebuilt the provider")
 	}
-	auth = testFile(t, githubAuth("two", "")).Auth
+	auth = testFile(t, githubAuth("two")).Auth
 	c, _, _ := ps.get(context.Background(), auth, "github")
 	if c == a || !strings.Contains(c.AuthCodeURL("s", "n", "v"), "client_id=two") {
 		t.Fatal("changed config did not rebuild the provider")
@@ -111,7 +99,7 @@ func TestProvidersCacheRebuildsOnChange(t *testing.T) {
 }
 
 func TestSignInOrigin(t *testing.T) {
-	gh, _ := testFile(t, githubAuth("c", "")).Auth.SignInByType(configfile.SignInGitHub)
+	gh, _ := testFile(t, githubAuth("c")).Auth.SignInByType(configfile.SignInGitHub)
 	oidc, _ := testFile(t, oidcAuth("https://id.example.com/realms/a")).Auth.SignInByType(configfile.SignInOIDC)
 	if got := signInOrigin(gh); got != "github:https://github.com" {
 		t.Fatalf("github origin = %q", got)

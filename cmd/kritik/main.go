@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -70,17 +71,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	var runSpec runner.Spec
-	switch role {
-	case config.RoleAll, config.RoleWorker:
-		err = cfg.ValidateWorker()
-	case config.RoleRunner:
-		if err = cfg.ValidateRunner(); err == nil {
-			runSpec, err = runner.ReadSpec(cfg.RunSpecFile)
-		}
-	case config.RoleWeb:
-		err = cfg.ValidateWeb()
-	}
+	runSpec, err := validateRole(role, cfg)
 	if err != nil {
 		return err
 	}
@@ -270,6 +261,25 @@ func run() error {
 	return nil
 }
 
+// validateRole checks what role needs of cfg beyond the common set, and
+// reads a runner's spec.
+func validateRole(role config.Role, cfg *config.Config) (runner.Spec, error) {
+	switch role {
+	case config.RoleAll:
+		return runner.Spec{}, errors.Join(cfg.ValidateWorker(), cfg.ValidateWeb())
+	case config.RoleWorker:
+		return runner.Spec{}, cfg.ValidateWorker()
+	case config.RoleRunner:
+		if err := cfg.ValidateRunner(); err != nil {
+			return runner.Spec{}, err
+		}
+		return runner.ReadSpec(cfg.RunSpecFile)
+	case config.RoleWeb:
+		return runner.Spec{}, cfg.ValidateWeb()
+	}
+	return runner.Spec{}, nil
+}
+
 // storeOptions is how role connects to the database. Only a
 // leader-eligible role, all or worker, is given the owner DSN; the web role
 // in particular never is (ADR-0009 §3).
@@ -288,13 +298,13 @@ func storeOptions(role config.Role, cfg *config.Config, logger *slog.Logger) sto
 const webDrain = 10 * time.Second
 
 // startWeb serves the dashboard, its sign-in and its API on WebAddr until
-// ctx ends, when role serves it. Without a sealing key the dashboard still
-// serves, but cannot write the instance spec.
+// ctx ends, for the all and web roles. Without a sealing key the dashboard
+// still serves, but cannot write the instance spec.
 func startWeb(
 	ctx context.Context, g *errgroup.Group, role config.Role, st *store.Store, cfg *config.Config, current *configfile.Current,
 	logger *slog.Logger,
 ) error {
-	if !cfg.WebEnabled(role) {
+	if role != config.RoleAll && role != config.RoleWeb {
 		return nil
 	}
 	if role == config.RoleWeb && st.LeaderEligible() {
@@ -406,37 +416,42 @@ func lead(
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
 	}
-	// The backstop poll is a leader duty: one lister per connection.
+	// Every leader duty ends before lead returns and the lock is released,
+	// so the next leader never runs one alongside this replica's.
 	pollCtx, stopPoll := context.WithCancel(ctx)
+	var duties sync.WaitGroup
+	defer duties.Wait()
 	defer stopPoll()
-	go func() {
-		_ = (&poller.Poller{
-			Store: st, Current: current, Forges: &worker.ForgeCache{Build: worker.BuildForge},
-			Dispatcher: ingest.NewService(st, queue),
-			Logger:     logger, Metrics: m,
-		}).Run(pollCtx)
-	}()
+	// The backstop poll is a leader duty: one lister per connection.
+	poll := &poller.Poller{
+		Store: st, Current: current, Forges: &worker.ForgeCache{Build: worker.BuildForge},
+		Dispatcher: ingest.NewService(st, queue),
+		Logger:     logger, Metrics: m,
+	}
+	duties.Go(func() { poll.Run(pollCtx) })
 	// So is deleting, by name, run Secrets a dead worker left without an
 	// owner. Like the poller it walks the configured accounts, each under
 	// its own row-level security scope.
 	if sweeper != nil {
-		go sweeper.RunSecretSweeper(pollCtx, st, func() []string {
-			accounts := current.Get().Accounts
-			ids := make([]string, 0, len(accounts))
-			for i := range accounts {
-				ids = append(ids, accounts[i].ID())
-			}
-			return ids
-		}, secretSweepInterval)
+		duties.Go(func() {
+			sweeper.RunSecretSweeper(pollCtx, st, func() []string {
+				accounts := current.Get().Accounts
+				ids := make([]string, 0, len(accounts))
+				for i := range accounts {
+					ids = append(ids, accounts[i].ID())
+				}
+				return ids
+			}, secretSweepInterval)
+		})
 	}
 	// So is feeding the index queue its onboarding jobs, a few at a time.
 	onboarder := &worker.Onboarder{Store: st, Queue: queue, Current: current, Logger: logger}
-	go onboarder.Run(pollCtx)
+	duties.Go(func() { onboarder.Run(pollCtx) })
 	// And so is retention: model-call transcripts past their configured
 	// window and the indexes of repositories disabled past their grace
 	// (owner pool, bypassing row-level security), and expired dashboard
 	// sessions (app pool).
-	go retentionSweep(pollCtx, st, current, retentionSweepInterval, logger)
+	duties.Go(func() { retentionSweep(pollCtx, st, current, retentionSweepInterval, logger) })
 	return applyLoop(ctx, current, func(ctx context.Context, f *configfile.File) error {
 		if err := st.ApplyConfig(ctx, f, leader); err != nil {
 			return err
