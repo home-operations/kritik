@@ -226,7 +226,7 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	}
 }
 
-func TestDispatchCommentPushInstallation(t *testing.T) {
+func TestDispatchCommentPush(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
@@ -287,12 +287,18 @@ func TestDispatchCommentPushInstallation(t *testing.T) {
 			t.Fatalf("index jobs = %d", count("index"))
 		}
 	})
+}
+
+func TestDispatchInstallation(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 
 	t.Run("connection adds and removes forge-managed repositories", func(t *testing.T) {
 		added := webhook.Event{Kind: webhook.KindInstallation, Action: "added", Account: "onedr0p",
 			Installation: &webhook.Installation{Repositories: []string{"onedr0p/new-repo", "onedr0p/disabled"}}}
-		if _, err := svc.Dispatch(ctx, request(f, added)); err != nil {
-			t.Fatal(err)
+		if out, err := svc.Dispatch(ctx, request(f, added)); err != nil || out != (Outcome{Status: Recorded, Reason: "added"}) {
+			t.Fatalf("Dispatch = %+v, %v; want recorded for added", out, err)
 		}
 		var newEnabled, disabledEnabled bool
 		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
