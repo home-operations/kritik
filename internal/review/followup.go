@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // Message is one comment in a thread, as the follow-up prompt shows it.
@@ -76,7 +78,7 @@ func BuildFollowUp(in Input, findings []Finding, thread []Message) string {
 	for i, m := range thread {
 		body := strings.TrimSpace(m.Body)
 		if len(body) > maxMessageChars {
-			body = body[:maxMessageChars] + " …"
+			body = textcut.Prefix(body, maxMessageChars) + " …"
 		}
 		fmt.Fprintf(&tail, "\n--- %s", m.Author)
 		if !m.When.IsZero() {
@@ -103,7 +105,7 @@ func BuildFollowUp(in Input, findings []Finding, thread []Message) string {
 func oneLine(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if len(s) > 200 {
-		return s[:200] + " …"
+		return textcut.Prefix(s, 200) + " …"
 	}
 	return s
 }

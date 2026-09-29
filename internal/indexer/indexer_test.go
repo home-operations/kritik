@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -109,6 +110,44 @@ func TestBuildStopsAtBudget(t *testing.T) {
 	_, _, stats, err := Build(t.Context(), head, nil, nil, opts)
 	if err != nil || !stats.Truncated || stats.Files != 1 {
 		t.Fatalf("err=%v stats=%+v", err, stats)
+	}
+}
+
+// TestBuildKeepsTextValidUTF8: every chunk is valid UTF-8, as the staging
+// table's text column requires: a file that is not UTF-8 is skipped, and a
+// chunk cut to its limit ends on a rune boundary.
+func TestBuildKeepsTextValidUTF8(t *testing.T) {
+	fs := memfs.New()
+	r, _ := git.Init(memory.NewStorage(), fs)
+	wt, _ := r.Worktree()
+	for name, content := range map[string]string{
+		"latin1.yaml": "key: caf\xe9\n",
+		"wide.yaml":   "key: " + strings.Repeat("é", 50) + "\n",
+	} {
+		f, _ := fs.Create(name)
+		_, _ = f.Write([]byte(content))
+		_ = f.Close()
+		_, _ = wt.Add(name)
+	}
+	hash, err := wt.Commit("c", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := r.CommitObject(hash)
+	head, _ := c.Tree()
+	opts := DefaultOptions
+	opts.MaxChunkBytes = 8
+	chunks, _, stats, err := Build(t.Context(), head, nil, nil, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) == 0 || stats.Skipped != 1 {
+		t.Fatalf("chunks = %+v, stats = %+v; want wide.yaml chunked and latin1.yaml skipped", chunks, stats)
+	}
+	for _, c := range chunks {
+		if c.Path != "wide.yaml" || !utf8.ValidString(c.Text) {
+			t.Fatalf("chunk %q of %s is not valid UTF-8 or should have been skipped", c.Text, c.Path)
+		}
 	}
 }
 

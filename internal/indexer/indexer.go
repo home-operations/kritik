@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/home-operations/kritik/internal/chunk"
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // Chunk is one staged piece of a file.
@@ -152,8 +154,10 @@ func (b *builder) file(f *object.File) error {
 		b.stats.Skipped++
 		return nil
 	}
+	// A file that is not UTF-8 would fail the staging insert, and so the
+	// whole run: Postgres text holds valid UTF-8 only.
 	content, err := f.Contents()
-	if err != nil || content == "" {
+	if err != nil || content == "" || !utf8.ValidString(content) {
 		b.stats.Skipped++
 		return nil
 	}
@@ -165,10 +169,7 @@ func (b *builder) file(f *object.File) error {
 		b.stats.Parsed++
 	}
 	for _, d := range pieces(pf, b.opts) {
-		text := chunk.Text(src, d.StartLine, d.EndLine)
-		if len(text) > b.opts.MaxChunkBytes {
-			text = text[:b.opts.MaxChunkBytes]
-		}
+		text := textcut.Prefix(chunk.Text(src, d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
 		if text == "" {
 			continue
 		}

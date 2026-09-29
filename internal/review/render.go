@@ -6,8 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
+
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // MaxRenderBytes bounds a rendered comment, marker included. GitHub rejects
@@ -73,7 +74,7 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 	if err != nil {
 		// The default renders data kritik bounds itself; failing here is a
 		// bug, but the comment must still carry the marker and the take.
-		out = truncateUTF8(fmt.Sprintf("### kritik review\n\n%s\n", d.Result.Summary.Take), limit)
+		out = textcut.Prefix(fmt.Sprintf("### kritik review\n\n%s\n", d.Result.Summary.Take), limit)
 	}
 	return marker + out, notes
 }
@@ -91,7 +92,7 @@ func RenderInline(ctx context.Context, t Templates, f Finding) (string, []string
 	}
 	out, err := render(context.WithoutCancel(ctx), defaultInline, f, MaxRenderBytes)
 	if err != nil {
-		out = truncateUTF8(fmt.Sprintf("**[%s]** **%s**\n\n%s\n", f.Severity, f.Title, f.Explanation), MaxRenderBytes)
+		out = textcut.Prefix(fmt.Sprintf("**[%s]** **%s**\n\n%s\n", f.Severity, f.Title, f.Explanation), MaxRenderBytes)
 	}
 	return out, notes
 }
@@ -136,11 +137,4 @@ func render(ctx context.Context, src string, data any, limit int) (string, error
 	case <-ctx.Done():
 		return "", fmt.Errorf("review: render: %w", ctx.Err())
 	}
-}
-
-func truncateUTF8(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return strings.ToValidUTF8(s[:n], "")
 }

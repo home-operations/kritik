@@ -10,12 +10,12 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // SpecVersion is the only job document version this runner understands. A
@@ -204,13 +204,7 @@ const maxPromptBytes = 768 << 10
 // share of the spec, by half at a time, keeping the first in the order the
 // worker read them.
 func (p *Prompt) Trim() {
-	if body := p.PullRequest.Body; len(body) > MaxBodyBytes {
-		n := MaxBodyBytes
-		for n > 0 && !utf8.RuneStart(body[n]) {
-			n--
-		}
-		p.PullRequest.Body = body[:n]
-	}
+	p.PullRequest.Body = textcut.Prefix(p.PullRequest.Body, MaxBodyBytes)
 	if len(p.Prior) > MaxPriorFindings {
 		p.Prior = p.Prior[:MaxPriorFindings]
 	}
