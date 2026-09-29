@@ -63,8 +63,10 @@ test.describe('setup wizard', () => {
     await flags(page, { listener: true, installed: true });
     await setup(page, () => ({ ...fresh, connections: ['alpha-bot'], reviewModel: saved ? 'or/acme-large' : '' }), [
       [/\/api\/v1\/admin\/connections\/alpha-bot\/repositories$/, [g.golden<T.AccountRepositories>('account_repositories')]],
+      [new RegExp(`/api/v1/accounts/${g.SLUG}/config$`), g.accountConfig],
     ]);
     const sent = await g.mockWrites(page, [
+      ['PUT', new RegExp(`/api/v1/accounts/${g.SLUG}/config$`), { status: 200, body: { revision: 5 } }],
       ['POST', /\/api\/v1\/admin\/providers\/test$/, { status: 200, body: g.testResult }],
       [
         'PUT',
@@ -97,9 +99,27 @@ test.describe('setup wizard', () => {
 
     await wizard.getByRole('button', { name: 'Skip' }).click();
     await expect(wizard.locator('[aria-current="step"]')).toHaveText('Repositories');
-    await expect(wizard).toContainText('1 repository');
+    await expect(wizard).toContainText('0 of 1 checked');
+    await wizard.getByRole('button', { name: 'Check all' }).click();
+    await expect(wizard.getByRole('checkbox', { name: 'one' })).toBeChecked();
     await wizard.getByRole('button', { name: 'Register and continue' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Registered 1 new repository' })).toBeVisible();
+    // The account's choice is saved before its repositories are registered:
+    // the ones the App reaches later start off, and the checked one is on.
+    expect(sent.slice(-2).map((s) => `${s.method} ${s.url.pathname}`)).toEqual([
+      `PUT /api/v1/accounts/${g.SLUG}/config`,
+      'POST /api/v1/admin/connections/alpha-bot/repositories',
+    ]);
+    expect(sent.at(-2)!.body).toEqual({
+      revision: g.accountConfig.revision,
+      spec: {
+        forge: 'github',
+        name: 'alpha',
+        providers: { own: { type: 'openai', apiKey: { keep: true } } },
+        enabled: false,
+        repositories: [{ name: 'one', enabled: true }],
+      },
+    });
     await expect(wizard.locator('[aria-current="step"]')).toHaveText('Done');
     await wizard.getByRole('button', { name: 'Finish' }).click();
     await expect(wizard).toBeHidden();

@@ -278,6 +278,21 @@
   color: var(--text);
   font-weight: 600;
 }
+.setup-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.setup-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 2px 12px;
+}
 .setup-list {
   margin: 0;
   padding-left: 18px;
