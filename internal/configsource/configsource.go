@@ -28,6 +28,11 @@ var _ configfile.Opener = (*sealbox.Keyring)(nil)
 // sealed credentials.
 var ErrNoDashboardKey = errors.New("configsource: an instance spec is stored but KRITIK_DASHBOARD_KEY is not set")
 
+// ErrNoSignIn is a configuration that leaves the dashboard no way to sign
+// in, refused where RequireSignIn is set.
+var ErrNoSignIn = errors.New(
+	"configsource: the dashboard has no way to sign in: set KRITIK_AUTH_ADMIN_PASSWORD, or auth in the configuration file")
+
 // DefaultPoll is how often Run checks the dashboard fingerprint when Poll
 // is unset. Notifications carry changes promptly; the poll only bounds how
 // long a missed one goes unnoticed.
@@ -53,6 +58,11 @@ type Source struct {
 	Logger *slog.Logger
 	// Poll defaults to DefaultPoll.
 	Poll time.Duration
+	// RequireSignIn refuses a configuration with no way to sign in, at
+	// startup and on every reload, for a process that serves the
+	// dashboard: a reload that removed the last sign-in would lock every
+	// admin out. Other roles may run without one.
+	RequireSignIn bool
 	// Errors, when set, is raised at the merge stage while LastError is
 	// not nil, the file's latest content does not parse, or the running
 	// configuration leaves a file connection out.
@@ -234,6 +244,9 @@ func (s *Source) merge(file *configfile.File, spec configfile.InstanceSpec) (*co
 	merged, err := configfile.Merge(file, spec, open)
 	if err != nil {
 		return nil, fmt.Errorf("configsource: %w", err)
+	}
+	if s.RequireSignIn && !merged.Auth.Configured() {
+		return nil, ErrNoSignIn
 	}
 	return merged, nil
 }
