@@ -28,6 +28,8 @@
   }
 </script>
 
+<svelte:head><title>All accounts · kritik</title></svelte:head>
+
 <main class="page">
   <div class="page-inner">
     <header class="page-head"><h1>All accounts</h1></header>

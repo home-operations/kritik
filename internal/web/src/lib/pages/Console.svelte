@@ -32,6 +32,8 @@
   }
 </script>
 
+<svelte:head><title>Admin console · kritik</title></svelte:head>
+
 <main class="page">
   <div class="page-inner">
     <header class="page-head">

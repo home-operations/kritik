@@ -62,6 +62,8 @@
   }
 </script>
 
+<svelte:head><title>Sign in · kritik</title></svelte:head>
+
 <div class="signin">
   <div class="signin-card">
     <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />

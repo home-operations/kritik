@@ -15,6 +15,8 @@
   const known = $derived(SECTIONS.some(([s]) => s === current));
 </script>
 
+<svelte:head><title>Admin · {slug} · kritik</title></svelte:head>
+
 <main class="page">
   <div class="page-inner">
     <header class="page-head">

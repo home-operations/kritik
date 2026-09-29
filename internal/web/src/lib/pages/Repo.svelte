@@ -120,6 +120,8 @@
   }
 </script>
 
+<svelte:head><title>{fullName} · kritik</title></svelte:head>
+
 {#snippet setting(d: RepoDetail, r: Row)}
   {@const eff = d.repoConfig?.settings ?? d.settings}
   {@const value = r.value(eff)}

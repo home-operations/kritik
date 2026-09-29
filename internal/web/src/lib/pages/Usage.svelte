@@ -48,6 +48,8 @@
   }
 </script>
 
+<svelte:head><title>Usage · {slug} · kritik</title></svelte:head>
+
 <main class="page">
   <div class="page-inner">
     <header class="page-head"><h1>Usage</h1></header>
