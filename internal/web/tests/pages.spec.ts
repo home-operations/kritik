@@ -271,9 +271,16 @@ test.describe('pulls list', () => {
   });
 });
 
-test('pull detail shows the review history and follow-ups with a transcript', async ({ page }) => {
+test('pull detail leads with its latest review, then the history and follow-ups with a transcript', async ({ page }) => {
   await page.goto(`/${T}/pulls/alpha/one/7`);
   await expect(page.locator('h1')).toContainText(g.pullDetail.pull.title);
+  const p = g.pullDetail.pull;
+  await expect(page.locator('.page-head .meta-line')).toContainText(`${p.author} wants to merge ${p.headRef} into ${p.baseRef}`);
+  const latest = page.getByRole('region', { name: 'Latest review' });
+  await expect(latest).toContainText(g.reviewDetail.summary!.take);
+  const f = g.reviewDetail.findings[0]!;
+  await expect(latest.getByRole('list', { name: 'Findings' }).getByRole('listitem')).toHaveText([`${f.severity} ${f.title} ${f.path}:${f.line}`]);
+  await expect(latest.getByRole('link', { name: 'Open the review' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/rev-1`);
   await expect(page.locator('.timeline-item')).toContainText('$0.42');
   await expect(page.locator('.timeline-item')).toContainText('excluded by filter');
   await expect(page.locator('.followup')).toContainText(g.followup.author);
@@ -292,6 +299,10 @@ test.describe('review', () => {
     await expect(page.locator('.finding')).toContainText(f.title);
     await expect(page.locator('.finding')).toContainText(`${f.path}:${f.line}-${f.endLine}`);
     await expect(page.locator('.finding .code-block')).toContainText(f.replacement);
+    const r = g.reviewDetail.review;
+    const fact = (name: string) => page.locator('.page-head .facts > div').filter({ has: page.getByRole('term').getByText(name, { exact: true }) }).getByRole('definition');
+    await expect(fact('Scope')).toHaveText(new RegExp(`^${r.scope}\\s\\(${r.scopeReason}\\)$`));
+    await expect(fact('Model')).toHaveText(r.model);
 
     for (const [tab, text] of [
       ['Timeline', g.reviewDetail.runnerRun!.podName],
