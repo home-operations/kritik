@@ -342,6 +342,33 @@ test.describe('findings', () => {
   });
 });
 
+test.describe('rules', () => {
+  test('lists each file reviews read, where it is named and which repositories read it', async ({ page }) => {
+    await page.goto(`/${T}/rules`);
+    const r = g.rule;
+    const row = page.locator('.rule-table tbody tr');
+    await expect(row).toHaveCount(1);
+    await expect(row.locator('.rule-path')).toHaveText(r.path);
+    await expect(row).toContainText(r.description);
+    await expect(row.locator('code')).toHaveText(r.paths);
+    await expect(row).toContainText('.kritik.yaml');
+    await expect(row.getByRole('link', { name: r.repositories[0]! })).toHaveAttribute('href', `#/a/${g.SLUG}/repos/alpha/one`);
+    await expect(page.locator('.sections .section-tab.active')).toHaveText('Rules');
+
+    const search = page.getByRole('combobox', { name: 'Search rules' });
+    await search.fill('kind:instructions');
+    await expect(page.locator('.state-msg')).toHaveText('No rule matches.');
+    await search.fill('kind:context schema');
+    await expect(row).toHaveCount(1);
+  });
+
+  test('says how to add a rule when there is none', async ({ page }) => {
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), []], ...g.defaultApi()]);
+    await page.goto(`/${T}/rules`);
+    await expect(page.locator('.state-msg')).toContainText('name instruction or context files under review.instructions and review.context');
+  });
+});
+
 test('pull detail leads with its latest review, then the history and follow-ups with a transcript', async ({ page }) => {
   await page.goto(`/${T}/pulls/alpha/one/7`);
   await expect(page.locator('h1')).toContainText(g.pullDetail.pull.title);

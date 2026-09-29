@@ -178,7 +178,8 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 	e.exec(`INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files)
 		VALUES ($1, $2, 'head7', 'base7', 'patch7', $3, '{a.go}',
 			'[{"stage":"definitions","path":"b.go","start_line":1,"end_line":2,"text":"func F() {}"}]',
-			'{".kritik.yaml":"mode: agentic\n"}')`, s.runID, s.accountID, "diff of "+slug)
+			jsonb_build_object('.kritik.yaml', $4::text))`, s.runID, s.accountID, "diff of "+slug,
+		"mode: agentic\nreview:\n  instructions: [docs/rules-of-"+slug+".md]\n")
 	e.exec(`INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline, model, sources)
 		VALUES ($1, $2, 'submitted', '{"findings":[]}', 2, '{"grep":1}',
 			'[{"index":0,"tools":["grep"],"duration_ms":5,"output_bytes":7,"input_tokens":10,"output_tokens":2}]', 'acme/large',
@@ -315,6 +316,7 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/reviews/" + e.a.reviewID + "/raw", `"logTail":"tail of webapi-a"`},
 		{a + "/index-runs?repo=wa/one", `"commitSha":"commit7"`},
 		{a + "/findings?repo=wa/one&severity=blocking&status=open", `"title":"nil deref"`},
+		{a + "/rules", `"path":"docs/rules-of-webapi-a.md","description":"","paths":[],"source":"repository","repositories":["wa/one"]`},
 		{a + "/followups?repo=wa/one", `"commentId":4242`},
 		{a + "/followups/4242/transcript", `"system":"follow of webapi-a"`},
 		{a + "/usage?group=repo", `"key":"wa/one"`},

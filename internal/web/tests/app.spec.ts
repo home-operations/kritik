@@ -133,7 +133,7 @@ test.describe('signed-in shell', () => {
 
     // The sections are tabs under the topbar's first row, above the page.
     const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Sections' }).getByRole('link');
-    await expect(tabs).toHaveText(['Analytics', 'Pull requests', 'Settings']);
+    await expect(tabs).toHaveText(['Analytics', 'Pull requests', 'Rules', 'Settings']);
     await expect(tabs.first()).toHaveAttribute('href', '#/a/github/acme');
     await expect(page.locator('.sections [aria-current]')).toHaveCount(0);
     const bar = await page.locator('.topbar').boundingBox();

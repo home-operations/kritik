@@ -125,6 +125,7 @@ func TestAccountScopeHidesUnreadableAccounts(t *testing.T) {
 		"/api/v1/accounts/%s/reviews/x/transcript", "/api/v1/accounts/%s/reviews/x/raw", "/api/v1/accounts/%s/index-runs",
 		"/api/v1/accounts/%s/followups", "/api/v1/accounts/%s/followups/1/transcript", "/api/v1/accounts/%s/usage",
 		"/api/v1/accounts/%s/queue", "/api/v1/accounts/%s/findings", "/api/v1/accounts/%s/analytics",
+		"/api/v1/accounts/%s/rules",
 	}
 	for _, slug := range []string{"beta", "nope"} {
 		for _, p := range paths {
