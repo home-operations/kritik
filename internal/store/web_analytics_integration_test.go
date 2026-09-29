@@ -32,8 +32,8 @@ func TestReadAnalytics(t *testing.T) {
 		}
 		pull := func(number int) string {
 			var id string
-			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha)
-				VALUES ($1, $2, $3, 'h') RETURNING id`, account, repoID, number).Scan(&id); err != nil {
+			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha, opened_at)
+				VALUES ($1, $2, $3, 'h', $4) RETURNING id`, account, repoID, number, day(-2, 0)).Scan(&id); err != nil {
 				t.Fatal(err)
 			}
 			return id
@@ -45,8 +45,9 @@ func TestReadAnalytics(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, f := range findings {
-				if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation, fingerprint)
-					VALUES ($1, $2, 'a.go', 1, $3, $4, '', $4)`, account, id, f[0], f[1]); err != nil {
+				// Each finding drew one 👍 on this review's copy of it.
+				if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation, fingerprint,
+					reactions_up) VALUES ($1, $2, 'a.go', 1, $3, $4, '', $4, 1)`, account, id, f[0], f[1]); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -64,6 +65,13 @@ func TestReadAnalytics(t *testing.T) {
 		review(b, "h1", "completed", day(1, 13), 3*time.Minute, [2]string{"nit", "typo"})
 		// After the window.
 		review(b, "h2", "completed", day(3, 1), time.Minute)
+		// a merged a day and a half after it opened; b closed unmerged.
+		if _, err := tx.Exec(ctx, `UPDATE pull_requests SET merged = true, closed_at = $2 WHERE id = $1`, a, day(-1, 12)); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE pull_requests SET closed_at = $2 WHERE id = $1`, b, day(1, 0)); err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -93,14 +101,17 @@ func TestReadAnalytics(t *testing.T) {
 	// window; race is still open. old counts before the window.
 	median := int64(3 * time.Minute / time.Millisecond)
 	want := AnalyticsTotals{
-		PullRequests: 2, Reviews: 3, Failed: 1, Findings: SeverityCounts{Important: 1, Nit: 2}, Addressed: 2, CostUSD: 2,
+		PullRequests: 2, Reviews: 3, Failed: 1, Findings: SeverityCounts{Important: 1, Nit: 2}, Addressed: 2, ReactionsUp: 3, CostUSD: 2,
 		MedianReviewMs: &median,
 	}
 	if !reflect.DeepEqual(totals, want) {
-		t.Errorf("totals = %+v (median %v), want %+v (median %v)", totals, deref(totals.MedianReviewMs), want, median)
+		t.Errorf("totals = %+v (median %v, merge %v), want %+v (median %v)", totals, deref(totals.MedianReviewMs),
+			deref(totals.MedianMergeMs), want, median)
 	}
-	if before.Reviews != 1 || before.Findings.Blocking != 1 || before.Addressed != 1 {
-		t.Errorf("before = %+v, want the one review and its blocking finding, addressed", before)
+	merge := int64(36 * time.Hour / time.Millisecond)
+	if before.Reviews != 1 || before.Findings.Blocking != 1 || before.Addressed != 1 || before.MedianMergeMs == nil || *before.MedianMergeMs != merge {
+		t.Errorf("before = %+v (merge %v), want the one review and its blocking finding, addressed, and a merged in 36h",
+			before, deref(before.MedianMergeMs))
 	}
 	wantSeries := []AnalyticsPoint{
 		{Key: "2026-09-01", Reviews: 1, Findings: SeverityCounts{Nit: 1}, CostUSD: 0.5},

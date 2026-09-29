@@ -13,8 +13,11 @@ at once, and holds a tab for each of an account's sections
 
 - **Analytics:** the account's reviews over the last 7, 30 or 90 days
   against the same span before: pull requests reviewed, reviews,
-  findings, the share addressed, the median review time and spend, by
-  day or week, and the most reviewed repositories. Its Findings list has
+  findings, the share addressed, the median review time, the median time
+  from opening to merging, the 👍 and 👎 on kritik's inline comments and
+  spend, by day or week, and the most reviewed repositories. The poller
+  reads reactions, for a week after a pull request's latest review, so
+  they need `polling` on. Its Findings list has
   each finding once per pull request however many reviews repeated it,
   addressed once a later review of the pull request, at a newer head, no
   longer reports it. A finding kritik posted inline links to its thread

@@ -291,6 +291,20 @@ func TestWriteBackCalls(t *testing.T) {
 	}
 }
 
+func TestListInlineReactions(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("GET /api/v3/repos/o/r/pulls/7/comments", 200,
+		`[{"id":3,"body":"c","path":"a.go","line":1,"user":{"login":"u"},"reactions":{"+1":2,"-1":1,"heart":5}},
+		  {"id":4,"body":"d","path":"a.go","line":2,"user":{"login":"u"}}]`)
+	inl, err := c.ListInline(t.Context(), "o", "r", 7)
+	if err != nil || len(inl) != 2 {
+		t.Fatalf("ListInline = %+v, %v", inl, err)
+	}
+	if inl[0].ReactionsUp != 2 || inl[0].ReactionsDown != 1 || inl[1].ReactionsUp != 0 || inl[1].ReactionsDown != 0 {
+		t.Fatalf("reactions = %+v; want 👍 and 👎 counted, other reactions and a missing rollup left out", inl)
+	}
+}
+
 func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 	f, c := newFakeAPI(t)
 	f.reply("GET /api/v3/repos/o/r/issues/comments/1", 200, `{"id":1,"body":"hi","user":{"login":"u","type":"User"},"created_at":"2026-09-24T20:00:00Z"}`)

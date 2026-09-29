@@ -1069,6 +1069,19 @@ input[type='checkbox'][role='switch']:focus-visible {
   align-items: center;
   gap: 6px 10px;
 }
+.reactions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.reactions > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
 .finding-thread {
   margin-left: auto;
 }
@@ -1498,6 +1511,20 @@ table.diff td.code {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+}
+/* Eight tiles fill four columns, or two, or one, with no cell left over. */
+.stats.stats-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 900px) {
+  .stats.stats-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 480px) {
+  .stats.stats-4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .stat {
   display: flex;

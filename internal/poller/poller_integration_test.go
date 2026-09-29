@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -446,5 +447,132 @@ func TestSyncRepositories(t *testing.T) {
 	p.SyncRepositories(ctx)
 	if !strings.Contains(logs.String(), "repositories not synced") || !strings.Contains(logs.String(), "502") {
 		t.Fatalf("a failed listing is not logged: %s", logs.String())
+	}
+}
+
+// reactionForge lists no open pull requests, and the inline comments of
+// the pull requests it has them for.
+type reactionForge struct {
+	forge.Client
+
+	mu     sync.Mutex
+	inline map[int][]forge.Comment
+	listed []int
+}
+
+func (f *reactionForge) ListOpenPullRequests(context.Context, string, string, time.Time) ([]forge.OpenPullRequest, error) {
+	return nil, nil
+}
+
+func (f *reactionForge) ListInline(_ context.Context, _, _ string, number int) ([]forge.Comment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listed = append(f.listed, number)
+	return f.inline[number], nil
+}
+
+// TestPollerReadsReactions: a poll reads the reactions on kritik's inline
+// comments into every finding that carries the comment's thread, for the
+// pull requests reviewed lately only.
+func TestPollerReadsReactions(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	st, err := store.Open(ctx, store.Options{
+		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
+		Logger: logger,
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(st.Close)
+	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	in, _ := file.Connection("bot-ross")
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+
+	var recent, stale string
+	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = true WHERE name = 'onedr0p/home-ops'`); err != nil {
+			return err
+		}
+		pull := func(number int, reviewed time.Time, comments ...int64) string {
+			var pr string
+			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha)
+				SELECT $1, id, $2, 'h' FROM repositories WHERE name = 'onedr0p/home-ops' RETURNING id`, account.ID(), number).Scan(&pr); err != nil {
+				t.Fatal(err)
+			}
+			// Two reviews, the second carrying the first's threads.
+			for i := range 2 {
+				var review string
+				if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at)
+					VALUES ($1, $2, $3, 'completed', $4) RETURNING id`, account.ID(), pr, fmt.Sprintf("h%d", i), reviewed).Scan(&review); err != nil {
+					t.Fatal(err)
+				}
+				for _, id := range comments {
+					if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation,
+						posted_inline, forge_comment_id) VALUES ($1, $2, 'a.go', 1, 'nit', 'n', '', true, $3)`, account.ID(), review, id); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			return pr
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE number IN (70, 71)`); err != nil {
+			return err
+		}
+		recent = pull(70, time.Now(), 9001, 9002)
+		stale = pull(71, time.Now().Add(-30*24*time.Hour), 9101)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rf := &reactionForge{inline: map[int][]forge.Comment{
+		70: {{ID: 9001, ReactionsUp: 3, ReactionsDown: 1}, {ID: 9002}, {ID: 5, ReactionsUp: 9}},
+		71: {{ID: 9101, ReactionsUp: 4}},
+	}}
+	p := &Poller{Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: rf}, Logger: logger}
+	if _, err := p.Poll(ctx, file, account, in); err != nil {
+		t.Fatalf("Poll: %v", err)
+	}
+	if !slices.Equal(rf.listed, []int{70}) {
+		t.Fatalf("listed the inline comments of %v; want only the pull request reviewed lately", rf.listed)
+	}
+	reactions := func(pr string) map[int64][2]int {
+		t.Helper()
+		out := map[int64][2]int{}
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, `SELECT f.forge_comment_id, f.reactions_up, f.reactions_down FROM findings f
+				JOIN reviews v ON v.id = f.review_id WHERE v.pull_request_id = $1`, pr)
+			if err != nil {
+				return err
+			}
+			var id int64
+			var up, down int
+			_, err = pgx.ForEachRow(rows, []any{&id, &up, &down}, func() error {
+				if got, ok := out[id]; ok && got != [2]int{up, down} {
+					return fmt.Errorf("comment %d reads %v on one review and %v on another", id, got, [2]int{up, down})
+				}
+				out[id] = [2]int{up, down}
+				return nil
+			})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if got := reactions(recent); got[9001] != [2]int{3, 1} || got[9002] != [2]int{0, 0} {
+		t.Fatalf("reactions = %v", got)
+	}
+	if got := reactions(stale); got[9101] != [2]int{0, 0} {
+		t.Fatalf("a pull request reviewed a month ago was read: %v", got)
 	}
 }

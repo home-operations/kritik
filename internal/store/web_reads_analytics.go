@@ -25,17 +25,22 @@ func (g AnalyticsGroup) Valid() bool {
 
 // AnalyticsTotals is what an account's reviews came to over a window.
 // Reviews and pull requests count completed reviews; findings count each
-// pull request's finding once, in the window it was first reported, and
-// Addressed how many of those a later review no longer reported.
+// pull request's finding once, in the window it was first reported,
+// Addressed how many of those a later review no longer reported, and the
+// reactions the ones posted inline drew.
 type AnalyticsTotals struct {
-	PullRequests int
-	Reviews      int
-	Failed       int
-	Findings     SeverityCounts
-	Addressed    int
-	CostUSD      float64
-	// MedianReviewMs is nil when no review completed.
+	PullRequests  int
+	Reviews       int
+	Failed        int
+	Findings      SeverityCounts
+	Addressed     int
+	ReactionsUp   int
+	ReactionsDown int
+	CostUSD       float64
+	// MedianReviewMs is nil when no review completed, and MedianMergeMs,
+	// from opened to merged, when no pull request kritik knows merged.
 	MedianReviewMs *int64
+	MedianMergeMs  *int64
 }
 
 // ReadAnalyticsTotals sums the account's reviews in [from, to).
@@ -57,9 +62,10 @@ func ReadAnalyticsTotals(ctx context.Context, tx pgx.Tx, from, to time.Time) (An
 	}
 	err = tx.QueryRow(ctx, `WITH `+findingIssues+`
 		SELECT count(*) FILTER (WHERE severity = 'blocking'), count(*) FILTER (WHERE severity = 'important'),
-			count(*) FILTER (WHERE severity = 'nit'), count(*) FILTER (WHERE addressed)
+			count(*) FILTER (WHERE severity = 'nit'), count(*) FILTER (WHERE addressed),
+			coalesce(sum(reactions_up), 0), coalesce(sum(reactions_down), 0)
 		FROM latest WHERE first_at >= $1 AND first_at < $2`, from, to).
-		Scan(&t.Findings.Blocking, &t.Findings.Important, &t.Findings.Nit, &t.Addressed)
+		Scan(&t.Findings.Blocking, &t.Findings.Important, &t.Findings.Nit, &t.Addressed, &t.ReactionsUp, &t.ReactionsDown)
 	if err != nil {
 		return t, fmt.Errorf("store: analytics findings: %w", err)
 	}
@@ -67,6 +73,16 @@ func ReadAnalyticsTotals(ctx context.Context, tx pgx.Tx, from, to time.Time) (An
 		Scan(&t.CostUSD)
 	if err != nil {
 		return t, fmt.Errorf("store: analytics spend: %w", err)
+	}
+	var merge *float64
+	err = tx.QueryRow(ctx, `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM closed_at - opened_at) * 1000)
+		FROM pull_requests WHERE merged AND opened_at IS NOT NULL AND closed_at >= $1 AND closed_at < $2`, from, to).Scan(&merge)
+	if err != nil {
+		return t, fmt.Errorf("store: analytics merge time: %w", err)
+	}
+	if merge != nil {
+		ms := int64(*merge)
+		t.MedianMergeMs = &ms
 	}
 	return t, nil
 }

@@ -3,6 +3,7 @@ package webhook
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritik/internal/configfile"
 )
@@ -52,6 +53,16 @@ func TestParseGitHubPullRequest(t *testing.T) {
 	labels := vars["labels"].([]any)
 	if len(labels) != 1 || labels[0].(map[string]any)["name"] != "area/storage" {
 		t.Fatalf("labels = %v", labels)
+	}
+	if pr.ClosedAt != nil {
+		t.Fatalf("an open pull request's ClosedAt = %v", pr.ClosedAt)
+	}
+	closed := []byte(`{"action":"closed","pull_request":{"number":1,"state":"closed","merged":true,
+	  "closed_at":"2026-09-24T20:00:00Z","user":{"login":"x"}},
+	  "repository":{"full_name":"onedr0p/home-ops","owner":{"login":"onedr0p"}}}`)
+	ev, err = Parse(configfile.ForgeGitHub, gh("pull_request"), closed)
+	if err != nil || ev.PullRequest.ClosedAt == nil || !ev.PullRequest.ClosedAt.Equal(time.Date(2026, 9, 24, 20, 0, 0, 0, time.UTC)) {
+		t.Fatalf("closed PR = %+v, %v; want its closed_at", ev.PullRequest, err)
 	}
 }
 

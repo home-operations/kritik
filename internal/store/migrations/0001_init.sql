@@ -108,6 +108,9 @@ CREATE TABLE pull_requests (
     body          text        NOT NULL DEFAULT '',
     labels        jsonb       NOT NULL DEFAULT '[]'::jsonb,
     merged        boolean     NOT NULL DEFAULT false,
+    -- closed_at is when the pull request was closed or merged; NULL while
+    -- it is open.
+    closed_at     timestamptz,
     UNIQUE (repository_id, number)
 );
 CREATE INDEX pull_requests_account_updated_idx ON pull_requests (account_id, updated_at DESC, id DESC);
@@ -244,7 +247,11 @@ CREATE TABLE findings (
     posted_inline    boolean     NOT NULL DEFAULT false,
     end_line         int         NOT NULL DEFAULT 0,
     replacement      text        NOT NULL DEFAULT '',
-    agent_prompt     text        NOT NULL DEFAULT ''
+    agent_prompt     text        NOT NULL DEFAULT '',
+    -- The 👍 and 👎 on the finding's inline comment, as the poller last read
+    -- them; every review that carried the comment's thread holds them.
+    reactions_up     int         NOT NULL DEFAULT 0,
+    reactions_down   int         NOT NULL DEFAULT 0
 );
 CREATE INDEX findings_account_id_idx ON findings (account_id);
 CREATE INDEX findings_review_idx ON findings (review_id);

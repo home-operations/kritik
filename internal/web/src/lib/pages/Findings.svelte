@@ -14,6 +14,7 @@
   import LoadMore from '../components/LoadMore.svelte';
   import SectionTabs from '../components/SectionTabs.svelte';
   import TokenSearch from '../components/TokenSearch.svelte';
+  import Reactions from '../components/Reactions.svelte';
   import Time from '../components/Time.svelte';
   import Icon from '../Icon.svelte';
   import { mdiCheck, mdiCircleOutline, mdiOpenInNew } from '../icons';
@@ -142,6 +143,7 @@
                         <span class="status-tile"><Icon path={f.status === 'addressed' ? mdiCheck : mdiCircleOutline} size={12} /></span>
                         <span class="status-word">{f.status}</span>
                       </span>
+                      <Reactions up={f.reactionsUp} down={f.reactionsDown} />
                     </td>
                     <td class="num"><Time iso={f.firstSeenAt} /></td>
                   </tr>

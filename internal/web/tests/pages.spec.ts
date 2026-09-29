@@ -46,6 +46,9 @@ test('analytics shows the totals against the window before, the charts and the r
   await expect(stat('Addressed').locator('.stat-sub')).toHaveText('2 of 6');
   await expect(stat('Addressed').locator('.delta')).toHaveCount(0);
   await expect(stat('Median review').locator('.stat-value')).toHaveText('1m 30s');
+  await expect(stat('Time to merge').locator('.stat-value')).toHaveText('36h 0m');
+  await expect(stat('Reactions').locator('.stat-value')).toHaveText(`${c.reactionsUp} up`);
+  await expect(stat('Reactions').locator('.stat-sub')).toHaveText(`${c.reactionsDown} down`);
   await expect(stat('Spend').locator('.delta')).toHaveText('new');
   await expect(stat('Spend').locator('.delta')).toHaveClass(/tone-danger/);
   await expect(page.getByRole('img', { name: /^Completed reviews per day/ })).toBeVisible();
@@ -312,6 +315,7 @@ test.describe('findings', () => {
     await expect(row.locator('.sev')).toHaveText(f.severity);
     await expect(row.getByRole('link', { name: `${f.pull.repository} #${f.pull.number}` })).toHaveAttribute('href', `#/a/${g.SLUG}/pulls/alpha/one/7`);
     await expect(row.locator('.status-word')).toHaveText(f.status);
+    await expect(row.getByTitle('Reactions to its comment on GitHub')).toHaveText(`${f.reactionsUp} ${f.reactionsDown}`);
     await expect(row.getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute('href', `${f.pull.url}#discussion_r${f.forgeCommentId}`);
     await expect(page.locator('.sections .section-tab.active')).toHaveText('Analytics');
     await expect(page.getByRole('navigation', { name: 'Analytics' }).getByRole('link', { name: 'Findings' })).toHaveAttribute('aria-current', 'page');

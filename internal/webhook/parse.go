@@ -87,7 +87,9 @@ type PullRequest struct {
 	URL         string
 	Body        string
 	CreatedAt   time.Time
-	Labels      []Label
+	// ClosedAt is when a closed pull request was closed, nil while open.
+	ClosedAt *time.Time
+	Labels   []Label
 }
 
 // Label is a PR label.
@@ -222,15 +224,16 @@ func (r ghRepo) event() *Repository {
 
 // ghPR is a pull request as GitHub payloads carry one.
 type ghPR struct {
-	Number    int       `json:"number"`
-	Title     string    `json:"title"`
-	Body      string    `json:"body"`
-	State     string    `json:"state"`
-	Merged    bool      `json:"merged"`
-	Draft     bool      `json:"draft"`
-	HTMLURL   string    `json:"html_url"`
-	CreatedAt time.Time `json:"created_at"`
-	User      ghUser    `json:"user"`
+	Number    int        `json:"number"`
+	Title     string     `json:"title"`
+	Body      string     `json:"body"`
+	State     string     `json:"state"`
+	Merged    bool       `json:"merged"`
+	Draft     bool       `json:"draft"`
+	HTMLURL   string     `json:"html_url"`
+	CreatedAt time.Time  `json:"created_at"`
+	ClosedAt  *time.Time `json:"closed_at"`
+	User      ghUser     `json:"user"`
 	Head      struct {
 		Ref  string `json:"ref"`
 		SHA  string `json:"sha"`
@@ -255,7 +258,7 @@ func (p ghPR) event() *PullRequest {
 		Number: p.Number, Title: p.Title, Author: p.User.Login, AuthorIsBot: p.User.isBot(),
 		State: cmp.Or(p.State, stateOpen), Merged: p.Merged, Draft: p.Draft,
 		HeadRef: p.Head.Ref, HeadSHA: p.Head.SHA, BaseRef: p.Base.Ref,
-		URL: p.HTMLURL, Body: p.Body, CreatedAt: p.CreatedAt,
+		URL: p.HTMLURL, Body: p.Body, CreatedAt: p.CreatedAt, ClosedAt: p.ClosedAt,
 	}
 	// A fork PR's head lives in a different repository than its base. A
 	// deleted fork leaves head.repo null, which is also not the base repo.

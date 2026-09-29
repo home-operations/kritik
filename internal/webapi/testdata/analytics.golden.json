@@ -12,8 +12,11 @@
       "nit": 3
     },
     "addressed": 2,
+    "reactionsUp": 4,
+    "reactionsDown": 1,
     "costUsd": 1.25,
-    "medianReviewMs": 90000
+    "medianReviewMs": 90000,
+    "medianMergeMs": 129600000
   },
   "previous": {
     "pullRequests": 0,
@@ -25,8 +28,11 @@
       "nit": 0
     },
     "addressed": 0,
+    "reactionsUp": 0,
+    "reactionsDown": 0,
     "costUsd": 0,
-    "medianReviewMs": null
+    "medianReviewMs": null,
+    "medianMergeMs": null
   },
   "series": [
     {

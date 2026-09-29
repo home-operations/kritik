@@ -63,7 +63,8 @@ func (s *Server) getAnalytics(w http.ResponseWriter, r *http.Request, t *account
 func analyticsTotals(t store.AnalyticsTotals) AnalyticsTotals {
 	return AnalyticsTotals{
 		PullRequests: t.PullRequests, Reviews: t.Reviews, Failed: t.Failed, Findings: severityCounts(t.Findings),
-		Addressed: t.Addressed, CostUSD: t.CostUSD, MedianReviewMs: t.MedianReviewMs,
+		Addressed: t.Addressed, ReactionsUp: t.ReactionsUp, ReactionsDown: t.ReactionsDown, CostUSD: t.CostUSD,
+		MedianReviewMs: t.MedianReviewMs, MedianMergeMs: t.MedianMergeMs,
 	}
 }
 

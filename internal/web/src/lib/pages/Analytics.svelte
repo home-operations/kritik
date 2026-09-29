@@ -138,7 +138,7 @@
         {@const c = d.current}
         {@const p = d.previous}
         <div class="analytics" class:stale={res.loading}>
-          <section class="stats" aria-label="Totals">
+          <section class="stats stats-4" aria-label="Totals">
             <StatTile
               label="Pull requests reviewed"
               value={wholeNumber(c.pullRequests)}
@@ -179,6 +179,23 @@
               before={p.medianReviewMs}
               good="down"
               define="How long a completed review took, from start to finish"
+            />
+            <StatTile
+              label="Time to merge"
+              value={c.medianMergeMs === null ? '—' : duration(c.medianMergeMs)}
+              now={c.medianMergeMs}
+              before={p.medianMergeMs}
+              good="down"
+              define="The median time from opening to merging, of the pull requests kritik knows that merged in the period"
+            />
+            <StatTile
+              label="Reactions"
+              value={`${wholeNumber(c.reactionsUp)} up`}
+              sub={`${wholeNumber(c.reactionsDown)} down`}
+              now={c.reactionsUp - c.reactionsDown}
+              before={p.reactionsUp - p.reactionsDown}
+              good="up"
+              define="The thumbs up and down on the inline comments of the findings reported in the period"
             />
             <StatTile label="Spend" value={usd(c.costUsd)} now={c.costUsd} before={p.costUsd} good="down" define="Model spend in the period" />
           </section>

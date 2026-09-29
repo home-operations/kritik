@@ -66,7 +66,7 @@ type FindingFilter struct {
 // its own.
 const findingIssues = `seen AS (
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix, f.replacement,
-			f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at,
+			f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up, f.reactions_down,
 			v.id AS review_id, v.pull_request_id, v.head_sha, v.created_at AS seen_at,
 			row_number() OVER newest AS nth, min(v.created_at) OVER issue AS first_at
 		FROM findings f JOIN reviews v ON v.id = f.review_id
@@ -80,7 +80,7 @@ const findingIssues = `seen AS (
 
 const accountFindings = `WITH ` + findingIssues + `
 	SELECT l.id, l.path, l.line, l.end_line, l.severity, l.title, l.explanation, l.suggested_fix, l.replacement,
-		l.agent_prompt, l.fingerprint, l.posted_inline, l.forge_comment_id, l.created_at,
+		l.agent_prompt, l.fingerprint, l.posted_inline, l.forge_comment_id, l.created_at, l.reactions_up, l.reactions_down,
 		l.review_id, r.name, p.number, p.title, p.url, l.addressed, l.first_at, l.seen_at
 	FROM latest l JOIN pull_requests p ON p.id = l.pull_request_id JOIN repositories r ON r.id = p.repository_id`
 
@@ -115,7 +115,7 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 		var sev string
 		var addressed bool
 		err := row.Scan(&a.ID, &a.Path, &a.Line, &a.EndLine, &sev, &a.Title, &a.Explanation, &a.SuggestedFix, &a.Replacement,
-			&a.AgentPrompt, &a.Fingerprint, &a.PostedInline, &a.ForgeCommentID, &a.CreatedAt,
+			&a.AgentPrompt, &a.Fingerprint, &a.PostedInline, &a.ForgeCommentID, &a.CreatedAt, &a.ReactionsUp, &a.ReactionsDown,
 			&a.ReviewID, &a.PullRequest.Repository, &a.PullRequest.Number, &a.PullRequest.Title, &a.PullRequest.URL,
 			&addressed, &a.FirstSeenAt, &a.LastSeenAt)
 		a.Severity, a.Status = review.Severity(sev), FindingOpen

@@ -35,6 +35,8 @@ type Comment struct {
 	// InReplyTo is the root inline comment this one replies to, 0 for a
 	// root or a conversation comment.
 	InReplyTo int64
+	// ReactionsUp and ReactionsDown count the 👍 and 👎 on the comment.
+	ReactionsUp, ReactionsDown int
 }
 
 // InlineComment is one finding attached to a line on the head side of the
