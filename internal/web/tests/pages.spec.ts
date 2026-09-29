@@ -105,6 +105,11 @@ test.describe('pulls list', () => {
     await expect.poll(() => seen.some((u) => u.searchParams.get('cursor') === g.repoPage.nextCursor)).toBe(true);
     await expect(rows).toHaveCount(2);
 
+    // '?' in a focused select is the select's, not the help overlay's.
+    await page.getByRole('combobox', { name: 'State' }).focus();
+    await page.keyboard.press('?');
+    await expect(page.locator('.help-overlay')).toHaveCount(0);
+
     await page.locator('h1').click();
     await page.keyboard.press('j');
     await expect(rows.first()).toHaveClass(/selected/);

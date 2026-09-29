@@ -147,6 +147,8 @@
           <Icon path={themeIconPath} label="Toggle theme" />
         </button>
         {#if me}
+          <!-- Escape from anywhere in the open menu, the sign-out button included, closes it before the window's handlers see it. -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <details class="user-menu" bind:this={userMenuEl} onkeydown={onUserMenuKeydown}>
             <summary class="btn btn-icon" title={me.user.displayName}>
               <Icon path={mdiAccountOutline} label="User" />
