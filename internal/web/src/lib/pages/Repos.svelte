@@ -16,6 +16,9 @@
   import LoadMore from '../components/LoadMore.svelte';
   import RepoTraits from '../components/RepoTraits.svelte';
   import Dialog from '../components/Dialog.svelte';
+  import Icon from '../Icon.svelte';
+  import { mdiCheck, mdiProgressClock, mdiAlertCircleOutline, mdiSwapHorizontal } from '../icons';
+  import type { IndexRunStatus } from '../types';
 
   let { slug }: { slug: string } = $props();
   let filter = $state('');
@@ -58,6 +61,12 @@
   let confirmReindex = $state(false);
 
   const isOn = (r: Repository): boolean => turned[r.fullName] ?? r.enabled;
+  const indexIcon: Record<IndexRunStatus, string> = {
+    running: mdiProgressClock,
+    completed: mdiCheck,
+    failed: mdiAlertCircleOutline,
+    superseded: mdiSwapHorizontal,
+  };
   const plural = (n: number): string => (n === 1 ? '1 repository' : `${n} repositories`);
 
   function pick(fullName: string, on: boolean): void {
@@ -196,8 +205,8 @@
             <button class="btn btn-small" onclick={clearFilter}>Clear filter</button>
           </div>
         {:else}
-          <div class="table-wrap">
-            <table class="data">
+          <div class="table-wrap table-card">
+            <table class="data repo-table">
               <thead>
                 <tr>
                   {#if manage}
@@ -246,13 +255,18 @@
                             disabled={busy || repo.archived}
                             onchange={(e) => setEnabled([repo.fullName], e.currentTarget.checked)}
                           />
-                          <span>{isOn(repo) ? 'on' : 'off'}</span>
+                          <span>{isOn(repo) ? 'On' : 'Off'}</span>
                         </label>
                       {:else if repo.enabled}<Pill tone="ok" label="on" />{:else}<Pill label="off" />{/if}
                     </td>
                     <td>
                       {#if repo.index.lastRunStatus}
-                        <Pill tone={indexTone[repo.index.lastRunStatus]} label={repo.index.lastRunStatus} /> <Time iso={repo.index.lastRunAt} />
+                        {@const st = repo.index.lastRunStatus}
+                        <span class="status tone-{indexTone[st]}">
+                          <span class="status-tile"><Icon path={indexIcon[st]} size={12} /></span>
+                          <span class="status-word">{st}</span>
+                        </span>
+                        <Time iso={repo.index.lastRunAt} />
                       {:else}<span class="muted">never</span>{/if}
                     </td>
                     <td class="mono small">{repo.index.activeCommit.slice(0, 7) || '—'}</td>

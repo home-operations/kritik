@@ -11,6 +11,8 @@
   import type { Me, Page, Pull } from './types';
   import { getJSON } from './api.svelte';
   import { pullRoute, accountApi } from './links';
+  import { CONSOLE_SECTIONS, ACCOUNT_FIELDS } from './settingsindex';
+  import { focusWhenShown } from './focus';
   import {
     mdiMagnify,
     mdiLogin,
@@ -40,34 +42,6 @@
     keywords?: string;
   }
 
-  // The admin console's sections, and one account's settings: the fields of
-  // its configuration form, by the path each carries.
-  const consoleSettings: [label: string, target: string, keywords: string][] = [
-    ['Instance configuration', '#op-config', 'settings spec json'],
-    ['Connections', '#instance-connections', 'github app webhook'],
-    ['Provider keys', '#instance-providers', 'model api key byok openrouter openai anthropic'],
-    ['Default models', '#instance-models', 'review model fallback model defaults'],
-    ['Embeddings', '#instance-embedding', 'embedder index vector'],
-    ['Create a GitHub App', '#op-app', 'manifest register'],
-    ['GitHub installations', '#op-connections', 'uninstall connections'],
-    ['Instance settings', '#op-instance', 'environment'],
-    ['Admin audit log', '#op-audit', 'history'],
-  ];
-  const accountSettings: [label: string, target: string, keywords: string][] = [
-    ['Review model', '[data-path="models.review"]', 'models.review'],
-    ['Fallback model', '[data-path="models.fallback"]', 'models.fallback'],
-    ['Filter', '[data-path="filter"]', 'cel'],
-    ['Forks', '[data-path="forks"]', ''],
-    ['Thoroughness', '[data-path="review.thoroughness"]', 'review focused thorough nits line comments'],
-    ['Settle', '[data-path="settle"]', 'delay'],
-    ['Concurrency', '[data-path="limits.concurrency"]', 'limits'],
-    ['Reviews per day', '[data-path="limits.reviewsPerDay"]', 'limits'],
-    ['Tokens per month', '[data-path="limits.tokensPerMonth"]', 'limits budget spend'],
-    ['Runner', '[data-path="runner"]', 'deadline resources'],
-    ['Provider keys', '#account-providers', 'model api key byok'],
-    ['Repositories', '#account-repositories', 'mode enabled'],
-  ];
-
   // currentSlug reads the account slug off whatever route is active, when the
   // route carries one — every account-scoped Route variant does.
   function currentSlug(r: Route): string | undefined {
@@ -82,7 +56,7 @@
     if (me?.admin) {
       entries.push({ label: 'Admin console', route: { name: 'console' }, icon: mdiConsoleLine });
       if (searching) {
-        for (const [label, target, keywords] of consoleSettings) {
+        for (const { label, target, keywords } of CONSOLE_SECTIONS) {
           entries.push({ label, hint: 'admin console', route: { name: 'console' }, icon: mdiCogOutline, target, keywords });
         }
       }
@@ -110,7 +84,7 @@
           { label: 'Audit log', hint: slug, route: { name: 'admin', slug, section: 'audit' }, icon: mdiClipboardTextClockOutline, keywords: 'history' },
         );
         if (searching) {
-          for (const [label, target, keywords] of accountSettings) {
+          for (const { label, target, keywords } of ACCOUNT_FIELDS) {
             entries.push({
               label, hint: `${slug} settings`, route: { name: 'admin', slug, section: 'config' }, icon: mdiCogOutline, target, keywords,
             });
@@ -174,25 +148,6 @@
     togglePalette();
     navigate(row.route);
     if (row.target) focusWhenShown(row.target);
-  }
-
-  // focusWhenShown focuses the element target selects, or the first field
-  // inside it, once the page shows it: a page loads its data first.
-  function focusWhenShown(target: string): void {
-    const deadline = performance.now() + 3000;
-    const attempt = (): void => {
-      const el = document.querySelector<HTMLElement>(target);
-      if (!el) {
-        if (performance.now() < deadline) requestAnimationFrame(attempt);
-        return;
-      }
-      const field = el.matches('input, select, textarea') ? el : el.querySelector<HTMLElement>('input, select, textarea');
-      const focus = field ?? el;
-      if (!field && !focus.hasAttribute('tabindex')) focus.setAttribute('tabindex', '-1');
-      focus.scrollIntoView({ block: 'center' });
-      focus.focus();
-    };
-    requestAnimationFrame(attempt);
   }
 
   function onKeydown(e: KeyboardEvent): void {

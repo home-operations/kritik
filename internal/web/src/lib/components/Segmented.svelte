@@ -7,12 +7,15 @@
     value,
     onchange,
     disabled = false,
+    path,
   }: {
     label: string;
     options: readonly { value: V; label: string }[];
     value: V;
     onchange: (v: V) => void;
     disabled?: boolean;
+    // path is the spec path a form marks the control with.
+    path?: string;
   } = $props();
 
   let group = $state<HTMLDivElement | undefined>(undefined);
@@ -28,7 +31,7 @@
   }
 </script>
 
-<div class="segmented" role="radiogroup" aria-label={label} bind:this={group}>
+<div class="segmented" role="radiogroup" aria-label={label} data-path={path} bind:this={group}>
   {#each options as o (o.value)}
     <button
       type="button"

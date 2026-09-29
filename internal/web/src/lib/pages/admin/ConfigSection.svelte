@@ -36,7 +36,7 @@
     {@const reason = readOnlyReason(cfg)}
     <section class="panel" aria-labelledby="admin-config">
       <header class="panel-head">
-        <h2 id="admin-config">Configuration</h2>
+        <h2 id="admin-config" class="mono">{slug}</h2>
         <span class="small muted">revision {cfg.revision}</span>
       </header>
       {#if reason}
