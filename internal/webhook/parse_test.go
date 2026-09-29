@@ -130,6 +130,38 @@ func TestParseGitHubPushInstallationPingAndUnknown(t *testing.T) {
 	}
 }
 
+func TestParseGitHubRepositoryTraits(t *testing.T) {
+	tests := []struct {
+		name, event, body string
+		kind              Kind
+		traits            configfile.RepoTraits
+	}{
+		{"pull request in an archived fork", "pull_request", `{"action":"opened","pull_request":{"number":1,"user":{"login":"x"}},
+		  "repository":{"full_name":"a/b","archived":true,"fork":true,"owner":{"login":"a"}}}`,
+			KindPullRequest, configfile.RepoTraits{Archived: true, Fork: true}},
+		{"push to a fork", "push", `{"ref":"refs/heads/main","after":"2","repository":{"full_name":"a/b","fork":true,"owner":{"login":"a"}}}`,
+			KindPush, configfile.RepoTraits{Fork: true}},
+		{"repository archived", "repository", `{"action":"archived","repository":{"full_name":"a/b","archived":true,"owner":{"login":"a"}}}`,
+			KindRepository, configfile.RepoTraits{Archived: true}},
+		{"repository unarchived", "repository", `{"action":"unarchived","repository":{"full_name":"a/b","owner":{"login":"a"}}}`,
+			KindRepository, configfile.RepoTraits{}},
+		{"fork created", "repository", `{"action":"created","repository":{"full_name":"a/b","fork":true,"owner":{"login":"a"}}}`,
+			KindRepository, configfile.RepoTraits{Fork: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev, err := Parse(configfile.ForgeGitHub, gh(tt.event), []byte(tt.body))
+			if err != nil || ev.Kind != tt.kind || ev.Account != "a" || ev.Repository == nil || ev.Repository.RepoTraits != tt.traits {
+				t.Fatalf("event = %+v, repository %+v, %v", ev, ev.Repository, err)
+			}
+		})
+	}
+	ev, err := Parse(configfile.ForgeGitHub, gh("repository"), []byte(`{"action":"edited","repository":{"full_name":"a/b"}}`))
+	if err != nil || ev.Kind != KindIgnored || ev.Action != "repository" {
+		t.Fatalf("an edit changes nothing kritik keeps: %+v %v", ev, err)
+	}
+}
+
 func TestParseFormEncodedPayload(t *testing.T) {
 	h := gh("push")
 	h.Set("Content-Type", "application/x-www-form-urlencoded")

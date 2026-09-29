@@ -145,7 +145,7 @@ func TestRepositories(t *testing.T) {
 				t.Errorf("listing repositories with %q, want the installation token", r.Header.Get("Authorization"))
 			}
 			_, _ = w.Write([]byte(`{"total_count":2,"repositories":[{"name":"repo-1","full_name":"org-1/repo-1","private":true,"default_branch":"main"},` +
-				`{"name":"old","full_name":"org-1/old","archived":true}]}`))
+				`{"name":"old","full_name":"org-1/old","archived":true,"fork":true}]}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -156,7 +156,10 @@ func TestRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := app.Repositories(t.Context(), 7)
-	want := []Repository{{Name: "repo-1", FullName: "org-1/repo-1", DefaultBranch: "main"}, {Name: "old", FullName: "org-1/old"}}
+	want := []Repository{
+		{Name: "repo-1", FullName: "org-1/repo-1", DefaultBranch: "main"},
+		{Name: "old", FullName: "org-1/old", Archived: true, Fork: true},
+	}
 	if err != nil || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("Repositories = %+v, %v", got, err)
 	}

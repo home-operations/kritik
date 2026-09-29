@@ -211,8 +211,8 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 func repository(r store.RepoRow, on bool) Repository {
 	out := Repository{
 		ID: r.ID, FullName: r.FullName, Enabled: r.Enabled && on, ManagedBy: r.ManagedBy,
-		DefaultBranch: r.DefaultBranch,
-		Index:         IndexState{ActiveCommit: r.ActiveCommit, ActiveAt: r.ActiveAt, LastRunStatus: r.LastIndexStatus, LastRunAt: r.LastIndexAt},
+		DefaultBranch: r.DefaultBranch, Archived: r.Archived, Fork: r.Fork,
+		Index: IndexState{ActiveCommit: r.ActiveCommit, ActiveAt: r.ActiveAt, LastRunStatus: r.LastIndexStatus, LastRunAt: r.LastIndexAt},
 	}
 	if r.LastReview != nil {
 		out.LastReview = &ReviewRef{ID: r.LastReview.ID, Status: r.LastReview.Status, CreatedAt: r.LastReview.CreatedAt}

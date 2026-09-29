@@ -327,7 +327,7 @@ func TestRepositoryNamesIgnoreCase(t *testing.T) {
 		t.Helper()
 		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 			var err error
-			id, isNew, err = EnsureRepository(ctx, tx, alpha, name, "")
+			id, isNew, err = EnsureRepository(ctx, tx, alpha, ReachedRepository{FullName: name})
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -361,6 +361,50 @@ func TestRepositoryNamesIgnoreCase(t *testing.T) {
 		return err
 	}); err != nil {
 		t.Fatalf("FindRepo in another case: %v", err)
+	}
+}
+
+// TestRepositoryTraits: a report that says whether a repository is
+// archived or a fork records it, and one that does not, as an installation
+// event, keeps what was known.
+func TestRepositoryTraits(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := accountID(t, s, "alpha")
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(ctx, `DELETE FROM repositories WHERE id = $1`, configfile.RepositoryID(alpha, "alpha/copy"))
+	})
+	report := func(traits *configfile.RepoTraits) configfile.RepoTraits {
+		t.Helper()
+		var row RepoRow
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			if _, _, err := EnsureRepository(ctx, tx, alpha, ReachedRepository{FullName: "alpha/copy", Traits: traits}); err != nil {
+				return err
+			}
+			var err error
+			row, err = FindRepo(ctx, tx, "alpha/copy")
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return row.RepoTraits
+	}
+	for _, step := range []struct {
+		name   string
+		report *configfile.RepoTraits
+		want   configfile.RepoTraits
+	}{
+		{"first named without traits", nil, configfile.RepoTraits{}},
+		{"reported archived fork", &configfile.RepoTraits{Archived: true, Fork: true}, configfile.RepoTraits{Archived: true, Fork: true}},
+		{"named again without traits", nil, configfile.RepoTraits{Archived: true, Fork: true}},
+		{"reported unarchived", &configfile.RepoTraits{Fork: true}, configfile.RepoTraits{Fork: true}},
+	} {
+		if got := report(step.report); got != step.want {
+			t.Fatalf("%s: traits %+v, want %+v", step.name, got, step.want)
+		}
 	}
 }
 

@@ -90,6 +90,14 @@ test('repositories filter and repository detail', async ({ page }) => {
   await expect(page.locator('#repo-pulls').locator('../..')).toContainText(g.pull.title);
 });
 
+test('repositories say which are forks or archived', async ({ page }) => {
+  const copy = { ...g.repoPage.items[0]!, id: 'repo-2', fullName: 'alpha/copy', fork: true, archived: true };
+  await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/repos$`), g.pageOf([g.repoPage.items[0]!, copy])], ...g.defaultApi()]);
+  await page.goto(`/${T}/repos`);
+  await expect(page.getByRole('row', { name: /alpha\/copy/ }).locator('.badge')).toHaveText(['fork', 'archived']);
+  await expect(page.getByRole('row', { name: /alpha\/one/ }).locator('.badge')).toHaveCount(0);
+});
+
 test('repository settings say where each comes from and what .kritik.yaml chose', async ({ page }) => {
   await page.goto(`/${T}/repos/alpha/one`);
   const settings = page.locator('#repo-settings').locator('../..');

@@ -5,7 +5,9 @@
     {
       "name": "one",
       "fullName": "alpha/one",
-      "defaultBranch": "main"
+      "defaultBranch": "main",
+      "archived": false,
+      "fork": false
     }
   ]
 }

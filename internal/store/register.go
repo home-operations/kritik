@@ -9,9 +9,13 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 )
 
-// ReachedRepository is a repository a connection's App reaches.
+// ReachedRepository is a repository as the forge reports it. Traits is nil
+// when the report names it without saying what it is, as an installation
+// event does; the row keeps what it knew, or starts as neither archived
+// nor a fork.
 type ReachedRepository struct {
 	FullName, DefaultBranch string
+	Traits                  *configfile.RepoTraits
 }
 
 // RegisterRepositories records the repositories of account accountID that
@@ -22,7 +26,7 @@ func (s *Store) RegisterRepositories(ctx context.Context, accountID string, repo
 	var added int
 	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		for _, r := range repos {
-			_, isNew, err := EnsureRepository(ctx, tx, accountID, r.FullName, r.DefaultBranch)
+			_, isNew, err := EnsureRepository(ctx, tx, accountID, r)
 			if err != nil {
 				return err
 			}
@@ -35,26 +39,32 @@ func (s *Store) RegisterRepositories(ctx context.Context, accountID string, repo
 	return added, err
 }
 
-// EnsureRepository records repository fullName of account accountID as
-// the forge names it, spelling included, and returns its id and whether it
-// is new. A row the forge manages is enabled, since the forge just named
-// it; one the spec lists keeps its enabled flag. A defaultBranch of ""
-// leaves the known one.
-func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID, fullName, defaultBranch string) (id string, isNew bool, err error) {
+// EnsureRepository records repository r of account accountID as the forge
+// names it, spelling included, and returns its id and whether it is new. A
+// row the forge manages is enabled, since the forge just named it; one the
+// spec lists keeps its enabled flag. A DefaultBranch of "" leaves the known
+// one, and so does a nil Traits the known traits.
+func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r ReachedRepository) (id string, isNew bool, err error) {
+	var archived, fork *bool
+	if r.Traits != nil {
+		archived, fork = &r.Traits.Archived, &r.Traits.Fork
+	}
 	// xmax is 0 only on a row the statement inserted, not one it updated.
 	err = tx.QueryRow(ctx, `
-		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled)
-		VALUES ($1, $2, $3, $4, 'forge', true)
+		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled, archived, fork)
+		VALUES ($1, $2, $3, $4, 'forge', true, coalesce($5, false), coalesce($6, false))
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			default_branch = CASE WHEN EXCLUDED.default_branch <> '' THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
 			enabled = CASE WHEN repositories.managed_by = 'forge' THEN true ELSE repositories.enabled END,
 			disabled_at = CASE WHEN repositories.managed_by = 'forge' THEN NULL ELSE repositories.disabled_at END,
+			archived = coalesce($5, repositories.archived),
+			fork = coalesce($6, repositories.fork),
 			updated_at = now()
 		RETURNING id, xmax = 0`,
-		configfile.RepositoryID(accountID, fullName), accountID, fullName, defaultBranch).Scan(&id, &isNew)
+		configfile.RepositoryID(accountID, r.FullName), accountID, r.FullName, r.DefaultBranch, archived, fork).Scan(&id, &isNew)
 	if err != nil {
-		return "", false, fmt.Errorf("store: ensure repository %s: %w", fullName, err)
+		return "", false, fmt.Errorf("store: ensure repository %s: %w", r.FullName, err)
 	}
 	return id, isNew, nil
 }

@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritik/internal/configfile"
 )
 
 // The dashboard's read queries. Each takes a transaction opened by
@@ -210,6 +212,7 @@ type RepoRow struct {
 	Enabled       bool
 	ManagedBy     string
 	DefaultBranch string
+	configfile.RepoTraits
 	// ActiveCommit and ActiveAt describe the active index generation, empty
 	// when there is none.
 	ActiveCommit string
@@ -227,7 +230,7 @@ type ReviewRef struct {
 	CreatedAt time.Time
 }
 
-const repoColumns = `r.id, r.name, r.enabled, r.managed_by, r.default_branch,
+const repoColumns = `r.id, r.name, r.enabled, r.managed_by, r.default_branch, r.archived, r.fork,
 	coalesce(a.commit_sha, ''), coalesce(a.finished_at, a.created_at),
 	coalesce(l.status, ''), l.created_at,
 	lr.id, lr.status, lr.created_at
@@ -243,7 +246,7 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 	var status string
 	var lrID, lrStatus *string
 	var lrAt *time.Time
-	err := row.Scan(&r.ID, &r.FullName, &r.Enabled, &r.ManagedBy, &r.DefaultBranch,
+	err := row.Scan(&r.ID, &r.FullName, &r.Enabled, &r.ManagedBy, &r.DefaultBranch, &r.Archived, &r.Fork,
 		&r.ActiveCommit, &r.ActiveAt, &status, &r.LastIndexAt, &lrID, &lrStatus, &lrAt)
 	r.LastIndexStatus = IndexRunStatus(status)
 	if r.ActiveCommit == "" {

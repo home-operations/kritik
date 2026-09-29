@@ -151,6 +151,8 @@ type Repository struct {
 	Enabled       bool       `json:"enabled"`
 	ManagedBy     string     `json:"managedBy"`
 	DefaultBranch string     `json:"defaultBranch"`
+	Archived      bool       `json:"archived"`
+	Fork          bool       `json:"fork"`
 	Index         IndexState `json:"index"`
 	LastReview    *ReviewRef `json:"lastReview"`
 }

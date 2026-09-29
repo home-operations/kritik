@@ -412,6 +412,12 @@ type Repository struct {
 	Overrides `yaml:",inline"`
 }
 
+// RepoTraits is what the forge says of a repository beyond its name: an
+// archived repository is read-only, and a fork is a copy of another one.
+type RepoTraits struct {
+	Archived, Fork bool
+}
+
 // ReviewMode is how a review is carried out.
 type ReviewMode string
 

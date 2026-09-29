@@ -175,7 +175,7 @@ func (s *Server) reached(r *http.Request) (*configfile.Connection, []AccountRepo
 			entry.Installed = true
 			for _, x := range repos {
 				entry.Repositories = append(entry.Repositories, AppRepository{
-					Name: x.Name, FullName: x.FullName, DefaultBranch: x.DefaultBranch,
+					Name: x.Name, FullName: x.FullName, DefaultBranch: x.DefaultBranch, Archived: x.Archived, Fork: x.Fork,
 				})
 			}
 		}
@@ -210,7 +210,9 @@ func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
 		}
 		repos := make([]store.ReachedRepository, 0, len(a.Repositories))
 		for _, x := range a.Repositories {
-			repos = append(repos, store.ReachedRepository{FullName: x.FullName, DefaultBranch: x.DefaultBranch})
+			repos = append(repos, store.ReachedRepository{
+				FullName: x.FullName, DefaultBranch: x.DefaultBranch, Traits: &configfile.RepoTraits{Archived: x.Archived, Fork: x.Fork},
+			})
 		}
 		added, err := s.store.RegisterRepositories(r.Context(), acct.ID(), repos)
 		if err != nil {

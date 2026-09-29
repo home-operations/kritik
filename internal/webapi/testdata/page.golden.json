@@ -6,6 +6,8 @@
       "enabled": true,
       "managedBy": "dashboard",
       "defaultBranch": "main",
+      "archived": false,
+      "fork": false,
       "index": {
         "activeCommit": "def456",
         "activeAt": "2026-09-01T12:00:00Z",

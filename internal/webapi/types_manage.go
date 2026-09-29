@@ -183,6 +183,8 @@ type AppRepository struct {
 	Name          string `json:"name"`
 	FullName      string `json:"fullName"`
 	DefaultBranch string `json:"defaultBranch"`
+	Archived      bool   `json:"archived"`
+	Fork          bool   `json:"fork"`
 }
 
 // RegisterResult is how many repositories a registration added.

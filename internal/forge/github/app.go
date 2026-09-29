@@ -104,6 +104,7 @@ func (a *App) Installations(ctx context.Context) ([]Installation, error) {
 type Repository struct {
 	// Name is the repository's name, FullName "owner/name".
 	Name, FullName, DefaultBranch string
+	Archived, Fork                bool
 }
 
 // Repositories lists every repository installation id reaches, with a
@@ -120,6 +121,7 @@ func (a *App) Repositories(ctx context.Context, id int64) ([]Repository, error) 
 		}
 		out = append(out, Repository{
 			Name: r.GetName(), FullName: r.GetFullName(), DefaultBranch: r.GetDefaultBranch(),
+			Archived: r.GetArchived(), Fork: r.GetFork(),
 		})
 	}
 	return out, nil

@@ -56,6 +56,9 @@ CREATE TABLE repositories (
     managed_by      text        NOT NULL CHECK (managed_by IN ('dashboard', 'forge')),
     enabled         boolean     NOT NULL DEFAULT true,
     disabled_at     timestamptz,
+    -- What the forge last said of the repository; false until it says.
+    archived        boolean     NOT NULL DEFAULT false,
+    fork            boolean     NOT NULL DEFAULT false,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
