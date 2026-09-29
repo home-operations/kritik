@@ -3,9 +3,9 @@
   import { basePath } from './lib/base';
   import { router, initRouter, href, navigate, parse, replace } from './lib/router.svelte';
   import { getJSON, sendJSON, ApiError, signinState } from './lib/api.svelte';
-  import { initEvents, closeEvents } from './lib/events.svelte';
+  import { initEvents, closeEvents, stream } from './lib/events.svelte';
   import { theme, cycleTheme, initTheme } from './lib/theme.svelte';
-  import { initClock } from './lib/time.svelte';
+  import { initClock, absolute } from './lib/time.svelte';
   import { initKeyboard, help, toggleHelp, togglePalette } from './lib/keyboard.svelte';
   import {
     mdiThemeLightDark,
@@ -136,6 +136,17 @@
       <div class="spacer"></div>
 
       <div class="actions">
+        {#if me}
+          <span
+            class="live"
+            class:live-down={stream.down}
+            aria-live="polite"
+            title={stream.down ? `Live updates stopped at ${absolute(stream.since)}; this page may be out of date.` : 'Live updates on'}
+          >
+            <span class="live-dot" aria-hidden="true"></span>
+            {#if stream.down}Reconnecting…{:else}<span class="sr-only">Live updates on</span>{/if}
+          </span>
+        {/if}
         <button class="btn btn-icon" onclick={togglePalette} title="Go to (Ctrl/⌘ K)">
           <Icon path={mdiMagnify} label="Go to" />
         </button>
