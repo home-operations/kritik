@@ -90,8 +90,8 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	if !ok {
 		if ev.Action == "closed" {
 			err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', updated_at = now()
-					WHERE repository_id = $1 AND number = $2`, repoID(req, ev.Repository.FullName), pr.Number)
+				_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = $3, updated_at = now()
+					WHERE repository_id = $1 AND number = $2`, repoID(req, ev.Repository.FullName), pr.Number, pr.Merged)
 				return err
 			})
 			return Outcome{Status: Ignored, Reason: "closed"}, err

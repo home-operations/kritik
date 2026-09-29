@@ -39,8 +39,8 @@ func IsConfigContentError(err error) bool {
 
 // ApplyConfig upserts the running connections, the accounts they serve and
 // the repositories the spec lists, disables the connections and accounts
-// that no longer run and the listed repositories no longer listed, and
-// records the applied hash. A connection declared again by the other origin
+// that no longer run, hands the repositories no longer listed back to the
+// forge, and records the applied hash. A connection declared again by the other origin
 // (a file connection removed and a dashboard one of the same name added,
 // or the reverse) is disabled and then taken over; an enabled one is never
 // taken over (ErrManagedBy). It runs as the owner in one transaction, so a
@@ -88,10 +88,11 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File, leader stri
 }
 
 // disableUndeclared disables every connection f does not run with that same
-// origin and every account no running connection serves, then every listed
-// repository of a disabled account or no longer listed by its account. The
-// upserts that follow re-enable what f still declares. Forge-discovered
-// repositories are left alone.
+// origin, every account no running connection serves and every listed
+// repository of a disabled account. A repository its served account no
+// longer lists goes back to the forge, enabled, as the settings of an
+// unlisted repository have it. The upserts that follow re-enable what f
+// still declares. Forge-discovered repositories are left alone.
 func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error {
 	names, origins := make([]string, 0, len(f.Connections)), make([]string, 0, len(f.Connections))
 	for i := range f.Connections {
@@ -120,10 +121,10 @@ func disableUndeclared(ctx context.Context, tx pgx.Tx, f *configfile.File) error
 	for i := range f.Accounts {
 		a := &f.Accounts[i]
 		if _, err := tx.Exec(ctx, `
-			UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-			WHERE account_id = $1 AND managed_by = 'dashboard' AND enabled AND name <> ALL($2)`,
+			UPDATE repositories SET managed_by = 'forge', enabled = true, disabled_at = NULL, updated_at = now()
+			WHERE account_id = $1 AND managed_by = 'dashboard' AND name <> ALL($2)`,
 			a.ID(), repoNames(a)); err != nil {
-			return fmt.Errorf("store: disable removed repositories: %w", err)
+			return fmt.Errorf("store: hand back unlisted repositories: %w", err)
 		}
 	}
 	return nil

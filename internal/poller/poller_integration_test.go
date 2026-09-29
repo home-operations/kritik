@@ -114,10 +114,14 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		Logger: logger,
 	}
 
-	// Start from no poll state and no pull requests 7 or 8, whatever
-	// earlier suites left behind.
+	// Start from no poll state, no pull requests 7 or 8 and home-ops as
+	// the one enabled repository, whatever earlier suites left behind:
+	// the repositories they listed are the forge's again, and enabled.
 	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE account_id = $1`, account.ID()); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false WHERE name <> 'onedr0p/home-ops'`); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE number IN (7, 8)`)

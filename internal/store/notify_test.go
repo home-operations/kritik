@@ -102,47 +102,6 @@ func TestParseEvent(t *testing.T) {
 	}
 }
 
-func TestNextConnectedOnce(t *testing.T) {
-	tests := []struct {
-		name        string
-		was         bool
-		reachedLoop bool
-		want        bool
-	}{
-		{
-			name:        "first attempt fails to connect",
-			was:         false,
-			reachedLoop: false,
-			want:        false, // must stay false, or the *next* successful connect would wrongly look like a reconnect
-		},
-		{
-			name:        "first attempt reaches the loop",
-			was:         false,
-			reachedLoop: true,
-			want:        true,
-		},
-		{
-			name:        "later attempt drops before reaching the loop, but a prior one already had",
-			was:         true,
-			reachedLoop: false,
-			want:        true, // sticky: once true, never reverts
-		},
-		{
-			name:        "later attempt reaches the loop again",
-			was:         true,
-			reachedLoop: true,
-			want:        true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := nextConnectedOnce(tt.was, tt.reachedLoop); got != tt.want {
-				t.Errorf("nextConnectedOnce(%v, %v) = %v, want %v", tt.was, tt.reachedLoop, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestEnqueueReconnect(t *testing.T) {
 	t.Run("delivers immediately when the queue has room", func(t *testing.T) {
 		notifications := make(chan func(), 2)

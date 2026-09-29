@@ -251,6 +251,40 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 	})
 }
 
+// TestApplyConfigHandsUnlistedRepositoryBack: a repository its account no
+// longer lists goes back to the forge, enabled, and listing it again takes
+// it over.
+func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	listed := parse(t, twoAccounts)
+	if err := s.ApplyConfig(ctx, listed, "test"); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	unlisted := parse(t, strings.Replace(twoAccounts, "      - name: two\n        enabled: false\n", "", 1))
+	check := func(wantOrigin string, wantEnabled bool) {
+		t.Helper()
+		var origin string
+		var enabled bool
+		var disabledAt *time.Time
+		if err := s.owner.QueryRow(ctx, `SELECT managed_by, enabled, disabled_at FROM repositories WHERE name = 'alpha/two'`).
+			Scan(&origin, &enabled, &disabledAt); err != nil {
+			t.Fatal(err)
+		}
+		if origin != wantOrigin || enabled != wantEnabled || (disabledAt == nil) != wantEnabled {
+			t.Fatalf("alpha/two managed_by=%s enabled=%v disabled_at=%v; want %s, enabled %v", origin, enabled, disabledAt, wantOrigin, wantEnabled)
+		}
+	}
+	if err := s.ApplyConfig(ctx, unlisted, "test"); err != nil {
+		t.Fatalf("ApplyConfig unlisted: %v", err)
+	}
+	check("forge", true)
+	if err := s.ApplyConfig(ctx, listed, "test"); err != nil {
+		t.Fatalf("ApplyConfig listed: %v", err)
+	}
+	check("dashboard", false)
+}
+
 func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
