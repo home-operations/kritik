@@ -55,7 +55,8 @@ type Kube struct {
 	Logger *slog.Logger
 }
 
-// NewKubeInCluster builds a Kube executor from the pod's service account.
+// NewKubeInCluster returns a Kubernetes client from the pod's service
+// account, and the pod's namespace, for a Kube executor.
 func NewKubeInCluster() (kubernetes.Interface, string, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {

@@ -322,7 +322,7 @@ func accountSpecFailure(err error, index int, baseline func() error) error {
 		return errStatus(http.StatusUnprocessableEntity, CodeInvalidSpec, msg, pathDetails{})
 	}
 	return errStatus(http.StatusConflict, CodeConfigBlocked,
-		"the configuration is invalid elsewhere, so this change cannot be checked; an admin must fix it first", nil)
+		"the configuration is invalid elsewhere, so this change cannot be checked until that is fixed", nil)
 }
 
 // readBody strictly decodes one JSON document into v.

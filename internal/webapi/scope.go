@@ -17,7 +17,7 @@ type accountScope struct {
 	principal *auth.Principal
 }
 
-// role is the principal's role on the account: an operator is an admin of
+// role is the principal's role on the account: an instance admin is an admin of
 // every account, and anyone else who may read it a member.
 func (t *accountScope) role() auth.Role { return roleOn(t.principal) }
 

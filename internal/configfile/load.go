@@ -563,7 +563,8 @@ func (f *File) checkModels(where string, t *Account, m ModelsSpec) error {
 }
 
 // checkModelRef rejects a model reference that is not
-// "<provider>/<model>" of a provider declared for account t or in the file.
+// "<provider>/<model>" of a provider declared for account t or the
+// instance.
 func (f *File) checkModelRef(where string, t *Account, ref ModelRef) error {
 	p := ref.Provider()
 	if p == "" || ref.Model() == "" {
@@ -610,7 +611,7 @@ func (f *File) validateAllow(where string, t *Account, a *Allow) error {
 
 // checkWithinAllow rejects resolved settings whose own values lie outside
 // the bounds they give the repository: the repository would be refused
-// the operator's own choice.
+// the admin's own choice.
 func checkWithinAllow(where string, s Settings) error {
 	a := s.Allow
 	if a.Modes != nil && !slices.Contains(a.Modes, s.Mode) {

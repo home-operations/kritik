@@ -88,7 +88,7 @@ func (w *Review) agentAdmit(
 		return admission{}, statusFailed, "agentic mode needs the model gateway (KRITIK_GATEWAY_URL)", nil
 	}
 	if _, ok := file.Provider(account, ref.Provider()); !ok {
-		return admission{}, statusFailed, fmt.Sprintf("worker: provider %q is not in the configuration", ref.Provider()), nil
+		return admission{}, statusFailed, fmt.Sprintf("provider %q is not in the configuration", ref.Provider()), nil
 	}
 	l, err := takeLease(ctx, w.Store, account.ID(), string(ref), settings.Limits.Concurrency, jobID)
 	if err != nil {

@@ -1,7 +1,9 @@
-// Package webapi is the dashboard's JSON API and static UI server: the
-// read endpoints over one account's reviews, repositories, usage and queue,
-// and the server-sent event stream that keeps the UI live. The web role
-// runs it; internal/auth decides who a request acts as.
+// Package webapi is the dashboard's JSON API and static UI server: reads
+// over each account's reviews, repositories, usage and queue; the admin's
+// configuration, setup wizard, GitHub App registration and connections;
+// re-runs, cancels and reindexes with their audit log; and the server-sent
+// event stream that keeps the UI live. The web role runs it; internal/auth
+// decides who a request acts as.
 package webapi
 
 import (
@@ -45,7 +47,7 @@ type Config struct {
 	// Now defaults to time.Now.
 	Now func() time.Time
 	// Env is this process's environment as the configuration read it,
-	// shown to operators; secrets show only whether they are set.
+	// shown to admins; secrets show only whether they are set.
 	Env []config.EnvVar
 	// GitHubAPI is the GitHub API the App manifest flow converts its code
 	// at, "" for api.github.com; tests point it at a server of their own.
@@ -168,8 +170,8 @@ func (s *Server) routes() http.Handler {
 	})
 }
 
-// registerAPI mounts every /api route. Each group of routes lives in its
-// own routes_*.go file as a method that registers on mux.
+// registerAPI mounts every /api route. Each group of routes registers on
+// mux from the file that holds its handlers.
 func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/events", s.hub.serve)
 	s.registerReads(mux)

@@ -1,5 +1,5 @@
-// Package jobs defines the River job arguments the ingest role enqueues and
-// the worker role consumes. Uniqueness lives here because it is the contract
+// Package jobs defines the River job arguments that ingest, the leader and
+// the dashboard enqueue and the worker role consumes. Uniqueness lives here because it is the contract
 // between the two: a review is unique per head SHA so no push is ever lost,
 // a follow-up per comment, an index run per target commit.
 package jobs
@@ -59,14 +59,11 @@ type ReviewArgs struct {
 	// Trigger is why: opened, synchronize, reopened, ready_for_review, poll,
 	// manual.
 	Trigger string `json:"trigger"`
-	// Request distinguishes one manual re-run from another. River hashes
-	// only the river:"unique" fields (sorted by key) to dedupe by args, so
-	// the omitempty tag is load-bearing: it must serialize to no "request"
-	// key at all (every trigger but manual) for the hash to match what a job
-	// enqueued before this field existed would have produced, keeping the
-	// existing dedup on account+repository+number+head unchanged. A manual
-	// re-run sets a fresh value (a UUID) so it is never deduped against a
-	// prior run of the same head, including another manual one.
+	// Request distinguishes one manual re-run from another. River dedupes
+	// by the river:"unique" fields, so every trigger but manual leaves it
+	// empty and dedupes on account, repository, number and head, and a
+	// manual re-run sets a fresh value (a UUID) so it is never deduped
+	// against a prior run of the same head, including another manual one.
 	Request string `json:"request,omitempty" river:"unique"`
 }
 

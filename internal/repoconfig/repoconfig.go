@@ -1,9 +1,9 @@
 // Package repoconfig parses .kritik.yaml, the optional per-repository file
 // that lets a repository narrow how kritik reviews it (a filter ANDed with
-// the operator's own filter, path globs to ignore, a skip-review rule),
+// the admin's own filter, path globs to ignore, a skip-review rule),
 // add review instructions and templates read from the repository itself,
 // and choose its mode, models, agent limits and settle time within the
-// bounds the operator allows.
+// bounds an admin allows.
 //
 // Everything here is read from the merge-base commit (the base branch history
 // a PR cannot rewrite), never the PR's own tree, so a PR cannot use its own
@@ -93,7 +93,7 @@ type Review struct {
 	MinSeverity         string        `yaml:"minSeverity,omitempty"`
 	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
 	// Context names files that explain the code, added after the
-	// operator's.
+	// admin's.
 	Context []configfile.ContextFile `yaml:"context,omitempty"`
 }
 
@@ -104,7 +104,7 @@ type Skip struct {
 }
 
 // Models are the review and fallback models a repository chooses, each a
-// "<provider>/<model>" the operator's bounds list.
+// "<provider>/<model>" the admin's bounds list.
 type Models struct {
 	Review   configfile.ModelRef `yaml:"review,omitempty"`
 	Fallback configfile.ModelRef `yaml:"fallback,omitempty"`
@@ -120,7 +120,7 @@ type Agent struct {
 }
 
 // File is the decoded content of .kritik.yaml. Nothing in it is a secret or
-// a reference to one: it can only name what the operator configured.
+// a reference to one: it can only name what an admin configured.
 type File struct {
 	Enabled *bool                 `yaml:"enabled,omitempty"`
 	Mode    configfile.ReviewMode `yaml:"mode,omitempty"`
@@ -136,8 +136,8 @@ type File struct {
 // Parse decodes data as .kritik.yaml. Unknown fields, invalid glob patterns
 // and a filter that fails to compile or that fails a smoke test against
 // configfile.SamplePR are rejected, as is any referenced path (an
-// instruction or template) that is absolute or escapes the repository via
-// "..". An empty document is valid (the file is optional) and yields a zero
+// instruction, template or context file) that is absolute or escapes the
+// repository via "..". An empty document is valid (the file is optional) and yields a zero
 // File with no filter.
 func Parse(data []byte) (File, *prfilter.Program, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
@@ -216,8 +216,8 @@ func validateRefPath(p string) error {
 }
 
 // Referenced lists the in-repo paths the file names: review instructions
-// first, then the summary and inline templates, deduplicated in the order
-// first seen.
+// first, then the summary and inline templates, then the context files,
+// deduplicated in the order first seen.
 func (f File) Referenced() []string {
 	seen := make(map[string]bool, len(f.Review.Instructions)+2)
 	var out []string

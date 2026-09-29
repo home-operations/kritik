@@ -31,7 +31,7 @@ import (
 
 // Forges builds and caches a forge client per connection and repository
 // owner. repo is the repository the client is for: a GitHub App's
-// connection, and with it the token, is its owner's.
+// installation, and with it the token, is its owner's.
 type Forges interface {
 	For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error)
 }
@@ -429,7 +429,7 @@ type begun struct {
 // begin takes a review job up to its admission, or ends it: superseded,
 // snoozed while every model slot is held or until its settle time is over,
 // or skipped by the merge-base .kritik.yaml or as an unchanged bot rebase.
-// The operator's model's slots are checked before any forge call, so a job
+// The admin's model's slots are checked before any forge call, so a job
 // snoozed through a busy spell costs the forge nothing each time it wakes;
 // a repository that chooses another model then waits for that model's
 // slots too. It reports whether it ended the job, with the error of that or

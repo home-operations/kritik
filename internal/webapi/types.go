@@ -76,10 +76,10 @@ type OperatorAccount struct {
 	Conflict string `json:"conflict,omitempty"`
 }
 
-// InstanceSetting is one instance-wide setting as the operator console
-// shows it, read-only: its value, and whether it comes from this
-// process's environment, the configuration file or a built-in default. A
-// secret shows only whether it is set.
+// InstanceSetting is one instance-wide setting as the admin console shows
+// it, read-only: its value, and whether it comes from this process's
+// environment, the configuration file, the dashboard or a built-in
+// default. A secret shows only whether it is set.
 type InstanceSetting struct {
 	Section string            `json:"section"`
 	Key     string            `json:"key"`
@@ -95,9 +95,9 @@ type CredentialsSet struct {
 	WebhookSecret bool `json:"webhookSecret"`
 }
 
-// Connection is one GitHub App and the accounts it serves. HookPath
-// is relative to the ingest endpoint, whose origin the dashboard does not
-// know. ManagedBy is where it is declared.
+// Connection is one GitHub App and the accounts it serves. HookPath is
+// where its webhook arrives, under the dashboard's URL. ManagedBy is where
+// it is declared.
 type Connection struct {
 	Name        string            `json:"name"`
 	Forge       configfile.Forge  `json:"forge"`
@@ -184,7 +184,7 @@ type ReviewBlock struct {
 }
 
 // AllowBounds are what a repository's .kritik.yaml may choose; a bound
-// that is null leaves it only the operator's own value, or for a limit or
+// that is null leaves it only the admin's own value, or for a limit or
 // the settle time one at or below it.
 type AllowBounds struct {
 	Modes    []configfile.ReviewMode `json:"modes"`
@@ -204,7 +204,7 @@ type AllowAgentBounds struct {
 }
 
 // RepoSettings are a repository's settings as they resolve: the
-// operator's, or with the in-repo .kritik.yaml applied (RepoConfig).
+// admin's, or with the in-repo .kritik.yaml applied (RepoConfig).
 type RepoSettings struct {
 	Enabled       bool                  `json:"enabled"`
 	Mode          configfile.ReviewMode `json:"mode"`
@@ -221,7 +221,7 @@ type RepoSettings struct {
 }
 
 // RepoConfig is the repository's .kritik.yaml as the last review that ran
-// read it, applied to the operator's settings as they are now.
+// read it, applied to the admin's settings as they are now.
 type RepoConfig struct {
 	ReviewID string `json:"reviewId"`
 	// Commit is the merge base the review read the file at.
@@ -230,12 +230,12 @@ type RepoConfig struct {
 	Found bool `json:"found"`
 	// Settings are the repository's settings with the file applied.
 	Settings RepoSettings `json:"settings"`
-	// Filter is the file's own filter, ANDed with the operator's, and
+	// Filter is the file's own filter, ANDed with the admin's, and
 	// SkipPaths its skip.onlyPaths.
 	Filter    string   `json:"filter"`
 	SkipPaths []string `json:"skipPaths"`
-	// Dropped are the file's values outside the operator's bounds; the
-	// operator's value applies for each.
+	// Dropped are the file's values outside the admin's bounds; the
+	// admin's value applies for each.
 	Dropped []string `json:"dropped"`
 	// Ignored is why the file was ignored as a whole, when it was.
 	Ignored string `json:"ignored,omitempty"`
@@ -259,8 +259,9 @@ type IndexRun struct {
 
 // RepoDetail is one repository, its settings and recent index runs.
 // Sources says, by the policy table's keys, which layer each of the
-// operator's settings comes from: file, dashboard or default. RepoConfig
-// is null until a review has read the repository's .kritik.yaml.
+// admin's settings comes from: the defaults, the account (its entry or the
+// repository's entry in it) or kritik's default. RepoConfig is null until a
+// review has read the repository's .kritik.yaml.
 type RepoDetail struct {
 	Repository
 	Settings   RepoSettings                 `json:"settings"`

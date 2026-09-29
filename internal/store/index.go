@@ -27,7 +27,7 @@ func (s *Store) EnsureIndexSchema(ctx context.Context, appRole, model string, di
 	}
 	err = pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritik-index-schema'))`); err != nil {
-			return err
+			return fmt.Errorf("store: lock index schema: %w", err)
 		}
 		curModel, curDims, ok, err := IndexSchemaIn(ctx, tx)
 		switch {

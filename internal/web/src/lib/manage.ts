@@ -11,7 +11,7 @@ const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
   reindex_required: "A new embedding model or dimension rebuilds every repository's index.",
   forge_error: 'GitHub refused or failed the request.',
   installation_served: 'The connection serves this account.',
-  config_blocked: 'The running configuration is invalid elsewhere; an admin must fix it before this can be saved.',
+  config_blocked: 'The running configuration is invalid elsewhere; fix that before saving this.',
   management_disabled: MANAGEMENT_OFF,
   actions_disabled: 'This server process cannot queue dashboard actions.',
   already_queued: 'That is already queued or running; it will show up here when it finishes.',

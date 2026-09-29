@@ -126,7 +126,7 @@ func (o *OpenAI) step(
 		// in the list, and the gateway answers for a model the runner only
 		// names as "review"; both responses say which. Another provider's
 		// model field names a dated snapshot of the one asked for, which is
-		// not what the operator configured, so it is not used.
+		// not what an admin configured, so it is not used.
 		out.Model = cc.Model
 	}
 	for _, tc := range msg.ToolCalls {

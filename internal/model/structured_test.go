@@ -116,7 +116,7 @@ func TestStructuredOnStep(t *testing.T) {
 			}
 		})
 	}
-	// Without OnStep, Complete works as before.
+	// Without OnStep, an answer with no tool call is still an error.
 	if _, err := (Structured{Stepper: &fakeStepper{}}).Complete(t.Context(), CompletionRequest{SchemaName: "x"}); err == nil {
 		t.Fatal("no tool call was not an error")
 	}

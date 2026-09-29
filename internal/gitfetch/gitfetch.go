@@ -23,8 +23,8 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
-// Refs the two commits are fetched into. They are private to kritik so the
-// bare repository never gains a branch a later fetch could confuse.
+// Refs the commits are fetched into. They are private to kritik so the bare
+// repository never gains a branch a later fetch could confuse.
 const (
 	headRef  = "refs/kritik/head"
 	baseRef  = "refs/kritik/base"
