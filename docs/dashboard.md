@@ -54,8 +54,10 @@ instance's providers, default models and embedder as well
 the instance configuration's own, where it sets them, override the
 file's.
 
-- The admin console's form edits the connections, the provider keys and
-  the embedder.
+- The admin console's form edits the connections, the provider keys, the
+  default models and the embedder. What the configuration file sets of
+  these shows as what an empty field inherits, with an "Override" that
+  starts the dashboard's own.
   "Advanced: edit JSON" edits the whole document.
 - An account's admin page edits that account's entry alone.
 - The command palette, `Ctrl`/`⌘` `K`, finds a setting by name and jumps

@@ -118,11 +118,14 @@ export interface EmbeddingDraft {
 }
 
 // The instance spec as its form edits it: the connections, the
-// instance's provider keys and its embedder, and everything else, the
-// defaults and the accounts among it, as rest.
+// instance's provider keys, its default models and its embedder, and
+// everything else, the rest of the defaults and the accounts among it, as
+// rest.
 export interface InstanceDraft {
   connections: ConnectionDraft[];
   providers: ProviderDraft[];
+  reviewModel: string;
+  fallbackModel: string;
   embedding: EmbeddingDraft | undefined;
   rest: Obj;
 }
@@ -330,12 +333,22 @@ function keptSecrets(v: unknown): unknown {
 
 export function instanceDraftOf(spec: Obj): InstanceDraft {
   const o = obj(spec);
-  return {
+  const defaults = obj(o.defaults);
+  const models = obj(defaults.models);
+  const d: InstanceDraft = {
     connections: Array.isArray(o.connections) ? o.connections.map(connectionOf) : [],
     providers: Object.entries(obj(o.providers)).map(([name, v]) => providerOf(name, v)),
+    reviewModel: str(models.review),
+    fallbackModel: str(models.fallback),
     embedding: o.embedding ? embeddingOf(o.embedding) : undefined,
-    rest: obj(keptSecrets(take(o, 'connections', 'providers', 'embedding'))),
+    rest: obj(keptSecrets(take(o, 'connections', 'providers', 'embedding', 'defaults'))),
   };
+  // The rest of the defaults, and of their models, stay as they are.
+  const modelsRest = take(models, 'review', 'fallback');
+  const defaultsRest = take(defaults, 'models');
+  if (nonEmpty(modelsRest)) defaultsRest.models = modelsRest;
+  if (nonEmpty(defaultsRest)) d.rest.defaults = defaultsRest;
+  return d;
 }
 
 // Builder collects the spec and the first problem found. lenient keeps
@@ -585,6 +598,14 @@ export function buildInstanceSpec(d: InstanceDraft, redact = false): Built {
   const b = new Builder(redact);
   const out: Obj = { ...d.rest };
   if (d.providers.length) out.providers = providersSpec(b, d.providers);
+  const defaults: Obj = { ...obj(d.rest.defaults) };
+  const models: Obj = { ...obj(defaults.models) };
+  set(models, 'review', d.reviewModel);
+  set(models, 'fallback', d.fallbackModel);
+  delete defaults.models;
+  if (nonEmpty(models)) defaults.models = models;
+  delete out.defaults;
+  if (nonEmpty(defaults)) out.defaults = defaults;
   if (d.embedding) out.embedding = embeddingSpec(b, d.embedding);
   if (d.connections.length) out.connections = d.connections.map((x, i) => connectionSpec(b, x, i));
   return { spec: out, error: b.error };

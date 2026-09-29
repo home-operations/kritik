@@ -43,6 +43,7 @@
     ['Instance configuration', '#op-config', 'settings spec json'],
     ['Connections', '#instance-connections', 'github app webhook'],
     ['Provider keys', '#instance-providers', 'model api key byok openrouter openai anthropic'],
+    ['Default models', '#instance-models', 'review model fallback model defaults'],
     ['Embeddings', '#instance-embedding', 'embedder index vector'],
     ['Create a GitHub App', '#op-app', 'manifest register'],
     ['GitHub installations', '#op-connections', 'uninstall connections'],

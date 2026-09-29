@@ -23,10 +23,14 @@ const accountConfig: T.AccountConfig = {
 };
 const ownKey = { type: 'openai', apiKey: { keep: true } };
 
+// An instance whose configuration file sets none of its defaults.
+const noFile: T.InstanceInherited = { providers: {}, review: null, fallback: null, embedding: null };
+
 // The golden instance spec, with settings its form has no control for.
 const accountEntry = { forge: 'github', name: 'alpha', providers: { own: { type: 'openai', apiKey: { set: true } } } };
 const instanceConfig: T.InstanceConfig = {
   ...g.instanceConfig,
+  inherited: noFile,
   spec: { ...g.instanceConfig.spec, defaults: { settle: '1m' }, accounts: [accountEntry] },
 };
 const alphaBot = (g.instanceConfig.spec.connections as Record<string, unknown>[])[0]!;
@@ -380,7 +384,7 @@ test.describe('admin console', () => {
   });
 
   test('adds a connection to a fresh instance', async ({ page }) => {
-    await setup(page, adminMe, [instanceRow({ revision: 0, editable: true, spec: {} })]);
+    await setup(page, adminMe, [instanceRow({ revision: 0, editable: true, inherited: noFile, spec: {} })]);
     const sent = await g.mockWrites(page, [
       ['PUT', CONFIG, { status: 200, body: { revision: 1, generated: { 'connections[beta-bot].app.webhookSecret': 'abcd' } } }],
     ]);
@@ -446,7 +450,7 @@ test.describe('admin console', () => {
   });
 
   test('a renamed connection cannot keep the secrets stored under its new name', async ({ page }) => {
-    const two: T.InstanceConfig = { ...g.instanceConfig, spec: { connections: [alphaBot, { ...alphaBot, name: 'beta-bot', accounts: ['beta'] }] } };
+    const two: T.InstanceConfig = { ...g.instanceConfig, inherited: noFile, spec: { connections: [alphaBot, { ...alphaBot, name: 'beta-bot', accounts: ['beta'] }] } };
     await setup(page, adminMe, [instanceRow(two)]);
     const sent = await g.mockWrites(page, [['PUT', CONFIG, { status: 200, body: { revision: 4 } }]]);
     await page.goto('/#/admin');
@@ -511,6 +515,36 @@ test.describe('admin console', () => {
     await expect(page.locator('#op-config').locator('..')).toContainText('revision 9');
     await expect(accounts).toHaveValue('alpha');
     await expect(page.getByRole('alert')).toHaveCount(0);
+  });
+
+  test('what the configuration file sets shows as inherited, and each can be overridden', async ({ page }) => {
+    const file = g.instanceConfig.inherited;
+    await setup(page, adminMe, [instanceRow({ ...instanceConfig, inherited: file })]);
+    const sent = await g.mockWrites(page, [['PUT', CONFIG, { status: 200, body: { revision: 4 } }]]);
+    await page.goto('/#/admin');
+    const fromFile = page.getByRole('list', { name: 'Provider keys the configuration file sets' });
+    await expect(fromFile).toHaveText(/openrouter: openrouter, from the environment/);
+    const review = page.locator('[data-path="defaults.models.review"]');
+    await expect(review).toHaveAttribute('placeholder', `inherits ${file.review!.value} from the config file`);
+    await expect(page.locator('[data-path="defaults.models.fallback"]')).toHaveAttribute('placeholder', 'no fallback');
+    const embeddings = page.getByRole('group', { name: 'Embeddings' });
+    await expect(embeddings).toContainText(`Uses ${file.embedding!.model} (${file.embedding!.dims} dimensions) at ${file.embedding!.baseUrl}, from the config file.`);
+
+    await fromFile.getByRole('button', { name: 'Override' }).click();
+    await expect(fromFile).toContainText('(overridden by the key below)');
+    await page.getByLabel('API key: new value').fill('sk-ui');
+    await page.locator('[data-path="defaults.models.fallback"]').fill('openrouter/small');
+    await embeddings.getByRole('button', { name: 'Override' }).click();
+    await expect(embeddings).toContainText(`Overrides ${file.embedding!.model} (${file.embedding!.dims} dimensions) from the config file`);
+    await expect(page.getByLabel('Model', { exact: true })).toHaveValue(file.embedding!.model);
+    await page.getByLabel('Embedding API key: new value').fill('ek');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await expect.poll(() => sent.length).toBe(1);
+    const body = sent[0]!.body as T.UpdateConfigRequest;
+    expect(body.spec.providers).toEqual({ openrouter: { type: 'openrouter', apiKey: { value: 'sk-ui' } } });
+    expect(body.spec.defaults).toEqual({ settle: '1m', models: { fallback: 'openrouter/small' } });
+    expect(body.spec.embedding).toEqual({ baseUrl: file.embedding!.baseUrl, model: file.embedding!.model, dims: file.embedding!.dims, apiKey: { value: 'ek' } });
   });
 
   test('adds an embedder to the instance', async ({ page }) => {

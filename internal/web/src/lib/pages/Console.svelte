@@ -97,7 +97,8 @@
     <section class="panel" aria-labelledby="op-instance">
       <header class="panel-head"><h2 id="op-instance">Instance settings</h2></header>
       <p class="muted small">
-        Read-only: the environment is this web process's, and sign-in and the file's connections are the configuration file's.
+        Read-only: the environment is this web process's, and sign-in, the file's connections and the instance defaults the
+        file sets are the configuration file's. The instance configuration above may override those defaults.
       </p>
       <StateView res={instance} retry={() => instance.load()} isEmpty={(d) => d.length === 0} empty="No instance settings.">
         {#snippet children(rows)}

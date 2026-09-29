@@ -72,6 +72,7 @@
           {#key save.epoch}
             <InstanceEditor
               initial={cfg.spec}
+              inherited={cfg.inherited}
               saving={save.saving}
               errMessage={save.errMessage}
               errPath={save.errPath}
