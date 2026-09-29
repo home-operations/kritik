@@ -537,6 +537,21 @@ export function buildSpec(d: AccountDraft, redact = false): Built {
   return { spec: out, error: b.error };
 }
 
+// withRepositoriesEnabled is the account spec with each repository in
+// names, given without its owner, turned on or off. A repository with no
+// entry gets one only when on differs from inherited, what an entry that
+// leaves enabled out takes.
+export function withRepositoriesEnabled(spec: Obj, names: string[], on: boolean, inherited: boolean): Built {
+  const d = draftOf(spec);
+  const value: TriBool = on ? 'true' : 'false';
+  for (const name of names) {
+    const entry = d.repositories.find((r) => r.name.toLowerCase() === name.toLowerCase());
+    if (entry) entry.enabled = value;
+    else if (on !== inherited) d.repositories.push({ ...newRepository(), name, enabled: value });
+  }
+  return buildSpec(d);
+}
+
 export function buildInstanceSpec(d: InstanceDraft, redact = false): Built {
   const b = new Builder(redact);
   const out: Obj = { ...d.rest };

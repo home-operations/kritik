@@ -358,6 +358,18 @@ table.data tbody tr:hover {
   align-items: center;
   gap: 8px;
 }
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
 .search-box {
   flex: 1 1 240px;
   min-width: 0;

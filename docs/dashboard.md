@@ -85,6 +85,11 @@ App reaches is registered but nothing runs for it until its own entry says
 `"enabled": true`. A repository that is off is neither polled nor
 indexed.
 
+An admin switches repositories on and off on an account's Repositories
+page, one at a time or a selection together, and reindexes a selection
+from there too. Each switch saves the account's entry, adding a
+repository entry only where it differs from what the account gives.
+
 ## Secrets
 
 A secret an admin submits, such as an App's private key or client ID, is

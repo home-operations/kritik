@@ -730,3 +730,66 @@ test.describe('settings search', () => {
     await expect(settings).toContainText('No setting matches');
   });
 });
+
+test.describe('repository switches', () => {
+  const REPOS = `#/a/${S}/repos`;
+  const second: T.Repository = { ...g.repoPage.items[0]!, id: 'repo-2', fullName: 'alpha/two', enabled: false };
+  const repos = [new RegExp(`${API}/repos$`), g.pageOf([g.repoPage.items[0]!, second])] as [RegExp, unknown];
+
+  test('a member sees whether a repository is on, and nothing to change it', async ({ page }) => {
+    await setup(page, memberMe, [repos]);
+    await page.goto(`/${REPOS}`);
+    await expect(page.locator('tbody tr')).toHaveCount(2);
+    await expect(page.getByRole('switch')).toHaveCount(0);
+    await expect(page.getByRole('checkbox')).toHaveCount(0);
+  });
+
+  test('a switch saves the account entry, keeping its stored secrets', async ({ page }) => {
+    await setup(page, adminMe, [repos, accountRow(g.accountConfig)]);
+    const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }]]);
+    await page.goto(`/${REPOS}`);
+    const one = page.getByRole('switch', { name: 'Review and index alpha/one' });
+    await expect(one).toBeChecked();
+    await one.uncheck();
+    await expect(page.getByRole('status')).toContainText('1 repository turned off');
+    await expect(one).not.toBeChecked();
+    expect(sent[0]!.body).toEqual({
+      revision: g.accountConfig.revision,
+      spec: { forge: 'github', name: 'alpha', providers: { own: ownKey }, repositories: [{ name: 'one', enabled: false }] },
+    });
+
+    // On is what an entry without enabled takes here, so turning a
+    // repository with no entry on writes none.
+    await page.getByRole('switch', { name: 'Review and index alpha/two' }).check();
+    await expect.poll(() => sent.length).toBe(2);
+    expect(sent[1]!.body).toEqual({ revision: g.accountConfig.revision, spec: { forge: 'github', name: 'alpha', providers: { own: ownKey } } });
+  });
+
+  test('selected repositories are turned off together, and the ones on reindexed', async ({ page }) => {
+    await setup(page, adminMe, [repos, accountRow(g.accountConfig)]);
+    const sent = await g.mockWrites(page, [
+      ['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }],
+      ['POST', /\/reindex$/, { status: 202, body: { jobId: 9 } }],
+    ]);
+    await page.goto(`/${REPOS}`);
+    await page.getByRole('checkbox', { name: 'Select every repository shown' }).check();
+    const bulk = page.getByRole('group', { name: 'Selected repositories' });
+    await expect(bulk).toContainText('2 selected');
+
+    await bulk.getByRole('button', { name: 'Reindex…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Reindex 1 repository?' });
+    await expect(dialog).toContainText('1 repository that is off is skipped.');
+    await dialog.getByRole('button', { name: 'Reindex' }).click();
+    await expect(page.getByRole('status')).toContainText('Reindex queued for 1 repository');
+    expect(sent.map((s) => `${s.method} ${s.url.pathname}`)).toEqual([`POST ${API}/repos/alpha/one/reindex`]);
+
+    await page.getByRole('checkbox', { name: 'Select every repository shown' }).check();
+    await bulk.getByRole('button', { name: 'Turn off' }).click();
+    await expect(page.getByRole('status')).toContainText('2 repositories turned off');
+    expect(sent[1]!.body).toEqual({
+      revision: g.accountConfig.revision,
+      spec: { forge: 'github', name: 'alpha', providers: { own: ownKey }, repositories: [{ name: 'one', enabled: false }, { name: 'two', enabled: false }] },
+    });
+    await expect(page.getByRole('switch', { name: 'Review and index alpha/one' })).not.toBeChecked();
+  });
+});
