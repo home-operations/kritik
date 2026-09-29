@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -162,5 +163,45 @@ func TestRepositories(t *testing.T) {
 	}
 	if err != nil || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("Repositories = %+v, %v", got, err)
+	}
+}
+
+// TestReach: each account is installed or not, with the repositories its
+// installation reaches; a suspended installation reaches none and is not
+// asked for them.
+func TestReach(t *testing.T) {
+	_, pemKey := testKeyPEM(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v3/app/installations":
+			_, _ = w.Write([]byte(`[{"id":7,"account":{"login":"Org-1","type":"Organization"}},` +
+				`{"id":8,"account":{"login":"user-1","type":"User"},"suspended_at":"2026-09-01T00:00:00Z"}]`))
+		case "/api/v3/app/installations/7/access_tokens":
+			exp := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+			_, _ = w.Write([]byte(`{"token":"ghs_7","expires_at":"` + exp + `"}`))
+		case "/api/v3/installation/repositories":
+			_, _ = w.Write([]byte(`{"total_count":1,"repositories":[{"name":"repo-1","full_name":"Org-1/repo-1","default_branch":"main","fork":true}]}`))
+		default:
+			t.Errorf("unexpected request %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	app, err := NewApp("Iv1.abc", pemKey, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := app.Reach(t.Context(), []string{"org-1", "user-1", "gone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []AccountRepositories{
+		{Account: "org-1", Installed: true, Repositories: []Repository{{Name: "repo-1", FullName: "Org-1/repo-1", DefaultBranch: "main", Fork: true}}},
+		{Account: "user-1", Repositories: []Repository{}},
+		{Account: "gone", Repositories: []Repository{}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Reach = %+v, want %+v", got, want)
 	}
 }

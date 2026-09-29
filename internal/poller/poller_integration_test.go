@@ -3,10 +3,14 @@
 package poller
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -351,5 +355,96 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	poll()
 	if got := indexJobs(); len(got) != 0 {
 		t.Fatalf("index jobs = %v, want none for a tip the index covers", got)
+	}
+}
+
+// TestSyncRepositories: the repositories a running connection's App reaches
+// are registered on the accounts it serves, with what the forge says of
+// them, and a second sync adds none; an account it does not serve gets
+// nothing, and a listing that fails is logged.
+func TestSyncRepositories(t *testing.T) {
+	ctx := context.Background()
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	st, err := store.Open(ctx, store.Options{
+		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
+		Logger: logger,
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(st.Close)
+	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	// The other suites poll every enabled repository of the account.
+	t.Cleanup(func() {
+		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false WHERE name LIKE 'onedr0p/synced%'`)
+			return err
+		})
+	})
+	var asked []string
+	p := &Poller{Store: st, Current: configfile.NewCurrent(file), Logger: logger,
+		Reach: func(_ context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error) {
+			asked = append(asked, in.Name)
+			return map[string][]store.ReachedRepository{
+				"onedr0p": {
+					{FullName: "onedr0p/synced", DefaultBranch: "main", Traits: &configfile.RepoTraits{}},
+					{FullName: "onedr0p/synced-fork", DefaultBranch: "main", Traits: &configfile.RepoTraits{Fork: true}},
+				},
+				"stranger": {{FullName: "stranger/elsewhere", Traits: &configfile.RepoTraits{}}},
+			}, nil
+		},
+	}
+	rows := func() string {
+		t.Helper()
+		var out []string
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			r, err := tx.Query(ctx, `SELECT name, enabled, default_branch, fork FROM repositories
+				WHERE name LIKE 'onedr0p/synced%' OR name LIKE 'stranger/%' ORDER BY name COLLATE "C"`)
+			if err != nil {
+				return err
+			}
+			var name, branch string
+			var enabled, fork bool
+			_, err = pgx.ForEachRow(r, []any{&name, &enabled, &branch, &fork}, func() error {
+				out = append(out, fmt.Sprintf("%s:%v:%s:%v", name, enabled, branch, fork))
+				return nil
+			})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(out, ",")
+	}
+
+	p.SyncRepositories(ctx)
+	want := "onedr0p/synced:true:main:false,onedr0p/synced-fork:true:main:true"
+	if got := rows(); got != want || len(asked) != 1 || asked[0] != "bot-ross" {
+		t.Fatalf("after a sync: repositories %q, asked %v; want %q from bot-ross alone", got, asked, want)
+	}
+	if !strings.Contains(logs.String(), "repositories registered") || !strings.Contains(logs.String(), "added=2") {
+		t.Fatalf("logs = %s", logs.String())
+	}
+	logs.Reset()
+	p.SyncRepositories(ctx)
+	if got := rows(); got != want || strings.Contains(logs.String(), "repositories registered") {
+		t.Fatalf("a second sync: repositories %q, logs %s; want nothing new", got, logs.String())
+	}
+
+	p.Reach = func(context.Context, *configfile.Connection) (map[string][]store.ReachedRepository, error) {
+		return nil, errors.New("github: list App installations: 502")
+	}
+	p.SyncRepositories(ctx)
+	if !strings.Contains(logs.String(), "repositories not synced") || !strings.Contains(logs.String(), "502") {
+		t.Fatalf("a failed listing is not logged: %s", logs.String())
 	}
 }
