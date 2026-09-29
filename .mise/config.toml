@@ -125,31 +125,48 @@ run = "go run ./cmd/kritik --role all"
 # kustomization (.private/deploy), the KUBECONFIG pointer
 # (.private/mise.local.toml, symlinked from the repo root as .mise.local.toml;
 # a local file inside .mise/ would make `mise lock` prune this file's lock)
-# and the last pushed image reference (.private/image).
+# and the last pushed image references (.private/image and
+# .private/runner-image). KRITIK_DEV_REGISTRY, set in the same file, names a
+# registry the cluster pulls from to push to instead of ttl.sh.
 
 [tasks.image-push]
-description = "Build the image and push it to ttl.sh under a fresh name (24h TTL); the reference lands in .private/image"
+description = "Build the image and its -tools runner image and push both to KRITIK_DEV_REGISTRY, or to ttl.sh (24h TTL) when unset, under a fresh name; the references land in .private/image and .private/runner-image"
 run = """
 set -e
-image="ttl.sh/kritik-$(id -un)-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n'):24h"
-docker build --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" --build-arg NODE_VERSION="$(mise config get -f .mise/config.toml tools.node)" --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" -t "$image" .
+suffix="$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+if [ -n "${KRITIK_DEV_REGISTRY:-}" ]; then
+  image="$KRITIK_DEV_REGISTRY/kritik:dev-$suffix"
+  runner="$KRITIK_DEV_REGISTRY/kritik:dev-$suffix-tools"
+else
+  # ttl.sh takes the TTL as the tag.
+  image="ttl.sh/kritik-$(id -un)-$suffix:24h"
+  runner="ttl.sh/kritik-$(id -un)-$suffix-tools:24h"
+fi
+build() {
+  docker build --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" --build-arg NODE_VERSION="$(mise config get -f .mise/config.toml tools.node)" --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" "$@" .
+}
+build -t "$image"
+build --target tools -t "$runner"
 docker push "$image"
+docker push "$runner"
 mkdir -p .private
 echo "$image" > .private/image
-echo "pushed $image"
+echo "$runner" > .private/runner-image
+echo "pushed $image and $runner"
 """
 
 [tasks.deploy]
-description = "Push a fresh image, apply .private/deploy (namespace, database, secrets) and install the chart into kritik"
+description = "Push fresh images, apply .private/deploy (namespace, database, secrets) and install the chart into kritik"
 depends = ["image-push"]
 run = """
 set -e
 : "${KUBECONFIG:?set KUBECONFIG to the target cluster (see .private/mise.local.toml)}"
 image="$(cat .private/image)"
 kubectl apply --server-side --field-manager kritik-dev -k .private/deploy
-# ttl.sh references are repo:tag with the TTL as the tag.
+# Split at the last colon: a registry host may carry a port.
 helm upgrade --install kritik charts/kritik -n kritik --values .private/values.yaml \
-  --set image.repository="${image%%:*}" --set image.tag="${image##*:}" --wait --timeout 10m
+  --set image.repository="${image%:*}" --set image.tag="${image##*:}" \
+  --set runner.image="$(cat .private/runner-image)" --wait --timeout 10m
 """
 
 [tasks.undeploy]
