@@ -33,27 +33,23 @@ func Verify(forge configfile.Forge, secret string, header http.Header, body []by
 	switch forge {
 	case configfile.ForgeGitHub:
 		// X-Hub-Signature-256: "sha256=" + hex(HMAC-SHA256(body, secret)).
-		return verifyHMAC(header.Get("X-Hub-Signature-256"), "sha256=", secret, body)
+		return verifyHMAC(header.Get("X-Hub-Signature-256"), secret, body)
 	default:
 		return fmt.Errorf("webhook: unsupported forge %q", forge)
 	}
 }
 
-// verifyHMAC checks an HMAC-SHA256 signature header. prefix is stripped first
-// (e.g. "sha256="); an empty prefix means the header is the bare hex digest.
-// The comparison is constant-time (hmac.Equal).
-func verifyHMAC(provided, prefix, secret string, body []byte) error {
+// verifyHMAC checks a "sha256=" + hex HMAC-SHA256 signature header. The
+// comparison is constant-time (hmac.Equal).
+func verifyHMAC(provided, secret string, body []byte) error {
 	if provided == "" {
 		return ErrMissingSignature
 	}
-	if prefix != "" {
-		rest, ok := strings.CutPrefix(provided, prefix)
-		if !ok {
-			return ErrSignatureMismatch
-		}
-		provided = rest
+	digest, ok := strings.CutPrefix(provided, "sha256=")
+	if !ok {
+		return ErrSignatureMismatch
 	}
-	got, err := hex.DecodeString(provided)
+	got, err := hex.DecodeString(digest)
 	if err != nil {
 		return ErrSignatureMismatch
 	}
