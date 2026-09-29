@@ -209,12 +209,16 @@ test.describe('account configuration', () => {
     await setup(page, adminMe, [accountRow(accountConfig), [new RegExp(`${API}/audit$`), g.pageOf([])]]);
     await page.goto(`/${ADMIN}/config`);
     await page.getByLabel('Filter').first().fill('draft');
-    page.once('dialog', (d) => void d.dismiss());
+    // Each dialog is answered before the test goes on, so none is left
+    // pending when the test ends.
+    const dismissed = page.waitForEvent('dialog').then((d) => d.dismiss());
     await page.getByRole('link', { name: 'Audit log' }).click();
+    await dismissed;
     await expect(page).toHaveURL(new RegExp(`${ADMIN}/config$`));
     await expect(page.getByLabel('Filter').first()).toHaveValue('draft');
-    page.once('dialog', (d) => void d.accept());
+    const accepted = page.waitForEvent('dialog').then((d) => d.accept());
     await page.getByRole('link', { name: 'Audit log' }).click();
+    await accepted;
     await expect(page).toHaveURL(new RegExp(`${ADMIN}/audit$`));
   });
 
