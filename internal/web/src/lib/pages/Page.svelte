@@ -15,8 +15,11 @@
   import Usage from './Usage.svelte';
   import Followups from './Followups.svelte';
   import Admin from './admin/Admin.svelte';
+  import SettingsNav from './SettingsNav.svelte';
+  import { sectionOf } from '../sections';
 
   let { route }: { route: Route } = $props();
+  const settings = $derived(sectionOf(route) === 'settings');
 
   function keyOf(r: Route): string {
     if (r.name === 'review') return JSON.stringify({ n: r.name, s: r.slug, id: r.id });
@@ -27,7 +30,8 @@
 </script>
 
 <!-- data-route exposes the parsed route to the router tests. -->
-<div class="route-host" data-route={JSON.stringify(route)}>
+<div class="route-host" class:with-subnav={settings} data-route={JSON.stringify(route)}>
+{#if settings}<SettingsNav {route} />{/if}
 {#key key}
   {#if route.name === 'overview'}
     <Overview />

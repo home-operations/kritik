@@ -25,6 +25,8 @@ export {
   mdiCheck,
   mdiChevronRight,
   mdiOpenInNew,
+  mdiUnfoldMoreHorizontal,
+  mdiTuneVariant,
 } from '@mdi/js';
 
 import { siGithub } from 'simple-icons';

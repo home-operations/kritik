@@ -15,17 +15,15 @@
     mdiMagnify,
     mdiViewDashboardOutline,
     mdiViewGridOutline,
-    mdiSourceRepository,
     mdiSourcePull,
-    mdiTrayFull,
-    mdiCurrencyUsd,
-    mdiClipboardTextClockOutline,
     mdiCogOutline,
-    mdiConsoleLine,
     mdiAccountOutline,
     mdiLogout,
     mdiChevronDown,
+    mdiUnfoldMoreHorizontal,
+    mdiCheck,
   } from './lib/icons';
+  import { SECTIONS, SECTION_ORDER, sectionOf, type Section } from './lib/sections';
   import Icon from './lib/Icon.svelte';
   import Palette from './lib/Palette.svelte';
   import SignIn from './lib/SignIn.svelte';
@@ -79,13 +77,16 @@
   }
 
   // currentSlug reads the account slug off whatever route is active, falling
-  // back to the first account so the nav has somewhere to point before the
+  // back to the first account so the tabs have somewhere to point before the
   // user has ever picked one explicitly.
   const currentSlug = $derived('slug' in router.route ? router.route.slug : me?.accounts[0]);
+  const currentSection = $derived(sectionOf(router.route));
 
-  function switchAccount(slug: string): void {
-    navigate({ name: 'account', slug });
-  }
+  const sectionIcon: Record<Section, string> = {
+    overview: mdiViewDashboardOutline,
+    pulls: mdiSourcePull,
+    settings: mdiCogOutline,
+  };
 
   const themeIconPath = $derived(
     theme.pref === 'auto' ? mdiThemeLightDark : theme.pref === 'dark' ? mdiWeatherNight : mdiWhiteBalanceSunny,
@@ -101,24 +102,34 @@
     node.focus();
   }
 
-  // A native <details> has no built-in Escape handling and stays open on an
-  // outside click, so both are wired up by hand here.
+  // The account and user menus are native <details>, which have no built-in
+  // Escape handling and stay open on an outside click or once a link in
+  // them is followed, so all three are wired up by hand here.
+  let accountMenuEl = $state<HTMLDetailsElement | undefined>(undefined);
   let userMenuEl = $state<HTMLDetailsElement | undefined>(undefined);
 
-  function closeUserMenu(): void {
+  function closeMenus(): void {
+    if (accountMenuEl) accountMenuEl.open = false;
     if (userMenuEl) userMenuEl.open = false;
   }
 
-  function onUserMenuKeydown(e: KeyboardEvent): void {
+  function onMenuKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
       e.stopPropagation();
-      closeUserMenu();
+      closeMenus();
     }
   }
 
   function onDocumentClick(e: MouseEvent): void {
-    if (userMenuEl?.open && !userMenuEl.contains(e.target as Node)) closeUserMenu();
+    for (const el of [accountMenuEl, userMenuEl]) {
+      if (el?.open && !el.contains(e.target as Node)) el.open = false;
+    }
   }
+
+  $effect(() => {
+    void router.route;
+    closeMenus();
+  });
 </script>
 
 <svelte:window onclick={onDocumentClick} />
@@ -128,161 +139,107 @@
 {:else}
   <div class="app">
     <header class="topbar">
-      <a class="brand" href="#/">
-        <img src="{basePath}/favicon.svg" width="22" height="22" alt="" />
-        <span class="wordmark marked">kritik</span>
-      </a>
+      <div class="topbar-row">
+        <a class="brand" href="#/">
+          <img src="{basePath}/favicon.svg" width="22" height="22" alt="" />
+          <span class="wordmark marked">kritik</span>
+        </a>
 
-      <div class="spacer"></div>
-
-      <div class="actions">
-        {#if me}
-          <span
-            class="live"
-            class:live-down={stream.down}
-            aria-live="polite"
-            title={stream.down ? `Live updates stopped at ${absolute(stream.since)}; this page may be out of date.` : 'Live updates on'}
-          >
-            <span class="live-dot" aria-hidden="true"></span>
-            {#if stream.down}Reconnecting…{:else}<span class="sr-only">Live updates on</span>{/if}
-          </span>
-        {/if}
-        <button class="btn btn-icon" onclick={togglePalette} title="Go to (Ctrl/⌘ K)">
-          <Icon path={mdiMagnify} label="Go to" />
-        </button>
-        <button class="btn btn-icon" onclick={toggleHelp} title="Keyboard shortcuts (?)">
-          <Icon path={mdiKeyboardOutline} label="Keyboard shortcuts" />
-        </button>
-        <button class="btn btn-icon" onclick={cycleTheme} title={`Theme: ${theme.pref}`}>
-          <Icon path={themeIconPath} label="Toggle theme" />
-        </button>
-        {#if me}
-          <!-- Escape from anywhere in the open menu, the sign-out button included, closes it before the window's handlers see it. -->
+        {#if me && me.accounts.length > 0}
+          <!-- Escape from anywhere in the open menu closes it before the window's handlers see it. -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <details class="user-menu" bind:this={userMenuEl} onkeydown={onUserMenuKeydown}>
-            <summary class="btn btn-icon" title={me.user.displayName}>
-              <Icon path={mdiAccountOutline} label="User" />
-              <Icon path={mdiChevronDown} size={12} />
+          <details class="menu account-menu" bind:this={accountMenuEl} onkeydown={onMenuKeydown}>
+            <summary class="account-button" title="Switch account">
+              {#if router.route.name === 'overview'}
+                <span>All accounts</span>
+              {:else}
+                <span class="mono">{currentSlug}</span>
+              {/if}
+              <Icon path={mdiUnfoldMoreHorizontal} size={14} label="Switch account" />
             </summary>
-            <div class="user-panel">
-              <p class="user-name">{me.user.displayName}</p>
-              <p class="user-email mono">{me.user.email}</p>
-              <button class="btn" onclick={signOut}>
-                <Icon path={mdiLogout} size={14} /> Sign out
-              </button>
-            </div>
+            <nav class="menu-panel account-panel" aria-label="Accounts">
+              <a class="menu-item" href={href({ name: 'overview' })} aria-current={router.route.name === 'overview' ? 'page' : undefined}>
+                <Icon path={mdiViewGridOutline} size={15} /> All accounts
+              </a>
+              {#each me.accounts as slug (slug)}
+                {@const on = router.route.name !== 'overview' && slug === currentSlug}
+                <a class="menu-item mono" href={href({ name: 'account', slug })} aria-current={on ? 'true' : undefined}>
+                  <span class="menu-check">{#if on}<Icon path={mdiCheck} size={14} />{/if}</span>
+                  {slug}
+                </a>
+              {/each}
+            </nav>
           </details>
         {/if}
+
+        <div class="spacer"></div>
+
+        <div class="actions">
+          {#if me}
+            <span
+              class="live"
+              class:live-down={stream.down}
+              aria-live="polite"
+              title={stream.down ? `Live updates stopped at ${absolute(stream.since)}; this page may be out of date.` : 'Live updates on'}
+            >
+              <span class="live-dot" aria-hidden="true"></span>
+              {#if stream.down}Reconnecting…{:else}<span class="sr-only">Live updates on</span>{/if}
+            </span>
+          {/if}
+          <button class="btn btn-icon" onclick={togglePalette} title="Go to (Ctrl/⌘ K)">
+            <Icon path={mdiMagnify} label="Go to" />
+          </button>
+          <button class="btn btn-icon" onclick={toggleHelp} title="Keyboard shortcuts (?)">
+            <Icon path={mdiKeyboardOutline} label="Keyboard shortcuts" />
+          </button>
+          <button class="btn btn-icon" onclick={cycleTheme} title={`Theme: ${theme.pref}`}>
+            <Icon path={themeIconPath} label="Toggle theme" />
+          </button>
+          {#if me}
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <details class="menu user-menu" bind:this={userMenuEl} onkeydown={onMenuKeydown}>
+              <summary class="btn btn-icon" title={me.user.displayName}>
+                <Icon path={mdiAccountOutline} label="User" />
+                <Icon path={mdiChevronDown} size={12} />
+              </summary>
+              <div class="menu-panel user-panel">
+                <p class="user-name">{me.user.displayName}</p>
+                <p class="user-email mono">{me.user.email}</p>
+                <button class="btn" onclick={signOut}>
+                  <Icon path={mdiLogout} size={14} /> Sign out
+                </button>
+                {#if session.meta?.version}
+                  <p class="user-version mono" title="kritik {session.meta.version}">kritik {session.meta.version}</p>
+                {/if}
+              </div>
+            </details>
+          {/if}
+        </div>
       </div>
+
+      {#if me && currentSlug}
+        <nav class="sections" aria-label="Sections">
+          {#each SECTION_ORDER as s (s)}
+            <a
+              class="section-tab"
+              class:active={currentSection === s}
+              aria-current={currentSection === s ? 'page' : undefined}
+              href={href(SECTIONS[s].home(currentSlug))}
+            >
+              <Icon path={sectionIcon[s]} size={15} />
+              <span class="section-label">{SECTIONS[s].label}</span>
+            </a>
+          {/each}
+        </nav>
+      {/if}
     </header>
 
-    <div class="shell">
-      {#if me}
-        <aside class="sidebar" aria-label="Navigation">
-          <nav class="nav" aria-label="Home">
-            <a
-              class:active={router.route.name === 'overview'}
-              aria-current={router.route.name === 'overview' ? 'page' : undefined}
-              href={href({ name: 'overview' })}
-            >
-              <Icon path={mdiViewGridOutline} size={15} /> All accounts
-            </a>
-          </nav>
-          {#if me.accounts.length > 0}
-            <select
-              class="account-switch"
-              aria-label="Switch account"
-              value={currentSlug}
-              onchange={(e) => switchAccount(e.currentTarget.value)}
-            >
-              {#each me.accounts as slug (slug)}
-                <option value={slug}>{slug}</option>
-              {/each}
-            </select>
-          {/if}
-
-          {#if currentSlug}
-            <nav class="nav" aria-label="Account">
-              <a
-                class:active={router.route.name === 'account'}
-                aria-current={router.route.name === 'account' ? 'page' : undefined}
-                href={href({ name: 'account', slug: currentSlug })}
-              >
-                <Icon path={mdiViewDashboardOutline} size={15} /> Overview
-              </a>
-              <a
-                class:active={router.route.name === 'repos'}
-                aria-current={router.route.name === 'repos' ? 'page' : undefined}
-                href={href({ name: 'repos', slug: currentSlug })}
-              >
-                <Icon path={mdiSourceRepository} size={15} /> Repos
-              </a>
-              <a
-                class:active={router.route.name === 'pulls'}
-                aria-current={router.route.name === 'pulls' ? 'page' : undefined}
-                href={href({ name: 'pulls', slug: currentSlug })}
-              >
-                <Icon path={mdiSourcePull} size={15} /> Pulls
-              </a>
-              <a
-                class:active={router.route.name === 'queue'}
-                aria-current={router.route.name === 'queue' ? 'page' : undefined}
-                href={href({ name: 'queue', slug: currentSlug })}
-              >
-                <Icon path={mdiTrayFull} size={15} /> Queue
-              </a>
-              <a
-                class:active={router.route.name === 'usage'}
-                aria-current={router.route.name === 'usage' ? 'page' : undefined}
-                href={href({ name: 'usage', slug: currentSlug })}
-              >
-                <Icon path={mdiCurrencyUsd} size={15} /> Usage
-              </a>
-              <a
-                class:active={router.route.name === 'followups'}
-                aria-current={router.route.name === 'followups' ? 'page' : undefined}
-                href={href({ name: 'followups', slug: currentSlug })}
-              >
-                <Icon path={mdiClipboardTextClockOutline} size={15} /> Follow-ups
-              </a>
-              {#if me?.admin}
-                <a
-                  class:active={router.route.name === 'admin'}
-                  aria-current={router.route.name === 'admin' ? 'page' : undefined}
-                  href={href({ name: 'admin', slug: currentSlug })}
-                >
-                  <Icon path={mdiCogOutline} size={15} /> Admin
-                </a>
-              {/if}
-            </nav>
-          {/if}
-          {#if me.admin}
-            <nav class="nav nav-instance" aria-label="Instance">
-              <a
-                class:active={router.route.name === 'console'}
-                aria-current={router.route.name === 'console' ? 'page' : undefined}
-                href={href({ name: 'console' })}
-              >
-                <Icon path={mdiConsoleLine} size={15} /> Admin console
-              </a>
-            </nav>
-          {/if}
-          {#if session.meta?.version}
-            <p class="sidebar-version mono" title="kritik {session.meta.version}">kritik {session.meta.version}</p>
-          {/if}
-        </aside>
-      {/if}
-
-      <div class="main-col">
-        {#if me?.admin && management()}<Setup />{/if}
-        <Page route={router.route} />
-      </div>
+    <div class="main-col">
+      {#if me?.admin && management()}<Setup />{/if}
+      <Page route={router.route} />
     </div>
-
     <Palette {me} />
-
     <Toasts />
-
     {#if help.open}
       <div class="help-overlay">
         <button class="help-backdrop" aria-label="Close keyboard shortcuts" onclick={toggleHelp}></button>

@@ -10,9 +10,11 @@
   sign-in and operators of §2.3 with a local admin and role-mapped OIDC
   and GitHub sign-in, reduces the roles of §2.4 to admin and member, and
   replaces the dashboard tenants of §2.5 with one instance spec whose
-  tenants are forge accounts; and
+  tenants are forge accounts;
   [ADR-0016](0016-dashboard-identity.md), which replaces §2.1's Geist and
-  Geist Mono and the palette with the dashboard's own.
+  Geist Mono and the palette with the dashboard's own; and
+  [ADR-0017](0017-dashboard-sections.md), which replaces the layout §2.1
+  copied from konflate with sections under a top bar.
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.17 and
   [ADR-0001](0001-kritik-pr-review-service.md) §2.14, the deferred v2
   dashboard sketch in both: this ADR is that dashboard, built.

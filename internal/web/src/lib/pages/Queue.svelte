@@ -8,6 +8,7 @@
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
+  import SectionTabs from '../components/SectionTabs.svelte';
 
   let { slug }: { slug: string } = $props();
   const res = new Resource(() => getJSON<Job[]>(`${accountApi(slug)}/queue`));
@@ -28,7 +29,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head"><h1>Queue</h1></header>
+    <SectionTabs section="pulls" {slug} current="queue" />
     <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="The queue is empty.">
       {#snippet children(jobs)}
         <div class="table-wrap">

@@ -22,6 +22,8 @@
     mdiCurrencyUsd,
     mdiClipboardTextClockOutline,
     mdiCogOutline,
+    mdiViewGridOutline,
+    mdiTuneVariant,
   } from './icons';
 
   let { me }: { me: Me | undefined } = $props();
@@ -71,11 +73,11 @@
     return 'slug' in r ? r.slug : undefined;
   }
 
-  // Gated the same way as the top-bar (App.svelte): the admin console and
-  // each account's admin pages are for admins, and "Sign in" only makes
-  // sense when there's no session yet.
+  // Gated the same way as the settings navigation: the admin console and
+  // each account's configuration and audit log are for admins, and "Sign
+  // in" only makes sense when there's no session yet.
   function buildEntries(r: Route, searching: boolean): Entry[] {
-    const entries: Entry[] = [{ label: 'Overview', route: { name: 'overview' }, icon: mdiViewDashboardOutline }];
+    const entries: Entry[] = [{ label: 'All accounts', route: { name: 'overview' }, icon: mdiViewGridOutline }];
     if (me?.admin) {
       entries.push({ label: 'Admin console', route: { name: 'console' }, icon: mdiConsoleLine });
       if (searching) {
@@ -93,15 +95,18 @@
     const slugs = [...new Set([...(current ? [current] : []), ...(me?.accounts ?? [])])];
     for (const slug of slugs) {
       entries.push(
-        { label: 'Account overview', hint: slug, route: { name: 'account', slug }, icon: mdiViewDashboardOutline },
-        { label: 'Repos', hint: slug, route: { name: 'repos', slug }, icon: mdiSourceRepository },
+        { label: 'Overview', hint: slug, route: { name: 'account', slug }, icon: mdiViewDashboardOutline },
+        { label: 'Repositories', hint: slug, route: { name: 'repos', slug }, icon: mdiSourceRepository },
         { label: 'Pull requests', hint: slug, route: { name: 'pulls', slug }, icon: mdiSourcePull },
         { label: 'Queue', hint: slug, route: { name: 'queue', slug }, icon: mdiTrayFull },
         { label: 'Usage', hint: slug, route: { name: 'usage', slug }, icon: mdiCurrencyUsd },
         { label: 'Follow-ups', hint: slug, route: { name: 'followups', slug }, icon: mdiClipboardTextClockOutline },
       );
       if (me?.admin) {
-        entries.push({ label: 'Admin', hint: slug, route: { name: 'admin', slug }, icon: mdiCogOutline });
+        entries.push(
+          { label: 'Configuration', hint: slug, route: { name: 'admin', slug, section: 'config' }, icon: mdiTuneVariant, keywords: 'admin settings' },
+          { label: 'Audit log', hint: slug, route: { name: 'admin', slug, section: 'audit' }, icon: mdiClipboardTextClockOutline, keywords: 'history' },
+        );
         if (searching) {
           for (const [label, target, keywords] of accountSettings) {
             entries.push({

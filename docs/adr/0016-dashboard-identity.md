@@ -5,6 +5,8 @@
 - **Authors:** onedr0p.
 - **Amends:** [ADR-0009](0009-web-dashboard.md) §2.1 (Geist and Geist
   Mono, copied from konflate).
+- **Amended by:** [ADR-0017](0017-dashboard-sections.md), which replaces
+  the layout this ADR left as ADR-0009 set it.
 
 > Scope: the dashboard's typefaces, palette and the few treatments built
 > on them. The layout, the components and konflate's frontend stack

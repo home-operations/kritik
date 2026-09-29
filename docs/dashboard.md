@@ -7,6 +7,16 @@ runs, and, for an admin, the audit log. An admin can also queue a re-run
 of a specific pull request, cancel a review in progress, or reindex a
 repository's embeddings, from the dashboard rather than the forge.
 
+The top bar switches between the accounts you can read, or all of them
+at once, and holds a tab for each of an account's sections
+([ADR-0017](adr/0017-dashboard-sections.md)):
+
+- **Overview:** the account at a glance, and its usage.
+- **Pull requests:** its pull requests and their reviews, the run queue
+  and the follow-up questions.
+- **Settings:** its repositories, and for an admin its configuration and
+  audit log, and the admin console.
+
 A dot in the top bar shows whether live updates are connected. Once they
 have been down for two seconds it reads "Reconnecting…", and the page may
 be out of date until they are back.
@@ -58,9 +68,10 @@ file's.
   these shows as what an empty field inherits, with an "Override" that
   starts the dashboard's own.
   "Advanced: edit JSON" edits the whole document.
-- An account's admin page edits that account's entry alone.
+- An account's Configuration page, under Settings, edits that account's
+  entry alone.
 - The command palette, `Ctrl`/`⌘` `K`, finds a setting by name and jumps
-  to its field, in the admin console or an account's admin page. A
+  to its field, in the admin console or an account's Configuration page. A
   repository's page filters its effective settings.
 - A save names the revision it was loaded at. A save over a newer
   revision is refused with `409 revision_conflict`, and the form offers to
@@ -141,7 +152,7 @@ is not running, is a `409 Conflict`.
 
 An account can bring its own model keys: `providers` in its entry, the
 same shape as the instance's `providers`, edited in the "Provider keys"
-section of the account's admin page. A model named `<key name>/<model>`
+section of the account's Configuration page. A model named `<key name>/<model>`
 then runs on that key, and the account pays for it; a key's name may not
 be one the instance's providers already use. The account's review and fallback models,
 and a repository entry's, may name a model on one of these keys. The keys are sealed at rest like connection secrets

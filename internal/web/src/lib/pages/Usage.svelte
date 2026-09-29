@@ -6,6 +6,7 @@
   import type { UsageGroup, UsagePoint, UsageSeries } from '../types';
   import StateView from '../components/StateView.svelte';
   import BarChart from '../components/BarChart.svelte';
+  import SectionTabs from '../components/SectionTabs.svelte';
 
   let { slug }: { slug: string } = $props();
   const PRESETS = [7, 30, 90] as const;
@@ -52,7 +53,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head"><h1>Usage</h1></header>
+    <SectionTabs section="overview" {slug} current="usage" />
     <div class="toolbar">
       <div class="view-toggle" role="group" aria-label="Date range">
         {#each PRESETS as p (p)}
