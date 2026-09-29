@@ -503,6 +503,10 @@ type Review struct {
 	// InlineComments is false to post the summary alone.
 	InlineComments bool
 	Context        []ContextFile
+	// Thoroughness is what the reviewer reports: ThoroughnessThorough,
+	// anything a maintainer could act on, or ThoroughnessFocused, only what
+	// would stop the review.
+	Thoroughness string
 }
 
 // ContextFile is a repository file that explains the code, named to the
@@ -521,6 +525,12 @@ const (
 	SeverityImportant = "important"
 )
 
+// Review thoroughnesses.
+const (
+	ThoroughnessThorough = "thorough"
+	ThoroughnessFocused  = "focused"
+)
+
 // ReviewSpec sets the review block at one scope, field by field: a field
 // written here, even empty, replaces the broader scope's.
 type ReviewSpec struct {
@@ -530,6 +540,7 @@ type ReviewSpec struct {
 	MinSeverity         *string       `yaml:"minSeverity,omitempty"`
 	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
 	Context             []ContextFile `yaml:"context,omitempty"`
+	Thoroughness        *string       `yaml:"thoroughness,omitempty"`
 }
 
 // TemplatesSpec sets the comment templates at one scope; an empty path

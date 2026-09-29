@@ -52,6 +52,15 @@
           <input class="mono" data-path="filter" aria-invalid={inv('filter') || undefined} bind:value={draft.filter} placeholder={hint('filter', own.filter || 'no filter')} />
         </label>
         <label class="field">
+          <span>Thoroughness</span>
+          <select data-path="review.thoroughness" aria-invalid={inv('review.thoroughness') || undefined} bind:value={draft.thoroughness}>
+            <option value="">{`default: ${own.review.thoroughness}`}</option>
+            <option value="thorough">thorough</option>
+            <option value="focused">focused</option>
+          </select>
+          <span class="field-hint">Thorough comments on anything a maintainer could act on; focused only on what would stop the review.</span>
+        </label>
+        <label class="field">
           <span>Forks</span>
           <select data-path="forks" aria-invalid={inv('forks') || undefined} bind:value={draft.forks}>
             <option value="">{own ? `default: ${own.forks ? 'review' : 'skip'}` : 'default'}</option>

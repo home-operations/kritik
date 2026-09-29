@@ -50,6 +50,7 @@ func TestAgentPrompt(t *testing.T) {
 		scope        review.Scope
 		instructions []string
 		strict       bool
+		focused      bool
 	}{
 		{name: "the named instructions and strictness", paths: []string{"docs/rules.md"},
 			scope: review.ScopeFull, instructions: []string{"Admin rules."}, strict: true},
@@ -61,18 +62,20 @@ func TestAgentPrompt(t *testing.T) {
 			scoped: map[string][]string{".kritik/rules.md": {"*.go"}}, scope: review.ScopeFull,
 			instructions: []string{"Admin rules.", "Repository rules."}, strict: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
+		{name: "a focused review gets the focused prompt", scope: review.ScopeFull, focused: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
 			s.Prompt.Instructions, s.Prompt.InstructionScopes, s.Prompt.RequireSuggestedFix = tt.paths, tt.scoped, tt.strict
+			s.Prompt.Focused = tt.focused
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {
 				pack.DeltaDiff = agentDiff
 			}
 			system, user, strict := agentPrompt(s, files, pack, nil)
-			if want := review.AgenticSystemPrompt(tt.instructions, nil); system != want {
+			if want := review.AgenticSystemPrompt(tt.instructions, nil, tt.focused); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput

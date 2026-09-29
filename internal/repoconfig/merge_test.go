@@ -68,6 +68,14 @@ func TestMerge(t *testing.T) {
 			},
 		},
 		{
+			name: "thoroughness replaces the admin's", doc: "review: { thoroughness: focused }\n",
+			want: func(s *configfile.Settings) { s.Review.Thoroughness = configfile.ThoroughnessFocused },
+		},
+		{
+			name: "an unknown thoroughness is dropped", doc: "review: { thoroughness: exhaustive }\n",
+			dropped: []string{`.kritik.yaml: review.thoroughness "exhaustive" was dropped; allowed: thorough, focused`},
+		},
+		{
 			name: "an unknown severity floor is dropped", doc: "review: { minSeverity: blocking }\n",
 			dropped: []string{`.kritik.yaml: review.minSeverity "blocking" was dropped; allowed: nit, important`},
 		},

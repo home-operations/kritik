@@ -93,6 +93,9 @@ type Prompt struct {
 	// pointed at to read for itself.
 	Context             []configfile.ContextFile `json:"context,omitempty"`
 	RequireSuggestedFix bool                     `json:"requireSuggestedFix,omitempty"`
+	// Focused is a focused review's: it reports only what would stop the
+	// review, where a thorough one reports anything actionable.
+	Focused bool `json:"focused,omitempty"`
 	// SkipPaths are the .kritik.yaml skip.onlyPaths globs: when every
 	// changed path matches one, the worker will skip the review.
 	SkipPaths []string `json:"skipPaths,omitempty"`

@@ -71,6 +71,22 @@ test.describe('account configuration', () => {
     expect(seen.filter((u) => u.pathname.endsWith('/config')).length).toBeGreaterThanOrEqual(2);
   });
 
+  test('thoroughness saves on the account and on a repository entry, and shows what it inherits', async ({ page }) => {
+    await setup(page, adminMe, [accountRow(accountConfig)]);
+    const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }]]);
+    await page.goto(`/${ADMIN}/config`);
+    const account = page.locator('[data-path="review.thoroughness"]');
+    const repo = page.locator('[data-path="repositories[0].review.thoroughness"]');
+    await expect(account.locator('option[value=""]')).toHaveText(`default: ${g.accountConfig.inherited.account.review.thoroughness}`);
+    await account.selectOption('focused');
+    await repo.selectOption('thorough');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    const body = sent[0]!.body as T.UpdateConfigRequest;
+    expect(body.spec.review).toEqual({ thoroughness: 'focused' });
+    expect((body.spec.repositories as Record<string, unknown>[])[0]!.review).toEqual({ thoroughness: 'thorough' });
+  });
+
   test('a configuration the caller cannot change renders read-only with secrets as set/not set', async ({ page }) => {
     await setup(page, adminMe, [accountRow({ ...accountConfig, editable: false })]);
     await page.goto(`/${ADMIN}/config`);

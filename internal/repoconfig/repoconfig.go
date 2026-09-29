@@ -92,6 +92,8 @@ type Review struct {
 	Templates           Templates     `yaml:"templates,omitempty"`
 	MinSeverity         string        `yaml:"minSeverity,omitempty"`
 	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
+	// Thoroughness replaces the admin's: thorough or focused.
+	Thoroughness string `yaml:"thoroughness,omitempty"`
 	// Context names files that explain the code, added after the
 	// admin's.
 	Context []configfile.ContextFile `yaml:"context,omitempty"`

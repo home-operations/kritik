@@ -44,7 +44,8 @@
           "description": "the schema",
           "paths": ["**/*.sql"]
         }
-      ]
+      ],
+      "thoroughness": "thorough"
     },
     "agent": {
       "maxSteps": 60,
@@ -108,7 +109,8 @@
             "description": "the schema",
             "paths": ["**/*.sql"]
           }
-        ]
+        ],
+        "thoroughness": "thorough"
       },
       "agent": {
         "maxSteps": 60,

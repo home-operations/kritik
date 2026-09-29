@@ -100,7 +100,7 @@ func (p *publishPhase) run(ctx context.Context) (status store.ReviewStatus, err 
 		p.logger.Warn("similar-code retrieval skipped", "error", err)
 	}
 	in.context = append(in.context, similar...)
-	system := review.SystemPrompt(p.instructions)
+	system := review.SystemPrompt(p.instructions, p.settings.Review.Thoroughness == configfile.ThoroughnessFocused)
 	var incremental *review.IncrementalInput
 	if p.scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{

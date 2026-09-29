@@ -70,6 +70,13 @@ instructions, and chooses a few settings within bounds an admin sets:
   the summary still lists every finding.
 - `review.inlineComments: false`: posts the summary alone, without inline
   comments.
+- `review.thoroughness`: `thorough`, the default, or `focused`. A thorough
+  review comments on every line a maintainer could act on, smaller
+  improvements, missing tests and questions included, with a one-click
+  suggestion wherever the fix is a change to those lines. A focused one
+  reports only what would stop the review: bugs, risks and breaking
+  changes. The admin sets it for the instance, an account or a repository
+  as well.
 - `review.templates.summary` / `review.templates.inline`: paths to Go
   [text/template](https://pkg.go.dev/text/template) templates that replace
   kritik's built-in summary and inline comment templates, with the

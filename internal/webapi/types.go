@@ -175,6 +175,7 @@ type ReviewBlock struct {
 	MinSeverity         string                     `json:"minSeverity"`
 	InlineComments      bool                       `json:"inlineComments"`
 	Context             []configfile.ContextFile   `json:"context"`
+	Thoroughness        string                     `json:"thoroughness"`
 }
 
 // AllowBounds are what a repository's .kritik.yaml may choose; a bound

@@ -69,6 +69,14 @@
       </select>
     </label>
     <label class="field">
+      <span>Thoroughness</span>
+      <select data-path="{p}.review.thoroughness" aria-invalid={inv(`${p}.review.thoroughness`) || undefined} bind:value={repo.thoroughness}>
+        <option value="">{own ? `default: ${own.review.thoroughness}` : 'default'}</option>
+        <option value="thorough">thorough</option>
+        <option value="focused">focused</option>
+      </select>
+    </label>
+    <label class="field">
       <span>Incremental: max delta files</span>
       <input inputmode="numeric" data-path="{p}.incremental" aria-invalid={inv(`${p}.incremental`) || undefined} bind:value={repo.maxDeltaFiles} placeholder={hint('incremental.maxDeltaFiles', String(own.maxDeltaFiles))} />
     </label>
