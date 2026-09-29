@@ -77,8 +77,9 @@ Register a GitHub App under the account whose repositories kritik reviews
 - **Organization permissions:** Members: read-only, only for signing in
   with GitHub through this App, whose role mapping reads the
   organizations a person belongs to.
-- **Events:** Pull request, Pull request review comment, Issue comment and
-  Push. Installation events arrive without subscribing.
+- **Events:** Pull request, Pull request review comment, Issue comment,
+  Push and Repository, which says when a repository is created, archived
+  or unarchived. Installation events arrive without subscribing.
 - **Where it can be installed:** only on this account, unless it should
   serve several. A public App can be installed on many organizations: list
   each one kritik should review in the connection's `accounts`. A

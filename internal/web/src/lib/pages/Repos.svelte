@@ -14,6 +14,7 @@
   import Time from '../components/Time.svelte';
   import ReviewStatusPill from '../components/ReviewStatusPill.svelte';
   import LoadMore from '../components/LoadMore.svelte';
+  import RepoTraits from '../components/RepoTraits.svelte';
   import Dialog from '../components/Dialog.svelte';
 
   let { slug }: { slug: string } = $props();
@@ -183,7 +184,7 @@
                         />
                       </td>
                     {/if}
-                    <td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a></td>
+                    <td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a> <RepoTraits r={repo} /></td>
                     <td>
                       {#if manage}
                         <label class="toggle">

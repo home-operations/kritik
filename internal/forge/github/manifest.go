@@ -42,7 +42,7 @@ var (
 		"statuses":      permWrite,
 		"members":       permRead,
 	}
-	AppEvents = []string{"pull_request", "pull_request_review_comment", "issue_comment", "push"}
+	AppEvents = []string{"pull_request", "pull_request_review_comment", "issue_comment", "push", "repository"}
 )
 
 // Permission levels a manifest grants.

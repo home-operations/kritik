@@ -75,6 +75,8 @@ func (s *Service) Dispatch(ctx context.Context, req Request) (Outcome, error) {
 		return s.push(ctx, req)
 	case webhook.KindInstallation:
 		return s.installation(ctx, req)
+	case webhook.KindRepository:
+		return s.repository(ctx, req)
 	default:
 		return Outcome{Status: Ignored, Reason: string(req.Event.Kind)}, nil
 	}
@@ -268,7 +270,9 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 		}
 		for _, name := range inst.Repositories {
 			if enable {
-				if _, err := ensureRepository(ctx, tx, req, &webhook.Repository{FullName: name}); err != nil {
+				// An installation event names a repository without saying
+				// whether it is archived or a fork.
+				if _, _, err := store.EnsureRepository(ctx, tx, req.Account.ID(), store.ReachedRepository{FullName: name}); err != nil {
 					return err
 				}
 				continue
@@ -283,8 +287,24 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 	return Outcome{Status: Recorded, Reason: ev.Action}, err
 }
 
+// repository records what the forge now says of a repository: that it was
+// created, archived or unarchived.
+func (s *Service) repository(ctx context.Context, req Request) (Outcome, error) {
+	ev := req.Event
+	if ev.Repository == nil {
+		return Outcome{Status: Ignored, Reason: reasonNoRepository}, nil
+	}
+	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
+		_, err := ensureRepository(ctx, tx, req, ev.Repository)
+		return err
+	})
+	return Outcome{Status: Recorded, Reason: ev.Action}, err
+}
+
 func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook.Repository) (string, error) {
-	id, _, err := store.EnsureRepository(ctx, tx, req.Account.ID(), repo.FullName, repo.DefaultBranch)
+	id, _, err := store.EnsureRepository(ctx, tx, req.Account.ID(), store.ReachedRepository{
+		FullName: repo.FullName, DefaultBranch: repo.DefaultBranch, Traits: &repo.RepoTraits,
+	})
 	return id, err
 }
 

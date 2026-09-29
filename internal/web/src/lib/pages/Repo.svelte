@@ -9,6 +9,7 @@
   import Time from '../components/Time.svelte';
   import PullRows from '../components/PullRows.svelte';
   import ActionButton from '../components/ActionButton.svelte';
+  import RepoTraits from '../components/RepoTraits.svelte';
   import { reindexPath, accountApi } from '../links';
   import { isAdmin } from '../session.svelte';
 
@@ -142,6 +143,7 @@
     <header class="page-head">
       <p class="crumbs"><a href={href({ name: 'repos', slug })}>Repositories</a> /</p>
       <h1 class="mono">{fullName}</h1>
+      {#if res.data?.fork || res.data?.archived}<p class="meta-line"><RepoTraits r={res.data} /></p>{/if}
       {#if isAdmin()}
         <div class="page-actions">
           <ActionButton

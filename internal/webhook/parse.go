@@ -23,6 +23,7 @@ const (
 	evIssueComment  = "issue_comment"
 	evReviewComment = "pull_request_review_comment"
 	evPush          = "push"
+	evRepository    = "repository"
 )
 
 // Kind is what a webhook is about, after the forge-specific shape is gone.
@@ -35,7 +36,10 @@ const (
 	KindComment      Kind = "comment"
 	KindPush         Kind = "push"
 	KindInstallation Kind = "installation"
-	KindIgnored      Kind = "ignored"
+	// KindRepository is a repository created, archived or unarchived; its
+	// Repository says what the forge now says of it.
+	KindRepository Kind = "repository"
+	KindIgnored    Kind = "ignored"
 )
 
 // Event is the forge-neutral view of a verified webhook.
@@ -63,6 +67,7 @@ type Repository struct {
 	// FullName is "owner/repo".
 	FullName      string
 	DefaultBranch string
+	configfile.RepoTraits
 }
 
 // PullRequest carries the fields the filter and the review pipeline need.
@@ -203,6 +208,8 @@ func IsBot(userType, login string) bool {
 type ghRepo struct {
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`
+	Archived      bool   `json:"archived"`
+	Fork          bool   `json:"fork"`
 	Owner         ghUser `json:"owner"`
 }
 
@@ -210,7 +217,7 @@ func (r ghRepo) event() *Repository {
 	if r.FullName == "" {
 		return nil
 	}
-	return &Repository{FullName: r.FullName, DefaultBranch: r.DefaultBranch}
+	return &Repository{FullName: r.FullName, DefaultBranch: r.DefaultBranch, Archived: r.Archived, Fork: r.Fork}
 }
 
 // ghPR is a pull request as GitHub payloads carry one.
@@ -273,6 +280,8 @@ func parseGitHub(event, delivery string, body []byte) (Event, error) {
 		return parsePush(delivery, body)
 	case "installation", "installation_repositories":
 		return parseInstallation(delivery, body)
+	case evRepository:
+		return parseRepository(delivery, body)
 	default:
 		return Event{Kind: KindIgnored, Delivery: delivery, Action: event}, nil
 	}
@@ -365,6 +374,27 @@ func parsePush(delivery string, body []byte) (Event, error) {
 		Kind: KindPush, Delivery: delivery,
 		Repository: p.Repository.event(), Account: p.Repository.Owner.Login,
 		Push: &Push{Ref: p.Ref, After: p.After},
+	}, nil
+}
+
+// repositoryActions are the repository event actions that change what
+// kritik records of one; the rest, such as edited, change nothing it keeps.
+var repositoryActions = map[string]bool{"created": true, "archived": true, "unarchived": true}
+
+func parseRepository(delivery string, body []byte) (Event, error) {
+	var p struct {
+		Action     string `json:"action"`
+		Repository ghRepo `json:"repository"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		return Event{}, fmt.Errorf("webhook: repository payload: %w", err)
+	}
+	if !repositoryActions[p.Action] {
+		return Event{Kind: KindIgnored, Action: evRepository, Delivery: delivery}, nil
+	}
+	return Event{
+		Kind: KindRepository, Action: p.Action, Delivery: delivery,
+		Repository: p.Repository.event(), Account: p.Repository.Owner.Login,
 	}, nil
 }
 

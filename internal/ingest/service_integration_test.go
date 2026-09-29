@@ -368,6 +368,55 @@ func TestDispatchInstallation(t *testing.T) {
 	})
 }
 
+// TestDispatchRepository: a repository event records whether the
+// repository is archived or a fork, which a later installation event,
+// naming it alone, keeps.
+func TestDispatchRepository(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	// The poller's tests share the database and poll every enabled
+	// repository of bot-ross.
+	t.Cleanup(func() {
+		removed := webhook.Event{Kind: webhook.KindInstallation, Action: "removed", Account: "onedr0p",
+			Installation: &webhook.Installation{Repositories: []string{"onedr0p/old"}}}
+		_, _ = svc.Dispatch(ctx, request(f, removed))
+	})
+	traits := func() (archived, fork bool) {
+		t.Helper()
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT archived, fork FROM repositories WHERE name = 'onedr0p/old'`).Scan(&archived, &fork)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return archived, fork
+	}
+	old := &webhook.Repository{FullName: "onedr0p/old", Archived: true, Fork: true}
+	archived := webhook.Event{Kind: webhook.KindRepository, Action: "archived", Account: "onedr0p", Repository: old}
+	if out, err := svc.Dispatch(ctx, request(f, archived)); err != nil || out != (Outcome{Status: Recorded, Reason: "archived"}) {
+		t.Fatalf("Dispatch = %+v, %v; want recorded for archived", out, err)
+	}
+	if a, fk := traits(); !a || !fk {
+		t.Fatalf("archived=%v fork=%v after the repository event", a, fk)
+	}
+	added := webhook.Event{Kind: webhook.KindInstallation, Action: "added", Account: "onedr0p",
+		Installation: &webhook.Installation{Repositories: []string{"onedr0p/old"}}}
+	if _, err := svc.Dispatch(ctx, request(f, added)); err != nil {
+		t.Fatal(err)
+	}
+	if a, fk := traits(); !a || !fk {
+		t.Fatalf("archived=%v fork=%v after an installation event; it names the repository alone", a, fk)
+	}
+	old.Archived = false
+	unarchived := webhook.Event{Kind: webhook.KindRepository, Action: "unarchived", Account: "onedr0p", Repository: old}
+	if _, err := svc.Dispatch(ctx, request(f, unarchived)); err != nil {
+		t.Fatal(err)
+	}
+	if a, fk := traits(); a || !fk {
+		t.Fatalf("archived=%v fork=%v after unarchiving", a, fk)
+	}
+}
+
 func TestRecordDelivery(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()

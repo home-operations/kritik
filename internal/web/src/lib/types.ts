@@ -159,6 +159,8 @@ export interface Repository {
   enabled: boolean;
   managedBy: 'dashboard' | 'forge';
   defaultBranch: string;
+  archived: boolean;
+  fork: boolean;
   index: IndexState;
   lastReview: ReviewRef | null;
 }
@@ -795,6 +797,8 @@ export interface AppRepository {
   name: string;
   fullName: string;
   defaultBranch: string;
+  archived: boolean;
+  fork: boolean;
 }
 
 export interface RegisterResult {
