@@ -57,7 +57,7 @@ func TestParseFileLayer(t *testing.T) {
 	}
 	for _, tt := range []struct{ name, yaml, want string }{
 		{"a spec key", "polling: {}\n" + file, "field polling not found"},
-		{"a default the file does not set", "defaults: { settle: 1m }\n" + file, "field settle not found"},
+		{"a default the file does not set", "defaults: { filter: \"true\" }\n" + file, "field filter not found"},
 		{"a sealed connection secret", strings.Replace(file, "{ env: TEST_PRIVATE_KEY }", "{ sealed: abc }", 1),
 			"connections[0].app.privateKey: sealed values are only valid in the dashboard's configuration"},
 		{"sealed and env", strings.Replace(file, "{ env: TEST_PRIVATE_KEY }", "{ env: TEST_PRIVATE_KEY, sealed: abc }", 1),

@@ -114,7 +114,7 @@ auth:
 
 # The optional configuration file: sign-in (`auth`), GitHub Apps that
 # already exist (`connections`), and the instance's defaults (`providers`,
-# `defaults.models` and `embedding`), which the dashboard may override.
+# part of `defaults`, and `embedding`), which the dashboard may override.
 # Every key in it also has a `KRITIK_*` environment variable, which wins
 # over the file; the `auth` values above render those, and `extraEnv` can
 # set the others. Accounts, their repositories and the dashboard's own
@@ -125,7 +125,7 @@ auth:
 # `secretMounts` or environment variables. Every replica re-reads the file
 # on `reloadInterval`; the leader applies it to the store.
 config:
-  # -- (optional) The configuration file, as YAML: `auth`, `connections`, `providers`, `defaults.models` and `embedding`. Passed through verbatim, not tpl'd. See docs/configuration.md.
+  # -- (optional) The configuration file, as YAML: `auth`, `connections`, `providers`, part of `defaults` and `embedding`. Passed through verbatim, not tpl'd. See docs/configuration.md.
   file: {}
   # connections:
   #   - name: github

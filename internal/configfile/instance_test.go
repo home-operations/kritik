@@ -1,8 +1,10 @@
 package configfile
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fileWithDefaults is minimal's connection with instance defaults in the
@@ -126,7 +128,9 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 
 	for _, tt := range []struct{ name, key, value, want string }{
 		{"an unknown provider key", "KRITIK_PROVIDERS_MODEL", "x", "KRITIK_PROVIDERS_MODEL names no provider setting"},
-		{"an unknown defaults key", "KRITIK_DEFAULTS_SETTLE", "1m", "KRITIK_DEFAULTS_SETTLE names no defaults setting"},
+		{"an unknown defaults key", "KRITIK_DEFAULTS_FILTER", "true", "KRITIK_DEFAULTS_FILTER names no defaults setting"},
+		{"forks that are not a bool", "KRITIK_DEFAULTS_FORKS", "sometimes", "KRITIK_DEFAULTS_FORKS must be true or false"},
+		{"a settle that is not a duration", "KRITIK_DEFAULTS_SETTLE", "soon", "KRITIK_DEFAULTS_SETTLE"},
 		{"an unknown embedding key", "KRITIK_EMBEDDING_URL", "x", "KRITIK_EMBEDDING_URL names no embedding setting"},
 		{"dims that are not a number", "KRITIK_EMBEDDING_DIMS", "many", "KRITIK_EMBEDDING_DIMS must be a whole number"},
 		{"a key set twice", "KRITIK_PROVIDERS_API_KEY_FILE", "/nope", "set the same provider setting"},
@@ -151,5 +155,54 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 	}
 	if _, err := Merge(base, spec(`{}`, 1), testOpener{}); err == nil || !strings.Contains(err.Error(), "defaults.models.review") {
 		t.Fatalf("Merge = %v; want the default model refused", err)
+	}
+}
+
+// TestFileReviewDefaults: the file and the environment set the defaults'
+// mode, thoroughness, forks and settle, which accounts inherit with the
+// file's or the environment's source and the spec overrides key by key.
+func TestFileReviewDefaults(t *testing.T) {
+	setInstanceEnv(t)
+	t.Setenv("KRITIK_DEFAULTS_SETTLE", "45s")
+	models := "  models: { review: openrouter/big, fallback: openrouter/small }\n"
+	withDefaults := func(extra string) []byte { return []byte(strings.Replace(fileWithDefaults, models, models+extra, 1)) }
+	base, err := Parse(withDefaults("  mode: agentic\n  forks: true\n  review: { thoroughness: focused }\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	f, err := Merge(base, spec(`{"defaults":{"review":{"thoroughness":"thorough"}},"accounts":[{"forge":"github","name":"acme"}]}`, 1), testOpener{})
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	a := &f.Accounts[0]
+	s := f.Settings(a, "acme/x")
+	if s.Mode != ReviewAgentic || !s.Forks || s.Settle != 45*time.Second || s.Review.Thoroughness != ThoroughnessThorough {
+		t.Fatalf("settings = mode %s forks %v settle %s thoroughness %s; want the file's and the environment's, the spec's thoroughness",
+			s.Mode, s.Forks, s.Settle, s.Review.Thoroughness)
+	}
+	src := f.Sources(a, "acme/x")
+	for key, want := range map[string]Source{"mode": SourceFile, "forks": SourceFile, "settle": SourceEnv, "review.thoroughness": SourceDefaults} {
+		if src[key] != want {
+			t.Errorf("source of %s = %s, want %s", key, src[key], want)
+		}
+	}
+	want := []FileDefault{
+		{"mode", FileValue{Value: "agentic", Source: SourceFile}},
+		{"review.thoroughness", FileValue{Value: "focused", Source: SourceFile, Overridden: true}},
+		{"forks", FileValue{Value: "true", Source: SourceFile}},
+		{"settle", FileValue{Value: "45s", Source: SourceEnv}},
+	}
+	if got := f.FileLayer().Defaults; !slices.Equal(got, want) {
+		t.Fatalf("file layer defaults = %+v, want %+v", got, want)
+	}
+	if _, err := Merge(base, spec(`{}`, 2), testOpener{}); err != nil {
+		t.Fatalf("Merge without a spec: %v", err)
+	}
+	bad, err := Parse(withDefaults("  mode: thorough\n"))
+	if err == nil {
+		_, err = Merge(bad, spec(`{}`, 1), testOpener{})
+	}
+	if err == nil || !strings.Contains(err.Error(), "defaults.mode must be single or agentic") {
+		t.Fatalf("an unknown mode = %v", err)
 	}
 }
