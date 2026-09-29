@@ -116,6 +116,26 @@ test.describe('pulls list', () => {
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7$`));
   });
+
+  test('the keyboard cursor stays on its pull when a live refetch adds one above it', async ({ page }) => {
+    const newer = { ...g.pull, number: 9, title: 'Newer widgets', url: g.pull.url.replace(/\d+$/, '9') };
+    let added = false;
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), () => g.pageOf(added ? [newer, g.pull] : [g.pull])], ...g.defaultApi()]);
+    await page.goto(`/${T}/pulls`);
+    const rows = page.locator('.pull-rows .row');
+    await expect(rows).toHaveCount(1);
+    await page.locator('h1').click();
+    await page.keyboard.press('j');
+    await expect(rows.first()).toHaveClass(/selected/);
+
+    // The fixture's stream closes as it opens, and every reopen refetches.
+    added = true;
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first()).not.toHaveClass(/selected/);
+    await expect(rows.nth(1)).toHaveClass(/selected/);
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7$`));
+  });
 });
 
 test('pull detail shows the review history and follow-ups with a transcript', async ({ page }) => {

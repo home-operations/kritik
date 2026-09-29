@@ -19,7 +19,6 @@
   let repoName = $state('');
   let qInput = $state('');
   let q = $state('');
-  let selected = $state(-1);
   let searchEl = $state<HTMLInputElement | undefined>(undefined);
 
   const account = $derived(`${accountApi(slug)}`);
@@ -33,7 +32,8 @@
     return `${account}/pulls?${p}`;
   }
 
-  const paged = new Paged<Pull>(query, (p) => `${p.repository}#${p.number}`);
+  const pullKey = (p: Pull) => `${p.repository}#${p.number}`;
+  const paged = new Paged<Pull>(query, pullKey);
   const res = paged.first;
   const repos = new Resource(() => getJSON<Page<Repository>>(`${account}/repos?limit=100`));
 
@@ -52,9 +52,15 @@
   });
 
   const items = $derived(paged.items);
+  // The cursor follows its pull rather than its position, which a live
+  // refetch shifts when it adds or reorders rows above it.
+  let selectedKey = $state('');
+  const selected = $derived(items.findIndex((p) => pullKey(p) === selectedKey));
 
   async function select(i: number): Promise<void> {
-    selected = i;
+    const p = items[i];
+    if (!p) return;
+    selectedKey = pullKey(p);
     await tick();
     document.querySelector(`.pull-rows [data-index="${i}"]`)?.scrollIntoView({ block: 'nearest' });
   }
