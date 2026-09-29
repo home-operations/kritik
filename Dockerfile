@@ -12,7 +12,7 @@ ARG NODE_VERSION
 FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS ui
 WORKDIR /ui
 COPY internal/web/package.json internal/web/package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 COPY internal/web/ ./
 RUN npm run build
 
@@ -26,14 +26,16 @@ ARG REVISION=dev
 WORKDIR /workspace
 # Cache module downloads before copying source.
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY cmd/ cmd/
 COPY internal/ internal/
 COPY --from=ui /ui/dist/ internal/web/dist/
 
 # Static, stripped, reproducible binary. GOARCH is left to the platform.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
     -o kritik ./cmd/kritik

@@ -1,14 +1,20 @@
 <script lang="ts">
   import { href } from '../router.svelte';
   import { Paged, live } from '../resource.svelte';
-  import { indexTone } from '../format';
-  import { repoRoute, accountApi } from '../links';
-  import type { Repository } from '../types';
+  import { indexTone, splitRepo } from '../format';
+  import { repoRoute, accountApi, reindexPath } from '../links';
+  import { getJSON, sendJSON } from '../api.svelte';
+  import { describe, isCode } from '../manage';
+  import { isAdmin, management } from '../session.svelte';
+  import { withRepositoriesEnabled } from '../spec';
+  import { toast } from '../toast.svelte';
+  import type { AccountConfig, Repository } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
   import ReviewStatusPill from '../components/ReviewStatusPill.svelte';
   import LoadMore from '../components/LoadMore.svelte';
+  import Dialog from '../components/Dialog.svelte';
 
   let { slug }: { slug: string } = $props();
   let filter = $state('');
@@ -30,6 +36,82 @@
     const all = paged.items;
     return needle ? all.filter((r) => r.fullName.toLowerCase().includes(needle)) : all;
   }
+
+  const manage = $derived(isAdmin() && management());
+  // Full names picked for a bulk action.
+  let selected = $state<string[]>([]);
+  // What this page last turned each repository to: a list read right after
+  // a save may still show the running configuration before it.
+  let turned = $state<Record<string, boolean>>({});
+  let busy = $state(false);
+  let confirmReindex = $state(false);
+
+  const isOn = (r: Repository): boolean => turned[r.fullName] ?? r.enabled;
+  const plural = (n: number): string => (n === 1 ? '1 repository' : `${n} repositories`);
+
+  function pick(fullName: string, on: boolean): void {
+    selected = on ? [...selected, fullName] : selected.filter((n) => n !== fullName);
+  }
+
+  function pickAll(rows: Repository[], on: boolean): void {
+    const names = rows.map((r) => r.fullName);
+    selected = on ? [...new Set([...selected, ...names])] : selected.filter((n) => !names.includes(n));
+  }
+
+  // setEnabled writes the account's entries for names in one save of its
+  // configuration.
+  async function setEnabled(names: string[], on: boolean): Promise<void> {
+    busy = true;
+    try {
+      const path = `${accountApi(slug)}/config`;
+      const cfg = await getJSON<AccountConfig>(path);
+      const built = withRepositoriesEnabled(
+        cfg.spec,
+        names.map((n) => splitRepo(n).repo),
+        on,
+        cfg.inherited.repository.enabled,
+      );
+      if (built.error) throw new Error(`${built.error.path}: ${built.error.message}`);
+      await sendJSON('PUT', path, { revision: cfg.revision, spec: built.spec });
+      for (const n of names) turned[n] = on;
+      toast(`${plural(names.length)} turned ${on ? 'on' : 'off'}`);
+      selected = [];
+      void paged.load();
+    } catch (err) {
+      const why = isCode(err, 'revision_conflict') ? 'the configuration changed meanwhile; try again' : describe(err);
+      toast(`Turning ${on ? 'on' : 'off'} failed: ${why}`, 'danger');
+    } finally {
+      busy = false;
+    }
+  }
+
+  // reindex queues a reindex of each selected repository that is on, one
+  // request at a time.
+  async function reindex(): Promise<void> {
+    busy = true;
+    const targets = paged.items.filter((r) => selected.includes(r.fullName) && isOn(r)).map((r) => r.fullName);
+    let queued = 0;
+    let already = 0;
+    const failed: string[] = [];
+    for (const name of targets) {
+      try {
+        await sendJSON('POST', reindexPath(slug, name));
+        queued++;
+      } catch (err) {
+        if (isCode(err, 'already_queued')) already++;
+        else failed.push(`${name}: ${describe(err)}`);
+      }
+    }
+    busy = false;
+    confirmReindex = false;
+    selected = [];
+    const parts = [`Reindex queued for ${plural(queued)}`];
+    if (already) parts.push(`${already} already queued`);
+    if (failed.length) parts.push(`${failed.length} failed (${failed.join('; ')})`);
+    toast(parts.join(', '), failed.length ? 'danger' : 'ok');
+  }
+
+  const selectedOff = $derived(paged.items.filter((r) => selected.includes(r.fullName) && !isOn(r)).length);
 </script>
 
 <main class="page">
@@ -40,6 +122,15 @@
         <span class="sr-only">Filter repositories</span>
         <input type="search" placeholder="Filter by name" bind:value={filter} />
       </label>
+      {#if manage && selected.length}
+        <div class="bulk-actions" role="group" aria-label="Selected repositories">
+          <span class="small">{selected.length} selected</span>
+          <button class="btn btn-small" disabled={busy} onclick={() => setEnabled(selected, true)}>Turn on</button>
+          <button class="btn btn-small" disabled={busy} onclick={() => setEnabled(selected, false)}>Turn off</button>
+          <button class="btn btn-small" disabled={busy} onclick={() => (confirmReindex = true)}>Reindex…</button>
+          <button class="btn btn-small" disabled={busy} onclick={() => (selected = [])}>Clear</button>
+        </div>
+      {/if}
     </div>
     <StateView {res} retry={() => res.load()} isEmpty={(d) => d.items.length === 0} empty="No repositories yet.">
       {#snippet children()}
@@ -51,6 +142,16 @@
             <table class="data">
               <thead>
                 <tr>
+                  {#if manage}
+                    <th scope="col">
+                      <input
+                        type="checkbox"
+                        aria-label="Select every repository shown"
+                        checked={rows.every((r) => selected.includes(r.fullName))}
+                        onchange={(e) => pickAll(rows, e.currentTarget.checked)}
+                      />
+                    </th>
+                  {/if}
                   <th scope="col">Repository</th>
                   <th scope="col">Enabled</th>
                   <th scope="col">Index</th>
@@ -61,8 +162,32 @@
               <tbody>
                 {#each rows as repo (repo.id)}
                   <tr>
+                    {#if manage}
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${repo.fullName}`}
+                          checked={selected.includes(repo.fullName)}
+                          onchange={(e) => pick(repo.fullName, e.currentTarget.checked)}
+                        />
+                      </td>
+                    {/if}
                     <td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a></td>
-                    <td>{#if repo.enabled}<Pill tone="ok" label="on" />{:else}<Pill label="off" />{/if}</td>
+                    <td>
+                      {#if manage}
+                        <label class="toggle">
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            aria-label={`Review and index ${repo.fullName}`}
+                            checked={isOn(repo)}
+                            disabled={busy}
+                            onchange={(e) => setEnabled([repo.fullName], e.currentTarget.checked)}
+                          />
+                          <span>{isOn(repo) ? 'on' : 'off'}</span>
+                        </label>
+                      {:else if repo.enabled}<Pill tone="ok" label="on" />{:else}<Pill label="off" />{/if}
+                    </td>
                     <td>
                       {#if repo.index.lastRunStatus}
                         <Pill tone={indexTone[repo.index.lastRunStatus]} label={repo.index.lastRunStatus} /> <Time iso={repo.index.lastRunAt} />
@@ -86,3 +211,14 @@
     </StateView>
   </div>
 </main>
+
+<Dialog bind:open={confirmReindex} title={`Reindex ${plural(selected.length - selectedOff)}?`}>
+  <p>
+    Each is indexed again from its default branch, which spends embedder tokens.
+    {#if selectedOff}{plural(selectedOff)} that {selectedOff === 1 ? 'is' : 'are'} off {selectedOff === 1 ? 'is' : 'are'} skipped.{/if}
+  </p>
+  {#snippet footer()}
+    <button class="btn" onclick={() => (confirmReindex = false)}>Cancel</button>
+    <button class="btn btn-primary" disabled={busy || selected.length === selectedOff} onclick={reindex}>{busy ? 'Queuing…' : 'Reindex'}</button>
+  {/snippet}
+</Dialog>
