@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -103,9 +104,7 @@ func (p *oidcProvider) Exchange(ctx context.Context, code, pkceVerifier, nonce s
 		Email: c.Email, EmailVerified: bool(c.EmailVerified) && c.Email != "",
 		DisplayName: c.Name, AvatarURL: c.Picture,
 	}
-	if id.DisplayName == "" {
-		id.DisplayName = id.Login
-	}
+	id.DisplayName = cmp.Or(id.DisplayName, id.Login)
 	facts := Facts{MappingVars: func(ctx context.Context) (map[string]any, error) {
 		claims := map[string]any{}
 		if err := idt.Claims(&claims); err != nil {

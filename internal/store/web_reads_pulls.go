@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -115,9 +116,7 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 	if err := p.check(); err != nil {
 		return nil, nil, err
 	}
-	if f.State == "" {
-		f.State = PullAll
-	}
+	f.State = cmp.Or(f.State, PullAll)
 	if !f.State.Valid() || (f.Outcome != "" && !f.Outcome.Valid()) {
 		return nil, nil, ErrFilter
 	}

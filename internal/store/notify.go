@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -61,7 +62,7 @@ func parseEvent(payload string) (Event, error) {
 		return Event{}, fmt.Errorf("store: parse event payload: unknown kind %q", p.Kind)
 	}
 	if p.AccountID == "" || p.ID == "" {
-		return Event{}, fmt.Errorf("store: parse event payload: missing account_id or id")
+		return Event{}, errors.New("store: parse event payload: missing account_id or id")
 	}
 	return Event{AccountID: p.AccountID, Kind: kind, ID: p.ID, ReviewID: p.ReviewID}, nil
 }
@@ -229,7 +230,7 @@ func (s *Store) listenOnce(
 		return false, fmt.Errorf("store: listen connect: %w", err)
 	}
 	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		_ = conn.Close(closeCtx)
 	}()

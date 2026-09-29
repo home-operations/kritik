@@ -5,6 +5,7 @@
 package model
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -220,15 +221,11 @@ type Embedder interface {
 func NewStepper(t ProviderType, baseURL, apiKey string, pricing Pricing, client *http.Client) (Stepper, error) {
 	switch t {
 	case ProviderOpenRouter:
-		if baseURL == "" {
-			baseURL = OpenRouterBaseURL
-		}
+		baseURL = cmp.Or(baseURL, OpenRouterBaseURL)
 		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, OpenRouter: true, Pricing: pricing})
 	case ProviderOpenAI:
 		// Set, so the client never falls back to OPENAI_BASE_URL.
-		if baseURL == "" {
-			baseURL = OpenAIBaseURL
-		}
+		baseURL = cmp.Or(baseURL, OpenAIBaseURL)
 		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, Pricing: pricing})
 	case ProviderAnthropic:
 		return NewAnthropic(AnthropicConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, Pricing: pricing})

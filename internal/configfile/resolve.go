@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"cmp"
 	"reflect"
 	"slices"
 	"strings"
@@ -86,9 +87,7 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 		}
 		s.apply(&r.Overrides)
 	}
-	if s.Limits.Concurrency == 0 {
-		s.Limits.Concurrency = DefaultConcurrency
-	}
+	s.Limits.Concurrency = cmp.Or(s.Limits.Concurrency, DefaultConcurrency)
 	return s
 }
 

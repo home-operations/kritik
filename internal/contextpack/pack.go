@@ -7,8 +7,9 @@ package contextpack
 
 import (
 	"bytes"
+	"cmp"
 	"context"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -216,12 +217,7 @@ func (b *builder) overlay(ctx context.Context) error {
 			b.identifiers = append(b.identifiers, id)
 		}
 	}
-	sort.Slice(b.identifiers, func(i, j int) bool {
-		if idCount[b.identifiers[i]] != idCount[b.identifiers[j]] {
-			return idCount[b.identifiers[i]] > idCount[b.identifiers[j]]
-		}
-		return b.identifiers[i] < b.identifiers[j]
-	})
+	slices.SortFunc(b.identifiers, func(x, y string) int { return cmp.Or(cmp.Compare(idCount[y], idCount[x]), cmp.Compare(x, y)) })
 	if len(b.identifiers) > b.opts.MaxIdentifiers {
 		b.identifiers = b.identifiers[:b.opts.MaxIdentifiers]
 	}
@@ -413,18 +409,9 @@ func pick(cs []Chunk, n int) []Chunk {
 		if len(out) == n {
 			break
 		}
-		if !containsChunk(out, c) {
+		if !slices.ContainsFunc(out, func(x Chunk) bool { return x.Path == c.Path && x.StartLine == c.StartLine }) {
 			out = append(out, c)
 		}
 	}
 	return out
-}
-
-func containsChunk(cs []Chunk, c Chunk) bool {
-	for _, x := range cs {
-		if x.Path == c.Path && x.StartLine == c.StartLine {
-			return true
-		}
-	}
-	return false
 }

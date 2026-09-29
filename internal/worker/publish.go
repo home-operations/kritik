@@ -1,12 +1,13 @@
 package worker
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -350,7 +351,7 @@ func reviewNotes(omitted []string, dropped []review.Dropped) []string {
 		for r, n := range byReason {
 			reasons = append(reasons, fmt.Sprintf("%s: %d", r, n))
 		}
-		sort.Strings(reasons)
+		slices.Sort(reasons)
 		notes = append(notes, fmt.Sprintf("%d finding(s) were dropped (%s)", len(dropped), strings.Join(reasons, ", ")))
 	}
 	return notes
@@ -615,7 +616,7 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 	if err != nil {
 		return nil, err
 	}
-	sort.SliceStable(hits, func(i, j int) bool { return hits[i].sim > hits[j].sim })
+	slices.SortStableFunc(hits, func(a, b hit) int { return cmp.Compare(b.sim, a.sim) })
 	if len(hits) > similarMax {
 		hits = hits[:similarMax]
 	}

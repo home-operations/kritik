@@ -2,6 +2,7 @@ package review
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -54,7 +55,7 @@ func ParseFollowUp(raw string) (string, error) {
 	}
 	out.Reply = strings.TrimSpace(out.Reply)
 	if out.Reply == "" {
-		return "", fmt.Errorf("review: model returned an empty reply")
+		return "", errors.New("review: model returned an empty reply")
 	}
 	return out.Reply, nil
 }

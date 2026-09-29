@@ -7,6 +7,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -212,10 +213,10 @@ type Config struct {
 // ValidateWorker checks what the worker role needs beyond the common set.
 func (c *Config) ValidateWorker() error {
 	if c.Executor == "kubernetes" && c.RunnerImage == "" {
-		return fmt.Errorf("config: KRITIK_RUNNER_IMAGE is required with the kubernetes executor")
+		return errors.New("config: KRITIK_RUNNER_IMAGE is required with the kubernetes executor")
 	}
 	if c.Executor == "local" && c.RunnerDatabaseURL == "" {
-		return fmt.Errorf("config: KRITIK_RUNNER_DATABASE_URL is required with the local executor")
+		return errors.New("config: KRITIK_RUNNER_DATABASE_URL is required with the local executor")
 	}
 	return nil
 }
@@ -224,7 +225,7 @@ func (c *Config) ValidateWorker() error {
 // decoded and validated by the runner package.
 func (c *Config) ValidateRunner() error {
 	if c.RunSpecFile == "" {
-		return fmt.Errorf("config: KRITIK_RUN_SPEC_FILE is required for the runner role")
+		return errors.New("config: KRITIK_RUN_SPEC_FILE is required for the runner role")
 	}
 	return nil
 }
@@ -233,7 +234,7 @@ func (c *Config) ValidateRunner() error {
 // set, for the all and web roles.
 func (c *Config) ValidateWeb() error {
 	if c.WebURL == "" {
-		return fmt.Errorf("config: KRITIK_WEB_URL is required for the all and web roles")
+		return errors.New("config: KRITIK_WEB_URL is required for the all and web roles")
 	}
 	return nil
 }
@@ -315,7 +316,7 @@ func (c *Config) validate() error {
 		return err
 	}
 	if c.DatabaseAppRole == "" || c.DatabaseRunnerRole == "" || c.DatabaseAppRole == c.DatabaseRunnerRole {
-		return fmt.Errorf("config: KRITIK_DATABASE_APP_ROLE and KRITIK_DATABASE_RUNNER_ROLE must be set and distinct")
+		return errors.New("config: KRITIK_DATABASE_APP_ROLE and KRITIK_DATABASE_RUNNER_ROLE must be set and distinct")
 	}
 	if c.LeaderRetryInterval <= 0 {
 		return fmt.Errorf("config: KRITIK_LEADER_RETRY_INTERVAL must be positive, got %s", c.LeaderRetryInterval)
@@ -334,10 +335,10 @@ func (c *Config) validate() error {
 // validateWork checks the settings that size the queues and the runners.
 func (c *Config) validateWork() error {
 	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 {
-		return fmt.Errorf("config: KRITIK_REVIEW_WORKERS and KRITIK_INDEX_WORKERS must be positive")
+		return errors.New("config: KRITIK_REVIEW_WORKERS and KRITIK_INDEX_WORKERS must be positive")
 	}
 	if c.RunnerTTL <= 0 {
-		return fmt.Errorf("config: KRITIK_RUNNER_TTL must be positive")
+		return errors.New("config: KRITIK_RUNNER_TTL must be positive")
 	}
 	return nil
 }
@@ -345,7 +346,7 @@ func (c *Config) validateWork() error {
 func (c *Config) buildKeyring() error {
 	if c.DashboardKey == "" {
 		if len(c.DashboardOldKeys) > 0 {
-			return fmt.Errorf("config: KRITIK_DASHBOARD_OLD_KEYS needs KRITIK_DASHBOARD_KEY")
+			return errors.New("config: KRITIK_DASHBOARD_OLD_KEYS needs KRITIK_DASHBOARD_KEY")
 		}
 		return nil
 	}

@@ -8,7 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -292,7 +292,7 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, error) {
 	if !found {
 		comments = append(comments, f.comment)
 	}
-	sort.SliceStable(comments, func(i, j int) bool { return comments[i].CreatedAt.Before(comments[j].CreatedAt) })
+	slices.SortStableFunc(comments, func(a, b forge.Comment) int { return a.CreatedAt.Compare(b.CreatedAt) })
 	// The asking comment closes the thread whatever the timestamps say.
 	for i, c := range comments {
 		if c.ID == f.comment.ID && i != len(comments)-1 {

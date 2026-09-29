@@ -166,9 +166,7 @@ func (k *Keyring) Seal(plaintext []byte) (string, error) {
 	}
 
 	dek := make([]byte, keyLen)
-	if _, err := rand.Read(dek); err != nil {
-		return "", fmt.Errorf("sealbox: generate dek: %w", err)
-	}
+	_, _ = rand.Read(dek) // never fails
 	defer clear(dek)
 
 	aad := additionalData(k.currentID)
@@ -294,9 +292,7 @@ func sealLayer(key, plaintext, aad []byte) (nonce, ciphertext []byte, err error)
 		return nil, nil, err
 	}
 	nonce = make([]byte, nonceLen)
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, nil, fmt.Errorf("sealbox: generate nonce: %w", err)
-	}
+	_, _ = rand.Read(nonce) // never fails
 	return nonce, aead.Seal(nil, nonce, plaintext, aad), nil
 }
 

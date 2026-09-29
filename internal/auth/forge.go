@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -75,9 +76,7 @@ func (p *forgeProvider) Exchange(ctx context.Context, code, pkceVerifier, _ stri
 		return Identity{}, Facts{}, fmt.Errorf("auth: %s: %w", name, err)
 	}
 	id.Provider, id.Origin = name, signInOrigin(p.signIn)
-	if id.DisplayName == "" {
-		id.DisplayName = id.Login
-	}
+	id.DisplayName = cmp.Or(id.DisplayName, id.Login)
 	facts := Facts{
 		MappingVars: func(ctx context.Context) (map[string]any, error) {
 			vars, err := p.api.mappingVars(ctx, c, id)

@@ -5,6 +5,7 @@
 package webapi
 
 import (
+	"cmp"
 	"context"
 	"io/fs"
 	"log/slog"
@@ -215,9 +216,7 @@ func (s *Server) uiHandler() http.Handler {
 // index.html, which http.FileServerFS would otherwise list.
 func isBareDir(ui fs.FS, urlPath string) bool {
 	name := strings.TrimPrefix(path.Clean("/"+urlPath), "/")
-	if name == "" {
-		name = "."
-	}
+	name = cmp.Or(name, ".")
 	st, err := fs.Stat(ui, name)
 	if err != nil || !st.IsDir() {
 		return false
@@ -250,16 +249,12 @@ type statusRecorder struct {
 }
 
 func (r *statusRecorder) WriteHeader(code int) {
-	if r.status == 0 {
-		r.status = code
-	}
+	r.status = cmp.Or(r.status, code)
 	r.ResponseWriter.WriteHeader(code)
 }
 
 func (r *statusRecorder) Write(b []byte) (int, error) {
-	if r.status == 0 {
-		r.status = http.StatusOK
-	}
+	r.status = cmp.Or(r.status, http.StatusOK)
 	return r.ResponseWriter.Write(b)
 }
 

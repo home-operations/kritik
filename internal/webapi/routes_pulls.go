@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	"cmp"
 	"errors"
 	"net/http"
 	"strconv"
@@ -21,9 +22,7 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *accountSco
 	}
 	q := r.URL.Query()
 	f := store.PullFilter{State: store.PullState(q.Get("state")), Outcome: store.ReviewStatus(q.Get("outcome")), Query: q.Get("q")}
-	if f.State == "" {
-		f.State = store.PullOpen
-	}
+	f.State = cmp.Or(f.State, store.PullOpen)
 	if !f.State.Valid() {
 		return errBadRequest(CodeBadRequest, "state must be open, closed or all")
 	}

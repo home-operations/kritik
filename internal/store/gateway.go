@@ -32,9 +32,7 @@ type GatewayGrant struct {
 // returns it. Only its SHA-256 is kept.
 func (s *Store) MintGatewayToken(ctx context.Context, g GatewayGrant, expires time.Time) (string, error) {
 	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("store: mint gateway token: %w", err)
-	}
+	_, _ = rand.Read(raw) // never fails
 	token := gatewayTokenPrefix + hex.EncodeToString(raw)
 	_, err := s.app.Exec(ctx, `INSERT INTO gateway_tokens
 		(token_hash, runner_run_id, account_id, review_id, repository_id, model, fallback, budget_tokens, expires_at)

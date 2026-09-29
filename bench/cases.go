@@ -8,10 +8,11 @@
 package bench
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -95,7 +96,7 @@ func Load(glob string) ([]Case, error) {
 			out = append(out, c)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	slices.SortFunc(out, func(a, b Case) int { return cmp.Compare(a.ID, b.ID) })
 	return out, nil
 }
 

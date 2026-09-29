@@ -40,18 +40,15 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 	if err != nil {
 		return priorReview{}, fmt.Errorf("worker: load findings: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
+	p.findings, err = pgx.AppendRows(p.findings, rows, func(row pgx.CollectableRow) (priorFinding, error) {
 		var f priorFinding
 		var sev string
-		if err := rows.Scan(&f.Path, &f.Line, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.postedInline,
-			&f.EndLine, &f.Replacement, &f.AgentPrompt); err != nil {
-			return priorReview{}, fmt.Errorf("worker: scan finding: %w", err)
-		}
+		err := row.Scan(&f.Path, &f.Line, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.postedInline,
+			&f.EndLine, &f.Replacement, &f.AgentPrompt)
 		f.Severity = review.Severity(sev)
-		p.findings = append(p.findings, f)
-	}
-	if err := rows.Err(); err != nil {
+		return f, err
+	})
+	if err != nil {
 		return priorReview{}, fmt.Errorf("worker: load findings: %w", err)
 	}
 	return p, nil
