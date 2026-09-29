@@ -3,6 +3,9 @@
 - **Status:** Proposed
 - **Date:** 2026-09-28
 - **Authors:** onedr0p.
+- **Amended by:** [ADR-0015](0015-instance-defaults-in-the-file.md), which
+  lets the file set the instance's providers, default models and embedder
+  under the spec's (§2.2).
 - **Supersedes:** [ADR-0013](0013-hosted-instance.md) (withdrawn: kritik is
   not run as a service for others).
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6 (the

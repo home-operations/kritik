@@ -112,19 +112,20 @@ auth:
     # -- CEL expression giving a role, or a map of accounts to roles.
     roleMapping: ""
 
-# The optional configuration file: sign-in (`auth`) and GitHub Apps that
-# already exist (`connections`), and nothing else. Every key in it also has
-# a `KRITIK_*` environment variable, which wins over the file; the `auth`
-# values above render those. Model
-# providers, defaults, accounts and their repositories are the instance
-# configuration, set in the dashboard's admin console and kept in
-# Postgres. The file is either inline as `file`, rendered into a
+# The optional configuration file: sign-in (`auth`), GitHub Apps that
+# already exist (`connections`), and the instance's defaults (`providers`,
+# `defaults.models` and `embedding`), which the dashboard may override.
+# Every key in it also has a `KRITIK_*` environment variable, which wins
+# over the file; the `auth` values above render those, and `extraEnv` can
+# set the others. Accounts, their repositories and the dashboard's own
+# overrides are the instance configuration, set in the dashboard's admin
+# console and kept in Postgres. The file is either inline as `file`, rendered into a
 # chart-managed ConfigMap, or an existing ConfigMap with a `config.yaml`
 # key. Secret material never goes in the file: it references files under
 # `secretMounts` or environment variables. Every replica re-reads the file
 # on `reloadInterval`; the leader applies it to the store.
 config:
-  # -- (optional) The configuration file, as YAML: `auth` and `connections`. Passed through verbatim, not tpl'd. See docs/configuration.md.
+  # -- (optional) The configuration file, as YAML: `auth`, `connections`, `providers`, `defaults.models` and `embedding`. Passed through verbatim, not tpl'd. See docs/configuration.md.
   file: {}
   # connections:
   #   - name: github
@@ -134,6 +135,10 @@ config:
   #       clientId: Iv1.example
   #       privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
   #       webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+  # providers:
+  #   openrouter: { type: openrouter, apiKey: { file: /var/run/secrets/kritik/openrouter/api-key } }
+  # defaults:
+  #   models: { review: openrouter/vendor/large-model }
 
   # -- Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`.
   existingConfigMap: ""

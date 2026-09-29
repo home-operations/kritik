@@ -677,7 +677,23 @@ export interface Inherited {
 export interface InstanceConfig {
   revision: number;
   editable: boolean;
+  inherited: InstanceInherited;
   spec: Record<string, unknown>;
+}
+
+// What the configuration file and its environment set of the instance's
+// defaults, which the spec overrides: its providers by name, its default
+// models by key and its embedder whole. No key is shown.
+export interface InstanceInherited {
+  providers: Record<string, { type: 'openrouter' | 'openai' | 'anthropic'; baseUrl: string; source: ConfigSource }>;
+  review: InheritedValue | null;
+  fallback: InheritedValue | null;
+  embedding: { baseUrl: string; model: string; dims: number; source: ConfigSource } | null;
+}
+
+export interface InheritedValue {
+  value: string;
+  source: ConfigSource;
 }
 
 // An account's entry in the instance spec, every secret a SecretState, and

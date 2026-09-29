@@ -645,6 +645,14 @@ type File struct {
 	// envConnection names the connection the environment declared, "" for
 	// none.
 	envConnection string
+	// envProvider names the provider the environment declared, "" for none,
+	// and envKeys holds the instance defaults it set, by dotted path.
+	envProvider string
+	envKeys     map[string]bool
+	// specDefaults are the spec's own defaults, before the file's are laid
+	// under them, and specProviders the names of the spec's providers.
+	specDefaults  Defaults
+	specProviders map[string]bool
 }
 
 // Hash is the hex SHA-256 of the file's bytes as parsed, or for a merged

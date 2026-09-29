@@ -162,7 +162,7 @@
       "type": "object"
     },
     "config": {
-      "description": "The optional configuration file: sign-in (`auth`) and GitHub Apps that\nalready exist (`connections`), and nothing else. Every key in it also has\na `KRITIK_*` environment variable, which wins over the file; the `auth`\nvalues above render those. Model\nproviders, defaults, accounts and their repositories are the instance\nconfiguration, set in the dashboard's admin console and kept in\nPostgres. The file is either inline as `file`, rendered into a\nchart-managed ConfigMap, or an existing ConfigMap with a `config.yaml`\nkey. Secret material never goes in the file: it references files under\n`secretMounts` or environment variables. Every replica re-reads the file\non `reloadInterval`; the leader applies it to the store.",
+      "description": "The optional configuration file: sign-in (`auth`), GitHub Apps that\nalready exist (`connections`), and the instance's defaults (`providers`,\n`defaults.models` and `embedding`), which the dashboard may override.\nEvery key in it also has a `KRITIK_*` environment variable, which wins\nover the file; the `auth` values above render those, and `extraEnv` can\nset the others. Accounts, their repositories and the dashboard's own\noverrides are the instance configuration, set in the dashboard's admin\nconsole and kept in Postgres. The file is either inline as `file`, rendered into a\nchart-managed ConfigMap, or an existing ConfigMap with a `config.yaml`\nkey. Secret material never goes in the file: it references files under\n`secretMounts` or environment variables. Every replica re-reads the file\non `reloadInterval`; the leader applies it to the store.",
       "properties": {
         "existingConfigMap": {
           "default": "",
@@ -179,7 +179,7 @@
           "type": "array"
         },
         "file": {
-          "description": "(optional) The configuration file, as YAML: `auth` and `connections`. Passed through verbatim, not tpl'd. See docs/configuration.md.",
+          "description": "(optional) The configuration file, as YAML: `auth`, `connections`, `providers`, `defaults.models` and `embedding`. Passed through verbatim, not tpl'd. See docs/configuration.md.",
           "required": [],
           "title": "file",
           "type": "object"

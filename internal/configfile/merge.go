@@ -53,7 +53,8 @@ func DecodeSpec(raw json.RawMessage) (Spec, error) {
 }
 
 // Merge returns the running configuration: file's sign-in, its connections
-// and the spec's, and the spec's settings, with the spec's secrets opened
+// and the spec's, and the spec's settings over the file's instance
+// defaults (ADR-0015), with the spec's secrets opened
 // with open and its filters compiled, validated as a whole. Any error is a
 // *MergeError. When file is itself a merged File, its spec is replaced.
 // file is not modified.
@@ -74,10 +75,15 @@ func Merge(file *File, spec InstanceSpec, open Opener) (*File, error) {
 	if err := s.resolve(open); err != nil {
 		return nil, &MergeError{Err: err}
 	}
+	providers, defaults, embedding := file.underSpec(&s)
 	out := &File{
-		Auth: file.Auth, Providers: s.Providers, Defaults: s.Defaults, Polling: s.Polling, Indexing: s.Indexing,
-		Tools: s.Tools, Retention: s.Retention, Egress: s.Egress, Embedding: s.Embedding,
+		Auth: file.Auth, Providers: providers, Defaults: defaults, Polling: s.Polling, Indexing: s.Indexing,
+		Tools: s.Tools, Retention: s.Retention, Egress: s.Egress, Embedding: embedding,
 		hash: mergedHash(file.hash, spec), base: file, spec: spec, envConnection: file.envConnection,
+		envProvider: file.envProvider, envKeys: file.envKeys, specDefaults: s.Defaults, specProviders: map[string]bool{},
+	}
+	for name := range s.Providers {
+		out.specProviders[name] = true
 	}
 	held := claims(s.Connections)
 	for _, in := range file.Connections {

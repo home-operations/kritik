@@ -3,6 +3,8 @@ package webapi
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -380,7 +382,8 @@ func (s *Server) listInstanceSettings(w http.ResponseWriter, r *http.Request) er
 }
 
 // instanceSettings are the settings no account owns: this process's
-// environment, then the running connections, those left out, and sign-in.
+// environment, then the running connections, those left out, sign-in, and
+// the instance defaults the file sets under the spec's.
 func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting {
 	out := []InstanceSetting{}
 	add := func(section, key, value string, source configfile.Source) {
@@ -436,6 +439,32 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 			value += ", no role mapping"
 		}
 		add("auth", string(s.Type()), value, authFrom(string(s.Type())+".clientId", true))
+	}
+	layer := f.FileLayer()
+	overridden := func(value string, over bool) string {
+		if over {
+			return value + ", overridden by the dashboard"
+		}
+		return value
+	}
+	for _, name := range slices.Sorted(maps.Keys(layer.Providers)) {
+		p := layer.Providers[name]
+		value := string(p.Type)
+		if p.BaseURL != "" {
+			value += " at " + withoutCredentials(p.BaseURL)
+		}
+		add("providers", name, overridden(value, p.Overridden), p.Source)
+	}
+	for _, m := range []struct {
+		key string
+		v   configfile.FileValue
+	}{{"models.review", layer.Review}, {"models.fallback", layer.Fallback}} {
+		if m.v.Value != "" {
+			add("defaults", m.key, overridden(m.v.Value, m.v.Overridden), m.v.Source)
+		}
+	}
+	if e := layer.Embedding; e != nil {
+		add("embedding", e.Model, overridden(fmt.Sprintf("%d dimensions at %s", e.Dims, withoutCredentials(e.BaseURL)), e.Overridden), e.Source)
 	}
 	return out
 }

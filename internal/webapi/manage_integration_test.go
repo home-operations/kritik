@@ -693,6 +693,38 @@ func TestConcurrentSpecWrites(t *testing.T) {
 	}
 }
 
+// TestReindexFileEmbedder: with an embedder the environment sets, a spec
+// that sets another, or drops its own for the environment's while the
+// index is its own, rebuilds the index and needs confirming.
+func TestReindexFileEmbedder(t *testing.T) {
+	t.Setenv("KRITIK_EMBEDDING_BASE_URL", "https://embed.example/v1")
+	t.Setenv("KRITIK_EMBEDDING_API_KEY", "ek")
+	t.Setenv("KRITIK_EMBEDDING_MODEL", "f")
+	t.Setenv("KRITIK_EMBEDDING_DIMS", "8")
+	e := newManageEnv(t)
+	t.Cleanup(func() { e.exec(`DELETE FROM index_schema`) })
+	revision := int64(0)
+	put := func(spec map[string]any, confirm bool, wantStatus int, wantCode ErrorCode) {
+		t.Helper()
+		status, body := e.do("admin", "PUT", instancePath, UpdateConfigRequest{Revision: revision, Spec: mustJSON(t, spec), ConfirmReindex: confirm})
+		e.expect(status, body, wantStatus, wantCode)
+		if status == http.StatusOK {
+			revision++
+		}
+	}
+	own := map[string]any{"embedding": map[string]any{"baseUrl": "https://embed.example/v1", "apiKey": map[string]any{"value": "ek"}, "model": "g", "dims": 8}}
+	// The leader has built the index for the environment's embedder.
+	e.exec(`INSERT INTO index_schema (id, embed_model, embed_dims) VALUES (1, 'f', 8)`)
+	first := instanceSpec(map[string]any{"value": "pem"}, map[string]any{"generate": true}, nil)
+	put(first, false, http.StatusOK, "")
+	put(instanceSpec(keep, keep, own), false, http.StatusConflict, CodeReindexRequired)
+	put(instanceSpec(keep, keep, own), true, http.StatusOK, "")
+	// Rebuilt for the spec's; dropping it for the environment's rebuilds again.
+	e.exec(`UPDATE index_schema SET embed_model = 'g'`)
+	put(instanceSpec(keep, keep, nil), false, http.StatusConflict, CodeReindexRequired)
+	put(instanceSpec(keep, keep, nil), true, http.StatusOK, "")
+}
+
 // TestReindexConfirmation: a write whose embedder would rebuild the index
 // needs the admin's confirmation, once; one that keeps the index's model
 // and dimension, or adds the first embedder, does not.

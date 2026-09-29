@@ -36,10 +36,14 @@ var toolNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,56}[a-z0-9])?$`)
 var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 
 // fileDoc is the configuration file's schema: sign-in and the connections
-// an admin keeps in git (ADR-0014 §2.2). Everything else is the spec's.
+// an admin keeps in git (ADR-0014 §2.2), and the instance defaults the spec
+// overrides (ADR-0015). Everything else is the spec's.
 type fileDoc struct {
-	Auth        Auth         `yaml:"auth,omitempty"`
-	Connections []Connection `yaml:"connections,omitempty"`
+	Auth        Auth                `yaml:"auth,omitempty"`
+	Connections []Connection        `yaml:"connections,omitempty"`
+	Providers   map[string]Provider `yaml:"providers,omitempty"`
+	Defaults    fileDefaults        `yaml:"defaults,omitempty"`
+	Embedding   *Embedding          `yaml:"embedding,omitempty"`
 }
 
 // Load reads, decodes, resolves and validates the configuration file at
@@ -74,8 +78,26 @@ func Parse(raw []byte) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	f := &File{Auth: doc.Auth, Connections: doc.Connections, envConnection: envConnection}
+	envProvider, err := overlayProviderEnv(&doc.Providers, environ)
+	if err != nil {
+		return nil, err
+	}
+	envKeys := map[string]bool{}
+	if err := overlayDefaultsEnv(&doc.Defaults, environ, envKeys); err != nil {
+		return nil, err
+	}
+	if err := overlayEmbeddingEnv(&doc.Embedding, environ, envKeys); err != nil {
+		return nil, err
+	}
+	f := &File{
+		Auth: doc.Auth, Connections: doc.Connections, Providers: doc.Providers, Embedding: doc.Embedding,
+		envConnection: envConnection, envProvider: envProvider, envKeys: envKeys,
+	}
+	f.Defaults.Models = doc.Defaults.Models
 	if err := f.Auth.resolve(); err != nil {
+		return nil, err
+	}
+	if err := f.resolveInstanceDefaults(); err != nil {
 		return nil, err
 	}
 	for i := range f.Connections {
@@ -88,6 +110,13 @@ func Parse(raw []byte) (*File, error) {
 		return nil, err
 	}
 	if err := validateConnections(f.Connections); err != nil {
+		return nil, err
+	}
+	// The default models are checked once merged, against every provider.
+	if err := f.validateProviders(); err != nil {
+		return nil, err
+	}
+	if err := f.validateEmbedding(); err != nil {
 		return nil, err
 	}
 	sum := sha256.Sum256(raw)

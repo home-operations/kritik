@@ -2,6 +2,7 @@ package webapi
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,7 +55,7 @@ func (s *Server) getInstanceConfig(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	out := InstanceConfig{Revision: stored.Revision, Editable: s.keyring != nil}
+	out := InstanceConfig{Revision: stored.Revision, Editable: s.keyring != nil, Inherited: instanceInherited(s.current.Get().FileLayer())}
 	if out.Spec, err = redactSpec(specOrEmpty(stored.Spec)); err != nil {
 		return err
 	}
@@ -180,7 +181,7 @@ func (s *Server) writeSpec(
 		if err := configfile.ValidateSpec(s.current.Get(), stored, next, s.keyring); err != nil {
 			return fail(err, func() error { return configfile.ValidateSpec(s.current.Get(), stored, stored, s.keyring) })
 		}
-		reindex, err := rebuildsIndex(ctx, tx, stored, decoded.Embedding)
+		reindex, err := rebuildsIndex(ctx, tx, stored, decoded.Embedding, fileEmbedding(s.current.Get()))
 		if err != nil {
 			return err
 		}
@@ -207,7 +208,10 @@ var errReindexRequired = errStatus(http.StatusConflict, CodeReindexRequired,
 // rebuildsIndex reports whether next, the embedder a write saves, rebuilds
 // the index: the index was built for another model or dimension, and the
 // stored spec, whose change was confirmed already, does not name next's.
-func rebuildsIndex(ctx context.Context, tx pgx.Tx, stored configfile.InstanceSpec, next *configfile.Embedding) (bool, error) {
+// A spec with no embedder runs file's, the file's own, so a write that
+// drops the spec's for the file's rebuilds the index as well.
+func rebuildsIndex(ctx context.Context, tx pgx.Tx, stored configfile.InstanceSpec, next, file *configfile.Embedding) (bool, error) {
+	next = cmp.Or(next, file)
 	if next == nil {
 		return false, nil
 	}
@@ -219,7 +223,36 @@ func rebuildsIndex(ctx context.Context, tx pgx.Tx, stored configfile.InstanceSpe
 	if err != nil {
 		return false, fmt.Errorf("webapi: stored spec: %w", err)
 	}
-	return prev.Embedding == nil || prev.Embedding.Model != next.Model || prev.Embedding.Dims != next.Dims, nil
+	was := cmp.Or(prev.Embedding, file)
+	return was == nil || was.Model != next.Model || was.Dims != next.Dims, nil
+}
+
+// fileEmbedding is the embedder f's configuration file sets, nil for none.
+func fileEmbedding(f *configfile.File) *configfile.Embedding {
+	e := f.FileLayer().Embedding
+	if e == nil {
+		return nil
+	}
+	return &configfile.Embedding{Model: e.Model, Dims: e.Dims}
+}
+
+// instanceInherited is the file's instance defaults as the API shows them.
+func instanceInherited(l configfile.FileLayer) InstanceInherited {
+	out := InstanceInherited{Providers: map[string]InheritedProvider{}}
+	for name, p := range l.Providers {
+		out.Providers[name] = InheritedProvider{Type: p.Type, BaseURL: p.BaseURL, Source: p.Source}
+	}
+	value := func(v configfile.FileValue) *InheritedValue {
+		if v.Value == "" {
+			return nil
+		}
+		return &InheritedValue{Value: v.Value, Source: v.Source}
+	}
+	out.Review, out.Fallback = value(l.Review), value(l.Fallback)
+	if e := l.Embedding; e != nil {
+		out.Embedding = &InheritedEmbedding{BaseURL: e.BaseURL, Model: e.Model, Dims: e.Dims, Source: e.Source}
+	}
+	return out
 }
 
 // refusal is err as the API answers it: a *specError is the client's
