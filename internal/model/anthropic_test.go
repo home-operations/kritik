@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -240,4 +241,19 @@ func TestNewStepper(t *testing.T) {
 			}
 		})
 	}
+	t.Run("openai default url ignores OPENAI_BASE_URL", func(t *testing.T) {
+		t.Setenv("OPENAI_BASE_URL", "https://elsewhere.example.com/v1")
+		var host string
+		client := &http.Client{Transport: roundTripper(func(r *http.Request) (*http.Response, error) {
+			host = r.URL.Host
+			return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+		})}
+		if _, err := Probe(t.Context(), ProviderOpenAI, "", "k", client); err == nil || host != "api.openai.com" {
+			t.Fatalf("Probe reached %q (%v), want api.openai.com", host, err)
+		}
+	})
 }
+
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

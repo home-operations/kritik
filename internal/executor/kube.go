@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -83,7 +84,10 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	if err != nil {
 		return Result{Err: fmt.Errorf("executor: %w", err)}
 	}
-	job := k.job(spec)
+	job, err := k.job(spec)
+	if err != nil {
+		return Result{Err: err}
+	}
 	secrets := k.Client.CoreV1().Secrets(k.Namespace)
 	if _, err := secrets.Create(ctx, k.secret(spec, runSpec), metav1.CreateOptions{}); err != nil {
 		return Result{Err: fmt.Errorf("executor: create secret: %w", err)}
@@ -321,7 +325,11 @@ func (k *Kube) secret(spec Spec, runSpec []byte) *corev1.Secret {
 // job builds the Job for a spec. The runner gets its job document as a
 // read-only file and its credentials as variables, both from the run's
 // Secret, and the runner role's DSN from the database Secret; nothing else.
-func (k *Kube) job(spec Spec) *batchv1.Job {
+func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
+	resources, err := containerResources(spec.Resources)
+	if err != nil {
+		return nil, err
+	}
 	name := jobName(spec.RunID)
 	deadline := int64(spec.Deadline / time.Second)
 	if deadline <= 0 {
@@ -359,10 +367,11 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 		)
 	}
 	container := corev1.Container{
-		Name:  runnerRole,
-		Image: k.Image,
-		Args:  []string{"--role", runnerRole},
-		Env:   env,
+		Name:      runnerRole,
+		Image:     k.Image,
+		Args:      []string{"--role", runnerRole},
+		Env:       env,
+		Resources: resources,
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: new(false),
 			ReadOnlyRootFilesystem:   new(true),
@@ -372,11 +381,6 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 			{Name: "scratch", MountPath: "/tmp"},
 			{Name: "spec", MountPath: specDir, ReadOnly: true},
 		},
-	}
-	if spec.Resources != nil {
-		if b, err := json.Marshal(spec.Resources); err == nil {
-			_ = json.Unmarshal(b, &container.Resources)
-		}
 	}
 	volumes := []corev1.Volume{
 		{Name: "scratch", EmptyDir: &corev1.EmptyDirVolumeSource{}},
@@ -422,5 +426,25 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 				},
 			},
 		},
+	}, nil
+}
+
+// containerResources decodes an account's runner.resources, which the
+// configuration keeps as the YAML written, refusing a field the Kubernetes
+// type does not have rather than dropping it.
+func containerResources(m map[string]any) (corev1.ResourceRequirements, error) {
+	var r corev1.ResourceRequirements
+	if m == nil {
+		return r, nil
 	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return r, fmt.Errorf("executor: runner.resources: %w", err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&r); err != nil {
+		return r, fmt.Errorf("executor: runner.resources: %w", err)
+	}
+	return r, nil
 }

@@ -12,12 +12,13 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -159,7 +160,7 @@ func mine(repo, name, ref string, depth int) ([]bench.Case, error) {
 		c.Expected = mergeExpected(c.Expected)
 		out = append(out, *c)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].PR < out[j].PR })
+	slices.SortFunc(out, func(a, b bench.Case) int { return cmp.Compare(a.PR, b.PR) })
 	return out, nil
 }
 
@@ -239,11 +240,9 @@ func blame(repo, rev, path string, from, to int) (map[string][2]int, error) {
 
 // mergeExpected joins overlapping ranges on the same path from the same fix.
 func mergeExpected(in []bench.Expected) []bench.Expected {
-	sort.Slice(in, func(i, j int) bool {
-		if in[i].Path != in[j].Path {
-			return in[i].Path < in[j].Path
-		}
-		return in[i].Lines[0] < in[j].Lines[0]
+	slices.SortFunc(in, func(a, b bench.Expected) int {
+		return cmp.Or(cmp.Compare(a.Path, b.Path), cmp.Compare(a.Fix, b.Fix),
+			cmp.Compare(a.Lines[0], b.Lines[0]), cmp.Compare(a.Lines[1], b.Lines[1]))
 	})
 	var out []bench.Expected
 	for _, e := range in {

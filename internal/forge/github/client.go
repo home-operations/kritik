@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -77,7 +78,11 @@ func (c *Client) LineRanges() bool { return true }
 
 // FileURL implements forge.Client.
 func (c *Client) FileURL(owner, repo, sha, path string, line, endLine int) string {
-	u := fmt.Sprintf("%s/%s/%s/blob/%s/%s#L%d", webBase, owner, repo, sha, path, line)
+	segs := strings.Split(path, "/")
+	for i, s := range segs {
+		segs[i] = url.PathEscape(s)
+	}
+	u := fmt.Sprintf("%s/%s/%s/blob/%s/%s#L%d", webBase, owner, repo, sha, strings.Join(segs, "/"), line)
 	if endLine > line {
 		u += fmt.Sprintf("-L%d", endLine)
 	}
@@ -248,9 +253,10 @@ func (c *Client) Permission(ctx context.Context, owner, repo, login string) (for
 		return "", fmt.Errorf("github: permission of %s on %s/%s: %w", login, owner, repo, err)
 	}
 	// role_name carries maintain and triage, which permission folds into
-	// write and read.
+	// write and read. A custom repository role puts its own name there, and
+	// its base role in permission.
 	p := forge.Permission(level.GetRoleName())
-	if p == "" {
+	if !p.Valid() {
 		p = forge.Permission(level.GetPermission())
 	}
 	if !p.Valid() {

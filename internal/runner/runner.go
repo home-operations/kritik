@@ -46,7 +46,10 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 	}
 	err := run(ctx, st, spec, secrets, logger)
 	if err != nil {
-		_ = fail(ctx, st, spec.RunID, secrets, err)
+		// The worker still sees the Job fail; the row only loses why.
+		if ferr := fail(ctx, st, spec.RunID, secrets, err); ferr != nil {
+			logger.Warn("run failure not recorded", "error", ferr)
+		}
 	}
 	return err
 }
@@ -227,11 +230,15 @@ func setPhase(ctx context.Context, st *store.Store, runID, phase string) error {
 func fail(ctx context.Context, st *store.Store, runID string, secrets Secrets, cause error) error {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	return st.WithRunnerJob(fctx, runID, func(tx pgx.Tx) error {
+	err := st.WithRunnerJob(fctx, runID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(fctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`,
 			runID, failure(secrets, cause))
 		return err
 	})
+	if err != nil {
+		return fmt.Errorf("runner: record failure: %w", err)
+	}
+	return nil
 }
 
 // failure is cause as the run's error column stores it.

@@ -93,7 +93,7 @@ func BuildFollowUp(in Input, findings []Finding, thread []Message) string {
 
 	budget := in.BudgetTokens
 	if budget <= 0 {
-		budget = 24_000
+		budget = DefaultBudgetTokens
 	}
 	in.BudgetTokens = max(budget-tail.Len()/charsPerToken, 2_000)
 	msg, _, _ := Build(in)

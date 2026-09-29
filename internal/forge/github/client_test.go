@@ -45,6 +45,24 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *C
 	return srv, c
 }
 
+func TestFileURL(t *testing.T) {
+	tests := []struct {
+		path          string
+		line, endLine int
+		want          string
+	}{
+		{"cmd/main.go", 3, 0, "https://github.com/o/r/blob/abc/cmd/main.go#L3"},
+		{"docs/a file#1?.md", 2, 5, "https://github.com/o/r/blob/abc/docs/a%20file%231%3F.md#L2-L5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := (&Client{}).FileURL("o", "r", "abc", tt.path, tt.line, tt.endLine); got != tt.want {
+				t.Fatalf("FileURL = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPermission(t *testing.T) {
 	respond := func(body string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +85,7 @@ func TestPermission(t *testing.T) {
 		{"none permission", `{"permission":"none"}`, forge.PermissionNone},
 		{"maintain role_name overrides write permission", `{"permission":"write","role_name":"maintain"}`, forge.PermissionMaintain},
 		{"triage role_name overrides read permission", `{"permission":"read","role_name":"triage"}`, forge.PermissionTriage},
+		{"custom role falls back to its base permission", `{"permission":"write","role_name":"security-reviewer"}`, forge.PermissionWrite},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
