@@ -267,6 +267,9 @@
               </a>
             </nav>
           {/if}
+          {#if session.meta?.version}
+            <p class="sidebar-version mono" title="kritik {session.meta.version}">kritik {session.meta.version}</p>
+          {/if}
         </aside>
       {/if}
 

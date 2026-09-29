@@ -312,6 +312,15 @@ test('a stream that (re)opens refetches the page, event or not', async ({ page }
   await expect.poll(queues).toBeGreaterThanOrEqual(3);
 });
 
+test('the sidebar shows the version the server reports, below the admin console', async ({ page }) => {
+  await page.goto(`/${T}`);
+  const version = page.locator('aside.sidebar .sidebar-version');
+  await expect(version).toHaveText(`kritik ${g.meta.version}`);
+  const consoleLink = await page.getByRole('navigation', { name: 'Instance' }).boundingBox();
+  const box = await version.boundingBox();
+  expect(consoleLink && box && box.y >= consoleLink.y + consoleLink.height).toBe(true);
+});
+
 test('a signed-in user navigating to sign-in is sent back', async ({ page, mockProviders }) => {
   await mockProviders();
   await page.goto(`/${T}/queue`);
