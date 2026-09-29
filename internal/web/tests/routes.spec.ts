@@ -13,6 +13,7 @@ const ROUTES: Route[] = [
   { name: 'repos', slug: 'github/acme' },
   { name: 'repo', slug: 'github/acme', owner: 'kritik', repo: 'kritik' },
   { name: 'pulls', slug: 'github/acme' },
+  { name: 'pulls', slug: 'github/acme', filter: { state: 'all', outcome: 'failed', repo: 'kritik/kritik', q: 'a b&c#d' } },
   { name: 'pull', slug: 'github/acme', owner: 'kritik', repo: 'kritik', number: 42 },
   { name: 'review', slug: 'github/acme', id: 'r1' },
   { name: 'review', slug: 'github/acme', id: 'r1', tab: 'diff' },
@@ -74,6 +75,9 @@ const MALFORMED: [string, Route][] = [
   // A query string is ignored.
   ['#/a/github/acme/repos/o/r?connection=x', { name: 'repo', slug: 'github/acme', owner: 'o', repo: 'r' }],
   ['#/a/github/acme/pulls/o/r/7?other=1', { name: 'pull', slug: 'github/acme', owner: 'o', repo: 'r', number: 7 }],
+  // The pull list keeps only the filters it knows, and none that are a default.
+  ['#/a/github/acme/pulls?state=open&outcome=bogus&repo=&other=1', { name: 'pulls', slug: 'github/acme' }],
+  ['#/a/github/acme/pulls/?state=closed&outcome=bogus', { name: 'pulls', slug: 'github/acme', filter: { state: 'closed' } }],
 ];
 
 test.describe('routes: parse() on unknown/malformed hashes', () => {

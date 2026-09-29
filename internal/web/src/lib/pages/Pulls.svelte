@@ -1,25 +1,29 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { getJSON } from '../api.svelte';
-  import { navigate } from '../router.svelte';
+  import { navigate, replace } from '../router.svelte';
+  import { PULL_OUTCOMES, pullFilter, type PullFilter } from '../routes';
   import { Paged, Resource, live } from '../resource.svelte';
   import { pullRoute, accountApi } from '../links';
   import { listKeys } from '../listkeys';
-  import type { Page, Pull, Repository, ReviewStatus } from '../types';
+  import type { Page, Pull, Repository } from '../types';
   import StateView from '../components/StateView.svelte';
   import PullRows from '../components/PullRows.svelte';
   import LoadMore from '../components/LoadMore.svelte';
 
-  let { slug }: { slug: string } = $props();
+  let { slug, filter }: { slug: string; filter?: PullFilter } = $props();
 
-  const OUTCOMES: readonly ReviewStatus[] = ['running', 'prepared', 'completed', 'superseded', 'skipped', 'capped', 'failed', 'canceled'];
-
-  let prState = $state<'open' | 'closed' | 'all'>('open');
-  let outcome = $state<ReviewStatus | ''>('');
-  let repoName = $state('');
-  let qInput = $state('');
-  let q = $state('');
+  const prState = $derived(filter?.state ?? 'open');
+  const outcome = $derived(filter?.outcome ?? '');
+  const repoName = $derived(filter?.repo ?? '');
+  const q = $derived(filter?.q ?? '');
   let searchEl = $state<HTMLInputElement | undefined>(undefined);
+
+  // setFilter changes one filter in the URL, replacing the history entry so
+  // Back leaves the list instead of stepping through its filters.
+  function setFilter(change: { state?: string; outcome?: string; repo?: string; q?: string }): void {
+    replace({ name: 'pulls', slug, filter: pullFilter({ ...filter, ...change }) });
+  }
 
   const account = $derived(`${accountApi(slug)}`);
 
@@ -44,11 +48,25 @@
     void repos.load();
   });
   $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void paged.load()));
-  // Debounce the search box so typing doesn't fire a request per keystroke.
+  // The search box reaches the URL once typing pauses, so typing doesn't
+  // fire a request per keystroke. sent is the last search it wrote there:
+  // any other change to q, such as following a link to the unfiltered list,
+  // replaces the box's text.
+  let qInput = $state(untrack(() => q));
+  let sent = untrack(() => q);
   $effect(() => {
     const v = qInput.trim();
-    const t = setTimeout(() => (q = v), 250);
+    if (v === sent) return;
+    const t = setTimeout(() => {
+      sent = v;
+      setFilter({ q: v });
+    }, 250);
     return () => clearTimeout(t);
+  });
+  $effect(() => {
+    if (q === sent) return;
+    sent = q;
+    qInput = q;
   });
 
   const items = $derived(paged.items);
@@ -92,7 +110,7 @@
       </label>
       <label class="select">
         <span class="sr-only">Repository</span>
-        <select bind:value={repoName} aria-label="Repository">
+        <select bind:value={() => repoName, (repo) => setFilter({ repo })} aria-label="Repository">
           <option value="">All repositories</option>
           {#each repos.data?.items ?? [] as r (r.id)}
             <option value={r.fullName}>{r.fullName}</option>
@@ -101,7 +119,7 @@
       </label>
       <label class="select">
         <span class="sr-only">State</span>
-        <select bind:value={prState} aria-label="State">
+        <select bind:value={() => prState, (state) => setFilter({ state })} aria-label="State">
           <option value="open">Open</option>
           <option value="closed">Closed</option>
           <option value="all">All</option>
@@ -109,9 +127,9 @@
       </label>
       <label class="select">
         <span class="sr-only">Last review outcome</span>
-        <select bind:value={outcome} aria-label="Last review outcome">
+        <select bind:value={() => outcome, (outcome) => setFilter({ outcome })} aria-label="Last review outcome">
           <option value="">Any outcome</option>
-          {#each OUTCOMES as o (o)}<option value={o}>{o}</option>{/each}
+          {#each PULL_OUTCOMES as o (o)}<option value={o}>{o}</option>{/each}
         </select>
       </label>
     </div>
