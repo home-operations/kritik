@@ -60,6 +60,15 @@
           </select>
         </label>
         <label class="field">
+          <span>Repositories</span>
+          <select data-path="enabled" aria-invalid={inv('enabled') || undefined} bind:value={draft.enabled}>
+            <option value="">{`default: ${own.enabled ? 'on' : 'off'}`}</option>
+            <option value="true">on unless turned off</option>
+            <option value="false">off unless turned on</option>
+          </select>
+          <span class="field-hint">Where a repository without an entry of its own starts, including ones the App reaches later.</span>
+        </label>
+        <label class="field">
           <span>Settle</span>
           <input data-path="settle" aria-invalid={inv('settle') || undefined} bind:value={draft.settle} placeholder={hint('settle', duration((own.settleSeconds ?? 0) * 1000) || '0s')} />
         </label>

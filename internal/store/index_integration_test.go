@@ -134,7 +134,8 @@ func TestOnboardCandidates(t *testing.T) {
 		t.Fatalf("OnboardingInFlight = %d, %v; want %d", after, err, before+1)
 	}
 
-	refs, err := s.OnboardCandidates(ctx, 1000, time.Hour)
+	all := func(string, string) bool { return true }
+	refs, err := s.OnboardCandidates(ctx, 1000, time.Hour, all)
 	if err != nil {
 		t.Fatalf("OnboardCandidates: %v", err)
 	}
@@ -148,7 +149,16 @@ func TestOnboardCandidates(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("candidates = %v, want %v", got, want)
 	}
-	if limited, err := s.OnboardCandidates(ctx, 1, time.Hour); err != nil || len(limited) != 1 {
+	if limited, err := s.OnboardCandidates(ctx, 1, time.Hour, all); err != nil || len(limited) != 1 {
 		t.Fatalf("OnboardCandidates(1) = %v, %v", limited, err)
+	}
+	// A repository its settings leave off is passed over, and takes none
+	// of the limit.
+	ours := func(_, name string) bool {
+		_, ok := ids[name]
+		return ok && name != "east/busy"
+	}
+	if limited, err := s.OnboardCandidates(ctx, 1, time.Hour, ours); err != nil || len(limited) != 1 || names[limited[0].ID] != "west/one" {
+		t.Fatalf("OnboardCandidates(1, without east/busy) = %v, %v; want west/one", limited, err)
 	}
 }

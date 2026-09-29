@@ -34,8 +34,8 @@ func TestSpecValue(t *testing.T) {
 	if v, ok := SpecValue(&Account{}, "limits.concurrency"); !ok || v.(*int) != nil {
 		t.Fatalf("limits.concurrency = %v, %v", v, ok)
 	}
-	if _, ok := SpecValue(&Account{}, "enabled"); ok {
-		t.Fatal("an account has no enabled key")
+	if v, ok := SpecValue(&Account{}, "enabled"); !ok || v.(*bool) != nil {
+		t.Fatalf("enabled = %v, %v", v, ok)
 	}
 }
 

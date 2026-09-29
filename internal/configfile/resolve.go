@@ -66,8 +66,9 @@ func (a *Account) Repository(fullName string) *Repository {
 // Settings resolves the effective settings for the repository fullName,
 // "owner/repo", of account a. Layers apply in one direction: defaults, then
 // the account, then its entry for the repository, if one exists. A
-// repository the account does not list gets the account's settings and is
-// enabled; an empty fullName gives the account's settings alone.
+// repository the account does not list gets the account's settings, so it
+// is enabled unless the defaults or the account turn it off; an empty
+// fullName gives the account's settings alone.
 func (f *File) Settings(a *Account, fullName string) Settings {
 	s := Settings{
 		Enabled:     true,
@@ -82,9 +83,6 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 	s.apply(&a.Overrides)
 	s.Limits = s.Limits.overlay(a.Limits)
 	if r := a.Repository(fullName); r != nil {
-		if r.Enabled != nil {
-			s.Enabled = *r.Enabled
-		}
 		s.apply(&r.Overrides)
 	}
 	s.Limits.Concurrency = cmp.Or(s.Limits.Concurrency, DefaultConcurrency)
@@ -139,6 +137,9 @@ func (f *File) Sources(a *Account, fullName string) map[string]Source {
 // apply lays one scope's overrides over s: a field the scope writes
 // replaces s's, and its ignore globs are added to s's.
 func (s *Settings) apply(o *Overrides) {
+	if o.Enabled != nil {
+		s.Enabled = *o.Enabled
+	}
 	s.Models = s.Models.overlay(o.Models)
 	if o.Filter != nil {
 		s.Filter = o.filter

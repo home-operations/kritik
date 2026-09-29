@@ -143,15 +143,26 @@ type MonthUsage struct {
 	ReviewsToday int64
 }
 
-// ReadAccountStats reads the account's counts. The month and day boundaries
-// are the database's, as the worker's cap checks use.
-func ReadAccountStats(ctx context.Context, tx pgx.Tx) (AccountStats, error) {
+// ReadAccountStats reads the account's counts; a repository counts when
+// enabled also admits its full name. The month and day boundaries are the
+// database's, as the worker's cap checks use.
+func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(fullName string) bool) (AccountStats, error) {
 	var s AccountStats
-	err := tx.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM repositories WHERE enabled),
-		(SELECT count(*) FROM reviews WHERE created_at >= now() - interval '7 days')`).
-		Scan(&s.Repositories, &s.Reviews7d)
+	rows, err := tx.Query(ctx, `SELECT name FROM repositories WHERE enabled`)
 	if err != nil {
+		return s, fmt.Errorf("store: account stats: %w", err)
+	}
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return s, fmt.Errorf("store: account stats: %w", err)
+	}
+	for _, name := range names {
+		if enabled(name) {
+			s.Repositories++
+		}
+	}
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE created_at >= now() - interval '7 days'`).
+		Scan(&s.Reviews7d); err != nil {
 		return s, fmt.Errorf("store: account stats: %w", err)
 	}
 	if s.Month, err = ReadMonthUsage(ctx, tx); err != nil {

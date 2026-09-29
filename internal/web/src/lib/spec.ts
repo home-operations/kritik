@@ -87,6 +87,9 @@ export interface AccountDraft {
   modelsRest: Obj;
   filter: string;
   forks: TriBool;
+  // enabled is where the account's repositories without an entry of their
+  // own start.
+  enabled: TriBool;
   settle: string;
   concurrency: string;
   reviewsPerDay: string;
@@ -288,6 +291,7 @@ export function draftOf(spec: Obj): AccountDraft {
     modelsRest: take(models, 'review', 'fallback'),
     filter: str(o.filter),
     forks: tri(o.forks),
+    enabled: tri(o.enabled),
     settle: str(o.settle),
     concurrency: str(limits.concurrency),
     reviewsPerDay: str(limits.reviewsPerDay),
@@ -296,7 +300,7 @@ export function draftOf(spec: Obj): AccountDraft {
     runner: json(o.runner),
     providers: Object.entries(obj(o.providers)).map(([name, v]) => providerOf(name, v)),
     repositories: Array.isArray(o.repositories) ? o.repositories.map(repositoryOf) : [],
-    rest: take(o, 'forge', 'name', 'models', 'filter', 'forks', 'settle', 'limits', 'runner', 'providers', 'repositories'),
+    rest: take(o, 'forge', 'name', 'models', 'filter', 'forks', 'enabled', 'settle', 'limits', 'runner', 'providers', 'repositories'),
   };
 }
 
@@ -522,6 +526,7 @@ export function buildSpec(d: AccountDraft, redact = false): Built {
   if (nonEmpty(models)) out.models = models;
   set(out, 'filter', d.filter);
   if (d.forks !== '') out.forks = d.forks === 'true';
+  if (d.enabled !== '') out.enabled = d.enabled === 'true';
   const limits: Obj = { ...d.limitsRest };
   b.int(limits, 'concurrency', d.concurrency, 'limits.concurrency');
   b.int(limits, 'reviewsPerDay', d.reviewsPerDay, 'limits.reviewsPerDay');

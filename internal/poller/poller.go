@@ -139,6 +139,10 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 			return handled, ctx.Err()
 		}
 		repo := r.name
+		// The App can reach it, but the settings leave it off.
+		if !file.Settings(account, repo).Enabled {
+			continue
+		}
 		client, err := p.Forges.For(ctx, in, repo)
 		if err != nil {
 			return handled, err

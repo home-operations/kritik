@@ -191,10 +191,14 @@ type Defaults struct {
 // field it leaves out inherits (ADR-0010 §2.4). Ignore globs are unioned
 // instead.
 type Overrides struct {
-	Models ModelsSpec `yaml:"models,omitempty"`
-	Filter *string    `yaml:"filter,omitempty"`
-	Forks  *bool      `yaml:"forks,omitempty"`
-	Ignore []string   `yaml:"ignore,omitempty"`
+	// Enabled turns reviews and indexing on or off. Written at the defaults
+	// or an account, it is where each repository without its own entry
+	// starts, so an account can take repositories one at a time.
+	Enabled *bool      `yaml:"enabled,omitempty"`
+	Models  ModelsSpec `yaml:"models,omitempty"`
+	Filter  *string    `yaml:"filter,omitempty"`
+	Forks   *bool      `yaml:"forks,omitempty"`
+	Ignore  []string   `yaml:"ignore,omitempty"`
 	// Settle delays a review job for a new head, so a burst of pushes
 	// collapses onto the last one before anything is spent.
 	Settle      *time.Duration `yaml:"settle,omitempty"`
@@ -405,7 +409,6 @@ func (i Connection) WebhookSecretValue() Secret { return i.App.webhookSecret }
 type Repository struct {
 	// Name is the repository's name under its account, without the owner.
 	Name      string `yaml:"name"`
-	Enabled   *bool  `yaml:"enabled,omitempty"`
 	Overrides `yaml:",inline"`
 }
 
