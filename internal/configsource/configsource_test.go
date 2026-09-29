@@ -418,3 +418,32 @@ func TestRunPollsTheFingerprint(t *testing.T) {
 	fs.set("changed", specOf(t, k, 1, "beta-bot:beta"))
 	waitFor(t, "beta-bot via poll", func() bool { return hasConnection(s.Current.Get(), "beta-bot") })
 }
+
+// TestRequireSignIn: a process serving the dashboard refuses a
+// configuration with no way to sign in, at startup and on a reload, which
+// keeps the last good snapshot.
+func TestRequireSignIn(t *testing.T) {
+	path := configPath(t)
+	t.Setenv("TEST_CS_PASSWORD", "pw")
+	s := &Source{Store: newFakeStore(), RequireSignIn: true, Logger: slog.New(slog.DiscardHandler)}
+	if _, err := s.Load(t.Context(), path); !errors.Is(err, ErrNoSignIn) {
+		t.Fatalf("Load without a sign-in = %v, want ErrNoSignIn", err)
+	}
+	writeFile(t, path, "auth:\n  admin:\n    password: { env: TEST_CS_PASSWORD }\n"+fileYAML)
+	if _, err := s.Load(t.Context(), path); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	withoutSignIn := filepath.Join(t.TempDir(), "config.yaml")
+	writeFile(t, withoutSignIn, fileYAML)
+	f, err := configfile.Load(withoutSignIn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.file = f
+	s.mu.Unlock()
+	s.refresh(t.Context())
+	if !errors.Is(s.LastError(), ErrNoSignIn) || !s.Current.Get().Auth.Configured() {
+		t.Fatalf("LastError = %v, sign-in kept %v; want the reload refused", s.LastError(), s.Current.Get().Auth.Configured())
+	}
+}

@@ -73,8 +73,10 @@ auth:
 
 A provider must allow the callback URL `<KRITIK_WEB_URL>/auth/callback/oidc`
 or `<KRITIK_WEB_URL>/auth/callback/github`. The dashboard refuses to start
-with no way to sign in. The configuration is refused when nothing could
-make an admin: set an admin password, or a `roleMapping` on a provider.
+with no way to sign in, and a running one keeps its last good configuration
+when a reload would leave none. The configuration is refused when nothing
+could make an admin: set an admin password, or a `roleMapping` on a
+provider.
 
 ### Roles
 

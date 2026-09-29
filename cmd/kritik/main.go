@@ -131,7 +131,10 @@ func run() error {
 	if role != config.RoleRunner {
 		// current is the last good merged file; the leader applies it on
 		// election and on every reload, followers only compare hashes.
-		src := &configsource.Source{Store: st, Keyring: cfg.DashboardKeyring(), Logger: logger, Errors: configErrors}
+		src := &configsource.Source{
+			Store: st, Keyring: cfg.DashboardKeyring(), Logger: logger, Errors: configErrors,
+			RequireSignIn: role == config.RoleAll || role == config.RoleWeb,
+		}
 		file, err := src.Load(ctx, cfg.ConfigFile)
 		if err != nil {
 			return err
@@ -308,9 +311,6 @@ func startWeb(
 ) error {
 	if role != config.RoleAll && role != config.RoleWeb {
 		return nil
-	}
-	if !current.Get().Auth.Configured() {
-		return errors.New("the dashboard has no way to sign in: set KRITIK_AUTH_ADMIN_PASSWORD, or auth in the configuration file")
 	}
 	webLogger := logger.With("listener", "web")
 	authHandler, err := auth.New(auth.Config{Store: st, Current: current, WebURL: cfg.WebURLParsed(), Logger: webLogger})
