@@ -16,6 +16,7 @@ import (
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 // Effective is a repository's settings once its .kritik.yaml is applied.
@@ -137,9 +138,9 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective, cli
 	if reason == "" {
 		return false, nil
 	}
-	e.logger.Info("review "+statusSkipped+" before its runner", "reason", reason)
+	e.logger.Info("review skipped before its runner", "reason", reason)
 	e.skip = reason
-	if err := w.end(ctx, e, statusSkipped, ""); err != nil {
+	if err := w.end(ctx, e, store.ReviewSkipped, ""); err != nil {
 		return true, err
 	}
 	desc := "kritik: skipped (" + reason.Description() + ")"

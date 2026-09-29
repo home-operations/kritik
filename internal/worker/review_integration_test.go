@@ -2126,7 +2126,7 @@ func checkJobEnded(
 		t.Cleanup(func() { exec.setAfter(nil) })
 		deadline.arm()
 		dispatch(head, false)
-		if status, _, _ := waitReview(head); status != statusFailed {
+		if status, _, _ := waitReview(head); status != string(store.ReviewFailed) {
 			t.Fatalf("status = %s, want failed", status)
 		}
 		id := latestReviewID(ctx, t, appStore, accountID, head)
@@ -2165,7 +2165,7 @@ func checkJobEnded(
 		})
 		t.Cleanup(func() { fc.setAnswered(nil) })
 		dispatch(head, false)
-		if status, _, _ := waitReview(head); status != statusCompleted {
+		if status, _, _ := waitReview(head); status != string(store.ReviewCompleted) {
 			t.Fatalf("status = %s, want completed", status)
 		}
 		id := latestReviewID(ctx, t, appStore, accountID, head)

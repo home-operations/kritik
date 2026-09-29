@@ -57,17 +57,6 @@ type Review struct {
 	superviseEvery time.Duration
 }
 
-// Review statuses the worker writes; the table's CHECK lists the same set.
-const (
-	statusPrepared   = "prepared"
-	statusCompleted  = "completed"
-	statusSuperseded = "superseded"
-	statusSkipped    = "skipped"
-	statusCapped     = "capped"
-	statusFailed     = "failed"
-	statusCanceled   = "canceled"
-)
-
 // pullRequest is what the worker reads back before starting.
 type pullRequest struct {
 	id, repositoryID string
@@ -178,23 +167,23 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	if agentErr != nil {
 		logger.Error("agent run not read", "error", agentErr)
-		w.Metrics.Review(account.Key(), statusFailed, time.Since(started))
+		w.Metrics.Review(account.Key(), string(store.ReviewFailed), time.Since(started))
 		// A retry would run the agent again; the review ends here.
-		return w.finishReview(cctx, args.AccountID, reviewID, statusFailed, "", agentErr.Error())
+		return w.finishReview(cctx, args.AccountID, reviewID, store.ReviewFailed, "", agentErr.Error())
 	}
 	switch {
 	case res.Err != nil && errors.Is(cause, errSuperseded):
 		logger.Info("review superseded while running", "job", res.JobName)
-		w.Metrics.Review(account.Key(), statusSuperseded, time.Since(started))
-		return w.finishReview(cctx, args.AccountID, reviewID, statusSuperseded, "", "")
+		w.Metrics.Review(account.Key(), string(store.ReviewSuperseded), time.Since(started))
+		return w.finishReview(cctx, args.AccountID, reviewID, store.ReviewSuperseded, "", "")
 	case res.Err != nil && errors.Is(cause, errHeartbeatLost):
 		logger.Warn("runner heartbeat lost", "job", res.JobName)
-		w.Metrics.Review(account.Key(), statusFailed, time.Since(started))
-		return w.finishReview(cctx, args.AccountID, reviewID, statusFailed, "", "runner heartbeat lost")
+		w.Metrics.Review(account.Key(), string(store.ReviewFailed), time.Since(started))
+		return w.finishReview(cctx, args.AccountID, reviewID, store.ReviewFailed, "", "runner heartbeat lost")
 	case res.Err != nil:
 		logger.Warn("runner failed", "error", res.Err, "job", res.JobName, "reason", res.TerminationReason)
-		w.Metrics.Review(account.Key(), statusFailed, time.Since(started))
-		return w.finishReview(cctx, args.AccountID, reviewID, statusFailed, "", res.Err.Error())
+		w.Metrics.Review(account.Key(), string(store.ReviewFailed), time.Since(started))
+		return w.finishReview(cctx, args.AccountID, reviewID, store.ReviewFailed, "", res.Err.Error())
 	}
 	prep, status, err := w.afterRun(ctx, args, pr, eff, b.notes, client, reviewID, runID, prior, logger)
 	if err != nil {
@@ -204,7 +193,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		return w.finishEnded(ctx, ended, err)
 	}
 	if prep.patchID == "" {
-		w.Metrics.Review(account.Key(), status, time.Since(started))
+		w.Metrics.Review(account.Key(), string(status), time.Since(started))
 		return nil
 	}
 	patchID := prep.patchID
@@ -227,11 +216,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if perr != nil && ctx.Err() != nil {
 		return w.finishEnded(ctx, ended, perr)
 	}
-	if perr != nil && status == statusFailed {
+	if perr != nil && status == store.ReviewFailed {
 		logger.Error("review failed", "error", perr)
 	}
-	logger.Info("review " + status)
-	w.Metrics.Review(account.Key(), status, time.Since(started))
+	logger.Info("review " + string(status))
+	w.Metrics.Review(account.Key(), string(status), time.Since(started))
 	fctx, fcancel := detach(ctx)
 	defer fcancel()
 	return w.finishReview(fctx, args.AccountID, reviewID, status, patchID, errText(perr))
@@ -259,7 +248,7 @@ type prepared struct {
 func (w *Review) afterRun(
 	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, eff Effective, notes []string, client forge.Client,
 	reviewID, runID string, prior priorReview, logger *slog.Logger,
-) (prepared, string, error) {
+) (prepared, store.ReviewStatus, error) {
 	var (
 		patchID, lastPatch             string
 		priorFetched                   *string
@@ -301,8 +290,8 @@ func (w *Review) afterRun(
 		return prepared{}, "", err
 	}
 	if superseded {
-		logger.Info("review "+statusSuperseded, "patch_id", short(patchID))
-		return prepared{}, statusSuperseded, w.finishReview(ctx, args.AccountID, reviewID, statusSuperseded, patchID, "")
+		logger.Info("review superseded", "patch_id", short(patchID))
+		return prepared{}, store.ReviewSuperseded, w.finishReview(ctx, args.AccountID, reviewID, store.ReviewSuperseded, patchID, "")
 	}
 
 	var files repoconfig.Files
@@ -315,7 +304,7 @@ func (w *Review) afterRun(
 		logger.Warn("repository filter failed to evaluate", "error", ferr)
 	}
 	if reason != "" {
-		logger.Info("review "+statusSkipped, "reason", reason, "patch_id", short(patchID))
+		logger.Info("review skipped", "reason", reason, "patch_id", short(patchID))
 		if err := w.finishSkipped(ctx, args.AccountID, reviewID, patchID, reason); err != nil {
 			return prepared{}, "", err
 		}
@@ -324,11 +313,11 @@ func (w *Review) afterRun(
 			"kritik: skipped ("+reason.Description()+")"); err != nil {
 			logger.Warn("commit status not set", "error", err)
 		}
-		return prepared{}, statusSkipped, nil
+		return prepared{}, store.ReviewSkipped, nil
 	}
 	if pr.authorIsBot && lastPatch != "" && lastPatch == patchID {
-		logger.Info("review "+statusSkipped, "patch_id", short(patchID))
-		return prepared{}, statusSkipped, w.finishReview(ctx, args.AccountID, reviewID, statusSkipped, patchID, "")
+		logger.Info("review skipped", "patch_id", short(patchID))
+		return prepared{}, store.ReviewSkipped, w.finishReview(ctx, args.AccountID, reviewID, store.ReviewSkipped, patchID, "")
 	}
 
 	scope, scopeReason := review.DecideScope(prior.id != "", priorFetched != nil, len(deltaPaths), eff.Incremental.MaxDeltaFiles)
@@ -340,14 +329,14 @@ func (w *Review) afterRun(
 	// stays NULL until it ends one way or the other.
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, scope = $4, scope_reason = $5, prior_review_id = $6
-			WHERE id = $1`, reviewID, statusPrepared, patchID, string(scope), scopeReason, priorID)
+			WHERE id = $1`, reviewID, store.ReviewPrepared, patchID, string(scope), scopeReason, priorID)
 		return err
 	})
 	if err != nil {
 		return prepared{}, "", fmt.Errorf("worker: mark review prepared: %w", err)
 	}
 	logger.Info("review prepared", "patch_id", short(patchID), "scope", scope, "scope_reason", scopeReason, "delta_paths", len(deltaPaths))
-	return prepared{patchID: patchID, eff: eff, notes: notes, scope: scope}, statusPrepared, nil
+	return prepared{patchID: patchID, eff: eff, notes: notes, scope: scope}, store.ReviewPrepared, nil
 }
 
 // loadPullRequest reads a job's pull request. One the store does not know
@@ -384,8 +373,8 @@ type earlyEnd struct {
 
 // end records a review that never ran as status, for reason, and counts
 // it.
-func (w *Review) end(ctx context.Context, e earlyEnd, status, reason string) error {
-	w.Metrics.Review(e.accountKey, status, time.Since(e.started))
+func (w *Review) end(ctx context.Context, e earlyEnd, status store.ReviewStatus, reason string) error {
+	w.Metrics.Review(e.accountKey, string(status), time.Since(e.started))
 	return w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO reviews
 			(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error, finished_at)
@@ -408,9 +397,9 @@ func (w *Review) skipUnchangedBot(ctx context.Context, e earlyEnd, client forge.
 	if !unchanged {
 		return patch, false, nil
 	}
-	e.logger.Info("review "+statusSkipped+" before its runner: bot patch unchanged", "forge_patch_id", short(patch))
+	e.logger.Info("review skipped before its runner: bot patch unchanged", "forge_patch_id", short(patch))
 	e.forgePatch = patch
-	return patch, true, w.end(ctx, e, statusSkipped, "")
+	return patch, true, w.end(ctx, e, store.ReviewSkipped, "")
 }
 
 // begun is a review job past everything before its admission: its pull
@@ -446,7 +435,7 @@ func (w *Review) begin(
 	e := earlyEnd{args: args, pr: pr, accountKey: account.Key(), started: started, logger: logger}
 	if pr.headSHA != args.HeadSHA {
 		logger.Info("review superseded before start", "current_head", short(pr.headSHA))
-		return begun{}, true, w.end(ctx, e, statusSuperseded, "")
+		return begun{}, true, w.end(ctx, e, store.ReviewSuperseded, "")
 	}
 	settings := file.Settings(account, pr.repository)
 	if held, err := w.slotsHeld(ctx, e, job, account.ID(), settings); held {
@@ -517,7 +506,7 @@ func (w *Review) admit(
 	if status == "" {
 		return a, false, nil
 	}
-	e.logger.Warn("review "+status, "reason", reason)
+	e.logger.Warn("review "+string(status), "reason", reason)
 	return admission{}, true, w.end(ctx, e, status, reason)
 }
 
@@ -613,7 +602,7 @@ func (w *Review) start(
 	return reviewID, runID, prior, err
 }
 
-func (w *Review) finishReview(ctx context.Context, accountID, reviewID, status, patchID, errText string) error {
+func (w *Review) finishReview(ctx context.Context, accountID, reviewID string, status store.ReviewStatus, patchID, errText string) error {
 	return w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, error = left($4, 2000), finished_at = now() WHERE id = $1`,
 			reviewID, status, patchID, errText)
@@ -646,19 +635,19 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 	cctx, cancel := detach(ctx)
 	defer cancel()
 	cause := context.Cause(ctx)
-	status, errText, desc := statusCanceled, "", "kritik: review canceled"
+	status, errText, desc := store.ReviewCanceled, "", "kritik: review canceled"
 	if !errors.Is(cause, river.ErrJobCancelledRemotely) {
-		status, errText, desc = statusFailed, "review timed out: "+cause.Error(), "kritik: review timed out"
+		status, errText, desc = store.ReviewFailed, "review timed out: "+cause.Error(), "kritik: review timed out"
 	}
 	finished, ferr := w.finishUnfinished(cctx, e.accountID, e.reviewID, status, errText)
 	if ferr != nil || !finished {
 		return ferr
 	}
-	e.logger.Info("review "+status+" as its job ended", "cause", cause, "job", e.jobName)
+	e.logger.Info("review "+string(status)+" as its job ended", "cause", cause, "job", e.jobName)
 	if err := e.client.SetStatus(cctx, e.owner, e.repo, e.headSHA, forge.StatusError, desc); err != nil {
 		e.logger.Warn("commit status not set", "error", err)
 	}
-	w.Metrics.Review(e.accountKey, status, time.Since(e.started))
+	w.Metrics.Review(e.accountKey, string(status), time.Since(e.started))
 	return nil
 }
 
@@ -677,12 +666,14 @@ func (w *Review) agentSpecFailed(ctx context.Context, e endedReview, runID strin
 		}
 		return w.finishEnded(ctx, e, err)
 	}
-	return errors.Join(err, w.finishReview(dctx, e.accountID, e.reviewID, statusFailed, "", err.Error()), runErr)
+	return errors.Join(err, w.finishReview(dctx, e.accountID, e.reviewID, store.ReviewFailed, "", err.Error()), runErr)
 }
 
 // finishUnfinished ends a review only if nothing has ended it yet, and
 // reports whether it did.
-func (w *Review) finishUnfinished(ctx context.Context, accountID, reviewID, status, errText string) (bool, error) {
+func (w *Review) finishUnfinished(
+	ctx context.Context, accountID, reviewID string, status store.ReviewStatus, errText string,
+) (bool, error) {
 	var finished bool
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, error = left($3, 2000), finished_at = now()
@@ -712,7 +703,7 @@ func failRun(ctx context.Context, st *store.Store, accountID, runID, errText str
 func (w *Review) finishSkipped(ctx context.Context, accountID, reviewID, patchID string, reason repoconfig.SkipReason) error {
 	return w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, skip_reason = $4, finished_at = now() WHERE id = $1`,
-			reviewID, statusSkipped, patchID, string(reason))
+			reviewID, store.ReviewSkipped, patchID, string(reason))
 		if err != nil {
 			return fmt.Errorf("worker: finish review: %w", err)
 		}
