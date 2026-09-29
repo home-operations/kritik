@@ -13,6 +13,29 @@ let source: EventSource | null = null;
 let attempt = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
+// stream is what the topbar says of the connection. It only reads as down
+// once the stream has stayed closed for DOWN_AFTER_MS, so the routine
+// reconnect after a server restart or a proxy's idle cut goes unremarked.
+export const stream = $state<{ down: boolean; since: string }>({ down: false, since: '' });
+const DOWN_AFTER_MS = 2_000;
+let downTimer: ReturnType<typeof setTimeout> | undefined;
+
+function clearDown(): void {
+  clearTimeout(downTimer);
+  downTimer = undefined;
+  stream.down = false;
+}
+
+function armDown(): void {
+  if (downTimer !== undefined || stream.down) return;
+  const since = new Date().toISOString();
+  downTimer = setTimeout(() => {
+    downTimer = undefined;
+    stream.down = true;
+    stream.since = since;
+  }, DOWN_AFTER_MS);
+}
+
 function parseData(e: MessageEvent<string>): unknown {
   try {
     return JSON.parse(e.data) as unknown;
@@ -64,6 +87,7 @@ function connect(): void {
   // each stream with one; live() debounces the pair into one refetch.
   source.addEventListener('open', () => {
     attempt = 0;
+    clearDown();
     for (const fn of listeners.get('resync') ?? []) fn({});
   });
   // EventSource retries on its own after 'error', but only at a fixed
@@ -71,6 +95,7 @@ function connect(): void {
   // above actually applies.
   source.addEventListener('error', () => {
     source?.close();
+    armDown();
     // Once the stream has failed twice running, check it is not the session.
     if (attempt > 0) void probeSession();
     scheduleReconnect();
@@ -79,7 +104,9 @@ function connect(): void {
 }
 
 export function initEvents(): void {
-  if (!source) connect();
+  if (source) return;
+  armDown();
+  connect();
 }
 
 // closeEvents tears down the shared connection on sign-out, so a stale
@@ -91,6 +118,7 @@ export function closeEvents(): void {
   source?.close();
   source = null;
   attempt = 0;
+  clearDown();
 }
 
 // subscribe registers fn for events of the given kind, returning an

@@ -275,6 +275,23 @@ test('a stream the server refuses for a dead session sends the tab to sign-in', 
   expect(streams).toBe(after);
 });
 
+test('the topbar says when live updates are down, and when they are back', async ({ page, signIn }) => {
+  await signIn();
+  let up = false;
+  await page.route('**/api/events', (route) =>
+    up ? route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }) : route.fulfill({ status: 503, body: '' }),
+  );
+  await page.goto('/');
+  const live = page.locator('.topbar .live');
+  await expect(live).toHaveText('Live updates on');
+  await expect(live).toHaveText('Reconnecting…');
+  await expect(live).toHaveAttribute('title', /^Live updates stopped at .+; this page may be out of date\.$/);
+
+  up = true;
+  // The next attempt waits out the reconnect backoff, a few seconds by now.
+  await expect(live).toHaveText('Live updates on', { timeout: 10_000 });
+});
+
 test('a 401 from a page while signed in stays on sign-in', async ({ page, signIn, mockProviders }) => {
   await signIn();
   await mockProviders();

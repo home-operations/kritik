@@ -377,6 +377,29 @@ kbd {
   font-family: var(--font-mono);
 }
 
+/* ---- live-updates indicator -------------------------------------------- */
+.live {
+  --live: var(--ok);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.live-down {
+  --live: var(--warn);
+  color: var(--warn);
+}
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--live) 25%, transparent);
+}
+
 /* ---- user menu --------------------------------------------------------- */
 .user-menu {
   position: relative;

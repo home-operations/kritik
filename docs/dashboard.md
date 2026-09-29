@@ -7,6 +7,10 @@ runs, and, for an admin, the audit log. An admin can also queue a re-run
 of a specific pull request, cancel a review in progress, or reindex a
 repository's embeddings, from the dashboard rather than the forge.
 
+A dot in the top bar shows whether live updates are connected. Once they
+have been down for two seconds it reads "Reconnecting…", and the page may
+be out of date until they are back.
+
 It is served at `KRITIK_WEB_URL`, the chart's `web.url`, which the webhook
 listener shares under `/hooks`. People sign in as
 [`auth`](configuration.md#auth) configures, with the role it maps them to.
