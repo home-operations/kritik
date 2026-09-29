@@ -362,9 +362,10 @@ func reviewNotes(omitted []string, dropped []review.Dropped) []string {
 // required: the other two are best effort and logged when they fail, so a
 // forge quirk cannot turn a finished review into a retry storm. A finding
 // the last review already posted inline, or one the settings keep out of
-// inline comments, is listed in the summary only. The returned flags say,
-// per finding, whether an inline comment for it is on the forge.
-func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, []bool, error) {
+// inline comments, is listed in the summary only. The returned comments
+// say, per finding, whether an inline comment for it is on the forge, and
+// its id there.
+func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, []inlineComment, error) {
 	owner, repo, _ := strings.Cut(p.pr.repository, "/")
 	onForge := alreadyInline(res.Findings, p.prior.findings)
 	for i := range res.Findings {
@@ -378,7 +379,7 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	inline := make([]forge.InlineComment, 0, len(res.Findings))
 	var posted []int
 	for i, f := range res.Findings {
-		if onForge[i] || !p.postsInline(f) {
+		if onForge[i].posted || !p.postsInline(f) {
 			continue
 		}
 		body, inlineNotes := review.RenderInline(ctx, templates, f)
@@ -410,11 +411,16 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 		return 0, nil, err
 	}
 
-	if err := p.client.CreateReview(ctx, owner, repo, p.pr.number, p.pr.headSHA, inline); err != nil {
+	ids, err := p.client.CreateReview(ctx, owner, repo, p.pr.number, p.pr.headSHA, inline)
+	switch {
+	case ids == nil:
 		p.logger.Warn("inline review not posted", "error", err)
-	} else {
-		for _, i := range posted {
-			onForge[i] = true
+	case err != nil:
+		p.logger.Warn("inline review posted, but its comments' ids not read back", "error", err)
+	}
+	for j, i := range posted {
+		if ids != nil {
+			onForge[i] = inlineComment{posted: true, id: ids[j]}
 		}
 	}
 	desc := "no findings"
@@ -470,16 +476,16 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 }
 
 func (p *publishPhase) persist(
-	ctx context.Context, res review.Result, inline []bool, resp model.CompletionResponse, role string, commentID int64,
+	ctx context.Context, res review.Result, inline []inlineComment, resp model.CompletionResponse, role string, commentID int64,
 ) error {
 	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		for i, f := range res.Findings {
 			if _, err := tx.Exec(ctx, `INSERT INTO findings
 				(account_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint, posted_inline,
-				 end_line, replacement, agent_prompt)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`, p.account.ID(), p.reviewID, f.Path, f.Line,
-				string(f.Severity), f.Title, f.Explanation, f.SuggestedFix, review.Fingerprint(f), inline[i],
-				f.EndLine, f.Replacement, f.AgentPrompt); err != nil {
+				 end_line, replacement, agent_prompt, forge_comment_id)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, nullif($14::bigint, 0))`, p.account.ID(), p.reviewID, f.Path, f.Line,
+				string(f.Severity), f.Title, f.Explanation, f.SuggestedFix, review.Fingerprint(f), inline[i].posted,
+				f.EndLine, f.Replacement, f.AgentPrompt, inline[i].id); err != nil {
 				return fmt.Errorf("worker: insert finding: %w", err)
 			}
 		}

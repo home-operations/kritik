@@ -12,22 +12,25 @@ func TestAlreadyInline(t *testing.T) {
 	fresh := review.Finding{Path: "main.go", Line: 5, Title: "unchecked error"}
 	notPosted := review.Finding{Path: "util.go", Line: 1, Title: "slow loop"}
 	prior := []priorFinding{
-		{Finding: seen, postedInline: true},
+		{Finding: seen, postedInline: true, commentID: 55},
 		{Finding: notPosted, postedInline: false},
 	}
+	none := inlineComment{}
 	cases := []struct {
 		name        string
 		findings    []review.Finding
 		prior       []priorFinding
-		wantCarried []bool
+		wantCarried []inlineComment
 	}{
-		{name: "no prior review", findings: []review.Finding{seen, fresh}, wantCarried: []bool{false, false}},
+		{name: "no prior review", findings: []review.Finding{seen, fresh}, wantCarried: []inlineComment{none, none}},
 		{
 			// The fingerprint ignores the line and title case and spacing,
-			// so a finding that moved is still the one already posted.
-			name: "posted before", findings: []review.Finding{moved, fresh}, prior: prior, wantCarried: []bool{true, false},
+			// so a finding that moved is still the one already posted, and
+			// keeps its thread.
+			name: "posted before", findings: []review.Finding{moved, fresh}, prior: prior,
+			wantCarried: []inlineComment{{posted: true, id: 55}, none},
 		},
-		{name: "found before but never posted", findings: []review.Finding{notPosted}, prior: prior, wantCarried: []bool{false}},
+		{name: "found before but never posted", findings: []review.Finding{notPosted}, prior: prior, wantCarried: []inlineComment{none}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

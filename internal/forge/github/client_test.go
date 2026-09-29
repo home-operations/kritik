@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -245,6 +246,8 @@ func TestWriteBackCalls(t *testing.T) {
 	f.reply("POST /api/v3/repos/o/r/issues/7/comments", 201, `{"id":100}`)
 	f.reply("PATCH /api/v3/repos/o/r/issues/comments/100", 200, `{"id":100}`)
 	f.reply("POST /api/v3/repos/o/r/pulls/7/reviews", 200, `{"id":5}`)
+	f.reply("GET /api/v3/repos/o/r/pulls/7/reviews/5/comments", 200,
+		`[{"id":301,"path":"a.go","line":3,"body":"b"},{"id":302,"path":"a.go","line":9,"body":"elsewhere"}]`)
 	f.reply("POST /api/v3/repos/o/r/statuses/abc", 201, `{"state":"success"}`)
 	f.reply("POST /api/v3/repos/o/r/pulls/7/comments", 201, `{"id":200}`)
 
@@ -255,11 +258,13 @@ func TestWriteBackCalls(t *testing.T) {
 	if err := c.UpdateComment(t.Context(), "o", "r", 100, "edited"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.CreateReview(t.Context(), "o", "r", 7, "abc", nil); err != nil || f.saw("POST /api/v3/repos/o/r/pulls/7/reviews") {
+	if ids, err := c.CreateReview(t.Context(), "o", "r", 7, "abc", nil); err != nil || ids == nil || f.saw("POST /api/v3/repos/o/r/pulls/7/reviews") {
 		t.Fatal("a review with no comments must not be posted")
 	}
-	if err := c.CreateReview(t.Context(), "o", "r", 7, "abc", []forge.InlineComment{{Path: "a.go", Line: 3, Body: "b"}}); err != nil {
-		t.Fatal(err)
+	sent := []forge.InlineComment{{Path: "a.go", Line: 3, Body: "b"}, {Path: "b.go", Line: 1, Body: "b"}}
+	ids, err := c.CreateReview(t.Context(), "o", "r", 7, "abc", sent)
+	if err != nil || !slices.Equal(ids, []int64{301, 0}) {
+		t.Fatalf("CreateReview = %v, %v; want each comment's id matched by path and body, 0 where none", ids, err)
 	}
 	review := f.bodies["POST /api/v3/repos/o/r/pulls/7/reviews"].(map[string]any)
 	if review["event"] != "COMMENT" || review["commit_id"] != "abc" {

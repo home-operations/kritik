@@ -142,8 +142,11 @@ type Client interface {
 	// UpdateComment replaces the body of conversation comment id.
 	UpdateComment(ctx context.Context, owner, repo string, id int64, body string) error
 	// CreateReview posts a non-blocking review with inline comments pinned
-	// to headSHA.
-	CreateReview(ctx context.Context, owner, repo string, number int, headSHA string, comments []InlineComment) error
+	// to headSHA and returns each comment's id, in order, 0 where the forge
+	// did not say. ids is nil when the review was not posted; a review
+	// posted whose comments could not be read back returns ids, all 0, and
+	// the error.
+	CreateReview(ctx context.Context, owner, repo string, number int, headSHA string, comments []InlineComment) (ids []int64, err error)
 	// SetStatus sets the kritik commit status on sha.
 	SetStatus(ctx context.Context, owner, repo, sha string, state StatusState, description string) error
 	// FileURL links lines line through endLine (0 for line alone) of path

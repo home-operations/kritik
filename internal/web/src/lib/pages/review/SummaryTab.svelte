@@ -31,6 +31,6 @@
 {#each groups as g (g.s)}
   <section class="finding-group" aria-labelledby="sev-{g.s}">
     <h2 id="sev-{g.s}" class="finding-group-head"><span class="sev sev-{g.s}">{g.s}</span> {g.items.length}</h2>
-    {#each g.items as f (f.id)}<FindingCard {f} />{/each}
+    {#each g.items as f (f.id)}<FindingCard {f} pullUrl={d.review.pull.url} />{/each}
   </section>
 {/each}
