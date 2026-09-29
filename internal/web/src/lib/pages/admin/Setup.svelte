@@ -18,7 +18,7 @@
   onMount(() => {
     void (async () => {
       try {
-        status = await getJSON<SetupStatus>('/api/v1/operator/setup');
+        status = await getJSON<SetupStatus>('/api/v1/admin/setup');
         if (reason && !setupFlags.dismissed) open = true;
       } catch {
         // No wizard without a status; the registrations still show.
@@ -36,7 +36,7 @@
 
   async function refresh(done?: (s: SetupStatus) => boolean): Promise<void> {
     for (let i = 0; i < 20; i++) {
-      status = await getJSON<SetupStatus>('/api/v1/operator/setup');
+      status = await getJSON<SetupStatus>('/api/v1/admin/setup');
       if (!done || done(status)) return;
       await new Promise((r) => setTimeout(r, 300));
     }

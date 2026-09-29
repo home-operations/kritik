@@ -178,7 +178,7 @@ test.describe('review', () => {
   });
 });
 
-test('queue, usage, follow-ups and operator pages render their fixtures', async ({ page }) => {
+test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/queue`);
   await expect(page.locator('tbody tr')).toContainText(g.job.lastError);
@@ -194,8 +194,8 @@ test('queue, usage, follow-ups and operator pages render their fixtures', async 
   await page.goto(`/${T}/followups`);
   await expect(page.locator('.followup')).toContainText(`${g.followup.repository}#${g.followup.number}`);
 
-  await page.goto('/#/operator');
-  await expect(page.getByRole('row').filter({ hasText: g.operatorAccount.slug })).toContainText('not served');
+  await page.goto('/#/admin');
+  await expect(page.getByRole('row').filter({ hasText: g.adminAccount.slug })).toContainText('not served');
 });
 
 test('a server-sent event for the account refetches the page', async ({ page }) => {

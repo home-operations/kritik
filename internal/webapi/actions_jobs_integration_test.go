@@ -108,7 +108,7 @@ func newActionsEnv(t *testing.T) *actionsEnv {
 	e.prID = e.scalar(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha)
 		VALUES ($1, $2, 11, 'rerun me', 'ada', 'headA') RETURNING id::text`, e.accountID, e.repoID)
 
-	e.signIn("operator", "aj-op", store.SessionGrant{Role: store.RoleAdmin})
+	e.signIn("admin", "aj-op", store.SessionGrant{Role: store.RoleAdmin})
 	return e
 }
 

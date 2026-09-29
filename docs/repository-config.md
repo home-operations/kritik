@@ -8,7 +8,7 @@ it to follow-ups (from the pull request's merge base) and to indexing (from
 the commit indexed) too.
 
 The file holds nothing secret: no field takes a credential, a URL, a host
-or a secret reference, and it can only name what the operator configured,
+or a secret reference, and it can only name what an admin configured,
 a model by its `<provider>/<model>` reference and a command by its name.
 
 [`kritik.schema.json`](kritik.schema.json) is its JSON Schema. An editor
@@ -21,21 +21,21 @@ its first line names the schema:
 
 ## What it may change
 
-The file narrows what the operator allows, adds to the review's
-instructions, and chooses a few settings within bounds the operator sets:
+The file narrows what an admin allows, adds to the review's
+instructions, and chooses a few settings within bounds an admin sets:
 
 - `enabled: false`: stops reviews, follow-ups and indexing for the
   repository. It cannot turn a disabled repository back on.
-- `filter`: a filter expression ANDed with the operator's own. It is
+- `filter`: a filter expression ANDed with the admin's own. It is
   compiled and smoke-tested against a sample pull request when the file is
   parsed, so a broken expression is rejected rather than silently skipping
   every review. A review it filters out ends before any runner starts.
-- `ignore`: path globs added to the operator's own ignore list, for
+- `ignore`: path globs added to the admin's own ignore list, for
   reviews and indexing alike.
 - `skip.onlyPaths`: path globs. A pull request is skipped only when every
   changed path matches at least one of them.
 - `review.instructions`: paths to files, read from the same merge-base
-  tree, appended after the operator's instructions to the reviewer's system
+  tree, appended after the admin's instructions to the reviewer's system
   prompt (and a follow-up's), capped at 32 KiB joined. An entry may instead
   be a `path` with `paths` globs, included only when a changed path matches
   one of them, so rules for one part of the repository do not spend the cap
@@ -49,7 +49,7 @@ instructions, and chooses a few settings within bounds the operator sets:
   ```
 
 - `review.context`: files that explain the code, each a `path` with a
-  `description` and optional `paths` globs, added after the operator's. An
+  `description` and optional `paths` globs, added after the admin's. An
   agentic review is pointed at each file to read it with its own tools; a
   single-shot review is given its content, after the diff and before the
   context kritik gathers, as the prompt budget allows. A file with `paths`
@@ -89,11 +89,11 @@ instructions, and chooses a few settings within bounds the operator sets:
   template cannot hang or exhaust memory; one that exceeds a bound falls
   back to the default with a note in the comment.
 
-## What it may choose within the operator's bounds
+## What it may choose within the admin's bounds
 
-These choose a value for the repository, each within a bound the operator
+These choose a value for the repository, each within a bound an admin
 sets in an `allow` block (at `defaults`, an account or a repository entry).
-Where the operator sets no bound, the file may only pick the operator's own
+Where an admin sets no bound, the file may only pick the admin's own
 value, or a limit or settle time at or below it:
 
 - `mode`: `single` or `agentic`, from `allow.modes`.
@@ -118,7 +118,7 @@ review:
   requireSuggestedFix: true
 ```
 
-A value outside its bound is dropped, not clamped: the operator's value
+A value outside its bound is dropped, not clamped: the admin's value
 applies for that field, a note in the review's summary says which field
 was dropped and what was allowed, and the rest of the file still applies.
 `limits`, `forks`, `runner`, `incremental` and `agent.commandTimeout` are

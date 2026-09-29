@@ -42,7 +42,7 @@ func TestAgentPrompt(t *testing.T) {
 		Context: []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 1, EndLine: 2, Text: "func u() {}"}},
 		Scope:   review.ScopeFull,
 	}
-	files := repoconfig.Files{"docs/rules.md": "Operator rules.", ".kritik/rules.md": "Repository rules."}
+	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritik/rules.md": "Repository rules."}
 	tests := []struct {
 		name         string
 		paths        []string
@@ -52,14 +52,14 @@ func TestAgentPrompt(t *testing.T) {
 		strict       bool
 	}{
 		{name: "the named instructions and strictness", paths: []string{"docs/rules.md"},
-			scope: review.ScopeFull, instructions: []string{"Operator rules."}, strict: true},
+			scope: review.ScopeFull, instructions: []string{"Admin rules."}, strict: true},
 		{name: "instructions in the order named", paths: []string{".kritik/rules.md", "docs/rules.md"},
-			scope: review.ScopeFull, instructions: []string{"Repository rules.", "Operator rules."}, strict: true},
+			scope: review.ScopeFull, instructions: []string{"Repository rules.", "Admin rules."}, strict: true},
 		{name: "an instruction scoped to paths the change does not touch is left out", paths: []string{"docs/rules.md", ".kritik/rules.md"},
-			scoped: map[string][]string{".kritik/rules.md": {"web/**"}}, scope: review.ScopeFull, instructions: []string{"Operator rules."}, strict: true},
+			scoped: map[string][]string{".kritik/rules.md": {"web/**"}}, scope: review.ScopeFull, instructions: []string{"Admin rules."}, strict: true},
 		{name: "one scoped to a path it touches is kept", paths: []string{"docs/rules.md", ".kritik/rules.md"},
 			scoped: map[string][]string{".kritik/rules.md": {"*.go"}}, scope: review.ScopeFull,
-			instructions: []string{"Operator rules.", "Repository rules."}, strict: true},
+			instructions: []string{"Admin rules.", "Repository rules."}, strict: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
 	}
 	for _, tt := range tests {

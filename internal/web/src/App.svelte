@@ -81,8 +81,7 @@
   // currentSlug reads the account slug off whatever route is active, falling
   // back to the first account so the nav has somewhere to point before the
   // user has ever picked one explicitly.
-  const currentSlug = $derived('slug' in router.route ? router.route.slug : me?.accounts[0]?.slug);
-  const currentAccount = $derived(me?.accounts.find((t) => t.slug === currentSlug));
+  const currentSlug = $derived('slug' in router.route ? router.route.slug : me?.accounts[0]);
 
   function switchAccount(slug: string): void {
     navigate({ name: 'account', slug });
@@ -185,8 +184,8 @@
               value={currentSlug}
               onchange={(e) => switchAccount(e.currentTarget.value)}
             >
-              {#each me.accounts as t (t.slug)}
-                <option value={t.slug}>{t.slug}</option>
+              {#each me.accounts as slug (slug)}
+                <option value={slug}>{slug}</option>
               {/each}
             </select>
           {/if}
@@ -235,7 +234,7 @@
               >
                 <Icon path={mdiClipboardTextClockOutline} size={15} /> Follow-ups
               </a>
-              {#if currentAccount?.role === 'admin' || me?.operator}
+              {#if me?.admin}
                 <a
                   class:active={router.route.name === 'admin'}
                   aria-current={router.route.name === 'admin' ? 'page' : undefined}
@@ -246,12 +245,12 @@
               {/if}
             </nav>
           {/if}
-          {#if me.operator}
+          {#if me.admin}
             <nav class="nav nav-instance" aria-label="Instance">
               <a
-                class:active={router.route.name === 'operator'}
-                aria-current={router.route.name === 'operator' ? 'page' : undefined}
-                href={href({ name: 'operator' })}
+                class:active={router.route.name === 'console'}
+                aria-current={router.route.name === 'console' ? 'page' : undefined}
+                href={href({ name: 'console' })}
               >
                 <Icon path={mdiConsoleLine} size={15} /> Admin console
               </a>
@@ -261,7 +260,7 @@
       {/if}
 
       <div class="main-col">
-        {#if me?.operator && management()}<Setup />{/if}
+        {#if me?.admin && management()}<Setup />{/if}
         <Page route={router.route} />
       </div>
     </div>

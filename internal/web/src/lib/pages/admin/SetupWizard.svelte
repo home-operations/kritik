@@ -94,9 +94,9 @@
   let installs = $state<Record<string, AppInstallation[]>>({});
   async function checkInstalls(): Promise<void> {
     try {
-      conns = await getJSON<Connection[]>('/api/v1/operator/connections');
+      conns = await getJSON<Connection[]>('/api/v1/admin/connections');
       for (const c of conns) {
-        installs[c.name] = await getJSON<AppInstallation[]>(`/api/v1/operator/connections/${encodeURIComponent(c.name)}/installations`);
+        installs[c.name] = await getJSON<AppInstallation[]>(`/api/v1/admin/connections/${encodeURIComponent(c.name)}/installations`);
       }
       if (Object.values(installs).some((list) => list.some((i) => i.served))) setFlag('installed', true);
     } catch (err) {
@@ -191,7 +191,7 @@
     void (async () => {
       try {
         for (const c of status.connections) {
-          reached[c] = await getJSON<AccountRepositories[]>(`/api/v1/operator/connections/${encodeURIComponent(c)}/repositories`);
+          reached[c] = await getJSON<AccountRepositories[]>(`/api/v1/admin/connections/${encodeURIComponent(c)}/repositories`);
         }
       } catch (err) {
         fail(err);
@@ -205,7 +205,7 @@
     try {
       let added = 0;
       for (const c of status.connections) {
-        const r = await sendJSON<RegisterResult>('POST', `/api/v1/operator/connections/${encodeURIComponent(c)}/repositories`);
+        const r = await sendJSON<RegisterResult>('POST', `/api/v1/admin/connections/${encodeURIComponent(c)}/repositories`);
         added += r.added;
       }
       toast(added === 1 ? 'Registered 1 new repository' : `Registered ${added} new repositories`);
@@ -223,7 +223,7 @@
   }
   $effect(() => {
     if (open && step === 5 && conns.length === 0) {
-      void getJSON<Connection[]>('/api/v1/operator/connections').then((c) => (conns = c), fail);
+      void getJSON<Connection[]>('/api/v1/admin/connections').then((c) => (conns = c), fail);
     }
   });
 </script>
@@ -340,7 +340,7 @@
       {#each accountsOf() as a (a)}
         <li><a href={href({ name: 'queue', slug: `github/${a}` })} onclick={() => (open = false)}>github/{a}</a>: watch its queue</li>
       {/each}
-      <li><a href={href({ name: 'operator' })} onclick={() => (open = false)}>Admin console</a>: every setting</li>
+      <li><a href={href({ name: 'console' })} onclick={() => (open = false)}>Admin console</a>: every setting</li>
     </ul>
   {/if}
 

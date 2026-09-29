@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -144,18 +145,17 @@ func TestResolveAccount(t *testing.T) {
 	f := testFile(t)
 	alpha := accountIDOf(t, f, "alpha")
 	tests := []struct {
-		name     string
-		p        *auth.Principal
-		slug     string
-		wantRole auth.Role
-		wantErr  bool
+		name    string
+		p       *auth.Principal
+		slug    string
+		wantErr bool
 	}{
-		{"member reads own account", &auth.Principal{Accounts: map[string]bool{alpha: true}}, "alpha", auth.RoleMember, false},
-		{"member of every account", &auth.Principal{AllAccounts: true}, "beta", auth.RoleMember, false},
-		{"member of another account", &auth.Principal{Accounts: map[string]bool{alpha: true}}, "beta", "", true},
-		{"unknown account", &auth.Principal{Operator: true}, "gamma", "", true},
-		{"operator reads any account as admin", &auth.Principal{Operator: true}, "beta", auth.RoleAdmin, false},
-		{"no memberships", &auth.Principal{}, "alpha", "", true},
+		{"member reads own account", &auth.Principal{Accounts: map[string]bool{alpha: true}}, "alpha", false},
+		{"member of every account", &auth.Principal{AllAccounts: true}, "beta", false},
+		{"member of another account", &auth.Principal{Accounts: map[string]bool{alpha: true}}, "beta", true},
+		{"unknown account", &auth.Principal{Admin: true}, "gamma", true},
+		{"an admin reads any account", &auth.Principal{Admin: true}, "beta", false},
+		{"no memberships", &auth.Principal{}, "alpha", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -170,8 +170,8 @@ func TestResolveAccount(t *testing.T) {
 			if err != nil {
 				t.Fatalf("resolveAccount: %v", err)
 			}
-			if sc.account.Name != tt.slug || sc.role() != tt.wantRole {
-				t.Errorf("scope = %s as %q, want %s as %q", sc.account.Name, sc.role(), tt.slug, tt.wantRole)
+			if sc.account.Name != tt.slug {
+				t.Errorf("scope = %s, want %s", sc.account.Name, tt.slug)
 			}
 		})
 	}
@@ -182,16 +182,12 @@ func TestMe(t *testing.T) {
 	tests := []struct {
 		name     string
 		p        *auth.Principal
-		operator bool
-		accounts []AccountMembership
+		admin    bool
+		accounts []string
 	}{
-		{"member", memberOf(t, ts.file, "beta"), false,
-			[]AccountMembership{{Slug: "github/beta", Role: auth.RoleMember}}},
-		{"operator sees every account as admin", &auth.Principal{Operator: true}, true, []AccountMembership{
-			{Slug: "github/alpha", Role: auth.RoleAdmin},
-			{Slug: "github/beta", Role: auth.RoleAdmin},
-		}},
-		{"no accounts", &auth.Principal{}, false, []AccountMembership{}},
+		{"member", memberOf(t, ts.file, "beta"), false, []string{"github/beta"}},
+		{"an admin reads every account", &auth.Principal{Admin: true}, true, []string{"github/alpha", "github/beta"}},
+		{"no accounts", &auth.Principal{}, false, []string{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -203,13 +199,8 @@ func TestMe(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &me); err != nil {
 				t.Fatal(err)
 			}
-			if me.Operator != tt.operator || len(me.Accounts) != len(tt.accounts) {
-				t.Fatalf("me = %+v, want operator %v accounts %+v", me, tt.operator, tt.accounts)
-			}
-			for i := range tt.accounts {
-				if me.Accounts[i] != tt.accounts[i] {
-					t.Errorf("account %d = %+v, want %+v", i, me.Accounts[i], tt.accounts[i])
-				}
+			if me.Admin != tt.admin || !slices.Equal(me.Accounts, tt.accounts) {
+				t.Fatalf("me = %+v, want admin %v accounts %v", me, tt.admin, tt.accounts)
 			}
 		})
 	}
@@ -223,9 +214,9 @@ func TestListAccountsWithNoneReadable(t *testing.T) {
 	}
 }
 
-func TestOperatorRouteHiddenFromNonOperators(t *testing.T) {
+func TestAdminRouteHiddenFromNonAdmins(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	w := ts.as(memberOf(t, ts.file, "alpha"), httptest.NewRequest("GET", "/api/v1/operator/accounts", nil))
+	w := ts.as(memberOf(t, ts.file, "alpha"), httptest.NewRequest("GET", "/api/v1/admin/accounts", nil))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
@@ -261,7 +252,7 @@ func TestRequestValidation(t *testing.T) {
 
 func TestUnknownRoutes(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	p := &auth.Principal{Operator: true}
+	p := &auth.Principal{Admin: true}
 	for _, path := range []string{"/api/v1/nope", "/api/v2/accounts", "/auth/nope"} {
 		t.Run(path, func(t *testing.T) {
 			w := ts.as(p, httptest.NewRequest("GET", path, nil))
@@ -274,7 +265,7 @@ func TestUnknownRoutes(t *testing.T) {
 
 func TestMutationsNeedSameOrigin(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
-	w := ts.as(&auth.Principal{Operator: true}, httptest.NewRequest("POST", "/api/v1/me", nil))
+	w := ts.as(&auth.Principal{Admin: true}, httptest.NewRequest("POST", "/api/v1/me", nil))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 from the same-origin check", w.Code)
 	}
@@ -358,7 +349,7 @@ func TestUIServesFilesOnly(t *testing.T) {
 
 func TestBasePath(t *testing.T) {
 	ts := newTestServer(t, "https://example.com/kritik/")
-	p := &auth.Principal{Operator: true}
+	p := &auth.Principal{Admin: true}
 	tests := []struct {
 		name, path string
 		status     int

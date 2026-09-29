@@ -17,17 +17,6 @@ type accountScope struct {
 	principal *auth.Principal
 }
 
-// role is the principal's role on the account: an instance admin is an admin of
-// every account, and anyone else who may read it a member.
-func (t *accountScope) role() auth.Role { return roleOn(t.principal) }
-
-func roleOn(p *auth.Principal) auth.Role {
-	if p.Operator {
-		return auth.RoleAdmin
-	}
-	return auth.RoleMember
-}
-
 // resolveAccount finds the running account name on forge for p. An account
 // p may not read is reported exactly like one that does not exist, so the
 // API never confirms an account to someone outside it.
@@ -63,11 +52,11 @@ func (s *Server) handler(h func(w http.ResponseWriter, r *http.Request) error) h
 	}
 }
 
-// operator adapts a handler only an instance admin may call: to anyone
-// else its route does not exist.
-func (s *Server) operator(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+// admin adapts a handler only an admin may call: to anyone else its route
+// does not exist.
+func (s *Server) admin(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
 	return s.handler(func(w http.ResponseWriter, r *http.Request) error {
-		if !auth.PrincipalFrom(r.Context()).Operator {
+		if !auth.PrincipalFrom(r.Context()).Admin {
 			return errNotFound("route")
 		}
 		return h(w, r)

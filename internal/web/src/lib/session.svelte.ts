@@ -28,10 +28,8 @@ export function management(): boolean {
   return session.meta?.management === true;
 }
 
-// canAdmin is whether the viewer may change account slug: /me gives an
-// admin the admin role on every account, and anyone else member.
-export function canAdmin(slug: string): boolean {
-  const me = session.me;
-  if (!me) return false;
-  return me.operator || me.accounts.some((t) => t.slug === slug && t.role === 'admin');
+// isAdmin is whether the viewer administers the instance, and with it every
+// account.
+export function isAdmin(): boolean {
+  return session.me?.admin === true;
 }

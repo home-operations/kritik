@@ -77,7 +77,7 @@ test.describe('sign-in page', () => {
     let signedIn = false;
     await page.route('**/api/v1/me', (route) =>
       signedIn
-        ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...DEFAULT_ME, operator: true }) })
+        ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...DEFAULT_ME, admin: true }) })
         : route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: 'unauthenticated' }) }),
     );
     let sent: unknown;
@@ -87,13 +87,13 @@ test.describe('sign-in page', () => {
       signedIn = true;
       await route.fulfill({ status: 204 });
     });
-    await page.goto('/#/operator');
+    await page.goto('/#/admin');
     await expect(page).toHaveURL(/#\/signin$/);
     const form = page.getByRole('form', { name: 'Admin sign-in' });
     await form.getByLabel('Username').fill('admin');
     await form.getByLabel('Password').fill('hunter2');
     await form.getByRole('button', { name: 'Sign in' }).click();
-    await expect(page).toHaveURL(/#\/operator$/);
+    await expect(page).toHaveURL(/#\/admin$/);
     expect(sent).toEqual({ user: 'admin', password: 'hunter2' });
   });
 
@@ -122,11 +122,12 @@ test.describe('sign-in page', () => {
 
 test.describe('signed-in shell', () => {
   test('shows account nav, the admin link, and the user menu for an admin', async ({ page, signIn }) => {
-    await signIn();
+    await signIn({ ...DEFAULT_ME, admin: true });
     await page.goto('/');
 
     await expect(page.locator('.account-switch option')).toHaveText(['github/acme']);
-    await expect(page.locator('.nav a')).toHaveCount(8); // All accounts, then Overview/Repos/Pulls/Queue/Usage/Follow-ups/Admin
+    // All accounts, then Overview/Repos/Pulls/Queue/Usage/Follow-ups/Admin, then the Admin console.
+    await expect(page.locator('.nav a')).toHaveCount(9);
     // The sections are a sidebar left of the page, not part of the topbar.
     await expect(page.locator('.topbar .nav')).toHaveCount(0);
     const side = await page.locator('aside.sidebar').boundingBox();
@@ -140,13 +141,13 @@ test.describe('signed-in shell', () => {
   });
 
   test('hides the admin link for a non-admin member', async ({ page, signIn }) => {
-    await signIn({ ...DEFAULT_ME, accounts: [{ slug: 'github/acme', role: 'member' }] });
+    await signIn(DEFAULT_ME);
     await page.goto('/');
     await expect(page.locator('.nav a')).toHaveCount(7);
   });
 
   test('shows the admin console link for an admin', async ({ page, signIn }) => {
-    await signIn({ ...DEFAULT_ME, operator: true });
+    await signIn({ ...DEFAULT_ME, admin: true });
     await page.goto('/');
     await expect(page.getByRole('navigation', { name: 'Instance' }).getByRole('link', { name: 'Admin console' })).toBeVisible();
   });
@@ -154,10 +155,7 @@ test.describe('signed-in shell', () => {
   test('switching accounts in the dropdown navigates to that account', async ({ page, signIn }) => {
     await signIn({
       ...DEFAULT_ME,
-      accounts: [
-        { slug: 'github/acme', role: 'admin' },
-        { slug: 'github/globex', role: 'member' },
-      ],
+      accounts: ['github/acme', 'github/globex'],
     });
     await page.goto('/');
     await page.locator('.account-switch').selectOption('github/globex');
@@ -219,7 +217,7 @@ test.describe('keyboard shortcuts', () => {
   });
 
   test('Ctrl/Cmd+K opens the command palette; typing filters; Enter navigates', async ({ page, signIn }) => {
-    await signIn({ ...DEFAULT_ME, operator: true });
+    await signIn({ ...DEFAULT_ME, admin: true });
     await page.goto('/');
     await page.keyboard.press('ControlOrMeta+k');
     await expect(page.locator('.palette-input input')).toBeFocused();
@@ -229,7 +227,7 @@ test.describe('keyboard shortcuts', () => {
     await expect(page.locator('.row-title').first()).toHaveText('Admin console');
 
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/#\/operator$/);
+    await expect(page).toHaveURL(/#\/admin$/);
     await expect(page.locator('.palette-overlay')).toHaveCount(0);
   });
 

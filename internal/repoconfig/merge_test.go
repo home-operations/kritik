@@ -12,7 +12,7 @@ import (
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
-func operator() configfile.Settings {
+func adminSettings() configfile.Settings {
 	return configfile.Settings{
 		Enabled: true, Ignore: []string{"vendor/**"}, Mode: configfile.ReviewSingle, Settle: 2 * time.Minute,
 		Models: configfile.Models{Review: "p/big"},
@@ -51,10 +51,10 @@ func TestMerge(t *testing.T) {
 			filter: true, skip: []string{"docs/**"}, scoped: map[string][]string{".kritik/sql.md": {"**/*.sql"}},
 		},
 		{
-			name: "an operator's instruction stays unscoped", doc: "review:\n  instructions: [{ path: docs/rules.md, paths: ['**/*.sql'] }]\n",
+			name: "an admin's instruction stays unscoped", doc: "review:\n  instructions: [{ path: docs/rules.md, paths: ['**/*.sql'] }]\n",
 		},
 		{
-			name: "context files follow the operator's", doc: "review:\n  context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }]\n",
+			name: "context files follow the admin's", doc: "review:\n  context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }]\n",
 			want: func(s *configfile.Settings) {
 				s.Review.Context = append(s.Review.Context, configfile.ContextFile{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}})
 			},
@@ -62,7 +62,7 @@ func TestMerge(t *testing.T) {
 		{name: "a context file without a description", doc: "review:\n  context: [{ path: db/schema.sql }]\n", wantErr: "description is required"},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
-			name: "presentation replaces the operator's", doc: "review: { minSeverity: important, inlineComments: false }\n",
+			name: "presentation replaces the admin's", doc: "review: { minSeverity: important, inlineComments: false }\n",
 			want: func(s *configfile.Settings) {
 				s.Review.MinSeverity, s.Review.InlineComments = configfile.SeverityImportant, false
 			},
@@ -73,10 +73,10 @@ func TestMerge(t *testing.T) {
 		},
 		{
 			name: "requireSuggestedFix may only turn on", doc: "review:\n  requireSuggestedFix: false\n",
-			dropped: []string{".kritik.yaml: review.requireSuggestedFix false was dropped; allowed: true, since the operator requires a suggested fix"},
+			dropped: []string{".kritik.yaml: review.requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},
 		{
-			name: "with no bounds set, the operator's own values or lower",
+			name: "with no bounds set, the admin's own values or lower",
 			doc:  "mode: single\nmodels: { review: p/big }\nagent: { maxSteps: 20, maxTokens: 5000, commands: [] }\nsettle: 30s\n",
 			want: func(s *configfile.Settings) {
 				s.Agent.MaxSteps, s.Agent.Commands, s.Settle = 20, []string{}, 30*time.Second
@@ -96,7 +96,7 @@ func TestMerge(t *testing.T) {
 			},
 		},
 		{
-			name: "the bounds open choices past the operator's own",
+			name: "the bounds open choices past the admin's own",
 			doc:  "mode: agentic\nmodels: { review: p/small, fallback: p/big }\nagent: { maxSteps: 60, timeout: 20m, commands: [fd, curl] }\nsettle: 30m\n",
 			allow: configfile.Allow{
 				Modes: []configfile.ReviewMode{configfile.ReviewSingle, configfile.ReviewAgentic}, Models: []configfile.ModelRef{"p/big", "p/small"},
@@ -118,7 +118,7 @@ func TestMerge(t *testing.T) {
 			},
 		},
 		{name: "a secret reference does not decode", doc: "models: { review: { env: KEY } }\n", wantErr: "cannot unmarshal"},
-		{name: "a file that does not parse leaves the operator's settings", doc: "unknown: 1\n", wantErr: "unknown"},
+		{name: "a file that does not parse leaves the admin's settings", doc: "unknown: 1\n", wantErr: "unknown"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -127,9 +127,9 @@ func TestMerge(t *testing.T) {
 			if tt.doc != "" {
 				doc = []byte(tt.doc)
 			}
-			op := operator()
+			op := adminSettings()
 			op.Allow = tt.allow
-			want := operator()
+			want := adminSettings()
 			want.Allow = tt.allow
 			if tt.want != nil {
 				tt.want(&want)
@@ -145,8 +145,8 @@ func TestMerge(t *testing.T) {
 				!reflect.DeepEqual(m.Scoped, tt.scoped) {
 				t.Fatalf("filter=%v skip=%v scoped=%v dropped=%q", m.InRepoFilter != nil, m.Skip.OnlyPaths, m.Scoped, m.Dropped)
 			}
-			if !reflect.DeepEqual(op, func() configfile.Settings { o := operator(); o.Allow = tt.allow; return o }()) {
-				t.Fatal("Merge changed the operator's settings")
+			if !reflect.DeepEqual(op, func() configfile.Settings { o := adminSettings(); o.Allow = tt.allow; return o }()) {
+				t.Fatal("Merge changed the admin's settings")
 			}
 		})
 	}

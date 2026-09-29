@@ -11,7 +11,6 @@ import (
 
 	"github.com/riverqueue/river/rivertype"
 
-	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
@@ -34,7 +33,7 @@ var goldenReview = Review{
 }
 
 var goldenSummary = AccountSummary{
-	Slug: "github/alpha", Role: auth.RoleAdmin, Connection: "alpha-bot", Repositories: 3, Reviews7d: 9,
+	Slug: "github/alpha", Connection: "alpha-bot", Repositories: 3, Reviews7d: 9,
 	Usage: MonthUsage{Tokens: 5000, CostUSD: 1.5, TokensPerMonth: 1000000, ReviewsToday: 2, ReviewsPerDay: 50},
 }
 
@@ -89,13 +88,13 @@ var goldenTools = []ToolDef{{Name: "grep", Description: "search", InputSchema: j
 var goldens = map[string]any{
 	"page": Page[Repository]{Items: []Repository{goldenRepo}, NextCursor: new("opaque")},
 	"me": Me{
-		User:     User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"},
-		Operator: true, Accounts: []AccountMembership{{Slug: "github/alpha", Role: auth.RoleMember}},
+		User:  User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"},
+		Admin: true, Accounts: []string{"github/alpha"},
 	},
-	"account_summary":  goldenSummary,
-	"operator_account": OperatorAccount{AccountSummary: goldenSummary, Live: false, Conflict: "no connection serves this account"},
+	"account_summary": goldenSummary,
+	"admin_account":   AdminAccount{AccountSummary: goldenSummary, Live: false, Conflict: "no connection serves this account"},
 	"account_detail": AccountDetail{
-		Slug: "github/alpha", Role: auth.RoleMember,
+		Slug: "github/alpha",
 		Connection: Connection{
 			Name: "alpha-bot", Forge: configfile.ForgeGitHub, ManagedBy: configfile.OriginFile, Accounts: []string{"alpha"},
 			Credentials: CredentialsSet{ClientID: true, PrivateKey: true, WebhookSecret: true},

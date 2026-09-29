@@ -2,16 +2,9 @@
 // JSON names in internal/webapi/testdata/*.golden.json. Timestamps are
 // RFC 3339 strings; null means "none".
 
-export type AccountRole = 'admin' | 'member';
 // Where a connection is declared: the configuration file (or its
 // environment), or the dashboard.
 export type ConnectionOrigin = 'file' | 'dashboard';
-
-// An account's slug is "<forge>/<name>", as the forge spells the name.
-export interface AccountMembership {
-  slug: string;
-  role: AccountRole;
-}
 
 // A person signed in to the dashboard.
 export interface User {
@@ -21,10 +14,12 @@ export interface User {
   avatarUrl: string;
 }
 
+// admin administers the instance and every account; accounts are the slugs
+// ("<forge>/<name>") of the accounts the viewer may read.
 export interface Me {
   user: User;
-  operator: boolean;
-  accounts: AccountMembership[];
+  admin: boolean;
+  accounts: string[];
 }
 
 // local is the admin's username and password form, posted to /auth/local.
@@ -94,7 +89,6 @@ export interface MonthUsage {
 // connection names the connection serving the account.
 export interface AccountSummary {
   slug: string;
-  role: AccountRole;
   connection: string;
   repositories: number;
   reviews7d: number;
@@ -103,7 +97,7 @@ export interface AccountSummary {
 
 // live is false for an entry of the instance spec no connection serves,
 // which conflict explains.
-export interface OperatorAccount extends AccountSummary {
+export interface AdminAccount extends AccountSummary {
   live: boolean;
   conflict?: string;
 }
@@ -139,7 +133,6 @@ export interface Limits {
 
 export interface AccountDetail {
   slug: string;
-  role: AccountRole;
   connection: Connection;
   models: Models;
   limits: Limits;
@@ -195,7 +188,7 @@ export interface ReviewBlock {
 }
 
 // What a repository's .kritik.yaml may choose; a null bound leaves it the
-// operator's own value, or a limit or settle time at or below it.
+// admin's own value, or a limit or settle time at or below it.
 export interface AllowBounds {
   modes: ReviewMode[] | null;
   models: string[] | null;
@@ -238,7 +231,7 @@ export interface InstanceSetting {
 }
 
 // The repository's .kritik.yaml as the last review that ran read it, at
-// its merge base, applied to the operator's settings as they are now.
+// its merge base, applied to the admin's settings as they are now.
 export interface RepoConfig {
   reviewId: string;
   commit: string;
@@ -267,7 +260,7 @@ export interface IndexRun {
 
 export interface RepoDetail extends Repository {
   settings: RepoSettings;
-  // Where each of the operator's settings comes from, by policy key.
+  // Where each of the admin's settings comes from, by policy key.
   sources: Record<string, ConfigSource>;
   repoConfig: RepoConfig | null;
   indexRuns: IndexRun[];

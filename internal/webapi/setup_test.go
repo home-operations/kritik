@@ -79,7 +79,7 @@ func TestProviderAndEmbeddingTests(t *testing.T) {
 	t.Setenv("TEST_GOOD", "good")
 	ts.srv.current.Set(configfiletest.Load(t, testConfig+"providers:\n  held: { type: openai, baseUrl: "+base+", apiKey: { env: TEST_GOOD } }\n"+
 		"embedding: { baseUrl: "+base+", apiKey: { env: TEST_GOOD }, model: e, dims: 3 }\n"))
-	admin := &auth.Principal{Operator: true}
+	admin := &auth.Principal{Admin: true}
 	post := func(p *auth.Principal, path string, body any) (int, TestResult, ErrorBody) {
 		t.Helper()
 		raw, _ := json.Marshal(body)
@@ -112,7 +112,7 @@ func TestProviderAndEmbeddingTests(t *testing.T) {
 		{"a bad type", ProviderTestRequest{Type: "gemini", APIKey: value("good")}, false, http.StatusUnprocessableEntity, "type must be"},
 	} {
 		t.Run("provider "+tt.name, func(t *testing.T) {
-			code, res, eb := post(admin, "/api/v1/operator/providers/test", tt.req)
+			code, res, eb := post(admin, "/api/v1/admin/providers/test", tt.req)
 			if code != tt.code || res.OK != tt.ok || !strings.Contains(res.Error+eb.Message, tt.errSub) {
 				t.Fatalf("= %d %+v %+v", code, res, eb)
 			}
@@ -135,13 +135,13 @@ func TestProviderAndEmbeddingTests(t *testing.T) {
 			"dims must be"},
 	} {
 		t.Run("embedding "+tt.name, func(t *testing.T) {
-			code, res, eb := post(admin, "/api/v1/operator/embedding/test", tt.req)
+			code, res, eb := post(admin, "/api/v1/admin/embedding/test", tt.req)
 			if code != tt.code || res.OK != tt.ok || !strings.Contains(res.Error+eb.Message, tt.errSub) {
 				t.Fatalf("= %d %+v %+v", code, res, eb)
 			}
 		})
 	}
-	if code, _, _ := post(memberOf(t, ts.file, "alpha"), "/api/v1/operator/providers/test", ProviderTestRequest{}); code != http.StatusNotFound {
+	if code, _, _ := post(memberOf(t, ts.file, "alpha"), "/api/v1/admin/providers/test", ProviderTestRequest{}); code != http.StatusNotFound {
 		t.Fatalf("a member's test = %d, want 404", code)
 	}
 }

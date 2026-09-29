@@ -699,7 +699,7 @@ func TestReviewPresentation(t *testing.T) {
 
 // TestAllow checks the allow block resolves bound by bound like any other
 // setting, and that load refuses a bound a repository could not choose
-// and an operator value outside its own bounds.
+// and an admin value outside its own bounds.
 func TestAllow(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -741,11 +741,11 @@ defaults:
 		{"a command path", doc("", "{ name: x, allow: { commands: [/bin/sh] } }"), "allow.commands[0] \"/bin/sh\" must be a bare command name"},
 		{"a bound that is not positive", doc("    allow: { agent: { maxTokens: 0 } }\n", ""), "allow.agent bounds must be positive"},
 		{"a negative settle bound", doc("    allow: { settle: -1s }\n", ""), "allow.settle must not be negative"},
-		{"the operator's mode outside its bounds", doc("    mode: agentic\n    allow: { modes: [single] }\n", ""), "mode agentic is outside allow.modes"},
-		{"the operator's model outside its bounds", doc("    models: { fallback: p/tiny }\n", ""), "models.fallback \"p/tiny\" is outside allow.models"},
+		{"the admin's mode outside its bounds", doc("    mode: agentic\n    allow: { modes: [single] }\n", ""), "mode agentic is outside allow.modes"},
+		{"the admin's model outside its bounds", doc("    models: { fallback: p/tiny }\n", ""), "models.fallback \"p/tiny\" is outside allow.models"},
 		{"a repository's command outside its bounds", doc("", "{ name: x, agent: { commands: [curl] } }"), "agent.commands \"curl\" is outside allow.commands"},
 		{"a built-in limit above its bound", doc("    allow: { agent: { maxSteps: 10 } }\n", ""), "agent.maxSteps is above allow.agent.maxSteps"},
-		{"the operator's settle above its bound", doc("    settle: 1h\n", ""), "settle is above allow.settle"},
+		{"the admin's settle above its bound", doc("    settle: 1h\n", ""), "settle is above allow.settle"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

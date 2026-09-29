@@ -26,8 +26,8 @@ test.describe('router: parse()', () => {
     await expectRoute(page, '#/nonsense', { name: 'overview' });
   });
 
-  test('#/operator', async ({ page }) => {
-    await expectRoute(page, '#/operator', { name: 'operator' });
+  test('#/admin', async ({ page }) => {
+    await expectRoute(page, '#/admin', { name: 'console' });
   });
 
   test('#/a/github/acme is the account overview', async ({ page }) => {

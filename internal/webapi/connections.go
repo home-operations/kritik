@@ -17,9 +17,9 @@ import (
 // and of the accounts each one's GitHub App is installed on (ADR-0014
 // §2.3), where an installation no connection serves can be removed.
 func (s *Server) registerConnections(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/operator/connections", s.operator(s.listConnections))
-	mux.HandleFunc("GET /api/v1/operator/connections/{name}/installations", s.operator(s.listInstallations))
-	mux.HandleFunc("DELETE /api/v1/operator/connections/{name}/installations/{id}", s.operator(s.uninstall))
+	mux.HandleFunc("GET /api/v1/admin/connections", s.admin(s.listConnections))
+	mux.HandleFunc("GET /api/v1/admin/connections/{name}/installations", s.admin(s.listInstallations))
+	mux.HandleFunc("DELETE /api/v1/admin/connections/{name}/installations/{id}", s.admin(s.uninstall))
 }
 
 func (s *Server) listConnections(w http.ResponseWriter, r *http.Request) error {

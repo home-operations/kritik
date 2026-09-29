@@ -25,8 +25,8 @@ const recentIndexRuns = 20
 func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me", s.handler(s.getMe))
 	mux.HandleFunc("GET /api/v1/accounts", s.handler(s.listAccounts))
-	mux.HandleFunc("GET /api/v1/operator/accounts", s.operator(s.listOperatorAccounts))
-	mux.HandleFunc("GET /api/v1/operator/instance", s.operator(s.listInstanceSettings))
+	mux.HandleFunc("GET /api/v1/admin/accounts", s.admin(s.listAdminAccounts))
+	mux.HandleFunc("GET /api/v1/admin/instance", s.admin(s.listInstanceSettings))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}", s.account(s.getAccount))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos", s.account(s.listRepos))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}", s.account(s.getRepo))
@@ -49,12 +49,9 @@ func toUser(a store.User) User {
 
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
-	me := Me{
-		User:     toUser(p.User),
-		Operator: p.Operator, Accounts: []AccountMembership{},
-	}
+	me := Me{User: toUser(p.User), Admin: p.Admin, Accounts: []string{}}
 	for _, t := range readable(s.current.Get(), p) {
-		me.Accounts = append(me.Accounts, AccountMembership{Slug: t.Slug(), Role: roleOn(p)})
+		me.Accounts = append(me.Accounts, t.Slug())
 	}
 	writeJSON(w, http.StatusOK, me)
 	return nil
@@ -76,7 +73,7 @@ func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) error {
 	file := s.current.Get()
 	out := []AccountSummary{}
 	for _, t := range readable(file, p) {
-		sum, err := s.accountSummary(r.Context(), file, t, roleOn(p))
+		sum, err := s.accountSummary(r.Context(), file, t)
 		if err != nil {
 			return err
 		}
@@ -86,7 +83,7 @@ func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *configfile.Account, role auth.Role) (AccountSummary, error) {
+func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *configfile.Account) (AccountSummary, error) {
 	var stats store.AccountStats
 	err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
 		var err error
@@ -97,7 +94,7 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 		return AccountSummary{}, err
 	}
 	sum := AccountSummary{
-		Slug: t.Slug(), Role: role, Repositories: stats.Repositories,
+		Slug: t.Slug(), Repositories: stats.Repositories,
 		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "").Limits),
 	}
 	if in := file.ConnectionFor(t); in != nil {
@@ -113,25 +110,22 @@ func monthUsage(m store.MonthUsage, l configfile.Limits) MonthUsage {
 	}
 }
 
-// listOperatorAccounts lists every running account, and every entry of the
+// listAdminAccounts lists every running account, and every entry of the
 // instance spec no connection serves. It is reported as a missing route to
 // anyone but an admin.
-func (s *Server) listOperatorAccounts(w http.ResponseWriter, r *http.Request) error {
+func (s *Server) listAdminAccounts(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	file := s.current.Get()
-	out := []OperatorAccount{}
+	out := []AdminAccount{}
 	for i := range file.Accounts {
-		sum, err := s.accountSummary(ctx, file, &file.Accounts[i], auth.RoleAdmin)
+		sum, err := s.accountSummary(ctx, file, &file.Accounts[i])
 		if err != nil {
 			return err
 		}
-		out = append(out, OperatorAccount{AccountSummary: sum, Live: true})
+		out = append(out, AdminAccount{AccountSummary: sum, Live: true})
 	}
 	for _, a := range file.Unserved() {
-		out = append(out, OperatorAccount{
-			Slug: a.Slug(), Role: auth.RoleAdmin,
-			Conflict: "no connection serves this account",
-		})
+		out = append(out, AdminAccount{Slug: a.Slug(), Conflict: "no connection serves this account"})
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
@@ -153,7 +147,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 	}
 	settings := t.file.Settings(t.account, "")
 	d := AccountDetail{
-		Slug: t.account.Slug(), Role: t.role(),
+		Slug:   t.account.Slug(),
 		Models: models(settings.Models), Limits: limits(settings.Limits), Filter: filterSource(settings),
 		Usage: monthUsage(month, settings.Limits),
 	}
