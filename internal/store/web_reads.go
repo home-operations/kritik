@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -146,22 +147,23 @@ type MonthUsage struct {
 }
 
 // ReadAccountStats reads the account's counts; a repository counts when
-// enabled also admits its full name. The month and day boundaries are the
-// database's, as the worker's cap checks use.
-func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(fullName string) bool) (AccountStats, error) {
+// enabled also admits its full name and traits. The month and day
+// boundaries are the database's, as the worker's cap checks use.
+func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(fullName string, t configfile.RepoTraits) bool) (AccountStats, error) {
 	var s AccountStats
-	rows, err := tx.Query(ctx, `SELECT name FROM repositories WHERE enabled`)
+	rows, err := tx.Query(ctx, `SELECT name, archived, fork FROM repositories WHERE enabled`)
 	if err != nil {
 		return s, fmt.Errorf("store: account stats: %w", err)
 	}
-	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return s, fmt.Errorf("store: account stats: %w", err)
-	}
-	for _, name := range names {
-		if enabled(name) {
+	var name string
+	var t configfile.RepoTraits
+	if _, err := pgx.ForEachRow(rows, []any{&name, &t.Archived, &t.Fork}, func() error {
+		if enabled(name, t) {
 			s.Repositories++
 		}
+		return nil
+	}); err != nil {
+		return s, fmt.Errorf("store: account stats: %w", err)
 	}
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE created_at >= now() - interval '7 days'`).
 		Scan(&s.Reviews7d); err != nil {
@@ -258,15 +260,49 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 	return r, err
 }
 
-// ListRepos returns a page of the account's repositories ordered by full
-// name.
-func ListRepos(ctx context.Context, tx pgx.Tx, p Page) ([]RepoRow, *Cursor, error) {
+// RepoKind picks which of an account's repositories a list shows.
+type RepoKind string
+
+// Repository kinds. RepoInUse, the default, is the ones kritik can run:
+// neither archived nor a fork, but for the forks turned on one by one.
+// RepoForks is every fork not archived, and RepoArchived every archived
+// repository.
+const (
+	RepoInUse    RepoKind = ""
+	RepoForks    RepoKind = "forks"
+	RepoArchived RepoKind = "archived"
+)
+
+// Valid reports whether k is a kind a list takes.
+func (k RepoKind) Valid() bool {
+	return k == RepoInUse || k == RepoForks || k == RepoArchived
+}
+
+// RepoFilter picks the repositories a list shows: those of Kind, where
+// TurnedOn names, in any case, the forks RepoInUse lets in.
+type RepoFilter struct {
+	Kind     RepoKind
+	TurnedOn []string
+}
+
+// ListRepos returns a page of the account's repositories f picks, ordered
+// by full name.
+func ListRepos(ctx context.Context, tx pgx.Tx, f RepoFilter, p Page) ([]RepoRow, *Cursor, error) {
 	if err := p.check(); err != nil {
 		return nil, nil, err
 	}
+	turnedOn := make([]string, len(f.TurnedOn))
+	for i, n := range f.TurnedOn {
+		turnedOn[i] = strings.ToLower(n)
+	}
 	rows, err := tx.Query(ctx, `SELECT `+repoColumns+`
-		WHERE $1 OR (r.name, r.id) > ($2, $3::uuid)
-		ORDER BY r.name, r.id LIMIT $4`, p.After.First(), p.After.S, p.afterID(), p.Limit+1)
+		WHERE ($1 OR (r.name, r.id) > ($2, $3::uuid))
+		  AND CASE $5
+			WHEN 'forks' THEN r.fork AND NOT r.archived
+			WHEN 'archived' THEN r.archived
+			ELSE NOT r.archived AND (NOT r.fork OR lower(r.name) = ANY($6))
+		  END
+		ORDER BY r.name, r.id LIMIT $4`, p.After.First(), p.After.S, p.afterID(), p.Limit+1, string(f.Kind), turnedOn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list repositories: %w", err)
 	}

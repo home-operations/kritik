@@ -59,6 +59,7 @@ accounts:
     name: wa
     repositories:
       - name: one
+        enabled: true
       - name: two
   - forge: github
     name: wb
@@ -291,6 +292,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("account detail shows each connection's last webhook", func(t *testing.T) { testLastWebhook(t, e) })
 	t.Run("transcripts equal Rebuild", func(t *testing.T) { testTranscriptsEqualRebuild(t, e) })
 	t.Run("repository pagination", func(t *testing.T) { testRepoPagination(t, e) })
+	t.Run("repository kinds", func(t *testing.T) { testRepoKinds(t, e) })
 	t.Run("event stream scopes to the account", func(t *testing.T) { testEventStreamScopesToAccount(t, e) })
 }
 
@@ -492,6 +494,58 @@ func testRepoPagination(t *testing.T, e *apiEnv) {
 	}
 	if strings.Join(names, ",") != "wa/one,wa/two" {
 		t.Errorf("paged repositories = %v, want wa/one, wa/two", names)
+	}
+}
+
+// testRepoKinds: the repository list leaves out archived repositories and
+// forks, but for a fork turned on by its own entry, as wa/one's is; each
+// has a list of its own, and neither counts as the account's.
+func testRepoKinds(t *testing.T, e *apiEnv) {
+	t.Cleanup(func() {
+		e.exec(`UPDATE repositories SET fork = false, archived = false WHERE name IN ('wa/one', 'wa/two')`)
+	})
+	list := func(query string) string {
+		t.Helper()
+		status, body := e.getBody("member-a", "/api/v1/accounts/github/wa/repos"+query)
+		if status != 200 {
+			t.Fatalf("%s: status = %d: %s", query, status, body)
+		}
+		var page Page[Repository]
+		if err := json.Unmarshal(body, &page); err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, 0, len(page.Items))
+		for _, r := range page.Items {
+			out = append(out, fmt.Sprintf("%s:%v", r.FullName, r.Enabled))
+		}
+		return strings.Join(out, ",")
+	}
+	count := func() int {
+		t.Helper()
+		_, body := e.getBody("member-a", "/api/v1/accounts")
+		var accounts []AccountSummary
+		if err := json.Unmarshal(body, &accounts); err != nil || len(accounts) != 1 {
+			t.Fatalf("accounts = %s, %v", body, err)
+		}
+		return accounts[0].Repositories
+	}
+	e.exec(`UPDATE repositories SET fork = true WHERE name IN ('wa/one', 'wa/two')`)
+	for _, tt := range []struct{ query, want string }{{"", "wa/one:true"}, {"?type=forks", "wa/one:true,wa/two:false"}, {"?type=archived", ""}} {
+		if got := list(tt.query); got != tt.want {
+			t.Errorf("forks: repos%s = %q, want %q", tt.query, got, tt.want)
+		}
+	}
+	if got := count(); got != 1 {
+		t.Errorf("forks: the account counts %d repositories, want 1", got)
+	}
+	e.exec(`UPDATE repositories SET archived = true WHERE name = 'wa/one'`)
+	for _, tt := range []struct{ query, want string }{{"", ""}, {"?type=forks", "wa/two:false"}, {"?type=archived", "wa/one:false"}} {
+		if got := list(tt.query); got != tt.want {
+			t.Errorf("archived: repos%s = %q, want %q", tt.query, got, tt.want)
+		}
+	}
+	if got := count(); got != 0 {
+		t.Errorf("archived: the account counts %d repositories, want 0", got)
 	}
 }
 

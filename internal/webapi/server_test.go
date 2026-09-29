@@ -232,6 +232,7 @@ func TestRequestValidation(t *testing.T) {
 	}{
 		{"/api/v1/accounts/github/alpha/repos?limit=0", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/repos?cursor=@@", CodeInvalidCursor},
+		{"/api/v1/accounts/github/alpha/repos?type=mirrors", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/pulls?state=merged", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/pulls?outcome=great", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/usage?group=week", CodeBadRequest},

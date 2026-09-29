@@ -185,6 +185,26 @@ func TestDispatchPullRequest(t *testing.T) {
 
 // A new head is enqueued at once even where the repository settles: the
 // worker waits the settle time out, since .kritik.yaml may set it.
+// TestDispatchSkipsArchivedAndForks: nothing runs for an archived
+// repository, or a fork its own entry does not turn on, whatever the
+// account's settings say.
+func TestDispatchSkipsArchivedAndForks(t *testing.T) {
+	svc, _, f := setupService(t)
+	ctx := context.Background()
+	for _, traits := range []configfile.RepoTraits{{Fork: true}, {Archived: true}} {
+		r := &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main", RepoTraits: traits}
+		for _, ev := range []webhook.Event{
+			{Kind: webhook.KindPullRequest, Action: "opened", Repository: r, PullRequest: &webhook.PullRequest{Number: 99, HeadSHA: "x"}},
+			{Kind: webhook.KindComment, Action: "created", Repository: r, Comment: &webhook.Comment{ID: 9, Number: 99, Body: "@bot why"}},
+			{Kind: webhook.KindPush, Repository: r, Push: &webhook.Push{Ref: "refs/heads/main", After: "abc"}},
+		} {
+			if out, err := svc.Dispatch(ctx, request(f, ev)); err != nil || out != (Outcome{Status: Skipped, Reason: reasonDisabled}) {
+				t.Errorf("%s in a repository that is %+v = %+v, %v; want skipped as disabled", ev.Kind, traits, out, err)
+			}
+		}
+	}
+}
+
 func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()

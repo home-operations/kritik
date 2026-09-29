@@ -8,6 +8,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritik/internal/configfile"
 )
 
 const onboardAccounts = `
@@ -134,7 +136,7 @@ func TestOnboardCandidates(t *testing.T) {
 		t.Fatalf("OnboardingInFlight = %d, %v; want %d", after, err, before+1)
 	}
 
-	all := func(string, string) bool { return true }
+	all := func(string, string, configfile.RepoTraits) bool { return true }
 	refs, err := s.OnboardCandidates(ctx, 1000, time.Hour, all)
 	if err != nil {
 		t.Fatalf("OnboardCandidates: %v", err)
@@ -154,11 +156,24 @@ func TestOnboardCandidates(t *testing.T) {
 	}
 	// A repository its settings leave off is passed over, and takes none
 	// of the limit.
-	ours := func(_, name string) bool {
+	ours := func(_, name string, _ configfile.RepoTraits) bool {
 		_, ok := ids[name]
 		return ok && name != "east/busy"
 	}
 	if limited, err := s.OnboardCandidates(ctx, 1, time.Hour, ours); err != nil || len(limited) != 1 || names[limited[0].ID] != "west/one" {
 		t.Fatalf("OnboardCandidates(1, without east/busy) = %v, %v; want west/one", limited, err)
+	}
+	// The callback sees what the forge says of each: here, that the
+	// busiest is a fork.
+	exec(`UPDATE repositories SET fork = true WHERE id = $1`, ids["east/busy"])
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET fork = false WHERE id = $1`, ids["east/busy"])
+	})
+	sources := func(_, name string, traits configfile.RepoTraits) bool {
+		_, ok := ids[name]
+		return ok && !traits.Fork
+	}
+	if limited, err := s.OnboardCandidates(ctx, 1, time.Hour, sources); err != nil || len(limited) != 1 || names[limited[0].ID] != "west/one" {
+		t.Fatalf("OnboardCandidates(1, no forks) = %v, %v; want west/one", limited, err)
 	}
 }

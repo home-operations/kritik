@@ -765,6 +765,42 @@ test.describe('repository switches', () => {
     expect(sent[1]!.body).toEqual({ revision: g.accountConfig.revision, spec: { forge: 'github', name: 'alpha', providers: { own: ownKey } } });
   });
 
+  test('a fork is turned on by an entry of its own, and an archived repository cannot be', async ({ page }) => {
+    const copy: T.Repository = { ...g.repoPage.items[0]!, id: 'repo-3', fullName: 'alpha/copy', fork: true, enabled: false };
+    const old: T.Repository = { ...g.repoPage.items[0]!, id: 'repo-4', fullName: 'alpha/old', archived: true, enabled: false };
+    await setup(page, adminMe, [[new RegExp(`${API}/repos$`), g.pageOf([copy, old])], accountRow(g.accountConfig)]);
+    const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }]]);
+    await page.goto(`/${REPOS}`);
+    await expect(page.getByRole('switch', { name: 'Review and index alpha/old' })).toBeDisabled();
+    await expect(page.getByRole('checkbox', { name: 'Select alpha/old' })).toHaveCount(0);
+
+    // The account turns repositories on, but only its own entry does a fork.
+    await page.getByRole('switch', { name: 'Review and index alpha/copy' }).check();
+    await expect.poll(() => sent.length).toBe(1);
+    expect(sent[0]!.body).toEqual({
+      revision: g.accountConfig.revision,
+      spec: { forge: 'github', name: 'alpha', providers: { own: ownKey }, repositories: [{ name: 'copy', enabled: true }] },
+    });
+  });
+
+  test('the list shows forks or archived repositories only when asked, and an admin can resync it', async ({ page }) => {
+    const seen = await setup(page, adminMe, [repos]);
+    const sent = await g.mockWrites(page, [['POST', /\/api\/v1\/admin\/connections\/[^/]+\/repositories$/, { status: 200, body: { added: 2 } }]]);
+    await page.goto(`/${REPOS}`);
+    const lists = () => seen.filter((u) => u.pathname.endsWith('/repos')).map((u) => u.searchParams.get('type'));
+    await expect.poll(lists).toEqual([null]);
+    await page.getByRole('combobox', { name: 'Type' }).selectOption('forks');
+    await expect.poll(() => lists().at(-1)).toBe('forks');
+    await expect(page.getByText('A fork is only reviewed and indexed once turned on here.')).toBeVisible();
+    await page.getByRole('combobox', { name: 'Type' }).selectOption('archived');
+    await expect.poll(() => lists().at(-1)).toBe('archived');
+
+    await page.getByRole('button', { name: 'Resync from GitHub' }).click();
+    await expect(page.getByRole('status')).toContainText('Resynced from GitHub: 2 repositories added');
+    const detail = g.golden<T.AccountDetail>('account_detail');
+    expect(sent.map((s) => s.url.pathname)).toEqual([`/api/v1/admin/connections/${detail.connection.name}/repositories`]);
+  });
+
   test('selected repositories are turned off together, and the ones on reindexed', async ({ page }) => {
     await setup(page, adminMe, [repos, accountRow(g.accountConfig)]);
     const sent = await g.mockWrites(page, [

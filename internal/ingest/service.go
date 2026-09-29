@@ -104,7 +104,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	}
 	settings := req.File.Settings(req.Account, ev.Repository.FullName)
 	switch {
-	case !settings.Enabled:
+	case !req.File.Runs(req.Account, ev.Repository.FullName, ev.Repository.RepoTraits):
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	case pr.Fork && !settings.Forks:
 		return Outcome{Status: Skipped, Reason: "fork"}, nil
@@ -174,8 +174,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}
-	settings := req.File.Settings(req.Account, ev.Repository.FullName)
-	if !settings.Enabled {
+	if !req.File.Runs(req.Account, ev.Repository.FullName, ev.Repository.RepoTraits) {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	}
 	out := Outcome{Status: Enqueued, Job: "followup"}
@@ -210,8 +209,7 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Push.After == "" || strings.Trim(ev.Push.After, "0") == "" {
 		return Outcome{Status: Skipped, Reason: "branch-deleted"}, nil
 	}
-	settings := req.File.Settings(req.Account, ev.Repository.FullName)
-	if !settings.Enabled {
+	if !req.File.Runs(req.Account, ev.Repository.FullName, ev.Repository.RepoTraits) {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	}
 	out := Outcome{Status: Enqueued, Job: "index"}

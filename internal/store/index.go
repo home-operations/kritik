@@ -175,7 +175,7 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 }
 
 // OnboardCandidates lists up to limit enabled repositories, of those
-// enabled also admits by account ID and full name, with no active index
+// enabled also admits by account ID, full name and traits, with no active index
 // generation, no index job queued or running, and no onboarding job
 // that finished within retryAfter without building an index: one that
 // failed or was skipped would fail or be skipped again. Accounts take turns,
@@ -183,13 +183,13 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 // first, as the ones a review is likeliest to need soon. Owner connection:
 // it spans every account.
 func (s *Store) OnboardCandidates(
-	ctx context.Context, limit int, retryAfter time.Duration, enabled func(accountID, fullName string) bool,
+	ctx context.Context, limit int, retryAfter time.Duration, enabled func(accountID, fullName string, t configfile.RepoTraits) bool,
 ) ([]RepoRef, error) {
 	if s.owner == nil {
 		return nil, errors.New("store: OnboardCandidates needs the owner connection")
 	}
 	rows, err := s.owner.Query(ctx, `WITH candidates AS (
-			SELECT r.id, r.account_id, r.name, r.created_at,
+			SELECT r.id, r.account_id, r.name, r.archived, r.fork, r.created_at,
 				(SELECT max(p.updated_at) FROM pull_requests p WHERE p.repository_id = r.id) AS active
 			FROM repositories r
 			WHERE r.enabled AND r.active_index_run_id IS NULL
@@ -199,7 +199,7 @@ func (s *Store) OnboardCandidates(
 			                  AND NOT EXISTS (SELECT 1 FROM index_runs ir WHERE ir.repository_id = r.id
 			                                  AND ir.status IN ('completed', 'superseded') AND ir.created_at >= j.created_at))
 		)
-		SELECT id, account_id, name FROM (
+		SELECT id, account_id, name, archived, fork FROM (
 			SELECT c.*, row_number() OVER (PARTITION BY account_id ORDER BY active DESC NULLS LAST, created_at, id) AS turn FROM candidates c
 		) ranked
 		ORDER BY turn, active DESC NULLS LAST, created_at, id`, retryAfter.Seconds())
@@ -211,10 +211,11 @@ func (s *Store) OnboardCandidates(
 	for len(refs) < limit && rows.Next() {
 		var r RepoRef
 		var name string
-		if err := rows.Scan(&r.ID, &r.AccountID, &name); err != nil {
+		var t configfile.RepoTraits
+		if err := rows.Scan(&r.ID, &r.AccountID, &name, &t.Archived, &t.Fork); err != nil {
 			return nil, fmt.Errorf("store: list onboarding candidates: %w", err)
 		}
-		if enabled(r.AccountID, name) {
+		if enabled(r.AccountID, name, t) {
 			refs = append(refs, r)
 		}
 	}

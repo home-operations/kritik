@@ -195,6 +195,7 @@
       try {
         for (const c of status.connections) {
           reached[c] = await getJSON<AccountRepositories[]>(`/api/v1/admin/connections/${encodeURIComponent(c)}/repositories`);
+          for (const r of reached[c].flatMap(sources)) checked[r.fullName] ??= true;
         }
       } catch (err) {
         fail(err);
@@ -203,12 +204,18 @@
   });
 
   // Which reached repositories are checked, by full name, and whether the
-  // ones the App reaches later start on.
+  // ones the App reaches later start on. Both start on.
   let checked = $state<Record<string, boolean>>({});
-  let laterOn = $state(false);
+  let laterOn = $state(true);
+
+  // sources are the repositories of a the step offers: an archived one
+  // never runs, and a fork only once turned on from the Repositories page.
+  function sources(a: AccountRepositories): AccountRepositories['repositories'] {
+    return a.repositories.filter((r) => !r.fork && !r.archived);
+  }
 
   function checkAll(a: AccountRepositories, on: boolean): void {
-    for (const r of a.repositories) checked[r.fullName] = on;
+    for (const r of sources(a)) checked[r.fullName] = on;
   }
 
   // chooseRepositories saves a's account entry: its repositories without an
@@ -216,8 +223,8 @@
   async function chooseRepositories(a: AccountRepositories): Promise<void> {
     const path = `${accountApi(`github/${a.account}`)}/config`;
     const cfg = await getJSON<AccountConfig>(path);
-    const on = a.repositories.filter((r) => checked[r.fullName]).map((r) => r.name);
-    const off = a.repositories.filter((r) => !checked[r.fullName]).map((r) => r.name);
+    const on = sources(a).filter((r) => checked[r.fullName]).map((r) => r.name);
+    const off = sources(a).filter((r) => !checked[r.fullName]).map((r) => r.name);
     const b = withRepositoryChoice(cfg.spec, laterOn, on, off);
     if (b.error) throw new Error(`${b.error.path}: ${b.error.message}`);
     await sendJSON<ConfigWriteResult>('PUT', path, { revision: cfg.revision, spec: b.spec });
@@ -345,18 +352,21 @@
   {:else if step === 4}
     <p>
       Check the repositories kritik reviews. Each one checked is reviewed on every pull request, and indexed when an
-      embedder is set, which spends tokens. The rest are registered off. Switch any of them later on the account's
-      Repositories page.
+      embedder is set, which spends tokens. The rest are registered off. Forks and archived repositories are left out:
+      turn a fork on from the account's Repositories page, where any of these can be switched later.
     </p>
     {#each Object.entries(reached) as [c, accounts] (c)}
       {#each accounts as a (a.account)}
-        {@const on = a.repositories.filter((r) => checked[r.fullName]).length}
+        {@const offered = sources(a)}
+        {@const on = offered.filter((r) => checked[r.fullName]).length}
+        {@const forks = a.repositories.filter((r) => r.fork && !r.archived).length}
+        {@const archived = a.repositories.filter((r) => r.archived).length}
         <div class="item-card">
           <div class="item-head">
             <span><span class="mono">{a.account}</span> <span class="small muted">through {c}</span></span>
-            {#if a.installed && a.repositories.length}
+            {#if a.installed && offered.length}
               <span class="setup-pick">
-                <span class="small">{on} of {a.repositories.length} checked</span>
+                <span class="small">{on} of {offered.length} checked</span>
                 <button type="button" class="btn btn-small" onclick={() => checkAll(a, true)}>Check all</button>
                 <button type="button" class="btn btn-small" onclick={() => checkAll(a, false)}>Check none</button>
               </span>
@@ -366,10 +376,15 @@
             <p class="muted">The App is not installed here.</p>
           {:else}
             <ul class="setup-checklist" aria-label={`${a.account}'s repositories`}>
-              {#each a.repositories as r (r.fullName)}
+              {#each offered as r (r.fullName)}
                 <li><label><input type="checkbox" bind:checked={checked[r.fullName]} /> <span class="mono">{r.name}</span></label></li>
               {/each}
             </ul>
+            {#if forks || archived}
+              <p class="field-hint">
+                Left out: {forks === 1 ? '1 fork' : `${forks} forks`} and {archived === 1 ? '1 archived repository' : `${archived} archived repositories`}.
+              </p>
+            {/if}
           {/if}
         </div>
       {/each}

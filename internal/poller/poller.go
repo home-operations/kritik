@@ -96,6 +96,7 @@ func (p *Poller) PollAll(ctx context.Context) {
 // commit its active index generation covers, "" when it has none.
 type pollRepo struct {
 	name, defaultBranch, indexed string
+	configfile.RepoTraits
 }
 
 // Poll lists one account's repositories through the connection serving it
@@ -107,7 +108,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	var known time.Time
 	var polled, delivered *time.Time
 	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, '')
+		rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, ''), r.archived, r.fork
 			FROM repositories r LEFT JOIN index_runs g ON g.id = r.active_index_run_id
 			WHERE r.enabled ORDER BY r.name`)
 		if err != nil {
@@ -115,7 +116,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		}
 		if repos, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (pollRepo, error) {
 			var r pollRepo
-			err := row.Scan(&r.name, &r.defaultBranch, &r.indexed)
+			err := row.Scan(&r.name, &r.defaultBranch, &r.indexed, &r.Archived, &r.Fork)
 			return r, err
 		}); err != nil {
 			return err
@@ -139,8 +140,9 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 			return handled, ctx.Err()
 		}
 		repo := r.name
-		// The App can reach it, but the settings leave it off.
-		if !file.Settings(account, repo).Enabled {
+		// The App can reach it, but it is archived, a fork not turned on,
+		// or off in the settings.
+		if !file.Runs(account, repo, r.RepoTraits) {
 			continue
 		}
 		client, err := p.Forges.For(ctx, in, repo)
@@ -164,7 +166,8 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 			}
 			ev := webhook.Event{
 				Kind: webhook.KindPullRequest, Action: action, Delivery: fmt.Sprintf("poll-%s-%d", started.UTC().Format("20060102T150405"), pr.Number),
-				Repository: &webhook.Repository{FullName: repo, DefaultBranch: pr.DefaultBranch}, Account: owner, PullRequest: &pr.PullRequest,
+				Repository: &webhook.Repository{FullName: repo, DefaultBranch: pr.DefaultBranch, RepoTraits: r.RepoTraits},
+				Account:    owner, PullRequest: &pr.PullRequest,
 			}
 			out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Account: account, Event: ev})
 			if err != nil {
@@ -202,7 +205,7 @@ func (p *Poller) pollTip(
 	}
 	ev := webhook.Event{
 		Kind: webhook.KindPush, Delivery: fmt.Sprintf("poll-%s-push", started.UTC().Format("20060102T150405")),
-		Repository: &webhook.Repository{FullName: r.name, DefaultBranch: branch}, Account: owner,
+		Repository: &webhook.Repository{FullName: r.name, DefaultBranch: branch, RepoTraits: r.RepoTraits}, Account: owner,
 		Push: &webhook.Push{Ref: "refs/heads/" + branch, After: tip},
 	}
 	out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Account: account, Event: ev})
