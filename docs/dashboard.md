@@ -24,8 +24,11 @@ other:
 3. **Model provider:** the instance's key, tested before it is saved, and
    the default review model.
 4. **Embeddings:** the embedder, which can be skipped.
-5. **Repositories:** registers every repository the App reaches, so kritik
-   polls, and indexes, them before the first webhook arrives.
+5. **Repositories:** a checklist of every repository the App reaches.
+   The checked ones are reviewed, and indexed with an embedder; the rest
+   are registered off, and so are the ones the App reaches later unless
+   the step is told to turn those on. The account's entry is saved before
+   the repositories are registered, so none is polled or indexed first.
 
 Each step saves through the same API as the admin console, so closing the
 wizard loses nothing. It reopens at the first step not done, and a banner

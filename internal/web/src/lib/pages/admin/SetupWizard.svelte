@@ -6,6 +6,7 @@
   import { untrack } from 'svelte';
   import { getJSON, sendJSON } from '../../api.svelte';
   import { href } from '../../router.svelte';
+  import { accountApi } from '../../links';
   import { describe, errorPath } from '../../manage';
   import { SETUP_STEPS, firstStep, setFlag, setupFlags } from '../../setup.svelte';
   import { toast } from '../../toast.svelte';
@@ -15,10 +16,12 @@
     newEmbedding,
     newProvider,
     pathMatches,
+    withRepositoryChoice,
     type EmbeddingDraft,
     type InstanceDraft,
   } from '../../spec';
   import type {
+    AccountConfig,
     AccountRepositories,
     AppInstallation,
     ConfigWriteResult,
@@ -199,12 +202,38 @@
     })();
   });
 
+  // Which reached repositories are checked, by full name, and whether the
+  // ones the App reaches later start on.
+  let checked = $state<Record<string, boolean>>({});
+  let laterOn = $state(false);
+
+  function checkAll(a: AccountRepositories, on: boolean): void {
+    for (const r of a.repositories) checked[r.fullName] = on;
+  }
+
+  // chooseRepositories saves a's account entry: its repositories without an
+  // entry start at laterOn, and the reached ones are on as checked.
+  async function chooseRepositories(a: AccountRepositories): Promise<void> {
+    const path = `${accountApi(`github/${a.account}`)}/config`;
+    const cfg = await getJSON<AccountConfig>(path);
+    const on = a.repositories.filter((r) => checked[r.fullName]).map((r) => r.name);
+    const off = a.repositories.filter((r) => !checked[r.fullName]).map((r) => r.name);
+    const b = withRepositoryChoice(cfg.spec, laterOn, on, off);
+    if (b.error) throw new Error(`${b.error.path}: ${b.error.message}`);
+    await sendJSON<ConfigWriteResult>('PUT', path, { revision: cfg.revision, spec: b.spec });
+  }
+
   async function registerRepositories(): Promise<void> {
     busy = true;
     errMessage = '';
     try {
       let added = 0;
       for (const c of status.connections) {
+        // The choice is saved before the rows exist, so a repository left
+        // off is never polled or indexed in between.
+        for (const a of reached[c] ?? []) {
+          if (a.installed) await chooseRepositories(a);
+        }
         const r = await sendJSON<RegisterResult>('POST', `/api/v1/admin/connections/${encodeURIComponent(c)}/repositories`);
         added += r.added;
       }
@@ -315,25 +344,39 @@
     {/if}
   {:else if step === 4}
     <p>
-      Every repository the App reaches is reviewed. Register them now so kritik polls them, and indexes them with an
-      embedder, before the first webhook arrives. Turn one off, or set its mode, limits or own key, on its account's admin
-      page.
+      Check the repositories kritik reviews. Each one checked is reviewed on every pull request, and indexed when an
+      embedder is set, which spends tokens. The rest are registered off. Switch any of them later on the account's
+      Repositories page.
     </p>
     {#each Object.entries(reached) as [c, accounts] (c)}
       {#each accounts as a (a.account)}
+        {@const on = a.repositories.filter((r) => checked[r.fullName]).length}
         <div class="item-card">
-          <div class="item-head"><span class="mono">{a.account}</span> <span class="small muted">through {c}</span></div>
+          <div class="item-head">
+            <span><span class="mono">{a.account}</span> <span class="small muted">through {c}</span></span>
+            {#if a.installed && a.repositories.length}
+              <span class="setup-pick">
+                <span class="small">{on} of {a.repositories.length} checked</span>
+                <button type="button" class="btn btn-small" onclick={() => checkAll(a, true)}>Check all</button>
+                <button type="button" class="btn btn-small" onclick={() => checkAll(a, false)}>Check none</button>
+              </span>
+            {/if}
+          </div>
           {#if !a.installed}
             <p class="muted">The App is not installed here.</p>
           {:else}
-            <p>
-              {a.repositories.length === 1 ? '1 repository' : `${a.repositories.length} repositories`}:
-              <span class="mono small">{a.repositories.slice(0, 10).map((r) => r.name).join(', ')}{a.repositories.length > 10 ? ', …' : ''}</span>
-            </p>
+            <ul class="setup-checklist" aria-label={`${a.account}'s repositories`}>
+              {#each a.repositories as r (r.fullName)}
+                <li><label><input type="checkbox" bind:checked={checked[r.fullName]} /> <span class="mono">{r.name}</span></label></li>
+              {/each}
+            </ul>
           {/if}
         </div>
       {/each}
     {/each}
+    <label class="field-hint">
+      <input type="checkbox" bind:checked={laterOn} /> Turn on the repositories the App reaches later, too
+    </label>
   {:else}
     <p>kritik can review. A pull request opened, or pushed to, in a served repository is reviewed within moments.</p>
     <ul class="setup-list">

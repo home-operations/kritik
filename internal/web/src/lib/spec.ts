@@ -537,18 +537,34 @@ export function buildSpec(d: AccountDraft, redact = false): Built {
   return { spec: out, error: b.error };
 }
 
-// withRepositoriesEnabled is the account spec with each repository in
-// names, given without its owner, turned on or off. A repository with no
-// entry gets one only when on differs from inherited, what an entry that
-// leaves enabled out takes.
-export function withRepositoriesEnabled(spec: Obj, names: string[], on: boolean, inherited: boolean): Built {
-  const d = draftOf(spec);
+// turnRepositories turns each repository in names, given without its
+// owner, on or off in d. A repository with no entry gets one only when on
+// differs from inherited, what an entry that leaves enabled out takes.
+function turnRepositories(d: AccountDraft, names: string[], on: boolean, inherited: boolean): void {
   const value: TriBool = on ? 'true' : 'false';
   for (const name of names) {
     const entry = d.repositories.find((r) => r.name.toLowerCase() === name.toLowerCase());
     if (entry) entry.enabled = value;
     else if (on !== inherited) d.repositories.push({ ...newRepository(), name, enabled: value });
   }
+}
+
+// withRepositoriesEnabled is the account spec with each repository in
+// names turned on or off, as turnRepositories does.
+export function withRepositoriesEnabled(spec: Obj, names: string[], on: boolean, inherited: boolean): Built {
+  const d = draftOf(spec);
+  turnRepositories(d, names, on, inherited);
+  return buildSpec(d);
+}
+
+// withRepositoryChoice is the account spec that starts its repositories
+// without an entry of their own at later, with the ones in on turned on
+// and the ones in off turned off.
+export function withRepositoryChoice(spec: Obj, later: boolean, on: string[], off: string[]): Built {
+  const d = draftOf(spec);
+  d.enabled = later ? 'true' : 'false';
+  turnRepositories(d, on, true, later);
+  turnRepositories(d, off, false, later);
   return buildSpec(d);
 }
 
