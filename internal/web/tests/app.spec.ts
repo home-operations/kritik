@@ -205,6 +205,20 @@ test.describe('theme toggle', () => {
     await button.click();
     await expect.poll(stored).toBe('auto');
   });
+
+  // The bundle runs after the first paint may have happened, so the class
+  // must not depend on it.
+  test('applies the OS or stored theme without the bundle', async ({ page }) => {
+    await page.route('**/assets/*.js', (route) => route.abort());
+    const currentClass = () => page.evaluate(() => document.documentElement.className);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/');
+    expect(await currentClass()).toBe('dark');
+
+    await page.addInitScript(() => localStorage.setItem('kritik-theme', 'light'));
+    await page.reload();
+    expect(await currentClass()).toBe('light');
+  });
 });
 
 test.describe('keyboard shortcuts', () => {
