@@ -30,10 +30,9 @@ other:
 4. **Embeddings:** the embedder, which can be skipped.
 5. **Repositories:** a checklist of the repositories the App reaches,
    all checked, leaving out forks and archived repositories. The checked
-   ones are reviewed, and indexed with an embedder; the rest are
-   registered off. The ones the App reaches later start on, unless the
-   step is told otherwise. The account's entry is saved before the
-   repositories are registered, so none is polled or indexed first.
+   ones are reviewed, and indexed with an embedder; the rest are turned
+   off. The ones the App reaches later start on, unless the step is told
+   otherwise.
 
 Each step saves through the same API as the admin console, so closing the
 wizard loses nothing. It reopens at the first step not done, and a banner
@@ -114,9 +113,12 @@ from there too. Each switch saves the account's entry, adding a
 repository entry only where it differs from what the repository gets
 without one. The page lists the repositories that can run, with any fork
 turned on; its Type filter lists the forks, or the archived repositories,
-instead. "Resync from GitHub" lists the repositories the App reaches
-again, such as after unarchiving one. An account's repository count is of
-the ones that run.
+instead. kritik registers every repository each connection's App reaches
+by itself: once the configuration is applied, at start or after a change,
+and again on every poll, so a fresh instance lists them without a webhook
+or the wizard. "Resync from GitHub" does the same at once, such as right
+after unarchiving one. An account's repository count is of the ones that
+run.
 
 ## Secrets
 

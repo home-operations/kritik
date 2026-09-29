@@ -157,27 +157,17 @@ func (s *Server) reached(r *http.Request) (*configfile.Connection, []AccountRepo
 	if err != nil {
 		return nil, nil, err
 	}
-	insts, err := app.Installations(r.Context())
+	reach, err := app.Reach(r.Context(), in.Accounts)
 	if err != nil {
 		return nil, nil, errForge(err)
 	}
-	out := make([]AccountRepositories, 0, len(in.Accounts))
-	for _, account := range in.Accounts {
-		entry := AccountRepositories{Account: account, Repositories: []AppRepository{}}
-		for _, inst := range insts {
-			if !strings.EqualFold(inst.Account, account) {
-				continue
-			}
-			repos, err := app.Repositories(r.Context(), inst.ID)
-			if err != nil {
-				return nil, nil, errForge(err)
-			}
-			entry.Installed = true
-			for _, x := range repos {
-				entry.Repositories = append(entry.Repositories, AppRepository{
-					Name: x.Name, FullName: x.FullName, DefaultBranch: x.DefaultBranch, Archived: x.Archived, Fork: x.Fork,
-				})
-			}
+	out := make([]AccountRepositories, 0, len(reach))
+	for _, a := range reach {
+		entry := AccountRepositories{Account: a.Account, Installed: a.Installed, Repositories: []AppRepository{}}
+		for _, x := range a.Repositories {
+			entry.Repositories = append(entry.Repositories, AppRepository{
+				Name: x.Name, FullName: x.FullName, DefaultBranch: x.DefaultBranch, Archived: x.Archived, Fork: x.Fork,
+			})
 		}
 		out = append(out, entry)
 	}

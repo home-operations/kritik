@@ -41,11 +41,19 @@ type Poller struct {
 	Logger     *slog.Logger
 	// Metrics may be nil.
 	Metrics *metrics.Metrics
+	// Reach lists, by lowercased account login, the repositories a
+	// connection's App reaches; nil registers none.
+	Reach func(ctx context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error)
 }
 
 // pollOffRecheck is how often Run looks again at a file that turns
 // polling off, so turning it back on takes effect without a restart.
 const pollOffRecheck = time.Minute
+
+// reachTimeout bounds one connection's repository listing: the leader
+// lists right after applying the configuration and applies no change
+// until it is done, so a hung forge must not hold that up.
+const reachTimeout = time.Minute
 
 // Run polls until ctx ends, every polling.interval of the file current at
 // the time. The first poll happens after one interval, so a freshly
@@ -71,9 +79,54 @@ func (p *Poller) Run(ctx context.Context) {
 	}
 }
 
-// PollAll polls every account in the current configuration through the
-// connection serving it.
+// SyncRepositories registers the repositories each running connection's
+// App reaches on the accounts it serves, as a webhook from each would, so
+// they are known, polled and indexed without one: an App installed before
+// kritik started sends no installation event. A connection whose listing
+// fails, or takes longer than reachTimeout, is logged and left for the
+// next poll.
+func (p *Poller) SyncRepositories(ctx context.Context) {
+	if p.Reach == nil {
+		return
+	}
+	file := p.Current.Get()
+	for i := range file.Connections {
+		in := &file.Connections[i]
+		if ctx.Err() != nil {
+			return
+		}
+		reachCtx, cancel := context.WithTimeout(ctx, reachTimeout)
+		reach, err := p.Reach(reachCtx, in)
+		cancel()
+		if err != nil {
+			p.Logger.Warn("repositories not synced", "connection", in.Name, "error", err)
+			continue
+		}
+		for j := range file.Accounts {
+			account := &file.Accounts[j]
+			if c := file.ConnectionFor(account); c == nil || c.Name != in.Name {
+				continue
+			}
+			repos := reach[strings.ToLower(account.Name)]
+			if len(repos) == 0 {
+				continue
+			}
+			added, err := p.Store.RegisterRepositories(ctx, account.ID(), repos)
+			if err != nil {
+				p.Logger.Warn("repositories not synced", "connection", in.Name, "account", account.Key(), "error", err)
+				continue
+			}
+			if added > 0 {
+				p.Logger.Info("repositories registered", "connection", in.Name, "account", account.Key(), "added", added)
+			}
+		}
+	}
+}
+
+// PollAll registers the repositories the Apps reach, then polls every
+// account in the current configuration through the connection serving it.
 func (p *Poller) PollAll(ctx context.Context) {
+	p.SyncRepositories(ctx)
 	file := p.Current.Get()
 	for i := range file.Accounts {
 		account := &file.Accounts[i]

@@ -11,6 +11,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/forge/github"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 // BuildForge constructs the forge client for a connection from its
@@ -33,6 +34,34 @@ func BuildForge(ctx context.Context, in *configfile.Connection, repo string) (fo
 	default:
 		return nil, fmt.Errorf("worker: forge %s is not implemented yet", in.Forge)
 	}
+}
+
+// ReachRepositories lists the repositories connection in's App reaches,
+// by the lowercased login of the account each is under, as the store
+// registers them.
+func ReachRepositories(ctx context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error) {
+	if in.Forge != configfile.ForgeGitHub {
+		return nil, fmt.Errorf("worker: forge %s is not implemented yet", in.Forge)
+	}
+	app, err := github.NewApp(in.App.ClientIDValue(), in.App.PrivateKeyValue().Value(), "")
+	if err != nil {
+		return nil, err
+	}
+	reach, err := app.Reach(ctx, in.Accounts)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]store.ReachedRepository, len(reach))
+	for _, a := range reach {
+		repos := make([]store.ReachedRepository, 0, len(a.Repositories))
+		for _, r := range a.Repositories {
+			repos = append(repos, store.ReachedRepository{
+				FullName: r.FullName, DefaultBranch: r.DefaultBranch, Traits: &configfile.RepoTraits{Archived: r.Archived, Fork: r.Fork},
+			})
+		}
+		out[strings.ToLower(a.Account)] = repos
+	}
+	return out, nil
 }
 
 // credentialFingerprint identifies what BuildForge builds a client from, so a

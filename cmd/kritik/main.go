@@ -405,7 +405,8 @@ func openStore(ctx context.Context, opts store.Options, logger *slog.Logger) (*s
 const secretSweepInterval = 5 * time.Minute
 
 // lead runs for as long as this replica holds the leader lock: migrate,
-// apply the current configuration, then re-apply whenever it changes. While
+// apply the current configuration and register the repositories its Apps
+// reach, then do both again whenever it changes. While
 // the configuration has an embedder it also keeps the index schema to it
 // and enqueues an onboarding index job for every repository that has none.
 func lead(
@@ -423,7 +424,7 @@ func lead(
 	defer stopPoll()
 	// The backstop poll is a leader duty: one lister per connection.
 	poll := &poller.Poller{
-		Store: st, Current: current, Forges: &worker.ForgeCache{Build: worker.BuildForge},
+		Store: st, Current: current, Forges: &worker.ForgeCache{Build: worker.BuildForge}, Reach: worker.ReachRepositories,
 		Dispatcher: ingest.NewService(st, queue),
 		Logger:     logger, Metrics: m,
 	}
@@ -455,7 +456,13 @@ func lead(
 		if err := st.ApplyConfig(ctx, f); err != nil {
 			return err
 		}
-		return ensureIndexSchema(ctx, st, cfg.DatabaseAppRole, f.Embedding, logger)
+		if err := ensureIndexSchema(ctx, st, cfg.DatabaseAppRole, f.Embedding, logger); err != nil {
+			return err
+		}
+		// Once the accounts exist: a fresh instance, or a new connection,
+		// knows its repositories before any webhook names one.
+		poll.SyncRepositories(ctx)
+		return nil
 	}, onboarder.Offer, refusedRetryInterval, configErrors, logger)
 }
 

@@ -11,6 +11,7 @@ import (
 	"crypto/rsa"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -123,6 +124,41 @@ func (a *App) Repositories(ctx context.Context, id int64) ([]Repository, error) 
 			Name: r.GetName(), FullName: r.GetFullName(), DefaultBranch: r.GetDefaultBranch(),
 			Archived: r.GetArchived(), Fork: r.GetFork(),
 		})
+	}
+	return out, nil
+}
+
+// AccountRepositories is what an App reaches on one account: whether it
+// is installed there, and the repositories its installation reaches.
+type AccountRepositories struct {
+	Account      string
+	Installed    bool
+	Repositories []Repository
+}
+
+// Reach lists, for each of accounts in order, whether the App is installed
+// there and the repositories it reaches. A suspended installation reaches
+// none: it can mint no token to list them with.
+func (a *App) Reach(ctx context.Context, accounts []string) ([]AccountRepositories, error) {
+	insts, err := a.Installations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AccountRepositories, 0, len(accounts))
+	for _, account := range accounts {
+		entry := AccountRepositories{Account: account, Repositories: []Repository{}}
+		for _, inst := range insts {
+			if inst.Suspended || !strings.EqualFold(inst.Account, account) {
+				continue
+			}
+			repos, err := a.Repositories(ctx, inst.ID)
+			if err != nil {
+				return nil, err
+			}
+			entry.Installed = true
+			entry.Repositories = append(entry.Repositories, repos...)
+		}
+		out = append(out, entry)
 	}
 	return out, nil
 }
