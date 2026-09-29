@@ -1,15 +1,14 @@
 <script lang="ts">
   import { accountApi } from '../../links';
-  import { getJSON, sendJSON } from '../../api.svelte';
+  import { getJSON } from '../../api.svelte';
   import { setLeaveGuard } from '../../router.svelte';
   import { Resource } from '../../resource.svelte';
-  import { describe, errorPath, isCode } from '../../manage';
   import { MANAGEMENT_OFF, management } from '../../session.svelte';
-  import { toast } from '../../toast.svelte';
-  import type { AccountConfig, ConfigWriteResult } from '../../types';
+  import type { AccountConfig } from '../../types';
   import StateView from '../../components/StateView.svelte';
   import ConfigEditor from './ConfigEditor.svelte';
   import SpecView from './SpecView.svelte';
+  import { SpecSave } from './save.svelte';
 
   let { slug }: { slug: string } = $props();
   const path = $derived(`${accountApi(slug)}/config`);
@@ -18,49 +17,12 @@
     void res.load();
   });
 
-  let saving = $state(false);
-  let dirty = $state(false);
-  let errMessage = $state('');
-  let errPath = $state('');
-  let errSeq = $state(0);
-  let conflict = $state(false);
-  // Bumped to remount the editor on a fresh draft.
-  let epoch = $state(0);
+  const save = new SpecSave(() => path, () => res.load());
 
   $effect(() => {
-    setLeaveGuard(() => dirty);
+    setLeaveGuard(() => save.dirty);
     return () => setLeaveGuard(undefined);
   });
-
-  function resetError(): void {
-    errMessage = '';
-    errPath = '';
-    conflict = false;
-  }
-
-  async function reload(): Promise<void> {
-    resetError();
-    dirty = false;
-    await res.load();
-    epoch++;
-  }
-
-  async function save(cfg: AccountConfig, spec: Record<string, unknown>): Promise<void> {
-    saving = true;
-    resetError();
-    try {
-      const r = await sendJSON<ConfigWriteResult>('PUT', path, { revision: cfg.revision, spec });
-      toast(`Saved: revision ${r.revision}`);
-      await reload();
-    } catch (err) {
-      errMessage = describe(err);
-      errPath = errorPath(err);
-      errSeq++;
-      conflict = isCode(err, 'revision_conflict');
-    } finally {
-      saving = false;
-    }
-  }
 
   function readOnlyReason(cfg: AccountConfig): string {
     if (!management()) return MANAGEMENT_OFF;
@@ -82,19 +44,19 @@
         <SpecView spec={cfg.spec} />
       {:else}
         <div class="panel-body">
-          {#key epoch}
+          {#key save.epoch}
             <ConfigEditor
               initial={cfg.spec}
               inherited={cfg.inherited}
-              {saving}
-              {errMessage}
-              {errPath}
-              {errSeq}
-              bind:dirty
-              onsave={(spec) => save(cfg, spec)}
+              saving={save.saving}
+              errMessage={save.errMessage}
+              errPath={save.errPath}
+              errSeq={save.errSeq}
+              bind:dirty={save.dirty}
+              onsave={(spec) => save.put({ revision: cfg.revision, spec })}
             >
               {#snippet alertAction()}
-                {#if conflict}<button type="button" class="btn" onclick={reload}>Reload the latest (discards your edits)</button>{/if}
+                {#if save.conflict}<button type="button" class="btn" onclick={() => save.reload()}>Reload the latest (discards your edits)</button>{/if}
               {/snippet}
             </ConfigEditor>
           {/key}
