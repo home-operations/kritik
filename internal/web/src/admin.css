@@ -15,6 +15,9 @@
 }
 
 .dialog {
+  /* Tailwind's preflight zeroes every margin, which drops the margin: auto
+     that centers a modal dialog. */
+  margin: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);

@@ -48,6 +48,16 @@ test.describe('setup wizard', () => {
     await expect(wizard.locator('[aria-current="step"]')).toHaveText('GitHub App');
   });
 
+  test('opens in the middle of the window', async ({ page }) => {
+    await setup(page, fresh);
+    await page.goto('/#/');
+    const box = await page.getByRole('dialog', { name: 'Set up kritik' }).boundingBox();
+    const view = page.viewportSize();
+    expect(box && view).toBeTruthy();
+    expect(Math.abs(box!.x + box!.width / 2 - view!.width / 2)).toBeLessThan(2);
+    expect(Math.abs(box!.y + box!.height / 2 - view!.height / 2)).toBeLessThan(2);
+  });
+
   test('saves the model key and review model, then registers the repositories', async ({ page }) => {
     let saved = false;
     await flags(page, { listener: true, installed: true });
