@@ -22,9 +22,41 @@ type Meta struct {
 // InstanceConfig is the instance spec as an admin sees it: every secret is
 // {"set": bool}. Revision is the stored spec's, 0 before any write.
 type InstanceConfig struct {
-	Revision int64           `json:"revision"`
-	Editable bool            `json:"editable"`
-	Spec     json.RawMessage `json:"spec"`
+	Revision  int64             `json:"revision"`
+	Editable  bool              `json:"editable"`
+	Inherited InstanceInherited `json:"inherited"`
+	Spec      json.RawMessage   `json:"spec"`
+}
+
+// InstanceInherited is what the configuration file and its environment set
+// of the instance's defaults, which the spec overrides: its providers by
+// name, its default models by key and its embedder whole. No key is shown.
+type InstanceInherited struct {
+	Providers map[string]InheritedProvider `json:"providers"`
+	Review    *InheritedValue              `json:"review"`
+	Fallback  *InheritedValue              `json:"fallback"`
+	Embedding *InheritedEmbedding          `json:"embedding"`
+}
+
+// InheritedProvider is a provider the file or the environment declares.
+type InheritedProvider struct {
+	Type    configfile.ProviderType `json:"type"`
+	BaseURL string                  `json:"baseUrl"`
+	Source  configfile.Source       `json:"source"`
+}
+
+// InheritedValue is a value the file or the environment sets.
+type InheritedValue struct {
+	Value  string            `json:"value"`
+	Source configfile.Source `json:"source"`
+}
+
+// InheritedEmbedding is the embedder the file or the environment sets.
+type InheritedEmbedding struct {
+	BaseURL string            `json:"baseUrl"`
+	Model   string            `json:"model"`
+	Dims    int               `json:"dims"`
+	Source  configfile.Source `json:"source"`
 }
 
 // AccountConfig is an account's entry in the instance spec, every secret

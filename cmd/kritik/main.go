@@ -462,7 +462,8 @@ func lead(
 // ensureIndexSchema keeps the index table to the configuration's embedder,
 // rebuilding it, and so every repository's index, when the model or
 // dimension changed: the dashboard asked the admin to confirm that before
-// saving it. Without an embedder the table is left as it is.
+// saving it, and a configuration file edit makes it without asking.
+// Without an embedder the table is left as it is.
 func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *configfile.Embedding, logger *slog.Logger) error {
 	if e == nil {
 		return nil

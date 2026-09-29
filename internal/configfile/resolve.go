@@ -150,7 +150,13 @@ func (f *File) Sources(a *Account, fullName string) map[string]Source {
 		spec   any
 		source Source
 	}
-	scopes := []scope{{&f.Defaults, SourceDefaults}, {a, SourceAccount}}
+	// A parsed File's defaults are the file's alone; a merged one's lay the
+	// spec's over the file's.
+	scopes := []scope{{&f.Defaults, SourceFile}}
+	if f.base != nil {
+		scopes = []scope{{&f.base.Defaults, SourceFile}, {&f.specDefaults, SourceDefaults}}
+	}
+	scopes = append(scopes, scope{a, SourceAccount})
 	if r := a.Repository(fullName); r != nil {
 		scopes = append(scopes, scope{r, SourceAccount})
 	}
@@ -164,6 +170,9 @@ func (f *File) Sources(a *Account, fullName string) map[string]Source {
 			if v, ok := SpecValue(sc.spec, p.Key); ok && !reflect.ValueOf(v).IsZero() {
 				out[p.Key] = sc.source
 			}
+		}
+		if out[p.Key] == SourceFile && f.envKeys[p.Key] {
+			out[p.Key] = SourceEnv
 		}
 	}
 	return out

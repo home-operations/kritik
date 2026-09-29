@@ -16,6 +16,11 @@ func init() {
 		},
 		"instance_config": InstanceConfig{
 			Revision: 3, Editable: true,
+			Inherited: InstanceInherited{
+				Providers: map[string]InheritedProvider{"openrouter": {Type: configfile.ProviderOpenRouter, Source: configfile.SourceEnv}},
+				Review:    &InheritedValue{Value: "openrouter/acme-large", Source: configfile.SourceFile},
+				Embedding: &InheritedEmbedding{BaseURL: "https://openrouter.ai/api/v1", Model: "acme-embed", Dims: 1024, Source: configfile.SourceFile},
+			},
 			Spec: json.RawMessage(`{"connections":[{"name":"alpha-bot","forge":"github","accounts":["alpha"],` +
 				`"app":{"clientId":"Iv1.alpha","privateKey":{"set":true},"webhookSecret":{"set":true}}}]}`),
 		},
