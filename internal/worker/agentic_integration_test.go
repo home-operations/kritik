@@ -1017,7 +1017,7 @@ func checkAgentCappedUnderLease(t *testing.T, h *agenticHarness) {
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc capped() {}\n")
 	h.dispatch(t, next)
 	_, status, errText := h.waitReview(t, next)
-	if status != statusCapped || !strings.Contains(errText, "reviewsPerDay") {
+	if status != string(store.ReviewCapped) || !strings.Contains(errText, "reviewsPerDay") {
 		t.Fatalf("status = %s (%s), want capped on reviewsPerDay", status, errText)
 	}
 	var held int
@@ -1097,12 +1097,12 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 		ctx       context.Context
 		head      string
 		retried   bool
-		status    string
+		status    store.ReviewStatus
 		errPrefix string
 	}{
-		{"the job still runs: River retries", h.ctx, strings.Repeat("e", 40), true, statusFailed, boom.Error()},
-		{"a remote cancel ends it canceled", remote, strings.Repeat("f", 40), false, statusCanceled, ""},
-		{"a timeout ends it failed", timedOut, strings.Repeat("9", 40), false, statusFailed, "review timed out"},
+		{"the job still runs: River retries", h.ctx, strings.Repeat("e", 40), true, store.ReviewFailed, boom.Error()},
+		{"a remote cancel ends it canceled", remote, strings.Repeat("f", 40), false, store.ReviewCanceled, ""},
+		{"a timeout ends it failed", timedOut, strings.Repeat("9", 40), false, store.ReviewFailed, "review timed out"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1127,7 +1127,7 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 				return tx.QueryRow(h.ctx, `SELECT r.status, coalesce(r.error, ''), rr.phase FROM reviews r, runner_runs rr
 					WHERE r.id = $1 AND rr.id = $2`, reviewID, runID).Scan(&status, &errText, &phase)
 			})
-			if err != nil || status != tt.status || !strings.HasPrefix(errText, tt.errPrefix) || phase != "failed" {
+			if err != nil || status != string(tt.status) || !strings.HasPrefix(errText, tt.errPrefix) || phase != "failed" {
 				t.Fatalf("review %s (%q), run %s, err %v; want review %s (%q...), run failed", status, errText, phase, err, tt.status, tt.errPrefix)
 			}
 		})

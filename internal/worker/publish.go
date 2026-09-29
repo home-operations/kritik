@@ -85,14 +85,14 @@ type publishPhase struct {
 	agent *agentRun
 }
 
-func (p *publishPhase) run(ctx context.Context) (status string, err error) {
+func (p *publishPhase) run(ctx context.Context) (status store.ReviewStatus, err error) {
 	ref := p.settings.Models.Review
 	if ref == "" {
-		return statusSkipped, errors.New("no review model is configured for this repository")
+		return store.ReviewSkipped, errors.New("no review model is configured for this repository")
 	}
 	in, err := p.load(ctx)
 	if err != nil {
-		return statusFailed, err
+		return store.ReviewFailed, err
 	}
 	similar, err := p.similar(ctx, in)
 	if err != nil {
@@ -125,10 +125,10 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	resp, role, err := p.complete(ctx, ref, system, msg)
 	if capped, ok := errors.AsType[cappedError](err); ok {
 		p.logger.Warn("review capped", "cap", string(capped))
-		return statusCapped, err
+		return store.ReviewCapped, err
 	}
 	if err != nil {
-		return statusFailed, err
+		return store.ReviewFailed, err
 	}
 	// The model has answered and its tokens are spent: the rest runs to the
 	// end even if the job's ctx ends meanwhile, so the usage row lands and
@@ -137,7 +137,7 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 	defer cancel()
 	res, dropped, err := review.Parse(resp.Raw, review.Anchors(in.diff), p.parse)
 	if err != nil {
-		return statusFailed, err
+		return store.ReviewFailed, err
 	}
 	p.logger.Info("model answered", "model", resp.Model, "upstream", resp.Upstream, "findings", len(res.Findings),
 		"dropped", len(dropped), "omitted", len(omitted), "input_tokens", resp.InputTokens, "cached_tokens", resp.CachedTokens,
@@ -148,13 +148,13 @@ func (p *publishPhase) run(ctx context.Context) (status string, err error) {
 
 	commentID, inline, err := p.writeBack(ctx, res, resp.Model, append(reviewNotes(omitted, dropped), p.repoNotes...))
 	if err != nil {
-		return statusFailed, err
+		return store.ReviewFailed, err
 	}
 	p.countFindings(res)
 	if err := p.persist(ctx, res, inline, resp, role, commentID); err != nil {
-		return statusFailed, err
+		return store.ReviewFailed, err
 	}
-	return statusCompleted, nil
+	return store.ReviewCompleted, nil
 }
 
 func (p *publishPhase) countFindings(res review.Result) {

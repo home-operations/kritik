@@ -79,16 +79,16 @@ type admission struct {
 // before it runs, for the reason given.
 func (w *Review) agentAdmit(
 	ctx context.Context, logger *slog.Logger, file *configfile.File, account *configfile.Account, settings configfile.Settings, jobID int64,
-) (admission, string, string, error) {
+) (admission, store.ReviewStatus, string, error) {
 	ref := settings.Models.Review
 	if ref == "" {
-		return admission{}, statusSkipped, "no review model is configured for this repository", nil
+		return admission{}, store.ReviewSkipped, "no review model is configured for this repository", nil
 	}
 	if w.GatewayURL == "" {
-		return admission{}, statusFailed, "agentic mode needs the model gateway (KRITIK_GATEWAY_URL)", nil
+		return admission{}, store.ReviewFailed, "agentic mode needs the model gateway (KRITIK_GATEWAY_URL)", nil
 	}
 	if _, ok := file.Provider(account, ref.Provider()); !ok {
-		return admission{}, statusFailed, fmt.Sprintf("provider %q is not in the configuration", ref.Provider()), nil
+		return admission{}, store.ReviewFailed, fmt.Sprintf("provider %q is not in the configuration", ref.Provider()), nil
 	}
 	l, err := takeLease(ctx, w.Store, account.ID(), string(ref), settings.Limits.Concurrency, jobID)
 	if err != nil {
@@ -105,7 +105,7 @@ func (w *Review) agentAdmit(
 		if err != nil {
 			return admission{}, "", "", err
 		}
-		return admission{}, statusCapped, capped, nil
+		return admission{}, store.ReviewCapped, capped, nil
 	}
 	return admission{lease: l, maxTokens: budget}, "", "", nil
 }
@@ -314,17 +314,17 @@ func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string) (ag
 // stopped without submitting fails the review, and the sticky comment says
 // this head was not fully reviewed so an earlier verdict does not stand in
 // for it. A run the runner skipped ends the review skipped.
-func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
+func (p *publishPhase) runAgentic(ctx context.Context) (store.ReviewStatus, error) {
 	// The agent has already answered, so publishing runs to the end even if
 	// the job's ctx ends meanwhile, as run does once its model answers.
 	ctx, cancel := detach(ctx)
 	defer cancel()
 	if p.agent == nil {
-		return statusFailed, errors.New("worker: the runner wrote no agent run")
+		return store.ReviewFailed, errors.New("worker: the runner wrote no agent run")
 	}
 	run := *p.agent
 	if run.stop == runner.AgentSkipped {
-		p.logger.Info("review "+statusSkipped+" by the runner", "reason", run.errText)
+		p.logger.Info("review skipped by the runner", "reason", run.errText)
 		p.skippedStatus(ctx, run.errText)
 		if reason := repoconfig.SkipReason(run.errText); reason.Valid() {
 			err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
@@ -332,40 +332,40 @@ func (p *publishPhase) runAgentic(ctx context.Context) (string, error) {
 				return err
 			})
 			if err != nil {
-				return statusFailed, fmt.Errorf("worker: record skip reason: %w", err)
+				return store.ReviewFailed, fmt.Errorf("worker: record skip reason: %w", err)
 			}
 		}
-		return statusSkipped, nil
+		return store.ReviewSkipped, nil
 	}
 	var diff string
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT diff FROM context_packs WHERE runner_run_id = $1`, p.runID).Scan(&diff)
 	})
 	if err != nil {
-		return statusFailed, fmt.Errorf("worker: read context pack: %w", err)
+		return store.ReviewFailed, fmt.Errorf("worker: read context pack: %w", err)
 	}
 	resp := run.response()
 	p.logger.Info("agent answered", "stop", run.stop, "steps", run.steps, "model", run.model, "input_tokens", resp.InputTokens,
 		"cached_tokens", resp.CachedTokens, "output_tokens", resp.OutputTokens, "cost_usd", resp.CostUSD)
 	if stopErr := run.stopError(); stopErr != nil {
-		return statusFailed, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+string(run.stop), resp))
+		return store.ReviewFailed, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+string(run.stop), resp))
 	}
 	res, dropped, err := review.Parse(string(run.result), review.Anchors(diff), p.parse)
 	if err != nil {
-		return statusFailed, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", resp))
+		return store.ReviewFailed, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", resp))
 	}
 	for _, d := range dropped {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
 	commentID, inline, err := p.writeBack(ctx, res, run.model, append(reviewNotes(nil, dropped), p.repoNotes...))
 	if err != nil {
-		return statusFailed, err
+		return store.ReviewFailed, err
 	}
 	p.countFindings(res)
 	if err := p.persist(ctx, res, inline, resp, roleReview, commentID); err != nil {
-		return statusFailed, err
+		return store.ReviewFailed, err
 	}
-	return statusCompleted, nil
+	return store.ReviewCompleted, nil
 }
 
 // skippedStatus says on the head why the runner skipped its review: the
