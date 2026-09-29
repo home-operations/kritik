@@ -363,6 +363,18 @@ kbd {
   background: var(--panel-alt);
   box-shadow: inset 2px 0 0 var(--accent);
 }
+.sidebar-version {
+  margin: auto 0 0;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-instance + .sidebar-version {
+  margin-top: 0;
+}
 .account-switch {
   border: 1px solid var(--border);
   background: var(--panel-alt);
@@ -531,6 +543,9 @@ kbd {
     margin-top: 0;
     padding-top: 0;
     border-top: 0;
+  }
+  .sidebar-version {
+    display: none;
   }
   .account-switch {
     width: auto;
