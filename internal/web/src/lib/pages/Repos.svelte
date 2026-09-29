@@ -18,6 +18,12 @@
 
   let { slug }: { slug: string } = $props();
   let filter = $state('');
+  let filterEl = $state<HTMLInputElement | undefined>(undefined);
+
+  function clearFilter(): void {
+    filter = '';
+    filterEl?.focus();
+  }
 
   const base = $derived(`${accountApi(slug)}/repos`);
   const paged = new Paged<Repository>(
@@ -120,7 +126,7 @@
     <div class="toolbar">
       <label class="search-box">
         <span class="sr-only">Filter repositories</span>
-        <input type="search" placeholder="Filter by name" bind:value={filter} />
+        <input type="search" placeholder="Filter by name" bind:value={filter} bind:this={filterEl} />
       </label>
       {#if manage && selected.length}
         <div class="bulk-actions" role="group" aria-label="Selected repositories">
@@ -136,7 +142,10 @@
       {#snippet children()}
         {@const rows = visible()}
         {#if rows.length === 0}
-          <p class="state-msg">Nothing matches “{filter}”.</p>
+          <div class="state-msg">
+            <span>Nothing matches “{filter}”.</span>
+            <button class="btn btn-small" onclick={clearFilter}>Clear filter</button>
+          </div>
         {:else}
           <div class="table-wrap">
             <table class="data">
