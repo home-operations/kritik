@@ -1,6 +1,7 @@
 package contextpack
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -195,5 +196,41 @@ func TestPickPrefersDistinctFiles(t *testing.T) {
 	}
 	if got := pick(cs, 5); len(got) != 3 {
 		t.Fatalf("pick under the cap must keep everything, got %d", len(got))
+	}
+}
+
+// TestDiffEdges: a new file's hunk, a deleted file's, and lines that read
+// like file headers ("-- x" removed, "++ x" added) are all hunk lines.
+func TestDiffEdges(t *testing.T) {
+	diff := "diff --git a/new.go b/new.go\nnew file mode 100644\n--- /dev/null\n+++ b/new.go\n@@ -0,0 +1,2 @@\n+package x\n+func F() {}\n" +
+		"diff --git a/q.sql b/q.sql\n--- a/q.sql\n+++ b/q.sql\n@@ -1,3 +1,3 @@\n SELECT 1;\n--- old comment\n+++ new comment\n SELECT 2;\n" +
+		"diff --git a/gone.go b/gone.go\ndeleted file mode 100644\n--- a/gone.go\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-package gone\n-var V int\n"
+	d := parseDiff(diff)
+	for name, got := range map[string][]int{"added new.go": d.added["new.go"], "added q.sql": d.added["q.sql"],
+		"removed q.sql": d.removed["q.sql"], "removed gone.go": d.removed["gone.go"]} {
+		want := map[string][]int{"added new.go": {1, 2}, "added q.sql": {2}, "removed q.sql": {2}, "removed gone.go": {1, 2}}[name]
+		if !slices.Equal(got, want) {
+			t.Errorf("%s = %v, want %v", name, got, want)
+		}
+	}
+	if shown := ShownLines(diff); len(shown["q.sql"]) != 3 || len(shown["new.go"]) != 2 || shown["gone.go"] != nil {
+		t.Errorf("shown = %v", shown)
+	}
+	h := Hunks(diff)
+	if len(h) != 2 || h[0] != (Hunk{Path: "new.go", Text: "package x\nfunc F() {}\n"}) ||
+		h[1] != (Hunk{Path: "q.sql", Text: "SELECT 1;\n++ new comment\nSELECT 2;\n"}) {
+		t.Fatalf("hunks = %+v", h)
+	}
+}
+
+// TestBuildStopsAtTheScanBudget: a head tree over the scan budget truncates
+// the scan rather than failing the pack.
+func TestBuildStopsAtTheScanBudget(t *testing.T) {
+	head, base, diff := repo(t)
+	opts := DefaultOptions
+	opts.MaxScanFiles = 1
+	_, stats, err := Build(t.Context(), Input{Head: head, Base: base, Diff: diff, Changed: []string{"widget.go"}}, opts)
+	if err != nil || !stats.ScanTruncated {
+		t.Fatalf("Build = %+v, %v; want a truncated scan and no error", stats, err)
 	}
 }

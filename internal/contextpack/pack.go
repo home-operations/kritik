@@ -8,11 +8,11 @@ package contextpack
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"sort"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 
 	"github.com/home-operations/kritik/internal/chunk"
 )
@@ -269,7 +269,7 @@ func (b *builder) scan(ctx context.Context) error {
 		}
 		if b.stats.FilesScanned >= b.opts.MaxScanFiles || b.stats.BytesScanned >= b.opts.MaxScanBytes {
 			b.stats.ScanTruncated = true
-			return errStop
+			return storer.ErrStop
 		}
 		if f.Size > int64(b.opts.MaxFileBytes) || b.ignored(f.Name) {
 			return nil
@@ -341,9 +341,6 @@ func (b *builder) scan(ctx context.Context) error {
 		return nil
 	})
 }
-
-// errStop ends the tree walk early without failing it.
-var errStop = fmt.Errorf("contextpack: scan budget reached")
 
 // assemble orders and caps the stages and truncates chunks to size.
 func (b *builder) assemble() []Chunk {

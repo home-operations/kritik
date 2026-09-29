@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 
 	"github.com/home-operations/kritik/internal/model"
 )
@@ -27,11 +27,6 @@ const (
 // memory. read_file rejects an oversized blob with a tool error; grep skips
 // it and keeps walking.
 const maxBlobBytes = 1 << 20
-
-// errStopWalk is returned from a tree walk's ForEach callback to end the
-// walk early once grep has collected max_results matches. It is unwrapped
-// after ForEach returns and never surfaced as a tool error.
-var errStopWalk = errors.New("agent: stop walk")
 
 // truncate caps s at max bytes, appending a note of how much was cut. A
 // non-positive max disables truncation.
@@ -208,7 +203,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 			return err
 		}
 		if len(matches) >= max {
-			return errStopWalk
+			return storer.ErrStop
 		}
 		if gt.tree.ignored(f.Name) {
 			return nil
@@ -236,7 +231,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		}
 		return nil
 	})
-	if err != nil && !errors.Is(err, errStopWalk) {
+	if err != nil {
 		return "", fmt.Errorf("agent: grep: %w", err)
 	}
 
