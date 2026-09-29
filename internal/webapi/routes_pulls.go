@@ -21,7 +21,9 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *accountSco
 		return err
 	}
 	q := r.URL.Query()
-	f := store.PullFilter{State: store.PullState(q.Get("state")), Outcome: store.ReviewStatus(q.Get("outcome")), Query: q.Get("q")}
+	f := store.PullFilter{
+		State: store.PullState(q.Get("state")), Outcome: store.ReviewStatus(q.Get("outcome")), Author: q.Get("author"), Query: q.Get("q"),
+	}
 	f.State = cmp.Or(f.State, store.PullOpen)
 	if !f.State.Valid() {
 		return errBadRequest(CodeBadRequest, "state must be open, closed or all")

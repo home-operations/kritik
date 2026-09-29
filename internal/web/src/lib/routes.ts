@@ -43,22 +43,24 @@ export const PULL_OUTCOMES: readonly ReviewStatus[] = ['running', 'prepared', 'c
 // PullFilter is the pull list's filters, carried in the hash's query so a
 // filtered list can be linked and comes back with Back. A field is present
 // only when it differs from the default: open pulls, any last review
-// outcome, every repository, no search.
+// outcome, every repository and author, no search.
 export interface PullFilter {
   state?: 'closed' | 'all';
   outcome?: ReviewStatus;
   repo?: string;
+  author?: string;
   q?: string;
 }
 
 // pullFilter drops the fields of f that are a default, so each filter has
 // one Route and one URL; undefined when nothing is left.
-export function pullFilter(f: { state?: string; outcome?: string; repo?: string; q?: string }): PullFilter | undefined {
+export function pullFilter(f: { state?: string; outcome?: string; repo?: string; author?: string; q?: string }): PullFilter | undefined {
   const out: PullFilter = {};
   if (f.state === 'closed' || f.state === 'all') out.state = f.state;
   const outcome = PULL_OUTCOMES.find((o) => o === f.outcome);
   if (outcome) out.outcome = outcome;
   if (f.repo) out.repo = f.repo;
+  if (f.author) out.author = f.author;
   if (f.q) out.q = f.q;
   return Object.keys(out).length ? out : undefined;
 }

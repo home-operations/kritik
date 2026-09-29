@@ -27,6 +27,15 @@ export {
   mdiOpenInNew,
   mdiUnfoldMoreHorizontal,
   mdiTuneVariant,
+  mdiProgressClock,
+  mdiAlertCircleOutline,
+  mdiGaugeFull,
+  mdiDebugStepOver,
+  mdiSwapHorizontal,
+  mdiCancel,
+  mdiSourceMerge,
+  mdiSourceBranchRemove,
+  mdiFileDocumentEditOutline,
 } from '@mdi/js';
 
 import { siGithub } from 'simple-icons';

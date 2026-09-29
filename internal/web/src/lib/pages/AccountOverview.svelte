@@ -11,7 +11,7 @@
   import Meter from '../components/Meter.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
-  import ReviewStatusPill from '../components/ReviewStatusPill.svelte';
+  import ReviewStatusTile from '../components/ReviewStatusTile.svelte';
   import SeverityCounts from '../components/SeverityCounts.svelte';
   import SectionTabs from '../components/SectionTabs.svelte';
 
@@ -187,7 +187,7 @@
                     </a>
                     <span class="row-meta">
                       <SeverityCounts counts={r.findings} />
-                      <ReviewStatusPill status={r.status} />
+                      <ReviewStatusTile status={r.status} />
                       <Time iso={r.createdAt} />
                     </span>
                   </li>
@@ -239,7 +239,7 @@
                       <td class="mono small">{repo.index.activeCommit.slice(0, 7) || '—'} <Time iso={repo.index.activeAt} /></td>
                       <td>
                         {#if repo.lastReview}
-                          <a href={href({ name: 'review', slug, id: repo.lastReview.id })}><ReviewStatusPill status={repo.lastReview.status} /></a>
+                          <a href={href({ name: 'review', slug, id: repo.lastReview.id })}><ReviewStatusTile status={repo.lastReview.status} /></a>
                           <Time iso={repo.lastReview.createdAt} />
                         {:else}<span class="muted">—</span>{/if}
                       </td>

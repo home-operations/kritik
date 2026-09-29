@@ -12,7 +12,7 @@
   import Time from '../components/Time.svelte';
   import Icon from '../Icon.svelte';
   import { mdiOpenInNew } from '../icons';
-  import ReviewStatusPill from '../components/ReviewStatusPill.svelte';
+  import ReviewStatusTile from '../components/ReviewStatusTile.svelte';
   import ReviewMeta from '../components/ReviewMeta.svelte';
   import FollowupItem from '../components/FollowupItem.svelte';
 
@@ -89,7 +89,7 @@
                   <li class="timeline-item">
                     <a class="timeline-link" href={href({ name: 'review', slug, id: r.id })}>
                       <span class="timeline-top">
-                        <ReviewStatusPill status={r.status} />
+                        <ReviewStatusTile status={r.status} />
                         <Time iso={r.createdAt} />
                         {#if r.skipReason}<span class="small muted">skipped: {skipText[r.skipReason] ?? r.skipReason}</span>{/if}
                       </span>

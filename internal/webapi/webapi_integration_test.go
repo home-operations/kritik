@@ -293,6 +293,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("transcripts equal Rebuild", func(t *testing.T) { testTranscriptsEqualRebuild(t, e) })
 	t.Run("repository pagination", func(t *testing.T) { testRepoPagination(t, e) })
 	t.Run("repository kinds", func(t *testing.T) { testRepoKinds(t, e) })
+	t.Run("pull requests by author", func(t *testing.T) { testPullsByAuthor(t, e) })
 	t.Run("event stream scopes to the account", func(t *testing.T) { testEventStreamScopesToAccount(t, e) })
 }
 
@@ -306,6 +307,7 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/repos/wa/one", `"commit":"base7","found":true`},
 		{a + "/pulls", `"title":"PR of webapi-a"`},
 		{a + "/pulls?state=all&repo=wa/one&outcome=completed&q=webapi-a", `"title":"PR of webapi-a"`},
+		{a + "/pulls?state=all&author=ADA", `"title":"PR of webapi-a"`},
 		{a + "/pulls/wa/one/7", `"title":"PR of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID, `"logTail":"tail of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/diff", `"diff":"diff of webapi-a"`},
@@ -500,6 +502,15 @@ func testRepoPagination(t *testing.T, e *apiEnv) {
 // testRepoKinds: the repository list leaves out archived repositories and
 // forks, but for a fork turned on by its own entry, as wa/one's is; each
 // has a list of its own, and neither counts as the account's.
+func testPullsByAuthor(t *testing.T, e *apiEnv) {
+	for author, want := range map[string]string{"ada": `"title":"PR of webapi-a"`, "Ada": `"title":"PR of webapi-a"`, "ad": `"items":[]`} {
+		status, body := e.getBody("member-a", "/api/v1/accounts/github/wa/pulls?state=all&author="+author)
+		if status != 200 || !bytes.Contains(body, []byte(want)) {
+			t.Errorf("author=%s: status %d, body %s, want %s", author, status, body, want)
+		}
+	}
+}
+
 func testRepoKinds(t *testing.T, e *apiEnv) {
 	t.Cleanup(func() {
 		e.exec(`UPDATE repositories SET fork = false, archived = false WHERE name IN ('wa/one', 'wa/two')`)

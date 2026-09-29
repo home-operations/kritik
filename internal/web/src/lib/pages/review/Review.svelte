@@ -9,7 +9,7 @@
   import ActionButton from '../../components/ActionButton.svelte';
   import type { ReviewDetail } from '../../types';
   import StateView from '../../components/StateView.svelte';
-  import ReviewStatusPill from '../../components/ReviewStatusPill.svelte';
+  import ReviewStatusTile from '../../components/ReviewStatusTile.svelte';
   import ReviewMeta from '../../components/ReviewMeta.svelte';
   import Time from '../../components/Time.svelte';
   import SummaryTab from './SummaryTab.svelte';
@@ -70,7 +70,7 @@
           </p>
           <h1>{r.pull.title}</h1>
           <p class="meta-line">
-            <ReviewStatusPill status={r.status} />
+            <ReviewStatusTile status={r.status} />
             <Time iso={r.createdAt} />
             <ReviewMeta {r} />
           </p>
