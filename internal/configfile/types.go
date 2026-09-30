@@ -486,7 +486,6 @@ type ReviewTemplates struct {
 // Review is the admin's resolved presentation and strictness for a
 // repository. Paths name files in the repository's merge-base tree.
 type Review struct {
-	Instructions        []string
 	RequireSuggestedFix bool
 	Templates           ReviewTemplates
 	// InlineComments is false to post the summary alone.
@@ -538,7 +537,6 @@ func (r Review) NitsInline() bool { return r.Feedback != FeedbackStandard }
 // exception: they add to the broader scope's, one with an id already
 // listed replacing that rule where it stands.
 type ReviewSpec struct {
-	Instructions        []string      `yaml:"instructions,omitempty"`
 	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
 	Templates           TemplatesSpec `yaml:"templates,omitempty"`
 	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
@@ -555,11 +553,15 @@ type TemplatesSpec struct {
 	Inline  *string `yaml:"inline,omitempty"`
 }
 
-// Referenced lists the repository paths the block names: instructions
-// first, then the summary and inline templates and the context files,
-// deduplicated.
+// Referenced lists the repository paths the block names: the rules'
+// files first, then the summary and inline templates and the context
+// files, deduplicated.
 func (r Review) Referenced() []string {
-	paths := append(append([]string(nil), r.Instructions...), r.Templates.Summary, r.Templates.Inline)
+	paths := make([]string, 0, len(r.Rules)+2+len(r.Context))
+	for _, rule := range r.Rules {
+		paths = append(paths, rule.File)
+	}
+	paths = append(paths, r.Templates.Summary, r.Templates.Inline)
 	for _, c := range r.Context {
 		paths = append(paths, c.Path)
 	}

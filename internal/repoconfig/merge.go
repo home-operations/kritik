@@ -19,9 +19,6 @@ type Merged struct {
 	// which ingest has already applied; nil when it sets none.
 	InRepoFilter *prfilter.Program
 	Skip         Skip
-	// Scoped maps each instruction file the repository scoped to the
-	// globs of the changed paths it applies to; see Active.
-	Scoped map[string][]string
 	// Dropped says which of the file's values fell outside the admin's
 	// bounds; the admin's value applies for each.
 	Dropped []string
@@ -30,7 +27,7 @@ type Merged struct {
 // Merge applies doc, the merge-base FileName or nil when the repository has
 // none, over the admin's settings op (ADR-0010 §2.5). The file narrows
 // what an admin allows (enabled, filter, ignore, skip), appends its
-// instructions, context files and rules to the admin's, may only turn
+// context files and rules to the admin's, may only turn
 // requireSuggestedFix on, and replaces the templates, the feedback level
 // and whether findings go inline, which grant nothing. It chooses
 // its mode, models, agent limits and commands and settle time within the
@@ -41,7 +38,6 @@ type Merged struct {
 // ignored as a whole: op stands, and the error says why.
 func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	op.Ignore = slices.Clone(op.Ignore)
-	op.Review.Instructions = slices.Clone(op.Review.Instructions)
 	op.Review.Context = slices.Clone(op.Review.Context)
 	op.Review.Rules = slices.Clone(op.Review.Rules)
 	m := Merged{Settings: op}
@@ -62,18 +58,6 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		}
 	}
 	m.Skip = f.Skip
-	for _, in := range f.Review.Instructions {
-		if slices.Contains(m.Review.Instructions, in.Path) {
-			continue
-		}
-		m.Review.Instructions = append(m.Review.Instructions, in.Path)
-		if len(in.Paths) > 0 {
-			if m.Scoped == nil {
-				m.Scoped = map[string][]string{}
-			}
-			m.Scoped[in.Path] = in.Paths
-		}
-	}
 	if v := f.Review.RequireSuggestedFix; v != nil && *v {
 		m.Review.RequireSuggestedFix = true
 	} else if v != nil && op.Review.RequireSuggestedFix {

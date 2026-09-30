@@ -55,25 +55,12 @@ func TestReadAgentFiles(t *testing.T) {
 	}
 }
 
-func TestActiveInstructions(t *testing.T) {
-	files := Files{
-		"docs/review.md": "r", "AGENTS.md": "root", "CLAUDE.md": "@AGENTS.md", "svc/CLAUDE.md": "svc", "other/AGENTS.md": "other",
-	}
-	named := []string{"docs/review.md", "AGENTS.md"}
-	changed := []string{"svc/h.go"}
-	tests := []struct {
-		name string
-		on   bool
-		want []string
-	}{
-		{"off: the named files alone", false, []string{"docs/review.md", "AGENTS.md"}},
-		{"on: then each directory's agent file once, shallowest first", true, []string{"docs/review.md", "AGENTS.md", "svc/CLAUDE.md"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := ActiveInstructions(named, nil, files, changed, tt.on); !slices.Equal(got, tt.want) {
-				t.Fatalf("ActiveInstructions = %q, want %q", got, tt.want)
-			}
-		})
+// TestAgentFiles: each changed directory's agent file, shallowest first,
+// its CLAUDE.md only where it has no AGENTS.md, and none of a directory
+// the change does not touch.
+func TestAgentFiles(t *testing.T) {
+	files := Files{"docs/review.md": "r", "AGENTS.md": "root", "CLAUDE.md": "@AGENTS.md", "svc/CLAUDE.md": "svc", "other/AGENTS.md": "other"}
+	if got, want := AgentFiles(files, []string{"svc/h.go"}), []string{"AGENTS.md", "svc/CLAUDE.md"}; !slices.Equal(got, want) {
+		t.Fatalf("AgentFiles = %q, want %q", got, want)
 	}
 }

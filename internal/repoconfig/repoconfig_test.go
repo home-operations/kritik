@@ -22,12 +22,11 @@ func TestParse_Invalid(t *testing.T) {
 		{"bad skip glob", "skip:\n  onlyPaths:\n    - \"[\"\n"},
 		{"bad filter syntax", "filter: \"pr.draft &&\"\n"},
 		{"filter not bool", "filter: \"pr.title\"\n"},
-		{"absolute instruction path", "review:\n  instructions:\n    - /etc/passwd\n"},
-		{"instruction escapes repo", "review:\n  instructions:\n    - ../x\n"},
-		{"scoped instruction escapes repo", "review:\n  instructions:\n    - { path: ../x, paths: [\"**\"] }\n"},
-		{"scoped instruction without a path", "review:\n  instructions:\n    - { paths: [\"**\"] }\n"},
-		{"scoped instruction with a bad glob", "review:\n  instructions:\n    - { path: x.md, paths: [\"[\"] }\n"},
-		{"scoped instruction with an unknown key", "review:\n  instructions:\n    - { path: x.md, glob: \"**\" }\n"},
+		{"absolute rule file", "review:\n  rules: [{ id: a, file: /etc/passwd }]\n"},
+		{"rule file escapes repo", "review:\n  rules: [{ id: a, file: ../x }]\n"},
+		{"rule with both a rule and a file", "review:\n  rules: [{ id: a, rule: Check., file: x.md }]\n"},
+		{"rule with neither", "review:\n  rules: [{ id: a, paths: [\"**\"] }]\n"},
+		{"file rule with a bad glob", "review:\n  rules: [{ id: a, file: x.md, paths: [\"[\"] }]\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -66,9 +65,9 @@ skip:
   onlyPaths:
     - "**/*.md"
 review:
-  instructions:
-    - docs/instructions.md
-    - { path: docs/sql.md, paths: ["**/*.sql"] }
+  rules:
+    - { id: house-style, file: docs/instructions.md }
+    - { id: sql, file: docs/sql.md, paths: ["**/*.sql"] }
   requireSuggestedFix: true
   templates:
     summary: docs/summary.tmpl
@@ -93,10 +92,10 @@ review:
 		if !slices.Equal(f.Skip.OnlyPaths, []string{"**/*.md"}) {
 			t.Fatalf("Skip.OnlyPaths = %v", f.Skip.OnlyPaths)
 		}
-		if !reflect.DeepEqual(f.Review.Instructions, []Instruction{
-			{Path: "docs/instructions.md"}, {Path: "docs/sql.md", Paths: []string{"**/*.sql"}},
+		if !reflect.DeepEqual(f.Review.Rules, []configfile.Rule{
+			{ID: "house-style", File: "docs/instructions.md"}, {ID: "sql", File: "docs/sql.md", Paths: []string{"**/*.sql"}},
 		}) {
-			t.Fatalf("Review.Instructions = %v", f.Review.Instructions)
+			t.Fatalf("Review.Rules = %v", f.Review.Rules)
 		}
 		if f.Review.RequireSuggestedFix == nil || !*f.Review.RequireSuggestedFix {
 			t.Fatalf("Review.RequireSuggestedFix = %v, want true", f.Review.RequireSuggestedFix)
@@ -105,30 +104,6 @@ review:
 			t.Fatalf("Review.Templates = %+v", f.Review.Templates)
 		}
 	})
-}
-
-func TestActive(t *testing.T) {
-	t.Parallel()
-	paths := []string{"ops.md", "sql.md", "web.md"}
-	scoped := map[string][]string{"sql.md": {"**/*.sql", "internal/store/**"}, "web.md": {"web/**"}}
-	tests := []struct {
-		name    string
-		changed []string
-		want    []string
-	}{
-		{"no scope matches", []string{"main.go"}, []string{"ops.md"}},
-		{"one scope matches", []string{"main.go", "internal/store/pr.go"}, []string{"ops.md", "sql.md"}},
-		{"both scopes match", []string{"a/b.sql", "web/app.ts"}, []string{"ops.md", "sql.md", "web.md"}},
-		{"nothing changed", nil, []string{"ops.md"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := Active(paths, scoped, tt.changed); !slices.Equal(got, tt.want) {
-				t.Fatalf("Active = %v, want %v", got, tt.want)
-			}
-		})
-	}
 }
 
 func TestActiveContext(t *testing.T) {
@@ -143,19 +118,24 @@ func TestActiveContext(t *testing.T) {
 }
 
 // TestActiveRules: a rule applies to a change its paths match, or to any
-// when it has none, and the rules past the cap are counted, not listed.
+// when it has none; a file rule carries its file's content, and one whose
+// file is missing or blank is left out; the rules past each cap are
+// counted, not listed.
 func TestActiveRules(t *testing.T) {
 	t.Parallel()
 	rules := []configfile.Rule{
 		{ID: "any", Rule: "Check errors."}, {ID: "sql", Rule: "Use placeholders.", Paths: []string{"**/*.sql"}},
-		{ID: "big", Rule: strings.Repeat("x", MaxRulesBytes)}, {ID: "last", Rule: "Name things."},
+		{ID: "big", Rule: strings.Repeat("x", MaxRulesBytes)}, {ID: "style", File: "docs/style.md"},
+		{ID: "gone", File: "docs/gone.md"}, {ID: "blank", File: "docs/blank.md"},
+		{ID: "huge", File: "docs/huge.md"}, {ID: "last", Rule: "Name things."},
 	}
-	got, left := ActiveRules(rules, []string{"main.go"})
-	want := []review.Rule{{ID: "any", Text: "Check errors."}, {ID: "last", Text: "Name things."}}
-	if !reflect.DeepEqual(got, want) || left != 1 {
+	files := Files{"docs/style.md": " Short names. \n", "docs/blank.md": "\n", "docs/huge.md": strings.Repeat("y", MaxRuleFileBytes)}
+	got, left := ActiveRules(rules, files, []string{"main.go"})
+	want := []review.Rule{{ID: "any", Text: "Check errors."}, {ID: "style", Text: "Short names.", File: "docs/style.md"}, {ID: "last", Text: "Name things."}}
+	if !reflect.DeepEqual(got, want) || left != 2 {
 		t.Fatalf("ActiveRules = %+v, %d left", got, left)
 	}
-	if got, _ := ActiveRules(rules[:2], []string{"db/0001.sql"}); len(got) != 2 {
+	if got, _ := ActiveRules(rules[:2], files, []string{"db/0001.sql"}); len(got) != 2 {
 		t.Fatalf("ActiveRules = %+v", got)
 	}
 }
@@ -164,7 +144,7 @@ func TestFile_Referenced(t *testing.T) {
 	t.Parallel()
 	f := File{
 		Review: Review{
-			Instructions: []Instruction{{Path: "docs/a.md"}, {Path: "docs/b.md", Paths: []string{"b/**"}}, {Path: "docs/a.md"}},
+			Rules: []configfile.Rule{{ID: "a", File: "docs/a.md"}, {ID: "b", File: "docs/b.md", Paths: []string{"b/**"}}, {ID: "c", Rule: "Check."}},
 			Templates: Templates{
 				Summary: "docs/a.md",
 				Inline:  "docs/c.md",

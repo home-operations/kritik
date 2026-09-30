@@ -114,15 +114,13 @@ func collectRules(repos []repoRules) []Rule {
 	}
 	for _, rr := range repos {
 		own := rr.settings.Review
-		instructionsFrom, contextFrom := RuleSource(rr.sources["review.instructions"]), RuleSource(rr.sources["review.context"])
-		for _, p := range own.Instructions {
-			add(Rule{Kind: RuleInstructions, Path: p, Paths: []string{}, Source: instructionsFrom}, rr.name)
-		}
+		contextFrom := RuleSource(rr.sources["review.context"])
 		for _, c := range own.Context {
 			add(Rule{Kind: RuleContext, Path: c.Path, Description: c.Description, Paths: nonNil(c.Paths), Source: contextFrom}, rr.name)
 		}
 		for _, w := range own.Rules {
-			add(Rule{Kind: RuleWritten, ID: w.ID, Text: w.Rule, Paths: nonNil(w.Paths), Source: ruleFrom[rr.ruleScopes[w.ID]]}, rr.name)
+			source := ruleFrom[rr.ruleScopes[w.ID]]
+			add(Rule{Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: nonNil(w.Paths), Source: source}, rr.name)
 		}
 		if rr.doc == nil {
 			continue
@@ -131,18 +129,13 @@ func collectRules(repos []repoRules) []Rule {
 		if err != nil {
 			continue
 		}
-		for _, p := range m.Review.Instructions {
-			if !slices.Contains(own.Instructions, p) {
-				add(Rule{Kind: RuleInstructions, Path: p, Paths: nonNil(m.Scoped[p]), Source: RuleFromRepository}, rr.name)
-			}
-		}
 		for _, c := range m.Review.Context {
 			if !slices.ContainsFunc(own.Context, func(o configfile.ContextFile) bool { return o.Path == c.Path }) {
 				add(Rule{Kind: RuleContext, Path: c.Path, Description: c.Description, Paths: nonNil(c.Paths), Source: RuleFromRepository}, rr.name)
 			}
 		}
 		for _, w := range m.Review.Rules[len(own.Rules):] {
-			add(Rule{Kind: RuleWritten, ID: w.ID, Text: w.Rule, Paths: nonNil(w.Paths), Source: RuleFromRepository}, rr.name)
+			add(Rule{Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: nonNil(w.Paths), Source: RuleFromRepository}, rr.name)
 		}
 	}
 	out := make([]Rule, 0, len(byKey))

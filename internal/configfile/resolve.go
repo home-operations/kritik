@@ -274,9 +274,6 @@ func (l Limits) overlay(o LimitsSpec) Limits {
 }
 
 func (r Review) overlay(o ReviewSpec) Review {
-	if o.Instructions != nil {
-		r.Instructions = o.Instructions
-	}
 	if o.RequireSuggestedFix != nil {
 		r.RequireSuggestedFix = *o.RequireSuggestedFix
 	}

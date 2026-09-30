@@ -20,9 +20,10 @@ import (
 )
 
 // Effective is a repository's settings once its .kritik.yaml is applied.
-// Settings.Review names the files the runner reads; Instructions,
-// Templates and References hold their contents once it has, and Rules
-// the rules that apply to the change.
+// Settings.Review names the files the runner reads; Instructions, its
+// agent files, Templates and References hold their contents once it has,
+// and Rules the rules that apply to the change, a file rule with its
+// file's content.
 type Effective struct {
 	repoconfig.Merged
 	// Found is whether the repository has a .kritik.yaml.
@@ -73,8 +74,8 @@ func (e *Effective) repoFiles() []string {
 }
 
 // fill reads the contents of the files e names out of files, what the
-// runner read, into Instructions, Templates and References, leaving out
-// instructions, context files and rules scoped to paths none of changed
+// runner read, into Rules, Instructions, Templates and References,
+// leaving out context files and rules scoped to paths none of changed
 // matches.
 // notes lead the returned ones; a named file missing from files is noted
 // unless they already say why.
@@ -90,17 +91,21 @@ func (e *Effective) fill(files repoconfig.Files, notes, changed []string) []stri
 		}
 		return content
 	}
-	for _, p := range e.Review.Instructions {
-		read(p)
+	for _, r := range e.Review.Rules {
+		read(r.File)
 	}
 	var left int
-	if e.Rules, left = repoconfig.ActiveRules(e.Review.Rules, changed); left > 0 {
-		notes = append(notes, fmt.Sprintf("%d review rules left out, past the 16 KiB of rules a review is given", left))
+	if e.Rules, left = repoconfig.ActiveRules(e.Review.Rules, files, changed); left > 0 {
+		notes = append(notes, fmt.Sprintf("%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given",
+			left))
+	}
+	var agent []string
+	if e.Review.AgentFiles {
+		agent = repoconfig.AgentFiles(files, changed)
 	}
 	var truncated bool
-	active := repoconfig.ActiveInstructions(e.Review.Instructions, e.Scoped, files, changed, e.Review.AgentFiles)
-	if e.Instructions, truncated = repoconfig.Instructions(files, active); truncated {
-		notes = append(notes, "repository instructions truncated to 32 KiB")
+	if e.Instructions, truncated = repoconfig.Instructions(files, agent); truncated {
+		notes = append(notes, "AGENTS.md and CLAUDE.md files truncated to 32 KiB")
 	}
 	e.Templates = review.Templates{Summary: read(e.Review.Templates.Summary), Inline: read(e.Review.Templates.Inline)}
 	applies := repoconfig.ActiveContext(e.Review.Context, changed)

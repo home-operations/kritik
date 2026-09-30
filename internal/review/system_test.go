@@ -173,3 +173,17 @@ func TestSystemRulesInBothModes(t *testing.T) {
 		}
 	}
 }
+
+// TestSystemPromptFileRules: a file rule follows the written ones as a
+// heading of its id and file over its content, and a section of file
+// rules alone has no empty list.
+func TestSystemPromptFileRules(t *testing.T) {
+	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors."}, {ID: "house-style", Text: " Short names.\n", File: ".kritik/style.md"}}
+	want := "finding, and the finding lists the id in rules.\n\n- wrap-errors: Wrap errors.\n\n### house-style (.kritik/style.md)\n\nShort names."
+	if got := SystemPrompt(rules, nil, false); !strings.HasSuffix(got, want) {
+		t.Fatalf("system prompt:\n%s", got)
+	}
+	if got := SystemPrompt(rules[1:], nil, false); !strings.HasSuffix(got, "in rules.\n\n### house-style (.kritik/style.md)\n\nShort names.") {
+		t.Fatalf("system prompt:\n%s", got)
+	}
+}

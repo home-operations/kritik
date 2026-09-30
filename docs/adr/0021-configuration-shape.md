@@ -121,10 +121,12 @@ still posts the summary alone.
 
 A rule is a `rule`, as before, or a `file` of the repository, read from
 the merge base, whose content is the check; either may have `paths`. A
-file rule is cited by its id like any other, and its content is capped
-with the instruction files' 32 KiB. `review.instructions` goes: a named
-instruction file is a file rule. `context` and `agentFiles` stay as they
-are.
+file rule is cited by its id like any other, and is given to the review
+under a heading of its id and file; the file rules a change matches
+share 32 KiB, as the rules' text shares 16 KiB. `review.instructions`
+goes: a named instruction file is a file rule, and a repository's
+instructions are its agent files alone. `context` and `agentFiles` stay
+as they are.
 
 ### 2.6 `ignore` also skips
 

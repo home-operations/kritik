@@ -31,7 +31,6 @@
     "settleSeconds": 30,
     "maxDeltaFiles": 40,
     "review": {
-      "instructions": ["docs/review.md"],
       "requireSuggestedFix": true,
       "templates": {
         "Summary": "docs/summary.tmpl",
@@ -96,7 +95,6 @@
       "settleSeconds": 30,
       "maxDeltaFiles": 40,
       "review": {
-        "instructions": ["docs/review.md"],
         "requireSuggestedFix": true,
         "templates": {
           "Summary": "docs/summary.tmpl",

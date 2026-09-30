@@ -76,21 +76,16 @@ func ReadAgentFiles(read func(name string) ([]byte, error), files Files, changed
 	return notes, nil
 }
 
-// ActiveInstructions is Active's instruction files and then, with
-// agentFiles set, the agent files of files that apply to changed, as
-// ReadAgentFiles picks them, that Active does not already name.
-func ActiveInstructions(paths []string, scoped map[string][]string, files Files, changed []string, agentFiles bool) []string {
-	out := Active(paths, scoped, changed)
-	if !agentFiles {
-		return out
-	}
+// AgentFiles is the agent files of files that apply to changed, as
+// ReadAgentFiles picks them, shallowest first: the repository's
+// instructions.
+func AgentFiles(files Files, changed []string) []string {
+	var out []string
 	for _, dir := range agentDirs(changed) {
 		for _, name := range agentFileNames {
 			p := path.Join(dir, name)
 			if _, ok := files[p]; ok {
-				if !slices.Contains(out, p) {
-					out = append(out, p)
-				}
+				out = append(out, p)
 				break
 			}
 		}

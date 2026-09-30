@@ -362,11 +362,15 @@ test.describe('findings', () => {
 test.describe('rules', () => {
   test('lists each rule reviews check, where it is set and which repositories read it', async ({ page }) => {
     const file: Rule = { ...g.rule, kind: 'context', id: '', text: '', path: 'db/schema.sql', description: 'the schema', source: 'repository' };
-    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), [file, g.rule]], ...g.defaultApi()]);
+    const fileRule: Rule = { ...g.rule, id: 'house-style', text: '', path: '.kritik/review.md', source: 'repository' };
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), [file, g.rule, fileRule]], ...g.defaultApi()]);
     await page.goto(`/${T}/rules`);
     const r = g.rule;
     const rows = page.locator('.rule-table tbody tr');
-    await expect(rows).toHaveCount(2);
+    await expect(rows).toHaveCount(3);
+    // A file rule names its file over its id.
+    await expect(rows.nth(1).locator('.rule-path')).toHaveText(fileRule.path);
+    await expect(rows.nth(1).locator('.rule-sub')).toHaveText(fileRule.id);
     const row = rows.first();
     await expect(row.locator('.rule-body')).toHaveText(r.text);
     await expect(row.locator('.rule-sub')).toHaveText(r.id);
@@ -385,7 +389,7 @@ test.describe('rules', () => {
     await expect(page.locator('.sections .section-tab.active')).toHaveText('Rules');
 
     const search = page.getByRole('combobox', { name: 'Search rules' });
-    await search.fill('kind:instructions');
+    await search.fill('kind:context package');
     await expect(page.locator('.state-msg')).toHaveText('No rule matches.');
     await search.fill('kind:rule package');
     await expect(rows).toHaveCount(1);
@@ -395,7 +399,7 @@ test.describe('rules', () => {
   test('says how to add a rule when there is none', async ({ page }) => {
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), []], ...g.defaultApi()]);
     await page.goto(`/${T}/rules`);
-    await expect(page.locator('.state-msg')).toContainText('write them under review.rules, or name instruction or context files under review.instructions and review.context');
+    await expect(page.locator('.state-msg')).toContainText('write them, or name files for them, under review.rules, and name context files under review.context');
   });
 });
 

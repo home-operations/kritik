@@ -34,8 +34,8 @@ at once, and holds a tab for each of an account's sections
   by checkbox or with Space on the keyboard's row, and re-run them
   together.
 - **Rules:** what its reviews check: rules written in the configuration
-  ([ADR-0018](adr/0018-rules.md)), instruction files they follow and
-  context files that explain the code, each with where it is set (a layer
+  ([ADR-0018](adr/0018-rules.md)), as text or a file, and context files
+  that explain the code, each with where it is set (a layer
   of the configuration, a repository's entry, or a repository's
   `.kritik.yaml` as its last review read it), the paths it applies to,
   and the repositories that read it. A written rule also has the findings

@@ -42,8 +42,8 @@ Kubernetes Job pod that holds no secrets.
   key never enters a runner pod: the agent reaches its model through the
   worker's gateway.
 - **Repository overrides.** A `.kritik.yaml`, read from the merge-base, can
-  narrow the admin's settings and bring its own instructions and comment
-  templates.
+  narrow the admin's settings and bring its own rules, context files and
+  comment templates.
 - **Configuration in git.** One YAML file holds the whole configuration and
   reloads on change; secrets stay in Secrets it references by path.
 - **Dashboard.** Sign-in, live review state, full model transcripts, the

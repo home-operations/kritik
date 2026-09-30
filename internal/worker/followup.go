@@ -95,19 +95,17 @@ type followUp struct {
 	file     *configfile.File
 	account  *configfile.Account
 	settings configfile.Settings
-	// instructionFiles are the instruction files settings name, as
-	// repoConfig read them, and scoped the changed-path globs each scoped
-	// one applies to.
-	instructionFiles repoconfig.Files
-	scoped           map[string][]string
-	client           forge.Client
-	pr               *pullRequest
-	comment          forge.Comment
-	owner            string
-	repo             string
-	botLogin         string
-	jobID            int64
-	logger           *slog.Logger
+	// ruleFiles are the files settings' rules name, as repoConfig read
+	// them.
+	ruleFiles repoconfig.Files
+	client    forge.Client
+	pr        *pullRequest
+	comment   forge.Comment
+	owner     string
+	repo      string
+	botLogin  string
+	jobID     int64
+	logger    *slog.Logger
 }
 
 // alreadyAnswered guards a retried job: once a reply is on the forge the
@@ -166,16 +164,19 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	if err != nil {
 		return followUpFailed, err
 	}
-	// The review's runner read the agent files; the named files are read
+	// The review's runner read the agent files; the rules' files are read
 	// again at the merge base, and win.
 	files := maps.Clone(rec.files)
 	if files == nil {
 		files = repoconfig.Files{}
 	}
-	maps.Copy(files, f.instructionFiles)
-	instructions, _ := repoconfig.Instructions(files,
-		repoconfig.ActiveInstructions(f.settings.Review.Instructions, f.scoped, files, rec.changed, f.settings.Review.AgentFiles))
-	rules, _ := repoconfig.ActiveRules(f.settings.Review.Rules, rec.changed)
+	maps.Copy(files, f.ruleFiles)
+	var agent []string
+	if f.settings.Review.AgentFiles {
+		agent = repoconfig.AgentFiles(files, rec.changed)
+	}
+	instructions, _ := repoconfig.Instructions(files, agent)
+	rules, _ := repoconfig.ActiveRules(f.settings.Review.Rules, files, rec.changed)
 	system := review.FollowUpSystemPrompt(rules, instructions)
 	msg := review.BuildFollowUp(review.Input{
 		Repository: f.pr.repository, Number: f.pr.number, Title: f.pr.title, Author: f.pr.author, BaseRef: f.pr.baseRef,
@@ -458,12 +459,23 @@ func (f *followUp) repoConfig(ctx context.Context) (string, error) {
 			return nil, fmt.Errorf("worker: %s: %w", p, fs.ErrNotExist)
 		}
 		return b, err
-	}, eff.Review.Instructions...)
+	}, ruleFiles(eff.Review.Rules)...)
 	if err != nil {
 		return "", err
 	}
-	f.instructionFiles, f.scoped = files, eff.Scoped
+	f.ruleFiles = files
 	return "", nil
+}
+
+// ruleFiles is the files rules name, in order.
+func ruleFiles(rules []configfile.Rule) []string {
+	var out []string
+	for _, r := range rules {
+		if r.File != "" {
+			out = append(out, r.File)
+		}
+	}
+	return out
 }
 
 // complete asks the review model for the reply, with the repository's

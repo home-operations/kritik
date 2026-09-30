@@ -21,8 +21,8 @@ its first line names the schema:
 
 ## What it may change
 
-The file narrows what an admin allows, adds to the review's
-instructions, and chooses a few settings within bounds an admin sets:
+The file narrows what an admin allows, adds to the review's rules and
+context, and chooses a few settings within bounds an admin sets:
 
 - `enabled: false`: stops reviews, follow-ups and indexing for the
   repository. It cannot turn a disabled repository back on.
@@ -34,20 +34,6 @@ instructions, and chooses a few settings within bounds an admin sets:
   reviews and indexing alike.
 - `skip.onlyPaths`: path globs. A pull request is skipped only when every
   changed path matches at least one of them.
-- `review.instructions`: paths to files, read from the same merge-base
-  tree, appended after the admin's instructions to the reviewer's system
-  prompt (and a follow-up's), capped at 32 KiB joined. An entry may instead
-  be a `path` with `paths` globs, included only when a changed path matches
-  one of them, so rules for one part of the repository do not spend the cap
-  on changes elsewhere:
-
-  ```yaml
-  review:
-    instructions:
-      - .kritik/rules.md
-      - { path: .kritik/sql.md, paths: ["internal/store/**", "**/*.sql"] }
-  ```
-
 - `review.context`: files that explain the code, each a `path` with a
   `description` and optional `paths` globs, added after the admin's. An
   agentic review is pointed at each file to read it with its own tools; a
@@ -66,12 +52,17 @@ instructions, and chooses a few settings within bounds an admin sets:
 - `review.rules`: checks the review makes, added after the admin's
   ([ADR-0018](adr/0018-rules.md)). Each has an `id` (lowercase letters,
   digits and hyphens, at most 64 characters) that findings cite it by,
-  the `rule` itself (at most 2000 characters) and optional `paths` globs,
-  which apply it only when a changed path matches one. A rule whose `id`
-  an admin's rule has is dropped, and the review's summary says so. The
-  rules a change matches are listed by id in the system prompt ahead of
-  the instructions, capped at 16 KiB, and a finding lists the ids of the
-  rules it enforces, keeping only ones its review was given:
+  and either the `rule` itself (at most 2000 characters) or a `file`,
+  read from the same merge-base tree, whose content is the check
+  ([ADR-0021](adr/0021-configuration-shape.md) §2.5); optional `paths`
+  globs apply it only when a changed path matches one, so checks for one
+  part of the repository do not spend the room on changes elsewhere. A
+  rule whose `id` an admin's rule has is dropped, and the review's
+  summary says so. The rules a change matches are listed by id in the
+  system prompt (and a follow-up's), a file rule under a heading of its
+  own, within 16 KiB of rule text and 32 KiB of rule files, and a finding
+  lists the ids of the rules it enforces, keeping only ones its review
+  was given:
 
   ```yaml
   review:
@@ -79,6 +70,9 @@ instructions, and chooses a few settings within bounds an admin sets:
       - id: wrap-errors
         rule: 'Wrap an error with fmt.Errorf("<package>: %w", err) before returning it.'
         paths: ["**/*.go"]
+      - id: sql
+        file: .kritik/sql.md
+        paths: ["internal/store/**", "**/*.sql"]
   ```
 
 - `review.requireSuggestedFix: true`: findings must include a suggested
@@ -88,9 +82,9 @@ instructions, and chooses a few settings within bounds an admin sets:
 - `review.agentFiles: false`: leaves the repository's agent files out.
   Unless set, a review adds to its instructions the `AGENTS.md` of the
   root and of each directory above a changed path, or a directory's
-  `CLAUDE.md` where it has no `AGENTS.md`, read from the merge base after
-  the named instruction files and within the same 32 KiB
-  ([ADR-0020](adr/0020-agent-files.md)).
+  `CLAUDE.md` where it has no `AGENTS.md`, read from the merge base,
+  within 32 KiB ([ADR-0020](adr/0020-agent-files.md)). They follow the
+  rules in the prompt.
 - `review.feedback`: how much the review says
   ([ADR-0021](adr/0021-configuration-shape.md) §2.4). The admin sets it
   for the instance, an account or a repository as well.
@@ -149,7 +143,7 @@ filter: '!pr.body.contains("[skip-review]")'
 ignore: ["web/src/generated/**"]
 skip: { onlyPaths: ["docs/**"] }
 review:
-  instructions: [".kritik/rules.md"]
+  rules: [{ id: house-style, file: .kritik/rules.md }]
   requireSuggestedFix: true
 ```
 
