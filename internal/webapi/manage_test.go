@@ -62,7 +62,7 @@ func TestManagementRefusals(t *testing.T) {
 		{"reindex as a member", member, mutate("POST", "/api/v1/accounts/github/alpha/repos/o/r/reindex", ""), 403, CodeForbidden},
 		{"rerun without actions", admin, mutate("POST", "/api/v1/accounts/github/alpha/pulls/o/r/1/rerun", ""), 503, CodeActionsDisabled},
 		{"account audit as a member", member, httptest.NewRequest("GET", "/api/v1/accounts/github/alpha/audit", nil), 403, CodeForbidden},
-		{"admin audit as a member", member, httptest.NewRequest("GET", "/api/v1/admin/audit", nil), 403, CodeForbidden},
+		{"admin audit as a member", member, httptest.NewRequest("GET", "/api/v1/admin/audit", nil), 404, CodeNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
