@@ -45,7 +45,6 @@ export type ErrorCode = 'not_found' | 'bad_request' | 'invalid_cursor' | 'ambigu
 export interface ErrorBody {
   code: ErrorCode | string;
   message: string;
-  details?: unknown;
 }
 
 export type ReviewStatus =
@@ -229,7 +228,7 @@ export interface RepoSettings {
 
 // defaults is the instance spec's defaults, account an account's entry in
 // it, dashboard the instance spec itself.
-export type ConfigSource = 'default' | 'env' | 'file' | 'dashboard' | 'defaults' | 'account' | 'repository';
+export type ConfigSource = 'default' | 'env' | 'file' | 'defaults' | 'account' | 'repository';
 
 // One instance-wide setting, read-only in the admin console: a secret
 // shows only whether it is set.
@@ -443,7 +442,7 @@ export interface Analytics {
 export type RuleKind = 'rule' | 'instructions' | 'context';
 // entry is an account's entry for the repository; repository is the
 // repository's own .kritik.yaml.
-export type RuleSource = 'default' | 'env' | 'file' | 'dashboard' | 'defaults' | 'account' | 'entry' | 'repository';
+export type RuleSource = 'default' | 'env' | 'file' | 'defaults' | 'account' | 'entry' | 'repository';
 
 // Rule is one written rule or file reviews read, with where it is set, the
 // paths it applies to (every change when empty), and the repositories that
@@ -708,130 +707,24 @@ export interface LiveEvent {
   reviewId: string | null;
 }
 
-// The management API: the instance configuration, actions and the audit log.
+// The management API: actions, connections and the audit log.
 // ErrorBody.code may also be one of these.
 export type ManagementErrorCode =
   | 'forbidden'
-  | 'invalid_spec'
-  | 'revision_conflict'
-  | 'config_blocked'
-  | 'management_disabled'
   | 'no_head'
   | 'not_cancelable'
   | 'actions_disabled'
   | 'already_queued'
-  | 'reenter_secret'
-  | 'reindex_required'
   | 'forge_error'
   | 'installation_served';
 
-// details of an invalid_spec error.
-export interface PathDetails {
-  path: string;
-}
-
 export interface Meta {
   version: string;
-  management: boolean;
   webUrl: string;
-}
-
-// A secret as a read shows it, and the forms a write may give instead:
-// generate only for a webhook secret, keep only when updating.
-export interface SecretState {
-  set: boolean;
-}
-export type SecretInput = { value: string } | { keep: true } | { generate: true };
-
-// What an account's fields, and its repository entries' fields, resolve to
-// where the spec leaves them out, and where each value comes from.
-export interface Inherited {
-  account: RepoSettings;
-  accountSources: Record<string, ConfigSource>;
-  repository: RepoSettings;
-  repositorySources: Record<string, ConfigSource>;
-}
-
-// The instance spec as an admin reads it, every secret a SecretState;
-// revision is 0 before the first write.
-export interface InstanceConfig {
-  revision: number;
-  editable: boolean;
-  inherited: InstanceInherited;
-  spec: Record<string, unknown>;
-}
-
-// What the configuration file and its environment set of the instance's
-// defaults, which the spec overrides: its providers by name, its default
-// models by key and its embedder whole. No key is shown.
-export interface InstanceInherited {
-  providers: Record<string, { type: 'openrouter' | 'openai' | 'anthropic'; baseUrl: string; source: ConfigSource }>;
-  review: InheritedValue | null;
-  fallback: InheritedValue | null;
-  embedding: { baseUrl: string; model: string; dims: number; source: ConfigSource } | null;
-}
-
-export interface InheritedValue {
-  value: string;
-  source: ConfigSource;
-}
-
-// An account's entry in the instance spec, every secret a SecretState, and
-// the instance spec's revision, which a write of the entry must match.
-export interface AccountConfig {
-  revision: number;
-  editable: boolean;
-  inherited: Inherited;
-  spec: Record<string, unknown>;
-}
-
-// Replaces the instance spec, or an account's entry in it, while the
-// instance spec is still at revision.
-export interface UpdateConfigRequest {
-  revision: number;
-  spec: Record<string, unknown>;
-  // Accepts that a new embedding model or dimension rebuilds every
-  // repository's index; without it such a write is reindex_required.
-  confirmReindex?: boolean;
-}
-
-export interface ConfigWriteResult {
-  revision: number;
-  // Each server-generated secret, keyed "connections[<name>].<key>";
-  // shown once, never again.
-  generated?: Record<string, string>;
 }
 
 export interface Accepted {
   jobId?: number;
-}
-
-// Starts registering a GitHub App from a manifest for a new connection.
-// organization is empty for the admin's own GitHub account; name defaults
-// to "kritik-<connection>".
-export interface AppManifestRequest {
-  connection: string;
-  organization?: string;
-  name?: string;
-  public: boolean;
-}
-
-// What the browser POSTs to GitHub: manifest, as the form's manifest
-// field, to url.
-export interface AppManifestForm {
-  url: string;
-  manifest: Record<string, unknown>;
-}
-
-// One finished registration, read once: the App and where to install it,
-// with its client ID and secret for GitHub sign-in, or why it failed.
-export interface AppManifestResult {
-  connection: string;
-  slug?: string;
-  installUrl?: string;
-  clientId?: string;
-  clientSecret?: string;
-  error?: string;
 }
 
 // One account a connection's GitHub App is installed on. served is whether
@@ -847,59 +740,19 @@ export interface AppInstallation {
   url?: string;
 }
 
-// How far the instance is from reviewing: what the setup wizard shows and
-// resumes from.
+// How far the instance is from reviewing: what the Configuration page's
+// checklist shows.
 export interface SetupStatus {
   webUrl: string;
   // Where each connection's webhook goes, its name appended.
   hooksUrl: string;
-  fileConnections: string[];
   connections: string[];
   // defaults.models.review, '' when unset.
   reviewModel: string;
   embedding: boolean;
-}
-
-// Tests a provider's key before it is saved. apiKey is {value} or
-// {keep: true}, the running provider name's key (an account's own when
-// account names one), at its own type and endpoint only.
-export interface ProviderTestRequest {
-  type: string;
-  baseUrl?: string;
-  apiKey: SecretInput;
-  name?: string;
-  account?: string;
-}
-
-export interface EmbeddingTestRequest {
-  baseUrl: string;
-  model: string;
-  dims: number;
-  apiKey: SecretInput;
-}
-
-// A test's outcome: the provider's error as it came, and the models a
-// provider lists.
-export interface TestResult {
-  ok: boolean;
-  error?: string;
-  models?: string[];
-}
-
-// One account a connection serves: whether its App is installed there,
-// and the repositories it reaches.
-export interface AccountRepositories {
-  account: string;
-  installed: boolean;
-  repositories: AppRepository[];
-}
-
-export interface AppRepository {
-  name: string;
-  fullName: string;
-  defaultBranch: string;
-  archived: boolean;
-  fork: boolean;
+  // Why the configuration file's latest content was refused, '' while the
+  // running configuration is its latest content.
+  configError: string;
 }
 
 export interface RegisterResult {

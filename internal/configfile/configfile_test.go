@@ -98,8 +98,8 @@ func TestLoadFull(t *testing.T) {
 				filterOK: SamplePR(), filterNo: with(SamplePR(), "labels", []any{map[string]any{"name": "skip-review", "color": "0"}}),
 			},
 			{
-				name: "disabled repo", account: ho, repo: "home-operations/charts-mirror",
-				enabled: false, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
+				name: "listed repo inherits enabled", account: ho, repo: "home-operations/charts-mirror",
+				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
 			},
 			{
 				name: "account overrides review model and forks", account: od, repo: "onedr0p/home-ops",
@@ -256,8 +256,8 @@ func loadBytes(t *testing.T, raw []byte) (*File, error) {
 }
 
 // TestEnabledDefault checks enabled resolves like the other overrides: the
-// defaults and an account set where a repository without an entry of its
-// own starts, and an entry decides for itself.
+// defaults and an account set where a repository starts, entry or not,
+// until an admin turns it on or off.
 func TestEnabledDefault(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -265,14 +265,14 @@ func TestEnabledDefault(t *testing.T) {
 		name, doc string
 		want      map[string]bool
 	}{
-		{"on unless turned off", acme("    repositories: [{ name: off, enabled: false }]\n"),
-			map[string]bool{"acme/new": true, "acme/off": false}},
-		{"off at the defaults", "defaults: { enabled: false }\n" + acme("    repositories: [{ name: on, enabled: true }, { name: listed }]\n"),
-			map[string]bool{"acme/new": false, "acme/on": true, "acme/listed": false}},
+		{"on unless turned off", acme("    repositories: [{ name: listed, mode: single }]\n"),
+			map[string]bool{"acme/new": true, "acme/listed": true}},
+		{"off at the defaults", "defaults: { enabled: false }\n" + acme("    repositories: [{ name: listed }]\n"),
+			map[string]bool{"acme/new": false, "acme/listed": false}},
 		{"the account over the defaults", "defaults: { enabled: false }\n" + acme("    enabled: true\n"),
 			map[string]bool{"acme/new": true}},
-		{"off at the account", acme("    enabled: false\n    repositories: [{ name: on, enabled: true }]\n"),
-			map[string]bool{"acme/new": false, "acme/on": true}},
+		{"off at the account", acme("    enabled: false\n    repositories: [{ name: listed }]\n"),
+			map[string]bool{"acme/new": false, "acme/listed": false}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -287,8 +287,8 @@ func TestEnabledDefault(t *testing.T) {
 }
 
 // TestRuns checks which repositories run once the forge says what they
-// are: an archived one never, a fork only when its own entry turns it on,
-// and the rest as enabled resolves.
+// are: an archived one never, one an admin turned on or off as they chose,
+// a fork not otherwise, and the rest as enabled resolves.
 func TestRuns(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -302,17 +302,11 @@ func TestRuns(t *testing.T) {
 		{"a source repository turned off", acme("    enabled: false\n"), "acme/app", RepoTraits{}, false},
 		{"a fork", acme(""), "acme/copy", fork, false},
 		{"a fork the account turns on", acme("    enabled: true\n"), "acme/copy", fork, false},
-		{"a fork with an entry that leaves enabled out", acme("    repositories: [{ name: copy, mode: agentic }]\n"), "acme/copy", fork, false},
-		{"a fork its own entry turns on", acme("    repositories: [{ name: Copy, enabled: true }]\n"), "acme/copy", fork, true},
-		{"a fork its own entry turns off", acme("    repositories: [{ name: copy, enabled: false }]\n"), "acme/copy", fork, false},
+		{"a fork with an entry", acme("    repositories: [{ name: copy, mode: agentic }]\n"), "acme/copy", fork, false},
 		{"an archived repository", acme(""), "acme/old", archived, false},
-		{"an archived repository its own entry turns on", acme("    repositories: [{ name: old, enabled: true }]\n"), "acme/old", archived, false},
-		{"an archived fork turned on", acme("    repositories: [{ name: old, enabled: true }]\n"), "acme/old", RepoTraits{Archived: true, Fork: true}, false},
 		{"a repository an admin turned off", acme("    enabled: true\n"), "acme/app", RepoTraits{TurnedOn: new(false)}, false},
 		{"a repository an admin turned on", acme("    enabled: false\n"), "acme/app", RepoTraits{TurnedOn: new(true)}, true},
 		{"a fork an admin turned on", acme(""), "acme/copy", RepoTraits{Fork: true, TurnedOn: new(true)}, true},
-		{"a fork an admin turned off that its entry turns on", acme("    repositories: [{ name: copy, enabled: true }]\n"), "acme/copy",
-			RepoTraits{Fork: true, TurnedOn: new(false)}, false},
 		{"an archived repository an admin turned on", acme(""), "acme/old", RepoTraits{Archived: true, TurnedOn: new(true)}, false},
 	}
 	for _, tt := range tests {
@@ -322,10 +316,6 @@ func TestRuns(t *testing.T) {
 				t.Errorf("Runs(%s, %+v) = %v, want %v", tt.repo, tt.traits, got, tt.want)
 			}
 		})
-	}
-	f := mustLoad(t, acme("    repositories: [{ name: on, enabled: true }, { name: off, enabled: false }, { name: left }]\n"))
-	if got := f.Accounts[0].TurnedOn(); len(got) != 1 || got[0] != "acme/on" {
-		t.Errorf("TurnedOn = %v, want [acme/on]", got)
 	}
 }
 
@@ -545,7 +535,7 @@ func TestWatch(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	file, _ := split(t, minimal)
+	file := []byte(minimal)
 	named := func(name string) string { return strings.Replace(string(file), "name: acme-bot", "name: "+name, 1) }
 	write := func(s string) {
 		t.Helper()

@@ -162,7 +162,7 @@
       "type": "object"
     },
     "config": {
-      "description": "The optional configuration file: sign-in (`auth`), GitHub Apps that\nalready exist (`connections`), and the instance's defaults (`providers`,\npart of `defaults`, and `embedding`), which the dashboard may override.\nEvery key in it also has a `KRITIK_*` environment variable, which wins\nover the file; the `auth` values above render those, and `extraEnv` can\nset the others. Accounts, their repositories and the dashboard's own\noverrides are the instance configuration, set in the dashboard's admin\nconsole and kept in Postgres. The file is either inline as `file`, rendered into a\nchart-managed ConfigMap, or an existing ConfigMap with a `config.yaml`\nkey. Secret material never goes in the file: it references files under\n`secretMounts` or environment variables. Every replica re-reads the file\non `reloadInterval`; the leader applies it to the store.",
+      "description": "The configuration file holds the whole configuration (ADR-0019): sign-in\n(`auth`), the GitHub Apps (`connections`), the instance's `providers`,\n`defaults` and `embedding`, and the `accounts` with their settings and\nrepositories. Sign-in, one connection, one provider, the default models\nand review settings and the embedder also have `KRITIK_*` environment\nvariables, which win over the file; the `auth` values above render some,\nand `extraEnv` can set the others. The file is either inline as `file`,\nrendered into a chart-managed ConfigMap, or an existing ConfigMap with a\n`config.yaml` key. Secret material never goes in the file: it references\nfiles under `secretMounts` or environment variables. Every replica\nre-reads the file on `reloadInterval`; the leader applies it to the store.",
       "properties": {
         "existingConfigMap": {
           "default": "",
@@ -179,7 +179,7 @@
           "type": "array"
         },
         "file": {
-          "description": "(optional) The configuration file, as YAML: `auth`, `connections`, `providers`, part of `defaults` and `embedding`. Passed through verbatim, not tpl'd. See docs/configuration.md.",
+          "description": "(optional) The configuration file, as YAML: the whole configuration, from `auth` and `connections` to `accounts` and their repositories. Passed through verbatim, not tpl'd. See docs/configuration.md.",
           "required": [],
           "title": "file",
           "type": "object"
@@ -217,52 +217,6 @@
       },
       "required": [],
       "title": "config",
-      "type": "object"
-    },
-    "dashboard": {
-      "description": "KRITIK_DASHBOARD_KEY is the AES-256 key that seals the instance\nconfiguration's credentials (App keys, webhook secrets, provider keys) at\nrest; it has nothing to do with sessions. Wired onto every non-runner role\nand required there once an instance configuration is stored. To rotate\nit, move the old value into oldKeysSecret (KRITIK_DASHBOARD_OLD_KEYS),\nwhich only opens values sealed under it, and keep it there until the\nconfiguration has been saved once, which re-seals every value under the\nnew key. Losing a key that still seals a value makes those credentials\nunreadable, and the pod then fails to start.",
-      "properties": {
-        "keySecret": {
-          "properties": {
-            "key": {
-              "default": "key",
-              "description": "Key in that Secret.",
-              "title": "key",
-              "type": "string"
-            },
-            "name": {
-              "default": "",
-              "description": "Secret holding the key that seals the instance configuration's credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start.",
-              "title": "name",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "title": "keySecret",
-          "type": "object"
-        },
-        "oldKeysSecret": {
-          "properties": {
-            "key": {
-              "default": "old-keys",
-              "description": "Key in that Secret.",
-              "title": "key",
-              "type": "string"
-            },
-            "name": {
-              "default": "",
-              "description": "(optional) Secret holding retired sealing keys, comma-separated, only to open values sealed under them.",
-              "title": "name",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "title": "oldKeysSecret",
-          "type": "object"
-        }
-      },
-      "required": [],
-      "title": "dashboard",
       "type": "object"
     },
     "database": {

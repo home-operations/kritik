@@ -2,40 +2,15 @@ package configfile
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// The configuration file may set the instance's defaults (ADR-0015): model
-// providers, the review and fallback models, mode, thoroughness, forks and
-// settle every account and repository inherits, and the embedder. The
-// instance spec overrides each: a provider by name, a default by key, and
-// the embedder whole.
-
-// fileDefaults is the part of the defaults the file sets.
-type fileDefaults struct {
-	Models ModelsSpec     `yaml:"models,omitempty"`
-	Mode   ReviewMode     `yaml:"mode,omitempty"`
-	Forks  *bool          `yaml:"forks,omitempty"`
-	Settle *time.Duration `yaml:"settle,omitempty"`
-	Review fileReview     `yaml:"review,omitempty"`
-}
-
-// fileReview is the part of the review block the file sets.
-type fileReview struct {
-	Thoroughness *string `yaml:"thoroughness,omitempty"`
-}
-
-// defaults is d as the defaults it sets.
-func (d fileDefaults) defaults() Defaults {
-	var out Defaults
-	out.Models, out.Mode, out.Forks, out.Settle = d.Models, d.Mode, d.Forks, d.Settle
-	out.Review.Thoroughness = d.Review.Thoroughness
-	return out
-}
+// The environment may set the instance's defaults key by key (ADR-0015
+// §2): one model provider, the review and fallback models, mode,
+// thoroughness, forks and settle every account and repository inherits,
+// and the embedder. Each wins over the file's.
 
 // Environment variable prefixes of the file's instance defaults.
 const (
@@ -98,7 +73,7 @@ func overlayProviderEnv(providers *map[string]Provider, environ []string) (strin
 
 // overlayDefaultsEnv sets the file's defaults from KRITIK_DEFAULTS_*,
 // recording each key it sets in from.
-func overlayDefaultsEnv(d *fileDefaults, environ []string, from map[string]bool) error {
+func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) error {
 	for _, kv := range environ {
 		env, value, _ := strings.Cut(kv, "=")
 		key, ok := strings.CutPrefix(env, defaultsEnvPrefix)
@@ -179,65 +154,9 @@ func overlayEmbeddingEnv(e **Embedding, environ []string, from map[string]bool) 
 	return nil
 }
 
-// resolveInstanceDefaults reads the file's provider and embedder keys,
-// which are env or file references like every other secret the file holds.
-func (f *File) resolveInstanceDefaults() error {
-	for _, name := range slices.Sorted(maps.Keys(f.Providers)) {
-		p := f.Providers[name]
-		v, err := p.APIKey.resolve(fileRefs)
-		if err != nil {
-			return fmt.Errorf("configfile: providers.%s.apiKey: %w", name, err)
-		}
-		p.apiKey = v
-		f.Providers[name] = p
-	}
-	if e := f.Embedding; e != nil {
-		v, err := e.APIKey.resolve(fileRefs)
-		if err != nil {
-			return fmt.Errorf("configfile: embedding.apiKey: %w", err)
-		}
-		e.apiKey = v
-	}
-	return nil
-}
-
-// underSpec is the file's instance defaults with the spec s laid over them:
-// its providers by name, its defaults by key, and its embedder whole.
-func (f *File) underSpec(s *Spec) (map[string]Provider, Defaults, *Embedding) {
-	providers := maps.Clone(f.Providers)
-	if len(s.Providers) > 0 && providers == nil {
-		providers = map[string]Provider{}
-	}
-	maps.Copy(providers, s.Providers)
-	defaults := s.Defaults
-	if defaults.Models.Review == nil {
-		defaults.Models.Review = f.Defaults.Models.Review
-	}
-	if defaults.Models.Fallback == nil {
-		defaults.Models.Fallback = f.Defaults.Models.Fallback
-	}
-	if defaults.Mode == "" {
-		defaults.Mode = f.Defaults.Mode
-	}
-	if defaults.Forks == nil {
-		defaults.Forks = f.Defaults.Forks
-	}
-	if defaults.Settle == nil {
-		defaults.Settle = f.Defaults.Settle
-	}
-	if defaults.Review.Thoroughness == nil {
-		defaults.Review.Thoroughness = f.Defaults.Review.Thoroughness
-	}
-	embedding := s.Embedding
-	if embedding == nil {
-		embedding = f.Embedding
-	}
-	return providers, defaults, embedding
-}
-
 // FileLayer is what the configuration file and its environment set of the
-// instance's defaults, which the spec overrides: its providers, default
-// models, other defaults and embedder, each with where it comes from.
+// instance's defaults: its providers, default models, other defaults and
+// embedder, each with where it comes from.
 type FileLayer struct {
 	Providers map[string]FileProvider
 	Review    FileValue
@@ -256,81 +175,67 @@ type FileDefault struct {
 }
 
 // FileProvider is one provider the file or the environment declares.
-// Overridden is whether the spec declares one by its name, which runs
-// instead.
 type FileProvider struct {
-	Type       ProviderType
-	BaseURL    string
-	Source     Source
-	Overridden bool
+	Type    ProviderType
+	BaseURL string
+	Source  Source
 }
 
-// FileValue is a default model the file or the environment sets; the
-// zero FileValue is none. Overridden is whether the spec sets it instead.
+// FileValue is a default the file or the environment sets; the zero
+// FileValue is none.
 type FileValue struct {
-	Value      string
-	Source     Source
-	Overridden bool
+	Value  string
+	Source Source
 }
 
 // FileEmbedding is the embedder the file or the environment sets.
-// Overridden is whether the spec sets one, which runs instead.
 type FileEmbedding struct {
 	BaseURL, Model string
 	Dims           int
 	Source         Source
-	Overridden     bool
 }
 
-// FileLayer returns the file's instance defaults of f, a parsed or a
-// merged File, each marked overridden where f's spec sets its own.
+// FileLayer returns f's instance defaults, each with where it comes from.
 func (f *File) FileLayer() FileLayer {
-	base := f
-	if f.base != nil {
-		base = f.base
-	}
 	source := func(key string) Source {
-		if base.envKeys[key] {
+		if f.envKeys[key] {
 			return SourceEnv
 		}
 		return SourceFile
 	}
 	var out FileLayer
-	for name, p := range base.Providers {
+	for name, p := range f.Providers {
 		if out.Providers == nil {
 			out.Providers = map[string]FileProvider{}
 		}
 		src := SourceFile
-		if name == base.envProvider {
+		if name == f.envProvider {
 			src = SourceEnv
 		}
-		out.Providers[name] = FileProvider{Type: p.Type, BaseURL: p.BaseURL, Source: src, Overridden: f.specProviders[name]}
+		out.Providers[name] = FileProvider{Type: p.Type, BaseURL: p.BaseURL, Source: src}
 	}
-	if r := base.Defaults.Models.Review; r != nil {
-		out.Review = FileValue{Value: string(*r), Source: source("models.review"), Overridden: f.specDefaults.Models.Review != nil}
+	if r := f.Defaults.Models.Review; r != nil {
+		out.Review = FileValue{Value: string(*r), Source: source("models.review")}
 	}
-	if r := base.Defaults.Models.Fallback; r != nil {
-		out.Fallback = FileValue{Value: string(*r), Source: source("models.fallback"), Overridden: f.specDefaults.Models.Fallback != nil}
+	if r := f.Defaults.Models.Fallback; r != nil {
+		out.Fallback = FileValue{Value: string(*r), Source: source("models.fallback")}
 	}
-	d, spec := base.Defaults, f.specDefaults
+	d := f.Defaults
 	for _, x := range []struct {
 		key, value string
-		set, over  bool
+		set        bool
 	}{
-		{keyMode, string(d.Mode), d.Mode != "", spec.Mode != ""},
-		{keyThoroughness, deref(d.Review.Thoroughness), d.Review.Thoroughness != nil, spec.Review.Thoroughness != nil},
-		{keyForks, strconv.FormatBool(d.Forks != nil && *d.Forks), d.Forks != nil, spec.Forks != nil},
-		{keySettle, durationValue(d.Settle), d.Settle != nil, spec.Settle != nil},
+		{keyMode, string(d.Mode), d.Mode != ""},
+		{keyThoroughness, deref(d.Review.Thoroughness), d.Review.Thoroughness != nil},
+		{keyForks, strconv.FormatBool(d.Forks != nil && *d.Forks), d.Forks != nil},
+		{keySettle, durationValue(d.Settle), d.Settle != nil},
 	} {
 		if x.set {
-			v := FileValue{Value: x.value, Source: source(x.key), Overridden: x.over}
-			out.Defaults = append(out.Defaults, FileDefault{Key: x.key, FileValue: v})
+			out.Defaults = append(out.Defaults, FileDefault{Key: x.key, Value: x.value, Source: source(x.key)})
 		}
 	}
-	if e := base.Embedding; e != nil {
-		out.Embedding = &FileEmbedding{
-			BaseURL: e.BaseURL, Model: e.Model, Dims: e.Dims, Source: source("embedding"), Overridden: f.Embedding != e,
-		}
+	if e := f.Embedding; e != nil {
+		out.Embedding = &FileEmbedding{BaseURL: e.BaseURL, Model: e.Model, Dims: e.Dims, Source: source("embedding")}
 	}
 	return out
 }

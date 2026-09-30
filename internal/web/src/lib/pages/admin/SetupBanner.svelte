@@ -1,6 +1,7 @@
 <script lang="ts">
-  // Tells an admin, on every page, while the instance cannot review, and
-  // points at the Configuration page's checklist.
+  // Tells an admin, on every page, while the instance cannot review or its
+  // configuration file's latest content was refused, and points at the
+  // Configuration page.
   import { getJSON } from '../../api.svelte';
   import { href } from '../../router.svelte';
   import { Resource } from '../../resource.svelte';
@@ -18,5 +19,10 @@
   <div class="setup-banner" role="note">
     <span>kritik cannot review yet: {reason}.</span>
     <a class="btn btn-small" href={href({ name: 'console' })}>See what is missing</a>
+  </div>
+{:else if status.data?.configError}
+  <div class="setup-banner" role="note">
+    <span>The configuration file's latest content was refused; the one before it keeps running.</span>
+    <a class="btn btn-small" href={href({ name: 'console' })}>See why</a>
   </div>
 {/if}

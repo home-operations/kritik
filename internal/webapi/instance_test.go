@@ -53,19 +53,15 @@ connections:
 
 // TestInstanceSettingsFileLayer: the providers, default models and
 // embedder the file and the environment set are listed with their source,
-// whatever the spec lays over them, and without their keys.
+// and without their keys.
 func TestInstanceSettingsFileLayer(t *testing.T) {
 	t.Setenv("TEST_KEY", "sk-secret")
 	t.Setenv("KRITIK_DEFAULTS_MODELS_REVIEW", "gw/big")
-	base, err := configfile.Parse([]byte(`providers:
+	f, err := configfile.Parse([]byte(`providers:
   gw: { type: openai, baseUrl: "https://kritik:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
 defaults: { models: { fallback: gw/small }, mode: agentic }
 embedding: { baseUrl: https://embed.example/v1, apiKey: { env: TEST_KEY }, model: e1, dims: 8 }
 `))
-	if err != nil {
-		t.Fatal(err)
-	}
-	f, err := configfile.Merge(base, configfile.InstanceSpec{Spec: json.RawMessage(`{"defaults":{"models":{"review":"gw/huge"}}}`), Revision: 1}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +71,7 @@ embedding: { baseUrl: https://embed.example/v1, apiKey: { env: TEST_KEY }, model
 	}
 	for key, want := range map[string]InstanceSetting{
 		"providers gw":             {"providers", "gw", "openai at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
-		"defaults models.review":   {"defaults", "models.review", "gw/big, overridden by the dashboard", configfile.SourceEnv},
+		"defaults models.review":   {"defaults", "models.review", "gw/big", configfile.SourceEnv},
 		"defaults models.fallback": {"defaults", "models.fallback", "gw/small", configfile.SourceFile},
 		"defaults mode":            {"defaults", "mode", "agentic", configfile.SourceFile},
 		"embedding e1":             {"embedding", "e1", "8 dimensions at https://embed.example/v1", configfile.SourceFile},

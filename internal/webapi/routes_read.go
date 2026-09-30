@@ -194,7 +194,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 	if err != nil {
 		return err
 	}
-	f := store.RepoFilter{Kind: store.RepoKind(r.URL.Query().Get("type")), TurnedOn: t.account.TurnedOn()}
+	f := store.RepoFilter{Kind: store.RepoKind(r.URL.Query().Get("type"))}
 	if !f.Kind.Valid() {
 		return errBadRequest(CodeBadRequest, "type must be forks or archived")
 	}
@@ -385,8 +385,8 @@ func (s *Server) listInstanceSettings(w http.ResponseWriter, r *http.Request) er
 }
 
 // instanceSettings are the settings no account owns: this process's
-// environment, then the running connections, those left out, sign-in, and
-// the instance defaults the file sets under the spec's.
+// environment, then the connections, sign-in, and the instance defaults,
+// each with where it comes from.
 func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting {
 	out := []InstanceSetting{}
 	add := func(section, key, value string, source configfile.Source) {
@@ -400,21 +400,11 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		add("environment", e.Name, withoutCredentials(e.Value), source)
 	}
 	for _, in := range f.Connections {
-		source := configfile.SourceDashboard
-		switch {
-		case f.ConnectionFromEnv(in.Name):
+		source := configfile.SourceFile
+		if f.ConnectionFromEnv(in.Name) {
 			source = configfile.SourceEnv
-		case in.Origin() == configfile.OriginFile:
-			source = configfile.SourceFile
 		}
 		add("connections", in.Name, strings.Join(in.Accounts, ", ")+", webhook /hooks/"+in.Name, source)
-	}
-	for _, sk := range f.Skipped() {
-		source := configfile.SourceFile
-		if f.ConnectionFromEnv(sk.Name) {
-			source = configfile.SourceEnv
-		}
-		add("connections", sk.Name, "left out: "+sk.Reason, source)
 	}
 	a := f.Auth
 	// An auth key an environment variable set shows as coming from it.
@@ -444,33 +434,27 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		add("auth", string(s.Type()), value, authFrom(string(s.Type())+".clientId", true))
 	}
 	layer := f.FileLayer()
-	overridden := func(value string, over bool) string {
-		if over {
-			return value + ", overridden by the dashboard"
-		}
-		return value
-	}
 	for _, name := range slices.Sorted(maps.Keys(layer.Providers)) {
 		p := layer.Providers[name]
 		value := string(p.Type)
 		if p.BaseURL != "" {
 			value += " at " + withoutCredentials(p.BaseURL)
 		}
-		add("providers", name, overridden(value, p.Overridden), p.Source)
+		add("providers", name, value, p.Source)
 	}
 	for _, m := range []struct {
 		key string
 		v   configfile.FileValue
 	}{{"models.review", layer.Review}, {"models.fallback", layer.Fallback}} {
 		if m.v.Value != "" {
-			add("defaults", m.key, overridden(m.v.Value, m.v.Overridden), m.v.Source)
+			add("defaults", m.key, m.v.Value, m.v.Source)
 		}
 	}
 	for _, d := range layer.Defaults {
-		add("defaults", d.Key, overridden(d.Value, d.Overridden), d.Source)
+		add("defaults", d.Key, d.Value, d.Source)
 	}
 	if e := layer.Embedding; e != nil {
-		add("embedding", e.Model, overridden(fmt.Sprintf("%d dimensions at %s", e.Dims, withoutCredentials(e.BaseURL)), e.Overridden), e.Source)
+		add("embedding", e.Model, fmt.Sprintf("%d dimensions at %s", e.Dims, withoutCredentials(e.BaseURL)), e.Source)
 	}
 	return out
 }

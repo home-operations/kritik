@@ -20,20 +20,11 @@ const (
 	CodeAmbiguous     ErrorCode = "ambiguous"
 	CodeInternal      ErrorCode = "internal"
 
-	CodeForbidden          ErrorCode = "forbidden"
-	CodeInvalidSpec        ErrorCode = "invalid_spec"
-	CodeRevisionConflict   ErrorCode = "revision_conflict"
-	CodeConfigBlocked      ErrorCode = "config_blocked"
-	CodeManagementDisabled ErrorCode = "management_disabled"
-	CodeNoHead             ErrorCode = "no_head"
-	CodeNotCancelable      ErrorCode = "not_cancelable"
-	CodeActionsDisabled    ErrorCode = "actions_disabled"
-	CodeAlreadyQueued      ErrorCode = "already_queued"
-	CodeReenterSecret      ErrorCode = "reenter_secret"
-	// CodeReindexRequired refuses a write that changes the embedder's model
-	// or dimension, which rebuilds every repository's index, until the
-	// client confirms it with UpdateConfigRequest.ConfirmReindex.
-	CodeReindexRequired ErrorCode = "reindex_required"
+	CodeForbidden       ErrorCode = "forbidden"
+	CodeNoHead          ErrorCode = "no_head"
+	CodeNotCancelable   ErrorCode = "not_cancelable"
+	CodeActionsDisabled ErrorCode = "actions_disabled"
+	CodeAlreadyQueued   ErrorCode = "already_queued"
 	// CodeForgeError is GitHub failing or refusing a call an admin asked
 	// for; the message is GitHub's.
 	CodeForgeError ErrorCode = "forge_error"
@@ -47,7 +38,6 @@ type apiError struct {
 	status  int
 	code    ErrorCode
 	message string
-	details json.RawMessage
 }
 
 func (e *apiError) Error() string { return string(e.code) + ": " + e.message }
@@ -60,18 +50,9 @@ func errBadRequest(code ErrorCode, message string) error {
 	return &apiError{status: http.StatusBadRequest, code: code, message: message}
 }
 
-// errStatus is an error with any status, and details when non-nil.
-func errStatus(status int, code ErrorCode, message string, details any) error {
-	e := &apiError{status: status, code: code, message: message}
-	if details != nil {
-		e.details, _ = json.Marshal(details) // details are always plain structs
-	}
-	return e
-}
-
-// pathDetails names where in a request body an error is.
-type pathDetails struct {
-	Path string `json:"path"`
+// errStatus is an error with any status.
+func errStatus(status int, code ErrorCode, message string) error {
+	return &apiError{status: status, code: code, message: message}
 }
 
 // writeJSON writes v as the response. Every API response is no-store:
@@ -88,7 +69,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // nothing about its cause.
 func writeError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, err error) {
 	if e, ok := errors.AsType[*apiError](err); ok {
-		writeJSON(w, e.status, ErrorBody{Code: e.code, Message: e.message, Details: e.details})
+		writeJSON(w, e.status, ErrorBody{Code: e.code, Message: e.message})
 		return
 	}
 	switch {

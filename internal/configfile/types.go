@@ -43,20 +43,12 @@ type Forge string
 // can be added back (ADR-0014).
 const ForgeGitHub Forge = "github"
 
-// SecretRef points at where a secret value lives. Exactly one of Env, File
-// or Sealed is set. Values are resolved at load and never written back to
-// disk or the database. Sealed is ciphertext only the instance spec may
-// carry; Env and File would read the server's own environment and
-// filesystem, so only the admin's file may use them.
+// SecretRef points at where a secret value lives: an environment variable
+// or a file, exactly one of them. Values are resolved at load and never
+// written back to disk or the database.
 type SecretRef struct {
-	Env    string `yaml:"env,omitempty"`
-	File   string `yaml:"file,omitempty"`
-	Sealed string `yaml:"sealed,omitempty"`
-}
-
-// Opener decrypts a sealed secret value.
-type Opener interface {
-	Open(sealed string) ([]byte, error)
+	Env  string `yaml:"env,omitempty"`
+	File string `yaml:"file,omitempty"`
 }
 
 // Secret is a resolved secret value. Its String method redacts, so a Secret
@@ -191,9 +183,9 @@ type Defaults struct {
 // field it leaves out inherits (ADR-0010 §2.4). Ignore globs are unioned
 // instead.
 type Overrides struct {
-	// Enabled turns reviews and indexing on or off. Written at the defaults
-	// or an account, it is where each repository without its own entry
-	// starts, so an account can take repositories one at a time.
+	// Enabled is where a repository starts, on or off, until an admin turns
+	// it on or off in the dashboard (ADR-0019 §2.3). A repository entry may
+	// not set it.
 	Enabled *bool      `yaml:"enabled,omitempty"`
 	Models  ModelsSpec `yaml:"models,omitempty"`
 	Filter  *string    `yaml:"filter,omitempty"`
@@ -397,8 +389,6 @@ type Connection struct {
 	Accounts []string `yaml:"accounts"`
 
 	App *GitHubApp `yaml:"app,omitempty"`
-
-	origin Origin
 }
 
 // WebhookSecretValue returns the resolved webhook secret.
@@ -606,28 +596,10 @@ type Egress struct {
 	credentials map[string]Secret
 }
 
-// Spec is the instance configuration the dashboard keeps in Postgres: every
-// setting but sign-in and the connections the file declares. Its secrets
-// are sealed.
-type Spec struct {
-	Providers   map[string]Provider `yaml:"providers,omitempty"`
-	Defaults    Defaults            `yaml:"defaults,omitempty"`
-	Polling     Polling             `yaml:"polling,omitempty"`
-	Indexing    Indexing            `yaml:"indexing,omitempty"`
-	Tools       []Tool              `yaml:"tools,omitempty"`
-	Retention   Retention           `yaml:"retention,omitempty"`
-	Egress      Egress              `yaml:"egress,omitempty"`
-	Embedding   *Embedding          `yaml:"embedding,omitempty"`
-	Connections []Connection        `yaml:"connections,omitempty"`
-	Accounts    []Account           `yaml:"accounts,omitempty"`
-}
-
-// File is the running configuration: the configuration file's sign-in and
-// connections, and the instance spec merged over them. A File returned by
-// Parse carries only the file's layer; Merge adds the spec.
+// File is the running configuration, as the configuration file and its
+// environment set it (ADR-0019 §2.1).
 type File struct {
-	Auth Auth
-	// Connections are the file's and the spec's that run.
+	Auth        Auth
 	Connections []Connection
 	Providers   map[string]Provider
 	Defaults    Defaults
@@ -643,13 +615,7 @@ type File struct {
 	Accounts []Account
 
 	hash string
-	// base is the parsed file a merged File was built from, nil for a
-	// parsed one.
-	base *File
-	spec InstanceSpec
-	// skipped are the file's connections the spec's crowd out, and
-	// unserved the spec's accounts no running connection serves.
-	skipped  []SkippedConnection
+	// unserved are the account entries no connection serves.
 	unserved []Account
 	// envConnection names the connection the environment declared, "" for
 	// none.
@@ -658,16 +624,11 @@ type File struct {
 	// and envKeys holds the instance defaults it set, by dotted path.
 	envProvider string
 	envKeys     map[string]bool
-	// specDefaults are the spec's own defaults, before the file's are laid
-	// under them, and specProviders the names of the spec's providers.
-	specDefaults  Defaults
-	specProviders map[string]bool
 }
 
-// Hash is the hex SHA-256 of the file's bytes as parsed, or for a merged
-// File, of the parsed file's hash and the spec's revision and content. The
-// leader records it in the store after applying the configuration, and
-// followers compare it with their own copy to report drift.
+// Hash is the hex SHA-256 of the file's bytes as parsed. The leader records
+// it in the store after applying the configuration, and followers compare
+// it with their own copy to report drift.
 func (f *File) Hash() string { return f.hash }
 
 // Settings are the effective settings for one repository after defaults,

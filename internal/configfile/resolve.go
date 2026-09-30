@@ -90,11 +90,11 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 }
 
 // Runs reports whether repository fullName of account a, known as t, is
-// reviewed, polled and indexed. An archived repository never is: it is
-// read-only until unarchived. One an admin turned on or off runs as they
-// chose. A fork only is when its own entry turns it on, since an account
-// can reach many forks it never meant kritik to spend on. Any other
-// repository runs as its settings say.
+// reviewed, polled and indexed (ADR-0019 §2.3). An archived repository
+// never is: it is read-only until unarchived. One an admin turned on or off
+// runs as they chose. A fork does not otherwise, since an account can reach
+// many forks it never meant kritik to spend on. Any other repository runs
+// as its settings say.
 func (f *File) Runs(a *Account, fullName string, t RepoTraits) bool {
 	switch {
 	case t.Archived:
@@ -102,29 +102,10 @@ func (f *File) Runs(a *Account, fullName string, t RepoTraits) bool {
 	case t.TurnedOn != nil:
 		return *t.TurnedOn
 	case t.Fork:
-		return a.TurnsOn(fullName)
+		return false
 	default:
 		return f.Settings(a, fullName).Enabled
 	}
-}
-
-// TurnsOn reports whether the account's own entry for repository fullName
-// turns it on, rather than leaving it to the account or the defaults.
-func (a *Account) TurnsOn(fullName string) bool {
-	r := a.Repository(fullName)
-	return r != nil && r.Enabled != nil && *r.Enabled
-}
-
-// TurnedOn lists the full names of the repositories whose own entry turns
-// them on.
-func (a *Account) TurnedOn() []string {
-	var out []string
-	for _, r := range a.Repositories {
-		if r.Enabled != nil && *r.Enabled {
-			out = append(out, a.Name+"/"+r.Name)
-		}
-	}
-	return out
 }
 
 // Source is the layer a setting's value comes from.
@@ -136,11 +117,10 @@ const (
 	SourceDefault Source = "default"
 	SourceEnv     Source = "env"
 	SourceFile    Source = "file"
-	// SourceDashboard is the instance spec, SourceDefaults its defaults and
-	// SourceAccount an account's entry or one of its repository entries.
-	SourceDashboard Source = "dashboard"
-	SourceDefaults  Source = "defaults"
-	SourceAccount   Source = "account"
+	// SourceDefaults is the file's defaults and SourceAccount an account's
+	// entry or one of its repository entries.
+	SourceDefaults Source = "defaults"
+	SourceAccount  Source = "account"
 )
 
 // Sources says, for each setting the policy table lets an admin write,
@@ -153,13 +133,7 @@ func (f *File) Sources(a *Account, fullName string) map[string]Source {
 		spec   any
 		source Source
 	}
-	// A parsed File's defaults are the file's alone; a merged one's lay the
-	// spec's over the file's.
-	scopes := []scope{{&f.Defaults, SourceFile}}
-	if f.base != nil {
-		scopes = []scope{{&f.base.Defaults, SourceFile}, {&f.specDefaults, SourceDefaults}}
-	}
-	scopes = append(scopes, scope{a, SourceAccount})
+	scopes := []scope{{&f.Defaults, SourceDefaults}, {a, SourceAccount}}
 	if r := a.Repository(fullName); r != nil {
 		scopes = append(scopes, scope{r, SourceAccount})
 	}
@@ -174,7 +148,7 @@ func (f *File) Sources(a *Account, fullName string) map[string]Source {
 				out[p.Key] = sc.source
 			}
 		}
-		if out[p.Key] == SourceFile && f.envKeys[p.Key] {
+		if out[p.Key] == SourceDefaults && f.envKeys[p.Key] {
 			out[p.Key] = SourceEnv
 		}
 	}

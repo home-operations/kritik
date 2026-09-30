@@ -100,29 +100,6 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
-// checkAccountEnabled applies twoAccounts with alpha's repositories off,
-// asserts alpha/one, listed without an enabled of its own, is recorded off,
-// and applies twoAccounts again.
-func checkAccountEnabled(ctx context.Context, t *testing.T, s *Store) {
-	t.Helper()
-	off := strings.Replace(twoAccounts, "    name: alpha\n", "    name: alpha\n    enabled: false\n", 1)
-	if err := s.ApplyConfig(ctx, parse(t, off)); err != nil {
-		t.Fatalf("ApplyConfig: %v", err)
-	}
-	defer func() {
-		if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
-			t.Fatalf("ApplyConfig: %v", err)
-		}
-	}()
-	var enabled bool
-	if err := s.owner.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'alpha/one'`).Scan(&enabled); err != nil {
-		t.Fatal(err)
-	}
-	if enabled {
-		t.Fatal("alpha/one is enabled, though alpha turns its repositories off")
-	}
-}
-
 const alphaEntry = `
 accounts:
   - forge: github
@@ -130,7 +107,6 @@ accounts:
     repositories:
       - name: one
       - name: two
-        enabled: false
 `
 
 // twoAccounts serves alpha and beta; alphaAccount, alpha alone.
@@ -238,19 +214,24 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 		}
 	})
 
-	t.Run("disabled repository is recorded as disabled", func(t *testing.T) {
+	t.Run("a listed repository is recorded enabled whatever its account starts it as", func(t *testing.T) {
+		off := strings.Replace(twoAccounts, "    name: alpha\n", "    name: alpha\n    enabled: false\n", 1)
+		if err := s.ApplyConfig(ctx, parse(t, off)); err != nil {
+			t.Fatalf("ApplyConfig: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := s.ApplyConfig(context.Background(), parse(t, twoAccounts)); err != nil {
+				t.Errorf("ApplyConfig: %v", err)
+			}
+		})
 		var enabled bool
 		var disabledAt *time.Time
 		if err := s.owner.QueryRow(ctx, `SELECT enabled, disabled_at FROM repositories WHERE name = 'alpha/two'`).Scan(&enabled, &disabledAt); err != nil {
 			t.Fatal(err)
 		}
-		if enabled || disabledAt == nil {
-			t.Fatalf("alpha/two enabled=%v disabled_at=%v", enabled, disabledAt)
+		if !enabled || disabledAt != nil {
+			t.Fatalf("alpha/two enabled=%v disabled_at=%v; want it recorded as listed", enabled, disabledAt)
 		}
-	})
-
-	t.Run("a listed repository without its own enabled takes the account's", func(t *testing.T) {
-		checkAccountEnabled(ctx, t, s)
 	})
 
 	t.Run("an account no connection serves any more is disabled and keeps its rows", func(t *testing.T) {
@@ -288,7 +269,7 @@ func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
 	if err := s.ApplyConfig(ctx, listed); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	unlisted := parse(t, strings.Replace(twoAccounts, "      - name: two\n        enabled: false\n", "", 1))
+	unlisted := parse(t, strings.Replace(twoAccounts, "      - name: two\n", "", 1))
 	check := func(wantOrigin string, wantEnabled bool) {
 		t.Helper()
 		var origin string
@@ -309,7 +290,7 @@ func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
 	if err := s.ApplyConfig(ctx, listed); err != nil {
 		t.Fatalf("ApplyConfig listed: %v", err)
 	}
-	check("dashboard", false)
+	check("dashboard", true)
 }
 
 // TestRepositoryNamesIgnoreCase: GitHub's spelling of a listed repository
@@ -695,7 +676,7 @@ func TestSweepDisabledIndexes(t *testing.T) {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
 	// Both alpha repositories get an active generation with one chunk;
-	// alpha/two is the disabled one.
+	// an admin turns alpha/two off, and the App loses alpha/one later.
 	runs := map[string]string{}
 	for _, name := range []string{"alpha/one", "alpha/two"} {
 		var run string
@@ -729,21 +710,41 @@ func TestSweepDisabledIndexes(t *testing.T) {
 		}
 	}
 
+	exec := func(sql string) {
+		t.Helper()
+		if _, err := s.owner.Exec(ctx, sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET turned_on = NULL, turned_at = NULL, enabled = true, disabled_at = NULL
+			WHERE name IN ('alpha/one', 'alpha/two')`)
+	})
+	alpha := accountID(t, s, "alpha")
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		return TurnOn(ctx, tx, configfile.RepositoryID(alpha, "alpha/two"), false)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	sweep(0)
 	if active, status, chunks := state("alpha/two"); !active || status != "completed" || chunks != 1 {
 		t.Fatalf("within the grace: active=%v status=%s chunks=%d, want the index kept", active, status, chunks)
 	}
-	if _, err := s.owner.Exec(ctx, `UPDATE repositories SET disabled_at = now() - interval '2 hours' WHERE name = 'alpha/two'`); err != nil {
-		t.Fatal(err)
-	}
+	exec(`UPDATE repositories SET turned_at = now() - interval '2 hours' WHERE name = 'alpha/two'`)
 	sweep(1)
 	if active, status, chunks := state("alpha/two"); active || status != "superseded" || chunks != 0 {
-		t.Fatalf("past the grace: active=%v status=%s chunks=%d, want the index dropped", active, status, chunks)
+		t.Fatalf("turned off past the grace: active=%v status=%s chunks=%d, want the index dropped", active, status, chunks)
 	}
 	if active, status, chunks := state("alpha/one"); !active || status != "completed" || chunks != 1 {
-		t.Fatalf("enabled repository: active=%v status=%s chunks=%d, want the index kept", active, status, chunks)
+		t.Fatalf("a repository that runs: active=%v status=%s chunks=%d, want the index kept", active, status, chunks)
 	}
 	sweep(0)
+	exec(`UPDATE repositories SET enabled = false, disabled_at = now() - interval '2 hours' WHERE name = 'alpha/one'`)
+	sweep(1)
+	if active, status, chunks := state("alpha/one"); active || status != "superseded" || chunks != 0 {
+		t.Fatalf("lost past the grace: active=%v status=%s chunks=%d, want the index dropped", active, status, chunks)
+	}
 }
 
 // TestFindRepo: a repository is found by its full name within the account

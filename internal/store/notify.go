@@ -67,8 +67,8 @@ func parseEvent(payload string) (Event, error) {
 	return Event{AccountID: p.AccountID, Kind: kind, ID: p.ID, ReviewID: p.ReviewID}, nil
 }
 
-// ListenHandlers bundles the callbacks Listen drives. OnEvent, OnConfig and
-// OnReconnect are all funneled through the same bounded queue and invoked
+// ListenHandlers bundles the callbacks Listen drives. OnEvent and
+// OnReconnect are both funneled through the same bounded queue and invoked
 // synchronously, one at a time, in the order they were queued, from a
 // single dedicated goroutine that drains it (see Listen's doc comment) —
 // so none of them may block for long: a slow callback delays every
@@ -76,7 +76,7 @@ func parseEvent(payload string) (Event, error) {
 // should hand off to its own goroutine or queue rather than doing it
 // inline.
 //
-// Once the queue is full, a new OnEvent/OnConfig notification is dropped
+// Once the queue is full, a new OnEvent notification is dropped
 // (see dropWarner). OnReconnect is treated as more important than any
 // single dropped event — a consumer that misses it can go on serving
 // stale state indefinitely — so if the queue is full when OnReconnect is
@@ -89,11 +89,9 @@ func parseEvent(payload string) (Event, error) {
 // loop (i.e. LISTEN itself succeeded). A NOTIFY sent while no listener was
 // connected is lost, so consumers use OnReconnect to re-fetch whatever
 // state they'd otherwise have learned about incrementally: e.g. the web
-// SSE broadcaster telling browsers to resync, or a config source
-// re-merging the instance spec.
+// SSE broadcaster telling browsers to resync.
 type ListenHandlers struct {
 	OnEvent     func(Event)
-	OnConfig    func(revision string)
 	OnReconnect func()
 }
 
@@ -144,8 +142,8 @@ func (w *dropWarner) drop() {
 	}
 }
 
-// Listen holds one dedicated connection LISTENing on kritik_events and
-// kritik_config, reconnecting with backoff on any error, until ctx ends
+// Listen holds one dedicated connection LISTENing on kritik_events,
+// reconnecting with backoff on any error, until ctx ends
 // (the only condition under which Listen returns).
 //
 // The connection's read loop never calls a handler directly: it decodes
@@ -157,8 +155,7 @@ func (w *dropWarner) drop() {
 // resulting callback contract.
 //
 // A malformed kritik_events payload is logged and skipped rather than
-// ending the listener. kritik_config payloads are the instance spec's
-// revision, passed to OnConfig unparsed.
+// ending the listener.
 func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
 	notifications := make(chan func(), listenBufferSize)
 	consumerDone := make(chan struct{})
@@ -238,9 +235,6 @@ func (s *Store) listenOnce(
 	if _, err := conn.Exec(ctx, `LISTEN kritik_events`); err != nil {
 		return false, fmt.Errorf("store: listen kritik_events: %w", err)
 	}
-	if _, err := conn.Exec(ctx, `LISTEN kritik_config`); err != nil {
-		return false, fmt.Errorf("store: listen kritik_config: %w", err)
-	}
 
 	// From here on this attempt counts as having reached the loop,
 	// regardless of how WaitForNotification eventually ends.
@@ -258,27 +252,18 @@ func (s *Store) listenOnce(
 			}
 			return reachedLoop, fmt.Errorf("store: wait for notification: %w", err)
 		}
-		var fn func()
-		switch n.Channel {
-		case "kritik_events":
-			event, err := parseEvent(n.Payload)
-			if err != nil {
-				s.logger.Warn("dropped malformed event notification", "error", err, "payload", n.Payload)
-				continue
-			}
-			if handlers.OnEvent == nil {
-				continue
-			}
-			fn = func() { handlers.OnEvent(event) }
-		case "kritik_config":
-			if handlers.OnConfig == nil {
-				continue
-			}
-			revision := n.Payload
-			fn = func() { handlers.OnConfig(revision) }
-		default:
+		if n.Channel != "kritik_events" {
 			continue
 		}
+		event, err := parseEvent(n.Payload)
+		if err != nil {
+			s.logger.Warn("dropped malformed event notification", "error", err, "payload", n.Payload)
+			continue
+		}
+		if handlers.OnEvent == nil {
+			continue
+		}
+		fn := func() { handlers.OnEvent(event) }
 		select {
 		case notifications <- fn:
 		default:

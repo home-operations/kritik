@@ -24,7 +24,7 @@ func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountSco
 	var repos []store.RepoRow
 	var files map[string]store.RepoFileRow
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
-		f := store.RepoFilter{TurnedOn: t.account.TurnedOn()}
+		f := store.RepoFilter{}
 		page := store.Page{Limit: rulesRepoPage}
 		for {
 			rows, next, err := store.ListRepos(ctx, tx, f, page)

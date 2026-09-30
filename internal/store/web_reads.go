@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -264,8 +263,7 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 type RepoKind string
 
 // Repository kinds. RepoInUse, the default, is the ones kritik can run:
-// neither archived nor a fork, but for the forks turned on one by one, in
-// the dashboard or by their entries.
+// neither archived nor a fork, but for the forks an admin turned on.
 // RepoForks is every fork not archived, and RepoArchived every archived
 // repository.
 const (
@@ -279,12 +277,9 @@ func (k RepoKind) Valid() bool {
 	return k == RepoInUse || k == RepoForks || k == RepoArchived
 }
 
-// RepoFilter picks the repositories a list shows: those of Kind, where
-// TurnedOn names, in any case, the forks whose entries let RepoInUse take
-// them.
+// RepoFilter picks the repositories a list shows: those of Kind.
 type RepoFilter struct {
-	Kind     RepoKind
-	TurnedOn []string
+	Kind RepoKind
 }
 
 // ListRepos returns a page of the account's repositories f picks, ordered
@@ -293,18 +288,14 @@ func ListRepos(ctx context.Context, tx pgx.Tx, f RepoFilter, p Page) ([]RepoRow,
 	if err := p.check(); err != nil {
 		return nil, nil, err
 	}
-	turnedOn := make([]string, len(f.TurnedOn))
-	for i, n := range f.TurnedOn {
-		turnedOn[i] = strings.ToLower(n)
-	}
 	rows, err := tx.Query(ctx, `SELECT `+repoColumns+`
 		WHERE ($1 OR (r.name, r.id) > ($2, $3::uuid))
 		  AND CASE $5
 			WHEN 'forks' THEN r.fork AND NOT r.archived
 			WHEN 'archived' THEN r.archived
-			ELSE NOT r.archived AND (NOT r.fork OR r.turned_on OR lower(r.name) = ANY($6))
+			ELSE NOT r.archived AND (NOT r.fork OR coalesce(r.turned_on, false))
 		  END
-		ORDER BY r.name, r.id LIMIT $4`, p.After.First(), p.After.S, p.afterID(), p.Limit+1, string(f.Kind), turnedOn)
+		ORDER BY r.name, r.id LIMIT $4`, p.After.First(), p.After.S, p.afterID(), p.Limit+1, string(f.Kind))
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list repositories: %w", err)
 	}

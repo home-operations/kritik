@@ -157,18 +157,6 @@
   font-size: 13px;
 }
 
-.spec-tree {
-  font-size: 12px;
-  margin: 0;
-  padding-left: 14px;
-}
-.spec-tree > li {
-  list-style: none;
-  padding: 2px 0;
-}
-.spec-key {
-  color: var(--muted);
-}
 .detail-json {
   margin: 0;
   font-family: var(--font-mono);
@@ -190,6 +178,9 @@
   font-size: 13px;
 }
 /* The Configuration page's setup steps, each done or with what to set. */
+.config-refused {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
 .checklist {
   display: flex;
   flex-direction: column;

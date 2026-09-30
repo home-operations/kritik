@@ -21,7 +21,7 @@
 {{- fail "web.url must be an http(s) URL" -}}
 {{- end -}}
 {{- if and (not .Values.roles.all.enabled) (not .Values.roles.web.enabled) -}}
-{{- fail "the split topology needs roles.web: kritik is configured in its dashboard" -}}
+{{- fail "the split topology needs roles.web: it serves the dashboard at web.url" -}}
 {{- end -}}
 {{- range $role := $roles }}
 {{- $spec := index $.Values.roles $role }}
@@ -120,20 +120,6 @@ spec:
                 secretKeyRef:
                   name: {{ tpl $.Values.database.app.existingSecret $ | quote }}
                   key: {{ $.Values.database.app.key | quote }}
-            {{- with $.Values.dashboard.keySecret.name }}
-            - name: KRITIK_DASHBOARD_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ tpl . $ | quote }}
-                  key: {{ $.Values.dashboard.keySecret.key | quote }}
-            {{- end }}
-            {{- with $.Values.dashboard.oldKeysSecret.name }}
-            - name: KRITIK_DASHBOARD_OLD_KEYS
-              valueFrom:
-                secretKeyRef:
-                  name: {{ tpl . $ | quote }}
-                  key: {{ $.Values.dashboard.oldKeysSecret.key | quote }}
-            {{- end }}
             {{- if and (ne $role "ingest") (ne $role "web") }}
             - name: KRITIK_DATABASE_OWNER_URL
               valueFrom:

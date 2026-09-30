@@ -70,7 +70,7 @@ func (s *Store) ApplyConfig(ctx context.Context, f *configfile.File) error {
 			return err
 		}
 		for j := range a.Repositories {
-			if err := upsertRepository(ctx, tx, f, a, &a.Repositories[j]); err != nil {
+			if err := upsertRepository(ctx, tx, a, &a.Repositories[j]); err != nil {
 				return err
 			}
 		}
@@ -174,20 +174,18 @@ func upsertConnection(ctx context.Context, tx pgx.Tx, in *configfile.Connection)
 	return nil
 }
 
-// upsertRepository also takes over a forge-discovered row: listing a
-// repository the poller or a webhook already found makes it declared. A
-// known row keeps its spelling, which is GitHub's once it reported one.
-func upsertRepository(ctx context.Context, tx pgx.Tx, f *configfile.File, a *configfile.Account, r *configfile.Repository) error {
+// upsertRepository records a repository the configuration lists, enabled
+// as listed: whether it runs is File.Runs's call. It also takes over a
+// forge-discovered row: listing a repository the poller or a webhook
+// already found makes it declared. A known row keeps its spelling, which is
+// GitHub's once it reported one.
+func upsertRepository(ctx context.Context, tx pgx.Tx, a *configfile.Account, r *configfile.Repository) error {
 	name := a.Name + "/" + r.Name
-	enabled := f.Settings(a, name).Enabled
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO repositories (id, account_id, name, managed_by, enabled, disabled_at)
-		VALUES ($1, $2, $3, 'dashboard', $4, CASE WHEN $4 THEN NULL ELSE now() END)
-		ON CONFLICT (id) DO UPDATE SET
-			managed_by = 'dashboard', enabled = EXCLUDED.enabled,
-			disabled_at = CASE WHEN EXCLUDED.enabled THEN NULL ELSE coalesce(repositories.disabled_at, now()) END,
-			updated_at = now()`,
-		configfile.RepositoryID(a.ID(), name), a.ID(), name, enabled); err != nil {
+		INSERT INTO repositories (id, account_id, name, managed_by, enabled)
+		VALUES ($1, $2, $3, 'dashboard', true)
+		ON CONFLICT (id) DO UPDATE SET managed_by = 'dashboard', enabled = true, disabled_at = NULL, updated_at = now()`,
+		configfile.RepositoryID(a.ID(), name), a.ID(), name); err != nil {
 		return fmt.Errorf("store: upsert repository %s: %w", name, err)
 	}
 	return nil

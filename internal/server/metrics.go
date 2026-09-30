@@ -30,18 +30,16 @@ type ConfigErrorStage string
 
 // Configuration error stages.
 const (
-	// ConfigErrorMerge is the file or the instance spec failing to parse,
-	// resolve or merge, which leaves the last good snapshot live, or the
-	// merge leaving out a file connection whose name or account a dashboard
-	// connection holds.
-	ConfigErrorMerge ConfigErrorStage = "merge"
+	// ConfigErrorLoad is the file's latest content failing to parse,
+	// resolve or validate, which leaves the last good configuration live.
+	ConfigErrorLoad ConfigErrorStage = "load"
 	// ConfigErrorApply is the leader's store refusing the merged snapshot;
 	// the last applied state stays live.
 	ConfigErrorApply ConfigErrorStage = "apply"
 )
 
 // Valid reports whether s is a stage.
-func (s ConfigErrorStage) Valid() bool { return s == ConfigErrorMerge || s == ConfigErrorApply }
+func (s ConfigErrorStage) Valid() bool { return s == ConfigErrorLoad || s == ConfigErrorApply }
 
 // ConfigErrorGauge is 1 for a stage while its latest attempt failed.
 type ConfigErrorGauge struct{ g *prometheus.GaugeVec }
@@ -50,11 +48,10 @@ type ConfigErrorGauge struct{ g *prometheus.GaugeVec }
 func NewConfigErrorGauge(reg prometheus.Registerer) *ConfigErrorGauge {
 	g := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "kritik_config_error",
-		Help: "1 while the latest attempt at a stage (merge, apply) of loading the configuration failed, " +
-			"or the merge left a file connection out, else 0.",
+		Help: "1 while the latest attempt at a stage (load, apply) of the configuration failed, else 0.",
 	}, []string{"stage"})
 	reg.MustRegister(g)
-	for _, s := range []ConfigErrorStage{ConfigErrorMerge, ConfigErrorApply} {
+	for _, s := range []ConfigErrorStage{ConfigErrorLoad, ConfigErrorApply} {
 		g.WithLabelValues(string(s)).Set(0)
 	}
 	return &ConfigErrorGauge{g: g}

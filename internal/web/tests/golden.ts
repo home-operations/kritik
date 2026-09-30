@@ -35,13 +35,7 @@ export const rule = golden<T.Rule>('rule');
 export const usageSeries = golden<T.UsageSeries>('usage_series');
 export const liveEvent = golden<T.LiveEvent>('event');
 export const meta = golden<T.Meta>('meta');
-export const accountConfig = golden<T.AccountConfig>('account_config');
-export const configWriteResult = golden<T.ConfigWriteResult>('config_write_result');
-export const instanceConfig = golden<T.InstanceConfig>('instance_config');
-export const appManifestForm = golden<T.AppManifestForm>('app_manifest_form');
-export const appManifestResult = golden<T.AppManifestResult>('app_manifest_result');
 export const appInstallation = golden<T.AppInstallation>('app_installation');
-export const testResult = golden<T.TestResult>('test_result');
 export const setupStatus = golden<T.SetupStatus>('setup_status');
 export const auditEvent = golden<T.AuditEvent>('audit_event');
 export const accepted = golden<T.Accepted>('accepted');
@@ -91,8 +85,6 @@ export function defaultApi(): [RegExp, Body][] {
     [/\/api\/v1\/admin\/instance$/, [instanceSetting]],
     [/\/api\/v1\/admin\/connections$/, [golden<T.AccountDetail>('account_detail').connection]],
     [/\/api\/v1\/admin\/setup$/, setupStatus],
-    [/\/api\/v1\/app\/manifests\/collect$/, []],
-    [/\/api\/v1\/config$/, instanceConfig],
     [new RegExp(`${t}/repos$`), repoPage],
     [new RegExp(`${t}/repos/alpha/one$`), repoDetail],
     [

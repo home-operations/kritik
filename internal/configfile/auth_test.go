@@ -61,10 +61,6 @@ func TestAuth(t *testing.T) {
 	if !a.Configured() || (Auth{}).Configured() {
 		t.Fatal("Configured")
 	}
-	m, err := Merge(f, InstanceSpec{}, nil)
-	if err != nil || len(m.Auth.SignIns()) != 2 {
-		t.Fatalf("merge lost the auth section: %v", err)
-	}
 }
 
 func TestAuthRejects(t *testing.T) {
@@ -84,7 +80,7 @@ func TestAuthRejects(t *testing.T) {
 		{"no client id", rep("clientId: kritik", "clientId: \"\""), "auth.oidc.clientId is required"},
 		{"unset secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ env: TEST_NOPE }"), "auth.oidc.clientSecret"},
 		{"empty secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ env: TEST_EMPTY }"), "auth.oidc.clientSecret resolved to an empty value"},
-		{"sealed secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ sealed: abc }"), "sealed values are only valid"},
+		{"sealed secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ sealed: abc }"), "field sealed not found"},
 		{"empty password", rep("TEST_ADMIN_PASSWORD", "TEST_EMPTY"), "auth.admin.password resolved to an empty value"},
 		{"blank admin user", rep("  admin:\n", "  admin:\n    user: ' '\n"), "auth.admin.user must not be blank"},
 		{"unknown default role", rep("defaultRole: none", "defaultRole: admin"), "auth.oidc.defaultRole must be none or member"},

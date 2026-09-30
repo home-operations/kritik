@@ -253,16 +253,12 @@ Kubernetes: `>=1.25.0-0`
 | auth.sessionTTL | string | `""` | How long a dashboard session lasts (Go duration, 5m to 720h); empty is 12h. |
 | config.existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. |
 | config.extraEnv | list | `[]` | Extra raw env vars merged into every role's container (advanced). |
-| config.file | optional | `{}` | The configuration file, as YAML: `auth`, `connections`, `providers`, part of `defaults` and `embedding`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
+| config.file | optional | `{}` | The configuration file, as YAML: the whole configuration, from `auth` and `connections` to `accounts` and their repositories. Passed through verbatim, not tpl'd. See docs/configuration.md. |
 | config.indexWorkers | int | `1` | Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews. |
 | config.logFormat | string | `"json"` | Log format: json or text. |
 | config.logLevel | string | `"info"` | Log level: debug, info, warn or error. |
 | config.reloadInterval | string | `"10s"` | How often each replica re-reads the file (Go duration). |
 | config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers). |
-| dashboard.keySecret.key | string | `"key"` | Key in that Secret. |
-| dashboard.keySecret.name | string | `""` | Secret holding the key that seals the instance configuration's credentials (`openssl rand -base64 32`); rotate via oldKeysSecret, as losing it makes those credentials unreadable and the pod fail to start. |
-| dashboard.oldKeysSecret.key | string | `"old-keys"` | Key in that Secret. |
-| dashboard.oldKeysSecret.name | optional | `""` | Secret holding retired sealing keys, comma-separated, only to open values sealed under them. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritik_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |

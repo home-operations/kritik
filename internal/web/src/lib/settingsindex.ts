@@ -10,10 +10,9 @@ export interface SettingEntry {
 
 // The Configuration page's sections, in page order.
 export const CONSOLE_SECTIONS: readonly SettingEntry[] = [
-  { label: 'Setup', target: '#op-setup', keywords: 'checklist missing' },
+  { label: 'Setup', target: '#op-setup', keywords: 'checklist missing error refused reload' },
   { label: 'Accounts', target: '#op-accounts', keywords: 'served usage' },
   { label: 'Instance settings', target: '#op-instance', keywords: 'environment sources defaults providers embedding' },
-  { label: 'Instance configuration', target: '#op-config', keywords: 'spec json' },
   { label: 'Connections', target: '#op-connections', keywords: 'github app installations uninstall' },
   { label: 'Admin audit log', target: '#op-audit', keywords: 'history' },
 ];

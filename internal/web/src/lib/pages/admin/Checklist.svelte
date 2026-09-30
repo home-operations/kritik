@@ -1,6 +1,7 @@
 <script lang="ts">
   // What the instance still lacks before it reviews, each step with what to
-  // set in the configuration file.
+  // set in the configuration file, and why the file's latest content was
+  // refused, when it was.
   import { getJSON } from '../../api.svelte';
   import { Resource } from '../../resource.svelte';
   import { checklist } from '../../setup';
@@ -23,6 +24,14 @@
       <h2 id="op-setup">Setup</h2>
       <span class="small muted">{items.filter((i) => i.done).length} of {items.length} done</span>
     </header>
+    {#if status.data?.configError}
+      <div class="panel-body">
+        <p class="notice config-refused" role="alert">
+          The configuration file's latest content was refused, so the one before it keeps running:
+          <span class="mono">{status.data.configError}</span>
+        </p>
+      </div>
+    {/if}
     <ul class="checklist">
       {#each items as item (item.label)}
         <li class:done={item.done}>

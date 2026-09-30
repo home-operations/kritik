@@ -85,9 +85,9 @@ func TurnedOn(ctx context.Context, tx pgx.Tx, id string) (*bool, error) {
 }
 
 // TurnOn records an admin's choice to review the repository with id or
-// not.
+// not, and when it was made.
 func TurnOn(ctx context.Context, tx pgx.Tx, id string, on bool) error {
-	tag, err := tx.Exec(ctx, `UPDATE repositories SET turned_on = $2, updated_at = now() WHERE id = $1`, id, on)
+	tag, err := tx.Exec(ctx, `UPDATE repositories SET turned_on = $2, turned_at = now(), updated_at = now() WHERE id = $1`, id, on)
 	if err != nil {
 		return fmt.Errorf("store: turn repository %s on or off: %w", id, err)
 	}

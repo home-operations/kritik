@@ -182,7 +182,7 @@ func (a Auth) FromEnv(path string) bool { return a.fromEnv[path] }
 
 func (a *Auth) resolve() error {
 	if !a.Admin.Password.empty() {
-		v, err := a.Admin.Password.resolve(fileRefs)
+		v, err := a.Admin.Password.resolve()
 		if err != nil {
 			return fmt.Errorf("configfile: auth.admin.password: %w", err)
 		}
@@ -198,7 +198,7 @@ func (a *Auth) resolve() error {
 		}
 		s.signIn.typ = s.typ
 		where := "auth." + string(s.typ)
-		v, err := s.signIn.ClientSecret.resolve(fileRefs)
+		v, err := s.signIn.ClientSecret.resolve()
 		if err != nil {
 			return fmt.Errorf("configfile: %s.clientSecret: %w", where, err)
 		}

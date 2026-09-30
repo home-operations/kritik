@@ -51,7 +51,7 @@ accounts:
       - name: kopiur
         filter: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
       - name: charts-mirror
-        enabled: false
+        mode: single
 
   - forge: github
     name: onedr0p

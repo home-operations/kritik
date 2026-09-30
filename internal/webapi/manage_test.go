@@ -34,7 +34,7 @@ func TestMetaNeedsNoSession(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.Management || m.WebURL != "https://kritik.example" {
+	if m.WebURL != "https://kritik.example" {
 		t.Errorf("meta = %+v", m)
 	}
 	if w.Header().Get("Cache-Control") != "no-store" {
@@ -46,7 +46,6 @@ func TestManagementRefusals(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
 	admin := &auth.Principal{Admin: true}
 	member := memberOf(t, ts.file, "alpha")
-	const body = `{"revision":1,"spec":{}}`
 	tests := []struct {
 		name   string
 		p      *auth.Principal
@@ -54,14 +53,10 @@ func TestManagementRefusals(t *testing.T) {
 		status int
 		code   ErrorCode
 	}{
-		{"the instance spec needs an admin", member, httptest.NewRequest("GET", "/api/v1/config", nil), 403, CodeForbidden},
-		{"a spec write needs an admin", member, mutate("PUT", "/api/v1/config", body), 403, CodeForbidden},
-		{"a spec write needs the sealing key", admin, mutate("PUT", "/api/v1/config", body), 503, CodeManagementDisabled},
-		{"an account write needs an admin", member, mutate("PUT", "/api/v1/accounts/github/alpha/config", body), 403, CodeForbidden},
-		{"an account write needs the sealing key", admin, mutate("PUT", "/api/v1/accounts/github/alpha/config", body), 503, CodeManagementDisabled},
-		{"a write to an unreadable account", member, mutate("PUT", "/api/v1/accounts/github/beta/config", body), 404, CodeNotFound},
-		{"a write to an unknown account", admin, mutate("PUT", "/api/v1/accounts/github/gamma/config", body), 404, CodeNotFound},
-		{"config of an unreadable account", member, httptest.NewRequest("GET", "/api/v1/accounts/github/beta/config", nil), 404, CodeNotFound},
+		{"the configuration is not served", admin, httptest.NewRequest("GET", "/api/v1/config", nil), 404, CodeNotFound},
+		{"turning on as a member", member, mutate("PUT", "/api/v1/accounts/github/alpha/repos/o/r/turned-on", `{"on":true}`), 403, CodeForbidden},
+		{"turning on in an unreadable account", member, mutate("PUT", "/api/v1/accounts/github/beta/repos/o/r/turned-on", `{"on":true}`), 404,
+			CodeNotFound},
 		{"rerun as a member", member, mutate("POST", "/api/v1/accounts/github/alpha/pulls/o/r/1/rerun", ""), 403, CodeForbidden},
 		{"cancel as a member", member, mutate("POST", "/api/v1/accounts/github/alpha/reviews/x/cancel", ""), 403, CodeForbidden},
 		{"reindex as a member", member, mutate("POST", "/api/v1/accounts/github/alpha/repos/o/r/reindex", ""), 403, CodeForbidden},
@@ -86,7 +81,7 @@ func TestManagementNeedsSameOrigin(t *testing.T) {
 	ts := newTestServer(t, "https://kritik.example")
 	admin := &auth.Principal{Admin: true}
 	for _, route := range []struct{ method, path string }{
-		{"PUT", "/api/v1/config"}, {"PUT", "/api/v1/accounts/github/alpha/config"},
+		{"PUT", "/api/v1/accounts/github/alpha/repos/o/r/turned-on"},
 		{"POST", "/api/v1/accounts/github/alpha/pulls/o/r/1/rerun"}, {"POST", "/api/v1/accounts/github/alpha/reviews/x/cancel"},
 		{"POST", "/api/v1/accounts/github/alpha/repos/o/r/reindex"},
 	} {

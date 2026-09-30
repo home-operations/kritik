@@ -1,9 +1,9 @@
 // Package webapi is the dashboard's JSON API and static UI server: reads
-// over each account's reviews, repositories, usage and queue; the admin's
-// configuration, setup wizard, GitHub App registration and connections;
-// re-runs, cancels and reindexes with their audit log; and the server-sent
-// event stream that keeps the UI live. The web role runs it; internal/auth
-// decides who a request acts as.
+// over each account's reviews, repositories, usage and queue, and over the
+// running configuration, its setup and connections; re-runs, cancels,
+// reindexes and turning repositories on or off, with their audit log; and
+// the server-sent event stream that keeps the UI live. The web role runs
+// it; internal/auth decides who a request acts as.
 package webapi
 
 import (
@@ -20,7 +20,6 @@ import (
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/sealbox"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -29,9 +28,6 @@ type Config struct {
 	Store   *store.Store
 	Current *configfile.Current
 	Auth    *auth.Handler
-	// Keyring seals the instance spec's secrets; nil disables writing the
-	// spec.
-	Keyring *sealbox.Keyring
 	// Actions queues re-runs, cancels and reindexes; nil disables them.
 	Actions Actions
 	// Version is the build's version, shown by /api/v1/meta.
@@ -49,27 +45,31 @@ type Config struct {
 	// Env is this process's environment as the configuration read it,
 	// shown to admins; secrets show only whether they are set.
 	Env []config.EnvVar
-	// GitHubAPI is the GitHub API the App manifest flow converts its code
-	// at, "" for api.github.com; tests point it at a server of their own.
+	// ConfigError is why the configuration file's latest content was
+	// refused, nil while the running configuration is its latest content;
+	// nil reports none.
+	ConfigError func() error
+	// GitHubAPI is the GitHub API the connections' Apps call, "" for
+	// api.github.com; tests point it at a server of their own.
 	GitHubAPI string
 }
 
 // Server serves the dashboard.
 type Server struct {
-	store     *store.Store
-	current   *configfile.Current
-	auth      *auth.Handler
-	keyring   *sealbox.Keyring
-	actions   Actions
-	version   string
-	webURL    *url.URL
-	ui        fs.FS
-	basePath  string
-	logger    *slog.Logger
-	now       func() time.Time
-	hub       *hub
-	env       []config.EnvVar
-	githubAPI string
+	store       *store.Store
+	current     *configfile.Current
+	auth        *auth.Handler
+	actions     Actions
+	version     string
+	webURL      *url.URL
+	ui          fs.FS
+	basePath    string
+	logger      *slog.Logger
+	now         func() time.Time
+	hub         *hub
+	env         []config.EnvVar
+	configError func() error
+	githubAPI   string
 }
 
 // New builds a Server from cfg.
@@ -80,10 +80,14 @@ func New(cfg Config) *Server {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	if cfg.ConfigError == nil {
+		cfg.ConfigError = func() error { return nil }
+	}
 	return &Server{
-		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, keyring: cfg.Keyring, actions: cfg.Actions, version: cfg.Version,
+		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, actions: cfg.Actions, version: cfg.Version,
 		webURL: cfg.WebURL, ui: cfg.UI, basePath: strings.TrimRight(cfg.WebURL.Path, "/"),
-		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger), env: cfg.Env, githubAPI: cfg.GitHubAPI,
+		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger), env: cfg.Env, configError: cfg.ConfigError,
+		githubAPI: cfg.GitHubAPI,
 	}
 }
 
@@ -145,10 +149,6 @@ func (s *Server) routes() http.Handler {
 	s.auth.Register(signIn)
 	signIn.HandleFunc("/", s.notFound)
 
-	app := http.NewServeMux()
-	s.registerAppPages(app)
-	app.HandleFunc("/", s.notFound)
-
 	ui := s.uiHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -161,9 +161,6 @@ func (s *Server) routes() http.Handler {
 		case strings.HasPrefix(r.URL.Path, "/auth/"):
 			w.Header().Set("Cache-Control", "no-store")
 			signIn.ServeHTTP(w, r)
-		case strings.HasPrefix(r.URL.Path, "/app/"):
-			w.Header().Set("Cache-Control", "no-store")
-			app.ServeHTTP(w, r)
 		default:
 			ui.ServeHTTP(w, r)
 		}
@@ -175,8 +172,6 @@ func (s *Server) routes() http.Handler {
 func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/events", s.hub.serve)
 	s.registerReads(mux)
-	s.registerManage(mux)
-	s.registerApp(mux)
 	s.registerConnections(mux)
 	s.registerSetup(mux)
 	s.registerActions(mux)
@@ -227,11 +222,10 @@ func isBareDir(ui fs.FS, urlPath string) bool {
 	return err != nil
 }
 
-// contentSecurityPolicy allows only the dashboard's own scripts, styles
-// and connections; img-src also admits https for forge avatars, and
-// form-action GitHub, where the App manifest form posts.
+// contentSecurityPolicy allows only the dashboard's own scripts, styles,
+// connections and forms; img-src also admits https for forge avatars.
 const contentSecurityPolicy = "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; " +
-	"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://github.com"
+	"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
