@@ -37,14 +37,19 @@ const (
 	reasonDuplicate    = "duplicate"
 	reasonNotIndexed   = "not-indexed"
 	reasonFork         = "fork"
+	reasonReviewed     = "reviewed"
 )
 
-// ActionBaseline is the poller's synthetic action for a pull request that
-// predates kritik's knowing its connection: it is recorded, not reviewed.
-const ActionBaseline = "baseline"
+// The poller's synthetic actions: ActionPoll for an open pull request it
+// lists, and ActionBaseline for one that predates kritik's knowing its
+// connection, which is recorded, not reviewed.
+const (
+	ActionPoll     = "poll"
+	ActionBaseline = "baseline"
+)
 
 // pullRequestActions are the pull request actions that record the pull
-// request, each saying whether it also starts a review; "poll" and
+// request, each saying whether it also starts a review; ActionPoll and
 // ActionBaseline are the poller's synthetic ones. The review job starts at
 // once: the worker waits out the repository's settle time (jobs.Settles),
 // since .kritik.yaml may set it.
@@ -53,7 +58,7 @@ var pullRequestActions = map[string]bool{
 	"reopened":         true,
 	"ready_for_review": true,
 	"synchronize":      true,
-	"poll":             true,
+	ActionPoll:         true,
 	ActionBaseline:     false,
 }
 
@@ -164,6 +169,21 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		case !review:
 			out = Outcome{Status: Skipped, Reason: ev.Action}
 			return nil
+		}
+		// A poll lists a pull request whenever anything about it moved, a
+		// comment or a label included; only a head no review has seen is
+		// news. The queue's unique key alone would not say so once River
+		// has cleaned the earlier job up.
+		if ev.Action == ActionPoll {
+			var reviewed bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
+				WHERE p.repository_id = $1 AND p.number = $2 AND r.head_sha = $3)`, rid, pr.Number, pr.HeadSHA).Scan(&reviewed); err != nil {
+				return fmt.Errorf("ingest: read reviews of the head: %w", err)
+			}
+			if reviewed {
+				out = Outcome{Status: Skipped, Reason: reasonReviewed}
+				return nil
+			}
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
 			AccountID: req.Account.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: ev.Action,

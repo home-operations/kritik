@@ -215,7 +215,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 			return handled, err
 		}
 		for _, pr := range prs {
-			action := "poll"
+			action := ingest.ActionPoll
 			if polled == nil && !pr.UpdatedAt.After(known) {
 				action = ingest.ActionBaseline
 			}

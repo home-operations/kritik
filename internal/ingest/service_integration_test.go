@@ -212,6 +212,39 @@ func TestDispatchForkRecorded(t *testing.T) {
 	}
 }
 
+// TestDispatchPollSkipsReviewedHead: a poll lists a pull request whenever it
+// moved, so a head a review has already seen is skipped rather than
+// reviewed again, while a new head is reviewed.
+func TestDispatchPollSkipsReviewedHead(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	pr := &webhook.PullRequest{Number: 71, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "ccc", BaseRef: "main"}
+	ev := func(action string, pr *webhook.PullRequest) webhook.Event {
+		return webhook.Event{Kind: webhook.KindPullRequest, Action: action, Repository: repo("onedr0p/polled"), PullRequest: pr}
+	}
+	if out, err := svc.Dispatch(ctx, request(f, ev("opened", pr))); err != nil || out.Status != Enqueued {
+		t.Fatalf("opened = %+v, %v", out, err)
+	}
+	// The review the worker made of that head.
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, finished_at)
+			SELECT account_id, id, head_sha, 'completed', now() FROM pull_requests WHERE repository_id = $1 AND number = $2`,
+			configfile.RepositoryID(account.ID(), "onedr0p/polled"), pr.Number)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, pr))); err != nil || out != (Outcome{Status: Skipped, Reason: reasonReviewed}) {
+		t.Fatalf("poll of a reviewed head = %+v, %v; want it skipped as reviewed", out, err)
+	}
+	moved := *pr
+	moved.HeadSHA = "ddd"
+	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, &moved))); err != nil || out.Status != Enqueued {
+		t.Fatalf("poll of a new head = %+v, %v; want it enqueued", out, err)
+	}
+}
+
 // A new head is enqueued at once even where the repository settles: the
 // worker waits the settle time out, since .kritik.yaml may set it.
 // TestDispatchSkipsArchivedAndForks: nothing runs for an archived
