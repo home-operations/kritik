@@ -32,7 +32,7 @@ from what you see, say what is missing.`
 // repository's instructions appended, as SystemPrompt appends them to a
 // review's.
 func FollowUpSystemPrompt(rules []Rule, instructions []string) string {
-	return withInstructions(FollowUpSystem, rules, instructions)
+	return withInstructions(FollowUpSystem, rules, "", instructions)
 }
 
 var followUpSchema = jsonSchema{

@@ -166,9 +166,9 @@ type Rule struct {
 // merge base and so carry the maintainers' authority, appended.
 func SystemPrompt(rules []Rule, instructions []string, focused bool) string {
 	if focused {
-		return withInstructions(FocusedSystem, rules, instructions)
+		return withInstructions(FocusedSystem, rules, ruleCitation, instructions)
 	}
-	return withInstructions(System, rules, instructions)
+	return withInstructions(System, rules, ruleCitation, instructions)
 }
 
 // AgenticSystemPrompt is SystemPrompt for an agentic review. commands are
@@ -182,17 +182,21 @@ func AgenticSystemPrompt(rules []Rule, instructions, commands []string, focused 
 	if len(commands) > 0 {
 		system += fmt.Sprintf(agenticCommands, strings.Join(commands, ", "))
 	}
-	return withInstructions(system, rules, instructions)
+	return withInstructions(system, rules, ruleCitation, instructions)
 }
 
-func withInstructions(system string, rules []Rule, instructions []string) string {
+// ruleCitation is how a review's findings name the rules they enforce;
+// a follow-up, which has no findings, is not told.
+const ruleCitation = ", and the finding lists the id in rules"
+
+func withInstructions(system string, rules []Rule, cite string, instructions []string) string {
 	if len(rules) > 0 {
 		lines := make([]string, len(rules))
 		for i, r := range rules {
 			lines[i] = "- " + r.ID + ": " + strings.ReplaceAll(strings.TrimSpace(r.Text), "\n", "\n  ")
 		}
 		system += "\n\n## Review rules\n\n" +
-			"Checks the maintainers set, each by its id. A change that breaks one is a finding.\n\n" +
+			"Checks the maintainers set, each by its id. A change that breaks one is a finding" + cite + ".\n\n" +
 			strings.Join(lines, "\n")
 	}
 	if len(instructions) == 0 {

@@ -135,6 +135,16 @@ func TestParse(t *testing.T) {
 			opts: ParseOptions{RequireSuggestedFix: true},
 			take: "t", kept: []string{"main.go:11:replaced"},
 		},
+		{
+			name: "a finding cites only the rules the review was given, once each",
+			raw: `{"summary": {"take": "t"}, "findings": [
+			  {"path": "main.go", "line": 11, "severity": "nit", "title": "cites", "explanation": "e",
+			   "rules": ["wrap-errors", " no-tokens ", "made-up", "wrap-errors"]},
+			  {"path": "main.go", "line": 12, "severity": "nit", "title": "cites none", "explanation": "e", "rules": ["made-up"]}
+			]}`,
+			opts: ParseOptions{Rules: []string{"no-tokens", "wrap-errors"}},
+			take: "t", kept: []string{"main.go:11:cites", "main.go:12:cites none"},
+		},
 		{name: "garbage errors", raw: "not json", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -175,6 +185,14 @@ func TestParse(t *testing.T) {
 				case "same line":
 					if f.EndLine != 0 || f.Replacement != "a" || f.AgentPrompt != "p" {
 						t.Errorf("same line = %+v", f)
+					}
+				case "cites":
+					if !slices.Equal(f.Rules, []string{"wrap-errors", "no-tokens"}) {
+						t.Errorf("cites rules = %q", f.Rules)
+					}
+				case "cites none":
+					if f.Rules != nil {
+						t.Errorf("cites none rules = %q", f.Rules)
 					}
 				}
 			}
@@ -444,7 +462,7 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 	raw, err := json.Marshal(Result{
 		Summary: Summary{Take: "t", Praise: []string{"p"}},
 		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityNit, Title: "t", Explanation: "e", SuggestedFix: "f",
-			EndLine: 2, Replacement: "r", AgentPrompt: "p", URL: "ignored"}},
+			EndLine: 2, Replacement: "r", AgentPrompt: "p", Rules: []string{"r"}, URL: "ignored"}},
 	})
 	if err != nil {
 		t.Fatal(err)

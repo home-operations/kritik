@@ -70,7 +70,8 @@ instructions, and chooses a few settings within bounds an admin sets:
   which apply it only when a changed path matches one. A rule whose `id`
   an admin's rule has is dropped, and the review's summary says so. The
   rules a change matches are listed by id in the system prompt ahead of
-  the instructions, capped at 16 KiB:
+  the instructions, capped at 16 KiB, and a finding lists the ids of the
+  rules it enforces, keeping only ones its review was given:
 
   ```yaml
   review:
@@ -107,8 +108,9 @@ instructions, and chooses a few settings within bounds an admin sets:
   `.Result.Findings`, `.Counts.Blocking`/`.Important`/`.Nit`, `.Notes`,
   `.Incremental`, `.PriorHeadSHA`, `.Incomplete`). The inline template's dot
   is one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Title`,
-  `.Explanation`, `.SuggestedFix`, `.Replacement`, `.AgentPrompt`, `.URL`, a
-  link to the lines at the head commit). Rendering is bounded (loop
+  `.Explanation`, `.SuggestedFix`, `.Replacement`, `.AgentPrompt`, `.Rules`,
+  the ids of the rules it enforces, and `.URL`, a link to the lines at the
+  head commit). Rendering is bounded (loop
   iterations, bytes per function call, output size, a deadline), so a
   template cannot hang or exhaust memory; one that exceeds a bound falls
   back to the default with a note in the comment.

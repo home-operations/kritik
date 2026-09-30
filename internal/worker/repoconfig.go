@@ -114,6 +114,15 @@ func (e *Effective) fill(files repoconfig.Files, notes, changed []string) []stri
 	return notes
 }
 
+// ruleIDs is the ids of the rules a review was given.
+func ruleIDs(rules []review.Rule) []string {
+	ids := make([]string, len(rules))
+	for i, r := range rules {
+		ids[i] = r.ID
+	}
+	return ids
+}
+
 // settleLeft is how much longer a review job started by trigger, enqueued
 // at created, waits before it runs: a new head waits until settle has
 // passed since it arrived, so a burst of pushes is reviewed once, at its

@@ -200,9 +200,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	phase := &publishPhase{
 		w: w, file: file, account: account, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, jobID: job.ID, logger: logger,
-		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix}, templates: prep.eff.Templates,
+		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Rules: ruleIDs(prep.eff.Rules)},
 		rules: prep.eff.Rules, instructions: prep.eff.Instructions, references: prep.eff.References, repoNotes: prep.notes, prior: prior,
-		scope: prep.scope,
+		scope: prep.scope, templates: prep.eff.Templates,
 		agent: agentOutcome,
 	}
 	publish := phase.run

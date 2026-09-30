@@ -38,7 +38,7 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 		return priorReview{}, fmt.Errorf("worker: load last completed review: %w", err)
 	}
 	rows, err := tx.Query(ctx, `SELECT path, line, severity, title, explanation, suggested_fix, posted_inline,
-		end_line, replacement, agent_prompt, coalesce(forge_comment_id, 0) FROM findings WHERE review_id = $1 ORDER BY path, line`, p.id)
+		end_line, replacement, agent_prompt, coalesce(forge_comment_id, 0), rules FROM findings WHERE review_id = $1 ORDER BY path, line`, p.id)
 	if err != nil {
 		return priorReview{}, fmt.Errorf("worker: load findings: %w", err)
 	}
@@ -46,7 +46,7 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 		var f priorFinding
 		var sev string
 		err := row.Scan(&f.Path, &f.Line, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.postedInline,
-			&f.EndLine, &f.Replacement, &f.AgentPrompt, &f.commentID)
+			&f.EndLine, &f.Replacement, &f.AgentPrompt, &f.commentID, &f.Rules)
 		f.Severity = review.Severity(sev)
 		return f, err
 	})
