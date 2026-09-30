@@ -8,7 +8,9 @@
   under the spec's (§2.2), and [ADR-0019](0019-configuration-in-git.md),
   which moves the whole configuration back into the file, drops the spec,
   the setup wizard and the App manifest flow (§2.1 to §2.3, §2.6), and
-  leaves the dashboard turning repositories on and off.
+  leaves the dashboard turning repositories on and off, and
+  [ADR-0021](0021-configuration-shape.md), which renames the connections
+  of §2.2 `apps`.
 - **Supersedes:** [ADR-0013](0013-hosted-instance.md) (withdrawn: kritik is
   not run as a service for others).
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6 (the

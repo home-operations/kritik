@@ -4,6 +4,8 @@
 - **Date:** 2026-09-26
 - **Amends:** [ADR-0008](0008-runner-tools.md) §2.2 (where the `run`
   tool's binaries come from).
+- **Amended by:** [ADR-0021](0021-configuration-shape.md), which moves
+  the tool catalog from the file to `KRITIK_RUNNER_TOOLS`.
 - **Authors:** onedr0p.
 
 > Scope: how an operator adds command-line tools, such as `helm` or

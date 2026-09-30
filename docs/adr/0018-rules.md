@@ -6,6 +6,8 @@
 - **Amends:** [ADR-0010](0010-configuration-layers.md) §2.4 (a key that
   adds up across scopes) and [ADR-0017](0017-dashboard-sections.md) §2.4
   (the Rules page lists written rules).
+- **Amended by:** [ADR-0021](0021-configuration-shape.md), which lets a
+  rule be a file and drops `review.instructions`.
 
 > Scope: review rules as short statements in the configuration, how they
 > reach a review, and how findings cite them. Instruction and context

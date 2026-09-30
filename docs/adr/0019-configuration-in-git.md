@@ -3,6 +3,8 @@
 - **Status:** Proposed
 - **Date:** 2026-09-29
 - **Authors:** onedr0p.
+- **Amended by:** [ADR-0021](0021-configuration-shape.md), which lets
+  the defaults and an `owner/*` entry say where repositories start (§2.3).
 - **Supersedes:** [ADR-0015](0015-instance-defaults-in-the-file.md) (with
   no spec to lay them under, the file's instance defaults are simply the
   defaults) and [ADR-0012](0012-github-app-manifest.md) (the dashboard no
