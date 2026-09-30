@@ -31,13 +31,7 @@ const (
 	RepoUnion RepoRule = "union"
 	// RepoAppend follows the admin's.
 	RepoAppend RepoRule = "append"
-	// RepoChoose picks one value an admin's allow bound lists.
-	RepoChoose RepoRule = "choose"
-	// RepoSubset picks some of the values an admin's allow bound lists.
-	RepoSubset RepoRule = "subset"
-	// RepoAtMost is at most an admin's allow bound.
-	RepoAtMost RepoRule = "atMost"
-	// RepoReplace replaces the admin's; it grants nothing.
+	// RepoReplace replaces the admin's.
 	RepoReplace RepoRule = "replace"
 )
 
@@ -70,7 +64,7 @@ const (
 // The keys the file's defaults set as well (instance.go).
 const (
 	keyMode     = "mode"
-	keyFeedback = "review.feedback"
+	keyFeedback = "feedback"
 	keyForks    = "forks"
 	keySettle   = "settle"
 )
@@ -78,28 +72,26 @@ const (
 // Policies is the table.
 var Policies = []Policy{
 	{Key: "enabled", Scopes: everyScope, Repository: RepoTurnOff},
+	{Key: keyMode, Scopes: everyScope, Repository: RepoReplace},
+	{Key: "models.review", Scopes: everyScope, Repository: RepoReplace},
+	{Key: "models.fallback", Scopes: everyScope, Repository: RepoReplace},
+	{Key: keyFeedback, Scopes: everyScope, Repository: RepoReplace},
+	{Key: "comments", Scopes: everyScope, Repository: RepoReplace},
+	{Key: "requireSuggestedFix", Scopes: everyScope, Repository: RepoTurnOn},
 	{Key: "filter", Scopes: everyScope, Repository: RepoAnd},
 	{Key: "ignore", Scopes: everyScope, Repository: RepoUnion},
+	{Key: "rules", Scopes: everyScope, Repository: RepoAppend},
+	{Key: "context", Scopes: everyScope, Repository: RepoAppend},
+	{Key: "agentFiles", Scopes: everyScope, Repository: RepoReplace},
 	{Key: keyForks, Scopes: everyScope},
-	{Key: "models.review", Scopes: everyScope, Repository: RepoChoose},
-	{Key: "models.fallback", Scopes: everyScope, Repository: RepoChoose},
-	{Key: keyMode, Scopes: everyScope, Repository: RepoChoose},
-	{Key: keyMaxSteps, Scopes: everyScope, Repository: RepoAtMost},
-	{Key: keyMaxToolOutputBytes, Scopes: everyScope, Repository: RepoAtMost},
-	{Key: keyMaxTokens, Scopes: everyScope, Repository: RepoAtMost},
-	{Key: keyTimeout, Scopes: everyScope, Repository: RepoAtMost},
-	{Key: "agent.commands", Scopes: everyScope, Repository: RepoSubset},
+	{Key: keyMaxSteps, Scopes: everyScope},
+	{Key: keyMaxToolOutputBytes, Scopes: everyScope},
+	{Key: keyMaxTokens, Scopes: everyScope},
+	{Key: keyTimeout, Scopes: everyScope},
+	{Key: "agent.commands", Scopes: everyScope},
 	{Key: "agent.commandTimeout", Scopes: everyScope},
-	{Key: keySettle, Scopes: everyScope, Repository: RepoAtMost},
+	{Key: keySettle, Scopes: everyScope},
 	{Key: "incremental.maxDeltaFiles", Scopes: everyScope},
-	{Key: "review.requireSuggestedFix", Scopes: everyScope, Repository: RepoTurnOn},
-	{Key: "review.templates", Scopes: everyScope, Repository: RepoReplace},
-	{Key: "review.context", Scopes: everyScope, Repository: RepoAppend},
-	{Key: "review.rules", Scopes: everyScope, Repository: RepoAppend},
-	{Key: "review.inlineComments", Scopes: everyScope, Repository: RepoReplace},
-	{Key: keyFeedback, Scopes: everyScope, Repository: RepoReplace},
-	{Key: "review.agentFiles", Scopes: everyScope, Repository: RepoReplace},
-	{Key: "allow", Scopes: everyScope},
 	{Key: "limits", Scopes: accountScopes},
 	{Key: "runner", Scopes: accountScopes},
 }

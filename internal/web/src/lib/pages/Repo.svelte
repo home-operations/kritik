@@ -63,11 +63,11 @@
     { label: 'Ignore', key: 'ignore', value: (s) => list(s.ignore), mono: true },
     { label: 'Settle', key: 'settle', value: (s) => duration(s.settleSeconds * 1000) || '0s' },
     { label: 'Max delta files', key: 'incremental.maxDeltaFiles', value: (s) => String(s.maxDeltaFiles) },
-    { label: 'Context files', key: 'review.context', value: (s) => list(s.review.context.map((c) => c.path)), mono: true },
-    { label: 'AGENTS.md / CLAUDE.md', key: 'review.agentFiles', value: (s) => (s.review.agentFiles ? 'read' : 'not read') },
-    { label: 'Require suggested fix', key: 'review.requireSuggestedFix', value: (s) => yes(s.review.requireSuggestedFix) },
-    { label: 'Inline comments', key: 'review.inlineComments', value: (s) => yes(s.review.inlineComments) },
-    { label: 'Feedback', key: 'review.feedback', value: (s) => s.review.feedback },
+    { label: 'Context files', key: 'context', value: (s) => list(s.review.context.map((c) => c.path)), mono: true },
+    { label: 'AGENTS.md / CLAUDE.md', key: 'agentFiles', value: (s) => (s.review.agentFiles ? 'read' : 'not read') },
+    { label: 'Require suggested fix', key: 'requireSuggestedFix', value: (s) => yes(s.review.requireSuggestedFix) },
+    { label: 'Inline comments', key: 'comments', value: (s) => yes(s.review.inlineComments) },
+    { label: 'Feedback', key: 'feedback', value: (s) => s.review.feedback },
     { label: 'Concurrency', key: 'limits', value: (s) => unlimited(s.limits.concurrency) },
     { label: 'Reviews / day', key: 'limits', value: (s) => unlimited(s.limits.reviewsPerDay) },
     { label: 'Tokens / month', key: 'limits', value: (s) => unlimited(s.limits.tokensPerMonth) },
@@ -101,23 +101,6 @@
     return rows.filter((r) => matches(r.label, r.key, r.value(eff)));
   }
 
-  // The bounds a repository's .kritik.yaml chooses within, each "own" when
-  // the admin set none.
-  function bounds(s: RepoSettings): { label: string; value: string }[] {
-    const a = s.allow;
-    const most = (n: number | null, own: string) => (n === null ? `at most the admin's ${own}` : `at most ${n}`);
-    return [
-      { label: 'Modes', value: a.modes ? list(a.modes) : `the admin's own (${s.mode})` },
-      { label: 'Models', value: a.models ? list(a.models) : "the admin's own" },
-      { label: 'Commands', value: a.commands ? list(a.commands) : `some of the admin's (${list(s.agent.commands)})` },
-      { label: 'Max steps', value: most(a.agent.maxSteps, String(s.agent.maxSteps)) },
-      { label: 'Max tokens', value: most(a.agent.maxTokens, String(s.agent.maxTokens)) },
-      {
-        label: 'Settle',
-        value: a.settleSeconds === null ? `at most the admin's ${duration(s.settleSeconds * 1000) || '0s'}` : `at most ${duration(a.settleSeconds * 1000) || '0s'}`,
-      },
-    ];
-  }
 </script>
 
 <svelte:head><title>{fullName} · kritik</title></svelte:head>
@@ -158,7 +141,6 @@
     </header>
     <StateView {res} retry={() => res.load()}>
         {#snippet children(d)}
-          {@const s = d.settings}
           {@const rc = d.repoConfig}
           {@const enabled = d.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'}
           {@const why = d.archived ? 'archived on GitHub' : d.fork && !d.enabled ? 'a fork not turned on' : d.managedBy}
@@ -191,45 +173,35 @@
             </section>
           </div>
 
-          <div class="grid-2">
-            <section class="panel" aria-labelledby="repo-file">
-              <header class="panel-head"><h2 id="repo-file" class="mono">.kritik.yaml</h2></header>
-              {#if !rc}
-                <p class="state-msg">No review has read it yet.</p>
-              {:else}
-                <dl class="deflist">
-                  <dt>Read at</dt>
-                  <dd>
-                    <span class="mono" title={rc.commit}>{shortSha(rc.commit)}</span>
-                    <span class="muted small">(merge base of <a href={href({ name: 'review', slug, id: rc.reviewId })}>the last review</a>)</span>
-                  </dd>
-                  {#if rc.found}
-                    <dt>Filter</dt><dd class="mono">{rc.filter || '—'} <span class="muted small">(ANDed with the admin's)</span></dd>
-                  {/if}
-                </dl>
-                {#if !rc.found}
-                  <p class="state-msg">There was no .kritik.yaml at that commit.</p>
-                {/if}
-                {#if rc.ignored}
-                  <p class="notice" role="note">Ignored as a whole: {rc.ignored}</p>
-                {/if}
-                {#if rc.dropped.length}
-                  <p class="small">Values outside the admin's bounds, where the admin's apply instead:</p>
-                  <ul class="small">
-                    {#each rc.dropped as note (note)}<li>{note}</li>{/each}
-                  </ul>
-                {/if}
-              {/if}
-            </section>
-            <section class="panel" aria-labelledby="repo-bounds">
-              <header class="panel-head"><h2 id="repo-bounds">What .kritik.yaml may choose</h2></header>
+          <section class="panel" aria-labelledby="repo-file">
+            <header class="panel-head"><h2 id="repo-file" class="mono">.kritik.yaml</h2></header>
+            {#if !rc}
+              <p class="state-msg">No review has read it yet.</p>
+            {:else}
               <dl class="deflist">
-                {#each bounds(s) as b (b.label)}
-                  <dt>{b.label}</dt><dd class="mono">{b.value}</dd>
-                {/each}
+                <dt>Read at</dt>
+                <dd>
+                  <span class="mono" title={rc.commit}>{shortSha(rc.commit)}</span>
+                  <span class="muted small">(merge base of <a href={href({ name: 'review', slug, id: rc.reviewId })}>the last review</a>)</span>
+                </dd>
+                {#if rc.found}
+                  <dt>Filter</dt><dd class="mono">{rc.filter || '—'} <span class="muted small">(ANDed with the admin's)</span></dd>
+                {/if}
               </dl>
-            </section>
-          </div>
+              {#if !rc.found}
+                <p class="state-msg">There was no .kritik.yaml at that commit.</p>
+              {/if}
+              {#if rc.ignored}
+                <p class="notice" role="note">Ignored as a whole: {rc.ignored}</p>
+              {/if}
+              {#if rc.dropped.length}
+                <p class="small">Values the file may not set, where the admin's apply instead:</p>
+                <ul class="small">
+                  {#each rc.dropped as note (note)}<li>{note}</li>{/each}
+                </ul>
+              {/if}
+            {/if}
+          </section>
 
           <section class="panel" aria-labelledby="repo-index">
             <header class="panel-head"><h2 id="repo-index">Index runs</h2></header>

@@ -316,23 +316,6 @@ func repoSettings(s configfile.Settings) RepoSettings {
 			CommandTimeoutSeconds: int64(s.Agent.CommandTimeout.Seconds()),
 		},
 		Limits: limits(s.Limits),
-		Allow:  allowBounds(s.Allow),
-	}
-}
-
-func allowBounds(a configfile.Allow) AllowBounds {
-	seconds := func(d *time.Duration) *int64 {
-		if d == nil {
-			return nil
-		}
-		return new(int64(d.Seconds()))
-	}
-	return AllowBounds{
-		Modes: a.Modes, Models: a.Models, Commands: a.Commands, SettleSeconds: seconds(a.Settle),
-		Agent: AllowAgentBounds{
-			MaxSteps: a.Agent.MaxSteps, MaxToolOutputBytes: a.Agent.MaxToolOutputBytes, MaxTokens: a.Agent.MaxTokens,
-			TimeoutSeconds: seconds(a.Agent.Timeout),
-		},
 	}
 }
 

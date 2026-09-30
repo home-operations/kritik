@@ -15,15 +15,15 @@ func TestCollectRules(t *testing.T) {
 		return s
 	}
 	schema := configfile.ContextFile{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}
-	account := map[string]configfile.Source{"review.context": configfile.SourceDefaults}
+	account := map[string]configfile.Source{"context": configfile.SourceDefaults}
 	repos := []repoRules{
 		{name: "alpha/two", settings: settings(schema), sources: account},
 		{
 			name: "alpha/one", settings: settings(schema), sources: account,
-			doc: []byte("review:\n  context:\n    - path: ARCHITECTURE.md\n      description: how it fits\n"),
+			doc: []byte("context:\n  - path: ARCHITECTURE.md\n    description: how it fits\n"),
 		},
 		// A .kritik.yaml that does not parse is ignored, as a review ignores it.
-		{name: "alpha/three", settings: settings(), sources: map[string]configfile.Source{}, doc: []byte("review: [")},
+		{name: "alpha/three", settings: settings(), sources: map[string]configfile.Source{}, doc: []byte("rules: {")},
 	}
 	// Written rules: the account's text and file rules, one alpha/one's
 	// entry replaces, and a text and a file rule its .kritik.yaml adds.
@@ -34,8 +34,8 @@ func TestCollectRules(t *testing.T) {
 	repos[0].settings.Review.Rules, repos[0].ruleScopes = []configfile.Rule{wrap, style}, accountRules
 	repos[1].settings.Review.Rules = []configfile.Rule{own, style}
 	repos[1].ruleScopes = map[string]configfile.Scope{"wrap-errors": configfile.ScopeRepository, "style": configfile.ScopeAccount}
-	repos[1].doc = append(repos[1].doc, []byte("  rules:\n    - { id: wrap-errors, rule: Anything. }\n    - { id: no-tokens, rule: Never log a token. }\n"+
-		"    - { id: go, file: docs/go.md, paths: ['**/*.go'] }\n")...)
+	repos[1].doc = append(repos[1].doc, []byte("rules:\n  - { id: wrap-errors, rule: Anything. }\n  - { id: no-tokens, rule: Never log a token. }\n"+
+		"  - { id: go, file: docs/go.md, paths: ['**/*.go'] }\n")...)
 	got := collectRules(repos)
 	want := []Rule{
 		{Kind: RuleContext, Path: "ARCHITECTURE.md", Description: "how it fits", Paths: []string{}, Source: RuleFromRepository, Repositories: []string{"alpha/one"}},

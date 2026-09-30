@@ -82,28 +82,28 @@ func TestEffective(t *testing.T) {
 			repoFiles: append(adminPaths, repoconfig.FileName), rules: adminRules, templates: adminDefaults, strict: true,
 		},
 		{
-			name: "requireSuggestedFix may only turn on", doc: "review:\n  requireSuggestedFix: false\n", files: adminFiles,
+			name: "requireSuggestedFix may only turn on", doc: "requireSuggestedFix: false\n", files: adminFiles,
 			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
 			rules: adminRules, templates: adminDefaults, strict: true,
-			notes: []string{".kritik.yaml: review.requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
+			notes: []string{".kritik.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},
 		{
 			name:    "repository file rules follow the admin's, and its summary template replaces the admin's",
-			doc:     "review:\n  rules: [{ id: repo, file: .kritik/rules.md }]\n  templates:\n    summary: .kritik/summary.tmpl\n",
+			doc:     "rules: [{ id: repo, file: .kritik/rules.md }]\ncomments:\n  summaryTemplate: .kritik/summary.tmpl\n",
 			files:   with(repoconfig.Files{".kritik/rules.md": "repo rules", ".kritik/summary.tmpl": "repo summary"}),
 			enabled: true, ignore: []string{"vendor/**"},
 			repoFiles: []string{"ops/rules.md", ".kritik/rules.md", ".kritik/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
 			rules:     append(slices.Clone(adminRules), repoRule), templates: review.Templates{Summary: "repo summary", Inline: "op inline"}, strict: true,
 		},
 		{
-			name: "a missing rule file is noted", doc: "review:\n  rules: [{ id: repo, file: .kritik/rules.md }, { id: gone, file: .kritik/gone.md }]\n",
+			name: "a missing rule file is noted", doc: "rules: [{ id: repo, file: .kritik/rules.md }, { id: gone, file: .kritik/gone.md }]\n",
 			files: with(repoconfig.Files{".kritik/rules.md": "repo rules"}), enabled: true, ignore: []string{"vendor/**"},
 			repoFiles: []string{"ops/rules.md", ".kritik/rules.md", ".kritik/gone.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
 			rules:     append(slices.Clone(adminRules), repoRule), templates: adminDefaults, strict: true,
 			notes: []string{".kritik/gone.md: referenced but not found"},
 		},
 		{
-			name: "a file the runner noted is not noted again", doc: "review:\n  rules: [{ id: big, file: .kritik/big.md }, { id: gone, file: .kritik/gone.md }]\n",
+			name: "a file the runner noted is not noted again", doc: "rules: [{ id: big, file: .kritik/big.md }, { id: gone, file: .kritik/gone.md }]\n",
 			files: adminFiles,
 			runnerNotes: []string{
 				".kritik/big.md: skipped, it exceeds the 262144 byte per-file limit", ".kritik/gone.md: referenced but not found",
@@ -118,7 +118,7 @@ func TestEffective(t *testing.T) {
 		{
 			// The file is one byte too long by its last character, whose
 			// first byte would still fit.
-			name: "agent files are capped at a UTF-8 boundary", doc: "review: { agentFiles: true }\n",
+			name: "agent files are capped at a UTF-8 boundary", doc: "agentFiles: true\n",
 			files:   with(repoconfig.Files{"AGENTS.md": strings.Repeat("a", repoconfig.MaxInstructionBytes-1) + "é"}),
 			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
 			rules: adminRules, templates: adminDefaults, strict: true,
@@ -304,17 +304,17 @@ func TestFollowUpRepoConfig(t *testing.T) {
 	}{
 		{name: "no file", files: files, model: "p/big", rules: []string{"admin rules"}},
 		{
-			name: "the repository's model and file rules", files: with("models: { review: p/small }\nreview: { rules: [{ id: repo, file: .kritik/rules.md }] }\n"),
+			name: "the repository's model and file rules", files: with("models: { review: p/small }\nrules: [{ id: repo, file: .kritik/rules.md }]\n"),
 			model: "p/small", rules: []string{"admin rules", "repo rules"},
 		},
-		{name: "a model outside the bounds is dropped", files: with("models: { review: p/huge }\n"), model: "p/big", rules: []string{"admin rules"}},
+		{name: "a model of a provider the account may not use is dropped", files: with("models: { review: q/huge }\n"), model: "p/big", rules: []string{"admin rules"}},
 		{name: "disabled", files: with("enabled: false\n"), reason: "disabled in .kritik.yaml", model: "p/big"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			settings := adminSettings(t)
 			settings.Models.Review = "p/big"
-			settings.Allow.Models = []configfile.ModelRef{"p/big", "p/small"}
+			settings.Providers = []string{"p"}
 			f := &followUp{client: fileForge{files: tt.files}, owner: "o", repo: "r", pr: &pullRequest{number: 1}, settings: settings}
 			reason, err := f.repoConfig(t.Context())
 			if err != nil || reason != tt.reason {
@@ -360,7 +360,7 @@ func TestPostsInline(t *testing.T) {
 }
 
 func TestFillScopesRules(t *testing.T) {
-	e, _ := effective(adminSettings(t), []byte("review:\n  rules: [{ id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }]\n"))
+	e, _ := effective(adminSettings(t), []byte("rules: [{ id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }]\n"))
 	files := repoconfig.Files{"ops/rules.md": "admin rules", ".kritik/sql.md": "sql rules"}
 	for _, tt := range []struct {
 		changed []string
@@ -383,7 +383,7 @@ func TestFillScopesRules(t *testing.T) {
 func TestFillReferences(t *testing.T) {
 	settings := adminSettings(t)
 	settings.Review.Context = []configfile.ContextFile{{Path: "docs/arch.md", Description: "how the parts fit"}}
-	e, _ := effective(settings, []byte("review:\n  context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }, "+
+	e, _ := effective(settings, []byte("context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }, "+
 		"{ path: docs/gone.md, description: gone }]\n"))
 	files := repoconfig.Files{
 		"ops/rules.md": "admin rules", "ops/summary.tmpl": "s", "ops/inline.tmpl": "i", "docs/arch.md": "arch", "db/schema.sql": "schema",

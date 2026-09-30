@@ -22,11 +22,12 @@ func TestParse_Invalid(t *testing.T) {
 		{"skip is gone", "skip:\n  onlyPaths:\n    - \"**/*.md\"\n"},
 		{"bad filter syntax", "filter: \"pr.draft &&\"\n"},
 		{"filter not bool", "filter: \"pr.title\"\n"},
-		{"absolute rule file", "review:\n  rules: [{ id: a, file: /etc/passwd }]\n"},
-		{"rule file escapes repo", "review:\n  rules: [{ id: a, file: ../x }]\n"},
-		{"rule with both a rule and a file", "review:\n  rules: [{ id: a, rule: Check., file: x.md }]\n"},
-		{"rule with neither", "review:\n  rules: [{ id: a, paths: [\"**\"] }]\n"},
-		{"file rule with a bad glob", "review:\n  rules: [{ id: a, file: x.md, paths: [\"[\"] }]\n"},
+		{"absolute rule file", "rules: [{ id: a, file: /etc/passwd }]\n"},
+		{"rule file escapes repo", "rules: [{ id: a, file: ../x }]\n"},
+		{"rule with both a rule and a file", "rules: [{ id: a, rule: Check., file: x.md }]\n"},
+		{"rule with neither", "rules: [{ id: a, paths: [\"**\"] }]\n"},
+		{"file rule with a bad glob", "rules: [{ id: a, file: x.md, paths: [\"[\"] }]\n"},
+		{"the review block is gone", "review:\n  feedback: minimal\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -61,14 +62,13 @@ func TestParse_Valid(t *testing.T) {
 filter: '!pr.draft'
 ignore:
   - "**/*.md"
-review:
-  rules:
-    - { id: house-style, file: docs/instructions.md }
-    - { id: sql, file: docs/sql.md, paths: ["**/*.sql"] }
-  requireSuggestedFix: true
-  templates:
-    summary: docs/summary.tmpl
-    inline: docs/inline.tmpl
+rules:
+  - { id: house-style, file: docs/instructions.md }
+  - { id: sql, file: docs/sql.md, paths: ["**/*.sql"] }
+requireSuggestedFix: true
+comments:
+  summaryTemplate: docs/summary.tmpl
+  inlineTemplate: docs/inline.tmpl
 `)
 		f, prg, err := Parse(doc)
 		if err != nil {
@@ -86,16 +86,16 @@ review:
 		if !slices.Equal(f.Ignore, []string{"**/*.md"}) {
 			t.Fatalf("Ignore = %v", f.Ignore)
 		}
-		if !reflect.DeepEqual(f.Review.Rules, []configfile.Rule{
+		if !reflect.DeepEqual(f.Rules, []configfile.Rule{
 			{ID: "house-style", File: "docs/instructions.md"}, {ID: "sql", File: "docs/sql.md", Paths: []string{"**/*.sql"}},
 		}) {
-			t.Fatalf("Review.Rules = %v", f.Review.Rules)
+			t.Fatalf("Rules = %v", f.Rules)
 		}
-		if f.Review.RequireSuggestedFix == nil || !*f.Review.RequireSuggestedFix {
-			t.Fatalf("Review.RequireSuggestedFix = %v, want true", f.Review.RequireSuggestedFix)
+		if f.RequireSuggestedFix == nil || !*f.RequireSuggestedFix {
+			t.Fatalf("RequireSuggestedFix = %v, want true", f.RequireSuggestedFix)
 		}
-		if f.Review.Templates.Summary != "docs/summary.tmpl" || f.Review.Templates.Inline != "docs/inline.tmpl" {
-			t.Fatalf("Review.Templates = %+v", f.Review.Templates)
+		if f.Comments.SummaryTemplate != "docs/summary.tmpl" || f.Comments.InlineTemplate != "docs/inline.tmpl" {
+			t.Fatalf("Comments = %+v", f.Comments)
 		}
 	})
 }
@@ -137,13 +137,8 @@ func TestActiveRules(t *testing.T) {
 func TestFile_Referenced(t *testing.T) {
 	t.Parallel()
 	f := File{
-		Review: Review{
-			Rules: []configfile.Rule{{ID: "a", File: "docs/a.md"}, {ID: "b", File: "docs/b.md", Paths: []string{"b/**"}}, {ID: "c", Rule: "Check."}},
-			Templates: Templates{
-				Summary: "docs/a.md",
-				Inline:  "docs/c.md",
-			},
-		},
+		Rules:    []configfile.Rule{{ID: "a", File: "docs/a.md"}, {ID: "b", File: "docs/b.md", Paths: []string{"b/**"}}, {ID: "c", Rule: "Check."}},
+		Comments: Comments{SummaryTemplate: "docs/a.md", InlineTemplate: "docs/c.md"},
 	}
 	want := []string{"docs/a.md", "docs/b.md", "docs/c.md"}
 	if got := f.Referenced(); !slices.Equal(got, want) {
@@ -179,7 +174,7 @@ func TestCollect(t *testing.T) {
 		{name: "nothing to read"},
 		{
 			name:      "each path read once, in order",
-			src:       map[string]string{FileName: "review: {}\n", "docs/a.md": "a", "docs/summary.tmpl": "s"},
+			src:       map[string]string{FileName: "rules: []\n", "docs/a.md": "a", "docs/summary.tmpl": "s"},
 			paths:     []string{FileName, "docs/a.md", "docs/summary.tmpl", "docs/a.md", ""},
 			wantFiles: []string{FileName, "docs/a.md", "docs/summary.tmpl"},
 		},

@@ -180,26 +180,6 @@ type ReviewBlock struct {
 	AgentFiles          bool                       `json:"agentFiles"`
 }
 
-// AllowBounds are what a repository's .kritik.yaml may choose; a bound
-// that is null leaves it only the admin's own value, or for a limit or
-// the settle time one at or below it.
-type AllowBounds struct {
-	Modes    []configfile.ReviewMode `json:"modes"`
-	Models   []configfile.ModelRef   `json:"models"`
-	Commands []string                `json:"commands"`
-	Agent    AllowAgentBounds        `json:"agent"`
-	// SettleSeconds is the most settle time a repository may choose.
-	SettleSeconds *int64 `json:"settleSeconds"`
-}
-
-// AllowAgentBounds cap each agent limit a repository may set.
-type AllowAgentBounds struct {
-	MaxSteps           *int   `json:"maxSteps"`
-	MaxToolOutputBytes *int   `json:"maxToolOutputBytes"`
-	MaxTokens          *int64 `json:"maxTokens"`
-	TimeoutSeconds     *int64 `json:"timeoutSeconds"`
-}
-
 // RepoSettings are a repository's settings as they resolve: the
 // admin's, or with the in-repo .kritik.yaml applied (RepoConfig).
 type RepoSettings struct {
@@ -214,7 +194,6 @@ type RepoSettings struct {
 	Review        ReviewBlock           `json:"review"`
 	Agent         AgentLimits           `json:"agent"`
 	Limits        Limits                `json:"limits"`
-	Allow         AllowBounds           `json:"allow"`
 }
 
 // RepoConfig is the repository's .kritik.yaml as the last review that ran

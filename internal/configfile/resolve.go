@@ -2,6 +2,7 @@ package configfile
 
 import (
 	"cmp"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -77,6 +78,7 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
 		Review:      Review{InlineComments: true, Feedback: FeedbackDetailed, AgentFiles: true},
+		Providers:   f.providerNames(a),
 	}
 	s.apply(&f.Defaults.Overrides)
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
@@ -180,7 +182,14 @@ func (s *Settings) apply(o *Overrides) {
 		s.Incremental.MaxDeltaFiles = *o.Incremental.MaxDeltaFiles
 	}
 	s.Review = s.Review.overlay(o.Review)
-	s.Allow = s.Allow.overlay(o.Allow)
+}
+
+// providerNames is the names of the providers account a may use, sorted.
+func (f *File) providerNames(a *Account) []string {
+	names := slices.Collect(maps.Keys(f.Providers))
+	names = append(names, slices.Collect(maps.Keys(a.Providers))...)
+	slices.Sort(names)
+	return names
 }
 
 // PollInterval is how often the leader polls, 0 when polling is off.
@@ -277,14 +286,14 @@ func (r Review) overlay(o ReviewSpec) Review {
 	if o.RequireSuggestedFix != nil {
 		r.RequireSuggestedFix = *o.RequireSuggestedFix
 	}
-	if o.Templates.Summary != nil {
-		r.Templates.Summary = *o.Templates.Summary
+	if o.Comments.SummaryTemplate != nil {
+		r.Templates.Summary = *o.Comments.SummaryTemplate
 	}
-	if o.Templates.Inline != nil {
-		r.Templates.Inline = *o.Templates.Inline
+	if o.Comments.InlineTemplate != nil {
+		r.Templates.Inline = *o.Comments.InlineTemplate
 	}
-	if o.InlineComments != nil {
-		r.InlineComments = *o.InlineComments
+	if o.Comments.Inline != nil {
+		r.InlineComments = *o.Comments.Inline
 	}
 	if o.Context != nil {
 		r.Context = o.Context
@@ -297,34 +306,6 @@ func (r Review) overlay(o ReviewSpec) Review {
 		r.Feedback = *o.Feedback
 	}
 	return r
-}
-
-func (a Allow) overlay(o Allow) Allow {
-	if o.Modes != nil {
-		a.Modes = o.Modes
-	}
-	if o.Models != nil {
-		a.Models = o.Models
-	}
-	if o.Commands != nil {
-		a.Commands = o.Commands
-	}
-	if o.Agent.MaxSteps != nil {
-		a.Agent.MaxSteps = o.Agent.MaxSteps
-	}
-	if o.Agent.MaxToolOutputBytes != nil {
-		a.Agent.MaxToolOutputBytes = o.Agent.MaxToolOutputBytes
-	}
-	if o.Agent.MaxTokens != nil {
-		a.Agent.MaxTokens = o.Agent.MaxTokens
-	}
-	if o.Agent.Timeout != nil {
-		a.Agent.Timeout = o.Agent.Timeout
-	}
-	if o.Settle != nil {
-		a.Settle = o.Settle
-	}
-	return a
 }
 
 func (a AgentSettings) overlay(o Agent) AgentSettings {

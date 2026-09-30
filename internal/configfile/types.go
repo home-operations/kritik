@@ -181,7 +181,8 @@ type Defaults struct {
 // defaults, an account and a repository entry. A field a narrower scope
 // writes replaces the broader scope's, even when it is empty or zero; a
 // field it leaves out inherits (ADR-0010 §2.4). Ignore globs are unioned
-// instead.
+// instead. The review keys are the ones a .kritik.yaml takes too, at the
+// same level (ADR-0021 §2.1).
 type Overrides struct {
 	// Enabled is where a repository starts, on or off, until an admin turns
 	// it on or off in the dashboard (ADR-0019 §2.3). A repository entry may
@@ -197,33 +198,9 @@ type Overrides struct {
 	Mode        ReviewMode     `yaml:"mode,omitempty"`
 	Agent       Agent          `yaml:"agent,omitempty"`
 	Incremental Incremental    `yaml:"incremental,omitempty"`
-	Review      ReviewSpec     `yaml:"review,omitempty"`
-	// Allow bounds what the repository's own .kritik.yaml may choose.
-	Allow Allow `yaml:"allow,omitempty"`
+	Review      ReviewSpec     `yaml:",inline"`
 
 	filter *prfilter.Program
-}
-
-// Allow bounds what a repository's .kritik.yaml may choose (ADR-0010
-// §2.5), bound by bound: one written at a narrower scope replaces the
-// broader scope's, even when empty. A bound written nowhere leaves a
-// repository only the admin's own mode, model and commands, and limits
-// and a settle time at or below the admin's own.
-type Allow struct {
-	Modes    []ReviewMode `yaml:"modes,omitempty"`
-	Models   []ModelRef   `yaml:"models,omitempty"`
-	Commands []string     `yaml:"commands,omitempty"`
-	// Agent caps each agent limit a repository may set.
-	Agent  AllowAgent     `yaml:"agent,omitempty"`
-	Settle *time.Duration `yaml:"settle,omitempty"`
-}
-
-// AllowAgent caps the agent limits a repository may set.
-type AllowAgent struct {
-	MaxSteps           *int           `yaml:"maxSteps,omitempty"`
-	MaxToolOutputBytes *int           `yaml:"maxToolOutputBytes,omitempty"`
-	MaxTokens          *int64         `yaml:"maxTokens,omitempty"`
-	Timeout            *time.Duration `yaml:"timeout,omitempty"`
 }
 
 // Polling is the leader's backstop for missed webhooks: it lists each
@@ -532,25 +509,26 @@ func (r Review) Focused() bool { return r.Feedback == FeedbackMinimal }
 // NitsInline reports whether a nit is posted as an inline comment.
 func (r Review) NitsInline() bool { return r.Feedback != FeedbackStandard }
 
-// ReviewSpec sets the review block at one scope, field by field: a field
+// ReviewSpec sets the review keys at one scope, field by field: a field
 // written here, even empty, replaces the broader scope's. Rules are the
 // exception: they add to the broader scope's, one with an id already
 // listed replacing that rule where it stands.
 type ReviewSpec struct {
-	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
-	Templates           TemplatesSpec `yaml:"templates,omitempty"`
-	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
-	Context             []ContextFile `yaml:"context,omitempty"`
-	Rules               []Rule        `yaml:"rules,omitempty"`
 	Feedback            *string       `yaml:"feedback,omitempty"`
+	Comments            CommentsSpec  `yaml:"comments,omitempty"`
+	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
+	Rules               []Rule        `yaml:"rules,omitempty"`
+	Context             []ContextFile `yaml:"context,omitempty"`
 	AgentFiles          *bool         `yaml:"agentFiles,omitempty"`
 }
 
-// TemplatesSpec sets the comment templates at one scope; an empty path
-// written here restores the built-in template.
-type TemplatesSpec struct {
-	Summary *string `yaml:"summary,omitempty"`
-	Inline  *string `yaml:"inline,omitempty"`
+// CommentsSpec sets how a review comments at one scope: whether findings
+// go inline, and the repository files that replace the built-in summary
+// and inline templates, where an empty path restores the built-in one.
+type CommentsSpec struct {
+	Inline          *bool   `yaml:"inline,omitempty"`
+	SummaryTemplate *string `yaml:"summaryTemplate,omitempty"`
+	InlineTemplate  *string `yaml:"inlineTemplate,omitempty"`
 }
 
 // Referenced lists the repository paths the block names: the rules'
@@ -656,7 +634,8 @@ type Settings struct {
 	Agent       AgentSettings
 	Incremental IncrementalSettings
 	Review      Review
-	// Allow is the bounds as the narrowest scope writing each one set it;
-	// one no scope writes is left unset.
-	Allow Allow
+	// Providers name the model providers the repository's account may use,
+	// the instance's and its own, sorted: the ones a .kritik.yaml may
+	// choose a model of (ADR-0021 §2.3).
+	Providers []string
 }

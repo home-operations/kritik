@@ -8,8 +8,8 @@ it to follow-ups (from the pull request's merge base) and to indexing (from
 the commit indexed) too.
 
 The file holds nothing secret: no field takes a credential, a URL, a host
-or a secret reference, and it can only name what an admin configured,
-a model by its `<provider>/<model>` reference and a command by its name.
+or a secret reference, and a model it names is a `<provider>/<model>` of a
+provider an admin configured.
 
 [`kritik.schema.json`](kritik.schema.json) is its JSON Schema. An editor
 using the YAML language server validates the file as it is written when
@@ -19,76 +19,42 @@ its first line names the schema:
 # yaml-language-server: $schema=https://raw.githubusercontent.com/home-operations/kritik/main/docs/kritik.schema.json
 ```
 
-## What it may change
+## What it may set
 
-The file narrows what an admin allows, adds to the review's rules and
-context, and chooses a few settings within bounds an admin sets:
+The file takes the review keys the configuration's `defaults` and
+repository entries take, at its top level
+([ADR-0021](adr/0021-configuration-shape.md) §2.1). It narrows what an
+admin allows, adds to the review's rules and context, and replaces the
+rest:
+
+```yaml
+mode: agentic
+models: { review: openrouter/anthropic/claude-opus-5.5 }
+feedback: standard
+comments: { inline: true }
+filter: "!pr.draft"
+ignore: ["web/src/generated/**", "docs/**"]
+rules:
+  - {
+      id: wrap-errors,
+      rule: 'Wrap errors with fmt.Errorf("<package>: %w", err).',
+      paths: ["**/*.go"],
+    }
+  - { id: house-style, file: .kritik/review.md }
+context:
+  - { path: ARCHITECTURE.md, description: how the services fit together }
+```
 
 - `enabled: false`: stops reviews, follow-ups and indexing for the
   repository. It cannot turn a disabled repository back on.
-- `filter`: a filter expression ANDed with the admin's own. It is
-  compiled and smoke-tested against a sample pull request when the file is
-  parsed, so a broken expression is rejected rather than silently skipping
-  every review. A review it filters out ends before any runner starts.
-- `ignore`: path globs added to the admin's own ignore list, for
-  reviews and indexing alike. A pull request whose every changed path is
-  ignored, by these, the admin's globs or kritik's defaults (vendored
-  trees and lockfiles), is skipped
-  ([ADR-0021](adr/0021-configuration-shape.md) §2.6).
-- `review.context`: files that explain the code, each a `path` with a
-  `description` and optional `paths` globs, added after the admin's. An
-  agentic review is pointed at each file to read it with its own tools; a
-  single-shot review is given its content, after the diff and before the
-  context kritik gathers, as the prompt budget allows. A file with `paths`
-  applies only when a changed path matches one of them:
-
-  ```yaml
-  review:
-    context:
-      - path: internal/store/migrations/0001_init.sql
-        description: the schema; check queries against it
-        paths: ["internal/store/**"]
-  ```
-
-- `review.rules`: checks the review makes, added after the admin's
-  ([ADR-0018](adr/0018-rules.md)). Each has an `id` (lowercase letters,
-  digits and hyphens, at most 64 characters) that findings cite it by,
-  and either the `rule` itself (at most 2000 characters) or a `file`,
-  read from the same merge-base tree, whose content is the check
-  ([ADR-0021](adr/0021-configuration-shape.md) §2.5); optional `paths`
-  globs apply it only when a changed path matches one, so checks for one
-  part of the repository do not spend the room on changes elsewhere. A
-  rule whose `id` an admin's rule has is dropped, and the review's
-  summary says so. The rules a change matches are listed by id in the
-  system prompt (and a follow-up's), a file rule under a heading of its
-  own, within 16 KiB of rule text and 32 KiB of rule files, and a finding
-  lists the ids of the rules it enforces, keeping only ones its review
-  was given:
-
-  ```yaml
-  review:
-    rules:
-      - id: wrap-errors
-        rule: 'Wrap an error with fmt.Errorf("<package>: %w", err) before returning it.'
-        paths: ["**/*.go"]
-      - id: sql
-        file: .kritik/sql.md
-        paths: ["internal/store/**", "**/*.sql"]
-  ```
-
-- `review.requireSuggestedFix: true`: findings must include a suggested
-  fix. The file can turn the requirement on, never off.
-- `review.inlineComments: false`: posts the summary alone, without inline
-  comments.
-- `review.agentFiles: false`: leaves the repository's agent files out.
-  Unless set, a review adds to its instructions the `AGENTS.md` of the
-  root and of each directory above a changed path, or a directory's
-  `CLAUDE.md` where it has no `AGENTS.md`, read from the merge base,
-  within 32 KiB ([ADR-0020](adr/0020-agent-files.md)). They follow the
-  rules in the prompt.
-- `review.feedback`: how much the review says
-  ([ADR-0021](adr/0021-configuration-shape.md) §2.4). The admin sets it
-  for the instance, an account or a repository as well.
+- `mode`: `single` or `agentic`, replacing the admin's.
+- `models.review` / `models.fallback`: a `<provider>/<model>` of a
+  provider the instance or the repository's account declares, used for
+  the review and for follow-ups. A model of any other provider is
+  dropped; the account's limits bound what a choice can cost.
+- `feedback`: how much the review says
+  ([ADR-0021](adr/0021-configuration-shape.md) §2.4), replacing the
+  admin's.
 
   | `feedback`           | What the review reports                                                                                                                                                                |
   | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -99,7 +65,9 @@ context, and chooses a few settings within bounds an admin sets:
   A `blocking` finding is always posted inline, and the summary lists
   every finding.
 
-- `review.templates.summary` / `review.templates.inline`: paths to Go
+- `comments.inline: false`: posts the summary alone, without inline
+  comments.
+- `comments.summaryTemplate` / `comments.inlineTemplate`: paths to Go
   [text/template](https://pkg.go.dev/text/template) templates that replace
   kritik's built-in summary and inline comment templates, with the
   [sprout](https://github.com/go-sprout/sprout) helpers tuppr and chaski
@@ -114,45 +82,55 @@ context, and chooses a few settings within bounds an admin sets:
   is one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Title`,
   `.Explanation`, `.SuggestedFix`, `.Replacement`, `.AgentPrompt`, `.Rules`,
   the ids of the rules it enforces, and `.URL`, a link to the lines at the
-  head commit). Rendering is bounded (loop
-  iterations, bytes per function call, output size, a deadline), so a
-  template cannot hang or exhaust memory; one that exceeds a bound falls
-  back to the default with a note in the comment.
+  head commit). Rendering is bounded (loop iterations, bytes per function
+  call, output size, a deadline), so a template cannot hang or exhaust
+  memory; one that exceeds a bound falls back to the default with a note
+  in the comment.
+- `requireSuggestedFix: true`: findings must include a suggested fix. The
+  file can turn the requirement on, never off.
+- `filter`: a filter expression ANDed with the admin's own. It is
+  compiled and smoke-tested against a sample pull request when the file is
+  parsed, so a broken expression is rejected rather than silently skipping
+  every review. A review it filters out ends before any runner starts.
+- `ignore`: path globs added to the admin's own ignore list, for
+  reviews and indexing alike. A pull request whose every changed path is
+  ignored, by these, the admin's globs or kritik's defaults (vendored
+  trees and lockfiles), is skipped
+  ([ADR-0021](adr/0021-configuration-shape.md) §2.6).
+- `rules`: checks the review makes, added after the admin's
+  ([ADR-0018](adr/0018-rules.md)). Each has an `id` (lowercase letters,
+  digits and hyphens, at most 64 characters) that findings cite it by,
+  and either the `rule` itself (at most 2000 characters) or a `file`,
+  read from the same merge-base tree, whose content is the check
+  ([ADR-0021](adr/0021-configuration-shape.md) §2.5); optional `paths`
+  globs apply it only when a changed path matches one, so checks for one
+  part of the repository do not spend the room on changes elsewhere. A
+  rule whose `id` an admin's rule has is dropped, and the review's
+  summary says so. The rules a change matches are listed by id in the
+  system prompt (and a follow-up's), a file rule under a heading of its
+  own, within 16 KiB of rule text and 32 KiB of rule files, and a finding
+  lists the ids of the rules it enforces, keeping only ones its review
+  was given.
+- `context`: files that explain the code, each a `path` with a
+  `description` and optional `paths` globs, added after the admin's. An
+  agentic review is pointed at each file to read it with its own tools; a
+  single-shot review is given its content, after the diff and before the
+  context kritik gathers, as the prompt budget allows. A file with `paths`
+  applies only when a changed path matches one of them.
+- `agentFiles: false`: leaves the repository's agent files out. Unless
+  set, a review adds to its instructions the `AGENTS.md` of the root and
+  of each directory above a changed path, or a directory's `CLAUDE.md`
+  where it has no `AGENTS.md`, read from the merge base, within 32 KiB
+  ([ADR-0020](adr/0020-agent-files.md)). They follow the rules in the
+  prompt.
 
-## What it may choose within the admin's bounds
-
-These choose a value for the repository, each within a bound an admin
-sets in an `allow` block (at `defaults`, an account or a repository entry).
-Where an admin sets no bound, the file may only pick the admin's own
-value, or a limit or settle time at or below it:
-
-- `mode`: `single` or `agentic`, from `allow.modes`.
-- `models.review` / `models.fallback`: a `<provider>/<model>` from
-  `allow.models`, used for the review and for follow-ups.
-- `agent.maxSteps`, `agent.maxToolOutputBytes`, `agent.maxTokens`,
-  `agent.timeout`: each at most its `allow.agent` bound.
-- `agent.commands`: a subset of `allow.commands`.
-- `settle`: how long a new head waits before its review starts, at most
-  `allow.settle`.
-
-```yaml
-mode: agentic
-models: { review: openrouter/openai/gpt-6-mini }
-agent: { maxSteps: 40, commands: [rg] }
-settle: 5m
-filter: '!pr.body.contains("[skip-review]")'
-ignore: ["web/src/generated/**", "docs/**"]
-review:
-  rules: [{ id: house-style, file: .kritik/rules.md }]
-  requireSuggestedFix: true
-```
-
-A value outside its bound is dropped, not clamped: the admin's value
-applies for that field, a note in the review's summary says which field
-was dropped and what was allowed, and the rest of the file still applies.
-`limits`, `forks`, `runner`, `incremental` and `agent.commandTimeout` are
-never the repository's to choose; a file naming one of them, or any other
-unknown key, does not parse.
+A value the file may not take, such as an unknown feedback level or a
+model of an undeclared provider, is dropped: the admin's value applies for
+that field, a note in the review's summary says which field was dropped
+and what it may be, and the rest of the file still applies. `agent`,
+`settle`, `forks`, `incremental`, `limits` and `runner` are the admin's
+alone; a file naming one of them, or any other unknown key, does not
+parse.
 
 ## Filter recipes
 

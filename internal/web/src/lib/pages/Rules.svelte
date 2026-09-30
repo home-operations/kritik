@@ -74,8 +74,8 @@
       <h1>Rules</h1>
       <p class="muted small">
         What reviews check: rules written in the configuration, as text or a file, and context files that explain the code.
-        Rules are written, and files named, under <span class="mono">review.rules</span> and
-        <span class="mono">review.context</span> in the configuration file or a repository's own
+        Rules are written, and files named, under <span class="mono">rules</span> and
+        <span class="mono">context</span> in the configuration file or a repository's own
         <span class="mono">.kritik.yaml</span>.
       </p>
     </header>
@@ -94,7 +94,7 @@
       {res}
       retry={() => res.load()}
       isEmpty={(d) => d.length === 0}
-      empty="No rules yet: write them, or name files for them, under review.rules, and name context files under review.context, in the configuration or a repository's .kritik.yaml."
+      empty="No rules yet: write them, or name files for them, under rules, and name context files under context, in the configuration or a repository's .kritik.yaml."
     >
       {#snippet children(rules)}
         {@const rows = shown(rules)}

@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"slices"
 	"time"
 
 	"github.com/riverqueue/river"
@@ -13,22 +12,15 @@ import (
 
 // Timeout implements river.Worker: the runner's deadline, the agent's in
 // agentic mode, plus the lease wait and the publish phase around it. The
-// repository's .kritik.yaml is read only once the job runs, so the timeout
-// covers the longest review it may choose: agentic when its bounds allow
-// that mode, with the longest agent timeout they allow.
+// repository's .kritik.yaml is read only once the job runs and may choose
+// agentic mode, so the timeout always covers an agentic review with the
+// admin's agent timeout.
 func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
 	file := w.Current.Get()
 	account, _ := file.AccountByID(job.Args.AccountID)
 	deadline, _ := file.RunnerFor(account)
 	if account != nil {
-		settings := repoSettings(file, account, job.Args.RepositoryID)
-		if settings.Mode == configfile.ReviewAgentic || slices.Contains(settings.Allow.Modes, configfile.ReviewAgentic) {
-			timeout := settings.Agent.Timeout
-			if bound := settings.Allow.Agent.Timeout; bound != nil {
-				timeout = max(timeout, *bound)
-			}
-			deadline = agentDeadline(deadline, timeout)
-		}
+		deadline = agentDeadline(deadline, repoSettings(file, account, job.Args.RepositoryID).Agent.Timeout)
 	}
 	return min(deadline+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom, jobtimeout.MaxJobTimeout)
 }

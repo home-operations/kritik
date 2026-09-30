@@ -353,9 +353,6 @@ func (f *File) validateAccounts(entries []Account) error {
 	if err := f.validateOverrides("defaults", nil, &f.Defaults.Overrides); err != nil {
 		return err
 	}
-	if err := checkWithinAllow("defaults", f.Settings(&Account{}, "")); err != nil {
-		return err
-	}
 	seen := map[string]string{}
 	for i := range entries {
 		a := &entries[i]
@@ -410,11 +407,8 @@ func (f *File) validateAccount(where string, a *Account) error {
 		if err := f.validateOverrides(rwhere, a, &r.Overrides); err != nil {
 			return err
 		}
-		if err := checkWithinAllow(rwhere, f.Settings(a, a.Name+"/"+r.Name)); err != nil {
-			return err
-		}
 	}
-	return checkWithinAllow(where, f.Settings(a, ""))
+	return nil
 }
 
 // compile compiles the filter the scope writes, if any; an empty one
@@ -478,14 +472,11 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 			return fmt.Errorf("configfile: %s.agent.commands[%d] %q is listed twice", where, i, c)
 		}
 	}
-	if err := validateReview(where+".review", &r.Review); err != nil {
-		return err
-	}
-	return f.validateAllow(where+".allow", t, &r.Allow)
+	return validateReview(where, &r.Review)
 }
 
-// validateReview checks the review block one scope writes: its paths stay
-// inside the repository, and its feedback is a level.
+// validateReview checks the review keys one scope writes: their paths
+// stay inside the repository, and the feedback is a level.
 func validateReview(where string, r *ReviewSpec) error {
 	if fb := r.Feedback; fb != nil && !ValidFeedback(*fb) {
 		return fmt.Errorf("configfile: %s.feedback must be %s, got %q", where, FeedbackLevels, *fb)
@@ -501,12 +492,12 @@ func validateReview(where string, r *ReviewSpec) error {
 	for _, t := range []struct {
 		name string
 		path *string
-	}{{"summary", r.Templates.Summary}, {"inline", r.Templates.Inline}} {
+	}{{"summaryTemplate", r.Comments.SummaryTemplate}, {"inlineTemplate", r.Comments.InlineTemplate}} {
 		if t.path == nil || *t.path == "" {
 			continue
 		}
 		if err := checkRepoPath(*t.path); err != nil {
-			return fmt.Errorf("configfile: %s.templates.%s: %w", where, t.name, err)
+			return fmt.Errorf("configfile: %s.comments.%s: %w", where, t.name, err)
 		}
 	}
 	return nil
@@ -601,79 +592,6 @@ func (f *File) checkModelRef(where string, t *Account, ref ModelRef) error {
 	}
 	if _, ok := f.Provider(t, p); !ok {
 		return fmt.Errorf("configfile: %s references provider %q, which is not declared under providers", where, p)
-	}
-	return nil
-}
-
-// validateAllow checks one scope's bounds name what a repository could
-// choose: review modes, models of declared providers, bare command names,
-// positive limits and a settle time that is not negative.
-func (f *File) validateAllow(where string, t *Account, a *Allow) error {
-	for i, m := range a.Modes {
-		if !m.Valid() {
-			return fmt.Errorf("configfile: %s.modes[%d] must be %s or %s, got %q", where, i, ReviewSingle, ReviewAgentic, m)
-		}
-	}
-	for i, ref := range a.Models {
-		if err := f.checkModelRef(fmt.Sprintf("%s.models[%d]", where, i), t, ref); err != nil {
-			return err
-		}
-	}
-	for i, c := range a.Commands {
-		if !commandRe.MatchString(c) {
-			return fmt.Errorf("configfile: %s.commands[%d] %q must be a bare command name, not a path", where, i, c)
-		}
-	}
-	ag := a.Agent
-	if (ag.MaxSteps != nil && *ag.MaxSteps <= 0) || (ag.MaxToolOutputBytes != nil && *ag.MaxToolOutputBytes <= 0) ||
-		(ag.MaxTokens != nil && *ag.MaxTokens <= 0) || (ag.Timeout != nil && *ag.Timeout <= 0) {
-		return fmt.Errorf("configfile: %s.agent bounds must be positive", where)
-	}
-	if ag.Timeout != nil && *ag.Timeout > jobtimeout.MaxAgentTimeout {
-		return fmt.Errorf("configfile: %s.agent.timeout must not exceed %s", where, jobtimeout.MaxAgentTimeout)
-	}
-	if a.Settle != nil && *a.Settle < 0 {
-		return fmt.Errorf("configfile: %s.settle must not be negative", where)
-	}
-	return nil
-}
-
-// checkWithinAllow rejects resolved settings whose own values lie outside
-// the bounds they give the repository: the repository would be refused
-// the admin's own choice.
-func checkWithinAllow(where string, s Settings) error {
-	a := s.Allow
-	if a.Modes != nil && !slices.Contains(a.Modes, s.Mode) {
-		return fmt.Errorf("configfile: %s: mode %s is outside allow.modes", where, s.Mode)
-	}
-	for _, m := range []struct {
-		role string
-		ref  ModelRef
-	}{{"review", s.Models.Review}, {"fallback", s.Models.Fallback}} {
-		if a.Models != nil && m.ref != "" && !slices.Contains(a.Models, m.ref) {
-			return fmt.Errorf("configfile: %s: models.%s %q is outside allow.models", where, m.role, m.ref)
-		}
-	}
-	for _, c := range s.Agent.Commands {
-		if a.Commands != nil && !slices.Contains(a.Commands, c) {
-			return fmt.Errorf("configfile: %s: agent.commands %q is outside allow.commands", where, c)
-		}
-	}
-	var over string
-	switch ag, bound := s.Agent, a.Agent; {
-	case bound.MaxSteps != nil && ag.MaxSteps > *bound.MaxSteps:
-		over = keyMaxSteps
-	case bound.MaxToolOutputBytes != nil && ag.MaxToolOutputBytes > *bound.MaxToolOutputBytes:
-		over = keyMaxToolOutputBytes
-	case bound.MaxTokens != nil && ag.MaxTokens > *bound.MaxTokens:
-		over = keyMaxTokens
-	case bound.Timeout != nil && ag.Timeout > *bound.Timeout:
-		over = keyTimeout
-	case a.Settle != nil && s.Settle > *a.Settle:
-		over = keySettle
-	}
-	if over != "" {
-		return fmt.Errorf("configfile: %s: %s is above allow.%s; set it at or below the bound", where, over, over)
 	}
 	return nil
 }

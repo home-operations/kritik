@@ -161,7 +161,7 @@ type FileLayer struct {
 	Providers map[string]FileProvider
 	Review    FileValue
 	Fallback  FileValue
-	// Defaults are the other defaults it sets: mode, review.feedback, forks
+	// Defaults are the other defaults it sets: mode, feedback, forks
 	// and settle, in that order, by their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
