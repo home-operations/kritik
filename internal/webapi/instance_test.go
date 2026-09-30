@@ -73,7 +73,7 @@ embedding: { model: gw/e1, dims: 8 }
 		"defaults models.review":   {"defaults", "models.review", "gw/big", configfile.SourceEnv},
 		"defaults models.fallback": {"defaults", "models.fallback", "gw/small", configfile.SourceFile},
 		"defaults mode":            {"defaults", "mode", "agentic", configfile.SourceFile},
-		"embedding gw/e1":          {"embedding", "gw/e1", "8 dimensions at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
+		"embedding gw/e1":          {"embedding", "gw/e1", "8 dimensions", configfile.SourceFile},
 	} {
 		if rows[key] != want {
 			t.Errorf("%s = %+v, want %+v", key, rows[key], want)
