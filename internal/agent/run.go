@@ -86,6 +86,14 @@ func (rt *RunTool) Def() model.ToolDef {
 	desc := fmt.Sprintf("Run one of these commands in a checkout of the head commit: %s. The command runs directly, "+
 		"without a shell: arguments are passed exactly as given, with no globbing, pipes or redirection. It is stopped "+
 		"after %s, and its exit code and combined output are returned.", strings.Join(rt.names, ", "), rt.cfg.Timeout)
+	if slices.Contains(rt.names, "rg") {
+		desc += " rg searches file contents where the grep tool falls short: with context lines (`rg -C 3 <pattern>`), " +
+			"by file type (`rg -t go <pattern>`) or across lines (`rg -U <pattern>`)."
+	}
+	if slices.Contains(rt.names, "fd") {
+		desc += " fd finds files and directories by name, extension or type (`fd -e yaml values`, `fd -t d charts`), " +
+			"where the list_files tool's glob is not enough."
+	}
 	if slices.Contains(rt.names, "gh") {
 		desc += " Use gh, not curl, for anything on GitHub: it is signed in to read public repositories, such as " +
 			"`gh release view <tag> -R <owner>/<repo>`, `gh api repos/<owner>/<repo>/compare/<base>...<head>` or " +
