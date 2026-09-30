@@ -148,20 +148,35 @@ func TestHandler(t *testing.T) {
 
 // TestHandlerRecordsUnsigned: a delivery with no signature, which an App
 // with no webhook secret sends, is recorded as unsigned; a wrong signature
-// is not.
+// is not, and neither is an unsigned request without GitHub's delivery
+// headers, which anyone can send to the public hook path.
 func TestHandlerRecordsUnsigned(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
 		secret   string
+		bare     bool
 		unsigned bool
 	}{
-		{"no signature", "", true},
-		{"a wrong signature", "wrong", false},
+		{"no signature", "", false, true},
+		{"a wrong signature", "wrong", false, false},
+		{"no signature and no delivery headers", "", true, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			disp := &fakeDispatcher{}
 			srv := setup(t, disp)
-			if resp := post(t, srv, "/hooks/bot-ross", "pull_request", tt.secret, prBody); resp.StatusCode != http.StatusUnauthorized {
+			var resp *http.Response
+			if tt.bare {
+				req, _ := http.NewRequest(http.MethodPost, srv.URL+"/hooks/bot-ross", strings.NewReader(prBody))
+				req.Header.Set("Content-Type", "application/json")
+				var err error
+				if resp, err = http.DefaultClient.Do(req); err != nil {
+					t.Fatal(err)
+				}
+				_ = resp.Body.Close()
+			} else {
+				resp = post(t, srv, "/hooks/bot-ross", "pull_request", tt.secret, prBody)
+			}
+			if resp.StatusCode != http.StatusUnauthorized {
 				t.Fatalf("status = %d, want 401", resp.StatusCode)
 			}
 			if (len(disp.unsigned) == 1) != tt.unsigned || len(disp.delivered) != 0 {

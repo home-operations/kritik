@@ -123,8 +123,8 @@ GitHub keeps the App webhook's recent deliveries with kritik's response:
 the App has none, and 404 when the path names no App. The account
 overview's Connection panel shows when its App last had a delivery,
 explains where the webhook goes while none has, and says to set the App's
-webhook secret when its deliveries arrive with no signature, which the
-Configuration page's GitHub Apps panel marks `unsigned`.
+webhook secret when its deliveries arrive from GitHub with no signature,
+which the Configuration page's GitHub Apps panel marks `unsigned`.
 `kritik_webhooks_total{connection,outcome}` counts deliveries by outcome.
 
 ## Without webhooks
