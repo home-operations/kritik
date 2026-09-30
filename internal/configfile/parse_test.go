@@ -37,7 +37,7 @@ func TestParse(t *testing.T) {
 defaults: { models: { review: p/big }, settle: 2m }
 apps:
 ` + fileApp("acme-bot", "acme") + fileApp("org-bot", "org-2", "Org-3") + `repositories:
-  ORG-2/repo-1: { mode: agentic }
+  ORG-2/repo-1: { forks: true }
   gone/*: { forks: true }
 accounts:
   ORG-2: { limits: { reviewsPerDay: 5 } }
@@ -56,7 +56,7 @@ accounts:
 		t.Fatalf("accounts = %v", accounts)
 	}
 	org2, ok := f.Account(ForgeGitHub, "org-2")
-	if !ok || org2.Limits.ReviewsPerDay == nil || f.Settings(org2, "org-2/repo-1").Mode != ReviewAgentic || f.Settings(org2, "").Settle != 2*time.Minute {
+	if !ok || org2.Limits.ReviewsPerDay == nil || !f.Settings(org2, "org-2/repo-1").Forks || f.Settings(org2, "").Settle != 2*time.Minute {
 		t.Fatalf("org-2 = %+v", org2)
 	}
 	if in := f.ConnectionFor(org2); in == nil || in.Name != "org-bot" {

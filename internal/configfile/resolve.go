@@ -73,7 +73,6 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 	s := Settings{
 		Enabled:     true,
 		Ignore:      append([]string(nil), DefaultIgnore...),
-		Mode:        ReviewAgentic,
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
 		Review:      Review{InlineComments: true, Feedback: FeedbackDetailed, AgentFiles: true},
@@ -172,9 +171,6 @@ func (s *Settings) apply(o *Overrides) {
 	s.Ignore = append(s.Ignore, o.Ignore...)
 	if o.Settle != nil {
 		s.Settle = *o.Settle
-	}
-	if o.Mode != "" {
-		s.Mode = o.Mode
 	}
 	s.Agent = s.Agent.overlay(o.Agent)
 	if o.Incremental.MaxDeltaFiles != nil {

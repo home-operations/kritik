@@ -163,8 +163,8 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 	e.exec(`UPDATE repositories SET default_branch = 'main' WHERE id = $1`, s.repoID)
 	s.prID = e.scalar(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha, labels)
 		VALUES ($1, $2, 7, $3, 'ada', 'head7', '[{"name":"bug","color":"f00"}]') RETURNING id::text`, s.accountID, s.repoID, "PR of "+slug)
-	s.reviewID = e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status, trigger, mode, model, finished_at, summary)
-		VALUES ($1, $2, 'head7', 'completed', 'push', 'agentic', 'acme/large', now(), '{"take":"ok","praise":["tests"]}')
+	s.reviewID = e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status, trigger, model, finished_at, summary)
+		VALUES ($1, $2, 'head7', 'completed', 'push', 'acme/large', now(), '{"take":"ok","praise":["tests"]}')
 		RETURNING id::text`, s.accountID, s.prID)
 	e.exec(`INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation)
 		VALUES ($1, $2, 'a.go', 3, 'blocking', 'nil deref', 'x'), ($1, $2, 'b.go', 9, 'nit', 'naming', 'y')`, s.accountID, s.reviewID)
@@ -174,7 +174,7 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 		VALUES ($1, $2, 'head7', 'base7', 'patch7', $3, '{a.go}',
 			'[{"stage":"definitions","path":"b.go","start_line":1,"end_line":2,"text":"func F() {}"}]',
 			jsonb_build_object('.kritik.yaml', $4::text))`, s.runID, s.accountID, "diff of "+slug,
-		"mode: agentic\nrules: [{ id: house-style, file: docs/rules-of-"+slug+".md }]\n")
+		"rules: [{ id: house-style, file: docs/rules-of-"+slug+".md }]\n")
 	e.exec(`INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline, model, sources)
 		VALUES ($1, $2, 'submitted', '{"findings":[]}', 2, '{"grep":1}',
 			'[{"index":0,"tools":["grep"],"duration_ms":5,"output_bytes":7,"input_tokens":10,"output_tokens":2}]', 'acme/large',

@@ -25,20 +25,14 @@ func reviewSpec() Spec {
 	return Spec{
 		Version: SpecVersion, Kind: KindReview, RunID: "run-1", CloneURL: "https://forge.example.com/acme/widgets.git",
 		Head: shaA, Base: shaB, Ignore: []string{"vendor/**"}, RepoFiles: []string{"docs/rules.md"},
+		Agent: &AgentLimits{MaxSteps: 30, MaxToolOutputBytes: 16 << 10, MaxTokens: 200000},
+		Model: &ModelEndpoint{GatewayURL: "http://kritik-gateway:8082", Model: "review"},
+		Prompt: &Prompt{
+			Repository: "acme/widgets",
+			PullRequest: repoconfig.PullRequest{Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main", State: "open",
+				Labels: []byte(`[{"name":"deps"}]`)},
+			MaxDeltaFiles: 25, Prior: []review.Finding{{Path: "main.go", Line: 1, Severity: review.SeverityNit, Title: "earlier finding"}}},
 	}
-}
-
-func agenticSpec() Spec {
-	s := reviewSpec()
-	s.Mode = ModeAgentic
-	s.Agent = &AgentLimits{MaxSteps: 30, MaxToolOutputBytes: 16 << 10, MaxTokens: 200000}
-	s.Model = &ModelEndpoint{GatewayURL: "http://kritik-gateway:8082", Model: "review"}
-	s.Prompt = &Prompt{
-		Repository: "acme/widgets",
-		PullRequest: repoconfig.PullRequest{Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main", State: "open",
-			Labels: []byte(`[{"name":"deps"}]`)},
-		MaxDeltaFiles: 25, Prior: []review.Finding{{Path: "main.go", Line: 1, Severity: review.SeverityNit, Title: "earlier finding"}}}
-	return s
 }
 
 func TestDecodeSpec(t *testing.T) {
@@ -56,30 +50,29 @@ func TestDecodeSpec(t *testing.T) {
 	}{
 		{name: "valid review", in: encode(reviewSpec())},
 		{name: "valid index without base", in: encode(Spec{Version: SpecVersion, Kind: KindIndex, RunID: "r", CloneURL: "u", Head: shaA})},
-		{name: "valid agentic", in: encode(agenticSpec())},
-		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":9`, `"version":10`, 1), wantErr: "version"},
+		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":10`, `"version":11`, 1), wantErr: "version"},
 		{name: "unknown field", in: strings.Replace(encode(reviewSpec()), `{`, `{"token":"x",`, 1), wantErr: "unknown field"},
 		{name: "bad head sha", in: strings.Replace(encode(reviewSpec()), shaA, "abc", 1), wantErr: "head"},
 		{name: "uppercase sha", in: strings.Replace(encode(reviewSpec()), shaA, strings.ToUpper(shaA), 1), wantErr: "head"},
 		{name: "bad prior head", in: func() string { s := reviewSpec(); s.PriorHead = "zz"; return encode(s) }(), wantErr: "priorHead"},
 		{name: "review without base", in: func() string { s := reviewSpec(); s.Base = ""; return encode(s) }(), wantErr: "base"},
 		{name: "unknown kind", in: func() string { s := reviewSpec(); s.Kind = "lint"; return encode(s) }(), wantErr: "kind"},
-		{name: "unknown mode", in: func() string { s := reviewSpec(); s.Mode = "swarm"; return encode(s) }(), wantErr: "mode"},
+		{name: "a mode", in: strings.Replace(encode(reviewSpec()), `{`, `{"mode":"agentic",`, 1), wantErr: "unknown field"},
 		{name: "missing run id", in: func() string { s := reviewSpec(); s.RunID = ""; return encode(s) }(), wantErr: "runId"},
-		{name: "agentic without model", in: func() string { s := agenticSpec(); s.Model = nil; return encode(s) }(), wantErr: "model"},
-		{name: "agentic without limits", in: func() string { s := agenticSpec(); s.Agent = nil; return encode(s) }(), wantErr: "agent"},
-		{name: "agentic without a prompt", in: func() string { s := agenticSpec(); s.Prompt = nil; return encode(s) }(), wantErr: "prompt"},
-		{name: "agentic without the gateway", in: func() string { s := agenticSpec(); s.Model.GatewayURL = ""; return encode(s) }(), wantErr: "gateway"},
-		{name: "a version 4 document", in: func() string { s := agenticSpec(); s.Version = 4; return encode(s) }(), wantErr: "version 4"},
-		{name: "valid agentic with commands", in: func() string {
-			s := agenticSpec()
+		{name: "a review without model", in: func() string { s := reviewSpec(); s.Model = nil; return encode(s) }(), wantErr: "model"},
+		{name: "a review without limits", in: func() string { s := reviewSpec(); s.Agent = nil; return encode(s) }(), wantErr: "agent"},
+		{name: "a review without a prompt", in: func() string { s := reviewSpec(); s.Prompt = nil; return encode(s) }(), wantErr: "prompt"},
+		{name: "a review without the gateway", in: func() string { s := reviewSpec(); s.Model.GatewayURL = ""; return encode(s) }(), wantErr: "gateway"},
+		{name: "a version 4 document", in: func() string { s := reviewSpec(); s.Version = 4; return encode(s) }(), wantErr: "version 4"},
+		{name: "valid with commands", in: func() string {
+			s := reviewSpec()
 			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 30
 			return encode(s)
 		}()},
-		{name: "commands without a timeout", in: func() string { s := agenticSpec(); s.Agent.Commands = []string{"rg"}; return encode(s) }(),
+		{name: "commands without a timeout", in: func() string { s := reviewSpec(); s.Agent.Commands = []string{"rg"}; return encode(s) }(),
 			wantErr: "command timeout"},
 		{name: "a command given as a path", in: func() string {
-			s := agenticSpec()
+			s := reviewSpec()
 			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"../../tmp/x"}, 30
 			return encode(s)
 		}(), wantErr: "bare command name"},
@@ -106,7 +99,7 @@ func TestDecodeSpec(t *testing.T) {
 }
 
 func TestSpecRoundTripKeepsAgentFields(t *testing.T) {
-	want := agenticSpec()
+	want := reviewSpec()
 	b, err := json.Marshal(want)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +108,7 @@ func TestSpecRoundTripKeepsAgentFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Mode != ModeAgentic || got.Agent.MaxSteps != 30 || got.Model.Model != "review" ||
+	if got.Agent.MaxSteps != 30 || got.Model.Model != "review" ||
 		got.Model.GatewayURL != "http://kritik-gateway:8082" || got.Prompt.PullRequest.Title != "Add b" || len(got.Prompt.Prior) != 1 {
 		t.Fatalf("round trip = %+v %+v %+v", got, got.Agent, got.Model)
 	}
@@ -209,7 +202,7 @@ func TestPromptTrim(t *testing.T) {
 }
 
 func TestEncodeSpecWorstCaseFits(t *testing.T) {
-	s := agenticSpec()
+	s := reviewSpec()
 	// Every '<' encodes as six bytes.
 	s.Prompt.PullRequest.Body = strings.Repeat("<", 1<<20)
 	s.Prompt.Prior = make([]review.Finding, 1000)
@@ -232,7 +225,7 @@ func TestEncodeSpecWorstCaseFits(t *testing.T) {
 
 func TestReadSpec(t *testing.T) {
 	dir := t.TempDir()
-	b, err := EncodeSpec(agenticSpec())
+	b, err := EncodeSpec(reviewSpec())
 	if err != nil {
 		t.Fatal(err)
 	}

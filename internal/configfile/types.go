@@ -217,7 +217,6 @@ type Overrides struct {
 	// Settle delays a review job for a new head, so a burst of pushes
 	// collapses onto the last one before anything is spent.
 	Settle      *time.Duration `yaml:"settle,omitempty"`
-	Mode        ReviewMode     `yaml:"mode,omitempty"`
 	Agent       Agent          `yaml:"agent,omitempty"`
 	Incremental Incremental    `yaml:"incremental,omitempty"`
 	Review      ReviewSpec     `yaml:",inline"`
@@ -366,18 +365,6 @@ type RepoTraits struct {
 	TurnedOn       *bool
 }
 
-// ReviewMode is how a review is carried out.
-type ReviewMode string
-
-// Review modes. An unset mode resolves to single.
-const (
-	ReviewSingle  ReviewMode = "single"
-	ReviewAgentic ReviewMode = "agentic"
-)
-
-// Valid reports whether m is a review mode.
-func (m ReviewMode) Valid() bool { return m == ReviewSingle || m == ReviewAgentic }
-
 // Agent bounds an agentic review. A field left unset takes its default from
 // DefaultAgent; one that is set must be positive.
 type Agent struct {
@@ -463,9 +450,8 @@ type Review struct {
 }
 
 // ContextFile is a repository file that explains the code, named to the
-// reviewer with what it is: an agentic review is pointed at it, and a
-// single-shot one is given its content. With Paths it applies only when a
-// changed path matches one of them.
+// reviewer with what it is, which the agent reads with its tools. With
+// Paths it applies only when a changed path matches one of them.
 type ContextFile struct {
 	Path        string   `yaml:"path" json:"path"`
 	Description string   `yaml:"description" json:"description"`
@@ -628,7 +614,6 @@ type Settings struct {
 	Ignore []string
 	// Settle delays a review job for a new head; zero means immediate.
 	Settle      time.Duration
-	Mode        ReviewMode
 	Agent       AgentSettings
 	Incremental IncrementalSettings
 	Review      Review

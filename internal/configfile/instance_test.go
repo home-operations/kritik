@@ -126,31 +126,30 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 }
 
 // TestFileReviewDefaults: the file and the environment set the defaults'
-// mode, feedback, forks and settle, which accounts inherit with the
-// defaults' or the environment's source.
+// feedback, forks and settle, which accounts inherit with the defaults' or
+// the environment's source. mode is no longer a setting in either.
 func TestFileReviewDefaults(t *testing.T) {
 	setInstanceEnv(t)
 	t.Setenv("KRITIK_DEFAULTS_SETTLE", "45s")
 	models := "  models: { review: openrouter/big, fallback: openrouter/small }\n"
 	withDefaults := func(extra string) []byte { return []byte(strings.Replace(fileWithDefaults, models, models+extra, 1)) }
-	f, err := Parse(withDefaults("  mode: agentic\n  forks: true\n  feedback: minimal\n"))
+	f, err := Parse(withDefaults("  forks: true\n  feedback: minimal\n"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	a := &f.Accounts[0]
 	s := f.Settings(a, "acme/x")
-	if s.Mode != ReviewAgentic || !s.Forks || s.Settle != 45*time.Second || s.Review.Feedback != FeedbackMinimal {
-		t.Fatalf("settings = mode %s forks %v settle %s feedback %s; want the file's and the environment's",
-			s.Mode, s.Forks, s.Settle, s.Review.Feedback)
+	if !s.Forks || s.Settle != 45*time.Second || s.Review.Feedback != FeedbackMinimal {
+		t.Fatalf("settings = forks %v settle %s feedback %s; want the file's and the environment's",
+			s.Forks, s.Settle, s.Review.Feedback)
 	}
 	src := f.Sources(a, "acme/x")
-	for key, want := range map[string]Source{"mode": SourceDefaults, "forks": SourceDefaults, "settle": SourceEnv, "feedback": SourceDefaults} {
+	for key, want := range map[string]Source{"forks": SourceDefaults, "settle": SourceEnv, "feedback": SourceDefaults} {
 		if src[key] != want {
 			t.Errorf("source of %s = %s, want %s", key, src[key], want)
 		}
 	}
 	want := []FileDefault{
-		{"mode", FileValue{Value: "agentic", Source: SourceFile}},
 		{"feedback", FileValue{Value: "minimal", Source: SourceFile}},
 		{"forks", FileValue{Value: "true", Source: SourceFile}},
 		{"settle", FileValue{Value: "45s", Source: SourceEnv}},
@@ -158,7 +157,11 @@ func TestFileReviewDefaults(t *testing.T) {
 	if got := f.FileLayer().Defaults; !slices.Equal(got, want) {
 		t.Fatalf("file layer defaults = %+v, want %+v", got, want)
 	}
-	if _, err := Parse(withDefaults("  mode: thorough\n")); err == nil || !strings.Contains(err.Error(), "defaults.mode must be single or agentic") {
-		t.Fatalf("an unknown mode = %v", err)
+	if _, err := Parse(withDefaults("  mode: agentic\n")); err == nil || !strings.Contains(err.Error(), "mode") {
+		t.Fatalf("defaults.mode = %v, want it refused as an unknown key", err)
+	}
+	t.Setenv("KRITIK_DEFAULTS_MODE", "agentic")
+	if _, err := Parse(withDefaults("")); err == nil || !strings.Contains(err.Error(), "KRITIK_DEFAULTS_MODE names no defaults setting") {
+		t.Fatalf("KRITIK_DEFAULTS_MODE = %v, want it refused", err)
 	}
 }

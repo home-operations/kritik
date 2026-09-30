@@ -77,7 +77,7 @@ func TestCommandTool(t *testing.T) {
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n", "vendor/x.go": "package x\n"}), []string{"vendor/**"})
 
 	t.Run("offers what is on PATH, over a checkout", func(t *testing.T) {
-		s := agenticSpec()
+		s := reviewSpec()
 		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 5
 		run, cleanup := commandTool(t.Context(), s, head, "ghs_run", 1024, logger)
 		if run == nil {
@@ -108,7 +108,7 @@ func TestCommandTool(t *testing.T) {
 
 	t.Run("nothing to offer", func(t *testing.T) {
 		for _, commands := range [][]string{nil, {"curl"}} {
-			s := agenticSpec()
+			s := reviewSpec()
 			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = commands, 5
 			run, cleanup := commandTool(t.Context(), s, head, "ghs_run", 1024, logger)
 			cleanup()

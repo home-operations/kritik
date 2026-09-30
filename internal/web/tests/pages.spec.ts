@@ -131,7 +131,6 @@ test('repositories filter and repository detail', async ({ page }) => {
   await page.getByRole('link', { name: 'alpha/one' }).click();
   await expect(page).toHaveURL(new RegExp(`${T}/repos/alpha/one$`));
   await expect(page.locator('.deflist').first()).toContainText(g.repoDetail.settings.ignore[0]!);
-  await expect(page.locator('.deflist').first()).toContainText(g.repoDetail.settings.mode);
   await expect(page.locator('#repo-index').locator('../..')).toContainText(String(g.repoDetail.indexRuns[0]!.chunkCount));
   await expect(page.locator('#repo-pulls').locator('../..')).toContainText(g.pull.title);
 });
@@ -151,7 +150,7 @@ test('repository settings say where each comes from and what .kritik.yaml chose'
   // The golden file chose another review model; the admin's is shown beside it.
   await expect(settings.getByText(rc.settings.models.review, { exact: true })).toBeVisible();
   await expect(settings).toContainText(`(.kritik.yaml; the admin's is ${g.repoDetail.settings.models.review})`);
-  await expect(settings).toContainText(`${g.repoDetail.settings.mode} (account)`);
+  await expect(settings).toContainText('Forks skipped (account)');
   await expect(settings).toContainText('Settle 30s (default)');
   await expect(settings).toContainText(`Feedback ${g.repoDetail.settings.review.feedback} (default)`);
   await expect(settings).toContainText('AGENTS.md / CLAUDE.md read (default)');

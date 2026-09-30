@@ -180,7 +180,7 @@ secretEnv:
   - { name: GITHUB_TOKEN, secretName: kritik-github-token, key: token }
 ```
 
-The same port is an agentic runner's model endpoint. kritik serve mints a
+The same port is a runner's model endpoint. kritik serve mints a
 token for each run, good for that run until its Job's deadline and revoked
 when it ends, and hands it to the pod in place of a provider key; the
 gateway answers each step through the account's provider with the key only
@@ -189,8 +189,8 @@ account's `tokensPerMonth` is spent, and records the step's usage. Provider
 endpoints are therefore not in a runner's allowlist.
 
 `gateway.enabled: false` removes the listener and the Service and gives runner
-pods the `networkPolicy.egressPorts` to anywhere instead. Agentic reviews are
-refused without the gateway.
+pods the `networkPolicy.egressPorts` to anywhere instead. Reviews are refused
+without the gateway.
 
 ### Runner tools
 
@@ -220,7 +220,6 @@ config:
       allowHosts: ["*.githubusercontent.com"]
     repositories:
       org-1/repo-1:
-        mode: agentic
         agent: { commands: [gh, curl, fd, rg] }
 ```
 
@@ -234,8 +233,8 @@ Jobs under a sandboxed `runner.runtimeClassName`.
 
 ### Runner sandbox
 
-Runner Jobs parse untrusted repository content and, in agentic mode, run what
-the model asks of them. Set `runner.runtimeClassName` to a sandboxed runtime
+Runner Jobs parse untrusted repository content and run what the model asks of
+them. Set `runner.runtimeClassName` to a sandboxed runtime
 the cluster offers (`gvisor` with runsc, or a Kata class) so a kernel
 vulnerability reachable from the pod is contained by the sandbox rather than
 the node. It is advised, not required: without it the pod's other bounds
@@ -311,7 +310,7 @@ Kubernetes: `>=1.25.0-0`
 | database.runner.role | string | `"kritik_runner"` | Name of the runner role, granted only what runner Jobs need. |
 | deploymentAnnotations | object | `{}` | Annotations added to the Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
 | fullnameOverride | string | `""` | Override the full release name. |
-| gateway.enabled | bool | `true` | Serve the gateway on the kritik serve pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews, the default mode, are refused without it: set `KRITIK_DEFAULTS_MODE=single` (or `defaults.mode: single`) before turning it off. |
+| gateway.enabled | bool | `true` | Serve the gateway on the kritik serve pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint a runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Reviews are refused without it. |
 | gateway.port | int | `8082` | Gateway port on the pods and its Service. |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
@@ -356,7 +355,7 @@ Kubernetes: `>=1.25.0-0`
 | runner.deadline | string | `""` | Deadline of a runner Job (KRITIK_RUNNER_DEADLINE, Go duration). Empty is kritik's default, 15m. |
 | runner.image | string | `""` | Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd, gh and rg for an agentic review's `agent.commands`. |
 | runner.resources | object | `{}` | Resources for runner pods (KRITIK_RUNNER_RESOURCES), copied into the pod spec. |
-| runner.runtimeClassName | string | `""` | RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and, in agentic mode, runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default. |
+| runner.runtimeClassName | string | `""` | RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
 | runner.serviceAccount.create | bool | `true` | Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry. |
 | runner.serviceAccount.name | string | `""` | Runner ServiceAccount name; generated from the release name if empty. |

@@ -10,11 +10,9 @@ import (
 	"github.com/home-operations/kritik/internal/jobtimeout"
 )
 
-// Timeout implements river.Worker: the runner's deadline, the agent's in
-// agentic mode, plus the lease wait and the publish phase around it. The
-// repository's .kritik.yaml is read only once the job runs and may choose
-// agentic mode, so the timeout always covers an agentic review with the
-// admin's agent timeout.
+// Timeout implements river.Worker: the runner's deadline, which the
+// agent's timeout may lengthen, plus the lease wait and the publish phase
+// around it.
 func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
 	file := w.Current.Get()
 	account, _ := file.AccountByID(job.Args.AccountID)

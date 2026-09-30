@@ -11,8 +11,8 @@ import (
 
 // Completers resolves a configured provider to its model adapter, building
 // each on first use and again whenever its configuration changes. The
-// review and follow-up workers wrap its steppers in a model.Structured,
-// the gateway calls them directly.
+// follow-up worker wraps its steppers in a model.Structured; the gateway
+// calls them directly.
 type Completers struct {
 	Build func(p configfile.Provider) (model.Stepper, error)
 

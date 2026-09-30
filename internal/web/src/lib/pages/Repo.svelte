@@ -55,7 +55,6 @@
     mono?: boolean;
   }
   const settingRows: Row[] = [
-    { label: 'Mode', key: 'mode', value: (s) => s.mode },
     { label: 'Review model', key: 'models.review', value: (s) => s.models.review || '—', mono: true },
     { label: 'Fallback model', key: 'models.fallback', value: (s) => s.models.fallback || '—', mono: true },
     { label: 'Filter', key: 'filterExpr', value: (s) => s.filter || '—', mono: true },

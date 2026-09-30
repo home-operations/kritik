@@ -137,16 +137,15 @@ CREATE TABLE users (
     created_at     timestamptz NOT NULL DEFAULT now()
 );
 
--- A review is one pass over one head of one pull request: a single
--- completion or an agentic loop (mode), over the whole diff or only what
--- changed since the prior review (scope). summary holds the contract's
--- summary (take and praise); skip_reason says why the repository's own
--- configuration ended it skipped. forge_patch_id is the patch id of a bot
--- pull request's diff as its forge reports it, so a rebase that changed
--- nothing is skipped before a runner is made for it; it is compared only
--- with other forge patch ids, since the forge's diff is not the runner's
--- byte for byte. The dashboard can cancel a running review and records
--- when; the audit log records who.
+-- A review is one pass over one head of one pull request: an agent loop
+-- over the whole diff or only what changed since the prior review (scope).
+-- summary holds the contract's summary (take and praise); skip_reason says
+-- why the repository's own configuration ended it skipped. forge_patch_id
+-- is the patch id of a bot pull request's diff as its forge reports it, so
+-- a rebase that changed nothing is skipped before a runner is made for it;
+-- it is compared only with other forge patch ids, since the forge's diff
+-- is not the runner's byte for byte. The dashboard can cancel a running
+-- review and records when; the audit log records who.
 CREATE TABLE reviews (
     id                  uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     account_id          uuid        NOT NULL REFERENCES accounts (id),
@@ -162,7 +161,6 @@ CREATE TABLE reviews (
     created_at          timestamptz NOT NULL DEFAULT now(),
     finished_at         timestamptz,
     summary             jsonb,
-    mode                text        NOT NULL DEFAULT 'single' CHECK (mode IN ('single', 'agentic')),
     prior_review_id     uuid        REFERENCES reviews (id),
     scope               text        NOT NULL DEFAULT 'full' CHECK (scope IN ('full', 'incremental')),
     scope_reason        text        NOT NULL DEFAULT '',
@@ -288,7 +286,7 @@ CREATE TABLE usage (
     account_id    uuid        NOT NULL REFERENCES accounts (id),
     repository_id uuid        REFERENCES repositories (id),
     review_id     uuid        REFERENCES reviews (id),
-    role          text        NOT NULL CHECK (role IN ('review', 'fallback', 'embedding', 'followup')),
+    role          text        NOT NULL CHECK (role IN ('review', 'embedding', 'followup')),
     model         text        NOT NULL,
     upstream      text        NOT NULL DEFAULT '',
     input_tokens  bigint      NOT NULL DEFAULT 0,
@@ -521,9 +519,9 @@ CREATE INDEX audit_events_account_id_idx ON audit_events (account_id, id DESC);
 CREATE INDEX audit_events_user_id_idx ON audit_events (user_id) WHERE user_id IS NOT NULL;
 
 -- model_calls is account content (row-level security applies, unlike the
--- tables above): one row per model call the gateway made, whether an
--- agent's step, a plain review, a fallback, or a followup reply, kept for
--- the dashboard's transcript view and cost accounting. A NULL system or
+-- tables above): one row per model call kritik made, an agent's step or a
+-- followup reply, kept for the dashboard's transcript view and cost
+-- accounting. A NULL system or
 -- tools means "unchanged from the previous row of the same run/review",
 -- so a long agent run doesn't repeat an unchanging system prompt or tool
 -- list on every step.
@@ -541,7 +539,7 @@ CREATE TABLE model_calls (
     review_id           uuid        REFERENCES reviews (id),
     runner_run_id       uuid        REFERENCES runner_runs (id),
     followup_comment_id bigint,
-    kind                text        NOT NULL CHECK (kind IN ('agent_step', 'review', 'fallback', 'followup')),
+    kind                text        NOT NULL CHECK (kind IN ('agent_step', 'followup')),
     step                int         NOT NULL DEFAULT 0,
     model               text        NOT NULL DEFAULT '',
     upstream            text        NOT NULL DEFAULT '',

@@ -33,6 +33,8 @@ func spec() Spec {
 			Version: runner.SpecVersion, Kind: runner.KindReview, RunID: "0123456789abcdef-run",
 			CloneURL: "https://forge.example.com/acme/widgets.git", Head: headSHA, Base: baseSHA,
 			Ignore: []string{"vendor/**", "**/*.lock"},
+			Agent:  &runner.AgentLimits{}, Model: &runner.ModelEndpoint{GatewayURL: "http://kritik-gateway:8082", Model: "review"},
+			Prompt: &runner.Prompt{Repository: "acme/widgets"},
 		},
 		Secrets:   runner.Secrets{GitToken: "ghs_secret_token", GatewayToken: "krk_run_token"},
 		Deadline:  5 * time.Minute,

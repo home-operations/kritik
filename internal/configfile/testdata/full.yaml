@@ -36,7 +36,7 @@ repositories:
   home-operations/kopiur:
     filterExpr: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
   home-operations/charts-mirror:
-    mode: single
+    ignore: ["charts/**"]
   onedr0p/*:
     models:
       review: local/claude-opus-5

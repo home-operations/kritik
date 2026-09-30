@@ -11,6 +11,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -60,7 +62,6 @@ providers:
     baseUrl: http://unused.invalid/v1
     apiKey: { env: TEST_SECRET }
 defaults:
-  mode: single
   models:
     review: test/reviewer
   limits:
@@ -95,6 +96,25 @@ type localForge struct {
 	// permissions by login; unknown logins have read access.
 	permissions map[string]forge.Permission
 	replies     []string
+	// publishing, when set, runs once as a review writes its sticky
+	// comment, the first thing publishing does.
+	publishing func()
+}
+
+// onPublish runs fn once as the next review publishes.
+func (l *localForge) onPublish(fn func()) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.publishing = fn
+}
+
+// published takes the publishing hook; the caller runs it unlocked.
+func (l *localForge) published() func() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fn := l.publishing
+	l.publishing = nil
+	return fn
 }
 
 func (l *localForge) setBase(base string) {
@@ -209,6 +229,9 @@ func (l *localForge) FindComment(_ context.Context, _, _ string, _ int, _, marke
 }
 
 func (l *localForge) CreateComment(_ context.Context, _, _ string, _ int, body string) (int64, error) {
+	if fn := l.published(); fn != nil {
+		fn()
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.addComment("kritik[bot]", body), nil
@@ -275,6 +298,9 @@ func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, _ forge.
 }
 
 func (l *localForge) UpdateComment(_ context.Context, _, _ string, id int64, body string) error {
+	if fn := l.published(); fn != nil {
+		fn()
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if _, ok := l.comments[id]; !ok {
@@ -328,75 +354,45 @@ func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.St
 	return nil
 }
 
-// fakeCompleter answers a review with one finding on the first added line
-// of main.go and one that cannot be anchored, and a follow-up with a fixed
-// reply, as the forced tool call a model.Structured makes.
+// fakeCompleter answers a review's first step by submitting one finding on
+// the first added line of main.go and one that cannot be anchored, and a
+// follow-up with a fixed reply, as the forced tool call a model.Structured
+// makes.
 type fakeCompleter struct {
 	mu      sync.Mutex
 	calls   int
 	users   []string
 	systems []string
-	block   bool
-	started chan struct{}
-	// answered, if set, runs once a review/findings call has its answer and
-	// before Complete returns it.
-	answered func(ctx context.Context)
 }
 
-func (f *fakeCompleter) setAnswered(fn func(ctx context.Context)) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.answered = fn
-}
-
-// setBlock arms or disarms blocking the review/findings model call (never
-// the follow-up "reply" call) inside Step until the caller's ctx is done, so
-// a test can cancel a review while it is mid-publish. started, if non-nil,
-// receives a signal once a blocked call is actually in progress.
-func (f *fakeCompleter) setBlock(b bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.block = b
-}
-
-func (f *fakeCompleter) Step(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
+func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
 	f.mu.Lock()
 	f.calls++
 	f.users = append(f.users, req.Messages[0].Text)
 	f.systems = append(f.systems, req.System)
 	isReply := req.Tools[0].Name == "reply"
-	block := f.block && !isReply
-	started := f.started
-	answered := f.answered
 	f.mu.Unlock()
-	if block {
-		if started != nil {
-			select {
-			case started <- struct{}{}:
-			case <-ctx.Done():
-			}
+	// A review's agent is offered its read-only tools too; it submits at once.
+	tool := req.Tools[0].Name
+	for _, t := range req.Tools {
+		if t.Name == "submit_review" {
+			tool = t.Name
 		}
-		<-ctx.Done()
-		return model.StepResponse{}, context.Cause(ctx)
 	}
 	answer := func(raw string, usage model.Usage, upstream string, cost float64) model.StepResponse {
 		return model.StepResponse{
-			ToolCalls: []model.ToolCall{{ID: "call", Name: req.Tools[0].Name, Input: json.RawMessage(raw)}}, Stop: model.StopToolUse,
+			ToolCalls: []model.ToolCall{{ID: "call", Name: tool, Input: json.RawMessage(raw)}}, Stop: model.StopToolUse,
 			Usage: usage, Model: req.Model, Upstream: upstream, CostUSD: cost,
 		}
 	}
 	if isReply {
 		return answer(`{"reply":"Because b is new."}`, model.Usage{Input: 20, Output: 5}, "", 0), nil
 	}
-	resp := answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
+	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
 		  {"path":"main.go","line":1,"severity":"important","title":"first line","explanation":"look here","suggested_fix":"do this",
 		   "rules":["no-panics","sql-placeholders"]},
 		  {"path":"main.go","line":500,"severity":"blocking","title":"off the diff","explanation":"dropped"}]}`,
-		model.Usage{Input: 10, Output: 5}, "test", 0.001)
-	if answered != nil {
-		answered(ctx)
-	}
-	return resp, nil
+		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil
 }
 
 type completers struct{ c model.Stepper }
@@ -533,7 +529,7 @@ func checkContextPack(
 	}
 	checkWriteBack(t, lf, fc)
 	checkReviewRows(ctx, t, appStore, accountID, head)
-	checkSingleShotTranscript(ctx, t, appStore, accountID, head, fc)
+	checkReviewTranscript(ctx, t, appStore, accountID, head, fc)
 	var diff, phase, logTail, stages string
 	var changed []string
 	var heartbeat bool
@@ -1060,16 +1056,23 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	dispatch := func(headSHA string, bot bool) { t.Helper(); dispatchPR(1, headSHA, bot) }
 
 	lf := &localForge{dir: dir, base: base, tip: head, permissions: map[string]forge.Permission{"onedr0p": forge.PermissionAdmin}}
-	fc := &fakeCompleter{started: make(chan struct{}, 1)}
+	fc := &fakeCompleter{}
 	fe := &fakeEmbedder{}
 	embedders := &Embedders{Build: func(configfile.Embedding) model.Embedder { return fe }}
 	exec := &gateExecutor{inner: &executor.Local{Store: runnerStore}, started: make(chan executor.Spec)}
 	deadline := &jobDeadline{}
 	workers := river.NewWorkers()
 	wb := Base{Store: appStore, Current: current, Forges: &forges{f: lf}, Logger: logger}
+	// The runner reaches fc, and the index through fe, by the gateway.
+	gateway := httptest.NewServer(&Gateway{
+		Base: wb, Proxy: http.NotFoundHandler(), Embedders: embedders,
+		Steppers: &Completers{Build: func(configfile.Provider) (model.Stepper, error) { return fc, nil }},
+	})
+	t.Cleanup(gateway.Close)
 	river.AddWorker(workers, &Review{
-		Base: wb, Completers: &completers{c: fc}, Embedders: embedders, Executor: exec,
-		superviseEvery: 50 * time.Millisecond,
+		Base: wb, Executor: exec, GatewayURL: gateway.URL, GatewayTokenTTL: time.Hour,
+		// A stopped run's runner never started here, so no agent row comes.
+		superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
 	})
 	river.AddWorker(workers, &FollowUp{Base: wb, Completers: &completers{c: fc}})
 	river.AddWorker(workers, &Index{
@@ -1195,11 +1198,11 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("a job that ends after the runner still ends its review", func(t *testing.T) {
-		checkJobEnded(ctx, t, appStore, insertOnly, exec, fc, deadline, dispatch, waitReview, dir, base, account.ID(), lf)
+		checkJobEnded(ctx, t, appStore, exec, deadline, dispatch, waitReview, dir, base, account.ID(), lf)
 	})
 
 	t.Run("worker actions: rerun, cancel and forced reindex", func(t *testing.T) {
-		checkActions(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, dir, base, head, account.ID(), repoID, lf, fc)
+		checkActions(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, dir, base, head, account.ID(), repoID, lf)
 	})
 
 	t.Run("a maintainer's @kritik review queues a review", func(t *testing.T) {
@@ -1750,7 +1753,7 @@ func checkSupervision(
 func checkActions(
 	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], exec *gateExecutor,
 	dispatch func(string, bool), waitReview func(string) (string, string, string),
-	dir, base, head, accountID, repoID string, lf *localForge, fc *fakeCompleter,
+	dir, base, head, accountID, repoID string, lf *localForge,
 ) {
 	t.Helper()
 
@@ -1766,9 +1769,6 @@ func checkActions(
 	})
 	t.Run("RequestCancel ends a running review as canceled with no retry", func(t *testing.T) {
 		checkRequestCancelRunning(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, accountID, lf)
-	})
-	t.Run("RequestCancel ends a queued (prepared) review as canceled", func(t *testing.T) {
-		checkRequestCancelPrepared(ctx, t, appStore, insertOnly, fc, dispatch, waitReview, dir, base, accountID)
 	})
 	t.Run("EnqueueReindex forces a full generation even when one is active", func(t *testing.T) {
 		checkEnqueueReindex(ctx, t, appStore, insertOnly, accountID, repoID, head)
@@ -2004,43 +2004,6 @@ func checkRequestCancelRunning(
 	}
 }
 
-// checkRequestCancelPrepared cancels a review in its "prepared" state, which
-// RequestCancel also accepts: the runner finishes and records a successful
-// run, afterRun marks the review prepared, and the model call inside publish
-// is what the blocked completer holds open when the cancel arrives. The run
-// itself succeeded, so unlike checkRequestCancelRunning this does not assert
-// on runner_runs.
-func checkRequestCancelPrepared(
-	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], fc *fakeCompleter,
-	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, accountID string,
-) {
-	t.Helper()
-	head := commitOnBase(t, dir, base, "cancel during prepared", "package main\n\nfunc preparedCancel() {}\n")
-	fc.setBlock(true)
-	t.Cleanup(func() { fc.setBlock(false) })
-	dispatch(head, false)
-	select {
-	case <-fc.started:
-	case <-time.After(20 * time.Second):
-		t.Fatal("the completer never started")
-	}
-
-	id := latestReviewID(ctx, t, appStore, accountID, head)
-	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return jobs.RequestCancel(ctx, tx, insertOnly, id)
-	})
-	if err != nil {
-		t.Fatalf("RequestCancel: %v", err)
-	}
-
-	if status, _, _ := waitReview(head); status != "canceled" {
-		t.Fatalf("status = %s, want canceled", status)
-	}
-	if n := countReviewsByStatus(ctx, t, appStore, accountID, head, "canceled"); n != 1 {
-		t.Fatalf("canceled reviews for %s = %d, want 1 (no River retry)", head, n)
-	}
-}
-
 // checkEnqueueRerunClosed asserts EnqueueRerun refuses a pull request that
 // has no open head to re-review. dispatchPR always reopens PR #1 (State:
 // "open"), so this closes it directly with SQL rather than through a
@@ -2254,12 +2217,11 @@ func (d *jobDeadline) fire() {
 
 // checkJobEnded asserts a review job whose ctx ends after its runner has
 // finished leaves a terminal review and no River retry: a timeout during
-// afterRun fails the review, and a cancel after the model answered keeps
-// the published review completed with its usage recorded.
+// afterRun fails the review, and one while it publishes keeps the review
+// completed with its usage recorded.
 func checkJobEnded(
-	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], exec *gateExecutor,
-	fc *fakeCompleter, deadline *jobDeadline, dispatch func(string, bool), waitReview func(string) (string, string, string),
-	dir, base, accountID string, lf *localForge,
+	ctx context.Context, t *testing.T, appStore *store.Store, exec *gateExecutor, deadline *jobDeadline,
+	dispatch func(string, bool), waitReview func(string) (string, string, string), dir, base, accountID string, lf *localForge,
 ) {
 	t.Run("a timeout during afterRun fails the review", func(t *testing.T) {
 		head := commitOnBase(t, dir, base, "timed out after the runner", "package main\n\nfunc timedOut() {}\n")
@@ -2287,24 +2249,11 @@ func checkJobEnded(
 		}
 	})
 
-	t.Run("a cancel after the model answered keeps the review completed", func(t *testing.T) {
-		head := commitOnBase(t, dir, base, "canceled after the answer", "package main\n\nfunc answered() {}\n")
-		fc.setAnswered(func(cctx context.Context) {
-			id := latestReviewID(ctx, t, appStore, accountID, head)
-			err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-				return jobs.RequestCancel(ctx, tx, insertOnly, id)
-			})
-			if err != nil {
-				t.Errorf("RequestCancel: %v", err)
-				return
-			}
-			select {
-			case <-cctx.Done():
-			case <-time.After(10 * time.Second):
-				t.Error("the job's ctx never saw the cancel")
-			}
-		})
-		t.Cleanup(func() { fc.setAnswered(nil) })
+	t.Run("a timeout while publishing keeps the review completed", func(t *testing.T) {
+		head := commitOnBase(t, dir, base, "timed out while publishing", "package main\n\nfunc answered() {}\n")
+		lf.onPublish(deadline.fire)
+		t.Cleanup(func() { lf.onPublish(nil) })
+		deadline.arm()
 		dispatch(head, false)
 		if status, _, _ := waitReview(head); status != string(store.ReviewCompleted) {
 			t.Fatalf("status = %s, want completed", status)
@@ -2446,7 +2395,7 @@ func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
 	args := jobs.ReviewArgs{AccountID: account.ID(), RepositoryID: repoID, Number: 4242, HeadSHA: "abc4242"}
 	attempt := func(jobID int64) string {
 		t.Helper()
-		id, _, _, err := w.start(ctx, args, pr, "base", "", configfile.ReviewSingle, jobID)
+		id, _, _, err := w.start(ctx, args, pr, "base", "", jobID)
 		if err != nil {
 			t.Fatalf("start(%d): %v", jobID, err)
 		}

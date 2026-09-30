@@ -232,11 +232,11 @@ embedding:
 - `apiKey` is required: a server that takes no key still needs a
   reference, to a variable holding any value.
 - The model must support tool calls, and the server must honour a
-  request that forces a named one: kritik asks for a review's findings as
-  a call to a tool named for their schema, and an agentic review works
-  through tools.
-- The kritik pods call the server; an agentic review's runner reaches it
-  only through their gateway. With the chart's `networkPolicy.enabled`,
+  request that forces a named one: a review works through tools and
+  submits its findings as a call to `submit_review`, forced on its last
+  step, and a follow-up's reply is a forced call too.
+- The kritik pods call the server; a review's runner reaches it only
+  through their gateway. With the chart's `networkPolicy.enabled`,
   add the server's port to `networkPolicy.egressPorts`, which allows only
   443 unless set.
 - A server that reports no cost makes every call cost nothing unless
@@ -255,7 +255,6 @@ account, and `owner/name` for one
 
 ```yaml
 defaults:
-  mode: agentic
   models: { review: openrouter/vendor/large-model, fallback: openrouter/vendor/small-model }
   feedback: detailed
   settle: 30s
@@ -279,13 +278,15 @@ repositories:
 ```
 
 Each takes the keys a repository's own `.kritik.yaml` takes, at the same
-level (`mode`, `models`, `feedback`, `comments`, `requireSuggestedFix`,
+level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
 `approve`, `filterExpr`, `ignore`, `rules`, `context` and `agentFiles`; see
 [the repository settings](repository-config.md)), and the admin's own:
 
-- `agent`: an agentic review's `maxSteps`, `maxToolOutputBytes`,
-  `maxTokens`, `timeout`, the `commands` its run tool may execute, and
-  their `commandTimeout`. The runner's `-tools` image has `gh`, `curl`,
+- `agent`: a review's `maxSteps`, `maxToolOutputBytes`, `maxTokens`,
+  `timeout`, the `commands` its run tool may execute, and their
+  `commandTimeout`. `maxSteps: 1` is the cheapest review: one call, which
+  must submit the findings, over the same prompt
+  ([ADR-0026](adr/0026-agentic-only.md)). The runner's `-tools` image has `gh`, `curl`,
   `fd` and `rg`; the agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under
   review and public repositories
@@ -303,8 +304,7 @@ level (`mode`, `models`, `feedback`, `comments`, `requireSuggestedFix`,
 A value applies in this order: kritik's default, `defaults`, `owner/*`,
 `owner/name`, and the repository's `.kritik.yaml`. A narrower value
 replaces the broader one's, except `ignore` globs, which add up, and
-`rules`, which add up by id ([ADR-0018](adr/0018-rules.md)). `mode` is
-`agentic` unless set, which needs the chart's `gateway`.
+`rules`, which add up by id ([ADR-0018](adr/0018-rules.md)).
 
 The same defaults can come from the environment:
 
@@ -316,7 +316,6 @@ The same defaults can come from the environment:
 | `KRITIK_PROVIDERS_API_KEY`        | `apiKey`                                                                              |
 | `KRITIK_DEFAULTS_MODELS_REVIEW`   | `defaults.models.review`                                                              |
 | `KRITIK_DEFAULTS_MODELS_FALLBACK` | `defaults.models.fallback`                                                            |
-| `KRITIK_DEFAULTS_MODE`            | `defaults.mode`                                                                       |
 | `KRITIK_DEFAULTS_FEEDBACK`        | `defaults.feedback`                                                                   |
 | `KRITIK_DEFAULTS_FORKS`           | `defaults.forks`, `true` or `false`                                                   |
 | `KRITIK_DEFAULTS_SETTLE`          | `defaults.settle`, a duration such as `30s`                                           |

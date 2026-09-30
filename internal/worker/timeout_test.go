@@ -34,10 +34,7 @@ apps:
     privateKey: { env: TEST_PEM }
     webhookSecret: { env: TEST_SECRET }
 repositories:
-  acme/*: { mode: single }
-  acme/agentic: { mode: agentic }
-  acme/slow-agent: { mode: agentic, agent: { timeout: 50m } }
-  acme/may-go-agentic: { agent: { timeout: 40m } }
+  acme/slow-agent: { agent: { timeout: 50m } }
 `
 
 func TestJobTimeouts(t *testing.T) {
@@ -59,17 +56,12 @@ func TestJobTimeouts(t *testing.T) {
 		index        time.Duration
 		followUp     time.Duration
 	}{
-		// A .kritik.yaml may choose agentic mode, so single mode covers the
-		// agent's 20m plus 5m of fetch headroom too; 15m + 60m to embed.
-		{name: "single mode", accountID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: 55 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
-		// The agent's 20m plus 5m of fetch headroom outlasts the runner deadline.
-		{name: "agentic mode", accountID: acme.ID(), repositoryID: acmeRepo("acme/agentic"), review: 55 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
-		{name: "agentic with a longer agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/slow-agent"),
+		// The agent's 20m plus 5m of fetch headroom outlasts the runner
+		// deadline; 15m + 60m to embed.
+		{name: "the default agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: 55 * time.Minute,
+			index: 75 * time.Minute, followUp: 30 * time.Minute},
+		{name: "a longer agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/slow-agent"),
 			review: 85 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
-		// Single mode with a 40m agent timeout its .kritik.yaml may use:
-		// 40m + 5m of fetch headroom, then the rest.
-		{name: "single mode with a longer agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/may-go-agentic"),
-			review: 75 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 		{name: "unknown account", accountID: "missing", repositoryID: "missing", review: 45 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 	}
 	for _, tt := range tests {
@@ -97,7 +89,7 @@ func TestJobTimeouts(t *testing.T) {
 	t.Setenv("KRITIK_RUNNER_DEADLINE", jobtimeout.MaxRunnerDeadline.String())
 	current = configfile.NewCurrent(configfiletest.Load(t, timeoutConfigYAML))
 	review, index = &Review{Current: current}, &Index{Current: current}
-	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID(), RepositoryID: acmeRepo("acme/agentic")}}),
+	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID(), RepositoryID: acmeRepo("acme/unlisted")}}),
 		jobtimeout.MaxRunnerDeadline+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom; got != want {
 		t.Errorf("review timeout at the max deadline = %s, want %s", got, want)
 	}

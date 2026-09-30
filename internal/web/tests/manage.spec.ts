@@ -255,8 +255,8 @@ test.describe('settings search', () => {
     await settings.getByLabel('Filter settings').fill('settle');
     await expect(settings.locator('dt')).toHaveText(['Settle']);
     await expect(page.locator('#repo-agent').locator('../..').locator('dt')).toHaveCount(0);
-    await settings.getByLabel('Filter settings').fill('agentic');
-    await expect(settings.locator('dt')).toHaveText(['Mode']);
+    await settings.getByLabel('Filter settings').fill('skipped');
+    await expect(settings.locator('dt')).toHaveText(['Forks']);
     await settings.getByLabel('Filter settings').fill('nothing-like-it');
     await expect(settings).toContainText('No setting matches');
   });

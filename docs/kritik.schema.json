@@ -10,10 +10,6 @@
       "type": "boolean",
       "description": "false stops reviews, follow-ups and indexing; true cannot turn a disabled repository on."
     },
-    "mode": {
-      "enum": ["single", "agentic"],
-      "description": "How the repository is reviewed."
-    },
     "models": {
       "type": "object",
       "additionalProperties": false,

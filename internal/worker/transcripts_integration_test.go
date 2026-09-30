@@ -4,6 +4,7 @@ package worker
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,9 +30,10 @@ func modelCalls(
 	return rows
 }
 
-// checkSingleShotTranscript checks that a single-mode review recorded its
-// one call: the system prompt, the prompt and the forced tool's input.
-func checkSingleShotTranscript(ctx context.Context, t *testing.T, st *store.Store, accountID, head string, fc *fakeCompleter) {
+// checkReviewTranscript checks that the gateway recorded a review's one
+// agent step: the system prompt, the prompt, the agent's tools and
+// submit_review's input.
+func checkReviewTranscript(ctx context.Context, t *testing.T, st *store.Store, accountID, head string, fc *fakeCompleter) {
 	t.Helper()
 	var reviewID string
 	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -45,13 +47,17 @@ func checkSingleShotTranscript(ctx context.Context, t *testing.T, st *store.Stor
 	conv := transcript.Rebuild(modelCalls(ctx, t, st, accountID, func(tx pgx.Tx) ([]transcript.StoredRow, error) {
 		return store.ReviewModelCalls(ctx, tx, reviewID)
 	}))
-	if len(conv.Turns) != 1 || conv.System != system || len(conv.Tools) != 1 || conv.Tools[0].Name != "findings" {
+	tools := make([]string, len(conv.Tools))
+	for i, tool := range conv.Tools {
+		tools[i] = tool.Name
+	}
+	if len(conv.Turns) != 1 || conv.System != system || !slices.Equal(tools, []string{"read_file", "grep", "list_files", "submit_review"}) {
 		t.Fatalf("conversation = %+v", conv)
 	}
 	turn := conv.Turns[0]
-	if turn.Kind != store.ModelCallReview || len(turn.Messages) != 1 || turn.Messages[0].Text != user ||
+	if turn.Kind != store.ModelCallAgentStep || len(turn.Messages) != 1 || turn.Messages[0].Text != user ||
 		len(turn.Response.ToolCalls) != 1 || !strings.Contains(string(turn.Response.ToolCalls[0].Input), "first line") ||
-		turn.Usage.Input != 10 || turn.Usage.Output != 5 || turn.CostUSD != 0.001 || turn.Upstream != "test" || turn.RunnerRunID != "" {
+		turn.Usage.Input != 10 || turn.Usage.Output != 5 || turn.CostUSD != 0.001 || turn.Upstream != "test" || turn.RunnerRunID == "" {
 		t.Fatalf("turn = %+v", turn)
 	}
 }

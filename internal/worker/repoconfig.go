@@ -20,18 +20,15 @@ import (
 )
 
 // Effective is a repository's settings once its .kritik.yaml is applied.
-// Settings.Review names the files the runner reads; Instructions, its
-// agent files, Templates and References hold their contents once it has,
-// and Rules the rules that apply to the change, a file rule with its
-// file's content.
+// Settings.Review names the files the runner reads; Templates holds their
+// contents once it has, and Rules the rules that apply to the change, a
+// file rule with its file's content.
 type Effective struct {
 	repoconfig.Merged
 	// Found is whether the repository has a .kritik.yaml.
-	Found        bool
-	Rules        []review.Rule
-	Instructions []string
-	Templates    review.Templates
-	References   []review.Reference
+	Found     bool
+	Rules     []review.Rule
+	Templates review.Templates
 }
 
 // readRepoConfig reads .kritik.yaml at ref through the forge: nil when the
@@ -74,12 +71,11 @@ func (e *Effective) repoFiles() []string {
 }
 
 // fill reads the contents of the files e names out of files, what the
-// runner read, into Rules, Instructions, Templates and References,
-// leaving out context files and rules scoped to paths none of changed
-// matches, and rules whose whenExpr is false of vars, the pull request's
-// filter variables.
+// runner read, into Rules and Templates, leaving out rules scoped to paths
+// none of changed matches and rules whose whenExpr is false of vars, the
+// pull request's filter variables.
 // notes lead the returned ones; a named file missing from files is noted
-// unless they already say why.
+// unless they already say why, and instructions past their cap are too.
 func (e *Effective) fill(files repoconfig.Files, notes, changed []string, vars map[string]any) []string {
 	notes = slices.Clone(notes)
 	read := func(p string) string {
@@ -104,18 +100,12 @@ func (e *Effective) fill(files repoconfig.Files, notes, changed []string, vars m
 	if e.Review.AgentFiles {
 		agent = repoconfig.AgentFiles(files, changed)
 	}
-	var truncated bool
-	if e.Instructions, truncated = repoconfig.Instructions(files, agent); truncated {
+	if _, truncated := repoconfig.Instructions(files, agent); truncated {
 		notes = append(notes, "AGENTS.md and CLAUDE.md files truncated to 32 KiB")
 	}
 	e.Templates = review.Templates{Summary: read(e.Review.Templates.Summary), Inline: read(e.Review.Templates.Inline)}
-	applies := repoconfig.ActiveContext(e.Review.Context, changed)
-	e.References = nil
 	for _, c := range e.Review.Context {
-		content := read(c.Path)
-		if content != "" && slices.ContainsFunc(applies, func(a configfile.ContextFile) bool { return a.Path == c.Path }) {
-			e.References = append(e.References, review.Reference{Path: c.Path, Description: c.Description, Content: content})
-		}
+		read(c.Path)
 	}
 	return notes
 }

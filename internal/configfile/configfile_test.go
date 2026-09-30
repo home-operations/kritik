@@ -233,7 +233,7 @@ apps:
 }
 
 // acme is minimal with entries, lines of the repositories map, such as
-// "  acme/*: { mode: agentic }\n".
+// "  acme/*: { forks: true }\n".
 func acme(entries string) string {
 	if entries == "" {
 		return minimal
@@ -260,7 +260,7 @@ func TestEnabledDefault(t *testing.T) {
 		name, doc string
 		want      map[string]bool
 	}{
-		{"on unless turned off", acme("  acme/listed: { mode: single }\n"),
+		{"on unless turned off", acme("  acme/listed: { settle: 1m }\n"),
 			map[string]bool{"acme/new": true, "acme/listed": true}},
 		{"off at the defaults", "defaults: { enabled: false }\n" + acme("  acme/listed: {}\n"),
 			map[string]bool{"acme/new": false, "acme/listed": false}},
@@ -297,7 +297,7 @@ func TestRuns(t *testing.T) {
 		{"a source repository turned off", acme("  acme/*: { enabled: false }\n"), "acme/app", RepoTraits{}, false},
 		{"a fork", acme(""), "acme/copy", fork, false},
 		{"a fork owner/* turns on", acme("  acme/*: { enabled: true }\n"), "acme/copy", fork, false},
-		{"a fork with an entry", acme("  acme/copy: { mode: agentic }\n"), "acme/copy", fork, false},
+		{"a fork with an entry", acme("  acme/copy: { settle: 1m }\n"), "acme/copy", fork, false},
 		{"an archived repository", acme(""), "acme/old", archived, false},
 		{"a repository an admin turned off", acme("  acme/*: { enabled: true }\n"), "acme/app", RepoTraits{TurnedOn: new(false)}, false},
 		{"a repository an admin turned on", acme("  acme/*: { enabled: false }\n"), "acme/app", RepoTraits{TurnedOn: new(true)}, true},
@@ -530,7 +530,6 @@ defaults:
   filterExpr: "!pr.draft"
   settle: 2m
   ignore: ["defaults/**"]
-  mode: agentic
   agent: { maxSteps: 9 }
   incremental: { maxDeltaFiles: 3 }
   rules: [{ id: ops, file: ops/rules.md }]
@@ -558,7 +557,7 @@ defaults:
 	t.Run("an account inherits what it leaves out", func(t *testing.T) {
 		f := parse(t, doc("", "", ""))
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		if s.Filter == nil || s.Settle != 2*time.Minute || s.Mode != ReviewAgentic || s.Agent.MaxSteps != 9 ||
+		if s.Filter == nil || s.Settle != 2*time.Minute || s.Agent.MaxSteps != 9 ||
 			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
 			!reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
 			t.Fatalf("inherited settings = %+v", s)
@@ -578,10 +577,10 @@ defaults:
 	})
 
 	t.Run("the narrowest scope written wins, field by field", func(t *testing.T) {
-		f := parse(t, doc("", `mode: single, agent: { maxSteps: 7 }, requireSuggestedFix: true, ignore: ["account/**"]`,
+		f := parse(t, doc("", `agent: { maxSteps: 7 }, requireSuggestedFix: true, ignore: ["account/**"]`,
 			`models: { review: p/small }, forks: true, agent: { maxTokens: 500 }, ignore: ["repo/**"]`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		if s.Mode != ReviewSingle || s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" || !s.Forks {
+		if s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" || !s.Forks {
 			t.Fatalf("settings = %+v", s)
 		}
 		if !s.Review.RequireSuggestedFix || !reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) {
@@ -673,7 +672,7 @@ func TestRulesAddUp(t *testing.T) {
 	}
 }
 
-func TestRepositoryModeAgentReview(t *testing.T) {
+func TestRepositoryAgentReview(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	withRepo := func(repo string) string {
@@ -687,8 +686,8 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		}
 		for _, repo := range []string{"acme/x", "acme/unlisted"} {
 			s := f.Settings(&f.Accounts[0], repo)
-			if s.Mode != ReviewAgentic || !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
-				t.Fatalf("%s: mode=%q agent=%+v incremental=%+v", repo, s.Mode, s.Agent, s.Incremental)
+			if !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
+				t.Fatalf("%s: agent=%+v incremental=%+v", repo, s.Agent, s.Incremental)
 			}
 			if s.Review.RequireSuggestedFix || len(s.Review.Rules) != 0 || s.Review.Templates != (ReviewTemplates{}) {
 				t.Fatalf("%s: review = %+v", repo, s.Review)
@@ -700,7 +699,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 	})
 
 	t.Run("repository values override the defaults", func(t *testing.T) {
-		f, err := loadBytes(t, []byte(withRepo(`{ mode: agentic,
+		f, err := loadBytes(t, []byte(withRepo(`{
       agent: { maxSteps: 12, maxToolOutputBytes: 4096, maxTokens: 250000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
       incremental: { maxDeltaFiles: 5 },
       rules: [{ id: style, file: docs/rules.md }], requireSuggestedFix: true,
@@ -711,8 +710,8 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		s := f.Settings(&f.Accounts[0], "acme/x")
 		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, Timeout: 3 * time.Minute,
 			Commands: []string{"curl", "rg"}, CommandTimeout: 10 * time.Second}
-		if s.Mode != ReviewAgentic || !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
-			t.Fatalf("mode=%q agent=%+v incremental=%+v", s.Mode, s.Agent, s.Incremental)
+		if !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
+			t.Fatalf("agent=%+v incremental=%+v", s.Agent, s.Incremental)
 		}
 		if !s.Review.RequireSuggestedFix || len(s.Review.Rules) != 1 || s.Review.Rules[0].File != "docs/rules.md" ||
 			s.Review.Templates.Summary != ".kritik/summary.md.tmpl" || s.Review.Templates.Inline != ".kritik/inline.md.tmpl" {
@@ -735,16 +734,8 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		}
 	})
 
-	t.Run("review modes", func(t *testing.T) {
-		for m, valid := range map[ReviewMode]bool{ReviewSingle: true, ReviewAgentic: true, "": false, "loop": false} {
-			if m.Valid() != valid {
-				t.Fatalf("%q.Valid() = %v", m, !valid)
-			}
-		}
-	})
-
 	rejects := []struct{ name, repo, want string }{
-		{"invalid mode", "{ mode: loop }", "mode must be single or agentic"},
+		{"a mode", "{ mode: agentic }", "field mode not found"},
 		{"zero max steps", "{ agent: { maxSteps: 0 } }", "agent.maxSteps must be positive"},
 		{"negative max steps", "{ agent: { maxSteps: -1 } }", "agent.maxSteps must be positive"},
 		{"zero tool output", "{ agent: { maxToolOutputBytes: 0 } }", "agent.maxToolOutputBytes must be positive"},

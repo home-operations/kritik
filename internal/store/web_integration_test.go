@@ -145,7 +145,7 @@ func TestModelCallsRowLevelSecurity(t *testing.T) {
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO model_calls (account_id, kind, model) VALUES ($1, 'review', 'acme/large')`, alpha)
+		_, err := tx.Exec(ctx, `INSERT INTO model_calls (account_id, kind, model) VALUES ($1, 'followup', 'acme/large')`, alpha)
 		return err
 	}); err != nil {
 		t.Fatalf("insert model_calls: %v", err)
@@ -171,7 +171,7 @@ func TestModelCallsRowLevelSecurity(t *testing.T) {
 	// A foreign account_id must fail the WITH CHECK policy, same as every
 	// other account-scoped table.
 	err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO model_calls (account_id, kind, model) VALUES ($1, 'review', 'acme/large')`, beta)
+		_, err := tx.Exec(ctx, `INSERT INTO model_calls (account_id, kind, model) VALUES ($1, 'followup', 'acme/large')`, beta)
 		return err
 	})
 	var pgErr *pgconn.PgError

@@ -108,7 +108,7 @@ func checkModelCallRefusals(t *testing.T, s *Store, alpha, beta string) {
 	}
 	// Another account cannot write into alpha's transcript either.
 	if err := s.WithAccount(ctx, beta, func(tx pgx.Tx) error {
-		return InsertModelCall(ctx, tx, ModelCall{AccountID: alpha, Kind: ModelCallReview, Row: transcript.Delta(transcript.State{},
+		return InsertModelCall(ctx, tx, ModelCall{AccountID: alpha, Kind: ModelCallFollowUp, Row: transcript.Delta(transcript.State{},
 			model.StepRequest{}, nil).Encode()})
 	}); err == nil {
 		t.Fatal("beta inserted a model call for alpha")
@@ -133,7 +133,7 @@ func TestSweepModelCalls(t *testing.T) {
 		t.Helper()
 		var id string
 		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `INSERT INTO model_calls (account_id, kind) VALUES ($1, 'review') RETURNING id`, alpha).Scan(&id)
+			return tx.QueryRow(ctx, `INSERT INTO model_calls (account_id, kind) VALUES ($1, 'followup') RETURNING id`, alpha).Scan(&id)
 		}); err != nil {
 			t.Fatal(err)
 		}

@@ -63,7 +63,6 @@ apps:
     webhookSecret: { env: TEST_SECRET }
 repositories:
   acme/widgets:
-    mode: agentic
     agent:
       maxSteps: 6
       commands: [curl]
@@ -215,7 +214,6 @@ type agenticHarness struct {
 	// gatewayURL is the worker's gateway the runner calls its model
 	// through, which calls sm with the account's key.
 	gatewayURL string
-	fc         *fakeCompleter
 	sm         *scriptedModel
 	// fe is the gateway's embedder, used once the configuration names one.
 	fe *fakeEmbedder
@@ -247,7 +245,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	}
 	t.Cleanup(runnerStore.Close)
 
-	h := &agenticHarness{ctx: ctx, st: appStore, sm: &scriptedModel{}, fc: &fakeCompleter{}, fe: &fakeEmbedder{}}
+	h := &agenticHarness{ctx: ctx, st: appStore, sm: &scriptedModel{}, fe: &fakeEmbedder{}}
 	srv := httptest.NewServer(h.sm)
 	t.Cleanup(srv.Close)
 	t.Setenv("TEST_PEM", "pem")
@@ -284,7 +282,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	h.svc = ingest.NewService(appStore, insertOnly)
 	workers := river.NewWorkers()
 	h.review = &Review{
-		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf}, Completers: &completers{c: h.fc},
+		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf},
 		Executor: h.exec, Logger: logger, superviseEvery: 50 * time.Millisecond,
 	}
 	gateway := httptest.NewServer(&Gateway{
@@ -408,12 +406,6 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	if status != "completed" {
 		t.Fatalf("status = %s (%s)", status, errText)
 	}
-	var mode string
-	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(h.ctx, `SELECT mode FROM reviews WHERE id = $1`, reviewID).Scan(&mode)
-	}); err != nil || mode != "agentic" {
-		t.Fatalf("review mode = %q, %v", mode, err)
-	}
 	run := h.agentRow(t, reviewID)
 	var tools map[string]int
 	var timeline []map[string]any
@@ -462,12 +454,6 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 		t.Fatalf("the runner left the root's AGENTS.md out of the system prompt:\n%s", system)
 	}
 	checkAgentRules(t, system)
-	h.fc.mu.Lock()
-	calls := h.fc.calls
-	h.fc.mu.Unlock()
-	if calls != 0 {
-		t.Fatalf("the worker's own model was called %d time(s) in agentic mode", calls)
-	}
 	checkAgentTranscript(t, h, reviewID)
 }
 
@@ -601,7 +587,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", configfile.ReviewAgentic, 0)
+	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1083,7 +1069,7 @@ func checkFailRun(t *testing.T, h *agenticHarness) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", configfile.ReviewAgentic, 0)
+	_, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1131,7 +1117,7 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", configfile.ReviewAgentic, 0)
+			reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1312,7 +1298,7 @@ func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", configfile.ReviewAgentic, 0)
+	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

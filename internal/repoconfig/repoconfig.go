@@ -3,7 +3,7 @@
 // the admin's own filter, path globs to ignore, which also skip a pull
 // request that changes nothing else),
 // add rules, context files and templates read from the repository itself,
-// and choose its mode and models among what its account may use.
+// and choose its models among what its account may use.
 //
 // Everything here is read from the merge-base commit (the base branch history
 // a PR cannot rewrite), never the PR's own tree, so a PR cannot use its own
@@ -76,12 +76,11 @@ type Models struct {
 // configuration's defaults and repository entries take (ADR-0021 §2.1),
 // without the admin's own. Nothing in it is a secret or a reference to one.
 type File struct {
-	Enabled             *bool                 `yaml:"enabled,omitempty"`
-	Mode                configfile.ReviewMode `yaml:"mode,omitempty"`
-	Models              Models                `yaml:"models,omitempty"`
-	Feedback            string                `yaml:"feedback,omitempty"`
-	Comments            Comments              `yaml:"comments,omitempty"`
-	RequireSuggestedFix *bool                 `yaml:"requireSuggestedFix,omitempty"`
+	Enabled             *bool    `yaml:"enabled,omitempty"`
+	Models              Models   `yaml:"models,omitempty"`
+	Feedback            string   `yaml:"feedback,omitempty"`
+	Comments            Comments `yaml:"comments,omitempty"`
+	RequireSuggestedFix *bool    `yaml:"requireSuggestedFix,omitempty"`
 	// Approve replaces the admin's: whether a review that finds nothing
 	// blocking or important approves the pull request.
 	Approve    *bool    `yaml:"approve,omitempty"`

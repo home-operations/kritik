@@ -156,7 +156,7 @@ input:focus-visible {
   color: var(--muted);
   font-size: 12px;
 }
-/* A record's facts, each named: "Mode agentic", "Cost $0.42". */
+/* A record's facts, each named: "Scope full", "Cost $0.42". */
 .facts {
   display: flex;
   flex-wrap: wrap;
