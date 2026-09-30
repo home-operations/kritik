@@ -51,9 +51,11 @@ type Dispatcher interface {
 }
 
 // DeliveryRecorder notes that a connection's webhook delivered a request
-// kritik verified. The store-backed implementation is Service.
+// kritik verified, or one with no signature, which a GitHub App with no
+// webhook secret sends. The store-backed implementation is Service.
 type DeliveryRecorder interface {
 	RecordDelivery(ctx context.Context, connectionID string) error
+	RecordUnsigned(ctx context.Context, connectionID string) error
 }
 
 // Handler serves POST /hooks/{connection}.
@@ -73,7 +75,7 @@ func NewHandler(current *configfile.Current, disp Dispatcher, logger *slog.Logge
 }
 
 // ServeHTTP verifies, parses and dispatches. Status codes: 404 for an
-// unknown connection, 401 for a bad signature, 400 for an unparsable
+// unknown connection, 401 for a missing or bad signature, 400 for an unparsable
 // payload, 413 for an oversized one, 204 for a ping, 202 for anything
 // accepted (enqueued, skipped or ignored: the forge only needs to know the
 // delivery landed), 500 when the dispatcher failed and the forge should
@@ -104,7 +106,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := webhook.Verify(in.Forge, in.WebhookSecretValue().Value(), r.Header, body); err != nil {
 		logger.Warn("webhook rejected", "error", err, "remote", r.RemoteAddr)
-		h.Metrics.Webhook(name, "unauthorized")
+		outcome := "unauthorized"
+		// A delivery with no signature at all comes from an App with no
+		// webhook secret, which the dashboard says to set.
+		if errors.Is(err, webhook.ErrMissingSignature) {
+			outcome = "unsigned"
+			if h.Deliveries != nil {
+				if err := h.Deliveries.RecordUnsigned(r.Context(), in.ID()); err != nil {
+					logger.Warn("unsigned webhook not recorded", "error", err)
+				}
+			}
+		}
+		h.Metrics.Webhook(name, outcome)
 		http.Error(w, "signature verification failed", http.StatusUnauthorized)
 		return
 	}

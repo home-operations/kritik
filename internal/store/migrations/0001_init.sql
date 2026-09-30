@@ -43,9 +43,11 @@ CREATE TABLE connections (
     updated_at      timestamptz NOT NULL DEFAULT now(),
     -- When the connection's webhook last delivered a request kritik
     -- verified, so the dashboard can tell a connection whose forge sends
-    -- webhooks from one kritik only polls. The listener writes it at most
-    -- once a minute.
-    last_webhook_at timestamptz
+    -- webhooks from one kritik only polls, and when one last arrived with
+    -- no signature at all, which a GitHub App with no webhook secret sends.
+    -- The listener writes each at most once a minute.
+    last_webhook_at          timestamptz,
+    last_unsigned_webhook_at timestamptz
 );
 
 CREATE TABLE repositories (

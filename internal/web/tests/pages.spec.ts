@@ -106,6 +106,19 @@ test('analytics says when no webhook has reached the connection', async ({ page 
   await expect(panel.getByRole('note')).toContainText(`GitHub App's webhook at ${g.meta.webUrl}${detail.connection.hookPath}`);
 });
 
+test("analytics says when the connection's webhooks arrive unsigned", async ({ page }) => {
+  const detail = g.golden<AccountDetail>('account_detail');
+  const later = new Date(Date.parse(detail.connection.lastWebhookAt!) + 60_000).toISOString();
+  await g.mockApi(page, [
+    [new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connection: { ...detail.connection, lastUnsignedWebhookAt: later } }],
+    ...g.defaultApi(),
+  ]);
+  await page.goto(`/${T}`);
+  const note = page.getByRole('region', { name: 'Connection', exact: true }).getByRole('note');
+  await expect(note).toContainText('with no signature');
+  await expect(note).toContainText("Set the GitHub App's webhook secret");
+});
+
 test('repositories filter and repository detail', async ({ page }) => {
   await page.goto(`/${T}/repos`);
   await expect(page.locator('tbody tr')).toHaveCount(1);

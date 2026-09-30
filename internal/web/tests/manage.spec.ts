@@ -194,6 +194,19 @@ test.describe('configuration page', () => {
     await expect(stranger).toHaveCount(0);
   });
 
+  test("flags an App whose webhooks arrive unsigned", async ({ page }) => {
+    const conn = g.golden<T.AccountDetail>('account_detail').connection;
+    const later = new Date(Date.parse(conn.lastWebhookAt!) + 60_000).toISOString();
+    await setup(page, adminMe, [
+      [/\/api\/v1\/admin\/audit$/, g.pageOf([])],
+      [/\/api\/v1\/admin\/connections$/, [{ ...conn, lastUnsignedWebhookAt: later }]],
+    ]);
+    await page.goto('/#/admin');
+    const row = page.locator('#op-connections').locator('../..').getByRole('row').filter({ hasText: conn.name });
+    await expect(row).toContainText('unsigned');
+    await expect(row).not.toContainText('receiving');
+  });
+
   test('lists the instance settings read-only with their sources', async ({ page }) => {
     await setup(page, adminMe, [[/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
     await page.goto('/#/admin');

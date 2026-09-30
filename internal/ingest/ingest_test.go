@@ -32,6 +32,7 @@ type fakeDispatcher struct {
 	out       Outcome
 	err       error
 	delivered []string
+	unsigned  []string
 	recordErr error
 }
 
@@ -42,6 +43,11 @@ func (f *fakeDispatcher) Dispatch(_ context.Context, req Request) (Outcome, erro
 
 func (f *fakeDispatcher) RecordDelivery(_ context.Context, connectionID string) error {
 	f.delivered = append(f.delivered, connectionID)
+	return f.recordErr
+}
+
+func (f *fakeDispatcher) RecordUnsigned(_ context.Context, connectionID string) error {
+	f.unsigned = append(f.unsigned, connectionID)
 	return f.recordErr
 }
 
@@ -135,6 +141,31 @@ func TestHandler(t *testing.T) {
 				if !strings.EqualFold(req.Account.Name, req.Event.Account) || req.Event.Kind != webhook.KindPullRequest {
 					t.Fatalf("request = %+v", req)
 				}
+			}
+		})
+	}
+}
+
+// TestHandlerRecordsUnsigned: a delivery with no signature, which an App
+// with no webhook secret sends, is recorded as unsigned; a wrong signature
+// is not.
+func TestHandlerRecordsUnsigned(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		secret   string
+		unsigned bool
+	}{
+		{"no signature", "", true},
+		{"a wrong signature", "wrong", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			disp := &fakeDispatcher{}
+			srv := setup(t, disp)
+			if resp := post(t, srv, "/hooks/bot-ross", "pull_request", tt.secret, prBody); resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", resp.StatusCode)
+			}
+			if (len(disp.unsigned) == 1) != tt.unsigned || len(disp.delivered) != 0 {
+				t.Fatalf("unsigned = %v, delivered = %v", disp.unsigned, disp.delivered)
 			}
 		})
 	}

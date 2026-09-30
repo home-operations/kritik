@@ -65,6 +65,14 @@ func (s *Service) RecordDelivery(ctx context.Context, connectionID string) error
 	return nil
 }
 
+// RecordUnsigned implements DeliveryRecorder.
+func (s *Service) RecordUnsigned(ctx context.Context, connectionID string) error {
+	if err := s.store.RecordUnsignedWebhook(ctx, connectionID); err != nil {
+		return fmt.Errorf("ingest: record unsigned delivery: %w", err)
+	}
+	return nil
+}
+
 // Dispatch implements Dispatcher.
 func (s *Service) Dispatch(ctx context.Context, req Request) (Outcome, error) {
 	switch req.Event.Kind {

@@ -102,6 +102,10 @@ type Connection struct {
 	// signature verification, to the minute; null when none ever has, and
 	// kritik only polls it.
 	LastWebhookAt *time.Time `json:"lastWebhookAt"`
+	// LastUnsignedWebhookAt is when one last arrived with no signature, to
+	// the minute, which a GitHub App with no webhook secret sends; null when
+	// none has.
+	LastUnsignedWebhookAt *time.Time `json:"lastUnsignedWebhookAt"`
 }
 
 // Models names the review and fallback models, "provider/model".

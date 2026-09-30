@@ -4,6 +4,7 @@
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { hookURL } from '../session.svelte';
+  import { unsignedWebhooks } from '../setup';
   import { Resource, live } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
   import { daysAgo, duration, reviewTone, usd, wholeNumber } from '../format';
@@ -99,14 +100,21 @@
 <main class="page">
   <div class="page-inner">
     <SectionTabs section="analytics" {slug} current="account" />
-    {#if detail.data && !detail.data.connection.lastWebhookAt}
+    {#if detail.data && (unsignedWebhooks(detail.data.connection) || !detail.data.connection.lastWebhookAt)}
       {@const inst = detail.data.connection}
       <section class="panel" aria-labelledby="an-connection">
         <header class="panel-head"><h2 id="an-connection">Connection</h2></header>
-        <p class="notice" role="note">
-          No webhook has reached <span class="mono">{inst.name}</span>, so kritik only polls it for new pull requests and
-          cannot answer mentions. Point the GitHub App's webhook at <span class="mono">{hookURL(inst.hookPath)}</span>.
-        </p>
+        {#if unsignedWebhooks(inst)}
+          <p class="notice" role="note">
+            GitHub sends <span class="mono">{inst.name}</span>'s webhooks with no signature, so kritik refuses them, only polls for
+            new pull requests and cannot answer mentions. Set the GitHub App's webhook secret to the one kritik holds.
+          </p>
+        {:else}
+          <p class="notice" role="note">
+            No webhook has reached <span class="mono">{inst.name}</span>, so kritik only polls it for new pull requests and
+            cannot answer mentions. Point the GitHub App's webhook at <span class="mono">{hookURL(inst.hookPath)}</span>.
+          </p>
+        {/if}
       </section>
     {/if}
 
