@@ -219,7 +219,12 @@ func TestRunToolDef(t *testing.T) {
 		t.Fatalf("description = %q", d)
 	}
 	noCurl := NewRunTool(RunConfig{Commands: map[string]string{"fd": "/bin/fd"}, Timeout: time.Second, Note: "The checkout is partial."})
-	if d := noCurl.Def().Description; strings.Contains(d, "curl") || !strings.HasSuffix(d, " The checkout is partial.") {
+	if d := noCurl.Def().Description; strings.Contains(d, "curl") || strings.Contains(d, "rg searches") ||
+		!strings.Contains(d, "fd finds files and directories by name") || !strings.HasSuffix(d, " The checkout is partial.") {
+		t.Fatalf("description = %q", d)
+	}
+	if d := proxied.Def().Description; !strings.Contains(d, "rg searches file contents where the grep tool falls short") ||
+		strings.Contains(d, "fd finds") {
 		t.Fatalf("description = %q", d)
 	}
 }
