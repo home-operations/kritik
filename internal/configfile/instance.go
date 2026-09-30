@@ -184,9 +184,9 @@ type FileValue struct {
 
 // FileEmbedding is the embedder the file or the environment sets.
 type FileEmbedding struct {
-	BaseURL, Model string
-	Dims           int
-	Source         Source
+	Model  string
+	Dims   int
+	Source Source
 }
 
 // FileLayer returns f's instance defaults, each with where it comes from.
@@ -229,7 +229,7 @@ func (f *File) FileLayer() FileLayer {
 		}
 	}
 	if e := f.Embedding; e != nil {
-		out.Embedding = &FileEmbedding{BaseURL: e.BaseURL, Model: string(e.Ref), Dims: e.Dims, Source: source("embedding")}
+		out.Embedding = &FileEmbedding{Model: string(e.Ref), Dims: e.Dims, Source: source("embedding")}
 	}
 	return out
 }

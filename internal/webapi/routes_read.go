@@ -437,7 +437,7 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		add("defaults", d.Key, d.Value, d.Source)
 	}
 	if e := layer.Embedding; e != nil {
-		add("embedding", e.Model, fmt.Sprintf("%d dimensions at %s", e.Dims, withoutCredentials(e.BaseURL)), e.Source)
+		add("embedding", e.Model, fmt.Sprintf("%d dimensions", e.Dims), e.Source)
 	}
 	return out
 }
