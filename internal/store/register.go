@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -67,4 +68,31 @@ func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r Reache
 		return "", false, fmt.Errorf("store: ensure repository %s: %w", r.FullName, err)
 	}
 	return id, isNew, nil
+}
+
+// TurnedOn is the choice an admin made for the repository with id, nil
+// when none was or the repository is not known yet.
+func TurnedOn(ctx context.Context, tx pgx.Tx, id string) (*bool, error) {
+	var on *bool
+	err := tx.QueryRow(ctx, `SELECT turned_on FROM repositories WHERE id = $1`, id).Scan(&on)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: read whether repository %s is turned on: %w", id, err)
+	}
+	return on, nil
+}
+
+// TurnOn records an admin's choice to review the repository with id or
+// not.
+func TurnOn(ctx context.Context, tx pgx.Tx, id string, on bool) error {
+	tag, err := tx.Exec(ctx, `UPDATE repositories SET turned_on = $2, updated_at = now() WHERE id = $1`, id, on)
+	if err != nil {
+		return fmt.Errorf("store: turn repository %s on or off: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

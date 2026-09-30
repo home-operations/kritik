@@ -109,8 +109,12 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	// settings review forks: a maintainer asks for its review with
 	// "@<bot> review", which needs the pull request known.
 	fork := pr.Fork && !settings.Forks
+	runs, err := s.runs(ctx, req)
+	if err != nil {
+		return Outcome{}, err
+	}
 	switch {
-	case !req.File.Runs(req.Account, ev.Repository.FullName, ev.Repository.RepoTraits):
+	case !runs:
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	case !fork && settings.Filter != nil:
 		ok, err := settings.Filter.Eval(pr.FilterVars(ev.Action))
@@ -182,8 +186,8 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}
-	if !req.File.Runs(req.Account, ev.Repository.FullName, ev.Repository.RepoTraits) {
-		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
+	if runs, err := s.runs(ctx, req); err != nil || !runs {
+		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
 	out := Outcome{Status: Enqueued, Job: "followup"}
 	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
@@ -217,8 +221,8 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Push.After == "" || strings.Trim(ev.Push.After, "0") == "" {
 		return Outcome{Status: Skipped, Reason: "branch-deleted"}, nil
 	}
-	if !req.File.Runs(req.Account, ev.Repository.FullName, ev.Repository.RepoTraits) {
-		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
+	if runs, err := s.runs(ctx, req); err != nil || !runs {
+		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
 	out := Outcome{Status: Enqueued, Job: "index"}
 	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
@@ -312,6 +316,22 @@ func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook
 		FullName: repo.FullName, DefaultBranch: repo.DefaultBranch, Traits: &repo.RepoTraits,
 	})
 	return id, err
+}
+
+// runs reports whether the event's repository is reviewed: what the event
+// says of it, and the choice an admin made for it in the dashboard.
+func (s *Service) runs(ctx context.Context, req Request) (bool, error) {
+	repo := req.Event.Repository
+	t := repo.RepoTraits
+	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
+		var err error
+		t.TurnedOn, err = store.TurnedOn(ctx, tx, repoID(req, repo.FullName))
+		return err
+	})
+	if err != nil {
+		return false, err
+	}
+	return req.File.Runs(req.Account, repo.FullName, t), nil
 }
 
 func repoID(req Request, fullName string) string {

@@ -189,7 +189,7 @@ func (s *Store) OnboardCandidates(
 		return nil, errors.New("store: OnboardCandidates needs the owner connection")
 	}
 	rows, err := s.owner.Query(ctx, `WITH candidates AS (
-			SELECT r.id, r.account_id, r.name, r.archived, r.fork, r.created_at,
+			SELECT r.id, r.account_id, r.name, r.archived, r.fork, r.turned_on, r.created_at,
 				(SELECT max(p.updated_at) FROM pull_requests p WHERE p.repository_id = r.id) AS active
 			FROM repositories r
 			WHERE r.enabled AND r.active_index_run_id IS NULL
@@ -199,7 +199,7 @@ func (s *Store) OnboardCandidates(
 			                  AND NOT EXISTS (SELECT 1 FROM index_runs ir WHERE ir.repository_id = r.id
 			                                  AND ir.status IN ('completed', 'superseded') AND ir.created_at >= j.created_at))
 		)
-		SELECT id, account_id, name, archived, fork FROM (
+		SELECT id, account_id, name, archived, fork, turned_on FROM (
 			SELECT c.*, row_number() OVER (PARTITION BY account_id ORDER BY active DESC NULLS LAST, created_at, id) AS turn FROM candidates c
 		) ranked
 		ORDER BY turn, active DESC NULLS LAST, created_at, id`, retryAfter.Seconds())
@@ -212,7 +212,7 @@ func (s *Store) OnboardCandidates(
 		var r RepoRef
 		var name string
 		var t configfile.RepoTraits
-		if err := rows.Scan(&r.ID, &r.AccountID, &name, &t.Archived, &t.Fork); err != nil {
+		if err := rows.Scan(&r.ID, &r.AccountID, &name, &t.Archived, &t.Fork, &t.TurnedOn); err != nil {
 			return nil, fmt.Errorf("store: list onboarding candidates: %w", err)
 		}
 		if enabled(r.AccountID, name, t) {

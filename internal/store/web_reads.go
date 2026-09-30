@@ -151,13 +151,13 @@ type MonthUsage struct {
 // boundaries are the database's, as the worker's cap checks use.
 func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(fullName string, t configfile.RepoTraits) bool) (AccountStats, error) {
 	var s AccountStats
-	rows, err := tx.Query(ctx, `SELECT name, archived, fork FROM repositories WHERE enabled`)
+	rows, err := tx.Query(ctx, `SELECT name, archived, fork, turned_on FROM repositories WHERE enabled`)
 	if err != nil {
 		return s, fmt.Errorf("store: account stats: %w", err)
 	}
 	var name string
 	var t configfile.RepoTraits
-	if _, err := pgx.ForEachRow(rows, []any{&name, &t.Archived, &t.Fork}, func() error {
+	if _, err := pgx.ForEachRow(rows, []any{&name, &t.Archived, &t.Fork, &t.TurnedOn}, func() error {
 		if enabled(name, t) {
 			s.Repositories++
 		}
@@ -232,7 +232,7 @@ type ReviewRef struct {
 	CreatedAt time.Time
 }
 
-const repoColumns = `r.id, r.name, r.enabled, r.managed_by, r.default_branch, r.archived, r.fork,
+const repoColumns = `r.id, r.name, r.enabled, r.managed_by, r.default_branch, r.archived, r.fork, r.turned_on,
 	coalesce(a.commit_sha, ''), coalesce(a.finished_at, a.created_at),
 	coalesce(l.status, ''), l.created_at,
 	lr.id, lr.status, lr.created_at
@@ -248,7 +248,7 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 	var status string
 	var lrID, lrStatus *string
 	var lrAt *time.Time
-	err := row.Scan(&r.ID, &r.FullName, &r.Enabled, &r.ManagedBy, &r.DefaultBranch, &r.Archived, &r.Fork,
+	err := row.Scan(&r.ID, &r.FullName, &r.Enabled, &r.ManagedBy, &r.DefaultBranch, &r.Archived, &r.Fork, &r.TurnedOn,
 		&r.ActiveCommit, &r.ActiveAt, &status, &r.LastIndexAt, &lrID, &lrStatus, &lrAt)
 	r.LastIndexStatus = IndexRunStatus(status)
 	if r.ActiveCommit == "" {
@@ -264,7 +264,8 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 type RepoKind string
 
 // Repository kinds. RepoInUse, the default, is the ones kritik can run:
-// neither archived nor a fork, but for the forks turned on one by one.
+// neither archived nor a fork, but for the forks turned on one by one, in
+// the dashboard or by their entries.
 // RepoForks is every fork not archived, and RepoArchived every archived
 // repository.
 const (
@@ -279,7 +280,8 @@ func (k RepoKind) Valid() bool {
 }
 
 // RepoFilter picks the repositories a list shows: those of Kind, where
-// TurnedOn names, in any case, the forks RepoInUse lets in.
+// TurnedOn names, in any case, the forks whose entries let RepoInUse take
+// them.
 type RepoFilter struct {
 	Kind     RepoKind
 	TurnedOn []string
@@ -300,7 +302,7 @@ func ListRepos(ctx context.Context, tx pgx.Tx, f RepoFilter, p Page) ([]RepoRow,
 		  AND CASE $5
 			WHEN 'forks' THEN r.fork AND NOT r.archived
 			WHEN 'archived' THEN r.archived
-			ELSE NOT r.archived AND (NOT r.fork OR lower(r.name) = ANY($6))
+			ELSE NOT r.archived AND (NOT r.fork OR r.turned_on OR lower(r.name) = ANY($6))
 		  END
 		ORDER BY r.name, r.id LIMIT $4`, p.After.First(), p.After.S, p.afterID(), p.Limit+1, string(f.Kind), turnedOn)
 	if err != nil {

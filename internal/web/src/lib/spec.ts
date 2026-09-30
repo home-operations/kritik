@@ -575,14 +575,6 @@ function turnRepositories(d: AccountDraft, names: string[], on: boolean, inherit
   }
 }
 
-// withRepositoriesEnabled is the account spec with each repository in
-// names turned on or off, as turnRepositories does.
-export function withRepositoriesEnabled(spec: Obj, names: string[], on: boolean, inherited: (name: string) => boolean): Built {
-  const d = draftOf(spec);
-  turnRepositories(d, names, on, inherited);
-  return buildSpec(d);
-}
-
 // withRepositoryChoice is the account spec that starts its repositories
 // without an entry of their own at later, with the ones in on turned on
 // and the ones in off turned off.

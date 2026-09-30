@@ -43,3 +43,8 @@ export function reindexPath(slug: string, fullName: string): string {
   const n = splitRepo(fullName);
   return `${accountApi(slug)}/repos/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/reindex`;
 }
+
+export function turnedOnPath(slug: string, fullName: string): string {
+  const n = splitRepo(fullName);
+  return `${accountApi(slug)}/repos/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/turned-on`;
+}

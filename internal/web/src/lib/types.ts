@@ -161,6 +161,9 @@ export interface Repository {
   defaultBranch: string;
   archived: boolean;
   fork: boolean;
+  // turnedOn is the choice an admin made in the dashboard, null while the
+  // configuration decides.
+  turnedOn: boolean | null;
   index: IndexState;
   lastReview: ReviewRef | null;
 }
@@ -910,7 +913,14 @@ export type AuditAction =
   | 'app.uninstall'
   | 'review.rerun'
   | 'review.cancel'
-  | 'repo.reindex';
+  | 'repo.reindex'
+  | 'repo.turn_on'
+  | 'repo.turn_off';
+
+// Turns a repository on, or off.
+export interface TurnOnRequest {
+  on: boolean;
+}
 
 export interface AuditEvent {
   id: string;

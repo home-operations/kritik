@@ -199,9 +199,9 @@ func (w *Index) loadRepo(ctx context.Context, args jobs.IndexArgs) (*indexRepo, 
 	var active *string
 	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			SELECT name, default_branch, enabled, active_index_run_id::text, archived, fork
+			SELECT name, default_branch, enabled, active_index_run_id::text, archived, fork, turned_on
 			FROM repositories WHERE id = $1`, args.RepositoryID).
-			Scan(&r.name, &r.defaultBranch, &r.enabled, &active, &r.traits.Archived, &r.traits.Fork)
+			Scan(&r.name, &r.defaultBranch, &r.enabled, &active, &r.traits.Archived, &r.traits.Fork, &r.traits.TurnedOn)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, river.JobCancel(fmt.Errorf("worker: repository %s is unknown", args.RepositoryID))

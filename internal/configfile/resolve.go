@@ -89,15 +89,18 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 	return s
 }
 
-// Runs reports whether repository fullName of account a, which the forge
-// says is t, is reviewed, polled and indexed. An archived repository never
-// is: it is read-only until unarchived. A fork only is when its own entry
-// turns it on, since an account can reach many forks it never meant kritik
-// to spend on. Any other repository runs as its settings say.
+// Runs reports whether repository fullName of account a, known as t, is
+// reviewed, polled and indexed. An archived repository never is: it is
+// read-only until unarchived. One an admin turned on or off runs as they
+// chose. A fork only is when its own entry turns it on, since an account
+// can reach many forks it never meant kritik to spend on. Any other
+// repository runs as its settings say.
 func (f *File) Runs(a *Account, fullName string, t RepoTraits) bool {
 	switch {
 	case t.Archived:
 		return false
+	case t.TurnedOn != nil:
+		return *t.TurnedOn
 	case t.Fork:
 		return a.TurnsOn(fullName)
 	default:

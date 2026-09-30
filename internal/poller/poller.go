@@ -161,7 +161,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	var known time.Time
 	var polled, delivered *time.Time
 	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, ''), r.archived, r.fork
+		rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, ''), r.archived, r.fork, r.turned_on
 			FROM repositories r LEFT JOIN index_runs g ON g.id = r.active_index_run_id
 			WHERE r.enabled ORDER BY r.name`)
 		if err != nil {
@@ -169,7 +169,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		}
 		if repos, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (pollRepo, error) {
 			var r pollRepo
-			err := row.Scan(&r.name, &r.defaultBranch, &r.indexed, &r.Archived, &r.Fork)
+			err := row.Scan(&r.name, &r.defaultBranch, &r.indexed, &r.Archived, &r.Fork, &r.TurnedOn)
 			return r, err
 		}); err != nil {
 			return err

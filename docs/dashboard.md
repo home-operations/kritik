@@ -146,11 +146,13 @@ unarchived.
 
 An admin switches repositories on and off on an account's Repositories
 page, one at a time or a selection together, and reindexes a selection
-from there too. Each switch saves the account's entry, adding a
-repository entry only where it differs from what the repository gets
-without one. The page lists the repositories that can run, with any fork
-turned on; its Type filter lists the forks, or the archived repositories,
-instead. kritik registers every repository each connection's App reaches
+from there too. A switch is the dashboard's own choice, kept per
+repository and audited ([ADR-0019](adr/0019-configuration-in-git.md)):
+it wins over `enabled` and over a fork's own entry, and only an archived
+repository stays off whatever it says. A repository no admin has switched
+runs as the configuration says. The page lists the repositories that can
+run, with any fork turned on; its Type filter lists the forks, or the
+archived repositories, instead. kritik registers every repository each connection's App reaches
 by itself: once the configuration is applied, at start or after a change,
 and again on every poll, so a fresh instance lists them without a webhook
 or the wizard. "Resync from GitHub" does the same at once, such as right

@@ -870,43 +870,55 @@ test.describe('repository switches', () => {
     await expect(page.getByRole('checkbox')).toHaveCount(0);
   });
 
-  test('a switch saves the account entry, keeping its stored secrets', async ({ page }) => {
-    await setup(page, adminMe, [repos, accountRow(g.accountConfig)]);
-    const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }]]);
+  // turnable serves the repository list with each switch's last PUT applied,
+  // as the server's list reflects a choice at once.
+  async function turnable(page: Page, list: T.Repository[]) {
+    const rows = list.map((r) => ({ ...r }));
+    await setup(page, adminMe, [[new RegExp(`${API}/repos$`), () => g.pageOf(rows)]]);
+    return g.mockWrites(page, [
+      [
+        'PUT',
+        /\/turned-on$/,
+        (s) => {
+          const name = decodeURIComponent(s.url.pathname.split('/repos/')[1]!.replace(/\/turned-on$/, ''));
+          const r = rows.find((x) => x.fullName === name)!;
+          const on = (s.body as T.TurnOnRequest).on;
+          Object.assign(r, { turnedOn: on, enabled: on && !r.archived });
+          return { status: 204 };
+        },
+      ],
+      ['POST', /\/reindex$/, { status: 202, body: { jobId: 9 } }],
+    ]);
+  }
+
+  test('a switch turns the repository on or off, one request each', async ({ page }) => {
+    const sent = await turnable(page, [g.repoPage.items[0]!, second]);
     await page.goto(`/${REPOS}`);
     const one = page.getByRole('switch', { name: 'Review and index alpha/one' });
     await expect(one).toBeChecked();
     await one.uncheck();
     await expect(page.getByRole('status')).toContainText('1 repository turned off');
     await expect(one).not.toBeChecked();
-    expect(sent[0]!.body).toEqual({
-      revision: g.accountConfig.revision,
-      spec: { forge: 'github', name: 'alpha', providers: { own: ownKey }, repositories: [{ name: 'one', enabled: false }] },
-    });
-
-    // On is what an entry without enabled takes here, so turning a
-    // repository with no entry on writes none.
     await page.getByRole('switch', { name: 'Review and index alpha/two' }).check();
     await expect.poll(() => sent.length).toBe(2);
-    expect(sent[1]!.body).toEqual({ revision: g.accountConfig.revision, spec: { forge: 'github', name: 'alpha', providers: { own: ownKey } } });
+    expect(sent.map((s) => `${s.method} ${s.url.pathname} ${JSON.stringify(s.body)}`)).toEqual([
+      `PUT ${API}/repos/alpha/one/turned-on {"on":false}`,
+      `PUT ${API}/repos/alpha/two/turned-on {"on":true}`,
+    ]);
+    await expect(page.getByRole('switch', { name: 'Review and index alpha/two' })).toBeChecked();
   });
 
-  test('a fork is turned on by an entry of its own, and an archived repository cannot be', async ({ page }) => {
+  test('a fork is turned on like any repository, and an archived repository cannot be', async ({ page }) => {
     const copy: T.Repository = { ...g.repoPage.items[0]!, id: 'repo-3', fullName: 'alpha/copy', fork: true, enabled: false };
     const old: T.Repository = { ...g.repoPage.items[0]!, id: 'repo-4', fullName: 'alpha/old', archived: true, enabled: false };
-    await setup(page, adminMe, [[new RegExp(`${API}/repos$`), g.pageOf([copy, old])], accountRow(g.accountConfig)]);
-    const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }]]);
+    const sent = await turnable(page, [copy, old]);
     await page.goto(`/${REPOS}`);
     await expect(page.getByRole('switch', { name: 'Review and index alpha/old' })).toBeDisabled();
     await expect(page.getByRole('checkbox', { name: 'Select alpha/old' })).toHaveCount(0);
-
-    // The account turns repositories on, but only its own entry does a fork.
     await page.getByRole('switch', { name: 'Review and index alpha/copy' }).check();
     await expect.poll(() => sent.length).toBe(1);
-    expect(sent[0]!.body).toEqual({
-      revision: g.accountConfig.revision,
-      spec: { forge: 'github', name: 'alpha', providers: { own: ownKey }, repositories: [{ name: 'copy', enabled: true }] },
-    });
+    expect(sent[0]!.url.pathname).toBe(`${API}/repos/alpha/copy/turned-on`);
+    expect(sent[0]!.body).toEqual({ on: true });
   });
 
   test('the list shows forks or archived repositories only when asked, and an admin can resync it', async ({ page }) => {
@@ -928,11 +940,7 @@ test.describe('repository switches', () => {
   });
 
   test('selected repositories are turned off together, and the ones on reindexed', async ({ page }) => {
-    await setup(page, adminMe, [repos, accountRow(g.accountConfig)]);
-    const sent = await g.mockWrites(page, [
-      ['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }],
-      ['POST', /\/reindex$/, { status: 202, body: { jobId: 9 } }],
-    ]);
+    const sent = await turnable(page, [g.repoPage.items[0]!, second]);
     await page.goto(`/${REPOS}`);
     await page.getByRole('checkbox', { name: 'Select every repository shown' }).check();
     const bulk = page.getByRole('group', { name: 'Selected repositories' });
@@ -948,10 +956,10 @@ test.describe('repository switches', () => {
     await page.getByRole('checkbox', { name: 'Select every repository shown' }).check();
     await bulk.getByRole('button', { name: 'Turn off' }).click();
     await expect(page.getByRole('status')).toContainText('2 repositories turned off');
-    expect(sent[1]!.body).toEqual({
-      revision: g.accountConfig.revision,
-      spec: { forge: 'github', name: 'alpha', providers: { own: ownKey }, repositories: [{ name: 'one', enabled: false }, { name: 'two', enabled: false }] },
-    });
+    expect(sent.slice(1).map((s) => `${s.url.pathname} ${JSON.stringify(s.body)}`)).toEqual([
+      `${API}/repos/alpha/one/turned-on {"on":false}`,
+      `${API}/repos/alpha/two/turned-on {"on":false}`,
+    ]);
     await expect(page.getByRole('switch', { name: 'Review and index alpha/one' })).not.toBeChecked();
   });
 });

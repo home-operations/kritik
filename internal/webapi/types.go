@@ -146,15 +146,18 @@ type ReviewRef struct {
 
 // Repository is one row of the repository list.
 type Repository struct {
-	ID            string     `json:"id"`
-	FullName      string     `json:"fullName"`
-	Enabled       bool       `json:"enabled"`
-	ManagedBy     string     `json:"managedBy"`
-	DefaultBranch string     `json:"defaultBranch"`
-	Archived      bool       `json:"archived"`
-	Fork          bool       `json:"fork"`
-	Index         IndexState `json:"index"`
-	LastReview    *ReviewRef `json:"lastReview"`
+	ID            string `json:"id"`
+	FullName      string `json:"fullName"`
+	Enabled       bool   `json:"enabled"`
+	ManagedBy     string `json:"managedBy"`
+	DefaultBranch string `json:"defaultBranch"`
+	Archived      bool   `json:"archived"`
+	Fork          bool   `json:"fork"`
+	// TurnedOn is the choice an admin made in the dashboard, null while
+	// the configuration decides whether the repository runs.
+	TurnedOn   *bool      `json:"turnedOn"`
+	Index      IndexState `json:"index"`
+	LastReview *ReviewRef `json:"lastReview"`
 }
 
 // AgentLimits are an agentic review's resolved limits.

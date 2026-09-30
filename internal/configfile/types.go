@@ -412,10 +412,13 @@ type Repository struct {
 	Overrides `yaml:",inline"`
 }
 
-// RepoTraits is what the forge says of a repository beyond its name: an
-// archived repository is read-only, and a fork is a copy of another one.
+// RepoTraits is what kritik knows of a repository beyond its name: what
+// the forge says of it, that an archived repository is read-only and a
+// fork a copy of another one, and whether an admin turned it on or off
+// from the dashboard, nil until one does (ADR-0019 §2.3).
 type RepoTraits struct {
 	Archived, Fork bool
+	TurnedOn       *bool
 }
 
 // ReviewMode is how a review is carried out.
