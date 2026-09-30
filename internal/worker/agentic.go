@@ -156,7 +156,6 @@ func (w *Review) agentPrompt(
 ) (*runner.Prompt, error) {
 	p := &runner.Prompt{
 		Repository: pr.repository, Context: eff.Review.Context,
-		Rules:               eff.Review.Rules,
 		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Focused: eff.Review.Focused(),
 		MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
 	}
@@ -165,6 +164,15 @@ func (w *Review) agentPrompt(
 		if p.PullRequest, err = loadFilterPR(ctx, tx, pr.id); err != nil {
 			return err
 		}
+		// The rules' whenExpr is judged here, before the runner cuts the
+		// body, so a rule applies as it will when the worker reads the run.
+		judged := p.PullRequest
+		judged.Event = trigger
+		vars, err := judged.Vars()
+		if err != nil {
+			return err
+		}
+		p.Rules = repoconfig.RulesFor(eff.Review.Rules, vars)
 		if !pr.authorIsBot || trigger == jobs.TriggerManual {
 			return nil
 		}

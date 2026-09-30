@@ -459,6 +459,8 @@ func TestParseRejects(t *testing.T) {
 		{"blank rule", acme("  acme/x: { rules: [{ id: a, rule: ' ' }] }\n"), "repositories.acme/x.rules[0]: set one of rule or file"},
 		{"overlong rule", "defaults:\n  rules: [{ id: a, rule: " + strings.Repeat("x", MaxRuleChars+1) + " }]\n" + minimal, "over the 2000 allowed"},
 		{"rule with a bad glob", "defaults:\n  rules: [{ id: a, rule: x, paths: ['['] }]\n" + minimal, `rules[0].paths[0] "[" is not a valid glob`},
+		{"rule whenExpr syntax error", acme("  acme/x: { rules: [{ id: a, rule: x, whenExpr: 'pr.draft &&' }] }\n"), "repositories.acme/x.rules[0].whenExpr"},
+		{"rule whenExpr not a bool", "defaults:\n  rules: [{ id: a, rule: x, whenExpr: pr.title }]\n" + minimal, "defaults.rules[0].whenExpr"},
 		{"negative settle at owner/*", acme("  acme/*: { settle: -1s }\n"), "repositories.acme/*.settle must not be negative"},
 		{"negative settle repository", acme("  acme/x: { settle: -1s }\n"), "repositories.acme/x.settle must not be negative"},
 		{"indexing role removed", "defaults:\n  models:\n    indexing: p/m\n" + minimal, "field indexing not found"},

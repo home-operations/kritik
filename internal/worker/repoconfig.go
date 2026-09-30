@@ -76,10 +76,11 @@ func (e *Effective) repoFiles() []string {
 // fill reads the contents of the files e names out of files, what the
 // runner read, into Rules, Instructions, Templates and References,
 // leaving out context files and rules scoped to paths none of changed
-// matches.
+// matches, and rules whose whenExpr is false of vars, the pull request's
+// filter variables.
 // notes lead the returned ones; a named file missing from files is noted
 // unless they already say why.
-func (e *Effective) fill(files repoconfig.Files, notes, changed []string) []string {
+func (e *Effective) fill(files repoconfig.Files, notes, changed []string, vars map[string]any) []string {
 	notes = slices.Clone(notes)
 	read := func(p string) string {
 		if p == "" {
@@ -95,7 +96,7 @@ func (e *Effective) fill(files repoconfig.Files, notes, changed []string) []stri
 		read(r.File)
 	}
 	var left int
-	if e.Rules, left = repoconfig.ActiveRules(e.Review.Rules, files, changed); left > 0 {
+	if e.Rules, left = repoconfig.ActiveRules(repoconfig.RulesFor(e.Review.Rules, vars), files, changed); left > 0 {
 		notes = append(notes, fmt.Sprintf("%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given",
 			left))
 	}

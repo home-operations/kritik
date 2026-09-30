@@ -134,6 +134,31 @@ func TestActiveRules(t *testing.T) {
 	}
 }
 
+func TestRulesFor(t *testing.T) {
+	t.Parallel()
+	rules := []configfile.Rule{
+		{ID: "any", Rule: "Check errors."},
+		{ID: "renovate", Rule: "Say what breaks.", WhenExpr: `pr.headRef.startsWith("renovate/")`},
+		{ID: "broken", Rule: "Never applies.", WhenExpr: "pr.draft &&"},
+		{ID: "missing", Rule: "Never applies.", WhenExpr: "pr.nope"},
+	}
+	for _, tt := range []struct {
+		headRef string
+		want    []string
+	}{
+		{"feat/x", []string{"any"}},
+		{"renovate/go-1.x", []string{"any", "renovate"}},
+	} {
+		var got []string
+		for _, r := range RulesFor(rules, map[string]any{"headRef": tt.headRef}) {
+			got = append(got, r.ID)
+		}
+		if !slices.Equal(got, tt.want) {
+			t.Errorf("RulesFor(headRef %s) = %q, want %q", tt.headRef, got, tt.want)
+		}
+	}
+}
+
 func TestFile_Referenced(t *testing.T) {
 	t.Parallel()
 	f := File{

@@ -100,7 +100,7 @@ type repoRules struct {
 func collectRules(repos []repoRules) []Rule {
 	byKey := map[string]*Rule{}
 	add := func(r Rule, repo string) {
-		parts := []string{string(r.Kind), r.ID, r.Text, r.Path, r.Description, strings.Join(r.Paths, "\x00"), string(r.Source)}
+		parts := []string{string(r.Kind), r.ID, r.Text, r.Path, r.Description, strings.Join(r.Paths, "\x00"), r.WhenExpr, string(r.Source)}
 		key := strings.Join(parts, "\x01")
 		if r.Source == RuleFromEntry {
 			key += "\x01" + repo
@@ -120,7 +120,7 @@ func collectRules(repos []repoRules) []Rule {
 		}
 		for _, w := range own.Rules {
 			source := ruleFrom[rr.ruleScopes[w.ID]]
-			add(Rule{Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: nonNil(w.Paths), Source: source}, rr.name)
+			add(Rule{Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: nonNil(w.Paths), WhenExpr: w.WhenExpr, Source: source}, rr.name)
 		}
 		if rr.doc == nil {
 			continue
@@ -135,7 +135,9 @@ func collectRules(repos []repoRules) []Rule {
 			}
 		}
 		for _, w := range m.Review.Rules[len(own.Rules):] {
-			add(Rule{Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: nonNil(w.Paths), Source: RuleFromRepository}, rr.name)
+			add(Rule{
+				Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: nonNil(w.Paths), WhenExpr: w.WhenExpr, Source: RuleFromRepository,
+			}, rr.name)
 		}
 	}
 	out := make([]Rule, 0, len(byKey))

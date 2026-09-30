@@ -79,6 +79,10 @@
             "type": "array",
             "description": "Apply the rule only when a changed path matches one of these.",
             "items": { "$ref": "#/$defs/glob" }
+          },
+          "whenExpr": {
+            "type": "string",
+            "description": "A CEL expression over pr, as filterExpr sees it; the rule applies only when it is true."
           }
         }
       }
