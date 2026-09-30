@@ -1,6 +1,6 @@
 // Package metrics is every Prometheus series kritik exports beyond the Go
-// runtime. One Metrics value is registered per process and shared by the
-// roles; a nil *Metrics records nothing, so tests need not register one.
+// runtime. One Metrics value is registered per process and shared by its
+// parts; a nil *Metrics records nothing, so tests need not register one.
 package metrics
 
 import (
@@ -32,6 +32,7 @@ type Metrics struct {
 	modelCost      *prometheus.CounterVec
 	egress         *prometheus.CounterVec
 	transcripts    *prometheus.CounterVec
+	leader         prometheus.Gauge
 }
 
 // Label names shared across series.
@@ -63,6 +64,9 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritik_egress_requests_total",
 			Help: "Requests runner pods made through the gateway, by kind (connect, http) and outcome (allowed, refused, error).",
 		}, []string{lblKind, lblOutcome}),
+		leader: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "kritik_leader", Help: "1 while this replica holds the leader lock, else 0.",
+		}),
 		transcripts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_transcript_writes_total",
 			Help: "Model calls recorded for the transcript view, by kind (agent_step, review, fallback, followup) and outcome (ok, error).",
@@ -114,7 +118,8 @@ func New(reg prometheus.Registerer) *Metrics {
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,
 		m.contextChunks, m.indexRuns, m.indexChunks,
-		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.modelCalls, m.modelTokens, m.modelCost, m.egress, m.transcripts)
+		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.modelCalls, m.modelTokens, m.modelCost, m.egress, m.transcripts,
+		m.leader)
 	return m
 }
 
@@ -230,6 +235,18 @@ func (m *Metrics) Egress(kind, outcome string) {
 		return
 	}
 	m.egress.WithLabelValues(kind, outcome).Inc()
+}
+
+// Leading records whether this replica holds the leader lock.
+func (m *Metrics) Leading(held bool) {
+	if m == nil {
+		return
+	}
+	v := 0.0
+	if held {
+		v = 1
+	}
+	m.leader.Set(v)
 }
 
 // TranscriptWrite counts one model call recorded, or not, for the
