@@ -323,6 +323,54 @@ func TestKubeRunReportsFailure(t *testing.T) {
 	}
 }
 
+// TestKubeRunRetriesAStatusRead: a status read the API server fails is
+// tried again, and the run still ends with the Job's outcome.
+func TestKubeRunRetriesAStatusRead(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	failures := 0
+	client.PrependReactor("get", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if failures < 3 {
+			failures++
+			return true, nil, errors.New("the server is currently unable to handle the request")
+		}
+		return false, nil, nil
+	})
+	k := newKube(client)
+	ctx := t.Context()
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(ctx, spec()) }()
+	j := waitJob(t, client)
+	j.Status.Succeeded = 1
+	_, _ = client.BatchV1().Jobs("kritik").UpdateStatus(ctx, j, metav1.UpdateOptions{})
+	select {
+	case res := <-done:
+		if res.Err != nil || failures != 3 {
+			t.Fatalf("result = %+v after %d failed reads; want the Job's success", res, failures)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after the job succeeded")
+	}
+	if jobs, _ := client.BatchV1().Jobs("kritik").List(ctx, metav1.ListOptions{}); len(jobs.Items) != 1 {
+		t.Fatalf("the Job must be left to its TTL, %d left", len(jobs.Items))
+	}
+}
+
+// TestKubeRunGivesUpAnUnreadableJob: a Job whose status cannot be read at
+// all is deleted, so it does not run on beside the worker's retry.
+func TestKubeRunGivesUpAnUnreadableJob(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("get", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("the server is currently unable to handle the request")
+	})
+	res := newKube(client).Run(t.Context(), spec())
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "get job") {
+		t.Fatalf("err = %v, want the unread status surfaced", res.Err)
+	}
+	if jobs, _ := client.BatchV1().Jobs("kritik").List(t.Context(), metav1.ListOptions{}); len(jobs.Items) != 0 {
+		t.Fatalf("the unreadable Job must be deleted, %d left", len(jobs.Items))
+	}
+}
+
 func newKube(client *fake.Clientset) *Kube {
 	return &Kube{Client: client, Namespace: "kritik", Image: "img", ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}
 }

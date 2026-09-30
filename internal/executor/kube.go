@@ -117,6 +117,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	}
 	t := time.NewTicker(poll)
 	defer t.Stop()
+	unread := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -130,9 +131,20 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 				k.cancel(ctx, &res, spec.Secrets)
 				return res
 			}
+			// The API server answering badly says nothing about the run: the
+			// Job is checked again next tick. One that stays unreadable is
+			// deleted rather than left to run beside the retry the worker
+			// will start.
+			if unread++; unread < maxUnreadStatus {
+				k.logger().Warn("runner job status not read, retrying", "job", created.Name, "error", err)
+				continue
+			}
+			k.deleteJob(ctx, created.Name)
+			k.finish(ctx, &res, spec.Secrets)
 			res.Err = fmt.Errorf("executor: get job: %w", err)
 			return res
 		}
+		unread = 0
 		if j.Status.Succeeded > 0 || j.Status.Failed > 0 || jobFinished(j) {
 			k.finish(ctx, &res, spec.Secrets)
 			if j.Status.Succeeded == 0 {
@@ -142,6 +154,11 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 		}
 	}
 }
+
+// maxUnreadStatus is how many status reads in a row may fail before the
+// Job is given up on: with the default poll, half a minute of the API
+// server not answering.
+const maxUnreadStatus = 10
 
 // own makes the Job the Secret's owner so garbage collection deletes the
 // Secret with the Job. It is not the controller and must not block the
