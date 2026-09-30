@@ -458,8 +458,7 @@ func TestParseRejects(t *testing.T) {
 		{"negative deadline", acme("    runner: { activeDeadlineSeconds: -5 }\n"), "must not be negative"},
 		{"negative retention", "retention:\n  disabledIndexGrace: -1h\n" + minimal, "retention.disabledIndexGrace"},
 		{"negative settle default", "defaults:\n  settle: -1s\n" + minimal, "defaults.settle must not be negative"},
-		{"unknown inline severity floor", "defaults:\n  review: { minSeverity: blocking }\n" + minimal, "defaults.review.minSeverity must be nit or important"},
-		{"unknown thoroughness", "defaults:\n  review: { thoroughness: exhaustive }\n" + minimal, "defaults.review.thoroughness must be thorough or focused"},
+		{"unknown feedback", "defaults:\n  review: { feedback: exhaustive }\n" + minimal, "defaults.review.feedback must be detailed, standard or minimal"},
 		{"context without a description", "defaults:\n  review: { context: [{ path: db/schema.sql }] }\n" + minimal, "defaults.review.context[0]: description is required"},
 		{"context outside the repository", "defaults:\n  review: { context: [{ path: ../x, description: x }] }\n" + minimal, "escapes the repository"},
 		{"context with a bad glob", "defaults:\n  review: { context: [{ path: x, description: x, paths: ['['] }] }\n" + minimal, "paths[0] \"[\" is not a valid glob"},
@@ -744,8 +743,9 @@ defaults:
 	})
 }
 
-// TestReviewPresentation checks every finding goes inline unless a scope
-// sets a severity floor or turns inline comments off.
+// TestReviewPresentation checks every finding goes inline, from a
+// detailed review, unless a scope sets another feedback level or turns
+// inline comments off.
 func TestReviewPresentation(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -758,18 +758,16 @@ func TestReviewPresentation(t *testing.T) {
 		return f
 	}
 	f := parse(t, "", "{ name: x }")
-	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || s.Review.MinSeverity != "" || s.Review.Thoroughness != ThoroughnessThorough ||
-		!s.Review.AgentFiles {
-		t.Fatalf("review = %+v, want every finding inline, from a thorough review that reads agent files", s.Review)
+	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || s.Review.Feedback != FeedbackDetailed || !s.Review.AgentFiles {
+		t.Fatalf("review = %+v, want every finding inline, from a detailed review that reads agent files", s.Review)
 	}
-	f = parse(t, "    review: { minSeverity: important, inlineComments: false, thoroughness: focused, agentFiles: false }\n",
-		"{ name: x, review: { inlineComments: true } }, { name: y, review: { thoroughness: thorough } }")
-	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments || s.Review.MinSeverity != SeverityImportant ||
-		s.Review.Thoroughness != ThoroughnessFocused || s.Review.AgentFiles {
-		t.Fatalf("review = %+v, want the account's floor, thoroughness and agent files with the repository's inline comments", s.Review)
+	f = parse(t, "    review: { inlineComments: false, feedback: minimal, agentFiles: false }\n",
+		"{ name: x, review: { inlineComments: true } }, { name: y, review: { feedback: standard } }")
+	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments || s.Review.Feedback != FeedbackMinimal || s.Review.AgentFiles {
+		t.Fatalf("review = %+v, want the account's feedback and agent files with the repository's inline comments", s.Review)
 	}
-	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.Thoroughness != ThoroughnessThorough {
-		t.Fatalf("review = %+v, want the repository's thoroughness over the account's", s.Review)
+	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.Feedback != FeedbackStandard {
+		t.Fatalf("review = %+v, want the repository's feedback over the account's", s.Review)
 	}
 }
 

@@ -140,7 +140,7 @@ test('repository settings say where each comes from and what .kritik.yaml chose'
   await expect(settings).toContainText(`(.kritik.yaml; the admin's is ${g.repoDetail.settings.models.review})`);
   await expect(settings).toContainText(`${g.repoDetail.settings.mode} (account)`);
   await expect(settings).toContainText('Settle 30s (default)');
-  await expect(settings).toContainText('Thoroughness thorough (default)');
+  await expect(settings).toContainText(`Feedback ${g.repoDetail.settings.review.feedback} (default)`);
   await expect(settings).toContainText('AGENTS.md / CLAUDE.md read (default)');
   const file = page.locator('#repo-file').locator('../..');
   await expect(file).toContainText(rc.filter);

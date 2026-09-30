@@ -102,7 +102,7 @@ func (p *publishPhase) run(ctx context.Context) (status store.ReviewStatus, err 
 		p.logger.Warn("similar-code retrieval skipped", "error", err)
 	}
 	in.context = append(in.context, similar...)
-	system := review.SystemPrompt(p.rules, p.instructions, p.settings.Review.Thoroughness == configfile.ThoroughnessFocused)
+	system := review.SystemPrompt(p.rules, p.instructions, p.settings.Review.Focused())
 	var incremental *review.IncrementalInput
 	if p.scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{
@@ -436,17 +436,11 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 }
 
 // postsInline reports whether the review's settings post f as an inline
-// comment: none when inline comments are off, and otherwise a blocking
-// finding and any at or above the severity floor.
+// comment: none when inline comments are off, and otherwise every finding
+// but a nit that the feedback level keeps to the summary.
 func (p *publishPhase) postsInline(f review.Finding) bool {
 	r := p.settings.Review
-	switch {
-	case !r.InlineComments:
-		return false
-	case r.MinSeverity == "" || f.Severity == review.SeverityBlocking:
-		return true
-	}
-	return f.Severity.Rank() <= review.Severity(r.MinSeverity).Rank()
+	return r.InlineComments && (f.Severity != review.SeverityNit || r.NitsInline())
 }
 
 // upsertSticky edits the pull request's sticky comment to body, creating

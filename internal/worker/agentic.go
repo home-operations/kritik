@@ -157,7 +157,7 @@ func (w *Review) agentPrompt(
 	p := &runner.Prompt{
 		Repository: pr.repository, Instructions: eff.Review.Instructions, InstructionScopes: eff.Scoped, Context: eff.Review.Context,
 		Rules:               eff.Review.Rules,
-		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Focused: eff.Review.Thoroughness == configfile.ThoroughnessFocused,
+		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Focused: eff.Review.Focused(),
 		SkipPaths: eff.Skip.OnlyPaths, MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
 	}
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {

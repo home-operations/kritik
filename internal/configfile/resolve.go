@@ -76,7 +76,7 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 		Mode:        ReviewAgentic,
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
-		Review:      Review{InlineComments: true, Thoroughness: ThoroughnessThorough, AgentFiles: true},
+		Review:      Review{InlineComments: true, Feedback: FeedbackDetailed, AgentFiles: true},
 	}
 	s.apply(&f.Defaults.Overrides)
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
@@ -286,9 +286,6 @@ func (r Review) overlay(o ReviewSpec) Review {
 	if o.Templates.Inline != nil {
 		r.Templates.Inline = *o.Templates.Inline
 	}
-	if o.MinSeverity != nil {
-		r.MinSeverity = *o.MinSeverity
-	}
 	if o.InlineComments != nil {
 		r.InlineComments = *o.InlineComments
 	}
@@ -299,8 +296,8 @@ func (r Review) overlay(o ReviewSpec) Review {
 	if o.AgentFiles != nil {
 		r.AgentFiles = *o.AgentFiles
 	}
-	if o.Thoroughness != nil {
-		r.Thoroughness = *o.Thoroughness
+	if o.Feedback != nil {
+		r.Feedback = *o.Feedback
 	}
 	return r
 }

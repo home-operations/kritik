@@ -31,8 +31,8 @@ type Merged struct {
 // none, over the admin's settings op (ADR-0010 §2.5). The file narrows
 // what an admin allows (enabled, filter, ignore, skip), appends its
 // instructions, context files and rules to the admin's, may only turn
-// requireSuggestedFix on, and replaces the templates, the inline severity
-// floor and whether findings go inline, which grant nothing. It chooses
+// requireSuggestedFix on, and replaces the templates, the feedback level
+// and whether findings go inline, which grant nothing. It chooses
 // its mode, models, agent limits and commands and settle time within the
 // bounds op.Allow gives it; a bound an admin leaves unset allows only
 // the admin's own mode, models and commands, and limits and a settle
@@ -85,13 +85,6 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if f.Review.Templates.Inline != "" {
 		m.Review.Templates.Inline = f.Review.Templates.Inline
 	}
-	switch {
-	case f.Review.MinSeverity == "":
-	case configfile.ValidMinSeverity(f.Review.MinSeverity):
-		m.Review.MinSeverity = f.Review.MinSeverity
-	default:
-		m.drop("review.minSeverity", strconv.Quote(f.Review.MinSeverity), configfile.SeverityNit+", "+configfile.SeverityImportant)
-	}
 	if f.Review.InlineComments != nil {
 		m.Review.InlineComments = *f.Review.InlineComments
 	}
@@ -99,11 +92,11 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		m.Review.AgentFiles = *f.Review.AgentFiles
 	}
 	switch {
-	case f.Review.Thoroughness == "":
-	case configfile.ValidThoroughness(f.Review.Thoroughness):
-		m.Review.Thoroughness = f.Review.Thoroughness
+	case f.Review.Feedback == "":
+	case configfile.ValidFeedback(f.Review.Feedback):
+		m.Review.Feedback = f.Review.Feedback
 	default:
-		m.drop("review.thoroughness", strconv.Quote(f.Review.Thoroughness), configfile.ThoroughnessThorough+", "+configfile.ThoroughnessFocused)
+		m.drop("review.feedback", strconv.Quote(f.Review.Feedback), configfile.FeedbackLevels)
 	}
 	for _, c := range f.Review.Context {
 		if !slices.ContainsFunc(m.Review.Context, func(o configfile.ContextFile) bool { return o.Path == c.Path }) {

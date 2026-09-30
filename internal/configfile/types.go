@@ -489,20 +489,15 @@ type Review struct {
 	Instructions        []string
 	RequireSuggestedFix bool
 	Templates           ReviewTemplates
-	// MinSeverity is the least severe finding posted inline, nit or
-	// important; empty posts every one. A blocking finding is always
-	// posted, and the summary counts every finding.
-	MinSeverity string
 	// InlineComments is false to post the summary alone.
 	InlineComments bool
 	Context        []ContextFile
 	// Rules are the checks the configuration writes, the broadest scope's
 	// first (ADR-0018).
 	Rules []Rule
-	// Thoroughness is what the reviewer reports: ThoroughnessThorough,
-	// anything a maintainer could act on, or ThoroughnessFocused, only what
-	// would stop the review.
-	Thoroughness string
+	// Feedback is how much a review says (ADR-0021 §2.4): FeedbackDetailed,
+	// FeedbackStandard or FeedbackMinimal.
+	Feedback string
 	// AgentFiles is true to add the repository's AGENTS.md files, or a
 	// directory's CLAUDE.md where it has none, to the instructions: the
 	// root's and those of the directories a change touches (ADR-0020).
@@ -519,17 +514,24 @@ type ContextFile struct {
 	Paths       []string `yaml:"paths,omitempty" json:"paths,omitempty"`
 }
 
-// Inline severity floors.
+// Feedback levels.
 const (
-	SeverityNit       = "nit"
-	SeverityImportant = "important"
+	// FeedbackDetailed reports anything a maintainer could act on, nits,
+	// missing tests and questions included, each inline.
+	FeedbackDetailed = "detailed"
+	// FeedbackStandard is the same review with nits left out of the inline
+	// comments; the summary still lists them.
+	FeedbackStandard = "standard"
+	// FeedbackMinimal reports only bugs, risks and breaking changes.
+	FeedbackMinimal = "minimal"
 )
 
-// Review thoroughnesses.
-const (
-	ThoroughnessThorough = "thorough"
-	ThoroughnessFocused  = "focused"
-)
+// Focused reports whether the reviewer is told to report only what would
+// stop the review.
+func (r Review) Focused() bool { return r.Feedback == FeedbackMinimal }
+
+// NitsInline reports whether a nit is posted as an inline comment.
+func (r Review) NitsInline() bool { return r.Feedback != FeedbackStandard }
 
 // ReviewSpec sets the review block at one scope, field by field: a field
 // written here, even empty, replaces the broader scope's. Rules are the
@@ -539,11 +541,10 @@ type ReviewSpec struct {
 	Instructions        []string      `yaml:"instructions,omitempty"`
 	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
 	Templates           TemplatesSpec `yaml:"templates,omitempty"`
-	MinSeverity         *string       `yaml:"minSeverity,omitempty"`
 	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
 	Context             []ContextFile `yaml:"context,omitempty"`
 	Rules               []Rule        `yaml:"rules,omitempty"`
-	Thoroughness        *string       `yaml:"thoroughness,omitempty"`
+	Feedback            *string       `yaml:"feedback,omitempty"`
 	AgentFiles          *bool         `yaml:"agentFiles,omitempty"`
 }
 

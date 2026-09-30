@@ -175,10 +175,9 @@ type ReviewBlock struct {
 	Instructions        []string                   `json:"instructions"`
 	RequireSuggestedFix bool                       `json:"requireSuggestedFix"`
 	Templates           configfile.ReviewTemplates `json:"templates"`
-	MinSeverity         string                     `json:"minSeverity"`
 	InlineComments      bool                       `json:"inlineComments"`
 	Context             []configfile.ContextFile   `json:"context"`
-	Thoroughness        string                     `json:"thoroughness"`
+	Feedback            string                     `json:"feedback"`
 	AgentFiles          bool                       `json:"agentFiles"`
 }
 

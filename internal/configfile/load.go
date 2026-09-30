@@ -485,19 +485,15 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 }
 
 // validateReview checks the review block one scope writes: its paths stay
-// inside the repository, and its severity floor and thoroughness are each
-// one of the two.
+// inside the repository, and its feedback is a level.
 func validateReview(where string, r *ReviewSpec) error {
 	for i, p := range r.Instructions {
 		if err := checkRepoPath(p); err != nil {
 			return fmt.Errorf("configfile: %s.instructions[%d]: %w", where, i, err)
 		}
 	}
-	if m := r.MinSeverity; m != nil && !ValidMinSeverity(*m) {
-		return fmt.Errorf("configfile: %s.minSeverity must be %s or %s, got %q", where, SeverityNit, SeverityImportant, *m)
-	}
-	if th := r.Thoroughness; th != nil && !ValidThoroughness(*th) {
-		return fmt.Errorf("configfile: %s.thoroughness must be %s or %s, got %q", where, ThoroughnessThorough, ThoroughnessFocused, *th)
+	if fb := r.Feedback; fb != nil && !ValidFeedback(*fb) {
+		return fmt.Errorf("configfile: %s.feedback must be %s, got %q", where, FeedbackLevels, *fb)
 	}
 	for i, c := range r.Context {
 		if err := c.Check(); err != nil {
@@ -538,12 +534,13 @@ func (c ContextFile) Check() error {
 	return nil
 }
 
-// ValidMinSeverity reports whether s is an inline severity floor; empty is
-// none.
-func ValidMinSeverity(s string) bool { return s == "" || s == SeverityNit || s == SeverityImportant }
+// ValidFeedback reports whether s is a feedback level.
+func ValidFeedback(s string) bool {
+	return s == FeedbackDetailed || s == FeedbackStandard || s == FeedbackMinimal
+}
 
-// ValidThoroughness reports whether s is a review thoroughness.
-func ValidThoroughness(s string) bool { return s == ThoroughnessThorough || s == ThoroughnessFocused }
+// FeedbackLevels lists the feedback levels for a message.
+const FeedbackLevels = FeedbackDetailed + ", " + FeedbackStandard + " or " + FeedbackMinimal
 
 // checkRepoPath rejects a repository path that is empty, absolute or
 // escapes the repository root.

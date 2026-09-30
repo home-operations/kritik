@@ -37,7 +37,6 @@
         "Summary": "docs/summary.tmpl",
         "Inline": ""
       },
-      "minSeverity": "important",
       "inlineComments": true,
       "context": [
         {
@@ -46,7 +45,7 @@
           "paths": ["**/*.sql"]
         }
       ],
-      "thoroughness": "thorough",
+      "feedback": "standard",
       "agentFiles": true
     },
     "agent": {
@@ -103,7 +102,6 @@
           "Summary": "docs/summary.tmpl",
           "Inline": ""
         },
-        "minSeverity": "important",
         "inlineComments": true,
         "context": [
           {
@@ -112,7 +110,7 @@
             "paths": ["**/*.sql"]
           }
         ],
-        "thoroughness": "thorough",
+        "feedback": "standard",
         "agentFiles": true
       },
       "agent": {

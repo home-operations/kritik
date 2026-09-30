@@ -95,10 +95,9 @@ type Review struct {
 	Instructions        []Instruction `yaml:"instructions,omitempty"`
 	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
 	Templates           Templates     `yaml:"templates,omitempty"`
-	MinSeverity         string        `yaml:"minSeverity,omitempty"`
 	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
-	// Thoroughness replaces the admin's: thorough or focused.
-	Thoroughness string `yaml:"thoroughness,omitempty"`
+	// Feedback replaces the admin's: detailed, standard or minimal.
+	Feedback string `yaml:"feedback,omitempty"`
 	// Context names files that explain the code, added after the
 	// admin's.
 	Context []configfile.ContextFile `yaml:"context,omitempty"`

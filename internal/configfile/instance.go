@@ -9,8 +9,8 @@ import (
 
 // The environment may set the instance's defaults key by key (ADR-0015
 // §2): one model provider, the review and fallback models, mode,
-// thoroughness, forks and settle every account and repository inherits,
-// and the embedder. Each wins over the file's.
+// feedback, forks and settle every account and repository inherits, and
+// the embedder. Each wins over the file's.
 
 // Environment variable prefixes of the file's instance defaults.
 const (
@@ -90,8 +90,8 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 			d.Models.Fallback, path = &ref, "models.fallback"
 		case "MODE":
 			d.Mode, path = ReviewMode(value), keyMode
-		case "REVIEW_THOROUGHNESS":
-			d.Review.Thoroughness, path = &value, keyThoroughness
+		case "FEEDBACK":
+			d.Review.Feedback, path = &value, keyFeedback
 		case "FORKS":
 			b, err := strconv.ParseBool(value)
 			if err != nil {
@@ -161,8 +161,8 @@ type FileLayer struct {
 	Providers map[string]FileProvider
 	Review    FileValue
 	Fallback  FileValue
-	// Defaults are the other defaults it sets: mode, review.thoroughness,
-	// forks and settle, in that order, by their policy keys.
+	// Defaults are the other defaults it sets: mode, review.feedback, forks
+	// and settle, in that order, by their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
 }
@@ -226,7 +226,7 @@ func (f *File) FileLayer() FileLayer {
 		set        bool
 	}{
 		{keyMode, string(d.Mode), d.Mode != ""},
-		{keyThoroughness, deref(d.Review.Thoroughness), d.Review.Thoroughness != nil},
+		{keyFeedback, deref(d.Review.Feedback), d.Review.Feedback != nil},
 		{keyForks, strconv.FormatBool(d.Forks != nil && *d.Forks), d.Forks != nil},
 		{keySettle, durationValue(d.Settle), d.Settle != nil},
 	} {

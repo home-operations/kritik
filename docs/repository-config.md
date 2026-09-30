@@ -83,9 +83,6 @@ instructions, and chooses a few settings within bounds an admin sets:
 
 - `review.requireSuggestedFix: true`: findings must include a suggested
   fix. The file can turn the requirement on, never off.
-- `review.minSeverity`: `nit` or `important`, the least severe finding
-  posted as an inline comment. A `blocking` finding is always posted, and
-  the summary still lists every finding.
 - `review.inlineComments: false`: posts the summary alone, without inline
   comments.
 - `review.agentFiles: false`: leaves the repository's agent files out.
@@ -94,13 +91,19 @@ instructions, and chooses a few settings within bounds an admin sets:
   `CLAUDE.md` where it has no `AGENTS.md`, read from the merge base after
   the named instruction files and within the same 32 KiB
   ([ADR-0020](adr/0020-agent-files.md)).
-- `review.thoroughness`: `thorough`, the default, or `focused`. A thorough
-  review comments on every line a maintainer could act on, smaller
-  improvements, missing tests and questions included, with a one-click
-  suggestion wherever the fix is a change to those lines. A focused one
-  reports only what would stop the review: bugs, risks and breaking
-  changes. The admin sets it for the instance, an account or a repository
-  as well.
+- `review.feedback`: how much the review says
+  ([ADR-0021](adr/0021-configuration-shape.md) §2.4). The admin sets it
+  for the instance, an account or a repository as well.
+
+  | `feedback`           | What the review reports                                                                                                                                                                |
+  | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `detailed` (default) | every line a maintainer could act on, smaller improvements, missing tests and questions included, each inline, with a one-click suggestion wherever the fix is a change to those lines |
+  | `standard`           | the same review, with nits in the summary rather than inline                                                                                                                           |
+  | `minimal`            | only what would stop the review: bugs, risks and breaking changes                                                                                                                      |
+
+  A `blocking` finding is always posted inline, and the summary lists
+  every finding.
+
 - `review.templates.summary` / `review.templates.inline`: paths to Go
   [text/template](https://pkg.go.dev/text/template) templates that replace
   kritik's built-in summary and inline comment templates, with the
