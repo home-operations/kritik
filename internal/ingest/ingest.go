@@ -108,8 +108,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.Warn("webhook rejected", "error", err, "remote", r.RemoteAddr)
 		outcome := "unauthorized"
 		// A delivery with no signature at all comes from an App with no
-		// webhook secret, which the dashboard says to set.
-		if errors.Is(err, webhook.ErrMissingSignature) {
+		// webhook secret, which the dashboard says to set. Only one the forge
+		// sent says so: the hook path is public, and a bare POST from anyone
+		// else must not raise that alarm.
+		if errors.Is(err, webhook.ErrMissingSignature) && webhook.Delivered(in.Forge, r.Header) {
 			outcome = "unsigned"
 			if h.Deliveries != nil {
 				if err := h.Deliveries.RecordUnsigned(r.Context(), in.ID()); err != nil {

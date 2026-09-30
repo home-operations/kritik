@@ -63,3 +63,24 @@ func TestVerify(t *testing.T) {
 		t.Fatal("unsupported forge must error")
 	}
 }
+
+func TestDelivered(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		header http.Header
+		want   bool
+	}{
+		{"github delivery", http.Header{"X-Github-Delivery": {"d-1"}, "X-Github-Event": {"ping"}}, true},
+		{"delivery id alone", http.Header{"X-Github-Delivery": {"d-1"}}, false},
+		{"no headers", http.Header{}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Delivered(configfile.ForgeGitHub, tt.header); got != tt.want {
+				t.Fatalf("Delivered = %v, want %v", got, tt.want)
+			}
+		})
+	}
+	if Delivered("gitea", http.Header{"X-Github-Delivery": {"d-1"}, "X-Github-Event": {"ping"}}) {
+		t.Fatal("an unsupported forge delivers nothing")
+	}
+}

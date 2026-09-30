@@ -39,6 +39,18 @@ func Verify(forge configfile.Forge, secret string, header http.Header, body []by
 	}
 }
 
+// Delivered reports whether the request carries the headers forge puts on
+// every delivery, signed or not, so a request from anyone else can be told
+// from one the forge sent.
+func Delivered(forge configfile.Forge, header http.Header) bool {
+	switch forge {
+	case configfile.ForgeGitHub:
+		return header.Get("X-GitHub-Delivery") != "" && header.Get("X-GitHub-Event") != ""
+	default:
+		return false
+	}
+}
+
 // verifyHMAC checks a "sha256=" + hex HMAC-SHA256 signature header. The
 // comparison is constant-time (hmac.Equal).
 func verifyHMAC(provided, secret string, body []byte) error {
