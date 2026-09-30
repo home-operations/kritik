@@ -88,6 +88,12 @@ instructions, and chooses a few settings within bounds an admin sets:
   the summary still lists every finding.
 - `review.inlineComments: false`: posts the summary alone, without inline
   comments.
+- `review.agentFiles: false`: leaves the repository's agent files out.
+  Unless set, a review adds to its instructions the `AGENTS.md` of the
+  root and of each directory above a changed path, or a directory's
+  `CLAUDE.md` where it has no `AGENTS.md`, read from the merge base after
+  the named instruction files and within the same 32 KiB
+  ([ADR-0020](adr/0020-agent-files.md)).
 - `review.thoroughness`: `thorough`, the default, or `focused`. A thorough
   review comments on every line a maintainer could act on, smaller
   improvements, missing tests and questions included, with a one-click

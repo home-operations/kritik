@@ -21,7 +21,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 5
+const SpecVersion = 6
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -134,6 +134,11 @@ type Spec struct {
 	Agent     *AgentLimits   `json:"agent,omitempty"`
 	Model     *ModelEndpoint `json:"model,omitempty"`
 	Prompt    *Prompt        `json:"prompt,omitempty"`
+
+	// AgentFiles also reads the AGENTS.md or CLAUDE.md of the root and of
+	// each directory above a changed path, as repoconfig.ReadAgentFiles
+	// does, and adds them to the instructions.
+	AgentFiles bool `json:"agentFiles,omitempty"`
 }
 
 // Validate checks a spec is one this runner can carry out.

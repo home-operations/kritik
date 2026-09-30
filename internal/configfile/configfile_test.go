@@ -758,14 +758,15 @@ func TestReviewPresentation(t *testing.T) {
 		return f
 	}
 	f := parse(t, "", "{ name: x }")
-	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || s.Review.MinSeverity != "" || s.Review.Thoroughness != ThoroughnessThorough {
-		t.Fatalf("review = %+v, want every finding inline, from a thorough review", s.Review)
+	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || s.Review.MinSeverity != "" || s.Review.Thoroughness != ThoroughnessThorough ||
+		!s.Review.AgentFiles {
+		t.Fatalf("review = %+v, want every finding inline, from a thorough review that reads agent files", s.Review)
 	}
-	f = parse(t, "    review: { minSeverity: important, inlineComments: false, thoroughness: focused }\n",
+	f = parse(t, "    review: { minSeverity: important, inlineComments: false, thoroughness: focused, agentFiles: false }\n",
 		"{ name: x, review: { inlineComments: true } }, { name: y, review: { thoroughness: thorough } }")
 	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments || s.Review.MinSeverity != SeverityImportant ||
-		s.Review.Thoroughness != ThoroughnessFocused {
-		t.Fatalf("review = %+v, want the account's floor and thoroughness with the repository's inline comments", s.Review)
+		s.Review.Thoroughness != ThoroughnessFocused || s.Review.AgentFiles {
+		t.Fatalf("review = %+v, want the account's floor, thoroughness and agent files with the repository's inline comments", s.Review)
 	}
 	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.Thoroughness != ThoroughnessThorough {
 		t.Fatalf("review = %+v, want the repository's thoroughness over the account's", s.Review)

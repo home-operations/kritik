@@ -7,7 +7,8 @@
   key an environment variable that takes precedence (§2.2), and moves the
   embedder and every other instance setting into the dashboard, and
   [ADR-0018](0018-rules.md), which adds `review.rules`, a key whose values
-  add up across the scopes of §2.4.
+  add up across the scopes of §2.4, and [ADR-0020](0020-agent-files.md),
+  which adds `review.agentFiles`.
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6 (the two
   configuration sources), [ADR-0003](0003-forgejo-agentic-review.md) §2.3
   (`.kritik.yaml`) and [ADR-0009](0009-web-dashboard.md) §2.12 (collisions),

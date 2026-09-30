@@ -20,7 +20,7 @@ func adminSettings() configfile.Settings {
 		Review: configfile.Review{
 			Instructions: []string{"docs/rules.md"}, RequireSuggestedFix: true,
 			Templates: configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
-			Rules: []configfile.Rule{{ID: "wrap-errors", Rule: "Wrap errors."}},
+			Rules: []configfile.Rule{{ID: "wrap-errors", Rule: "Wrap errors."}}, AgentFiles: true,
 		},
 	}
 }
@@ -72,9 +72,9 @@ func TestMerge(t *testing.T) {
 		{name: "a rule without an id", doc: "review:\n  rules: [{ rule: Never log a token. }]\n", wantErr: `review.rules[0].id "" must be`},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
-			name: "presentation replaces the admin's", doc: "review: { minSeverity: important, inlineComments: false }\n",
+			name: "presentation replaces the admin's", doc: "review: { minSeverity: important, inlineComments: false, agentFiles: false }\n",
 			want: func(s *configfile.Settings) {
-				s.Review.MinSeverity, s.Review.InlineComments = configfile.SeverityImportant, false
+				s.Review.MinSeverity, s.Review.InlineComments, s.Review.AgentFiles = configfile.SeverityImportant, false, false
 			},
 		},
 		{

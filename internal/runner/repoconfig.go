@@ -12,11 +12,19 @@ import (
 )
 
 // repoFiles reads the repository files the spec names from the merge-base
-// tree, noting any it could not keep.
-func repoFiles(base *object.Tree, paths []string) (repoconfig.Files, []string, error) {
+// tree, then the agent files the directories of agentChanged hold, noting
+// any it could not keep.
+func repoFiles(base *object.Tree, paths, agentChanged []string) (repoconfig.Files, []string, error) {
 	files, notes, err := repoconfig.Collect(treeReader(base), paths...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("runner: %w", err)
+	}
+	if len(agentChanged) > 0 {
+		more, err := repoconfig.ReadAgentFiles(treeReader(base), files, agentChanged)
+		if err != nil {
+			return nil, nil, fmt.Errorf("runner: %w", err)
+		}
+		notes = append(notes, more...)
 	}
 	return files, notes, nil
 }

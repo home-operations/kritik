@@ -190,6 +190,7 @@ export interface ReviewBlock {
   inlineComments: boolean;
   context: ContextFile[];
   thoroughness: Thoroughness;
+  agentFiles: boolean;
 }
 
 // What a review reports: anything a maintainer could act on, or only what

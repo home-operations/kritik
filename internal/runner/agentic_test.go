@@ -42,7 +42,7 @@ func TestAgentPrompt(t *testing.T) {
 		Context: []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 1, EndLine: 2, Text: "func u() {}"}},
 		Scope:   review.ScopeFull,
 	}
-	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritik/rules.md": "Repository rules."}
+	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritik/rules.md": "Repository rules.", "AGENTS.md": "Agent notes."}
 	tests := []struct {
 		name         string
 		paths        []string
@@ -53,6 +53,7 @@ func TestAgentPrompt(t *testing.T) {
 		active       []review.Rule
 		strict       bool
 		focused      bool
+		agentFiles   bool
 	}{
 		{name: "the named instructions and strictness", paths: []string{"docs/rules.md"},
 			scope: review.ScopeFull, instructions: []string{"Admin rules."}, strict: true},
@@ -63,6 +64,8 @@ func TestAgentPrompt(t *testing.T) {
 		{name: "one scoped to a path it touches is kept", paths: []string{"docs/rules.md", ".kritik/rules.md"},
 			scoped: map[string][]string{".kritik/rules.md": {"*.go"}}, scope: review.ScopeFull,
 			instructions: []string{"Admin rules.", "Repository rules."}, strict: true},
+		{name: "the root's AGENTS.md follows the named instructions", paths: []string{"docs/rules.md"}, agentFiles: true,
+			scope: review.ScopeFull, instructions: []string{"Admin rules.", "Agent notes."}, strict: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
 		{name: "a focused review gets the focused prompt", scope: review.ScopeFull, focused: true},
 		{
@@ -75,7 +78,7 @@ func TestAgentPrompt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
 			s.Prompt.Instructions, s.Prompt.InstructionScopes, s.Prompt.RequireSuggestedFix = tt.paths, tt.scoped, tt.strict
-			s.Prompt.Focused, s.Prompt.Rules = tt.focused, tt.rules
+			s.Prompt.Focused, s.Prompt.Rules, s.AgentFiles = tt.focused, tt.rules, tt.agentFiles
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {

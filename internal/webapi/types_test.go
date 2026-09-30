@@ -53,6 +53,7 @@ var goldenRepoSettings = RepoSettings{
 		Templates: configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, MinSeverity: configfile.SeverityImportant, InlineComments: true,
 		Context:      []configfile.ContextFile{{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}},
 		Thoroughness: configfile.ThoroughnessThorough,
+		AgentFiles:   true,
 	},
 	Agent: AgentLimits{
 		MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, TimeoutSeconds: 1200, Commands: []string{"go"},

@@ -105,6 +105,9 @@ type Review struct {
 	// Rules are checks added after the admin's; one may not replace an
 	// admin's rule.
 	Rules []configfile.Rule `yaml:"rules,omitempty"`
+	// AgentFiles replaces the admin's: whether AGENTS.md and CLAUDE.md
+	// files join the instructions.
+	AgentFiles *bool `yaml:"agentFiles,omitempty"`
 }
 
 // Skip decides whether a PR should be skipped outright based on the paths it
@@ -284,13 +287,19 @@ func Collect(read func(name string) ([]byte, error), paths ...string) (Files, []
 		case len(b) > MaxFileBytes:
 			notes = append(notes, TooLarge(p))
 		case total+len(b) > MaxTotalBytes:
-			notes = append(notes, fmt.Sprintf("%s: skipped, would exceed the %d byte total limit", p, MaxTotalBytes))
+			notes = append(notes, overTotal(p))
 		default:
 			files[p] = string(b)
 			total += len(b)
 		}
 	}
 	return files, notes, nil
+}
+
+// overTotal is the note for a file that would push the total over
+// MaxTotalBytes.
+func overTotal(name string) string {
+	return fmt.Sprintf("%s: skipped, would exceed the %d byte total limit", name, MaxTotalBytes)
 }
 
 // TooLarge is the note for a file over MaxFileBytes.

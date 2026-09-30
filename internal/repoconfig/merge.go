@@ -95,6 +95,9 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if f.Review.InlineComments != nil {
 		m.Review.InlineComments = *f.Review.InlineComments
 	}
+	if f.Review.AgentFiles != nil {
+		m.Review.AgentFiles = *f.Review.AgentFiles
+	}
 	switch {
 	case f.Review.Thoroughness == "":
 	case configfile.ValidThoroughness(f.Review.Thoroughness):

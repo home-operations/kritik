@@ -98,7 +98,7 @@ func (e *Effective) fill(files repoconfig.Files, notes, changed []string) []stri
 		notes = append(notes, fmt.Sprintf("%d review rules left out, past the 16 KiB of rules a review is given", left))
 	}
 	var truncated bool
-	active := repoconfig.Active(e.Review.Instructions, e.Scoped, changed)
+	active := repoconfig.ActiveInstructions(e.Review.Instructions, e.Scoped, files, changed, e.Review.AgentFiles)
 	if e.Instructions, truncated = repoconfig.Instructions(files, active); truncated {
 		notes = append(notes, "repository instructions truncated to 32 KiB")
 	}
