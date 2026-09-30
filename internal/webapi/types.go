@@ -513,10 +513,12 @@ type ReviewDetail struct {
 }
 
 // ReviewDiff is a review's diff and, for an incremental one, the diff
-// since the prior review's head.
+// since the prior review's head. Swept says the retention sweep has
+// emptied both.
 type ReviewDiff struct {
 	Diff      string `json:"diff"`
 	DeltaDiff string `json:"deltaDiff"`
+	Swept     bool   `json:"swept"`
 }
 
 // ContextChunk is one context chunk with its text.

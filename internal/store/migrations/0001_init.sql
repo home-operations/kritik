@@ -106,7 +106,7 @@ CREATE TABLE pull_requests (
     author_is_bot boolean     NOT NULL DEFAULT false,
     draft         boolean     NOT NULL DEFAULT false,
     fork          boolean     NOT NULL DEFAULT false,
-    state         text        NOT NULL DEFAULT 'open',
+    state         text        NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed')),
     head_ref      text        NOT NULL DEFAULT '',
     head_sha      text        NOT NULL,
     base_ref      text        NOT NULL DEFAULT '',
@@ -171,8 +171,12 @@ CREATE TABLE reviews (
     river_job_id        bigint,
     cancel_requested_at timestamptz
 );
-CREATE INDEX reviews_account_id_idx ON reviews (account_id);
+-- Every account-scoped read of reviews is bounded by created_at too: the
+-- daily cap count at each review's start, the analytics ranges and the
+-- dashboard's recent counts.
+CREATE INDEX reviews_account_created_idx ON reviews (account_id, created_at DESC, id DESC);
 CREATE INDEX reviews_pull_request_idx ON reviews (pull_request_id, created_at DESC);
+CREATE INDEX reviews_prior_review_idx ON reviews (prior_review_id) WHERE prior_review_id IS NOT NULL;
 
 -- runner_runs is the record of the Kubernetes Job that prepared a review or
 -- an index generation. The runner stamps heartbeat_at while it works; the
@@ -188,7 +192,8 @@ CREATE TABLE runner_runs (
     job_name           text        NOT NULL DEFAULT '',
     pod_name           text        NOT NULL DEFAULT '',
     node_name          text        NOT NULL DEFAULT '',
-    phase              text        NOT NULL DEFAULT 'created',
+    phase              text        NOT NULL DEFAULT 'created'
+        CHECK (phase IN ('created', 'fetching', 'parsing', 'writing', 'reviewing', 'done', 'failed')),
     created_at         timestamptz NOT NULL DEFAULT now(),
     scheduled_at       timestamptz,
     started_at         timestamptz,
@@ -212,7 +217,9 @@ CREATE INDEX runner_runs_review_created_idx ON runner_runs (review_id, created_a
 -- could not be read), and for a re-review the head of the last completed
 -- review when the runner could fetch it (prior_head_sha, NULL when there
 -- was none or it was unreachable), the diff from it and the paths it
--- touches that no ignore glob covers.
+-- touches that no ignore glob covers. The retention sweep empties the
+-- bodies (diff, delta_diff, stage texts and repo_files) of a pack past
+-- KRITIK_DIFF_RETENTION and stamps swept_at; the metadata stays.
 CREATE TABLE context_packs (
     runner_run_id  uuid        PRIMARY KEY REFERENCES runner_runs (id),
     account_id     uuid        NOT NULL REFERENCES accounts (id),
@@ -227,9 +234,11 @@ CREATE TABLE context_packs (
     repo_notes     text[]      NOT NULL DEFAULT '{}',
     prior_head_sha text,
     delta_diff     text        NOT NULL DEFAULT '',
-    delta_paths    text[]      NOT NULL DEFAULT '{}'
+    delta_paths    text[]      NOT NULL DEFAULT '{}',
+    swept_at       timestamptz
 );
 CREATE INDEX context_packs_account_id_idx ON context_packs (account_id);
+CREATE INDEX context_packs_unswept_idx ON context_packs (created_at) WHERE swept_at IS NULL;
 
 -- A finding of the review contract: anchored to line, or to the range
 -- line through end_line (0 for line alone), with an explanation, an
@@ -290,6 +299,7 @@ CREATE TABLE usage (
 CREATE INDEX usage_account_created_idx ON usage (account_id, created_at DESC);
 -- A review's cost and a review's usage rows.
 CREATE INDEX usage_review_id_idx ON usage (review_id) WHERE review_id IS NOT NULL;
+CREATE INDEX usage_repository_id_idx ON usage (repository_id) WHERE repository_id IS NOT NULL;
 
 -- The embedding index. index_runs is a generation of one repository's
 -- index (or an incremental step of the active one); a repository points at
@@ -316,6 +326,11 @@ CREATE INDEX index_runs_account_created_idx ON index_runs (account_id, created_a
 
 ALTER TABLE repositories ADD COLUMN active_index_run_id uuid REFERENCES index_runs (id);
 ALTER TABLE runner_runs  ADD COLUMN index_run_id uuid REFERENCES index_runs (id);
+-- A run belongs to a review or to an index generation, never to the
+-- other kind's parent.
+ALTER TABLE runner_runs ADD CONSTRAINT runner_runs_kind_parent_check
+    CHECK ((kind = 'review' OR review_id IS NULL) AND (kind = 'index' OR index_run_id IS NULL));
+CREATE INDEX runner_runs_index_run_idx ON runner_runs (index_run_id) WHERE index_run_id IS NOT NULL;
 
 CREATE TABLE index_packs (
     runner_run_id uuid        PRIMARY KEY REFERENCES runner_runs (id),
@@ -433,6 +448,7 @@ CREATE TABLE gateway_tokens (
     created_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX gateway_tokens_runner_run_id_idx ON gateway_tokens (runner_run_id);
+CREATE INDEX gateway_tokens_review_id_idx ON gateway_tokens (review_id);
 CREATE INDEX gateway_tokens_expires_at_idx ON gateway_tokens (expires_at);
 
 -- One row per sign-in identity a user has signed in with, keyed by the
@@ -502,6 +518,7 @@ CREATE TABLE audit_events (
     detail     jsonb       NOT NULL DEFAULT '{}'::jsonb
 );
 CREATE INDEX audit_events_account_id_idx ON audit_events (account_id, id DESC);
+CREATE INDEX audit_events_user_id_idx ON audit_events (user_id) WHERE user_id IS NOT NULL;
 
 -- model_calls is account content (row-level security applies, unlike the
 -- tables above): one row per model call the gateway made, whether an
@@ -628,22 +645,29 @@ CREATE POLICY account_isolation ON model_calls
     WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
 
 -- The runner may update the phase of its own run and write its own packs,
--- staging rows and agent run.
+-- staging rows and agent run. What it writes must carry its run's own
+-- account: the subquery resolves through the runner's own-row policy on
+-- runner_runs, so a row under any other account is refused rather than
+-- left where no account's reads or sweeps would ever find it.
 CREATE POLICY runner_job ON runner_runs
     USING      (id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid)
     WITH CHECK (id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid);
 CREATE POLICY runner_job ON context_packs
     USING      (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid)
-    WITH CHECK (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid);
+    WITH CHECK (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid
+                AND account_id = (SELECT r.account_id FROM runner_runs r WHERE r.id = runner_run_id));
 CREATE POLICY runner_job ON index_packs
     USING      (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid)
-    WITH CHECK (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid);
+    WITH CHECK (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid
+                AND account_id = (SELECT r.account_id FROM runner_runs r WHERE r.id = runner_run_id));
 CREATE POLICY runner_job ON index_staging
     USING      (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid)
-    WITH CHECK (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid);
+    WITH CHECK (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid
+                AND account_id = (SELECT r.account_id FROM runner_runs r WHERE r.id = runner_run_id));
 CREATE POLICY runner_job ON agent_runs
     USING      (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid)
-    WITH CHECK (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid);
+    WITH CHECK (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid
+                AND account_id = (SELECT r.account_id FROM runner_runs r WHERE r.id = runner_run_id));
 
 -- kritik_notify_event publishes one row's change on the kritik_events
 -- channel for the dashboard's live views: the kind is baked into the

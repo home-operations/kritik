@@ -1,4 +1,5 @@
 {
   "diff": "diff --git a/a.go b/a.go\n",
-  "deltaDiff": ""
+  "deltaDiff": "",
+  "swept": false
 }

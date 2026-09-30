@@ -289,8 +289,9 @@ func (e *Embedding) Bounds() (batch, batchChars, itemChars int) {
 		cmp.Or(e.MaxItemChars, model.DefaultEmbedMaxItemChars)
 }
 
-// minTranscripts is the shortest transcript retention that may be set.
-const minTranscripts = 24 * time.Hour
+// minRetention is the shortest transcript or diff retention that may be
+// set.
+const minRetention = 24 * time.Hour
 
 // DefaultIgnore is always skipped by chunking and the caller search, on top
 // of whatever the admin's file and the in-repo file add. Vendored and

@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -156,6 +157,66 @@ func TestSweepModelCalls(t *testing.T) {
 	}
 	if len(left) != 1 || left[0] != fresh {
 		t.Fatalf("left = %v, want only %s", left, fresh)
+	}
+}
+
+func TestSweepDiffs(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := accountID(t, s, "alpha")
+	insert := func() string {
+		t.Helper()
+		var id string
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'review') RETURNING id`, alpha).Scan(&id); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, delta_diff, stages, repo_files)
+				VALUES ($1, $2, 'h', 'b', 'p', 'diff --git', 'delta', '[{"stage":"overlay","path":"a.go","text":"body"}]', '{"AGENTS.md":"rules"}')`, id, alpha)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	old, fresh := insert(), insert()
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(ctx, `DELETE FROM context_packs WHERE runner_run_id IN ($1, $2)`, old, fresh)
+		_, _ = s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE id IN ($1, $2)`, old, fresh)
+	})
+	if _, err := s.owner.Exec(ctx, `UPDATE context_packs SET created_at = now() - interval '40 days' WHERE runner_run_id = $1`, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SweepDiffs(ctx, 0); err == nil {
+		t.Fatal("a zero retention was accepted")
+	}
+	n, err := s.SweepDiffs(ctx, 30*24*time.Hour)
+	if err != nil || n != 1 {
+		t.Fatalf("swept %d, %v; want the one old pack", n, err)
+	}
+	if n, err := s.SweepDiffs(ctx, 30*24*time.Hour); err != nil || n != 0 {
+		t.Fatalf("second sweep swept %d, %v; want a swept pack passed over", n, err)
+	}
+	err = s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		diff, delta, swept, err := ContextPackDiffs(ctx, tx, old)
+		if err != nil || diff != "" || delta != "" || !swept {
+			return fmt.Errorf("old pack = %q, %q, swept %v, %v; want emptied and marked", diff, delta, swept, err)
+		}
+		m, err := FindContextPackMeta(ctx, tx, old)
+		if err != nil || len(m.Stages) != 1 || m.Stages[0].Path != "a.go" || m.StageBytes[0] != 0 || len(m.RepoFiles) != 0 {
+			return fmt.Errorf("old pack meta = %+v, %v; want its stage kept without text and no files", m, err)
+		}
+		diff, delta, swept, err = ContextPackDiffs(ctx, tx, fresh)
+		if err != nil || diff != "diff --git" || delta != "delta" || swept {
+			return fmt.Errorf("fresh pack = %q, %q, swept %v, %v; want untouched", diff, delta, swept, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

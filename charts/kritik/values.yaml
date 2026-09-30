@@ -124,6 +124,8 @@ config:
   indexGrace: ""
   # -- How long an agentic review's transcript is kept, at least 24h (KRITIK_TRANSCRIPT_RETENTION, Go duration). Empty is kritik's default, 720h.
   transcriptRetention: ""
+  # -- How long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h (KRITIK_DIFF_RETENTION, Go duration). Empty is kritik's default, 720h.
+  diffRetention: ""
   # -- Log level: debug, info, warn or error.
   logLevel: info
   # -- Log format: json or text.

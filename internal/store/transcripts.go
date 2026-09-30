@@ -134,3 +134,24 @@ func (s *Store) SweepModelCalls(ctx context.Context, olderThan time.Duration) (i
 	}
 	return tag.RowsAffected(), nil
 }
+
+// SweepDiffs empties the bodies of every account's context packs written
+// more than olderThan ago, the diffs, the stage texts and the repository
+// files, keeping the metadata, and returns how many packs it swept. A
+// swept pack is stamped so the next sweep passes it over. Owner
+// connection, leader only, like SweepModelCalls.
+func (s *Store) SweepDiffs(ctx context.Context, olderThan time.Duration) (int64, error) {
+	if s.owner == nil {
+		return 0, errors.New("store: SweepDiffs needs the owner connection")
+	}
+	if olderThan <= 0 {
+		return 0, fmt.Errorf("store: diff retention %s is not positive", olderThan)
+	}
+	tag, err := s.owner.Exec(ctx, `UPDATE context_packs SET diff = '', delta_diff = '', repo_files = '{}'::jsonb, swept_at = now(),
+		stages = (SELECT coalesce(jsonb_agg(e - 'text' ORDER BY n), '[]'::jsonb) FROM jsonb_array_elements(stages) WITH ORDINALITY AS s(e, n))
+		WHERE swept_at IS NULL AND created_at < now() - make_interval(secs => $1)`, olderThan.Seconds())
+	if err != nil {
+		return 0, fmt.Errorf("store: sweep diffs: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}

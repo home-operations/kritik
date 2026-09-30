@@ -568,6 +568,7 @@ export interface ReviewDetail {
 export interface ReviewDiff {
   diff: string;
   deltaDiff: string;
+  swept: boolean;
 }
 
 export interface ContextChunk {

@@ -390,17 +390,20 @@ These come from the environment, which the chart's values set, rather
 than the file ([ADR-0021](adr/0021-configuration-shape.md) §2.7); a
 restart changes them.
 
-| Variable                      | Chart value                  | What                                                                                                                                |
-| ----------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `KRITIK_POLL_INTERVAL`        | `config.pollInterval`        | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set       |
-| `KRITIK_POLL_LOOKBACK`        | `config.pollLookback`        | how far back a first or long-idle poll looks; 24h unless set                                                                        |
-| `KRITIK_ONBOARD_WINDOW`       | `config.onboardWindow`       | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                             |
-| `KRITIK_INDEX_GRACE`          | `config.indexGrace`          | how long the index of a repository that stopped running is kept; 720h unless set                                                    |
-| `KRITIK_TRANSCRIPT_RETENTION` | `config.transcriptRetention` | how long an agentic review's full model transcript is kept, at least 24h; 720h unless set                                           |
-| `KRITIK_RUNNER_DEADLINE`      | `runner.deadline`            | a runner Job's deadline; 15m unless set                                                                                             |
-| `KRITIK_RUNNER_RESOURCES`     | `runner.resources`           | a runner pod's resources, as JSON                                                                                                   |
-| `KRITIK_RUNNER_TOOLS`         | `runner.tools`               | command-line tools a runner pod mounts from an image for the agent's run tool ([ADR-0011](adr/0011-runner-tool-images.md)), as JSON |
+| Variable                      | Chart value                  | What                                                                                                                                    |
+| ----------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `KRITIK_POLL_INTERVAL`        | `config.pollInterval`        | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set           |
+| `KRITIK_POLL_LOOKBACK`        | `config.pollLookback`        | how far back a first or long-idle poll looks; 24h unless set                                                                            |
+| `KRITIK_ONBOARD_WINDOW`       | `config.onboardWindow`       | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                 |
+| `KRITIK_INDEX_GRACE`          | `config.indexGrace`          | how long the index of a repository that stopped running is kept; 720h unless set                                                        |
+| `KRITIK_TRANSCRIPT_RETENTION` | `config.transcriptRetention` | how long an agentic review's full model transcript is kept, at least 24h; 720h unless set                                               |
+| `KRITIK_DIFF_RETENTION`       | `config.diffRetention`       | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set |
+| `KRITIK_RUNNER_DEADLINE`      | `runner.deadline`            | a runner Job's deadline; 15m unless set                                                                                                 |
+| `KRITIK_RUNNER_RESOURCES`     | `runner.resources`           | a runner pod's resources, as JSON                                                                                                       |
+| `KRITIK_RUNNER_TOOLS`         | `runner.tools`               | command-line tools a runner pod mounts from an image for the agent's run tool ([ADR-0011](adr/0011-runner-tool-images.md)), as JSON     |
 
 A transcript may contain repository content the agent read, and every
-member of its account can read it. A tool is a `name`, a digest-pinned
+member of its account can read it. A review past the diff retention keeps
+its findings, summary and what it read by name and size; the dashboard's
+diff and raw views say the bodies were not kept. A tool is a `name`, a digest-pinned
 `image`, the `path` of its binaries and the `commands` it provides.

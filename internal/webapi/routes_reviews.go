@@ -181,11 +181,11 @@ func (s *Server) getReviewDiff(w http.ResponseWriter, r *http.Request, t *accoun
 		if err != nil || rec.run == nil {
 			return err
 		}
-		diff, delta, err := store.ContextPackDiffs(ctx, tx, rec.run.ID)
+		diff, delta, swept, err := store.ContextPackDiffs(ctx, tx, rec.run.ID)
 		if none, err := missing(err); none || err != nil {
 			return err
 		}
-		d = ReviewDiff{Diff: diff, DeltaDiff: delta}
+		d = ReviewDiff{Diff: diff, DeltaDiff: delta, Swept: swept}
 		return nil
 	}); err != nil {
 		return err

@@ -507,14 +507,15 @@ func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *
 }
 
 // retentionSweepInterval is how often the leader deletes model-call
-// transcripts, disabled repositories' indexes and dashboard sessions past
-// their retention window.
+// transcripts, review diffs, disabled repositories' indexes and dashboard
+// sessions past their retention window.
 const retentionSweepInterval = time.Hour
 
 // retentionStore is the subset of *store.Store that retentionSweep needs,
 // narrowed so it can be exercised in tests with a fake.
 type retentionStore interface {
 	SweepModelCalls(ctx context.Context, olderThan time.Duration) (int64, error)
+	SweepDiffs(ctx context.Context, olderThan time.Duration) (int64, error)
 	SweepSessions(ctx context.Context, now time.Time) (int64, error)
 	SweepDisabledIndexes(ctx context.Context, grace time.Duration) (int64, error)
 }
@@ -535,6 +536,13 @@ func retentionSweep(ctx context.Context, st retentionStore, current *configfile.
 			}
 		} else if n > 0 {
 			logger.Info("model call transcripts swept", "rows", n)
+		}
+		if n, err := st.SweepDiffs(ctx, current.Get().DiffRetention()); err != nil {
+			if ctx.Err() == nil {
+				logger.Warn("review diffs not swept", "error", err)
+			}
+		} else if n > 0 {
+			logger.Info("review diffs swept", "packs", n)
 		}
 		if n, err := st.SweepSessions(ctx, time.Now()); err != nil {
 			if ctx.Err() == nil {
