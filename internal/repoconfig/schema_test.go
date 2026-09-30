@@ -33,7 +33,6 @@ func TestSchemaMatchesFile(t *testing.T) {
 		{"the file", nil, yamlKeys[File]()},
 		{"models", []string{"properties", "models"}, yamlKeys[Models]()},
 		{"agent", []string{"properties", "agent"}, yamlKeys[Agent]()},
-		{"skip", []string{"properties", "skip"}, yamlKeys[Skip]()},
 		{"review", []string{"properties", "review"}, yamlKeys[Review]()},
 		{"review.templates", append(review, "templates"), yamlKeys[Templates]()},
 		{"review.context", append(review, "context", "items"), yamlKeys[configfile.ContextFile]()},

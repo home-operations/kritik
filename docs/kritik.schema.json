@@ -48,19 +48,8 @@
     },
     "ignore": {
       "type": "array",
-      "description": "Path globs added to the admin's ignore list.",
+      "description": "Path globs added to the admin's ignore list; a pull request that changes only ignored paths is skipped.",
       "items": { "$ref": "#/$defs/glob" }
-    },
-    "skip": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "onlyPaths": {
-          "type": "array",
-          "description": "Skip a pull request only when every changed path matches one of these.",
-          "items": { "$ref": "#/$defs/glob" }
-        }
-      }
     },
     "review": {
       "type": "object",

@@ -84,7 +84,7 @@ func agentSkip(p Spec, changed []string, patchID string) string {
 	switch {
 	case p.Prompt.UnchangedPatchID != "" && patchID == p.Prompt.UnchangedPatchID:
 		return SkipUnchangedPatch
-	case repoconfig.Skip{OnlyPaths: p.Prompt.SkipPaths}.All(changed):
+	case repoconfig.AllIgnored(p.Ignore, changed):
 		return string(repoconfig.SkipOnlyPaths)
 	}
 	return ""

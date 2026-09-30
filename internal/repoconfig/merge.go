@@ -18,7 +18,6 @@ type Merged struct {
 	// InRepoFilter is the file's own filter, ANDed with the admin's,
 	// which ingest has already applied; nil when it sets none.
 	InRepoFilter *prfilter.Program
-	Skip         Skip
 	// Dropped says which of the file's values fell outside the admin's
 	// bounds; the admin's value applies for each.
 	Dropped []string
@@ -26,7 +25,7 @@ type Merged struct {
 
 // Merge applies doc, the merge-base FileName or nil when the repository has
 // none, over the admin's settings op (ADR-0010 §2.5). The file narrows
-// what an admin allows (enabled, filter, ignore, skip), appends its
+// what an admin allows (enabled, filter, ignore), appends its
 // context files and rules to the admin's, may only turn
 // requireSuggestedFix on, and replaces the templates, the feedback level
 // and whether findings go inline, which grant nothing. It chooses
@@ -57,7 +56,6 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 			m.Ignore = append(m.Ignore, g)
 		}
 	}
-	m.Skip = f.Skip
 	if v := f.Review.RequireSuggestedFix; v != nil && *v {
 		m.Review.RequireSuggestedFix = true
 	} else if v != nil && op.Review.RequireSuggestedFix {
@@ -221,7 +219,7 @@ func (r SkipReason) Description() string {
 	case SkipFiltered:
 		return "filtered by " + FileName
 	case SkipOnlyPaths:
-		return "only skipped paths changed"
+		return "only ignored paths changed"
 	}
 	return string(r)
 }
@@ -240,7 +238,7 @@ func (m Merged) Check(vars map[string]any, changed []string) (SkipReason, error)
 			return SkipFiltered, err
 		}
 	}
-	if m.Skip.All(changed) {
+	if AllIgnored(m.Ignore, changed) {
 		return SkipOnlyPaths, nil
 	}
 	return "", nil

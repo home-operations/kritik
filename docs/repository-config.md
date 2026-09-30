@@ -31,9 +31,10 @@ context, and chooses a few settings within bounds an admin sets:
   parsed, so a broken expression is rejected rather than silently skipping
   every review. A review it filters out ends before any runner starts.
 - `ignore`: path globs added to the admin's own ignore list, for
-  reviews and indexing alike.
-- `skip.onlyPaths`: path globs. A pull request is skipped only when every
-  changed path matches at least one of them.
+  reviews and indexing alike. A pull request whose every changed path is
+  ignored, by these, the admin's globs or kritik's defaults (vendored
+  trees and lockfiles), is skipped
+  ([ADR-0021](adr/0021-configuration-shape.md) §2.6).
 - `review.context`: files that explain the code, each a `path` with a
   `description` and optional `paths` globs, added after the admin's. An
   agentic review is pointed at each file to read it with its own tools; a
@@ -140,8 +141,7 @@ models: { review: openrouter/openai/gpt-6-mini }
 agent: { maxSteps: 40, commands: [rg] }
 settle: 5m
 filter: '!pr.body.contains("[skip-review]")'
-ignore: ["web/src/generated/**"]
-skip: { onlyPaths: ["docs/**"] }
+ignore: ["web/src/generated/**", "docs/**"]
 review:
   rules: [{ id: house-style, file: .kritik/rules.md }]
   requireSuggestedFix: true

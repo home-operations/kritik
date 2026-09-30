@@ -205,7 +205,6 @@
                   </dd>
                   {#if rc.found}
                     <dt>Filter</dt><dd class="mono">{rc.filter || '—'} <span class="muted small">(ANDed with the admin's)</span></dd>
-                    <dt>Skip when only these change</dt><dd class="mono">{list(rc.skipPaths)}</dd>
                   {/if}
                 </dl>
                 {#if !rc.found}

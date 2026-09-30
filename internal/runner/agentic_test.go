@@ -119,21 +119,21 @@ func TestAgentPromptPointsAtContext(t *testing.T) {
 func TestAgentSkip(t *testing.T) {
 	tests := []struct {
 		name    string
-		skip    []string
+		ignore  []string
 		changed []string
 		patchID string
 		want    string
 	}{
 		{name: "reviewed", changed: []string{"main.go"}, patchID: "p2"},
 		{name: "unchanged bot patch", changed: []string{"main.go"}, patchID: "p1", want: SkipUnchangedPatch},
-		{name: "only skipped paths", skip: []string{"**/*.md"}, changed: []string{"docs/a.md"}, patchID: "p2",
+		{name: "only ignored paths", ignore: []string{"**/*.md"}, changed: []string{"docs/a.md"}, patchID: "p2",
 			want: string(repoconfig.SkipOnlyPaths)},
-		{name: "a path the skip rule does not cover", skip: []string{"**/*.md"}, changed: []string{"docs/a.md", "main.go"}, patchID: "p2"},
+		{name: "a path the ignore globs do not cover", ignore: []string{"**/*.md"}, changed: []string{"docs/a.md", "main.go"}, patchID: "p2"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
-			s.Prompt.UnchangedPatchID, s.Prompt.SkipPaths = "p1", tt.skip
+			s.Prompt.UnchangedPatchID, s.Ignore = "p1", tt.ignore
 			if got := agentSkip(s, tt.changed, tt.patchID); got != tt.want {
 				t.Fatalf("agentSkip = %q, want %q", got, tt.want)
 			}

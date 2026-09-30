@@ -21,7 +21,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 7
+const SpecVersion = 8
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -95,9 +95,6 @@ type Prompt struct {
 	// Focused is a focused review's: it reports only what would stop the
 	// review, where a thorough one reports anything actionable.
 	Focused bool `json:"focused,omitempty"`
-	// SkipPaths are the .kritik.yaml skip.onlyPaths globs: when every
-	// changed path matches one, the worker will skip the review.
-	SkipPaths []string `json:"skipPaths,omitempty"`
 	// MaxDeltaFiles is the incremental re-review threshold.
 	MaxDeltaFiles int              `json:"maxDeltaFiles"`
 	Prior         []review.Finding `json:"prior,omitempty"`
@@ -121,7 +118,8 @@ type Spec struct {
 	Base      string `json:"base,omitempty"`
 	PriorHead string `json:"priorHead,omitempty"`
 	// Ignore globs, the admin's and .kritik.yaml's, are skipped by the
-	// context stages.
+	// context stages, and a review whose every changed path matches one is
+	// skipped.
 	Ignore []string `json:"ignore,omitempty"`
 	// RepoFiles are repository paths read from the merge base: the files
 	// the review settings name, and .kritik.yaml itself when there is one.

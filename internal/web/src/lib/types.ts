@@ -246,7 +246,6 @@ export interface RepoConfig {
   found: boolean;
   settings: RepoSettings;
   filter: string;
-  skipPaths: string[];
   dropped: string[];
   ignored?: string;
 }

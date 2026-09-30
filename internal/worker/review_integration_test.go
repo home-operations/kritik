@@ -1342,7 +1342,7 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 	}
 }
 
-// checkRepoConfig commits a .kritik.yaml with a skip rule, rules, one of
+// checkRepoConfig commits a .kritik.yaml with ignore globs, rules, one of
 // them a file, and a summary template onto a new merge base, then reviews
 // pull requests against it.
 func checkRepoConfig(
@@ -1376,8 +1376,7 @@ func checkRepoConfig(
 	}
 	cfgBase := commit("configure kritik", map[string]string{
 		".kritik.yaml": `filter: '!pr.labels.exists(l, l.name == "skip-review")'
-skip:
-  onlyPaths: ["docs/**", ".kritik.yaml"]
+ignore: ["docs/**", ".kritik.yaml"]
 review:
   rules:
     - { id: todos, file: .kritik/rules.md }
@@ -1392,7 +1391,7 @@ review:
 		"web/AGENTS.md":           "Never inline styles.\n",
 	})
 	docsHead := commit("docs", map[string]string{"docs/guide.md": "# Guide\n"})
-	loosened := commit("drop the skip rule", map[string]string{".kritik.yaml": "review: {}\n"})
+	loosened := commit("drop the ignore globs", map[string]string{".kritik.yaml": "review: {}\n"})
 	lf.setBase(cfgBase)
 
 	fc.mu.Lock()
@@ -1410,12 +1409,12 @@ review:
 	for _, head := range []string{docsHead, loosened} {
 		dispatchPR(2, head, false)
 		if status, _, _ := waitReview(head); status != "skipped" {
-			t.Fatalf("status = %s, want skipped: the merge-base skip rule covers every changed path", status)
+			t.Fatalf("status = %s, want skipped: the merge-base ignore globs cover every changed path", status)
 		}
 		lf.mu.Lock()
 		forgeStatus := lf.status
 		lf.mu.Unlock()
-		if forgeStatus != "success: kritik: skipped (only skipped paths changed)" || skipReason(head) != "only_skipped_paths" {
+		if forgeStatus != "success: kritik: skipped (only ignored paths changed)" || skipReason(head) != "only_skipped_paths" {
 			t.Fatalf("status = %q reason = %q", forgeStatus, skipReason(head))
 		}
 	}

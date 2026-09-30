@@ -138,7 +138,6 @@
       }
     },
     "filter": "!pr.draft",
-    "skipPaths": ["docs/**"],
     "dropped": [".kritik.yaml: mode \"single\" was dropped; allowed: agentic"]
   },
   "indexRuns": [

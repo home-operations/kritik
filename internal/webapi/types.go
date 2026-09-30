@@ -227,10 +227,8 @@ type RepoConfig struct {
 	Found bool `json:"found"`
 	// Settings are the repository's settings with the file applied.
 	Settings RepoSettings `json:"settings"`
-	// Filter is the file's own filter, ANDed with the admin's, and
-	// SkipPaths its skip.onlyPaths.
-	Filter    string   `json:"filter"`
-	SkipPaths []string `json:"skipPaths"`
+	// Filter is the file's own filter, ANDed with the admin's.
+	Filter string `json:"filter"`
 	// Dropped are the file's values outside the admin's bounds; the
 	// admin's value applies for each.
 	Dropped []string `json:"dropped"`
