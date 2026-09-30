@@ -121,10 +121,11 @@ type Client interface {
 	PullRequestDiff(ctx context.Context, owner, repo, base, head string) (string, error)
 	// CloneURL is the HTTPS clone URL of a repository on this forge.
 	CloneURL(owner, repo string) string
-	// GitToken is the credential a runner fetches with, a short-lived
-	// installation token on GitHub. It reaches a pod that reads untrusted
-	// content.
-	GitToken(ctx context.Context) (string, error)
+	// GitToken is the credential a runner fetches repo, a name under the
+	// client's account, with: a short-lived installation token on GitHub
+	// that can only read repo. It reaches a pod that reads untrusted
+	// content and runs commands an agent chose.
+	GitToken(ctx context.Context, repo string) (string, error)
 	// BranchTip returns the commit a branch points at; an empty branch
 	// means the repository's default branch, whose name is also returned.
 	BranchTip(ctx context.Context, owner, repo, branch string) (sha, resolvedBranch string, err error)

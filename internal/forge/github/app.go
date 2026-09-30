@@ -247,8 +247,7 @@ type InstallationTokens struct {
 	exp time.Time
 }
 
-// Token returns a valid installation token, minting one if needed. It is
-// also what the runner receives as its git credential.
+// Token returns a valid installation token, minting one if needed.
 func (t *InstallationTokens) Token(ctx context.Context) (string, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -261,6 +260,21 @@ func (t *InstallationTokens) Token(ctx context.Context) (string, error) {
 	}
 	t.tok, t.exp = it.GetToken(), it.GetExpiresAt().Time
 	return t.tok, nil
+}
+
+// ReadOnly mints a token that can only read repo's contents and metadata,
+// uncached, for a runner: the commands an agent runs there can read it, so
+// it must not carry the App's other permissions or reach its other
+// repositories.
+func (t *InstallationTokens) ReadOnly(ctx context.Context, repo string) (string, error) {
+	it, _, err := t.apps.Apps.CreateInstallationToken(ctx, t.instID, &gh.InstallationTokenOptions{
+		Repositories: []string{repo},
+		Permissions:  &gh.InstallationPermissions{Contents: new("read"), Metadata: new("read")},
+	})
+	if err != nil {
+		return "", fmt.Errorf("github: mint a read-only token for %s on installation %d: %w", repo, t.instID, err)
+	}
+	return it.GetToken(), nil
 }
 
 // installTransport injects the installation token as the bearer.

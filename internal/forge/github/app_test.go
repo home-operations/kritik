@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -90,6 +91,34 @@ func TestInstallationTokensMintOnceAndRefresh(t *testing.T) {
 	third, _ := tokens.Token(ctx)
 	if second != "ghs_test2" || third != "ghs_test2" || mints != 2 {
 		t.Fatalf("tokens = %q, %q with %d mints; want a refresh then a cache hit", second, third, mints)
+	}
+}
+
+// TestReadOnlyToken: a runner's token is minted fresh for each run, for
+// the one repository, with read access to its contents and metadata alone.
+func TestReadOnlyToken(t *testing.T) {
+	_, pemKey := testKeyPEM(t)
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"token":"ghs_ro","expires_at":"` + time.Now().Add(time.Hour).UTC().Format(time.RFC3339) + `"}`))
+	}))
+	defer srv.Close()
+	app, err := NewApp("Iv1.abc", pemKey, srv.URL+"/api/v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := app.InstallationTokens(42)
+	for range 2 {
+		if tok, err := tokens.ReadOnly(t.Context(), "repo-1"); err != nil || tok != "ghs_ro" {
+			t.Fatalf("ReadOnly = %q, %v", tok, err)
+		}
+	}
+	want := `{"repositories":["repo-1"],"permissions":{"contents":"read","metadata":"read"}}`
+	if len(bodies) != 2 || strings.TrimSpace(bodies[0]) != want {
+		t.Fatalf("mint requests = %q, want two of %s", bodies, want)
 	}
 }
 

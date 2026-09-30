@@ -125,7 +125,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		logger.Info("index skipped, disabled in .kritik.yaml")
 		return nil
 	}
-	token, err := client.GitToken(ctx)
+	token, err := client.GitToken(ctx, name)
 	if err != nil {
 		return err
 	}
