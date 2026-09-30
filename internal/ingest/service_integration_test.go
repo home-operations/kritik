@@ -219,18 +219,27 @@ func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
-	pr := &webhook.PullRequest{Number: 71, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "ccc", BaseRef: "main"}
+	rid := configfile.RepositoryID(account.ID(), "onedr0p/polled")
+	pr := &webhook.PullRequest{Number: 271, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "ccc", BaseRef: "main"}
 	ev := func(action string, pr *webhook.PullRequest) webhook.Event {
 		return webhook.Event{Kind: webhook.KindPullRequest, Action: action, Repository: repo("onedr0p/polled"), PullRequest: pr}
 	}
+	// The database is shared with the other packages' suites, which delete
+	// pull requests by number; the review row must not stand in their way.
+	t.Cleanup(func() {
+		_ = st.WithAccount(context.Background(), account.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), `DELETE FROM reviews WHERE pull_request_id IN
+				(SELECT id FROM pull_requests WHERE repository_id = $1 AND number = $2)`, rid, pr.Number)
+			return err
+		})
+	})
 	if out, err := svc.Dispatch(ctx, request(f, ev("opened", pr))); err != nil || out.Status != Enqueued {
 		t.Fatalf("opened = %+v, %v", out, err)
 	}
 	// The review the worker made of that head.
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, finished_at)
-			SELECT account_id, id, head_sha, 'completed', now() FROM pull_requests WHERE repository_id = $1 AND number = $2`,
-			configfile.RepositoryID(account.ID(), "onedr0p/polled"), pr.Number)
+			SELECT account_id, id, head_sha, 'completed', now() FROM pull_requests WHERE repository_id = $1 AND number = $2`, rid, pr.Number)
 		return err
 	}); err != nil {
 		t.Fatal(err)
