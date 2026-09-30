@@ -216,10 +216,11 @@ func startPublic(
 		Store: st, Current: current, Auth: authHandler, UI: web.FS(),
 		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: webQueue}, Env: cfg.Env(),
 	})
-	g.Go(func() error { return api.Run(ctx) })
+	lctx := lingering(ctx, linger)
+	g.Go(func() error { return api.Run(lctx) })
 	public := server.Public(cfg.WebBasePath(), hooks, api.Handler())
 	g.Go(func() error {
-		return server.ServeDrain(ctx, cfg.Addr, public, publicDrain, logger.With("listener", "public"))
+		return server.ServeDrain(lctx, cfg.Addr, public, publicDrain, logger.With("listener", "public"))
 	})
 	return nil
 }
@@ -247,7 +248,7 @@ func startWorker(
 		Steppers: completers,
 	}
 	g.Go(func() error {
-		return server.ServeDrain(ctx, cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
+		return server.ServeDrain(lingering(ctx, linger), cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
 	})
 	river.AddWorker(workers, &worker.Review{
 		Base: base, Executor: exec, Completers: completers, Embedders: embedders,
@@ -311,6 +312,26 @@ func storeOptions(command config.Command, cfg *config.Config, logger *slog.Logge
 		opts.OwnerURL = cfg.DatabaseOwnerURL
 	}
 	return opts
+}
+
+// linger is how long the public listener and the gateway keep accepting
+// connections once serve is told to stop: Kubernetes and the proxies in
+// front of it take a moment to stop routing to a terminating pod, and a
+// connection refused meanwhile is a webhook lost, since GitHub does not
+// redeliver on its own, or a runner's model step retried.
+const linger = 5 * time.Second
+
+// lingering is a context that ends d after ctx does, with ctx's values.
+func lingering(ctx context.Context, d time.Duration) context.Context {
+	lctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	go func() {
+		<-ctx.Done()
+		t := time.NewTimer(d)
+		defer t.Stop()
+		<-t.C
+		cancel()
+	}()
+	return lctx
 }
 
 // publicDrain is how long a stopping serve lets webhook and dashboard

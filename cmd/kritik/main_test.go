@@ -345,3 +345,21 @@ func TestRetentionSweepLogsErrorsWithoutStopping(t *testing.T) {
 		t.Fatalf("logged %d warnings for two failed passes, want >= 6", n)
 	}
 }
+
+// TestLingering: the context outlives its parent by the delay, so a
+// listener keeps accepting connections while traffic moves off the pod.
+func TestLingering(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	lctx := lingering(ctx, 100*time.Millisecond)
+	cancel()
+	select {
+	case <-lctx.Done():
+		t.Fatal("ended with its parent")
+	case <-time.After(30 * time.Millisecond):
+	}
+	select {
+	case <-lctx.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not end after the delay")
+	}
+}
