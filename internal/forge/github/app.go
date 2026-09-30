@@ -24,6 +24,12 @@ type App struct {
 	clientID string
 	apiBase  string // "" for api.github.com
 	apps     *gh.Client
+
+	// tokens holds one InstallationTokens per installation, so every
+	// client and listing of an installation shares its token instead of
+	// minting one each.
+	mu     sync.Mutex
+	tokens map[int64]*InstallationTokens
 }
 
 // NewApp parses the App's private key and builds the App-level client used
@@ -56,10 +62,21 @@ func (a *App) Slug(ctx context.Context) (string, error) {
 	return app.GetSlug(), nil
 }
 
-// InstallationTokens returns a token source for one installation, as
-// DiscoverInstallation finds it.
+// InstallationTokens returns the token source for one installation, as
+// DiscoverInstallation finds it: the same one on every call, so the token
+// is minted once an hour however often the installation is used.
 func (a *App) InstallationTokens(installationID int64) *InstallationTokens {
-	return &InstallationTokens{apps: a.apps, instID: installationID}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if t, ok := a.tokens[installationID]; ok {
+		return t
+	}
+	if a.tokens == nil {
+		a.tokens = map[int64]*InstallationTokens{}
+	}
+	t := &InstallationTokens{apps: a.apps, instID: installationID}
+	a.tokens[installationID] = t
+	return t
 }
 
 // DiscoverInstallation returns the id of the App's installation on the

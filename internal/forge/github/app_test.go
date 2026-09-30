@@ -162,12 +162,17 @@ func TestInstallationsAndUninstall(t *testing.T) {
 	}
 }
 
+// TestRepositories also checks the listing's token is the installation's
+// one: listed again, and through a client of the installation, nothing is
+// minted anew.
 func TestRepositories(t *testing.T) {
 	_, pemKey := testKeyPEM(t)
+	mints := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v3/app/installations/7/access_tokens":
+			mints++
 			exp := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
 			_, _ = w.Write([]byte(`{"token":"ghs_7","expires_at":"` + exp + `"}`))
 		case "/api/v3/installation/repositories":
@@ -192,6 +197,15 @@ func TestRepositories(t *testing.T) {
 	}
 	if err != nil || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("Repositories = %+v, %v", got, err)
+	}
+	if _, err := app.Repositories(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
+	if tok, err := app.InstallationTokens(7).Token(t.Context()); err != nil || tok != "ghs_7" {
+		t.Fatalf("token = %q, %v", tok, err)
+	}
+	if mints != 1 {
+		t.Fatalf("%d tokens minted for one installation; want one, shared", mints)
 	}
 }
 
