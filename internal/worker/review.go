@@ -166,6 +166,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if canceled {
 		return w.finishEnded(ctx, ended, nil)
 	}
+	// A run a stopping worker cut is retried, not judged: its failure, and
+	// a missing agent row, are the stop's doing.
+	if res.Err != nil && workerStopping(ctx) {
+		return w.finishEnded(ctx, ended, res.Err)
+	}
 	if agentErr != nil {
 		logger.Error("agent run not read", "error", agentErr)
 		w.Metrics.Review(account.Key(), string(store.ReviewFailed), time.Since(started))
@@ -626,10 +631,12 @@ type endedReview struct {
 }
 
 // finishEnded ends a review whose job ctx ended before the review could: a
-// remote cancel as canceled, anything else (River's job timeout above all)
-// as failed. Either way it returns nil, since an error would have River
-// retry the review and pay for the model again. A review that is already
-// terminal is left as it is. While ctx is still live it returns err as is.
+// remote cancel as canceled, River's job timeout as failed, both returning
+// nil, since an error would have River retry the review and pay for the
+// model again. A stopping worker's cut (ADR-0024 §2.3) is the exception:
+// the review ends superseded by its retry, and an error is returned for
+// River to retry it. A review that is already terminal is left as it is.
+// While ctx is still live it returns err as is.
 func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) error {
 	if ctx.Err() == nil {
 		return err
@@ -637,6 +644,14 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 	cctx, cancel := detach(ctx)
 	defer cancel()
 	cause := context.Cause(ctx)
+	if workerStopping(ctx) {
+		if _, ferr := w.finishUnfinished(cctx, e.accountID, e.reviewID, store.ReviewSuperseded, "cut by a restart and retried"); ferr != nil {
+			return ferr
+		}
+		e.logger.Info("review cut by a restart; its job is retried", "job", e.jobName)
+		w.Metrics.Review(e.accountKey, string(store.ReviewSuperseded), time.Since(e.started))
+		return fmt.Errorf("worker: review cut by a restart: %w", cause)
+	}
 	status, errText, desc := store.ReviewCanceled, "", "kritik: review canceled"
 	if !errors.Is(cause, river.ErrJobCancelledRemotely) {
 		status, errText, desc = store.ReviewFailed, "review timed out: "+cause.Error(), "kritik: review timed out"
@@ -655,9 +670,9 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 
 // agentSpecFailed ends a review whose runner never started because its
 // agent spec could not be built, and the run made for it. When the job's
-// ctx ended meanwhile (a remote cancel, River's timeout), that is why, and
-// the review ends as finishEnded ends it, with no retry; otherwise err is
-// returned for River to retry.
+// ctx ended meanwhile (a remote cancel, River's timeout, a stopping
+// worker), that is why, and the review ends as finishEnded ends it;
+// otherwise err is returned for River to retry.
 func (w *Review) agentSpecFailed(ctx context.Context, e endedReview, runID string, err error) error {
 	dctx, cancel := detach(ctx)
 	defer cancel()
@@ -669,6 +684,14 @@ func (w *Review) agentSpecFailed(ctx context.Context, e endedReview, runID strin
 		return w.finishEnded(ctx, e, err)
 	}
 	return errors.Join(err, w.finishReview(dctx, e.accountID, e.reviewID, store.ReviewFailed, "", err.Error()), runErr)
+}
+
+// workerStopping reports whether ctx, a job's, ended because its River
+// client is stopping: River otherwise ends a job's ctx only when an admin
+// cancels the job or its timeout passes.
+func workerStopping(ctx context.Context) bool {
+	cause := context.Cause(ctx)
+	return ctx.Err() != nil && !errors.Is(cause, river.ErrJobCancelledRemotely) && !errors.Is(cause, context.DeadlineExceeded)
 }
 
 // finishUnfinished ends a review only if nothing has ended it yet, and

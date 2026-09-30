@@ -1099,6 +1099,9 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 	cancelRemote(river.ErrJobCancelledRemotely)
 	timedOut, cancelTimeout := context.WithCancelCause(h.ctx)
 	cancelTimeout(context.DeadlineExceeded)
+	// River cancels a stopping client's jobs with an error of its own.
+	stopped, cancelStop := context.WithCancelCause(h.ctx)
+	cancelStop(errors.New("stop initiated"))
 	tests := []struct {
 		name      string
 		ctx       context.Context
@@ -1110,6 +1113,7 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 		{"the job still runs: River retries", h.ctx, strings.Repeat("e", 40), true, store.ReviewFailed, boom.Error()},
 		{"a remote cancel ends it canceled", remote, strings.Repeat("f", 40), false, store.ReviewCanceled, ""},
 		{"a timeout ends it failed", timedOut, strings.Repeat("9", 40), false, store.ReviewFailed, "review timed out"},
+		{"a stopping worker's cut is retried", stopped, strings.Repeat("8", 40), true, store.ReviewSuperseded, "cut by a restart"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

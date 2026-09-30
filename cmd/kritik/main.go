@@ -230,6 +230,9 @@ func run() error {
 			// Review and index workers set their own timeouts from the
 			// runner deadline; rescue must wait out the longest of them.
 			RescueStuckJobsAfter: jobtimeout.RescueStuckJobsAfter,
+			// ctx ending starts a soft stop: running jobs get this long
+			// before their contexts end (ADR-0024 §2.3).
+			SoftStopTimeout: queueDrain,
 			Queues: map[string]river.QueueConfig{
 				jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
 				jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
@@ -240,22 +243,7 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("river: %w", err)
 		}
-		// The queue's tables come from migrations, which the leader runs;
-		// on a fresh database that may be this very process a moment from
-		// now, or another replica. Wait for the schema rather than racing it.
-		g.Go(func() error {
-			if err := st.WaitForSchema(ctx, 2*time.Second); err != nil {
-				return nil // shutdown while waiting
-			}
-			if err := startQueue(ctx, queue, logger); err != nil {
-				return err
-			}
-			logger.Info("working the queues", "review_workers", cfg.ReviewWorkers, "index_workers", cfg.IndexWorkers, "executor", cfg.Executor)
-			<-ctx.Done()
-			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			defer cancel()
-			return queue.Stop(stopCtx)
-		})
+		g.Go(func() error { return workQueues(ctx, st, queue, cfg, logger) })
 	}
 	mgmt.SetReady(true)
 
@@ -264,6 +252,16 @@ func run() error {
 	}
 	return nil
 }
+
+// queueDrain is how long a stopping worker lets running jobs finish; a
+// review still running then is cut and retried (ADR-0024 §2.3).
+// queueStopHeadroom covers what a cut review does before it hands its job
+// back, waiting for its agent row above all. Both fit in the chart's
+// 150s termination grace period.
+const (
+	queueDrain        = 100 * time.Second
+	queueStopHeadroom = 40 * time.Second
+)
 
 // validateRole checks what role needs of cfg beyond the common set, and
 // reads a runner's spec.
@@ -334,6 +332,28 @@ func startWeb(
 // database is briefly unavailable: right after a fresh cluster's initdb the
 // first queue upsert can time out, and River cleans up after a failed
 // start, so trying again is safe and beats a crash loop.
+// workQueues works the job queues until ctx ends, then waits for River's
+// soft stop to let running jobs finish or cut them. The queue's tables come
+// from migrations, which the leader runs; on a fresh database that may be
+// this very process a moment from now, or another replica, so it waits for
+// the schema rather than racing it.
+func workQueues(ctx context.Context, st *store.Store, queue *river.Client[pgx.Tx], cfg *config.Config, logger *slog.Logger) error {
+	if err := st.WaitForSchema(ctx, 2*time.Second); err != nil {
+		return nil // shutdown while waiting
+	}
+	if err := startQueue(ctx, queue, logger); err != nil {
+		return err
+	}
+	logger.Info("working the queues", "review_workers", cfg.ReviewWorkers, "index_workers", cfg.IndexWorkers, "executor", cfg.Executor)
+	<-ctx.Done()
+	select {
+	case <-queue.Stopped():
+	case <-time.After(queueDrain + queueStopHeadroom):
+		logger.Warn("the queues did not stop in time", "drain", queueDrain)
+	}
+	return nil
+}
+
 func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.Logger) error {
 	const retry = 5 * time.Second
 	const attempts = 24
