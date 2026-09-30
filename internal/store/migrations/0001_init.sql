@@ -236,7 +236,8 @@ CREATE INDEX context_packs_account_id_idx ON context_packs (account_id);
 -- applies the fix from. fingerprint (path and normalised title) recognises
 -- the same finding across reviews; posted_inline is true when an inline
 -- comment for it is on the forge, posted by its own review or by an
--- earlier one with the same fingerprint.
+-- earlier one with the same fingerprint. rules are the ids of the review
+-- rules it enforces, each one its review was given.
 CREATE TABLE findings (
     id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     account_id       uuid        NOT NULL REFERENCES accounts (id),
@@ -257,7 +258,8 @@ CREATE TABLE findings (
     -- The 👍 and 👎 on the finding's inline comment, as the poller last read
     -- them; every review that carried the comment's thread holds them.
     reactions_up     int         NOT NULL DEFAULT 0,
-    reactions_down   int         NOT NULL DEFAULT 0
+    reactions_down   int         NOT NULL DEFAULT 0,
+    rules            text[]      NOT NULL DEFAULT '{}'
 );
 CREATE INDEX findings_account_id_idx ON findings (account_id);
 CREATE INDEX findings_review_idx ON findings (review_id);

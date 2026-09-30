@@ -89,6 +89,9 @@ type Finding struct {
 	// AgentPrompt is one paragraph telling a coding agent how to apply the
 	// fix.
 	AgentPrompt string `json:"agent_prompt,omitempty"`
+	// Rules are the ids of the review rules the finding enforces; Parse
+	// keeps only those the review was given.
+	Rules []string `json:"rules,omitempty"`
 	// URL links the finding's lines at the head commit. kritik sets it
 	// when rendering; the model never does.
 	URL string `json:"-"`
@@ -157,6 +160,9 @@ type Dropped struct {
 type ParseOptions struct {
 	// RequireSuggestedFix drops findings that carry no suggested fix.
 	RequireSuggestedFix bool
+	// Rules are the ids of the rules the review was given, the only ones a
+	// finding may cite.
+	Rules []string
 }
 
 // Field names of the contract, shared by its JSON Schema and the template
@@ -175,10 +181,11 @@ const (
 	keyEndLine      = "end_line"
 	keyReplacement  = "replacement"
 	keyAgentPrompt  = "agent_prompt"
+	keyRules        = "rules"
 )
 
 // JSON Schema types the answer shapes use more than once.
-const schemaObject, schemaString = "object", "string"
+const schemaObject, schemaString, schemaArray = "object", "string", "array"
 
 // jsonSchema is the subset of JSON Schema kritik's answer shapes use.
 type jsonSchema struct {
@@ -208,6 +215,8 @@ const (
 		"should be committed: raw code, no fences, no commentary. Only when the fix is a change to those lines."
 	describeAgentPrompt = "One plain-text paragraph telling a coding agent how to apply the fix: the file, " +
 		"the lines, the symbols and the exact change."
+	describeRules = "Ids of the review rules this finding enforces, as the Review rules section lists them; " +
+		"omit when it enforces none."
 )
 
 // contractSchema is kept minimal on purpose: every extra field is something
@@ -235,7 +244,7 @@ func contractSchema(requireFix bool) json.RawMessage {
 						Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
 					},
 					keyPraise: {
-						Type:        "array",
+						Type:        schemaArray,
 						Description: "Up to three specific things the change does well; empty when nothing stands out.",
 						Items:       &jsonSchema{Type: schemaString},
 						MaxItems:    maxPraise,
@@ -244,7 +253,7 @@ func contractSchema(requireFix bool) json.RawMessage {
 				Required: []string{keyTake, keyPraise},
 			},
 			keyFindings: {
-				Type: "array",
+				Type: schemaArray,
 				Items: &jsonSchema{
 					Type: schemaObject,
 					Properties: map[string]*jsonSchema{
@@ -258,6 +267,7 @@ func contractSchema(requireFix bool) json.RawMessage {
 						keyEndLine:      {Type: "integer", Description: describeEndLine},
 						keyReplacement:  {Type: schemaString, Description: describeReplacement},
 						keyAgentPrompt:  {Type: schemaString, Description: describeAgentPrompt},
+						keyRules:        {Type: schemaArray, Description: describeRules, Items: &jsonSchema{Type: schemaString}},
 					},
 					Required: required,
 				},
@@ -309,6 +319,7 @@ func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Resu
 		f.SuggestedFix = strings.TrimSpace(f.SuggestedFix)
 		f.Replacement = stripFences(f.Replacement)
 		f.AgentPrompt = strings.TrimSpace(f.AgentPrompt)
+		f.Rules = citedRules(f.Rules, opts.Rules)
 		var reason DropReason
 		switch {
 		case !f.Severity.Valid():
@@ -344,6 +355,18 @@ func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Resu
 	})
 	res.Findings = kept
 	return res, dropped, nil
+}
+
+// citedRules is the ids of cited that given lists, once each, in the
+// order cited; nil for none.
+func citedRules(cited, given []string) []string {
+	var out []string
+	for _, id := range cited {
+		if id = strings.TrimSpace(id); slices.Contains(given, id) && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // stripFences drops the fence lines a model wraps replacement code in and

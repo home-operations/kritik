@@ -484,10 +484,10 @@ func (p *publishPhase) persist(
 		for i, f := range res.Findings {
 			if _, err := tx.Exec(ctx, `INSERT INTO findings
 				(account_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint, posted_inline,
-				 end_line, replacement, agent_prompt, forge_comment_id)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, nullif($14::bigint, 0))`, p.account.ID(), p.reviewID, f.Path, f.Line,
-				string(f.Severity), f.Title, f.Explanation, f.SuggestedFix, review.Fingerprint(f), inline[i].posted,
-				f.EndLine, f.Replacement, f.AgentPrompt, inline[i].id); err != nil {
+				 end_line, replacement, agent_prompt, forge_comment_id, rules)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, nullif($14::bigint, 0), coalesce($15::text[], '{}'))`,
+				p.account.ID(), p.reviewID, f.Path, f.Line, string(f.Severity), f.Title, f.Explanation, f.SuggestedFix,
+				review.Fingerprint(f), inline[i].posted, f.EndLine, f.Replacement, f.AgentPrompt, inline[i].id, f.Rules); err != nil {
 				return fmt.Errorf("worker: insert finding: %w", err)
 			}
 		}

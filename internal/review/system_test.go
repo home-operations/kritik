@@ -22,16 +22,22 @@ func TestSystemPrompt(t *testing.T) {
 }
 
 // TestSystemPromptRules: the rules come before the instructions, each by
-// its id, a rule over several lines indented under its item.
+// its id, a rule over several lines indented under its item; a review's
+// findings are told to cite them, a follow-up is not.
 func TestSystemPromptRules(t *testing.T) {
 	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors.\nWith the package name."}, {ID: "no-tokens", Text: " Never log a token. "}}
-	want := "\n\n## Review rules\n\nChecks the maintainers set, each by its id. A change that breaks one is a finding.\n\n" +
-		"- wrap-errors: Wrap errors.\n  With the package name.\n- no-tokens: Never log a token.\n\n## Repository instructions\n\n"
-	for name, got := range map[string]string{
-		"single": SystemPrompt(rules, []string{"Check errors."}, false), "agentic": AgenticSystemPrompt(rules, []string{"Check errors."}, nil, false),
-		"follow-up": FollowUpSystemPrompt(rules, []string{"Check errors."}),
+	section := func(lead string) string {
+		return "\n\n## Review rules\n\nChecks the maintainers set, each by its id. " + lead + "\n\n" +
+			"- wrap-errors: Wrap errors.\n  With the package name.\n- no-tokens: Never log a token.\n\n## Repository instructions\n\n"
+	}
+	review, followUp := section("A change that breaks one is a finding, and the finding lists the id in rules."),
+		section("A change that breaks one is a finding.")
+	for name, c := range map[string]struct{ got, want string }{
+		"single":    {SystemPrompt(rules, []string{"Check errors."}, false), review},
+		"agentic":   {AgenticSystemPrompt(rules, []string{"Check errors."}, nil, false), review},
+		"follow-up": {FollowUpSystemPrompt(rules, []string{"Check errors."}), followUp},
 	} {
-		if !strings.Contains(got, want) || !strings.HasSuffix(got, "\n\nCheck errors.") {
+		if got := c.got; !strings.Contains(got, c.want) || !strings.HasSuffix(got, "\n\nCheck errors.") {
 			t.Errorf("%s system prompt:\n%s", name, got)
 		}
 	}

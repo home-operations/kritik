@@ -14,6 +14,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -376,7 +377,8 @@ func (f *fakeCompleter) Step(ctx context.Context, req model.StepRequest) (model.
 		return answer(`{"reply":"Because b is new."}`, model.Usage{Input: 20, Output: 5}, "", 0), nil
 	}
 	resp := answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
-		  {"path":"main.go","line":1,"severity":"important","title":"first line","explanation":"look here","suggested_fix":"do this"},
+		  {"path":"main.go","line":1,"severity":"important","title":"first line","explanation":"look here","suggested_fix":"do this",
+		   "rules":["no-panics","sql-placeholders"]},
 		  {"path":"main.go","line":500,"severity":"blocking","title":"off the diff","explanation":"dropped"}]}`,
 		model.Usage{Input: 10, Output: 5}, "test", 0.001)
 	if answered != nil {
@@ -1435,6 +1437,17 @@ review:
 	if !strings.Contains(system, "\n\n- no-panics: Return an error rather than panic.\n\n## Repository instructions") ||
 		strings.Contains(system, "sql-placeholders") {
 		t.Fatalf("system prompt does not carry the rules:\n%s", system)
+	}
+	// The finding keeps the rule it was given and loses the one it was not.
+	var cited []string
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT f.rules FROM findings f JOIN reviews v ON v.id = f.review_id
+			WHERE v.head_sha = $1 AND f.title = 'first line'`, codeHead).Scan(&cited)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cited, []string{"no-panics"}) {
+		t.Fatalf("finding rules = %q, want [no-panics]", cited)
 	}
 	lf.mu.Lock()
 	var sticky string
