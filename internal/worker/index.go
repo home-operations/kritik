@@ -95,10 +95,15 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	if repo.defaultBranch == "" {
-		_ = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
+		// Best effort: the run has the branch either way, and the next one
+		// looks it up again until this lands.
+		err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `UPDATE repositories SET default_branch = $2 WHERE id = $1 AND default_branch = ''`, args.RepositoryID, branch)
 			return err
 		})
+		if err != nil {
+			logger.Warn("default branch not recorded", "branch", branch, "error", err)
+		}
 	}
 	logger = logger.With("commit", short(commit))
 
