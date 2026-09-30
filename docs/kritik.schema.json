@@ -108,6 +108,10 @@
           "type": "boolean",
           "description": "false posts the summary alone."
         },
+        "agentFiles": {
+          "type": "boolean",
+          "description": "false leaves the repository's AGENTS.md and CLAUDE.md files out of the instructions."
+        },
         "thoroughness": {
           "enum": ["thorough", "focused"],
           "description": "What the reviewer reports: thorough, anything a maintainer could act on, or focused, only what would stop the review."

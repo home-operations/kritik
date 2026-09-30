@@ -424,6 +424,7 @@ func testRepo(t *testing.T) (dir, base, head string) {
 		return h.String()
 	}
 	commit("other.go", "package main\n\nfunc c() {}\n", "other")
+	commit("AGENTS.md", "Keep functions small.\n", "agents")
 	base = commit("main.go", "package main\n", "base")
 	head = commit("main.go", "package main\n\nfunc b() {}\n", "head")
 	// checkActions later resets the branch back to base and commits again to
@@ -878,8 +879,12 @@ func checkFollowUps(
 	}
 	checkFollowUpTranscript(ctx, t, st, accountID, id, fc)
 	fc.mu.Lock()
-	prompt := fc.users[len(fc.users)-1]
+	prompt, system := fc.users[len(fc.users)-1], fc.systems[len(fc.systems)-1]
 	fc.mu.Unlock()
+	// The root's AGENTS.md, as the review's runner read it.
+	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
+		t.Fatalf("follow-up system prompt lacks AGENTS.md:\n%s", system)
+	}
 	for _, want := range []string{"Thread, oldest first", "<!-- kritik:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritik posted", "main.go:1 [important] first line: look here", "<description>\nAdds b.\n</description>"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("follow-up prompt missing %q:\n%s", want, prompt)
@@ -1383,6 +1388,8 @@ review:
 `,
 		".kritik/rules.md":        "Flag every TODO left in code.\n",
 		".kritik/summary.md.tmpl": "Custom summary for #{{ .Number }}: {{ .Result.Summary.Take }}\n",
+		"AGENTS.md":               "Prefer table-driven tests.\n",
+		"web/AGENTS.md":           "Never inline styles.\n",
 	})
 	docsHead := commit("docs", map[string]string{"docs/guide.md": "# Guide\n"})
 	loosened := commit("drop the skip rule", map[string]string{".kritik.yaml": "review: {}\n"})
@@ -1430,7 +1437,9 @@ review:
 	fc.mu.Lock()
 	system := fc.systems[len(fc.systems)-1]
 	fc.mu.Unlock()
-	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nFlag every TODO left in code.") {
+	// The named instructions, then the root's AGENTS.md; web/ is untouched.
+	if !strings.Contains(system, "\n\n## Repository instructions\n\n") ||
+		!strings.HasSuffix(system, "\n\nFlag every TODO left in code.\n\nPrefer table-driven tests.") || strings.Contains(system, "inline styles") {
 		t.Fatalf("system prompt does not carry the instructions:\n%s", system)
 	}
 	// Only the rule whose paths the change matches.

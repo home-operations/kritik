@@ -179,6 +179,7 @@ type ReviewBlock struct {
 	InlineComments      bool                       `json:"inlineComments"`
 	Context             []configfile.ContextFile   `json:"context"`
 	Thoroughness        string                     `json:"thoroughness"`
+	AgentFiles          bool                       `json:"agentFiles"`
 }
 
 // AllowBounds are what a repository's .kritik.yaml may choose; a bound

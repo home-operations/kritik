@@ -103,6 +103,7 @@ var Policies = []Policy{
 	{Key: "review.minSeverity", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "review.inlineComments", Scopes: everyScope, Repository: RepoReplace},
 	{Key: keyThoroughness, Scopes: everyScope, Repository: RepoReplace},
+	{Key: "review.agentFiles", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "allow", Scopes: everyScope},
 	{Key: "limits", Scopes: accountScopes},
 	{Key: "runner", Scopes: accountScopes},

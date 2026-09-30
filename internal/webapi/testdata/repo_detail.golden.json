@@ -46,7 +46,8 @@
           "paths": ["**/*.sql"]
         }
       ],
-      "thoroughness": "thorough"
+      "thoroughness": "thorough",
+      "agentFiles": true
     },
     "agent": {
       "maxSteps": 60,
@@ -111,7 +112,8 @@
             "paths": ["**/*.sql"]
           }
         ],
-        "thoroughness": "thorough"
+        "thoroughness": "thorough",
+        "agentFiles": true
       },
       "agent": {
         "maxSteps": 60,

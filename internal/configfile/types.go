@@ -503,6 +503,10 @@ type Review struct {
 	// anything a maintainer could act on, or ThoroughnessFocused, only what
 	// would stop the review.
 	Thoroughness string
+	// AgentFiles is true to add the repository's AGENTS.md files, or a
+	// directory's CLAUDE.md where it has none, to the instructions: the
+	// root's and those of the directories a change touches (ADR-0020).
+	AgentFiles bool
 }
 
 // ContextFile is a repository file that explains the code, named to the
@@ -540,6 +544,7 @@ type ReviewSpec struct {
 	Context             []ContextFile `yaml:"context,omitempty"`
 	Rules               []Rule        `yaml:"rules,omitempty"`
 	Thoroughness        *string       `yaml:"thoroughness,omitempty"`
+	AgentFiles          *bool         `yaml:"agentFiles,omitempty"`
 }
 
 // TemplatesSpec sets the comment templates at one scope; an empty path

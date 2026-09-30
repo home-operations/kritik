@@ -456,6 +456,9 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	if auth != "Bearer model-key" || !strings.HasPrefix(system, "You are kritik") {
 		t.Fatalf("auth=%q system=%.40q", auth, system)
 	}
+	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
+		t.Fatalf("the runner left the root's AGENTS.md out of the system prompt:\n%s", system)
+	}
 	h.fc.mu.Lock()
 	calls := h.fc.calls
 	h.fc.mu.Unlock()

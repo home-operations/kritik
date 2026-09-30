@@ -76,7 +76,7 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 		Mode:        ReviewAgentic,
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
-		Review:      Review{InlineComments: true, Thoroughness: ThoroughnessThorough},
+		Review:      Review{InlineComments: true, Thoroughness: ThoroughnessThorough, AgentFiles: true},
 	}
 	s.apply(&f.Defaults.Overrides)
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
@@ -296,6 +296,9 @@ func (r Review) overlay(o ReviewSpec) Review {
 		r.Context = o.Context
 	}
 	r.Rules = WithRules(r.Rules, o.Rules)
+	if o.AgentFiles != nil {
+		r.AgentFiles = *o.AgentFiles
+	}
 	if o.Thoroughness != nil {
 		r.Thoroughness = *o.Thoroughness
 	}

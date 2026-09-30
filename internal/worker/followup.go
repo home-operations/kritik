@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -165,7 +166,15 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	if err != nil {
 		return followUpFailed, err
 	}
-	instructions, _ := repoconfig.Instructions(f.instructionFiles, repoconfig.Active(f.settings.Review.Instructions, f.scoped, rec.changed))
+	// The review's runner read the agent files; the named files are read
+	// again at the merge base, and win.
+	files := maps.Clone(rec.files)
+	if files == nil {
+		files = repoconfig.Files{}
+	}
+	maps.Copy(files, f.instructionFiles)
+	instructions, _ := repoconfig.Instructions(files,
+		repoconfig.ActiveInstructions(f.settings.Review.Instructions, f.scoped, files, rec.changed, f.settings.Review.AgentFiles))
 	rules, _ := repoconfig.ActiveRules(f.settings.Review.Rules, rec.changed)
 	system := review.FollowUpSystemPrompt(rules, instructions)
 	msg := review.BuildFollowUp(review.Input{
@@ -381,11 +390,14 @@ type reviewRecord struct {
 	changed  []string
 	context  []contextpack.Chunk
 	findings []review.Finding
+	// files are the repository files the review's runner read, its agent
+	// files among them.
+	files repoconfig.Files
 }
 
 // reviewRecord loads the pull request description and the latest completed
-// review's diff, context pack and findings; without a review the thread
-// stands alone.
+// review's diff, context pack, repository files and findings; without a
+// review the thread stands alone.
 func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 	var rec reviewRecord
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
@@ -397,10 +409,10 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 			return err
 		}
 		rec.id, rec.findings = last.id, reviewFindings(last.findings)
-		var stages []byte
-		err = tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages FROM runner_runs rr
+		var stages, files []byte
+		err = tx.QueryRow(ctx, `SELECT c.diff, c.changed_paths, c.stages, c.repo_files FROM runner_runs rr
 			JOIN context_packs c ON c.runner_run_id = rr.id WHERE rr.review_id = $1`, last.id).
-			Scan(&rec.diff, &rec.changed, &stages)
+			Scan(&rec.diff, &rec.changed, &stages, &files)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -411,6 +423,9 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 			if err := json.Unmarshal(stages, &rec.context); err != nil {
 				return fmt.Errorf("worker: decode context pack: %w", err)
 			}
+		}
+		if err := json.Unmarshal(files, &rec.files); err != nil {
+			return fmt.Errorf("worker: decode repository files: %w", err)
 		}
 		return nil
 	})
