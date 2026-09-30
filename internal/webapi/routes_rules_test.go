@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 func TestCollectRules(t *testing.T) {
@@ -50,5 +51,30 @@ func TestCollectRules(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("collectRules =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
+// TestCountCitations: a written rule counts the citations of its id in its
+// own repositories only, so two rules sharing an id keep their counts
+// apart; a file counts none.
+func TestCountCitations(t *testing.T) {
+	rules := []Rule{
+		{Kind: RuleInstructions, Path: "wrap-errors", Repositories: []string{"alpha/one"}},
+		{Kind: RuleWritten, ID: "wrap-errors", Repositories: []string{"alpha/two"}},
+		{Kind: RuleWritten, ID: "wrap-errors", Repositories: []string{"alpha/one", "alpha/three"}},
+		{Kind: RuleWritten, ID: "no-tokens", Repositories: []string{"alpha/one"}},
+	}
+	cited := []store.RuleCitation{
+		{Repository: "alpha/one", Rule: "wrap-errors", Findings: 3, Addressed: 1},
+		{Repository: "alpha/three", Rule: "wrap-errors", Findings: 1, Addressed: 1},
+		{Repository: "alpha/two", Rule: "wrap-errors", Findings: 2, Addressed: 2},
+		{Repository: "alpha/four", Rule: "no-tokens", Findings: 5},
+	}
+	got := countCitations(rules, cited)
+	want := [][2]int{{0, 0}, {2, 2}, {4, 2}, {0, 0}}
+	for i, r := range got {
+		if [2]int{r.Findings, r.Addressed} != want[i] {
+			t.Errorf("rule %d (%s %s) counts = %d/%d, want %d/%d", i, r.Kind, r.ID, r.Findings, r.Addressed, want[i][0], want[i][1])
+		}
 	}
 }

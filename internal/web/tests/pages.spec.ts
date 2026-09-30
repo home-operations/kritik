@@ -317,6 +317,7 @@ test.describe('findings', () => {
     await expect(row.locator('.status-word')).toHaveText(f.status);
     await expect(row.getByTitle('Reactions to its comment on GitHub')).toHaveText(`${f.reactionsUp} ${f.reactionsDown}`);
     await expect(row.getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute('href', `${f.pull.url}#discussion_r${f.forgeCommentId}`);
+    await expect(row.locator('.finding-rules').getByRole('link')).toHaveText(f.rules);
     await expect(page.locator('.sections .section-tab.active')).toHaveText('Analytics');
     await expect(page.getByRole('navigation', { name: 'Analytics' }).getByRole('link', { name: 'Findings' })).toHaveAttribute('aria-current', 'page');
 
@@ -345,6 +346,16 @@ test.describe('findings', () => {
     await expect(search).toHaveValue('');
     await expect(search).toBeFocused();
   });
+
+  test('a cited rule narrows the list to the findings that cite it', async ({ page }) => {
+    const seen = await g.mockApi(page, g.defaultApi());
+    await page.goto(`/${T}/findings`);
+    const id = g.accountFinding.rules[0]!;
+    await page.locator('.finding-row').first().getByRole('link', { name: id }).click();
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?rule=${id}$`));
+    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/findings')).at(-1)?.searchParams.get('rule')).toBe(id);
+    await expect(page.getByRole('combobox', { name: 'Search findings' })).toHaveValue(`rule:${id}`);
+  });
 });
 
 test.describe('rules', () => {
@@ -361,8 +372,15 @@ test.describe('rules', () => {
     await expect(row.locator('code')).toHaveText(r.paths);
     await expect(row).toContainText('Repository entry');
     await expect(row.getByRole('link', { name: r.repositories[0]! })).toHaveAttribute('href', `#/a/${g.SLUG}/repos/alpha/one`);
+    // Its findings, narrowed to its one repository.
+    await expect(row.locator('.rule-cited')).toContainText(`${r.addressed} addressed`);
+    await expect(row.getByRole('link', { name: String(r.findings), exact: true })).toHaveAttribute(
+      'href',
+      `#/a/${g.SLUG}/findings?repo=alpha%2Fone&rule=${r.id}`,
+    );
     await expect(rows.last().locator('.rule-path')).toHaveText(file.path);
     await expect(rows.last()).toContainText('.kritik.yaml');
+    await expect(rows.last().locator('.rule-cited')).toHaveCount(0);
     await expect(page.locator('.sections .section-tab.active')).toHaveText('Rules');
 
     const search = page.getByRole('combobox', { name: 'Search rules' });
@@ -409,6 +427,7 @@ test.describe('review', () => {
     await expect(page.locator('.finding')).toContainText(f.title);
     await expect(page.locator('.finding')).toContainText(`${f.path}:${f.line}-${f.endLine}`);
     await expect(page.locator('.finding .code-block')).toContainText(f.replacement);
+    await expect(page.locator('.finding-head .badge.mono')).toHaveText(f.rules);
     // The golden finding was posted inline as comment 55 on the pull request.
     await expect(page.locator('.finding').getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute(
       'href',

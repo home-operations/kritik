@@ -24,7 +24,7 @@
   const account = $derived(accountApi(slug));
   function query(after?: string): string {
     const p = new URLSearchParams({ limit: '50' });
-    for (const k of ['severity', 'status', 'repo', 'q'] as const) {
+    for (const k of ['severity', 'status', 'repo', 'rule', 'q'] as const) {
       const v = filter?.[k];
       if (v) p.set(k, v);
     }
@@ -46,8 +46,10 @@
     { key: 'repo', hint: 'a repository', values: (repos.data?.items ?? []).map((r) => r.fullName) },
     { key: 'severity', hint: 'blocking, important or nit', values: SEVERITIES },
     { key: 'status', hint: 'open or addressed', values: FINDING_STATUSES },
+    { key: 'rule', hint: 'a rule id', values: [...new Set(paged.items.flatMap((f) => f.rules))].sort(), open: true },
   ]);
-  const boxText = (f: FindingFilter | undefined) => formatTokens(specs, { repo: f?.repo, severity: f?.severity, status: f?.status }, f?.q);
+  const boxText = (f: FindingFilter | undefined) =>
+    formatTokens(specs, { repo: f?.repo, severity: f?.severity, status: f?.status, rule: f?.rule }, f?.q);
 
   // As on the pull request list: written is the box's text for the filter it
   // last wrote to the URL, and any other change to the filter rewrites it.
@@ -88,7 +90,7 @@
       <TokenSearch
         id="finding-search"
         label="Search findings"
-        placeholder="Search, or filter by repo:, severity: or status:"
+        placeholder="Search, or filter by repo:, severity:, status: or rule:"
         {specs}
         bind:text
         bind:input={searchEl}
@@ -125,6 +127,13 @@
                     <td class="finding-main">
                       <a class="finding-link" href={href(reviewOf(f))}>{f.title}</a>
                       <span class="finding-sub">{f.explanation}</span>
+                      {#if f.rules.length}
+                        <span class="finding-rules">
+                          {#each f.rules as id (id)}
+                            <a class="mono" href={href({ name: 'findings', slug, filter: { rule: id } })} title="Findings that cite the rule {id}">{id}</a>
+                          {/each}
+                        </span>
+                      {/if}
                     </td>
                     <td><span class="sev sev-{f.severity}">{f.severity}</span></td>
                     <td class="finding-pull">

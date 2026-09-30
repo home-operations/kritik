@@ -618,6 +618,20 @@ table.data td.finding-main {
 .finding-pull .finding-sub {
   max-width: 220px;
 }
+.finding-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.finding-rules a {
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: 3px;
+  color: var(--text);
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+}
 
 /* ---- rules table -------------------------------------------------------- */
 table.data td.wrap {
@@ -683,6 +697,11 @@ table.data td.wrap {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 2px 8px;
+}
+.rule-cited {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 /* ---- search with suggestions ------------------------------------------- */

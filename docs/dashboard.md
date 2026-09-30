@@ -24,7 +24,8 @@ at once, and holds a tab for each of an account's sections
   each finding once per pull request however many reviews repeated it,
   addressed once a later review of the pull request, at a newer head, no
   longer reports it. A finding kritik posted inline links to its thread
-  on GitHub, here and on its review. Spend has the month so far against the account's
+  on GitHub, here and on its review, and one that enforces a written rule
+  names it; `rule:<id>` narrows the list to the findings that cite it. Spend has the month so far against the account's
   caps, and usage by day, model, repository or role.
 - **Pull requests:** its pull requests and their reviews, the run queue
   and the follow-up questions. The search box takes text, or narrows the
@@ -37,7 +38,10 @@ at once, and holds a tab for each of an account's sections
   context files that explain the code, each with where it is set (a layer
   of the configuration, a repository's entry, or a repository's
   `.kritik.yaml` as its last review read it), the paths it applies to,
-  and the repositories that read it. The page only lists them.
+  and the repositories that read it. A written rule also has the findings
+  that cite it, counted as the Findings list counts them, and how many of
+  those were addressed, so a noisy rule shows as many findings and few
+  addressed. The page only lists them.
 - **Settings:** its repositories, and for an admin its audit log and the
   instance's Configuration page.
 

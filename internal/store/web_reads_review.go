@@ -33,12 +33,14 @@ type FindingRow struct {
 	CreatedAt      time.Time
 	ReactionsUp    int
 	ReactionsDown  int
+	// Rules are the ids of the review rules it enforces.
+	Rules []string
 }
 
 // ListFindings returns a review's findings, most serious first.
 func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow, error) {
 	rows, err := tx.Query(ctx, `SELECT id, path, line, end_line, severity, title, explanation, suggested_fix, replacement,
-		agent_prompt, fingerprint, posted_inline, forge_comment_id, created_at, reactions_up, reactions_down
+		agent_prompt, fingerprint, posted_inline, forge_comment_id, created_at, reactions_up, reactions_down, rules
 		FROM findings WHERE review_id = $1
 		ORDER BY CASE severity WHEN 'blocking' THEN 0 WHEN 'important' THEN 1 ELSE 2 END, path, line, id`, reviewID)
 	if err != nil {
@@ -48,7 +50,7 @@ func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow
 		var f FindingRow
 		var sev string
 		err := row.Scan(&f.ID, &f.Path, &f.Line, &f.EndLine, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.Replacement,
-			&f.AgentPrompt, &f.Fingerprint, &f.PostedInline, &f.ForgeCommentID, &f.CreatedAt, &f.ReactionsUp, &f.ReactionsDown)
+			&f.AgentPrompt, &f.Fingerprint, &f.PostedInline, &f.ForgeCommentID, &f.CreatedAt, &f.ReactionsUp, &f.ReactionsDown, &f.Rules)
 		f.Severity = review.Severity(sev)
 		return f, err
 	})

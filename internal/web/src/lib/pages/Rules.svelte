@@ -8,6 +8,7 @@
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
+  import { findingFilter } from '../routes';
   import { parseTokens, type TokenSpec } from '../tokensearch';
   import type { Rule, RuleKind, RuleSource } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -45,6 +46,10 @@
   ]);
   let text = $state('');
   let applied = $state(parseTokens('', []));
+
+  // citedBy is the findings list narrowed to a written rule's citations,
+  // and to its repository when it has one alone.
+  const citedBy = (r: Rule) => findingFilter({ rule: r.id, repo: r.repositories.length === 1 ? r.repositories[0] : undefined });
 
   function shown(rules: Rule[]): Rule[] {
     const { tokens, q } = applied;
@@ -105,6 +110,7 @@
                   <th scope="col">Applies to</th>
                   <th scope="col">Set in</th>
                   <th scope="col">Repositories</th>
+                  <th scope="col" class="num" title="Findings that cite a rule, and how many a later review found addressed">Findings</th>
                 </tr>
               </thead>
               <tbody>
@@ -140,6 +146,16 @@
                         {/each}
                         {#if r.repositories.length > 2}<span class="small muted">and {r.repositories.length - 2} more</span>{/if}
                       </div>
+                    </td>
+                    <td class="num">
+                      {#if r.kind === 'rule'}
+                        <span class="rule-cited">
+                          {#if r.findings}
+                            <a href={href({ name: 'findings', slug, filter: citedBy(r) })} title="Findings that cite {r.id}">{r.findings}</a>
+                            <span class="small muted">{r.addressed} addressed</span>
+                          {:else}<span class="muted">0</span>{/if}
+                        </span>
+                      {/if}
                     </td>
                   </tr>
                 {/each}

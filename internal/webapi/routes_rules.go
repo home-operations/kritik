@@ -18,11 +18,13 @@ const rulesRepoPage = 500
 
 // listRules serves the rules, review instructions and context files the
 // account's running repositories read: the configuration's, and each
-// repository's own from its .kritik.yaml as its last review read it.
+// repository's own from its .kritik.yaml as its last review read it; a
+// written rule with the findings that cite it.
 func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
 	var repos []store.RepoRow
 	var files map[string]store.RepoFileRow
+	var cited []store.RuleCitation
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		f := store.RepoFilter{}
 		page := store.Page{Limit: rulesRepoPage}
@@ -38,7 +40,10 @@ func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountSco
 			page.After = *next
 		}
 		var err error
-		files, err = store.LastRepoFiles(ctx, tx)
+		if files, err = store.LastRepoFiles(ctx, tx); err != nil {
+			return err
+		}
+		cited, err = store.RuleCitations(ctx, tx)
 		return err
 	}); err != nil {
 		return err
@@ -57,8 +62,25 @@ func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountSco
 		}
 		in = append(in, rr)
 	}
-	writeJSON(w, http.StatusOK, collectRules(in))
+	writeJSON(w, http.StatusOK, countCitations(collectRules(in), cited))
 	return nil
+}
+
+// countCitations adds to each written rule the findings of its
+// repositories that cite its id.
+func countCitations(rules []Rule, cited []store.RuleCitation) []Rule {
+	for i, r := range rules {
+		if r.Kind != RuleWritten {
+			continue
+		}
+		for _, c := range cited {
+			if c.Rule == r.ID && slices.Contains(r.Repositories, c.Repository) {
+				rules[i].Findings += c.Findings
+				rules[i].Addressed += c.Addressed
+			}
+		}
+	}
+	return rules
 }
 
 // repoRules is what one repository's rules come from.

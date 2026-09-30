@@ -398,6 +398,8 @@ export interface Finding {
   createdAt: string;
   reactionsUp: number;
   reactionsDown: number;
+  // rules are the ids of the review rules it enforces.
+  rules: string[];
 }
 
 export type AnalyticsGroup = 'day' | 'week' | 'month';
@@ -457,6 +459,10 @@ export interface Rule {
   paths: string[];
   source: RuleSource;
   repositories: string[];
+  // findings and addressed are a written rule's: its repositories'
+  // findings that cite its id, and how many of those were addressed.
+  findings: number;
+  addressed: number;
 }
 
 export type FindingStatus = 'open' | 'addressed';
