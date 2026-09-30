@@ -66,18 +66,13 @@ func (m *Management) Handler() http.Handler {
 
 // Run serves until ctx is cancelled, then drains within shutdownTimeout.
 func (m *Management) Run(ctx context.Context) error {
-	return Serve(ctx, m.addr, m.Handler(), m.logger.With("listener", "management"))
+	return Serve(ctx, m.addr, m.Handler(), shutdownTimeout, m.logger.With("listener", "management"))
 }
 
-// Serve runs h on addr until ctx is cancelled, then drains within
-// shutdownTimeout.
-func Serve(ctx context.Context, addr string, h http.Handler, logger *slog.Logger) error {
-	return ServeDrain(ctx, addr, h, shutdownTimeout, logger)
-}
-
-// ServeDrain is Serve with its own drain. Requests still in flight when it
-// runs out are cut: a stopping process is not failing.
-func ServeDrain(ctx context.Context, addr string, h http.Handler, drain time.Duration, logger *slog.Logger) error {
+// Serve runs h on addr until ctx is cancelled, then drains within drain.
+// Requests still in flight when it runs out are cut: a stopping process is
+// not failing.
+func Serve(ctx context.Context, addr string, h http.Handler, drain time.Duration, logger *slog.Logger) error {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           h,

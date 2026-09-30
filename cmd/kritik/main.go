@@ -220,7 +220,7 @@ func startPublic(
 	g.Go(func() error { return api.Run(lctx) })
 	public := server.Public(cfg.WebBasePath(), hooks, api.Handler())
 	g.Go(func() error {
-		return server.ServeDrain(lctx, cfg.Addr, public, publicDrain, logger.With("listener", "public"))
+		return server.Serve(lctx, cfg.Addr, public, publicDrain, logger.With("listener", "public"))
 	})
 	return nil
 }
@@ -248,7 +248,7 @@ func startWorker(
 		Steppers: completers,
 	}
 	g.Go(func() error {
-		return server.ServeDrain(lingering(ctx, linger), cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
+		return server.Serve(lingering(ctx, linger), cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
 	})
 	river.AddWorker(workers, &worker.Review{
 		Base: base, Executor: exec, Completers: completers, Embedders: embedders,
@@ -585,7 +585,7 @@ func applyLoop(
 			switch {
 			case err != nil && store.IsConfigContentError(err):
 				refused = h
-				gauge.Set(server.ConfigErrorApply, true)
+				gauge.Set(true)
 				if err.Error() != logged {
 					logged = err.Error()
 					logger.Error("configuration refused by the store, keeping the last applied one", "hash", h[:12], "error", err)
@@ -594,7 +594,7 @@ func applyLoop(
 				return err
 			default:
 				applied, refused, logged = h, "", ""
-				gauge.Set(server.ConfigErrorApply, false)
+				gauge.Set(false)
 				logger.Info("configuration applied to the store", "hash", h[:12])
 				if err := onApplied(ctx); err != nil {
 					return err

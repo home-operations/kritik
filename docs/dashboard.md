@@ -105,7 +105,7 @@ head, or cancelling a review that is not running, is a `409 Conflict`.
 - The configuration is read at startup. A file that does not load fails
   startup, so a rollout that brings one leaves the pods before it
   serving; one the leader cannot apply to the store raises the
-  `kritik_config_error` gauge (labelled `apply`) until a later attempt
+  `kritik_config_error` gauge until a later attempt
   succeeds.
 - A secret is read from its variable at startup too: restart the pods
   after rotating one.

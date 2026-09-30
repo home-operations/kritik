@@ -442,10 +442,10 @@ func testTranscriptsEqualRebuild(t *testing.T, e *apiEnv) {
 	var steps, followups []transcript.StoredRow
 	if err := e.st.WithAccount(ctx, e.a.accountID, func(tx pgx.Tx) error {
 		var err error
-		if steps, err = store.ModelCalls(ctx, tx, store.ModelCallFilter{RunnerRunID: e.a.runID}); err != nil {
+		if steps, err = store.ReviewModelCalls(ctx, tx, e.a.reviewID); err != nil {
 			return err
 		}
-		followups, err = store.ModelCalls(ctx, tx, store.ModelCallFilter{FollowupCommentID: followupComment})
+		followups, err = store.FollowupModelCalls(ctx, tx, e.a.prID, followupComment)
 		return err
 	}); err != nil {
 		t.Fatal(err)

@@ -13,12 +13,15 @@ import (
 	"github.com/home-operations/kritik/internal/transcript"
 )
 
-func modelCalls(ctx context.Context, t *testing.T, st *store.Store, accountID string, f store.ModelCallFilter) []transcript.StoredRow {
+// modelCalls lists model calls as accountID sees them, through read.
+func modelCalls(
+	ctx context.Context, t *testing.T, st *store.Store, accountID string, read func(pgx.Tx) ([]transcript.StoredRow, error),
+) []transcript.StoredRow {
 	t.Helper()
 	var rows []transcript.StoredRow
 	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
-		rows, err = store.ModelCalls(ctx, tx, f)
+		rows, err = read(tx)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -39,7 +42,9 @@ func checkSingleShotTranscript(ctx context.Context, t *testing.T, st *store.Stor
 	fc.mu.Lock()
 	system, user := fc.systems[len(fc.systems)-1], fc.users[len(fc.users)-1]
 	fc.mu.Unlock()
-	conv := transcript.Rebuild(modelCalls(ctx, t, st, accountID, store.ModelCallFilter{ReviewID: reviewID}))
+	conv := transcript.Rebuild(modelCalls(ctx, t, st, accountID, func(tx pgx.Tx) ([]transcript.StoredRow, error) {
+		return store.ReviewModelCalls(ctx, tx, reviewID)
+	}))
 	if len(conv.Turns) != 1 || conv.System != system || len(conv.Tools) != 1 || conv.Tools[0].Name != "findings" {
 		t.Fatalf("conversation = %+v", conv)
 	}
@@ -58,7 +63,13 @@ func checkFollowUpTranscript(ctx context.Context, t *testing.T, st *store.Store,
 	fc.mu.Lock()
 	user := fc.users[len(fc.users)-1]
 	fc.mu.Unlock()
-	rows := modelCalls(ctx, t, st, accountID, store.ModelCallFilter{FollowupCommentID: commentID})
+	rows := modelCalls(ctx, t, st, accountID, func(tx pgx.Tx) ([]transcript.StoredRow, error) {
+		var prID string
+		if err := tx.QueryRow(ctx, `SELECT pull_request_id FROM followups WHERE comment_id = $1`, commentID).Scan(&prID); err != nil {
+			return nil, err
+		}
+		return store.FollowupModelCalls(ctx, tx, prID, commentID)
+	})
 	if len(rows) != 1 || rows[0].Kind != store.ModelCallFollowUp || rows[0].ReviewID == "" || rows[0].Messages[0].Text != user ||
 		!strings.Contains(string(rows[0].Response.ToolCalls[0].Input), "Because b is new.") {
 		t.Fatalf("follow-up model calls = %+v", rows)

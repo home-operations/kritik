@@ -468,7 +468,7 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 // with no secret in any column and nothing another account can read.
 func checkAgentTranscript(t *testing.T, h *agenticHarness, reviewID string) {
 	t.Helper()
-	rows := h.modelCalls(t, h.account.ID(), store.ModelCallFilter{ReviewID: reviewID})
+	rows := h.modelCalls(t, h.account.ID(), reviewID)
 	if len(rows) != 3 {
 		t.Fatalf("%d model calls recorded, want 3", len(rows))
 	}
@@ -505,17 +505,17 @@ func checkAgentTranscript(t *testing.T, h *agenticHarness, reviewID string) {
 		t.Fatalf("last response = %+v", conv.Turns[2].Response)
 	}
 	h.checkNoSecrets(t, `review_id = $1`, reviewID)
-	if n := len(h.modelCalls(t, h.other.ID(), store.ModelCallFilter{ReviewID: reviewID})); n != 0 {
+	if n := len(h.modelCalls(t, h.other.ID(), reviewID)); n != 0 {
 		t.Fatalf("globex reads %d of acme's model calls", n)
 	}
 }
 
-func (h *agenticHarness) modelCalls(t *testing.T, accountID string, f store.ModelCallFilter) []transcript.StoredRow {
+func (h *agenticHarness) modelCalls(t *testing.T, accountID, reviewID string) []transcript.StoredRow {
 	t.Helper()
 	var rows []transcript.StoredRow
 	if err := h.st.WithAccount(h.ctx, accountID, func(tx pgx.Tx) error {
 		var err error
-		rows, err = store.ModelCalls(h.ctx, tx, f)
+		rows, err = store.ReviewModelCalls(h.ctx, tx, reviewID)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -937,7 +937,7 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 		t.Fatalf("usage rows = %d", rows)
 	}
 	// The refused step is still recorded, the key it echoed masked.
-	rows := h.modelCalls(t, h.account.ID(), store.ModelCallFilter{ReviewID: reviewID})
+	rows := h.modelCalls(t, h.account.ID(), reviewID)
 	if len(rows) == 0 || !strings.Contains(rows[0].Error, "invalid api key ***") {
 		t.Fatalf("model calls = %+v", rows)
 	}

@@ -25,41 +25,29 @@ func (c *ConfigDriftGauge) Set(drifting bool) {
 	c.g.Set(0)
 }
 
-// ConfigErrorStage is where producing or applying the configuration failed.
-type ConfigErrorStage string
+// ConfigErrorGauge is 1 while the leader's latest attempt to apply the
+// merged configuration to the store was refused; the last applied state
+// stays live meanwhile.
+type ConfigErrorGauge struct{ g prometheus.Gauge }
 
-// Configuration error stages.
-const (
-	// ConfigErrorApply is the leader's store refusing the merged snapshot;
-	// the last applied state stays live.
-	ConfigErrorApply ConfigErrorStage = "apply"
-)
-
-// Valid reports whether s is a stage.
-func (s ConfigErrorStage) Valid() bool { return s == ConfigErrorApply }
-
-// ConfigErrorGauge is 1 for a stage while its latest attempt failed.
-type ConfigErrorGauge struct{ g *prometheus.GaugeVec }
-
-// NewConfigErrorGauge registers the gauge on reg, with every stage at 0.
+// NewConfigErrorGauge registers the gauge on reg, at 0.
 func NewConfigErrorGauge(reg prometheus.Registerer) *ConfigErrorGauge {
-	g := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	g := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "kritik_config_error",
-		Help: "1 while the latest attempt at a stage (apply) of the configuration failed, else 0.",
-	}, []string{"stage"})
+		Help: "1 while the latest attempt to apply the configuration to the store failed, else 0.",
+	})
 	reg.MustRegister(g)
-	g.WithLabelValues(string(ConfigErrorApply)).Set(0)
 	return &ConfigErrorGauge{g: g}
 }
 
-// Set records whether stage is failing. A nil gauge records nothing.
-func (c *ConfigErrorGauge) Set(stage ConfigErrorStage, failing bool) {
-	if c == nil || !stage.Valid() {
+// Set records whether applying is failing. A nil gauge records nothing.
+func (c *ConfigErrorGauge) Set(failing bool) {
+	if c == nil {
 		return
 	}
-	v := 0.0
 	if failing {
-		v = 1
+		c.g.Set(1)
+		return
 	}
-	c.g.WithLabelValues(string(stage)).Set(v)
+	c.g.Set(0)
 }
