@@ -162,11 +162,11 @@
       "type": "object"
     },
     "config": {
-      "description": "The configuration file holds the whole configuration (ADR-0019,\nADR-0021): sign-in (`auth`), the GitHub `apps`, the instance's\n`providers`, `embedding` and `egress`, the `defaults` every repository\ngets, the `repositories` entries keyed `owner/*` or `owner/name`, and the\n`accounts` with their limits and providers. Sign-in, one app, one\nprovider, the default models and review settings and the embedder also\nhave `KRITIK_*` environment variables, which win over the file; the\n`auth` values above render some, and `extraEnv` can set the others. The\nfile is either inline as `file`, rendered into a chart-managed ConfigMap,\nor an existing ConfigMap with a `config.yaml` key. Secret material never\ngoes in the file: it references files under `secretMounts` or environment\nvariables. Every replica re-reads the file on `reloadInterval`; the\nleader applies it to the store.",
+      "description": "The configuration file holds the whole configuration (ADR-0019,\nADR-0021): sign-in (`auth`), the GitHub `apps`, the instance's\n`providers`, `embedding` and `egress`, the `defaults` every repository\ngets, the `repositories` entries keyed `owner/*` or `owner/name`, and the\n`accounts` with their limits and providers. Sign-in, one app, one\nprovider, the default models and review settings and the embedder also\nhave `KRITIK_*` environment variables, which win over the file; the\n`auth` values above render some, and `extraEnv` can set the others. The\nfile is either inline as `file`, rendered into a chart-managed ConfigMap,\nor an existing ConfigMap with a `config.yaml` key. Secret material never\ngoes in the file: it references files under `secretMounts` or environment\nvariables. kritik reads the file at startup (ADR-0022): the pods carry a\nchecksum of `file`, so a change to it rolls them, while a change to an\n`existingConfigMap` needs a restart, for example by stakater's Reloader\nthrough `deploymentAnnotations`. The leader applies it to the store.",
       "properties": {
         "existingConfigMap": {
           "default": "",
-          "description": "Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`.",
+          "description": "Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. A change to it takes a restart.",
           "title": "existingConfigMap",
           "type": "string"
         },
@@ -224,12 +224,6 @@
           "default": "",
           "description": "How far back a first or long-idle poll looks (KRITIK_POLL_LOOKBACK, Go duration). Empty is kritik's default, 24h.",
           "title": "pollLookback",
-          "type": "string"
-        },
-        "reloadInterval": {
-          "default": "10s",
-          "description": "How often each replica re-reads the file (Go duration).",
-          "title": "reloadInterval",
           "type": "string"
         },
         "reviewWorkers": {

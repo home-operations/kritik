@@ -32,6 +32,23 @@ tests:
           path: spec.template.spec.containers[0].image
           pattern: ^ghcr\.io/home-operations/kritik:\d+\.\d+\.\d+$
 
+  - it: carries a checksum of the rendered configuration file, so a change rolls the pods
+    asserts:
+      - matchRegex:
+          path: spec.template.metadata.annotations["checksum/config"]
+          pattern: ^[0-9a-f]{64}$
+  - it: leaves an existing ConfigMap's restarts to the deployment, keeping pod annotations
+    set:
+      config.existingConfigMap: kritik-config
+      podAnnotations:
+        example.com/owner: ops
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/config"]
+      - equal:
+          path: spec.template.metadata.annotations["example.com/owner"]
+          value: ops
+
   - it: gates the liveness and readiness probes on a startup probe, which can be turned off
     asserts:
       - equal:

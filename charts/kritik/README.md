@@ -67,9 +67,10 @@ instance. OIDC and GitHub sign-in, with role mappings, set the same way
 `providers`, the `embedding`, the `defaults`, `repositories` entries keyed
 `owner/*` or `owner/name`, and `accounts`. How kritik runs, polling,
 retention and runner Jobs, is set by values instead (`config.pollInterval`,
-`runner.deadline`, `runner.tools` and the rest below). Every
-replica re-reads it on `config.reloadInterval`, and a reload the file's
-content can't pass keeps the last good one. Secrets never go in it: it
+`runner.deadline`, `runner.tools` and the rest below). kritik reads it
+at startup: the pods carry its checksum, so a change rolls them, and a
+pod whose file doesn't load never becomes ready while the ones before it
+keep serving. Secrets never go in it: it
 points at files under `secretMounts` or at environment variables. The
 [setup guide](https://github.com/home-operations/kritik/blob/main/docs/setup.md)
 covers creating the GitHub App, and the dashboard's setup checklist shows
@@ -273,7 +274,7 @@ Kubernetes: `>=1.25.0-0`
 | auth.oidc.rolesClaim | string | `""` | ID token or UserInfo claim a role mapping reads as `roles`. |
 | auth.oidc.scopes | list | `[]` | Scopes to request; empty is openid, email and profile. |
 | auth.sessionTTL | string | `""` | How long a dashboard session lasts (Go duration, 5m to 720h); empty is 12h. |
-| config.existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. |
+| config.existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. A change to it takes a restart. |
 | config.extraEnv | list | `[]` | Extra raw env vars merged into every role's container (advanced). |
 | config.file | optional | `{}` | The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
 | config.indexGrace | string | `""` | How long the index of a repository that stopped running is kept (KRITIK_INDEX_GRACE, Go duration). Empty is kritik's default, 720h. |
@@ -283,7 +284,6 @@ Kubernetes: `>=1.25.0-0`
 | config.onboardWindow | int | `0` | How many onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW). 0 is kritik's default, 4. |
 | config.pollInterval | string | `""` | How often the leader lists each app's open pull requests, its backstop for missed webhooks (KRITIK_POLL_INTERVAL, Go duration); `0s` turns polling off. Empty is kritik's default, 10m. |
 | config.pollLookback | string | `""` | How far back a first or long-idle poll looks (KRITIK_POLL_LOOKBACK, Go duration). Empty is kritik's default, 24h. |
-| config.reloadInterval | string | `"10s"` | How often each replica re-reads the file (Go duration). |
 | config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers). |
 | config.transcriptRetention | string | `""` | How long an agentic review's transcript is kept, at least 24h (KRITIK_TRANSCRIPT_RETENTION, Go duration). Empty is kritik's default, 720h. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |

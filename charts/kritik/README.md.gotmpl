@@ -72,9 +72,10 @@ instance. OIDC and GitHub sign-in, with role mappings, set the same way
 `providers`, the `embedding`, the `defaults`, `repositories` entries keyed
 `owner/*` or `owner/name`, and `accounts`. How kritik runs, polling,
 retention and runner Jobs, is set by values instead (`config.pollInterval`,
-`runner.deadline`, `runner.tools` and the rest below). Every
-replica re-reads it on `config.reloadInterval`, and a reload the file's
-content can't pass keeps the last good one. Secrets never go in it: it
+`runner.deadline`, `runner.tools` and the rest below). kritik reads it
+at startup: the pods carry its checksum, so a change rolls them, and a
+pod whose file doesn't load never becomes ready while the ones before it
+keep serving. Secrets never go in it: it
 points at files under `secretMounts` or at environment variables. The
 [setup guide](https://github.com/home-operations/kritik/blob/main/docs/setup.md)
 covers creating the GitHub App, and the dashboard's setup checklist shows

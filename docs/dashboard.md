@@ -102,14 +102,13 @@ head, or cancelling a review that is not running, is a `409 Conflict`.
 
 ## Operational notes
 
-- A configuration file that does not load at boot fails startup. After
-  boot, one that does not load, or that the leader cannot apply to the
-  store, keeps the last good configuration running and raises the
-  `kritik_config_error` gauge (labelled `load` or `apply`) until a later
-  attempt succeeds.
-- A secret referenced by `file:` is only re-read when the configuration
-  file itself changes, not on the referenced file's own schedule: rotate
-  the file, then touch or reapply the configuration to pick it up.
+- The configuration is read at startup. A file that does not load fails
+  startup, so a rollout that brings one leaves the pods before it
+  serving; one the leader cannot apply to the store raises the
+  `kritik_config_error` gauge (labelled `apply`) until a later attempt
+  succeeds.
+- A secret, from a variable or a `file:` reference, is read at startup
+  too: restart the pods after rotating one.
 - A role mapping is only as trustworthy as what it reads. Map on groups
   or roles the IdP controls, not on an email or name a user can set on
   their own profile.

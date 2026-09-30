@@ -2,8 +2,6 @@ package configfile
 
 import (
 	"fmt"
-	"io"
-	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -520,75 +518,6 @@ func TestJobTimeoutBounds(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestWatch(t *testing.T) {
-	t.Setenv("TEST_PRIVATE_KEY", "tok")
-	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	file := []byte(minimal)
-	named := func(name string) string { return strings.Replace(string(file), "name: acme-bot", "name: "+name, 1) }
-	write := func(s string) {
-		t.Helper()
-		if err := os.WriteFile(path, []byte(s), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write(string(file))
-
-	applied := make(chan *File, 4)
-	rejected := make(chan error, 1)
-	ctx := t.Context()
-	go Watch(ctx, path, 20*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)),
-		func(f *File) { applied <- f }, func(err error) {
-			select {
-			case rejected <- err:
-			default:
-			}
-		})
-
-	expectNone := func(why string) {
-		t.Helper()
-		select {
-		case f := <-applied:
-			t.Fatalf("%s: unexpected apply of %d connections", why, len(f.Connections))
-		case <-time.After(150 * time.Millisecond):
-		}
-	}
-	expectApply := func(name string) {
-		t.Helper()
-		select {
-		case f := <-applied:
-			if f.Connections[0].Name != name {
-				t.Fatalf("applied connection %q, want %q", f.Connections[0].Name, name)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatalf("no apply for %q", name)
-		}
-	}
-
-	expectNone("unchanged content on the first ticks")
-	write(named("acme-two"))
-	expectApply("acme-two")
-	select {
-	case <-rejected: // a tick that caught an earlier write half done
-	default:
-	}
-	write("connections: [{ name: Bad }]\n")
-	expectNone("an invalid file must not be applied")
-	// A tick can also catch a write half done, so only that the invalid
-	// file was reported is certain, not how many times.
-	select {
-	case <-rejected:
-	case <-time.After(2 * time.Second):
-		t.Fatal("an invalid file was not reported rejected")
-	}
-	// Reverting to the content last applied applies it again, so the caller
-	// learns the invalid file is gone.
-	write(named("acme-two"))
-	expectApply("acme-two")
-	write(named("acme-three"))
-	expectApply("acme-three")
 }
 
 func TestScopePrecedence(t *testing.T) {

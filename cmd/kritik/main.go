@@ -126,26 +126,19 @@ func run() error {
 	// The runner gets everything it needs from its Job spec; every other role
 	// is driven by the configuration file, and must not start without it.
 	var current *configfile.Current
-	var configErr func() error
 	var exec executor.Executor
 	if role != config.RoleRunner {
-		// current is the last good configuration; the leader applies it on
-		// election and on every reload, followers only compare hashes.
-		src := &configsource.Source{
-			Logger: logger, Errors: configErrors, RequireSignIn: role == config.RoleAll || role == config.RoleWeb,
-		}
+		// current is the configuration read at startup; the leader applies
+		// it on election, followers only compare hashes.
+		src := &configsource.Source{RequireSignIn: role == config.RoleAll || role == config.RoleWeb}
 		file, err := src.Load(cfg.ConfigFile)
 		if err != nil {
 			return err
 		}
 		logConfig(logger, file, "configuration loaded")
-		current, configErr = src.Current, src.LastError
+		current = src.Current
 		g.Go(func() error {
-			src.Run(ctx, cfg.ConfigFile, cfg.ConfigReloadInterval)
-			return nil
-		})
-		g.Go(func() error {
-			return reportDrift(ctx, st, current, drift, cfg.ConfigReloadInterval)
+			return reportDrift(ctx, st, current, drift, driftInterval)
 		})
 		if st.LeaderEligible() {
 			// Only an all or worker role holds the owner DSN, so a leader
@@ -188,7 +181,7 @@ func run() error {
 		hooks := server.NewHooks(cfg.Addr, cfg.WebBasePath(), handler, logger)
 		g.Go(func() error { return hooks.Run(ctx) })
 	}
-	if err := startWeb(ctx, g, role, st, cfg, current, configErr, logger); err != nil {
+	if err := startWeb(ctx, g, role, st, cfg, current, logger); err != nil {
 		return err
 	}
 	if role == config.RoleAll || role == config.RoleWorker {
@@ -302,11 +295,10 @@ func storeOptions(role config.Role, cfg *config.Config, logger *slog.Logger) sto
 const webDrain = 10 * time.Second
 
 // startWeb serves the dashboard, its sign-in and its API on WebAddr until
-// ctx ends, for the all and web roles. configErr is why the configuration
-// file's latest content was refused, for the Configuration page.
+// ctx ends, for the all and web roles.
 func startWeb(
 	ctx context.Context, g *errgroup.Group, role config.Role, st *store.Store, cfg *config.Config, current *configfile.Current,
-	configErr func() error, logger *slog.Logger,
+	logger *slog.Logger,
 ) error {
 	if role != config.RoleAll && role != config.RoleWeb {
 		return nil
@@ -323,7 +315,7 @@ func startWeb(
 		return fmt.Errorf("river: %w", err)
 	}
 	api := webapi.New(webapi.Config{
-		Store: st, Current: current, Auth: authHandler, UI: web.FS(), ConfigError: configErr,
+		Store: st, Current: current, Auth: authHandler, UI: web.FS(),
 		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: queue}, Env: cfg.Env(),
 	})
 	g.Go(func() error { return api.Run(ctx) })
@@ -589,6 +581,10 @@ func applyLoop(
 		}
 	}
 }
+
+// driftInterval is how often a replica compares its configuration with
+// the one the leader applied, which differ while a rollout is part done.
+const driftInterval = 10 * time.Second
 
 // reportDrift compares this replica's file with what the leader applied and
 // exposes a mismatch as a gauge. It is deliberately not on /readyz: a stale

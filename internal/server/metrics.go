@@ -30,16 +30,13 @@ type ConfigErrorStage string
 
 // Configuration error stages.
 const (
-	// ConfigErrorLoad is the file's latest content failing to parse,
-	// resolve or validate, which leaves the last good configuration live.
-	ConfigErrorLoad ConfigErrorStage = "load"
 	// ConfigErrorApply is the leader's store refusing the merged snapshot;
 	// the last applied state stays live.
 	ConfigErrorApply ConfigErrorStage = "apply"
 )
 
 // Valid reports whether s is a stage.
-func (s ConfigErrorStage) Valid() bool { return s == ConfigErrorLoad || s == ConfigErrorApply }
+func (s ConfigErrorStage) Valid() bool { return s == ConfigErrorApply }
 
 // ConfigErrorGauge is 1 for a stage while its latest attempt failed.
 type ConfigErrorGauge struct{ g *prometheus.GaugeVec }
@@ -48,12 +45,10 @@ type ConfigErrorGauge struct{ g *prometheus.GaugeVec }
 func NewConfigErrorGauge(reg prometheus.Registerer) *ConfigErrorGauge {
 	g := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "kritik_config_error",
-		Help: "1 while the latest attempt at a stage (load, apply) of the configuration failed, else 0.",
+		Help: "1 while the latest attempt at a stage (apply) of the configuration failed, else 0.",
 	}, []string{"stage"})
 	reg.MustRegister(g)
-	for _, s := range []ConfigErrorStage{ConfigErrorLoad, ConfigErrorApply} {
-		g.WithLabelValues(string(s)).Set(0)
-	}
+	g.WithLabelValues(string(ConfigErrorApply)).Set(0)
 	return &ConfigErrorGauge{g: g}
 }
 

@@ -45,10 +45,6 @@ type Config struct {
 	// Env is this process's environment as the configuration read it,
 	// shown to admins; secrets show only whether they are set.
 	Env []config.EnvVar
-	// ConfigError is why the configuration file's latest content was
-	// refused, nil while the running configuration is its latest content;
-	// nil reports none.
-	ConfigError func() error
 	// GitHubAPI is the GitHub API the connections' Apps call, "" for
 	// api.github.com; tests point it at a server of their own.
 	GitHubAPI string
@@ -56,20 +52,19 @@ type Config struct {
 
 // Server serves the dashboard.
 type Server struct {
-	store       *store.Store
-	current     *configfile.Current
-	auth        *auth.Handler
-	actions     Actions
-	version     string
-	webURL      *url.URL
-	ui          fs.FS
-	basePath    string
-	logger      *slog.Logger
-	now         func() time.Time
-	hub         *hub
-	env         []config.EnvVar
-	configError func() error
-	githubAPI   string
+	store     *store.Store
+	current   *configfile.Current
+	auth      *auth.Handler
+	actions   Actions
+	version   string
+	webURL    *url.URL
+	ui        fs.FS
+	basePath  string
+	logger    *slog.Logger
+	now       func() time.Time
+	hub       *hub
+	env       []config.EnvVar
+	githubAPI string
 }
 
 // New builds a Server from cfg.
@@ -80,13 +75,10 @@ func New(cfg Config) *Server {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	if cfg.ConfigError == nil {
-		cfg.ConfigError = func() error { return nil }
-	}
 	return &Server{
 		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, actions: cfg.Actions, version: cfg.Version,
 		webURL: cfg.WebURL, ui: cfg.UI, basePath: strings.TrimRight(cfg.WebURL.Path, "/"),
-		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger), env: cfg.Env, configError: cfg.ConfigError,
+		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger), env: cfg.Env,
 		githubAPI: cfg.GitHubAPI,
 	}
 }

@@ -740,9 +740,6 @@ export interface SetupStatus {
   // defaults.models.review, '' when unset.
   reviewModel: string;
   embedding: boolean;
-  // Why the configuration file's latest content was refused, '' while the
-  // running configuration is its latest content.
-  configError: string;
 }
 
 export interface RegisterResult {

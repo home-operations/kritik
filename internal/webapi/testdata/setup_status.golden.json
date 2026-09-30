@@ -3,6 +3,5 @@
   "hooksUrl": "https://kritik.example/hooks/",
   "connections": ["alpha-bot"],
   "reviewModel": "openrouter/acme-large",
-  "embedding": false,
-  "configError": ""
+  "embedding": false
 }

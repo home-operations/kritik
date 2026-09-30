@@ -64,9 +64,19 @@ spec:
         {{- with $.Values.podLabels }}
         {{- tpl (toYaml .) $ | nindent 8 }}
         {{- end }}
-      {{- with $.Values.podAnnotations }}
+      {{- $checksum := "" }}
+      {{- if and $.Values.config.file (not $.Values.config.existingConfigMap) }}
+      {{- $checksum = toYaml $.Values.config.file | sha256sum }}
+      {{- end }}
+      {{- if or $checksum $.Values.podAnnotations }}
       annotations:
+        {{- with $checksum }}
+        # kritik reads the file at startup (ADR-0022), so a change rolls the pods.
+        checksum/config: {{ . }}
+        {{- end }}
+        {{- with $.Values.podAnnotations }}
         {{- tpl (toYaml .) $ | nindent 8 }}
+        {{- end }}
       {{- end }}
     spec:
       # The Service is named after the release; the kubelet's legacy link
@@ -101,8 +111,6 @@ spec:
             - name: KRITIK_WEB_URL
               value: {{ tpl $.Values.web.url $ | quote }}
             {{- include "kritik.authEnv" $ | nindent 12 }}
-            - name: KRITIK_CONFIG_RELOAD_INTERVAL
-              value: {{ tpl (toString $.Values.config.reloadInterval) $ | quote }}
             - name: KRITIK_LOG_LEVEL
               value: {{ tpl $.Values.config.logLevel $ | quote }}
             - name: KRITIK_LOG_FORMAT
