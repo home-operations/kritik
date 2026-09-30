@@ -10,7 +10,8 @@
   and [ADR-0010](0010-configuration-layers.md), which lets `.kritik.yaml`
   of §2.3 choose within operator bounds and has the worker read it first,
   and [ADR-0014](0014-github-app-only-self-hosted.md), which removes the
-  Forgejo and Gitea support of §2.1.
+  Forgejo and Gitea support of §2.1, and [ADR-0026](0026-agentic-only.md),
+  which removes the `mode` key of §2.3 and makes §2.6 the only mode.
 - **Date:** 2026-09-24
 - **Amended:** 2026-09-26, to route `forge: gitea` through the Forgejo
   client of §2.1 rather than a separate implementation; 2026-09-29, to

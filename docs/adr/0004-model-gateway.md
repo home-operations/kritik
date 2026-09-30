@@ -12,7 +12,9 @@
   as merged; what remains of it is the credential question, decided here.
 - **Amended by:** [ADR-0008](0008-runner-tools.md), which makes the
   gateway the runner pod's only route out, as a forward proxy with a host
-  allowlist, before it fronts model calls.
+  allowlist, before it fronts model calls, and
+  [ADR-0026](0026-agentic-only.md), which adds the similar-code endpoint
+  §2 leaves unbuilt.
 - **Authors:** onedr0p.
 
 > Scope: where the provider credential lives when a runner pod runs the
