@@ -1,4 +1,4 @@
-# Webhook listener.
+# The public listener: the webhooks and the dashboard.
 apiVersion: v1
 kind: Service
 metadata:
@@ -37,25 +37,6 @@ spec:
   selector:
     {{- include "kritik.selectorLabels" . | nindent 4 }}
 {{- end }}
----
-# Dashboard.
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "kritik.fullname" . }}-web
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kritik.labels" . | nindent 4 }}
-    app.kubernetes.io/component: web
-spec:
-  type: {{ .Values.service.type }}
-  ports:
-    - name: web
-      port: {{ .Values.service.webPort }}
-      targetPort: web
-      protocol: TCP
-  selector:
-    {{- include "kritik.selectorLabels" . | nindent 4 }}
 ---
 # Metrics.
 apiVersion: v1

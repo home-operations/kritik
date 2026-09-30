@@ -1,8 +1,8 @@
 {{- if .Values.httpRoute.enabled -}}
 {{- $route := .Values.httpRoute -}}
 {{- $base := include "kritik.webPath" . -}}
-# One HTTPRoute for web.url: the webhook listener under /hooks, the dashboard
-# everywhere else (ADR-0014 §2.1).
+# One HTTPRoute for web.url, to the public listener: the webhooks under
+# /hooks and the dashboard everywhere else (ADR-0024 §2.2).
 apiVersion: {{ $route.apiVersion | default "gateway.networking.k8s.io/v1" }}
 kind: HTTPRoute
 metadata:
@@ -28,15 +28,8 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: {{ printf "%s/hooks" $base | quote }}
+            value: {{ $base | default "/" | quote }}
       backendRefs:
         - name: {{ include "kritik.fullname" . }}
           port: {{ .Values.service.port }}
-    - matches:
-        - path:
-            type: PathPrefix
-            value: {{ $base | default "/" | quote }}
-      backendRefs:
-        - name: {{ include "kritik.fullname" . }}-web
-          port: {{ .Values.service.webPort }}
 {{- end }}

@@ -15,14 +15,12 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # No `from`: the webhook and metrics ports are reachable by any peer;
+    # No `from`: the public and metrics ports are reachable by any peer;
     # lock down per cluster with your own policy if needed.
     - ports:
         - port: {{ .Values.service.port }}
           protocol: TCP
         - port: {{ .Values.service.metricsPort }}
-          protocol: TCP
-        - port: {{ .Values.web.port }}
           protocol: TCP
     {{- if .Values.gateway.enabled }}
     # The gateway is for runner pods alone.

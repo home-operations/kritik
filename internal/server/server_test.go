@@ -59,36 +59,38 @@ func TestManagementHandler(t *testing.T) {
 	})
 }
 
-func TestHooksHandlerRouting(t *testing.T) {
-	h := NewHooks(":0", "/kritik/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestPublicRouting(t *testing.T) {
+	hooks := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(r.PathValue("connection")))
-	}), slog.New(slog.NewTextHandler(io.Discard, nil)))
-	srv := httptest.NewServer(h.Handler())
+		_, _ = w.Write([]byte("hook " + r.PathValue("connection")))
+	})
+	web := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("web")) })
+	srv := httptest.NewServer(Public("/kritik/", hooks, web))
 	defer srv.Close()
 
-	tests := []struct {
+	for _, tt := range []struct {
 		name   string
 		method string
 		path   string
-		want   int
+		want   string
 	}{
-		{name: "post to a connection", method: http.MethodPost, path: "/hooks/sticky-gecko", want: http.StatusAccepted},
-		{name: "get is not routable", method: http.MethodGet, path: "/hooks/sticky-gecko", want: http.StatusMethodNotAllowed},
-		{name: "bare hooks path", method: http.MethodPost, path: "/hooks", want: http.StatusNotFound},
-		{name: "post under the dashboard's base path", method: http.MethodPost, path: "/kritik/hooks/sticky-gecko", want: http.StatusAccepted},
-		{name: "another base path", method: http.MethodPost, path: "/other/hooks/sticky-gecko", want: http.StatusNotFound},
-	}
-	for _, tt := range tests {
+		{"post to a connection", http.MethodPost, "/hooks/sticky-gecko", "hook sticky-gecko"},
+		{"post under the dashboard's base path", http.MethodPost, "/kritik/hooks/sticky-gecko", "hook sticky-gecko"},
+		{"a get is the dashboard's", http.MethodGet, "/hooks/sticky-gecko", "web"},
+		{"the bare hooks path is the dashboard's", http.MethodPost, "/hooks", "web"},
+		{"another base path is the dashboard's", http.MethodPost, "/other/hooks/sticky-gecko", "web"},
+		{"the dashboard", http.MethodGet, "/kritik/", "web"},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
 			req, _ := http.NewRequest(tt.method, srv.URL+tt.path, nil)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal(err)
 			}
+			body, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
-			if resp.StatusCode != tt.want {
-				t.Fatalf("%s %s = %d, want %d", tt.method, tt.path, resp.StatusCode, tt.want)
+			if string(body) != tt.want {
+				t.Fatalf("%s %s = %q, want %q", tt.method, tt.path, body, tt.want)
 			}
 		})
 	}

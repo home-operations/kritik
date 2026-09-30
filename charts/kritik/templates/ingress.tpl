@@ -1,7 +1,7 @@
 {{- if .Values.ingress.enabled -}}
 {{- $base := include "kritik.webPath" . -}}
-# One Ingress for web.url: the webhook listener under /hooks, the dashboard
-# everywhere else (ADR-0014 §2.1).
+# One Ingress for web.url, to the public listener: the webhooks under /hooks
+# and the dashboard everywhere else (ADR-0024 §2.2).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -25,18 +25,11 @@ spec:
     - host: {{ include "kritik.webHost" . | quote }}
       http:
         paths:
-          - path: {{ printf "%s/hooks" $base | quote }}
+          - path: {{ $base | default "/" | quote }}
             pathType: Prefix
             backend:
               service:
                 name: {{ include "kritik.fullname" . }}
                 port:
                   name: http
-          - path: {{ $base | default "/" | quote }}
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "kritik.fullname" . }}-web
-                port:
-                  name: web
 {{- end }}

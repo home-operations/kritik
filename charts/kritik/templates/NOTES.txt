@@ -4,12 +4,12 @@ Open {{ tpl .Values.web.url . }} to sign in. The GitHub Apps, model providers
 and review settings come from config.file and its KRITIK_* variables (see
 docs/configuration.md); the dashboard turns each repository on or off.
 
-GitHub delivers each app's webhook to {{ tpl .Values.web.url . | trimSuffix "/" }}/hooks/<app name>:
+GitHub delivers each app's webhook to {{ tpl .Values.web.url . | trimSuffix "/" }}/hooks/<app name>,
+which kritik serves beside the dashboard:
 {{- if or .Values.ingress.enabled .Values.httpRoute.enabled }} the chart's
-{{ if .Values.ingress.enabled }}Ingress{{ else }}HTTPRoute{{ end }} routes /hooks there to the webhook listener.
-{{- else }} route /hooks under
-that URL to the webhook listener, {{ include "kritik.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }},
-and the rest to the dashboard, {{ include "kritik.fullname" . }}-web.{{ .Release.Namespace }}.svc:{{ .Values.service.webPort }}.
+{{ if .Values.ingress.enabled }}Ingress{{ else }}HTTPRoute{{ end }} routes that URL to it.
+{{- else }} route that URL to
+{{ include "kritik.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}.
 {{- end }}
 
 Runner Jobs appear in this namespace as kritik-run-*; every run is also recorded

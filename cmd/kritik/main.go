@@ -178,31 +178,47 @@ func serve(
 	} else {
 		logger.Warn("no owner DSN configured; this replica can never migrate or apply configuration")
 	}
-	if err := startHooks(ctx, g, st, cfg, current, m, logger); err != nil {
-		return err
-	}
-	if err := startWeb(ctx, g, st, cfg, current, logger); err != nil {
+	if err := startPublic(ctx, g, st, cfg, current, m, logger); err != nil {
 		return err
 	}
 	return startWorker(ctx, g, st, cfg, current, exec, m, logger)
 }
 
-// startHooks serves the webhook listener on Addr until ctx ends. Its
-// River client only inserts: the queues are worked by startWorker's.
-func startHooks(
+// startPublic serves the one public listener on Addr until ctx ends
+// (ADR-0024 §2.2): the webhooks, and the dashboard with its sign-in and
+// API. Their River clients only insert: the queues are worked by
+// startWorker's.
+func startPublic(
 	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current, m *metrics.Metrics,
 	logger *slog.Logger,
 ) error {
-	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
+	hookQueue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
 	}
-	svc := ingest.NewService(st, queue)
-	handler := ingest.NewHandler(current, svc, logger)
-	handler.Metrics = m
-	handler.Deliveries = svc
-	hooks := server.NewHooks(cfg.Addr, cfg.WebBasePath(), handler, logger)
-	g.Go(func() error { return hooks.Run(ctx) })
+	svc := ingest.NewService(st, hookQueue)
+	hooks := ingest.NewHandler(current, svc, logger.With("listener", "hooks"))
+	hooks.Metrics = m
+	hooks.Deliveries = svc
+
+	webLogger := logger.With("listener", "web")
+	authHandler, err := auth.New(auth.Config{Store: st, Current: current, WebURL: cfg.WebURLParsed(), Logger: webLogger})
+	if err != nil {
+		return err
+	}
+	webQueue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: webLogger})
+	if err != nil {
+		return fmt.Errorf("river: %w", err)
+	}
+	api := webapi.New(webapi.Config{
+		Store: st, Current: current, Auth: authHandler, UI: web.FS(),
+		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: webQueue}, Env: cfg.Env(),
+	})
+	g.Go(func() error { return api.Run(ctx) })
+	public := server.Public(cfg.WebBasePath(), hooks, api.Handler())
+	g.Go(func() error {
+		return server.ServeDrain(ctx, cfg.Addr, public, publicDrain, logger.With("listener", "public"))
+	})
 	return nil
 }
 
@@ -295,39 +311,10 @@ func storeOptions(command config.Command, cfg *config.Config, logger *slog.Logge
 	return opts
 }
 
-// webDrain is how long a stopping dashboard lets requests finish. Event
-// streams end at once, when the API's Run returns.
-const webDrain = 10 * time.Second
+// publicDrain is how long a stopping serve lets webhook and dashboard
+// requests finish. Event streams end at once, when the API's Run returns.
+const publicDrain = 10 * time.Second
 
-// startWeb serves the dashboard, its sign-in and its API on WebAddr until
-// ctx ends.
-func startWeb(
-	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current, logger *slog.Logger,
-) error {
-	webLogger := logger.With("listener", "web")
-	authHandler, err := auth.New(auth.Config{Store: st, Current: current, WebURL: cfg.WebURLParsed(), Logger: webLogger})
-	if err != nil {
-		return err
-	}
-	// Insert-only River client: the dashboard enqueues re-runs, cancels and
-	// reindexes, it never works jobs.
-	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: webLogger})
-	if err != nil {
-		return fmt.Errorf("river: %w", err)
-	}
-	api := webapi.New(webapi.Config{
-		Store: st, Current: current, Auth: authHandler, UI: web.FS(),
-		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: queue}, Env: cfg.Env(),
-	})
-	g.Go(func() error { return api.Run(ctx) })
-	g.Go(func() error { return server.ServeDrain(ctx, cfg.WebAddr, api.Handler(), webDrain, webLogger) })
-	return nil
-}
-
-// startQueue starts the River client, retrying for a while when the
-// database is briefly unavailable: right after a fresh cluster's initdb the
-// first queue upsert can time out, and River cleans up after a failed
-// start, so trying again is safe and beats a crash loop.
 // workQueues works the job queues until ctx ends, then waits for River's
 // soft stop to let running jobs finish or cut them. The queue's tables come
 // from migrations, which the leader runs; on a fresh database that may be
