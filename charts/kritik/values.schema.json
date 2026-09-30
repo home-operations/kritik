@@ -177,7 +177,7 @@
           "type": "string"
         },
         "extraEnv": {
-          "description": "Extra raw env vars merged into every role's container (advanced).",
+          "description": "Extra raw env vars merged into the kritik serve container (advanced).",
           "items": {
             "required": []
           },
@@ -327,7 +327,7 @@
       "type": "object"
     },
     "deploymentAnnotations": {
-      "description": "Annotations added to every Deployment (e.g. `reloader.stakater.com/auto: \"true\"`). Pod-level annotations go in `podAnnotations`.",
+      "description": "Annotations added to the Deployment (e.g. `reloader.stakater.com/auto: \"true\"`). Pod-level annotations go in `podAnnotations`.",
       "required": [],
       "title": "deploymentAnnotations",
       "type": "object"
@@ -435,7 +435,7 @@
       "type": "object"
     },
     "imagePullSecrets": {
-      "description": "Image pull secrets for private registries.",
+      "description": "Image pull secrets for private registries, for the kritik serve pods and, through the runner ServiceAccount, runner Jobs and the tool images they mount.",
       "items": {
         "required": []
       },
@@ -518,7 +518,7 @@
             },
             "enabled": {
               "default": false,
-              "description": "Create a Prometheus Operator ServiceMonitor for every role's metrics (requires its CRDs).",
+              "description": "Create a Prometheus Operator ServiceMonitor for the metrics Service (requires its CRDs).",
               "title": "enabled",
               "type": "boolean"
             },
@@ -577,7 +577,7 @@
       "properties": {
         "allowDNS": {
           "default": true,
-          "description": "Allow DNS egress (UDP/TCP 53).",
+          "description": "Allow DNS egress (UDP/TCP 53); the Cilium flavor allows it to kube-dns alone.",
           "title": "allowDNS",
           "type": "boolean"
         },
@@ -605,6 +605,12 @@
           "description": "Postgres port allowed for egress.",
           "title": "postgresPort",
           "type": "integer"
+        },
+        "type": {
+          "default": "default",
+          "description": "Policy flavor for your CNI: \"default\" (networking.k8s.io/v1 NetworkPolicy), \"cilium\" (CiliumNetworkPolicy) or \"calico\" (projectcalico.org/v3 NetworkPolicy).",
+          "title": "type",
+          "type": "string"
         }
       },
       "required": [],
@@ -633,9 +639,19 @@
         },
         "maxUnavailable": {
           "default": 1,
-          "description": "Maximum pods that may be unavailable, as a count or percentage.",
+          "description": "Maximum pods that may be unavailable, as a count or percentage; takes precedence over `minAvailable` when set.",
           "required": [],
           "title": "maxUnavailable",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "minAvailable": {
+          "default": "",
+          "description": "Minimum pods that must stay available, as a count or percentage. Used unless `maxUnavailable` is set.",
+          "required": [],
+          "title": "minAvailable",
           "type": [
             "integer",
             "string"
@@ -816,7 +832,7 @@
             },
             "create": {
               "default": true,
-              "description": "Create the runner ServiceAccount (no permissions, no token mounted).",
+              "description": "Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry.",
               "title": "create",
               "type": "boolean"
             },
@@ -832,7 +848,7 @@
           "type": "object"
         },
         "tools": {
-          "description": "Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS, ADR-0011), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides.",
+          "description": "Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS, ADR-0011), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster.",
           "items": {
             "required": []
           },
@@ -851,7 +867,7 @@
       "type": "object"
     },
     "secretEnv": {
-      "description": "The secrets the configuration file names (GitHub App private keys and\nwebhook secrets, model keys, sign-in secrets) and the `KRITIK_*` secret\nvariables (ADR-0022 §2.2). Each entry sets the variable `name` in every\nrole's pods from `key` of the existing Secret `secretName`; kritik drops\nit from its own environment once read.\nEnvironment variables set from existing Secrets, for the configuration file's `{ env: NAME }` references.",
+      "description": "The secrets the configuration file names (GitHub App private keys and\nwebhook secrets, model keys, sign-in secrets) and the `KRITIK_*` secret\nvariables (ADR-0022 §2.2). Each entry sets the variable `name` in the\nkritik serve pods from `key` of the existing Secret `secretName`; kritik\ndrops it from its own environment once read. Runner pods never get them:\neach is handed its own per-run credentials.\nEnvironment variables set from existing Secrets, for the configuration file's `{ env: NAME }` references.",
       "items": {
         "required": []
       },
@@ -986,11 +1002,74 @@
       "title": "startupProbe",
       "type": "object"
     },
+    "strategy": {
+      "description": "Deployment update strategy. A rolling update that surges one pod and takes none down keeps one replica serving while the other is replaced (ADR-0022 §2.3). Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`.",
+      "properties": {
+        "rollingUpdate": {
+          "properties": {
+            "maxSurge": {
+              "default": 1,
+              "title": "maxSurge",
+              "type": "integer"
+            },
+            "maxUnavailable": {
+              "default": 0,
+              "title": "maxUnavailable",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "rollingUpdate",
+          "type": "object"
+        },
+        "type": {
+          "default": "RollingUpdate",
+          "title": "type",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "strategy",
+      "type": "object"
+    },
     "terminationGracePeriodSeconds": {
       "default": 150,
       "description": "Grace period for a clean shutdown: kritik serve keeps accepting webhooks, dashboard requests and model steps for 5s while traffic moves off the pod, stops taking jobs and lets running ones finish for up to 100s, then retries the reviews it cut, and its gateway lets model steps in flight finish for up to 2m.",
       "title": "terminationGracePeriodSeconds",
       "type": "integer"
+    },
+    "tests": {
+      "description": "Config for the chart's `helm test` hook: a one-shot pod that curls the\nmetrics Service's /readyz to prove the release serves. Used only by `helm\ntest`, never the workload.",
+      "properties": {
+        "image": {
+          "properties": {
+            "pullPolicy": {
+              "default": "IfNotPresent",
+              "description": "`helm test` image pull policy.",
+              "title": "pullPolicy",
+              "type": "string"
+            },
+            "repository": {
+              "default": "mirror.gcr.io/curlimages/curl",
+              "description": "`helm test` connection-pod image; a gcr-mirrored curl, so the test never pulls from Docker Hub.",
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777",
+              "description": "`helm test` image, pinned as `tag",
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image",
+          "type": "object"
+        }
+      },
+      "required": [],
+      "title": "tests",
+      "type": "object"
     },
     "tolerations": {
       "description": "Tolerations for pod scheduling.",
@@ -1000,8 +1079,63 @@
       "title": "tolerations",
       "type": "array"
     },
+    "topologySpreadConstraints": {
+      "description": "Spread the kritik serve pods across nodes, so a node loss does not take both replicas: a soft constraint, so a one-node cluster still schedules them. Rendered through `tpl`; empty leaves scheduling to Kubernetes.",
+      "items": {
+        "anyOf": [
+          {
+            "properties": {
+              "labelSelector": {
+                "properties": {
+                  "matchLabels": {
+                    "properties": {
+                      "app.kubernetes.io/instance": {
+                        "default": "{{ .Release.Name }}",
+                        "title": "app.kubernetes.io/instance",
+                        "type": "string"
+                      },
+                      "app.kubernetes.io/name": {
+                        "default": "{{ include \"kritik.name\" . }}",
+                        "title": "app.kubernetes.io/name",
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "title": "matchLabels",
+                    "type": "object"
+                  }
+                },
+                "required": [],
+                "title": "labelSelector",
+                "type": "object"
+              },
+              "maxSkew": {
+                "default": 1,
+                "title": "maxSkew",
+                "type": "integer"
+              },
+              "topologyKey": {
+                "default": "kubernetes.io/hostname",
+                "title": "topologyKey",
+                "type": "string"
+              },
+              "whenUnsatisfiable": {
+                "default": "ScheduleAnyway",
+                "title": "whenUnsatisfiable",
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        ],
+        "required": []
+      },
+      "title": "topologySpreadConstraints",
+      "type": "array"
+    },
     "volumeMounts": {
-      "description": "Additional volume mounts on every container.",
+      "description": "Additional volume mounts on the kritik serve container.",
       "items": {
         "required": []
       },
@@ -1009,7 +1143,7 @@
       "type": "array"
     },
     "volumes": {
-      "description": "Additional volumes on every Deployment.",
+      "description": "Additional volumes on the Deployment.",
       "items": {
         "required": []
       },
