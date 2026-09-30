@@ -32,6 +32,8 @@ type RunConfig struct {
 	Dir string
 	// Env is the commands' whole environment.
 	Env []string
+	// CommandEnv adds variables to one command's environment, by name.
+	CommandEnv map[string][]string
 	// Commands map each name the model may run to the binary it runs.
 	Commands map[string]string
 	// Timeout bounds one command.
@@ -47,8 +49,8 @@ type RunConfig struct {
 
 // RunTool executes one allowlisted binary with the model's arguments,
 // directly and without a shell, in a checkout of the head commit
-// (ADR-0008), and records every http(s) URL curl is given as a source the
-// review consulted.
+// (ADR-0008), and records as a source the review consulted every http(s)
+// URL curl is given and what each gh call reads (ADR-0023).
 type RunTool struct {
 	cfg     RunConfig
 	names   []string
@@ -76,13 +78,19 @@ func NewRunTool(c RunConfig) *RunTool {
 // Names are the commands the tool offers, sorted.
 func (rt *RunTool) Names() []string { return rt.names }
 
-// Sources are the URLs curl was given, in first-use order, never nil.
+// Sources are the URLs curl was given and gh read, in first-use order,
+// never nil.
 func (rt *RunTool) Sources() []string { return append([]string{}, rt.sources...) }
 
 func (rt *RunTool) Def() model.ToolDef {
 	desc := fmt.Sprintf("Run one of these commands in a checkout of the head commit: %s. The command runs directly, "+
 		"without a shell: arguments are passed exactly as given, with no globbing, pipes or redirection. It is stopped "+
 		"after %s, and its exit code and combined output are returned.", strings.Join(rt.names, ", "), rt.cfg.Timeout)
+	if slices.Contains(rt.names, "gh") {
+		desc += " Use gh, not curl, for anything on GitHub: it is signed in to read public repositories, such as " +
+			"`gh release view <tag> -R <owner>/<repo>`, `gh api repos/<owner>/<repo>/compare/<base>...<head>` or " +
+			"`gh api repos/<owner>/<repo>/contents/<path>?ref=<tag>`."
+	}
 	if slices.Contains(rt.names, "curl") {
 		if rt.cfg.Proxied {
 			desc += " The network is reached through a gateway that allows only some hosts. Give curl http:// URLs: " +
@@ -109,15 +117,20 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	if !ok {
 		return "", fmt.Errorf("agent: run: %q is not one of %s", req.Command, strings.Join(rt.names, ", "))
 	}
-	if req.Command == "curl" {
+	switch req.Command {
+	case "curl":
 		rt.record(req.Args)
+	case "gh":
+		if s := ghSource(req.Args); s != "" {
+			rt.record([]string{s})
+		}
 	}
 
 	cctx, cancel := context.WithTimeout(ctx, rt.cfg.Timeout)
 	defer cancel()
 	out := &cappedBuffer{max: rt.cfg.MaxOutputBytes}
 	cmd := exec.CommandContext(cctx, bin, req.Args...)
-	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, rt.cfg.Env, out, out
+	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(rt.cfg.Env), rt.cfg.CommandEnv[req.Command]...), out, out
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
 	cmd.WaitDelay = time.Second

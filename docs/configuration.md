@@ -275,7 +275,7 @@ repositories:
         }
   org-1/repo-1:
     feedback: minimal
-    agent: { commands: [curl] }
+    agent: { commands: [gh, curl] }
 ```
 
 Each takes the keys a repository's own `.kritik.yaml` takes, at the same
@@ -285,7 +285,11 @@ level (`mode`, `models`, `feedback`, `comments`, `requireSuggestedFix`,
 
 - `agent`: an agentic review's `maxSteps`, `maxToolOutputBytes`,
   `maxTokens`, `timeout`, the `commands` its run tool may execute, and
-  their `commandTimeout`.
+  their `commandTimeout`. The runner's `-tools` image has `gh`, `curl`,
+  `fd` and `rg`; the agent is told to use `gh` for GitHub, which signs in
+  with a token minted for the run that can only read the repository under
+  review and public repositories
+  ([ADR-0023](adr/0023-gh-in-runners.md)).
 - `settle`: how long a new head waits before its review starts, so a
   burst of pushes is reviewed once.
 - `forks: true`: reviews pull requests from forks without being asked; by
@@ -376,9 +380,9 @@ served.
 ## `egress`
 
 `egress` is what runner pods may reach through the worker's gateway beyond
-GitHub: `allowHosts`, exact or `*.`-prefixed, and `credentials`, a token
-the gateway adds to a plain `http://` request to that host, so the runner
-never holds it.
+`github.com` and `api.github.com`, which an app allows: `allowHosts`,
+exact or `*.`-prefixed, and `credentials`, a token the gateway adds to a
+plain `http://` request to that host, so the runner never holds it.
 
 ## How kritik runs
 

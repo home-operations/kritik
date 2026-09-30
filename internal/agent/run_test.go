@@ -171,6 +171,33 @@ func TestRunToolRecordsCurlSources(t *testing.T) {
 	}
 }
 
+// TestRunToolGH: only gh is given its extra environment, what it reads is
+// a source, and the tool steers GitHub lookups to it.
+func TestRunToolGH(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := NewRunTool(RunConfig{
+		Dir: t.TempDir(), Env: []string{helperEnv + "=1", "GOCOVERDIR=" + t.TempDir()},
+		CommandEnv: map[string][]string{"gh": {"GH_TOKEN=ghs_run"}},
+		Commands:   map[string]string{"gh": self, "rg": self}, Timeout: 2 * time.Second, MaxOutputBytes: 4096,
+	})
+	gh, err := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["api","repos/a/b/compare/v1...v2"]}`))
+	if err != nil || !strings.Contains(gh, "env=GH_TOKEN=ghs_run") {
+		t.Fatalf("gh out = %q, %v", gh, err)
+	}
+	if rg, _ := rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["x"]}`)); strings.Contains(rg, "GH_TOKEN") {
+		t.Fatalf("rg was given gh's environment: %q", rg)
+	}
+	if got := rt.Sources(); !slices.Equal(got, []string{"https://api.github.com/repos/a/b/compare/v1...v2"}) {
+		t.Fatalf("sources = %q", got)
+	}
+	if d := rt.Def().Description; !strings.Contains(d, "Use gh, not curl, for anything on GitHub") {
+		t.Fatalf("description = %q", d)
+	}
+}
+
 func TestRunToolDef(t *testing.T) {
 	proxied, _ := newTestRunTool(t, true)
 	def := proxied.Def()

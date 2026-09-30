@@ -80,7 +80,7 @@ func TestCommandTool(t *testing.T) {
 	t.Run("offers what is on PATH, over a checkout", func(t *testing.T) {
 		s := agenticSpec()
 		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 5
-		run, cleanup := commandTool(t.Context(), s, head, 1024, logger)
+		run, cleanup := commandTool(t.Context(), s, head, "ghs_run", 1024, logger)
 		if run == nil {
 			t.Fatal("no run tool")
 		}
@@ -111,7 +111,7 @@ func TestCommandTool(t *testing.T) {
 		for _, commands := range [][]string{nil, {"curl"}} {
 			s := agenticSpec()
 			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = commands, 5
-			run, cleanup := commandTool(t.Context(), s, head, 1024, logger)
+			run, cleanup := commandTool(t.Context(), s, head, "ghs_run", 1024, logger)
 			cleanup()
 			if run != nil {
 				t.Fatalf("%v: run tool offered with %v", commands, run.Names())

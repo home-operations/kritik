@@ -192,12 +192,15 @@ refused without the gateway.
 
 An agentic repository's `agent.commands` lets the model run allowlisted
 binaries over a checkout of the head commit: to read a dependency bump's
-release notes and compare view with `curl`, or search with `rg` and `fd`.
-The chart's image has none of them, so no command is offered; point
-`runner.image` at the release's `-tools` tag, an Alpine image with all
-three. Every host `curl` reaches must pass the gateway, so add the
-release APIs and registries to `egress.allowHosts` (an app already
-allows `github.com`):
+release notes and compare view with `gh`, fetch anything else with
+`curl`, or search with `rg` and `fd`. The chart's image has none of them,
+so no command is offered; point `runner.image` at the release's `-tools`
+tag, an Alpine image with all four. `gh` signs in with the run's own
+token, which can read only the repository under review and public
+repositories, and an app already allows `github.com` and `api.github.com`
+through the gateway. Every other host `curl` reaches must pass the
+gateway too, so add the release hosts and registries to
+`egress.allowHosts`:
 
 ```yaml
 runner:
@@ -210,15 +213,16 @@ and, in `config.file`:
 config:
   file:
     egress:
-      allowHosts: [api.github.com, "*.githubusercontent.com"]
+      allowHosts: ["*.githubusercontent.com"]
     repositories:
       org-1/repo-1:
         mode: agentic
-        agent: { commands: [curl, fd, rg] }
+        agent: { commands: [gh, curl, fd, rg] }
 ```
 
 A command runs without a shell, with an environment of `PATH`, its own
-`HOME` and the gateway, and the runner makes itself unreadable to it first,
+`HOME` and the gateway, `gh` also with the run's read-only token as
+`GH_TOKEN`, and the runner makes itself unreadable to it first,
 so a command cannot read the runner's credentials from `/proc`. The
 `-tools` image does have one, though, and `fd -x` or `rg --pre` can start
 it, and with it a script from the checkout: another reason to run runner
