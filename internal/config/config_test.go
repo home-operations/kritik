@@ -31,9 +31,6 @@ func TestLoad(t *testing.T) {
 				if lvl, _ := c.Level(); lvl != slog.LevelInfo {
 					t.Fatalf("level default = %v", lvl)
 				}
-				if c.WebAddr != ":8083" {
-					t.Fatalf("web addr default = %q", c.WebAddr)
-				}
 				if c.WebURL != "" || c.WebURLParsed() != nil {
 					t.Fatalf("web should be unconfigured by default: %+v", c)
 				}

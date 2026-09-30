@@ -9,7 +9,7 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: routes web.url's /hooks to the webhook listener and the rest to the dashboard
+  - it: routes web.url to the public Service, which serves the webhooks and the dashboard
     set:
       httpRoute.enabled: true
       httpRoute.parentRefs:
@@ -30,10 +30,8 @@ tests:
       - equal:
           path: spec.rules
           value:
-            - matches: [{ path: { type: PathPrefix, value: /hooks } }]
-              backendRefs: [{ name: RELEASE-NAME-kritik, port: 8080 }]
             - matches: [{ path: { type: PathPrefix, value: / } }]
-              backendRefs: [{ name: RELEASE-NAME-kritik-web, port: 8083 }]
+              backendRefs: [{ name: RELEASE-NAME-kritik, port: 8080 }]
 
   - it: keeps web.url's path
     set:
@@ -42,7 +40,4 @@ tests:
     asserts:
       - equal:
           path: spec.rules[0].matches[0].path.value
-          value: /kritik/hooks
-      - equal:
-          path: spec.rules[1].matches[0].path.value
           value: /kritik

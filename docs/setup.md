@@ -11,8 +11,8 @@ instance from install to its first review.
 Install the chart as its [README](../charts/kritik/README.md) shows, with:
 
 - `web.url`, the one public URL. The dashboard is served at it, and GitHub
-  delivers each App's webhook under it, to `/hooks/<app name>`. The chart's `ingress` or `httpRoute` routes
-  `/hooks` to the webhook listener and everything else to the dashboard;
+  delivers each App's webhook under it, to `/hooks/<app name>`, both from
+  one port. The chart's `ingress` or `httpRoute` routes the URL there;
   nothing else needs to be public.
 - A way to sign in: `auth.admin.passwordSecret` for the local admin, or
   OIDC or GitHub with a role mapping that makes someone an admin

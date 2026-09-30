@@ -30,13 +30,12 @@ fullnameOverride: ""
 # -- Replicas of kritik serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3).
 replicas: 2
 
-# The one public URL: the dashboard at `web.url`, and the webhook listener
-# under it at `/hooks`, which the Ingress or HTTPRoute below route.
+# The one public URL: the dashboard at `web.url`, and the webhooks under it
+# at `/hooks`, both served on `service.port`, which the Ingress or HTTPRoute
+# below route to.
 web:
-  # -- (required) Public URL the dashboard is reached at, e.g. https://kritik.example.com; the webhook listener shares it under `/hooks`, and the GitHub Apps the dashboard creates send their webhooks there. Must be an absolute http(s) URL with no query or fragment.
+  # -- (required) Public URL the dashboard is reached at, e.g. https://kritik.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment.
   url: ""
-  # -- Dashboard port, served by `all` and `web` pods.
-  port: 8083
 
 # How people sign in (see docs/configuration.md), rendered to the
 # KRITIK_AUTH_* variables, which win over the configuration file's `auth`
@@ -249,18 +248,16 @@ securityContext:
       - ALL
 
 service:
-  # -- Service type for the webhook listener.
+  # -- Service type of the public Service.
   type: ClusterIP
-  # -- Webhook port (`POST /hooks/{app}`), served by `all` and `ingest` pods.
+  # -- Public port: the webhooks (`POST /hooks/{app}`) and the dashboard (ADR-0024 §2.2).
   port: 8080
-  # -- Metrics and probe port, served by every pod.
+  # -- Metrics and probe port.
   metricsPort: 8081
-  # -- Dashboard port, served by `all` and `web` pods.
-  webPort: 8083
 
-# One Ingress, or one Gateway API HTTPRoute, for `web.url`: `/hooks` under it
-# goes to the webhook listener and everything else to the dashboard. The host
-# and paths come from `web.url`.
+# One Ingress, or one Gateway API HTTPRoute, for `web.url`, to the public
+# Service, which serves the webhooks under `/hooks` and the dashboard. The
+# host and path come from `web.url`.
 ingress:
   # -- Expose web.url through an Ingress.
   enabled: false

@@ -140,8 +140,6 @@ spec:
               value: {{ $.Values.config.reviewWorkers | quote }}
             - name: KRITIK_INDEX_WORKERS
               value: {{ $.Values.config.indexWorkers | quote }}
-            - name: KRITIK_WEB_ADDR
-              value: {{ printf ":%d" (int $.Values.web.port) | quote }}
             {{- range $name, $value := dict "KRITIK_POLL_INTERVAL" $.Values.config.pollInterval "KRITIK_POLL_LOOKBACK" $.Values.config.pollLookback "KRITIK_INDEX_GRACE" $.Values.config.indexGrace "KRITIK_TRANSCRIPT_RETENTION" $.Values.config.transcriptRetention "KRITIK_RUNNER_DEADLINE" $.Values.runner.deadline }}
             {{- with $value }}
             - name: {{ $name }}
@@ -175,9 +173,7 @@ spec:
               containerPort: {{ $.Values.gateway.port }}
               protocol: TCP
             {{- end }}
-            - name: web
-              containerPort: {{ $.Values.web.port }}
-              protocol: TCP
+
           livenessProbe:
             {{- tpl (toYaml $.Values.livenessProbe) $ | nindent 12 }}
           readinessProbe:

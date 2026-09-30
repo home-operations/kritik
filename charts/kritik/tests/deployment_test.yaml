@@ -195,7 +195,7 @@ tests:
             name: KRITIK_RUNNER_RUNTIME_CLASS
             value: gvisor
 
-  - it: hands kritik serve the dashboard env and port
+  - it: hands kritik serve the dashboard's URL, and one public port for the webhooks and the dashboard
     set:
       web.url: https://dash.example.com
     asserts:
@@ -204,17 +204,12 @@ tests:
           content:
             name: KRITIK_WEB_URL
             value: https://dash.example.com
-      - contains:
+      - equal:
           path: spec.template.spec.containers[0].ports
-          content:
-            name: web
-            containerPort: 8083
-            protocol: TCP
-      - contains:
-          path: spec.template.spec.containers[0].ports
-          content:
-            name: http
-          any: true
+          value:
+            - { name: http, containerPort: 8080, protocol: TCP }
+            - { name: metrics, containerPort: 8081, protocol: TCP }
+            - { name: gateway, containerPort: 8082, protocol: TCP }
 
   - it: fails without web.url
     set:

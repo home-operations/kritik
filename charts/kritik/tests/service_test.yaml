@@ -4,10 +4,10 @@ templates:
 values:
   - ../ci/lint-values.yaml
 tests:
-  - it: renders the webhook, gateway, dashboard and metrics Services, each selecting the server pods
+  - it: renders the public, gateway and metrics Services, each selecting the server pods
     asserts:
       - hasDocuments:
-          count: 4
+          count: 3
       - equal:
           path: spec.selector
           value:
@@ -23,29 +23,16 @@ tests:
         documentIndex: 1
       - equal:
           path: metadata.name
-          value: RELEASE-NAME-kritik-web
-        documentIndex: 2
-      - equal:
-          path: metadata.name
           value: RELEASE-NAME-kritik-metrics
-        documentIndex: 3
+        documentIndex: 2
 
   - it: leaves the gateway Service out when the gateway is disabled
     set:
       gateway.enabled: false
     asserts:
       - hasDocuments:
-          count: 3
+          count: 2
       - equal:
           path: metadata.name
           value: RELEASE-NAME-kritik-metrics
-        documentIndex: 2
-
-  - it: renders the dashboard Service
-    asserts:
-      - hasDocuments:
-          count: 4
-      - equal:
-          path: metadata.name
-          value: RELEASE-NAME-kritik-web
-        documentIndex: 2
+        documentIndex: 1

@@ -55,22 +55,23 @@ func ParseCommand(args []string) (Command, error) {
 // from environment variables via caarlos0/env. Call [Load] to parse and
 // validate; do not construct directly.
 type Config struct {
-	// Addr is the listen address for the webhook surface serve runs:
-	// /hooks/{connection} and nothing else. Port 8080 matches the container
-	// image's EXPOSE and the other services in the fleet.
+	// Addr is the listen address of serve's one public listener (ADR-0024
+	// §2.2): the webhooks, /hooks/{connection}, and the dashboard. Port 8080
+	// matches the container image's EXPOSE and the other services in the
+	// fleet.
 	Addr string `env:"KRITIK_ADDR" envDefault:":8080"`
 
 	// MetricsAddr is the listen address for /healthz, /readyz and /metrics.
-	// Kept on a separate port from the hook surface, as konflate does, so the
-	// management endpoints are never reachable through the ingress that fronts
-	// the webhooks.
+	// Kept on a separate port from the public listener, as konflate does, so
+	// the management endpoints are never reachable through the ingress that
+	// fronts it.
 	MetricsAddr string `env:"KRITIK_METRICS_ADDR" envDefault:":8081"`
 
 	// GatewayAddr is the listen address of the gateway serve runs: the
 	// forward proxy runner pods reach the outside through
 	// (ADR-0008), and the model endpoint an agentic runner calls with its
 	// run token (ADR-0004). Its own port, so the runner network policy can
-	// name it without opening the hook or management surfaces.
+	// name it without opening the public or management listeners.
 	GatewayAddr string `env:"KRITIK_GATEWAY_ADDR" envDefault:":8082"`
 
 	// GatewayURL is the gateway's in-cluster address, http://host:port:
@@ -84,12 +85,6 @@ type Config struct {
 	// deadline before it expires on its own, in case the worker that
 	// minted it dies before revoking it.
 	GatewayTokenTTL time.Duration `env:"KRITIK_GATEWAY_TOKEN_TTL" envDefault:"1h"`
-
-	// WebAddr is the listen address for the dashboard serve runs. Its own
-	// port, matching the pattern of Addr/MetricsAddr/
-	// GatewayAddr, so the dashboard can be exposed without opening the
-	// other surfaces.
-	WebAddr string `env:"KRITIK_WEB_ADDR" envDefault:":8083"`
 
 	// WebURL is the dashboard's externally reachable origin: an absolute
 	// http(s) URL with a host and no query or fragment. It is how the

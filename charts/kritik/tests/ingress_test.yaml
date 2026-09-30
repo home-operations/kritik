@@ -9,7 +9,7 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: routes web.url's /hooks to the webhook listener and the rest to the dashboard
+  - it: routes web.url to the public Service, which serves the webhooks and the dashboard
     set:
       ingress.enabled: true
       ingress.className: nginx
@@ -25,12 +25,9 @@ tests:
       - equal:
           path: spec.rules[0].http.paths
           value:
-            - path: /hooks
-              pathType: Prefix
-              backend: { service: { name: RELEASE-NAME-kritik, port: { name: http } } }
             - path: /
               pathType: Prefix
-              backend: { service: { name: RELEASE-NAME-kritik-web, port: { name: web } } }
+              backend: { service: { name: RELEASE-NAME-kritik, port: { name: http } } }
 
   - it: keeps web.url's path and drops its port
     set:
@@ -42,7 +39,4 @@ tests:
           value: kritik.example.com
       - equal:
           path: spec.rules[0].http.paths[0].path
-          value: /kritik/hooks
-      - equal:
-          path: spec.rules[0].http.paths[1].path
           value: /kritik

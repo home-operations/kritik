@@ -352,10 +352,9 @@ Kubernetes: `>=1.25.0-0`
 | runner.ttl | string | `"1h"` | How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew. |
 | secretEnv | list | `[]` | Environment variables set from existing Secrets, for the configuration file's `{ env: NAME }` references. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container securityContext (no privilege escalation, read-only root filesystem, drops ALL capabilities). |
-| service.metricsPort | int | `8081` | Metrics and probe port, served by every pod. |
-| service.port | int | `8080` | Webhook port (`POST /hooks/{app}`), served by `all` and `ingest` pods. |
-| service.type | string | `"ClusterIP"` | Service type for the webhook listener. |
-| service.webPort | int | `8083` | Dashboard port, served by `all` and `web` pods. |
+| service.metricsPort | int | `8081` | Metrics and probe port. |
+| service.port | int | `8080` | Public port: the webhooks (`POST /hooks/{app}`) and the dashboard (ADR-0024 §2.2). |
+| service.type | string | `"ClusterIP"` | Service type of the public Service. |
 | serviceAccount.annotations | object | `{}` | Annotations for the ServiceAccount. |
 | serviceAccount.automount | bool | `true` | Automount the API token, which kritik serve needs to create runner Jobs. |
 | serviceAccount.create | bool | `true` | Create the ServiceAccount kritik serve runs as. |
@@ -365,8 +364,7 @@ Kubernetes: `>=1.25.0-0`
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
 | volumeMounts | list | `[]` | Additional volume mounts on every container. |
 | volumes | list | `[]` | Additional volumes on every Deployment. |
-| web.port | int | `8083` | Dashboard port, served by `all` and `web` pods. |
-| web.url | required | `""` | Public URL the dashboard is reached at, e.g. https://kritik.example.com; the webhook listener shares it under `/hooks`, and the GitHub Apps the dashboard creates send their webhooks there. Must be an absolute http(s) URL with no query or fragment. |
+| web.url | required | `""` | Public URL the dashboard is reached at, e.g. https://kritik.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment. |
 
 ---
 
