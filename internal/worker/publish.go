@@ -398,7 +398,7 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	}
 	var sources []string
 	if p.agent != nil {
-		sources = p.agent.sources
+		sources = review.SourceLinks(p.agent.sources)
 	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Result: res, Counts: res.Counts(), Notes: notes,
