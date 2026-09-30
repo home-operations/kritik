@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"slices"
 	"strings"
@@ -189,7 +188,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 			Usage: model.Usage{Input: 300, Output: 30}, CostUSD: 0.5},
 	}}
 	s := agentPromptSpec()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	res, timeline := reviewAgent(t.Context(), st, s, head, []string{"vendor/**"}, nil, "system", "user", true, time.Minute, logger)
 	if res.Stop != agent.StopSubmitted || res.Steps != 3 || res.ToolCalls["grep"] != 1 || res.ToolCalls["read_file"] != 1 ||
 		res.ToolCalls["submit_review"] != 1 || res.CostUSD != 0.5 {
@@ -229,7 +228,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 func TestReviewAgentTimeout(t *testing.T) {
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	st := blockingStepper{}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	res, _ := reviewAgent(t.Context(), st, agentPromptSpec(), head, nil, nil, "s", "u", false, 20*time.Millisecond, logger)
 	if res.Stop != agent.StopCanceled || !strings.Contains(res.Err, "timeout") {
 		t.Fatalf("result = %+v", res)

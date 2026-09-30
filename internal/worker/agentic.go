@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -15,7 +14,6 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
-	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
@@ -121,10 +119,10 @@ func (w *Review) agentCaps(ctx context.Context, account *configfile.Account, set
 	if err != nil {
 		return 0, "", err
 	}
-	if capped := u.reached(limits); capped != "" {
+	if capped := reached(u, limits); capped != "" {
 		return 0, capped, nil
 	}
-	budget, capped := agentBudget(settings.Agent.MaxTokens, limits.TokensPerMonth, u.tokens)
+	budget, capped := agentBudget(settings.Agent.MaxTokens, limits.TokensPerMonth, u.Tokens)
 	return budget, capped, nil
 }
 
@@ -173,15 +171,10 @@ func (w *Review) agentPrompt(
 			return err
 		}
 		p.Rules = repoconfig.RulesFor(eff.Review.Rules, vars)
-		if !pr.authorIsBot || trigger == jobs.TriggerManual {
-			return nil
+		if pr.dedupesBotPatch(trigger) {
+			p.UnchangedPatchID, err = lastPatchID(ctx, tx, pr.id, reviewID)
 		}
-		err = tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
-			AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, pr.id, reviewID).Scan(&p.UnchangedPatchID)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("worker: read last review: %w", err)
-		}
-		return nil
+		return err
 	})
 	p.Trim()
 	return p, err
@@ -385,7 +378,7 @@ func (p *publishPhase) skippedStatus(ctx context.Context, reason string) {
 	if reason == runner.SkipUnchangedPatch {
 		desc = "patch unchanged since the last review"
 	}
-	owner, repo, _ := strings.Cut(p.pr.repository, "/")
+	owner, repo := p.pr.ownerRepo()
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: skipped ("+desc+")"); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
@@ -402,7 +395,7 @@ func (p *publishPhase) incomplete(ctx context.Context, reason string, resp model
 	if err != nil {
 		return err
 	}
-	owner, repo, _ := strings.Cut(p.pr.repository, "/")
+	owner, repo := p.pr.ownerRepo()
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: review incomplete ("+reason+")"); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}

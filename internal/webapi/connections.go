@@ -2,6 +2,7 @@ package webapi
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
@@ -96,16 +97,12 @@ func (s *Server) uninstall(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return errForge(err)
 	}
-	var inst *github.Installation
-	for i := range insts {
-		if insts[i].ID == id {
-			inst = &insts[i]
-		}
-	}
-	switch {
-	case inst == nil:
+	i := slices.IndexFunc(insts, func(x github.Installation) bool { return x.ID == id })
+	if i < 0 {
 		return errNotFound("installation")
-	case in.Serves(inst.Account):
+	}
+	inst := &insts[i]
+	if in.Serves(inst.Account) {
 		return errStatus(http.StatusConflict, CodeInstallationServed,
 			"connection "+in.Name+" serves "+inst.Account+": remove the account from its accounts first")
 	}

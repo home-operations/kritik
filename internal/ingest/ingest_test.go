@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -67,7 +66,7 @@ func setup(t *testing.T, disp Dispatcher) *httptest.Server {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
 	f := configfiletest.Load(t, configYAML)
-	h := NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h := NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.DiscardHandler))
 	if r, ok := disp.(DeliveryRecorder); ok {
 		h.Deliveries = r
 	}

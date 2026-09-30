@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/metrics"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
 )
@@ -105,7 +106,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 			logger.Warn("default branch not recorded", "branch", branch, "error", err)
 		}
 	}
-	logger = logger.With("commit", short(commit))
+	logger = logger.With("commit", review.ShortSHA(commit))
 
 	active, err := w.activeGeneration(ctx, args.AccountID, repo.activeRun)
 	if err != nil {
@@ -169,22 +170,23 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 			reason = "runner heartbeat lost"
 		}
 		logger.Warn("index runner failed", "error", reason, "job", res.JobName, "reason", res.TerminationReason)
-		w.Metrics.IndexRun(account.Key(), mode, "failed", 0)
+		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexFailed), 0)
 		// An error, so River tries again: most runner failures (a fetch
 		// timeout, a node going away) do not repeat.
-		return errors.Join(fmt.Errorf("worker: index runner failed: %s", reason), w.finish(dctx, args.AccountID, runID, "failed", 0, reason))
+		return errors.Join(fmt.Errorf("worker: index runner failed: %s", reason),
+			w.finish(dctx, args.AccountID, runID, store.IndexFailed, 0, reason))
 	}
 	n, mode, err := w.embed(ctx, args, account, embedder, emb.Model, commit, runID, runnerRunID, active, settings, job.ID)
 	if err != nil {
 		logger.Error("index embedding failed", "error", err)
-		w.Metrics.IndexRun(account.Key(), mode, "failed", 0)
+		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexFailed), 0)
 		fctx, fcancel := detach(ctx)
 		defer fcancel()
-		return errors.Join(err, w.finish(fctx, args.AccountID, runID, "failed", 0, err.Error()))
+		return errors.Join(err, w.finish(fctx, args.AccountID, runID, store.IndexFailed, 0, err.Error()))
 	}
 	logger.Info("index completed", "mode", mode, "chunks", n)
-	w.Metrics.IndexRun(account.Key(), mode, "completed", n)
-	if err := w.finish(ctx, args.AccountID, runID, "completed", n, ""); err != nil {
+	w.Metrics.IndexRun(account.Key(), mode, string(store.IndexCompleted), n)
+	if err := w.finish(ctx, args.AccountID, runID, store.IndexCompleted, n, ""); err != nil {
 		return err
 	}
 	// A push while this ran was absorbed into this job: if the branch has
@@ -192,7 +194,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	// forced rebuild leaves the new tip to the update job the push queued.
 	if !args.Full {
 		if tip, _, err := client.BranchTip(ctx, owner, name, repo.defaultBranch); err == nil && tip != commit {
-			logger.Info("index again: the branch moved while it ran", "tip", short(tip))
+			logger.Info("index again: the branch moved while it ran", "tip", review.ShortSHA(tip))
 			return river.JobSnooze(0)
 		}
 	}
@@ -286,7 +288,7 @@ func (w *Index) clearStaging(ctx context.Context, logger *slog.Logger, accountID
 	}
 }
 
-func (w *Index) finish(ctx context.Context, accountID, runID, status string, chunks int, errText string) error {
+func (w *Index) finish(ctx context.Context, accountID, runID string, status store.IndexRunStatus, chunks int, errText string) error {
 	return w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE index_runs SET status = $2, chunk_count = $3, error = left($4, 2000), finished_at = now() WHERE id = $1`,
 			runID, status, chunks, errText)

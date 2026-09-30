@@ -2,7 +2,6 @@ package runner
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -74,7 +73,7 @@ func TestCommandTool(t *testing.T) {
 	t.Setenv("PATH", bin)
 	t.Setenv("HTTPS_PROXY", "http://gateway:8082")
 	t.Setenv("TMPDIR", t.TempDir())
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n", "vendor/x.go": "package x\n"}), []string{"vendor/**"})
 
 	t.Run("offers what is on PATH, over a checkout", func(t *testing.T) {

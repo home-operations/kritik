@@ -13,8 +13,8 @@ import (
 // priorReview is a pull request's last completed review; id is "" when it
 // has none.
 type priorReview struct {
-	id, headSHA string
-	findings    []priorFinding
+	id, headSHA, trigger string
+	findings             []priorFinding
 }
 
 type priorFinding struct {
@@ -28,9 +28,9 @@ type priorFinding struct {
 // findings.
 func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, error) {
 	var p priorReview
-	err := tx.QueryRow(ctx, `SELECT id, head_sha FROM reviews
+	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger FROM reviews
 		WHERE pull_request_id = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, prID).
-		Scan(&p.id, &p.headSHA)
+		Scan(&p.id, &p.headSHA, &p.trigger)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return priorReview{}, nil
 	}

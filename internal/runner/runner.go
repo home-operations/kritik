@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/chunk"
@@ -70,6 +71,10 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err := setPhase(ctx, st, p.RunID, "parsing"); err != nil {
 		return err
 	}
+	headTree, err := res.Head.Tree()
+	if err != nil {
+		return fmt.Errorf("runner: head tree: %w", err)
+	}
 	baseTree, err := res.Base.Tree()
 	if err != nil {
 		return fmt.Errorf("runner: base tree: %w", err)
@@ -94,7 +99,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		// expected cause; the error tells it apart from auth or network.
 		logger.Warn("prior head not fetched", "prior", p.PriorHead[:7], "error", res.PriorErr)
 	}
-	chunks, stats, err := stages(ctx, res, ignore)
+	chunks, stats, err := stages(ctx, headTree, baseTree, res, ignore)
 	if err != nil {
 		return err
 	}
@@ -142,16 +147,10 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if p.Mode != ModeAgentic {
 		return nil
 	}
-	headTree, err := res.Head.Tree()
-	if err != nil {
-		err = fmt.Errorf("runner: head tree: %w", err)
-	} else {
-		scope, _ := review.DecideScope(p.PriorHead != "", priorHead != nil, len(deltaPaths), p.Prompt.MaxDeltaFiles)
-		err = runAgentic(ctx, st, p, secrets, headTree, files, packView{
-			Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
-		}, ignore, res.PatchID, logger)
-	}
-	return err
+	scope, _ := review.DecideScope(p.PriorHead != "", priorHead != nil, len(deltaPaths), p.Prompt.MaxDeltaFiles)
+	return runAgentic(ctx, st, p, secrets, headTree, files, packView{
+		Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
+	}, ignore, res.PatchID, logger)
 }
 
 // notIgnored returns the paths no ignore glob matches, never nil.
@@ -167,15 +166,9 @@ func notIgnored(paths, ignore []string) []string {
 
 // stages runs context stages 1 to 3 over the fetched trees. The chunk list
 // is never nil so the column holds a JSON array even for an empty pack.
-func stages(ctx context.Context, res *gitfetch.Result, ignore []string) ([]contextpack.Chunk, contextpack.Stats, error) {
-	headTree, err := res.Head.Tree()
-	if err != nil {
-		return nil, contextpack.Stats{}, fmt.Errorf("runner: head tree: %w", err)
-	}
-	baseTree, err := res.Base.Tree()
-	if err != nil {
-		return nil, contextpack.Stats{}, fmt.Errorf("runner: base tree: %w", err)
-	}
+func stages(
+	ctx context.Context, headTree, baseTree *object.Tree, res *gitfetch.Result, ignore []string,
+) ([]contextpack.Chunk, contextpack.Stats, error) {
 	chunks, stats, err := contextpack.Build(ctx, contextpack.Input{
 		Head: headTree, Base: baseTree, Diff: res.Diff, Changed: res.Changed, Ignore: ignore,
 	}, contextpack.DefaultOptions)

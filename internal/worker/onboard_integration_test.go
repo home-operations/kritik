@@ -4,7 +4,6 @@ package worker
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"testing"
 
@@ -20,7 +19,7 @@ import (
 // to its window and no further, and fills a place a finished job leaves.
 func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	st, err := store.Open(ctx, store.Options{
 		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
 		Logger: logger,

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/contextpack"
@@ -28,11 +27,7 @@ type reviewRecord struct {
 // run and that run's agent run.
 func loadReview(ctx context.Context, tx pgx.Tx, r *http.Request, withRun bool) (reviewRecord, error) {
 	var rec reviewRecord
-	id := r.PathValue("id")
-	if uuid.Validate(id) != nil {
-		return rec, errNotFound("review")
-	}
-	v, err := store.FindReview(ctx, tx, id)
+	v, err := store.FindReview(ctx, tx, r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		return rec, errNotFound("review")
 	}

@@ -32,14 +32,6 @@ const (
 	threadMessages   = 20
 )
 
-// Follow-up outcomes, as the followups table spells them.
-const (
-	followUpAnswered = "answered"
-	followUpLimited  = "limited"
-	followUpIgnored  = "ignored"
-	followUpFailed   = "failed"
-)
-
 // FollowUp works the followup queue: one job answers one comment that
 // @-mentioned the bot, scoped to its thread.
 type FollowUp struct {
@@ -65,7 +57,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	if err != nil {
 		return err
 	}
-	owner, repo, _ := strings.Cut(pr.repository, "/")
+	owner, repo := pr.ownerRepo()
 	comment, err := client.GetComment(ctx, owner, repo, args.CommentID, args.Inline)
 	if err != nil {
 		return err
@@ -80,15 +72,15 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		return err
 	}
 	outcome, err := f.run(ctx)
-	w.Metrics.FollowUp(account.Key(), outcome)
+	w.Metrics.FollowUp(account.Key(), string(outcome))
 	if err != nil {
 		logger.Error("follow-up failed", "error", err)
 		// The failure itself is what goes back to River; a record of it that
 		// could not be written is lost with it, and the retry records anew.
-		_ = f.record(ctx, followUpFailed, err.Error(), 0, "")
+		_ = f.record(ctx, store.FollowupFailed, err.Error(), 0, "")
 		return err
 	}
-	logger.Info("follow-up " + outcome)
+	logger.Info("follow-up " + string(outcome))
 	return nil
 }
 
@@ -113,7 +105,7 @@ type followUp struct {
 // alreadyAnswered guards a retried job: once a reply is on the forge the
 // mention is done, whatever happened after posting.
 func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
-	var status string
+	var status store.FollowupStatus
 	var replyID *int64
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT status, reply_comment_id FROM followups WHERE pull_request_id = $1 AND comment_id = $2`,
@@ -125,7 +117,7 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("worker: read follow-up: %w", err)
 	}
-	if status == followUpAnswered || status == followUpLimited || replyID != nil {
+	if status == store.FollowupAnswered || status == store.FollowupLimited || replyID != nil {
 		f.logger.Info("follow-up already handled", "status", status)
 		return true, nil
 	}
@@ -135,36 +127,36 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 // run qualifies the mention (ADR-0002 §2.7), gathers the thread and the review's
 // record, asks the model, and posts the reply. Nothing after the reply is
 // posted may fail the job: a retry would answer twice.
-func (f *followUp) run(ctx context.Context) (string, error) {
+func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	if reason := f.disqualified(ctx); reason != "" {
 		f.logger.Info("follow-up ignored", "reason", reason)
-		return followUpIgnored, f.record(ctx, followUpIgnored, reason, 0, "")
+		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, reason, 0, "")
 	}
 	if requestsReview(f.comment.Body, strings.TrimSuffix(f.botLogin, "[bot]")) {
 		return f.requestReview(ctx)
 	}
 	reason, err := f.repoConfig(ctx)
 	if err != nil {
-		return followUpFailed, err
+		return store.FollowupFailed, err
 	}
 	if reason != "" {
 		f.logger.Info("follow-up ignored", "reason", reason)
-		return followUpIgnored, f.record(ctx, followUpIgnored, reason, 0, "")
+		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, reason, 0, "")
 	}
 	limited, err := f.rateLimited(ctx)
 	if err != nil {
-		return followUpFailed, err
+		return store.FollowupFailed, err
 	}
 	if limited {
-		return followUpLimited, nil
+		return store.FollowupLimited, nil
 	}
 	thread, err := f.thread(ctx)
 	if err != nil {
-		return followUpFailed, err
+		return store.FollowupFailed, err
 	}
 	rec, err := f.reviewRecord(ctx)
 	if err != nil {
-		return followUpFailed, err
+		return store.FollowupFailed, err
 	}
 	// The review's runner read the agent files; the rules' files are read
 	// again at the merge base, and win.
@@ -186,21 +178,16 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	}, rec.findings, thread)
 	resp, err := f.complete(ctx, system, msg, rec.id)
 	if err != nil {
-		return followUpFailed, err
+		return store.FollowupFailed, err
 	}
 	reply, err := review.ParseFollowUp(resp.Raw)
 	if err != nil {
-		return followUpFailed, err
+		return store.FollowupFailed, err
 	}
 	body := review.FollowUpBody(reply, resp.Model)
-	var replyID int64
-	if f.comment.Inline {
-		replyID, err = f.client.ReplyInline(ctx, f.owner, f.repo, f.pr.number, f.comment, body)
-	} else {
-		replyID, err = f.client.CreateComment(ctx, f.owner, f.repo, f.pr.number, body)
-	}
+	replyID, err := f.reply(ctx, body)
 	if err != nil {
-		return followUpFailed, err
+		return store.FollowupFailed, err
 	}
 	f.logger.Info("follow-up answered", "model", resp.Model, "reply", replyID, "input_tokens", resp.InputTokens,
 		"output_tokens", resp.OutputTokens, "cost_usd", resp.CostUSD)
@@ -213,10 +200,10 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 	if err != nil {
 		f.logger.Error("follow-up usage not recorded", "error", err)
 	}
-	if err := f.record(ctx, followUpAnswered, "", replyID, resp.Model); err != nil {
+	if err := f.record(ctx, store.FollowupAnswered, "", replyID, resp.Model); err != nil {
 		f.logger.Error("follow-up not recorded", "error", err, "reply", replyID)
 	}
-	return followUpAnswered, nil
+	return store.FollowupAnswered, nil
 }
 
 var (
@@ -240,13 +227,13 @@ func requestsReview(body, slug string) bool {
 // "@<bot> review": it is how a pull request from a fork, which is not
 // reviewed on its own, gets one. It replies that it did, and counts
 // against the hourly follow-up limit.
-func (f *followUp) requestReview(ctx context.Context) (string, error) {
+func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, error) {
 	limited, err := f.rateLimited(ctx)
 	if err != nil {
-		return followUpFailed, err
+		return store.FollowupFailed, err
 	}
 	if limited {
-		return followUpLimited, nil
+		return store.FollowupLimited, nil
 	}
 	queue := river.ClientFromContext[pgx.Tx](ctx)
 	already := false
@@ -258,26 +245,21 @@ func (f *followUp) requestReview(ctx context.Context) (string, error) {
 		return err
 	})
 	if errors.Is(err, jobs.ErrNoHead) {
-		return followUpIgnored, f.record(ctx, followUpIgnored, "the pull request is closed", 0, "")
+		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, "the pull request is closed", 0, "")
 	}
 	if err != nil {
-		return followUpFailed, fmt.Errorf("worker: queue the requested review: %w", err)
+		return store.FollowupFailed, fmt.Errorf("worker: queue the requested review: %w", err)
 	}
 	body := review.ReviewQueuedBody(f.pr.headSHA, already)
-	var replyID int64
-	if f.comment.Inline {
-		replyID, err = f.client.ReplyInline(ctx, f.owner, f.repo, f.pr.number, f.comment, body)
-	} else {
-		replyID, err = f.client.CreateComment(ctx, f.owner, f.repo, f.pr.number, body)
-	}
+	replyID, err := f.reply(ctx, body)
 	if err != nil {
-		return followUpFailed, err
+		return store.FollowupFailed, err
 	}
 	f.logger.Info("review requested", "already_queued", already, "reply", replyID)
-	if err := f.record(ctx, followUpAnswered, "review requested", replyID, ""); err != nil {
+	if err := f.record(ctx, store.FollowupAnswered, "review requested", replyID, ""); err != nil {
 		f.logger.Error("follow-up not recorded", "error", err, "reply", replyID)
 	}
-	return followUpAnswered, nil
+	return store.FollowupAnswered, nil
 }
 
 // mentioned reports whether body @-mentions slug as a whole word.
@@ -331,7 +313,7 @@ func (f *followUp) rateLimited(ctx context.Context) (bool, error) {
 		}
 	}
 	f.logger.Info("follow-up rate limited", "answered_last_hour", answered, "notice_posted", notices == 0)
-	return true, f.record(ctx, followUpLimited, "", replyID, "")
+	return true, f.record(ctx, store.FollowupLimited, "", replyID, "")
 }
 
 // thread returns the messages the model sees. The asking comment is always
@@ -358,23 +340,14 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, error) {
 			}
 		}
 	}
-	found := false
-	for _, c := range comments {
-		if c.ID == f.comment.ID {
-			found = true
-		}
-	}
-	if !found {
-		comments = append(comments, f.comment)
+	// The asking comment closes the thread whatever the timestamps say.
+	asking := f.comment
+	if i := slices.IndexFunc(comments, func(c forge.Comment) bool { return c.ID == f.comment.ID }); i >= 0 {
+		asking = comments[i]
+		comments = slices.Delete(comments, i, i+1)
 	}
 	slices.SortStableFunc(comments, func(a, b forge.Comment) int { return a.CreatedAt.Compare(b.CreatedAt) })
-	// The asking comment closes the thread whatever the timestamps say.
-	for i, c := range comments {
-		if c.ID == f.comment.ID && i != len(comments)-1 {
-			comments = append(append(comments[:i:i], comments[i+1:]...), c)
-			break
-		}
-	}
+	comments = append(comments, asking)
 	if len(comments) > threadMessages {
 		comments = comments[len(comments)-threadMessages:]
 	}
@@ -414,13 +387,7 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 		if err != nil {
 			return err
 		}
-		var trigger string
-		if last.id != "" {
-			if err := tx.QueryRow(ctx, `SELECT trigger FROM reviews WHERE id = $1`, last.id).Scan(&trigger); err != nil {
-				return fmt.Errorf("worker: load review trigger: %w", err)
-			}
-		}
-		if rec.vars, err = filterVars(ctx, tx, f.pr.id, trigger); err != nil || last.id == "" {
+		if rec.vars, err = filterVars(ctx, tx, f.pr.id, last.trigger); err != nil || last.id == "" {
 			return err
 		}
 		rec.id, rec.findings = last.id, reviewFindings(last.findings)
@@ -526,7 +493,16 @@ func (f *followUp) complete(ctx context.Context, system, msg, reviewID string) (
 	return resp, err
 }
 
-func (f *followUp) record(ctx context.Context, status, reason string, replyID int64, modelName string) error {
+// reply posts body where the mention was made: in its inline thread, or on
+// the conversation.
+func (f *followUp) reply(ctx context.Context, body string) (int64, error) {
+	if f.comment.Inline {
+		return f.client.ReplyInline(ctx, f.owner, f.repo, f.pr.number, f.comment, body)
+	}
+	return f.client.CreateComment(ctx, f.owner, f.repo, f.pr.number, body)
+}
+
+func (f *followUp) record(ctx context.Context, status store.FollowupStatus, reason string, replyID int64, modelName string) error {
 	return f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO followups
 			(account_id, pull_request_id, comment_id, author, inline, path, line, status, reason, reply_comment_id, model)

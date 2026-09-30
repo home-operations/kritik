@@ -224,7 +224,7 @@ type agenticHarness struct {
 func newAgenticHarness(t *testing.T) *agenticHarness {
 	t.Helper()
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	appStore, err := store.Open(ctx, store.Options{
 		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
 		Logger: logger,
@@ -1128,7 +1128,7 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 				t.Fatal(err)
 			}
 			e := endedReview{accountID: h.account.ID(), accountKey: h.account.Key(), reviewID: reviewID, headSHA: tt.head,
-				owner: "acme", repo: "widgets", client: h.lf, started: time.Now(), logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+				owner: "acme", repo: "widgets", client: h.lf, started: time.Now(), logger: slog.New(slog.DiscardHandler)}
 			err = h.review.agentSpecFailed(tt.ctx, e, runID, boom)
 			if (err != nil) != tt.retried {
 				t.Fatalf("agentSpecFailed = %v, want an error only when River should retry", err)

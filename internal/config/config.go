@@ -51,6 +51,18 @@ func ParseCommand(args []string) (Command, error) {
 	return "", fmt.Errorf("config: unknown arguments %q: usage: kritik [serve | run]", args)
 }
 
+// Executor selects how runners run.
+type Executor string
+
+// Executors a kritik process can run runners with.
+const (
+	// ExecutorKubernetes creates a Job per run in the pod's own namespace.
+	ExecutorKubernetes Executor = "kubernetes"
+	// ExecutorLocal runs the runner in-process and is for development and
+	// tests only, because it gives the checkout the worker's credentials.
+	ExecutorLocal Executor = "local"
+)
+
 // Config holds the process configuration for kritik. All fields are populated
 // from environment variables via caarlos0/env. Call [Load] to parse and
 // validate; do not construct directly.
@@ -134,11 +146,8 @@ type Config struct {
 	// runs at most ReviewWorkers + IndexWorkers runner pods.
 	IndexWorkers int `env:"KRITIK_INDEX_WORKERS" envDefault:"1"`
 
-	// Executor selects how runners run: "kubernetes" creates a Job per run
-	// in the pod's own namespace; "local" runs the runner in-process and is
-	// for development and tests only, because it gives the checkout the
-	// worker's credentials.
-	Executor string `env:"KRITIK_EXECUTOR" envDefault:"kubernetes"`
+	// Executor selects how runners run; see the Executor type.
+	Executor Executor `env:"KRITIK_EXECUTOR" envDefault:"kubernetes"`
 
 	// RunnerImage is the image runner Jobs use, normally serve's own.
 	// Required to serve with the kubernetes executor.
@@ -189,10 +198,10 @@ type Config struct {
 // ValidateServe checks what serve needs beyond the common set.
 func (c *Config) ValidateServe() error {
 	var errs []error
-	if c.Executor == "kubernetes" && c.RunnerImage == "" {
+	if c.Executor == ExecutorKubernetes && c.RunnerImage == "" {
 		errs = append(errs, errors.New("config: KRITIK_RUNNER_IMAGE is required with the kubernetes executor"))
 	}
-	if c.Executor == "local" && c.RunnerDatabaseURL == "" {
+	if c.Executor == ExecutorLocal && c.RunnerDatabaseURL == "" {
 		errs = append(errs, errors.New("config: KRITIK_RUNNER_DATABASE_URL is required with the local executor"))
 	}
 	if c.WebURL == "" {
@@ -286,7 +295,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("config: KRITIK_LEADER_RETRY_INTERVAL must be positive, got %s", c.LeaderRetryInterval)
 	}
 	switch c.Executor {
-	case "kubernetes", "local":
+	case ExecutorKubernetes, ExecutorLocal:
 	default:
 		return fmt.Errorf("config: KRITIK_EXECUTOR must be kubernetes or local, got %q", c.Executor)
 	}

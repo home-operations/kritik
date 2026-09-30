@@ -13,7 +13,7 @@ import (
 )
 
 func TestManagementHandler(t *testing.T) {
-	m := NewManagement(":0", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m := NewManagement(":0", slog.New(slog.DiscardHandler))
 	srv := httptest.NewServer(m.Handler())
 	defer srv.Close()
 
@@ -107,7 +107,7 @@ func TestServeDrainsOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Serve(ctx, addr, http.NotFoundHandler(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+		done <- Serve(ctx, addr, http.NotFoundHandler(), slog.New(slog.DiscardHandler))
 	}()
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -149,7 +149,7 @@ func TestServeDrainCutsWhatOutlastsIt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- ServeDrain(ctx, addr, slow, 50*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		done <- ServeDrain(ctx, addr, slow, 50*time.Millisecond, slog.New(slog.DiscardHandler))
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for {

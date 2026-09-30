@@ -26,6 +26,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/home-operations/kritik/internal/chunk"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/prfilter"
 	"github.com/home-operations/kritik/internal/review"
@@ -247,20 +248,11 @@ func AllIgnored(ignore, changed []string) bool {
 		return false
 	}
 	for _, c := range changed {
-		if !matchesAny(ignore, c) {
+		if !chunk.Ignored(ignore, c) {
 			return false
 		}
 	}
 	return true
-}
-
-func matchesAny(patterns []string, p string) bool {
-	for _, pat := range patterns {
-		if ok, _ := doublestar.Match(pat, p); ok {
-			return true
-		}
-	}
-	return false
 }
 
 // ActiveContext is the context files that apply to a change of the changed
@@ -269,7 +261,7 @@ func matchesAny(patterns []string, p string) bool {
 func ActiveContext(files []configfile.ContextFile, changed []string) []configfile.ContextFile {
 	var out []configfile.ContextFile
 	for _, f := range files {
-		if len(f.Paths) == 0 || slices.ContainsFunc(changed, func(c string) bool { return matchesAny(f.Paths, c) }) {
+		if len(f.Paths) == 0 || slices.ContainsFunc(changed, func(c string) bool { return chunk.Ignored(f.Paths, c) }) {
 			out = append(out, f)
 		}
 	}
@@ -285,7 +277,7 @@ func ActiveContext(files []configfile.ContextFile, changed []string) []configfil
 func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []review.Rule, left int) {
 	room, fileRoom := MaxRulesBytes, MaxRuleFileBytes
 	for _, r := range rules {
-		if len(r.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return matchesAny(r.Paths, c) }) {
+		if len(r.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return chunk.Ignored(r.Paths, c) }) {
 			continue
 		}
 		text, budget := r.Rule, &room

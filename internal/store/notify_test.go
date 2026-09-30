@@ -1,7 +1,6 @@
 package store
 
 import (
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -105,7 +104,7 @@ func TestParseEvent(t *testing.T) {
 func TestEnqueueReconnect(t *testing.T) {
 	t.Run("delivers immediately when the queue has room", func(t *testing.T) {
 		notifications := make(chan func(), 2)
-		warner := &dropWarner{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+		warner := &dropWarner{logger: slog.New(slog.DiscardHandler)}
 
 		called := false
 		enqueueReconnect(notifications, func() { called = true }, warner)
@@ -129,7 +128,7 @@ func TestEnqueueReconnect(t *testing.T) {
 		// lastWarnAt starts non-zero so drop()'s once-per-second warning does
 		// not fire (and reset the counter) on this very first call, letting
 		// the assertion below observe the increment.
-		warner := &dropWarner{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), lastWarnAt: time.Now()}
+		warner := &dropWarner{logger: slog.New(slog.DiscardHandler), lastWarnAt: time.Now()}
 
 		oldestRan := false
 		notifications <- func() { oldestRan = true } // fill the queue

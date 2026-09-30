@@ -99,7 +99,9 @@ func tokenHash(token string) []byte {
 	return h[:]
 }
 
-func randomToken() string {
+// RandomToken is 32 random bytes, URL-safe base64 encoded without padding:
+// a session or state token, a nonce.
+func RandomToken() string {
 	raw := make([]byte, 32)
 	_, _ = rand.Read(raw) // never fails
 	return base64.RawURLEncoding.EncodeToString(raw)
@@ -182,7 +184,7 @@ func (s *Store) CreateSession(
 	if g.Accounts == nil {
 		g.Accounts = []string{}
 	}
-	token := randomToken()
+	token := RandomToken()
 	if _, err := s.app.Exec(ctx, `DELETE FROM sessions WHERE expires_at <= $1`, now); err != nil {
 		return "", fmt.Errorf("store: create session: %w", err)
 	}
@@ -221,10 +223,6 @@ func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) 
 	if err != nil {
 		return Session{}, fmt.Errorf("store: look up session: %w", err)
 	}
-	sess.Identity.Email = sess.User.Email
-	sess.Identity.EmailVerified = sess.User.EmailVerified
-	sess.Identity.DisplayName = sess.User.DisplayName
-	sess.Identity.AvatarURL = sess.User.AvatarURL
 	return sess, nil
 }
 
@@ -264,7 +262,7 @@ func (s *Store) CreateLoginState(ctx context.Context, ls LoginState, browser str
 	if browser == "" {
 		return "", errors.New("store: create login state: no browser binding")
 	}
-	state := randomToken()
+	state := RandomToken()
 	if _, err := s.app.Exec(ctx, `DELETE FROM login_states WHERE expires_at <= $1`, now); err != nil {
 		return "", fmt.Errorf("store: create login state: %w", err)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
 	"sync/atomic"
@@ -45,7 +44,7 @@ func TestApplyLoopReturnsOnAppliedError(t *testing.T) {
 	current := configfile.NewCurrent(parseAccount(t, "good"))
 	gauge := server.NewConfigErrorGauge(prometheus.NewRegistry())
 	err := applyLoop(t.Context(), current, func(context.Context, *configfile.File) error { return nil },
-		recordApplied(current, make(chan string, 1), errors.New("enqueue failed")), time.Hour, gauge, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		recordApplied(current, make(chan string, 1), errors.New("enqueue failed")), time.Hour, gauge, slog.New(slog.DiscardHandler))
 	if err == nil || err.Error() != "enqueue failed" {
 		t.Fatalf("applyLoop = %v, want the onApplied error", err)
 	}
@@ -87,7 +86,7 @@ func TestApplyLoop(t *testing.T) {
 	onApplied := recordApplied(current, appliedCh, nil)
 	done := make(chan error, 1)
 	go func() {
-		done <- applyLoop(t.Context(), current, apply, onApplied, time.Hour, gauge, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		done <- applyLoop(t.Context(), current, apply, onApplied, time.Hour, gauge, slog.New(slog.DiscardHandler))
 	}()
 	next := func(t *testing.T, ch chan string) string {
 		t.Helper()
@@ -269,7 +268,7 @@ func TestRetentionSweep(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
-		retentionSweep(ctx, st, current, 5*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		retentionSweep(ctx, st, current, 5*time.Millisecond, slog.New(slog.DiscardHandler))
 		close(done)
 	}()
 

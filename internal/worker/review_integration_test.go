@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"math"
@@ -982,7 +981,7 @@ func checkReviewRequest(
 
 func TestReviewWorkerEndToEnd(t *testing.T) {
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	appStore, err := store.Open(ctx, store.Options{
 		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
 		Logger: logger,
@@ -2370,7 +2369,7 @@ func checkEnqueueReindexSentinels(
 // review an earlier attempt of the same job left running, and no other.
 func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	st, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"), Logger: logger})
 	if err != nil {
 		t.Fatalf("Open: %v", err)

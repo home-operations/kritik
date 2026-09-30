@@ -64,7 +64,7 @@ type actionsEnv struct {
 func newActionsEnv(t *testing.T) *actionsEnv {
 	t.Helper()
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	st, err := store.Open(ctx, store.Options{
 		AppURL: testEnv(t, "KRITIK_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIK_TEST_OWNER_URL"),
 		Logger: logger,

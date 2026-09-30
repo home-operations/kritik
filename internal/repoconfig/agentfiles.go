@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -30,10 +31,7 @@ func agentDirs(changed []string) []string {
 		}
 		return strings.Count(d, "/")
 	}
-	dirs := make([]string, 0, len(seen))
-	for d := range seen {
-		dirs = append(dirs, d)
-	}
+	dirs := slices.Collect(maps.Keys(seen))
 	slices.SortFunc(dirs, func(a, b string) int { return cmp.Or(cmp.Compare(depth(a), depth(b)), strings.Compare(a, b)) })
 	return dirs
 }

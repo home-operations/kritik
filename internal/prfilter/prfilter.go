@@ -16,6 +16,7 @@ package prfilter
 
 import (
 	"fmt"
+	"sync"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/types"
@@ -35,15 +36,20 @@ type Program struct {
 // loops, so a finite cost is guaranteed to exist).
 const evalCostLimit = 1_000_000
 
+// env is the one CEL environment every filter compiles in: building one
+// loads the standard library, so it is shared, which cel.Env permits once
+// built. pr is a string-keyed map of dynamic values (the caller fills it
+// from the PR); field access is therefore statically dyn, see the bool/dyn
+// check in Compile.
+var env = sync.OnceValues(func() (*cel.Env, error) {
+	return cel.NewEnv(cel.Variable("pr", cel.MapType(cel.StringType, cel.DynType)))
+})
+
 // Compile parses and type-checks expr and returns a runnable Program. It fails
 // when the expression is syntactically invalid, references unknown
 // variables/functions, or cannot produce a boolean.
 func Compile(expr string) (*Program, error) {
-	// pr is a string-keyed map of dynamic values (the caller fills it from the
-	// PR); field access is therefore statically dyn — see the bool/dyn check.
-	env, err := cel.NewEnv(
-		cel.Variable("pr", cel.MapType(cel.StringType, cel.DynType)),
-	)
+	env, err := env()
 	if err != nil {
 		return nil, fmt.Errorf("prfilter: build env: %w", err)
 	}

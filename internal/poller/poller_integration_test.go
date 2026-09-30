@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"slices"
@@ -71,7 +70,7 @@ func env(t *testing.T, key string) string {
 
 func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	st, err := store.Open(ctx, store.Options{
 		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
 		Logger: logger,
@@ -259,7 +258,7 @@ func (f *tipForge) BranchTip(context.Context, string, string, string) (string, s
 // queued when one moved; one that webhooks reach does not.
 func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	st, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"), Logger: logger})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -471,7 +470,7 @@ func (f *reactionForge) ListInline(_ context.Context, _, _ string, number int) (
 // pull requests reviewed lately only.
 func TestPollerReadsReactions(t *testing.T) {
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	st, err := store.Open(ctx, store.Options{
 		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
 		Logger: logger,

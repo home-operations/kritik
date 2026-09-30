@@ -12,6 +12,7 @@ package chunk
 import (
 	"bytes"
 	"cmp"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -337,10 +338,7 @@ func (f *File) Identifiers(lines []int) []string {
 		}
 	}
 	walk(f.tree.RootNode())
-	out := make([]string, 0, len(counts))
-	for id := range counts {
-		out = append(out, id)
-	}
+	out := slices.Collect(maps.Keys(counts))
 	slices.SortFunc(out, func(a, b string) int { return cmp.Or(cmp.Compare(counts[b], counts[a]), cmp.Compare(a, b)) })
 	return out
 }
