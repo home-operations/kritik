@@ -144,6 +144,7 @@ var goldens = map[string]any{
 			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityBlocking, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "if x != nil {}", AgentPrompt: "fix it",
 			Fingerprint: "fp", PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0, ReactionsUp: 2, ReactionsDown: 1,
+			Rules: []string{"wrap-errors"},
 		}},
 		RunnerRun: &RunnerRun{
 			ID: "run-1", Phase: "done", JobName: "job", PodName: "pod", NodeName: "node", CreatedAt: t0, ScheduledAt: &t0,
@@ -172,6 +173,7 @@ var goldens = map[string]any{
 			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityBlocking, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "", AgentPrompt: "", Fingerprint: "fp",
 			PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0, ReactionsUp: 2, ReactionsDown: 1,
+			Rules: []string{"wrap-errors"},
 		},
 		ReviewID: "rev-1", Pull: goldenPullRef, Status: store.FindingAddressed, FirstSeenAt: t0, LastSeenAt: t1,
 	},
@@ -217,7 +219,7 @@ var goldens = map[string]any{
 	},
 	"rule": Rule{
 		Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap an error with the package name before returning it.", Paths: []string{"**/*.go"},
-		Source: RuleFromEntry, Repositories: []string{"alpha/one"},
+		Source: RuleFromEntry, Repositories: []string{"alpha/one"}, Findings: 3, Addressed: 1,
 	},
 	"job": Job{
 		ID: 42, Kind: "review", State: rivertype.JobStateRetryable, Attempt: 2, MaxAttempts: 5, CreatedAt: t0, ScheduledAt: t1,

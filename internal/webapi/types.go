@@ -405,6 +405,8 @@ type Finding struct {
 	// comment, as the poller last read them.
 	ReactionsUp   int `json:"reactionsUp"`
 	ReactionsDown int `json:"reactionsDown"`
+	// Rules are the ids of the review rules it enforces.
+	Rules []string `json:"rules"`
 }
 
 // AccountFinding is one finding of a pull request, however many of its
@@ -675,7 +677,10 @@ const (
 // Rule is one written rule or file reviews read, with where it is set,
 // the paths it applies to (every change when empty), and the running
 // repositories whose reviews read it. ID and Text are a written rule's,
-// Path and Description a file's.
+// Path and Description a file's. Findings and Addressed are a written
+// rule's too: its repositories' findings that cite its id, once per pull
+// request as the findings list counts them, and how many of those were
+// addressed.
 type Rule struct {
 	Kind         RuleKind   `json:"kind"`
 	ID           string     `json:"id"`
@@ -685,6 +690,8 @@ type Rule struct {
 	Paths        []string   `json:"paths"`
 	Source       RuleSource `json:"source"`
 	Repositories []string   `json:"repositories"`
+	Findings     int        `json:"findings"`
+	Addressed    int        `json:"addressed"`
 }
 
 // AnalyticsTotals is what the account's reviews came to over a window:

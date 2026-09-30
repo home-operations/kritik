@@ -6,5 +6,7 @@
   "description": "",
   "paths": ["**/*.go"],
   "source": "entry",
-  "repositories": ["alpha/one"]
+  "repositories": ["alpha/one"],
+  "findings": 3,
+  "addressed": 1
 }

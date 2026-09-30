@@ -49,12 +49,14 @@ type PullRef struct {
 }
 
 // FindingFilter narrows ListAccountFindings. Zero fields match everything;
-// Query matches a title, explanation, path or pull request title
-// substring, or a pull request number.
+// Rule matches a finding that cites that rule id; Query matches a title,
+// explanation, path or pull request title substring, or a pull request
+// number.
 type FindingFilter struct {
 	RepositoryID string
 	Severity     review.Severity
 	Status       FindingStatus
+	Rule         string
 	Query        string
 }
 
@@ -66,7 +68,7 @@ type FindingFilter struct {
 // its own.
 const findingIssues = `seen AS (
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix, f.replacement,
-			f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up, f.reactions_down,
+			f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up, f.reactions_down, f.rules,
 			v.id AS review_id, v.pull_request_id, v.head_sha, v.created_at AS seen_at,
 			row_number() OVER newest AS nth, min(v.created_at) OVER issue AS first_at
 		FROM findings f JOIN reviews v ON v.id = f.review_id
@@ -80,7 +82,7 @@ const findingIssues = `seen AS (
 
 const accountFindings = `WITH ` + findingIssues + `
 	SELECT l.id, l.path, l.line, l.end_line, l.severity, l.title, l.explanation, l.suggested_fix, l.replacement,
-		l.agent_prompt, l.fingerprint, l.posted_inline, l.forge_comment_id, l.created_at, l.reactions_up, l.reactions_down,
+		l.agent_prompt, l.fingerprint, l.posted_inline, l.forge_comment_id, l.created_at, l.reactions_up, l.reactions_down, l.rules,
 		l.review_id, r.name, p.number, p.title, p.url, l.addressed, l.first_at, l.seen_at
 	FROM latest l JOIN pull_requests p ON p.id = l.pull_request_id JOIN repositories r ON r.id = p.repository_id`
 
@@ -104,9 +106,10 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 			AND ($3 = '' OR l.addressed = ($3 = 'addressed'))
 			AND ($4 = '' OR l.title ILIKE $5 OR l.explanation ILIKE $5 OR l.path ILIKE $5 OR p.title ILIKE $5 OR p.number = $6)
 			AND ($7 OR (l.seen_at, l.id) < ($8, $9::uuid))
+			AND ($11 = '' OR $11 = ANY (l.rules))
 		ORDER BY l.seen_at DESC, l.id DESC LIMIT $10`,
 		uuidParam(f.RepositoryID), string(f.Severity), string(f.Status), f.Query, like, number,
-		p.After.First(), p.After.T, p.afterID(), p.Limit+1)
+		p.After.First(), p.After.T, p.afterID(), p.Limit+1, f.Rule)
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list account findings: %w", err)
 	}
@@ -115,7 +118,7 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 		var sev string
 		var addressed bool
 		err := row.Scan(&a.ID, &a.Path, &a.Line, &a.EndLine, &sev, &a.Title, &a.Explanation, &a.SuggestedFix, &a.Replacement,
-			&a.AgentPrompt, &a.Fingerprint, &a.PostedInline, &a.ForgeCommentID, &a.CreatedAt, &a.ReactionsUp, &a.ReactionsDown,
+			&a.AgentPrompt, &a.Fingerprint, &a.PostedInline, &a.ForgeCommentID, &a.CreatedAt, &a.ReactionsUp, &a.ReactionsDown, &a.Rules,
 			&a.ReviewID, &a.PullRequest.Repository, &a.PullRequest.Number, &a.PullRequest.Title, &a.PullRequest.URL,
 			&addressed, &a.FirstSeenAt, &a.LastSeenAt)
 		a.Severity, a.Status = review.Severity(sev), FindingOpen
@@ -129,4 +132,36 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 	}
 	items, next := paged(out, p.Limit, func(a AccountFinding) Cursor { return Cursor{T: a.LastSeenAt, ID: a.ID} })
 	return items, next, nil
+}
+
+// RuleCitation is how many of a repository's findings cite a rule id, and
+// how many of those were addressed, counting a finding once per pull
+// request as ListAccountFindings lists it.
+type RuleCitation struct {
+	Repository string
+	Rule       string
+	Findings   int
+	Addressed  int
+}
+
+// RuleCitations counts the account's findings by repository and the rule
+// ids they cite.
+func RuleCitations(ctx context.Context, tx pgx.Tx) ([]RuleCitation, error) {
+	rows, err := tx.Query(ctx, `WITH `+findingIssues+`
+		SELECT r.name, c.rule, count(*), count(*) FILTER (WHERE l.addressed)
+		FROM latest l JOIN pull_requests p ON p.id = l.pull_request_id JOIN repositories r ON r.id = p.repository_id,
+			unnest(l.rules) AS c(rule)
+		GROUP BY r.name, c.rule ORDER BY r.name, c.rule`)
+	if err != nil {
+		return nil, fmt.Errorf("store: count rule citations: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RuleCitation, error) {
+		var c RuleCitation
+		err := row.Scan(&c.Repository, &c.Rule, &c.Findings, &c.Addressed)
+		return c, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: count rule citations: %w", err)
+	}
+	return out, nil
 }

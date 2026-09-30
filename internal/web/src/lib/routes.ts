@@ -74,6 +74,7 @@ export interface FindingFilter {
   severity?: Severity;
   status?: FindingStatus;
   repo?: string;
+  rule?: string;
   q?: string;
 }
 
@@ -81,13 +82,14 @@ export const FINDING_STATUSES: readonly FindingStatus[] = ['open', 'addressed'];
 
 // findingFilter drops the fields of f that match everything; undefined when
 // nothing is left.
-export function findingFilter(f: { severity?: string; status?: string; repo?: string; q?: string }): FindingFilter | undefined {
+export function findingFilter(f: { severity?: string; status?: string; repo?: string; rule?: string; q?: string }): FindingFilter | undefined {
   const out: FindingFilter = {};
   const severity = SEVERITIES.find((s) => s === f.severity);
   if (severity) out.severity = severity;
   const status = FINDING_STATUSES.find((s) => s === f.status);
   if (status) out.status = status;
   if (f.repo) out.repo = f.repo;
+  if (f.rule) out.rule = f.rule;
   if (f.q) out.q = f.q;
   return Object.keys(out).length ? out : undefined;
 }

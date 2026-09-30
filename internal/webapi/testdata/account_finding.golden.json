@@ -15,6 +15,7 @@
   "createdAt": "2026-09-01T12:00:00Z",
   "reactionsUp": 2,
   "reactionsDown": 1,
+  "rules": ["wrap-errors"],
   "reviewId": "rev-1",
   "pull": {
     "repository": "alpha/one",

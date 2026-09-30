@@ -19,6 +19,7 @@
   <header class="finding-head">
     <span class="sev sev-{f.severity}">{f.severity}</span>
     <span class="finding-title">{f.title}</span>
+    {#each f.rules as id (id)}<span class="badge mono" title="Enforces the review rule {id}">{id}</span>{/each}
     {#if !compact}<span class="mono small muted">{where}</span>{/if}
     <Reactions up={f.reactionsUp} down={f.reactionsDown} />
     {#if thread}

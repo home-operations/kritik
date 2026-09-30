@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -59,7 +60,10 @@ func TestListAccountFindings(t *testing.T) {
 		reviewAt(first, "h2", "completed", t0.Add(2*time.Minute), [3]string{"important", "Nil deref", "fp-a"})
 		reviewAt(first, "h3", "running", t0.Add(3*time.Minute))
 		reviewAt(second, "h1", "completed", t0.Add(4*time.Minute), [3]string{"nit", "nil deref", "fp-a"})
-		return nil
+		// Pull 7's latest report of fp-a cites a rule its earlier ones did not.
+		_, err := tx.Exec(ctx, `UPDATE findings SET rules = CASE title WHEN 'Nil deref' THEN '{wrap-errors}'::text[]
+			ELSE '{wrap-errors,no-tokens}' END WHERE title IN ('Nil deref', 'naming')`)
+		return err
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -124,6 +128,23 @@ func TestListAccountFindings(t *testing.T) {
 	check("pull title", byPull, row{8, "nil deref", review.SeverityNit, FindingOpen})
 	byNumber, _ := list(FindingFilter{Query: "#7"}, Page{Limit: 10})
 	check("number", byNumber, row{7, "Nil deref", review.SeverityImportant, FindingOpen}, row{7, "naming", review.SeverityNit, FindingAddressed})
+
+	wraps, _ := list(FindingFilter{Rule: "wrap-errors"}, Page{Limit: 10})
+	check("rule", wraps, row{7, "Nil deref", review.SeverityImportant, FindingOpen}, row{7, "naming", review.SeverityNit, FindingAddressed})
+	if got := wraps[1].Rules; len(got) != 2 || got[0] != "wrap-errors" || got[1] != "no-tokens" {
+		t.Fatalf("naming's rules = %q", got)
+	}
+	var cited []RuleCitation
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var err error
+		cited, err = RuleCitations(ctx, tx)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []RuleCitation{{"findings/one", "no-tokens", 1, 1}, {"findings/one", "wrap-errors", 2, 1}}; !slices.Equal(cited, want) {
+		t.Fatalf("RuleCitations = %+v, want %+v", cited, want)
+	}
 
 	page1, next := list(FindingFilter{}, Page{Limit: 2})
 	if next == nil {
