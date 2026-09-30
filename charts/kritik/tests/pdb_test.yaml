@@ -15,11 +15,11 @@ tests:
           value: 1
       - equal:
           path: spec.selector.matchLabels["app.kubernetes.io/component"]
-          value: all
+          value: server
 
-  - it: renders none for a role of one replica
+  - it: renders none for one replica
     set:
-      roles.all.replicas: 1
+      replicas: 1
     asserts:
       - hasDocuments:
           count: 0

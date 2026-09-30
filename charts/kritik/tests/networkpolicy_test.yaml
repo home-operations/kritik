@@ -53,8 +53,10 @@ tests:
             protocol: TCP
         documentIndex: 1
       - equal:
-          path: spec.egress[2].to[0].podSelector.matchLabels["kritik.home-operations.com/gateway"]
-          value: "true"
+          path: spec.egress[2].to[0].podSelector.matchLabels
+          value:
+            app.kubernetes.io/name: kritik
+            app.kubernetes.io/instance: RELEASE-NAME
         documentIndex: 1
       - equal:
           path: spec.egress[2].ports[0].port

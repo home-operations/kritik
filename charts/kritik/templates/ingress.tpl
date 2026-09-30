@@ -25,7 +25,6 @@ spec:
     - host: {{ include "kritik.webHost" . | quote }}
       http:
         paths:
-          {{- if include "kritik.hasIngest" . }}
           - path: {{ printf "%s/hooks" $base | quote }}
             pathType: Prefix
             backend:
@@ -33,7 +32,6 @@ spec:
                 name: {{ include "kritik.fullname" . }}
                 port:
                   name: http
-          {{- end }}
           - path: {{ $base | default "/" | quote }}
             pathType: Prefix
             backend:

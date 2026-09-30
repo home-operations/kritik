@@ -4,7 +4,7 @@ templates:
 values:
   - ../ci/lint-values.yaml
 tests:
-  - it: renders one Deployment for the all role by default
+  - it: renders one Deployment of kritik serve by default
     asserts:
       - notContains:
           path: spec.template.spec.containers[0].env
@@ -20,13 +20,13 @@ tests:
           value: RELEASE-NAME-kritik
       - equal:
           path: spec.template.metadata.labels["app.kubernetes.io/component"]
-          value: all
+          value: server
       - equal:
-          path: spec.template.metadata.labels["kritik.home-operations.com/hooks"]
-          value: "true"
-      - contains:
+          path: spec.replicas
+          value: 2
+      - equal:
           path: spec.template.spec.containers[0].args
-          content: all
+          value: [serve]
       # The tag floats with the release-please-stamped appVersion.
       - matchRegex:
           path: spec.template.spec.containers[0].image
@@ -76,7 +76,7 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].startupProbe
 
-  - it: wires the three database secrets and the runner settings for a worker-capable role
+  - it: wires the three database secrets and the runner settings
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -119,56 +119,7 @@ tests:
             mountPath: /etc/kritik
             readOnly: true
 
-  - it: renders the split topology with an ingest, a worker and a web Deployment
-    set:
-      roles.all.enabled: false
-      roles.ingest.enabled: true
-      roles.worker.enabled: true
-      roles.web.enabled: true
-      roles.worker.resources:
-        limits:
-          memory: 2Gi
-    asserts:
-      - hasDocuments:
-          count: 3
-      - equal:
-          path: metadata.name
-          value: RELEASE-NAME-kritik-ingest
-        documentIndex: 0
-      - equal:
-          path: metadata.name
-          value: RELEASE-NAME-kritik-worker
-        documentIndex: 1
-      # Ingest never sees the owner DSN or the runner settings.
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIK_EXECUTOR
-            value: kubernetes
-        documentIndex: 0
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIK_EXECUTOR
-            value: kubernetes
-        documentIndex: 1
-      # The worker has no http port and is not selected by the webhook Service.
-      - notExists:
-          path: spec.template.metadata.labels["kritik.home-operations.com/hooks"]
-        documentIndex: 1
-      - equal:
-          path: spec.template.spec.containers[0].resources.limits.memory
-          value: 2Gi
-        documentIndex: 1
-
-  - it: refuses all together with a split role
-    set:
-      roles.worker.enabled: true
-    asserts:
-      - failedTemplate:
-          errorPattern: single-process topology
-
-  - it: refuses a worker-capable role without the owner secret
+  - it: refuses to render without the owner secret
     set:
       database.owner.existingSecret: ""
     asserts:
@@ -234,7 +185,7 @@ tests:
               value: '[{"image":"registry.example/helm:3","name":"helm"}]',
             }
 
-  - it: hands the worker a runner RuntimeClass only when one is set
+  - it: hands runners a RuntimeClass only when one is set
     set:
       runner.runtimeClassName: gvisor
     asserts:
@@ -244,61 +195,7 @@ tests:
             name: KRITIK_RUNNER_RUNTIME_CLASS
             value: gvisor
 
-  - it: renders a web-only Deployment with the dashboard env and port, and no http/gateway port
-    set:
-      roles.all.enabled: false
-      roles.web.enabled: true
-      web.url: https://dash.example.com
-      web.port: 9090
-    asserts:
-      - hasDocuments:
-          count: 1
-      - equal:
-          path: metadata.name
-          value: RELEASE-NAME-kritik-web
-      - equal:
-          path: spec.template.metadata.labels["app.kubernetes.io/component"]
-          value: web
-      - equal:
-          path: spec.template.metadata.labels["kritik.home-operations.com/web"]
-          value: "true"
-      - notExists:
-          path: spec.template.metadata.labels["kritik.home-operations.com/hooks"]
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIK_WEB_URL
-            value: https://dash.example.com
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIK_WEB_ADDR
-            value: ":9090"
-      - contains:
-          path: spec.template.spec.containers[0].ports
-          content:
-            name: web
-            containerPort: 9090
-            protocol: TCP
-      - notContains:
-          path: spec.template.spec.containers[0].ports
-          content:
-            name: http
-          any: true
-      - notContains:
-          path: spec.template.spec.containers[0].ports
-          content:
-            name: gateway
-          any: true
-      # The web role never gets the owner DSN or the runner/gateway settings.
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIK_EXECUTOR
-            value: kubernetes
-          any: true
-
-  - it: hands the all role the dashboard env and port
+  - it: hands kritik serve the dashboard env and port
     set:
       web.url: https://dash.example.com
     asserts:
@@ -325,15 +222,6 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: web.url is required
-
-  - it: fails on a split topology without the web role
-    set:
-      roles.all.enabled: false
-      roles.ingest.enabled: true
-      roles.worker.enabled: true
-    asserts:
-      - failedTemplate:
-          errorPattern: the split topology needs roles.web
 
   - it: renders each auth value set as its KRITIK_AUTH_ variable, and no other
     set:

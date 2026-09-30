@@ -9,7 +9,7 @@ import (
 // namespace roots every deterministic identifier kritik derives. Accounts
 // and connections get their ids from their names so that any role can
 // address them without a lookup that row-level security would forbid before
-// the account is known: the ingest role derives the account id from the
+// the account is known: the webhook listener derives the account id from the
 // repository owner a webhook names and opens the account transaction
 // directly.
 var namespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://github.com/home-operations/kritik"))

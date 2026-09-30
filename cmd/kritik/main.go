@@ -1,11 +1,10 @@
 // Command kritik reviews GitHub pull requests against an index of the
-// repository. One binary serves every role; --role selects
-// which part of the service this process runs.
+// repository. "kritik serve" runs the service, and "kritik run" one review
+// or index run in a runner Job the service creates (ADR-0024).
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -20,10 +19,10 @@ import (
 	// is otherwise unaware of the cgroup limit, so a parse of a large repository
 	// could OOM-kill the pod before the GC reclaims.
 	_ "github.com/KimMachineGun/automemlimit"
-	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
@@ -60,18 +59,15 @@ func main() {
 }
 
 func run() error {
-	roleFlag := pflag.String("role", string(config.RoleAll), "process role: all, ingest, worker, runner or web")
-	pflag.Parse()
-	role, err := config.ParseRole(*roleFlag)
+	command, err := config.ParseCommand(os.Args[1:])
 	if err != nil {
 		return err
 	}
-
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	runSpec, err := validateRole(role, cfg)
+	runSpec, err := validate(command, cfg)
 	if err != nil {
 		return err
 	}
@@ -85,7 +81,7 @@ func run() error {
 	logger.Info("starting kritik",
 		"version", version,
 		"commit", commit,
-		"role", role,
+		"command", command,
 		"addr", cfg.Addr,
 		"metrics_addr", cfg.MetricsAddr,
 		"gateway_addr", cfg.GatewayAddr,
@@ -108,152 +104,164 @@ func run() error {
 	// database is still starting; readiness stays false until the store is
 	// open, so the pod waits rather than being killed by its own probe.
 	mgmt := server.NewManagement(cfg.MetricsAddr, logger)
-	drift := server.NewConfigDriftGauge(mgmt.Registry())
-	configErrors := server.NewConfigErrorGauge(mgmt.Registry())
-	m := metrics.New(mgmt.Registry())
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return mgmt.Run(ctx) })
 
-	// Every role connects with the application DSN and refuses to start if
-	// that DSN could bypass row-level security or the vector extension is
-	// missing. Leader-eligible roles also open the owner DSN.
-	st, err := openStore(ctx, storeOptions(role, cfg, logger), logger)
+	// Both commands connect with the application DSN and refuse to start if
+	// it could bypass row-level security or the vector extension is
+	// missing; serve also opens the owner DSN, to lead.
+	st, err := openStore(ctx, storeOptions(command, cfg, logger), logger)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
 
-	// The runner gets everything it needs from its Job spec; every other role
-	// is driven by the configuration file, and must not start without it.
-	var current *configfile.Current
-	var exec executor.Executor
-	if role != config.RoleRunner {
-		// current is the configuration read at startup; the leader applies
-		// it on election, followers only compare hashes.
-		src := &configsource.Source{RequireSignIn: role == config.RoleAll || role == config.RoleWeb}
-		file, err := src.Load(cfg.ConfigFile)
-		if err != nil {
-			return err
-		}
-		logConfig(logger, file, "configuration loaded")
-		// Once read, a secret's variable is dropped, so no later lookup or
-		// child process sees it (ADR-0022 §2.2).
-		for _, name := range file.SecretEnv() {
-			if err := os.Unsetenv(name); err != nil {
-				return fmt.Errorf("unset %s: %w", name, err)
-			}
-		}
-		current = src.Current
-		g.Go(func() error {
-			return reportDrift(ctx, st, current, drift, driftInterval)
-		})
-		if st.LeaderEligible() {
-			// Only an all or worker role holds the owner DSN, so a leader
-			// always has the executor it would sweep up after.
-			exec, err = newExecutor(ctx, cfg, logger)
-			if err != nil {
-				return err
-			}
-			sweeper, _ := exec.(*executor.Kube)
-			// Insert-only client: the leader enqueues onboarding index jobs.
-			leaderQueue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
-			if err != nil {
-				return fmt.Errorf("river: %w", err)
-			}
-			g.Go(func() error {
-				return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
-					return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, configErrors, logger)
-				})
-			})
-		} else if role != config.RoleIngest && role != config.RoleWeb {
-			logger.Warn("no owner DSN configured; this replica can never migrate or apply configuration")
-		}
-	}
-
-	if role == config.RoleRunner {
+	if command == config.CommandRun {
 		// A runner does one thing and exits; it never becomes ready.
 		return runner.Run(ctx, st, runSpec, runner.Secrets{GitToken: cfg.GitToken, GatewayToken: cfg.GatewayToken}, logger)
 	}
-
-	if role == config.RoleAll || role == config.RoleIngest {
-		// Insert-only River client: ingest enqueues, it never works jobs.
-		queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
-		if err != nil {
-			return fmt.Errorf("river: %w", err)
-		}
-		svc := ingest.NewService(st, queue)
-		handler := ingest.NewHandler(current, svc, logger)
-		handler.Metrics = m
-		handler.Deliveries = svc
-		hooks := server.NewHooks(cfg.Addr, cfg.WebBasePath(), handler, logger)
-		g.Go(func() error { return hooks.Run(ctx) })
-	}
-	if err := startWeb(ctx, g, role, st, cfg, current, logger); err != nil {
+	if err := serve(ctx, g, st, cfg, mgmt.Registry(), logger); err != nil {
 		return err
-	}
-	if role == config.RoleAll || role == config.RoleWorker {
-		if exec == nil {
-			if exec, err = newExecutor(ctx, cfg, logger); err != nil {
-				return err
-			}
-		}
-		embedders := &worker.Embedders{Build: worker.BuildEmbedder}
-		forges := &worker.ForgeCache{Build: worker.BuildForge}
-		workers := river.NewWorkers()
-		base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
-		completers := &worker.Completers{Build: worker.BuildStepper}
-		// The gateway: runner pods' one route out, allowed by the hosts the
-		// current configuration names (ADR-0008), and the model endpoint an
-		// agentic runner calls with its run token (ADR-0004).
-		gatewayLogger := logger.With("listener", "gateway")
-		gateway := &worker.Gateway{
-			Store: st, Current: current, Logger: gatewayLogger, Metrics: m,
-			Proxy: &egress.Proxy{
-				Rules:   func() egress.Rules { return current.Get().EgressRules() },
-				Observe: m.Egress, Logger: gatewayLogger,
-			},
-			Steppers: completers,
-		}
-		g.Go(func() error {
-			return server.ServeDrain(ctx, cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
-		})
-		river.AddWorker(workers, &worker.Review{
-			Base: base, Executor: exec, Completers: completers, Embedders: embedders,
-			GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
-		})
-		river.AddWorker(workers, &worker.FollowUp{Base: base, Completers: completers})
-		river.AddWorker(workers, &worker.Index{
-			Base: base, Executor: exec, Embedders: embedders,
-		})
-		queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
-			Logger: logger,
-			// Review and index workers set their own timeouts from the
-			// runner deadline; rescue must wait out the longest of them.
-			RescueStuckJobsAfter: jobtimeout.RescueStuckJobsAfter,
-			// ctx ending starts a soft stop: running jobs get this long
-			// before their contexts end (ADR-0024 §2.3).
-			SoftStopTimeout: queueDrain,
-			Queues: map[string]river.QueueConfig{
-				jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
-				jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
-				jobs.QueueIndex:    {MaxWorkers: cfg.IndexWorkers},
-			},
-			Workers: workers,
-		})
-		if err != nil {
-			return fmt.Errorf("river: %w", err)
-		}
-		g.Go(func() error { return workQueues(ctx, st, queue, cfg, logger) })
 	}
 	mgmt.SetReady(true)
 
 	if err := g.Wait(); err != nil {
-		return fmt.Errorf("%s: %w", role, err)
+		return fmt.Errorf("%s: %w", command, err)
 	}
 	return nil
 }
 
-// queueDrain is how long a stopping worker lets running jobs finish; a
+// serve starts the service on g (ADR-0024): the configuration read at
+// startup, the leader duties on the replica holding the leader lock, the
+// webhooks, the dashboard, the gateway and the job queues.
+func serve(
+	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, reg *prometheus.Registry, logger *slog.Logger,
+) error {
+	drift := server.NewConfigDriftGauge(reg)
+	configErrors := server.NewConfigErrorGauge(reg)
+	m := metrics.New(reg)
+	src := &configsource.Source{RequireSignIn: true}
+	file, err := src.Load(cfg.ConfigFile)
+	if err != nil {
+		return err
+	}
+	logConfig(logger, file, "configuration loaded")
+	// Once read, a secret's variable is dropped, so no later lookup or
+	// child process sees it (ADR-0022 §2.2).
+	for _, name := range file.SecretEnv() {
+		if err := os.Unsetenv(name); err != nil {
+			return fmt.Errorf("unset %s: %w", name, err)
+		}
+	}
+	// current is the configuration read at startup; the leader applies it
+	// on election, the other replica only compares hashes.
+	current := src.Current
+	g.Go(func() error {
+		return reportDrift(ctx, st, current, drift, driftInterval)
+	})
+	exec, err := newExecutor(ctx, cfg, logger)
+	if err != nil {
+		return err
+	}
+	if st.LeaderEligible() {
+		sweeper, _ := exec.(*executor.Kube)
+		// Insert-only client: the leader enqueues onboarding index jobs.
+		leaderQueue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
+		if err != nil {
+			return fmt.Errorf("river: %w", err)
+		}
+		g.Go(func() error {
+			return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
+				return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, configErrors, logger)
+			})
+		})
+	} else {
+		logger.Warn("no owner DSN configured; this replica can never migrate or apply configuration")
+	}
+	if err := startHooks(ctx, g, st, cfg, current, m, logger); err != nil {
+		return err
+	}
+	if err := startWeb(ctx, g, st, cfg, current, logger); err != nil {
+		return err
+	}
+	return startWorker(ctx, g, st, cfg, current, exec, m, logger)
+}
+
+// startHooks serves the webhook listener on Addr until ctx ends. Its
+// River client only inserts: the queues are worked by startWorker's.
+func startHooks(
+	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current, m *metrics.Metrics,
+	logger *slog.Logger,
+) error {
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
+	if err != nil {
+		return fmt.Errorf("river: %w", err)
+	}
+	svc := ingest.NewService(st, queue)
+	handler := ingest.NewHandler(current, svc, logger)
+	handler.Metrics = m
+	handler.Deliveries = svc
+	hooks := server.NewHooks(cfg.Addr, cfg.WebBasePath(), handler, logger)
+	g.Go(func() error { return hooks.Run(ctx) })
+	return nil
+}
+
+// startWorker serves the gateway and works the job queues until ctx ends.
+func startWorker(
+	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current, exec executor.Executor,
+	m *metrics.Metrics, logger *slog.Logger,
+) error {
+	embedders := &worker.Embedders{Build: worker.BuildEmbedder}
+	forges := &worker.ForgeCache{Build: worker.BuildForge}
+	workers := river.NewWorkers()
+	base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
+	completers := &worker.Completers{Build: worker.BuildStepper}
+	// The gateway: runner pods' one route out, allowed by the hosts the
+	// current configuration names (ADR-0008), and the model endpoint an
+	// agentic runner calls with its run token (ADR-0004).
+	gatewayLogger := logger.With("listener", "gateway")
+	gateway := &worker.Gateway{
+		Store: st, Current: current, Logger: gatewayLogger, Metrics: m,
+		Proxy: &egress.Proxy{
+			Rules:   func() egress.Rules { return current.Get().EgressRules() },
+			Observe: m.Egress, Logger: gatewayLogger,
+		},
+		Steppers: completers,
+	}
+	g.Go(func() error {
+		return server.ServeDrain(ctx, cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
+	})
+	river.AddWorker(workers, &worker.Review{
+		Base: base, Executor: exec, Completers: completers, Embedders: embedders,
+		GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
+	})
+	river.AddWorker(workers, &worker.FollowUp{Base: base, Completers: completers})
+	river.AddWorker(workers, &worker.Index{
+		Base: base, Executor: exec, Embedders: embedders,
+	})
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
+		Logger: logger,
+		// Review and index workers set their own timeouts from the
+		// runner deadline; rescue must wait out the longest of them.
+		RescueStuckJobsAfter: jobtimeout.RescueStuckJobsAfter,
+		// ctx ending starts a soft stop: running jobs get this long
+		// before their contexts end (ADR-0024 §2.3).
+		SoftStopTimeout: queueDrain,
+		Queues: map[string]river.QueueConfig{
+			jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
+			jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
+			jobs.QueueIndex:    {MaxWorkers: cfg.IndexWorkers},
+		},
+		Workers: workers,
+	})
+	if err != nil {
+		return fmt.Errorf("river: %w", err)
+	}
+	g.Go(func() error { return workQueues(ctx, st, queue, cfg, logger) })
+	return nil
+}
+
+// queueDrain is how long a stopping serve lets running jobs finish; a
 // review still running then is cut and retried (ADR-0024 §2.3).
 // queueStopHeadroom covers what a cut review does before it hands its job
 // back, waiting for its agent row above all. Both fit in the chart's
@@ -263,51 +271,39 @@ const (
 	queueStopHeadroom = 40 * time.Second
 )
 
-// validateRole checks what role needs of cfg beyond the common set, and
+// validate checks what command needs of cfg beyond the common set, and
 // reads a runner's spec.
-func validateRole(role config.Role, cfg *config.Config) (runner.Spec, error) {
-	switch role {
-	case config.RoleAll:
-		return runner.Spec{}, errors.Join(cfg.ValidateWorker(), cfg.ValidateWeb())
-	case config.RoleWorker:
-		return runner.Spec{}, cfg.ValidateWorker()
-	case config.RoleRunner:
-		if err := cfg.ValidateRunner(); err != nil {
-			return runner.Spec{}, err
-		}
-		return runner.ReadSpec(cfg.RunSpecFile)
-	case config.RoleWeb:
-		return runner.Spec{}, cfg.ValidateWeb()
+func validate(command config.Command, cfg *config.Config) (runner.Spec, error) {
+	if command == config.CommandServe {
+		return runner.Spec{}, cfg.ValidateServe()
 	}
-	return runner.Spec{}, nil
+	if err := cfg.ValidateRunner(); err != nil {
+		return runner.Spec{}, err
+	}
+	return runner.ReadSpec(cfg.RunSpecFile)
 }
 
-// storeOptions is how role connects to the database. Only a
-// leader-eligible role, all or worker, is given the owner DSN; the web role
-// in particular never is (ADR-0009 §3).
-func storeOptions(role config.Role, cfg *config.Config, logger *slog.Logger) store.Options {
+// storeOptions is how command connects to the database: serve with the
+// owner DSN too, which leading needs, a runner never.
+func storeOptions(command config.Command, cfg *config.Config, logger *slog.Logger) store.Options {
 	opts := store.Options{
 		AppURL: cfg.DatabaseURL, Logger: logger,
 	}
-	if role == config.RoleAll || role == config.RoleWorker {
+	if command == config.CommandServe {
 		opts.OwnerURL = cfg.DatabaseOwnerURL
 	}
 	return opts
 }
 
-// webDrain is how long a stopping web role lets requests finish. Event
+// webDrain is how long a stopping dashboard lets requests finish. Event
 // streams end at once, when the API's Run returns.
 const webDrain = 10 * time.Second
 
 // startWeb serves the dashboard, its sign-in and its API on WebAddr until
-// ctx ends, for the all and web roles.
+// ctx ends.
 func startWeb(
-	ctx context.Context, g *errgroup.Group, role config.Role, st *store.Store, cfg *config.Config, current *configfile.Current,
-	logger *slog.Logger,
+	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current, logger *slog.Logger,
 ) error {
-	if role != config.RoleAll && role != config.RoleWeb {
-		return nil
-	}
 	webLogger := logger.With("listener", "web")
 	authHandler, err := auth.New(auth.Config{Store: st, Current: current, WebURL: cfg.WebURLParsed(), Logger: webLogger})
 	if err != nil {

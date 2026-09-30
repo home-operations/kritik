@@ -1,5 +1,4 @@
-{{- if include "kritik.hasIngest" . }}
-# Webhook listener: only pods that serve hooks (`all` and `ingest`).
+# Webhook listener.
 apiVersion: v1
 kind: Service
 metadata:
@@ -16,12 +15,10 @@ spec:
       protocol: TCP
   selector:
     {{- include "kritik.selectorLabels" . | nindent 4 }}
-    kritik.home-operations.com/hooks: "true"
-{{- end }}
-{{- if and (include "kritik.hasWorker" .) .Values.gateway.enabled }}
+{{- if .Values.gateway.enabled }}
 ---
 # Egress gateway: the forward proxy runner Jobs reach the outside through
-# (ADR-0008), served by worker-capable pods.
+# (ADR-0008).
 apiVersion: v1
 kind: Service
 metadata:
@@ -39,11 +36,9 @@ spec:
       protocol: TCP
   selector:
     {{- include "kritik.selectorLabels" . | nindent 4 }}
-    kritik.home-operations.com/gateway: "true"
 {{- end }}
-{{- if include "kritik.hasWeb" . }}
 ---
-# Dashboard: only pods that serve the web UI/API.
+# Dashboard.
 apiVersion: v1
 kind: Service
 metadata:
@@ -61,10 +56,8 @@ spec:
       protocol: TCP
   selector:
     {{- include "kritik.selectorLabels" . | nindent 4 }}
-    kritik.home-operations.com/web: "true"
-{{- end }}
 ---
-# Metrics: every role's pods.
+# Metrics.
 apiVersion: v1
 kind: Service
 metadata:

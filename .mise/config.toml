@@ -117,8 +117,8 @@ git diff --exit-code charts/kritik/README.md charts/kritik/values.schema.json
 """
 
 [tasks.dev]
-description = "Run kritik locally with the all role"
-run = "go run ./cmd/kritik --role all"
+description = "Run kritik serve locally"
+run = "go run ./cmd/kritik serve"
 
 # --- Cluster development loop -------------------------------------------
 # Everything cluster-specific lives in the gitignored .private/ folder: the

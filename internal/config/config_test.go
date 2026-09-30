@@ -133,65 +133,50 @@ func TestWebURL(t *testing.T) {
 	}
 }
 
-func TestRoleValidation(t *testing.T) {
+func TestCommandValidation(t *testing.T) {
 	t.Setenv("KRITIK_DATABASE_URL", "postgres://app@db/kritik")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.ValidateWorker(); err == nil {
-		t.Fatal("kubernetes executor without a runner image must fail")
+	err = cfg.ValidateServe()
+	if err == nil || !strings.Contains(err.Error(), "KRITIK_RUNNER_IMAGE") || !strings.Contains(err.Error(), "KRITIK_WEB_URL") {
+		t.Fatalf("serve without a runner image or a web URL = %v, want both named", err)
 	}
-	cfg.RunnerImage = "img"
-	if err := cfg.ValidateWorker(); err != nil {
+	cfg.RunnerImage, cfg.WebURL = "img", "https://dash.example.com"
+	if err := cfg.ValidateServe(); err != nil {
 		t.Fatal(err)
 	}
 	cfg.Executor, cfg.RunnerImage = "local", ""
-	if err := cfg.ValidateWorker(); err == nil {
-		t.Fatal("local executor without a runner DSN must fail")
+	if err := cfg.ValidateServe(); err == nil || !strings.Contains(err.Error(), "KRITIK_RUNNER_DATABASE_URL") {
+		t.Fatalf("local executor without a runner DSN = %v", err)
 	}
 	if err := cfg.ValidateRunner(); err == nil {
-		t.Fatal("runner without its inputs must fail")
+		t.Fatal("run without its inputs must fail")
 	}
 	cfg.RunSpecFile = "/var/run/kritik/spec.json"
 	if err := cfg.ValidateRunner(); err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.ValidateWeb(); err == nil {
-		t.Fatal("serving the dashboard without KRITIK_WEB_URL must fail")
-	}
-	cfg.WebURL = "https://dash.example.com"
-	if err := cfg.ValidateWeb(); err != nil {
-		t.Fatal(err)
-	}
 }
 
-func TestParseRole(t *testing.T) {
-	tests := []struct {
-		in      string
-		want    Role
+func TestParseCommand(t *testing.T) {
+	for _, tt := range []struct {
+		args    []string
+		want    Command
 		wantErr bool
 	}{
-		{in: "all", want: RoleAll},
-		{in: " Worker ", want: RoleWorker},
-		{in: "ingest", want: RoleIngest},
-		{in: "runner", want: RoleRunner},
-		{in: "Web", want: RoleWeb},
-		{in: "", wantErr: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			got, err := ParseRole(tt.in)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("ParseRole(%q) = %q, want error", tt.in, got)
-				}
-				return
-			}
-			if err != nil || got != tt.want {
-				t.Fatalf("ParseRole(%q) = %q, %v; want %q", tt.in, got, err, tt.want)
-			}
-		})
+		{args: nil, want: CommandServe},
+		{args: []string{"serve"}, want: CommandServe},
+		{args: []string{"run"}, want: CommandRun},
+		{args: []string{"--role", "all"}, wantErr: true},
+		{args: []string{"worker"}, wantErr: true},
+		{args: []string{"serve", "extra"}, wantErr: true},
+	} {
+		got, err := ParseCommand(tt.args)
+		if (err != nil) != tt.wantErr || got != tt.want {
+			t.Errorf("ParseCommand(%q) = %q, %v; want %q (error %v)", tt.args, got, err, tt.want, tt.wantErr)
+		}
 	}
 }
 

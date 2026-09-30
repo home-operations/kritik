@@ -39,13 +39,14 @@ Kubernetes Job pod that holds no secrets.
   answer in the thread.
 - **Providers and limits.** OpenRouter, OpenAI and Anthropic adapters, with
   per-account concurrency, daily review and monthly token caps. The provider
-  key never enters a runner pod: the agent reaches its model through the
-  worker's gateway.
+  key never enters a runner pod: the agent reaches its model through
+  kritik's gateway.
 - **Repository overrides.** A `.kritik.yaml`, read from the merge-base, can
   narrow the admin's settings and bring its own rules, context files and
   comment templates.
-- **Configuration in git.** One YAML file holds the whole configuration and
-  reloads on change; secrets stay in Secrets it references by path.
+- **Configuration in git.** One YAML file holds the whole configuration,
+  read at startup, and a change rolls the pods; secrets stay in Secrets,
+  which reach kritik as environment variables.
 - **Dashboard.** Sign-in, live review state, full model transcripts, the
   running configuration, repository on/off and an audit log.
 
@@ -58,8 +59,8 @@ CloudNativePG setup for the three database roles. In short: a Postgres with
 builds on) loaded, with an owner, an application and a runner role; the one
 public URL under `web.url`, which the dashboard and GitHub's webhooks share;
 a way to sign in under `auth`; and the configuration file under `config`.
-`roles.all` runs the single-process topology; `roles.ingest`, `roles.worker`
-and `roles.web` split it.
+It runs as one Deployment of `kritik serve`, two replicas by default, which
+creates a runner Job for each review and index run.
 
 The [setup guide](docs/setup.md) takes a fresh instance through its GitHub
 App, model key and embedder to its first review; the dashboard's setup
@@ -68,10 +69,10 @@ checklist shows what is still missing.
 Security notes:
 
 - Install kritik into a namespace of its own: runner Jobs run in the release
-  namespace, and the worker's Role can create, patch and delete every Secret
+  namespace, and kritik's Role can create, patch and delete every Secret
   there, though it can never get or list one.
 - Keep the egress gateway on (the chart's default) with a NetworkPolicy:
-  runner pods then reach the outside only through the worker's forward proxy,
+  runner pods then reach the outside only through kritik's forward proxy,
   which allows destinations by hostname (github.com and the configuration's
   `egress.allowHosts`), and never hold the credentials `egress.credentials`
   lets the gateway add. Agentic reviews need it, since their model calls go

@@ -2,7 +2,7 @@
 // over each account's reviews, repositories, usage and queue, and over the
 // running configuration, its setup and connections; re-runs, cancels,
 // reindexes and turning repositories on or off, with their audit log; and
-// the server-sent event stream that keeps the UI live. The web role runs
+// the server-sent event stream that keeps the UI live. kritik serve runs
 // it; internal/auth decides who a request acts as.
 package webapi
 

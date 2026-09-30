@@ -23,7 +23,8 @@ import (
 	"github.com/home-operations/kritik/internal/runner"
 )
 
-// runnerRole is the --role value and container name of a runner pod.
+// runnerRole names a runner pod's container, and its component and role
+// labels, which the runner network policy selects.
 const runnerRole = "runner"
 
 // noProxy is what a runner pod with a gateway reaches directly, besides
@@ -371,7 +372,7 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 	container := corev1.Container{
 		Name:      runnerRole,
 		Image:     k.Image,
-		Args:      []string{"--role", runnerRole},
+		Args:      []string{"run"},
 		Env:       env,
 		Resources: resources,
 		SecurityContext: &corev1.SecurityContext{

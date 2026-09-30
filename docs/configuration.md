@@ -379,7 +379,7 @@ served.
 
 ## `egress`
 
-`egress` is what runner pods may reach through the worker's gateway beyond
+`egress` is what runner pods may reach through kritik's gateway beyond
 `github.com` and `api.github.com`, which an app allows: `allowHosts`,
 exact or `*.`-prefixed, and `credentials`, a token the gateway adds to a
 plain `http://` request to that host, so the runner never holds it.

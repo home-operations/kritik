@@ -1,5 +1,5 @@
 // Package jobs defines the River job arguments that ingest, the leader and
-// the dashboard enqueue and the worker role consumes. Uniqueness lives here because it is the contract
+// the dashboard enqueue and the worker consumes. Uniqueness lives here because it is the contract
 // between the two: a review is unique per head SHA so no push is ever lost,
 // a follow-up per comment, an index run per target commit.
 package jobs

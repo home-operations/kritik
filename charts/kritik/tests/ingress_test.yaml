@@ -46,17 +46,3 @@ tests:
       - equal:
           path: spec.rules[0].http.paths[1].path
           value: /kritik
-
-  - it: routes only the dashboard when no role serves webhooks
-    set:
-      ingress.enabled: true
-      roles.all.enabled: false
-      roles.worker.enabled: true
-      roles.web.enabled: true
-    asserts:
-      - equal:
-          path: spec.rules[0].http.paths
-          value:
-            - path: /
-              pathType: Prefix
-              backend: { service: { name: RELEASE-NAME-kritik-web, port: { name: web } } }

@@ -112,6 +112,3 @@ head, or cancelling a review that is not running, is a `409 Conflict`.
 - A role mapping is only as trustworthy as what it reads. Map on groups
   or roles the IdP controls, not on an email or name a user can set on
   their own profile.
-- The web role only ever holds the application database DSN, never the
-  owner DSN a migration or leader election needs, and refuses to start if
-  it would.

@@ -1,5 +1,5 @@
 // Package jobtimeout holds the River job timeout bounds shared between the
-// worker role, which computes each job's timeout, and configfile, which
+// worker, which computes each job's timeout, and configfile, which
 // rejects admin settings that would make River's cap cut a job short.
 // configfile must not import worker, so these constants live in this leaf
 // package instead, which neither worker nor configfile's other leaf
