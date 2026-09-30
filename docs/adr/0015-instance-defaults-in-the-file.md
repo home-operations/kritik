@@ -1,7 +1,10 @@
 # ADR-0015: instance defaults in the file, under the dashboard's
 
-- **Status:** Proposed
+- **Status:** Superseded
 - **Date:** 2026-09-29
+- **Superseded by:** [ADR-0019](0019-configuration-in-git.md): the file
+  holds the whole configuration, so its defaults are the defaults. Its
+  environment variables stay.
 - **Authors:** onedr0p.
 - **Amends:** [ADR-0014](0014-github-app-only-self-hosted.md) §2.2 (what
   the file holds, and that there is no per-field overlay).
