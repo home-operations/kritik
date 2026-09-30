@@ -1,10 +1,10 @@
 kritik {{ .Chart.AppVersion }} is installed as {{ include "kritik.fullname" . }} with roles: {{ include "kritik.enabledRoles" . }}.
 
-Open {{ tpl .Values.web.url . }} to sign in. The first admin is met by a setup
-wizard that creates the GitHub App, sets a model key and registers the
-repositories to review.
+Open {{ tpl .Values.web.url . }} to sign in. The GitHub Apps, model providers
+and review settings come from config.file and its KRITIK_* variables (see
+docs/configuration.md); the dashboard turns each repository on or off.
 {{ if include "kritik.hasIngest" . }}
-GitHub delivers each connection's webhook to {{ tpl .Values.web.url . | trimSuffix "/" }}/hooks/<connection>:
+GitHub delivers each app's webhook to {{ tpl .Values.web.url . | trimSuffix "/" }}/hooks/<app name>:
 {{- if or .Values.ingress.enabled .Values.httpRoute.enabled }} the chart's
 {{ if .Values.ingress.enabled }}Ingress{{ else }}HTTPRoute{{ end }} routes /hooks there to the webhook listener.
 {{- else }} route /hooks under

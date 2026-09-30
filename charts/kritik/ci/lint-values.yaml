@@ -16,14 +16,12 @@ auth:
       name: kritik-auth
 config:
   file:
-    connections:
+    apps:
       - name: github
-        forge: github
         accounts: [org-1]
-        app:
-          clientId: Iv1.example
-          privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-          webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+        clientId: Iv1.example
+        privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+        webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
 secretMounts:
   - name: bot
     secretName: kritik-bot
