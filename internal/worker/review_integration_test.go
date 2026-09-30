@@ -1373,6 +1373,9 @@ skip:
   onlyPaths: ["docs/**", ".kritik.yaml"]
 review:
   instructions: [".kritik/rules.md"]
+  rules:
+    - { id: no-panics, rule: Return an error rather than panic. }
+    - { id: sql-placeholders, rule: Use query placeholders., paths: ["**/*.sql"] }
   templates:
     summary: ".kritik/summary.md.tmpl"
 `,
@@ -1427,6 +1430,11 @@ review:
 	fc.mu.Unlock()
 	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nFlag every TODO left in code.") {
 		t.Fatalf("system prompt does not carry the instructions:\n%s", system)
+	}
+	// Only the rule whose paths the change matches.
+	if !strings.Contains(system, "\n\n- no-panics: Return an error rather than panic.\n\n## Repository instructions") ||
+		strings.Contains(system, "sql-placeholders") {
+		t.Fatalf("system prompt does not carry the rules:\n%s", system)
 	}
 	lf.mu.Lock()
 	var sticky string

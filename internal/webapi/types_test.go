@@ -216,8 +216,8 @@ var goldens = map[string]any{
 		},
 	},
 	"rule": Rule{
-		Kind: RuleContext, Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}, Source: RuleFromRepository,
-		Repositories: []string{"alpha/one"},
+		Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap an error with the package name before returning it.", Paths: []string{"**/*.go"},
+		Source: RuleFromEntry, Repositories: []string{"alpha/one"},
 	},
 	"job": Job{
 		ID: 42, Kind: "review", State: rivertype.JobStateRetryable, Attempt: 2, MaxAttempts: 5, CreatedAt: t0, ScheduledAt: t1,

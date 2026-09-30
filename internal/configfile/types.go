@@ -503,6 +503,9 @@ type Review struct {
 	// InlineComments is false to post the summary alone.
 	InlineComments bool
 	Context        []ContextFile
+	// Rules are the checks the configuration writes, the broadest scope's
+	// first (ADR-0018).
+	Rules []Rule
 	// Thoroughness is what the reviewer reports: ThoroughnessThorough,
 	// anything a maintainer could act on, or ThoroughnessFocused, only what
 	// would stop the review.
@@ -532,7 +535,9 @@ const (
 )
 
 // ReviewSpec sets the review block at one scope, field by field: a field
-// written here, even empty, replaces the broader scope's.
+// written here, even empty, replaces the broader scope's. Rules are the
+// exception: they add to the broader scope's, one with an id already
+// listed replacing that rule where it stands.
 type ReviewSpec struct {
 	Instructions        []string      `yaml:"instructions,omitempty"`
 	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
@@ -540,6 +545,7 @@ type ReviewSpec struct {
 	MinSeverity         *string       `yaml:"minSeverity,omitempty"`
 	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
 	Context             []ContextFile `yaml:"context,omitempty"`
+	Rules               []Rule        `yaml:"rules,omitempty"`
 	Thoroughness        *string       `yaml:"thoroughness,omitempty"`
 }
 

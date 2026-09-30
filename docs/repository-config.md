@@ -63,6 +63,23 @@ instructions, and chooses a few settings within bounds an admin sets:
         paths: ["internal/store/**"]
   ```
 
+- `review.rules`: checks the review makes, added after the admin's
+  ([ADR-0018](adr/0018-rules.md)). Each has an `id` (lowercase letters,
+  digits and hyphens, at most 64 characters) that findings cite it by,
+  the `rule` itself (at most 2000 characters) and optional `paths` globs,
+  which apply it only when a changed path matches one. A rule whose `id`
+  an admin's rule has is dropped, and the review's summary says so. The
+  rules a change matches are listed by id in the system prompt ahead of
+  the instructions, capped at 16 KiB:
+
+  ```yaml
+  review:
+    rules:
+      - id: wrap-errors
+        rule: Wrap an error with fmt.Errorf("<package>: %w", err) before returning it.
+        paths: ["**/*.go"]
+  ```
+
 - `review.requireSuggestedFix: true`: findings must include a suggested
   fix. The file can turn the requirement on, never off.
 - `review.minSeverity`: `nit` or `important`, the least severe finding

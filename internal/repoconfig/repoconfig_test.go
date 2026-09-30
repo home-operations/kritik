@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/review"
 )
 
 func TestParse_Invalid(t *testing.T) {
@@ -138,6 +139,24 @@ func TestActiveContext(t *testing.T) {
 	}
 	if got := ActiveContext(files, []string{"db/0001.sql"}); len(got) != 2 {
 		t.Fatalf("ActiveContext = %v", got)
+	}
+}
+
+// TestActiveRules: a rule applies to a change its paths match, or to any
+// when it has none, and the rules past the cap are counted, not listed.
+func TestActiveRules(t *testing.T) {
+	t.Parallel()
+	rules := []configfile.Rule{
+		{ID: "any", Rule: "Check errors."}, {ID: "sql", Rule: "Use placeholders.", Paths: []string{"**/*.sql"}},
+		{ID: "big", Rule: strings.Repeat("x", MaxRulesBytes)}, {ID: "last", Rule: "Name things."},
+	}
+	got, left := ActiveRules(rules, []string{"main.go"})
+	want := []review.Rule{{ID: "any", Text: "Check errors."}, {ID: "last", Text: "Name things."}}
+	if !reflect.DeepEqual(got, want) || left != 1 {
+		t.Fatalf("ActiveRules = %+v, %d left", got, left)
+	}
+	if got, _ := ActiveRules(rules[:2], []string{"db/0001.sql"}); len(got) != 2 {
+		t.Fatalf("ActiveRules = %+v", got)
 	}
 }
 

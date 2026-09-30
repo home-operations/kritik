@@ -166,7 +166,8 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 		return followUpFailed, err
 	}
 	instructions, _ := repoconfig.Instructions(f.instructionFiles, repoconfig.Active(f.settings.Review.Instructions, f.scoped, rec.changed))
-	system := review.FollowUpSystemPrompt(instructions)
+	rules, _ := repoconfig.ActiveRules(f.settings.Review.Rules, rec.changed)
+	system := review.FollowUpSystemPrompt(rules, instructions)
 	msg := review.BuildFollowUp(review.Input{
 		Repository: f.pr.repository, Number: f.pr.number, Title: f.pr.title, Author: f.pr.author, BaseRef: f.pr.baseRef,
 		Body: rec.body, Changed: rec.changed, Diff: rec.diff, Context: rec.context, BudgetTokens: review.UserBudget(system),

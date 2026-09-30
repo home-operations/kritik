@@ -3,6 +3,8 @@
 - **Status:** Proposed
 - **Date:** 2026-09-29
 - **Authors:** onedr0p.
+- **Amended by:** [ADR-0018](0018-rules.md), which adds the rules written
+  in the configuration to the Rules page of §2.4.
 - **Amends:** [ADR-0009](0009-web-dashboard.md) §2.1 (the layout copied
   from konflate) and [ADR-0016](0016-dashboard-identity.md)'s scope, which
   left that layout as it was.

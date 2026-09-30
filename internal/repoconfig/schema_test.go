@@ -37,6 +37,7 @@ func TestSchemaMatchesFile(t *testing.T) {
 		{"review", []string{"properties", "review"}, yamlKeys[Review]()},
 		{"review.templates", append(review, "templates"), yamlKeys[Templates]()},
 		{"review.context", append(review, "context", "items"), yamlKeys[configfile.ContextFile]()},
+		{"review.rules", append(review, "rules", "items"), yamlKeys[configfile.Rule]()},
 		{"a scoped instruction", append(review, "instructions", "items", "oneOf", "1"), []string{"path", "paths"}},
 	}
 	for _, tt := range tests {

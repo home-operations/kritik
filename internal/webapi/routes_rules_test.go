@@ -25,6 +25,13 @@ func TestCollectRules(t *testing.T) {
 		// A .kritik.yaml that does not parse is ignored, as a review ignores it.
 		{name: "alpha/three", settings: settings(nil), sources: map[string]configfile.Source{}, doc: []byte("review: [")},
 	}
+	// Written rules: the account's, one alpha/one's entry replaces, and
+	// one its .kritik.yaml adds.
+	wrap := configfile.Rule{ID: "wrap-errors", Rule: "Wrap errors."}
+	own := configfile.Rule{ID: "wrap-errors", Rule: "Wrap errors here too.", Paths: []string{"**/*.go"}}
+	repos[0].settings.Review.Rules, repos[0].ruleScopes = []configfile.Rule{wrap}, map[string]configfile.Scope{"wrap-errors": configfile.ScopeAccount}
+	repos[1].settings.Review.Rules, repos[1].ruleScopes = []configfile.Rule{own}, map[string]configfile.Scope{"wrap-errors": configfile.ScopeRepository}
+	repos[1].doc = append(repos[1].doc, []byte("  rules:\n    - { id: wrap-errors, rule: Anything. }\n    - { id: no-tokens, rule: Never log a token. }\n")...)
 	got := collectRules(repos)
 	want := []Rule{
 		{Kind: RuleContext, Path: "ARCHITECTURE.md", Description: "how it fits", Paths: []string{}, Source: RuleFromRepository, Repositories: []string{"alpha/one"}},
@@ -34,6 +41,12 @@ func TestCollectRules(t *testing.T) {
 		},
 		{Kind: RuleInstructions, Path: "docs/go.md", Paths: []string{"**/*.go"}, Source: RuleFromRepository, Repositories: []string{"alpha/one"}},
 		{Kind: RuleInstructions, Path: "docs/review.md", Paths: []string{}, Source: "account", Repositories: []string{"alpha/one", "alpha/two"}},
+		{Kind: RuleWritten, ID: "no-tokens", Text: "Never log a token.", Paths: []string{}, Source: RuleFromRepository, Repositories: []string{"alpha/one"}},
+		{Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap errors.", Paths: []string{}, Source: "account", Repositories: []string{"alpha/two"}},
+		{
+			Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap errors here too.", Paths: []string{"**/*.go"}, Source: RuleFromEntry,
+			Repositories: []string{"alpha/one"},
+		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("collectRules =\n%+v\nwant\n%+v", got, want)

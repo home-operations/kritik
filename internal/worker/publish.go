@@ -70,9 +70,11 @@ type publishPhase struct {
 	// values are kritik's defaults.
 	parse     review.ParseOptions
 	templates review.Templates
-	// instructions are the repository's review instructions, references
-	// the files it names as explaining the code, and repoNotes what the
-	// summary states about its configuration files.
+	// rules are the rules that apply to the change, instructions the
+	// repository's review instructions, references the files it names as
+	// explaining the code, and repoNotes what the summary states about its
+	// configuration files.
+	rules        []review.Rule
 	instructions []string
 	references   []review.Reference
 	repoNotes    []string
@@ -100,7 +102,7 @@ func (p *publishPhase) run(ctx context.Context) (status store.ReviewStatus, err 
 		p.logger.Warn("similar-code retrieval skipped", "error", err)
 	}
 	in.context = append(in.context, similar...)
-	system := review.SystemPrompt(p.instructions, p.settings.Review.Thoroughness == configfile.ThoroughnessFocused)
+	system := review.SystemPrompt(p.rules, p.instructions, p.settings.Review.Thoroughness == configfile.ThoroughnessFocused)
 	var incremental *review.IncrementalInput
 	if p.scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{

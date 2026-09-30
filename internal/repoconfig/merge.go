@@ -30,7 +30,7 @@ type Merged struct {
 // Merge applies doc, the merge-base FileName or nil when the repository has
 // none, over the admin's settings op (ADR-0010 §2.5). The file narrows
 // what an admin allows (enabled, filter, ignore, skip), appends its
-// instructions and context files to the admin's, may only turn
+// instructions, context files and rules to the admin's, may only turn
 // requireSuggestedFix on, and replaces the templates, the inline severity
 // floor and whether findings go inline, which grant nothing. It chooses
 // its mode, models, agent limits and commands and settle time within the
@@ -43,6 +43,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	op.Ignore = slices.Clone(op.Ignore)
 	op.Review.Instructions = slices.Clone(op.Review.Instructions)
 	op.Review.Context = slices.Clone(op.Review.Context)
+	op.Review.Rules = slices.Clone(op.Review.Rules)
 	m := Merged{Settings: op}
 	if doc == nil {
 		return m, nil
@@ -105,6 +106,13 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		if !slices.ContainsFunc(m.Review.Context, func(o configfile.ContextFile) bool { return o.Path == c.Path }) {
 			m.Review.Context = append(m.Review.Context, c)
 		}
+	}
+	for _, r := range f.Review.Rules {
+		if slices.ContainsFunc(op.Review.Rules, func(o configfile.Rule) bool { return o.ID == r.ID }) {
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: review.rules %s was dropped: an admin's rule has that id", FileName, r.ID))
+			continue
+		}
+		m.Review.Rules = append(m.Review.Rules, r)
 	}
 	m.choose(&f, &op)
 	return m, nil

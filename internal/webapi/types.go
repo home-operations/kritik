@@ -646,29 +646,37 @@ type UsageSeries struct {
 	Rows  []UsagePoint     `json:"rows"`
 }
 
-// RuleKind is what a rule is to a review: instructions it follows, or a
-// context file that explains the code.
+// RuleKind is what a rule is to a review: a check written in the
+// configuration (ADR-0018), instructions it follows, or a context file
+// that explains the code.
 type RuleKind string
 
 // Rule kinds.
 const (
+	RuleWritten      RuleKind = "rule"
 	RuleInstructions RuleKind = "instructions"
 	RuleContext      RuleKind = "context"
 )
 
 // RuleSource is where a rule is set: a layer of the configuration, as
-// configfile.Source names it, or RuleFromRepository, the repository's own
-// .kritik.yaml.
+// configfile.Source names it, RuleFromEntry, an account's entry for the
+// repository, or RuleFromRepository, the repository's own .kritik.yaml.
 type RuleSource string
 
-// RuleFromRepository is a rule a repository's .kritik.yaml adds.
-const RuleFromRepository RuleSource = "repository"
+// Rule sources beyond the configuration's layers.
+const (
+	RuleFromRepository RuleSource = "repository"
+	RuleFromEntry      RuleSource = "entry"
+)
 
-// Rule is one file reviews read, with where it is set, the paths it
-// applies to (every change when empty), and the running repositories
-// whose reviews read it.
+// Rule is one written rule or file reviews read, with where it is set,
+// the paths it applies to (every change when empty), and the running
+// repositories whose reviews read it. ID and Text are a written rule's,
+// Path and Description a file's.
 type Rule struct {
 	Kind         RuleKind   `json:"kind"`
+	ID           string     `json:"id"`
+	Text         string     `json:"text"`
 	Path         string     `json:"path"`
 	Description  string     `json:"description"`
 	Paths        []string   `json:"paths"`

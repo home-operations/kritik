@@ -49,6 +49,8 @@ func TestAgentPrompt(t *testing.T) {
 		scoped       map[string][]string
 		scope        review.Scope
 		instructions []string
+		rules        []configfile.Rule
+		active       []review.Rule
 		strict       bool
 		focused      bool
 	}{
@@ -63,19 +65,24 @@ func TestAgentPrompt(t *testing.T) {
 			instructions: []string{"Admin rules.", "Repository rules."}, strict: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
 		{name: "a focused review gets the focused prompt", scope: review.ScopeFull, focused: true},
+		{
+			name: "a rule scoped to paths the change does not touch is left out", scope: review.ScopeFull,
+			rules:  []configfile.Rule{{ID: "go", Rule: "Wrap errors.", Paths: []string{"*.go"}}, {ID: "web", Rule: "No inline styles.", Paths: []string{"web/**"}}},
+			active: []review.Rule{{ID: "go", Text: "Wrap errors."}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
 			s.Prompt.Instructions, s.Prompt.InstructionScopes, s.Prompt.RequireSuggestedFix = tt.paths, tt.scoped, tt.strict
-			s.Prompt.Focused = tt.focused
+			s.Prompt.Focused, s.Prompt.Rules = tt.focused, tt.rules
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {
 				pack.DeltaDiff = agentDiff
 			}
 			system, user, strict := agentPrompt(s, files, pack, nil)
-			if want := review.AgenticSystemPrompt(tt.instructions, nil, tt.focused); system != want {
+			if want := review.AgenticSystemPrompt(tt.active, tt.instructions, nil, tt.focused); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput

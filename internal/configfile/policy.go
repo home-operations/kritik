@@ -99,6 +99,7 @@ var Policies = []Policy{
 	{Key: "review.requireSuggestedFix", Scopes: everyScope, Repository: RepoTurnOn},
 	{Key: "review.templates", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "review.context", Scopes: everyScope, Repository: RepoAppend},
+	{Key: "review.rules", Scopes: everyScope, Repository: RepoAppend},
 	{Key: "review.minSeverity", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "review.inlineComments", Scopes: everyScope, Repository: RepoReplace},
 	{Key: keyThoroughness, Scopes: everyScope, Repository: RepoReplace},

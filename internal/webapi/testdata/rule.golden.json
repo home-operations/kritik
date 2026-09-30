@@ -1,8 +1,10 @@
 {
-  "kind": "context",
-  "path": "db/schema.sql",
-  "description": "the schema",
-  "paths": ["**/*.sql"],
-  "source": "repository",
+  "kind": "rule",
+  "id": "wrap-errors",
+  "text": "Wrap an error with the package name before returning it.",
+  "path": "",
+  "description": "",
+  "paths": ["**/*.go"],
+  "source": "entry",
   "repositories": ["alpha/one"]
 }

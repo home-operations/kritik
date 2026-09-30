@@ -20,6 +20,7 @@ func adminSettings() configfile.Settings {
 		Review: configfile.Review{
 			Instructions: []string{"docs/rules.md"}, RequireSuggestedFix: true,
 			Templates: configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
+			Rules: []configfile.Rule{{ID: "wrap-errors", Rule: "Wrap errors."}},
 		},
 	}
 }
@@ -60,6 +61,15 @@ func TestMerge(t *testing.T) {
 			},
 		},
 		{name: "a context file without a description", doc: "review:\n  context: [{ path: db/schema.sql }]\n", wantErr: "description is required"},
+		{
+			name: "rules follow the admin's, and may not replace one",
+			doc:  "review:\n  rules:\n    - { id: wrap-errors, rule: Anything goes. }\n    - { id: no-tokens, rule: Never log a token., paths: ['**/*.go'] }\n",
+			want: func(s *configfile.Settings) {
+				s.Review.Rules = append(s.Review.Rules, configfile.Rule{ID: "no-tokens", Rule: "Never log a token.", Paths: []string{"**/*.go"}})
+			},
+			dropped: []string{".kritik.yaml: review.rules wrap-errors was dropped: an admin's rule has that id"},
+		},
+		{name: "a rule without an id", doc: "review:\n  rules: [{ rule: Never log a token. }]\n", wantErr: `review.rules[0].id "" must be`},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
 			name: "presentation replaces the admin's", doc: "review: { minSeverity: important, inlineComments: false }\n",
