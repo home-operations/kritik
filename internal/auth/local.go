@@ -20,8 +20,10 @@ import (
 const (
 	maxFailedSignIns   = 10
 	failedSignInWindow = 15 * time.Minute
-	// maxTrackedClients bounds the limiter's memory; past it, expired
-	// windows are dropped.
+	// maxTrackedClients bounds the limiter's memory: at it, expired windows
+	// are dropped, and failing that the oldest one, so a flood of addresses
+	// costs the client it displaces its count rather than the process its
+	// memory.
 	maxTrackedClients = 10_000
 )
 
@@ -55,11 +57,20 @@ func (a *attempts) fail(client string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := a.now()
-	if len(a.failed) >= maxTrackedClients {
+	if _, tracked := a.failed[client]; !tracked && len(a.failed) >= maxTrackedClients {
 		for k, w := range a.failed {
 			if now.Sub(w.start) >= failedSignInWindow {
 				delete(a.failed, k)
 			}
+		}
+		if len(a.failed) >= maxTrackedClients {
+			var oldest string
+			for k, w := range a.failed {
+				if oldest == "" || w.start.Before(a.failed[oldest].start) {
+					oldest = k
+				}
+			}
+			delete(a.failed, oldest)
 		}
 	}
 	w := a.failed[client]
