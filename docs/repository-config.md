@@ -91,6 +91,13 @@ context:
   in the comment.
 - `requireSuggestedFix: true`: findings must include a suggested fix. The
   file can turn the requirement on, never off.
+- `approve: true`: a review that finds nothing blocking or important
+  approves the pull request, as a review pinned to the head it saw; nits
+  alone do not withhold it. A later review of the same pull request that
+  does find something dismisses kritik's approval. It replaces the
+  admin's, in either direction: a repository turns it on where the
+  instance leaves it off ([ADR-0025](adr/0025-approvals.md)). Off unless
+  set.
 - `filterExpr`: a filter expression ANDed with the admin's own. It is
   compiled and smoke-tested against a sample pull request when the file is
   parsed, so a broken expression is rejected rather than silently skipping

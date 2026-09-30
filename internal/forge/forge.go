@@ -150,6 +150,13 @@ type Client interface {
 	// posted whose comments could not be read back returns ids, all 0, and
 	// the error.
 	CreateReview(ctx context.Context, owner, repo string, number int, headSHA string, comments []InlineComment) (ids []int64, err error)
+	// Approve posts an approving review of headSHA with body, unless the
+	// bot's approval of that head already stands, and reports whether one
+	// was posted.
+	Approve(ctx context.Context, owner, repo string, number int, headSHA, body string) (bool, error)
+	// DismissApprovals dismisses each of the bot's standing approvals of
+	// the pull request with message, and returns how many it dismissed.
+	DismissApprovals(ctx context.Context, owner, repo string, number int, message string) (int, error)
 	// SetStatus sets the kritik commit status on sha.
 	SetStatus(ctx context.Context, owner, repo, sha string, state StatusState, description string) error
 	// FileURL links lines line through endLine (0 for line alone) of path

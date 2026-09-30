@@ -94,6 +94,10 @@ func TestMerge(t *testing.T) {
 			dropped: []string{`.kritik.yaml: feedback "exhaustive" was dropped; allowed: detailed, standard or minimal`},
 		},
 		{
+			name: "approve replaces the admin's", doc: "approve: true\n",
+			want: func(s *configfile.Settings) { s.Review.Approve = true },
+		},
+		{
 			name: "requireSuggestedFix may only turn on", doc: "requireSuggestedFix: false\n",
 			dropped: []string{".kritik.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},

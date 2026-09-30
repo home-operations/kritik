@@ -37,6 +37,9 @@ Kubernetes Job pod that holds no secrets.
   the last review, and `settle` folds a burst of force-pushes into one.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
   answer in the thread.
+- **Approvals, opt-in.** A repository or the instance can have a review that
+  finds nothing blocking or important approve the pull request, and a later
+  review that does withdraw it.
 - **Providers and limits.** OpenRouter, OpenAI and Anthropic adapters, with
   per-account concurrency, daily review and monthly token caps. The provider
   key never enters a runner pod: the agent reaches its model through

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -212,6 +213,59 @@ func (c *Client) CreateReview(
 		}
 	}
 	return ids, nil
+}
+
+// Approve implements forge.Client. GitHub keeps every review a user
+// submits, so a re-run on the same head would stack a second approval;
+// the bot's reviews are listed first and one already approving the head
+// stands as it is.
+func (c *Client) Approve(ctx context.Context, owner, repo string, number int, headSHA, body string) (bool, error) {
+	approvals, err := c.approvals(ctx, owner, repo, number)
+	if err != nil {
+		return false, err
+	}
+	if slices.ContainsFunc(approvals, func(r *gh.PullRequestReview) bool { return r.GetCommitID() == headSHA }) {
+		return false, nil
+	}
+	req := &gh.PullRequestReviewRequest{CommitID: new(headSHA), Event: new("APPROVE"), Body: new(body)}
+	if _, _, err := c.api.PullRequests.CreateReview(ctx, owner, repo, number, req); err != nil {
+		return false, fmt.Errorf("github: approve #%d: %w", number, err)
+	}
+	return true, nil
+}
+
+// DismissApprovals implements forge.Client.
+func (c *Client) DismissApprovals(ctx context.Context, owner, repo string, number int, message string) (int, error) {
+	approvals, err := c.approvals(ctx, owner, repo, number)
+	if err != nil {
+		return 0, err
+	}
+	for i, r := range approvals {
+		if _, _, err := c.api.PullRequests.DismissReview(ctx, owner, repo, number, r.GetID(),
+			gh.PullRequestDismissReviewRequest{Message: message}); err != nil {
+			return i, fmt.Errorf("github: dismiss review %d on #%d: %w", r.GetID(), number, err)
+		}
+	}
+	return len(approvals), nil
+}
+
+// approvals lists the bot's reviews of the pull request that approve it
+// and stand: GitHub reports a dismissed one as DISMISSED.
+func (c *Client) approvals(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error) {
+	login, err := c.BotLogin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []*gh.PullRequestReview
+	for r, err := range c.api.PullRequests.ListReviewsIter(ctx, owner, repo, number, &gh.ListOptions{PerPage: 100}) {
+		if err != nil {
+			return nil, fmt.Errorf("github: list reviews on #%d: %w", number, err)
+		}
+		if r.GetUser().GetLogin() == login && r.GetState() == "APPROVED" {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 // GetComment implements forge.Client. GitHub resolves a comment by id alone,

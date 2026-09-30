@@ -37,6 +37,7 @@
         "Inline": ""
       },
       "inlineComments": true,
+      "approve": false,
       "context": [
         {
           "path": "db/schema.sql",
@@ -89,6 +90,7 @@
           "Inline": ""
         },
         "inlineComments": true,
+        "approve": false,
         "context": [
           {
             "path": "db/schema.sql",

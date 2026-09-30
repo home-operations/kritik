@@ -78,6 +78,7 @@ var Policies = []Policy{
 	{Key: keyFeedback, Scopes: everyScope, Repository: RepoReplace},
 	{Key: "comments", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "requireSuggestedFix", Scopes: everyScope, Repository: RepoTurnOn},
+	{Key: "approve", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "filterExpr", Scopes: everyScope, Repository: RepoAnd},
 	{Key: "ignore", Scopes: everyScope, Repository: RepoUnion},
 	{Key: "rules", Scopes: everyScope, Repository: RepoAppend},

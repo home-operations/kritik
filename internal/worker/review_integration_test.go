@@ -88,6 +88,10 @@ type localForge struct {
 	authors  map[int64]string
 	inline   []forge.InlineComment
 	status   string
+	// approvals are the heads the bot's standing approvals cover, and
+	// dismissals how often they were withdrawn.
+	approvals  []string
+	dismissals int
 	// permissions by login; unknown logins have read access.
 	permissions map[string]forge.Permission
 	replies     []string
@@ -291,6 +295,26 @@ func (l *localForge) CreateReview(_ context.Context, _, _ string, _ int, _ strin
 	}
 	l.inline = append(l.inline, comments...)
 	return ids, nil
+}
+
+// Approve records the approved head; a head approved once stands.
+func (l *localForge) Approve(_ context.Context, _, _ string, _ int, headSHA, _ string) (bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if slices.Contains(l.approvals, headSHA) {
+		return false, nil
+	}
+	l.approvals = append(l.approvals, headSHA)
+	return true, nil
+}
+
+func (l *localForge) DismissApprovals(context.Context, string, string, int, string) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := len(l.approvals)
+	l.approvals = nil
+	l.dismissals++
+	return n, nil
 }
 
 func (l *localForge) FileURL(owner, repo, sha, path string, line, _ int) string {
@@ -1374,6 +1398,7 @@ rules:
   - { id: renovate, rule: Say what the update breaks., whenExpr: 'pr.headRef.startsWith("renovate/")' }
 comments:
   summaryTemplate: ".kritik/summary.md.tmpl"
+approve: true
 `,
 		".kritik/rules.md":        "Flag every TODO left in code.\n",
 		".kritik/summary.md.tmpl": "Custom summary for #{{ .Number }}: {{ .Result.Summary.Take }}\n",
@@ -1460,6 +1485,7 @@ comments:
 	if !strings.HasPrefix(sticky, "<!-- kritik:pr-3 -->\nCustom summary for #3: Changes main.go.") {
 		t.Fatalf("sticky comment for PR 3 = %q", sticky)
 	}
+	checkWithdrawn(t, lf)
 
 	// The same kind of change carrying the label the filter excludes.
 	labelledHead := commit("labelledHead", map[string]string{"main.go": "package main\n\nfunc e() {}\n"})
@@ -1472,6 +1498,19 @@ comments:
 	lf.mu.Unlock()
 	if forgeStatus != "success: kritik: skipped (filtered by .kritik.yaml)" {
 		t.Fatalf("status = %q", forgeStatus)
+	}
+}
+
+// checkWithdrawn asserts what a review with an important finding does
+// where the merge-base .kritik.yaml opted in to approvals: no approval,
+// and any standing one withdrawn.
+func checkWithdrawn(t *testing.T, lf *localForge) {
+	t.Helper()
+	lf.mu.Lock()
+	approvals, dismissals := lf.approvals, lf.dismissals
+	lf.mu.Unlock()
+	if len(approvals) != 0 || dismissals != 1 {
+		t.Fatalf("approvals = %v dismissals = %d, want none and one withdrawal", approvals, dismissals)
 	}
 }
 

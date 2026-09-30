@@ -82,8 +82,11 @@ type File struct {
 	Feedback            string                `yaml:"feedback,omitempty"`
 	Comments            Comments              `yaml:"comments,omitempty"`
 	RequireSuggestedFix *bool                 `yaml:"requireSuggestedFix,omitempty"`
-	FilterExpr          string                `yaml:"filterExpr,omitempty"`
-	Ignore              []string              `yaml:"ignore,omitempty"`
+	// Approve replaces the admin's: whether a review that finds nothing
+	// blocking or important approves the pull request.
+	Approve    *bool    `yaml:"approve,omitempty"`
+	FilterExpr string   `yaml:"filterExpr,omitempty"`
+	Ignore     []string `yaml:"ignore,omitempty"`
 	// Rules are checks added after the admin's; one may not replace an
 	// admin's rule.
 	Rules []configfile.Rule `yaml:"rules,omitempty"`

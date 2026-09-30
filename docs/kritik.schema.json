@@ -42,6 +42,10 @@
       "type": "boolean",
       "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."
     },
+    "approve": {
+      "type": "boolean",
+      "description": "true approves a pull request whose review finds nothing blocking or important, and dismisses that approval when a later review does; replaces the admin's."
+    },
     "filterExpr": {
       "type": "string",
       "description": "A CEL expression over pr, ANDed with the admin's filter."
