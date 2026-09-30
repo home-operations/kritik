@@ -754,11 +754,14 @@ export interface InstanceConfig {
 
 // What the configuration file and its environment set of the instance's
 // defaults, which the spec overrides: its providers by name, its default
-// models by key and its embedder whole. No key is shown.
+// models by key and its embedder whole. No key is shown. defaults are what
+// the spec's other review defaults fall back to, kritik's own where the
+// file sets none.
 export interface InstanceInherited {
   providers: Record<string, { type: 'openrouter' | 'openai' | 'anthropic'; baseUrl: string; source: ConfigSource }>;
   review: InheritedValue | null;
   fallback: InheritedValue | null;
+  defaults: Record<'mode' | 'review.thoroughness' | 'forks' | 'settle', InheritedValue>;
   embedding: { baseUrl: string; model: string; dims: number; source: ConfigSource } | null;
 }
 

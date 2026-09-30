@@ -249,6 +249,16 @@ func instanceInherited(l configfile.FileLayer) InstanceInherited {
 		return &InheritedValue{Value: v.Value, Source: v.Source}
 	}
 	out.Review, out.Fallback = value(l.Review), value(l.Fallback)
+	own := (&configfile.File{}).Settings(&configfile.Account{}, "")
+	out.Defaults = map[string]InheritedValue{
+		"mode":                {Value: string(own.Mode), Source: configfile.SourceDefault},
+		"review.thoroughness": {Value: own.Review.Thoroughness, Source: configfile.SourceDefault},
+		"forks":               {Value: strconv.FormatBool(own.Forks), Source: configfile.SourceDefault},
+		"settle":              {Value: own.Settle.String(), Source: configfile.SourceDefault},
+	}
+	for _, d := range l.Defaults {
+		out.Defaults[d.Key] = InheritedValue{Value: d.Value, Source: d.Source}
+	}
 	if e := l.Embedding; e != nil {
 		out.Embedding = &InheritedEmbedding{BaseURL: e.BaseURL, Model: e.Model, Dims: e.Dims, Source: e.Source}
 	}

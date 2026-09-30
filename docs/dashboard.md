@@ -84,10 +84,12 @@ instance's providers, default models and embedder as well
 the instance configuration's own, where it sets them, override the
 file's.
 
-- The admin console's form edits the connections, the provider keys, the
-  default models and the embedder. What the configuration file sets of
-  these shows as what an empty field inherits, with an "Override" that
-  starts the dashboard's own.
+- The admin console's form edits the review defaults (the models, mode,
+  thoroughness, forks and settle), the provider keys, the embedder and
+  the connections. What the configuration file or the environment sets
+  of these shows as what an empty field inherits, and kritik's own
+  default where neither sets one; a provider key or the embedder has an
+  "Override" that starts the dashboard's own.
   "Advanced: edit JSON" edits the whole document.
 - An account's Configuration page, under Settings, edits that account's
   entry alone.

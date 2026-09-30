@@ -86,6 +86,7 @@ export interface AccountDraft {
   reviewModel: string;
   fallbackModel: string;
   modelsRest: Obj;
+  mode: ReviewMode | '';
   thoroughness: Thoroughness | '';
   reviewRest: Obj;
   filter: string;
@@ -118,7 +119,7 @@ export interface EmbeddingDraft {
 }
 
 // The instance spec as its form edits it: the connections, the
-// instance's provider keys, its default models and its embedder, and
+// instance's provider keys, its review defaults and its embedder, and
 // everything else, the rest of the defaults and the accounts among it, as
 // rest.
 export interface InstanceDraft {
@@ -126,6 +127,10 @@ export interface InstanceDraft {
   providers: ProviderDraft[];
   reviewModel: string;
   fallbackModel: string;
+  mode: ReviewMode | '';
+  thoroughness: Thoroughness | '';
+  forks: TriBool;
+  settle: string;
   embedding: EmbeddingDraft | undefined;
   rest: Obj;
 }
@@ -297,6 +302,7 @@ export function draftOf(spec: Obj): AccountDraft {
     reviewModel: str(models.review),
     fallbackModel: str(models.fallback),
     modelsRest: take(models, 'review', 'fallback'),
+    mode: str(o.mode) as ReviewMode | '',
     thoroughness: str(review.thoroughness) as Thoroughness | '',
     reviewRest: take(review, 'thoroughness'),
     filter: str(o.filter),
@@ -310,7 +316,7 @@ export function draftOf(spec: Obj): AccountDraft {
     runner: json(o.runner),
     providers: Object.entries(obj(o.providers)).map(([name, v]) => providerOf(name, v)),
     repositories: Array.isArray(o.repositories) ? o.repositories.map(repositoryOf) : [],
-    rest: take(o, 'forge', 'name', 'models', 'review', 'filter', 'forks', 'enabled', 'settle', 'limits', 'runner', 'providers', 'repositories'),
+    rest: take(o, 'forge', 'name', 'models', 'mode', 'review', 'filter', 'forks', 'enabled', 'settle', 'limits', 'runner', 'providers', 'repositories'),
   };
 }
 
@@ -335,18 +341,26 @@ export function instanceDraftOf(spec: Obj): InstanceDraft {
   const o = obj(spec);
   const defaults = obj(o.defaults);
   const models = obj(defaults.models);
+  const review = obj(defaults.review);
   const d: InstanceDraft = {
     connections: Array.isArray(o.connections) ? o.connections.map(connectionOf) : [],
     providers: Object.entries(obj(o.providers)).map(([name, v]) => providerOf(name, v)),
     reviewModel: str(models.review),
     fallbackModel: str(models.fallback),
+    mode: str(defaults.mode) as ReviewMode | '',
+    thoroughness: str(review.thoroughness) as Thoroughness | '',
+    forks: tri(defaults.forks),
+    settle: str(defaults.settle),
     embedding: o.embedding ? embeddingOf(o.embedding) : undefined,
     rest: obj(keptSecrets(take(o, 'connections', 'providers', 'embedding', 'defaults'))),
   };
-  // The rest of the defaults, and of their models, stay as they are.
+  // The rest of the defaults, and of their models and review, stay as
+  // they are.
   const modelsRest = take(models, 'review', 'fallback');
-  const defaultsRest = take(defaults, 'models');
+  const reviewRest = take(review, 'thoroughness');
+  const defaultsRest = take(defaults, 'models', 'mode', 'review', 'forks', 'settle');
   if (nonEmpty(modelsRest)) defaultsRest.models = modelsRest;
+  if (nonEmpty(reviewRest)) defaultsRest.review = reviewRest;
   if (nonEmpty(defaultsRest)) d.rest.defaults = defaultsRest;
   return d;
 }
@@ -545,6 +559,7 @@ export function buildSpec(d: AccountDraft, redact = false): Built {
   set(models, 'review', d.reviewModel);
   set(models, 'fallback', d.fallbackModel);
   if (nonEmpty(models)) out.models = models;
+  if (d.mode) out.mode = d.mode;
   const review: Obj = { ...d.reviewRest };
   if (d.thoroughness) review.thoroughness = d.thoroughness;
   if (nonEmpty(review)) out.review = review;
@@ -604,6 +619,13 @@ export function buildInstanceSpec(d: InstanceDraft, redact = false): Built {
   set(models, 'fallback', d.fallbackModel);
   delete defaults.models;
   if (nonEmpty(models)) defaults.models = models;
+  if (d.mode) defaults.mode = d.mode;
+  const review: Obj = { ...obj(defaults.review) };
+  if (d.thoroughness) review.thoroughness = d.thoroughness;
+  delete defaults.review;
+  if (nonEmpty(review)) defaults.review = review;
+  if (d.forks !== '') defaults.forks = d.forks === 'true';
+  set(defaults, 'settle', d.settle);
   delete out.defaults;
   if (nonEmpty(defaults)) out.defaults = defaults;
   if (d.embedding) out.embedding = embeddingSpec(b, d.embedding);

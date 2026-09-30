@@ -242,6 +242,9 @@
 .setting-rows {
   display: flex;
   flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;

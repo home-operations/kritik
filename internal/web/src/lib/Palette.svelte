@@ -11,7 +11,7 @@
   import type { Me, Page, Pull } from './types';
   import { getJSON } from './api.svelte';
   import { pullRoute, accountApi } from './links';
-  import { CONSOLE_SECTIONS, ACCOUNT_FIELDS } from './settingsindex';
+  import { CONSOLE_SECTIONS, CONSOLE_FIELDS, ACCOUNT_FIELDS } from './settingsindex';
   import { focusWhenShown } from './focus';
   import {
     mdiMagnify,
@@ -57,7 +57,7 @@
     if (me?.admin) {
       entries.push({ label: 'Admin console', route: { name: 'console' }, icon: mdiConsoleLine });
       if (searching) {
-        for (const { label, target, keywords } of CONSOLE_SECTIONS) {
+        for (const { label, target, keywords } of [...CONSOLE_SECTIONS, ...CONSOLE_FIELDS]) {
           entries.push({ label, hint: 'admin console', route: { name: 'console' }, icon: mdiCogOutline, target, keywords });
         }
       }

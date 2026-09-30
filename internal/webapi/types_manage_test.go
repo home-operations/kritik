@@ -19,6 +19,10 @@ func init() {
 			Inherited: InstanceInherited{
 				Providers: map[string]InheritedProvider{"openrouter": {Type: configfile.ProviderOpenRouter, Source: configfile.SourceEnv}},
 				Review:    &InheritedValue{Value: "openrouter/acme-large", Source: configfile.SourceFile},
+				Defaults: map[string]InheritedValue{
+					"mode": {Value: "agentic", Source: configfile.SourceEnv}, "review.thoroughness": {Value: "thorough", Source: configfile.SourceDefault},
+					"forks": {Value: "false", Source: configfile.SourceDefault}, "settle": {Value: "30s", Source: configfile.SourceFile},
+				},
 				Embedding: &InheritedEmbedding{BaseURL: "https://openrouter.ai/api/v1", Model: "acme-embed", Dims: 1024, Source: configfile.SourceFile},
 			},
 			Spec: json.RawMessage(`{"connections":[{"name":"alpha-bot","forge":"github","accounts":["alpha"],` +

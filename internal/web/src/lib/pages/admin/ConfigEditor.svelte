@@ -38,6 +38,7 @@
     <span class="mono">{'{"value": "…"}'}</span>. Values typed into the form are not carried over.
   {/snippet}
   {#snippet fields(draft: AccountDraft, inv: (path: string) => boolean, structural: (edit: () => void) => void)}
+    {@const agentic = (draft.mode || own.mode) === 'agentic'}
     {@const thorough = (draft.thoroughness || own.review.thoroughness) === 'thorough'}
     {@const forks = draft.forks ? draft.forks === 'true' : own.forks}
     {@const on = draft.enabled ? draft.enabled === 'true' : own.enabled}
@@ -53,6 +54,26 @@
         </SettingRow>
         <SettingRow id="set-fallback-model" label="Fallback model" hint="What the provider falls back to when the review model cannot answer; it must be on the same provider.">
           <input class="mono" aria-labelledby="set-fallback-model" data-path="models.fallback" aria-invalid={inv('models.fallback') || undefined} bind:value={draft.fallbackModel} placeholder={hint('models.fallback', own.models.fallback || 'no fallback')} />
+        </SettingRow>
+        <SettingRow
+          id="set-mode"
+          label="Mode"
+          hint="How a review reads the change."
+          note={agentic
+            ? 'The model reads the repository with tools in a runner before it reports; it runs longer and costs more.'
+            : 'One model call over the diff and the context kritik gathers for it.'}
+        >
+          <Segmented
+            label="Mode"
+            path="mode"
+            options={[
+              { value: '', label: `Default (${own.mode})` },
+              { value: 'single', label: 'Single' },
+              { value: 'agentic', label: 'Agentic' },
+            ]}
+            value={draft.mode}
+            onchange={(v) => (draft.mode = v)}
+          />
         </SettingRow>
         <SettingRow
           id="set-thoroughness"

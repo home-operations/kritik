@@ -24,7 +24,18 @@ const accountConfig: T.AccountConfig = {
 const ownKey = { type: 'openai', apiKey: { keep: true } };
 
 // An instance whose configuration file sets none of its defaults.
-const noFile: T.InstanceInherited = { providers: {}, review: null, fallback: null, embedding: null };
+const noFile: T.InstanceInherited = {
+  providers: {},
+  review: null,
+  fallback: null,
+  defaults: {
+    mode: { value: 'single', source: 'default' },
+    'review.thoroughness': { value: 'thorough', source: 'default' },
+    forks: { value: 'false', source: 'default' },
+    settle: { value: '0s', source: 'default' },
+  },
+  embedding: null,
+};
 
 // The golden instance spec, with settings its form has no control for.
 const accountEntry = { forge: 'github', name: 'alpha', providers: { own: { type: 'openai', apiKey: { set: true } } } };
@@ -75,6 +86,19 @@ test.describe('account configuration', () => {
     expect(seen.filter((u) => u.pathname.endsWith('/config')).length).toBeGreaterThanOrEqual(2);
   });
 
+  test('the mode saves on the account and shows what it inherits', async ({ page }) => {
+    await setup(page, adminMe, [accountRow(accountConfig)]);
+    const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }]]);
+    await page.goto(`/${ADMIN}/config`);
+    const mode = page.getByRole('radiogroup', { name: 'Mode' });
+    await expect(mode.getByRole('radio', { checked: true })).toHaveText(`Default (${g.accountConfig.inherited.account.mode})`);
+    await mode.getByRole('radio', { name: 'Single', exact: true }).click();
+    await expect(page.locator('.setting-row').filter({ has: mode }).locator('.setting-note')).toHaveText('One model call over the diff and the context kritik gathers for it.');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    expect((sent[0]!.body as T.UpdateConfigRequest).spec.mode).toBe('single');
+  });
+
   test('thoroughness saves on the account and on a repository entry, and shows what it inherits', async ({ page }) => {
     await setup(page, adminMe, [accountRow(accountConfig)]);
     const sent = await g.mockWrites(page, [['PUT', new RegExp(`${API}/config$`), { status: 200, body: { revision: 4 } }]]);
@@ -117,8 +141,8 @@ test.describe('account configuration', () => {
     await expect(page.locator('#account-limits')).toBeFocused();
 
     await nav.getByRole('searchbox', { name: 'Search settings' }).fill('thorough');
-    await expect(nav.locator('.subnav-hit')).toHaveCount(1);
-    await nav.locator('.subnav-hit').click();
+    await expect(nav.locator('.subnav-hit')).toHaveText(['Thoroughness Configuration', 'Default thoroughness Admin console']);
+    await nav.locator('.subnav-hit').first().click();
     await expect(page.getByRole('radiogroup', { name: 'Thoroughness' }).getByRole('radio', { checked: true })).toBeFocused();
     await nav.getByRole('searchbox', { name: 'Search settings' }).fill('embedder');
     await nav.locator('.subnav-hit').click();
@@ -599,15 +623,15 @@ test.describe('admin console', () => {
     const sent = await g.mockWrites(page, [['PUT', CONFIG, { status: 200, body: { revision: 4 } }]]);
     await page.goto('/#/admin');
     const fromFile = page.getByRole('list', { name: 'Provider keys the configuration file sets' });
-    await expect(fromFile).toHaveText(/openrouter: openrouter, from the environment/);
+    await expect(fromFile.getByRole('listitem')).toContainText('openrouter, from the environment');
     const review = page.locator('[data-path="defaults.models.review"]');
     await expect(review).toHaveAttribute('placeholder', `inherits ${file.review!.value} from the config file`);
     await expect(page.locator('[data-path="defaults.models.fallback"]')).toHaveAttribute('placeholder', 'no fallback');
-    const embeddings = page.getByRole('group', { name: 'Embeddings' });
+    const embeddings = page.getByRole('region', { name: 'Embeddings' });
     await expect(embeddings).toContainText(`Uses ${file.embedding!.model} (${file.embedding!.dims} dimensions) at ${file.embedding!.baseUrl}, from the config file.`);
 
-    await fromFile.getByRole('button', { name: 'Override' }).click();
-    await expect(fromFile).toContainText('(overridden by the key below)');
+    await fromFile.getByRole('button', { name: 'Override openrouter' }).click();
+    await expect(fromFile).toContainText('Overridden by the key below');
     await page.getByLabel('API key: new value').fill('sk-ui');
     await page.locator('[data-path="defaults.models.fallback"]').fill('openrouter/small');
     await embeddings.getByRole('button', { name: 'Override' }).click();
@@ -621,6 +645,30 @@ test.describe('admin console', () => {
     expect(body.spec.providers).toEqual({ openrouter: { type: 'openrouter', apiKey: { value: 'sk-ui' } } });
     expect(body.spec.defaults).toEqual({ settle: '1m', models: { fallback: 'openrouter/small' } });
     expect(body.spec.embedding).toEqual({ baseUrl: file.embedding!.baseUrl, model: file.embedding!.model, dims: file.embedding!.dims, apiKey: { value: 'ek' } });
+  });
+
+  test('the review defaults show where each inherited value comes from, and save under defaults', async ({ page }) => {
+    const file = g.instanceConfig.inherited;
+    await setup(page, adminMe, [instanceRow({ ...instanceConfig, inherited: file })]);
+    const sent = await g.mockWrites(page, [['PUT', CONFIG, { status: 200, body: { revision: 4 } }]]);
+    await page.goto('/#/admin');
+    const defaults = page.getByRole('region', { name: 'Review defaults' });
+    const mode = page.getByRole('radiogroup', { name: 'Mode' });
+    const modeNote = page.locator('.setting-row').filter({ has: mode }).locator('.setting-note');
+    await expect(mode.getByRole('radio', { checked: true })).toHaveText(`Default (${file.defaults.mode.value})`);
+    await expect(modeNote).toContainText('Set by the environment.');
+    await expect(page.locator('.setting-row').filter({ has: page.getByRole('radiogroup', { name: 'Forks' }) }).locator('.setting-note')).not.toContainText('Set by');
+    await expect(defaults.locator('[data-path="defaults.settle"]')).toHaveValue('1m');
+    await defaults.locator('[data-path="defaults.settle"]').fill('');
+    await expect(defaults.locator('[data-path="defaults.settle"]')).toHaveAttribute('placeholder', `inherits ${file.defaults.settle.value} from the config file`);
+
+    await mode.getByRole('radio', { name: 'Single', exact: true }).click();
+    await expect(modeNote).toHaveText('One model call over the diff and the context kritik gathers for it.');
+    await defaults.getByRole('radiogroup', { name: 'Thoroughness' }).getByRole('radio', { name: 'Focused' }).click();
+    await defaults.getByRole('radiogroup', { name: 'Forks' }).getByRole('radio', { name: 'Review' }).click();
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    expect((sent[0]!.body as T.UpdateConfigRequest).spec.defaults).toEqual({ mode: 'single', review: { thoroughness: 'focused' }, forks: true });
   });
 
   test('adds an embedder to the instance', async ({ page }) => {

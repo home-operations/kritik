@@ -14,6 +14,24 @@
       "source": "file"
     },
     "fallback": null,
+    "defaults": {
+      "forks": {
+        "value": "false",
+        "source": "default"
+      },
+      "mode": {
+        "value": "agentic",
+        "source": "env"
+      },
+      "review.thoroughness": {
+        "value": "thorough",
+        "source": "default"
+      },
+      "settle": {
+        "value": "30s",
+        "source": "file"
+      }
+    },
     "embedding": {
       "baseUrl": "https://openrouter.ai/api/v1",
       "model": "acme-embed",

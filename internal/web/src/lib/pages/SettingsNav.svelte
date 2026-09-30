@@ -6,7 +6,7 @@
   import type { Route } from '../routes';
   import { session } from '../session.svelte';
   import { focusWhenShown } from '../focus';
-  import { ACCOUNT_FIELDS, ACCOUNT_SECTIONS, CONSOLE_SECTIONS, matches, type SettingEntry } from '../settingsindex';
+  import { ACCOUNT_FIELDS, ACCOUNT_SECTIONS, CONSOLE_FIELDS, CONSOLE_SECTIONS, matches, type SettingEntry } from '../settingsindex';
   import Icon from '../Icon.svelte';
   import { mdiSourceRepository, mdiTuneVariant, mdiClipboardTextClockOutline, mdiConsoleLine, mdiMagnify } from '../icons';
 
@@ -65,7 +65,7 @@
         if (matches(e, query)) out.push({ entry: e, to: { name: 'admin', slug, section: 'config' }, where: 'Configuration' });
       }
     }
-    for (const e of CONSOLE_SECTIONS) if (matches(e, query)) out.push({ entry: e, to: { name: 'console' }, where: 'Admin console' });
+    for (const e of [...CONSOLE_SECTIONS, ...CONSOLE_FIELDS]) if (matches(e, query)) out.push({ entry: e, to: { name: 'console' }, where: 'Admin console' });
     return out;
   });
 </script>

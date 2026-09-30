@@ -2,6 +2,7 @@ package webapi
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,6 +89,30 @@ embedding: { baseUrl: https://embed.example/v1, apiKey: { env: TEST_KEY }, model
 		if strings.Contains(s.Value, "hunter2") || strings.Contains(s.Value, "sk-secret") {
 			t.Fatalf("%s %s shows a secret: %q", s.Section, s.Key, s.Value)
 		}
+	}
+}
+
+// TestInstanceInheritedDefaults: each review default the spec may leave
+// out falls back to what the file or the environment sets, else to
+// kritik's own, whatever the spec sets over it.
+func TestInstanceInheritedDefaults(t *testing.T) {
+	t.Setenv("KRITIK_DEFAULTS_MODE", "agentic")
+	base, err := configfile.Parse([]byte("defaults: { settle: 45s }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := configfile.Merge(base, configfile.InstanceSpec{Spec: json.RawMessage(`{"defaults":{"settle":"1m","forks":true}}`), Revision: 1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]InheritedValue{
+		"mode":                {Value: "agentic", Source: configfile.SourceEnv},
+		"review.thoroughness": {Value: "thorough", Source: configfile.SourceDefault},
+		"forks":               {Value: "false", Source: configfile.SourceDefault},
+		"settle":              {Value: "45s", Source: configfile.SourceFile},
+	}
+	if got := instanceInherited(f.FileLayer()).Defaults; !maps.Equal(got, want) {
+		t.Errorf("Defaults = %v, want %v", got, want)
 	}
 }
 

@@ -31,10 +31,14 @@ type InstanceConfig struct {
 // InstanceInherited is what the configuration file and its environment set
 // of the instance's defaults, which the spec overrides: its providers by
 // name, its default models by key and its embedder whole. No key is shown.
+// Defaults are what the spec's mode, review.thoroughness, forks and settle
+// fall back to, by those keys: the file's or the environment's value, or
+// else kritik's own.
 type InstanceInherited struct {
 	Providers map[string]InheritedProvider `json:"providers"`
 	Review    *InheritedValue              `json:"review"`
 	Fallback  *InheritedValue              `json:"fallback"`
+	Defaults  map[string]InheritedValue    `json:"defaults"`
 	Embedding *InheritedEmbedding          `json:"embedding"`
 }
 
