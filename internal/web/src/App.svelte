@@ -30,8 +30,8 @@
   import SignIn from './lib/SignIn.svelte';
   import Page from './lib/pages/Page.svelte';
   import Toasts from './lib/components/Toasts.svelte';
-  import Setup from './lib/pages/admin/Setup.svelte';
-  import { session, loadMeta, management } from './lib/session.svelte';
+  import SetupBanner from './lib/pages/admin/SetupBanner.svelte';
+  import { session, loadMeta } from './lib/session.svelte';
   import type { Me } from './lib/types';
 
   const me = $derived(session.me);
@@ -237,7 +237,7 @@
     </header>
 
     <div class="main-col">
-      {#if me?.admin && management()}<Setup />{/if}
+      {#if me?.admin}<SetupBanner />{/if}
       <Page route={router.route} />
     </div>
     <Palette {me} />

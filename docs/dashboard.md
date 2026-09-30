@@ -35,8 +35,8 @@ at once, and holds a tab for each of an account's sections
   of the configuration, a repository's entry, or a repository's
   `.kritik.yaml` as its last review read it), the paths it applies to,
   and the repositories that read it. The page only lists them.
-- **Settings:** its repositories, and for an admin its configuration and
-  audit log, and the admin console.
+- **Settings:** its repositories, and for an admin its audit log and the
+  instance's Configuration page.
 
 A dot in the top bar shows whether live updates are connected. Once they
 have been down for two seconds it reads "Reconnecting…", and the page may
@@ -48,34 +48,35 @@ listener shares under `/hooks`. People sign in as
 
 ## First run
 
-The first admin to sign in to a fresh instance is met by a setup wizard.
-It walks the instance configuration in the order its parts depend on each
-other:
+The dashboard does not configure kritik: the configuration file does
+([ADR-0019](adr/0019-configuration-in-git.md)). Until an instance can
+review, with a running connection and a default review model, a banner
+tells an admin so and leads to the Configuration page, whose Setup
+checklist names each step still missing and what to set for it:
 
-1. **Listener:** the dashboard's URL and where each webhook goes.
-2. **GitHub App:** create one from a manifest, or declare an existing one
-   in the configuration file, then install it. The step moves on once
-   GitHub reports an installation on an account the App serves.
-3. **Model provider:** the instance's key, tested before it is saved, and
-   the default review model.
-4. **Embeddings:** the embedder, which can be skipped.
-5. **Repositories:** a checklist of the repositories the App reaches,
-   all checked, leaving out forks and archived repositories. The checked
-   ones are reviewed, and indexed with an embedder; the rest are turned
-   off. The ones the App reaches later start on, unless the step is told
-   otherwise.
+1. **A GitHub App is connected:** declared under `connections`.
+2. **The App reaches a repository:** installed on an account its
+   connection lists.
+3. **A review model is set:** `defaults.models.review`.
+4. **An embedder is set:** `embedding`, which is optional.
 
-Each step saves through the same API as the admin console, so closing the
-wizard loses nothing. It reopens at the first step not done, and a banner
-offers to resume it until the instance can review: a running connection
-and a default review model. The steps with nothing to save that were
-passed are remembered in the browser.
+## Configuration page
+
+An admin's Configuration page, under Settings, shows what the instance
+runs and changes none of it: the Setup checklist, the accounts the
+connections serve, each instance setting with its source, the stored
+instance configuration, the connections with the accounts each App is
+installed on, and the admin audit log. The command palette, `Ctrl`/`⌘`
+`K`, finds each of those sections, and the Settings navigation lists them
+while the page is open. A repository's page filters its effective
+settings.
 
 ## Instance configuration
 
 Everything but sign-in and the file's connections is the instance
-configuration: one document kept in Postgres and edited in the admin
-console. It holds the connections added in the dashboard, the instance's
+configuration: one document kept in Postgres and written through
+`PUT /api/v1/config`, until it moves into the configuration file
+([ADR-0019](adr/0019-configuration-in-git.md)). It holds the connections added in the dashboard, the instance's
 provider keys, its `embedding`, `defaults`, `polling`, `indexing`, `tools`,
 `retention`, `egress`, and `accounts`, each account's own settings,
 provider keys and repository entries. The configuration file may set the
@@ -84,24 +85,10 @@ instance's providers, default models and embedder as well
 the instance configuration's own, where it sets them, override the
 file's.
 
-- The admin console's form edits the connections, the provider keys, the
-  default models and the embedder. What the configuration file sets of
-  these shows as what an empty field inherits, with an "Override" that
-  starts the dashboard's own.
-  "Advanced: edit JSON" edits the whole document.
-- An account's Configuration page, under Settings, edits that account's
-  entry alone.
-- The command palette, `Ctrl`/`⌘` `K`, and the search at the top of the
-  Settings navigation find a setting by name and jump to its field, in
-  the admin console or an account's Configuration page, whose sections
-  the navigation lists while it is open. A repository's page filters its
-  effective settings.
-- A setting is a row: what it does, its control, and for a choice, what
-  the current one does. Nothing is saved until Save, which stays at the
-  bottom of the view with Discard while there are unsaved changes.
+- The Configuration page shows the document read-only, each secret as
+  set or not; the dashboard has no form for it.
 - A save names the revision it was loaded at. A save over a newer
-  revision is refused with `409 revision_conflict`, and the form offers to
-  reload.
+  revision is refused with `409 revision_conflict`.
 - A save that would not run is refused with `422`, naming the offending
   key. Every replica picks up a saved revision through Postgres `NOTIFY`.
 
@@ -123,8 +110,8 @@ the repository without its owner:
 ```
 
 An account runs while a connection serves it. An entry for an account no
-connection serves is kept, but not run, and the admin console lists it as
-not served.
+connection serves is kept, but not run, and the Configuration page lists
+it as not served.
 
 Every repository the App reaches is reviewed and indexed unless it is
 turned off. `enabled` turns it off or on, and like the other settings it
@@ -154,8 +141,8 @@ runs as the configuration says. The page lists the repositories that can
 run, with any fork turned on; its Type filter lists the forks, or the
 archived repositories, instead. kritik registers every repository each connection's App reaches
 by itself: once the configuration is applied, at start or after a change,
-and again on every poll, so a fresh instance lists them without a webhook
-or the wizard. "Resync from GitHub" does the same at once, such as right
+and again on every poll, so a fresh instance lists them without a
+webhook. "Resync from GitHub" does the same at once, such as right
 after unarchiving one. An account's repository count is of the ones that
 run.
 
@@ -242,7 +229,7 @@ visible to every member of the account it belongs to, not only admins.
   attempt succeeds.
 - A file connection whose name or account a dashboard connection already
   holds is left out of the running configuration, at boot or on reload,
-  while everything else runs: the admin console lists it with the reason,
+  while everything else runs: the Configuration page lists it with the reason,
   and `kritik_config_error{stage="merge"}` stays at 1. Rename either side,
   or remove the dashboard connection, to bring it back.
 - A secret referenced by `file:` is only re-read when the configuration

@@ -154,14 +154,14 @@ test.describe('signed-in shell', () => {
     await expect(page.locator('.sections .section-tab.active')).toHaveText('Settings');
   });
 
-  test("settings lists an admin the account's configuration and the admin console", async ({ page, signIn }) => {
+  test("settings lists an admin the account's audit log and the instance's configuration", async ({ page, signIn }) => {
     await signIn({ ...DEFAULT_ME, admin: true });
     await page.goto('/#/a/github/acme/repos');
     const nav = page.getByRole('navigation', { name: 'Settings' });
-    await expect(nav.getByRole('link')).toHaveText(['Repositories', 'Configuration', 'Audit log', 'Admin console']);
-    await nav.getByRole('link', { name: 'Admin console' }).click();
+    await expect(nav.getByRole('link')).toHaveText(['Repositories', 'Audit log', 'Configuration']);
+    await nav.getByRole('link', { name: 'Configuration' }).click();
     await expect(page).toHaveURL(/#\/admin$/);
-    await expect(nav.getByRole('link', { name: 'Admin console' })).toHaveAttribute('aria-current', 'page');
+    await expect(nav.getByRole('link', { name: 'Configuration', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('.sections .section-tab.active')).toHaveText('Settings');
   });
 
@@ -254,8 +254,8 @@ test.describe('keyboard shortcuts', () => {
     await expect(page.locator('.palette-input input')).toBeFocused();
 
     await page.keyboard.type('console');
-    // The console's sections match too, after the console itself.
-    await expect(page.locator('.row-title').first()).toHaveText('Admin console');
+    // The Configuration page's sections match too, after the page itself.
+    await expect(page.locator('.row-title').first()).toHaveText('Configuration');
 
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/#\/admin$/);

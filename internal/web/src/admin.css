@@ -114,8 +114,7 @@
 }
 .field input,
 .field select,
-.field textarea,
-.json-edit {
+.field textarea {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
@@ -125,17 +124,12 @@
   font-size: 13px;
   min-width: 0;
 }
-.field textarea,
-.json-edit {
+.field textarea {
   font-family: var(--font-mono);
   font-size: 12px;
   resize: vertical;
 }
-.json-edit {
-  width: 100%;
-  min-height: 320px;
-  box-sizing: border-box;
-}
+
 .field input:disabled,
 .field select:disabled,
 .field textarea:disabled {
@@ -143,185 +137,18 @@
 }
 .field input:focus-visible,
 .field select:focus-visible,
-.field textarea:focus-visible,
-.json-edit:focus-visible {
+.field textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.field-check {
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-}
+
 .invalid input,
 .invalid select,
 .invalid textarea,
 [aria-invalid='true'] {
   border-color: var(--danger) !important;
 }
-.field-hint {
-  font-size: 11px;
-  color: var(--muted);
-}
-.field-error {
-  font-size: 11px;
-  color: var(--danger);
-}
-.secret-modes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  border: none;
-  padding: 0;
-  margin: 0;
-}
-.secret-modes label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.item-card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.item-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.form-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-/* The save stays at the bottom of the view while the form scrolls. */
-.savebar {
-  position: sticky;
-  bottom: 0;
-  z-index: 3;
-  margin: 0 -12px -10px;
-  padding: 10px 12px;
-  background: var(--panel);
-  border-top: 1px solid var(--border);
-  border-radius: 0 0 8px 8px;
-}
-.savebar.dirty {
-  box-shadow: 0 -6px 16px color-mix(in srgb, var(--text) 8%, transparent);
-}
-.savebar-note {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--warn);
-}
 
-/* ---- settings as rows (ADR-0017 §2.5) --------------------------------- */
-.setting-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  scroll-margin-top: 12px;
-}
-.setting-section h3 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 650;
-}
-.setting-section-sub {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-.setting-rows {
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.setting-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 380px);
-  align-items: center;
-  gap: 8px 24px;
-  padding: 12px 14px;
-  border-top: 1px solid var(--border);
-}
-.setting-row:first-child {
-  border-top: none;
-}
-.setting-text {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-.setting-name {
-  font-size: 13px;
-  font-weight: 600;
-}
-.setting-hint {
-  font-size: 12px;
-  color: var(--muted);
-}
-/* What the current choice does, restated under the setting. */
-.setting-note {
-  align-self: flex-start;
-  margin-top: 4px;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--panel-alt);
-  font-size: 11px;
-}
-.setting-control {
-  display: flex;
-  justify-content: flex-end;
-  min-width: 0;
-}
-.setting-control input,
-.setting-control textarea {
-  width: 100%;
-  min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-}
-.setting-control textarea {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  resize: vertical;
-}
-@media (max-width: 640px) {
-  .setting-row {
-    grid-template-columns: 1fr;
-  }
-  .setting-control {
-    justify-content: flex-start;
-  }
-}
-
-.form-alert {
-  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 13px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
 .notice {
   border: 1px solid var(--border);
   background: var(--panel-alt);
@@ -329,14 +156,7 @@
   padding: 8px 12px;
   font-size: 13px;
 }
-.secret-once {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  word-break: break-all;
-}
+
 .spec-tree {
   font-size: 12px;
   margin: 0;
@@ -369,49 +189,33 @@
   padding: 8px 12px;
   font-size: 13px;
 }
-.setup-steps {
+/* The Configuration page's setup steps, each done or with what to set. */
+.checklist {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  margin: 0 0 8px;
-  padding: 0;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
   list-style: none;
-  counter-reset: step;
-  font-size: 12px;
+  font-size: 13px;
+}
+.checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.check-mark {
+  display: inline-flex;
+  flex: none;
+  margin-top: 2px;
   color: var(--muted);
 }
-.setup-steps li::before {
-  counter-increment: step;
-  content: counter(step) '. ';
+.checklist li.done .check-mark {
+  color: var(--ok);
 }
-.setup-steps li.current {
-  color: var(--text);
-  font-weight: 600;
-}
-.setup-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.setup-checklist {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 240px;
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 2px 12px;
-}
-.setup-list {
-  margin: 0;
-  padding-left: 18px;
+.check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.key-test {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}

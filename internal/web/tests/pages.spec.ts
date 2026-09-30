@@ -525,7 +525,7 @@ test('each page names itself in the browser tab', async ({ page }) => {
     [`${T}/pulls/alpha/one/7`, `${g.pullDetail.pull.title} · alpha/one#7 · kritik`],
     [`${T}/reviews/rev-1/diff`, `${r.status} · ${r.pull.repository}#${r.pull.number} review · kritik`],
     [`${T}/queue`, `Queue · ${g.SLUG} · kritik`],
-    ['#/admin', 'Admin console · kritik'],
+    ['#/admin', 'Configuration · kritik'],
   ]) {
     await page.goto(`/${h}`);
     await expect(page).toHaveTitle(title);
