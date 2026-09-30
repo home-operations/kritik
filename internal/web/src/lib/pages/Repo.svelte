@@ -58,7 +58,7 @@
     { label: 'Mode', key: 'mode', value: (s) => s.mode },
     { label: 'Review model', key: 'models.review', value: (s) => s.models.review || '—', mono: true },
     { label: 'Fallback model', key: 'models.fallback', value: (s) => s.models.fallback || '—', mono: true },
-    { label: 'Filter', key: 'filter', value: (s) => s.filter || '—', mono: true },
+    { label: 'Filter', key: 'filterExpr', value: (s) => s.filter || '—', mono: true },
     { label: 'Forks', key: 'forks', value: (s) => (s.forks ? 'reviewed' : 'skipped') },
     { label: 'Ignore', key: 'ignore', value: (s) => list(s.ignore), mono: true },
     { label: 'Settle', key: 'settle', value: (s) => duration(s.settleSeconds * 1000) || '0s' },

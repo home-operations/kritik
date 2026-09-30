@@ -161,7 +161,7 @@ func (f *File) resolve(accounts []Account) error {
 		return err
 	}
 	if err := f.Defaults.compile(); err != nil {
-		return fmt.Errorf("configfile: defaults.filter: %w", err)
+		return fmt.Errorf("configfile: defaults.filterExpr: %w", err)
 	}
 	for i := range f.Connections {
 		if err := f.Connections[i].resolve(fmt.Sprintf("apps[%d]", i)); err != nil {
@@ -258,7 +258,7 @@ func accountsOf(entries map[string]accountDoc, repos map[string]Overrides) ([]Ac
 // resolve reads the account's secret references and compiles its filters.
 func (a *Account) resolve() error {
 	if err := a.compile(); err != nil {
-		return fmt.Errorf("configfile: %s.filter: %w", a.pattern, err)
+		return fmt.Errorf("configfile: %s.filterExpr: %w", a.pattern, err)
 	}
 	for _, name := range slices.Sorted(maps.Keys(a.Providers)) {
 		p := a.Providers[name]
@@ -271,7 +271,7 @@ func (a *Account) resolve() error {
 	}
 	for ri := range a.Repositories {
 		if err := a.Repositories[ri].compile(); err != nil {
-			return fmt.Errorf("configfile: %s.filter: %w", a.Repositories[ri].where, err)
+			return fmt.Errorf("configfile: %s.filterExpr: %w", a.Repositories[ri].where, err)
 		}
 	}
 	return nil
@@ -416,8 +416,8 @@ func (f *File) validateAccount(a *Account) error {
 // compile compiles the filter the scope writes, if any; an empty one
 // compiles to no restriction.
 func (o *Overrides) compile() (err error) {
-	if o.Filter != nil {
-		o.filter, err = compileFilter(*o.Filter)
+	if o.FilterExpr != nil {
+		o.filter, err = compileFilter(*o.FilterExpr)
 	}
 	return err
 }

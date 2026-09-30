@@ -39,7 +39,7 @@ func TestMerge(t *testing.T) {
 		{name: "no file"},
 		{
 			name: "the file narrows, appends file rules and replaces presentation",
-			doc: "enabled: false\nfilter: '!pr.draft'\nignore: [gen/**, vendor/**]\n" +
+			doc: "enabled: false\nfilterExpr: '!pr.draft'\nignore: [gen/**, vendor/**]\n" +
 				"rules: [{ id: repo-style, file: .kritik/rules.md }, { id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }]\n" +
 				"comments:\n  inlineTemplate: .kritik/inline.tmpl\n",
 			want: func(s *configfile.Settings) {
@@ -153,9 +153,9 @@ func TestMergedCheck(t *testing.T) {
 	}{
 		{"nothing to skip", "", []string{"main.go"}, "", false},
 		{"disabled", "enabled: false\n", []string{"main.go"}, SkipDisabled, false},
-		{"filtered", "filter: '!pr.body.contains(\"[skip-review]\")'\n", []string{"main.go"}, SkipFiltered, false},
-		{"filter allows", "filter: 'pr.number == 3 && pr.open && pr.labels[0].name == \"deps\"'\n", []string{"main.go"}, "", false},
-		{"filter that fails to evaluate skips", "filter: 'pr.number == 1 || pr.labels[9].name == \"x\"'\n", []string{"main.go"}, SkipFiltered, true},
+		{"filtered", "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", []string{"main.go"}, SkipFiltered, false},
+		{"filter allows", "filterExpr: 'pr.number == 3 && pr.open && pr.labels[0].name == \"deps\"'\n", []string{"main.go"}, "", false},
+		{"filter that fails to evaluate skips", "filterExpr: 'pr.number == 1 || pr.labels[9].name == \"x\"'\n", []string{"main.go"}, SkipFiltered, true},
 		{"only ignored paths", "ignore: [docs/**]\n", []string{"docs/a.md"}, SkipOnlyPaths, false},
 	}
 	for _, tt := range tests {

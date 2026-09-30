@@ -131,7 +131,7 @@ func GrantKey(a configfile.Auth, provider string) (key string, ok bool) {
 		if !ok {
 			return "", false
 		}
-		parts = []string{s.RoleMapping, s.RolesClaim, s.DefaultRole}
+		parts = []string{s.RoleMappingExpr, s.RolesClaim, s.DefaultRole}
 	}
 	h := sha256.New()
 	h.Write([]byte(provider))

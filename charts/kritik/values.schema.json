@@ -69,10 +69,10 @@
               "title": "clientSecretSecret",
               "type": "object"
             },
-            "roleMapping": {
+            "roleMappingExpr": {
               "default": "",
-              "description": "CEL expression giving a role, or a map of accounts to roles.",
-              "title": "roleMapping",
+              "description": "CEL expression giving a role, or a map of accounts to roles (KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR).",
+              "title": "roleMappingExpr",
               "type": "string"
             }
           },
@@ -125,10 +125,10 @@
               "title": "name",
               "type": "string"
             },
-            "roleMapping": {
+            "roleMappingExpr": {
               "default": "",
-              "description": "CEL expression giving a role, or a map of accounts to roles (docs/configuration.md).",
-              "title": "roleMapping",
+              "description": "CEL expression giving a role, or a map of accounts to roles (KRITIK_AUTH_OIDC_ROLE_MAPPING_EXPR, docs/configuration.md).",
+              "title": "roleMappingExpr",
               "type": "string"
             },
             "rolesClaim": {

@@ -1365,7 +1365,7 @@ func checkRepoConfig(
 		return h.String()
 	}
 	cfgBase := commit("configure kritik", map[string]string{
-		".kritik.yaml": `filter: '!pr.labels.exists(l, l.name == "skip-review")'
+		".kritik.yaml": `filterExpr: '!pr.labels.exists(l, l.name == "skip-review")'
 ignore: ["docs/**", ".kritik.yaml"]
 rules:
   - { id: todos, file: .kritik/rules.md }

@@ -163,7 +163,7 @@ func (s *Settings) apply(o *Overrides) {
 		s.Enabled = *o.Enabled
 	}
 	s.Models = s.Models.overlay(o.Models)
-	if o.Filter != nil {
+	if o.FilterExpr != nil {
 		s.Filter = o.filter
 	}
 	if o.Forks != nil {

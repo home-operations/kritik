@@ -67,14 +67,14 @@ func TestGrant(t *testing.T) {
 	github := func(mapping string) string {
 		auth := "auth:\n" + adminPassword + "  github:\n    clientId: Iv1.x\n    clientSecret: { env: TEST_AUTH_SECRET }\n"
 		if mapping != "" {
-			auth += "    roleMapping: '" + mapping + "'\n"
+			auth += "    roleMappingExpr: '" + mapping + "'\n"
 		}
 		return auth
 	}
 	oidc := func(mapping, defaultRole string) string {
 		auth := "auth:\n" + adminPassword + "  oidc:\n    issuer: https://id.example.com\n    clientId: k\n    clientSecret: { env: TEST_AUTH_SECRET }\n"
 		if mapping != "" {
-			auth += "    roleMapping: '" + mapping + "'\n"
+			auth += "    roleMappingExpr: '" + mapping + "'\n"
 		}
 		if defaultRole != "" {
 			auth += "    defaultRole: " + defaultRole + "\n"
@@ -158,10 +158,10 @@ func TestGrantRefuses(t *testing.T) {
 	github := testFile(t, "auth:\n"+adminPassword+"  github:\n    clientId: Iv1.x\n    clientSecret: { env: TEST_AUTH_SECRET }\n")
 	gh, _ := github.Auth.SignInByType(configfile.SignInGitHub)
 	oidc := testFile(t, "auth:\n  oidc:\n    issuer: https://id.example.com\n    clientId: k\n    clientSecret: { env: TEST_AUTH_SECRET }\n"+
-		"    roleMapping: 'claims.groups[0] == \"a\" ? \"admin\" : \"\"'\n")
+		"    roleMappingExpr: 'claims.groups[0] == \"a\" ? \"admin\" : \"\"'\n")
 	od, _ := oidc.Auth.SignInByType(configfile.SignInOIDC)
 	oidcNone := testFile(t, "auth:\n  oidc:\n    issuer: https://id.example.com\n    clientId: k\n    clientSecret: { env: TEST_AUTH_SECRET }\n"+
-		"    roleMapping: '\"kritik-admin\" in roles ? \"admin\" : \"\"'\n")
+		"    roleMappingExpr: '\"kritik-admin\" in roles ? \"admin\" : \"\"'\n")
 	on, _ := oidcNone.Auth.SignInByType(configfile.SignInOIDC)
 	for _, tt := range []struct {
 		name  string
@@ -187,7 +187,7 @@ func TestGrantRefuses(t *testing.T) {
 // with nothing else.
 func TestGrantKey(t *testing.T) {
 	base := "auth:\n  admin: { password: { env: TEST_AUTH_SECRET } }\n  github:\n    clientId: Iv1.x\n    clientSecret: { env: TEST_AUTH_SECRET }\n" +
-		"    roleMapping: 'login == \"a\" ? \"admin\" : \"\"'\n"
+		"    roleMappingExpr: 'login == \"a\" ? \"admin\" : \"\"'\n"
 	key := func(auth, provider string) string {
 		t.Helper()
 		k, ok := GrantKey(testFile(t, auth).Auth, provider)

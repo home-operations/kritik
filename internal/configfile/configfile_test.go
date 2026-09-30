@@ -463,9 +463,9 @@ func TestParseRejects(t *testing.T) {
 		{"negative settle repository", acme("  acme/x: { settle: -1s }\n"), "repositories.acme/x.settle must not be negative"},
 		{"indexing role removed", "defaults:\n  models:\n    indexing: p/m\n" + minimal, "field indexing not found"},
 		{"bad ignore glob", acme("  acme/x: { ignore: ['['] }\n"), "not a valid glob"},
-		{"filter syntax error", "defaults:\n  filter: 'pr.draft &&'\n" + minimal, "defaults.filter"},
-		{"filter fails smoke test", "defaults:\n  filter: 'pr.labels[5].name == \"x\"'\n" + minimal, "smoke test"},
-		{"repository filter error", acme("  acme/x: { filter: 'pr.title' }\n"), "repositories.acme/x.filter"},
+		{"filter syntax error", "defaults:\n  filterExpr: 'pr.draft &&'\n" + minimal, "defaults.filterExpr"},
+		{"filter fails smoke test", "defaults:\n  filterExpr: 'pr.labels[5].name == \"x\"'\n" + minimal, "smoke test"},
+		{"repository filter error", acme("  acme/x: { filterExpr: 'pr.title' }\n"), "repositories.acme/x.filterExpr"},
 		{"a repository key without an owner", acme("  x: {}\n"), "keyed owner/* or owner/name"},
 		{"a repository key too deep", acme("  acme/x/y: {}\n"), "keyed owner/* or owner/name"},
 		{"duplicate repository", acme("  acme/x: {}\n  ACME/x: {}\n"), "duplicates repositories.ACME/x"},
@@ -596,7 +596,7 @@ func TestScopePrecedence(t *testing.T) {
   p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }
 defaults:
   models: { review: p/big, fallback: p/small }
-  filter: "!pr.draft"
+  filterExpr: "!pr.draft"
   settle: 2m
   ignore: ["defaults/**"]
   mode: agentic
@@ -635,7 +635,7 @@ defaults:
 	})
 
 	t.Run("an empty or zero value written at a narrower scope clears", func(t *testing.T) {
-		f := parse(t, doc("tokensPerMonth: 0", `filter: "", settle: 0s, models: { fallback: "" }`, `comments: { summaryTemplate: "" }`))
+		f := parse(t, doc("tokensPerMonth: 0", `filterExpr: "", settle: 0s, models: { fallback: "" }`, `comments: { summaryTemplate: "" }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Filter != nil || s.Settle != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
 			s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {

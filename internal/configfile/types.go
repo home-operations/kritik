@@ -211,9 +211,10 @@ type Overrides struct {
 	// not set it.
 	Enabled *bool      `yaml:"enabled,omitempty"`
 	Models  ModelsSpec `yaml:"models,omitempty"`
-	Filter  *string    `yaml:"filter,omitempty"`
-	Forks   *bool      `yaml:"forks,omitempty"`
-	Ignore  []string   `yaml:"ignore,omitempty"`
+	// FilterExpr is CEL over pr; a key whose value is CEL ends in Expr.
+	FilterExpr *string  `yaml:"filterExpr,omitempty"`
+	Forks      *bool    `yaml:"forks,omitempty"`
+	Ignore     []string `yaml:"ignore,omitempty"`
 	// Settle delays a review job for a new head, so a burst of pushes
 	// collapses onto the last one before anything is spent.
 	Settle      *time.Duration `yaml:"settle,omitempty"`

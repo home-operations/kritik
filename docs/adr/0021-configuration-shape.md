@@ -155,6 +155,14 @@ environment overlays follow the file: `KRITIK_CONNECTIONS_*` becomes
 `KRITIK_DEFAULTS_FEEDBACK`, and `KRITIK_EMBEDDING_*` keeps only `MODEL`
 and `DIMS`.
 
+### 2.8 CEL keys end in `Expr`
+
+A key whose value is a CEL expression is named for it: `filter` becomes
+`filterExpr`, and a sign-in's `roleMapping` becomes `roleMappingExpr`,
+with their environment variables (`KRITIK_AUTH_OIDC_ROLE_MAPPING_EXPR`,
+`KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR`) and the chart's values. A reader
+knows from the name that the value is code, not a literal.
+
 ## 3. Consequences
 
 - A block reads the same in the configuration and in a repository, and a

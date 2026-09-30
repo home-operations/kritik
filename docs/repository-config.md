@@ -32,7 +32,7 @@ mode: agentic
 models: { review: openrouter/anthropic/claude-opus-5.5 }
 feedback: standard
 comments: { inline: true }
-filter: "!pr.draft"
+filterExpr: "!pr.draft"
 ignore: ["web/src/generated/**", "docs/**"]
 rules:
   - {
@@ -88,7 +88,7 @@ context:
   in the comment.
 - `requireSuggestedFix: true`: findings must include a suggested fix. The
   file can turn the requirement on, never off.
-- `filter`: a filter expression ANDed with the admin's own. It is
+- `filterExpr`: a filter expression ANDed with the admin's own. It is
   compiled and smoke-tested against a sample pull request when the file is
   parsed, so a broken expression is rejected rather than silently skipping
   every review. A review it filters out ends before any runner starts.
@@ -132,9 +132,9 @@ and what it may be, and the rest of the file still applies. `agent`,
 alone; a file naming one of them, or any other unknown key, does not
 parse.
 
-## Filter recipes
+## `filterExpr` recipes
 
-`filter` is a [CEL](https://cel.dev) expression over `pr`, which has the
+`filterExpr` is a [CEL](https://cel.dev) expression over `pr`, which has the
 pull request's `number`, `title`, `body`, `author`, `state`, `open`,
 `merged`, `draft`, `fork`, `headRef`, `headSha`, `baseRef`, `url`,
 `createdAt` and `labels` (each with a `name` and a `color`), and `event`,
@@ -142,7 +142,7 @@ what started the review: `opened`, `reopened`, `ready_for_review`,
 `synchronize` (a push), `poll` (a push kritik found without its webhook)
 or `manual` (a re-run from the dashboard).
 
-Some filters, each the whole `filter` value:
+Some filters, each the whole `filterExpr` value:
 
 - Skip drafts: `!pr.draft`
 - Skip anything labelled `skip-review`:

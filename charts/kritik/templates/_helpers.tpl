@@ -195,10 +195,10 @@ the configuration file gives is not overridden with an empty one.
   (list "KRITIK_AUTH_OIDC_CLIENT_ID" $a.oidc.clientId)
   (list "KRITIK_AUTH_OIDC_SCOPES" (join "," $a.oidc.scopes))
   (list "KRITIK_AUTH_OIDC_ROLES_CLAIM" $a.oidc.rolesClaim)
-  (list "KRITIK_AUTH_OIDC_ROLE_MAPPING" $a.oidc.roleMapping)
+  (list "KRITIK_AUTH_OIDC_ROLE_MAPPING_EXPR" $a.oidc.roleMappingExpr)
   (list "KRITIK_AUTH_OIDC_DEFAULT_ROLE" $a.oidc.defaultRole)
   (list "KRITIK_AUTH_GITHUB_CLIENT_ID" $a.github.clientId)
-  (list "KRITIK_AUTH_GITHUB_ROLE_MAPPING" $a.github.roleMapping)
+  (list "KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR" $a.github.roleMappingExpr)
 -}}
 {{- range $plain }}
 {{- if index . 1 }}

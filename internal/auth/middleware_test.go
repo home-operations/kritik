@@ -166,7 +166,7 @@ func TestPrincipalFor(t *testing.T) {
 // where it did, and would decide grants as it did.
 func TestHonoured(t *testing.T) {
 	auth := "auth:\n  admin: { password: { env: TEST_AUTH_SECRET } }\n  oidc:\n    issuer: https://id.example.com\n    clientId: k\n" +
-		"    clientSecret: { env: TEST_AUTH_SECRET }\n    roleMapping: '\"a\" in roles ? \"admin\" : \"\"'\n"
+		"    clientSecret: { env: TEST_AUTH_SECRET }\n    roleMappingExpr: '\"a\" in roles ? \"admin\" : \"\"'\n"
 	file := testFile(t, auth)
 	s, _ := file.Auth.SignInByType(configfile.SignInOIDC)
 	oidcKey, _ := GrantKey(file.Auth, "oidc")
