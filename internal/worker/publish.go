@@ -452,6 +452,8 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 		return 0, err
 	}
 	var commentID int64
+	// The row is a shortcut: no row, or a read that failed, leaves the
+	// comment to be found on the forge by its marker.
 	_ = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT forge_comment_id FROM sticky_comments WHERE pull_request_id = $1`, p.pr.id).Scan(&commentID)
 	})

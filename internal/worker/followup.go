@@ -83,6 +83,8 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	w.Metrics.FollowUp(account.Key(), outcome)
 	if err != nil {
 		logger.Error("follow-up failed", "error", err)
+		// The failure itself is what goes back to River; a record of it that
+		// could not be written is lost with it, and the retry records anew.
 		_ = f.record(ctx, followUpFailed, err.Error(), 0, "")
 		return err
 	}
