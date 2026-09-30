@@ -1,7 +1,9 @@
 # ADR-0012: a dashboard GitHub installation can create its App from a manifest
 
-- **Status:** Proposed
+- **Status:** Superseded
 - **Date:** 2026-09-26
+- **Superseded by:** [ADR-0019](0019-configuration-in-git.md): the
+  dashboard no longer registers an App; it is created on GitHub by hand.
 - **Amended by:** [ADR-0014](0014-github-app-only-self-hosted.md), which
   runs the flow for the instance rather than a tenant, lets the admin
   choose a private or public App, shows the `client_secret` once for the

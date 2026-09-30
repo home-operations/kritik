@@ -5,7 +5,10 @@
 - **Authors:** onedr0p.
 - **Amended by:** [ADR-0015](0015-instance-defaults-in-the-file.md), which
   lets the file set the instance's providers, default models and embedder
-  under the spec's (§2.2).
+  under the spec's (§2.2), and [ADR-0019](0019-configuration-in-git.md),
+  which moves the whole configuration back into the file, drops the spec,
+  the setup wizard and the App manifest flow (§2.1 to §2.3, §2.6), and
+  leaves the dashboard turning repositories on and off.
 - **Supersedes:** [ADR-0013](0013-hosted-instance.md) (withdrawn: kritik is
   not run as a service for others).
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6 (the
