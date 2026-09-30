@@ -2,9 +2,10 @@
   // One row per pull request: its title over its repository, number and
   // author; its last review's findings and status; when it last changed.
   // `selected` marks the keyboard cursor; a click anywhere on a row that is
-  // not a link opens the pull request.
+  // not a link opens the pull request. With onpick, each row has a checkbox
+  // for a bulk action, picked naming the ones checked by pullKey.
   import { href, navigate } from '../router.svelte';
-  import { pullRoute } from '../links';
+  import { pullKey, pullRoute } from '../links';
   import type { Pull } from '../types';
   import Icon from '../Icon.svelte';
   import { mdiSourceMerge, mdiSourceBranchRemove, mdiFileDocumentEditOutline } from '../icons';
@@ -12,7 +13,13 @@
   import ReviewStatusTile from './ReviewStatusTile.svelte';
   import SeverityCounts from './SeverityCounts.svelte';
 
-  let { slug, items, selected = -1 }: { slug: string; items: Pull[]; selected?: number } = $props();
+  let {
+    slug,
+    items,
+    selected = -1,
+    picked = [],
+    onpick,
+  }: { slug: string; items: Pull[]; selected?: number; picked?: string[]; onpick?: (keys: string[], on: boolean) => void } = $props();
 
   // lifecycle marks a pull request that is no longer simply open.
   function lifecycle(p: Pull): { icon: string; label: string; tone: string } | undefined {
@@ -23,7 +30,7 @@
   }
 
   function onRowClick(e: MouseEvent, p: Pull): void {
-    if ((e.target as Element).closest('a, button') || getSelection()?.toString()) return;
+    if ((e.target as Element).closest('a, button, input, label') || getSelection()?.toString()) return;
     navigate(pullRoute(slug, p));
   }
 </script>
@@ -32,6 +39,16 @@
   <table class="data pull-table">
     <thead>
       <tr>
+        {#if onpick}
+          <th scope="col" class="pick">
+            <input
+              type="checkbox"
+              aria-label="Select every pull request shown"
+              checked={items.length > 0 && items.every((p) => picked.includes(pullKey(p)))}
+              onchange={(e) => onpick(items.map(pullKey), e.currentTarget.checked)}
+            />
+          </th>
+        {/if}
         <th scope="col">Pull request</th>
         <th scope="col" title="Blocking, important and nit, in that order">Findings</th>
         <th scope="col">Last review</th>
@@ -42,8 +59,17 @@
       {#each items as p, i (p.url)}
         {@const life = lifecycle(p)}
         <!-- The title is the row's link; the click is a larger target for a pointer. -->
-        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
         <tr class="pull-row" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, p)}>
+          {#if onpick}
+            <td class="pick">
+              <input
+                type="checkbox"
+                aria-label="Select {p.repository}#{p.number}"
+                checked={picked.includes(pullKey(p))}
+                onchange={(e) => onpick([pullKey(p)], e.currentTarget.checked)}
+              />
+            </td>
+          {/if}
           <td class="pull-main">
             <a class="pull-title" href={href(pullRoute(slug, p))} aria-current={i === selected ? 'true' : undefined}>
               {#if life}<span class="lifecycle tone-{life.tone}" title={life.label}><Icon path={life.icon} size={13} label={life.label} /></span>{/if}

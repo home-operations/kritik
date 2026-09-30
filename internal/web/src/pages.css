@@ -569,6 +569,11 @@ table.data tbody tr:hover {
 .pull-row {
   cursor: pointer;
 }
+table.data th.pick,
+table.data td.pick {
+  width: 1%;
+  padding-right: 0;
+}
 .pull-row.selected td {
   background: var(--mark-wash);
 }
