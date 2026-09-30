@@ -81,7 +81,8 @@ auth:
   username, `admin` unless `user` sets another, and `password`. It exists
   only while a password is set: it is the way into a fresh instance, and a
   way in when every provider is down. Ten failed attempts from one address
-  within 15 minutes lock that address out until the window passes.
+  within 15 minutes lock that address out until the window passes; each
+  replica counts its own.
 - `oidc` signs in through any OpenID Connect issuer, an `https` URL. The
   sign-in page labels it `name`, or "SSO" when unset.
 - `github` signs in on github.com with an OAuth App's client, or a GitHub

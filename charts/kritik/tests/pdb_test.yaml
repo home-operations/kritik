@@ -1,0 +1,32 @@
+suite: pdb
+templates:
+  - pdb.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: keeps one of the default two replicas available
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: all
+
+  - it: renders none for a role of one replica
+    set:
+      roles.all.replicas: 1
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders none when turned off
+    set:
+      podDisruptionBudget.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

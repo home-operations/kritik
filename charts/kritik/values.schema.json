@@ -620,7 +620,7 @@
     "podDisruptionBudget": {
       "properties": {
         "enabled": {
-          "default": false,
+          "default": true,
           "description": "Create a PodDisruptionBudget per role with more than one replica.",
           "title": "enabled",
           "type": "boolean"
@@ -779,8 +779,8 @@
               "type": "boolean"
             },
             "replicas": {
-              "default": 1,
-              "description": "Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time.",
+              "default": 2,
+              "description": "Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3).",
               "title": "replicas",
               "type": "integer"
             },

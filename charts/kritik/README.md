@@ -235,7 +235,10 @@ it from the node.
 `roles.all` runs everything in one Deployment and is the usual shape. For a
 split, disable it and enable `roles.ingest` (webhooks) and `roles.worker`
 (queues, runner Jobs, leader duties) with their own replica counts. Any
-number of replicas may run; one holds the leader lock at a time.
+number of replicas may run; one holds the leader lock at a time. `roles.all`
+runs two by default, with a PodDisruptionBudget, so a rollout, such as the
+one a changed `config.file` starts, always leaves one serving webhooks and
+the dashboard.
 
 ## Maintainers
 
@@ -326,7 +329,7 @@ Kubernetes: `>=1.25.0-0`
 | networkPolicy.postgresPort | int | `5432` | Postgres port allowed for egress. |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | podAnnotations | object | `{}` | Annotations added to the pods. |
-| podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget per role with more than one replica. |
+| podDisruptionBudget.enabled | bool | `true` | Create a PodDisruptionBudget per role with more than one replica. |
 | podDisruptionBudget.maxUnavailable | int | `1` | Maximum pods of a role that may be unavailable, as a count or percentage. @schema type: [integer, string] @schema |
 | podLabels | object | `{}` | Labels added to the pods. |
 | podSecurityContext | object | `{"runAsGroup":65532,"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level securityContext (non-root uid/gid 65532, RuntimeDefault seccomp). |
@@ -335,7 +338,7 @@ Kubernetes: `>=1.25.0-0`
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"metrics"},"periodSeconds":10}` | Readiness probe, on the metrics port. A replica is ready once it has a database connection and its listeners are up. |
 | resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Pod resource requests/limits shared by every role; `roles.<role>.resources` overrides per role. |
 | roles.all.enabled | bool | `true` | Run the single-process topology: webhooks, leader duties, the worker and the dashboard in one Deployment. |
-| roles.all.replicas | int | `1` | Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time. |
+| roles.all.replicas | int | `2` | Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3). |
 | roles.all.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
 | roles.ingest.enabled | bool | `false` | Run webhook ingest as its own Deployment (split topology). |
 | roles.ingest.replicas | int | `2` | Replicas for the ingest Deployment. |

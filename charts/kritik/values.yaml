@@ -33,8 +33,8 @@ roles:
   all:
     # -- Run the single-process topology: webhooks, leader duties, the worker and the dashboard in one Deployment.
     enabled: true
-    # -- Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time.
-    replicas: 1
+    # -- Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3).
+    replicas: 2
     # -- Resources for this role's pods; empty falls back to `resources`.
     resources: {}
   ingest:
@@ -378,7 +378,7 @@ monitoring:
 
 podDisruptionBudget:
   # -- Create a PodDisruptionBudget per role with more than one replica.
-  enabled: false
+  enabled: true
   # -- Maximum pods of a role that may be unavailable, as a count or percentage.
   # @schema
   # type: [integer, string]

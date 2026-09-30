@@ -240,7 +240,10 @@ it from the node.
 `roles.all` runs everything in one Deployment and is the usual shape. For a
 split, disable it and enable `roles.ingest` (webhooks) and `roles.worker`
 (queues, runner Jobs, leader duties) with their own replica counts. Any
-number of replicas may run; one holds the leader lock at a time.
+number of replicas may run; one holds the leader lock at a time. `roles.all`
+runs two by default, with a PodDisruptionBudget, so a rollout, such as the
+one a changed `config.file` starts, always leaves one serving webhooks and
+the dashboard.
 
 {{ template "chart.maintainersSection" . }}
 
