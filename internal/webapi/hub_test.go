@@ -20,7 +20,7 @@ import (
 func testHub(t *testing.T) (*hub, *configfile.File) {
 	t.Helper()
 	f := testFile(t)
-	return newHub(configfile.NewCurrent(f), slog.New(slog.NewTextHandler(io.Discard, nil))), f
+	return newHub(configfile.NewCurrent(f), slog.New(slog.DiscardHandler)), f
 }
 
 func TestHubPublishFiltersByAccount(t *testing.T) {

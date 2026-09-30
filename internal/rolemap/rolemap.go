@@ -12,6 +12,7 @@ package rolemap
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/types"
@@ -62,28 +63,39 @@ type Result struct {
 	Accounts map[string]bool
 }
 
-// Compile parses and type-checks expr for kind. It fails when the
-// expression is not valid CEL, names a variable kind does not have, or
-// cannot yield a string or a map.
-func Compile(kind Kind, expr string) (*Program, error) {
-	var vars []cel.EnvOption
-	switch kind {
-	case OIDC:
-		vars = []cel.EnvOption{
+// The CEL environments, one per kind, are built once: building one loads
+// the standard library, and cel.Env is shared safely once built.
+var (
+	oidcEnv = sync.OnceValues(func() (*cel.Env, error) {
+		return cel.NewEnv(
 			cel.Variable("claims", cel.MapType(cel.StringType, cel.DynType)),
 			cel.Variable("roles", cel.ListType(cel.StringType)),
-		}
-	case GitHub:
-		vars = []cel.EnvOption{
+		)
+	})
+	githubEnv = sync.OnceValues(func() (*cel.Env, error) {
+		return cel.NewEnv(
 			cel.Variable("login", cel.StringType),
 			cel.Variable("email", cel.StringType),
 			cel.Variable("orgs", cel.ListType(cel.StringType)),
 			cel.Variable("teams", cel.ListType(cel.StringType)),
-		}
+		)
+	})
+)
+
+// Compile parses and type-checks expr for kind. It fails when the
+// expression is not valid CEL, names a variable kind does not have, or
+// cannot yield a string or a map.
+func Compile(kind Kind, expr string) (*Program, error) {
+	var newEnv func() (*cel.Env, error)
+	switch kind {
+	case OIDC:
+		newEnv = oidcEnv
+	case GitHub:
+		newEnv = githubEnv
 	default:
 		return nil, fmt.Errorf("rolemap: unknown kind %d", kind)
 	}
-	env, err := cel.NewEnv(vars...)
+	env, err := newEnv()
 	if err != nil {
 		return nil, fmt.Errorf("rolemap: build env: %w", err)
 	}

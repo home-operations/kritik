@@ -383,7 +383,7 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 
 // newExecutor builds the runner executor the configuration selects.
 func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (executor.Executor, error) {
-	if cfg.Executor == "local" {
+	if cfg.Executor == config.ExecutorLocal {
 		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, Logger: logger})
 		if err != nil {
 			return nil, err

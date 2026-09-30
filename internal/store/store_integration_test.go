@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -44,7 +43,7 @@ func openStore(t *testing.T) *Store {
 	ctx := context.Background()
 	s, err := Open(ctx, Options{
 		AppURL: testEnv(t, "KRITIK_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger: slog.New(slog.DiscardHandler),
 	})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -58,7 +57,7 @@ func openStore(t *testing.T) *Store {
 
 func TestOpenRefusesUnsafeApplicationDSN(t *testing.T) {
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	tests := []struct {
 		name string
 		url  string
@@ -402,7 +401,7 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIK_TEST_RUNNER_URL"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIK_TEST_RUNNER_URL"), Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatalf("Open runner: %v", err)
 	}

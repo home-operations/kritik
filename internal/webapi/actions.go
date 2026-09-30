@@ -37,10 +37,21 @@ var errActionsDisabled = errStatus(http.StatusServiceUnavailable, CodeActionsDis
 // registerActions mounts re-run, cancel and reindex, and turning a
 // repository on or off.
 func (s *Server) registerActions(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/pulls/{owner}/{repo}/{number}/rerun", s.accountAdmin(s.rerun))
-	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/reviews/{id}/cancel", s.accountAdmin(s.cancel))
-	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}/reindex", s.accountAdmin(s.reindex))
+	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/pulls/{owner}/{repo}/{number}/rerun", s.accountAdmin(s.requireActions(s.rerun)))
+	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/reviews/{id}/cancel", s.accountAdmin(s.requireActions(s.cancel)))
+	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}/reindex", s.accountAdmin(s.requireActions(s.reindex)))
 	mux.HandleFunc("PUT /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}/turned-on", s.accountAdmin(s.turnOn))
+}
+
+// requireActions refuses h in a process that does not queue dashboard
+// actions.
+func (s *Server) requireActions(h accountHandler) accountHandler {
+	return func(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+		if s.actions == nil {
+			return errActionsDisabled
+		}
+		return h(w, r, t)
+	}
 }
 
 // jobAudit is a queued action's audit detail.
@@ -49,9 +60,6 @@ type jobAudit struct {
 }
 
 func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *accountScope) error {
-	if s.actions == nil {
-		return errActionsDisabled
-	}
 	ctx, tid := r.Context(), t.account.ID()
 	var job int64
 	err := s.read(ctx, t, func(tx pgx.Tx) error {
@@ -79,9 +87,6 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *accountScope) 
 }
 
 func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *accountScope) error {
-	if s.actions == nil {
-		return errActionsDisabled
-	}
 	ctx, tid, id := r.Context(), t.account.ID(), r.PathValue("id")
 	if uuid.Validate(id) != nil {
 		return errNotFound("review")
@@ -104,9 +109,6 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *accountScope)
 }
 
 func (s *Server) reindex(w http.ResponseWriter, r *http.Request, t *accountScope) error {
-	if s.actions == nil {
-		return errActionsDisabled
-	}
 	ctx, tid := r.Context(), t.account.ID()
 	var job int64
 	err := s.read(ctx, t, func(tx pgx.Tx) error {

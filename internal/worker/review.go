@@ -67,6 +67,31 @@ type pullRequest struct {
 	authorIsBot      bool
 }
 
+// dedupesBotPatch says whether an unchanged patch from a bot author skips
+// the review. A manual re-run bypasses the skip: the human asked for it, so
+// an identical bot patch is reviewed again rather than deduped away.
+func (pr *pullRequest) dedupesBotPatch(trigger string) bool {
+	return pr.authorIsBot && trigger != jobs.TriggerManual
+}
+
+// lastPatchID is the patch id of the pull request's newest prepared or
+// completed review other than reviewID, "" when it has none.
+func lastPatchID(ctx context.Context, tx pgx.Tx, prID, reviewID string) (string, error) {
+	var patch string
+	err := tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
+		AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&patch)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("worker: read last review: %w", err)
+	}
+	return patch, nil
+}
+
+// ownerRepo splits the repository's full name as the forge client takes it.
+func (pr *pullRequest) ownerRepo() (owner, repo string) {
+	owner, repo, _ = strings.Cut(pr.repository, "/")
+	return owner, repo
+}
+
 // Work implements river.Worker.
 func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) error {
 	args := job.Args
@@ -75,7 +100,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if err != nil {
 		return err
 	}
-	logger := w.Logger.With("account", account.Key(), "pr", args.Number, "head", short(args.HeadSHA))
+	logger := w.Logger.With("account", account.Key(), "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
 	started := time.Now()
 
 	b, done, err := w.begin(ctx, job, file, account, logger, started)
@@ -282,22 +307,16 @@ func (w *Review) afterRun(
 		if vars, err = filterVars(ctx, tx, pr.id, args.Trigger); err != nil {
 			return err
 		}
-		// A manual re-run bypasses this skip: the human asked for it, so an
-		// identical bot patch is reviewed again rather than deduped away.
-		if pr.authorIsBot && args.Trigger != jobs.TriggerManual {
-			err := tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
-				AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, pr.id, reviewID).Scan(&lastPatch)
-			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				return fmt.Errorf("worker: read last review: %w", err)
-			}
+		if pr.dedupesBotPatch(args.Trigger) {
+			lastPatch, err = lastPatchID(ctx, tx, pr.id, reviewID)
 		}
-		return nil
+		return err
 	})
 	if err != nil {
 		return prepared{}, "", err
 	}
 	if superseded {
-		logger.Info("review superseded", "patch_id", short(patchID))
+		logger.Info("review superseded", "patch_id", review.ShortSHA(patchID))
 		return prepared{}, store.ReviewSuperseded, w.finishReview(ctx, args.AccountID, reviewID, store.ReviewSuperseded, patchID, "")
 	}
 
@@ -311,11 +330,11 @@ func (w *Review) afterRun(
 		logger.Warn("repository filter failed to evaluate", "error", ferr)
 	}
 	if reason != "" {
-		logger.Info("review skipped", "reason", reason, "patch_id", short(patchID))
+		logger.Info("review skipped", "reason", reason, "patch_id", review.ShortSHA(patchID))
 		if err := w.finishSkipped(ctx, args.AccountID, reviewID, patchID, reason); err != nil {
 			return prepared{}, "", err
 		}
-		owner, repo, _ := strings.Cut(pr.repository, "/")
+		owner, repo := pr.ownerRepo()
 		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusSuccess,
 			"kritik: skipped ("+reason.Description()+")"); err != nil {
 			logger.Warn("commit status not set", "error", err)
@@ -323,7 +342,7 @@ func (w *Review) afterRun(
 		return prepared{}, store.ReviewSkipped, nil
 	}
 	if pr.authorIsBot && lastPatch != "" && lastPatch == patchID {
-		logger.Info("review skipped", "patch_id", short(patchID))
+		logger.Info("review skipped", "patch_id", review.ShortSHA(patchID))
 		return prepared{}, store.ReviewSkipped, w.finishReview(ctx, args.AccountID, reviewID, store.ReviewSkipped, patchID, "")
 	}
 
@@ -342,7 +361,8 @@ func (w *Review) afterRun(
 	if err != nil {
 		return prepared{}, "", fmt.Errorf("worker: mark review prepared: %w", err)
 	}
-	logger.Info("review prepared", "patch_id", short(patchID), "scope", scope, "scope_reason", scopeReason, "delta_paths", len(deltaPaths))
+	logger.Info("review prepared", "patch_id", review.ShortSHA(patchID), "scope", scope, "scope_reason", scopeReason,
+		"delta_paths", len(deltaPaths))
 	return prepared{patchID: patchID, eff: eff, notes: notes, scope: scope}, store.ReviewPrepared, nil
 }
 
@@ -404,7 +424,7 @@ func (w *Review) skipUnchangedBot(ctx context.Context, e earlyEnd, client forge.
 	if !unchanged {
 		return patch, false, nil
 	}
-	e.logger.Info("review skipped before its runner: bot patch unchanged", "forge_patch_id", short(patch))
+	e.logger.Info("review skipped before its runner: bot patch unchanged", "forge_patch_id", review.ShortSHA(patch))
 	e.forgePatch = patch
 	return patch, true, w.end(ctx, e, store.ReviewSkipped, "")
 }
@@ -441,7 +461,7 @@ func (w *Review) begin(
 	}
 	e := earlyEnd{args: args, pr: pr, accountKey: account.Key(), started: started, logger: logger}
 	if pr.headSHA != args.HeadSHA {
-		logger.Info("review superseded before start", "current_head", short(pr.headSHA))
+		logger.Info("review superseded before start", "current_head", review.ShortSHA(pr.headSHA))
 		return begun{}, true, w.end(ctx, e, store.ReviewSuperseded, "")
 	}
 	settings := file.Settings(account, pr.repository)
@@ -452,7 +472,7 @@ func (w *Review) begin(
 	if err != nil {
 		return begun{}, true, err
 	}
-	owner, repo, _ := strings.Cut(pr.repository, "/")
+	owner, repo := pr.ownerRepo()
 	if e.mergeBase, err = client.MergeBase(ctx, owner, repo, pr.baseRef, pr.headSHA); err != nil {
 		return begun{}, true, err
 	}
@@ -734,13 +754,6 @@ func (w *Review) finishSkipped(ctx context.Context, accountID, reviewID, patchID
 		}
 		return nil
 	})
-}
-
-func short(sha string) string {
-	if len(sha) > 7 {
-		return sha[:7]
-	}
-	return sha
 }
 
 func errText(err error) string {

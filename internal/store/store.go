@@ -182,34 +182,27 @@ func (s *Store) assertExtension(ctx context.Context) error {
 // transaction-locally, so the runner_job policies open exactly that run's
 // rows. Used by the runner role, whose DSN is the runner role's.
 func (s *Store) WithRunnerJob(ctx context.Context, runID string, fn func(pgx.Tx) error) error {
-	tx, err := s.app.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("store: begin: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `SELECT set_config('app.runner_job_id', $1, true)`, runID); err != nil {
-		return fmt.Errorf("store: set runner job: %w", err)
-	}
-	if err := fn(tx); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("store: commit: %w", err)
-	}
-	return nil
+	return s.withSetting(ctx, "app.runner_job_id", runID, "store: set runner job", fn)
 }
 
 // WithAccount runs fn in a transaction on the application pool with the
 // account set transaction-locally, so every policy resolves to that account
 // and nothing survives on the pooled connection after commit or rollback.
 func (s *Store) WithAccount(ctx context.Context, accountID string, fn func(pgx.Tx) error) error {
+	return s.withSetting(ctx, "app.account_id", accountID, "store: set account", fn)
+}
+
+// withSetting runs fn in a transaction on the application pool with the
+// setting key set to value transaction-locally; setErr prefixes a failure
+// to set it.
+func (s *Store) withSetting(ctx context.Context, key, value, setErr string, fn func(pgx.Tx) error) error {
 	tx, err := s.app.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("store: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
-	if _, err := tx.Exec(ctx, `SELECT set_config('app.account_id', $1, true)`, accountID); err != nil {
-		return fmt.Errorf("store: set account: %w", err)
+	if _, err := tx.Exec(ctx, `SELECT set_config($1, $2, true)`, key, value); err != nil {
+		return fmt.Errorf("%s: %w", setErr, err)
 	}
 	if err := fn(tx); err != nil {
 		return err

@@ -35,7 +35,7 @@ func (w *Index) Timeout(*river.Job[jobs.IndexArgs]) time.Duration {
 // Timeout implements river.Worker: the lease wait, model call and forge
 // write-back a follow-up reply makes, capped like every other job kind.
 func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration {
-	return min(jobtimeout.FollowUpTimeout, jobtimeout.MaxJobTimeout)
+	return jobtimeout.FollowUpTimeout
 }
 
 // repoSettings resolves a repository's settings from its id, which a job

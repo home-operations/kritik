@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -91,7 +90,7 @@ func newAuthEnv(t *testing.T) *authEnv {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Options{
 		AppURL: testEnv(t, "KRITIK_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger: slog.New(slog.DiscardHandler),
 	})
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
@@ -120,7 +119,7 @@ func newAuthEnv(t *testing.T) *authEnv {
 	e.h, err = New(Config{
 		Store: st, Current: e.current, WebURL: mustParseURL(t, "https://kritik.example.com/dash/"),
 		HTTPClient: trustingClient(e.gh, e.oidc, e.oidc2), Now: func() time.Time { return e.now },
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger: slog.New(slog.DiscardHandler),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,7 +20,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/runner"
 )
 
@@ -212,12 +212,9 @@ func (k *Kube) logger() *slog.Logger {
 }
 
 func jobFinished(j *batchv1.Job) bool {
-	for _, c := range j.Status.Conditions {
-		if (c.Type == batchv1.JobComplete || c.Type == batchv1.JobFailed) && c.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(j.Status.Conditions, func(c batchv1.JobCondition) bool {
+		return (c.Type == batchv1.JobComplete || c.Type == batchv1.JobFailed) && c.Status == corev1.ConditionTrue
+	})
 }
 
 // finish fills the pod-level fields of a result from the Job's pod, with
@@ -352,13 +349,7 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 	}
 	name := jobName(spec.Job.RunID)
 	deadline := int64(spec.Deadline / time.Second)
-	if deadline <= 0 {
-		deadline = int64(configfile.DefaultRunnerDeadline / time.Second)
-	}
 	ttl := int32(k.TTL / time.Second)
-	if ttl <= 0 {
-		ttl = 600
-	}
 	labels := runnerLabels(spec)
 	annotations := map[string]string{}
 	for key, v := range spec.Annotations {

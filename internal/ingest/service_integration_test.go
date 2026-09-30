@@ -5,7 +5,6 @@ package ingest
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"os"
 	"reflect"
@@ -38,7 +37,7 @@ func env(t *testing.T, key string) string {
 func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	t.Helper()
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	st, err := store.Open(ctx, store.Options{
 		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
 		Logger: logger,

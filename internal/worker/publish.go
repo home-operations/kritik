@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // CompleterSource resolves a provider name, the account's own or the
@@ -179,16 +180,12 @@ func capReached(ctx context.Context, st *store.Store, accountID string, limits c
 	if err != nil {
 		return "", err
 	}
-	return u.reached(limits), nil
+	return reached(u, limits), nil
 }
 
-// capUsage is what an account's caps count: completed reviews today and
+// readUsage is what an account's caps count: completed reviews today and
 // tokens this month.
-type capUsage struct {
-	reviews, tokens int64
-}
-
-func readUsage(ctx context.Context, st *store.Store, accountID string) (capUsage, error) {
+func readUsage(ctx context.Context, st *store.Store, accountID string) (store.MonthUsage, error) {
 	var m store.MonthUsage
 	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
@@ -196,9 +193,9 @@ func readUsage(ctx context.Context, st *store.Store, accountID string) (capUsage
 		return err
 	})
 	if err != nil {
-		return capUsage{}, fmt.Errorf("worker: read caps: %w", err)
+		return store.MonthUsage{}, fmt.Errorf("worker: read caps: %w", err)
 	}
-	return capUsage{reviews: m.ReviewsToday, tokens: m.Tokens}, nil
+	return m, nil
 }
 
 // usageRow is one model call charged to an account, and to the review it
@@ -222,11 +219,11 @@ func insertUsage(ctx context.Context, tx pgx.Tx, u usageRow) error {
 }
 
 // reached says which cap u has reached, or "".
-func (u capUsage) reached(limits configfile.Limits) string {
-	if limits.ReviewsPerDay > 0 && u.reviews >= int64(limits.ReviewsPerDay) {
+func reached(u store.MonthUsage, limits configfile.Limits) string {
+	if limits.ReviewsPerDay > 0 && u.ReviewsToday >= int64(limits.ReviewsPerDay) {
 		return fmt.Sprintf("reviewsPerDay (%d) reached", limits.ReviewsPerDay)
 	}
-	if limits.TokensPerMonth > 0 && u.tokens >= limits.TokensPerMonth {
+	if limits.TokensPerMonth > 0 && u.Tokens >= limits.TokensPerMonth {
 		return fmt.Sprintf("tokensPerMonth (%d) reached", limits.TokensPerMonth)
 	}
 	return ""
@@ -368,7 +365,7 @@ func reviewNotes(omitted []string, dropped []review.Dropped) []string {
 // say, per finding, whether an inline comment for it is on the forge, and
 // its id there.
 func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, []inlineComment, error) {
-	owner, repo, _ := strings.Cut(p.pr.repository, "/")
+	owner, repo := p.pr.ownerRepo()
 	onForge := alreadyInline(res.Findings, p.prior.findings)
 	for i := range res.Findings {
 		f := &res.Findings[i]
@@ -446,7 +443,7 @@ func (p *publishPhase) postsInline(f review.Finding) bool {
 // upsertSticky edits the pull request's sticky comment to body, creating
 // it the first time, and returns its id.
 func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, error) {
-	owner, repo, _ := strings.Cut(p.pr.repository, "/")
+	owner, repo := p.pr.ownerRepo()
 	login, err := p.client.BotLogin(ctx)
 	if err != nil {
 		return 0, err
@@ -552,10 +549,7 @@ func (p *publishPhase) similar(ctx context.Context, in reviewInput) ([]contextpa
 	texts := make([]string, len(hunks))
 	for i, h := range hunks {
 		t := h.Path + "\n" + h.Text
-		if len(t) > similarHunkChar {
-			t = t[:similarHunkChar]
-		}
-		texts[i] = t
+		texts[i] = textcut.Prefix(t, similarHunkChar)
 	}
 	var vectors [][]float32
 	var tokens int64

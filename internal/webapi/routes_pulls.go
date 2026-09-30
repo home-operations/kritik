@@ -185,7 +185,7 @@ func (s *Server) getFollowupTranscript(w http.ResponseWriter, r *http.Request, t
 		case len(matches) == 0:
 			return errNotFound("follow-up")
 		case len(matches) > 1:
-			return &apiError{status: http.StatusConflict, code: CodeAmbiguous, message: "comment id matches several follow-ups; pass ?repo="}
+			return errStatus(http.StatusConflict, CodeAmbiguous, "comment id matches several follow-ups; pass ?repo=")
 		}
 		rows, err = store.FollowupModelCalls(ctx, tx, matches[0].PullRequestID, commentID)
 		return err

@@ -5,7 +5,6 @@ package store
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -191,7 +190,7 @@ func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 	ctx := context.Background()
 	runner, err := Open(ctx, Options{
 		AppURL: testEnv(t, "KRITIK_TEST_RUNNER_URL"),
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger: slog.New(slog.DiscardHandler),
 	})
 	if err != nil {
 		t.Fatalf("open runner store: %v", err)

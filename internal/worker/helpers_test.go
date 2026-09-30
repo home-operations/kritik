@@ -8,9 +8,6 @@ import (
 )
 
 func TestSmallHelpers(t *testing.T) {
-	if short("0123456789") != "0123456" || short("abc") != "abc" {
-		t.Fatal("short")
-	}
 	if errText(nil) != "" || errText(errors.New("x")) != "x" {
 		t.Fatal("errText")
 	}

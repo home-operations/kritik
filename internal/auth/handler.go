@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -151,7 +149,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, http.StatusBadGateway, codeProviderUnavailable, err)
 		return
 	}
-	nonce, browser := randomString(), randomString()
+	nonce, browser := store.RandomToken(), store.RandomToken()
 	ls := store.LoginState{
 		Provider: name, Nonce: nonce, PKCEVerifier: oauth2.GenerateVerifier(),
 		ReturnTo: returnTo(r.URL.Query().Get("return_to")),
@@ -379,12 +377,6 @@ func clearedLoginCookie(webURL *url.URL) *http.Cookie {
 	c := newCookie(webURL, loginCookieName(webURL), "", loginCookiePath(webURL))
 	c.MaxAge = -1
 	return c
-}
-
-func randomString() string {
-	raw := make([]byte, 32)
-	_, _ = rand.Read(raw) // never fails
-	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 // errorCode is the only failure detail a client is shown.

@@ -124,7 +124,7 @@ const LimitBody = "kritik has answered the limit of follow-ups for this pull req
 // queued, or already queued or running.
 func ReviewQueuedBody(headSHA string, already bool) string {
 	if already {
-		return fmt.Sprintf("A review of `%s` is already queued or running.\n", shortSHA(headSHA))
+		return fmt.Sprintf("A review of `%s` is already queued or running.\n", ShortSHA(headSHA))
 	}
-	return fmt.Sprintf("Reviewing `%s`; the summary lands on this pull request when it is done.\n", shortSHA(headSHA))
+	return fmt.Sprintf("Reviewing `%s`; the summary lands on this pull request when it is done.\n", ShortSHA(headSHA))
 }

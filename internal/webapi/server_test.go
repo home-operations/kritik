@@ -2,7 +2,6 @@ package webapi
 
 import (
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -70,7 +69,7 @@ func newTestServer(t *testing.T, webURL string) *testServer {
 		"favicon.svg":      {Data: []byte("<svg/>")},
 		"assets/app-1.css": {Data: []byte("body{}")},
 	}
-	srv := New(Config{Current: cur, Auth: a, UI: ui, WebURL: u, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	srv := New(Config{Current: cur, Auth: a, UI: ui, WebURL: u, Logger: slog.New(slog.DiscardHandler)})
 	return &testServer{srv: srv, file: f, h: srv.Handler()}
 }
 

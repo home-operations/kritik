@@ -144,7 +144,7 @@ func TestCommandValidation(t *testing.T) {
 	if err := cfg.ValidateServe(); err != nil {
 		t.Fatal(err)
 	}
-	cfg.Executor, cfg.RunnerImage = "local", ""
+	cfg.Executor, cfg.RunnerImage = ExecutorLocal, ""
 	if err := cfg.ValidateServe(); err == nil || !strings.Contains(err.Error(), "KRITIK_RUNNER_DATABASE_URL") {
 		t.Fatalf("local executor without a runner DSN = %v", err)
 	}

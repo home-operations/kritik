@@ -15,6 +15,7 @@ import (
 	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/store"
 )
 
@@ -107,7 +108,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusForbidden, "invalid_token", "the run's account is not in the configuration")
 		return
 	}
-	logger := g.Logger.With("account", account.Key(), "run", short(grant.RunID))
+	logger := g.Logger.With("account", account.Key(), "run", review.ShortSHA(grant.RunID))
 	capped, err := g.monthCapped(ctx, file, account)
 	if err != nil {
 		logger.Error("gateway: caps not read", "error", err)
