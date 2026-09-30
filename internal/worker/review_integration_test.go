@@ -62,30 +62,19 @@ providers:
     apiKey: { env: TEST_SECRET }
 defaults:
   mode: single
-  runner:
-    activeDeadlineSeconds: 60
   models:
     review: test/reviewer
   limits:
     concurrency: 1
-embedding:
-  baseUrl: http://unused.invalid/v1
-  apiKey: { env: TEST_SECRET }
-  model: fake-embed
-  dims: 8
-connections:
+embedding: { model: test/fake-embed, dims: 8 }
+apps:
   - name: bot-ross
-    forge: github
     accounts: [onedr0p]
-    app:
-      clientId: Iv1.x
-      privateKey: { env: TEST_PEM }
-      webhookSecret: { env: TEST_SECRET }
-accounts:
-  - forge: github
-    name: onedr0p
-    repositories:
-      - name: home-ops
+    clientId: Iv1.x
+    privateKey: { env: TEST_PEM }
+    webhookSecret: { env: TEST_SECRET }
+repositories:
+  onedr0p/home-ops: {}
 `
 
 // localForge stands in for GitHub: the merge-base is known from the test
@@ -1018,6 +1007,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	// Long enough that masking it out of the transcripts leaves the prompts
 	// they are checked against intact.
 	t.Setenv("TEST_SECRET", "test-provider-key")
+	t.Setenv("KRITIK_RUNNER_DEADLINE", "60s")
 	file := configfiletest.Load(t, configYAML)
 	if err := appStore.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
@@ -2388,6 +2378,7 @@ func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
 	}
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "test-provider-key")
+	t.Setenv("KRITIK_RUNNER_DEADLINE", "60s")
 	file := configfiletest.Load(t, configYAML)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)

@@ -28,19 +28,14 @@ import (
 )
 
 const configYAML = `
-connections:
+apps:
   - name: bot-ross
-    forge: github
     accounts: [onedr0p]
-    app:
-      clientId: Iv1.x
-      privateKey: { env: TEST_PEM }
-      webhookSecret: { env: TEST_SECRET }
-accounts:
-  - forge: github
-    name: onedr0p
-    repositories:
-      - name: home-ops
+    clientId: Iv1.x
+    privateKey: { env: TEST_PEM }
+    webhookSecret: { env: TEST_SECRET }
+repositories:
+  onedr0p/home-ops: {}
 `
 
 // listForge answers only the listing call; the poller needs nothing else.

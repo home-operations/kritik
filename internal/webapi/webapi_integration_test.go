@@ -45,25 +45,21 @@ auth:
     clientId: kritik
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: '"kritik-admin" in roles ? "admin" : ""'
-connections:
+apps:
   - name: webapi-a-bot
-    forge: github
     accounts: [wa]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
   - name: webapi-b-bot
-    forge: github
     accounts: [wb]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
-accounts:
-  - forge: github
-    name: wa
-    repositories:
-      - name: one
-      - name: two
-  - forge: github
-    name: wb
-    repositories:
-      - name: one
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
+repositories:
+  wa/one: {}
+  wa/two: {}
+  wb/one: {}
 `
 
 // followupComment is answered in both accounts, as comment ids from two

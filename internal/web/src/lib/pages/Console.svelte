@@ -36,15 +36,15 @@
     {#if res.data}<Checklist accounts={res.data} />{/if}
     <section class="panel" aria-labelledby="op-accounts">
       <header class="panel-head"><h2 id="op-accounts">Accounts</h2></header>
-      <p class="muted small panel-body">Every account a connection serves, and entries of the configuration no connection serves.</p>
-      <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="No accounts yet: declare a connection in the configuration file.">
+      <p class="muted small panel-body">Every account a GitHub App serves, and entries of the configuration no App serves.</p>
+      <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="No accounts yet: declare a GitHub App under apps in the configuration file.">
         {#snippet children(list)}
           <div class="table-wrap">
             <table class="data">
               <thead>
                 <tr>
                   <th scope="col">Account</th>
-                  <th scope="col">Connection</th>
+                  <th scope="col">App</th>
                   <th scope="col">State</th>
                   <th scope="col" class="num">Repos</th>
                   <th scope="col" class="num">Reviews 7d</th>
@@ -83,7 +83,7 @@
     <section class="panel" aria-labelledby="op-instance">
       <header class="panel-head"><h2 id="op-instance">Instance settings</h2></header>
       <p class="muted small panel-body">
-        The environment is this web process's; sign-in, the connections and the instance defaults are the configuration
+        The environment is this web process's; sign-in, the GitHub Apps and the instance defaults are the configuration
         file's, or its environment's where a variable sets them.
       </p>
       <StateView res={instance} retry={() => instance.load()} isEmpty={(d) => d.length === 0} empty="No instance settings.">

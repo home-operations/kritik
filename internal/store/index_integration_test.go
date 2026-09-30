@@ -13,46 +13,41 @@ import (
 )
 
 const onboardAccounts = `
-connections:
+apps:
   - name: alpha-bot
-    forge: github
     accounts: [alpha]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
   - name: beta-bot
-    forge: github
     accounts: [beta]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
   - name: east-bot
-    forge: github
     accounts: [east]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
   - name: west-bot
-    forge: github
     accounts: [west]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
-accounts:
-  - forge: github
-    name: alpha
-    repositories:
-      - name: one
-      - name: two
-  - forge: github
-    name: east
-    repositories:
-      - name: busy
-      - name: quiet
-      - name: later
-      - name: rebuilt
-      - name: skipped
-      - name: failed
-      - name: queued
-      - name: indexed
-      - name: "off"
-  - forge: github
-    name: west
-    repositories:
-      - name: one
-      - name: old-failure
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
+repositories:
+  alpha/one: {}
+  alpha/two: {}
+  east/busy: {}
+  east/quiet: {}
+  east/later: {}
+  east/rebuilt: {}
+  east/skipped: {}
+  east/failed: {}
+  east/queued: {}
+  east/indexed: {}
+  east/off: {}
+  west/one: {}
+  west/old-failure: {}
 `
 
 // TestOnboardCandidates checks which repositories the onboarding feeder is

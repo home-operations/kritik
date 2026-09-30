@@ -173,6 +173,51 @@ tests:
             name: KRITIK_RUNNER_IMAGE
             value: ghcr.io/home-operations/kritik@sha256:deadbeef
 
+  - it: leaves how kritik runs to its defaults unless values set it
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_POLL_INTERVAL
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_RUNNER_TOOLS
+          any: true
+
+  - it: renders how kritik runs into its environment
+    set:
+      config.pollInterval: 0s
+      config.onboardWindow: 8
+      config.transcriptRetention: 48h
+      runner.deadline: 20m
+      runner.resources: { limits: { memory: 1Gi } }
+      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIK_POLL_INTERVAL, value: 0s }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIK_ONBOARD_WINDOW, value: "8" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIK_TRANSCRIPT_RETENTION, value: 48h }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIK_RUNNER_DEADLINE, value: 20m }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIK_RUNNER_RESOURCES, value: '{"limits":{"memory":"1Gi"}}' }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            {
+              name: KRITIK_RUNNER_TOOLS,
+              value: '[{"image":"registry.example/helm:3","name":"helm"}]',
+            }
+
   - it: hands the worker a runner RuntimeClass only when one is set
     set:
       runner.runtimeClassName: gvisor

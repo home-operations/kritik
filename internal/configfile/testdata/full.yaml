@@ -1,18 +1,14 @@
-connections:
+apps:
   - name: sticky-gecko
-    forge: github
     accounts: [home-operations]
-    app:
-      clientId: Iv1.xxxxxxxx
-      privateKey: { file: __DIR__/private-key.pem }
-      webhookSecret: { env: TEST_WEBHOOK_SECRET }
+    clientId: Iv1.xxxxxxxx
+    privateKey: { file: __DIR__/private-key.pem }
+    webhookSecret: { env: TEST_WEBHOOK_SECRET }
   - name: bot-ross
-    forge: github
     accounts: [onedr0p]
-    app:
-      clientIdFrom: { env: TEST_CLIENT_ID }
-      privateKey: { file: __DIR__/private-key.pem }
-      webhookSecret: { env: TEST_WEBHOOK_SECRET }
+    clientId: { env: TEST_CLIENT_ID }
+    privateKey: { file: __DIR__/private-key.pem }
+    webhookSecret: { env: TEST_WEBHOOK_SECRET }
 
 providers:
   openrouter:
@@ -32,30 +28,22 @@ defaults:
   limits:
     concurrency: 3
 
-retention:
-  disabledIndexGrace: 720h
-
-accounts:
-  - forge: github
-    name: home-operations
-    runner:
-      resources: { limits: { cpu: "2", memory: 4Gi } }
-      activeDeadlineSeconds: 900
-    limits:
-      reviewsPerDay: 200
-    repositories:
-      - name: flate
-        ignore:
-          - "**/testdata/**"
-        settle: 30s
-      - name: kopiur
-        filter: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
-      - name: charts-mirror
-        mode: single
-
-  - forge: github
-    name: onedr0p
+repositories:
+  home-operations/flate:
+    ignore:
+      - "**/testdata/**"
+    settle: 30s
+  home-operations/kopiur:
+    filter: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
+  home-operations/charts-mirror:
+    mode: single
+  onedr0p/*:
     models:
       review: local/claude-opus-5
     forks: true
     settle: 2m
+
+accounts:
+  home-operations:
+    limits:
+      reviewsPerDay: 200

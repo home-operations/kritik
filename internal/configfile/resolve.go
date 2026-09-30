@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"time"
 )
 
 // Account returns the running account name on forge.
@@ -190,73 +189,6 @@ func (f *File) providerNames(a *Account) []string {
 	names = append(names, slices.Collect(maps.Keys(a.Providers))...)
 	slices.Sort(names)
 	return names
-}
-
-// PollInterval is how often the leader polls, 0 when polling is off.
-func (f *File) PollInterval() time.Duration {
-	if f.Polling.Interval != nil {
-		return *f.Polling.Interval
-	}
-	return DefaultPollInterval
-}
-
-// PollLookback bounds how far back a first or long-idle poll looks.
-func (f *File) PollLookback() time.Duration {
-	if f.Polling.Lookback > 0 {
-		return f.Polling.Lookback
-	}
-	return DefaultPollLookback
-}
-
-// ToolsFor returns the tools that provide any of commands, the ones a run
-// whose agent may run commands mounts; nil when none does.
-func (f *File) ToolsFor(commands []string) []Tool {
-	var out []Tool
-	for _, t := range f.Tools {
-		if slices.ContainsFunc(t.Provides(), func(c string) bool { return slices.Contains(commands, c) }) {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// OnboardWindow is how many onboarding index jobs may be queued or running.
-func (f *File) OnboardWindow() int {
-	if f.Indexing.OnboardWindow > 0 {
-		return f.Indexing.OnboardWindow
-	}
-	return DefaultOnboardWindow
-}
-
-// RunnerFor resolves an account's runner Job deadline and resources: the
-// account's runner block, then defaults.runner, then DefaultRunnerDeadline
-// and no resources. t may be nil for an account no longer served.
-func (f *File) RunnerFor(t *Account) (deadline time.Duration, resources map[string]any) {
-	deadline = DefaultRunnerDeadline
-	blocks := []*Runner{f.Defaults.Runner}
-	if t != nil {
-		blocks = append(blocks, t.Runner)
-	}
-	for _, r := range blocks {
-		if r == nil {
-			continue
-		}
-		if r.ActiveDeadlineSeconds > 0 {
-			deadline = time.Duration(r.ActiveDeadlineSeconds) * time.Second
-		}
-		if r.Resources != nil {
-			resources = r.Resources
-		}
-	}
-	return deadline, resources
-}
-
-// DisabledIndexGrace returns the configured grace period or the default.
-func (f *File) DisabledIndexGrace() time.Duration {
-	if f.Retention.DisabledIndexGrace > 0 {
-		return f.Retention.DisabledIndexGrace
-	}
-	return DefaultDisabledIndexGrace
 }
 
 func (m Models) overlay(o ModelsSpec) Models {

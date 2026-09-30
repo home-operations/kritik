@@ -28,9 +28,6 @@ func TestSpecValue(t *testing.T) {
 	if v, ok := SpecValue(r, "mode"); !ok || v.(ReviewMode) != ReviewAgentic {
 		t.Fatalf("mode = %v, %v", v, ok)
 	}
-	if v, ok := SpecValue(&Account{}, "runner"); !ok || v.(*Runner) != nil {
-		t.Fatalf("runner = %v, %v", v, ok)
-	}
 	if v, ok := SpecValue(&Account{}, "limits.concurrency"); !ok || v.(*int) != nil {
 		t.Fatalf("limits.concurrency = %v, %v", v, ok)
 	}
@@ -43,7 +40,7 @@ func TestSources(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f := mustLoad(t, "defaults:\n  settle: 2m\n  agent: { maxSteps: 9 }\n"+
-		acme("    mode: agentic\n    repositories: [{ name: x, settle: 0s, filter: \"true\" }]\n"))
+		acme("  acme/*: { mode: agentic }\n  acme/x: { settle: 0s, filter: \"true\" }\n"))
 	s := f.Sources(&f.Accounts[0], "acme/x")
 	for key, want := range map[string]Source{
 		"settle": SourceAccount, "mode": SourceAccount, "agent.maxSteps": SourceDefaults, "enabled": SourceDefault, "filter": SourceAccount,

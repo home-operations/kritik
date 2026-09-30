@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -14,10 +13,7 @@ import (
 	"github.com/home-operations/kritik/internal/jobtimeout"
 )
 
-// timeoutConfigYAMLTemplate takes globex's runner.activeDeadlineSeconds, so
-// the test can drive it right up to jobtimeout.MaxRunnerDeadline without
-// tripping configfile's upper-bound validation.
-const timeoutConfigYAMLTemplate = `
+const timeoutConfigYAML = `
 providers:
   gateway:
     type: openai
@@ -26,50 +22,31 @@ providers:
 defaults:
   models:
     review: gateway/review-model
-connections:
+apps:
   - name: acme-bot
-    forge: github
     accounts: [acme]
-    app:
-      clientId: Iv1.x
-      privateKey: { env: TEST_PEM }
-      webhookSecret: { env: TEST_SECRET }
+    clientId: Iv1.x
+    privateKey: { env: TEST_PEM }
+    webhookSecret: { env: TEST_SECRET }
   - name: globex-bot
-    forge: github
     accounts: [globex]
-    app:
-      clientId: Iv1.y
-      privateKey: { env: TEST_PEM }
-      webhookSecret: { env: TEST_SECRET }
-accounts:
-  - forge: github
-    name: acme
-    mode: single
-    repositories:
-      - name: agentic
-        mode: agentic
-      - name: slow-agent
-        mode: agentic
-        agent:
-          timeout: 50m
-      - name: may-go-agentic
-        agent: { timeout: 40m }
-  - forge: github
-    name: globex
-    runner:
-      activeDeadlineSeconds: %d
+    clientId: Iv1.y
+    privateKey: { env: TEST_PEM }
+    webhookSecret: { env: TEST_SECRET }
+repositories:
+  acme/*: { mode: single }
+  acme/agentic: { mode: agentic }
+  acme/slow-agent: { mode: agentic, agent: { timeout: 50m } }
+  acme/may-go-agentic: { agent: { timeout: 40m } }
 `
 
 func TestJobTimeouts(t *testing.T) {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
-	timeoutConfigYAML := fmt.Sprintf(timeoutConfigYAMLTemplate, int64(jobtimeout.MaxRunnerDeadline.Seconds()))
 	file := configfiletest.Load(t, timeoutConfigYAML)
 	current := configfile.NewCurrent(file)
 	acme, _ := file.Account(configfile.ForgeGitHub, "acme")
-	globex, _ := file.Account(configfile.ForgeGitHub, "globex")
 	acmeRepo := func(name string) string { return configfile.RepositoryID(acme.ID(), name) }
-	globexRepo := configfile.RepositoryID(globex.ID(), "globex/app")
 
 	review := &Review{Current: current}
 	index := &Index{Current: current}
@@ -93,10 +70,6 @@ func TestJobTimeouts(t *testing.T) {
 		// 40m + 5m of fetch headroom, then the rest.
 		{name: "single mode with a longer agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/may-go-agentic"),
 			review: 75 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
-		// The account's runner deadline is configfile's max allowed value; index lands exactly on MaxJobTimeout.
-		{name: "account runner deadline at the max", accountID: globex.ID(), repositoryID: globexRepo,
-			review: jobtimeout.MaxRunnerDeadline + jobtimeout.LeaseWaitHeadroom + jobtimeout.PublishHeadroom,
-			index:  jobtimeout.MaxRunnerDeadline + jobtimeout.IndexWriteHeadroom, followUp: 30 * time.Minute},
 		{name: "unknown account", accountID: "missing", repositoryID: "missing", review: 45 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 	}
 	for _, tt := range tests {
@@ -117,6 +90,19 @@ func TestJobTimeouts(t *testing.T) {
 				t.Errorf("follow-up timeout = %s, want %s", got, tt.followUp)
 			}
 		})
+	}
+
+	// A runner deadline at configfile's max: the index job lands exactly on
+	// MaxJobTimeout.
+	t.Setenv("KRITIK_RUNNER_DEADLINE", jobtimeout.MaxRunnerDeadline.String())
+	current = configfile.NewCurrent(configfiletest.Load(t, timeoutConfigYAML))
+	review, index = &Review{Current: current}, &Index{Current: current}
+	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID(), RepositoryID: acmeRepo("acme/agentic")}}),
+		jobtimeout.MaxRunnerDeadline+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom; got != want {
+		t.Errorf("review timeout at the max deadline = %s, want %s", got, want)
+	}
+	if got := index.Timeout(&river.Job[jobs.IndexArgs]{}); got != jobtimeout.MaxRunnerDeadline+jobtimeout.IndexWriteHeadroom {
+		t.Errorf("index timeout at the max deadline = %s", got)
 	}
 }
 

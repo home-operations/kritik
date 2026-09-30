@@ -64,12 +64,12 @@ auth:
     clientId: kritik-client
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: 'login == "opgh" ? "admin" : ("mapped-org" in orgs ? dyn({"github/acme": "member"}) : "")'
-connections:
-  - {name: auth-personal-bot, forge: github, accounts: [alice-gh], app: &app {clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}}
-  - {name: auth-acme-bot, forge: github, accounts: [acme], app: *app}
-  - {name: auth-widgets-bot, forge: github, accounts: [Widgets], app: *app}
-  - {name: auth-pending-bot, forge: github, accounts: [pendco], app: *app}
-  - {name: auth-other-bot, forge: github, accounts: [nobody], app: *app}
+apps:
+  - {name: auth-personal-bot, accounts: [alice-gh], clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
+  - {name: auth-acme-bot, accounts: [acme], clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
+  - {name: auth-widgets-bot, accounts: [Widgets], clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
+  - {name: auth-pending-bot, accounts: [pendco], clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
+  - {name: auth-other-bot, accounts: [nobody], clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
 `
 
 type authEnv struct {

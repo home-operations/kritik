@@ -45,40 +45,28 @@ providers:
     baseUrl: %s/v1
     apiKey: { env: TEST_SECRET }
 defaults:
-  runner:
-    activeDeadlineSeconds: 60
   models:
     review: gateway/agent-model
   limits:
     concurrency: 1
-tools:
-  - { name: helm, image: registry.example/helm:3 }
-  - { name: kurl, image: registry.example/kurl:1, path: /usr/bin, commands: [curl] }
-connections:
+apps:
   - name: acme-bot
-    forge: github
     accounts: [acme]
-    app:
-      clientId: Iv1.x
-      privateKey: { env: TEST_PEM }
-      webhookSecret: { env: TEST_SECRET }
+    clientId: Iv1.x
+    privateKey: { env: TEST_PEM }
+    webhookSecret: { env: TEST_SECRET }
   - name: globex-bot
-    forge: github
     accounts: [globex]
-    app:
-      clientId: Iv1.y
-      privateKey: { env: TEST_PEM }
-      webhookSecret: { env: TEST_SECRET }
-accounts:
-  - forge: github
-    name: acme
-    repositories:
-      - name: widgets
-        mode: agentic
-        agent:
-          maxSteps: 6
-          commands: [curl]
-          commandTimeout: 5s
+    clientId: Iv1.y
+    privateKey: { env: TEST_PEM }
+    webhookSecret: { env: TEST_SECRET }
+repositories:
+  acme/widgets:
+    mode: agentic
+    agent:
+      maxSteps: 6
+      commands: [curl]
+      commandTimeout: 5s
 `
 
 // agentJobTimeout is the harness client's JobTimeout.
@@ -256,6 +244,9 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	t.Cleanup(srv.Close)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "model-key")
+	t.Setenv("KRITIK_RUNNER_DEADLINE", "60s")
+	t.Setenv("KRITIK_RUNNER_TOOLS", `[{"name": "helm", "image": "registry.example/helm:3"},
+		{"name": "kurl", "image": "registry.example/kurl:1", "path": "/usr/bin", "commands": ["curl"]}]`)
 	// Credentials in the provider's URL, which the SDK prints in its errors,
 	// must not reach a runner either.
 	providerURL := strings.Replace(srv.URL, "http://", "http://kritik:provider-secret@", 1)

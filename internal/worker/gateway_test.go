@@ -44,9 +44,10 @@ func TestMaskProvider(t *testing.T) {
 
 // minimalGatewayFile is the rest of a configuration file the provider
 // above sits in.
-const minimalGatewayFile = `connections:
+const minimalGatewayFile = `apps:
   - name: acme-bot
-    forge: github
     accounts: [acme]
-    app: { clientId: Iv1.test, privateKey: { env: TEST_PROVIDER_KEY }, webhookSecret: { env: TEST_PROVIDER_KEY } }
+    clientId: Iv1.test
+    privateKey: { env: TEST_PROVIDER_KEY }
+    webhookSecret: { env: TEST_PROVIDER_KEY }
 `

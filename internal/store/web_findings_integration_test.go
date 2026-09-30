@@ -158,15 +158,13 @@ func TestListAccountFindings(t *testing.T) {
 // test's rows are the only ones its account reads in the shared database.
 func soloAccount(name string) string {
 	return fmt.Sprintf(`
-connections:
+apps:
   - name: %[1]s-bot
-    forge: github
     accounts: [%[1]s]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
-accounts:
-  - forge: github
-    name: %[1]s
-    repositories:
-      - name: one
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
+repositories:
+  %[1]s/one: {}
 `, name)
 }

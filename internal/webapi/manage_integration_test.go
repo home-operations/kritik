@@ -37,13 +37,14 @@ auth:
     clientId: kritik
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: '"kritik-admin" in roles ? "admin" : ""'
-connections:
+apps:
   - name: mgr-file-bot
-    forge: github
     accounts: [mf, md]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
-accounts:
-  - { forge: github, name: md, repositories: [{ name: one }] }
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
+repositories:
+  md/one: {}
 `
 
 // fakeActions records each action with the account its transaction was

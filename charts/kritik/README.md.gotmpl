@@ -37,14 +37,12 @@ auth:
     passwordSecret: { name: kritik-admin }
 config:
   file:
-    connections:
+    apps:
       - name: github
-        forge: github
         accounts: [org-1]
-        app:
-          clientId: Iv1.example
-          privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-          webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+        clientId: Iv1.example
+        privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+        webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
     providers:
       openrouter:
         type: openrouter
@@ -70,8 +68,11 @@ with its password from an existing Secret, which is the way into a fresh
 instance. OIDC and GitHub sign-in, with role mappings, set the same way
 (see [the configuration reference](https://github.com/home-operations/kritik/blob/main/docs/configuration.md)).
 
-`config.file` is the whole configuration: the GitHub Apps, model
-providers, defaults, the embedder, accounts and their repositories. Every
+`config.file` is the whole configuration: the GitHub `apps`, model
+`providers`, the `embedding`, the `defaults`, `repositories` entries keyed
+`owner/*` or `owner/name`, and `accounts`. How kritik runs, polling,
+retention and runner Jobs, is set by values instead (`config.pollInterval`,
+`runner.deadline`, `runner.tools` and the rest below). Every
 replica re-reads it on `config.reloadInterval`, and a reload the file's
 content can't pass keeps the last good one. Secrets never go in it: it
 points at files under `secretMounts` or at environment variables. The
@@ -159,8 +160,8 @@ Worker-capable pods serve a forward proxy on `gateway.port`, and runner Jobs
 are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
-destination by hostname only. github.com is always allowed once a
-connection exists; `egress.allowHosts` in `config.file` adds the rest
+destination by hostname only. github.com is always allowed once an app
+is declared; `egress.allowHosts` in `config.file` adds the rest
 (registries, release APIs), and `egress.credentials` names hosts the gateway
 adds a bearer token to when a runner sends it a plain `http://` request, so
 the runner never holds the token. The token is a secret reference like any
@@ -195,8 +196,8 @@ release notes and compare view with `curl`, or search with `rg` and `fd`.
 The chart's image has none of them, so no command is offered; point
 `runner.image` at the release's `-tools` tag, an Alpine image with all
 three. Every host `curl` reaches must pass the gateway, so add the
-release APIs and registries to `egress.allowHosts` (a GitHub
-connection already allows `github.com`):
+release APIs and registries to `egress.allowHosts` (an app already
+allows `github.com`):
 
 ```yaml
 runner:
@@ -210,13 +211,10 @@ config:
   file:
     egress:
       allowHosts: [api.github.com, "*.githubusercontent.com"]
-    accounts:
-      - forge: github
-        name: org-1
-        repositories:
-          - name: repo-1
-            mode: agentic
-            agent: { commands: [curl, fd, rg] }
+    repositories:
+      org-1/repo-1:
+        mode: agentic
+        agent: { commands: [curl, fd, rg] }
 ```
 
 A command runs without a shell, with an environment of `PATH`, its own

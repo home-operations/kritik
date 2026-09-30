@@ -137,7 +137,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	// would leave them behind for good, and the chunks embedded under the
 	// run with them: a retry stages and embeds its own under a new run.
 	defer w.clearStaging(ctx, logger, args.AccountID, runID, runnerRunID)
-	deadline, resources := file.RunnerFor(account)
+	deadline, resources := file.RunnerFor()
 	sup := runSupervision(w.Store, args.AccountID, runnerRunID, "", "", w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		Labels: map[string]string{

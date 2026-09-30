@@ -85,7 +85,8 @@ Security notes:
 - [Setup](docs/setup.md): from install to the first review, the GitHub App,
   its permissions and its webhook
 - [Configuration](docs/configuration.md): the configuration file, sign-in and
-  role mappings, connections, accounts and which repositories run
+  role mappings, GitHub Apps, repository entries, accounts and which
+  repositories run
 - [Chart values](charts/kritik/README.md)
 - [`.kritik.yaml` reference](docs/repository-config.md)
 - [Dashboard](docs/dashboard.md): the setup checklist, the Configuration

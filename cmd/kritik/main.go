@@ -504,7 +504,7 @@ func retentionSweep(ctx context.Context, st retentionStore, current *configfile.
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
-		if n, err := st.SweepModelCalls(ctx, current.Get().Retention.TranscriptsOrDefault()); err != nil {
+		if n, err := st.SweepModelCalls(ctx, current.Get().TranscriptRetention()); err != nil {
 			if ctx.Err() == nil {
 				logger.Warn("model call transcripts not swept", "error", err)
 			}

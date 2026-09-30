@@ -11,8 +11,7 @@ instance from install to its first review.
 Install the chart as its [README](../charts/kritik/README.md) shows, with:
 
 - `web.url`, the one public URL. The dashboard is served at it, and GitHub
-  delivers each connection's webhook under it, to
-  `/hooks/<connection name>`. The chart's `ingress` or `httpRoute` routes
+  delivers each App's webhook under it, to `/hooks/<app name>`. The chart's `ingress` or `httpRoute` routes
   `/hooks` to the webhook listener and everything else to the dashboard;
   nothing else needs to be public.
 - A way to sign in: `auth.admin.passwordSecret` for the local admin, or
@@ -27,14 +26,12 @@ A minimal file names the GitHub App (below), a model key and the default
 review model:
 
 ```yaml
-connections:
+apps:
   - name: github
-    forge: github
     accounts: [org-1]
-    app:
-      clientId: Iv1.example
-      privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-      webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+    clientId: Iv1.example
+    privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+    webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
 providers:
   openrouter:
     type: openrouter
@@ -43,8 +40,10 @@ defaults:
   models: { review: openrouter/vendor/large-model }
 ```
 
-Add `embedding` to index each repository for similar code, and `accounts`
-for an account's own settings, limits and rules.
+Add `embedding` to index each repository for similar code, `repositories`
+entries for an account's or a repository's own settings and rules, and
+`accounts` for an account's limits
+([configuration](configuration.md)).
 
 ## Sign in
 
@@ -55,9 +54,9 @@ checklist names each step and what to set for it
 
 ## The GitHub App
 
-A connection is one GitHub App that kritik serves accounts through. It
-serves the users and organizations its `accounts` lists, and each of them
-is a kritik account, `github/<name>`, that this connection alone serves.
+An entry of `apps` is one GitHub App that kritik serves accounts through.
+It serves the users and organizations its `accounts` lists, and each of
+them is a kritik account, `github/<name>`, that this App alone serves.
 
 ### Register it
 
@@ -65,7 +64,7 @@ Register a GitHub App under the account whose repositories kritik reviews
 (a personal account's or an organization's Developer settings):
 
 - **Webhook:** Active, with the URL
-  `<web.url>/hooks/<connection name>` and a random secret.
+  `<web.url>/hooks/<app name>` and a random secret.
   This one webhook receives the events of every repository the App is
   installed on.
 - **Repository permissions:**
@@ -86,7 +85,7 @@ Register a GitHub App under the account whose repositories kritik reviews
   or unarchived. Installation events arrive without subscribing.
 - **Where it can be installed:** only on this account, unless it should
   serve several. A public App can be installed on many organizations: list
-  each one kritik should review in the connection's `accounts`. A
+  each one kritik should review in the App's `accounts`. A
   delivery for any account not listed is accepted and ignored, so nobody
   else who installs the App gets reviews.
 
@@ -96,8 +95,8 @@ answer. `@<app slug> review` queues a review of the pull request's head
 instead of asking a question: a pull request from a fork is not reviewed on
 its own, since its code comes from outside the organization, and this is
 how a maintainer gets it one. Put the private key and the webhook secret
-in a Secret, and declare the App as a connection in the configuration file
-or the environment ([`connections`](configuration.md#connections)). To
+in a Secret, and declare the App under `apps` in the configuration file
+or the environment ([`apps`](configuration.md#apps)). To
 sign in with GitHub through the same App, generate a client secret on its
 settings page and set it, with the client ID, as `auth.github`.
 
@@ -105,37 +104,37 @@ settings page and set it, with the client ID, as `auth.github`.
 
 Install the App on each account in `accounts`, for all repositories or
 selected ones. Each pull request in them is reviewed when it opens and
-after each push, under the account's settings in the configuration file,
-in every repository that runs
+after each push, under its settings in the configuration file, in every
+repository that runs
 ([which repositories run](configuration.md#which-repositories-run)).
 
 Anyone can install a public App by its slug. The Configuration page's
-Connections panel lists every account each connection's App is installed
-on, marks those the connection does not serve, and uninstalls the App
-from any of them. kritik reviews nothing on an account its connection
-does not list, whether or not the App is installed there.
+GitHub Apps panel lists every account each App is installed on, marks
+those it does not serve, and uninstalls the App from any of them. kritik
+reviews nothing on an account the App's entry does not list, whether or
+not the App is installed there.
 
 ## Check that it works
 
 GitHub keeps the App webhook's recent deliveries with kritik's response:
 204 for a ping, 202 for anything accepted, 401 when the secrets differ,
-and 404 when the path names no connection. The account overview's
-Connection panel shows when its connection last had a delivery, and
+and 404 when the path names no App. The account overview's Connection
+panel shows when its App last had a delivery, and
 explains where the webhook goes while none has.
 `kritik_webhooks_total{connection,outcome}` counts deliveries by outcome.
 
 ## Without webhooks
 
 When the forge cannot reach the listener, polling alone still reviews:
-every `polling.interval` (10 minutes unless set, `0s` turns it off), the
+every `KRITIK_POLL_INTERVAL` (10 minutes unless set, `0s` turns it off), the
 leader lists the open pull requests updated since the last poll. It is a
 backstop, not a substitute:
 
 - a review waits for the next poll;
 - no mention is answered, since the poller does not read comments;
 - the index catches up with the default branch at the next poll, not on
-  each push: while no webhook has reached a connection within
-  `polling.lookback`, each poll also checks its indexed repositories'
+  each push: while no webhook has reached an App within
+  `KRITIK_POLL_LOOKBACK`, each poll also checks its indexed repositories'
   default branches;
 - only repositories kritik already knows, from the configuration or an
   earlier event, are polled.

@@ -2,13 +2,13 @@ package configfile
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
-	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -20,6 +20,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/home-operations/kritik/internal/jobtimeout"
+	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/prfilter"
 )
 
@@ -36,19 +37,24 @@ var toolNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,56}[a-z0-9])?$`)
 var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 
 // fileDoc is the configuration file's schema: sign-in and the whole
-// configuration (ADR-0019 §2.1).
+// configuration (ADR-0019 §2.1, ADR-0021 §2.2).
 type fileDoc struct {
-	Auth        Auth                `yaml:"auth,omitempty"`
-	Providers   map[string]Provider `yaml:"providers,omitempty"`
-	Defaults    Defaults            `yaml:"defaults,omitempty"`
-	Polling     Polling             `yaml:"polling,omitempty"`
-	Indexing    Indexing            `yaml:"indexing,omitempty"`
-	Tools       []Tool              `yaml:"tools,omitempty"`
-	Retention   Retention           `yaml:"retention,omitempty"`
-	Egress      Egress              `yaml:"egress,omitempty"`
-	Embedding   *Embedding          `yaml:"embedding,omitempty"`
-	Connections []Connection        `yaml:"connections,omitempty"`
-	Accounts    []Account           `yaml:"accounts,omitempty"`
+	Auth      Auth                `yaml:"auth,omitempty"`
+	Apps      []Connection        `yaml:"apps,omitempty"`
+	Providers map[string]Provider `yaml:"providers,omitempty"`
+	Embedding *Embedding          `yaml:"embedding,omitempty"`
+	Egress    Egress              `yaml:"egress,omitempty"`
+	Defaults  Defaults            `yaml:"defaults,omitempty"`
+	// Repositories are the owner/* and owner/name entries.
+	Repositories map[string]Overrides  `yaml:"repositories,omitempty"`
+	Accounts     map[string]accountDoc `yaml:"accounts,omitempty"`
+}
+
+// accountDoc is an entry of the file's accounts: what is an account's
+// alone.
+type accountDoc struct {
+	Limits    LimitsSpec          `yaml:"limits,omitempty"`
+	Providers map[string]Provider `yaml:"providers,omitempty"`
 }
 
 // Load reads, decodes, resolves and validates the configuration file at
@@ -79,11 +85,14 @@ func Parse(raw []byte) (*File, error) {
 			return nil, errors.New("configfile: parse: the file must hold one document")
 		}
 	}
+	for i := range doc.Apps {
+		doc.Apps[i].Forge = ForgeGitHub
+	}
 	environ := os.Environ()
 	if err := doc.Auth.overlayEnv(environ); err != nil {
 		return nil, err
 	}
-	envConnection, err := overlayConnectionEnv(&doc.Connections, environ)
+	envConnection, err := overlayConnectionEnv(&doc.Apps, environ)
 	if err != nil {
 		return nil, err
 	}
@@ -98,24 +107,31 @@ func Parse(raw []byte) (*File, error) {
 	if err := overlayEmbeddingEnv(&doc.Embedding, environ, envKeys); err != nil {
 		return nil, err
 	}
+	run, err := loadRun()
+	if err != nil {
+		return nil, err
+	}
+	accounts, err := accountsOf(doc.Accounts, doc.Repositories)
+	if err != nil {
+		return nil, err
+	}
 	f := &File{
-		Auth: doc.Auth, Connections: doc.Connections, Providers: doc.Providers, Defaults: doc.Defaults, Polling: doc.Polling,
-		Indexing: doc.Indexing, Tools: doc.Tools, Retention: doc.Retention, Egress: doc.Egress, Embedding: doc.Embedding,
-		envConnection: envConnection, envProvider: envProvider, envKeys: envKeys,
+		Auth: doc.Auth, Connections: doc.Apps, Providers: doc.Providers, Defaults: doc.Defaults, Egress: doc.Egress,
+		Embedding: doc.Embedding, Run: run, envConnection: envConnection, envProvider: envProvider, envKeys: envKeys,
 	}
 	if err := f.Auth.resolve(); err != nil {
 		return nil, err
 	}
-	if err := f.resolve(doc.Accounts); err != nil {
+	if err := f.resolve(accounts); err != nil {
 		return nil, err
 	}
 	if err := f.Auth.validate(); err != nil {
 		return nil, err
 	}
-	if err := f.validate(doc.Accounts); err != nil {
+	if err := f.validate(accounts); err != nil {
 		return nil, err
 	}
-	f.Accounts, f.unserved = servedAccounts(f.Connections, doc.Accounts)
+	f.Accounts, f.unserved = servedAccounts(f.Connections, accounts)
 	sum := sha256.Sum256(raw)
 	f.hash = hex.EncodeToString(sum[:])
 	return f, nil
@@ -141,47 +157,121 @@ func (f *File) resolve(accounts []Account) error {
 		}
 		f.Egress.credentials[strings.ToLower(host)] = v
 	}
-	if e := f.Embedding; e != nil {
-		v, err := e.APIKey.resolve()
-		if err != nil {
-			return fmt.Errorf("configfile: embedding.apiKey: %w", err)
-		}
-		e.apiKey = v
+	if err := f.resolveEmbedding(); err != nil {
+		return err
 	}
 	if err := f.Defaults.compile(); err != nil {
 		return fmt.Errorf("configfile: defaults.filter: %w", err)
 	}
 	for i := range f.Connections {
-		if err := f.Connections[i].resolve(fmt.Sprintf("connections[%d]", i)); err != nil {
+		if err := f.Connections[i].resolve(fmt.Sprintf("apps[%d]", i)); err != nil {
 			return err
 		}
 	}
 	for i := range accounts {
-		if err := accounts[i].resolve(fmt.Sprintf("accounts[%d]", i)); err != nil {
+		if err := accounts[i].resolve(); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// resolve reads the account's secret references and compiles its filters;
-// where prefixes every error.
-func (a *Account) resolve(where string) error {
+// resolveEmbedding gives the embedder its provider's endpoint and key: an
+// openrouter or openai provider of the instance, since an account's own
+// keys pay for its reviews, not the instance's index.
+func (f *File) resolveEmbedding() error {
+	e := f.Embedding
+	if e == nil {
+		return nil
+	}
+	name := e.Ref.Provider()
+	if name == "" || e.Ref.Model() == "" {
+		return fmt.Errorf("configfile: embedding.model must be \"<provider>/<model>\", got %q", e.Ref)
+	}
+	p, ok := f.Providers[name]
+	if !ok {
+		return fmt.Errorf("configfile: embedding.model references provider %q, which is not declared under providers", name)
+	}
+	switch p.Type {
+	case ProviderOpenRouter:
+		e.BaseURL = cmp.Or(p.BaseURL, model.OpenRouterBaseURL)
+	case ProviderOpenAI:
+		e.BaseURL = cmp.Or(p.BaseURL, model.OpenAIBaseURL)
+	default:
+		return fmt.Errorf("configfile: embedding.model names a %s provider; embeddings need an %s or %s one",
+			p.Type, ProviderOpenRouter, ProviderOpenAI)
+	}
+	e.Model, e.apiKey = e.Ref.Model(), p.apiKey
+	return nil
+}
+
+// accountsOf gathers each account's entries, in the order of their
+// names: its accounts entry, and its owner/* and owner/name entries under
+// repositories.
+func accountsOf(entries map[string]accountDoc, repos map[string]Overrides) ([]Account, error) {
+	byKey := map[string]*Account{}
+	get := func(name string) *Account {
+		key := AccountKey(ForgeGitHub, name)
+		if a, ok := byKey[key]; ok {
+			return a
+		}
+		a := &Account{Forge: ForgeGitHub, Name: name}
+		byKey[key] = a
+		return a
+	}
+	for _, name := range slices.Sorted(maps.Keys(entries)) {
+		where := "accounts." + name
+		if err := checkAccountName(where, name); err != nil {
+			return nil, err
+		}
+		a := get(name)
+		if a.entry != "" {
+			return nil, fmt.Errorf("configfile: %s duplicates %s", where, a.entry)
+		}
+		a.entry, a.Limits, a.Providers = where, entries[name].Limits, entries[name].Providers
+	}
+	seen := map[string]string{}
+	for _, key := range slices.Sorted(maps.Keys(repos)) {
+		where := "repositories." + key
+		owner, name, ok := strings.Cut(key, "/")
+		if !ok || checkAccountName(where, owner) != nil || strings.TrimSpace(name) == "" || strings.ContainsAny(name, "/ ") {
+			return nil, fmt.Errorf("configfile: %s: a repository entry is keyed owner/* or owner/name", where)
+		}
+		if prev, dup := seen[strings.ToLower(key)]; dup {
+			return nil, fmt.Errorf("configfile: %s duplicates %s", where, prev)
+		}
+		seen[strings.ToLower(key)] = where
+		a := get(owner)
+		if name == "*" {
+			a.Overrides, a.pattern = repos[key], where
+		} else {
+			a.Repositories = append(a.Repositories, Repository{Name: name, Overrides: repos[key], where: where})
+		}
+	}
+	out := make([]Account, 0, len(byKey))
+	for _, key := range slices.Sorted(maps.Keys(byKey)) {
+		out = append(out, *byKey[key])
+	}
+	return out, nil
+}
+
+// resolve reads the account's secret references and compiles its filters.
+func (a *Account) resolve() error {
 	if err := a.compile(); err != nil {
-		return fmt.Errorf("configfile: %s.filter: %w", where, err)
+		return fmt.Errorf("configfile: %s.filter: %w", a.pattern, err)
 	}
 	for _, name := range slices.Sorted(maps.Keys(a.Providers)) {
 		p := a.Providers[name]
 		v, err := p.APIKey.resolve()
 		if err != nil {
-			return fmt.Errorf("configfile: %s.providers.%s.apiKey: %w", where, name, err)
+			return fmt.Errorf("configfile: %s.providers.%s.apiKey: %w", a.entry, name, err)
 		}
 		p.apiKey = v
 		a.Providers[name] = p
 	}
 	for ri := range a.Repositories {
 		if err := a.Repositories[ri].compile(); err != nil {
-			return fmt.Errorf("configfile: %s.repositories[%d].filter: %w", where, ri, err)
+			return fmt.Errorf("configfile: %s.filter: %w", a.Repositories[ri].where, err)
 		}
 	}
 	return nil
@@ -189,21 +279,14 @@ func (a *Account) resolve(where string) error {
 
 func (in *Connection) resolve(where string) error {
 	var err error
-	if in.App != nil {
-		in.App.clientID = in.App.ClientID
-		if !in.App.ClientIDFrom.empty() {
-			v, err := in.App.ClientIDFrom.resolve()
-			if err != nil {
-				return fmt.Errorf("configfile: %s.app.clientIdFrom: %w", where, err)
-			}
-			in.App.clientID = v.Value()
-		}
-		if in.App.privateKey, err = in.App.PrivateKey.resolve(); err != nil {
-			return fmt.Errorf("configfile: %s.app.privateKey: %w", where, err)
-		}
-		if in.App.webhookSecret, err = in.App.WebhookSecret.resolve(); err != nil {
-			return fmt.Errorf("configfile: %s.app.webhookSecret: %w", where, err)
-		}
+	if in.App.clientID, err = in.App.ClientID.resolve(); err != nil {
+		return fmt.Errorf("configfile: %s.clientId: %w", where, err)
+	}
+	if in.App.privateKey, err = in.App.PrivateKey.resolve(); err != nil {
+		return fmt.Errorf("configfile: %s.privateKey: %w", where, err)
+	}
+	if in.App.webhookSecret, err = in.App.WebhookSecret.resolve(); err != nil {
+		return fmt.Errorf("configfile: %s.webhookSecret: %w", where, err)
 	}
 	return nil
 }
@@ -215,15 +298,6 @@ func (f *File) validate(accounts []Account) error {
 		return err
 	}
 	if err := f.validateEgress(); err != nil {
-		return err
-	}
-	if err := f.validateRetention(); err != nil {
-		return err
-	}
-	if err := f.validateTuning(); err != nil {
-		return err
-	}
-	if err := f.validateTools(); err != nil {
 		return err
 	}
 	if err := f.validateEmbedding(); err != nil {
@@ -238,10 +312,10 @@ func (f *File) validate(accounts []Account) error {
 // validateTools checks the tool catalog: unique volume-safe names, an
 // image each, a clean absolute path, and bare command names no two tools
 // both provide.
-func (f *File) validateTools() error {
+func validateTools(tools []Tool) error {
 	names, commands := map[string]bool{}, map[string]string{}
-	for i, t := range f.Tools {
-		where := fmt.Sprintf("tools[%d]", i)
+	for i, t := range tools {
+		where := fmt.Sprintf("KRITIK_RUNNER_TOOLS[%d]", i)
 		if !toolNameRe.MatchString(t.Name) {
 			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 58 characters", where, t.Name)
 		}
@@ -268,53 +342,18 @@ func (f *File) validateTools() error {
 	return nil
 }
 
-// validateEmbedding checks the embedder: an absolute endpoint, a key, a
-// model, and a dimension the index column takes.
+// validateEmbedding checks the embedder's dimension fits the index column
+// and its bounds are not negative; its provider is checked with the rest.
 func (f *File) validateEmbedding() error {
 	e := f.Embedding
 	if e == nil {
 		return nil
-	}
-	if u, err := url.Parse(e.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
-		return fmt.Errorf("configfile: embedding.baseUrl %q must be an absolute URL", e.BaseURL)
-	}
-	if e.apiKey.Value() == "" {
-		return errors.New("configfile: embedding.apiKey resolved to an empty value")
-	}
-	if strings.TrimSpace(e.Model) == "" {
-		return errors.New("configfile: embedding.model is required")
 	}
 	if e.Dims <= 0 || e.Dims > MaxEmbedDims {
 		return fmt.Errorf("configfile: embedding.dims must be between 1 and %d (the index's halfvec limit), got %d", MaxEmbedDims, e.Dims)
 	}
 	if e.MaxBatch < 0 || e.MaxBatchChars < 0 || e.MaxItemChars < 0 {
 		return errors.New("configfile: embedding.maxBatch, maxBatchChars and maxItemChars must not be negative")
-	}
-	return nil
-}
-
-// validateTuning checks defaults.runner, polling and indexing.
-func (f *File) validateTuning() error {
-	if r := f.Defaults.Runner; r != nil {
-		if err := validateRunnerDeadline("defaults", r.ActiveDeadlineSeconds); err != nil {
-			return err
-		}
-	}
-	if (f.Polling.Interval != nil && *f.Polling.Interval < 0) || f.Polling.Lookback < 0 {
-		return errors.New("configfile: polling.interval and polling.lookback must not be negative")
-	}
-	if f.Indexing.OnboardWindow < 0 {
-		return errors.New("configfile: indexing.onboardWindow must not be negative")
-	}
-	return nil
-}
-
-func (f *File) validateRetention() error {
-	if f.Retention.DisabledIndexGrace < 0 {
-		return errors.New("configfile: retention.disabledIndexGrace must not be negative")
-	}
-	if f.Retention.Transcripts != 0 && f.Retention.Transcripts < minTranscripts {
-		return fmt.Errorf("configfile: retention.transcripts must be at least %s", minTranscripts)
 	}
 	return nil
 }
@@ -328,83 +367,46 @@ func (f *File) validateProviders() error {
 	return nil
 }
 
-// validateRunnerDeadline checks that an account's runner.activeDeadlineSeconds is
-// non-negative and, once converted to a job timeout, does not exceed River's cap.
-func validateRunnerDeadline(where string, seconds int64) error {
-	if seconds < 0 {
-		return fmt.Errorf("configfile: %s.runner.activeDeadlineSeconds must not be negative", where)
-	}
-	deadline := time.Duration(seconds) * time.Second
-	if deadline > jobtimeout.MaxRunnerDeadline {
-		return fmt.Errorf("configfile: %s.runner.activeDeadlineSeconds must not exceed %d (%s),"+
-			" or River's %s job timeout cap would cut the runner off early",
-			where, int64(jobtimeout.MaxRunnerDeadline.Seconds()), jobtimeout.MaxRunnerDeadline, jobtimeout.MaxJobTimeout)
-	}
-	return nil
-}
-
-// validateAccounts checks the defaults and every account entry, served or
-// not, so an entry is judged when it is written rather than when a
-// connection first serves it.
-func (f *File) validateAccounts(entries []Account) error {
+// validateAccounts checks the defaults and every account's entries,
+// served or not, so an entry is judged when it is written rather than when
+// a connection first serves it.
+func (f *File) validateAccounts(accounts []Account) error {
 	if err := checkLimits("defaults.limits", f.Defaults.Limits); err != nil {
 		return err
 	}
 	if err := f.validateOverrides("defaults", nil, &f.Defaults.Overrides); err != nil {
 		return err
 	}
-	seen := map[string]string{}
-	for i := range entries {
-		a := &entries[i]
-		where := fmt.Sprintf("accounts[%d]", i)
-		if prev, dup := seen[a.Key()]; dup {
-			return fmt.Errorf("configfile: %s: account %s/%s duplicates %s", where, a.Forge, a.Name, prev)
-		}
-		seen[a.Key()] = where
-		if err := f.validateAccount(where, a); err != nil {
+	for i := range accounts {
+		if err := f.validateAccount(&accounts[i]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateAccount checks one account entry.
-func (f *File) validateAccount(where string, a *Account) error {
-	if a.Forge != ForgeGitHub {
-		return fmt.Errorf("configfile: %s.forge must be %s, got %q", where, ForgeGitHub, a.Forge)
-	}
-	if err := checkAccountName(where+".name", a.Name); err != nil {
-		return err
-	}
-	if err := checkLimits(where+".limits", a.Limits); err != nil {
-		return err
-	}
-	if err := f.validateAccountProviders(where, a); err != nil {
-		return err
-	}
-	if err := f.validateOverrides(where, a, &a.Overrides); err != nil {
-		return err
-	}
-	if a.Runner != nil {
-		if err := validateRunnerDeadline(where, a.Runner.ActiveDeadlineSeconds); err != nil {
+// validateAccount checks an account's entries: its accounts entry, its
+// owner/* entry, and its owner/name entries, which may not say where a
+// repository starts.
+func (f *File) validateAccount(a *Account) error {
+	if a.entry != "" {
+		if err := checkLimits(a.entry+".limits", a.Limits); err != nil {
+			return err
+		}
+		if err := f.validateAccountProviders(a.entry, a); err != nil {
 			return err
 		}
 	}
-	repos := map[string]int{}
-	for ri, r := range a.Repositories {
-		rwhere := fmt.Sprintf("%s.repositories[%d]", where, ri)
-		if strings.TrimSpace(r.Name) == "" || strings.ContainsAny(r.Name, "/ ") {
-			return fmt.Errorf("configfile: %s.name %q must be the repository's name without its owner", rwhere, r.Name)
+	if a.pattern != "" {
+		if err := f.validateOverrides(a.pattern, a, &a.Overrides); err != nil {
+			return err
 		}
-		key := strings.ToLower(r.Name)
-		if prev, dup := repos[key]; dup {
-			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d]", rwhere, r.Name, prev)
-		}
-		repos[key] = ri
+	}
+	for _, r := range a.Repositories {
 		if r.Enabled != nil {
-			return fmt.Errorf("configfile: %s.enabled: turn a repository on or off in the dashboard (ADR-0019 §2.3)", rwhere)
+			return fmt.Errorf("configfile: %s.enabled: turn a repository on or off in the dashboard (ADR-0019 §2.3)", r.where)
 		}
-		if err := f.validateOverrides(rwhere, a, &r.Overrides); err != nil {
+		if err := f.validateOverrides(r.where, a, &r.Overrides); err != nil {
 			return err
 		}
 	}
@@ -546,20 +548,14 @@ func checkRepoPath(p string) error {
 func (in Connection) validate(where string) error {
 	switch in.Forge {
 	case ForgeGitHub:
-		if in.App == nil {
-			return fmt.Errorf("configfile: %s: a github connection needs an app", where)
-		}
-		if (in.App.ClientID == "") == in.App.ClientIDFrom.empty() {
-			return fmt.Errorf("configfile: %s.app: set exactly one of clientId or clientIdFrom", where)
-		}
 		if in.App.clientID == "" {
-			return fmt.Errorf("configfile: %s.app.clientIdFrom resolved to an empty value", where)
+			return fmt.Errorf("configfile: %s.clientId is required", where)
 		}
 		if in.App.privateKey.Value() == "" {
-			return fmt.Errorf("configfile: %s.app.privateKey is required", where)
+			return fmt.Errorf("configfile: %s.privateKey is required", where)
 		}
 		if in.App.webhookSecret.Value() == "" {
-			return fmt.Errorf("configfile: %s.app.webhookSecret is required", where)
+			return fmt.Errorf("configfile: %s.webhookSecret is required", where)
 		}
 	default:
 		return fmt.Errorf("configfile: %s.forge must be %s, got %q", where, ForgeGitHub, in.Forge)

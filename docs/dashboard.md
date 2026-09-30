@@ -2,7 +2,7 @@
 
 kritik serves a dashboard: sign in with a local admin password,
 GitHub or an OIDC provider, and see the accounts you can read, the
-connection serving each and its repositories, live review and conversation state as it
+GitHub App serving each and its repositories, live review and conversation state as it
 runs, and, for an admin, the running configuration and the audit log. An
 admin can also queue a re-run of a specific pull request, cancel a review
 in progress, reindex a repository's embeddings, or turn a repository on or
@@ -20,7 +20,7 @@ at once, and holds a tab for each of an account's sections
   from opening to merging, the 👍 and 👎 on kritik's inline comments and
   spend, by day or week, and the most reviewed repositories. The poller
   reads reactions, for a week after a pull request's latest review, so
-  they need `polling` on. Its Findings list has
+  they need polling on. Its Findings list has
   each finding once per pull request however many reviews repeated it,
   addressed once a later review of the pull request, at a newer head, no
   longer reports it. A finding kritik posted inline links to its thread
@@ -57,13 +57,13 @@ listener shares under `/hooks`. People sign in as
 
 The dashboard does not configure kritik: the configuration file does
 ([ADR-0019](adr/0019-configuration-in-git.md)). Until an instance can
-review, with a running connection and a default review model, a banner
+review, with a GitHub App and a default review model, a banner
 tells an admin so and leads to the Configuration page, whose Setup
 checklist names each step still missing and what to set for it:
 
-1. **A GitHub App is connected:** declared under `connections`.
-2. **The App reaches a repository:** installed on an account its
-   connection lists.
+1. **A GitHub App is connected:** declared under `apps`.
+2. **The App reaches a repository:** installed on an account its entry
+   under `apps` lists.
 3. **A review model is set:** `defaults.models.review`.
 4. **An embedder is set:** `embedding`, which is optional.
 
@@ -71,8 +71,8 @@ checklist names each step still missing and what to set for it:
 
 An admin's Configuration page, under Settings, shows what the instance
 runs and changes none of it: the Setup checklist, the accounts the
-connections serve, each instance setting with its source, the connections
-with the accounts each App is installed on, and the admin audit log. When
+GitHub Apps serve, each instance setting with its source, the Apps with
+the accounts each is installed on, and the admin audit log. When
 the configuration file's latest content was refused, it says why, and a
 banner on every page leads there. The command palette, `Ctrl`/`⌘` `K`,
 finds each of those sections, and the Settings navigation lists them

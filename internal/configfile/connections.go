@@ -23,12 +23,12 @@ func validateConnections(conns []Connection) error {
 	served := map[string]string{}
 	for i := range conns {
 		in := &conns[i]
-		where := fmt.Sprintf("connections[%d]", i)
+		where := fmt.Sprintf("apps[%d]", i)
 		if !nameRe.MatchString(in.Name) {
 			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", where, in.Name)
 		}
 		if prev, dup := names[in.Name]; dup {
-			return fmt.Errorf("configfile: %s.name %q duplicates connections[%d]; names are hook paths and must be unique", where, in.Name, prev)
+			return fmt.Errorf("configfile: %s.name %q duplicates apps[%d]; names are hook paths and must be unique", where, in.Name, prev)
 		}
 		names[in.Name] = i
 		if err := validateAccountNames(in.Accounts, where); err != nil {
@@ -40,7 +40,7 @@ func validateConnections(conns []Connection) error {
 		for ai, a := range in.Accounts {
 			key := AccountKey(in.Forge, a)
 			if other, dup := served[key]; dup {
-				return fmt.Errorf("configfile: %s.accounts[%d] %q is served by connection %q already; an account is served by one connection",
+				return fmt.Errorf("configfile: %s.accounts[%d] %q is served by app %q already; an account is served by one app",
 					where, ai, a, other)
 			}
 			served[key] = in.Name
@@ -54,21 +54,21 @@ func validateConnections(conns []Connection) error {
 func ValidConnectionName(name string) bool { return nameRe.MatchString(name) }
 
 // connectionEnvPrefix starts every environment variable that declares the
-// environment's connection.
-const connectionEnvPrefix = "KRITIK_CONNECTIONS_"
+// environment's app.
+const connectionEnvPrefix = "KRITIK_APPS_"
 
-// DefaultEnvConnection names the environment's connection when
-// KRITIK_CONNECTIONS_NAME is unset.
+// DefaultEnvConnection names the environment's app when KRITIK_APPS_NAME
+// is unset.
 const DefaultEnvConnection = "github"
 
-// overlayConnectionEnv declares the one connection the environment may
-// (ADR-0014 §2.2): it replaces the file's connection of its name whole, or
-// joins them. It returns the connection's name, "" when no
-// KRITIK_CONNECTIONS_* variable is set. A variable that names no key is an
-// error, so a typo is refused rather than ignored, and so is a secret set
-// both directly and by _FILE, since environ's order would pick one.
+// overlayConnectionEnv declares the one app the environment may (ADR-0014
+// §2.2): it replaces the file's app of its name whole, or joins them. It
+// returns the app's name, "" when no KRITIK_APPS_* variable is set. A
+// variable that names no key is an error, so a typo is refused rather than
+// ignored, and so is a secret set both directly and by _FILE, since
+// environ's order would pick one.
 func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error) {
-	in := Connection{Name: DefaultEnvConnection, Forge: ForgeGitHub, App: &GitHubApp{}}
+	in := Connection{Name: DefaultEnvConnection, Forge: ForgeGitHub}
 	setBy := map[string]string{}
 	for _, kv := range environ {
 		name, value, _ := strings.Cut(kv, "=")
@@ -78,7 +78,7 @@ func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error)
 		}
 		setting := strings.TrimSuffix(key, "_FILE")
 		if prev, dup := setBy[setting]; dup {
-			return "", fmt.Errorf("configfile: environment variables %s and %s set the same connection setting; set one", prev, name)
+			return "", fmt.Errorf("configfile: environment variables %s and %s set the same app setting; set one", prev, name)
 		}
 		setBy[setting] = name
 		switch key {
@@ -86,18 +86,18 @@ func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error)
 			in.Name = value
 		case "ACCOUNTS":
 			in.Accounts = envList(value)
-		case "APP_CLIENT_ID":
-			in.App.ClientID = value
-		case "APP_PRIVATE_KEY":
+		case "CLIENT_ID":
+			in.App.ClientID = ValueOrRef{Value: value}
+		case "PRIVATE_KEY":
 			in.App.PrivateKey = SecretRef{Env: name}
-		case "APP_PRIVATE_KEY_FILE":
+		case "PRIVATE_KEY_FILE":
 			in.App.PrivateKey = SecretRef{File: value}
-		case "APP_WEBHOOK_SECRET":
+		case "WEBHOOK_SECRET":
 			in.App.WebhookSecret = SecretRef{Env: name}
-		case "APP_WEBHOOK_SECRET_FILE":
+		case "WEBHOOK_SECRET_FILE":
 			in.App.WebhookSecret = SecretRef{File: value}
 		default:
-			return "", fmt.Errorf("configfile: environment variable %s names no connection setting", name)
+			return "", fmt.Errorf("configfile: environment variable %s names no app setting", name)
 		}
 	}
 	if len(setBy) == 0 {

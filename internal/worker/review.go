@@ -97,7 +97,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if err != nil {
 		return err
 	}
-	deadline, resources := file.RunnerFor(account)
+	deadline, resources := file.RunnerFor()
 	spec := runner.Spec{
 		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
 		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, Ignore: settings.Ignore, RepoFiles: eff.repoFiles(),

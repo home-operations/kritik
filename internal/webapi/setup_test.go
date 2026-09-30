@@ -14,8 +14,8 @@ import (
 
 func TestSetupStatus(t *testing.T) {
 	t.Setenv("TEST_KEY", "k")
-	const conn = `connections:
-  - { name: acme-bot, forge: github, accounts: [acme], app: { clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } } }
+	const conn = `apps:
+  - { name: acme-bot, accounts: [acme], clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } }
 `
 	const provider = "providers:\n  p: { type: openai, apiKey: { env: TEST_KEY } }\n"
 	base := SetupStatus{WebURL: "https://kritik.example", HooksURL: "https://kritik.example/hooks/", Connections: []string{}}

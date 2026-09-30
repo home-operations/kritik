@@ -19,14 +19,12 @@ import (
 )
 
 const configYAML = `
-connections:
+apps:
   - name: bot-ross
-    forge: github
     accounts: [onedr0p, home-operations]
-    app:
-      clientId: Iv1.x
-      privateKey: { env: TEST_PEM }
-      webhookSecret: { env: TEST_SECRET }
+    clientId: Iv1.x
+    privateKey: { env: TEST_PEM }
+    webhookSecret: { env: TEST_SECRET }
 `
 
 type fakeDispatcher struct {

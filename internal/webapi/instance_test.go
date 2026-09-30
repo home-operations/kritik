@@ -17,9 +17,8 @@ func TestInstanceSettings(t *testing.T) {
 	t.Setenv("TEST_KEY", "sk-secret")
 	f := configfiletest.Load(t, `providers:
   gw: { type: openai, baseUrl: "https://kritik:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
-polling: { interval: 2m }
-connections:
-  - { name: acme-bot, forge: github, accounts: [acme, org-1], app: { clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } } }
+apps:
+  - { name: acme-bot, accounts: [acme, org-1], clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } }
 `)
 	env := []config.EnvVar{
 		{Name: "KRITIK_ADDR", Value: ":9090", Set: true},
@@ -38,7 +37,7 @@ connections:
 			"environment", "KRITIK_GATEWAY_URL", "https://gw.example (credentials hidden)", configfile.SourceEnv,
 		},
 		"environment KRITIK_DATABASE_URL": {"environment", "KRITIK_DATABASE_URL", "set", configfile.SourceEnv},
-		"connections acme-bot":            {"connections", "acme-bot", "acme, org-1, webhook /hooks/acme-bot", configfile.SourceFile},
+		"apps acme-bot":                   {"apps", "acme-bot", "acme, org-1, webhook /hooks/acme-bot", configfile.SourceFile},
 	} {
 		if rows[key] != want {
 			t.Errorf("%s = %+v, want %+v", key, rows[key], want)
@@ -60,7 +59,7 @@ func TestInstanceSettingsFileLayer(t *testing.T) {
 	f, err := configfile.Parse([]byte(`providers:
   gw: { type: openai, baseUrl: "https://kritik:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
 defaults: { models: { fallback: gw/small }, mode: agentic }
-embedding: { baseUrl: https://embed.example/v1, apiKey: { env: TEST_KEY }, model: e1, dims: 8 }
+embedding: { model: gw/e1, dims: 8 }
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +73,7 @@ embedding: { baseUrl: https://embed.example/v1, apiKey: { env: TEST_KEY }, model
 		"defaults models.review":   {"defaults", "models.review", "gw/big", configfile.SourceEnv},
 		"defaults models.fallback": {"defaults", "models.fallback", "gw/small", configfile.SourceFile},
 		"defaults mode":            {"defaults", "mode", "agentic", configfile.SourceFile},
-		"embedding e1":             {"embedding", "e1", "8 dimensions at https://embed.example/v1", configfile.SourceFile},
+		"embedding gw/e1":          {"embedding", "gw/e1", "8 dimensions at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
 	} {
 		if rows[key] != want {
 			t.Errorf("%s = %+v, want %+v", key, rows[key], want)

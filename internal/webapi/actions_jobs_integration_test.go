@@ -35,16 +35,14 @@ auth:
     clientId: kritik
     clientSecret: { env: KRITIK_TEST_TOKEN }
     roleMapping: '"kritik-admin" in roles ? "admin" : ""'
-connections:
+apps:
   - name: aj-bot
-    forge: github
     accounts: [aj]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
-accounts:
-  - forge: github
-    name: aj
-    repositories:
-      - name: one
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
+repositories:
+  aj/one: {}
 `
 
 // actionsEnv exercises the dashboard actions (rerun, cancel, reindex)

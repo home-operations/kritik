@@ -132,14 +132,8 @@ func overlayEmbeddingEnv(e **Embedding, environ []string, from map[string]bool) 
 			*e = &Embedding{}
 		}
 		switch key {
-		case "BASE_URL":
-			(*e).BaseURL = value
-		case "API_KEY":
-			(*e).APIKey = SecretRef{Env: env}
-		case "API_KEY_FILE":
-			(*e).APIKey = SecretRef{File: value}
 		case "MODEL":
-			(*e).Model = value
+			(*e).Ref = ModelRef(value)
 		case "DIMS":
 			dims, err := strconv.Atoi(value)
 			if err != nil {
@@ -235,7 +229,7 @@ func (f *File) FileLayer() FileLayer {
 		}
 	}
 	if e := f.Embedding; e != nil {
-		out.Embedding = &FileEmbedding{BaseURL: e.BaseURL, Model: e.Model, Dims: e.Dims, Source: source("embedding")}
+		out.Embedding = &FileEmbedding{BaseURL: e.BaseURL, Model: string(e.Ref), Dims: e.Dims, Source: source("embedding")}
 	}
 	return out
 }

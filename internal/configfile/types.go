@@ -1,10 +1,8 @@
-// Package configfile is kritik's configuration in two layers (ADR-0014
-// §2.2): the configuration file, with its KRITIK_AUTH_* and
-// KRITIK_CONNECTIONS_* environment overlay, declares sign-in and the
-// connections an admin wants fixed at deploy time; the instance spec, which
-// the dashboard keeps in Postgres, holds everything else. Process
-// configuration (addresses, database, log level) is environment variables
-// and lives in internal/config.
+// Package configfile is kritik's configuration: the configuration file
+// (ADR-0019, ADR-0021) with its KRITIK_* environment overlay, and the
+// settings for how kritik runs that come from the environment alone
+// (ADR-0021 §2.7). Process configuration (addresses, database, log level)
+// is environment variables too and lives in internal/config.
 //
 // Each layer is applied atomically: the whole document is decoded with
 // unknown keys rejected, every secret reference resolved, every filter
@@ -15,9 +13,12 @@ package configfile
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/model"
@@ -49,6 +50,38 @@ const ForgeGitHub Forge = "github"
 type SecretRef struct {
 	Env  string `yaml:"env,omitempty"`
 	File string `yaml:"file,omitempty"`
+}
+
+// ValueOrRef is a setting given inline, or by a reference to where it
+// lives like a secret's, for a value that is not secret but is often kept
+// next to one.
+type ValueOrRef struct {
+	Value string
+	Ref   SecretRef
+}
+
+// UnmarshalYAML takes a scalar as the value, or a mapping as the reference.
+func (v *ValueOrRef) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode {
+		return n.Decode(&v.Value)
+	}
+	// Node.Decode drops the strictness Parse asked for, so unknown keys are
+	// refused here.
+	for i := 0; n.Kind == yaml.MappingNode && i < len(n.Content); i += 2 {
+		if k := n.Content[i]; k.Value != "env" && k.Value != "file" {
+			return fmt.Errorf("line %d: field %s not found in type configfile.SecretRef", k.Line, k.Value)
+		}
+	}
+	return n.Decode(&v.Ref)
+}
+
+// resolve is the value, read from its reference when it has one.
+func (v ValueOrRef) resolve() (string, error) {
+	if v.Ref.empty() {
+		return v.Value, nil
+	}
+	s, err := v.Ref.resolve()
+	return s.Value(), err
 }
 
 // Secret is a resolved secret value. Its String method redacts, so a Secret
@@ -155,24 +188,13 @@ type LimitsSpec struct {
 // DefaultConcurrency applies when no level of the configuration sets one.
 const DefaultConcurrency = 2
 
-// Runner overrides for the Kubernetes Job an account's index and review pods
-// run as. Kept as loose maps for resources because the values are copied
-// verbatim into the pod spec and the Kubernetes types are not a dependency
-// of this package.
-type Runner struct {
-	Resources             map[string]any `yaml:"resources,omitempty"`
-	ActiveDeadlineSeconds int64          `yaml:"activeDeadlineSeconds,omitempty"`
-}
-
-// DefaultRunnerDeadline bounds a runner Job when neither the account nor
-// defaults.runner sets activeDeadlineSeconds.
+// DefaultRunnerDeadline bounds a runner Job when KRITIK_RUNNER_DEADLINE
+// sets none.
 const DefaultRunnerDeadline = 15 * time.Minute
 
-// Defaults apply to every account unless overridden.
+// Defaults apply to every repository unless an entry overrides them, and
+// Limits to every account unless its entry sets its own.
 type Defaults struct {
-	// Runner is every account's runner block unless the account sets its own
-	// deadline or resources.
-	Runner    *Runner `yaml:"runner,omitempty"`
 	Overrides `yaml:",inline"`
 	Limits    LimitsSpec `yaml:"limits,omitempty"`
 }
@@ -203,38 +225,21 @@ type Overrides struct {
 	filter *prfilter.Program
 }
 
-// Polling is the leader's backstop for missed webhooks: it lists each
-// connection's open pull requests every Interval.
-type Polling struct {
-	// Interval is how often to poll; an explicit 0 turns polling off, and
-	// unset is DefaultPollInterval.
-	Interval *time.Duration `yaml:"interval,omitempty"`
-	// Lookback bounds how far back a first or long-idle poll looks, so a
-	// long outage does not list every open pull request's history at once.
-	Lookback time.Duration `yaml:"lookback,omitempty"`
-}
-
-// Poll defaults, when the configuration sets none.
-const (
-	DefaultPollInterval = 10 * time.Minute
-	DefaultPollLookback = 24 * time.Hour
-)
-
 // Tool is a command-line tool a runner pod mounts from an image, read-only,
 // for the agent's run tool (ADR-0011). The runner image's own tools (curl,
 // fd and rg in the -tools image) need no entry.
 type Tool struct {
 	// Name identifies the tool; it names the pod volume.
-	Name string `yaml:"name"`
+	Name string `json:"name"`
 	// Image is the image the tool comes from; pin it by digest.
-	Image string `yaml:"image"`
+	Image string `json:"image"`
 	// Path is the directory inside the image that holds the binaries; it
 	// goes first on the runner's PATH. Default "/". The binaries must be
 	// statically linked: the default runner image has no libc.
-	Path string `yaml:"path,omitempty"`
+	Path string `json:"path,omitempty"`
 	// Commands are the binaries the tool provides, the names agent.commands
 	// allows; default the tool's name.
-	Commands []string `yaml:"commands,omitempty"`
+	Commands []string `json:"commands,omitempty"`
 }
 
 // Provides lists the commands the tool puts on the runner's PATH.
@@ -245,28 +250,16 @@ func (t Tool) Provides() []string {
 	return t.Commands
 }
 
-// Indexing tunes how repositories are onboarded into the embedding index.
-type Indexing struct {
-	// OnboardWindow is how many onboarding index jobs the leader keeps
-	// queued or running at once; accounts take turns, and the repositories
-	// whose pull requests moved last go first.
-	OnboardWindow int `yaml:"onboardWindow,omitempty"`
-}
-
-// DefaultOnboardWindow applies when the configuration sets no onboardWindow.
-const DefaultOnboardWindow = 4
-
-// Embedding is the instance's embedder, any OpenAI-compatible embeddings
-// endpoint, which builds the similar-code index. There is one per instance
+// Embedding is the instance's embedder, which builds the similar-code
+// index: a model of one of the instance's openrouter or openai providers,
+// on its endpoint and key (ADR-0021 §2.2). There is one per instance
 // because the index has one vector dimension (ADR-0014 §2.6). Unset,
 // indexing is off and reviews run without vector retrieval.
 type Embedding struct {
-	// BaseURL is the endpoint, such as https://openrouter.ai/api/v1.
-	BaseURL string    `yaml:"baseUrl"`
-	APIKey  SecretRef `yaml:"apiKey"`
-	Model   string    `yaml:"model"`
+	// Ref is the model as the configuration names it, "<provider>/<model>".
+	Ref ModelRef `yaml:"model"`
 	// Dims is the vector dimension, which shapes the index table: a change
-	// of it or of Model rebuilds every repository's index.
+	// of it or of the model rebuilds every repository's index.
 	Dims int `yaml:"dims"`
 	// MaxBatch, MaxBatchChars and MaxItemChars bound one request: inputs,
 	// characters, and characters per input, beyond which an input is cut.
@@ -276,7 +269,11 @@ type Embedding struct {
 	MaxBatchChars int `yaml:"maxBatchChars,omitempty"`
 	MaxItemChars  int `yaml:"maxItemChars,omitempty"`
 
-	apiKey Secret
+	// BaseURL, Model and the key are the provider's, resolved at load:
+	// its endpoint, the model's id on it, and its key.
+	BaseURL string `yaml:"-"`
+	Model   string `yaml:"-"`
+	apiKey  Secret
 }
 
 // APIKeyValue returns the resolved API key.
@@ -292,35 +289,8 @@ func (e *Embedding) Bounds() (batch, batchChars, itemChars int) {
 		cmp.Or(e.MaxItemChars, model.DefaultEmbedMaxItemChars)
 }
 
-// Retention controls what is deleted and when. Reviews, findings and usage
-// are kept indefinitely; only bulky, reproducible data expires.
-type Retention struct {
-	// DisabledIndexGrace is how long a disabled repository's vectors are
-	// kept before deletion, so re-enabling within the window reuses the
-	// index instead of rebuilding it.
-	DisabledIndexGrace time.Duration `yaml:"disabledIndexGrace,omitempty"`
-	// Transcripts is how long an agentic review's transcript is kept.
-	Transcripts time.Duration `yaml:"transcripts,omitempty"`
-}
-
-// DefaultDisabledIndexGrace applies when the file sets no retention.
-const DefaultDisabledIndexGrace = 30 * 24 * time.Hour
-
-// DefaultTranscripts applies when the configuration sets no transcript
-// retention.
-const DefaultTranscripts = 30 * 24 * time.Hour
-
-// minTranscripts is the shortest transcript retention the configuration
-// may set.
+// minTranscripts is the shortest transcript retention that may be set.
 const minTranscripts = 24 * time.Hour
-
-// TranscriptsOrDefault returns the transcript retention or its default.
-func (r Retention) TranscriptsOrDefault() time.Duration {
-	if r.Transcripts > 0 {
-		return r.Transcripts
-	}
-	return DefaultTranscripts
-}
 
 // DefaultIgnore is always skipped by chunking and the caller search, on top
 // of whatever the admin's file and the in-repo file add. Vendored and
@@ -335,12 +305,11 @@ var DefaultIgnore = []string{
 
 // GitHubApp is a GitHub App credential owned by a connection. The client
 // id is not secret, but admins often keep it next to the key, so it may
-// be given inline or by reference; exactly one of the two.
+// be given inline or by reference.
 type GitHubApp struct {
-	ClientID      string    `yaml:"clientId,omitempty"`
-	ClientIDFrom  SecretRef `yaml:"clientIdFrom,omitempty"`
-	PrivateKey    SecretRef `yaml:"privateKey"`
-	WebhookSecret SecretRef `yaml:"webhookSecret"`
+	ClientID      ValueOrRef `yaml:"clientId"`
+	PrivateKey    SecretRef  `yaml:"privateKey"`
+	WebhookSecret SecretRef  `yaml:"webhookSecret"`
 
 	clientID      string
 	privateKey    Secret
@@ -353,11 +322,13 @@ func (a GitHubApp) ClientIDValue() string { return a.clientID }
 // PrivateKeyValue returns the resolved private key PEM.
 func (a GitHubApp) PrivateKeyValue() Secret { return a.privateKey }
 
-// Connection is one GitHub App serving the accounts it lists. Its name is
-// the hook path, /hooks/{name}, and is unique across the configuration.
+// Connection is one GitHub App serving the accounts it lists, an entry of
+// the configuration's apps (ADR-0021 §2.2). Its name is the hook path,
+// /hooks/{name}, and is unique across the configuration.
 type Connection struct {
-	Name  string `yaml:"name"`
-	Forge Forge  `yaml:"forge"`
+	Name string `yaml:"name"`
+	// Forge is always ForgeGitHub; the file does not name it.
+	Forge Forge `yaml:"-"`
 	// Accounts are the users and organizations the connection serves: a
 	// webhook for any other account is ignored, and a repository belongs to
 	// the connection serving its owner. A public GitHub App installed on
@@ -365,18 +336,24 @@ type Connection struct {
 	// served that is not listed.
 	Accounts []string `yaml:"accounts"`
 
-	App *GitHubApp `yaml:"app,omitempty"`
+	App GitHubApp `yaml:",inline"`
 }
 
 // WebhookSecretValue returns the resolved webhook secret.
 func (i Connection) WebhookSecretValue() Secret { return i.App.webhookSecret }
 
-// Repository carries per-repository overrides. Everything a connection
-// grants access to is watched whether or not it is listed here.
+// Repository carries per-repository overrides, the configuration's
+// owner/name entry for it. Everything a connection grants access to is
+// watched whether or not it has one.
 type Repository struct {
 	// Name is the repository's name under its account, without the owner.
-	Name      string `yaml:"name"`
+	Name string `yaml:"-"`
+	// Overrides keep their yaml names, which the policy table looks them
+	// up by, though the entry is decoded as the file's repositories map.
 	Overrides `yaml:",inline"`
+
+	// where names the entry in errors.
+	where string
 }
 
 // RepoTraits is what kritik knows of a repository beyond its name: what
@@ -553,20 +530,30 @@ func (r Review) Referenced() []string {
 }
 
 // Account is a forge account, github/<name>, and the unit of isolation
-// (ADR-0014 §2.4). It exists because a connection serves it; its entry in
-// the spec, if any, holds its settings, and one the spec does not list
+// (ADR-0014 §2.4). It exists because a connection serves it. Its entry
+// under the configuration's accounts holds what is its alone, its limits
+// and providers, and its owner/* and owner/name entries under repositories
+// its repositories' settings (ADR-0021 §2.2); an account with neither
 // inherits the defaults.
 type Account struct {
-	Forge        Forge   `yaml:"forge"`
-	Name         string  `yaml:"name"`
-	Runner       *Runner `yaml:"runner,omitempty"`
-	Overrides    `yaml:",inline"`
-	Limits       LimitsSpec   `yaml:"limits,omitempty"`
-	Repositories []Repository `yaml:"repositories,omitempty"`
-	// Providers are the account's own model providers: its keys, for the
-	// models it pays for. A model reference in the account names one of them
-	// or one of the instance's, and a name may not be both.
-	Providers map[string]Provider `yaml:"providers,omitempty"`
+	Forge Forge  `yaml:"-"`
+	Name  string `yaml:"-"`
+	// Overrides are its owner/* entry's. They and Limits keep their yaml
+	// names, which the policy table looks them up by, though the account is
+	// gathered from the file's accounts and repositories maps.
+	Overrides `yaml:",inline"`
+	// Limits and Providers are its accounts entry's: its caps, and its own
+	// model providers, its keys for the models it pays for. A model
+	// reference for its repositories names one of them or one of the
+	// instance's, and a name may not be both.
+	Limits    LimitsSpec          `yaml:"limits"`
+	Providers map[string]Provider `yaml:"-"`
+	// Repositories are its owner/name entries.
+	Repositories []Repository `yaml:"-"`
+
+	// entry and pattern name its accounts entry and its owner/* entry in
+	// errors, "" for one it does not have.
+	entry, pattern string
 }
 
 // Egress is what runner pods may reach through the worker's gateway beyond
@@ -589,13 +576,11 @@ type File struct {
 	Connections []Connection
 	Providers   map[string]Provider
 	Defaults    Defaults
-	Polling     Polling
-	Indexing    Indexing
-	Tools       []Tool
-	Retention   Retention
 	Egress      Egress
 	// Embedding is the instance's embedder, nil when indexing is off.
 	Embedding *Embedding
+	// Run is how kritik runs, from the environment (ADR-0021 §2.7).
+	Run Run
 	// Accounts are every account a running connection serves, in the order
 	// the connections list them.
 	Accounts []Account

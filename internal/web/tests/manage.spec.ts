@@ -147,7 +147,7 @@ test.describe('configuration page', () => {
     const panel = page.locator('#op-setup').locator('../..');
     await expect(panel).toContainText('0 of 4 done');
     await expect(panel.getByRole('listitem')).toHaveText([
-      /A GitHub App is connected Declare the App under connections/,
+      /A GitHub App is connected Declare the App under apps/,
       /The App reaches a repository Install the App/,
       /A review model is set Set defaults.models.review/,
       /An embedder is set \(optional\) Set embedding/,
