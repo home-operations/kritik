@@ -14,7 +14,7 @@ import (
 
 func adminSettings() configfile.Settings {
 	return configfile.Settings{
-		Enabled: true, Ignore: []string{"vendor/**"}, Mode: configfile.ReviewSingle, Settle: 2 * time.Minute,
+		Enabled: true, Ignore: []string{"vendor/**"}, Settle: 2 * time.Minute,
 		Models: configfile.Models{Review: "p/big"},
 		Agent:  configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute, Commands: []string{"rg"}},
 		Review: configfile.Review{
@@ -102,10 +102,10 @@ func TestMerge(t *testing.T) {
 			dropped: []string{".kritik.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},
 		{
-			name: "any mode, and a model of a provider the account may use",
-			doc:  "mode: agentic\nmodels: { review: own/small, fallback: p/big }\n",
+			name: "a model of a provider the account may use",
+			doc:  "models: { review: own/small, fallback: p/big }\n",
 			want: func(s *configfile.Settings) {
-				s.Mode, s.Models = configfile.ReviewAgentic, configfile.Models{Review: "own/small", Fallback: "p/big"}
+				s.Models = configfile.Models{Review: "own/small", Fallback: "p/big"}
 			},
 		},
 		{
@@ -115,7 +115,7 @@ func TestMerge(t *testing.T) {
 				`.kritik.yaml: models.fallback "p" was dropped; allowed: a model of own, p`,
 			},
 		},
-		{name: "an unknown mode is dropped", doc: "mode: turbo\n", dropped: []string{`.kritik.yaml: mode "turbo" was dropped; allowed: single, agentic`}},
+		{name: "a mode is no longer a key", doc: "mode: agentic\n", wantErr: "field mode not found"},
 		{name: "agent limits are the admin's alone", doc: "agent: { maxSteps: 5 }\n", wantErr: "field agent not found"},
 		{name: "settle is the admin's alone", doc: "settle: 1m\n", wantErr: "field settle not found"},
 		{name: "a secret reference does not decode", doc: "models: { review: { env: KEY } }\n", wantErr: "cannot unmarshal"},

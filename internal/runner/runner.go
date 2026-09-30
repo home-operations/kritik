@@ -2,8 +2,8 @@
 // (and the last reviewed head when there is one), diff them, compute the
 // patch id, and write a context pack under its own run id. It works from
 // one versioned job document (Spec); its credentials, a git token for one
-// repository and for an agentic review a token for the worker's model
-// gateway, arrive apart from it (Secrets). Its database role can only touch
+// repository and for a review a token for the worker's model gateway,
+// arrive apart from it (Secrets). Its database role can only touch
 // its own run.
 package runner
 
@@ -121,11 +121,6 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err := setPhase(ctx, st, p.RunID, "writing"); err != nil {
 		return err
 	}
-	// An agentic run is not done until its agent has run too.
-	next := "done"
-	if p.Mode == ModeAgentic {
-		next = "reviewing"
-	}
 	err = st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		// account_id is copied from the run row: the runner never receives it
 		// and cannot invent one, and the policy only opens its own run.
@@ -138,15 +133,13 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		if err != nil {
 			return fmt.Errorf("runner: write context pack: %w", err)
 		}
-		return setPhaseTx(ctx, tx, p.RunID, next)
+		// A review is not done until its agent has run too.
+		return setPhaseTx(ctx, tx, p.RunID, "reviewing")
 	})
 	if err != nil {
 		return err
 	}
 	logger.Info("context pack written", "run", p.RunID, "patch_id", res.PatchID[:12])
-	if p.Mode != ModeAgentic {
-		return nil
-	}
 	scope, _ := review.DecideScope(p.PriorHead != "", priorHead != nil, len(deltaPaths), p.Prompt.MaxDeltaFiles)
 	return runAgentic(ctx, st, p, secrets, headTree, files, packView{
 		Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,

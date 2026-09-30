@@ -3,17 +3,14 @@ package worker
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/review"
@@ -34,131 +31,36 @@ const maxOutputTokens = 4096
 // Usage roles, matching the usage table's CHECK.
 const (
 	roleReview    = "review"
-	roleFallback  = "fallback"
 	roleEmbedding = "embedding"
 	roleFollowUp  = "followup"
 )
 
-// reviewInput is what the model phase reads from the database.
-type reviewInput struct {
-	diff    string
-	changed []string
-	context []contextpack.Chunk
-	title   string
-	author  string
-	body    string
-	// deltaDiff is the diff since the last review's head.
-	deltaDiff string
-}
-
-// publishPhase runs the model over a prepared review and writes the answer
-// back to the forge and the database. It returns the final review status
-// and, for a failure the caller should surface, the error.
+// publishPhase writes a prepared review's answer back to the forge and the
+// database. It returns the final review status and, for a failure the
+// caller should surface, the error.
 type publishPhase struct {
 	w        *Review
-	file     *configfile.File
 	account  *configfile.Account
 	settings configfile.Settings
 	client   forge.Client
 	pr       *pullRequest
 	reviewID string
 	runID    string
-	jobID    int64
 	logger   *slog.Logger
 	// parse and templates are the repository's contract settings; the zero
 	// values are kritik's defaults.
 	parse     review.ParseOptions
 	templates review.Templates
-	// rules are the rules that apply to the change, instructions the
-	// repository's review instructions, references the files it names as
-	// explaining the code, and repoNotes what the summary states about its
+	// repoNotes are what the summary states about the repository's
 	// configuration files.
-	rules        []review.Rule
-	instructions []string
-	references   []review.Reference
-	repoNotes    []string
+	repoNotes []string
 	// prior is the last completed review, whose inline comments are not
 	// posted again; scope says whether this review builds on it.
 	prior priorReview
 	scope review.Scope
-	// agent is an agentic review's run, whose usage the gateway recorded
+	// agent is the review's agent run, whose usage the gateway recorded
 	// step by step.
 	agent *agentRun
-}
-
-func (p *publishPhase) run(ctx context.Context) (status store.ReviewStatus, err error) {
-	ref := p.settings.Models.Review
-	if ref == "" {
-		return store.ReviewSkipped, errors.New("no review model is configured for this repository")
-	}
-	in, err := p.load(ctx)
-	if err != nil {
-		return store.ReviewFailed, err
-	}
-	similar, _, err := p.w.similar(ctx, p.w.Embedders, p.file, similarRequest{
-		account: p.account, repositoryID: p.pr.repositoryID, reviewID: p.reviewID, jobID: p.jobID,
-		slots: p.settings.Limits.Concurrency, diff: in.diff, changed: in.changed,
-	}, p.logger)
-	if err != nil {
-		// Stage 4 is best effort: the index may be absent or mid-rebuild.
-		p.logger.Warn("similar-code retrieval skipped", "error", err)
-	}
-	in.context = append(in.context, similar...)
-	system := review.SystemPrompt(p.rules, p.instructions, p.settings.Review.Focused())
-	var incremental *review.IncrementalInput
-	if p.scope == review.ScopeIncremental {
-		incremental = &review.IncrementalInput{
-			PriorHeadSHA: p.prior.headSHA, DeltaDiff: in.deltaDiff, Prior: reviewFindings(p.prior.findings),
-		}
-	}
-	msg, omitted, contextOmitted := review.Build(review.Input{
-		Repository: p.pr.repository, Number: p.pr.number, Title: in.title, Author: in.author, Body: in.body,
-		BaseRef: p.pr.baseRef, Changed: in.changed, Diff: in.diff, Context: in.context, Incremental: incremental,
-		References: p.references, BudgetTokens: review.UserBudget(system),
-	})
-	p.logger.Info("prompt built", "chars", len(msg), "diff_files_omitted", len(omitted),
-		"context_chunks", len(in.context), "context_omitted", contextOmitted)
-	byStage := map[string]int{}
-	for _, c := range in.context[:len(in.context)-min(contextOmitted, len(in.context))] {
-		byStage[c.Stage]++
-	}
-	for stage, n := range byStage {
-		p.w.Metrics.ContextChunks(p.account.Key(), stage, n)
-	}
-
-	resp, role, err := p.complete(ctx, ref, system, msg)
-	if capped, ok := errors.AsType[cappedError](err); ok {
-		p.logger.Warn("review capped", "cap", string(capped))
-		return store.ReviewCapped, err
-	}
-	if err != nil {
-		return store.ReviewFailed, err
-	}
-	// The model has answered and its tokens are spent: the rest runs to the
-	// end even if the job's ctx ends meanwhile, so the usage row lands and
-	// the comment, commit status and review row agree.
-	ctx, cancel := detach(ctx)
-	defer cancel()
-	res, dropped, err := review.Parse(resp.Raw, review.Anchors(in.diff), p.parse)
-	if err != nil {
-		return store.ReviewFailed, err
-	}
-	p.logger.Info("model answered", "model", resp.Model, "upstream", resp.Upstream, "findings", len(res.Findings),
-		"dropped", len(dropped), "omitted", len(omitted), "input_tokens", resp.InputTokens, "cached_tokens", resp.CachedTokens,
-		"output_tokens", resp.OutputTokens, "cost_usd", resp.CostUSD)
-	for _, d := range dropped {
-		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
-	}
-
-	commentID, inline, err := p.writeBack(ctx, res, resp.Model, append(reviewNotes(omitted, dropped), p.repoNotes...))
-	if err != nil {
-		return store.ReviewFailed, err
-	}
-	p.countFindings(res)
-	if err := p.persist(ctx, res, inline, resp, role, commentID); err != nil {
-		return store.ReviewFailed, err
-	}
-	return store.ReviewCompleted, nil
 }
 
 func (p *publishPhase) countFindings(res review.Result) {
@@ -230,118 +132,9 @@ func reached(u store.MonthUsage, limits configfile.Limits) string {
 	return ""
 }
 
-func (p *publishPhase) load(ctx context.Context) (reviewInput, error) {
-	var in reviewInput
-	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		var stages []byte
-		if err := tx.QueryRow(ctx, `SELECT diff, changed_paths, stages, delta_diff FROM context_packs WHERE runner_run_id = $1`, p.runID).
-			Scan(&in.diff, &in.changed, &stages, &in.deltaDiff); err != nil {
-			return fmt.Errorf("worker: read context pack: %w", err)
-		}
-		// Packs written before the context stages existed hold '{}'.
-		if len(stages) > 0 && stages[0] == '[' {
-			if err := json.Unmarshal(stages, &in.context); err != nil {
-				return fmt.Errorf("worker: decode context pack: %w", err)
-			}
-		}
-		if err := tx.QueryRow(ctx, `SELECT title, author, body FROM pull_requests WHERE id = $1`, p.pr.id).
-			Scan(&in.title, &in.author, &in.body); err != nil {
-			return fmt.Errorf("worker: read pull request: %w", err)
-		}
-		return nil
-	})
-	return in, err
-}
-
-// complete calls the primary model under a lease, falling back to the
-// configured fallback model. A fallback on the same provider is handed to
-// the provider (OpenRouter switches server-side); one on another provider
-// is a second call from here. The returned role says which answered.
-func (p *publishPhase) complete(
-	ctx context.Context, ref configfile.ModelRef, system, msg string,
-) (model.CompletionResponse, string, error) {
-	var resp model.CompletionResponse
-	role := roleReview
-	err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, func(ctx context.Context) error {
-		// Under the lease, so concurrent reviews cannot all pass a cap of
-		// one; a review only counts once it has completed.
-		capped, err := capReached(ctx, p.w.Store, p.account.ID(), p.settings.Limits)
-		if err != nil {
-			return err
-		}
-		if capped != "" {
-			return cappedError(capped)
-		}
-		resp, role, err = p.callModels(ctx, ref, system, msg)
-		return err
-	})
-	return resp, role, err
-}
-
-// cappedError says which account cap stopped a review.
-type cappedError string
-
-func (e cappedError) Error() string { return string(e) }
-
-// callModels asks the primary model and, when configured on another
-// provider, the fallback. The caller holds the lease.
-func (p *publishPhase) callModels(
-	ctx context.Context, ref configfile.ModelRef, system, msg string,
-) (model.CompletionResponse, string, error) {
-	req := model.CompletionRequest{
-		System: system, User: msg, Model: ref.Model(),
-		Schema: review.Schema(), SchemaName: "findings", MaxTokens: maxOutputTokens,
-	}
-	if p.parse.RequireSuggestedFix {
-		req.Schema = review.SchemaStrict()
-	}
-	fallback := p.settings.Models.Fallback
-	if fallback != "" && fallback.Provider() == ref.Provider() {
-		req.Fallbacks = []string{fallback.Model()}
-	}
-	stepper, err := p.w.Completers.Stepper(p.file, p.account, ref.Provider())
-	if err != nil {
-		return model.CompletionResponse{}, "", err
-	}
-	completer := model.Structured{Stepper: stepper, OnStep: p.onStep(ctx, ref.Provider(), store.ModelCallReview, 0)}
-	resp, err := completer.Complete(ctx, req)
-	p.w.Metrics.ModelCall(p.account.Key(), servedRef(ref, resp.Model), roleReview, callOutcome(err),
-		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
-	if err == nil || fallback == "" || fallback.Provider() == ref.Provider() || ctx.Err() != nil {
-		return resp, roleReview, err
-	}
-	p.logger.Warn("primary model failed, trying fallback", "model", ref, "fallback", fallback, "error", err)
-	fs, ferr := p.w.Completers.Stepper(p.file, p.account, fallback.Provider())
-	if ferr != nil {
-		return model.CompletionResponse{}, "", errors.Join(err, ferr)
-	}
-	req.Model, req.Fallbacks = fallback.Model(), nil
-	fc := model.Structured{Stepper: fs, OnStep: p.onStep(ctx, fallback.Provider(), store.ModelCallFallback, 1)}
-	resp, ferr = fc.Complete(ctx, req)
-	p.w.Metrics.ModelCall(p.account.Key(), servedRef(fallback, resp.Model), roleFallback, callOutcome(ferr),
-		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
-	if ferr != nil {
-		return model.CompletionResponse{}, "", errors.Join(err, ferr)
-	}
-	return resp, roleFallback, nil
-}
-
-// onStep records a single-shot call on the named provider against the
-// review.
-func (p *publishPhase) onStep(
-	ctx context.Context, provider string, kind store.ModelCallKind, step int,
-) func(model.StepRequest, model.StepResponse, error, time.Duration) {
-	c := store.ModelCall{AccountID: p.account.ID(), ReviewID: p.reviewID, Kind: kind, Step: step}
-	spec, _ := p.file.Provider(p.account, provider)
-	return p.w.onStep(ctx, p.logger, c, transcriptMask(p.file, spec))
-}
-
 // reviewNotes are the caveats the sticky comment states about a review.
-func reviewNotes(omitted []string, dropped []review.Dropped) []string {
+func reviewNotes(dropped []review.Dropped) []string {
 	var notes []string
-	if len(omitted) > 0 {
-		notes = append(notes, fmt.Sprintf("%d file(s) were omitted from the diff to fit the context budget", len(omitted)))
-	}
 	if len(dropped) > 0 {
 		byReason := map[review.DropReason]int{}
 		for _, d := range dropped {
@@ -499,9 +292,7 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 	return commentID, nil
 }
 
-func (p *publishPhase) persist(
-	ctx context.Context, res review.Result, inline []inlineComment, resp model.CompletionResponse, role string, commentID int64,
-) error {
+func (p *publishPhase) persist(ctx context.Context, res review.Result, inline []inlineComment, modelName string, commentID int64) error {
 	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		for i, f := range res.Findings {
 			if _, err := tx.Exec(ctx, `INSERT INTO findings
@@ -518,19 +309,11 @@ func (p *publishPhase) persist(
 			p.pr.id, p.account.ID(), commentID); err != nil {
 			return fmt.Errorf("worker: upsert sticky comment: %w", err)
 		}
-		if p.agent == nil {
-			if err := insertUsage(ctx, tx, usageRow{
-				accountID: p.account.ID(), repositoryID: p.pr.repositoryID, reviewID: p.reviewID, role: role, model: resp.Model,
-				upstream: resp.Upstream, input: resp.InputTokens, output: resp.OutputTokens, costUSD: resp.CostUSD,
-			}); err != nil {
-				return err
-			}
-		}
 		summary, err := json.Marshal(res.Summary)
 		if err != nil {
 			return fmt.Errorf("worker: encode summary: %w", err)
 		}
-		if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2, summary = $3 WHERE id = $1`, p.reviewID, resp.Model, summary); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2, summary = $3 WHERE id = $1`, p.reviewID, modelName, summary); err != nil {
 			return fmt.Errorf("worker: record model: %w", err)
 		}
 		return nil

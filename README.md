@@ -28,9 +28,10 @@ Kubernetes Job pod that holds no secrets.
   definitions of identifiers on changed lines and callers of changed
   declarations, cut by tree-sitter, plus the most similar chunks from a
   VectorChord index of the default branch.
-- **Single pass or agentic.** A repository can ask for a bounded, read-only
-  tool loop instead of one model call, optionally with allowlisted commands
-  (`curl`, `fd`, `rg`) so it can read a dependency bump's release notes.
+- **An agent, not one prompt.** Each review is a bounded, read-only tool loop
+  over the head commit, optionally with allowlisted commands (`gh`, `curl`,
+  `fd`, `rg`) so it can read a dependency bump's release notes;
+  `agent.maxSteps: 1` makes it one call.
 - **Fixes you can apply.** A finding offers its fix as a one-click suggestion,
   with a prompt a coding agent can apply it from.
 - **Incremental reviews.** A later push is reviewed against what changed since
@@ -78,7 +79,7 @@ Security notes:
   runner pods then reach the outside only through kritik's forward proxy,
   which allows destinations by hostname (github.com and the configuration's
   `egress.allowHosts`), and never hold the credentials `egress.credentials`
-  lets the gateway add. Agentic reviews need it, since their model calls go
+  lets the gateway add. Every review needs it, since its model calls go
   through it too.
 - Run runner Jobs under a sandboxed RuntimeClass such as gVisor
   (`runner.runtimeClassName`) where the cluster has one, since the pod parses

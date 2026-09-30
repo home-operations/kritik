@@ -28,7 +28,6 @@ admin allows, adds to the review's rules and context, and replaces the
 rest:
 
 ```yaml
-mode: agentic
 models: { review: openrouter/anthropic/claude-opus-5.5 }
 feedback: standard
 comments: { inline: true }
@@ -50,7 +49,6 @@ context:
 
 - `enabled: false`: stops reviews, follow-ups and indexing for the
   repository. It cannot turn a disabled repository back on.
-- `mode`: `single` or `agentic`, replacing the admin's.
 - `models.review` / `models.fallback`: a `<provider>/<model>` of a
   provider the instance or the repository's account declares, used for
   the review and for follow-ups. A model of any other provider is
@@ -127,11 +125,9 @@ context:
   rule files, and a finding lists the ids of the rules it enforces,
   keeping only ones its review was given.
 - `context`: files that explain the code, each a `path` with a
-  `description` and optional `paths` globs, added after the admin's. An
-  agentic review is pointed at each file to read it with its own tools; a
-  single-shot review is given its content, after the diff and before the
-  context kritik gathers, as the prompt budget allows. A file with `paths`
-  applies only when a changed path matches one of them.
+  `description` and optional `paths` globs, added after the admin's. The
+  review is pointed at each file to read it with its own tools. A file
+  with `paths` applies only when a changed path matches one of them.
 - `agentFiles: false`: leaves the repository's agent files out. Unless
   set, a review adds to its instructions the `AGENTS.md` of the root and
   of each directory above a changed path, or a directory's `CLAUDE.md`

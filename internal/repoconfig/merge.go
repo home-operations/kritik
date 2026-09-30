@@ -27,7 +27,7 @@ type Merged struct {
 // none, over the admin's settings op (ADR-0021 §2.3). The file narrows
 // what an admin allows (enabled, filter, ignore), appends its context
 // files and rules to the admin's, may only turn requireSuggestedFix on,
-// and replaces the mode, the models, the feedback level, how the review
+// and replaces the models, the feedback level, how the review
 // comments, whether it approves and whether it reads agent files. A model must be one of a
 // provider op.Providers names. A value it may not take is dropped, and
 // Dropped says so. A file that does not parse is ignored as a whole: op
@@ -96,16 +96,8 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	return m, nil
 }
 
-// choose applies the mode and the models f chooses: any mode, and a model
-// of one of providers.
+// choose applies the models f chooses: a model of one of providers.
 func (m *Merged) choose(f *File, providers []string) {
-	switch {
-	case f.Mode == "":
-	case f.Mode.Valid():
-		m.Mode = f.Mode
-	default:
-		m.drop("mode", strconv.Quote(string(f.Mode)), list([]configfile.ReviewMode{configfile.ReviewSingle, configfile.ReviewAgentic}))
-	}
 	for _, c := range []struct {
 		field string
 		want  configfile.ModelRef

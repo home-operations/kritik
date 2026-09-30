@@ -20,7 +20,6 @@
   },
   "settings": {
     "enabled": true,
-    "mode": "agentic",
     "models": {
       "review": "openrouter/acme-large",
       "fallback": ""
@@ -63,7 +62,7 @@
     }
   },
   "sources": {
-    "mode": "account",
+    "forks": "account",
     "models.review": "defaults",
     "settle": "default"
   },
@@ -73,7 +72,6 @@
     "found": true,
     "settings": {
       "enabled": true,
-      "mode": "agentic",
       "models": {
         "review": "openrouter/acme-small",
         "fallback": ""

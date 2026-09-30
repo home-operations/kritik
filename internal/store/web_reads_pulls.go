@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
 )
@@ -34,7 +33,6 @@ type SeverityCounts struct {
 type ReviewBrief struct {
 	ID        string
 	Status    ReviewStatus
-	Mode      configfile.ReviewMode
 	Scope     review.Scope
 	Findings  SeverityCounts
 	CreatedAt time.Time
@@ -76,9 +74,9 @@ type PullFilter struct {
 
 const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.fork, p.merged,
 	p.head_sha, p.head_ref, p.base_ref, p.url, p.opened_at, p.updated_at, p.labels,
-	lr.id, lr.status, lr.mode, lr.scope, lr.created_at, lr.blocking, lr.important, lr.nit
+	lr.id, lr.status, lr.scope, lr.created_at, lr.blocking, lr.important, lr.nit
 	FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
-	LEFT JOIN LATERAL (SELECT v.id, v.status, v.mode, v.scope, v.created_at,
+	LEFT JOIN LATERAL (SELECT v.id, v.status, v.scope, v.created_at,
 		count(f.id) FILTER (WHERE f.severity = 'blocking') AS blocking,
 		count(f.id) FILTER (WHERE f.severity = 'important') AS important,
 		count(f.id) FILTER (WHERE f.severity = 'nit') AS nit
@@ -89,12 +87,12 @@ const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author,
 func scanPull(row pgx.CollectableRow) (PullRow, error) {
 	var p PullRow
 	var labels []byte
-	var id, status, mode, scope *string
+	var id, status, scope *string
 	var at *time.Time
 	var blocking, important, nit *int
 	if err := row.Scan(&p.ID, &p.RepositoryID, &p.Repository, &p.Number, &p.Title, &p.Author, &p.State, &p.Draft, &p.Fork, &p.Merged,
 		&p.HeadSHA, &p.HeadRef, &p.BaseRef, &p.URL, &p.OpenedAt, &p.UpdatedAt, &labels,
-		&id, &status, &mode, &scope, &at, &blocking, &important, &nit); err != nil {
+		&id, &status, &scope, &at, &blocking, &important, &nit); err != nil {
 		return p, err
 	}
 	p.Labels = []Label{}
@@ -105,7 +103,7 @@ func scanPull(row pgx.CollectableRow) (PullRow, error) {
 	}
 	if id != nil {
 		p.LastReview = &ReviewBrief{
-			ID: *id, Status: ReviewStatus(*status), Mode: configfile.ReviewMode(*mode), Scope: review.Scope(*scope), CreatedAt: *at,
+			ID: *id, Status: ReviewStatus(*status), Scope: review.Scope(*scope), CreatedAt: *at,
 			Findings: SeverityCounts{Blocking: *blocking, Important: *important, Nit: *nit},
 		}
 	}
@@ -176,7 +174,6 @@ type ReviewRow struct {
 	URL               string
 	Status            ReviewStatus
 	Trigger           string
-	Mode              configfile.ReviewMode
 	Scope             review.Scope
 	ScopeReason       string
 	Model             string
@@ -196,7 +193,7 @@ type ReviewRow struct {
 	OutputTokens int64
 }
 
-const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url, v.status, v.trigger, v.mode, v.scope, v.scope_reason,
+const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url, v.status, v.trigger, v.scope, v.scope_reason,
 	v.model, v.head_sha, v.merge_base_sha, v.patch_id, v.prior_review_id, v.skip_reason, v.error, v.created_at, v.finished_at,
 	v.cancel_requested_at, v.summary, coalesce(u.cost, 0), coalesce(u.input, 0), coalesce(u.output, 0)
 	FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id JOIN repositories r ON r.id = p.repository_id
@@ -205,14 +202,14 @@ const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url
 
 func scanReview(row pgx.CollectableRow) (ReviewRow, error) {
 	var v ReviewRow
-	var status, mode, scope, skip string
+	var status, scope, skip string
 	var summary []byte
-	if err := row.Scan(&v.ID, &v.PullRequestID, &v.Repository, &v.Number, &v.Title, &v.URL, &status, &v.Trigger, &mode, &scope, &v.ScopeReason,
+	if err := row.Scan(&v.ID, &v.PullRequestID, &v.Repository, &v.Number, &v.Title, &v.URL, &status, &v.Trigger, &scope, &v.ScopeReason,
 		&v.Model, &v.HeadSHA, &v.MergeBaseSHA, &v.PatchID, &v.PriorReviewID, &skip, &v.Error, &v.CreatedAt, &v.FinishedAt,
 		&v.CancelRequestedAt, &summary, &v.CostUSD, &v.InputTokens, &v.OutputTokens); err != nil {
 		return v, err
 	}
-	v.Status, v.Mode = ReviewStatus(status), configfile.ReviewMode(mode)
+	v.Status = ReviewStatus(status)
 	v.Scope, v.SkipReason = review.Scope(scope), repoconfig.SkipReason(skip)
 	if len(summary) > 0 && string(summary) != "null" {
 		var s review.Summary

@@ -212,7 +212,7 @@ func deref(s *string) string {
 }
 
 func TestKindValid(t *testing.T) {
-	for k, want := range map[Kind]bool{KindAgentStep: true, KindReview: true, KindFallback: true, KindFollowUp: true, "other": false, "": false} {
+	for k, want := range map[Kind]bool{KindAgentStep: true, KindFollowUp: true, "review": false, "other": false, "": false} {
 		if k.Valid() != want {
 			t.Fatalf("%q.Valid() = %v", k, !want)
 		}

@@ -31,7 +31,7 @@ index 111..222 100644
 `
 
 func agentPromptSpec() Spec {
-	s := agenticSpec()
+	s := reviewSpec()
 	s.PriorHead = shaB
 	return s
 }
@@ -80,7 +80,7 @@ func TestAgentPrompt(t *testing.T) {
 				pack.DeltaDiff = agentDiff
 			}
 			system, user, strict := agentPrompt(s, files, pack, nil)
-			if want := review.AgenticSystemPrompt(tt.active, tt.instructions, nil, tt.focused); system != want {
+			if want := review.SystemPrompt(tt.active, tt.instructions, nil, tt.focused); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput

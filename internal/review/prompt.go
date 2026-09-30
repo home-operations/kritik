@@ -49,10 +49,9 @@ type IncrementalInput struct {
 }
 
 // Reference is a repository file named as explaining the code, with what
-// it is. Content, when set, is given whole; without it the file is a
-// pointer an agentic review reads with its own tools.
+// it is: a pointer the agent reads with its own tools.
 type Reference struct {
-	Path, Description, Content string
+	Path, Description string
 }
 
 // DefaultBudgetTokens bounds the user message when Input sets no budget.
@@ -64,18 +63,7 @@ const charsPerToken = 4
 // maxBodyChars bounds the pull request description in the prompt.
 const maxBodyChars = 4000
 
-// System is the reviewer's standing instructions, for a thorough review.
-// It is deliberately short: the diff carries the specifics, and a long
-// persona costs tokens on every review without changing the answer much.
-const System = systemLead + singleSees + "\n\n" + reportThorough + systemRules
-
-// FocusedSystem is System for a focused review.
-const FocusedSystem = systemLead + singleSees + "\n\n" + reportFocused + systemRules
-
 const systemLead = "You are kritik, a code reviewer for pull requests. "
-
-const singleSees = `You see the diff of the change and nothing else
-about the repository: judge what the diff shows and do not guess at what it does not.`
 
 // reportThorough and reportFocused are what a thorough and a focused
 // review report: anything a maintainer could act on, or only what would
@@ -164,19 +152,12 @@ type Rule struct {
 	File string
 }
 
-// SystemPrompt is System, or FocusedSystem when focused, with the rules
-// and the repository's instructions, which come from the admin and the
-// merge base and so carry the maintainers' authority, appended.
-func SystemPrompt(rules []Rule, instructions []string, focused bool) string {
-	if focused {
-		return withInstructions(FocusedSystem, rules, ruleCitation, instructions)
-	}
-	return withInstructions(System, rules, ruleCitation, instructions)
-}
-
-// AgenticSystemPrompt is SystemPrompt for an agentic review. commands are
-// what its run tool offers; none leaves the tool out of the prompt.
-func AgenticSystemPrompt(rules []Rule, instructions, commands []string, focused bool) string {
+// SystemPrompt is the reviewer's standing instructions, for a thorough or
+// a focused review, with the rules and the repository's instructions,
+// which come from the admin and the merge base and so carry the
+// maintainers' authority, appended. commands are what the run tool offers;
+// none leaves the tool out of the prompt.
+func SystemPrompt(rules []Rule, instructions, commands []string, focused bool) string {
 	report := reportThorough
 	if focused {
 		report = reportFocused
@@ -399,13 +380,6 @@ func writeReferences(b *strings.Builder, refs []Reference, budget int) {
 	b.WriteString(header)
 	for _, r := range refs {
 		entry := fmt.Sprintf("\n### %s: %s\n", r.Path, r.Description)
-		if r.Content != "" {
-			if whole := entry + "```\n" + r.Content + "\n```\n"; b.Len()+len(whole) <= budget {
-				b.WriteString(whole)
-				continue
-			}
-			entry = fmt.Sprintf("\n### %s: %s\n[omitted to fit the context budget]\n", r.Path, r.Description)
-		}
 		if b.Len()+len(entry) > budget {
 			return
 		}

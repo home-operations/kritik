@@ -427,7 +427,7 @@ func (o *Overrides) compile() (err error) {
 
 // validateOverrides checks the settings one scope writes: its models name
 // providers declared for account t (nil for the defaults), and its settle,
-// ignore globs, mode, agent, incremental and review keys are in range.
+// ignore globs, agent, incremental and review keys are in range.
 func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	if err := f.checkModels(where+".models", t, r.Models); err != nil {
 		return err
@@ -439,9 +439,6 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 		if !doublestar.ValidatePattern(g) || strings.TrimSpace(g) == "" {
 			return fmt.Errorf("configfile: %s.ignore[%d] %q is not a valid glob", where, gi, g)
 		}
-	}
-	if r.Mode != "" && !r.Mode.Valid() {
-		return fmt.Errorf("configfile: %s.mode must be %s or %s, got %q", where, ReviewSingle, ReviewAgentic, r.Mode)
 	}
 	for _, c := range []struct {
 		name string

@@ -41,20 +41,15 @@ type Review struct {
 	river.WorkerDefaults[jobs.ReviewArgs]
 	Base
 	Executor executor.Executor
-	// Completers resolves the configured model providers.
-	Completers CompleterSource
-	// Embedders resolves the instance's embedder, which enables stage 4
-	// (similar code from the repository's active index); without one it is
-	// skipped.
-	Embedders *Embedders
-	// GatewayURL is where an agentic runner calls its model, and
-	// GatewayTokenTTL how long its run token outlives the Job's deadline.
-	// Agentic reviews are refused without a gateway.
+	// GatewayURL is where a runner calls its model, and GatewayTokenTTL how
+	// long its run token outlives the Job's deadline. Reviews are refused
+	// without a gateway.
 	GatewayURL      string
 	GatewayTokenTTL time.Duration
 
-	// superviseEvery overrides superviseInterval.
+	// superviseEvery overrides superviseInterval, and rowWait agentRowWait.
 	superviseEvery time.Duration
+	rowWait        time.Duration
 }
 
 // pullRequest is what the worker reads back before starting.
@@ -109,7 +104,6 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	pr, client, owner, repo, mergeBase, eff := b.early.pr, b.client, b.owner, b.repo, b.early.mergeBase, b.eff
 	settings := eff.Settings
-	agentic := settings.Mode == configfile.ReviewAgentic
 	admitted, done, err := w.admit(ctx, b.early, job, file, account, settings)
 	if done {
 		return err
@@ -118,7 +112,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		defer w.releaseLease(ctx, logger, admitted.lease, string(settings.Models.Review))
 	}
 
-	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, b.early.forgePatch, settings.Mode, job.ID)
+	reviewID, runID, prior, err := w.start(ctx, args, pr, mergeBase, b.early.forgePatch, job.ID)
 	if err != nil {
 		return err
 	}
@@ -133,14 +127,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		accountID: args.AccountID, accountKey: account.Key(), reviewID: reviewID, headSHA: args.HeadSHA,
 		owner: owner, repo: repo, client: client, started: started, logger: logger,
 	}
-	var tools []configfile.Tool
-	if agentic {
-		deadline, err = w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, prior, admitted, &spec, &secrets, deadline)
-		if err != nil {
-			return w.agentSpecFailed(ctx, ended, runID, err)
-		}
-		tools = file.ToolsFor(settings.Agent.Commands)
+	deadline, err = w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, prior, admitted, &spec, &secrets, deadline)
+	if err != nil {
+		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
+	tools := file.ToolsFor(settings.Agent.Commands)
 	sup := runSupervision(w.Store, args.AccountID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		Labels: map[string]string{
@@ -156,20 +147,15 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	})
 	// The agent's row is read before recordRun settles the run's phase: a
 	// stopped run's row may still be on its way from the terminating pod.
-	var agentOutcome *agentRun
-	var agentErr error
-	if agentic {
-		w.revokeGatewayTokens(ctx, logger, runID)
-		agentOutcome, agentErr = w.readAgentRun(ctx, args.AccountID, runID, settings.Models.Review, stopped(ctx, res, cause))
-	}
+	w.revokeGatewayTokens(ctx, logger, runID)
+	agentOutcome, agentErr := w.readAgentRun(ctx, args.AccountID, runID, settings.Models.Review, stopped(ctx, res, cause))
 	// A River cancel (JobCancelTx from a web request) cancels ctx itself,
 	// unlike supervise's own errSuperseded/errHeartbeatLost, which only
 	// cancel the child ctx passed to the executor. ctx is left live from here
-	// on so a cancel that arrives during afterRun/publish (review status
-	// "prepared") still takes effect there, and a hung model call in publish
-	// still respects River's job timeout. cctx is a detached copy for the
-	// terminal writes up to afterRun, which must still land once ctx itself
-	// has ended.
+	// on so a cancel that arrives during afterRun (review status "prepared")
+	// still takes effect there. cctx is a detached copy for the terminal
+	// writes up to afterRun, which must still land once ctx itself has
+	// ended.
 	canceled := errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely)
 	cctx, cancel := detach(ctx)
 	defer cancel()
@@ -229,22 +215,17 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	}
 	patchID := prep.patchID
 	phase := &publishPhase{
-		w: w, file: file, account: account, settings: prep.eff.Settings, client: client, pr: pr,
-		reviewID: reviewID, runID: runID, jobID: job.ID, logger: logger,
-		parse: review.ParseOptions{RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Rules: ruleIDs(prep.eff.Rules)},
-		rules: prep.eff.Rules, instructions: prep.eff.Instructions, references: prep.eff.References, repoNotes: prep.notes, prior: prior,
-		scope: prep.scope, templates: prep.eff.Templates,
+		w: w, account: account, settings: prep.eff.Settings, client: client, pr: pr,
+		reviewID: reviewID, runID: runID, logger: logger,
+		parse:     review.ParseOptions{RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Rules: ruleIDs(prep.eff.Rules)},
+		repoNotes: prep.notes, prior: prior, scope: prep.scope, templates: prep.eff.Templates,
 		agent: agentOutcome,
 	}
-	publish := phase.run
-	if agentic {
-		publish = phase.runAgentic
-	}
-	status, perr := publish(ctx)
-	// Once the model has answered, publish finishes on a detached ctx, so a
-	// clean result stands even if ctx ended meanwhile: the comment and the
-	// commit status already say so. Only a publish that failed while ctx
-	// ended (the model call cut short) ends as canceled or timed out.
+	status, perr := phase.run(ctx)
+	// Publishing finishes on a detached ctx, so a clean result stands even
+	// if ctx ended meanwhile: the comment and the commit status already say
+	// so. Only a publish that failed while ctx ended ends as canceled or
+	// timed out.
 	if perr != nil && ctx.Err() != nil {
 		return w.finishEnded(ctx, ended, perr)
 	}
@@ -505,24 +486,20 @@ func (w *Review) begin(
 	return begun{early: e, eff: eff, notes: append(notes, parseNotes...), client: client, owner: owner, repo: repo, token: token}, false, nil
 }
 
-// errNoSlot is an agentic review's admission finding every model slot
-// held after begin saw one free.
+// errNoSlot is a review's admission finding every model slot held after
+// begin saw one free.
 var errNoSlot = errors.New("worker: every model slot is held")
 
-// admit settles what a review may spend before its runner starts. An
-// agentic review, whose runner spends against the model through the
-// gateway, takes its model lease and passes the account's caps (see
-// agentAdmit), and is snoozed if the slot begin saw free has been taken
-// since; a single-mode review takes its lease later, for its model call
-// alone. It reports whether it ended the job, with the error of admitting
-// or of recording that.
+// admit settles what a review may spend before its runner starts: its
+// runner spends against the model through the gateway, so it takes its
+// model lease and passes the account's caps (see agentAdmit), and is
+// snoozed if the slot begin saw free has been taken since. It reports
+// whether it ended the job, with the error of admitting or of recording
+// that.
 func (w *Review) admit(
 	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], file *configfile.File, account *configfile.Account,
 	settings configfile.Settings,
 ) (admission, bool, error) {
-	if settings.Mode != configfile.ReviewAgentic {
-		return admission{}, false, nil
-	}
 	a, status, reason, err := w.agentAdmit(ctx, e.logger, file, account, settings, job.ID)
 	if errors.Is(err, errNoSlot) {
 		return admission{}, true, w.snooze(e, job, string(settings.Models.Review))
@@ -600,7 +577,7 @@ func (w *Review) botPatch(
 // start records the review and its runner run, and reads the last
 // completed review the new one may build on.
 func (w *Review) start(
-	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase, forgePatchID string, mode configfile.ReviewMode, jobID int64,
+	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, mergeBase, forgePatchID string, jobID int64,
 ) (reviewID, runID string, prior priorReview, err error) {
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		var err error
@@ -615,9 +592,9 @@ func (w *Review) start(
 			return fmt.Errorf("worker: end an earlier attempt's review: %w", err)
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO reviews
-			(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, trigger, mode, river_job_id)
-			VALUES ($1, $2, $3, $4, $5, 'running', $6, $7, $8) RETURNING id`,
-			args.AccountID, pr.id, args.HeadSHA, mergeBase, forgePatchID, args.Trigger, string(mode), jobID).Scan(&reviewID); err != nil {
+			(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, trigger, river_job_id)
+			VALUES ($1, $2, $3, $4, $5, 'running', $6, $7) RETURNING id`,
+			args.AccountID, pr.id, args.HeadSHA, mergeBase, forgePatchID, args.Trigger, jobID).Scan(&reviewID); err != nil {
 			return fmt.Errorf("worker: insert review: %w", err)
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, review_id, kind) VALUES ($1, $2, 'review') RETURNING id`,

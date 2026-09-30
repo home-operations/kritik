@@ -304,26 +304,17 @@ func TestBuildAppendsContextWithinBudget(t *testing.T) {
 }
 
 func TestBuildReferences(t *testing.T) {
-	schema := Reference{Path: "db/schema.sql", Description: "the schema", Content: strings.Repeat("CREATE TABLE t (id int);\n", 100)}
-	pointer := Reference{Path: "docs/arch.md", Description: "how the parts fit"}
-	in := Input{Repository: "a/b", Number: 1, Diff: sampleDiff, Changed: []string{"main.go"}, References: []Reference{schema, pointer},
+	schema := Reference{Path: "db/schema.sql", Description: "the schema"}
+	arch := Reference{Path: "docs/arch.md", Description: "how the parts fit"}
+	in := Input{Repository: "a/b", Number: 1, Diff: sampleDiff, Changed: []string{"main.go"}, References: []Reference{schema, arch},
 		Context: []contextpack.Chunk{{Stage: "caller", Path: "b.go", Language: "go", StartLine: 1, EndLine: 1, Text: "b()"}}}
 	msg, _, _ := Build(in)
 	refs := strings.Index(msg, "Reference files the repository names")
 	if refs < strings.Index(msg, "Diff (unified") || refs > strings.Index(msg, "Context (not part") {
 		t.Fatalf("references must come between the diff and the context:\n%s", msg)
 	}
-	if !strings.Contains(msg, "### db/schema.sql: the schema\n```\n"+schema.Content+"\n```\n") ||
-		!strings.Contains(msg, "### docs/arch.md: how the parts fit\n") {
+	if !strings.Contains(msg, "### db/schema.sql: the schema\n\n### docs/arch.md: how the parts fit\n") {
 		t.Fatalf("references:\n%s", msg)
-	}
-	// A budget that fits the diff and the heading but not the schema's
-	// content names the schema instead.
-	in.BudgetTokens = (refs + 700) / charsPerToken
-	msg, _, _ = Build(in)
-	if !strings.Contains(msg, "### db/schema.sql: the schema\n[omitted to fit the context budget]\n") || strings.Contains(msg, "CREATE TABLE") ||
-		!strings.Contains(msg, "+new line") {
-		t.Fatalf("an oversized reference:\n%s", msg)
 	}
 }
 

@@ -18,8 +18,6 @@ type ModelCallKind = transcript.Kind
 // Model call kinds, as model_calls.kind spells them.
 const (
 	ModelCallAgentStep = transcript.KindAgentStep
-	ModelCallReview    = transcript.KindReview
-	ModelCallFallback  = transcript.KindFallback
 	ModelCallFollowUp  = transcript.KindFollowUp
 )
 

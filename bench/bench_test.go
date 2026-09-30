@@ -182,7 +182,8 @@ func TestBench(t *testing.T) {
 			if !dry {
 				started := time.Now()
 				resp, err := completer.Complete(ctx, model.CompletionRequest{
-					System: review.System, User: msg, Model: modelID, Schema: review.Schema(), SchemaName: "findings", MaxTokens: 4096,
+					System: review.SystemPrompt(nil, nil, nil, false), User: msg, Model: modelID, Schema: review.Schema(), SchemaName: "submit_review",
+					MaxTokens: 4096,
 				})
 				cr.Latency = time.Since(started)
 				if err != nil {

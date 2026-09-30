@@ -8,9 +8,9 @@ import (
 )
 
 // The environment may set the instance's defaults key by key (ADR-0015
-// §2): one model provider, the review and fallback models, mode,
-// feedback, forks and settle every account and repository inherits, and
-// the embedder. Each wins over the file's.
+// §2): one model provider, the review and fallback models, feedback,
+// forks and settle every account and repository inherits, and the
+// embedder. Each wins over the file's.
 
 // Environment variable prefixes of the file's instance defaults.
 const (
@@ -81,8 +81,6 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 		case "MODELS_FALLBACK":
 			ref := ModelRef(value)
 			d.Models.Fallback, path = &ref, "models.fallback"
-		case "MODE":
-			d.Mode, path = ReviewMode(value), keyMode
 		case "FEEDBACK":
 			d.Review.Feedback, path = &value, keyFeedback
 		case "FORKS":
@@ -142,8 +140,8 @@ type FileLayer struct {
 	Providers map[string]FileProvider
 	Review    FileValue
 	Fallback  FileValue
-	// Defaults are the other defaults it sets: mode, feedback, forks
-	// and settle, in that order, by their policy keys.
+	// Defaults are the other defaults it sets: feedback, forks and
+	// settle, in that order, by their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
 }
@@ -206,7 +204,6 @@ func (f *File) FileLayer() FileLayer {
 		key, value string
 		set        bool
 	}{
-		{keyMode, string(d.Mode), d.Mode != ""},
 		{keyFeedback, deref(d.Review.Feedback), d.Review.Feedback != nil},
 		{keyForks, strconv.FormatBool(d.Forks != nil && *d.Forks), d.Forks != nil},
 		{keySettle, durationValue(d.Settle), d.Settle != nil},

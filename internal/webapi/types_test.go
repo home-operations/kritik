@@ -27,7 +27,7 @@ var (
 )
 
 var goldenReview = Review{
-	ID: "rev-1", Status: store.ReviewCompleted, Trigger: "push", Mode: configfile.ReviewAgentic, Scope: review.ScopeIncremental,
+	ID: "rev-1", Status: store.ReviewCompleted, Trigger: "push", Scope: review.ScopeIncremental,
 	Model: "acme/large", HeadSHA: "abc123", CostUSD: 0.42, Tokens: TokenCounts{Input: 1000, Output: 200}, DurationMs: new(int64(90000)),
 	CreatedAt: t0, FinishedAt: &t1, SkipReason: repoconfig.SkipFiltered, Error: "",
 }
@@ -46,7 +46,7 @@ var goldenRepo = Repository{
 }
 
 var goldenRepoSettings = RepoSettings{
-	Enabled: true, Mode: configfile.ReviewAgentic, Models: Models{Review: "openrouter/acme-large"}, Filter: "true", Forks: false,
+	Enabled: true, Models: Models{Review: "openrouter/acme-large"}, Filter: "true", Forks: false,
 	Ignore: []string{"vendor/**"}, SettleSeconds: 30, MaxDeltaFiles: 40,
 	Review: ReviewBlock{
 		RequireSuggestedFix: true,
@@ -72,7 +72,7 @@ var goldenPull = Pull{
 	HeadSHA: "abc123", HeadRef: "widgets", BaseRef: "main", URL: "https://git.example/alpha/one/pulls/7", OpenedAt: &t0,
 	UpdatedAt: t1, Labels: []Label{{Name: "bug", Color: "ff0000"}},
 	LastReview: &ReviewBrief{
-		ID: "rev-1", Status: store.ReviewCompleted, Mode: configfile.ReviewSingle, Scope: review.ScopeFull,
+		ID: "rev-1", Status: store.ReviewCompleted, Scope: review.ScopeFull,
 		Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, CreatedAt: t0,
 	},
 }
@@ -110,7 +110,7 @@ var goldens = map[string]any{
 		Repository: goldenRepo,
 		Settings:   goldenRepoSettings,
 		Sources: map[string]configfile.Source{
-			"mode": configfile.SourceAccount, "models.review": configfile.SourceDefaults, "settle": configfile.SourceDefault,
+			"forks": configfile.SourceAccount, "models.review": configfile.SourceDefaults, "settle": configfile.SourceDefault,
 		},
 		RepoConfig: &RepoConfig{
 			ReviewID: "rev-1", Commit: "def456", Found: true,
@@ -176,7 +176,7 @@ var goldens = map[string]any{
 	},
 	"review_diff": ReviewDiff{Diff: "diff --git a/a.go b/a.go\n", DeltaDiff: ""},
 	"review_raw": ReviewRaw{
-		RepoFiles: map[string]string{".kritik.yaml": "mode: agentic\n"},
+		RepoFiles: map[string]string{".kritik.yaml": "approve: true\n"},
 		Stages: []ContextChunk{{
 			Stage: "definitions", Path: "b.go", Language: "go", Symbol: "F", Kind: "func", Scope: "pkg", StartLine: 1, EndLine: 9,
 			Ref: "F", Text: "func F() {}",

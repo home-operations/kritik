@@ -12,12 +12,12 @@ import "time"
 // deletes the runner Job when that happens, so a job's timeout must cover
 // everything the worker does around the runner as well as the runner.
 const (
-	// LeaseWaitHeadroom is the time a review may spend waiting for a model
-	// lease, before an agentic runner or before the worker's model call.
+	// LeaseWaitHeadroom is the time a review may spend taking its model
+	// lease before its runner starts.
 	LeaseWaitHeadroom = 15 * time.Minute
 	// PublishHeadroom covers the worker's side of a review after the
-	// runner: reading the pack, the model call in single mode, embedding
-	// for similar code and the forge write-back.
+	// runner: reading the agent's run and the pack, and the forge
+	// write-back.
 	PublishHeadroom = 15 * time.Minute
 	// IndexWriteHeadroom covers embedding a repository's staged chunks and
 	// swapping the generation after the index runner ends; the embedding
@@ -41,14 +41,14 @@ const (
 )
 
 // MaxRunnerDeadline is the largest runner.activeDeadlineSeconds an account may
-// set. Past it, either a single-mode review's timeout (deadline plus
-// LeaseWaitHeadroom and PublishHeadroom) or an index's timeout (deadline
-// plus IndexWriteHeadroom) would exceed MaxJobTimeout, and River would cut
-// the runner off before it finishes rather than the deadline doing so.
+// set. Past it, either a review's timeout (deadline plus LeaseWaitHeadroom
+// and PublishHeadroom) or an index's timeout (deadline plus
+// IndexWriteHeadroom) would exceed MaxJobTimeout, and River would cut the
+// runner off before it finishes rather than the deadline doing so.
 const MaxRunnerDeadline = min(MaxJobTimeout-LeaseWaitHeadroom-PublishHeadroom, MaxJobTimeout-IndexWriteHeadroom)
 
-// MaxAgentTimeout is the largest agent.timeout a repository in agentic mode
-// may set. Past it, agentDeadline's own contribution (agent.timeout plus
+// MaxAgentTimeout is the largest agent.timeout a repository may set. Past
+// it, agentDeadline's own contribution (agent.timeout plus
 // AgentFetchHeadroom, LeaseWaitHeadroom and PublishHeadroom) alone would
 // exceed MaxJobTimeout, regardless of the account's runner deadline.
 const MaxAgentTimeout = MaxJobTimeout - AgentFetchHeadroom - LeaseWaitHeadroom - PublishHeadroom

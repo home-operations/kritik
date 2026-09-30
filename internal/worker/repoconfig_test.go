@@ -58,7 +58,6 @@ func TestEffective(t *testing.T) {
 		ignore       []string
 		repoFiles    []string
 		rules        []review.Rule
-		instructions []string
 		templates    review.Templates
 		strict       bool
 		notes        []string
@@ -118,12 +117,11 @@ func TestEffective(t *testing.T) {
 		{
 			// The file is one byte too long by its last character, whose
 			// first byte would still fit.
-			name: "agent files are capped at a UTF-8 boundary", doc: "agentFiles: true\n",
+			name: "agent files over the cap are noted", doc: "agentFiles: true\n",
 			files:   with(repoconfig.Files{"AGENTS.md": strings.Repeat("a", repoconfig.MaxInstructionBytes-1) + "é"}),
 			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
 			rules: adminRules, templates: adminDefaults, strict: true,
-			instructions: []string{strings.Repeat("a", repoconfig.MaxInstructionBytes-1)},
-			notes:        []string{"AGENTS.md and CLAUDE.md files truncated to 32 KiB"},
+			notes: []string{"AGENTS.md and CLAUDE.md files truncated to 32 KiB"},
 		},
 		{
 			name: "invalid yaml is noted and the admin's settings apply", doc: "enabled: false\nunknown: 1\n", files: adminFiles,
@@ -150,9 +148,8 @@ func TestEffective(t *testing.T) {
 				t.Fatalf("repoFiles = %v, want %v", got, tt.repoFiles)
 			}
 			notes = e.fill(tt.files, append(notes, tt.runnerNotes...), []string{"main.go"}, nil)
-			if !reflect.DeepEqual(e.Rules, tt.rules) || !slices.Equal(e.Instructions, tt.instructions) || e.Templates != tt.templates ||
-				e.Review.RequireSuggestedFix != tt.strict {
-				t.Fatalf("rules=%+v instructions=%.40q templates=%+v strict=%v", e.Rules, e.Instructions, e.Templates, e.Review.RequireSuggestedFix)
+			if !reflect.DeepEqual(e.Rules, tt.rules) || e.Templates != tt.templates || e.Review.RequireSuggestedFix != tt.strict {
+				t.Fatalf("rules=%+v templates=%+v strict=%v", e.Rules, e.Templates, e.Review.RequireSuggestedFix)
 			}
 			if !slices.Equal(notes, tt.notes) {
 				t.Fatalf("notes = %q, want %q", notes, tt.notes)
@@ -384,7 +381,7 @@ func TestFillScopesRules(t *testing.T) {
 	}
 }
 
-func TestFillReferences(t *testing.T) {
+func TestFillNotesMissingContext(t *testing.T) {
 	settings := adminSettings(t)
 	settings.Review.Context = []configfile.ContextFile{{Path: "docs/arch.md", Description: "how the parts fit"}}
 	e, _ := effective(settings, []byte("context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }, "+
@@ -392,13 +389,7 @@ func TestFillReferences(t *testing.T) {
 	files := repoconfig.Files{
 		"ops/rules.md": "admin rules", "ops/summary.tmpl": "s", "ops/inline.tmpl": "i", "docs/arch.md": "arch", "db/schema.sql": "schema",
 	}
-	notes := e.fill(files, nil, []string{"main.go"}, nil)
-	want := []review.Reference{{Path: "docs/arch.md", Description: "how the parts fit", Content: "arch"}}
-	if !reflect.DeepEqual(e.References, want) || !slices.Equal(notes, []string{"docs/gone.md: referenced but not found"}) {
-		t.Fatalf("references = %+v, notes = %q", e.References, notes)
-	}
-	e.fill(files, nil, []string{"db/0002.sql"}, nil)
-	if len(e.References) != 2 || e.References[1].Content != "schema" {
-		t.Fatalf("references = %+v, want the schema too", e.References)
+	if notes := e.fill(files, nil, []string{"main.go"}, nil); !slices.Equal(notes, []string{"docs/gone.md: referenced but not found"}) {
+		t.Fatalf("notes = %q", notes)
 	}
 }

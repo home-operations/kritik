@@ -22,7 +22,6 @@
   "lastReview": {
     "id": "rev-1",
     "status": "completed",
-    "mode": "single",
     "scope": "full",
     "findings": {
       "blocking": 1,

@@ -48,12 +48,10 @@ const AgentSkipped agent.StopReason = "skipped"
 // id equals its last prepared review's.
 const SkipUnchangedPatch = "unchanged_patch"
 
-// agentPrompt composes the system prompt and user message the way a
-// single-mode review does, from the same repository files and pack, with
-// the agentic addendum to the system prompt, which describes the run tool
-// when commands are offered. Only the similar-code stage is missing: the
-// runner has no index, and the agent can grep instead. strict says whether
-// the contract requires a suggested fix.
+// agentPrompt composes the system prompt and user message from the
+// repository files and the pack, whose context includes the similar code
+// the gateway found, and describes the run tool when commands are offered.
+// strict says whether the contract requires a suggested fix.
 func agentPrompt(p Spec, files repoconfig.Files, pack packView, commands []string) (system, user string, strict bool) {
 	var agentFiles []string
 	if p.AgentFiles {
@@ -61,7 +59,7 @@ func agentPrompt(p Spec, files repoconfig.Files, pack packView, commands []strin
 	}
 	instructions, _ := repoconfig.Instructions(files, agentFiles)
 	rules, _ := repoconfig.ActiveRules(p.Prompt.Rules, files, pack.Changed)
-	system = review.AgenticSystemPrompt(rules, instructions, commands, p.Prompt.Focused)
+	system = review.SystemPrompt(rules, instructions, commands, p.Prompt.Focused)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior}

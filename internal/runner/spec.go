@@ -21,7 +21,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 9
+const SpecVersion = 10
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -42,19 +42,7 @@ const (
 // Valid reports whether k is a kind of run the runner implements.
 func (k Kind) Valid() bool { return k == KindReview || k == KindIndex }
 
-// Mode is how a review is carried out.
-type Mode string
-
-// Review modes. The empty mode is single.
-const (
-	ModeSingle  Mode = "single"
-	ModeAgentic Mode = "agentic"
-)
-
-// Valid reports whether m is a review mode; the empty mode is single.
-func (m Mode) Valid() bool { return m == "" || m == ModeSingle || m == ModeAgentic }
-
-// ModelEndpoint is where an agentic run's model calls go: the worker's
+// ModelEndpoint is where a review's model calls go: the worker's
 // gateway, which holds the provider key, picks the provider model and its
 // fallbacks, and counts what the run spends (ADR-0004). The run's token for
 // it reaches the pod as a job-scoped secret.
@@ -65,7 +53,7 @@ type ModelEndpoint struct {
 	Model string `json:"model"`
 }
 
-// AgentLimits bound an agentic run. A zero limit takes the agent loop's
+// AgentLimits bound a review's agent. A zero limit takes the agent loop's
 // default; a zero timeout leaves the tool loop to the Job deadline.
 type AgentLimits struct {
 	MaxSteps           int   `json:"maxSteps"`
@@ -124,7 +112,6 @@ type Spec struct {
 	// RepoFiles are repository paths read from the merge base: the files
 	// the review settings name, and .kritik.yaml itself when there is one.
 	RepoFiles []string       `json:"repoFiles,omitempty"`
-	Mode      Mode           `json:"mode,omitempty"`
 	Agent     *AgentLimits   `json:"agent,omitempty"`
 	Model     *ModelEndpoint `json:"model,omitempty"`
 	Prompt    *Prompt        `json:"prompt,omitempty"`
@@ -143,9 +130,6 @@ func (s Spec) Validate() error {
 	if !s.Kind.Valid() {
 		return fmt.Errorf("runner: spec kind %q is not review or index", s.Kind)
 	}
-	if !s.Mode.Valid() {
-		return fmt.Errorf("runner: spec mode %q is not single or agentic", s.Mode)
-	}
 	if s.RunID == "" || s.CloneURL == "" {
 		return errors.New("runner: spec needs runId and cloneUrl")
 	}
@@ -160,18 +144,18 @@ func (s Spec) Validate() error {
 			return fmt.Errorf("runner: spec %s %q is not a commit SHA", c.name, c.sha)
 		}
 	}
-	if s.Mode == ModeAgentic {
+	if s.Kind == KindReview {
 		if s.Agent == nil {
-			return errors.New("runner: an agentic spec needs agent limits")
+			return errors.New("runner: a review spec needs agent limits")
 		}
 		if s.Model == nil || s.Model.Model == "" || s.Model.GatewayURL == "" {
-			return errors.New("runner: an agentic spec needs a model and the gateway to reach it through")
+			return errors.New("runner: a review spec needs a model and the gateway to reach it through")
 		}
 		if s.Prompt == nil {
-			return errors.New("runner: an agentic spec needs a prompt")
+			return errors.New("runner: a review spec needs a prompt")
 		}
 		if len(s.Agent.Commands) > 0 && s.Agent.CommandTimeoutSeconds <= 0 {
-			return errors.New("runner: an agentic spec with commands needs a command timeout")
+			return errors.New("runner: a review spec with commands needs a command timeout")
 		}
 		for _, c := range s.Agent.Commands {
 			// A name with a separator would make exec.LookPath take it as a path.
@@ -271,7 +255,7 @@ func DecodeSpec(data []byte) (Spec, error) {
 }
 
 // Secrets are a run's credentials, delivered apart from the spec: the git
-// token it fetches with and, for an agentic run, its token for the model
+// token it fetches with and, for a review, its token for the model
 // gateway.
 type Secrets struct {
 	GitToken     string

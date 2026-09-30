@@ -63,7 +63,6 @@ const (
 
 // The keys the file's defaults set as well (instance.go).
 const (
-	keyMode     = "mode"
 	keyFeedback = "feedback"
 	keyForks    = "forks"
 	keySettle   = "settle"
@@ -72,7 +71,6 @@ const (
 // Policies is the table.
 var Policies = []Policy{
 	{Key: "enabled", Scopes: everyScope, Repository: RepoTurnOff},
-	{Key: keyMode, Scopes: everyScope, Repository: RepoReplace},
 	{Key: "models.review", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "models.fallback", Scopes: everyScope, Repository: RepoReplace},
 	{Key: keyFeedback, Scopes: everyScope, Repository: RepoReplace},

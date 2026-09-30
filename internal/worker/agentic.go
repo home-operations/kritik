@@ -54,15 +54,7 @@ func (r agentRun) stopError() error {
 	return fmt.Errorf("agent stopped: %s", r.stop)
 }
 
-// response is the run's usage in the shape the usage table and metrics
-// take from a single-mode call.
-func (r agentRun) response() model.CompletionResponse {
-	return model.CompletionResponse{
-		Model: r.model, InputTokens: r.usage.Prompt(), CachedTokens: r.usage.CacheRead, OutputTokens: r.usage.Output, CostUSD: r.costUSD,
-	}
-}
-
-// admission is what an agentic review holds before its runner starts.
+// admission is what a review holds before its runner starts.
 type admission struct {
 	lease *lease
 	// maxTokens is the agent's token budget for this review.
@@ -83,7 +75,7 @@ func (w *Review) agentAdmit(
 		return admission{}, store.ReviewSkipped, "no review model is configured for this repository", nil
 	}
 	if w.GatewayURL == "" {
-		return admission{}, store.ReviewFailed, "agentic mode needs the model gateway (KRITIK_GATEWAY_URL)", nil
+		return admission{}, store.ReviewFailed, "a review needs the model gateway (KRITIK_GATEWAY_URL)", nil
 	}
 	if _, ok := file.Provider(account, ref.Provider()); !ok {
 		return admission{}, store.ReviewFailed, fmt.Sprintf("provider %q is not in the configuration", ref.Provider()), nil
@@ -210,11 +202,12 @@ func (w *Review) loadAgentRun(ctx context.Context, accountID, runID string) (run
 // that, until the run settles or agentRowWait passes. ctx's cancellation is
 // not inherited, so a job River cancels still reads the row.
 func (w *Review) readAgentRun(ctx context.Context, accountID, runID string, ref configfile.ModelRef, await bool) (*agentRun, error) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agentRowWait+10*time.Second)
+	wait := cmp.Or(w.rowWait, agentRowWait)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), wait+10*time.Second)
 	defer cancel()
 	run, found, err := w.loadAgentRun(ctx, accountID, runID)
 	if err == nil && !found && await {
-		run, found, err = w.awaitAgentRun(ctx, accountID, runID)
+		run, found, err = w.awaitAgentRun(ctx, accountID, runID, wait)
 	}
 	if err != nil || !found {
 		return nil, err
@@ -227,7 +220,7 @@ func (w *Review) readAgentRun(ctx context.Context, accountID, runID string, ref 
 // gateway maps it to the provider model the run was granted.
 const gatewayModel = "review"
 
-// agentSpec makes spec an agentic run: the prompt, the gateway and a run
+// agentSpec gives spec its agent: the prompt, the gateway and a run
 // token for it, and the agent's bounds. The token is minted last, so an
 // error leaves none behind; the caller revokes it once the run ends. It
 // returns the runner Job's deadline, which the agent's timeout may
@@ -249,7 +242,7 @@ func (w *Review) agentSpec(
 	if err != nil {
 		return deadline, err
 	}
-	spec.Prompt, spec.Mode, secrets.GatewayToken = prompt, runner.ModeAgentic, token
+	spec.Prompt, secrets.GatewayToken = prompt, token
 	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gatewayModel}
 	spec.Agent = &runner.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
@@ -284,9 +277,9 @@ const agentRowWait = 30 * time.Second
 const agentRowPoll = time.Second
 
 // awaitAgentRun polls for a run's agent_runs row until it appears, the
-// run's phase settles without one, or agentRowWait passes.
-func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string) (agentRun, bool, error) {
-	deadline := time.After(agentRowWait)
+// run's phase settles without one, or wait passes.
+func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string, wait time.Duration) (agentRun, bool, error) {
+	deadline := time.After(wait)
 	for {
 		var phase string
 		err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -311,14 +304,14 @@ func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string) (ag
 	}
 }
 
-// runAgentic publishes what the runner's agent submitted, as run does for
-// a single model call; the run's usage is already recorded. An agent that
-// stopped without submitting fails the review, and the sticky comment says
-// this head was not fully reviewed so an earlier verdict does not stand in
-// for it. A run the runner skipped ends the review skipped.
-func (p *publishPhase) runAgentic(ctx context.Context) (store.ReviewStatus, error) {
+// run publishes what the runner's agent submitted; the run's usage is
+// already recorded. An agent that stopped without submitting fails the
+// review, and the sticky comment says this head was not fully reviewed so
+// an earlier verdict does not stand in for it. A run the runner skipped
+// ends the review skipped.
+func (p *publishPhase) run(ctx context.Context) (store.ReviewStatus, error) {
 	// The agent has already answered, so publishing runs to the end even if
-	// the job's ctx ends meanwhile, as run does once its model answers.
+	// the job's ctx ends meanwhile.
 	ctx, cancel := detach(ctx)
 	defer cancel()
 	if p.agent == nil {
@@ -346,25 +339,24 @@ func (p *publishPhase) runAgentic(ctx context.Context) (store.ReviewStatus, erro
 	if err != nil {
 		return store.ReviewFailed, fmt.Errorf("worker: read context pack: %w", err)
 	}
-	resp := run.response()
-	p.logger.Info("agent answered", "stop", run.stop, "steps", run.steps, "model", run.model, "input_tokens", resp.InputTokens,
-		"cached_tokens", resp.CachedTokens, "output_tokens", resp.OutputTokens, "cost_usd", resp.CostUSD)
+	p.logger.Info("agent answered", "stop", run.stop, "steps", run.steps, "model", run.model, "input_tokens", run.usage.Prompt(),
+		"cached_tokens", run.usage.CacheRead, "output_tokens", run.usage.Output, "cost_usd", run.costUSD)
 	if stopErr := run.stopError(); stopErr != nil {
-		return store.ReviewFailed, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+string(run.stop), resp))
+		return store.ReviewFailed, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+string(run.stop), run.model))
 	}
 	res, dropped, err := review.Parse(string(run.result), review.Anchors(diff), p.parse)
 	if err != nil {
-		return store.ReviewFailed, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", resp))
+		return store.ReviewFailed, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", run.model))
 	}
 	for _, d := range dropped {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
-	commentID, inline, err := p.writeBack(ctx, res, run.model, append(reviewNotes(nil, dropped), p.repoNotes...))
+	commentID, inline, err := p.writeBack(ctx, res, run.model, append(reviewNotes(dropped), p.repoNotes...))
 	if err != nil {
 		return store.ReviewFailed, err
 	}
 	p.countFindings(res)
-	if err := p.persist(ctx, res, inline, resp, roleReview, commentID); err != nil {
+	if err := p.persist(ctx, res, inline, run.model, commentID); err != nil {
 		return store.ReviewFailed, err
 	}
 	return store.ReviewCompleted, nil
@@ -385,11 +377,10 @@ func (p *publishPhase) skippedStatus(ctx context.Context, reason string) {
 }
 
 // incomplete replaces the sticky comment with one saying why this head was
-// not fully reviewed, in kritik's own template, and records what the run
-// spent.
-func (p *publishPhase) incomplete(ctx context.Context, reason string, resp model.CompletionResponse) error {
+// not fully reviewed, in kritik's own template, and records the model.
+func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string) error {
 	body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
-		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: resp.Model, Incomplete: reason, Notes: p.repoNotes,
+		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Incomplete: reason, Notes: p.repoNotes,
 	})
 	commentID, err := p.upsertSticky(ctx, body)
 	if err != nil {
@@ -399,5 +390,5 @@ func (p *publishPhase) incomplete(ctx context.Context, reason string, resp model
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: review incomplete ("+reason+")"); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
-	return p.persist(ctx, review.Result{}, nil, resp, roleReview, commentID)
+	return p.persist(ctx, review.Result{}, nil, modelName, commentID)
 }

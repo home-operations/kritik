@@ -70,7 +70,7 @@ func TestRebuild(t *testing.T) {
 	single := delta(State{}, model.StepRequest{System: "review sys", Messages: []model.Message{user("the diff")},
 		Tools: []model.ToolDef{{Name: "findings", InputSchema: json.RawMessage(`{"type":"object"}`)}}})
 	single.Response = response(model.StepResponse{ToolCalls: []model.ToolCall{{ID: "f", Name: "findings", Input: json.RawMessage(`{"findings":[]}`)}}})
-	singleRow := decoded(t, single.Encode(), StoredRow{Kind: KindReview, Usage: model.Usage{Input: 10, Output: 5}, CostUSD: 0.01,
+	singleRow := decoded(t, single.Encode(), StoredRow{Kind: KindFollowUp, Usage: model.Usage{Input: 10, Output: 5}, CostUSD: 0.01,
 		Duration: time.Second, Model: "m"})
 
 	truncated := delta(State{}, stepReq("sys", result(string(make([]byte, ToolResultCap+1)))))
@@ -94,7 +94,7 @@ func TestRebuild(t *testing.T) {
 			system: "sys", tools: grepTool, want: []string{"review", "two"}, resets: []bool{false, false}, changed: []bool{false, true}},
 		{name: "a new run is not a reset", rows: append(store(t, "r1", a, b), store(t, "r2", a)...), system: "sys", tools: grepTool,
 			want: []string{"review"}, resets: []bool{false, false, false}, changed: []bool{false, false, false}},
-		{name: "a single-shot call is one turn", rows: []StoredRow{singleRow}, system: "review sys",
+		{name: "a lone call is one turn", rows: []StoredRow{singleRow}, system: "review sys",
 			tools: []model.ToolDef{{Name: "findings", InputSchema: json.RawMessage(`{"type":"object"}`)}},
 			want:  []string{"the diff"}, resets: []bool{false}, changed: []bool{false}},
 		{name: "a truncated row says so", rows: []StoredRow{truncatedRow}, system: "sys", tools: grepTool,
@@ -130,7 +130,7 @@ func TestRebuild(t *testing.T) {
 	turn := Rebuild([]StoredRow{singleRow}).Turns[0]
 	if turn.Usage.Input != 10 || turn.CostUSD != 0.01 || turn.Duration != time.Second || turn.Model != "m" ||
 		string(turn.Response.ToolCalls[0].Input) != `{"findings":[]}` {
-		t.Fatalf("single-shot turn = %+v", turn)
+		t.Fatalf("lone call's turn = %+v", turn)
 	}
 	if !truncatedRow.Truncated || Rebuild([]StoredRow{truncatedRow}).Turns[0].Messages[0].ToolResults[0].TruncatedBytes != 1 {
 		t.Fatal("the cut tool result lost its marker")

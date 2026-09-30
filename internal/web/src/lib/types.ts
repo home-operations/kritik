@@ -56,7 +56,6 @@ export type ReviewStatus =
   | 'capped'
   | 'failed'
   | 'canceled';
-export type ReviewMode = 'single' | 'agentic';
 export type ReviewScope = 'full' | 'incremental';
 export type SkipReason = '' | 'disabled' | 'filtered' | 'only_skipped_paths';
 export type Severity = 'blocking' | 'important' | 'nit';
@@ -74,7 +73,7 @@ export type JobState =
   | 'cancelled'
   | 'discarded';
 export type EventKind = 'review' | 'runner_run' | 'index_run' | 'followup' | 'model_call';
-export type TranscriptKind = 'agent_step' | 'review' | 'fallback' | 'followup';
+export type TranscriptKind = 'agent_step' | 'followup';
 export type MessageRole = 'user' | 'assistant';
 
 export interface MonthUsage {
@@ -201,7 +200,6 @@ export type Feedback = 'detailed' | 'standard' | 'minimal';
 
 export interface RepoSettings {
   enabled: boolean;
-  mode: ReviewMode;
   models: Models;
   filter: string;
   forks: boolean;
@@ -275,7 +273,6 @@ export interface SeverityCounts {
 export interface ReviewBrief {
   id: string;
   status: ReviewStatus;
-  mode: ReviewMode;
   scope: ReviewScope;
   findings: SeverityCounts;
   createdAt: string;
@@ -311,7 +308,6 @@ export interface Review {
   id: string;
   status: ReviewStatus;
   trigger: string;
-  mode: ReviewMode;
   scope: ReviewScope;
   model: string;
   headSha: string;

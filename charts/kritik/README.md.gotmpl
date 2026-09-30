@@ -185,7 +185,7 @@ secretEnv:
   - { name: GITHUB_TOKEN, secretName: kritik-github-token, key: token }
 ```
 
-The same port is an agentic runner's model endpoint. kritik serve mints a
+The same port is a runner's model endpoint. kritik serve mints a
 token for each run, good for that run until its Job's deadline and revoked
 when it ends, and hands it to the pod in place of a provider key; the
 gateway answers each step through the account's provider with the key only
@@ -194,8 +194,8 @@ account's `tokensPerMonth` is spent, and records the step's usage. Provider
 endpoints are therefore not in a runner's allowlist.
 
 `gateway.enabled: false` removes the listener and the Service and gives runner
-pods the `networkPolicy.egressPorts` to anywhere instead. Agentic reviews are
-refused without the gateway.
+pods the `networkPolicy.egressPorts` to anywhere instead. Reviews are refused
+without the gateway.
 
 ### Runner tools
 
@@ -225,7 +225,6 @@ config:
       allowHosts: ["*.githubusercontent.com"]
     repositories:
       org-1/repo-1:
-        mode: agentic
         agent: { commands: [gh, curl, fd, rg] }
 ```
 
@@ -239,8 +238,8 @@ Jobs under a sandboxed `runner.runtimeClassName`.
 
 ### Runner sandbox
 
-Runner Jobs parse untrusted repository content and, in agentic mode, run what
-the model asks of them. Set `runner.runtimeClassName` to a sandboxed runtime
+Runner Jobs parse untrusted repository content and run what the model asks of
+them. Set `runner.runtimeClassName` to a sandboxed runtime
 the cluster offers (`gvisor` with runsc, or a Kata class) so a kernel
 vulnerability reachable from the pod is contained by the sandbox rather than
 the node. It is advised, not required: without it the pod's other bounds

@@ -188,17 +188,16 @@ type ReviewBlock struct {
 // RepoSettings are a repository's settings as they resolve: the
 // admin's, or with the in-repo .kritik.yaml applied (RepoConfig).
 type RepoSettings struct {
-	Enabled       bool                  `json:"enabled"`
-	Mode          configfile.ReviewMode `json:"mode"`
-	Models        Models                `json:"models"`
-	Filter        string                `json:"filter"`
-	Forks         bool                  `json:"forks"`
-	Ignore        []string              `json:"ignore"`
-	SettleSeconds int64                 `json:"settleSeconds"`
-	MaxDeltaFiles int                   `json:"maxDeltaFiles"`
-	Review        ReviewBlock           `json:"review"`
-	Agent         AgentLimits           `json:"agent"`
-	Limits        Limits                `json:"limits"`
+	Enabled       bool        `json:"enabled"`
+	Models        Models      `json:"models"`
+	Filter        string      `json:"filter"`
+	Forks         bool        `json:"forks"`
+	Ignore        []string    `json:"ignore"`
+	SettleSeconds int64       `json:"settleSeconds"`
+	MaxDeltaFiles int         `json:"maxDeltaFiles"`
+	Review        ReviewBlock `json:"review"`
+	Agent         AgentLimits `json:"agent"`
+	Limits        Limits      `json:"limits"`
 }
 
 // RepoConfig is the repository's .kritik.yaml as the last review that ran
@@ -264,12 +263,11 @@ type SeverityCounts struct {
 
 // ReviewBrief is a pull request's newest review.
 type ReviewBrief struct {
-	ID        string                `json:"id"`
-	Status    store.ReviewStatus    `json:"status"`
-	Mode      configfile.ReviewMode `json:"mode"`
-	Scope     review.Scope          `json:"scope"`
-	Findings  SeverityCounts        `json:"findings"`
-	CreatedAt time.Time             `json:"createdAt"`
+	ID        string             `json:"id"`
+	Status    store.ReviewStatus `json:"status"`
+	Scope     review.Scope       `json:"scope"`
+	Findings  SeverityCounts     `json:"findings"`
+	CreatedAt time.Time          `json:"createdAt"`
 }
 
 // Pull is one pull request.
@@ -304,7 +302,6 @@ type Review struct {
 	ID         string                `json:"id"`
 	Status     store.ReviewStatus    `json:"status"`
 	Trigger    string                `json:"trigger"`
-	Mode       configfile.ReviewMode `json:"mode"`
 	Scope      review.Scope          `json:"scope"`
 	Model      string                `json:"model"`
 	HeadSHA    string                `json:"headSha"`

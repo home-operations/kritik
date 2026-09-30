@@ -20,7 +20,6 @@ type Metrics struct {
 	reviewDuration *prometheus.HistogramVec
 	followups      *prometheus.CounterVec
 	findings       *prometheus.CounterVec
-	contextChunks  *prometheus.CounterVec
 	indexRuns      *prometheus.CounterVec
 	indexChunks    *prometheus.CounterVec
 	runnerRuns     *prometheus.CounterVec
@@ -81,9 +80,6 @@ func New(reg prometheus.Registerer) *Metrics {
 		findings: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_findings_total", Help: "Findings posted, by severity.",
 		}, []string{lblAccount, "severity"}),
-		contextChunks: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_context_chunks_total", Help: "Context chunks put in front of the model, by stage.",
-		}, []string{lblAccount, "stage"}),
 		indexRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_index_runs_total", Help: "Index runs finished, by mode and status.",
 		}, []string{lblAccount, "mode", "status"}),
@@ -117,7 +113,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		}, []string{lblAccount, lblModel, lblRole}),
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,
-		m.contextChunks, m.indexRuns, m.indexChunks,
+		m.indexRuns, m.indexChunks,
 		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.modelCalls, m.modelTokens, m.modelCost, m.egress, m.transcripts,
 		m.leader)
 	return m
@@ -159,13 +155,6 @@ func (m *Metrics) FollowUp(account, outcome string) {
 func (m *Metrics) Findings(account, severity string, n int) {
 	if m != nil && n > 0 {
 		m.findings.WithLabelValues(account, severity).Add(float64(n))
-	}
-}
-
-// ContextChunks counts chunks of one stage put in a prompt.
-func (m *Metrics) ContextChunks(account, stage string, n int) {
-	if m != nil && n > 0 {
-		m.contextChunks.WithLabelValues(account, stage).Add(float64(n))
 	}
 }
 

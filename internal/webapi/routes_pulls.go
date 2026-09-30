@@ -62,7 +62,7 @@ func pull(p store.PullRow) Pull {
 	}
 	if v := p.LastReview; v != nil {
 		out.LastReview = &ReviewBrief{
-			ID: v.ID, Status: v.Status, Mode: v.Mode, Scope: v.Scope, CreatedAt: v.CreatedAt,
+			ID: v.ID, Status: v.Status, Scope: v.Scope, CreatedAt: v.CreatedAt,
 			Findings: SeverityCounts{Blocking: v.Findings.Blocking, Important: v.Findings.Important, Nit: v.Findings.Nit},
 		}
 	}
@@ -117,7 +117,7 @@ func (s *Server) getPull(w http.ResponseWriter, r *http.Request, t *accountScope
 
 func reviewItem(v store.ReviewRow) Review {
 	out := Review{
-		ID: v.ID, Status: v.Status, Trigger: v.Trigger, Mode: v.Mode, Scope: v.Scope, Model: v.Model, HeadSHA: v.HeadSHA,
+		ID: v.ID, Status: v.Status, Trigger: v.Trigger, Scope: v.Scope, Model: v.Model, HeadSHA: v.HeadSHA,
 		CostUSD: v.CostUSD, Tokens: TokenCounts{Input: v.InputTokens, Output: v.OutputTokens}, CreatedAt: v.CreatedAt,
 		FinishedAt: v.FinishedAt, SkipReason: v.SkipReason, Error: v.Error,
 	}

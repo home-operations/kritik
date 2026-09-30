@@ -58,7 +58,7 @@ func TestInstanceSettingsFileLayer(t *testing.T) {
 	t.Setenv("KRITIK_DEFAULTS_MODELS_REVIEW", "gw/big")
 	f, err := configfile.Parse([]byte(`providers:
   gw: { type: openai, baseUrl: "https://kritik:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
-defaults: { models: { fallback: gw/small }, mode: agentic }
+defaults: { models: { fallback: gw/small }, forks: true }
 embedding: { model: gw/e1, dims: 8 }
 `))
 	if err != nil {
@@ -72,7 +72,7 @@ embedding: { model: gw/e1, dims: 8 }
 		"providers gw":             {"providers", "gw", "openai at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
 		"defaults models.review":   {"defaults", "models.review", "gw/big", configfile.SourceEnv},
 		"defaults models.fallback": {"defaults", "models.fallback", "gw/small", configfile.SourceFile},
-		"defaults mode":            {"defaults", "mode", "agentic", configfile.SourceFile},
+		"defaults forks":           {"defaults", "forks", "true", configfile.SourceFile},
 		"embedding gw/e1":          {"embedding", "gw/e1", "8 dimensions", configfile.SourceFile},
 	} {
 		if rows[key] != want {
