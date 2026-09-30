@@ -231,7 +231,7 @@ func fail(ctx context.Context, st *store.Store, runID string, secrets Secrets, c
 	defer cancel()
 	err := st.WithRunnerJob(fctx, runID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(fctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000) WHERE id = $1`,
-			runID, failure(secrets, cause))
+			runID, secrets.Mask(cause.Error()))
 		return err
 	})
 	if err != nil {
@@ -239,6 +239,3 @@ func fail(ctx context.Context, st *store.Store, runID string, secrets Secrets, c
 	}
 	return nil
 }
-
-// failure is cause as the run's error column stores it.
-func failure(secrets Secrets, cause error) string { return secrets.Mask(cause.Error()) }

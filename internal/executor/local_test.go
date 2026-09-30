@@ -12,7 +12,6 @@ import (
 func TestLocalMasksTheRunError(t *testing.T) {
 	const token = "ghs_secret_token"
 	s := spec()
-	s.Deadline = 0
 	// An invalid head makes the runner's own error quote it, before the
 	// runner touches the store.
 	s.Job.Head = token

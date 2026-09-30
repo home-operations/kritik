@@ -96,35 +96,6 @@ func AgentState(ctx context.Context, tx pgx.Tx, runnerRunID string) (transcript.
 	return st, step + 1, nil
 }
 
-// ModelCallFilter selects the model calls of one review, one runner run,
-// or one follow-up comment; exactly one field is set.
-type ModelCallFilter struct {
-	ReviewID          string
-	RunnerRunID       string
-	FollowupCommentID int64
-}
-
-// ModelCalls returns the model calls f selects in the order they were
-// recorded, as tx's account may see them.
-func ModelCalls(ctx context.Context, tx pgx.Tx, f ModelCallFilter) ([]transcript.StoredRow, error) {
-	var where string
-	var arg any
-	set := 0
-	if f.ReviewID != "" {
-		where, arg, set = "review_id = $1::uuid", f.ReviewID, set+1
-	}
-	if f.RunnerRunID != "" {
-		where, arg, set = "runner_run_id = $1::uuid", f.RunnerRunID, set+1
-	}
-	if f.FollowupCommentID != 0 {
-		where, arg, set = "followup_comment_id = $1", f.FollowupCommentID, set+1
-	}
-	if set != 1 {
-		return nil, errors.New("store: a model call filter sets exactly one of review, runner run and follow-up comment")
-	}
-	return modelCallsWhere(ctx, tx, where, arg)
-}
-
 func scanModelCall(row pgx.CollectableRow) (transcript.StoredRow, error) {
 	var r transcript.StoredRow
 	var kind string

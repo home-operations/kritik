@@ -54,29 +54,29 @@ func TestModelCalls(t *testing.T) {
 	msgs = append(msgs, model.Message{Role: model.RoleAssistant, Text: "looking"}, model.Message{Role: model.RoleUser, Text: "more"})
 	record(model.StepRequest{System: "sys", Messages: msgs, Tools: tools})
 
-	list := func(account string, f ModelCallFilter) []transcript.StoredRow {
+	list := func(account, where string, arg any) []transcript.StoredRow {
 		t.Helper()
 		var rows []transcript.StoredRow
 		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			var err error
-			rows, err = ModelCalls(ctx, tx, f)
+			rows, err = modelCallsWhere(ctx, tx, where, arg)
 			return err
 		}); err != nil {
 			t.Fatal(err)
 		}
 		return rows
 	}
-	rows := list(alpha, ModelCallFilter{RunnerRunID: runID})
+	rows := list(alpha, "runner_run_id = $1::uuid", runID)
 	if len(rows) != 2 || rows[0].Step != 0 || rows[1].Step != 1 || rows[1].MessagesFrom != 1 || len(rows[1].Messages) != 2 ||
 		rows[0].System == nil || rows[1].System != nil || rows[1].Tools != nil || rows[0].Duration != 1500*time.Millisecond ||
 		rows[0].CostUSD != 0.25 || rows[0].Usage.Input != 10 || rows[0].ReviewID != reviewID {
 		t.Fatalf("rows = %+v", rows)
 	}
-	conv := transcript.Rebuild(list(alpha, ModelCallFilter{ReviewID: reviewID}))
+	conv := transcript.Rebuild(list(alpha, "review_id = $1::uuid", reviewID))
 	if conv.System != "sys" || len(conv.Tools) != 1 || len(conv.Turns) != 2 || conv.Turns[1].Messages[1].Text != "more" {
 		t.Fatalf("conversation = %+v", conv)
 	}
-	if n := len(list(beta, ModelCallFilter{ReviewID: reviewID})); n != 0 {
+	if n := len(list(beta, "review_id = $1::uuid", reviewID)); n != 0 {
 		t.Fatalf("beta sees %d of alpha's model calls", n)
 	}
 
@@ -87,20 +87,17 @@ func TestModelCalls(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if rows := list(alpha, ModelCallFilter{FollowupCommentID: 4242}); len(rows) != 1 || rows[0].RunnerRunID != "" || rows[0].ReviewID != "" {
+	if rows := list(alpha, "followup_comment_id = $1", 4242); len(rows) != 1 || rows[0].RunnerRunID != "" || rows[0].ReviewID != "" {
 		t.Fatalf("follow-up rows = %+v", rows)
 	}
 
-	checkModelCallRefusals(t, s, alpha, beta, reviewID, runID)
+	checkModelCallRefusals(t, s, alpha, beta)
 }
 
-// checkModelCallRefusals checks what ModelCalls and InsertModelCall refuse.
-func checkModelCallRefusals(t *testing.T, s *Store, alpha, beta, reviewID, runID string) {
+// checkModelCallRefusals checks what InsertModelCall refuses.
+func checkModelCallRefusals(t *testing.T, s *Store, alpha, beta string) {
 	ctx := context.Background()
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-		if _, err := ModelCalls(ctx, tx, ModelCallFilter{ReviewID: reviewID, RunnerRunID: runID}); err == nil {
-			t.Error("a filter with two fields was accepted")
-		}
 		if err := InsertModelCall(ctx, tx, ModelCall{AccountID: alpha, Kind: "other"}); err == nil {
 			t.Error("an unknown kind was inserted")
 		}

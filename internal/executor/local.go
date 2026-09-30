@@ -25,11 +25,8 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	started := time.Now()
-	if spec.Deadline > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, spec.Deadline)
-		defer cancel()
-	}
+	ctx, cancel := context.WithTimeout(ctx, spec.Deadline)
+	defer cancel()
 	// The spec goes through the same encoding and strict decoding as a
 	// Job's mounted document, size limit included.
 	job, err := specRoundTrip(spec.Job)

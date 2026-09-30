@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"slices"
 	"strings"
@@ -153,7 +152,7 @@ func TestAgentErrorsAreMasked(t *testing.T) {
 	if rec, err := newAgentRecord(agent.Result{Stop: agent.StopMaxSteps}, nil, nil, secrets); err != nil || string(rec.sources) != "[]" {
 		t.Fatalf("sources of a run without commands = %s, %v", rec.sources, err)
 	}
-	if got := failure(secrets, errors.New("clone https://x:git-token@forge.example.com: denied")); strings.Contains(got, "git-token") {
+	if got := secrets.Mask("clone https://x:git-token@forge.example.com: denied"); strings.Contains(got, "git-token") {
 		t.Fatalf("run error = %q", got)
 	}
 }

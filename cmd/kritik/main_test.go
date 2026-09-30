@@ -50,15 +50,12 @@ func TestApplyLoopReturnsOnAppliedError(t *testing.T) {
 	}
 }
 
-// applyStage is the kritik_config_error{stage="apply"} value on reg, -1 when
-// absent.
+// applyStage is the kritik_config_error value on reg, -1 when absent.
 func applyStage(reg *prometheus.Registry) float64 {
 	families, _ := reg.Gather()
 	for _, mf := range families {
-		for _, m := range mf.GetMetric() {
-			if m.GetLabel()[0].GetValue() == "apply" {
-				return m.GetGauge().GetValue()
-			}
+		if mf.GetName() == "kritik_config_error" && len(mf.GetMetric()) == 1 {
+			return mf.GetMetric()[0].GetGauge().GetValue()
 		}
 	}
 	return -1
