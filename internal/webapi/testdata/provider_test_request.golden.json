@@ -1,8 +1,0 @@
-{
-  "type": "openrouter",
-  "apiKey": {
-    "keep": true
-  },
-  "name": "own",
-  "account": "github/alpha"
-}

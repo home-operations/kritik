@@ -8,10 +8,9 @@
     "avatarUrl": "https://img.example/a.png"
   },
   "account": "github/alpha",
-  "action": "account.update",
-  "target": "github/alpha",
+  "action": "repo.reindex",
+  "target": "alpha/one",
   "detail": {
-    "revision": 2,
-    "secretsChanged": ["accounts[github/alpha].providers.own.apiKey"]
+    "jobId": 42
   }
 }

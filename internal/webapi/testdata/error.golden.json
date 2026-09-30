@@ -1,7 +1,4 @@
 {
   "code": "not_found",
-  "message": "account not found",
-  "details": {
-    "slug": "x"
-  }
+  "message": "account not found"
 }

@@ -124,23 +124,22 @@ func run() error {
 	defer st.Close()
 
 	// The runner gets everything it needs from its Job spec; every other role
-	// is driven by the configuration file merged with the instance spec the
-	// dashboard keeps, and must not start without it.
+	// is driven by the configuration file, and must not start without it.
 	var current *configfile.Current
+	var configErr func() error
 	var exec executor.Executor
 	if role != config.RoleRunner {
-		// current is the last good merged file; the leader applies it on
+		// current is the last good configuration; the leader applies it on
 		// election and on every reload, followers only compare hashes.
 		src := &configsource.Source{
-			Store: st, Keyring: cfg.DashboardKeyring(), Logger: logger, Errors: configErrors,
-			RequireSignIn: role == config.RoleAll || role == config.RoleWeb,
+			Logger: logger, Errors: configErrors, RequireSignIn: role == config.RoleAll || role == config.RoleWeb,
 		}
-		file, err := src.Load(ctx, cfg.ConfigFile)
+		file, err := src.Load(cfg.ConfigFile)
 		if err != nil {
 			return err
 		}
 		logConfig(logger, file, "configuration loaded")
-		current = src.Current
+		current, configErr = src.Current, src.LastError
 		g.Go(func() error {
 			src.Run(ctx, cfg.ConfigFile, cfg.ConfigReloadInterval)
 			return nil
@@ -189,7 +188,7 @@ func run() error {
 		hooks := server.NewHooks(cfg.Addr, cfg.WebBasePath(), handler, logger)
 		g.Go(func() error { return hooks.Run(ctx) })
 	}
-	if err := startWeb(ctx, g, role, st, cfg, current, logger); err != nil {
+	if err := startWeb(ctx, g, role, st, cfg, current, configErr, logger); err != nil {
 		return err
 	}
 	if role == config.RoleAll || role == config.RoleWorker {
@@ -303,11 +302,11 @@ func storeOptions(role config.Role, cfg *config.Config, logger *slog.Logger) sto
 const webDrain = 10 * time.Second
 
 // startWeb serves the dashboard, its sign-in and its API on WebAddr until
-// ctx ends, for the all and web roles. Without a sealing key the dashboard
-// still serves, but cannot write the instance spec.
+// ctx ends, for the all and web roles. configErr is why the configuration
+// file's latest content was refused, for the Configuration page.
 func startWeb(
 	ctx context.Context, g *errgroup.Group, role config.Role, st *store.Store, cfg *config.Config, current *configfile.Current,
-	logger *slog.Logger,
+	configErr func() error, logger *slog.Logger,
 ) error {
 	if role != config.RoleAll && role != config.RoleWeb {
 		return nil
@@ -324,7 +323,7 @@ func startWeb(
 		return fmt.Errorf("river: %w", err)
 	}
 	api := webapi.New(webapi.Config{
-		Store: st, Current: current, Auth: authHandler, Keyring: cfg.DashboardKeyring(), UI: web.FS(),
+		Store: st, Current: current, Auth: authHandler, UI: web.FS(), ConfigError: configErr,
 		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: queue}, Env: cfg.Env(),
 	})
 	g.Go(func() error { return api.Run(ctx) })

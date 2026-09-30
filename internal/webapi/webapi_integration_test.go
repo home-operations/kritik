@@ -59,7 +59,6 @@ accounts:
     name: wa
     repositories:
       - name: one
-        enabled: true
       - name: two
   - forge: github
     name: wb
@@ -517,7 +516,7 @@ func testPullsByAuthor(t *testing.T, e *apiEnv) {
 
 func testRepoKinds(t *testing.T, e *apiEnv) {
 	t.Cleanup(func() {
-		e.exec(`UPDATE repositories SET fork = false, archived = false WHERE name IN ('wa/one', 'wa/two')`)
+		e.exec(`UPDATE repositories SET fork = false, archived = false, turned_on = NULL WHERE name IN ('wa/one', 'wa/two')`)
 	})
 	list := func(query string) string {
 		t.Helper()
@@ -544,7 +543,8 @@ func testRepoKinds(t *testing.T, e *apiEnv) {
 		}
 		return accounts[0].Repositories
 	}
-	e.exec(`UPDATE repositories SET fork = true WHERE name IN ('wa/one', 'wa/two')`)
+	// An admin turned the fork wa/one on.
+	e.exec(`UPDATE repositories SET fork = true, turned_on = name = 'wa/one' WHERE name IN ('wa/one', 'wa/two')`)
 	for _, tt := range []struct{ query, want string }{{"", "wa/one:true"}, {"?type=forks", "wa/one:true,wa/two:false"}, {"?type=archived", ""}} {
 		if got := list(tt.query); got != tt.want {
 			t.Errorf("forks: repos%s = %q, want %q", tt.query, got, tt.want)

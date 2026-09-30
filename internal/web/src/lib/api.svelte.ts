@@ -12,14 +12,12 @@ import type { ErrorBody } from './types';
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  readonly details?: unknown;
 
-  constructor(status: number, code: string, message: string, details?: unknown) {
+  constructor(status: number, code: string, message: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
-    this.details = details;
   }
 }
 
@@ -39,7 +37,7 @@ async function toApiError(res: Response): Promise<ApiError> {
   } catch {
     // No JSON body (e.g. a proxy error page) — fall back to the status text.
   }
-  return new ApiError(res.status, body.code ?? 'unknown', body.message ?? res.statusText, body.details);
+  return new ApiError(res.status, body.code ?? 'unknown', body.message ?? res.statusText);
 }
 
 // toSignIn sends the tab to sign-in, remembering where it was, unless it

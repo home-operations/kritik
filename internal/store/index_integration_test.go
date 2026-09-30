@@ -36,7 +36,6 @@ accounts:
     repositories:
       - name: one
       - name: two
-        enabled: false
   - forge: github
     name: east
     repositories:
@@ -49,7 +48,6 @@ accounts:
       - name: queued
       - name: indexed
       - name: "off"
-        enabled: false
   - forge: github
     name: west
     repositories:
@@ -88,6 +86,8 @@ func TestOnboardCandidates(t *testing.T) {
 			t.Fatalf("%s: %v", sql, err)
 		}
 	}
+	// The App lost east/off.
+	exec(`UPDATE repositories SET enabled = false, disabled_at = now() WHERE id = $1`, ids["east/off"])
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM river_job WHERE args->>'repository_id' = ANY($1)`, slices.Collect(maps.Values(ids)))
 	})

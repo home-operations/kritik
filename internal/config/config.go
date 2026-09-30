@@ -20,7 +20,6 @@ import (
 	"github.com/caarlos0/env/v11"
 
 	"github.com/home-operations/kritik/internal/egress"
-	"github.com/home-operations/kritik/internal/sealbox"
 )
 
 // Role selects which part of kritik a process runs. One image serves every
@@ -188,17 +187,6 @@ type Config struct {
 	GitToken     string `env:"KRITIK_GIT_TOKEN,unset"`
 	GatewayToken string `env:"KRITIK_GATEWAY_TOKEN,unset"`
 
-	// DashboardKey is the base64 32-byte key that seals and opens the
-	// credentials the instance spec stores (ADR-0009 §2.5). Empty is valid
-	// while no instance spec is stored; startup fails once one is. Passed like every other secret here, from the environment and
-	// unset once read.
-	DashboardKey string `env:"KRITIK_DASHBOARD_KEY,unset"`
-	// DashboardOldKeys are earlier DashboardKey values, comma-separated,
-	// still able to open what they sealed so a key can be rotated without
-	// resealing every account first. Empty by default: there is nothing to
-	// rotate from until a key has been replaced.
-	DashboardOldKeys []string `env:"KRITIK_DASHBOARD_OLD_KEYS,unset" envSeparator:","`
-
 	// LogLevel is the minimum slog level emitted: debug, info, warn or error.
 	LogLevel string `env:"KRITIK_LOG_LEVEL" envDefault:"info"`
 
@@ -206,8 +194,7 @@ type Config struct {
 	// or "text" for local runs.
 	LogFormat string `env:"KRITIK_LOG_FORMAT" envDefault:"json"`
 
-	keyring *sealbox.Keyring
-	webURL  *url.URL
+	webURL *url.URL
 }
 
 // ValidateWorker checks what the worker role needs beyond the common set.
@@ -275,10 +262,6 @@ func (c *Config) parseWebURL() error {
 	return nil
 }
 
-// DashboardKeyring returns the keyring built from DashboardKey and
-// DashboardOldKeys, nil when no key is configured.
-func (c *Config) DashboardKeyring() *sealbox.Keyring { return c.keyring }
-
 // Load parses the environment into a Config and validates it. It fails fast
 // on an invalid value so a misconfigured process never starts serving.
 func Load() (*Config, error) {
@@ -326,10 +309,7 @@ func (c *Config) validate() error {
 	default:
 		return fmt.Errorf("config: KRITIK_EXECUTOR must be kubernetes or local, got %q", c.Executor)
 	}
-	if err := c.validateWork(); err != nil {
-		return err
-	}
-	return c.buildKeyring()
+	return c.validateWork()
 }
 
 // validateWork checks the settings that size the queues and the runners.
@@ -339,31 +319,6 @@ func (c *Config) validateWork() error {
 	}
 	if c.RunnerTTL <= 0 {
 		return errors.New("config: KRITIK_RUNNER_TTL must be positive")
-	}
-	return nil
-}
-
-func (c *Config) buildKeyring() error {
-	if c.DashboardKey == "" {
-		if len(c.DashboardOldKeys) > 0 {
-			return errors.New("config: KRITIK_DASHBOARD_OLD_KEYS needs KRITIK_DASHBOARD_KEY")
-		}
-		return nil
-	}
-	current, err := sealbox.ParseKey(c.DashboardKey)
-	if err != nil {
-		return fmt.Errorf("config: KRITIK_DASHBOARD_KEY: %w", err)
-	}
-	old := make([][]byte, 0, len(c.DashboardOldKeys))
-	for i, s := range c.DashboardOldKeys {
-		k, err := sealbox.ParseKey(s)
-		if err != nil {
-			return fmt.Errorf("config: KRITIK_DASHBOARD_OLD_KEYS[%d]: %w", i, err)
-		}
-		old = append(old, k)
-	}
-	if c.keyring, err = sealbox.NewKeyring(current, old...); err != nil {
-		return fmt.Errorf("config: KRITIK_DASHBOARD_KEY: %w", err)
 	}
 	return nil
 }

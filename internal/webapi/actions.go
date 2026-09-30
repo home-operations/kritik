@@ -32,7 +32,7 @@ type Actions interface {
 	Reindex(ctx context.Context, tx pgx.Tx, accountID, repositoryID string) (int64, error)
 }
 
-var errActionsDisabled = errStatus(http.StatusServiceUnavailable, CodeActionsDisabled, "this process does not queue dashboard actions", nil)
+var errActionsDisabled = errStatus(http.StatusServiceUnavailable, CodeActionsDisabled, "this process does not queue dashboard actions")
 
 // registerActions mounts re-run, cancel and reindex, and turning a
 // repository on or off.
@@ -62,9 +62,9 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *accountScope) 
 		job, err = s.actions.Rerun(ctx, tx, tid, p.RepositoryID, p.Number)
 		switch {
 		case errors.Is(err, jobs.ErrNoHead):
-			return errStatus(http.StatusConflict, CodeNoHead, "the pull request has no known head to review", nil)
+			return errStatus(http.StatusConflict, CodeNoHead, "the pull request has no known head to review")
 		case errors.Is(err, jobs.ErrRerunQueued):
-			return errStatus(http.StatusConflict, CodeAlreadyQueued, "a review of this head is already queued or running", nil)
+			return errStatus(http.StatusConflict, CodeAlreadyQueued, "a review of this head is already queued or running")
 		case err != nil:
 			return err
 		}
@@ -89,7 +89,7 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *accountScope)
 	err := s.read(ctx, t, func(tx pgx.Tx) error {
 		err := s.actions.Cancel(ctx, tx, id)
 		if errors.Is(err, jobs.ErrNotCancelable) {
-			return errStatus(http.StatusConflict, CodeNotCancelable, "the review is not running", nil)
+			return errStatus(http.StatusConflict, CodeNotCancelable, "the review is not running")
 		}
 		if err != nil {
 			return err
@@ -119,7 +119,7 @@ func (s *Server) reindex(w http.ResponseWriter, r *http.Request, t *accountScope
 			return errNotFound("repository")
 		}
 		if errors.Is(err, jobs.ErrReindexQueued) {
-			return errStatus(http.StatusConflict, CodeAlreadyQueued, "a reindex is already queued for this repository", nil)
+			return errStatus(http.StatusConflict, CodeAlreadyQueued, "a reindex is already queued for this repository")
 		}
 		if err != nil {
 			return err

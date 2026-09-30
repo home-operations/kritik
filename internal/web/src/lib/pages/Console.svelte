@@ -1,33 +1,28 @@
 <script lang="ts">
   // The instance's configuration for an admin, read-only (ADR-0019 §2.2):
   // what setup still lacks, the accounts its connections serve, each
-  // setting with where it comes from, the stored instance configuration,
-  // the connections and their installations, and the admin audit log.
+  // setting with where it comes from, the connections and their
+  // installations, and the admin audit log.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { tokens, usd } from '../format';
-  import type { InstanceConfig, InstanceSetting, AdminAccount } from '../types';
+  import type { InstanceSetting, AdminAccount } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import AuditTable from '../components/AuditTable.svelte';
   import Checklist from './admin/Checklist.svelte';
   import ConnectionsSection from './admin/ConnectionsSection.svelte';
-  import SpecView from './admin/SpecView.svelte';
 
   const res = new Resource(() => getJSON<AdminAccount[]>('/api/v1/admin/accounts'));
   const instance = new Resource(() => getJSON<InstanceSetting[]>('/api/v1/admin/instance'));
-  const config = new Resource(() => getJSON<InstanceConfig>('/api/v1/config'));
   $effect(() => {
     void res.load();
   });
   $effect(() => {
     void instance.load();
   });
-  $effect(() => {
-    void config.load();
-  });
-  const sourceLabel: Record<string, string> = { env: 'environment', file: 'config file', default: 'default', dashboard: 'dashboard' };
+  const sourceLabel: Record<string, string> = { env: 'environment', file: 'config file', default: 'default' };
 </script>
 
 <svelte:head><title>Configuration · kritik</title></svelte:head>
@@ -88,8 +83,8 @@
     <section class="panel" aria-labelledby="op-instance">
       <header class="panel-head"><h2 id="op-instance">Instance settings</h2></header>
       <p class="muted small panel-body">
-        The environment is this web process's; sign-in, the file's connections and the instance defaults it sets are the
-        configuration file's, which the stored instance configuration below may override.
+        The environment is this web process's; sign-in, the connections and the instance defaults are the configuration
+        file's, or its environment's where a variable sets them.
       </p>
       <StateView res={instance} retry={() => instance.load()} isEmpty={(d) => d.length === 0} empty="No instance settings.">
         {#snippet children(rows)}
@@ -111,16 +106,6 @@
             </table>
           </div>
         {/snippet}
-      </StateView>
-    </section>
-
-    <section class="panel" aria-labelledby="op-config">
-      <header class="panel-head">
-        <h2 id="op-config">Instance configuration</h2>
-        {#if config.data}<span class="small muted">revision {config.data.revision}</span>{/if}
-      </header>
-      <StateView res={config} retry={() => config.load()}>
-        {#snippet children(cfg)}<SpecView spec={cfg.spec} />{/snippet}
       </StateView>
     </section>
 

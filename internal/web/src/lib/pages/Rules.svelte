@@ -31,7 +31,6 @@
     default: "kritik's default",
     env: 'Environment',
     file: 'Config file',
-    dashboard: 'Instance configuration',
     defaults: 'Instance defaults',
     account: 'Account entry',
     entry: 'Repository entry',

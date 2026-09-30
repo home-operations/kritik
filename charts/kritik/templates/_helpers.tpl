@@ -162,7 +162,7 @@ web.url is required.
 
 {{/*
 Whether a configuration file is mounted: the chart's, or an existing
-ConfigMap. Without one, kritik runs on its environment and the dashboard.
+ConfigMap. Without one, kritik runs on its environment alone.
 */}}
 {{- define "kritik.hasConfigFile" -}}
 {{- if or .Values.config.existingConfigMap .Values.config.file -}}true{{- end -}}

@@ -15,7 +15,6 @@ import (
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
-	"github.com/home-operations/kritik/internal/forge/github"
 )
 
 const testConfig = `
@@ -293,25 +292,8 @@ func TestSecurityHeaders(t *testing.T) {
 		})
 	}
 	if !strings.Contains(contentSecurityPolicy, "img-src 'self' data: https:;") ||
-		!strings.Contains(contentSecurityPolicy, "form-action 'self'") {
+		!strings.HasSuffix(contentSecurityPolicy, "form-action 'self'") {
 		t.Errorf("CSP %q does not match the dashboard's policy", contentSecurityPolicy)
-	}
-	// The App manifest form posts to GitHub; a form-action that does not
-	// admit its target leaves the browser on the dashboard.
-	var formAction []string
-	for d := range strings.SplitSeq(contentSecurityPolicy, ";") {
-		if f := strings.Fields(d); len(f) > 0 && f[0] == "form-action" {
-			formAction = f[1:]
-		}
-	}
-	for _, org := range []string{"", "org-1"} {
-		u, err := url.Parse(github.RegisterURL(org, "s1"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if origin := u.Scheme + "://" + u.Host; !slices.Contains(formAction, origin) {
-			t.Errorf("form-action %v does not admit %s, where the manifest form posts", formAction, u)
-		}
 	}
 }
 

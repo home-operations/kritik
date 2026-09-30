@@ -57,8 +57,6 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
     name: onedr0p
     filter: "!pr.draft"
     repositories:
-      - name: disabled
-        enabled: false
       - name: settle
         settle: 60s
       - name: opened-only
@@ -66,6 +64,17 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 `)
 	if err := st.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
+	}
+	// onedr0p/disabled is one an admin turned off.
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		id, _, err := store.EnsureRepository(ctx, tx, account.ID(), store.ReachedRepository{FullName: "onedr0p/disabled"})
+		if err != nil {
+			return err
+		}
+		return store.TurnOn(ctx, tx, id, false)
+	}); err != nil {
+		t.Fatal(err)
 	}
 	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
 	if err != nil {
@@ -385,15 +394,16 @@ func TestDispatchInstallation(t *testing.T) {
 		if out, err := svc.Dispatch(ctx, request(f, added)); err != nil || out != (Outcome{Status: Recorded, Reason: "added"}) {
 			t.Fatalf("Dispatch = %+v, %v; want recorded for added", out, err)
 		}
-		var newEnabled, disabledEnabled bool
+		var newEnabled bool
+		var turnedOn *bool
 		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 			if err := tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'onedr0p/new-repo'`).Scan(&newEnabled); err != nil {
 				return err
 			}
-			return tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'onedr0p/disabled'`).Scan(&disabledEnabled)
+			return tx.QueryRow(ctx, `SELECT turned_on FROM repositories WHERE name = 'onedr0p/disabled'`).Scan(&turnedOn)
 		})
-		if !newEnabled || disabledEnabled {
-			t.Fatalf("new=%v listed-disabled=%v; a row the spec lists must keep its flag", newEnabled, disabledEnabled)
+		if !newEnabled || turnedOn == nil || *turnedOn {
+			t.Fatalf("new=%v turned on=%v; the App reaching a repository an admin turned off must not turn it on", newEnabled, turnedOn)
 		}
 		removed := webhook.Event{Kind: webhook.KindInstallation, Action: "removed", Account: "onedr0p",
 			Installation: &webhook.Installation{Repositories: []string{"onedr0p/new-repo"}}}

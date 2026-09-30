@@ -134,36 +134,6 @@ func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 	}
 }
 
-// TestListenPublishesConfigEvents checks kritik_notify_config: an insert or
-// update of the instance spec must call onConfig with its revision.
-func TestListenPublishesConfigEvents(t *testing.T) {
-	s := openStore(t)
-	ctx := context.Background()
-	resetInstanceSpec(t, s)
-
-	configs := make(chan string, 10)
-	listenCtx := t.Context()
-	go s.Listen(listenCtx, ListenHandlers{OnConfig: func(rev string) { configs <- rev }})
-	time.Sleep(250 * time.Millisecond)
-
-	for _, step := range []struct{ sql, want string }{
-		{`INSERT INTO instance_config (id, spec, revision) VALUES (1, '{}'::jsonb, 1)`, "1"},
-		{`UPDATE instance_config SET revision = revision + 1`, "2"},
-	} {
-		if _, err := s.owner.Exec(ctx, step.sql); err != nil {
-			t.Fatalf("%s: %v", step.sql, err)
-		}
-		select {
-		case rev := <-configs:
-			if rev != step.want {
-				t.Fatalf("config event = %q, want %q", rev, step.want)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatalf("no config event for %s", step.sql)
-		}
-	}
-}
-
 // TestModelCallsRowLevelSecurity checks that model_calls, the one new web
 // table that is account content, gets the same account_isolation treatment as
 // every other account-scoped table.
@@ -229,8 +199,7 @@ func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 	t.Cleanup(runner.Close)
 
 	tables := []string{
-		"users", "identities", "sessions", "login_states", "app_manifests",
-		"audit_events", "instance_config", "model_calls",
+		"users", "identities", "sessions", "login_states", "audit_events", "model_calls",
 	}
 	for _, table := range tables {
 		t.Run(table, func(t *testing.T) {

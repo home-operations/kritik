@@ -85,7 +85,6 @@
     default: 'default',
     env: 'environment',
     file: 'config file',
-    dashboard: 'instance settings',
     defaults: 'defaults',
     account: 'account',
     repository: '.kritik.yaml',

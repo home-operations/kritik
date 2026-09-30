@@ -5,8 +5,6 @@ import type { Me, Meta } from './types';
 
 export const session = $state<{ me: Me | undefined; meta: Meta | undefined }>({ me: undefined, meta: undefined });
 
-export const MANAGEMENT_OFF = 'Dashboard management is disabled: no sealing key configured.';
-
 // loadMeta fetches /api/v1/meta once; it needs no session. A failure leaves
 // meta unset, which reads as management off.
 export async function loadMeta(): Promise<void> {

@@ -60,7 +60,7 @@ func (s *Server) connectionApp(r *http.Request) (*configfile.Connection, *github
 
 // errForge is GitHub failing or refusing a call the admin asked for.
 func errForge(err error) error {
-	return errStatus(http.StatusBadGateway, CodeForgeError, err.Error(), nil)
+	return errStatus(http.StatusBadGateway, CodeForgeError, err.Error())
 }
 
 func (s *Server) listInstallations(w http.ResponseWriter, r *http.Request) error {
@@ -110,7 +110,7 @@ func (s *Server) uninstall(w http.ResponseWriter, r *http.Request) error {
 		return errNotFound("installation")
 	case in.Serves(inst.Account):
 		return errStatus(http.StatusConflict, CodeInstallationServed,
-			"connection "+in.Name+" serves "+inst.Account+": remove the account from its accounts first", nil)
+			"connection "+in.Name+" serves "+inst.Account+": remove the account from its accounts first")
 	}
 	err = s.store.WithAccount(r.Context(), "", func(tx pgx.Tx) error {
 		detail := map[string]any{"installation": id}

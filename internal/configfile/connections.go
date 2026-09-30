@@ -8,20 +8,12 @@ import (
 // Origin is where a connection is declared.
 type Origin string
 
-// Connection origins.
-const (
-	OriginFile      Origin = "file"
-	OriginDashboard Origin = "dashboard"
-)
+// OriginFile is the configuration file or its environment, which declare
+// every connection (ADR-0019).
+const OriginFile Origin = "file"
 
-// Origin reports where the connection is declared: the configuration file
-// or its environment, or the dashboard.
-func (i *Connection) Origin() Origin {
-	if i.origin == "" {
-		return OriginFile
-	}
-	return i.origin
-}
+// Origin reports where the connection is declared.
+func (i *Connection) Origin() Origin { return OriginFile }
 
 // validateConnections checks one layer's connections: names that are hook
 // paths, unique; accounts listed; credentials that resolved; and every
@@ -60,21 +52,6 @@ func validateConnections(conns []Connection) error {
 // ValidConnectionName reports whether name may name a connection: it is
 // the connection's hook path segment.
 func ValidConnectionName(name string) bool { return nameRe.MatchString(name) }
-
-// clash says which of held, the names and account keys the spec's
-// connections hold, keeps the file's connection in from running, or ""
-// when none does.
-func (i *Connection) clash(held map[string]string) string {
-	if d, ok := held["connection "+i.Name]; ok {
-		return fmt.Sprintf("the dashboard's connection %q already holds the name", d)
-	}
-	for _, a := range i.Accounts {
-		if d, ok := held["account "+AccountKey(i.Forge, a)]; ok {
-			return fmt.Sprintf("the dashboard's connection %q already serves account %q", d, a)
-		}
-	}
-	return ""
-}
 
 // connectionEnvPrefix starts every environment variable that declares the
 // environment's connection.
@@ -139,8 +116,5 @@ func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error)
 // ConnectionFromEnv reports whether the environment declared the
 // connection named name.
 func (f *File) ConnectionFromEnv(name string) bool {
-	if f.base != nil {
-		f = f.base
-	}
 	return name != "" && f.envConnection == name
 }

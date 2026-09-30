@@ -1,8 +1,6 @@
 package config
 
 import (
-	"bytes"
-	"encoding/base64"
 	"log/slog"
 	"strings"
 	"testing"
@@ -199,45 +197,6 @@ func TestParseRole(t *testing.T) {
 	}
 }
 
-func TestDashboardKeyring(t *testing.T) {
-	key := func(b byte) string { return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{b}, 32)) }
-	tests := []struct {
-		name    string
-		env     map[string]string
-		wantErr string
-		wantNil bool
-	}{
-		{name: "unset", wantNil: true},
-		{name: "current key", env: map[string]string{"KRITIK_DASHBOARD_KEY": key('a')}},
-		{name: "current and old keys", env: map[string]string{"KRITIK_DASHBOARD_KEY": key('a'), "KRITIK_DASHBOARD_OLD_KEYS": key('b') + "," + key('c')}},
-		{name: "short key", env: map[string]string{"KRITIK_DASHBOARD_KEY": "c2hvcnQ="}, wantErr: "KRITIK_DASHBOARD_KEY"},
-		{name: "bad old key", env: map[string]string{"KRITIK_DASHBOARD_KEY": key('a'), "KRITIK_DASHBOARD_OLD_KEYS": "nope"}, wantErr: "KRITIK_DASHBOARD_OLD_KEYS"},
-		{name: "old key repeats the current one", env: map[string]string{"KRITIK_DASHBOARD_KEY": key('a'), "KRITIK_DASHBOARD_OLD_KEYS": key('a')}, wantErr: "duplicate"},
-		{name: "old keys without a current key", env: map[string]string{"KRITIK_DASHBOARD_OLD_KEYS": key('b')}, wantErr: "KRITIK_DASHBOARD_KEY"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("KRITIK_DATABASE_URL", "postgres://app@db/kritik")
-			for k, v := range tt.env {
-				t.Setenv(k, v)
-			}
-			cfg, err := Load()
-			if tt.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("Load = %v, want an error mentioning %q", err, tt.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Load: %v", err)
-			}
-			if got := cfg.DashboardKeyring(); (got == nil) != tt.wantNil {
-				t.Fatalf("DashboardKeyring() = %v, want nil %v", got, tt.wantNil)
-			}
-		})
-	}
-}
-
 func TestEnv(t *testing.T) {
 	t.Setenv("KRITIK_DATABASE_URL", "postgres://app:secret@db/kritik")
 	t.Setenv("KRITIK_ADDR", ":9090")
@@ -254,7 +213,6 @@ func TestEnv(t *testing.T) {
 		"KRITIK_METRICS_ADDR":           {Name: "KRITIK_METRICS_ADDR", Value: ":8081"},
 		"KRITIK_CONFIG_RELOAD_INTERVAL": {Name: "KRITIK_CONFIG_RELOAD_INTERVAL", Value: "10s"},
 		"KRITIK_DATABASE_URL":           {Name: "KRITIK_DATABASE_URL", Value: "set", Secret: true, Set: true},
-		"KRITIK_DASHBOARD_KEY":          {Name: "KRITIK_DASHBOARD_KEY", Value: "not set", Secret: true},
 	} {
 		if vars[name] != want {
 			t.Errorf("%s = %+v, want %+v", name, vars[name], want)

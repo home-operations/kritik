@@ -770,7 +770,6 @@ type Event struct {
 
 // ErrorBody is every API error.
 type ErrorBody struct {
-	Code    ErrorCode       `json:"code"`
-	Message string          `json:"message"`
-	Details json.RawMessage `json:"details,omitempty"`
+	Code    ErrorCode `json:"code"`
+	Message string    `json:"message"`
 }

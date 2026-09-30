@@ -31,7 +31,7 @@ test('the audit log pages and expands detail', async ({ page }) => {
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText(g.auditEvent.action);
   await rows.first().getByRole('button', { name: 'detail' }).click();
-  await expect(rows.first().locator('.detail-json')).toContainText('secretsChanged');
+  await expect(rows.first().locator('.detail-json')).toContainText('jobId');
   await page.getByRole('button', { name: 'Load more' }).click();
   await expect(rows).toHaveCount(2);
   expect(seen.some((u) => u.pathname.endsWith('/audit') && u.searchParams.get('cursor') === 'c1')).toBe(true);
@@ -137,7 +137,7 @@ test.describe('actions', () => {
 
 test.describe('configuration page', () => {
   test('shows what setup still lacks, each with what to set in the configuration', async ({ page }) => {
-    const fresh: T.SetupStatus = { ...g.setupStatus, fileConnections: [], connections: [], reviewModel: '', embedding: false };
+    const fresh: T.SetupStatus = { ...g.setupStatus, connections: [], reviewModel: '', embedding: false };
     await setup(page, adminMe, [
       [/\/api\/v1\/admin\/setup$/, fresh],
       [/\/api\/v1\/admin\/accounts$/, []],
@@ -168,14 +168,15 @@ test.describe('configuration page', () => {
     await expect(panel.getByRole('listitem').last()).toContainText('Set embedding');
   });
 
-  test('shows the stored instance configuration read-only, secrets as set or not', async ({ page }) => {
-    await setup(page, adminMe, [[/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
-    await page.goto('/#/admin');
-    const panel = page.locator('#op-config').locator('../..');
-    await expect(panel).toContainText(`revision ${g.instanceConfig.revision}`);
-    await expect(panel.locator('.spec-view')).toContainText('alpha-bot');
-    await expect(panel.locator('.spec-view .pill').first()).toHaveText('set');
-    await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0);
+  test('says when the file\'s latest content was refused, and why', async ({ page }) => {
+    const refused: T.SetupStatus = { ...g.setupStatus, configError: 'configfile: polling.interval must not be negative' };
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/setup$/, refused], [/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
+    await page.goto('/#/');
+    const banner = page.getByRole('note').filter({ hasText: 'latest content was refused' });
+    await banner.getByRole('link', { name: 'See why' }).click();
+    await expect(page).toHaveURL(/#\/admin$/);
+    await expect(page.locator('#op-setup').locator('../..').getByRole('alert')).toContainText(refused.configError);
+    await expect(page.locator('#op-config')).toHaveCount(0);
   });
 
   test("lists an App's installations and uninstalls it from an account nobody serves", async ({ page }) => {

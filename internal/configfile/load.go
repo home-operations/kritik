@@ -35,15 +35,20 @@ var toolNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,56}[a-z0-9])?$`)
 // separator, so the allowlist cannot name a file in the checkout.
 var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 
-// fileDoc is the configuration file's schema: sign-in and the connections
-// an admin keeps in git (ADR-0014 §2.2), and the instance defaults the spec
-// overrides (ADR-0015). Everything else is the spec's.
+// fileDoc is the configuration file's schema: sign-in and the whole
+// configuration (ADR-0019 §2.1).
 type fileDoc struct {
 	Auth        Auth                `yaml:"auth,omitempty"`
-	Connections []Connection        `yaml:"connections,omitempty"`
 	Providers   map[string]Provider `yaml:"providers,omitempty"`
-	Defaults    fileDefaults        `yaml:"defaults,omitempty"`
+	Defaults    Defaults            `yaml:"defaults,omitempty"`
+	Polling     Polling             `yaml:"polling,omitempty"`
+	Indexing    Indexing            `yaml:"indexing,omitempty"`
+	Tools       []Tool              `yaml:"tools,omitempty"`
+	Retention   Retention           `yaml:"retention,omitempty"`
+	Egress      Egress              `yaml:"egress,omitempty"`
 	Embedding   *Embedding          `yaml:"embedding,omitempty"`
+	Connections []Connection        `yaml:"connections,omitempty"`
+	Accounts    []Account           `yaml:"accounts,omitempty"`
 }
 
 // Load reads, decodes, resolves and validates the configuration file at
@@ -69,6 +74,10 @@ func Parse(raw []byte) (*File, error) {
 		if err := dec.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("configfile: parse: %w", err)
 		}
+		var extra any
+		if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+			return nil, errors.New("configfile: parse: the file must hold one document")
+		}
 	}
 	environ := os.Environ()
 	if err := doc.Auth.overlayEnv(environ); err != nil {
@@ -90,94 +99,80 @@ func Parse(raw []byte) (*File, error) {
 		return nil, err
 	}
 	f := &File{
-		Auth: doc.Auth, Connections: doc.Connections, Providers: doc.Providers, Embedding: doc.Embedding,
+		Auth: doc.Auth, Connections: doc.Connections, Providers: doc.Providers, Defaults: doc.Defaults, Polling: doc.Polling,
+		Indexing: doc.Indexing, Tools: doc.Tools, Retention: doc.Retention, Egress: doc.Egress, Embedding: doc.Embedding,
 		envConnection: envConnection, envProvider: envProvider, envKeys: envKeys,
 	}
-	f.Defaults = doc.Defaults.defaults()
 	if err := f.Auth.resolve(); err != nil {
 		return nil, err
 	}
-	if err := f.resolveInstanceDefaults(); err != nil {
+	if err := f.resolve(doc.Accounts); err != nil {
 		return nil, err
-	}
-	for i := range f.Connections {
-		f.Connections[i].origin = OriginFile
-		if err := f.Connections[i].resolve(fmt.Sprintf("connections[%d]", i), fileRefs); err != nil {
-			return nil, err
-		}
 	}
 	if err := f.Auth.validate(); err != nil {
 		return nil, err
 	}
-	if err := validateConnections(f.Connections); err != nil {
+	if err := f.validate(doc.Accounts); err != nil {
 		return nil, err
 	}
-	// The default models are checked once merged, against every provider.
-	if err := f.validateProviders(); err != nil {
-		return nil, err
-	}
-	if err := f.validateEmbedding(); err != nil {
-		return nil, err
-	}
+	f.Accounts, f.unserved = servedAccounts(f.Connections, doc.Accounts)
 	sum := sha256.Sum256(raw)
 	f.hash = hex.EncodeToString(sum[:])
 	return f, nil
 }
 
-// resolve reads the spec's sealed secrets with open and compiles its
-// filters.
-func (s *Spec) resolve(open Opener) error {
-	refs := refPolicy{dashboard: true, open: open}
-	for _, name := range slices.Sorted(maps.Keys(s.Providers)) {
-		p := s.Providers[name]
-		v, err := p.APIKey.resolve(refs)
+// resolve reads f's secrets and those of the account entries, and compiles
+// their filters.
+func (f *File) resolve(accounts []Account) error {
+	for _, name := range slices.Sorted(maps.Keys(f.Providers)) {
+		p := f.Providers[name]
+		v, err := p.APIKey.resolve()
 		if err != nil {
 			return fmt.Errorf("configfile: providers.%s.apiKey: %w", name, err)
 		}
 		p.apiKey = v
-		s.Providers[name] = p
+		f.Providers[name] = p
 	}
-	s.Egress.credentials = make(map[string]Secret, len(s.Egress.Credentials))
-	for _, host := range slices.Sorted(maps.Keys(s.Egress.Credentials)) {
-		v, err := s.Egress.Credentials[host].resolve(refs)
+	f.Egress.credentials = make(map[string]Secret, len(f.Egress.Credentials))
+	for _, host := range slices.Sorted(maps.Keys(f.Egress.Credentials)) {
+		v, err := f.Egress.Credentials[host].resolve()
 		if err != nil {
 			return fmt.Errorf("configfile: egress.credentials.%s: %w", host, err)
 		}
-		s.Egress.credentials[strings.ToLower(host)] = v
+		f.Egress.credentials[strings.ToLower(host)] = v
 	}
-	if e := s.Embedding; e != nil {
-		v, err := e.APIKey.resolve(refs)
+	if e := f.Embedding; e != nil {
+		v, err := e.APIKey.resolve()
 		if err != nil {
 			return fmt.Errorf("configfile: embedding.apiKey: %w", err)
 		}
 		e.apiKey = v
 	}
-	if err := s.Defaults.compile(); err != nil {
+	if err := f.Defaults.compile(); err != nil {
 		return fmt.Errorf("configfile: defaults.filter: %w", err)
 	}
-	for i := range s.Connections {
-		s.Connections[i].origin = OriginDashboard
-		if err := s.Connections[i].resolve(fmt.Sprintf("connections[%d]", i), refs); err != nil {
+	for i := range f.Connections {
+		if err := f.Connections[i].resolve(fmt.Sprintf("connections[%d]", i)); err != nil {
 			return err
 		}
 	}
-	for i := range s.Accounts {
-		if err := s.Accounts[i].resolve(fmt.Sprintf("accounts[%d]", i), refs); err != nil {
+	for i := range accounts {
+		if err := accounts[i].resolve(fmt.Sprintf("accounts[%d]", i)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// resolve reads the account's secret references under refs and compiles
-// its filters; where prefixes every error.
-func (a *Account) resolve(where string, refs refPolicy) error {
+// resolve reads the account's secret references and compiles its filters;
+// where prefixes every error.
+func (a *Account) resolve(where string) error {
 	if err := a.compile(); err != nil {
 		return fmt.Errorf("configfile: %s.filter: %w", where, err)
 	}
 	for _, name := range slices.Sorted(maps.Keys(a.Providers)) {
 		p := a.Providers[name]
-		v, err := p.APIKey.resolve(refs)
+		v, err := p.APIKey.resolve()
 		if err != nil {
 			return fmt.Errorf("configfile: %s.providers.%s.apiKey: %w", where, name, err)
 		}
@@ -192,30 +187,30 @@ func (a *Account) resolve(where string, refs refPolicy) error {
 	return nil
 }
 
-func (in *Connection) resolve(where string, refs refPolicy) error {
+func (in *Connection) resolve(where string) error {
 	var err error
 	if in.App != nil {
 		in.App.clientID = in.App.ClientID
 		if !in.App.ClientIDFrom.empty() {
-			v, err := in.App.ClientIDFrom.resolve(refs)
+			v, err := in.App.ClientIDFrom.resolve()
 			if err != nil {
 				return fmt.Errorf("configfile: %s.app.clientIdFrom: %w", where, err)
 			}
 			in.App.clientID = v.Value()
 		}
-		if in.App.privateKey, err = in.App.PrivateKey.resolve(refs); err != nil {
+		if in.App.privateKey, err = in.App.PrivateKey.resolve(); err != nil {
 			return fmt.Errorf("configfile: %s.app.privateKey: %w", where, err)
 		}
-		if in.App.webhookSecret, err = in.App.WebhookSecret.resolve(refs); err != nil {
+		if in.App.webhookSecret, err = in.App.WebhookSecret.resolve(); err != nil {
 			return fmt.Errorf("configfile: %s.app.webhookSecret: %w", where, err)
 		}
 	}
 	return nil
 }
 
-// validate checks every invariant the rest of kritik relies on in the
-// spec's settings, over the connections and accounts a merge runs.
-func (f *File) validate(spec *Spec) error {
+// validate checks every invariant the rest of kritik relies on, over f and
+// the account entries.
+func (f *File) validate(accounts []Account) error {
 	if err := f.validateProviders(); err != nil {
 		return err
 	}
@@ -234,10 +229,10 @@ func (f *File) validate(spec *Spec) error {
 	if err := f.validateEmbedding(); err != nil {
 		return err
 	}
-	if err := validateConnections(spec.Connections); err != nil {
+	if err := validateConnections(f.Connections); err != nil {
 		return err
 	}
-	return f.validateAccounts(spec.Accounts)
+	return f.validateAccounts(accounts)
 }
 
 // validateTools checks the tool catalog: unique volume-safe names, an
@@ -348,9 +343,9 @@ func validateRunnerDeadline(where string, seconds int64) error {
 	return nil
 }
 
-// validateAccounts checks the defaults and every account entry of the
-// spec, served or not, so an entry is judged when it is written rather than
-// when a connection first serves it.
+// validateAccounts checks the defaults and every account entry, served or
+// not, so an entry is judged when it is written rather than when a
+// connection first serves it.
 func (f *File) validateAccounts(entries []Account) error {
 	if err := checkLimits("defaults.limits", f.Defaults.Limits); err != nil {
 		return err
@@ -409,6 +404,9 @@ func (f *File) validateAccount(where string, a *Account) error {
 			return fmt.Errorf("configfile: %s.name %q duplicates repositories[%d]", rwhere, r.Name, prev)
 		}
 		repos[key] = ri
+		if r.Enabled != nil {
+			return fmt.Errorf("configfile: %s.enabled: turn a repository on or off in the dashboard (ADR-0019 §2.3)", rwhere)
+		}
 		if err := f.validateOverrides(rwhere, a, &r.Overrides); err != nil {
 			return err
 		}
@@ -740,41 +738,15 @@ func SamplePR() map[string]any {
 	}
 }
 
-func (r SecretRef) empty() bool { return r.Env == "" && r.File == "" && r.Sealed == "" }
+func (r SecretRef) empty() bool { return r.Env == "" && r.File == "" }
 
-// refPolicy is where a SecretRef may come from. The configuration file may
-// read the environment and filesystem but carries no sealed values; the
-// spec carries only sealed values, opened with open.
-type refPolicy struct {
-	dashboard bool
-	open      Opener
-}
-
-var fileRefs = refPolicy{}
-
-// resolve reads the referenced value. Exactly one of env, file or sealed
-// must be set; an unset variable, an unreadable file or an unopenable sealed
-// value is an error, never an empty value, so a typo cannot silently disable
-// authentication.
-func (r SecretRef) resolve(refs refPolicy) (Secret, error) {
+// resolve reads the referenced value. Exactly one of env or file must be
+// set; an unset variable or an unreadable file is an error, never an empty
+// value, so a typo cannot silently disable authentication.
+func (r SecretRef) resolve() (Secret, error) {
 	switch {
-	case r.Sealed != "" && (r.Env != "" || r.File != ""):
-		return Secret{}, errors.New("set exactly one of env, file or sealed")
 	case r.Env != "" && r.File != "":
 		return Secret{}, errors.New("set either env or file, not both")
-	case r.Sealed != "" && !refs.dashboard:
-		return Secret{}, errors.New("sealed values are only valid in the dashboard's configuration")
-	case refs.dashboard && (r.Env != "" || r.File != ""):
-		return Secret{}, errors.New("the dashboard's configuration takes sealed values, not env or file references")
-	case r.Sealed != "":
-		if refs.open == nil {
-			return Secret{}, errors.New("no key to open sealed values is configured")
-		}
-		b, err := refs.open.Open(r.Sealed)
-		if err != nil {
-			return Secret{}, fmt.Errorf("open sealed value: %w", err)
-		}
-		return Secret{value: strings.TrimRight(string(b), "\r\n")}, nil
 	case r.Env != "":
 		v, ok := os.LookupEnv(r.Env)
 		if !ok {
@@ -787,8 +759,6 @@ func (r SecretRef) resolve(refs refPolicy) (Secret, error) {
 			return Secret{}, err
 		}
 		return Secret{value: strings.TrimRight(string(b), "\r\n")}, nil
-	case refs.dashboard:
-		return Secret{}, errors.New("reference must set sealed")
 	default:
 		return Secret{}, errors.New("reference must set env or file")
 	}

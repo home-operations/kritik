@@ -60,8 +60,11 @@ CREATE TABLE repositories (
     archived        boolean     NOT NULL DEFAULT false,
     fork            boolean     NOT NULL DEFAULT false,
     -- An admin's choice to review the repository or not (ADR-0019 §2.3),
-    -- NULL until one is made: the configuration decides until then.
+    -- NULL until one is made: the configuration decides until then. A
+    -- repository turned off has its index dropped once turned_at is older
+    -- than retention.disabledIndexGrace.
     turned_on       boolean,
+    turned_at       timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
@@ -483,25 +486,6 @@ CREATE TABLE login_states (
 );
 CREATE INDEX login_states_expires_at_idx ON login_states (expires_at);
 
--- app_manifests holds one GitHub App manifest flow (ADR-0012, ADR-0014
--- §2.3), from the admin's form to their reading its result, keyed by the
--- SHA-256 of its state parameter. It is bound to the session that started
--- it and goes with it. The callback claims it once, then records the App
--- it registered, with the App's client secret sealed, or why it failed.
-CREATE TABLE app_manifests (
-    state_hash    bytea       PRIMARY KEY,
-    session_hash  bytea       NOT NULL REFERENCES sessions (token_hash) ON DELETE CASCADE,
-    connection    text        NOT NULL,
-    expires_at    timestamptz NOT NULL,
-    claimed_at    timestamptz,
-    finished_at   timestamptz,
-    app_slug      text        NOT NULL DEFAULT '',
-    client_id     text        NOT NULL DEFAULT '',
-    client_secret text        NOT NULL DEFAULT '',
-    error         text        NOT NULL DEFAULT ''
-);
-CREATE INDEX app_manifests_session_hash_idx ON app_manifests (session_hash);
-
 -- audit_events records dashboard-driven actions across every account, so an
 -- instance admin can read it without an account context; no RLS.
 CREATE TABLE audit_events (
@@ -514,17 +498,6 @@ CREATE TABLE audit_events (
     detail     jsonb       NOT NULL DEFAULT '{}'::jsonb
 );
 CREATE INDEX audit_events_account_id_idx ON audit_events (account_id, id DESC);
-
--- One row: the instance spec the dashboard edits (ADR-0014 §2.2), every
--- setting but sign-in and the file's connections, with its secrets sealed.
--- revision increments on each write. No RLS: it is instance-wide, and read
--- before any account is known.
-CREATE TABLE instance_config (
-    id         int         PRIMARY KEY CHECK (id = 1),
-    spec       jsonb       NOT NULL,
-    revision   bigint      NOT NULL,
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
 
 -- model_calls is account content (row-level security applies, unlike the
 -- tables above): one row per model call the gateway made, whether an
@@ -740,17 +713,3 @@ CREATE TRIGGER kritik_notify_model_call
     AFTER INSERT ON model_calls
     FOR EACH ROW
     EXECUTE FUNCTION kritik_notify_event('model_call');
-
--- kritik_notify_config publishes the spec's revision whenever the dashboard
--- writes it, so every replica re-merges without polling.
-CREATE FUNCTION kritik_notify_config() RETURNS trigger AS $$
-BEGIN
-    PERFORM pg_notify('kritik_config', NEW.revision::text);
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER kritik_notify_instance_config
-    AFTER INSERT OR UPDATE ON instance_config
-    FOR EACH ROW
-    EXECUTE FUNCTION kritik_notify_config();

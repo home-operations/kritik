@@ -225,7 +225,7 @@ var goldens = map[string]any{
 		Args: JobArgs{Repository: "alpha/one", Number: 7, Head: "abc123", Trigger: "push", CommentID: 0},
 	},
 	"event": Event{Kind: store.EventReview, Account: "alpha", ID: "rev-1", ReviewID: new("rev-1")},
-	"error": ErrorBody{Code: CodeNotFound, Message: "account not found", Details: json.RawMessage(`{"slug":"x"}`)},
+	"error": ErrorBody{Code: CodeNotFound, Message: "account not found"},
 }
 
 func TestDTOGolden(t *testing.T) {

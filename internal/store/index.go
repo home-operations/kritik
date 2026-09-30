@@ -128,7 +128,8 @@ func (s *Store) SweepDisabledIndexes(ctx context.Context, grace time.Duration) (
 		// Locked, so a repository enabled again meanwhile is either left out
 		// or waits until its index is gone, never swept halfway.
 		rows, err := tx.Query(ctx, `SELECT active_index_run_id::text FROM repositories
-			WHERE NOT enabled AND active_index_run_id IS NOT NULL AND disabled_at < now() - make_interval(secs => $1)
+			WHERE active_index_run_id IS NOT NULL AND (NOT enabled AND disabled_at < now() - make_interval(secs => $1)
+				OR NOT coalesce(turned_on, true) AND turned_at < now() - make_interval(secs => $1))
 			FOR UPDATE`, grace.Seconds())
 		if err != nil {
 			return err

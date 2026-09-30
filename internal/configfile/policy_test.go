@@ -43,10 +43,10 @@ func TestSources(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f := mustLoad(t, "defaults:\n  settle: 2m\n  agent: { maxSteps: 9 }\n"+
-		acme("    mode: agentic\n    repositories: [{ name: x, settle: 0s, enabled: false }]\n"))
+		acme("    mode: agentic\n    repositories: [{ name: x, settle: 0s, filter: \"true\" }]\n"))
 	s := f.Sources(&f.Accounts[0], "acme/x")
 	for key, want := range map[string]Source{
-		"settle": SourceAccount, "mode": SourceAccount, "agent.maxSteps": SourceDefaults, "enabled": SourceAccount,
+		"settle": SourceAccount, "mode": SourceAccount, "agent.maxSteps": SourceDefaults, "enabled": SourceDefault, "filter": SourceAccount,
 		"agent.maxTokens": SourceDefault, "models.review": SourceDefault, "ignore": SourceDefault,
 	} {
 		if s[key] != want {
