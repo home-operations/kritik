@@ -517,7 +517,7 @@ func (f *followUp) complete(ctx context.Context, system, msg, reviewID string) (
 	err = f.w.withLease(ctx, f.account, string(ref), f.settings.Limits.Concurrency, f.jobID, func(ctx context.Context) error {
 		var err error
 		resp, err = completer.Complete(ctx, req)
-		f.w.Metrics.ModelCall(f.account.Key(), string(ref), "followup", callOutcome(err),
+		f.w.Metrics.ModelCall(f.account.Key(), servedRef(ref, resp.Model), "followup", callOutcome(err),
 			resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 		return err
 	})

@@ -105,7 +105,7 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritik_review_snoozes_total", Help: "Reviews put back on the queue because every model slot was held.",
 		}, []string{lblAccount, lblModel}),
 		modelCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_model_calls_total", Help: "Model calls, by role and outcome.",
+			Name: "kritik_model_calls_total", Help: "Model calls, by the model that answered, role and outcome.",
 		}, []string{lblAccount, lblModel, lblRole, lblOutcome}),
 		modelTokens: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_model_tokens_total",

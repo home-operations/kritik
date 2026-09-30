@@ -307,7 +307,7 @@ func (p *publishPhase) callModels(
 	}
 	completer := model.Structured{Stepper: stepper, OnStep: p.onStep(ctx, ref.Provider(), store.ModelCallReview, 0)}
 	resp, err := completer.Complete(ctx, req)
-	p.w.Metrics.ModelCall(p.account.Key(), string(ref), roleReview, callOutcome(err),
+	p.w.Metrics.ModelCall(p.account.Key(), servedRef(ref, resp.Model), roleReview, callOutcome(err),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 	if err == nil || fallback == "" || fallback.Provider() == ref.Provider() || ctx.Err() != nil {
 		return resp, roleReview, err
@@ -320,7 +320,7 @@ func (p *publishPhase) callModels(
 	req.Model, req.Fallbacks = fallback.Model(), nil
 	fc := model.Structured{Stepper: fs, OnStep: p.onStep(ctx, fallback.Provider(), store.ModelCallFallback, 1)}
 	resp, ferr = fc.Complete(ctx, req)
-	p.w.Metrics.ModelCall(p.account.Key(), string(fallback), roleFallback, callOutcome(ferr),
+	p.w.Metrics.ModelCall(p.account.Key(), servedRef(fallback, resp.Model), roleFallback, callOutcome(ferr),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 	if ferr != nil {
 		return model.CompletionResponse{}, "", errors.Join(err, ferr)
@@ -635,4 +635,14 @@ func callOutcome(err error) string {
 		return "error"
 	}
 	return "ok"
+}
+
+// servedRef is the model that answered a call made to ref, as a model
+// reference, for metrics: OpenRouter's server-side fallback may answer with
+// a model other than the one asked for, and served names it, "" for none.
+func servedRef(ref configfile.ModelRef, served string) string {
+	if served == "" {
+		return string(ref)
+	}
+	return ref.Provider() + "/" + served
 }

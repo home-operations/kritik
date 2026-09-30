@@ -155,7 +155,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	resp, err := stepper.Step(ctx, req)
 	took := time.Since(start)
-	g.Metrics.ModelCall(account.Key(), grant.Model, roleReview, callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
+	g.Metrics.ModelCall(account.Key(), servedRef(ref, resp.Model), roleReview, callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
 		resp.Usage.Output, resp.CostUSD)
 	if cerr := g.charge(ctx, grant, token, reserved, resp, err == nil); cerr != nil {
 		// A step that was answered is paid for either way; the run still

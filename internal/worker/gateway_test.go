@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 )
 
@@ -51,3 +52,20 @@ const minimalGatewayFile = `apps:
     privateKey: { env: TEST_PROVIDER_KEY }
     webhookSecret: { env: TEST_PROVIDER_KEY }
 `
+
+func TestServedRef(t *testing.T) {
+	for _, tt := range []struct {
+		ref    configfile.ModelRef
+		served string
+		want   string
+	}{
+		{"openrouter/openai/gpt-6.1-sol", "anthropic/claude-opus-5.5", "openrouter/anthropic/claude-opus-5.5"},
+		{"openrouter/openai/gpt-6.1-sol", "openai/gpt-6.1-sol", "openrouter/openai/gpt-6.1-sol"},
+		{"anthropic/claude-sonnet-5", "claude-sonnet-5", "anthropic/claude-sonnet-5"},
+		{"openrouter/openai/gpt-6.1-sol", "", "openrouter/openai/gpt-6.1-sol"},
+	} {
+		if got := servedRef(tt.ref, tt.served); got != tt.want {
+			t.Errorf("servedRef(%s, %q) = %s, want %s", tt.ref, tt.served, got, tt.want)
+		}
+	}
+}
