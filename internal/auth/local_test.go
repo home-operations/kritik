@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +27,35 @@ func TestAttempts(t *testing.T) {
 	now = now.Add(failedSignInWindow)
 	if !a.allowed("1.2.3.4") {
 		t.Fatal("still refused after the window")
+	}
+}
+
+// TestAttemptsStayBounded: a flood of failures from distinct addresses,
+// none of whose windows has expired, cannot grow the tracker past its cap;
+// the oldest window gives way, and a client already tracked keeps its
+// count.
+func TestAttemptsStayBounded(t *testing.T) {
+	now := time.Now()
+	a := newAttempts(func() time.Time { return now })
+	a.fail("first")
+	for i := range maxTrackedClients + 100 {
+		now = now.Add(time.Millisecond)
+		a.fail(fmt.Sprintf("2001:db8::%x", i))
+	}
+	if len(a.failed) > maxTrackedClients {
+		t.Fatalf("%d clients tracked, cap is %d", len(a.failed), maxTrackedClients)
+	}
+	// "first" and the 100 oldest flood addresses gave way; the next survives.
+	if _, ok := a.failed["first"]; ok {
+		t.Fatal("the oldest window was not the one dropped")
+	}
+	if _, ok := a.failed["2001:db8::64"]; !ok {
+		t.Fatal("a window newer than the oldest was dropped")
+	}
+	last := fmt.Sprintf("2001:db8::%x", maxTrackedClients+99)
+	a.fail(last)
+	if got := a.failed[last].n; got != 2 || len(a.failed) > maxTrackedClients {
+		t.Fatalf("count = %d with %d tracked; a tracked client failing again keeps its count and evicts nothing", got, len(a.failed))
 	}
 }
 
