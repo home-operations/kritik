@@ -15,18 +15,43 @@ Install the chart as its [README](../charts/kritik/README.md) shows, with:
   `/hooks/<connection name>`. The chart's `ingress` or `httpRoute` routes
   `/hooks` to the webhook listener and everything else to the dashboard;
   nothing else needs to be public.
-- `dashboard.keySecret`, the key that seals the secrets the dashboard
-  keeps.
-- A way to sign in: `auth.admin.passwordSecret` for the local admin, which
-  is the way into a fresh instance, or OIDC or GitHub with a role mapping
-  that makes someone an admin ([`auth`](configuration.md#auth)).
+- A way to sign in: `auth.admin.passwordSecret` for the local admin, or
+  OIDC or GitHub with a role mapping that makes someone an admin
+  ([`auth`](configuration.md#auth)).
+- The [configuration file](configuration.md) as `config.file`, or an
+  existing ConfigMap, with the Secrets it references mounted under
+  `secretMounts`. It lives in git with the rest of the deployment, and
+  every replica re-reads it on `config.reloadInterval`.
 
-## Sign in, and follow the wizard
+A minimal file names the GitHub App (below), a model key and the default
+review model:
 
-The first admin to sign in is met by the [setup wizard](dashboard.md#first-run),
-which walks the rest of this guide: the GitHub App, a model key and review
-model, the embedder, and the repositories to review. Every step can also
-be done in the admin console.
+```yaml
+connections:
+  - name: github
+    forge: github
+    accounts: [org-1]
+    app:
+      clientId: Iv1.example
+      privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+      webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+providers:
+  openrouter:
+    type: openrouter
+    apiKey: { file: /var/run/secrets/kritik/openrouter/api-key }
+defaults:
+  models: { review: openrouter/vendor/large-model }
+```
+
+Add `embedding` to index each repository for similar code, and `accounts`
+for an account's own settings, limits and rules.
+
+## Sign in
+
+Sign in as an admin. Until the instance can review, a banner says what is
+missing and leads to the Configuration page, under Settings, whose Setup
+checklist names each step and what to set for it
+([first run](dashboard.md#first-run)).
 
 ## The GitHub App
 
@@ -34,28 +59,7 @@ A connection is one GitHub App that kritik serves accounts through. It
 serves the users and organizations its `accounts` lists, and each of them
 is a kritik account, `github/<name>`, that this connection alone serves.
 
-### Create it from the admin console
-
-The admin console's "Create a GitHub App" registers the App for you, from
-a [manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest)
-that sets its webhook, permissions and events:
-
-1. Name the connection, and choose whether the App belongs to your own
-   GitHub account or to an organization, and whether it is private or
-   public.
-2. "Create on GitHub" takes you to GitHub, which shows the App as kritik
-   described it. Confirm it there within an hour.
-3. GitHub sends you back to kritik, which adds the App as a dashboard
-   connection serving the account it belongs to. The admin console then
-   shows the App's client secret, once: kritik does not keep it. Set it
-   and the client ID as `auth.github` to sign in with GitHub through the
-   same App.
-4. Install the App from the link the admin console shows.
-
-To serve more accounts through a public App, add them to the connection's
-`accounts` afterwards.
-
-### Register it by hand
+### Register it
 
 Register a GitHub App under the account whose repositories kritik reviews
 (a personal account's or an organization's Developer settings):
@@ -91,19 +95,21 @@ the bot as `@<app slug>`, and only someone with write access gets an
 answer. `@<app slug> review` queues a review of the pull request's head
 instead of asking a question: a pull request from a fork is not reviewed on
 its own, since its code comes from outside the organization, and this is
-how a maintainer gets it one. Add the App as a connection in the admin console, whose "Add
-connection" takes these three values and can generate the webhook secret,
-or declare it in the configuration file or the environment
-([`connections`](configuration.md#connections)).
+how a maintainer gets it one. Put the private key and the webhook secret
+in a Secret, and declare the App as a connection in the configuration file
+or the environment ([`connections`](configuration.md#connections)). To
+sign in with GitHub through the same App, generate a client secret on its
+settings page and set it, with the client ID, as `auth.github`.
 
 ### Install it
 
 Install the App on each account in `accounts`, for all repositories or
 selected ones. Each pull request in them is reviewed when it opens and
-after each push, under the account's settings, which an admin sets on the
-account's Configuration page, under Settings.
+after each push, under the account's settings in the configuration file,
+in every repository that runs
+([which repositories run](configuration.md#which-repositories-run)).
 
-Anyone can install a public App by its slug. The admin console's
+Anyone can install a public App by its slug. The Configuration page's
 Connections panel lists every account each connection's App is installed
 on, marks those the connection does not serve, and uninstalls the App
 from any of them. kritik reviews nothing on an account its connection

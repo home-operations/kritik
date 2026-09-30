@@ -76,7 +76,7 @@ instructions, and chooses a few settings within bounds an admin sets:
   review:
     rules:
       - id: wrap-errors
-        rule: Wrap an error with fmt.Errorf("<package>: %w", err) before returning it.
+        rule: 'Wrap an error with fmt.Errorf("<package>: %w", err) before returning it.'
         paths: ["**/*.go"]
   ```
 
