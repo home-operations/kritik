@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -248,4 +250,44 @@ func mustJSON(t *testing.T, v any) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func TestSimilarCode(t *testing.T) {
+	chunk := contextpack.Chunk{Stage: contextpack.StageSimilar, Path: "other.go", StartLine: 3, EndLine: 9, Ref: "similarity 0.81", Text: "func a() {}"}
+	for _, tc := range []struct {
+		name    string
+		status  int
+		body    string
+		want    []contextpack.Chunk
+		wantErr string
+	}{
+		{name: "chunks", status: http.StatusOK, body: `{"chunks":[{"stage":"similar","path":"other.go","start_line":3,"end_line":9,` +
+			`"ref":"similarity 0.81","text":"func a() {}"}]}`, want: []contextpack.Chunk{chunk}},
+		{name: "none", status: http.StatusOK, body: `{"chunks":[]}`, want: []contextpack.Chunk{}},
+		{name: "refused", status: http.StatusTooManyRequests, body: `{"error":{"code":"budget_exceeded"}}` + "\n",
+			wantErr: `429 Too Many Requests: {"error":{"code":"budget_exceeded"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var path, auth string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path, auth = r.Method+" "+r.URL.Path, r.Header.Get("Authorization")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			got, err := similarCode(context.Background(), srv.URL+"/", "krk_run")
+			if path != "POST /v1/similar" || auth != "Bearer krk_run" {
+				t.Fatalf("request = %s with %q", path, auth)
+			}
+			if tc.wantErr != "" {
+				if err == nil || !strings.HasSuffix(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want it to end %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil || !slices.Equal(got, tc.want) {
+				t.Fatalf("similarCode = %+v, %v; want %+v", got, err, tc.want)
+			}
+		})
+	}
 }
