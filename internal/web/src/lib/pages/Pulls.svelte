@@ -1,10 +1,13 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import { getJSON } from '../api.svelte';
+  import { getJSON, sendJSON } from '../api.svelte';
+  import { isAdmin } from '../session.svelte';
+  import { describe, isCode } from '../manage';
+  import { toast } from '../toast.svelte';
   import { navigate, replace } from '../router.svelte';
   import { PULL_OUTCOMES, pullFilter, type PullFilter } from '../routes';
   import { Paged, Resource, live } from '../resource.svelte';
-  import { pullRoute, accountApi } from '../links';
+  import { pullKey, pullRoute, accountApi, rerunPath } from '../links';
   import { listKeys } from '../listkeys';
   import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
   import type { Page, Pull, Repository } from '../types';
@@ -14,6 +17,7 @@
   import SectionTabs from '../components/SectionTabs.svelte';
   import Segmented from '../components/Segmented.svelte';
   import TokenSearch from '../components/TokenSearch.svelte';
+  import Dialog from '../components/Dialog.svelte';
 
   let { slug, filter }: { slug: string; filter?: PullFilter } = $props();
 
@@ -43,7 +47,6 @@
     return `${account}/pulls?${p}`;
   }
 
-  const pullKey = (p: Pull) => `${p.repository}#${p.number}`;
   const paged = new Paged<Pull>(query, pullKey);
   const res = paged.first;
   const repos = new Resource(() => getJSON<Page<Repository>>(`${account}/repos?limit=100`));
@@ -107,8 +110,53 @@
         if (p) navigate(pullRoute(slug, p));
       },
       focusSearch: () => searchEl?.focus(),
+      toggle: (i) => {
+        const p = items[i];
+        if (p && isAdmin()) pick([pullKey(p)], !picked.includes(pullKey(p)));
+      },
     }),
   );
+
+  // An admin picks pull requests to re-run together, by checkbox or Space.
+  // A pick holds under the filter it was made in: another filter shows
+  // other rows, so it starts with none picked.
+  const filterKey = $derived(JSON.stringify(filter ?? {}));
+  let pickedUnder = $state({ filter: '', keys: [] as string[] });
+  const picked = $derived(pickedUnder.filter === filterKey ? pickedUnder.keys : []);
+  let confirmRerun = $state(false);
+  let busy = $state(false);
+  function pick(keys: string[], on: boolean): void {
+    pickedUnder = { filter: filterKey, keys: on ? [...new Set([...picked, ...keys])] : picked.filter((k) => !keys.includes(k)) };
+  }
+
+  const plural = (n: number) => (n === 1 ? '1 pull request' : `${n} pull requests`);
+
+  // rerunPicked queues a fresh review of each picked pull request at its
+  // current head, one request at a time.
+  async function rerunPicked(): Promise<void> {
+    busy = true;
+    const targets = items.filter((p) => picked.includes(pullKey(p)));
+    let queued = 0;
+    let already = 0;
+    const failed: string[] = [];
+    for (const p of targets) {
+      try {
+        await sendJSON('POST', rerunPath(slug, p));
+        queued++;
+      } catch (err) {
+        if (isCode(err, 'already_queued')) already++;
+        else failed.push(`${pullKey(p)}: ${describe(err)}`);
+      }
+    }
+    busy = false;
+    confirmRerun = false;
+    pick(picked, false);
+    const parts = [`Re-run queued for ${plural(queued)}`];
+    if (already) parts.push(`${already} already queued or running`);
+    if (failed.length) parts.push(`${failed.length} failed (${failed.join('; ')})`);
+    toast(parts.join(', '), failed.length ? 'danger' : 'ok');
+    void paged.load();
+  }
 
   const STATES = [
     { value: 'open', label: 'Open' },
@@ -134,6 +182,13 @@
         {onapply}
       />
       <Segmented label="State" options={STATES} value={prState} onchange={(state) => setFilter({ ...filter, state })} />
+      {#if picked.length}
+        <div class="bulk-actions" role="group" aria-label="Selected pull requests">
+          <span class="small">{picked.length} selected</span>
+          <button class="btn btn-small" disabled={busy} onclick={() => (confirmRerun = true)}>Re-run…</button>
+          <button class="btn btn-small" disabled={busy} onclick={() => pick(picked, false)}>Clear</button>
+        </div>
+      {/if}
     </div>
     <StateView {res} retry={() => res.load()}>
       {#snippet children()}
@@ -145,11 +200,21 @@
         {:else if items.length === 0}
           <p class="state-msg">No open pull requests.</p>
         {:else}
-          <PullTable {slug} {items} {selected} />
+          <PullTable {slug} {items} {selected} {picked} onpick={isAdmin() ? pick : undefined} />
           <LoadMore {paged} />
         {/if}
       {/snippet}
     </StateView>
-    <p class="muted small key-hints"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
+    <p class="muted small key-hints">
+      <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search{#if isAdmin()}{' · '}<kbd>space</kbd> select{/if}
+    </p>
   </div>
 </main>
+
+<Dialog bind:open={confirmRerun} title={`Re-run ${plural(picked.length)}?`}>
+  <p>Each is reviewed again at its current head, which spends model tokens. One already queued or running is left as it is.</p>
+  {#snippet footer()}
+    <button class="btn" onclick={() => (confirmRerun = false)}>Cancel</button>
+    <button class="btn btn-primary" disabled={busy} onclick={rerunPicked}>{busy ? 'Queuing…' : 'Re-run'}</button>
+  {/snippet}
+</Dialog>

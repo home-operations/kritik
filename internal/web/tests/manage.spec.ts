@@ -314,6 +314,48 @@ test('the audit log pages and expands detail', async ({ page }) => {
 });
 
 test.describe('actions', () => {
+  test('an admin picks pull requests and re-runs them together', async ({ page }) => {
+    const second = { ...g.pull, number: 9, title: 'Second', url: g.pull.url.replace(/\d+$/, '9') };
+    await setup(page, adminMe, [[new RegExp(`${API}/pulls$`), g.pageOf([g.pull, second])]]);
+    const sent = await g.mockWrites(page, [
+      ['POST', new RegExp(`${API}/pulls/alpha/one/7/rerun$`), { status: 202, body: g.accepted }],
+      ['POST', new RegExp(`${API}/pulls/alpha/one/9/rerun$`), g.apiError(409, 'already_queued', 'a review of this head is already queued or running')],
+    ]);
+    await page.goto(`/#/a/${S}/pulls`);
+    await expect(page.getByRole('group', { name: 'Selected pull requests' })).toHaveCount(0);
+    await page.getByRole('checkbox', { name: `Select ${g.pull.repository}#7` }).check();
+    // Space picks the row the keyboard is on.
+    await page.locator('.key-hints').click();
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+    await page.keyboard.press(' ');
+    const bulk = page.getByRole('group', { name: 'Selected pull requests' });
+    await expect(bulk).toContainText('2 selected');
+    await expect(page.getByRole('checkbox', { name: 'Select every pull request shown' })).toBeChecked();
+
+    await bulk.getByRole('button', { name: 'Re-run…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Re-run 2 pull requests?' });
+    await dialog.getByRole('button', { name: 'Re-run' }).click();
+    await expect.poll(() => sent.length).toBe(2);
+    await expect(page.getByRole('status')).toContainText('Re-run queued for 1 pull request, 1 already queued or running');
+    await expect(bulk).toHaveCount(0);
+
+    // A pick holds under its filter only.
+    await page.getByRole('checkbox', { name: `Select ${g.pull.repository}#7` }).check();
+    await expect(bulk).toContainText('1 selected');
+    await page.getByRole('radio', { name: 'All' }).click();
+    await expect(bulk).toHaveCount(0);
+    await expect(page.getByRole('checkbox', { name: `Select ${g.pull.repository}#7` })).not.toBeChecked();
+  });
+
+  test('a member has no picking on the pull list', async ({ page }) => {
+    await setup(page, memberMe);
+    await page.goto(`/#/a/${S}/pulls`);
+    await expect(page.locator('.pull-rows .pull-row')).toHaveCount(1);
+    await expect(page.getByRole('checkbox')).toHaveCount(0);
+    await expect(page.locator('.key-hints')).not.toContainText('select');
+  });
+
   test('re-run and cancel on a review, re-run on a pull, reindex on a repository', async ({ page }) => {
     const running: T.ReviewDetail = { ...g.reviewDetail, review: { ...g.reviewDetail.review, status: 'running' } };
     await setup(page, adminMe, [[new RegExp(`${API}/reviews/rev-1$`), running]]);

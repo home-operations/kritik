@@ -4,6 +4,11 @@ import { slugPath, type Route } from './routes';
 import { splitRepo } from './format';
 import { safeHref } from './markdown';
 
+// pullKey names a pull request across the account's repositories.
+export function pullKey(p: { repository: string; number: number }): string {
+  return `${p.repository}#${p.number}`;
+}
+
 export function pullRoute(slug: string, p: { repository: string; number: number }): Route {
   const n = splitRepo(p.repository);
   return { name: 'pull', slug, owner: n.owner, repo: n.repo, number: p.number };

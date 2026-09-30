@@ -26,7 +26,9 @@ at once, and holds a tab for each of an account's sections
 - **Pull requests:** its pull requests and their reviews, the run queue
   and the follow-up questions. The search box takes text, or narrows the
   list with `repo:owner/name`, `author:login` and `status:` a last review
-  status, and suggests each as you type.
+  status, and suggests each as you type. An admin can pick pull requests,
+  by checkbox or with Space on the keyboard's row, and re-run them
+  together.
 - **Rules:** the files its reviews read, instructions they follow and
   context files that explain the code, each with where it is named (a
   layer of the configuration, or a repository's `.kritik.yaml` as its last
