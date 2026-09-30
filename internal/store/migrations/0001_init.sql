@@ -59,6 +59,9 @@ CREATE TABLE repositories (
     -- What the forge last said of the repository; false until it says.
     archived        boolean     NOT NULL DEFAULT false,
     fork            boolean     NOT NULL DEFAULT false,
+    -- An admin's choice to review the repository or not (ADR-0019 §2.3),
+    -- NULL until one is made: the configuration decides until then.
+    turned_on       boolean,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now()
 );

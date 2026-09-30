@@ -242,7 +242,14 @@ const (
 	AuditReviewRerun   AuditAction = "review.rerun"
 	AuditReviewCancel  AuditAction = "review.cancel"
 	AuditRepoReindex   AuditAction = "repo.reindex"
+	AuditRepoTurnOn    AuditAction = "repo.turn_on"
+	AuditRepoTurnOff   AuditAction = "repo.turn_off"
 )
+
+// TurnOnRequest turns a repository on, or off.
+type TurnOnRequest struct {
+	On bool `json:"on"`
+}
 
 // AuditEvent is one audit log entry. Actor is null once the user is
 // deleted; Account is the account's slug, "" when the event names none or

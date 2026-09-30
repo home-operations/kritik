@@ -230,6 +230,46 @@ func TestDispatchSkipsArchivedAndForks(t *testing.T) {
 	}
 }
 
+// TestDispatchFollowsTheDashboard: a repository an admin turned off in the
+// dashboard runs nothing whatever the configuration says, and a fork one
+// turned on is reviewed.
+func TestDispatchFollowsTheDashboard(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	turn := func(name string, fork, on bool) {
+		t.Helper()
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			id, _, err := store.EnsureRepository(ctx, tx, account.ID(), store.ReachedRepository{
+				FullName: name, DefaultBranch: "main", Traits: &configfile.RepoTraits{Fork: fork},
+			})
+			if err != nil {
+				return err
+			}
+			return store.TurnOn(ctx, tx, id, on)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	turn("onedr0p/switched-off", false, false)
+	off := &webhook.Repository{FullName: "onedr0p/switched-off", DefaultBranch: "main"}
+	for _, ev := range []webhook.Event{
+		{Kind: webhook.KindPullRequest, Action: "opened", Repository: off, PullRequest: &webhook.PullRequest{Number: 98, HeadSHA: "x"}},
+		{Kind: webhook.KindComment, Action: "created", Repository: off, Comment: &webhook.Comment{ID: 8, Number: 98, Body: "@bot why"}},
+		{Kind: webhook.KindPush, Repository: off, Push: &webhook.Push{Ref: "refs/heads/main", After: "abc"}},
+	} {
+		if out, err := svc.Dispatch(ctx, request(f, ev)); err != nil || out != (Outcome{Status: Skipped, Reason: reasonDisabled}) {
+			t.Errorf("%s in a repository turned off = %+v, %v; want skipped as disabled", ev.Kind, out, err)
+		}
+	}
+	turn("onedr0p/switched-fork", true, true)
+	on := &webhook.Repository{FullName: "onedr0p/switched-fork", DefaultBranch: "main", Fork: true}
+	ev := webhook.Event{Kind: webhook.KindPush, Repository: on, Push: &webhook.Push{Ref: "refs/heads/main", After: "abc"}}
+	if out, err := svc.Dispatch(ctx, request(f, ev)); err != nil || out.Reason == reasonDisabled {
+		t.Errorf("a push to a fork turned on = %+v, %v; want it to run", out, err)
+	}
+}
+
 func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()

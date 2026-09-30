@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 // Actions queues the work an admin can ask for from the dashboard, each in
@@ -33,11 +34,13 @@ type Actions interface {
 
 var errActionsDisabled = errStatus(http.StatusServiceUnavailable, CodeActionsDisabled, "this process does not queue dashboard actions", nil)
 
-// registerActions mounts re-run, cancel and reindex.
+// registerActions mounts re-run, cancel and reindex, and turning a
+// repository on or off.
 func (s *Server) registerActions(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/pulls/{owner}/{repo}/{number}/rerun", s.accountAdmin(s.rerun))
 	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/reviews/{id}/cancel", s.accountAdmin(s.cancel))
 	mux.HandleFunc("POST /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}/reindex", s.accountAdmin(s.reindex))
+	mux.HandleFunc("PUT /api/v1/accounts/{forge}/{name}/repos/{owner}/{repo}/turned-on", s.accountAdmin(s.turnOn))
 }
 
 // jobAudit is a queued action's audit detail.
@@ -127,5 +130,35 @@ func (s *Server) reindex(w http.ResponseWriter, r *http.Request, t *accountScope
 		return err
 	}
 	writeJSON(w, http.StatusAccepted, Accepted{JobID: job})
+	return nil
+}
+
+// turnOn records an admin's choice to review a repository or not, which
+// the dashboard owns (ADR-0019 §2.3). It queues nothing: the repository
+// runs, or stops, from its next event on.
+func (s *Server) turnOn(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+	var req TurnOnRequest
+	if err := readBody(r, &req); err != nil {
+		return err
+	}
+	ctx, tid := r.Context(), t.account.ID()
+	err := s.read(ctx, t, func(tx pgx.Tx) error {
+		repo, err := findRepo(ctx, tx, r)
+		if err != nil {
+			return err
+		}
+		if err := store.TurnOn(ctx, tx, repo.ID, req.On); err != nil {
+			return err
+		}
+		action := AuditRepoTurnOff
+		if req.On {
+			action = AuditRepoTurnOn
+		}
+		return record(ctx, tx, t.principal, tid, action, repo.FullName, struct{}{})
+	})
+	if err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

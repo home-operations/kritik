@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -140,7 +141,12 @@ func (e *actionsEnv) signIn(name, subject string, g store.SessionGrant) {
 
 func (e *actionsEnv) do(path string) (int, []byte) {
 	e.t.Helper()
-	req, err := http.NewRequest(http.MethodPost, e.http.URL+path, nil)
+	return e.send(http.MethodPost, path, "")
+}
+
+func (e *actionsEnv) send(method, path, body string) (int, []byte) {
+	e.t.Helper()
+	req, err := http.NewRequest(method, e.http.URL+path, strings.NewReader(body))
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -208,6 +214,26 @@ func TestActionsJobs(t *testing.T) {
 	t.Run("cancel stops a running review's job", func(t *testing.T) { testCancelRunning(t, e) })
 	t.Run("cancel of a review whose job already ended is 409", func(t *testing.T) { testCancelEndedJob(t, e) })
 	t.Run("reindex enqueues a full index job, then dedupes", func(t *testing.T) { testReindexJob(t, e) })
+	t.Run("a repository is turned off and on, audited", func(t *testing.T) { testTurnOn(t, e) })
+}
+
+func testTurnOn(t *testing.T, e *actionsEnv) {
+	const path = "/api/v1/accounts/github/aj/repos/aj/one/turned-on"
+	for _, tt := range []struct {
+		body, want string
+		action     AuditAction
+	}{{`{"on":false}`, "false", AuditRepoTurnOff}, {`{"on":true}`, "true", AuditRepoTurnOn}} {
+		status, body := e.send(http.MethodPut, path, tt.body)
+		e.expect(status, body, http.StatusNoContent, "")
+		if got := e.scalar(`SELECT coalesce(turned_on::text, 'unset') FROM repositories WHERE id = $1`, e.repoID); got != tt.want {
+			t.Errorf("after %s turned_on = %s, want %s", tt.body, got, tt.want)
+		}
+		if n := e.audits(tt.action, "aj/one"); n != 1 {
+			t.Errorf("%s audit rows = %d, want 1", tt.action, n)
+		}
+	}
+	status, body := e.send(http.MethodPut, "/api/v1/accounts/github/aj/repos/aj/none/turned-on", `{"on":true}`)
+	e.expect(status, body, http.StatusNotFound, CodeNotFound)
 }
 
 func testRerunJob(t *testing.T, e *actionsEnv) {

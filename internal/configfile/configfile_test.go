@@ -308,6 +308,12 @@ func TestRuns(t *testing.T) {
 		{"an archived repository", acme(""), "acme/old", archived, false},
 		{"an archived repository its own entry turns on", acme("    repositories: [{ name: old, enabled: true }]\n"), "acme/old", archived, false},
 		{"an archived fork turned on", acme("    repositories: [{ name: old, enabled: true }]\n"), "acme/old", RepoTraits{Archived: true, Fork: true}, false},
+		{"a repository an admin turned off", acme("    enabled: true\n"), "acme/app", RepoTraits{TurnedOn: new(false)}, false},
+		{"a repository an admin turned on", acme("    enabled: false\n"), "acme/app", RepoTraits{TurnedOn: new(true)}, true},
+		{"a fork an admin turned on", acme(""), "acme/copy", RepoTraits{Fork: true, TurnedOn: new(true)}, true},
+		{"a fork an admin turned off that its entry turns on", acme("    repositories: [{ name: copy, enabled: true }]\n"), "acme/copy",
+			RepoTraits{Fork: true, TurnedOn: new(false)}, false},
+		{"an archived repository an admin turned on", acme(""), "acme/old", RepoTraits{Archived: true, TurnedOn: new(true)}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

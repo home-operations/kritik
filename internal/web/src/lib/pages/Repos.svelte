@@ -1,14 +1,13 @@
 <script lang="ts">
   import { href } from '../router.svelte';
   import { Paged, live } from '../resource.svelte';
-  import { indexTone, splitRepo } from '../format';
-  import { repoRoute, accountApi, reindexPath } from '../links';
+  import { indexTone } from '../format';
+  import { repoRoute, accountApi, reindexPath, turnedOnPath } from '../links';
   import { getJSON, sendJSON } from '../api.svelte';
   import { describe, isCode } from '../manage';
-  import { isAdmin, management } from '../session.svelte';
-  import { withRepositoriesEnabled } from '../spec';
+  import { isAdmin } from '../session.svelte';
   import { toast } from '../toast.svelte';
-  import type { AccountConfig, AccountDetail, RegisterResult, Repository } from '../types';
+  import type { AccountDetail, RegisterResult, Repository, TurnOnRequest } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
@@ -51,16 +50,13 @@
     return needle ? all.filter((r) => r.fullName.toLowerCase().includes(needle)) : all;
   }
 
-  const manage = $derived(isAdmin() && management());
+  const manage = $derived(isAdmin());
   // Full names picked for a bulk action.
   let selected = $state<string[]>([]);
-  // What this page last turned each repository to: a list read right after
-  // a save may still show the running configuration before it.
-  let turned = $state<Record<string, boolean>>({});
   let busy = $state(false);
   let confirmReindex = $state(false);
 
-  const isOn = (r: Repository): boolean => turned[r.fullName] ?? r.enabled;
+  const isOn = (r: Repository): boolean => r.enabled;
   const indexIcon: Record<IndexRunStatus, string> = {
     running: mdiProgressClock,
     completed: mdiCheck,
@@ -78,32 +74,25 @@
     selected = on ? [...new Set([...selected, ...names])] : selected.filter((n) => !names.includes(n));
   }
 
-  // setEnabled writes the account's entries for names in one save of its
-  // configuration.
+  // setEnabled turns each of names on or off, one request at a time: the
+  // dashboard owns a repository's on or off (ADR-0019 §2.3).
   async function setEnabled(names: string[], on: boolean): Promise<void> {
     busy = true;
-    try {
-      const path = `${accountApi(slug)}/config`;
-      const cfg = await getJSON<AccountConfig>(path);
-      const forks = new Set(paged.items.filter((r) => r.fork).map((r) => splitRepo(r.fullName).repo.toLowerCase()));
-      const built = withRepositoriesEnabled(
-        cfg.spec,
-        names.map((n) => splitRepo(n).repo),
-        on,
-        (name) => !forks.has(name.toLowerCase()) && cfg.inherited.repository.enabled,
-      );
-      if (built.error) throw new Error(`${built.error.path}: ${built.error.message}`);
-      await sendJSON('PUT', path, { revision: cfg.revision, spec: built.spec });
-      for (const n of names) turned[n] = on;
-      toast(`${plural(names.length)} turned ${on ? 'on' : 'off'}`);
-      selected = [];
-      void paged.load();
-    } catch (err) {
-      const why = isCode(err, 'revision_conflict') ? 'the configuration changed meanwhile; try again' : describe(err);
-      toast(`Turning ${on ? 'on' : 'off'} failed: ${why}`, 'danger');
-    } finally {
-      busy = false;
+    const body: TurnOnRequest = { on };
+    const failed: string[] = [];
+    for (const name of names) {
+      try {
+        await sendJSON('PUT', turnedOnPath(slug, name), body);
+      } catch (err) {
+        failed.push(`${name}: ${describe(err)}`);
+      }
     }
+    busy = false;
+    selected = [];
+    void paged.load();
+    const parts = [`${plural(names.length - failed.length)} turned ${on ? 'on' : 'off'}`];
+    if (failed.length) parts.push(`${failed.length} failed (${failed.join('; ')})`);
+    toast(parts.join(', '), failed.length ? 'danger' : 'ok');
   }
 
   // reindex queues a reindex of each selected repository that is on, one

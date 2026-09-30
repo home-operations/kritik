@@ -220,7 +220,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 func repository(r store.RepoRow, on bool) Repository {
 	out := Repository{
 		ID: r.ID, FullName: r.FullName, Enabled: r.Enabled && on, ManagedBy: r.ManagedBy,
-		DefaultBranch: r.DefaultBranch, Archived: r.Archived, Fork: r.Fork,
+		DefaultBranch: r.DefaultBranch, Archived: r.Archived, Fork: r.Fork, TurnedOn: r.TurnedOn,
 		Index: IndexState{ActiveCommit: r.ActiveCommit, ActiveAt: r.ActiveAt, LastRunStatus: r.LastIndexStatus, LastRunAt: r.LastIndexAt},
 	}
 	if r.LastReview != nil {
