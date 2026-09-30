@@ -17,7 +17,7 @@ of its alt text, and carries its own annotation. */}}
 
 kritik ships as an OCI Helm chart. It needs a Postgres with
 [VectorChord](https://github.com/tensorchord/VectorChord) and pgvector, three
-roles, a sealing key, its public URL, and a way to sign in:
+roles, its public URL, a way to sign in, and its configuration file:
 
 ```sh
 helm install kritik oci://ghcr.io/home-operations/charts/kritik \
@@ -32,11 +32,32 @@ where `my-values.yaml` sets:
 ```yaml
 web:
   url: https://kritik.example.com
-dashboard:
-  keySecret: { name: kritik-dashboard-key }
 auth:
   admin:
     passwordSecret: { name: kritik-admin }
+config:
+  file:
+    connections:
+      - name: github
+        forge: github
+        accounts: [org-1]
+        app:
+          clientId: Iv1.example
+          privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+          webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+    providers:
+      openrouter:
+        type: openrouter
+        apiKey: { file: /var/run/secrets/kritik/openrouter/api-key }
+    defaults:
+      models: { review: openrouter/vendor/large-model }
+secretMounts:
+  - name: bot
+    secretName: kritik-bot
+    mountPath: /var/run/secrets/kritik/bot
+  - name: openrouter
+    secretName: kritik-openrouter
+    mountPath: /var/run/secrets/kritik/openrouter
 ingress:
   enabled: true
   tls: [{ hosts: [kritik.example.com], secretName: kritik-tls }]
@@ -49,12 +70,14 @@ with its password from an existing Secret, which is the way into a fresh
 instance. OIDC and GitHub sign-in, with role mappings, set the same way
 (see [the configuration reference](https://github.com/home-operations/kritik/blob/main/docs/configuration.md)).
 
-The first admin to sign in is met by a setup wizard that creates the GitHub
-App, sets a model key and registers the repositories to review. Model
-providers, defaults, accounts, repositories and the embedder are the
-instance configuration, kept in Postgres and edited in the dashboard. An App
-that already exists can instead be declared in `config.file`, with its
-secrets under `secretMounts`.
+`config.file` is the whole configuration: the GitHub Apps, model
+providers, defaults, the embedder, accounts and their repositories. Every
+replica re-reads it on `config.reloadInterval`, and a reload the file's
+content can't pass keeps the last good one. Secrets never go in it: it
+points at files under `secretMounts` or at environment variables. The
+[setup guide](https://github.com/home-operations/kritik/blob/main/docs/setup.md)
+covers creating the GitHub App, and the dashboard's setup checklist shows
+what a fresh instance still lacks.
 
 ### Database
 
@@ -137,19 +160,19 @@ are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
 destination by hostname only. github.com is always allowed once a
-connection exists; `egress.allowHosts` in the instance configuration adds
-the rest (registries, release APIs), and `egress.credentials` names hosts the
-gateway adds a bearer token to when a runner sends it a plain `http://`
-request, so the runner never holds the token. Both are set in the admin
-console's JSON editor, the token sealed like every other secret there:
+connection exists; `egress.allowHosts` in `config.file` adds the rest
+(registries, release APIs), and `egress.credentials` names hosts the gateway
+adds a bearer token to when a runner sends it a plain `http://` request, so
+the runner never holds the token. The token is a secret reference like any
+other in the file:
 
-```json
-{
-  "egress": {
-    "allowHosts": ["api.github.com", "*.githubusercontent.com", "ghcr.io"],
-    "credentials": { "api.github.com": { "value": "<token>" } }
-  }
-}
+```yaml
+config:
+  file:
+    egress:
+      allowHosts: [api.github.com, "*.githubusercontent.com", ghcr.io]
+      credentials:
+        api.github.com: { file: /var/run/secrets/kritik/github-token/token }
 ```
 
 The same port is an agentic runner's model endpoint. The worker mints a
@@ -180,19 +203,20 @@ runner:
   image: ghcr.io/home-operations/kritik:<version>-tools
 ```
 
-and, in the instance configuration:
+and, in `config.file`:
 
-```json
-{
-  "egress": { "allowHosts": ["api.github.com", "*.githubusercontent.com"] },
-  "accounts": [
-    {
-      "forge": "github",
-      "name": "org-1",
-      "repositories": [{ "name": "repo-1", "mode": "agentic", "agent": { "commands": ["curl", "fd", "rg"] } }]
-    }
-  ]
-}
+```yaml
+config:
+  file:
+    egress:
+      allowHosts: [api.github.com, "*.githubusercontent.com"]
+    accounts:
+      - forge: github
+        name: org-1
+        repositories:
+          - name: repo-1
+            mode: agentic
+            agent: { commands: [curl, fd, rg] }
 ```
 
 A command runs without a shell, with an environment of `PATH`, its own
