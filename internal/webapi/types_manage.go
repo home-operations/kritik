@@ -43,9 +43,6 @@ type SetupStatus struct {
 	ReviewModel string `json:"reviewModel"`
 	// Embedding is whether an embedder is set.
 	Embedding bool `json:"embedding"`
-	// ConfigError is why the configuration file's latest content was
-	// refused, "" while the running configuration is its latest content.
-	ConfigError string `json:"configError"`
 }
 
 // RegisterResult is how many repositories a registration added.

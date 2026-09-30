@@ -178,9 +178,6 @@
   font-size: 13px;
 }
 /* The Configuration page's setup steps, each done or with what to set. */
-.config-refused {
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-}
 .checklist {
   display: flex;
   flex-direction: column;

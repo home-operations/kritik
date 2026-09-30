@@ -102,15 +102,9 @@ type Config struct {
 
 	// ConfigFile is the path of the optional configuration file: sign-in
 	// and the connections an admin keeps in git. Every role except runner
-	// loads it at startup and watches it for changes. Empty means no file,
-	// and the environment alone declares them.
+	// loads it at startup, and a change takes a restart (ADR-0022 §2.1).
+	// Empty means no file, and the environment alone declares them.
 	ConfigFile string `env:"KRITIK_CONFIG_FILE"`
-
-	// ConfigReloadInterval is how often the configuration file is re-read
-	// for changes. Polling, because a ConfigMap mount updates by swapping a
-	// symlink that inotify on the file misses; ten seconds keeps a Flux
-	// reconcile visible without hammering the disk.
-	ConfigReloadInterval time.Duration `env:"KRITIK_CONFIG_RELOAD_INTERVAL" envDefault:"10s"`
 
 	// DatabaseURL is the DSN every role connects with for request and job
 	// work. It must be the application role: not a superuser, no BYPASSRLS,
@@ -283,9 +277,6 @@ func (c *Config) validate() error {
 	case "json", "text":
 	default:
 		return fmt.Errorf("config: KRITIK_LOG_FORMAT must be json or text, got %q", c.LogFormat)
-	}
-	if c.ConfigReloadInterval <= 0 {
-		return fmt.Errorf("config: KRITIK_CONFIG_RELOAD_INTERVAL must be positive, got %s", c.ConfigReloadInterval)
 	}
 	if c.GatewayURL != "" {
 		if _, err := egress.ProxyURL(c.GatewayURL); err != nil {

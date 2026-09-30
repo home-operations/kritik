@@ -123,8 +123,10 @@ auth:
 # file is either inline as `file`, rendered into a chart-managed ConfigMap,
 # or an existing ConfigMap with a `config.yaml` key. Secret material never
 # goes in the file: it references files under `secretMounts` or environment
-# variables. Every replica re-reads the file on `reloadInterval`; the
-# leader applies it to the store.
+# variables. kritik reads the file at startup (ADR-0022): the pods carry a
+# checksum of `file`, so a change to it rolls them, while a change to an
+# `existingConfigMap` needs a restart, for example by stakater's Reloader
+# through `deploymentAnnotations`. The leader applies it to the store.
 config:
   # -- (optional) The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md.
   file: {}
@@ -139,10 +141,8 @@ config:
   # defaults:
   #   models: { review: openrouter/vendor/large-model }
 
-  # -- Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`.
+  # -- Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. A change to it takes a restart.
   existingConfigMap: ""
-  # -- How often each replica re-reads the file (Go duration).
-  reloadInterval: 10s
   # -- How often the leader lists each app's open pull requests, its backstop for missed webhooks (KRITIK_POLL_INTERVAL, Go duration); `0s` turns polling off. Empty is kritik's default, 10m.
   pollInterval: ""
   # -- How far back a first or long-idle poll looks (KRITIK_POLL_LOOKBACK, Go duration). Empty is kritik's default, 24h.

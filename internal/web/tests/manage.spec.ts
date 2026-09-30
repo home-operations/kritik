@@ -168,17 +168,6 @@ test.describe('configuration page', () => {
     await expect(panel.getByRole('listitem').last()).toContainText('Set embedding');
   });
 
-  test('says when the file\'s latest content was refused, and why', async ({ page }) => {
-    const refused: T.SetupStatus = { ...g.setupStatus, configError: 'configfile: polling.interval must not be negative' };
-    await setup(page, adminMe, [[/\/api\/v1\/admin\/setup$/, refused], [/\/api\/v1\/admin\/audit$/, g.pageOf([])]]);
-    await page.goto('/#/');
-    const banner = page.getByRole('note').filter({ hasText: 'latest content was refused' });
-    await banner.getByRole('link', { name: 'See why' }).click();
-    await expect(page).toHaveURL(/#\/admin$/);
-    await expect(page.locator('#op-setup').locator('../..').getByRole('alert')).toContainText(refused.configError);
-    await expect(page.locator('#op-config')).toHaveCount(0);
-  });
-
   test("lists an App's installations and uninstalls it from an account nobody serves", async ({ page }) => {
     const conn = g.golden<T.AccountDetail>('account_detail').connection;
     const path = `/api/v1/admin/connections/${conn.name}/installations`;

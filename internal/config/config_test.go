@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestLoad(t *testing.T) {
@@ -23,8 +22,8 @@ func TestLoad(t *testing.T) {
 				if c.LogFormat != "json" {
 					t.Fatalf("log format default = %q", c.LogFormat)
 				}
-				if c.ConfigFile != "" || c.ConfigReloadInterval != 10*time.Second {
-					t.Fatalf("config file defaults = %q, %s", c.ConfigFile, c.ConfigReloadInterval)
+				if c.ConfigFile != "" {
+					t.Fatalf("config file default = %q", c.ConfigFile)
 				}
 				if c.DatabaseOwnerURL != "" {
 					t.Fatalf("owner should be unset by default: %+v", c)
@@ -54,7 +53,6 @@ func TestLoad(t *testing.T) {
 		},
 		{name: "bad level", env: map[string]string{"KRITIK_LOG_LEVEL": "loud"}, wantErr: true},
 		{name: "bad format", env: map[string]string{"KRITIK_LOG_FORMAT": "xml"}, wantErr: true},
-		{name: "zero reload interval", env: map[string]string{"KRITIK_CONFIG_RELOAD_INTERVAL": "0s"}, wantErr: true},
 		{name: "database url required", env: map[string]string{"KRITIK_DATABASE_URL": ""}, wantErr: true},
 		{name: "same role for app and runner", env: map[string]string{"KRITIK_DATABASE_RUNNER_ROLE": "kritik_app"}, wantErr: true},
 		{name: "zero leader retry", env: map[string]string{"KRITIK_LEADER_RETRY_INTERVAL": "0"}, wantErr: true},
@@ -209,10 +207,9 @@ func TestEnv(t *testing.T) {
 		vars[e.Name] = e
 	}
 	for name, want := range map[string]EnvVar{
-		"KRITIK_ADDR":                   {Name: "KRITIK_ADDR", Value: ":9090", Set: true},
-		"KRITIK_METRICS_ADDR":           {Name: "KRITIK_METRICS_ADDR", Value: ":8081"},
-		"KRITIK_CONFIG_RELOAD_INTERVAL": {Name: "KRITIK_CONFIG_RELOAD_INTERVAL", Value: "10s"},
-		"KRITIK_DATABASE_URL":           {Name: "KRITIK_DATABASE_URL", Value: "set", Secret: true, Set: true},
+		"KRITIK_ADDR":         {Name: "KRITIK_ADDR", Value: ":9090", Set: true},
+		"KRITIK_METRICS_ADDR": {Name: "KRITIK_METRICS_ADDR", Value: ":8081"},
+		"KRITIK_DATABASE_URL": {Name: "KRITIK_DATABASE_URL", Value: "set", Secret: true, Set: true},
 	} {
 		if vars[name] != want {
 			t.Errorf("%s = %+v, want %+v", name, vars[name], want)

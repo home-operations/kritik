@@ -18,11 +18,7 @@ func (s *Server) registerSetup(mux *http.ServeMux) {
 }
 
 func (s *Server) getSetup(w http.ResponseWriter, r *http.Request) error {
-	out := setupStatus(s.current.Get(), s.webURL.String())
-	if err := s.configError(); err != nil {
-		out.ConfigError = err.Error()
-	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, setupStatus(s.current.Get(), s.webURL.String()))
 	return nil
 }
 

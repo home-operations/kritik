@@ -1,14 +1,9 @@
 package webapi
 
 import (
-	"encoding/json"
-	"errors"
-	"net/http"
-	"net/http/httptest"
 	"slices"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 )
 
@@ -43,18 +38,5 @@ func TestSetupStatus(t *testing.T) {
 				t.Fatalf("setupStatus = %+v, want %+v", got, tt.want)
 			}
 		})
-	}
-}
-
-// TestSetupReportsARefusedReload: the status says why the file's latest
-// content was refused, so the Configuration page can.
-func TestSetupReportsARefusedReload(t *testing.T) {
-	ts := newTestServer(t, "https://kritik.example")
-	ts.srv.configError = func() error { return errors.New("configfile: polling.interval must not be negative") }
-	w := ts.as(&auth.Principal{Admin: true}, httptest.NewRequest("GET", "/api/v1/admin/setup", nil))
-	var got SetupStatus
-	if err := json.Unmarshal(w.Body.Bytes(), &got); w.Code != http.StatusOK || err != nil ||
-		got.ConfigError != "configfile: polling.interval must not be negative" {
-		t.Fatalf("setup = %d %s", w.Code, w.Body)
 	}
 }

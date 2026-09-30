@@ -129,7 +129,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 	if err := os.WriteFile(path, []byte(manageConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	e.src = &configsource.Source{Logger: logger}
+	e.src = &configsource.Source{}
 	file, err := e.src.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)

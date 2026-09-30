@@ -3,12 +3,12 @@
 kritik takes its settings from three places, each for what it suits
 ([ADR-0019](adr/0019-configuration-in-git.md)):
 
-| Where                                                                                                                                          | What                                                                                                                                             | Changed by                                         |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| The environment                                                                                                                                | Process wiring: addresses, the database, logging and `KRITIK_WEB_URL`                                                                            | a restart                                          |
-| The configuration file, and its `KRITIK_AUTH_*`, `KRITIK_APPS_*`, `KRITIK_PROVIDERS_*`, `KRITIK_DEFAULTS_*` and `KRITIK_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the defaults, the repository entries and the accounts | a file edit, reloaded, or a restart for a variable |
-| The environment, set by the chart's values                                                                                                     | How kritik runs: polling, onboarding, retention and runner Jobs                                                                                  | a restart                                          |
-| The dashboard                                                                                                                                  | Whether each repository is on or off                                                                                                             | an admin, on the Repositories page                 |
+| Where                                                                                                                                          | What                                                                                                                                             | Changed by                         |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| The environment                                                                                                                                | Process wiring: addresses, the database, logging and `KRITIK_WEB_URL`                                                                            | a restart                          |
+| The configuration file, and its `KRITIK_AUTH_*`, `KRITIK_APPS_*`, `KRITIK_PROVIDERS_*`, `KRITIK_DEFAULTS_*` and `KRITIK_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the defaults, the repository entries and the accounts | a restart                          |
+| The environment, set by the chart's values                                                                                                     | How kritik runs: polling, onboarding, retention and runner Jobs                                                                                  | a restart                          |
+| The dashboard                                                                                                                                  | Whether each repository is on or off                                                                                                             | an admin, on the Repositories page |
 
 A repository's own [`.kritik.yaml`](repository-config.md) narrows what the
 configuration sets for it, from its own git.
@@ -27,12 +27,12 @@ startup rather than ignored.
 A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`:
 `filterExpr`, `roleMappingExpr` and a rule's `whenExpr`.
 
-Every replica re-reads the file on the chart's `config.reloadInterval`.
+kritik reads the file and its variables once, at startup
+([ADR-0022](adr/0022-configuration-at-startup.md)): a change takes a
+restart, and the chart rolls the pods when its `config.file` changes.
 Content that does not load, or that would leave the dashboard no way to
-sign in, is refused: the configuration before it keeps running,
-`kritik_config_error{stage="load"}` is 1, and the Configuration page, under
-Settings, says why until the file loads again. At startup the same content
-fails the process instead.
+sign in, fails startup, so a rolling update leaves the pods before it
+serving.
 
 ## `auth`
 
@@ -89,9 +89,8 @@ auth:
 
 A provider must allow the callback URL `<KRITIK_WEB_URL>/auth/callback/oidc`
 or `<KRITIK_WEB_URL>/auth/callback/github`. The dashboard refuses to start
-with no way to sign in, and a running one keeps its last good configuration
-when a reload would leave none. The configuration is refused when nothing
-could make an admin: set an admin password, or a `roleMappingExpr` on a
+with no way to sign in. The configuration is refused when nothing could
+make an admin: set an admin password, or a `roleMappingExpr` on a
 provider.
 
 ### Roles

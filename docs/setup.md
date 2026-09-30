@@ -19,8 +19,8 @@ Install the chart as its [README](../charts/kritik/README.md) shows, with:
   ([`auth`](configuration.md#auth)).
 - The [configuration file](configuration.md) as `config.file`, or an
   existing ConfigMap, with the Secrets it references mounted under
-  `secretMounts`. It lives in git with the rest of the deployment, and
-  every replica re-reads it on `config.reloadInterval`.
+  `secretMounts`. It lives in git with the rest of the deployment; kritik
+  reads it at startup, and the chart rolls the pods when it changes.
 
 A minimal file names the GitHub App (below), a model key and the default
 review model:
