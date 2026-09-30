@@ -172,6 +172,8 @@ func serve(
 		}
 		g.Go(func() error {
 			return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
+				m.Leading(true)
+				defer m.Leading(false)
 				return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, configErrors, logger)
 			})
 		})

@@ -89,6 +89,15 @@ The `vchord` (VectorChord) and `vector` (pgvector, whose types it builds on)
 extensions must exist before the first start, and `vchord` must be in
 `shared_preload_libraries`.
 
+The owner and application connections must reach Postgres directly, or
+through a pooler in session mode. The leader is whichever replica holds a
+session advisory lock on its owner connection, and the dashboard's live
+updates and the job queue's notifications `LISTEN` on the application
+connection. A transaction-mode pooler, such as PgBouncer or a CloudNativePG
+`Pooler` with `poolMode: transaction`, hands a session to other clients
+between transactions, which breaks both. `kritik_leader` is 1 on the replica
+that holds the lock.
+
 On CloudNativePG, use TensorChord's image (`ghcr.io/tensorchord/cloudnative-vectorchord`,
 tagged `<postgres>-<vchord>`) or mount `ghcr.io/tensorchord/vchord-scratch` as an
 image-volume extension, load the library, make the bootstrap owner `owner`,
