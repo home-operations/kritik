@@ -73,7 +73,7 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 	s := Settings{
 		Enabled:     true,
 		Ignore:      append([]string(nil), DefaultIgnore...),
-		Mode:        ReviewSingle,
+		Mode:        ReviewAgentic,
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
 		Review:      Review{InlineComments: true, Thoroughness: ThoroughnessThorough},

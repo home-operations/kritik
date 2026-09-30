@@ -60,6 +60,7 @@ providers:
     baseUrl: http://unused.invalid/v1
     apiKey: { env: TEST_SECRET }
 defaults:
+  mode: single
   runner:
     activeDeadlineSeconds: 60
   models:
