@@ -27,22 +27,17 @@ const DefaultEnvProvider = "openrouter"
 // replaces the file's provider of its name whole, or joins them. Its type
 // defaults to its name when that is a provider type. It returns the
 // provider's name, "" when no KRITIK_PROVIDERS_* variable is set; a
-// variable that names no key, or a key set both directly and by _FILE, is
-// an error.
+// variable that names no key is an error.
 func overlayProviderEnv(providers *map[string]Provider, environ []string) (string, error) {
 	name, p := DefaultEnvProvider, Provider{}
-	setBy := map[string]string{}
+	set := false
 	for _, kv := range environ {
 		env, value, _ := strings.Cut(kv, "=")
 		key, ok := strings.CutPrefix(env, providerEnvPrefix)
 		if !ok {
 			continue
 		}
-		setting := strings.TrimSuffix(key, "_FILE")
-		if prev, dup := setBy[setting]; dup {
-			return "", fmt.Errorf("configfile: environment variables %s and %s set the same provider setting; set one", prev, env)
-		}
-		setBy[setting] = env
+		set = true
 		switch key {
 		case "NAME":
 			name = value
@@ -52,13 +47,11 @@ func overlayProviderEnv(providers *map[string]Provider, environ []string) (strin
 			p.BaseURL = value
 		case "API_KEY":
 			p.APIKey = SecretRef{Env: env}
-		case "API_KEY_FILE":
-			p.APIKey = SecretRef{File: value}
 		default:
 			return "", fmt.Errorf("configfile: environment variable %s names no provider setting", env)
 		}
 	}
-	if len(setBy) == 0 {
+	if !set {
 		return "", nil
 	}
 	if p.Type == "" && ProviderType(name).Valid() {
@@ -116,18 +109,12 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 // KRITIK_EMBEDDING_*, starting one when the file has none, and records in
 // from that the environment set it.
 func overlayEmbeddingEnv(e **Embedding, environ []string, from map[string]bool) error {
-	setBy := map[string]string{}
 	for _, kv := range environ {
 		env, value, _ := strings.Cut(kv, "=")
 		key, ok := strings.CutPrefix(env, embeddingEnvPrefix)
 		if !ok {
 			continue
 		}
-		setting := strings.TrimSuffix(key, "_FILE")
-		if prev, dup := setBy[setting]; dup {
-			return fmt.Errorf("configfile: environment variables %s and %s set the same embedding setting; set one", prev, env)
-		}
-		setBy[setting] = env
 		if *e == nil {
 			*e = &Embedding{}
 		}

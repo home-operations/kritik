@@ -15,14 +15,17 @@ configuration sets for it, from its own git.
 
 The file is optional: `KRITIK_CONFIG_FILE` names it, and the chart's
 `config.file` renders it, so the configuration lives in git with the rest
-of the deployment. In the file a secret is `{ env: NAME }` or
-`{ file: path }`, never the value itself. Sign-in, one app, one provider,
-the default models and review settings, and the embedder also have
-variables, and a variable wins over the file, so a small deployment
-can be configured from the environment alone. A variable carries a secret
-itself, or, with a `_FILE` suffix, the path of a file holding it. A
-variable under one of these prefixes that names no key is refused at
-startup rather than ignored.
+of the deployment. In the file a secret is `{ env: NAME }`, the variable
+holding it, never the value itself; the chart's `secretEnv` sets such a
+variable from an existing Secret. Sign-in, one app, one provider, the
+default models and review settings, and the embedder also have
+variables, and a variable wins over the file, so a small deployment can
+be configured from the environment alone. A variable carries a secret
+itself. Once the configuration is read, kritik drops every variable a
+secret came from from its own environment
+([ADR-0022](adr/0022-configuration-at-startup.md) §2.2). A variable under
+one of these prefixes that names no key is refused at startup rather than
+ignored.
 
 A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`:
 `filterExpr`, `roleMappingExpr` and a rule's `whenExpr`.
@@ -43,17 +46,17 @@ values render its variables.
 | ------------------------ | ------------------------------------------ |
 | `sessionTTL`             | `KRITIK_AUTH_SESSION_TTL`                  |
 | `admin.user`             | `KRITIK_AUTH_ADMIN_USER`                   |
-| `admin.password`         | `KRITIK_AUTH_ADMIN_PASSWORD[_FILE]`        |
+| `admin.password`         | `KRITIK_AUTH_ADMIN_PASSWORD`               |
 | `oidc.name`              | `KRITIK_AUTH_OIDC_NAME`                    |
 | `oidc.issuer`            | `KRITIK_AUTH_OIDC_ISSUER`                  |
 | `oidc.clientId`          | `KRITIK_AUTH_OIDC_CLIENT_ID`               |
-| `oidc.clientSecret`      | `KRITIK_AUTH_OIDC_CLIENT_SECRET[_FILE]`    |
+| `oidc.clientSecret`      | `KRITIK_AUTH_OIDC_CLIENT_SECRET`           |
 | `oidc.scopes`            | `KRITIK_AUTH_OIDC_SCOPES`, comma-separated |
 | `oidc.rolesClaim`        | `KRITIK_AUTH_OIDC_ROLES_CLAIM`             |
 | `oidc.roleMappingExpr`   | `KRITIK_AUTH_OIDC_ROLE_MAPPING_EXPR`       |
 | `oidc.defaultRole`       | `KRITIK_AUTH_OIDC_DEFAULT_ROLE`            |
 | `github.clientId`        | `KRITIK_AUTH_GITHUB_CLIENT_ID`             |
-| `github.clientSecret`    | `KRITIK_AUTH_GITHUB_CLIENT_SECRET[_FILE]`  |
+| `github.clientSecret`    | `KRITIK_AUTH_GITHUB_CLIENT_SECRET`         |
 | `github.roleMappingExpr` | `KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR`     |
 
 ```yaml
@@ -151,8 +154,8 @@ apps:
   - name: github
     accounts: [org-1, user-1]
     clientId: Iv1.example
-    privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-    webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+    privateKey: { env: GITHUB_APP_PRIVATE_KEY }
+    webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
 ```
 
 `name` is the App's webhook path, `/hooks/<name>`, and `accounts` the users
@@ -161,13 +164,13 @@ account is served by one app. `clientId` is given inline or, like the
 secrets, as a reference. `webhookSecret` holds the same value as the App's
 webhook secret. The same app can come from the environment instead:
 
-| Variable                            | Key                               |
-| ----------------------------------- | --------------------------------- |
-| `KRITIK_APPS_NAME`                  | `name`, `github` unless set       |
-| `KRITIK_APPS_ACCOUNTS`              | `accounts`, comma-separated       |
-| `KRITIK_APPS_CLIENT_ID`             | `clientId`                        |
-| `KRITIK_APPS_PRIVATE_KEY[_FILE]`    | `privateKey`, or a file's path    |
-| `KRITIK_APPS_WEBHOOK_SECRET[_FILE]` | `webhookSecret`, or a file's path |
+| Variable                     | Key                         |
+| ---------------------------- | --------------------------- |
+| `KRITIK_APPS_NAME`           | `name`, `github` unless set |
+| `KRITIK_APPS_ACCOUNTS`       | `accounts`, comma-separated |
+| `KRITIK_APPS_CLIENT_ID`      | `clientId`                  |
+| `KRITIK_APPS_PRIVATE_KEY`    | `privateKey`                |
+| `KRITIK_APPS_WEBHOOK_SECRET` | `webhookSecret`             |
 
 The environment declares at most one app. It replaces the file's app of
 the same name whole, or is added to the file's when none has that name. A
@@ -182,7 +185,7 @@ that builds each repository's similar-code index from one of them.
 providers:
   openrouter:
     type: openrouter
-    apiKey: { file: /var/run/secrets/kritik/openrouter/api-key }
+    apiKey: { env: OPENROUTER_API_KEY }
 embedding:
   model: openrouter/voyageai/voyage-code-4
   dims: 1024
@@ -305,7 +308,7 @@ The same defaults can come from the environment:
 | `KRITIK_PROVIDERS_NAME`           | the provider's name, `openrouter` unless set                                          |
 | `KRITIK_PROVIDERS_TYPE`           | `type`, which defaults to the name when that is `openrouter`, `openai` or `anthropic` |
 | `KRITIK_PROVIDERS_BASE_URL`       | `baseUrl`                                                                             |
-| `KRITIK_PROVIDERS_API_KEY[_FILE]` | `apiKey`, or a file's path                                                            |
+| `KRITIK_PROVIDERS_API_KEY`        | `apiKey`                                                                              |
 | `KRITIK_DEFAULTS_MODELS_REVIEW`   | `defaults.models.review`                                                              |
 | `KRITIK_DEFAULTS_MODELS_FALLBACK` | `defaults.models.fallback`                                                            |
 | `KRITIK_DEFAULTS_MODE`            | `defaults.mode`                                                                       |
@@ -354,7 +357,7 @@ accounts:
   org-1:
     limits: { reviewsPerDay: 50, tokensPerMonth: 20000000 }
     providers:
-      org-1-key: { type: openrouter, apiKey: { file: /var/run/secrets/kritik/org-1/api-key } }
+      org-1-key: { type: openrouter, apiKey: { env: ORG_1_OPENROUTER_API_KEY } }
 ```
 
 - `limits`: `concurrency`, how many model calls it runs at once, 2 unless

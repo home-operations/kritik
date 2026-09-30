@@ -63,24 +63,19 @@ const DefaultEnvConnection = "github"
 
 // overlayConnectionEnv declares the one app the environment may (ADR-0014
 // §2.2): it replaces the file's app of its name whole, or joins them. It
-// returns the app's name, "" when no KRITIK_APPS_* variable is set. A
-// variable that names no key is an error, so a typo is refused rather than
-// ignored, and so is a secret set both directly and by _FILE, since
-// environ's order would pick one.
+// returns the app's name, "" when no KRITIK_APPS_* variable is set; a
+// secret's variable carries the value itself (ADR-0022 §2.2). A variable
+// that names no key is an error, so a typo is refused rather than ignored.
 func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error) {
 	in := Connection{Name: DefaultEnvConnection, Forge: ForgeGitHub}
-	setBy := map[string]string{}
+	set := false
 	for _, kv := range environ {
 		name, value, _ := strings.Cut(kv, "=")
 		key, ok := strings.CutPrefix(name, connectionEnvPrefix)
 		if !ok {
 			continue
 		}
-		setting := strings.TrimSuffix(key, "_FILE")
-		if prev, dup := setBy[setting]; dup {
-			return "", fmt.Errorf("configfile: environment variables %s and %s set the same app setting; set one", prev, name)
-		}
-		setBy[setting] = name
+		set = true
 		switch key {
 		case "NAME":
 			in.Name = value
@@ -90,17 +85,13 @@ func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error)
 			in.App.ClientID = ValueOrRef{Value: value}
 		case "PRIVATE_KEY":
 			in.App.PrivateKey = SecretRef{Env: name}
-		case "PRIVATE_KEY_FILE":
-			in.App.PrivateKey = SecretRef{File: value}
 		case "WEBHOOK_SECRET":
 			in.App.WebhookSecret = SecretRef{Env: name}
-		case "WEBHOOK_SECRET_FILE":
-			in.App.WebhookSecret = SecretRef{File: value}
 		default:
 			return "", fmt.Errorf("configfile: environment variable %s names no app setting", name)
 		}
 	}
-	if len(setBy) == 0 {
+	if !set {
 		return "", nil
 	}
 	for i := range *conns {

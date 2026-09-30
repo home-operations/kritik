@@ -119,12 +119,15 @@ func Parse(raw []byte) (*File, error) {
 		Auth: doc.Auth, Connections: doc.Apps, Providers: doc.Providers, Defaults: doc.Defaults, Egress: doc.Egress,
 		Embedding: doc.Embedding, Run: run, envConnection: envConnection, envProvider: envProvider, envKeys: envKeys,
 	}
-	if err := f.Auth.resolve(); err != nil {
+	s := &secrets{}
+	if err := f.Auth.resolve(s); err != nil {
 		return nil, err
 	}
-	if err := f.resolve(accounts); err != nil {
+	if err := f.resolve(accounts, s); err != nil {
 		return nil, err
 	}
+	slices.Sort(s.env)
+	f.secretEnv = s.env
 	if err := f.Auth.validate(); err != nil {
 		return nil, err
 	}
@@ -139,10 +142,10 @@ func Parse(raw []byte) (*File, error) {
 
 // resolve reads f's secrets and those of the account entries, and compiles
 // their filters.
-func (f *File) resolve(accounts []Account) error {
+func (f *File) resolve(accounts []Account, s *secrets) error {
 	for _, name := range slices.Sorted(maps.Keys(f.Providers)) {
 		p := f.Providers[name]
-		v, err := p.APIKey.resolve()
+		v, err := s.read(p.APIKey)
 		if err != nil {
 			return fmt.Errorf("configfile: providers.%s.apiKey: %w", name, err)
 		}
@@ -151,7 +154,7 @@ func (f *File) resolve(accounts []Account) error {
 	}
 	f.Egress.credentials = make(map[string]Secret, len(f.Egress.Credentials))
 	for _, host := range slices.Sorted(maps.Keys(f.Egress.Credentials)) {
-		v, err := f.Egress.Credentials[host].resolve()
+		v, err := s.read(f.Egress.Credentials[host])
 		if err != nil {
 			return fmt.Errorf("configfile: egress.credentials.%s: %w", host, err)
 		}
@@ -164,12 +167,12 @@ func (f *File) resolve(accounts []Account) error {
 		return fmt.Errorf("configfile: defaults.filterExpr: %w", err)
 	}
 	for i := range f.Connections {
-		if err := f.Connections[i].resolve(fmt.Sprintf("apps[%d]", i)); err != nil {
+		if err := f.Connections[i].resolve(fmt.Sprintf("apps[%d]", i), s); err != nil {
 			return err
 		}
 	}
 	for i := range accounts {
-		if err := accounts[i].resolve(); err != nil {
+		if err := accounts[i].resolve(s); err != nil {
 			return err
 		}
 	}
@@ -256,13 +259,13 @@ func accountsOf(entries map[string]accountDoc, repos map[string]Overrides) ([]Ac
 }
 
 // resolve reads the account's secret references and compiles its filters.
-func (a *Account) resolve() error {
+func (a *Account) resolve(s *secrets) error {
 	if err := a.compile(); err != nil {
 		return fmt.Errorf("configfile: %s.filterExpr: %w", a.pattern, err)
 	}
 	for _, name := range slices.Sorted(maps.Keys(a.Providers)) {
 		p := a.Providers[name]
-		v, err := p.APIKey.resolve()
+		v, err := s.read(p.APIKey)
 		if err != nil {
 			return fmt.Errorf("configfile: %s.providers.%s.apiKey: %w", a.entry, name, err)
 		}
@@ -277,15 +280,15 @@ func (a *Account) resolve() error {
 	return nil
 }
 
-func (in *Connection) resolve(where string) error {
+func (in *Connection) resolve(where string, s *secrets) error {
 	var err error
-	if in.App.clientID, err = in.App.ClientID.resolve(); err != nil {
+	if in.App.clientID, err = in.App.ClientID.resolve(s); err != nil {
 		return fmt.Errorf("configfile: %s.clientId: %w", where, err)
 	}
-	if in.App.privateKey, err = in.App.PrivateKey.resolve(); err != nil {
+	if in.App.privateKey, err = s.read(in.App.PrivateKey); err != nil {
 		return fmt.Errorf("configfile: %s.privateKey: %w", where, err)
 	}
-	if in.App.webhookSecret, err = in.App.WebhookSecret.resolve(); err != nil {
+	if in.App.webhookSecret, err = s.read(in.App.WebhookSecret); err != nil {
 		return fmt.Errorf("configfile: %s.webhookSecret: %w", where, err)
 	}
 	return nil
@@ -644,28 +647,24 @@ func SamplePR() map[string]any {
 	}
 }
 
-func (r SecretRef) empty() bool { return r.Env == "" && r.File == "" }
+func (r SecretRef) empty() bool { return r.Env == "" }
 
-// resolve reads the referenced value. Exactly one of env or file must be
-// set; an unset variable or an unreadable file is an error, never an empty
-// value, so a typo cannot silently disable authentication.
-func (r SecretRef) resolve() (Secret, error) {
-	switch {
-	case r.Env != "" && r.File != "":
-		return Secret{}, errors.New("set either env or file, not both")
-	case r.Env != "":
-		v, ok := os.LookupEnv(r.Env)
-		if !ok {
-			return Secret{}, fmt.Errorf("environment variable %s is not set", r.Env)
-		}
-		return Secret{value: strings.TrimRight(v, "\r\n")}, nil
-	case r.File != "":
-		b, err := os.ReadFile(r.File)
-		if err != nil {
-			return Secret{}, err
-		}
-		return Secret{value: strings.TrimRight(string(b), "\r\n")}, nil
-	default:
-		return Secret{}, errors.New("reference must set env or file")
+// secrets reads the secrets one Parse resolves, and records the variables
+// they came from in env.
+type secrets struct{ env []string }
+
+// read resolves r. An unset variable is an error, never an empty value, so
+// a typo cannot silently disable authentication.
+func (s *secrets) read(r SecretRef) (Secret, error) {
+	if r.Env == "" {
+		return Secret{}, errors.New("reference must set env")
 	}
+	v, ok := os.LookupEnv(r.Env)
+	if !ok {
+		return Secret{}, fmt.Errorf("environment variable %s is not set", r.Env)
+	}
+	if !slices.Contains(s.env, r.Env) {
+		s.env = append(s.env, r.Env)
+	}
+	return Secret{value: strings.TrimRight(v, "\r\n")}, nil
 }

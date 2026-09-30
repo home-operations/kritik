@@ -2,12 +2,12 @@ apps:
   - name: sticky-gecko
     accounts: [home-operations]
     clientId: Iv1.xxxxxxxx
-    privateKey: { file: __DIR__/private-key.pem }
+    privateKey: { env: TEST_PRIVATE_KEY }
     webhookSecret: { env: TEST_WEBHOOK_SECRET }
   - name: bot-ross
     accounts: [onedr0p]
     clientId: { env: TEST_CLIENT_ID }
-    privateKey: { file: __DIR__/private-key.pem }
+    privateKey: { env: TEST_PRIVATE_KEY }
     webhookSecret: { env: TEST_WEBHOOK_SECRET }
 
 providers:
@@ -17,7 +17,7 @@ providers:
   local:
     type: openai
     baseUrl: http://litellm.ai.svc:4000/v1
-    apiKey: { file: __DIR__/local-key }
+    apiKey: { env: TEST_LOCAL_KEY }
 
 defaults:
   models:

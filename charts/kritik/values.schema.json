@@ -162,7 +162,7 @@
       "type": "object"
     },
     "config": {
-      "description": "The configuration file holds the whole configuration (ADR-0019,\nADR-0021): sign-in (`auth`), the GitHub `apps`, the instance's\n`providers`, `embedding` and `egress`, the `defaults` every repository\ngets, the `repositories` entries keyed `owner/*` or `owner/name`, and the\n`accounts` with their limits and providers. Sign-in, one app, one\nprovider, the default models and review settings and the embedder also\nhave `KRITIK_*` environment variables, which win over the file; the\n`auth` values above render some, and `extraEnv` can set the others. The\nfile is either inline as `file`, rendered into a chart-managed ConfigMap,\nor an existing ConfigMap with a `config.yaml` key. Secret material never\ngoes in the file: it references files under `secretMounts` or environment\nvariables. kritik reads the file at startup (ADR-0022): the pods carry a\nchecksum of `file`, so a change to it rolls them, while a change to an\n`existingConfigMap` needs a restart, for example by stakater's Reloader\nthrough `deploymentAnnotations`. The leader applies it to the store.",
+      "description": "The configuration file holds the whole configuration (ADR-0019,\nADR-0021): sign-in (`auth`), the GitHub `apps`, the instance's\n`providers`, `embedding` and `egress`, the `defaults` every repository\ngets, the `repositories` entries keyed `owner/*` or `owner/name`, and the\n`accounts` with their limits and providers. Sign-in, one app, one\nprovider, the default models and review settings and the embedder also\nhave `KRITIK_*` environment variables, which win over the file; the\n`auth` values above render some, and `extraEnv` can set the others. The\nfile is either inline as `file`, rendered into a chart-managed ConfigMap,\nor an existing ConfigMap with a `config.yaml` key. Secret material never\ngoes in the file: it names environment variables, `{ env: NAME }`, which\n`secretEnv` sets from existing Secrets. kritik reads the file at startup\n(ADR-0022): the pods carry a\nchecksum of `file`, so a change to it rolls them, while a change to an\n`existingConfigMap` needs a restart, for example by stakater's Reloader\nthrough `deploymentAnnotations`. The leader applies it to the store.",
       "properties": {
         "existingConfigMap": {
           "default": "",
@@ -946,12 +946,12 @@
       "title": "runner",
       "type": "object"
     },
-    "secretMounts": {
-      "description": "Secrets the configuration file references by path (GitHub App private keys\nand webhook secrets, sign-in secrets). Each entry mounts one Secret,\nread-only, at `mountPath` in every role's pods; the file then points at\n`\u003cmountPath\u003e/\u003ckey\u003e`.\nSecrets mounted as files for the configuration file to reference.",
+    "secretEnv": {
+      "description": "The secrets the configuration file names (GitHub App private keys and\nwebhook secrets, model keys, sign-in secrets) and the `KRITIK_*` secret\nvariables (ADR-0022 §2.2). Each entry sets the variable `name` in every\nrole's pods from `key` of the existing Secret `secretName`; kritik drops\nit from its own environment once read.\nEnvironment variables set from existing Secrets, for the configuration file's `{ env: NAME }` references.",
       "items": {
         "required": []
       },
-      "title": "secretMounts",
+      "title": "secretEnv",
       "type": "array"
     },
     "securityContext": {

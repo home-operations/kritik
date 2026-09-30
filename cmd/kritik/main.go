@@ -136,6 +136,13 @@ func run() error {
 			return err
 		}
 		logConfig(logger, file, "configuration loaded")
+		// Once read, a secret's variable is dropped, so no later lookup or
+		// child process sees it (ADR-0022 §2.2).
+		for _, name := range file.SecretEnv() {
+			if err := os.Unsetenv(name); err != nil {
+				return fmt.Errorf("unset %s: %w", name, err)
+			}
+		}
 		current = src.Current
 		g.Go(func() error {
 			return reportDrift(ctx, st, current, drift, driftInterval)

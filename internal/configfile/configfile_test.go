@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -15,25 +14,20 @@ import (
 	"github.com/home-operations/kritik/internal/model"
 )
 
-// fixture materialises testdata/full.yaml with its file references pointing
-// into a temp dir and its env references set, and returns its content.
+// fixture sets the variables testdata/full.yaml's secrets name and returns
+// its content.
 func fixture(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "local-key"), []byte("sk-ant-test\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "private-key.pem"), []byte("-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	raw, err := os.ReadFile("testdata/full.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("TEST_OPENROUTER_API_KEY", "sk-or-test")
+	t.Setenv("TEST_LOCAL_KEY", "sk-ant-test\n")
+	t.Setenv("TEST_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\n")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	t.Setenv("TEST_CLIENT_ID", "Iv1.fromenv")
-	return strings.ReplaceAll(string(raw), "__DIR__", dir)
+	return string(raw)
 }
 
 func TestLoadFull(t *testing.T) {
@@ -42,12 +36,19 @@ func TestLoadFull(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	t.Run("providers resolve from env and file", func(t *testing.T) {
+	t.Run("providers resolve from env", func(t *testing.T) {
 		if got := f.Providers["openrouter"].APIKeyValue().Value(); got != "sk-or-test" {
 			t.Fatalf("openrouter key = %q", got)
 		}
 		if got := f.Providers["local"].APIKeyValue().Value(); got != "sk-ant-test" {
 			t.Fatalf("local key = %q (trailing newline must be trimmed)", got)
+		}
+	})
+
+	t.Run("records the variables its secrets came from", func(t *testing.T) {
+		want := []string{"TEST_CLIENT_ID", "TEST_LOCAL_KEY", "TEST_OPENROUTER_API_KEY", "TEST_PRIVATE_KEY", "TEST_WEBHOOK_SECRET"}
+		if got := f.SecretEnv(); !slices.Equal(got, want) {
+			t.Fatalf("SecretEnv = %q, want %q", got, want)
 		}
 	})
 
@@ -428,12 +429,11 @@ func TestParseRejects(t *testing.T) {
 		{"account listed twice", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ACME]", 1), `accounts[1] "ACME" is listed twice`},
 		{"an app without a client id", githubMinimal(""), "apps[0].clientId is required"},
 		{"a client id reference with an unknown key", githubMinimal("clientId: { vault: x }, "), "field vault not found"},
-		{"missing private key", strings.Replace(minimal, "privateKey: { env: TEST_PRIVATE_KEY }, ", "", 1), "apps[0].privateKey: reference must set env or file"},
+		{"missing private key", strings.Replace(minimal, "privateKey: { env: TEST_PRIVATE_KEY }, ", "", 1), "apps[0].privateKey: reference must set env"},
 		{"unset env reference", strings.Replace(minimal, "TEST_PRIVATE_KEY", "TEST_DOES_NOT_EXIST", 1), "is not set"},
 		{"empty env reference", strings.Replace(minimal, "TEST_PRIVATE_KEY", "TEST_EMPTY", 1), "privateKey is required"},
-		{"missing file reference", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{ file: /nonexistent/token }", 1), "no such file"},
-		{"env and file both set", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{ env: TEST_PRIVATE_KEY, file: /x }", 1), "not both"},
-		{"empty reference", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{}", 1), "apps[0].privateKey: reference must set env or file"},
+		{"a file reference", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{ file: /var/run/secrets/token }", 1), "field file not found"},
+		{"empty reference", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{}", 1), "apps[0].privateKey: reference must set env"},
 		{"unknown provider type", "providers:\n  p:\n    type: cohere\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" + minimal, "type must be"},
 		{"negative pricing", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
 			"    pricing: { acme-large: { input: 3, output: -1 } }\n" + minimal, "providers.p.pricing.acme-large"},

@@ -20,9 +20,8 @@ config:
       - name: github
         accounts: [org-1]
         clientId: Iv1.example
-        privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-        webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
-secretMounts:
-  - name: bot
-    secretName: kritik-bot
-    mountPath: /var/run/secrets/kritik/bot
+        privateKey: { env: GITHUB_APP_PRIVATE_KEY }
+        webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
+secretEnv:
+  - { name: GITHUB_APP_PRIVATE_KEY, secretName: kritik-bot, key: private-key.pem }
+  - { name: GITHUB_APP_WEBHOOK_SECRET, secretName: kritik-bot, key: webhook-secret }

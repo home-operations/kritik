@@ -180,9 +180,9 @@ func (a Auth) Configured() bool {
 // dotted path, such as "oidc.issuer".
 func (a Auth) FromEnv(path string) bool { return a.fromEnv[path] }
 
-func (a *Auth) resolve() error {
+func (a *Auth) resolve(sec *secrets) error {
 	if !a.Admin.Password.empty() {
-		v, err := a.Admin.Password.resolve()
+		v, err := sec.read(a.Admin.Password)
 		if err != nil {
 			return fmt.Errorf("configfile: auth.admin.password: %w", err)
 		}
@@ -198,7 +198,7 @@ func (a *Auth) resolve() error {
 		}
 		s.signIn.typ = s.typ
 		where := "auth." + string(s.typ)
-		v, err := s.signIn.ClientSecret.resolve()
+		v, err := sec.read(s.signIn.ClientSecret)
 		if err != nil {
 			return fmt.Errorf("configfile: %s.clientSecret: %w", where, err)
 		}
@@ -273,31 +273,16 @@ func (s *SignIn) validate(where string) error {
 // authEnvPrefix starts every environment variable that sets an auth key.
 const authEnvPrefix = "KRITIK_AUTH_"
 
-// authEnvSecrets are the keys that take a secret: the variable carries the
-// value itself, or, with a _FILE suffix, the path of a file holding it.
-var authEnvSecrets = map[string]bool{"ADMIN_PASSWORD": true, "OIDC_CLIENT_SECRET": true, "GITHUB_CLIENT_SECRET": true}
-
 // overlayEnv sets every auth key a KRITIK_AUTH_* variable in environ names,
-// over what the file says (ADR-0014 §2.2). A variable that names no key is
-// an error, so a typo is refused rather than ignored, and so is a secret
-// set both directly and by _FILE, since environ's order would pick one.
+// over what the file says (ADR-0014 §2.2); a secret's variable carries the
+// value itself (ADR-0022 §2.2). A variable that names no key is an error,
+// so a typo is refused rather than ignored.
 func (a *Auth) overlayEnv(environ []string) error {
-	setBy := map[string]string{}
 	for _, kv := range environ {
 		name, value, _ := strings.Cut(kv, "=")
 		key, ok := strings.CutPrefix(name, authEnvPrefix)
 		if !ok {
 			continue
-		}
-		file := false
-		if k, ok := strings.CutSuffix(key, "_FILE"); ok && authEnvSecrets[k] {
-			key, file = k, true
-		}
-		secret := func() SecretRef {
-			if file {
-				return SecretRef{File: value}
-			}
-			return SecretRef{Env: name}
 		}
 		var path string
 		switch key {
@@ -310,7 +295,7 @@ func (a *Auth) overlayEnv(environ []string) error {
 		case "ADMIN_USER":
 			a.Admin.User, path = value, "admin.user"
 		case "ADMIN_PASSWORD":
-			a.Admin.Password, path = secret(), "admin.password"
+			a.Admin.Password, path = SecretRef{Env: name}, "admin.password"
 		case "OIDC_NAME":
 			a.oidc().Name, path = value, "oidc.name"
 		case "OIDC_ISSUER":
@@ -318,7 +303,7 @@ func (a *Auth) overlayEnv(environ []string) error {
 		case "OIDC_CLIENT_ID":
 			a.oidc().ClientID, path = value, "oidc.clientId"
 		case "OIDC_CLIENT_SECRET":
-			a.oidc().ClientSecret, path = secret(), "oidc.clientSecret"
+			a.oidc().ClientSecret, path = SecretRef{Env: name}, "oidc.clientSecret"
 		case "OIDC_SCOPES":
 			a.oidc().Scopes, path = envList(value), "oidc.scopes"
 		case "OIDC_ROLES_CLAIM":
@@ -330,16 +315,12 @@ func (a *Auth) overlayEnv(environ []string) error {
 		case "GITHUB_CLIENT_ID":
 			a.github().ClientID, path = value, "github.clientId"
 		case "GITHUB_CLIENT_SECRET":
-			a.github().ClientSecret, path = secret(), "github.clientSecret"
+			a.github().ClientSecret, path = SecretRef{Env: name}, "github.clientSecret"
 		case "GITHUB_ROLE_MAPPING_EXPR":
 			a.github().RoleMappingExpr, path = value, "github.roleMappingExpr"
 		default:
 			return fmt.Errorf("configfile: environment variable %s names no auth setting", name)
 		}
-		if prev, dup := setBy[path]; dup {
-			return fmt.Errorf("configfile: environment variables %s and %s both set auth.%s; set one", prev, name, path)
-		}
-		setBy[path] = name
 		if a.fromEnv == nil {
 			a.fromEnv = map[string]bool{}
 		}

@@ -18,9 +18,10 @@ Install the chart as its [README](../charts/kritik/README.md) shows, with:
   OIDC or GitHub with a role mapping that makes someone an admin
   ([`auth`](configuration.md#auth)).
 - The [configuration file](configuration.md) as `config.file`, or an
-  existing ConfigMap, with the Secrets it references mounted under
-  `secretMounts`. It lives in git with the rest of the deployment; kritik
-  reads it at startup, and the chart rolls the pods when it changes.
+  existing ConfigMap, with the variables its secrets name set from
+  existing Secrets under `secretEnv`. It lives in git with the rest of the
+  deployment; kritik reads it at startup, and the chart rolls the pods
+  when it changes.
 
 A minimal file names the GitHub App (below), a model key and the default
 review model:
@@ -30,12 +31,12 @@ apps:
   - name: github
     accounts: [org-1]
     clientId: Iv1.example
-    privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-    webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+    privateKey: { env: GITHUB_APP_PRIVATE_KEY }
+    webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
 providers:
   openrouter:
     type: openrouter
-    apiKey: { file: /var/run/secrets/kritik/openrouter/api-key }
+    apiKey: { env: OPENROUTER_API_KEY }
 defaults:
   models: { review: openrouter/vendor/large-model }
 ```
@@ -95,8 +96,9 @@ answer. `@<app slug> review` queues a review of the pull request's head
 instead of asking a question: a pull request from a fork is not reviewed on
 its own, since its code comes from outside the organization, and this is
 how a maintainer gets it one. Put the private key and the webhook secret
-in a Secret, and declare the App under `apps` in the configuration file
-or the environment ([`apps`](configuration.md#apps)). To
+in a Secret, set a variable from each with `secretEnv`, and declare the
+App under `apps` in the configuration file or the environment
+([`apps`](configuration.md#apps)). To
 sign in with GitHub through the same App, generate a client secret on its
 settings page and set it, with the client ID, as `auth.github`.
 

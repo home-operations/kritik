@@ -18,7 +18,7 @@ tests:
           pattern: "clientId: Iv1.example"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: "file: /var/run/secrets/kritik/bot/private-key.pem"
+          pattern: "env: GITHUB_APP_PRIVATE_KEY"
 
   - it: renders nothing when an existing ConfigMap is named
     set:
