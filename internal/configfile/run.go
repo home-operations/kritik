@@ -34,6 +34,11 @@ type Run struct {
 	// TranscriptRetention is how long an agentic review's transcript is
 	// kept; at least a day, since members read it after the review.
 	TranscriptRetention time.Duration `env:"KRITIK_TRANSCRIPT_RETENTION" envDefault:"720h"`
+	// DiffRetention is how long a review keeps the diff it was made from,
+	// the context it read and the repository files it named; at least a
+	// day, since members read them after the review. The review and its
+	// findings stay.
+	DiffRetention time.Duration `env:"KRITIK_DIFF_RETENTION" envDefault:"720h"`
 	// RunnerDeadline bounds a runner Job, and RunnerResources are copied
 	// verbatim into its pod spec, a JSON object of requests and limits.
 	RunnerDeadline  time.Duration `env:"KRITIK_RUNNER_DEADLINE" envDefault:"15m"`
@@ -77,8 +82,10 @@ func loadRun() (Run, error) {
 		return Run{}, errors.New("configfile: KRITIK_ONBOARD_WINDOW must be positive")
 	case r.IndexGrace < 0:
 		return Run{}, errors.New("configfile: KRITIK_INDEX_GRACE must not be negative")
-	case r.TranscriptRetention < minTranscripts:
-		return Run{}, fmt.Errorf("configfile: KRITIK_TRANSCRIPT_RETENTION must be at least %s", minTranscripts)
+	case r.TranscriptRetention < minRetention:
+		return Run{}, fmt.Errorf("configfile: KRITIK_TRANSCRIPT_RETENTION must be at least %s", minRetention)
+	case r.DiffRetention < minRetention:
+		return Run{}, fmt.Errorf("configfile: KRITIK_DIFF_RETENTION must be at least %s", minRetention)
 	case r.RunnerDeadline <= 0:
 		return Run{}, errors.New("configfile: KRITIK_RUNNER_DEADLINE must be positive")
 	case r.RunnerDeadline > jobtimeout.MaxRunnerDeadline:
@@ -103,6 +110,10 @@ func (f *File) DisabledIndexGrace() time.Duration { return f.Run.IndexGrace }
 
 // TranscriptRetention is how long an agentic review's transcript is kept.
 func (f *File) TranscriptRetention() time.Duration { return f.Run.TranscriptRetention }
+
+// DiffRetention is how long a review's diff, context and repository files
+// are kept.
+func (f *File) DiffRetention() time.Duration { return f.Run.DiffRetention }
 
 // RunnerFor resolves a runner Job's deadline and resources.
 func (f *File) RunnerFor() (deadline time.Duration, resources map[string]any) {

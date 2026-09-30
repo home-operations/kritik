@@ -443,6 +443,27 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 	}); err != nil || account != alpha {
 		t.Fatalf("run account = %q, %v", account, err)
 	}
+	// What a runner writes carries its run's account: a pack under another
+	// account is refused by the policy, not left invisible to every reader.
+	for _, tt := range []struct {
+		name    string
+		account string
+		allowed bool
+	}{{"own account", alpha, true}, {"another account", beta, false}} {
+		t.Run("index pack under "+tt.name, func(t *testing.T) {
+			err := runner.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, `INSERT INTO index_packs (runner_run_id, account_id, mode) VALUES ($1, $2, 'full')`, runID, tt.account)
+				return err
+			})
+			var pgErr *pgconn.PgError
+			switch {
+			case tt.allowed && err != nil:
+				t.Fatalf("a runner must be able to write its pack: %v", err)
+			case !tt.allowed && (!errors.As(err, &pgErr) || pgErr.Code != "42501"):
+				t.Fatalf("a pack under another account must be refused, got %v", err)
+			}
+		})
+	}
 }
 
 func TestRunSecretsToSweep(t *testing.T) {

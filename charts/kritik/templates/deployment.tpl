@@ -140,7 +140,7 @@ spec:
               value: {{ $.Values.config.reviewWorkers | quote }}
             - name: KRITIK_INDEX_WORKERS
               value: {{ $.Values.config.indexWorkers | quote }}
-            {{- range $name, $value := dict "KRITIK_POLL_INTERVAL" $.Values.config.pollInterval "KRITIK_POLL_LOOKBACK" $.Values.config.pollLookback "KRITIK_INDEX_GRACE" $.Values.config.indexGrace "KRITIK_TRANSCRIPT_RETENTION" $.Values.config.transcriptRetention "KRITIK_RUNNER_DEADLINE" $.Values.runner.deadline }}
+            {{- range $name, $value := dict "KRITIK_POLL_INTERVAL" $.Values.config.pollInterval "KRITIK_POLL_LOOKBACK" $.Values.config.pollLookback "KRITIK_INDEX_GRACE" $.Values.config.indexGrace "KRITIK_TRANSCRIPT_RETENTION" $.Values.config.transcriptRetention "KRITIK_DIFF_RETENTION" $.Values.config.diffRetention "KRITIK_RUNNER_DEADLINE" $.Values.runner.deadline }}
             {{- with $value }}
             - name: {{ $name }}
               value: {{ . | quote }}

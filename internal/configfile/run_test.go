@@ -20,7 +20,7 @@ func TestRun(t *testing.T) {
 		f := mustLoad(t, minimal)
 		deadline, resources := f.RunnerFor()
 		if f.PollInterval() != 10*time.Minute || f.PollLookback() != 24*time.Hour || f.OnboardWindow() != 4 ||
-			f.DisabledIndexGrace() != 30*24*time.Hour || f.TranscriptRetention() != 30*24*time.Hour ||
+			f.DisabledIndexGrace() != 30*24*time.Hour || f.TranscriptRetention() != 30*24*time.Hour || f.DiffRetention() != 30*24*time.Hour ||
 			deadline != DefaultRunnerDeadline || resources != nil || f.Run.Tools != nil {
 			t.Fatalf("run = %+v", f.Run)
 		}
@@ -29,7 +29,7 @@ func TestRun(t *testing.T) {
 	t.Run("set values, and an interval of 0s turns polling off", func(t *testing.T) {
 		for k, v := range map[string]string{
 			"KRITIK_POLL_INTERVAL": "0s", "KRITIK_POLL_LOOKBACK": "1h", "KRITIK_ONBOARD_WINDOW": "8", "KRITIK_INDEX_GRACE": "48h",
-			"KRITIK_TRANSCRIPT_RETENTION": "72h", "KRITIK_RUNNER_DEADLINE": "10m",
+			"KRITIK_TRANSCRIPT_RETENTION": "72h", "KRITIK_DIFF_RETENTION": "96h", "KRITIK_RUNNER_DEADLINE": "10m",
 			"KRITIK_RUNNER_RESOURCES": `{"limits":{"memory":"1Gi"}}`,
 		} {
 			t.Setenv(k, v)
@@ -37,7 +37,7 @@ func TestRun(t *testing.T) {
 		f := mustLoad(t, minimal)
 		deadline, resources := f.RunnerFor()
 		if f.PollInterval() != 0 || f.PollLookback() != time.Hour || f.OnboardWindow() != 8 || f.DisabledIndexGrace() != 48*time.Hour ||
-			f.TranscriptRetention() != 72*time.Hour || deadline != 10*time.Minute || resources["limits"] == nil {
+			f.TranscriptRetention() != 72*time.Hour || f.DiffRetention() != 96*time.Hour || deadline != 10*time.Minute || resources["limits"] == nil {
 			t.Fatalf("run = %+v", f.Run)
 		}
 	})
@@ -46,6 +46,7 @@ func TestRun(t *testing.T) {
 		{"KRITIK_POLL_INTERVAL", "-1m", "must not be negative"},
 		{"KRITIK_ONBOARD_WINDOW", "0", "KRITIK_ONBOARD_WINDOW must be positive"},
 		{"KRITIK_TRANSCRIPT_RETENTION", "1h", "KRITIK_TRANSCRIPT_RETENTION must be at least 24h"},
+		{"KRITIK_DIFF_RETENTION", "1h", "KRITIK_DIFF_RETENTION must be at least 24h"},
 		{"KRITIK_RUNNER_DEADLINE", fmt.Sprintf("%ds", int64(jobtimeout.MaxRunnerDeadline.Seconds())+1), "KRITIK_RUNNER_DEADLINE must not exceed"},
 		{"KRITIK_RUNNER_RESOURCES", "[1]", "KRITIK_RUNNER_RESOURCES"},
 		{"KRITIK_POLL_LOOKBACK", "soon", "KRITIK_POLL_LOOKBACK"},

@@ -29,7 +29,12 @@
   });
 </script>
 
-<StateView {res} retry={() => res.load()} isEmpty={(x) => !x.diff && !x.deltaDiff} empty="No diff recorded for this review.">
+<StateView
+  {res}
+  retry={() => res.load()}
+  isEmpty={(x) => !x.diff && !x.deltaDiff}
+  empty={res.data?.swept ? 'The diff was not kept past the retention window.' : 'No diff recorded for this review.'}
+>
   {#snippet children(x)}
     <div class="toolbar">
       <span class="small muted">{files.length} file{files.length === 1 ? '' : 's'}</span>

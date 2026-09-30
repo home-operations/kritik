@@ -158,6 +158,7 @@ tests:
       config.pollInterval: 0s
       config.onboardWindow: 8
       config.transcriptRetention: 48h
+      config.diffRetention: 72h
       runner.deadline: 20m
       runner.resources: { limits: { memory: 1Gi } }
       runner.tools: [{ name: helm, image: registry.example/helm:3 }]
@@ -171,6 +172,9 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIK_TRANSCRIPT_RETENTION, value: 48h }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIK_DIFF_RETENTION, value: 72h }
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIK_RUNNER_DEADLINE, value: 20m }

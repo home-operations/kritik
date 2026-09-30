@@ -288,6 +288,7 @@ Kubernetes: `>=1.25.0-0`
 | auth.oidc.rolesClaim | string | `""` | ID token or UserInfo claim a role mapping reads as `roles`. |
 | auth.oidc.scopes | list | `[]` | Scopes to request; empty is openid, email and profile. |
 | auth.sessionTTL | string | `""` | How long a dashboard session lasts (Go duration, 5m to 720h); empty is 12h. |
+| config.diffRetention | string | `""` | How long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h (KRITIK_DIFF_RETENTION, Go duration). Empty is kritik's default, 720h. |
 | config.existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. A change to it takes a restart. |
 | config.extraEnv | list | `[]` | Extra raw env vars merged into every role's container (advanced). |
 | config.file | optional | `{}` | The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
