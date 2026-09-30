@@ -186,16 +186,15 @@ export interface ReviewBlock {
   instructions: string[];
   requireSuggestedFix: boolean;
   templates: { summary?: string; inline?: string };
-  minSeverity: '' | 'nit' | 'important';
   inlineComments: boolean;
   context: ContextFile[];
-  thoroughness: Thoroughness;
+  feedback: Feedback;
   agentFiles: boolean;
 }
 
-// What a review reports: anything a maintainer could act on, or only what
-// would stop the review.
-export type Thoroughness = 'thorough' | 'focused';
+// How much a review says: anything a maintainer could act on, the same
+// with nits kept to the summary, or only bugs, risks and breaking changes.
+export type Feedback = 'detailed' | 'standard' | 'minimal';
 
 // What a repository's .kritik.yaml may choose; a null bound leaves it the
 // admin's own value, or a limit or settle time at or below it.

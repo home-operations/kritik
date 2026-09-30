@@ -185,7 +185,7 @@ defaults:
     review: openrouter/vendor/large-model
     fallback: openrouter/vendor/small-model
   mode: agentic
-  review: { thoroughness: thorough }
+  review: { feedback: detailed }
   forks: false
   settle: 30s
 embedding:
@@ -199,8 +199,8 @@ A provider is `type` (`openrouter`, `openai` or `anthropic`), an optional
 `baseUrl` and `pricing`, and its `apiKey`. A model is named
 `<provider>/<model>`, on a provider the file declares.
 `mode` is `agentic` (the default, which needs the chart's `gateway`) or
-`single`, `review.thoroughness` is `thorough` or
-`focused` ([repository settings](repository-config.md)), `forks: true`
+`single`, `review.feedback` is `detailed`, `standard` or `minimal`
+([repository settings](repository-config.md)), `forks: true`
 reviews pull requests from forks without being asked (by default one is
 reviewed only when a maintainer comments `@<app slug> review`), and
 `settle` delays a review after a push so a burst of pushes is reviewed
@@ -209,22 +209,22 @@ what every account inherits.
 
 The same defaults can come from the environment:
 
-| Variable                              | Key                                                                                   |
-| ------------------------------------- | ------------------------------------------------------------------------------------- |
-| `KRITIK_PROVIDERS_NAME`               | the provider's name, `openrouter` unless set                                          |
-| `KRITIK_PROVIDERS_TYPE`               | `type`, which defaults to the name when that is `openrouter`, `openai` or `anthropic` |
-| `KRITIK_PROVIDERS_BASE_URL`           | `baseUrl`                                                                             |
-| `KRITIK_PROVIDERS_API_KEY[_FILE]`     | `apiKey`, or a file's path                                                            |
-| `KRITIK_DEFAULTS_MODELS_REVIEW`       | `defaults.models.review`                                                              |
-| `KRITIK_DEFAULTS_MODELS_FALLBACK`     | `defaults.models.fallback`                                                            |
-| `KRITIK_DEFAULTS_MODE`                | `defaults.mode`                                                                       |
-| `KRITIK_DEFAULTS_REVIEW_THOROUGHNESS` | `defaults.review.thoroughness`                                                        |
-| `KRITIK_DEFAULTS_FORKS`               | `defaults.forks`, `true` or `false`                                                   |
-| `KRITIK_DEFAULTS_SETTLE`              | `defaults.settle`, a duration such as `30s`                                           |
-| `KRITIK_EMBEDDING_BASE_URL`           | `embedding.baseUrl`                                                                   |
-| `KRITIK_EMBEDDING_API_KEY[_FILE]`     | `embedding.apiKey`, or a file's path                                                  |
-| `KRITIK_EMBEDDING_MODEL`              | `embedding.model`                                                                     |
-| `KRITIK_EMBEDDING_DIMS`               | `embedding.dims`                                                                      |
+| Variable                          | Key                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------- |
+| `KRITIK_PROVIDERS_NAME`           | the provider's name, `openrouter` unless set                                          |
+| `KRITIK_PROVIDERS_TYPE`           | `type`, which defaults to the name when that is `openrouter`, `openai` or `anthropic` |
+| `KRITIK_PROVIDERS_BASE_URL`       | `baseUrl`                                                                             |
+| `KRITIK_PROVIDERS_API_KEY[_FILE]` | `apiKey`, or a file's path                                                            |
+| `KRITIK_DEFAULTS_MODELS_REVIEW`   | `defaults.models.review`                                                              |
+| `KRITIK_DEFAULTS_MODELS_FALLBACK` | `defaults.models.fallback`                                                            |
+| `KRITIK_DEFAULTS_MODE`            | `defaults.mode`                                                                       |
+| `KRITIK_DEFAULTS_FEEDBACK`        | `defaults.review.feedback`                                                            |
+| `KRITIK_DEFAULTS_FORKS`           | `defaults.forks`, `true` or `false`                                                   |
+| `KRITIK_DEFAULTS_SETTLE`          | `defaults.settle`, a duration such as `30s`                                           |
+| `KRITIK_EMBEDDING_BASE_URL`       | `embedding.baseUrl`                                                                   |
+| `KRITIK_EMBEDDING_API_KEY[_FILE]` | `embedding.apiKey`, or a file's path                                                  |
+| `KRITIK_EMBEDDING_MODEL`          | `embedding.model`                                                                     |
+| `KRITIK_EMBEDDING_DIMS`           | `embedding.dims`                                                                      |
 
 The environment declares at most one provider, which replaces the file's
 of the same name whole or is added to the file's. The embedding variables

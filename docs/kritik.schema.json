@@ -100,10 +100,6 @@
             "inline": { "$ref": "#/$defs/path" }
           }
         },
-        "minSeverity": {
-          "enum": ["nit", "important"],
-          "description": "The least severe finding posted inline; blocking findings always are."
-        },
         "inlineComments": {
           "type": "boolean",
           "description": "false posts the summary alone."
@@ -112,9 +108,9 @@
           "type": "boolean",
           "description": "false leaves the repository's AGENTS.md and CLAUDE.md files out of the instructions."
         },
-        "thoroughness": {
-          "enum": ["thorough", "focused"],
-          "description": "What the reviewer reports: thorough, anything a maintainer could act on, or focused, only what would stop the review."
+        "feedback": {
+          "enum": ["detailed", "standard", "minimal"],
+          "description": "How much the review says: detailed, anything a maintainer could act on, every finding inline; standard, the same with nits kept to the summary; minimal, only bugs, risks and breaking changes."
         },
         "context": {
           "type": "array",

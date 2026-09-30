@@ -333,11 +333,13 @@ func TestPostsInline(t *testing.T) {
 		review configfile.Review
 		want   map[review.Severity]bool
 	}{
-		{"every finding", configfile.Review{InlineComments: true},
+		{"every finding, detailed", configfile.Review{InlineComments: true, Feedback: configfile.FeedbackDetailed},
 			map[review.Severity]bool{review.SeverityBlocking: true, review.SeverityImportant: true, review.SeverityNit: true}},
-		{"at or above the floor", configfile.Review{InlineComments: true, MinSeverity: configfile.SeverityImportant},
+		{"every finding, minimal", configfile.Review{InlineComments: true, Feedback: configfile.FeedbackMinimal},
+			map[review.Severity]bool{review.SeverityBlocking: true, review.SeverityImportant: true, review.SeverityNit: true}},
+		{"nits to the summary, standard", configfile.Review{InlineComments: true, Feedback: configfile.FeedbackStandard},
 			map[review.Severity]bool{review.SeverityBlocking: true, review.SeverityImportant: true, review.SeverityNit: false}},
-		{"none with inline comments off", configfile.Review{MinSeverity: configfile.SeverityNit},
+		{"none with inline comments off", configfile.Review{Feedback: configfile.FeedbackDetailed},
 			map[review.Severity]bool{review.SeverityBlocking: false, review.SeverityImportant: false, review.SeverityNit: false}},
 	}
 	for _, tt := range tests {

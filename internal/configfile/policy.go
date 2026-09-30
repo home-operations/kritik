@@ -71,10 +71,10 @@ const (
 
 // The keys the file's defaults set as well (instance.go).
 const (
-	keyMode         = "mode"
-	keyThoroughness = "review.thoroughness"
-	keyForks        = "forks"
-	keySettle       = "settle"
+	keyMode     = "mode"
+	keyFeedback = "review.feedback"
+	keyForks    = "forks"
+	keySettle   = "settle"
 )
 
 // Policies is the table.
@@ -100,9 +100,8 @@ var Policies = []Policy{
 	{Key: "review.templates", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "review.context", Scopes: everyScope, Repository: RepoAppend},
 	{Key: "review.rules", Scopes: everyScope, Repository: RepoAppend},
-	{Key: "review.minSeverity", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "review.inlineComments", Scopes: everyScope, Repository: RepoReplace},
-	{Key: keyThoroughness, Scopes: everyScope, Repository: RepoReplace},
+	{Key: keyFeedback, Scopes: everyScope, Repository: RepoReplace},
 	{Key: "review.agentFiles", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "allow", Scopes: everyScope},
 	{Key: "limits", Scopes: accountScopes},

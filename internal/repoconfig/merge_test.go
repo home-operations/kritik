@@ -72,22 +72,16 @@ func TestMerge(t *testing.T) {
 		{name: "a rule without an id", doc: "review:\n  rules: [{ rule: Never log a token. }]\n", wantErr: `review.rules[0].id "" must be`},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
-			name: "presentation replaces the admin's", doc: "review: { minSeverity: important, inlineComments: false, agentFiles: false }\n",
-			want: func(s *configfile.Settings) {
-				s.Review.MinSeverity, s.Review.InlineComments, s.Review.AgentFiles = configfile.SeverityImportant, false, false
-			},
+			name: "presentation replaces the admin's", doc: "review: { inlineComments: false, agentFiles: false }\n",
+			want: func(s *configfile.Settings) { s.Review.InlineComments, s.Review.AgentFiles = false, false },
 		},
 		{
-			name: "thoroughness replaces the admin's", doc: "review: { thoroughness: focused }\n",
-			want: func(s *configfile.Settings) { s.Review.Thoroughness = configfile.ThoroughnessFocused },
+			name: "feedback replaces the admin's", doc: "review: { feedback: minimal }\n",
+			want: func(s *configfile.Settings) { s.Review.Feedback = configfile.FeedbackMinimal },
 		},
 		{
-			name: "an unknown thoroughness is dropped", doc: "review: { thoroughness: exhaustive }\n",
-			dropped: []string{`.kritik.yaml: review.thoroughness "exhaustive" was dropped; allowed: thorough, focused`},
-		},
-		{
-			name: "an unknown severity floor is dropped", doc: "review: { minSeverity: blocking }\n",
-			dropped: []string{`.kritik.yaml: review.minSeverity "blocking" was dropped; allowed: nit, important`},
+			name: "an unknown feedback level is dropped", doc: "review: { feedback: exhaustive }\n",
+			dropped: []string{`.kritik.yaml: review.feedback "exhaustive" was dropped; allowed: detailed, standard or minimal`},
 		},
 		{
 			name: "requireSuggestedFix may only turn on", doc: "review:\n  requireSuggestedFix: false\n",

@@ -125,32 +125,32 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 }
 
 // TestFileReviewDefaults: the file and the environment set the defaults'
-// mode, thoroughness, forks and settle, which accounts inherit with the
+// mode, feedback, forks and settle, which accounts inherit with the
 // defaults' or the environment's source.
 func TestFileReviewDefaults(t *testing.T) {
 	setInstanceEnv(t)
 	t.Setenv("KRITIK_DEFAULTS_SETTLE", "45s")
 	models := "  models: { review: openrouter/big, fallback: openrouter/small }\n"
 	withDefaults := func(extra string) []byte { return []byte(strings.Replace(fileWithDefaults, models, models+extra, 1)) }
-	f, err := Parse(withDefaults("  mode: agentic\n  forks: true\n  review: { thoroughness: focused }\n"))
+	f, err := Parse(withDefaults("  mode: agentic\n  forks: true\n  review: { feedback: minimal }\n"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	a := &f.Accounts[0]
 	s := f.Settings(a, "acme/x")
-	if s.Mode != ReviewAgentic || !s.Forks || s.Settle != 45*time.Second || s.Review.Thoroughness != ThoroughnessFocused {
-		t.Fatalf("settings = mode %s forks %v settle %s thoroughness %s; want the file's and the environment's",
-			s.Mode, s.Forks, s.Settle, s.Review.Thoroughness)
+	if s.Mode != ReviewAgentic || !s.Forks || s.Settle != 45*time.Second || s.Review.Feedback != FeedbackMinimal {
+		t.Fatalf("settings = mode %s forks %v settle %s feedback %s; want the file's and the environment's",
+			s.Mode, s.Forks, s.Settle, s.Review.Feedback)
 	}
 	src := f.Sources(a, "acme/x")
-	for key, want := range map[string]Source{"mode": SourceDefaults, "forks": SourceDefaults, "settle": SourceEnv, "review.thoroughness": SourceDefaults} {
+	for key, want := range map[string]Source{"mode": SourceDefaults, "forks": SourceDefaults, "settle": SourceEnv, "review.feedback": SourceDefaults} {
 		if src[key] != want {
 			t.Errorf("source of %s = %s, want %s", key, src[key], want)
 		}
 	}
 	want := []FileDefault{
 		{"mode", FileValue{Value: "agentic", Source: SourceFile}},
-		{"review.thoroughness", FileValue{Value: "focused", Source: SourceFile}},
+		{"review.feedback", FileValue{Value: "minimal", Source: SourceFile}},
 		{"forks", FileValue{Value: "true", Source: SourceFile}},
 		{"settle", FileValue{Value: "45s", Source: SourceEnv}},
 	}
