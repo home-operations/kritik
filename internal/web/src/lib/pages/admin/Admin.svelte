@@ -2,12 +2,11 @@
   import { accountApi } from '../../links';
   import { isAdmin, session } from '../../session.svelte';
   import AuditTable from '../../components/AuditTable.svelte';
-  import ConfigSection from './ConfigSection.svelte';
 
   let { slug, section }: { slug: string; section?: string } = $props();
 
-  const SECTIONS: Record<string, string> = { config: 'Configuration', audit: 'Audit log' };
-  const current = $derived(section ?? 'config');
+  const SECTIONS: Record<string, string> = { audit: 'Audit log' };
+  const current = $derived(section ?? 'audit');
   const title = $derived(Object.hasOwn(SECTIONS, current) ? SECTIONS[current] : 'Settings');
 </script>
 
@@ -24,8 +23,6 @@
       <p class="state-msg" role="alert">Only an admin can see this page.</p>
     {:else if !Object.hasOwn(SECTIONS, current)}
       <p class="state-msg">No such section.</p>
-    {:else if current === 'config'}
-      <ConfigSection {slug} />
     {:else}
       <section class="panel">
         <AuditTable path={`${accountApi(slug)}/audit`} />

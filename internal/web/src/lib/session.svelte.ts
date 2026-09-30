@@ -24,10 +24,6 @@ export function hookURL(path: string): string {
   return (session.meta?.webUrl ?? '').replace(/\/+$/, '') + path;
 }
 
-export function management(): boolean {
-  return session.meta?.management === true;
-}
-
 // isAdmin is whether the viewer administers the instance, and with it every
 // account.
 export function isAdmin(): boolean {

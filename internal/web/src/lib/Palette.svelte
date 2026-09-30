@@ -1,9 +1,9 @@
 <script lang="ts">
   // The Cmd/Ctrl+K command palette: jump to any page from anywhere, from a
   // registry of routes (global pages, plus the current account's pages when
-  // the active route is inside one). A search also finds the settings an
-  // admin edits: each section and field, which the palette focuses once its
-  // page shows it.
+  // the active route is inside one). A search also finds the sections of
+  // the admin Configuration page, which the palette focuses once its page
+  // shows them.
   import type { Route } from './router.svelte';
   import { router, navigate } from './router.svelte';
   import { palette, togglePalette } from './keyboard.svelte';
@@ -11,7 +11,7 @@
   import type { Me, Page, Pull } from './types';
   import { getJSON } from './api.svelte';
   import { pullRoute, accountApi } from './links';
-  import { CONSOLE_SECTIONS, ACCOUNT_FIELDS } from './settingsindex';
+  import { CONSOLE_SECTIONS } from './settingsindex';
   import { focusWhenShown } from './focus';
   import {
     mdiMagnify,
@@ -24,7 +24,6 @@
     mdiClipboardTextClockOutline,
     mdiCogOutline,
     mdiViewGridOutline,
-    mdiTuneVariant,
     mdiBugOutline,
     mdiChartBoxOutline,
     mdiScaleBalance,
@@ -49,16 +48,16 @@
     return 'slug' in r ? r.slug : undefined;
   }
 
-  // Gated the same way as the settings navigation: the admin console and
-  // each account's configuration and audit log are for admins, and "Sign
-  // in" only makes sense when there's no session yet.
+  // Gated the same way as the settings navigation: the Configuration page
+  // and each account's audit log are for admins, and "Sign in" only makes
+  // sense when there's no session yet.
   function buildEntries(r: Route, searching: boolean): Entry[] {
     const entries: Entry[] = [{ label: 'All accounts', route: { name: 'overview' }, icon: mdiViewGridOutline }];
     if (me?.admin) {
-      entries.push({ label: 'Admin console', route: { name: 'console' }, icon: mdiConsoleLine });
+      entries.push({ label: 'Configuration', route: { name: 'console' }, icon: mdiConsoleLine, keywords: 'admin console settings' });
       if (searching) {
         for (const { label, target, keywords } of CONSOLE_SECTIONS) {
-          entries.push({ label, hint: 'admin console', route: { name: 'console' }, icon: mdiCogOutline, target, keywords });
+          entries.push({ label, hint: 'configuration', route: { name: 'console' }, icon: mdiCogOutline, target, keywords });
         }
       }
     }
@@ -81,17 +80,7 @@
         { label: 'Follow-ups', hint: slug, route: { name: 'followups', slug }, icon: mdiClipboardTextClockOutline },
       );
       if (me?.admin) {
-        entries.push(
-          { label: 'Configuration', hint: slug, route: { name: 'admin', slug, section: 'config' }, icon: mdiTuneVariant, keywords: 'admin settings' },
-          { label: 'Audit log', hint: slug, route: { name: 'admin', slug, section: 'audit' }, icon: mdiClipboardTextClockOutline, keywords: 'history' },
-        );
-        if (searching) {
-          for (const { label, target, keywords } of ACCOUNT_FIELDS) {
-            entries.push({
-              label, hint: `${slug} settings`, route: { name: 'admin', slug, section: 'config' }, icon: mdiCogOutline, target, keywords,
-            });
-          }
-        }
+        entries.push({ label: 'Audit log', hint: slug, route: { name: 'admin', slug, section: 'audit' }, icon: mdiClipboardTextClockOutline, keywords: 'history' });
       }
     }
     for (const p of recent) {

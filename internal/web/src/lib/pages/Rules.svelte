@@ -8,7 +8,6 @@
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
-  import { isAdmin } from '../session.svelte';
   import { parseTokens, type TokenSpec } from '../tokensearch';
   import type { Rule, RuleKind, RuleSource } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -72,10 +71,9 @@
       <h1>Rules</h1>
       <p class="muted small">
         What reviews check: rules written in the configuration, instruction files they follow, and context files that explain the
-        code. Files live in each repository, named by the configuration's <span class="mono">review.instructions</span> and
-        <span class="mono">review.context</span>
-        {#if isAdmin()}(<a href={href({ name: 'admin', slug, section: 'config' })}>Configuration</a>){/if}
-        or by the repository's own <span class="mono">.kritik.yaml</span>.
+        code. Rules are written, and files named, under <span class="mono">review.rules</span>,
+        <span class="mono">review.instructions</span> and <span class="mono">review.context</span> in the configuration file or
+        a repository's own <span class="mono">.kritik.yaml</span>.
       </p>
     </header>
     <div class="toolbar" role="search">
