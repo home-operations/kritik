@@ -59,11 +59,11 @@ auth:
     clientId: kritik-client
     clientSecret: { env: KRITIK_TEST_TOKEN }
     rolesClaim: groups
-    roleMapping: '"ops" in roles ? "admin" : ("staff" in roles ? "member" : "")'
+    roleMappingExpr: '"ops" in roles ? "admin" : ("staff" in roles ? "member" : "")'
   github:
     clientId: kritik-client
     clientSecret: { env: KRITIK_TEST_TOKEN }
-    roleMapping: 'login == "opgh" ? "admin" : ("mapped-org" in orgs ? dyn({"github/acme": "member"}) : "")'
+    roleMappingExpr: 'login == "opgh" ? "admin" : ("mapped-org" in orgs ? dyn({"github/acme": "member"}) : "")'
 apps:
   - {name: auth-personal-bot, accounts: [alice-gh], clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}
   - {name: auth-acme-bot, accounts: [acme], clientId: Iv1.x, privateKey: {env: KRITIK_TEST_TOKEN}, webhookSecret: {env: KRITIK_TEST_TOKEN}}

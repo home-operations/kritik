@@ -97,8 +97,8 @@ auth:
     scopes: []
     # -- ID token or UserInfo claim a role mapping reads as `roles`.
     rolesClaim: ""
-    # -- CEL expression giving a role, or a map of accounts to roles (docs/configuration.md).
-    roleMapping: ""
+    # -- CEL expression giving a role, or a map of accounts to roles (KRITIK_AUTH_OIDC_ROLE_MAPPING_EXPR, docs/configuration.md).
+    roleMappingExpr: ""
     # -- Role when the mapping places nobody: none (the default) or member.
     defaultRole: ""
   github:
@@ -109,8 +109,8 @@ auth:
       name: ""
       # -- Key in that Secret.
       key: client-secret
-    # -- CEL expression giving a role, or a map of accounts to roles.
-    roleMapping: ""
+    # -- CEL expression giving a role, or a map of accounts to roles (KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR).
+    roleMappingExpr: ""
 
 # The configuration file holds the whole configuration (ADR-0019,
 # ADR-0021): sign-in (`auth`), the GitHub `apps`, the instance's

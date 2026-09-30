@@ -20,8 +20,8 @@ func TestParse_Invalid(t *testing.T) {
 		{"unknown key", "foo: bar\n"},
 		{"bad ignore glob", "ignore:\n  - \"[\"\n"},
 		{"skip is gone", "skip:\n  onlyPaths:\n    - \"**/*.md\"\n"},
-		{"bad filter syntax", "filter: \"pr.draft &&\"\n"},
-		{"filter not bool", "filter: \"pr.title\"\n"},
+		{"bad filter syntax", "filterExpr: \"pr.draft &&\"\n"},
+		{"filter not bool", "filterExpr: \"pr.title\"\n"},
 		{"absolute rule file", "rules: [{ id: a, file: /etc/passwd }]\n"},
 		{"rule file escapes repo", "rules: [{ id: a, file: ../x }]\n"},
 		{"rule with both a rule and a file", "rules: [{ id: a, rule: Check., file: x.md }]\n"},
@@ -59,7 +59,7 @@ func TestParse_Valid(t *testing.T) {
 	t.Run("all fields", func(t *testing.T) {
 		t.Parallel()
 		doc := []byte(`enabled: true
-filter: '!pr.draft'
+filterExpr: '!pr.draft'
 ignore:
   - "**/*.md"
 rules:
@@ -80,8 +80,8 @@ comments:
 		if f.Enabled == nil || !*f.Enabled {
 			t.Fatalf("Enabled = %v, want true", f.Enabled)
 		}
-		if f.Filter != "!pr.draft" {
-			t.Fatalf("Filter = %q, want %q", f.Filter, "!pr.draft")
+		if f.FilterExpr != "!pr.draft" {
+			t.Fatalf("FilterExpr = %q, want %q", f.FilterExpr, "!pr.draft")
 		}
 		if !slices.Equal(f.Ignore, []string{"**/*.md"}) {
 			t.Fatalf("Ignore = %v", f.Ignore)

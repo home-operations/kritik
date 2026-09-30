@@ -42,7 +42,7 @@
       "type": "boolean",
       "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."
     },
-    "filter": {
+    "filterExpr": {
       "type": "string",
       "description": "A CEL expression over pr, ANDed with the admin's filter."
     },

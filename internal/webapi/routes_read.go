@@ -411,7 +411,7 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		if s.Issuer != "" {
 			value += " at " + s.Issuer
 		}
-		if s.RoleMapping == "" {
+		if s.RoleMappingExpr == "" {
 			value += ", no role mapping"
 		}
 		add("auth", string(s.Type()), value, authFrom(string(s.Type())+".clientId", true))

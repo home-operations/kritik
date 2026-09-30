@@ -262,14 +262,14 @@ Kubernetes: `>=1.25.0-0`
 | auth.github.clientId | string | `""` | Client ID of an OAuth App, or of a GitHub App, to sign in with GitHub. |
 | auth.github.clientSecretSecret.key | string | `"client-secret"` | Key in that Secret. |
 | auth.github.clientSecretSecret.name | string | `""` | Existing Secret holding the client secret. |
-| auth.github.roleMapping | string | `""` | CEL expression giving a role, or a map of accounts to roles. |
+| auth.github.roleMappingExpr | string | `""` | CEL expression giving a role, or a map of accounts to roles (KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR). |
 | auth.oidc.clientId | string | `""` | OAuth client ID at the issuer. |
 | auth.oidc.clientSecretSecret.key | string | `"client-secret"` | Key in that Secret. |
 | auth.oidc.clientSecretSecret.name | string | `""` | Existing Secret holding the client secret. |
 | auth.oidc.defaultRole | string | `""` | Role when the mapping places nobody: none (the default) or member. |
 | auth.oidc.issuer | string | `""` | OIDC issuer (https); set, with a client, to sign in through it. |
 | auth.oidc.name | string | `""` | The sign-in button's label; empty is "SSO". |
-| auth.oidc.roleMapping | string | `""` | CEL expression giving a role, or a map of accounts to roles (docs/configuration.md). |
+| auth.oidc.roleMappingExpr | string | `""` | CEL expression giving a role, or a map of accounts to roles (KRITIK_AUTH_OIDC_ROLE_MAPPING_EXPR, docs/configuration.md). |
 | auth.oidc.rolesClaim | string | `""` | ID token or UserInfo claim a role mapping reads as `roles`. |
 | auth.oidc.scopes | list | `[]` | Scopes to request; empty is openid, email and profile. |
 | auth.sessionTTL | string | `""` | How long a dashboard session lasts (Go duration, 5m to 720h); empty is 12h. |

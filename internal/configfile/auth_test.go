@@ -19,12 +19,12 @@ const authMinimal = `auth:
     clientSecret: { env: TEST_WEBHOOK_SECRET }
     scopes: [openid, profile, email]
     rolesClaim: "urn:zitadel:iam:org:project:1:roles"
-    roleMapping: '"kritik-admin" in roles ? "admin" : ("kritik-user" in roles ? "member" : "")'
+    roleMappingExpr: '"kritik-admin" in roles ? "admin" : ("kritik-user" in roles ? "member" : "")'
     defaultRole: none
   github:
     clientId: Iv1.x
     clientSecret: { env: TEST_WEBHOOK_SECRET }
-    roleMapping: 'login == "user-1" ? "admin" : ""'
+    roleMappingExpr: 'login == "user-1" ? "admin" : ""'
 `
 
 func authEnv(t *testing.T) {
@@ -84,7 +84,7 @@ func TestAuthRejects(t *testing.T) {
 		{"empty password", rep("TEST_ADMIN_PASSWORD", "TEST_EMPTY"), "auth.admin.password resolved to an empty value"},
 		{"blank admin user", rep("  admin:\n", "  admin:\n    user: ' '\n"), "auth.admin.user must not be blank"},
 		{"unknown default role", rep("defaultRole: none", "defaultRole: admin"), "auth.oidc.defaultRole must be none or member"},
-		{"bad mapping", rep(`roleMapping: 'login == "user-1" ? "admin" : ""'`, `roleMapping: 'claims.x'`), "auth.github.roleMapping"},
+		{"bad mapping", rep(`roleMappingExpr: 'login == "user-1" ? "admin" : ""'`, `roleMappingExpr: 'claims.x'`), "auth.github.roleMappingExpr"},
 		{"ttl too short", rep("sessionTTL: 8h", "sessionTTL: 1m"), "auth.sessionTTL"},
 		{"ttl too long", rep("sessionTTL: 8h", "sessionTTL: 800h"), "auth.sessionTTL"},
 		{"the old web block", "web:\n  sessionTTL: 8h\n" + minimal, "field web not found"},
@@ -123,7 +123,7 @@ func TestAuthEnv(t *testing.T) {
 		"KRITIK_AUTH_OIDC_DEFAULT_ROLE":         "member",
 		"KRITIK_AUTH_GITHUB_CLIENT_ID":          "Iv1.env",
 		"KRITIK_AUTH_GITHUB_CLIENT_SECRET_FILE": secret,
-		"KRITIK_AUTH_GITHUB_ROLE_MAPPING":       `"org-1" in orgs ? "admin" : ""`,
+		"KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR":  `"org-1" in orgs ? "admin" : ""`,
 	} {
 		t.Setenv(k, v)
 	}
@@ -141,7 +141,7 @@ func TestAuthEnv(t *testing.T) {
 	case oidc.Label() != "SSO", oidc.Issuer != "https://idp.example.com", strings.Join(oidc.Scopes, " ") != "openid groups",
 		!oidc.MembersByDefault(), oidc.ClientID != "kritik":
 		t.Fatalf("oidc = %+v", oidc)
-	case gh.ClientID != "Iv1.env", gh.ClientSecretValue().Value() != "from-file", gh.RoleMapping != `"org-1" in orgs ? "admin" : ""`:
+	case gh.ClientID != "Iv1.env", gh.ClientSecretValue().Value() != "from-file", gh.RoleMappingExpr != `"org-1" in orgs ? "admin" : ""`:
 		t.Fatalf("github = %+v", gh)
 	}
 	for path, want := range map[string]bool{"oidc.issuer": true, "github.clientSecret": true, "oidc.clientId": false} {

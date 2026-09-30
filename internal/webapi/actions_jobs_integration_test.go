@@ -34,7 +34,7 @@ auth:
     issuer: https://idp.example
     clientId: kritik
     clientSecret: { env: KRITIK_TEST_TOKEN }
-    roleMapping: '"kritik-admin" in roles ? "admin" : ""'
+    roleMappingExpr: '"kritik-admin" in roles ? "admin" : ""'
 apps:
   - name: aj-bot
     accounts: [aj]

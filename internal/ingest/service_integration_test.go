@@ -53,9 +53,9 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
 	f := configfiletest.Load(t, configYAML+`repositories:
-  onedr0p/*: { filter: "!pr.draft" }
+  onedr0p/*: { filterExpr: "!pr.draft" }
   onedr0p/settle: { settle: 60s }
-  onedr0p/opened-only: { filter: 'pr.event == "opened"' }
+  onedr0p/opened-only: { filterExpr: 'pr.event == "opened"' }
 `)
 	if err := st.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)

@@ -71,7 +71,7 @@ func TestLocalSignInRefuses(t *testing.T) {
 		t.Fatalf("cross-origin: %d, want 403", w.Code)
 	}
 
-	h.current.Set(testFile(t, "auth:\n  github:\n    clientId: c\n    clientSecret: { env: TEST_AUTH_SECRET }\n    roleMapping: '\"admin\"'\n"))
+	h.current.Set(testFile(t, "auth:\n  github:\n    clientId: c\n    clientSecret: { env: TEST_AUTH_SECRET }\n    roleMappingExpr: '\"admin\"'\n"))
 	if w := post(`{"user":"admin","password":"s3cret"}`, "10.0.0.2"); w.Code != http.StatusNotFound {
 		t.Fatalf("without a password: %d, want 404", w.Code)
 	}

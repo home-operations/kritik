@@ -81,7 +81,7 @@ type File struct {
 	Feedback            string                `yaml:"feedback,omitempty"`
 	Comments            Comments              `yaml:"comments,omitempty"`
 	RequireSuggestedFix *bool                 `yaml:"requireSuggestedFix,omitempty"`
-	Filter              string                `yaml:"filter,omitempty"`
+	FilterExpr          string                `yaml:"filterExpr,omitempty"`
 	Ignore              []string              `yaml:"ignore,omitempty"`
 	// Rules are checks added after the admin's; one may not replace an
 	// admin's rule.
@@ -130,14 +130,14 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 	}
 
 	var prg *prfilter.Program
-	if strings.TrimSpace(f.Filter) != "" {
+	if strings.TrimSpace(f.FilterExpr) != "" {
 		var err error
-		prg, err = prfilter.Compile(f.Filter)
+		prg, err = prfilter.Compile(f.FilterExpr)
 		if err != nil {
-			return File{}, nil, fmt.Errorf("repoconfig: filter: %w", err)
+			return File{}, nil, fmt.Errorf("repoconfig: filterExpr: %w", err)
 		}
 		if _, err := prg.Eval(configfile.SamplePR()); err != nil {
-			return File{}, nil, fmt.Errorf("repoconfig: filter: smoke test against a sample pull request: %w", err)
+			return File{}, nil, fmt.Errorf("repoconfig: filterExpr: smoke test against a sample pull request: %w", err)
 		}
 	}
 

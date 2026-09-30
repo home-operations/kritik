@@ -24,6 +24,9 @@ itself, or, with a `_FILE` suffix, the path of a file holding it. A
 variable under one of these prefixes that names no key is refused at
 startup rather than ignored.
 
+A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`:
+`filterExpr` and `roleMappingExpr`.
+
 Every replica re-reads the file on the chart's `config.reloadInterval`.
 Content that does not load, or that would leave the dashboard no way to
 sign in, is refused: the configuration before it keeps running,
@@ -36,22 +39,22 @@ fails the process instead.
 `auth` sets how people sign in and what each may do. The chart's `auth`
 values render its variables.
 
-| Key                   | Environment variable                       |
-| --------------------- | ------------------------------------------ |
-| `sessionTTL`          | `KRITIK_AUTH_SESSION_TTL`                  |
-| `admin.user`          | `KRITIK_AUTH_ADMIN_USER`                   |
-| `admin.password`      | `KRITIK_AUTH_ADMIN_PASSWORD[_FILE]`        |
-| `oidc.name`           | `KRITIK_AUTH_OIDC_NAME`                    |
-| `oidc.issuer`         | `KRITIK_AUTH_OIDC_ISSUER`                  |
-| `oidc.clientId`       | `KRITIK_AUTH_OIDC_CLIENT_ID`               |
-| `oidc.clientSecret`   | `KRITIK_AUTH_OIDC_CLIENT_SECRET[_FILE]`    |
-| `oidc.scopes`         | `KRITIK_AUTH_OIDC_SCOPES`, comma-separated |
-| `oidc.rolesClaim`     | `KRITIK_AUTH_OIDC_ROLES_CLAIM`             |
-| `oidc.roleMapping`    | `KRITIK_AUTH_OIDC_ROLE_MAPPING`            |
-| `oidc.defaultRole`    | `KRITIK_AUTH_OIDC_DEFAULT_ROLE`            |
-| `github.clientId`     | `KRITIK_AUTH_GITHUB_CLIENT_ID`             |
-| `github.clientSecret` | `KRITIK_AUTH_GITHUB_CLIENT_SECRET[_FILE]`  |
-| `github.roleMapping`  | `KRITIK_AUTH_GITHUB_ROLE_MAPPING`          |
+| Key                      | Environment variable                       |
+| ------------------------ | ------------------------------------------ |
+| `sessionTTL`             | `KRITIK_AUTH_SESSION_TTL`                  |
+| `admin.user`             | `KRITIK_AUTH_ADMIN_USER`                   |
+| `admin.password`         | `KRITIK_AUTH_ADMIN_PASSWORD[_FILE]`        |
+| `oidc.name`              | `KRITIK_AUTH_OIDC_NAME`                    |
+| `oidc.issuer`            | `KRITIK_AUTH_OIDC_ISSUER`                  |
+| `oidc.clientId`          | `KRITIK_AUTH_OIDC_CLIENT_ID`               |
+| `oidc.clientSecret`      | `KRITIK_AUTH_OIDC_CLIENT_SECRET[_FILE]`    |
+| `oidc.scopes`            | `KRITIK_AUTH_OIDC_SCOPES`, comma-separated |
+| `oidc.rolesClaim`        | `KRITIK_AUTH_OIDC_ROLES_CLAIM`             |
+| `oidc.roleMappingExpr`   | `KRITIK_AUTH_OIDC_ROLE_MAPPING_EXPR`       |
+| `oidc.defaultRole`       | `KRITIK_AUTH_OIDC_DEFAULT_ROLE`            |
+| `github.clientId`        | `KRITIK_AUTH_GITHUB_CLIENT_ID`             |
+| `github.clientSecret`    | `KRITIK_AUTH_GITHUB_CLIENT_SECRET[_FILE]`  |
+| `github.roleMappingExpr` | `KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR`     |
 
 ```yaml
 auth:
@@ -64,11 +67,11 @@ auth:
     clientSecret: { env: OIDC_CLIENT_SECRET }
     scopes: [openid, email, profile]
     rolesClaim: groups
-    roleMapping: '"kritik-admins" in roles ? "admin" : ("kritik-users" in roles ? "member" : "")'
+    roleMappingExpr: '"kritik-admins" in roles ? "admin" : ("kritik-users" in roles ? "member" : "")'
   github:
     clientId: Iv1.abc123
     clientSecret: { env: GITHUB_CLIENT_SECRET }
-    roleMapping: 'login == "user-1" ? "admin" : ""'
+    roleMappingExpr: 'login == "user-1" ? "admin" : ""'
 ```
 
 - `admin` is the local admin. It signs in on the sign-in page with a
@@ -88,7 +91,7 @@ A provider must allow the callback URL `<KRITIK_WEB_URL>/auth/callback/oidc`
 or `<KRITIK_WEB_URL>/auth/callback/github`. The dashboard refuses to start
 with no way to sign in, and a running one keeps its last good configuration
 when a reload would leave none. The configuration is refused when nothing
-could make an admin: set an admin password, or a `roleMapping` on a
+could make an admin: set an admin password, or a `roleMappingExpr` on a
 provider.
 
 ### Roles
@@ -113,7 +116,7 @@ the next request signs in again under the new rules.
 
 #### Role mappings
 
-A `roleMapping` is a [CEL](https://cel.dev) expression evaluated at
+A `roleMappingExpr` is a [CEL](https://cel.dev) expression evaluated at
 sign-in. It yields a role for every account, `"admin"`, `"member"` or `""`
 for none. Or it yields a map from forge account to `"member"`, which reads
 only the accounts serving those accounts, such as
@@ -232,7 +235,7 @@ repositories:
 
 Each takes the keys a repository's own `.kritik.yaml` takes, at the same
 level (`mode`, `models`, `feedback`, `comments`, `requireSuggestedFix`,
-`filter`, `ignore`, `rules`, `context` and `agentFiles`; see
+`filterExpr`, `ignore`, `rules`, `context` and `agentFiles`; see
 [the repository settings](repository-config.md)), and the admin's own:
 
 - `agent`: an agentic review's `maxSteps`, `maxToolOutputBytes`,

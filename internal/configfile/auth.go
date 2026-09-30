@@ -71,9 +71,9 @@ type SignIn struct {
 	// RolesClaim names the OIDC claim whose values, as a list or as the keys
 	// of a map, the role mapping sees as roles.
 	RolesClaim string `yaml:"rolesClaim,omitempty"`
-	// RoleMapping is a CEL expression deciding what a person may do; see
-	// package rolemap.
-	RoleMapping string `yaml:"roleMapping,omitempty"`
+	// RoleMappingExpr is a CEL expression deciding what a person may do;
+	// see package rolemap. A key whose value is CEL ends in Expr.
+	RoleMappingExpr string `yaml:"roleMappingExpr,omitempty"`
 	// DefaultRole is what an OIDC sign-in the mapping does not place gets:
 	// none, refused, unless set to member, which reads every account.
 	DefaultRole string `yaml:"defaultRole,omitempty"`
@@ -203,9 +203,9 @@ func (a *Auth) resolve() error {
 			return fmt.Errorf("configfile: %s.clientSecret: %w", where, err)
 		}
 		s.signIn.clientSecret = v
-		if s.signIn.RoleMapping != "" {
-			if s.signIn.mapping, err = rolemap.Compile(s.kind, s.signIn.RoleMapping); err != nil {
-				return fmt.Errorf("configfile: %s.roleMapping: %w", where, err)
+		if s.signIn.RoleMappingExpr != "" {
+			if s.signIn.mapping, err = rolemap.Compile(s.kind, s.signIn.RoleMappingExpr); err != nil {
+				return fmt.Errorf("configfile: %s.roleMappingExpr: %w", where, err)
 			}
 		}
 	}
@@ -232,7 +232,7 @@ func (a Auth) validate() error {
 	_, _, local := a.AdminUser()
 	mapped := slices.ContainsFunc(a.SignIns(), func(s *SignIn) bool { return s.mapping != nil })
 	if len(a.SignIns()) > 0 && !local && !mapped {
-		return errors.New("configfile: auth: no way to sign in as an admin: set auth.admin.password, or a roleMapping on a sign-in")
+		return errors.New("configfile: auth: no way to sign in as an admin: set auth.admin.password, or a roleMappingExpr on a sign-in")
 	}
 	return nil
 }
@@ -323,16 +323,16 @@ func (a *Auth) overlayEnv(environ []string) error {
 			a.oidc().Scopes, path = envList(value), "oidc.scopes"
 		case "OIDC_ROLES_CLAIM":
 			a.oidc().RolesClaim, path = value, "oidc.rolesClaim"
-		case "OIDC_ROLE_MAPPING":
-			a.oidc().RoleMapping, path = value, "oidc.roleMapping"
+		case "OIDC_ROLE_MAPPING_EXPR":
+			a.oidc().RoleMappingExpr, path = value, "oidc.roleMappingExpr"
 		case "OIDC_DEFAULT_ROLE":
 			a.oidc().DefaultRole, path = value, "oidc.defaultRole"
 		case "GITHUB_CLIENT_ID":
 			a.github().ClientID, path = value, "github.clientId"
 		case "GITHUB_CLIENT_SECRET":
 			a.github().ClientSecret, path = secret(), "github.clientSecret"
-		case "GITHUB_ROLE_MAPPING":
-			a.github().RoleMapping, path = value, "github.roleMapping"
+		case "GITHUB_ROLE_MAPPING_EXPR":
+			a.github().RoleMappingExpr, path = value, "github.roleMappingExpr"
 		default:
 			return fmt.Errorf("configfile: environment variable %s names no auth setting", name)
 		}

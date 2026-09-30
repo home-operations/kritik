@@ -72,7 +72,7 @@ func TestEffective(t *testing.T) {
 			repoFiles: append(adminPaths, repoconfig.FileName), rules: adminRules, templates: adminDefaults, strict: true,
 		},
 		{
-			name: "filter is kept apart to be ANDed", doc: "filter: '!pr.body.contains(\"[skip-review]\")'\n", files: adminFiles,
+			name: "filter is kept apart to be ANDed", doc: "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", files: adminFiles,
 			enabled: true, inRepoFilter: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
 			rules: adminRules, templates: adminDefaults, strict: true,
 		},
@@ -177,9 +177,9 @@ func TestEffectiveSkip(t *testing.T) {
 	}{
 		{"nothing to skip", "", "", []string{"main.go"}, ""},
 		{"disabled", "enabled: false\n", "", []string{"main.go"}, repoconfig.SkipDisabled},
-		{"filtered", "filter: '!pr.body.contains(\"[skip-review]\")'\n", "please [skip-review]", []string{"main.go"}, repoconfig.SkipFiltered},
-		{"filter allows", "filter: '!pr.body.contains(\"[skip-review]\")'\n", "normal", []string{"main.go"}, ""},
-		{"filter that fails to evaluate skips", "filter: 'pr.number > 0'\n", "", []string{"main.go"}, repoconfig.SkipFiltered},
+		{"filtered", "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", "please [skip-review]", []string{"main.go"}, repoconfig.SkipFiltered},
+		{"filter allows", "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", "normal", []string{"main.go"}, ""},
+		{"filter that fails to evaluate skips", "filterExpr: 'pr.number > 0'\n", "", []string{"main.go"}, repoconfig.SkipFiltered},
 		{"only ignored paths", "ignore: [docs/**]\n", "", []string{"docs/a.md", "docs/b/c.md"}, repoconfig.SkipOnlyPaths},
 		{"a path outside the ignore globs", "ignore: [docs/**]\n", "", []string{"docs/a.md", "main.go"}, ""},
 	}

@@ -23,7 +23,7 @@ defaults:
   models:
     review: openrouter/openai/gpt-6-sol
     fallback: local/claude-sonnet-5
-  filter: "!pr.draft"
+  filterExpr: "!pr.draft"
   forks: false
   limits:
     concurrency: 3
@@ -34,7 +34,7 @@ repositories:
       - "**/testdata/**"
     settle: 30s
   home-operations/kopiur:
-    filter: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
+    filterExpr: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
   home-operations/charts-mirror:
     mode: single
   onedr0p/*:
