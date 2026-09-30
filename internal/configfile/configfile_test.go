@@ -627,6 +627,13 @@ func TestReviewPresentation(t *testing.T) {
 	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.Feedback != FeedbackStandard {
 		t.Fatalf("review = %+v, want the repository's feedback over the account's", s.Review)
 	}
+	f = parse(t, "approve: true", "  acme/x: { approve: false }\n  acme/y: {}\n")
+	if s := f.Settings(&f.Accounts[0], "acme/x"); s.Review.Approve {
+		t.Fatalf("review = %+v, want the repository's approve over the account's", s.Review)
+	}
+	if s := f.Settings(&f.Accounts[0], "acme/y"); !s.Review.Approve {
+		t.Fatalf("review = %+v, want the account's approve", s.Review)
+	}
 }
 
 // TestSettingsProviders: a repository's settings name the providers its

@@ -291,6 +291,46 @@ func TestWriteBackCalls(t *testing.T) {
 	}
 }
 
+func TestApproveAndDismissApprovals(t *testing.T) {
+	f, c := newFakeAPI(t)
+	c.login = "kritik[bot]"
+	f.reply("GET /api/v3/repos/o/r/pulls/7/reviews", 200, `[
+		{"id":1,"user":{"login":"kritik[bot]"},"state":"COMMENTED","commit_id":"abc"},
+		{"id":2,"user":{"login":"human"},"state":"APPROVED","commit_id":"abc"},
+		{"id":3,"user":{"login":"kritik[bot]"},"state":"DISMISSED","commit_id":"old"},
+		{"id":4,"user":{"login":"kritik[bot]"},"state":"APPROVED","commit_id":"old"}]`)
+	f.reply("POST /api/v3/repos/o/r/pulls/7/reviews", 200, `{"id":5}`)
+	f.reply("PUT /api/v3/repos/o/r/pulls/7/reviews/4/dismissals", 200, `{"id":4,"state":"DISMISSED"}`)
+
+	posted, err := c.Approve(t.Context(), "o", "r", 7, "abc", "clean")
+	if err != nil || !posted {
+		t.Fatalf("Approve = %v, %v; want an approval of a head the bot has not approved", posted, err)
+	}
+	review := f.bodies["POST /api/v3/repos/o/r/pulls/7/reviews"].(map[string]any)
+	if review["event"] != "APPROVE" || review["commit_id"] != "abc" || review["body"] != "clean" {
+		t.Fatalf("review body = %v; must be an APPROVE review pinned to the head", review)
+	}
+	delete(f.bodies, "POST /api/v3/repos/o/r/pulls/7/reviews")
+	// The bot's approval of old stands; a human's of abc, and the bot's
+	// dismissed and comment reviews, do not count.
+	if posted, err := c.Approve(t.Context(), "o", "r", 7, "old", "clean"); err != nil || posted {
+		t.Fatalf("Approve = %v, %v; want the standing approval left as it is", posted, err)
+	}
+	if _, ok := f.bodies["POST /api/v3/repos/o/r/pulls/7/reviews"]; ok {
+		t.Fatal("a head the bot already approved was approved again")
+	}
+	n, err := c.DismissApprovals(t.Context(), "o", "r", 7, "stale")
+	if err != nil || n != 1 {
+		t.Fatalf("DismissApprovals = %d, %v; want the bot's one standing approval dismissed", n, err)
+	}
+	if body := f.bodies["PUT /api/v3/repos/o/r/pulls/7/reviews/4/dismissals"].(map[string]any); body["message"] != "stale" {
+		t.Fatalf("dismissal body = %v", body)
+	}
+	if f.saw("PUT /api/v3/repos/o/r/pulls/7/reviews/2/") {
+		t.Fatal("a human's approval was dismissed")
+	}
+}
+
 func TestListInlineReactions(t *testing.T) {
 	f, c := newFakeAPI(t)
 	f.reply("GET /api/v3/repos/o/r/pulls/7/comments", 200,

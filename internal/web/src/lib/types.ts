@@ -189,6 +189,7 @@ export interface ReviewBlock {
   requireSuggestedFix: boolean;
   templates: { summary?: string; inline?: string };
   inlineComments: boolean;
+  approve: boolean;
   context: ContextFile[];
   feedback: Feedback;
   agentFiles: boolean;

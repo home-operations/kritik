@@ -227,6 +227,9 @@ func (r Review) overlay(o ReviewSpec) Review {
 	if o.Comments.Inline != nil {
 		r.InlineComments = *o.Comments.Inline
 	}
+	if o.Approve != nil {
+		r.Approve = *o.Approve
+	}
 	if o.Context != nil {
 		r.Context = o.Context
 	}

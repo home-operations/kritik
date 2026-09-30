@@ -179,6 +179,7 @@ type ReviewBlock struct {
 	RequireSuggestedFix bool                       `json:"requireSuggestedFix"`
 	Templates           configfile.ReviewTemplates `json:"templates"`
 	InlineComments      bool                       `json:"inlineComments"`
+	Approve             bool                       `json:"approve"`
 	Context             []configfile.ContextFile   `json:"context"`
 	Feedback            string                     `json:"feedback"`
 	AgentFiles          bool                       `json:"agentFiles"`

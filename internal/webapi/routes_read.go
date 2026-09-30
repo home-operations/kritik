@@ -304,7 +304,7 @@ func repoSettings(s configfile.Settings) RepoSettings {
 		Ignore: nonNil(slices.Clone(s.Ignore)), SettleSeconds: int64(s.Settle.Seconds()), MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
 		Review: ReviewBlock{
 			RequireSuggestedFix: s.Review.RequireSuggestedFix, Templates: s.Review.Templates,
-			InlineComments: s.Review.InlineComments, Context: nonNil(s.Review.Context),
+			InlineComments: s.Review.InlineComments, Approve: s.Review.Approve, Context: nonNil(s.Review.Context),
 			Feedback: s.Review.Feedback, AgentFiles: s.Review.AgentFiles,
 		},
 		Agent: AgentLimits{

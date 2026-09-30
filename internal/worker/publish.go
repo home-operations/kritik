@@ -429,7 +429,35 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: "+desc); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
+	if p.settings.Review.Approve {
+		p.approve(ctx, res.Counts())
+	}
 	return commentID, onForge, nil
+}
+
+// approve approves the head when the review found nothing blocking or
+// important, and otherwise dismisses the approval an earlier review gave,
+// so an approval never outlives the verdict behind it. Both are best
+// effort, like the commit status: the review is published either way.
+func (p *publishPhase) approve(ctx context.Context, counts review.Counts) {
+	owner, repo := p.pr.ownerRepo()
+	if counts.Approvable() {
+		posted, err := p.client.Approve(ctx, owner, repo, p.pr.number, p.pr.headSHA,
+			fmt.Sprintf("kritik: nothing blocking or important found at %s.", review.ShortSHA(p.pr.headSHA)))
+		if err != nil {
+			p.logger.Warn("pull request not approved", "error", err)
+		} else if posted {
+			p.logger.Info("pull request approved")
+		}
+		return
+	}
+	n, err := p.client.DismissApprovals(ctx, owner, repo, p.pr.number,
+		fmt.Sprintf("kritik: %d blocking and %d important finding(s) at %s.", counts.Blocking, counts.Important, review.ShortSHA(p.pr.headSHA)))
+	if err != nil {
+		p.logger.Warn("approval not dismissed", "error", err)
+	} else if n > 0 {
+		p.logger.Info("approval dismissed", "reviews", n)
+	}
 }
 
 // postsInline reports whether the review's settings post f as an inline

@@ -139,6 +139,11 @@ func (r Result) Counts() Counts {
 	return c
 }
 
+// Approvable reports whether the result lets kritik approve the pull
+// request: nothing blocking and nothing important, so nits alone do not
+// withhold an approval.
+func (c Counts) Approvable() bool { return c.Blocking == 0 && c.Important == 0 }
+
 // DropReason says why Parse discarded a finding.
 type DropReason string
 

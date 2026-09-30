@@ -280,7 +280,7 @@ repositories:
 
 Each takes the keys a repository's own `.kritik.yaml` takes, at the same
 level (`mode`, `models`, `feedback`, `comments`, `requireSuggestedFix`,
-`filterExpr`, `ignore`, `rules`, `context` and `agentFiles`; see
+`approve`, `filterExpr`, `ignore`, `rules`, `context` and `agentFiles`; see
 [the repository settings](repository-config.md)), and the admin's own:
 
 - `agent`: an agentic review's `maxSteps`, `maxToolOutputBytes`,

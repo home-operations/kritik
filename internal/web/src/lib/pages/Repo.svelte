@@ -67,6 +67,7 @@
     { label: 'AGENTS.md / CLAUDE.md', key: 'agentFiles', value: (s) => (s.review.agentFiles ? 'read' : 'not read') },
     { label: 'Require suggested fix', key: 'requireSuggestedFix', value: (s) => yes(s.review.requireSuggestedFix) },
     { label: 'Inline comments', key: 'comments', value: (s) => yes(s.review.inlineComments) },
+    { label: 'Approve', key: 'approve', value: (s) => yes(s.review.approve) },
     { label: 'Feedback', key: 'feedback', value: (s) => s.review.feedback },
     { label: 'Concurrency', key: 'limits', value: (s) => unlimited(s.limits.concurrency) },
     { label: 'Reviews / day', key: 'limits', value: (s) => unlimited(s.limits.reviewsPerDay) },

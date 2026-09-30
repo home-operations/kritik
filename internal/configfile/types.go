@@ -444,7 +444,11 @@ type Review struct {
 	Templates           ReviewTemplates
 	// InlineComments is false to post the summary alone.
 	InlineComments bool
-	Context        []ContextFile
+	// Approve is true to approve a pull request whose review found
+	// nothing blocking or important, and to dismiss that approval when a
+	// later review does (ADR-0025). Off unless set.
+	Approve bool
+	Context []ContextFile
 	// Rules are the checks the configuration writes, the broadest scope's
 	// first (ADR-0018).
 	Rules []Rule
@@ -494,6 +498,7 @@ type ReviewSpec struct {
 	Feedback            *string       `yaml:"feedback,omitempty"`
 	Comments            CommentsSpec  `yaml:"comments,omitempty"`
 	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
+	Approve             *bool         `yaml:"approve,omitempty"`
 	Rules               []Rule        `yaml:"rules,omitempty"`
 	Context             []ContextFile `yaml:"context,omitempty"`
 	AgentFiles          *bool         `yaml:"agentFiles,omitempty"`
