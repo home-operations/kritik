@@ -44,6 +44,7 @@ connections:
 accounts:
   - forge: github
     name: acme
+    mode: single
     repositories:
       - name: agentic
         mode: agentic

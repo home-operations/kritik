@@ -892,7 +892,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		}
 		for _, repo := range []string{"acme/x", "acme/unlisted"} {
 			s := f.Settings(&f.Accounts[0], repo)
-			if s.Mode != ReviewSingle || !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
+			if s.Mode != ReviewAgentic || !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
 				t.Fatalf("%s: mode=%q agent=%+v incremental=%+v", repo, s.Mode, s.Agent, s.Incremental)
 			}
 			if s.Review.RequireSuggestedFix || len(s.Review.Instructions) != 0 || s.Review.Templates != (ReviewTemplates{}) {

@@ -204,7 +204,8 @@ A provider is `type` (`openrouter`, `openai` or `anthropic`), an optional
 dashboard's does: `baseUrl`, `apiKey`, `model`, `dims`, and the optional
 `maxBatch`, `maxBatchChars` and `maxItemChars`. A default model names a
 provider the file or the dashboard declares, as `<provider>/<model>`.
-`mode` is `single` or `agentic`, `review.thoroughness` is `thorough` or
+`mode` is `agentic` (the default, which needs the chart's `gateway`) or
+`single`, `review.thoroughness` is `thorough` or
 `focused` ([repository settings](repository-config.md)), `forks: true`
 reviews pull requests from forks without being asked (by default one is
 reviewed only when a maintainer comments `@<app slug> review`), and

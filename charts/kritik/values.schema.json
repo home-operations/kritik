@@ -358,7 +358,7 @@
       "properties": {
         "enabled": {
           "default": true,
-          "description": "Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once a connection exists, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews are refused without it.",
+          "description": "Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once a connection exists, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews, the default mode, are refused without it: set `KRITIK_DEFAULTS_MODE=single` (or `defaults.mode: single`) before turning it off.",
           "title": "enabled",
           "type": "boolean"
         },

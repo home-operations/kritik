@@ -13,7 +13,8 @@
   Forgejo and Gitea support of §2.1.
 - **Date:** 2026-09-24
 - **Amended:** 2026-09-26, to route `forge: gitea` through the Forgejo
-  client of §2.1 rather than a separate implementation.
+  client of §2.1 rather than a separate implementation; 2026-09-29, to
+  make agentic the default mode (§3).
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6, §2.7, §2.11 and §2.12.
 
 ## 1. Context
@@ -275,8 +276,10 @@ results reported back.
 - The findings schema, severities and the provider configuration change
   incompatibly; kritik has not had a release that would make this costly.
 - Forgejo reaches the same acceptance list as GitHub in ADR-0002 §2.7.
-- Agentic reviews cost more per review and run longer; they are opt-in per
-  repository in the operator's file only.
+- Agentic reviews cost more per review and run longer. They are the
+  default where no layer sets a mode, since the chart runs the gateway
+  they need by default; `mode: single` trades their depth for cost and
+  speed.
 
 ## 4. Deferred
 

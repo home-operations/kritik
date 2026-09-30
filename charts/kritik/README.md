@@ -273,7 +273,7 @@ Kubernetes: `>=1.25.0-0`
 | database.runner.role | string | `"kritik_runner"` | Name of the runner role, granted only what runner Jobs need. |
 | deploymentAnnotations | object | `{}` | Annotations added to every Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
 | fullnameOverride | string | `""` | Override the full release name. |
-| gateway.enabled | bool | `true` | Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once a connection exists, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews are refused without it. |
+| gateway.enabled | bool | `true` | Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once a connection exists, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews, the default mode, are refused without it: set `KRITIK_DEFAULTS_MODE=single` (or `defaults.mode: single`) before turning it off. |
 | gateway.port | int | `8082` | Gateway port on the pods and its Service. |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
