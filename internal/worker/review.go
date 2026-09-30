@@ -468,7 +468,7 @@ func (w *Review) begin(
 			return begun{}, true, err
 		}
 	}
-	token, err := client.GitToken(ctx)
+	token, err := client.GitToken(ctx, repo)
 	if err != nil {
 		return begun{}, true, err
 	}

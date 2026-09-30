@@ -82,9 +82,10 @@ func (c *Client) FileURL(owner, repo, sha, path string, line, endLine int) strin
 	return u
 }
 
-// GitToken implements forge.Client with the installation token.
-func (c *Client) GitToken(ctx context.Context) (string, error) {
-	return c.tokens.Token(ctx)
+// GitToken implements forge.Client with a read-only installation token
+// for repo alone.
+func (c *Client) GitToken(ctx context.Context, repo string) (string, error) {
+	return c.tokens.ReadOnly(ctx, repo)
 }
 
 // BranchTip implements forge.Client.
