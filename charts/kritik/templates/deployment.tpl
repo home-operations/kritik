@@ -157,6 +157,24 @@ spec:
             - name: KRITIK_WEB_ADDR
               value: {{ printf ":%d" (int $.Values.web.port) | quote }}
             {{- end }}
+            {{- range $name, $value := dict "KRITIK_POLL_INTERVAL" $.Values.config.pollInterval "KRITIK_POLL_LOOKBACK" $.Values.config.pollLookback "KRITIK_INDEX_GRACE" $.Values.config.indexGrace "KRITIK_TRANSCRIPT_RETENTION" $.Values.config.transcriptRetention "KRITIK_RUNNER_DEADLINE" $.Values.runner.deadline }}
+            {{- with $value }}
+            - name: {{ $name }}
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with $.Values.config.onboardWindow }}
+            - name: KRITIK_ONBOARD_WINDOW
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $.Values.runner.resources }}
+            - name: KRITIK_RUNNER_RESOURCES
+              value: {{ toJson . | quote }}
+            {{- end }}
+            {{- with $.Values.runner.tools }}
+            - name: KRITIK_RUNNER_TOOLS
+              value: {{ toJson . | quote }}
+            {{- end }}
             {{- with $.Values.config.extraEnv }}
             {{- tpl (toYaml .) $ | nindent 12 }}
             {{- end }}

@@ -387,7 +387,7 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		if f.ConnectionFromEnv(in.Name) {
 			source = configfile.SourceEnv
 		}
-		add("connections", in.Name, strings.Join(in.Accounts, ", ")+", webhook /hooks/"+in.Name, source)
+		add("apps", in.Name, strings.Join(in.Accounts, ", ")+", webhook /hooks/"+in.Name, source)
 	}
 	a := f.Auth
 	// An auth key an environment variable set shows as coming from it.

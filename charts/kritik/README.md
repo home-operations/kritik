@@ -32,14 +32,12 @@ auth:
     passwordSecret: { name: kritik-admin }
 config:
   file:
-    connections:
+    apps:
       - name: github
-        forge: github
         accounts: [org-1]
-        app:
-          clientId: Iv1.example
-          privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-          webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+        clientId: Iv1.example
+        privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+        webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
     providers:
       openrouter:
         type: openrouter
@@ -65,8 +63,11 @@ with its password from an existing Secret, which is the way into a fresh
 instance. OIDC and GitHub sign-in, with role mappings, set the same way
 (see [the configuration reference](https://github.com/home-operations/kritik/blob/main/docs/configuration.md)).
 
-`config.file` is the whole configuration: the GitHub Apps, model
-providers, defaults, the embedder, accounts and their repositories. Every
+`config.file` is the whole configuration: the GitHub `apps`, model
+`providers`, the `embedding`, the `defaults`, `repositories` entries keyed
+`owner/*` or `owner/name`, and `accounts`. How kritik runs, polling,
+retention and runner Jobs, is set by values instead (`config.pollInterval`,
+`runner.deadline`, `runner.tools` and the rest below). Every
 replica re-reads it on `config.reloadInterval`, and a reload the file's
 content can't pass keeps the last good one. Secrets never go in it: it
 points at files under `secretMounts` or at environment variables. The
@@ -154,8 +155,8 @@ Worker-capable pods serve a forward proxy on `gateway.port`, and runner Jobs
 are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
-destination by hostname only. github.com is always allowed once a
-connection exists; `egress.allowHosts` in `config.file` adds the rest
+destination by hostname only. github.com is always allowed once an app
+is declared; `egress.allowHosts` in `config.file` adds the rest
 (registries, release APIs), and `egress.credentials` names hosts the gateway
 adds a bearer token to when a runner sends it a plain `http://` request, so
 the runner never holds the token. The token is a secret reference like any
@@ -190,8 +191,8 @@ release notes and compare view with `curl`, or search with `rg` and `fd`.
 The chart's image has none of them, so no command is offered; point
 `runner.image` at the release's `-tools` tag, an Alpine image with all
 three. Every host `curl` reaches must pass the gateway, so add the
-release APIs and registries to `egress.allowHosts` (a GitHub
-connection already allows `github.com`):
+release APIs and registries to `egress.allowHosts` (an app already
+allows `github.com`):
 
 ```yaml
 runner:
@@ -205,13 +206,10 @@ config:
   file:
     egress:
       allowHosts: [api.github.com, "*.githubusercontent.com"]
-    accounts:
-      - forge: github
-        name: org-1
-        repositories:
-          - name: repo-1
-            mode: agentic
-            agent: { commands: [curl, fd, rg] }
+    repositories:
+      org-1/repo-1:
+        mode: agentic
+        agent: { commands: [curl, fd, rg] }
 ```
 
 A command runs without a shell, with an environment of `PATH`, its own
@@ -277,12 +275,17 @@ Kubernetes: `>=1.25.0-0`
 | auth.sessionTTL | string | `""` | How long a dashboard session lasts (Go duration, 5m to 720h); empty is 12h. |
 | config.existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. |
 | config.extraEnv | list | `[]` | Extra raw env vars merged into every role's container (advanced). |
-| config.file | optional | `{}` | The configuration file, as YAML: the whole configuration, from `auth` and `connections` to `accounts` and their repositories. Passed through verbatim, not tpl'd. See docs/configuration.md. |
+| config.file | optional | `{}` | The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
+| config.indexGrace | string | `""` | How long the index of a repository that stopped running is kept (KRITIK_INDEX_GRACE, Go duration). Empty is kritik's default, 720h. |
 | config.indexWorkers | int | `1` | Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews. |
 | config.logFormat | string | `"json"` | Log format: json or text. |
 | config.logLevel | string | `"info"` | Log level: debug, info, warn or error. |
+| config.onboardWindow | int | `0` | How many onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW). 0 is kritik's default, 4. |
+| config.pollInterval | string | `""` | How often the leader lists each app's open pull requests, its backstop for missed webhooks (KRITIK_POLL_INTERVAL, Go duration); `0s` turns polling off. Empty is kritik's default, 10m. |
+| config.pollLookback | string | `""` | How far back a first or long-idle poll looks (KRITIK_POLL_LOOKBACK, Go duration). Empty is kritik's default, 24h. |
 | config.reloadInterval | string | `"10s"` | How often each replica re-reads the file (Go duration). |
 | config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers). |
+| config.transcriptRetention | string | `""` | How long an agentic review's transcript is kept, at least 24h (KRITIK_TRANSCRIPT_RETENTION, Go duration). Empty is kritik's default, 720h. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritik_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |
@@ -344,11 +347,14 @@ Kubernetes: `>=1.25.0-0`
 | roles.worker.enabled | bool | `false` | Run the worker (queues, runner Jobs, leader duties) as its own Deployment (split topology). |
 | roles.worker.replicas | int | `1` | Replicas for the worker Deployment. |
 | roles.worker.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
+| runner.deadline | string | `""` | Deadline of a runner Job (KRITIK_RUNNER_DEADLINE, Go duration). Empty is kritik's default, 15m. |
 | runner.image | string | `""` | Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd and rg for an agentic review's `agent.commands`. |
+| runner.resources | object | `{}` | Resources for runner pods (KRITIK_RUNNER_RESOURCES), copied into the pod spec. |
 | runner.runtimeClassName | string | `""` | RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and, in agentic mode, runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
 | runner.serviceAccount.create | bool | `true` | Create the runner ServiceAccount (no permissions, no token mounted). |
 | runner.serviceAccount.name | string | `""` | Runner ServiceAccount name; generated from the release name if empty. |
+| runner.tools | list | `[]` | Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS, ADR-0011), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. |
 | runner.ttl | string | `"1h"` | How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew. |
 | secretMounts | list | `[]` | Secrets mounted as files for the configuration file to reference. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container securityContext (no privilege escalation, read-only root filesystem, drops ALL capabilities). |

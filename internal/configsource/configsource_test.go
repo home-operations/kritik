@@ -29,7 +29,7 @@ func write(t *testing.T, path, doc string) {
 func TestSourceKeepsTheLastGoodConfiguration(t *testing.T) {
 	t.Setenv("TEST_ADMIN_PASSWORD", "pw")
 	path := filepath.Join(t.TempDir(), "kritik.yaml")
-	write(t, path, signIn+"polling: { interval: 1m }\n")
+	write(t, path, signIn+"egress: { allowHosts: [first.example] }\n")
 	reg := prometheus.NewRegistry()
 	src := &Source{RequireSignIn: true, Errors: server.NewConfigErrorGauge(reg)}
 	if _, err := src.Load(path); err != nil {
@@ -64,21 +64,21 @@ func TestSourceKeepsTheLastGoodConfiguration(t *testing.T) {
 		}
 	}
 
-	write(t, path, signIn+"polling: { interval: -1m }\n")
+	write(t, path, signIn+"egress: { allowHosts: [\"https://bad\"] }\n")
 	wait("the refusal", func() bool { return src.LastError() != nil })
-	if src.Current.Get().PollInterval() != time.Minute || failing() != 1 {
-		t.Fatalf("interval = %s, gauge = %v; want the last good configuration running and the refusal reported",
-			src.Current.Get().PollInterval(), failing())
+	host := func() string { return src.Current.Get().Egress.AllowHosts[0] }
+	if host() != "first.example" || failing() != 1 {
+		t.Fatalf("host = %s, gauge = %v; want the last good configuration running and the refusal reported", host(), failing())
 	}
 
-	write(t, path, "polling: { interval: 2m }\n")
+	write(t, path, "egress: { allowHosts: [second.example] }\n")
 	wait("the sign-in refusal", func() bool { return errors.Is(src.LastError(), ErrNoSignIn) })
-	if src.Current.Get().PollInterval() != time.Minute {
+	if host() != "first.example" {
 		t.Fatal("a configuration without a sign-in replaced the running one")
 	}
 
-	write(t, path, signIn+"polling: { interval: 3m }\n")
-	wait("the reload", func() bool { return src.Current.Get().PollInterval() == 3*time.Minute })
+	write(t, path, signIn+"egress: { allowHosts: [third.example] }\n")
+	wait("the reload", func() bool { return host() == "third.example" })
 	if src.LastError() != nil || failing() != 0 {
 		t.Fatalf("last error = %v, gauge = %v; want both cleared", src.LastError(), failing())
 	}
@@ -86,7 +86,7 @@ func TestSourceKeepsTheLastGoodConfiguration(t *testing.T) {
 
 func TestLoadRefusesNoSignIn(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kritik.yaml")
-	write(t, path, "polling: { interval: 1m }\n")
+	write(t, path, "egress: { allowHosts: [first.example] }\n")
 	if _, err := (&Source{RequireSignIn: true}).Load(path); !errors.Is(err, ErrNoSignIn) {
 		t.Fatalf("Load = %v, want ErrNoSignIn", err)
 	}

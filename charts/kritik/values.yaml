@@ -112,28 +112,28 @@ auth:
     # -- CEL expression giving a role, or a map of accounts to roles.
     roleMapping: ""
 
-# The configuration file holds the whole configuration (ADR-0019): sign-in
-# (`auth`), the GitHub Apps (`connections`), the instance's `providers`,
-# `defaults` and `embedding`, and the `accounts` with their settings and
-# repositories. Sign-in, one connection, one provider, the default models
-# and review settings and the embedder also have `KRITIK_*` environment
-# variables, which win over the file; the `auth` values above render some,
-# and `extraEnv` can set the others. The file is either inline as `file`,
-# rendered into a chart-managed ConfigMap, or an existing ConfigMap with a
-# `config.yaml` key. Secret material never goes in the file: it references
-# files under `secretMounts` or environment variables. Every replica
-# re-reads the file on `reloadInterval`; the leader applies it to the store.
+# The configuration file holds the whole configuration (ADR-0019,
+# ADR-0021): sign-in (`auth`), the GitHub `apps`, the instance's
+# `providers`, `embedding` and `egress`, the `defaults` every repository
+# gets, the `repositories` entries keyed `owner/*` or `owner/name`, and the
+# `accounts` with their limits and providers. Sign-in, one app, one
+# provider, the default models and review settings and the embedder also
+# have `KRITIK_*` environment variables, which win over the file; the
+# `auth` values above render some, and `extraEnv` can set the others. The
+# file is either inline as `file`, rendered into a chart-managed ConfigMap,
+# or an existing ConfigMap with a `config.yaml` key. Secret material never
+# goes in the file: it references files under `secretMounts` or environment
+# variables. Every replica re-reads the file on `reloadInterval`; the
+# leader applies it to the store.
 config:
-  # -- (optional) The configuration file, as YAML: the whole configuration, from `auth` and `connections` to `accounts` and their repositories. Passed through verbatim, not tpl'd. See docs/configuration.md.
+  # -- (optional) The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md.
   file: {}
-  # connections:
+  # apps:
   #   - name: github
-  #     forge: github
   #     accounts: [org-1, user-1]
-  #     app:
-  #       clientId: Iv1.example
-  #       privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-  #       webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+  #     clientId: Iv1.example
+  #     privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+  #     webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
   # providers:
   #   openrouter: { type: openrouter, apiKey: { file: /var/run/secrets/kritik/openrouter/api-key } }
   # defaults:
@@ -143,6 +143,16 @@ config:
   existingConfigMap: ""
   # -- How often each replica re-reads the file (Go duration).
   reloadInterval: 10s
+  # -- How often the leader lists each app's open pull requests, its backstop for missed webhooks (KRITIK_POLL_INTERVAL, Go duration); `0s` turns polling off. Empty is kritik's default, 10m.
+  pollInterval: ""
+  # -- How far back a first or long-idle poll looks (KRITIK_POLL_LOOKBACK, Go duration). Empty is kritik's default, 24h.
+  pollLookback: ""
+  # -- How many onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW). 0 is kritik's default, 4.
+  onboardWindow: 0
+  # -- How long the index of a repository that stopped running is kept (KRITIK_INDEX_GRACE, Go duration). Empty is kritik's default, 720h.
+  indexGrace: ""
+  # -- How long an agentic review's transcript is kept, at least 24h (KRITIK_TRANSCRIPT_RETENTION, Go duration). Empty is kritik's default, 720h.
+  transcriptRetention: ""
   # -- Log level: debug, info, warn or error.
   logLevel: info
   # -- Log format: json or text.
@@ -206,6 +216,12 @@ runner:
   image: ""
   # -- How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew.
   ttl: 1h
+  # -- Deadline of a runner Job (KRITIK_RUNNER_DEADLINE, Go duration). Empty is kritik's default, 15m.
+  deadline: ""
+  # -- Resources for runner pods (KRITIK_RUNNER_RESOURCES), copied into the pod spec.
+  resources: {}
+  # -- Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS, ADR-0011), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides.
+  tools: []
   # -- RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and, in agentic mode, runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default.
   runtimeClassName: ""
   serviceAccount:

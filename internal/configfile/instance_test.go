@@ -7,17 +7,17 @@ import (
 	"time"
 )
 
-// fileWithDefaults is minimal's connection with instance defaults: a
-// provider, both default models and an embedder, and acme's entry.
-const fileWithDefaults = `connections:
-  - { name: acme-bot, forge: github, accounts: [acme], app: { clientId: x, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } } }
+// fileWithDefaults is minimal's app with instance defaults: a provider,
+// both default models and an embedder of the provider, and acme's entry.
+const fileWithDefaults = `apps:
+  - { name: acme-bot, accounts: [acme], clientId: x, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 providers:
   openrouter: { type: openrouter, apiKey: { env: TEST_PROVIDER_KEY } }
 defaults:
   models: { review: openrouter/big, fallback: openrouter/small }
-embedding: { baseUrl: https://embed.example/v1, apiKey: { env: TEST_PROVIDER_KEY }, model: e1, dims: 8 }
+embedding: { model: openrouter/e1, dims: 8 }
 accounts:
-  - { forge: github, name: acme }
+  acme: {}
 `
 
 func setInstanceEnv(t *testing.T) {
@@ -46,18 +46,18 @@ func TestFileInstanceDefaults(t *testing.T) {
 	if src := f.Sources(a, "acme/x"); src["models.review"] != SourceDefaults || src["models.fallback"] != SourceDefaults {
 		t.Fatalf("sources = %v; want the models from the defaults", src)
 	}
-	if f.Embedding == nil || f.Embedding.Model != "e1" || f.Embedding.APIKeyValue().Value() != "sk-file" {
+	if f.Embedding == nil || f.Embedding.Model != "e1" || f.Embedding.APIKeyValue().Value() != "sk-file" || f.Embedding.BaseURL != "https://openrouter.ai/api/v1" {
 		t.Fatalf("embedding = %+v; want the file's", f.Embedding)
 	}
 	layer := f.FileLayer()
 	if p := layer.Providers["openrouter"]; p.Source != SourceFile || layer.Review != (FileValue{Value: "openrouter/big", Source: SourceFile}) ||
-		layer.Embedding == nil || layer.Embedding.Model != "e1" {
+		layer.Embedding == nil || layer.Embedding.Model != "openrouter/e1" {
 		t.Fatalf("file layer = %+v", layer)
 	}
 
 	// An account's own provider may not take a name the instance's use.
-	mine := strings.Replace(fileWithDefaults, "  - { forge: github, name: acme }",
-		"  - { forge: github, name: acme, providers: { openrouter: { type: openai, apiKey: { env: TEST_PROVIDER_KEY } } } }", 1)
+	mine := strings.Replace(fileWithDefaults, "  acme: {}",
+		"  acme: { providers: { openrouter: { type: openai, apiKey: { env: TEST_PROVIDER_KEY } } } }", 1)
 	if _, err := Parse([]byte(mine)); err == nil || !strings.Contains(err.Error(), "the instance declares a provider by that name") {
 		t.Fatalf("Parse with an account provider named like the instance's = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 	setInstanceEnv(t)
 	t.Setenv("KRITIK_PROVIDERS_API_KEY", "sk-env")
 	t.Setenv("KRITIK_DEFAULTS_MODELS_REVIEW", "openrouter/env-model")
-	t.Setenv("KRITIK_EMBEDDING_MODEL", "e-env")
+	t.Setenv("KRITIK_EMBEDDING_MODEL", "openrouter/e-env")
 	t.Setenv("KRITIK_EMBEDDING_DIMS", "32")
 	f, err := Parse([]byte(fileWithDefaults))
 	if err != nil {
@@ -86,8 +86,9 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 	if src := f.Sources(a, "acme/x"); src["models.review"] != SourceEnv || src["models.fallback"] != SourceDefaults {
 		t.Fatalf("sources = %v", src)
 	}
-	// The environment sets the embedder key by key over the file's.
-	if e := f.Embedding; e.Model != "e-env" || e.Dims != 32 || e.BaseURL != "https://embed.example/v1" {
+	// The environment sets the embedder key by key over the file's, on the
+	// environment's key.
+	if e := f.Embedding; e.Model != "e-env" || e.Dims != 32 || e.APIKeyValue().Value() != "sk-env" {
 		t.Fatalf("embedding = %+v", e)
 	}
 	layer := f.FileLayer()

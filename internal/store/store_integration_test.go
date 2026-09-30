@@ -101,33 +101,33 @@ func TestMigrateIsIdempotent(t *testing.T) {
 }
 
 const alphaEntry = `
-accounts:
-  - forge: github
-    name: alpha
-    repositories:
-      - name: one
-      - name: two
+repositories:
+  alpha/one: {}
+  alpha/two: {}
 `
 
 // twoAccounts serves alpha and beta; alphaAccount, alpha alone.
 const (
 	twoAccounts = `
-connections:
+apps:
   - name: alpha-bot
-    forge: github
     accounts: [alpha]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
   - name: beta-bot
-    forge: github
     accounts: [beta]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
 ` + alphaEntry
 	alphaAccount = `
-connections:
+apps:
   - name: alpha-bot
-    forge: github
     accounts: [alpha]
-    app: { clientId: Iv1.test, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+    clientId: Iv1.test
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
 ` + alphaEntry
 )
 
@@ -269,7 +269,7 @@ func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
 	if err := s.ApplyConfig(ctx, listed); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	unlisted := parse(t, strings.Replace(twoAccounts, "      - name: two\n", "", 1))
+	unlisted := parse(t, strings.Replace(twoAccounts, "  alpha/two: {}\n", "", 1))
 	check := func(wantOrigin string, wantEnabled bool) {
 		t.Helper()
 		var origin string

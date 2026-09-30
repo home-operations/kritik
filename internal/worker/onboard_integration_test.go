@@ -34,9 +34,9 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	}
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
-	file, err := configfiletest.Parse(t, configYAML+`      - name: a
-      - name: b
-      - name: c
+	file, err := configfiletest.Parse(t, configYAML+`  onedr0p/a: {}
+  onedr0p/b: {}
+  onedr0p/c: {}
 `)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	// embedder: the feeder offers only repositories whose account it runs.
 	running := func(emb *configfile.Embedding) *configfile.File {
 		f := *file
-		f.Indexing = configfile.Indexing{OnboardWindow: window}
+		f.Run.OnboardWindow = window
 		f.Embedding = emb
 		return &f
 	}

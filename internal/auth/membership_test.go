@@ -11,14 +11,13 @@ import (
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 )
 
-// connectionsYAML is the connections the grant tests read forge accounts
-// from.
+// connectionsYAML is the apps the grant tests read forge accounts from.
 const connectionsYAML = `
-connections:
-  - { name: personal-bot, forge: github, accounts: [Alice], app: &app { clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } } }
-  - { name: org-bot, forge: github, accounts: [acme], app: *app }
-  - { name: adminorg-bot, forge: github, accounts: [widgets], app: *app }
-  - { name: several-bot, forge: github, accounts: [nobody, Initech], app: *app }
+apps:
+  - { name: personal-bot, accounts: [Alice], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
+  - { name: org-bot, accounts: [acme], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
+  - { name: adminorg-bot, accounts: [widgets], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
+  - { name: several-bot, accounts: [nobody, Initech], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
 `
 
 // adminPassword is an auth block's local admin, so a file whose sign-ins

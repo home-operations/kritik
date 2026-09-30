@@ -3,11 +3,12 @@
 kritik takes its settings from three places, each for what it suits
 ([ADR-0019](adr/0019-configuration-in-git.md)):
 
-| Where                                                                                                                                                 | What                                                                                                                                                                        | Changed by                                         |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| The environment                                                                                                                                       | Process wiring: addresses, the database, logging and `KRITIK_WEB_URL`                                                                                                       | a restart                                          |
-| The configuration file, and its `KRITIK_AUTH_*`, `KRITIK_CONNECTIONS_*`, `KRITIK_PROVIDERS_*`, `KRITIK_DEFAULTS_*` and `KRITIK_EMBEDDING_*` variables | Everything else: sign-in, the GitHub Apps, model providers, the defaults, the embedder, the accounts and their repositories, polling, indexing, tools, retention and egress | a file edit, reloaded, or a restart for a variable |
-| The dashboard                                                                                                                                         | Whether each repository is on or off                                                                                                                                        | an admin, on the Repositories page                 |
+| Where                                                                                                                                          | What                                                                                                                                             | Changed by                                         |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| The environment                                                                                                                                | Process wiring: addresses, the database, logging and `KRITIK_WEB_URL`                                                                            | a restart                                          |
+| The configuration file, and its `KRITIK_AUTH_*`, `KRITIK_APPS_*`, `KRITIK_PROVIDERS_*`, `KRITIK_DEFAULTS_*` and `KRITIK_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the defaults, the repository entries and the accounts | a file edit, reloaded, or a restart for a variable |
+| The environment, set by the chart's values                                                                                                     | How kritik runs: polling, onboarding, retention and runner Jobs                                                                                  | a restart                                          |
+| The dashboard                                                                                                                                  | Whether each repository is on or off                                                                                                             | an admin, on the Repositories page                 |
 
 A repository's own [`.kritik.yaml`](repository-config.md) narrows what the
 configuration sets for it, from its own git.
@@ -15,9 +16,9 @@ configuration sets for it, from its own git.
 The file is optional: `KRITIK_CONFIG_FILE` names it, and the chart's
 `config.file` renders it, so the configuration lives in git with the rest
 of the deployment. In the file a secret is `{ env: NAME }` or
-`{ file: path }`, never the value itself. Sign-in, one connection, one
-provider, the default models and review settings, and the embedder also
-have variables, and a variable wins over the file, so a small deployment
+`{ file: path }`, never the value itself. Sign-in, one app, one provider,
+the default models and review settings, and the embedder also have
+variables, and a variable wins over the file, so a small deployment
 can be configured from the environment alone. A variable carries a secret
 itself, or, with a `_FILE` suffix, the path of a file holding it. A
 variable under one of these prefixes that names no key is refused at
@@ -137,75 +138,121 @@ When the mapping places nobody:
 
 A mapping that fails to evaluate refuses the sign-in.
 
-## `connections`
+## `apps`
 
-`connections` declares the GitHub Apps kritik serves accounts through. The
-[setup guide](setup.md) covers creating the App.
+`apps` declares the GitHub Apps kritik serves accounts through
+([ADR-0021](adr/0021-configuration-shape.md) §2.2). The
+[setup guide](setup.md) covers creating one.
 
 ```yaml
-connections:
+apps:
   - name: github
-    forge: github
     accounts: [org-1, user-1]
-    app:
-      clientId: Iv1.example
-      privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-      webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+    clientId: Iv1.example
+    privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
+    webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
 ```
 
-`webhookSecret` holds the same value as the App's webhook secret. The
-same connection can come from the environment instead:
+`name` is the App's webhook path, `/hooks/<name>`, and `accounts` the users
+and organizations it serves: a webhook for any other is ignored, and an
+account is served by one app. `clientId` is given inline or, like the
+secrets, as a reference. `webhookSecret` holds the same value as the App's
+webhook secret. The same app can come from the environment instead:
 
-| Variable                                       | Key                                   |
-| ---------------------------------------------- | ------------------------------------- |
-| `KRITIK_CONNECTIONS_NAME`                      | `name`, `github` unless set           |
-| `KRITIK_CONNECTIONS_ACCOUNTS`                  | `accounts`, comma-separated           |
-| `KRITIK_CONNECTIONS_APP_CLIENT_ID`             | `app.clientId`                        |
-| `KRITIK_CONNECTIONS_APP_PRIVATE_KEY[_FILE]`    | `app.privateKey`, or a file's path    |
-| `KRITIK_CONNECTIONS_APP_WEBHOOK_SECRET[_FILE]` | `app.webhookSecret`, or a file's path |
+| Variable                            | Key                               |
+| ----------------------------------- | --------------------------------- |
+| `KRITIK_APPS_NAME`                  | `name`, `github` unless set       |
+| `KRITIK_APPS_ACCOUNTS`              | `accounts`, comma-separated       |
+| `KRITIK_APPS_CLIENT_ID`             | `clientId`                        |
+| `KRITIK_APPS_PRIVATE_KEY[_FILE]`    | `privateKey`, or a file's path    |
+| `KRITIK_APPS_WEBHOOK_SECRET[_FILE]` | `webhookSecret`, or a file's path |
 
-The environment declares at most one connection. It replaces the file's
-connection of the same name whole, or is added to the file's when none
-has that name. A `KRITIK_CONNECTIONS_*` variable that names no key is
-refused at startup.
+The environment declares at most one app. It replaces the file's app of
+the same name whole, or is added to the file's when none has that name. A
+`KRITIK_APPS_*` variable that names no key is refused at startup.
 
-## Instance defaults: `providers`, `defaults` and `embedding`
+## `providers` and `embedding`
 
-`providers` are the instance's model keys, `defaults` the settings every
-account and repository inherits unless its entry sets its own, and
-`embedding` the embedder that builds each repository's similar-code index.
+`providers` are the instance's model keys, and `embedding` the embedder
+that builds each repository's similar-code index from one of them.
 
 ```yaml
 providers:
   openrouter:
     type: openrouter
     apiKey: { file: /var/run/secrets/kritik/openrouter/api-key }
-defaults:
-  models:
-    review: openrouter/vendor/large-model
-    fallback: openrouter/vendor/small-model
-  mode: agentic
-  feedback: detailed
-  forks: false
-  settle: 30s
 embedding:
-  baseUrl: https://openrouter.ai/api/v1
-  apiKey: { file: /var/run/secrets/kritik/openrouter/api-key }
-  model: vendor/embedding-model
+  model: openrouter/voyageai/voyage-code-4
   dims: 1024
 ```
 
 A provider is `type` (`openrouter`, `openai` or `anthropic`), an optional
 `baseUrl` and `pricing`, and its `apiKey`. A model is named
 `<provider>/<model>`, on a provider the file declares.
-`mode` is `agentic` (the default, which needs the chart's `gateway`) or
-`single`, `feedback` is `detailed`, `standard` or `minimal`
-([repository settings](repository-config.md)), `forks: true`
-reviews pull requests from forks without being asked (by default one is
-reviewed only when a maintainer comments `@<app slug> review`), and
-`settle` delays a review after a push so a burst of pushes is reviewed
-once. `defaults` also takes the rest of an account's settings (below), as
-what every account inherits.
+
+The embedder's `model` is a model of an `openrouter` or `openai` provider
+of the instance, whose endpoint, or the type's default, and key it uses;
+`dims` is its dimension, at most 4000, and the optional `maxBatch`,
+`maxBatchChars` and `maxItemChars` bound one request to 64 inputs, 200,000
+characters and 16,000 characters per input unless set. Without an
+embedder, indexing is off and reviews run without similar code. The index
+holds one model and dimension: a configuration that changes either drops
+every repository's index, and the leader builds each again, a few at a
+time, as `KRITIK_ONBOARD_WINDOW` paces them. Removing the embedder keeps
+the index, and adding back the same model and dimension uses it again.
+
+## `defaults` and `repositories`
+
+`defaults` are the settings every repository gets, and `repositories` the
+entries that change them for some: `owner/*` for every repository of an
+account, and `owner/name` for one
+([ADR-0021](adr/0021-configuration-shape.md) §2.1).
+
+```yaml
+defaults:
+  mode: agentic
+  models: { review: openrouter/vendor/large-model, fallback: openrouter/vendor/small-model }
+  feedback: detailed
+  settle: 30s
+  rules:
+    - { id: no-tokens, rule: "Never log a token, key or password." }
+repositories:
+  org-1/*:
+    models: { review: org-1-key/vendor/large-model }
+    rules:
+      - {
+          id: wrap-errors,
+          rule: 'Wrap errors with fmt.Errorf("<package>: %w", err).',
+          paths: ["**/*.go"],
+        }
+  org-1/repo-1:
+    feedback: minimal
+    agent: { commands: [curl] }
+```
+
+Each takes the keys a repository's own `.kritik.yaml` takes, at the same
+level (`mode`, `models`, `feedback`, `comments`, `requireSuggestedFix`,
+`filter`, `ignore`, `rules`, `context` and `agentFiles`; see
+[the repository settings](repository-config.md)), and the admin's own:
+
+- `agent`: an agentic review's `maxSteps`, `maxToolOutputBytes`,
+  `maxTokens`, `timeout`, the `commands` its run tool may execute, and
+  their `commandTimeout`.
+- `settle`: how long a new head waits before its review starts, so a
+  burst of pushes is reviewed once.
+- `forks: true`: reviews pull requests from forks without being asked; by
+  default one is reviewed only when a maintainer comments
+  `@<app slug> review`.
+- `incremental.maxDeltaFiles`: how many files may change since the last
+  review before a re-review covers the whole pull request again.
+- `enabled`, at `defaults` and `owner/*` only: where repositories start
+  (see below).
+
+A value applies in this order: kritik's default, `defaults`, `owner/*`,
+`owner/name`, and the repository's `.kritik.yaml`. A narrower value
+replaces the broader one's, except `ignore` globs, which add up, and
+`rules`, which add up by id ([ADR-0018](adr/0018-rules.md)). `mode` is
+`agentic` unless set, which needs the chart's `gateway`.
 
 The same defaults can come from the environment:
 
@@ -221,8 +268,6 @@ The same defaults can come from the environment:
 | `KRITIK_DEFAULTS_FEEDBACK`        | `defaults.feedback`                                                                   |
 | `KRITIK_DEFAULTS_FORKS`           | `defaults.forks`, `true` or `false`                                                   |
 | `KRITIK_DEFAULTS_SETTLE`          | `defaults.settle`, a duration such as `30s`                                           |
-| `KRITIK_EMBEDDING_BASE_URL`       | `embedding.baseUrl`                                                                   |
-| `KRITIK_EMBEDDING_API_KEY[_FILE]` | `embedding.apiKey`, or a file's path                                                  |
 | `KRITIK_EMBEDDING_MODEL`          | `embedding.model`                                                                     |
 | `KRITIK_EMBEDDING_DIMS`           | `embedding.dims`                                                                      |
 
@@ -232,60 +277,9 @@ set the file's embedder key by key. The Configuration page lists what the
 file and the environment set under "Instance settings", with where each
 comes from.
 
-The embedder is any OpenAI-compatible embeddings endpoint: `baseUrl`,
-`apiKey`, `model` and `dims`, at most 4000, and the optional `maxBatch`,
-`maxBatchChars` and `maxItemChars`, which bound one request to 64 inputs,
-200,000 characters and 16,000 characters per input unless set. Without an
-embedder, indexing is off and reviews run without similar code. The index
-holds one model and dimension: a configuration that changes either drops
-every repository's index, and the leader builds each again, a few at a
-time, as `indexing.onboardWindow` paces them. Removing the embedder keeps
-the index, and adding back the same model and dimension uses it again.
-
-## `accounts`
-
-An account is a user or organization a connection serves, `github/<name>`.
-It runs with the defaults unless `accounts` has an entry for it, keyed by
-forge and name, which sets its own settings, and each repository entry
-under it names a repository without its owner:
-
-```yaml
-accounts:
-  - forge: github
-    name: org-1
-    models: { review: openrouter/vendor/large-model }
-    limits: { reviewsPerDay: 50, tokensPerMonth: 20000000 }
-    rules:
-      - id: wrap-errors
-        rule: 'Wrap an error with fmt.Errorf("<package>: %w", err) before returning it.'
-        paths: ["**/*.go"]
-    repositories:
-      - name: repo-1
-        mode: single
-        settle: 2m
-```
-
-An account and a repository entry take the defaults' settings: the keys
-a repository's `.kritik.yaml` takes (`mode`, `models`, `feedback`,
-`comments`, `requireSuggestedFix`, `filter`, `ignore`, `rules`, `context`
-and `agentFiles`, see [the repository settings](repository-config.md)),
-and the admin's own `forks`, `settle`, `agent` and `incremental`. A
-narrower scope's value replaces the broader one's, except `ignore` globs,
-which add up, and `rules`, which add up by id
-([ADR-0018](adr/0018-rules.md)). An
-account also takes `limits` (`concurrency`, `reviewsPerDay`,
-`tokensPerMonth`), `runner` (the review and index Jobs' `resources` and
-`activeDeadlineSeconds`), and `providers`, its own model keys: a model
-named `<key name>/<model>` then runs on that key and the account pays for
-it, and a key's name may not be one the instance's providers use.
-
-An account runs while a connection serves it. An entry for an account no
-connection serves is kept, but not run, and the Configuration page lists
-it as not served.
-
 ### Which repositories run
 
-kritik registers every repository each connection's App reaches, once the
+kritik registers every repository each App reaches, once the
 configuration is applied and again on every poll, and "Resync from GitHub"
 on the Repositories page does the same at once. Whether one runs is
 decided in this order ([ADR-0019](adr/0019-configuration-in-git.md)):
@@ -296,32 +290,65 @@ decided in this order ([ADR-0019](adr/0019-configuration-in-git.md)):
    chose;
 3. a fork does not run, since an account can reach many forks it never
    meant to review;
-4. any other runs as `enabled` says, at the defaults or the account: on
-   unless one sets `enabled: false`.
+4. any other runs as `enabled` says, at `defaults` or `owner/*`: on unless
+   one sets `enabled: false`.
 
-A repository entry may not set `enabled`: the dashboard owns a
+An `owner/name` entry may not set `enabled`: the dashboard owns a
 repository's on or off, and the configuration only says where one starts.
 A repository that is off is neither reviewed, polled nor indexed. One an
 admin turned off, or that the App no longer reaches, has its index dropped
-once `retention.disabledIndexGrace` has passed.
+once `KRITIK_INDEX_GRACE` has passed.
 
-## Other settings
+## `accounts`
 
-- `polling`: the leader's backstop for missed webhooks. `interval` is how
-  often it lists each connection's open pull requests, 10 minutes unless
-  set, and `0s` turns it off; `lookback` bounds how far back a first or
-  long-idle poll looks, 24 hours unless set.
-- `indexing.onboardWindow`: how many onboarding index jobs the leader keeps
-  queued or running at once, 4 unless set.
-- `tools`: command-line tools a runner pod mounts from an image for the
-  agent's run tool ([ADR-0011](adr/0011-runner-tool-images.md)), each a
-  `name`, a digest-pinned `image`, the `path` of its binaries and the
-  `commands` it provides.
-- `retention`: `disabledIndexGrace`, how long the index of a repository
-  that stopped running is kept, 30 days unless set; and `transcripts`, how
-  long an agentic review's full model transcript is kept, 30 days unless
-  set and at least 24 hours. A transcript may contain repository content
-  the agent read, and every member of its account can read it.
-- `egress`: what runner pods may reach through the worker's gateway beyond
-  the forges: `allowHosts`, exact or `*.`-prefixed, and `credentials`, a
-  token the gateway adds to a plain `http://` request to that host.
+An account is a user or organization an app serves, `github/<name>`. Its
+entry under `accounts`, keyed by its name, holds what is the account's
+alone:
+
+```yaml
+accounts:
+  org-1:
+    limits: { reviewsPerDay: 50, tokensPerMonth: 20000000 }
+    providers:
+      org-1-key: { type: openrouter, apiKey: { file: /var/run/secrets/kritik/org-1/api-key } }
+```
+
+- `limits`: `concurrency`, how many model calls it runs at once, 2 unless
+  set; `reviewsPerDay`; and `tokensPerMonth`. `defaults.limits` sets every
+  account's.
+- `providers`: its own model keys. A model named `<key name>/<model>` in
+  its `owner/*` or `owner/name` entries, or in one of its repositories'
+  `.kritik.yaml`, runs on that key and the account pays for it; a key's
+  name may not be one the instance's providers use.
+
+An account runs while an app serves it. An entry for an account no app
+serves is kept, but not run, and the Configuration page lists it as not
+served.
+
+## `egress`
+
+`egress` is what runner pods may reach through the worker's gateway beyond
+GitHub: `allowHosts`, exact or `*.`-prefixed, and `credentials`, a token
+the gateway adds to a plain `http://` request to that host, so the runner
+never holds it.
+
+## How kritik runs
+
+These come from the environment, which the chart's values set, rather
+than the file ([ADR-0021](adr/0021-configuration-shape.md) §2.7); a
+restart changes them.
+
+| Variable                      | Chart value                  | What                                                                                                                                |
+| ----------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `KRITIK_POLL_INTERVAL`        | `config.pollInterval`        | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set       |
+| `KRITIK_POLL_LOOKBACK`        | `config.pollLookback`        | how far back a first or long-idle poll looks; 24h unless set                                                                        |
+| `KRITIK_ONBOARD_WINDOW`       | `config.onboardWindow`       | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                             |
+| `KRITIK_INDEX_GRACE`          | `config.indexGrace`          | how long the index of a repository that stopped running is kept; 720h unless set                                                    |
+| `KRITIK_TRANSCRIPT_RETENTION` | `config.transcriptRetention` | how long an agentic review's full model transcript is kept, at least 24h; 720h unless set                                           |
+| `KRITIK_RUNNER_DEADLINE`      | `runner.deadline`            | a runner Job's deadline; 15m unless set                                                                                             |
+| `KRITIK_RUNNER_RESOURCES`     | `runner.resources`           | a runner pod's resources, as JSON                                                                                                   |
+| `KRITIK_RUNNER_TOOLS`         | `runner.tools`               | command-line tools a runner pod mounts from an image for the agent's run tool ([ADR-0011](adr/0011-runner-tool-images.md)), as JSON |
+
+A transcript may contain repository content the agent read, and every
+member of its account can read it. A tool is a `name`, a digest-pinned
+`image`, the `path` of its binaries and the `commands` it provides.

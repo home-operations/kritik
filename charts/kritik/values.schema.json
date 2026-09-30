@@ -162,7 +162,7 @@
       "type": "object"
     },
     "config": {
-      "description": "The configuration file holds the whole configuration (ADR-0019): sign-in\n(`auth`), the GitHub Apps (`connections`), the instance's `providers`,\n`defaults` and `embedding`, and the `accounts` with their settings and\nrepositories. Sign-in, one connection, one provider, the default models\nand review settings and the embedder also have `KRITIK_*` environment\nvariables, which win over the file; the `auth` values above render some,\nand `extraEnv` can set the others. The file is either inline as `file`,\nrendered into a chart-managed ConfigMap, or an existing ConfigMap with a\n`config.yaml` key. Secret material never goes in the file: it references\nfiles under `secretMounts` or environment variables. Every replica\nre-reads the file on `reloadInterval`; the leader applies it to the store.",
+      "description": "The configuration file holds the whole configuration (ADR-0019,\nADR-0021): sign-in (`auth`), the GitHub `apps`, the instance's\n`providers`, `embedding` and `egress`, the `defaults` every repository\ngets, the `repositories` entries keyed `owner/*` or `owner/name`, and the\n`accounts` with their limits and providers. Sign-in, one app, one\nprovider, the default models and review settings and the embedder also\nhave `KRITIK_*` environment variables, which win over the file; the\n`auth` values above render some, and `extraEnv` can set the others. The\nfile is either inline as `file`, rendered into a chart-managed ConfigMap,\nor an existing ConfigMap with a `config.yaml` key. Secret material never\ngoes in the file: it references files under `secretMounts` or environment\nvariables. Every replica re-reads the file on `reloadInterval`; the\nleader applies it to the store.",
       "properties": {
         "existingConfigMap": {
           "default": "",
@@ -179,10 +179,16 @@
           "type": "array"
         },
         "file": {
-          "description": "(optional) The configuration file, as YAML: the whole configuration, from `auth` and `connections` to `accounts` and their repositories. Passed through verbatim, not tpl'd. See docs/configuration.md.",
+          "description": "(optional) The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md.",
           "required": [],
           "title": "file",
           "type": "object"
+        },
+        "indexGrace": {
+          "default": "",
+          "description": "How long the index of a repository that stopped running is kept (KRITIK_INDEX_GRACE, Go duration). Empty is kritik's default, 720h.",
+          "title": "indexGrace",
+          "type": "string"
         },
         "indexWorkers": {
           "default": 1,
@@ -202,6 +208,24 @@
           "title": "logLevel",
           "type": "string"
         },
+        "onboardWindow": {
+          "default": 0,
+          "description": "How many onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW). 0 is kritik's default, 4.",
+          "title": "onboardWindow",
+          "type": "integer"
+        },
+        "pollInterval": {
+          "default": "",
+          "description": "How often the leader lists each app's open pull requests, its backstop for missed webhooks (KRITIK_POLL_INTERVAL, Go duration); `0s` turns polling off. Empty is kritik's default, 10m.",
+          "title": "pollInterval",
+          "type": "string"
+        },
+        "pollLookback": {
+          "default": "",
+          "description": "How far back a first or long-idle poll looks (KRITIK_POLL_LOOKBACK, Go duration). Empty is kritik's default, 24h.",
+          "title": "pollLookback",
+          "type": "string"
+        },
         "reloadInterval": {
           "default": "10s",
           "description": "How often each replica re-reads the file (Go duration).",
@@ -213,6 +237,12 @@
           "description": "Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers).",
           "title": "reviewWorkers",
           "type": "integer"
+        },
+        "transcriptRetention": {
+          "default": "",
+          "description": "How long an agentic review's transcript is kept, at least 24h (KRITIK_TRANSCRIPT_RETENTION, Go duration). Empty is kritik's default, 720h.",
+          "title": "transcriptRetention",
+          "type": "string"
         }
       },
       "required": [],
@@ -854,11 +884,23 @@
     "runner": {
       "description": "Runner Jobs: one pod per review or index run, created by the worker in the\nrelease namespace from the same image, running as a service account with\nno permissions and a database role that can only touch its own run. The\nworker's Role reaches every Secret in the release namespace, so install\nkritik into a namespace of its own.",
       "properties": {
+        "deadline": {
+          "default": "",
+          "description": "Deadline of a runner Job (KRITIK_RUNNER_DEADLINE, Go duration). Empty is kritik's default, 15m.",
+          "title": "deadline",
+          "type": "string"
+        },
         "image": {
           "default": "",
           "description": "Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd and rg for an agentic review's `agent.commands`.",
           "title": "image",
           "type": "string"
+        },
+        "resources": {
+          "description": "Resources for runner pods (KRITIK_RUNNER_RESOURCES), copied into the pod spec.",
+          "required": [],
+          "title": "resources",
+          "type": "object"
         },
         "runtimeClassName": {
           "default": "",
@@ -890,6 +932,14 @@
           "required": [],
           "title": "serviceAccount",
           "type": "object"
+        },
+        "tools": {
+          "description": "Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS, ADR-0011), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides.",
+          "items": {
+            "required": []
+          },
+          "title": "tools",
+          "type": "array"
         },
         "ttl": {
           "default": "1h",

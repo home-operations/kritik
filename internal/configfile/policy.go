@@ -93,7 +93,6 @@ var Policies = []Policy{
 	{Key: keySettle, Scopes: everyScope},
 	{Key: "incremental.maxDeltaFiles", Scopes: everyScope},
 	{Key: "limits", Scopes: accountScopes},
-	{Key: "runner", Scopes: accountScopes},
 }
 
 // SpecValue is the value spec, one scope's settings (a *Defaults, *Account or

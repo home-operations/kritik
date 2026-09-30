@@ -18,15 +18,17 @@ import (
 )
 
 const testConfig = `
-connections:
+apps:
   - name: alpha-bot
-    forge: github
     accounts: [alpha]
-    app: { clientId: Iv1.alpha, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+    clientId: Iv1.alpha
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
   - name: beta-bot
-    forge: github
     accounts: [beta]
-    app: { clientId: Iv1.beta, privateKey: { env: KRITIK_TEST_TOKEN }, webhookSecret: { env: KRITIK_TEST_TOKEN } }
+    clientId: Iv1.beta
+    privateKey: { env: KRITIK_TEST_TOKEN }
+    webhookSecret: { env: KRITIK_TEST_TOKEN }
 `
 
 func testFile(t *testing.T) *configfile.File {

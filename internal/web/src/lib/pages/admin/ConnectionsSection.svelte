@@ -53,14 +53,14 @@
 </script>
 
 <section class="panel" aria-labelledby="op-connections">
-  <header class="panel-head"><h2 id="op-connections">Connections</h2></header>
-  <StateView res={conns} retry={() => conns.load()} isEmpty={(d) => d.length === 0} empty="No connections yet.">
+  <header class="panel-head"><h2 id="op-connections">GitHub Apps</h2></header>
+  <StateView res={conns} retry={() => conns.load()} isEmpty={(d) => d.length === 0} empty="No GitHub Apps yet.">
     {#snippet children(list)}
       <div class="table-wrap">
         <table class="data">
           <thead>
             <tr>
-              <th scope="col">Connection</th>
+              <th scope="col">App</th>
               <th scope="col">From</th>
               <th scope="col">Accounts</th>
               <th scope="col">Webhooks</th>

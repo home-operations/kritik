@@ -24,11 +24,12 @@ func parseAccount(t *testing.T, slug string) *configfile.File {
 	t.Helper()
 	t.Setenv("TEST_MAIN_TOKEN", "tok")
 	return configfiletest.Load(t, `
-connections:
+apps:
   - name: `+slug+`-bot
-    forge: github
     accounts: [`+slug+`]
-    app: { clientId: Iv1.test, privateKey: { env: TEST_MAIN_TOKEN }, webhookSecret: { env: TEST_MAIN_TOKEN } }
+    clientId: Iv1.test
+    privateKey: { env: TEST_MAIN_TOKEN }
+    webhookSecret: { env: TEST_MAIN_TOKEN }
 `)
 }
 
@@ -289,7 +290,7 @@ func TestRetentionSweep(t *testing.T) {
 	if first.name != "modelCalls" {
 		t.Fatalf("first call = %q, want modelCalls", first.name)
 	}
-	if want := current.Get().Retention.TranscriptsOrDefault(); first.swept != want {
+	if want := current.Get().TranscriptRetention(); first.swept != want {
 		t.Fatalf("olderThan = %s, want %s", first.swept, want)
 	}
 	if got := next(); got.name != "sessions" {

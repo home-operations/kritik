@@ -17,12 +17,12 @@ export function checklist(s: SetupStatus, accounts: AdminAccount[]): ChecklistIt
     {
       label: 'A GitHub App is connected',
       done: s.connections.length > 0,
-      how: 'Declare the App under connections in the configuration file, its private key and webhook secret referenced from a Secret.',
+      how: 'Declare the App under apps in the configuration file, its private key and webhook secret referenced from a Secret.',
     },
     {
       label: 'The App reaches a repository',
       done: accounts.some((a) => a.live && a.repositories > 0),
-      how: 'Install the App on GitHub on an account its connection lists.',
+      how: 'Install the App on GitHub on an account its entry under apps lists.',
     },
     {
       label: 'A review model is set',
