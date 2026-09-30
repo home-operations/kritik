@@ -27,6 +27,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
+	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/ingest"
@@ -216,9 +217,13 @@ type agenticHarness struct {
 	gatewayURL string
 	fc         *fakeCompleter
 	sm         *scriptedModel
-	dir        string
-	base       string
-	head       string
+	// fe is the gateway's embedder, used once the configuration names one.
+	fe *fakeEmbedder
+	// config is the configuration file h.file was parsed from.
+	config string
+	dir    string
+	base   string
+	head   string
 }
 
 func newAgenticHarness(t *testing.T) *agenticHarness {
@@ -242,7 +247,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	}
 	t.Cleanup(runnerStore.Close)
 
-	h := &agenticHarness{ctx: ctx, st: appStore, sm: &scriptedModel{}, fc: &fakeCompleter{}}
+	h := &agenticHarness{ctx: ctx, st: appStore, sm: &scriptedModel{}, fc: &fakeCompleter{}, fe: &fakeEmbedder{}}
 	srv := httptest.NewServer(h.sm)
 	t.Cleanup(srv.Close)
 	t.Setenv("TEST_PEM", "pem")
@@ -253,7 +258,8 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	// Credentials in the provider's URL, which the SDK prints in its errors,
 	// must not reach a runner either.
 	providerURL := strings.Replace(srv.URL, "http://", "http://kritik:provider-secret@", 1)
-	if h.file, err = configfiletest.Parse(t, fmt.Sprintf(agenticConfigYAML, providerURL)); err != nil {
+	h.config = fmt.Sprintf(agenticConfigYAML, providerURL)
+	if h.file, err = configfiletest.Parse(t, h.config); err != nil {
 		t.Fatal(err)
 	}
 	if err := appStore.ApplyConfig(ctx, h.file); err != nil {
@@ -284,6 +290,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	gateway := httptest.NewServer(&Gateway{
 		Store: appStore, Current: h.review.Current, Logger: logger,
 		Proxy: http.NotFoundHandler(), Steppers: &Completers{Build: BuildStepper},
+		Embedders: &Embedders{Build: func(configfile.Embedding) model.Embedder { return h.fe }},
 	})
 	t.Cleanup(gateway.Close)
 	h.gatewayURL = gateway.URL
@@ -375,6 +382,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("an agent spec cut short by the job ending is not retried", func(t *testing.T) { checkAgentSpecFailed(t, h) })
 	t.Run("a capped review is capped under the lease and lets it go", func(t *testing.T) { checkAgentCappedUnderLease(t, h) })
 	t.Run("the gateway serves a run token's steps within its budget", func(t *testing.T) { checkGatewayEndpoint(t, h) })
+	t.Run("the gateway serves similar code into the agent's prompt", func(t *testing.T) { checkGatewaySimilar(t, h) })
 	t.Run("an agentic review snoozes while every model slot is held", func(t *testing.T) { checkAgentSnoozes(t, h) })
 	t.Run("the agent runs curl and the comment lists what it fetched", func(t *testing.T) { checkAgentRunsCommands(t, h) })
 	t.Run("another account cannot read the agent runs", func(t *testing.T) {
@@ -387,7 +395,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 9 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 10 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1196,5 +1204,150 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Unlock()
 	if forgeStatus != "success: kritik: skipped (patch unchanged since the last review)" {
 		t.Fatalf("forge status = %q", forgeStatus)
+	}
+}
+
+// checkGatewaySimilar indexes acme/widgets and checks stage 4 through the
+// gateway: the runner asks for it before its prompt, the gateway answers
+// from the index outside the changed paths and charges the embedding to
+// the run, and refuses a run without a pack or past its budget.
+func checkGatewaySimilar(t *testing.T, h *agenticHarness) {
+	withIndex, err := configfiletest.Parse(t, h.config+"embedding: { model: gateway/fake-embed, dims: 8 }\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.review.Current.Set(withIndex)
+	t.Cleanup(func() { h.review.Current.Set(h.file) })
+	repoID := configfile.RepositoryID(h.account.ID(), "acme/widgets")
+	code := "func b() {}\n\nfunc c() {}\n"
+	seedIndex(t, h, withIndex.Embedding, repoID, code)
+
+	h.sm.reset(scriptSubmit)
+	h.sm.mu.Lock()
+	first := len(h.sm.bodies)
+	h.sm.mu.Unlock()
+	next := h.commit(t, "main.go", "package main\n\n"+code)
+	h.dispatch(t, next)
+	reviewID, status, errText := h.waitReview(t, next)
+	if status != "completed" {
+		t.Fatalf("status = %s (%s)", status, errText)
+	}
+	h.sm.mu.Lock()
+	prompt := string(h.sm.bodies[first])
+	h.sm.mu.Unlock()
+	if !strings.Contains(prompt, "### similar: other.go") || strings.Contains(prompt, "### similar: main.go") {
+		t.Fatalf("stage 4 missing or wrong in the agent's first request:\n%s", prompt)
+	}
+	var embedded int
+	var tokens int64
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT count(*), coalesce(sum(input_tokens), 0) FROM usage WHERE review_id = $1 AND role = 'embedding'`,
+			reviewID).Scan(&embedded, &tokens)
+	}); err != nil || embedded != 1 || tokens <= 0 {
+		t.Fatalf("embedding usage rows=%d tokens=%d err=%v", embedded, tokens, err)
+	}
+
+	checkSimilarRoute(t, h, repoID, code)
+}
+
+// seedIndex makes an active index generation for repoID holding code at
+// other.go and at main.go, which the pull request changes.
+func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoID, code string) {
+	t.Helper()
+	if _, err := h.st.EnsureIndexSchema(h.ctx, "kritik_app", emb.Model, emb.Dims); err != nil {
+		t.Fatal(err)
+	}
+	vectors, _, err := h.fe.Embed(h.ctx, []string{code})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		var runID string
+		if err := tx.QueryRow(h.ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			VALUES ($1, $2, $3, $4, $5, 'full', 'completed') RETURNING id`, h.account.ID(), repoID, h.base, emb.Model, emb.Dims).Scan(&runID); err != nil {
+			return err
+		}
+		// main.go is changed by the pull request, so the overlay has it and
+		// stage 4 must not repeat it.
+		for _, path := range []string{"other.go", "main.go"} {
+			if _, err := tx.Exec(h.ctx, `INSERT INTO index_chunks (account_id, repository_id, index_run_id, path, start_line, end_line, text, embedding)
+				VALUES ($1, $2, $3, $4, 1, 3, $5, $6::halfvec)`, h.account.ID(), repoID, runID, path, code, model.VectorLiteral(vectors[0])); err != nil {
+				return err
+			}
+		}
+		_, err := tx.Exec(h.ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, repoID, runID)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("seed the index: %v", err)
+	}
+}
+
+// checkSimilarRoute calls /v1/similar the way a runner does: refused
+// without a valid token or a context pack, answered from the index, and
+// refused once the run's budget is spent.
+func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
+	t.Helper()
+	similar := func(token string) (int, similarResponse) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(h.ctx, http.MethodPost, h.gatewayURL+"/v1/similar", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var out similarResponse
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+	if code, _ := similar("krk_" + strings.Repeat("0", 64)); code != http.StatusUnauthorized {
+		t.Fatalf("an unknown token = %d", code)
+	}
+	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: repoID, Number: 1, HeadSHA: strings.Repeat("d", 40), Trigger: "test"}
+	pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, args.Number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", configfile.ReviewAgentic, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A budget the first call's embedding overruns: it is reserved while
+	// the run has spent nothing, and the second finds it spent.
+	token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
+		RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: repoID, Model: "gateway/agent-model", Budget: 1,
+	}, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := similar(token); code != http.StatusBadRequest {
+		t.Fatalf("a run without a context pack = %d", code)
+	}
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(h.ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths)
+			VALUES ($1, $2, $3, $4, 'p', $5, '{main.go}')`, runID, h.account.ID(), args.HeadSHA, h.base,
+			"diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1,1 +1,4 @@\n package main\n+\n+"+
+				strings.ReplaceAll(strings.TrimSuffix(code, "\n"), "\n", "\n+")+"\n")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	code200, out := similar(token)
+	if code200 != http.StatusOK || len(out.Chunks) != 1 || out.Chunks[0].Path != "other.go" || out.Chunks[0].Stage != contextpack.StageSimilar {
+		t.Fatalf("similar = %d %+v", code200, out)
+	}
+	grant, err := h.st.LookupGatewayToken(h.ctx, token)
+	if err != nil || grant.Spent <= 0 || grant.Spent >= similarReserve {
+		t.Fatalf("spent = %d, %v; want the embedding's tokens, not the reservation", grant.Spent, err)
+	}
+	if code, _ := similar(token); code != http.StatusTooManyRequests {
+		t.Fatalf("a call past the run's budget = %d", code)
+	}
+	if err := h.st.RevokeGatewayTokens(h.ctx, runID); err != nil {
+		t.Fatal(err)
 	}
 }

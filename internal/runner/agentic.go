@@ -1,11 +1,14 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -160,6 +163,12 @@ func runAgentic(
 	if err != nil {
 		return fmt.Errorf("runner: %w", err)
 	}
+	if chunks, err := similarCode(ctx, p.Model.GatewayURL, secrets.GatewayToken); err != nil {
+		// Stage 4 is best effort: the index may be absent or mid-rebuild.
+		logger.Warn("similar-code retrieval skipped", "error", err)
+	} else {
+		pack.Context = append(pack.Context, chunks...)
+	}
 	run, cleanup := commandTool(ctx, p, agent.NewTree(head, ignore), secrets.GitToken, p.Agent.limits().MaxToolOutputBytes, logger)
 	defer cleanup()
 	var extra []agent.Tool
@@ -205,6 +214,44 @@ func runAgentic(
 // canceledWriteTimeout bounds writing a cancelled agent's row, well inside
 // a runner pod's termination grace period.
 const canceledWriteTimeout = 5 * time.Second
+
+// similarTimeout bounds asking the gateway for stage 4, which may wait for
+// the account's embedding slot.
+const similarTimeout = time.Minute
+
+// maxSimilarBody bounds the gateway's stage 4 answer: ten chunks.
+const maxSimilarBody = 1 << 20
+
+// similarCode asks the gateway for stage 4: the chunks of the repository's
+// index nearest the diff of the context pack the run has written.
+func similarCode(ctx context.Context, gatewayURL, token string) ([]contextpack.Chunk, error) {
+	ctx, cancel := context.WithTimeout(ctx, similarTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(gatewayURL, "/")+"/v1/similar", nil)
+	if err != nil {
+		return nil, fmt.Errorf("runner: similar code: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("runner: similar code: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSimilarBody))
+	if err != nil {
+		return nil, fmt.Errorf("runner: similar code: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("runner: similar code: %s: %s", resp.Status, bytes.TrimSpace(body))
+	}
+	var out struct {
+		Chunks []contextpack.Chunk `json:"chunks"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("runner: similar code: %w", err)
+	}
+	return out.Chunks, nil
+}
 
 // agentRecord is an agent_runs row.
 type agentRecord struct {

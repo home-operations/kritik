@@ -236,8 +236,9 @@ func startWorker(
 	base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
 	completers := &worker.Completers{Build: worker.BuildStepper}
 	// The gateway: runner pods' one route out, allowed by the hosts the
-	// current configuration names (ADR-0008), and the model endpoint an
-	// agentic runner calls with its run token (ADR-0004).
+	// current configuration names (ADR-0008), and the model and similar-code
+	// endpoints an agentic runner calls with its run token (ADR-0004,
+	// ADR-0026).
 	gatewayLogger := logger.With("listener", "gateway")
 	gateway := &worker.Gateway{
 		Store: st, Current: current, Logger: gatewayLogger, Metrics: m,
@@ -245,7 +246,7 @@ func startWorker(
 			Rules:   func() egress.Rules { return current.Get().EgressRules() },
 			Observe: m.Egress, Logger: gatewayLogger,
 		},
-		Steppers: completers,
+		Steppers: completers, Embedders: embedders,
 	}
 	g.Go(func() error {
 		return server.Serve(lingering(ctx, linger), cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
