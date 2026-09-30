@@ -290,7 +290,7 @@ func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfi
 	m, err := repoconfig.Merge(doc, settings)
 	out := &RepoConfig{
 		ReviewID: row.ReviewID, Commit: row.Commit, Found: row.Doc != nil, Settings: repoSettings(m.Settings),
-		SkipPaths: nonNil(m.Skip.OnlyPaths), Dropped: nonNil(m.Dropped),
+		Dropped: nonNil(m.Dropped),
 	}
 	if m.InRepoFilter != nil {
 		out.Filter = m.InRepoFilter.Source()

@@ -61,7 +61,6 @@ func TestEffective(t *testing.T) {
 		instructions []string
 		templates    review.Templates
 		strict       bool
-		onlyPaths    []string
 		notes        []string
 	}{
 		{
@@ -78,8 +77,8 @@ func TestEffective(t *testing.T) {
 			rules: adminRules, templates: adminDefaults, strict: true,
 		},
 		{
-			name: "ignore and skip paths add to the admin's", doc: "ignore: [gen/**, vendor/**]\nskip:\n  onlyPaths: [docs/**]\n",
-			files: adminFiles, enabled: true, ignore: []string{"vendor/**", "gen/**"}, onlyPaths: []string{"docs/**"},
+			name: "ignore globs add to the admin's", doc: "ignore: [gen/**, vendor/**]\n",
+			files: adminFiles, enabled: true, ignore: []string{"vendor/**", "gen/**"},
 			repoFiles: append(adminPaths, repoconfig.FileName), rules: adminRules, templates: adminDefaults, strict: true,
 		},
 		{
@@ -144,8 +143,8 @@ func TestEffective(t *testing.T) {
 			if e.Enabled != tt.enabled || (e.InRepoFilter != nil) != tt.inRepoFilter || e.Filter != settings.Filter {
 				t.Fatalf("enabled=%v inRepoFilter=%v admin filter kept=%v", e.Enabled, e.InRepoFilter != nil, e.Filter == settings.Filter)
 			}
-			if !slices.Equal(e.Ignore, tt.ignore) || !slices.Equal(e.Skip.OnlyPaths, tt.onlyPaths) {
-				t.Fatalf("ignore=%v onlyPaths=%v", e.Ignore, e.Skip.OnlyPaths)
+			if !slices.Equal(e.Ignore, tt.ignore) {
+				t.Fatalf("ignore=%v", e.Ignore)
 			}
 			if got := e.repoFiles(); !slices.Equal(got, tt.repoFiles) {
 				t.Fatalf("repoFiles = %v, want %v", got, tt.repoFiles)
@@ -181,8 +180,8 @@ func TestEffectiveSkip(t *testing.T) {
 		{"filtered", "filter: '!pr.body.contains(\"[skip-review]\")'\n", "please [skip-review]", []string{"main.go"}, repoconfig.SkipFiltered},
 		{"filter allows", "filter: '!pr.body.contains(\"[skip-review]\")'\n", "normal", []string{"main.go"}, ""},
 		{"filter that fails to evaluate skips", "filter: 'pr.number > 0'\n", "", []string{"main.go"}, repoconfig.SkipFiltered},
-		{"only skipped paths", "skip:\n  onlyPaths: [docs/**]\n", "", []string{"docs/a.md", "docs/b/c.md"}, repoconfig.SkipOnlyPaths},
-		{"a path outside the skip rule", "skip:\n  onlyPaths: [docs/**]\n", "", []string{"docs/a.md", "main.go"}, ""},
+		{"only ignored paths", "ignore: [docs/**]\n", "", []string{"docs/a.md", "docs/b/c.md"}, repoconfig.SkipOnlyPaths},
+		{"a path outside the ignore globs", "ignore: [docs/**]\n", "", []string{"docs/a.md", "main.go"}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -197,7 +196,7 @@ func TestEffectiveSkip(t *testing.T) {
 		})
 	}
 	for r, want := range map[repoconfig.SkipReason]string{
-		repoconfig.SkipDisabled: "disabled in .kritik.yaml", repoconfig.SkipFiltered: "filtered by .kritik.yaml", repoconfig.SkipOnlyPaths: "only skipped paths changed",
+		repoconfig.SkipDisabled: "disabled in .kritik.yaml", repoconfig.SkipFiltered: "filtered by .kritik.yaml", repoconfig.SkipOnlyPaths: "only ignored paths changed",
 	} {
 		if r.Description() != want {
 			t.Fatalf("%q.Description() = %q, want %q", r, r.Description(), want)

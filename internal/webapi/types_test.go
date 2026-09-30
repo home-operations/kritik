@@ -123,7 +123,7 @@ var goldens = map[string]any{
 				s.Models.Review = "openrouter/acme-small"
 				return s
 			}(),
-			Filter: "!pr.draft", SkipPaths: []string{"docs/**"},
+			Filter:  "!pr.draft",
 			Dropped: []string{`.kritik.yaml: mode "single" was dropped; allowed: agentic`},
 		},
 		IndexRuns: []IndexRun{goldenIndexRun},

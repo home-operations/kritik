@@ -1,6 +1,7 @@
 // Package repoconfig parses .kritik.yaml, the optional per-repository file
 // that lets a repository narrow how kritik reviews it (a filter ANDed with
-// the admin's own filter, path globs to ignore, a skip-review rule),
+// the admin's own filter, path globs to ignore, which also skip a pull
+// request that changes nothing else),
 // add rules, context files and templates read from the repository itself,
 // and choose its mode, models, agent limits and settle time within the
 // bounds an admin allows.
@@ -81,12 +82,6 @@ type Review struct {
 	AgentFiles *bool `yaml:"agentFiles,omitempty"`
 }
 
-// Skip decides whether a PR should be skipped outright based on the paths it
-// changes.
-type Skip struct {
-	OnlyPaths []string `yaml:"onlyPaths,omitempty"`
-}
-
 // Models are the review and fallback models a repository chooses, each a
 // "<provider>/<model>" the admin's bounds list.
 type Models struct {
@@ -113,7 +108,6 @@ type File struct {
 	Settle  *time.Duration        `yaml:"settle,omitempty"`
 	Filter  string                `yaml:"filter,omitempty"`
 	Ignore  []string              `yaml:"ignore,omitempty"`
-	Skip    Skip                  `yaml:"skip,omitempty"`
 	Review  Review                `yaml:"review,omitempty"`
 }
 
@@ -137,11 +131,6 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 	for i, g := range f.Ignore {
 		if !validGlob(g) {
 			return File{}, nil, fmt.Errorf("repoconfig: ignore[%d] %q is not a valid glob", i, g)
-		}
-	}
-	for i, g := range f.Skip.OnlyPaths {
-		if !validGlob(g) {
-			return File{}, nil, fmt.Errorf("repoconfig: skip.onlyPaths[%d] %q is not a valid glob", i, g)
 		}
 	}
 	for i, c := range f.Review.Context {
@@ -268,16 +257,15 @@ func TooLarge(name string) string {
 	return fmt.Sprintf("%s: skipped, it exceeds the %d byte per-file limit", name, MaxFileBytes)
 }
 
-// All reports whether every path in changed matches at least one of s's
-// OnlyPaths glob patterns. It is false when there are no patterns or no
-// changed paths - an empty rule skips nothing, and there is nothing to
-// judge a skip against.
-func (s Skip) All(changed []string) bool {
-	if len(s.OnlyPaths) == 0 || len(changed) == 0 {
+// AllIgnored reports whether every path in changed matches one of the
+// ignore globs, so the pull request is skipped (ADR-0021 §2.6). It is
+// false when nothing changed: there is nothing to judge a skip against.
+func AllIgnored(ignore, changed []string) bool {
+	if len(ignore) == 0 || len(changed) == 0 {
 		return false
 	}
 	for _, c := range changed {
-		if !matchesAny(s.OnlyPaths, c) {
+		if !matchesAny(ignore, c) {
 			return false
 		}
 	}

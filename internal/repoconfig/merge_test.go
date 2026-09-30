@@ -33,14 +33,13 @@ func TestMerge(t *testing.T) {
 		allow   configfile.Allow
 		want    func(*configfile.Settings)
 		filter  bool
-		skip    []string
 		dropped []string
 		wantErr string
 	}{
 		{name: "no file"},
 		{
 			name: "the file narrows, appends file rules and replaces presentation",
-			doc: "enabled: false\nfilter: '!pr.draft'\nignore: [gen/**, vendor/**]\nskip:\n  onlyPaths: [docs/**]\n" +
+			doc: "enabled: false\nfilter: '!pr.draft'\nignore: [gen/**, vendor/**]\n" +
 				"review:\n  rules: [{ id: repo-style, file: .kritik/rules.md }, { id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }]\n" +
 				"  templates:\n    inline: .kritik/inline.tmpl\n",
 			want: func(s *configfile.Settings) {
@@ -49,7 +48,7 @@ func TestMerge(t *testing.T) {
 					configfile.Rule{ID: "sql", File: ".kritik/sql.md", Paths: []string{"**/*.sql"}})
 				s.Review.Templates.Inline = ".kritik/inline.tmpl"
 			},
-			filter: true, skip: []string{"docs/**"},
+			filter: true,
 		},
 		{
 			name: "an admin's file rule stays as the admin wrote it", doc: "review:\n  rules: [{ id: house-style, file: docs/rules.md, paths: ['**/*.sql'] }]\n",
@@ -154,8 +153,8 @@ func TestMerge(t *testing.T) {
 			if !reflect.DeepEqual(m.Settings, want) {
 				t.Fatalf("settings = %+v\nwant       %+v", m.Settings, want)
 			}
-			if (m.InRepoFilter != nil) != tt.filter || !slices.Equal(m.Skip.OnlyPaths, tt.skip) || !slices.Equal(m.Dropped, tt.dropped) {
-				t.Fatalf("filter=%v skip=%v dropped=%q", m.InRepoFilter != nil, m.Skip.OnlyPaths, m.Dropped)
+			if (m.InRepoFilter != nil) != tt.filter || !slices.Equal(m.Dropped, tt.dropped) {
+				t.Fatalf("filter=%v dropped=%q", m.InRepoFilter != nil, m.Dropped)
 			}
 			if !reflect.DeepEqual(op, func() configfile.Settings { o := adminSettings(); o.Allow = tt.allow; return o }()) {
 				t.Fatal("Merge changed the admin's settings")
@@ -183,7 +182,7 @@ func TestMergedCheck(t *testing.T) {
 		{"filtered", "filter: '!pr.body.contains(\"[skip-review]\")'\n", []string{"main.go"}, SkipFiltered, false},
 		{"filter allows", "filter: 'pr.number == 3 && pr.open && pr.labels[0].name == \"deps\"'\n", []string{"main.go"}, "", false},
 		{"filter that fails to evaluate skips", "filter: 'pr.number == 1 || pr.labels[9].name == \"x\"'\n", []string{"main.go"}, SkipFiltered, true},
-		{"only skipped paths", "skip:\n  onlyPaths: [docs/**]\n", []string{"docs/a.md"}, SkipOnlyPaths, false},
+		{"only ignored paths", "ignore: [docs/**]\n", []string{"docs/a.md"}, SkipOnlyPaths, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -199,7 +198,7 @@ func TestMergedCheck(t *testing.T) {
 		})
 	}
 	for r, want := range map[SkipReason]string{
-		SkipDisabled: "disabled in .kritik.yaml", SkipFiltered: "filtered by .kritik.yaml", SkipOnlyPaths: "only skipped paths changed",
+		SkipDisabled: "disabled in .kritik.yaml", SkipFiltered: "filtered by .kritik.yaml", SkipOnlyPaths: "only ignored paths changed",
 	} {
 		if !r.Valid() || r.Description() != want {
 			t.Fatalf("%q.Description() = %q, want %q", r, r.Description(), want)

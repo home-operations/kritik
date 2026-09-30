@@ -53,9 +53,6 @@ func TestSources(t *testing.T) {
 			t.Errorf("%s from %s, want %s", key, s[key], want)
 		}
 	}
-	if _, ok := s["skip.onlyPaths"]; ok {
-		t.Error("a setting only the repository has has no admin source")
-	}
 	if s := f.Sources(&Account{Forge: ForgeGitHub, Name: "other"}, "other/x"); s["settle"] != SourceDefaults || s["mode"] != SourceDefault {
 		t.Fatalf("an account without an entry = %v", s)
 	}

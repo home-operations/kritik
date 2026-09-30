@@ -21,8 +21,6 @@ type RepoRule string
 // Repository rules. The empty rule is none: the file cannot name the
 // setting at all.
 const (
-	// RepoOwn is a setting only the file has.
-	RepoOwn RepoRule = "own"
 	// RepoTurnOff may only turn the setting off.
 	RepoTurnOff RepoRule = "turnOff"
 	// RepoTurnOn may only turn the setting on.
@@ -82,7 +80,6 @@ var Policies = []Policy{
 	{Key: "enabled", Scopes: everyScope, Repository: RepoTurnOff},
 	{Key: "filter", Scopes: everyScope, Repository: RepoAnd},
 	{Key: "ignore", Scopes: everyScope, Repository: RepoUnion},
-	{Key: "skip.onlyPaths", Scopes: []Scope{}, Repository: RepoOwn},
 	{Key: keyForks, Scopes: everyScope},
 	{Key: "models.review", Scopes: everyScope, Repository: RepoChoose},
 	{Key: "models.fallback", Scopes: everyScope, Repository: RepoChoose},

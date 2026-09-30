@@ -57,7 +57,7 @@ func TestDecodeSpec(t *testing.T) {
 		{name: "valid review", in: encode(reviewSpec())},
 		{name: "valid index without base", in: encode(Spec{Version: SpecVersion, Kind: KindIndex, RunID: "r", CloneURL: "u", Head: shaA})},
 		{name: "valid agentic", in: encode(agenticSpec())},
-		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":7`, `"version":8`, 1), wantErr: "version"},
+		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":8`, `"version":9`, 1), wantErr: "version"},
 		{name: "unknown field", in: strings.Replace(encode(reviewSpec()), `{`, `{"token":"x",`, 1), wantErr: "unknown field"},
 		{name: "bad head sha", in: strings.Replace(encode(reviewSpec()), shaA, "abc", 1), wantErr: "head"},
 		{name: "uppercase sha", in: strings.Replace(encode(reviewSpec()), shaA, strings.ToUpper(shaA), 1), wantErr: "head"},

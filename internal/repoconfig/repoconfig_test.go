@@ -19,7 +19,7 @@ func TestParse_Invalid(t *testing.T) {
 	cases := []struct{ name, yaml string }{
 		{"unknown key", "foo: bar\n"},
 		{"bad ignore glob", "ignore:\n  - \"[\"\n"},
-		{"bad skip glob", "skip:\n  onlyPaths:\n    - \"[\"\n"},
+		{"skip is gone", "skip:\n  onlyPaths:\n    - \"**/*.md\"\n"},
 		{"bad filter syntax", "filter: \"pr.draft &&\"\n"},
 		{"filter not bool", "filter: \"pr.title\"\n"},
 		{"absolute rule file", "review:\n  rules: [{ id: a, file: /etc/passwd }]\n"},
@@ -61,9 +61,6 @@ func TestParse_Valid(t *testing.T) {
 filter: '!pr.draft'
 ignore:
   - "**/*.md"
-skip:
-  onlyPaths:
-    - "**/*.md"
 review:
   rules:
     - { id: house-style, file: docs/instructions.md }
@@ -88,9 +85,6 @@ review:
 		}
 		if !slices.Equal(f.Ignore, []string{"**/*.md"}) {
 			t.Fatalf("Ignore = %v", f.Ignore)
-		}
-		if !slices.Equal(f.Skip.OnlyPaths, []string{"**/*.md"}) {
-			t.Fatalf("Skip.OnlyPaths = %v", f.Skip.OnlyPaths)
 		}
 		if !reflect.DeepEqual(f.Review.Rules, []configfile.Rule{
 			{ID: "house-style", File: "docs/instructions.md"}, {ID: "sql", File: "docs/sql.md", Paths: []string{"**/*.sql"}},
@@ -251,24 +245,25 @@ func TestCollect(t *testing.T) {
 	})
 }
 
-func TestSkip_All(t *testing.T) {
+func TestAllIgnored(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name    string
-		skip    Skip
+		ignore  []string
 		changed []string
 		want    bool
 	}{
-		{"empty patterns", Skip{}, []string{"main.go"}, false},
-		{"all changed paths match", Skip{OnlyPaths: []string{"**/*.md"}}, []string{"docs/a.md", "docs/b.md"}, true},
-		{"one non-matching file", Skip{OnlyPaths: []string{"**/*.md"}}, []string{"docs/a.md", "main.go"}, false},
-		{"empty changed", Skip{OnlyPaths: []string{"**/*.md"}}, nil, false},
+		{"no globs", nil, []string{"main.go"}, false},
+		{"all changed paths ignored", []string{"**/*.md"}, []string{"docs/a.md", "docs/b.md"}, true},
+		{"one path not ignored", []string{"**/*.md"}, []string{"docs/a.md", "main.go"}, false},
+		{"nothing changed", []string{"**/*.md"}, nil, false},
+		{"a lockfile-only change, by the default globs", configfile.DefaultIgnore, []string{"go.sum", "web/package-lock.json"}, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			if got := c.skip.All(c.changed); got != c.want {
-				t.Fatalf("All(%v) = %v, want %v", c.changed, got, c.want)
+			if got := AllIgnored(c.ignore, c.changed); got != c.want {
+				t.Fatalf("AllIgnored(%v) = %v, want %v", c.changed, got, c.want)
 			}
 		})
 	}
