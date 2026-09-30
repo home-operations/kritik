@@ -193,17 +193,14 @@ func TestApplyLoopRetriesARefusal(t *testing.T) {
 func TestStoreOptionsOwnerDSN(t *testing.T) {
 	cfg := &config.Config{DatabaseURL: "postgres://app", DatabaseOwnerURL: "postgres://owner"}
 	for _, tt := range []struct {
-		role  config.Role
-		owner string
+		command config.Command
+		owner   string
 	}{
-		{config.RoleAll, "postgres://owner"},
-		{config.RoleWorker, "postgres://owner"},
-		{config.RoleIngest, ""},
-		{config.RoleRunner, ""},
-		{config.RoleWeb, ""},
+		{config.CommandServe, "postgres://owner"},
+		{config.CommandRun, ""},
 	} {
-		t.Run(string(tt.role), func(t *testing.T) {
-			opts := storeOptions(tt.role, cfg, slog.New(slog.DiscardHandler))
+		t.Run(string(tt.command), func(t *testing.T) {
+			opts := storeOptions(tt.command, cfg, slog.New(slog.DiscardHandler))
 			if opts.OwnerURL != tt.owner || opts.AppURL != "postgres://app" {
 				t.Errorf("owner = %q, app = %q; want owner %q", opts.OwnerURL, opts.AppURL, tt.owner)
 			}

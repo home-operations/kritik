@@ -30,7 +30,7 @@ func (f *File) AccountByID(id string) (*Account, bool) {
 }
 
 // Connection returns the running connection with the given name. Names are
-// unique, so this is how the ingest role turns a hook path into a webhook
+// unique, so this is how the webhook listener turns a hook path into a webhook
 // secret.
 func (f *File) Connection(name string) (*Connection, bool) {
 	for i := range f.Connections {

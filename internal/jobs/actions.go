@@ -1,6 +1,6 @@
 // actions.go holds the enqueue helpers the web dashboard's API handlers call,
 // each running inside the caller's account transaction (store.WithAccount) so
-// the web role can audit an action in the same transaction it takes effect
+// the dashboard can audit an action in the same transaction it takes effect
 // in. Row-level security on pull_requests/reviews already scopes every query
 // here to the transaction's account; the explicit account_id predicates below
 // are defense in depth, matching the rest of the codebase.

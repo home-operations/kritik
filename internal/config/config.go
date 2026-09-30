@@ -22,39 +22,40 @@ import (
 	"github.com/home-operations/kritik/internal/egress"
 )
 
-// Role selects which part of kritik a process runs. One image serves every
-// role; a homelab runs "all" in one pod while a larger deployment runs
-// "ingest" and "worker" as separate Deployments and lets the worker spawn
-// "runner" Jobs.
-type Role string
+// Command selects what a kritik process runs (ADR-0024): the service, or
+// one review or index run in a runner Job.
+type Command string
 
-// Roles a kritik process can run as.
+// Commands a kritik process can run.
 const (
-	RoleAll    Role = "all"
-	RoleIngest Role = "ingest"
-	RoleWorker Role = "worker"
-	RoleRunner Role = "runner"
-	// RoleWeb serves the dashboard (ADR-0009): sign-in, sessions,
-	// the accounts' pages and the instance configuration. "all" serves it
-	// too.
-	RoleWeb Role = "web"
+	// CommandServe is the service: webhooks, the dashboard, the job
+	// queues, runner Jobs, the gateway and, on the leader, the leader
+	// duties.
+	CommandServe Command = "serve"
+	// CommandRun is one run in a runner Job, which the service creates.
+	CommandRun Command = "run"
 )
 
-// ParseRole validates a role name from the command line.
-func ParseRole(s string) (Role, error) {
-	switch r := Role(strings.ToLower(strings.TrimSpace(s))); r {
-	case RoleAll, RoleIngest, RoleWorker, RoleRunner, RoleWeb:
-		return r, nil
-	default:
-		return "", fmt.Errorf("config: unknown role %q (want all, ingest, worker, runner or web)", s)
+// ParseCommand reads the command from a process's arguments, without the
+// program name: serve when there are none.
+func ParseCommand(args []string) (Command, error) {
+	if len(args) == 0 {
+		return CommandServe, nil
 	}
+	if len(args) == 1 {
+		switch c := Command(args[0]); c {
+		case CommandServe, CommandRun:
+			return c, nil
+		}
+	}
+	return "", fmt.Errorf("config: unknown arguments %q: usage: kritik [serve | run]", args)
 }
 
 // Config holds the process configuration for kritik. All fields are populated
 // from environment variables via caarlos0/env. Call [Load] to parse and
 // validate; do not construct directly.
 type Config struct {
-	// Addr is the listen address for the HTTP surface the ingest role serves:
+	// Addr is the listen address for the webhook surface serve runs:
 	// /hooks/{connection} and nothing else. Port 8080 matches the container
 	// image's EXPOSE and the other services in the fleet.
 	Addr string `env:"KRITIK_ADDR" envDefault:":8080"`
@@ -65,8 +66,8 @@ type Config struct {
 	// the webhooks.
 	MetricsAddr string `env:"KRITIK_METRICS_ADDR" envDefault:":8081"`
 
-	// GatewayAddr is the listen address of the gateway the worker and all
-	// roles serve: the forward proxy runner pods reach the outside through
+	// GatewayAddr is the listen address of the gateway serve runs: the
+	// forward proxy runner pods reach the outside through
 	// (ADR-0008), and the model endpoint an agentic runner calls with its
 	// run token (ADR-0004). Its own port, so the runner network policy can
 	// name it without opening the hook or management surfaces.
@@ -84,8 +85,8 @@ type Config struct {
 	// minted it dies before revoking it.
 	GatewayTokenTTL time.Duration `env:"KRITIK_GATEWAY_TOKEN_TTL" envDefault:"1h"`
 
-	// WebAddr is the listen address for the dashboard the web role
-	// serves. Its own port, matching the pattern of Addr/MetricsAddr/
+	// WebAddr is the listen address for the dashboard serve runs. Its own
+	// port, matching the pattern of Addr/MetricsAddr/
 	// GatewayAddr, so the dashboard can be exposed without opening the
 	// other surfaces.
 	WebAddr string `env:"KRITIK_WEB_ADDR" envDefault:":8083"`
@@ -93,21 +94,20 @@ type Config struct {
 	// WebURL is the dashboard's externally reachable origin: an absolute
 	// http(s) URL with a host and no query or fragment. It is how the
 	// dashboard builds absolute links (OIDC redirect URIs, session cookie
-	// scope) back to itself, so it must be required for the web role and
-	// must match how the ingress/HTTPRoute actually exposes it. A trailing
-	// slash is trimmed. Required for the all and web roles, which serve
-	// the dashboard. Parsed once into an unexported *url.URL, read back
-	// with [Config.WebURLParsed].
+	// scope) back to itself, so it must match how the ingress/HTTPRoute
+	// actually exposes it. A trailing slash is trimmed. Required to serve.
+	// Parsed once into an unexported *url.URL, read back with
+	// [Config.WebURLParsed].
 	WebURL string `env:"KRITIK_WEB_URL"`
 
 	// ConfigFile is the path of the optional configuration file: sign-in
-	// and the connections an admin keeps in git. Every role except runner
-	// loads it at startup, and a change takes a restart (ADR-0022 §2.1).
+	// and the connections an admin keeps in git. serve loads it at
+	// startup, and a change takes a restart (ADR-0022 §2.1).
 	// Empty means no file, and the environment alone declares them.
 	ConfigFile string `env:"KRITIK_CONFIG_FILE"`
 
-	// DatabaseURL is the DSN every role connects with for request and job
-	// work. It must be the application role: not a superuser, no BYPASSRLS,
+	// DatabaseURL is the DSN every process connects with for request and
+	// job work. It must be the application role: not a superuser, no BYPASSRLS,
 	// owning nothing, so row-level security applies to it. Runner pods get
 	// the runner role's DSN under the same variable name. Checked at
 	// startup; a DSN that bypasses row-level security refuses to start.
@@ -115,8 +115,8 @@ type Config struct {
 
 	// DatabaseOwnerURL is the DSN of the role that owns the schema. It runs
 	// migrations, the configuration loader and the chunks DDL, all of which
-	// write across accounts. Only the roles that can become leader (all and
-	// worker) need it; ingest and runner must not have it.
+	// write across accounts. serve needs it to become leader; a runner
+	// must not have it.
 	DatabaseOwnerURL string `env:"KRITIK_DATABASE_OWNER_URL,unset"`
 
 	// DatabaseAppRole and DatabaseRunnerRole are the Postgres role names the
@@ -145,8 +145,8 @@ type Config struct {
 	// worker's credentials.
 	Executor string `env:"KRITIK_EXECUTOR" envDefault:"kubernetes"`
 
-	// RunnerImage is the image runner Jobs use, normally the worker's own.
-	// Required for the worker and all roles with the kubernetes executor.
+	// RunnerImage is the image runner Jobs use, normally serve's own.
+	// Required to serve with the kubernetes executor.
 	RunnerImage string `env:"KRITIK_RUNNER_IMAGE"`
 
 	// RunnerServiceAccount is the permissionless service account runner pods
@@ -166,11 +166,11 @@ type Config struct {
 	// default runtime. Advised, not required (ADR-0008 §2.4).
 	RunnerRuntimeClass string `env:"KRITIK_RUNNER_RUNTIME_CLASS"`
 
-	// RunnerDatabaseURL is the runner role's DSN, needed only by the local
-	// executor, which runs the runner inside the worker process.
+	// RunnerDatabaseURL is the runner database role's DSN, needed only by
+	// the local executor, which runs the runner inside the serve process.
 	RunnerDatabaseURL string `env:"KRITIK_RUNNER_DATABASE_URL,unset"`
 
-	// RunSpecFile is the path of the runner role's job document, a
+	// RunSpecFile is the path of a runner's job document, a
 	// versioned JSON runner spec the worker mounts into the Job from the
 	// run's Secret. A file rather than a variable: a spec can outgrow the
 	// kernel's 128 KiB limit on one environment string.
@@ -191,31 +191,26 @@ type Config struct {
 	webURL *url.URL
 }
 
-// ValidateWorker checks what the worker role needs beyond the common set.
-func (c *Config) ValidateWorker() error {
+// ValidateServe checks what serve needs beyond the common set.
+func (c *Config) ValidateServe() error {
+	var errs []error
 	if c.Executor == "kubernetes" && c.RunnerImage == "" {
-		return errors.New("config: KRITIK_RUNNER_IMAGE is required with the kubernetes executor")
+		errs = append(errs, errors.New("config: KRITIK_RUNNER_IMAGE is required with the kubernetes executor"))
 	}
 	if c.Executor == "local" && c.RunnerDatabaseURL == "" {
-		return errors.New("config: KRITIK_RUNNER_DATABASE_URL is required with the local executor")
+		errs = append(errs, errors.New("config: KRITIK_RUNNER_DATABASE_URL is required with the local executor"))
 	}
-	return nil
+	if c.WebURL == "" {
+		errs = append(errs, errors.New("config: KRITIK_WEB_URL is required to serve"))
+	}
+	return errors.Join(errs...)
 }
 
 // ValidateRunner checks what a runner pod needs. The job document itself is
 // decoded and validated by the runner package.
 func (c *Config) ValidateRunner() error {
 	if c.RunSpecFile == "" {
-		return errors.New("config: KRITIK_RUN_SPEC_FILE is required for the runner role")
-	}
-	return nil
-}
-
-// ValidateWeb checks what serving the dashboard needs beyond the common
-// set, for the all and web roles.
-func (c *Config) ValidateWeb() error {
-	if c.WebURL == "" {
-		return errors.New("config: KRITIK_WEB_URL is required for the all and web roles")
+		return errors.New("config: KRITIK_RUN_SPEC_FILE is required to run")
 	}
 	return nil
 }

@@ -149,7 +149,7 @@ Secrets `Password` generator plus a templated `uri` works).
 
 ### Egress gateway
 
-Worker-capable pods serve a forward proxy on `gateway.port`, and runner Jobs
+The kritik serve pods serve a forward proxy on `gateway.port`, and runner Jobs
 are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
@@ -171,11 +171,11 @@ secretEnv:
   - { name: GITHUB_TOKEN, secretName: kritik-github-token, key: token }
 ```
 
-The same port is an agentic runner's model endpoint. The worker mints a
+The same port is an agentic runner's model endpoint. kritik serve mints a
 token for each run, good for that run until its Job's deadline and revoked
 when it ends, and hands it to the pod in place of a provider key; the
 gateway answers each step through the account's provider with the key only
-the worker holds, refuses a step once the run's token budget or the
+kritik serve holds, refuses a step once the run's token budget or the
 account's `tokensPerMonth` is spent, and records the step's usage. Provider
 endpoints are therefore not in a runner's allowlist.
 
@@ -236,13 +236,12 @@ it from the node.
 
 ### Topology
 
-`roles.all` runs everything in one Deployment and is the usual shape. For a
-split, disable it and enable `roles.ingest` (webhooks) and `roles.worker`
-(queues, runner Jobs, leader duties) with their own replica counts. Any
-number of replicas may run; one holds the leader lock at a time. `roles.all`
-runs two by default, with a PodDisruptionBudget, so a rollout, such as the
-one a changed `config.file` starts, always leaves one serving webhooks and
-the dashboard.
+The chart runs one Deployment of `kritik serve` (ADR-0024), `replicas: 2`
+by default with a PodDisruptionBudget. Every replica serves webhooks and the
+dashboard and works jobs, and one holds the leader lock at a time; two keep
+one serving while a rollout, such as the one a changed `config.file` starts,
+replaces the other. Runner pods are the Jobs `kritik serve` creates, one per
+review and index run, running `kritik run`.
 
 ## Maintainers
 
@@ -284,25 +283,25 @@ Kubernetes: `>=1.25.0-0`
 | config.extraEnv | list | `[]` | Extra raw env vars merged into every role's container (advanced). |
 | config.file | optional | `{}` | The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
 | config.indexGrace | string | `""` | How long the index of a repository that stopped running is kept (KRITIK_INDEX_GRACE, Go duration). Empty is kritik's default, 720h. |
-| config.indexWorkers | int | `1` | Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews. |
+| config.indexWorkers | int | `1` | Index jobs one replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews. |
 | config.logFormat | string | `"json"` | Log format: json or text. |
 | config.logLevel | string | `"info"` | Log level: debug, info, warn or error. |
 | config.onboardWindow | int | `0` | How many onboarding index jobs the leader keeps queued or running at once (KRITIK_ONBOARD_WINDOW). 0 is kritik's default, 4. |
 | config.pollInterval | string | `""` | How often the leader lists each app's open pull requests, its backstop for missed webhooks (KRITIK_POLL_INTERVAL, Go duration); `0s` turns polling off. Empty is kritik's default, 10m. |
 | config.pollLookback | string | `""` | How far back a first or long-idle poll looks (KRITIK_POLL_LOOKBACK, Go duration). Empty is kritik's default, 24h. |
-| config.reviewWorkers | int | `2` | Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers). |
+| config.reviewWorkers | int | `2` | Review jobs one replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed `replicas` × (reviewWorkers + indexWorkers). |
 | config.transcriptRetention | string | `""` | How long an agentic review's transcript is kept, at least 24h (KRITIK_TRANSCRIPT_RETENTION, Go duration). Empty is kritik's default, 720h. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritik_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |
-| database.owner.existingSecret | required for roles.all / roles.worker | `""` | Secret holding the owner role's connection URI, used only by the leader for migrations and configuration sync. |
+| database.owner.existingSecret | required | `""` | Secret holding the owner role's connection URI, used only by the leader for migrations and configuration sync. |
 | database.owner.key | string | `"uri"` | Key in that Secret. |
-| database.runner.existingSecret | required for roles.all / roles.worker | `""` | Secret holding the runner role's connection URI; referenced by runner Jobs, never read by the worker. |
+| database.runner.existingSecret | required | `""` | Secret holding the runner role's connection URI; referenced by runner Jobs, never read by kritik serve. |
 | database.runner.key | string | `"uri"` | Key in that Secret. |
 | database.runner.role | string | `"kritik_runner"` | Name of the runner role, granted only what runner Jobs need. |
 | deploymentAnnotations | object | `{}` | Annotations added to every Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
 | fullnameOverride | string | `""` | Override the full release name. |
-| gateway.enabled | bool | `true` | Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews, the default mode, are refused without it: set `KRITIK_DEFAULTS_MODE=single` (or `defaults.mode: single`) before turning it off. |
+| gateway.enabled | bool | `true` | Serve the gateway on the kritik serve pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews, the default mode, are refused without it: set `KRITIK_DEFAULTS_MODE=single` (or `defaults.mode: single`) before turning it off. |
 | gateway.port | int | `8082` | Gateway port on the pods and its Service. |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
@@ -333,28 +332,17 @@ Kubernetes: `>=1.25.0-0`
 | networkPolicy.postgresPort | int | `5432` | Postgres port allowed for egress. |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | podAnnotations | object | `{}` | Annotations added to the pods. |
-| podDisruptionBudget.enabled | bool | `true` | Create a PodDisruptionBudget per role with more than one replica. |
-| podDisruptionBudget.maxUnavailable | int | `1` | Maximum pods of a role that may be unavailable, as a count or percentage. @schema type: [integer, string] @schema |
+| podDisruptionBudget.enabled | bool | `true` | Create a PodDisruptionBudget when there is more than one replica. |
+| podDisruptionBudget.maxUnavailable | int | `1` | Maximum pods that may be unavailable, as a count or percentage. @schema type: [integer, string] @schema |
 | podLabels | object | `{}` | Labels added to the pods. |
 | podSecurityContext | object | `{"runAsGroup":65532,"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level securityContext (non-root uid/gid 65532, RuntimeDefault seccomp). |
 | priorityClassName | string | `""` | PriorityClass for the pods. Empty uses the cluster default. |
-| rbac.create | bool | `true` | Create the Role and RoleBinding the worker needs: Jobs in the release namespace, their pods and logs, and the Secrets it hands them. Nothing cluster-wide. |
+| rbac.create | bool | `true` | Create the Role and RoleBinding kritik serve needs: Jobs in the release namespace, their pods and logs, and the Secrets it hands them. Nothing cluster-wide. |
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"metrics"},"periodSeconds":10}` | Readiness probe, on the metrics port. A replica is ready once it has a database connection and its listeners are up. |
-| resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Pod resource requests/limits shared by every role; `roles.<role>.resources` overrides per role. |
-| roles.all.enabled | bool | `true` | Run the single-process topology: webhooks, leader duties, the worker and the dashboard in one Deployment. |
-| roles.all.replicas | int | `2` | Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3). |
-| roles.all.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
-| roles.ingest.enabled | bool | `false` | Run webhook ingest as its own Deployment (split topology). |
-| roles.ingest.replicas | int | `2` | Replicas for the ingest Deployment. |
-| roles.ingest.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
-| roles.web.enabled | bool | `false` | Run the dashboard as its own Deployment (split topology, where it is required: kritik is configured there). |
-| roles.web.replicas | int | `1` | Replicas for the web Deployment. |
-| roles.web.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
-| roles.worker.enabled | bool | `false` | Run the worker (queues, runner Jobs, leader duties) as its own Deployment (split topology). |
-| roles.worker.replicas | int | `1` | Replicas for the worker Deployment. |
-| roles.worker.resources | object | `{}` | Resources for this role's pods; empty falls back to `resources`. |
+| replicas | int | `2` | Replicas of kritik serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3). |
+| resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests and limits of the kritik serve pods. |
 | runner.deadline | string | `""` | Deadline of a runner Job (KRITIK_RUNNER_DEADLINE, Go duration). Empty is kritik's default, 15m. |
-| runner.image | string | `""` | Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd and rg for an agentic review's `agent.commands`. |
+| runner.image | string | `""` | Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd, gh and rg for an agentic review's `agent.commands`. |
 | runner.resources | object | `{}` | Resources for runner pods (KRITIK_RUNNER_RESOURCES), copied into the pod spec. |
 | runner.runtimeClassName | string | `""` | RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and, in agentic mode, runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
@@ -369,11 +357,11 @@ Kubernetes: `>=1.25.0-0`
 | service.type | string | `"ClusterIP"` | Service type for the webhook listener. |
 | service.webPort | int | `8083` | Dashboard port, served by `all` and `web` pods. |
 | serviceAccount.annotations | object | `{}` | Annotations for the ServiceAccount. |
-| serviceAccount.automount | bool | `true` | Automount the API token. The worker needs it to create runner Jobs; a pure ingest topology could turn it off. |
-| serviceAccount.create | bool | `true` | Create the ServiceAccount the roles run as. |
+| serviceAccount.automount | bool | `true` | Automount the API token, which kritik serve needs to create runner Jobs. |
+| serviceAccount.create | bool | `true` | Create the ServiceAccount kritik serve runs as. |
 | serviceAccount.name | string | `""` | ServiceAccount name; generated from the release name if empty. |
 | startupProbe | object | `{"failureThreshold":30,"httpGet":{"path":"/healthz","port":"metrics"},"periodSeconds":2}` | Startup probe, on the metrics port. The liveness and readiness probes wait until it passes, so a pod still opening its listeners is not reported unready; it allows a minute. |
-| terminationGracePeriodSeconds | int | `150` | Grace period for a clean shutdown: the worker stops taking jobs and lets running ones finish for up to 100s, then retries the reviews it cut, and its gateway lets model steps in flight finish for up to 2m. |
+| terminationGracePeriodSeconds | int | `150` | Grace period for a clean shutdown: kritik serve stops taking jobs and lets running ones finish for up to 100s, then retries the reviews it cut, and its gateway lets model steps in flight finish for up to 2m. |
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
 | volumeMounts | list | `[]` | Additional volume mounts on every container. |
 | volumes | list | `[]` | Additional volumes on every Deployment. |

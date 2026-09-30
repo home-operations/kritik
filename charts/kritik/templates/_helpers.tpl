@@ -41,22 +41,12 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
-Selector labels shared by every role's pods.
+Selector labels of the server pods. Runner pods lack the instance label, so
+these select the server alone.
 */}}
 {{- define "kritik.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "kritik.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
-{{- end }}
-
-{{/*
-Name of a role's Deployment: the release name for `all`, suffixed otherwise.
-*/}}
-{{- define "kritik.roleName" -}}
-{{- if eq .role "all" -}}
-{{- include "kritik.fullname" .root -}}
-{{- else -}}
-{{- printf "%s-%s" (include "kritik.fullname" .root) .role | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
 {{- end }}
 
 {{/*
@@ -114,24 +104,6 @@ ConfigMap the file is read from.
 {{- end }}
 
 {{/*
-Roles that are enabled, in a fixed order, so templates that range over them
-render deterministically.
-*/}}
-{{- define "kritik.enabledRoles" -}}
-{{- $out := list -}}
-{{- range $r := list "all" "ingest" "worker" "web" -}}
-{{- if (index $.Values.roles $r).enabled -}}
-{{- $out = append $out $r -}}
-{{- end -}}
-{{- end -}}
-{{- join "," $out -}}
-{{- end }}
-
-{{/*
-Whether any enabled role works jobs (and so needs the worker RBAC, the
-runner account and the owner/runner database secrets).
-*/}}
-{{/*
 In-cluster URL runner Jobs are handed as HTTPS_PROXY, empty when the gateway
 is off.
 */}}
@@ -139,25 +111,6 @@ is off.
 {{- if .Values.gateway.enabled -}}
 {{- printf "http://%s-gateway.%s.svc.cluster.local:%d" (include "kritik.fullname" .) .Release.Namespace (int .Values.gateway.port) -}}
 {{- end -}}
-{{- end }}
-
-{{- define "kritik.hasWorker" -}}
-{{- if or .Values.roles.all.enabled .Values.roles.worker.enabled -}}true{{- end -}}
-{{- end }}
-
-{{/*
-Whether any enabled role serves webhooks.
-*/}}
-{{- define "kritik.hasIngest" -}}
-{{- if or .Values.roles.all.enabled .Values.roles.ingest.enabled -}}true{{- end -}}
-{{- end }}
-
-{{/*
-Whether any enabled role serves the dashboard: all always does, since
-web.url is required.
-*/}}
-{{- define "kritik.hasWeb" -}}
-{{- if or .Values.roles.web.enabled .Values.roles.all.enabled -}}true{{- end -}}
 {{- end }}
 
 {{/*

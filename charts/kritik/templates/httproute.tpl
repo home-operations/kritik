@@ -25,7 +25,6 @@ spec:
   hostnames:
     - {{ include "kritik.webHost" . | quote }}
   rules:
-    {{- if include "kritik.hasIngest" . }}
     - matches:
         - path:
             type: PathPrefix
@@ -33,7 +32,6 @@ spec:
       backendRefs:
         - name: {{ include "kritik.fullname" . }}
           port: {{ .Values.service.port }}
-    {{- end }}
     - matches:
         - path:
             type: PathPrefix

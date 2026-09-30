@@ -192,7 +192,7 @@
         },
         "indexWorkers": {
           "default": 1,
-          "description": "Index jobs one worker replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews.",
+          "description": "Index jobs one replica runs at once (KRITIK_INDEX_WORKERS), rate-limited apart from reviews.",
           "title": "indexWorkers",
           "type": "integer"
         },
@@ -228,7 +228,7 @@
         },
         "reviewWorkers": {
           "default": 2,
-          "description": "Review jobs one worker replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed the replicas working jobs × (reviewWorkers + indexWorkers).",
+          "description": "Review jobs one replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed `replicas` × (reviewWorkers + indexWorkers).",
           "title": "reviewWorkers",
           "type": "integer"
         },
@@ -275,7 +275,7 @@
           "properties": {
             "existingSecret": {
               "default": "",
-              "description": "(required for roles.all / roles.worker) Secret holding the owner role's connection URI, used only by the leader for migrations and configuration sync.",
+              "description": "(required) Secret holding the owner role's connection URI, used only by the leader for migrations and configuration sync.",
               "title": "existingSecret",
               "type": "string"
             },
@@ -294,7 +294,7 @@
           "properties": {
             "existingSecret": {
               "default": "",
-              "description": "(required for roles.all / roles.worker) Secret holding the runner role's connection URI; referenced by runner Jobs, never read by the worker.",
+              "description": "(required) Secret holding the runner role's connection URI; referenced by runner Jobs, never read by kritik serve.",
               "title": "existingSecret",
               "type": "string"
             },
@@ -336,7 +336,7 @@
       "properties": {
         "enabled": {
           "default": true,
-          "description": "Serve the gateway on `all` and `worker` pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews, the default mode, are refused without it: set `KRITIK_DEFAULTS_MODE=single` (or `defaults.mode: single`) before turning it off.",
+          "description": "Serve the gateway on the kritik serve pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint an agentic runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Agentic reviews, the default mode, are refused without it: set `KRITIK_DEFAULTS_MODE=single` (or `defaults.mode: single`) before turning it off.",
           "title": "enabled",
           "type": "boolean"
         },
@@ -621,13 +621,13 @@
       "properties": {
         "enabled": {
           "default": true,
-          "description": "Create a PodDisruptionBudget per role with more than one replica.",
+          "description": "Create a PodDisruptionBudget when there is more than one replica.",
           "title": "enabled",
           "type": "boolean"
         },
         "maxUnavailable": {
           "default": 1,
-          "description": "Maximum pods of a role that may be unavailable, as a count or percentage.",
+          "description": "Maximum pods that may be unavailable, as a count or percentage.",
           "required": [],
           "title": "maxUnavailable",
           "type": [
@@ -691,7 +691,7 @@
       "properties": {
         "create": {
           "default": true,
-          "description": "Create the Role and RoleBinding the worker needs: Jobs in the release namespace, their pods and logs, and the Secrets it hands them. Nothing cluster-wide.",
+          "description": "Create the Role and RoleBinding kritik serve needs: Jobs in the release namespace, their pods and logs, and the Secrets it hands them. Nothing cluster-wide.",
           "title": "create",
           "type": "boolean"
         }
@@ -730,8 +730,14 @@
       "title": "readinessProbe",
       "type": "object"
     },
+    "replicas": {
+      "default": 2,
+      "description": "kritik runs as one Deployment of `kritik serve`: webhooks, the dashboard,\nthe job queues, runner Jobs, the gateway and, on the replica holding the\nleader lock, the leader duties (ADR-0024). Runner pods are not part of\nit: serve creates them as Jobs, one per review and index run.\nReplicas of kritik serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3).",
+      "title": "replicas",
+      "type": "integer"
+    },
     "resources": {
-      "description": "Pod resource requests/limits shared by every role; `roles.\u003crole\u003e.resources` overrides per role.",
+      "description": "Resource requests and limits of the kritik serve pods.",
       "properties": {
         "limits": {
           "properties": {
@@ -767,116 +773,8 @@
       "title": "resources",
       "type": "object"
     },
-    "roles": {
-      "description": "kritik is one binary with four roles. `all` runs ingest, worker and the\ndashboard in one process (the usual shape); a split topology enables\n`ingest`, `worker` and `web` separately and scales each. Every enabled role\nrenders its own Deployment from the same image, config and secrets. Runner\npods are not a role here: the worker creates them as Jobs per review and\nindex.",
-      "properties": {
-        "all": {
-          "properties": {
-            "enabled": {
-              "default": true,
-              "description": "Run the single-process topology: webhooks, leader duties, the worker and the dashboard in one Deployment.",
-              "title": "enabled",
-              "type": "boolean"
-            },
-            "replicas": {
-              "default": 2,
-              "description": "Replicas. Any replica can serve webhooks and work jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3).",
-              "title": "replicas",
-              "type": "integer"
-            },
-            "resources": {
-              "description": "Resources for this role's pods; empty falls back to `resources`.",
-              "required": [],
-              "title": "resources",
-              "type": "object"
-            }
-          },
-          "required": [],
-          "title": "all",
-          "type": "object"
-        },
-        "ingest": {
-          "properties": {
-            "enabled": {
-              "default": false,
-              "description": "Run webhook ingest as its own Deployment (split topology).",
-              "title": "enabled",
-              "type": "boolean"
-            },
-            "replicas": {
-              "default": 2,
-              "description": "Replicas for the ingest Deployment.",
-              "title": "replicas",
-              "type": "integer"
-            },
-            "resources": {
-              "description": "Resources for this role's pods; empty falls back to `resources`.",
-              "required": [],
-              "title": "resources",
-              "type": "object"
-            }
-          },
-          "required": [],
-          "title": "ingest",
-          "type": "object"
-        },
-        "web": {
-          "properties": {
-            "enabled": {
-              "default": false,
-              "description": "Run the dashboard as its own Deployment (split topology, where it is required: kritik is configured there).",
-              "title": "enabled",
-              "type": "boolean"
-            },
-            "replicas": {
-              "default": 1,
-              "description": "Replicas for the web Deployment.",
-              "title": "replicas",
-              "type": "integer"
-            },
-            "resources": {
-              "description": "Resources for this role's pods; empty falls back to `resources`.",
-              "required": [],
-              "title": "resources",
-              "type": "object"
-            }
-          },
-          "required": [],
-          "title": "web",
-          "type": "object"
-        },
-        "worker": {
-          "properties": {
-            "enabled": {
-              "default": false,
-              "description": "Run the worker (queues, runner Jobs, leader duties) as its own Deployment (split topology).",
-              "title": "enabled",
-              "type": "boolean"
-            },
-            "replicas": {
-              "default": 1,
-              "description": "Replicas for the worker Deployment.",
-              "title": "replicas",
-              "type": "integer"
-            },
-            "resources": {
-              "description": "Resources for this role's pods; empty falls back to `resources`.",
-              "required": [],
-              "title": "resources",
-              "type": "object"
-            }
-          },
-          "required": [],
-          "title": "worker",
-          "type": "object"
-        }
-      },
-      "required": [],
-      "title": "roles",
-      "type": "object"
-    },
     "runner": {
-      "description": "Runner Jobs: one pod per review or index run, created by the worker in the\nrelease namespace from the same image, running as a service account with\nno permissions and a database role that can only touch its own run. The\nworker's Role reaches every Secret in the release namespace, so install\nkritik into a namespace of its own.",
+      "description": "Runner Jobs: one pod per review or index run, created by kritik serve in the\nrelease namespace from the same image, running as a service account with\nno permissions and a database role that can only touch its own run. The\nserver's Role reaches every Secret in the release namespace, so install\nkritik into a namespace of its own.",
       "properties": {
         "deadline": {
           "default": "",
@@ -886,7 +784,7 @@
         },
         "image": {
           "default": "",
-          "description": "Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd and rg for an agentic review's `agent.commands`.",
+          "description": "Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd, gh and rg for an agentic review's `agent.commands`.",
           "title": "image",
           "type": "string"
         },
@@ -1032,13 +930,13 @@
         },
         "automount": {
           "default": true,
-          "description": "Automount the API token. The worker needs it to create runner Jobs; a pure ingest topology could turn it off.",
+          "description": "Automount the API token, which kritik serve needs to create runner Jobs.",
           "title": "automount",
           "type": "boolean"
         },
         "create": {
           "default": true,
-          "description": "Create the ServiceAccount the roles run as.",
+          "description": "Create the ServiceAccount kritik serve runs as.",
           "title": "create",
           "type": "boolean"
         },
@@ -1090,7 +988,7 @@
     },
     "terminationGracePeriodSeconds": {
       "default": 150,
-      "description": "Grace period for a clean shutdown: the worker stops taking jobs and lets running ones finish for up to 100s, then retries the reviews it cut, and its gateway lets model steps in flight finish for up to 2m.",
+      "description": "Grace period for a clean shutdown: kritik serve stops taking jobs and lets running ones finish for up to 100s, then retries the reviews it cut, and its gateway lets model steps in flight finish for up to 2m.",
       "title": "terminationGracePeriodSeconds",
       "type": "integer"
     },

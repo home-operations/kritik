@@ -22,10 +22,8 @@ spec:
           protocol: TCP
         - port: {{ .Values.service.metricsPort }}
           protocol: TCP
-        {{- if include "kritik.hasWeb" . }}
         - port: {{ .Values.web.port }}
           protocol: TCP
-        {{- end }}
     {{- if .Values.gateway.enabled }}
     # The gateway is for runner pods alone.
     - from:
@@ -51,18 +49,15 @@ spec:
         {{- end }}
         - port: {{ $np.postgresPort }}
           protocol: TCP
-    {{- if include "kritik.hasWorker" . }}
-    # The worker talks to the API server to create and watch runner Jobs.
+    # The API server, to create and watch runner Jobs.
     - ports:
         - port: 443
           protocol: TCP
         - port: 6443
           protocol: TCP
-    {{- end }}
-{{- if include "kritik.hasWorker" . }}
 ---
 # Runner pods: no ingress at all; egress to DNS, Postgres and, with the
-# gateway, the gateway port on worker-capable pods, through which the git
+# gateway, the gateway port on the server pods, through which the git
 # remote, the model endpoint and every allowed host are reached. Without
 # the gateway, the egressPorts to anywhere, as before.
 apiVersion: networking.k8s.io/v1
@@ -101,10 +96,9 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              kritik.home-operations.com/gateway: "true"
+              {{- include "kritik.selectorLabels" . | nindent 14 }}
       ports:
         - port: {{ .Values.gateway.port }}
           protocol: TCP
     {{- end }}
-{{- end }}
 {{- end }}

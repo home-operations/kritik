@@ -59,7 +59,7 @@ func TestJobSpec(t *testing.T) {
 		t.Fatalf("pod spec = %+v", pod)
 	}
 	c := pod.Containers[0]
-	if c.Image != "ttl.sh/x:1h" || len(c.Args) != 2 || c.Args[1] != "runner" {
+	if c.Image != "ttl.sh/x:1h" || len(c.Args) != 1 || c.Args[0] != "run" {
 		t.Fatalf("container = %+v", c)
 	}
 	checkRunnerEnv(t, c.Env)

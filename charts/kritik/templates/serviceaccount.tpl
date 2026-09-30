@@ -12,7 +12,7 @@ metadata:
   {{- end }}
 automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
 {{- end }}
-{{- if and (include "kritik.hasWorker" .) .Values.runner.serviceAccount.create }}
+{{- if .Values.runner.serviceAccount.create }}
 ---
 # Runner pods run as this account; it grants nothing and mounts no token.
 apiVersion: v1

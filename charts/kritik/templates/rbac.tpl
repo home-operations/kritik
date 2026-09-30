@@ -1,5 +1,5 @@
-{{- if and .Values.rbac.create (include "kritik.hasWorker" .) }}
-# The worker creates runner Jobs in its own namespace and reads their pods
+{{- if .Values.rbac.create }}
+# kritik serve creates runner Jobs in its own namespace and reads their pods
 # and logs; nothing cluster-wide, nothing else.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

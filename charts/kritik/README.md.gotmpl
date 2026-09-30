@@ -154,7 +154,7 @@ Secrets `Password` generator plus a templated `uri` works).
 
 ### Egress gateway
 
-Worker-capable pods serve a forward proxy on `gateway.port`, and runner Jobs
+The kritik serve pods serve a forward proxy on `gateway.port`, and runner Jobs
 are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
@@ -176,11 +176,11 @@ secretEnv:
   - { name: GITHUB_TOKEN, secretName: kritik-github-token, key: token }
 ```
 
-The same port is an agentic runner's model endpoint. The worker mints a
+The same port is an agentic runner's model endpoint. kritik serve mints a
 token for each run, good for that run until its Job's deadline and revoked
 when it ends, and hands it to the pod in place of a provider key; the
 gateway answers each step through the account's provider with the key only
-the worker holds, refuses a step once the run's token budget or the
+kritik serve holds, refuses a step once the run's token budget or the
 account's `tokensPerMonth` is spent, and records the step's usage. Provider
 endpoints are therefore not in a runner's allowlist.
 
@@ -241,13 +241,12 @@ it from the node.
 
 ### Topology
 
-`roles.all` runs everything in one Deployment and is the usual shape. For a
-split, disable it and enable `roles.ingest` (webhooks) and `roles.worker`
-(queues, runner Jobs, leader duties) with their own replica counts. Any
-number of replicas may run; one holds the leader lock at a time. `roles.all`
-runs two by default, with a PodDisruptionBudget, so a rollout, such as the
-one a changed `config.file` starts, always leaves one serving webhooks and
-the dashboard.
+The chart runs one Deployment of `kritik serve` (ADR-0024), `replicas: 2`
+by default with a PodDisruptionBudget. Every replica serves webhooks and the
+dashboard and works jobs, and one holds the leader lock at a time; two keep
+one serving while a rollout, such as the one a changed `config.file` starts,
+replaces the other. Runner pods are the Jobs `kritik serve` creates, one per
+review and index run, running `kritik run`.
 
 {{ template "chart.maintainersSection" . }}
 

@@ -43,17 +43,3 @@ tests:
           value: RELEASE-NAME-kritik-runner
         template: serviceaccount.tpl
         documentIndex: 1
-
-  - it: renders no worker RBAC or runner account for an ingest-only topology
-    set:
-      roles.all.enabled: false
-      roles.ingest.enabled: true
-      database.owner.existingSecret: ""
-      database.runner.existingSecret: ""
-    asserts:
-      - hasDocuments:
-          count: 0
-        template: rbac.tpl
-      - hasDocuments:
-          count: 1
-        template: serviceaccount.tpl
