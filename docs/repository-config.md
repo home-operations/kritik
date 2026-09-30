@@ -41,6 +41,9 @@ rules:
       paths: ["**/*.go"],
     }
   - { id: house-style, file: .kritik/review.md }
+  - id: renovate
+    rule: Say what the update breaks, from the release notes in the body.
+    whenExpr: pr.headRef.startsWith("renovate/")
 context:
   - { path: ARCHITECTURE.md, description: how the services fit together }
 ```
@@ -104,13 +107,18 @@ context:
   read from the same merge-base tree, whose content is the check
   ([ADR-0021](adr/0021-configuration-shape.md) §2.5); optional `paths`
   globs apply it only when a changed path matches one, so checks for one
-  part of the repository do not spend the room on changes elsewhere. A
-  rule whose `id` an admin's rule has is dropped, and the review's
-  summary says so. The rules a change matches are listed by id in the
-  system prompt (and a follow-up's), a file rule under a heading of its
-  own, within 16 KiB of rule text and 32 KiB of rule files, and a finding
-  lists the ids of the rules it enforces, keeping only ones its review
-  was given.
+  part of the repository do not spend the room on changes elsewhere. An
+  optional `whenExpr`, a CEL expression over the `pr` that `filterExpr`
+  sees, applies it only to a pull request it is true of, such as
+  `pr.headRef.startsWith("renovate/")` for Renovate's
+  ([ADR-0021](adr/0021-configuration-shape.md) §2.9); it is compiled and
+  smoke-tested like `filterExpr`, and a rule whose `whenExpr` fails to
+  evaluate is left out. A rule whose `id` an admin's rule has is
+  dropped, and the review's summary says so. The rules a change matches
+  are listed by id in the system prompt (and a follow-up's), a file rule
+  under a heading of its own, within 16 KiB of rule text and 32 KiB of
+  rule files, and a finding lists the ids of the rules it enforces,
+  keeping only ones its review was given.
 - `context`: files that explain the code, each a `path` with a
   `description` and optional `paths` globs, added after the admin's. An
   agentic review is pointed at each file to read it with its own tools; a
@@ -134,13 +142,14 @@ parse.
 
 ## `filterExpr` recipes
 
-`filterExpr` is a [CEL](https://cel.dev) expression over `pr`, which has the
-pull request's `number`, `title`, `body`, `author`, `state`, `open`,
-`merged`, `draft`, `fork`, `headRef`, `headSha`, `baseRef`, `url`,
-`createdAt` and `labels` (each with a `name` and a `color`), and `event`,
-what started the review: `opened`, `reopened`, `ready_for_review`,
-`synchronize` (a push), `poll` (a push kritik found without its webhook)
-or `manual` (a re-run from the dashboard).
+`filterExpr`, like a rule's `whenExpr`, is a [CEL](https://cel.dev)
+expression over `pr`, which has the pull request's `number`, `title`,
+`body`, `author`, `state`, `open`, `merged`, `draft`, `fork`, `headRef`,
+`headSha`, `baseRef`, `url`, `createdAt` and `labels` (each with a `name`
+and a `color`), and `event`, what started the review: `opened`,
+`reopened`, `ready_for_review`, `synchronize` (a push), `poll` (a push
+kritik found without its webhook) or `manual` (a re-run from the
+dashboard).
 
 Some filters, each the whole `filterExpr` value:
 

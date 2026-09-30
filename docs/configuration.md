@@ -25,7 +25,7 @@ variable under one of these prefixes that names no key is refused at
 startup rather than ignored.
 
 A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`:
-`filterExpr` and `roleMappingExpr`.
+`filterExpr`, `roleMappingExpr` and a rule's `whenExpr`.
 
 Every replica re-reads the file on the chart's `config.reloadInterval`.
 Content that does not load, or that would leave the dashboard no way to
@@ -219,6 +219,9 @@ defaults:
   settle: 30s
   rules:
     - { id: no-tokens, rule: "Never log a token, key or password." }
+    - id: renovate
+      rule: Say what the update breaks, from the release notes in the body.
+      whenExpr: pr.headRef.startsWith("renovate/")
 repositories:
   org-1/*:
     models: { review: org-1-key/vendor/large-model }

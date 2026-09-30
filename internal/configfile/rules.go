@@ -14,12 +14,15 @@ import (
 // (ADR-0018), by an id findings cite it by and narrower scopes replace it
 // by. The check is Rule's text or the content of File, a repository file
 // read from the merge base, exactly one of them (ADR-0021 §2.5). With
-// Paths it applies only when a changed path matches one of them.
+// Paths it applies only when a changed path matches one of them, and with
+// WhenExpr, a CEL expression over the pull request as a filter sees it,
+// only when that is true (ADR-0021 §2.9).
 type Rule struct {
-	ID    string   `yaml:"id" json:"id"`
-	Rule  string   `yaml:"rule,omitempty" json:"rule,omitempty"`
-	File  string   `yaml:"file,omitempty" json:"file,omitempty"`
-	Paths []string `yaml:"paths,omitempty" json:"paths,omitempty"`
+	ID       string   `yaml:"id" json:"id"`
+	Rule     string   `yaml:"rule,omitempty" json:"rule,omitempty"`
+	File     string   `yaml:"file,omitempty" json:"file,omitempty"`
+	Paths    []string `yaml:"paths,omitempty" json:"paths,omitempty"`
+	WhenExpr string   `yaml:"whenExpr,omitempty" json:"whenExpr,omitempty"`
 }
 
 // MaxRuleChars bounds one rule's text.
@@ -30,7 +33,8 @@ var ruleIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // CheckRules rejects a list of rules with an id that is not valid or is
 // listed twice, neither or both of a rule and a file, an overlong rule, a
-// file outside the repository, or a glob that is not valid. The error
+// file outside the repository, a glob that is not valid, or a whenExpr
+// that does not compile or fails against a sample pull request. The error
 // starts with the rule's place in the list, as rules[i].
 func CheckRules(rules []Rule) error {
 	for i, r := range rules {
@@ -56,6 +60,9 @@ func CheckRules(rules []Rule) error {
 			if strings.TrimSpace(g) == "" || !doublestar.ValidatePattern(g) {
 				return fmt.Errorf("rules[%d].paths[%d] %q is not a valid glob", i, j, g)
 			}
+		}
+		if _, err := compileFilter(r.WhenExpr); err != nil {
+			return fmt.Errorf("rules[%d].whenExpr: %w", i, err)
 		}
 	}
 	return nil

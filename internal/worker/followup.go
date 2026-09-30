@@ -176,7 +176,7 @@ func (f *followUp) run(ctx context.Context) (string, error) {
 		agent = repoconfig.AgentFiles(files, rec.changed)
 	}
 	instructions, _ := repoconfig.Instructions(files, agent)
-	rules, _ := repoconfig.ActiveRules(f.settings.Review.Rules, files, rec.changed)
+	rules, _ := repoconfig.ActiveRules(repoconfig.RulesFor(f.settings.Review.Rules, rec.vars), files, rec.changed)
 	system := review.FollowUpSystemPrompt(rules, instructions)
 	msg := review.BuildFollowUp(review.Input{
 		Repository: f.pr.repository, Number: f.pr.number, Title: f.pr.title, Author: f.pr.author, BaseRef: f.pr.baseRef,
@@ -394,11 +394,14 @@ type reviewRecord struct {
 	// files are the repository files the review's runner read, its agent
 	// files among them.
 	files repoconfig.Files
+	// vars is the pull request as a filter sees it, with the event of the
+	// review, which the rules' whenExpr are judged against.
+	vars map[string]any
 }
 
-// reviewRecord loads the pull request description and the latest completed
-// review's diff, context pack, repository files and findings; without a
-// review the thread stands alone.
+// reviewRecord loads the pull request description, its filter variables,
+// and the latest completed review's diff, context pack, repository files
+// and findings; without a review the thread stands alone.
 func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 	var rec reviewRecord
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
@@ -406,7 +409,16 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 			return fmt.Errorf("worker: load pull request body: %w", err)
 		}
 		last, err := lastCompleted(ctx, tx, f.pr.id)
-		if err != nil || last.id == "" {
+		if err != nil {
+			return err
+		}
+		var trigger string
+		if last.id != "" {
+			if err := tx.QueryRow(ctx, `SELECT trigger FROM reviews WHERE id = $1`, last.id).Scan(&trigger); err != nil {
+				return fmt.Errorf("worker: load review trigger: %w", err)
+			}
+		}
+		if rec.vars, err = filterVars(ctx, tx, f.pr.id, trigger); err != nil || last.id == "" {
 			return err
 		}
 		rec.id, rec.findings = last.id, reviewFindings(last.findings)

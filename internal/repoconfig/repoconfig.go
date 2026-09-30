@@ -304,6 +304,26 @@ func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []
 	return out, left
 }
 
+// RulesFor is the rules whose whenExpr, if any, is true of vars, the
+// filter's pr variable, in order. One that does not compile or evaluate is
+// left out, as it could not say the rule applies.
+func RulesFor(rules []configfile.Rule, vars map[string]any) []configfile.Rule {
+	var out []configfile.Rule
+	for _, r := range rules {
+		if r.WhenExpr != "" {
+			prg, err := prfilter.Compile(r.WhenExpr)
+			if err != nil {
+				continue
+			}
+			if ok, err := prg.Eval(vars); err != nil || !ok {
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // Instructions returns the contents of the named files, trimmed and in
 // order, skipping any that are absent or blank, so that joined by blank
 // lines they fit MaxInstructionBytes. truncated reports that the cap cut

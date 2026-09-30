@@ -67,6 +67,9 @@ repositories:
       maxSteps: 6
       commands: [curl]
       commandTimeout: 5s
+    rules:
+      - { id: into-main, rule: Keep main releasable., whenExpr: 'pr.baseRef == "main"' }
+      - { id: renovate, rule: Say what the update breaks., whenExpr: 'pr.headRef.startsWith("renovate/")' }
 `
 
 // agentJobTimeout is the harness client's JobTimeout.
@@ -450,6 +453,7 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
 		t.Fatalf("the runner left the root's AGENTS.md out of the system prompt:\n%s", system)
 	}
+	checkAgentRules(t, system)
 	h.fc.mu.Lock()
 	calls := h.fc.calls
 	h.fc.mu.Unlock()
@@ -938,6 +942,15 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 		t.Fatalf("model calls = %+v", rows)
 	}
 	h.checkNoSecrets(t, `review_id = $1`, reviewID)
+}
+
+// checkAgentRules checks the runner was given the rules whose whenExpr
+// the worker found true of the pull request, and only those.
+func checkAgentRules(t *testing.T, system string) {
+	t.Helper()
+	if !strings.Contains(system, "\n- into-main: Keep main releasable.") || strings.Contains(system, "- renovate:") {
+		t.Fatalf("the system prompt has the wrong rules:\n%s", system)
+	}
 }
 
 func checkAgentFiltered(t *testing.T, h *agenticHarness) {

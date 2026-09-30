@@ -1371,6 +1371,8 @@ rules:
   - { id: todos, file: .kritik/rules.md }
   - { id: no-panics, rule: Return an error rather than panic. }
   - { id: sql-placeholders, rule: Use query placeholders., paths: ["**/*.sql"] }
+  - { id: into-main, rule: Keep main releasable., whenExpr: 'pr.baseRef == "main"' }
+  - { id: renovate, rule: Say what the update breaks., whenExpr: 'pr.headRef.startsWith("renovate/")' }
 comments:
   summaryTemplate: ".kritik/summary.md.tmpl"
 `,
@@ -1430,10 +1432,11 @@ comments:
 		!strings.HasSuffix(system, "\n\nPrefer table-driven tests.") || strings.Contains(system, "inline styles") {
 		t.Fatalf("system prompt does not carry the instructions:\n%s", system)
 	}
-	// Only the rules whose paths the change matches, the file rule under
-	// its own heading.
-	if !strings.Contains(system, "\n\n- no-panics: Return an error rather than panic.\n\n### todos (.kritik/rules.md)\n\n"+
-		"Flag every TODO left in code.\n\n## Repository instructions") || strings.Contains(system, "sql-placeholders") {
+	// Only the rules whose paths the change matches and whose whenExpr the
+	// pull request meets, the file rule under its own heading.
+	if !strings.Contains(system, "\n\n- no-panics: Return an error rather than panic.\n- into-main: Keep main releasable.\n\n"+
+		"### todos (.kritik/rules.md)\n\nFlag every TODO left in code.\n\n## Repository instructions") ||
+		strings.Contains(system, "sql-placeholders") || strings.Contains(system, "- renovate:") {
 		t.Fatalf("system prompt does not carry the rules:\n%s", system)
 	}
 	// The finding keeps the rule it was given and loses the one it was not.

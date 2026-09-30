@@ -149,7 +149,7 @@ func TestEffective(t *testing.T) {
 			if got := e.repoFiles(); !slices.Equal(got, tt.repoFiles) {
 				t.Fatalf("repoFiles = %v, want %v", got, tt.repoFiles)
 			}
-			notes = e.fill(tt.files, append(notes, tt.runnerNotes...), []string{"main.go"})
+			notes = e.fill(tt.files, append(notes, tt.runnerNotes...), []string{"main.go"}, nil)
 			if !reflect.DeepEqual(e.Rules, tt.rules) || !slices.Equal(e.Instructions, tt.instructions) || e.Templates != tt.templates ||
 				e.Review.RequireSuggestedFix != tt.strict {
 				t.Fatalf("rules=%+v instructions=%.40q templates=%+v strict=%v", e.Rules, e.Instructions, e.Templates, e.Review.RequireSuggestedFix)
@@ -360,16 +360,20 @@ func TestPostsInline(t *testing.T) {
 }
 
 func TestFillScopesRules(t *testing.T) {
-	e, _ := effective(adminSettings(t), []byte("rules: [{ id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }]\n"))
+	e, _ := effective(adminSettings(t), []byte("rules: [{ id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }, "+
+		"{ id: renovate, rule: Say what the update breaks., whenExpr: 'pr.headRef.startsWith(\"renovate/\")' }]\n"))
 	files := repoconfig.Files{"ops/rules.md": "admin rules", ".kritik/sql.md": "sql rules"}
+	feature := map[string]any{"headRef": "feat/x"}
 	for _, tt := range []struct {
 		changed []string
+		vars    map[string]any
 		want    []string
 	}{
-		{[]string{"main.go"}, []string{"ops"}},
-		{[]string{"main.go", "db/0001.sql"}, []string{"ops", "sql"}},
+		{[]string{"main.go"}, feature, []string{"ops"}},
+		{[]string{"main.go", "db/0001.sql"}, feature, []string{"ops", "sql"}},
+		{[]string{"main.go"}, map[string]any{"headRef": "renovate/go-1.x"}, []string{"ops", "renovate"}},
 	} {
-		e.fill(files, nil, tt.changed)
+		e.fill(files, nil, tt.changed, tt.vars)
 		got := make([]string, 0, len(e.Rules))
 		for _, r := range e.Rules {
 			got = append(got, r.ID)
@@ -388,12 +392,12 @@ func TestFillReferences(t *testing.T) {
 	files := repoconfig.Files{
 		"ops/rules.md": "admin rules", "ops/summary.tmpl": "s", "ops/inline.tmpl": "i", "docs/arch.md": "arch", "db/schema.sql": "schema",
 	}
-	notes := e.fill(files, nil, []string{"main.go"})
+	notes := e.fill(files, nil, []string{"main.go"}, nil)
 	want := []review.Reference{{Path: "docs/arch.md", Description: "how the parts fit", Content: "arch"}}
 	if !reflect.DeepEqual(e.References, want) || !slices.Equal(notes, []string{"docs/gone.md: referenced but not found"}) {
 		t.Fatalf("references = %+v, notes = %q", e.References, notes)
 	}
-	e.fill(files, nil, []string{"db/0002.sql"})
+	e.fill(files, nil, []string{"db/0002.sql"}, nil)
 	if len(e.References) != 2 || e.References[1].Content != "schema" {
 		t.Fatalf("references = %+v, want the schema too", e.References)
 	}

@@ -35,7 +35,7 @@ func TestCollectRules(t *testing.T) {
 	repos[1].settings.Review.Rules = []configfile.Rule{own, style}
 	repos[1].ruleScopes = map[string]configfile.Scope{"wrap-errors": configfile.ScopeRepository, "style": configfile.ScopeAccount}
 	repos[1].doc = append(repos[1].doc, []byte("rules:\n  - { id: wrap-errors, rule: Anything. }\n  - { id: no-tokens, rule: Never log a token. }\n"+
-		"  - { id: go, file: docs/go.md, paths: ['**/*.go'] }\n")...)
+		"  - { id: go, file: docs/go.md, paths: ['**/*.go'], whenExpr: 'pr.baseRef == \"main\"' }\n")...)
 	got := collectRules(repos)
 	want := []Rule{
 		{Kind: RuleContext, Path: "ARCHITECTURE.md", Description: "how it fits", Paths: []string{}, Source: RuleFromRepository, Repositories: []string{"alpha/one"}},
@@ -49,7 +49,10 @@ func TestCollectRules(t *testing.T) {
 			Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap errors here too.", Paths: []string{"**/*.go"}, Source: RuleFromEntry,
 			Repositories: []string{"alpha/one"},
 		},
-		{Kind: RuleWritten, ID: "go", Path: "docs/go.md", Paths: []string{"**/*.go"}, Source: RuleFromRepository, Repositories: []string{"alpha/one"}},
+		{
+			Kind: RuleWritten, ID: "go", Path: "docs/go.md", Paths: []string{"**/*.go"}, WhenExpr: `pr.baseRef == "main"`, Source: RuleFromRepository,
+			Repositories: []string{"alpha/one"},
+		},
 		{Kind: RuleWritten, ID: "style", Path: "docs/review.md", Paths: []string{}, Source: "account", Repositories: []string{"alpha/one", "alpha/two"}},
 	}
 	if !reflect.DeepEqual(got, want) {

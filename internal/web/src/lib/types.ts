@@ -430,8 +430,9 @@ export type RuleSource = 'default' | 'env' | 'file' | 'defaults' | 'account' | '
 
 // Rule is one written rule or file reviews read, with where it is set, the
 // paths it applies to (every change when empty), and the repositories that
-// read it. id and text are a written rule's, path and description a
-// file's.
+// read it. id, text and whenExpr, the CEL expression over the pull request
+// it applies only when true of, are a written rule's, path and description
+// a file's.
 export interface Rule {
   kind: RuleKind;
   id: string;
@@ -439,6 +440,7 @@ export interface Rule {
   path: string;
   description: string;
   paths: string[];
+  whenExpr: string;
   source: RuleSource;
   repositories: string[];
   // findings and addressed are a written rule's: its repositories'

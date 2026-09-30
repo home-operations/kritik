@@ -163,6 +163,18 @@ with their environment variables (`KRITIK_AUTH_OIDC_ROLE_MAPPING_EXPR`,
 `KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR`) and the chart's values. A reader
 knows from the name that the value is code, not a literal.
 
+### 2.9 Rules by pull request
+
+A rule may have a `whenExpr`, a CEL expression over the `pr` that
+`filterExpr` sees, and applies only to a pull request it is true of, as
+well as to a change its `paths`, if any, match. A rule for Renovate's
+pull requests has `whenExpr: pr.headRef.startsWith("renovate/")`. The
+expression is compiled and smoke-tested with the rest of the file, like
+`filterExpr`; one that fails to evaluate for a pull request leaves its
+rule out. The worker judges it, for an agentic review before the runner
+cuts the pull request's body, and a follow-up judges it with the `event`
+of the review it follows.
+
 ## 3. Consequences
 
 - A block reads the same in the configuration and in a repository, and a
@@ -185,3 +197,7 @@ knows from the name that the value is code, not a literal.
   a second place for what `owner/*` says.
 - **Keep two knobs for how much kritik says.** The combinations worth
   having are three, and one ordered key names them.
+- **`branches` globs on a rule, or a top-level `branches` block.** A
+  glob answers one question about a pull request; `whenExpr` answers that
+  one and any other the filter can, with the variable `filterExpr`
+  already documents.
