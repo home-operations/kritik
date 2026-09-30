@@ -15,7 +15,7 @@ import (
 // registerAudit mounts the audit log reads.
 func (s *Server) registerAudit(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/audit", s.accountAdmin(s.listAccountAudit))
-	mux.HandleFunc("GET /api/v1/admin/audit", s.handler(s.listAdminAudit))
+	mux.HandleFunc("GET /api/v1/admin/audit", s.admin(s.listAdminAudit))
 }
 
 // record writes an audit event for a write p made, in the write's own
@@ -47,9 +47,6 @@ func (s *Server) listAccountAudit(w http.ResponseWriter, r *http.Request, t *acc
 }
 
 func (s *Server) listAdminAudit(w http.ResponseWriter, r *http.Request) error {
-	if !auth.PrincipalFrom(r.Context()).Admin {
-		return errForbidden
-	}
 	return s.writeAudit(w, r, "")
 }
 

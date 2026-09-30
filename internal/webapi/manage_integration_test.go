@@ -284,7 +284,7 @@ func testAuditLog(t *testing.T, e *manageEnv, md string) {
 	status, body := e.do("member", "GET", mdPath+"/audit")
 	e.expect(status, body, http.StatusForbidden, CodeForbidden)
 	status, body = e.do("member", "GET", "/api/v1/admin/audit")
-	e.expect(status, body, http.StatusForbidden, CodeForbidden)
+	e.expect(status, body, http.StatusNotFound, CodeNotFound)
 
 	var seen []AuditEvent
 	path := mdPath + "/audit?limit=2"
