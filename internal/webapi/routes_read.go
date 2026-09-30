@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -139,7 +138,7 @@ func (s *Server) listAdminAccounts(w http.ResponseWriter, r *http.Request) error
 func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
 	var month store.MonthUsage
-	var webhooks map[string]time.Time
+	var webhooks map[string]store.WebhookDeliveries
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		var err error
 		if month, err = store.ReadMonthUsage(ctx, tx); err != nil {
@@ -158,9 +157,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 	}
 	if in := t.file.ConnectionFor(t.account); in != nil {
 		d.Connection = connection(in)
-		if at, ok := webhooks[in.ID()]; ok {
-			d.Connection.LastWebhookAt = &at
-		}
+		d.Connection.delivered(webhooks[in.ID()])
 	}
 	writeJSON(w, http.StatusOK, d)
 	return nil

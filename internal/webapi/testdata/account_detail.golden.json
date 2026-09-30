@@ -11,7 +11,8 @@
       "webhookSecret": true
     },
     "hookPath": "/hooks/alpha-bot",
-    "lastWebhookAt": "2026-09-01T12:00:00Z"
+    "lastWebhookAt": "2026-09-01T12:00:00Z",
+    "lastUnsignedWebhookAt": null
   },
   "models": {
     "review": "openrouter/acme-large",

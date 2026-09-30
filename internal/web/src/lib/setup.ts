@@ -1,7 +1,7 @@
 // What an instance still lacks before it reviews (ADR-0019 §2.2), from its
 // setup status and the accounts its connections serve. Everything it names
 // is set in the configuration file. Rune-free so tests can import it.
-import type { AdminAccount, SetupStatus } from './types';
+import type { AdminAccount, Connection, SetupStatus } from './types';
 
 export interface ChecklistItem {
   label: string;
@@ -43,4 +43,12 @@ export function notReviewing(s: SetupStatus): string {
   if (s.connections.length === 0) return 'no GitHub App is connected';
   if (!s.reviewModel) return 'no review model is set';
   return '';
+}
+
+// unsignedWebhooks is whether c's App sends its webhooks with no signature,
+// which kritik refuses: its last unsigned delivery is newer than its last
+// verified one, so the App still has no webhook secret.
+export function unsignedWebhooks(c: Pick<Connection, 'lastWebhookAt' | 'lastUnsignedWebhookAt'>): boolean {
+  if (!c.lastUnsignedWebhookAt) return false;
+  return !c.lastWebhookAt || Date.parse(c.lastUnsignedWebhookAt) > Date.parse(c.lastWebhookAt);
 }

@@ -3,7 +3,6 @@ package webapi
 import (
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -23,7 +22,7 @@ func (s *Server) registerConnections(mux *http.ServeMux) {
 }
 
 func (s *Server) listConnections(w http.ResponseWriter, r *http.Request) error {
-	var webhooks map[string]time.Time
+	var webhooks map[string]store.WebhookDeliveries
 	if err := s.store.WithAccount(r.Context(), "", func(tx pgx.Tx) error {
 		var err error
 		webhooks, err = store.ReadWebhookDeliveries(r.Context(), tx)
@@ -36,9 +35,7 @@ func (s *Server) listConnections(w http.ResponseWriter, r *http.Request) error {
 	for i := range f.Connections {
 		in := &f.Connections[i]
 		c := connection(in)
-		if at, ok := webhooks[in.ID()]; ok {
-			c.LastWebhookAt = &at
-		}
+		c.delivered(webhooks[in.ID()])
 		out = append(out, c)
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -127,4 +124,10 @@ func (s *Server) uninstall(w http.ResponseWriter, r *http.Request) error {
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+// delivered sets when c's webhook last delivered a verified request and an
+// unsigned one.
+func (c *Connection) delivered(d store.WebhookDeliveries) {
+	c.LastWebhookAt, c.LastUnsignedWebhookAt = d.Verified, d.Unsigned
 }

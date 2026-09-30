@@ -5,6 +5,7 @@
   import { getJSON, sendJSON } from '../../api.svelte';
   import { Resource } from '../../resource.svelte';
   import { describe } from '../../manage';
+  import { unsignedWebhooks } from '../../setup';
   import { toast } from '../../toast.svelte';
   import type { AppInstallation, Connection } from '../../types';
   import StateView from '../../components/StateView.svelte';
@@ -74,7 +75,9 @@
                 <td>{c.managedBy === 'file' ? 'config file' : 'dashboard'}</td>
                 <td class="mono small">{c.accounts.join(', ')}</td>
                 <td>
-                  {#if c.lastWebhookAt}<Pill tone="ok" label="receiving" /> <span class="small muted"><Time iso={c.lastWebhookAt} /></span>
+                  {#if unsignedWebhooks(c)}<Pill tone="danger" label="unsigned" title="GitHub sends this App's webhooks with no signature, so kritik refuses them: set the App's webhook secret" />
+                    <span class="small muted"><Time iso={c.lastUnsignedWebhookAt} /></span>
+                  {:else if c.lastWebhookAt}<Pill tone="ok" label="receiving" /> <span class="small muted"><Time iso={c.lastWebhookAt} /></span>
                   {:else}<Pill tone="warn" label="none yet" />{/if}
                 </td>
                 <td>

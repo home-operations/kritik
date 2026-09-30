@@ -117,6 +117,9 @@ export interface Connection {
   // lastWebhookAt is null until a webhook for the connection reaches
   // kritik; until then kritik only polls it.
   lastWebhookAt: string | null;
+  // lastUnsignedWebhookAt is when one last arrived with no signature, which
+  // an App with no webhook secret sends; null when none has.
+  lastUnsignedWebhookAt: string | null;
 }
 
 export interface Models {

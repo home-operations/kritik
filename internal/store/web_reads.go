@@ -187,23 +187,41 @@ func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	return m, nil
 }
 
+// WebhookDeliveries is when a connection's webhook last delivered a
+// verified request and one with no signature, each nil for never.
+type WebhookDeliveries struct {
+	Verified, Unsigned *time.Time
+}
+
 // ReadWebhookDeliveries reads when each connection last received a verified
-// webhook, keyed by connection id; one that never has is absent.
-func ReadWebhookDeliveries(ctx context.Context, tx pgx.Tx) (map[string]time.Time, error) {
-	rows, err := tx.Query(ctx, `SELECT id::text, last_webhook_at FROM connections WHERE last_webhook_at IS NOT NULL`)
+// webhook and an unsigned one, keyed by connection id; one that never
+// received either is absent.
+func ReadWebhookDeliveries(ctx context.Context, tx pgx.Tx) (map[string]WebhookDeliveries, error) {
+	rows, err := tx.Query(ctx, `SELECT id::text, last_webhook_at, last_unsigned_webhook_at FROM connections
+		WHERE last_webhook_at IS NOT NULL OR last_unsigned_webhook_at IS NOT NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("store: webhook deliveries: %w", err)
 	}
-	out := map[string]time.Time{}
+	out := map[string]WebhookDeliveries{}
 	var id string
-	var at time.Time
-	if _, err := pgx.ForEachRow(rows, []any{&id, &at}, func() error {
-		out[id] = at
+	var verified, unsigned *time.Time
+	if _, err := pgx.ForEachRow(rows, []any{&id, &verified, &unsigned}, func() error {
+		out[id] = WebhookDeliveries{Verified: timeCopy(verified), Unsigned: timeCopy(unsigned)}
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("store: webhook deliveries: %w", err)
 	}
 	return out, nil
+}
+
+// timeCopy is a copy of *t, nil for nil, so a row's time does not share
+// the scan target the next row overwrites.
+func timeCopy(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	c := *t
+	return &c
 }
 
 // RepoRow is one repository as the repository list shows it.

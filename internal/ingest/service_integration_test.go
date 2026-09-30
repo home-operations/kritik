@@ -554,3 +554,44 @@ func TestRecordDelivery(t *testing.T) {
 		t.Fatalf("a delivery after the minute left the time at %s", now)
 	}
 }
+
+// TestRecordUnsigned: an unsigned delivery is recorded apart from verified
+// ones, and read back with them.
+func TestRecordUnsigned(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	in, _ := f.Connection("bot-ross")
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	read := func() store.WebhookDeliveries {
+		t.Helper()
+		var got map[string]store.WebhookDeliveries
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			var err error
+			got, err = store.ReadWebhookDeliveries(ctx, tx)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return got[in.ID()]
+	}
+	// The database is shared with the other packages' tests, whose state
+	// last_webhook_at is part of, so only the unsigned time is reset.
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE connections SET last_unsigned_webhook_at = NULL WHERE id = $1`, in.ID())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before := read()
+	if before.Unsigned != nil {
+		t.Fatalf("unsigned before any = %v", before.Unsigned)
+	}
+	if err := svc.RecordUnsigned(ctx, in.ID()); err != nil {
+		t.Fatalf("RecordUnsigned: %v", err)
+	}
+	after := read()
+	if after.Unsigned == nil || (before.Verified == nil) != (after.Verified == nil) ||
+		(before.Verified != nil && !after.Verified.Equal(*before.Verified)) {
+		t.Fatalf("deliveries %+v then %+v; want only the unsigned time set", before, after)
+	}
+}

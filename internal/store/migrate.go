@@ -138,7 +138,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		`GRANT USAGE ON SCHEMA public TO ` + app + `, ` + runner,
 		`GRANT SELECT ON accounts, config_state, schema_migrations TO ` + app,
 		// Only the leader writes connections; a request stamps a delivery.
-		`GRANT SELECT, UPDATE (last_webhook_at) ON connections TO ` + app,
+		`GRANT SELECT, UPDATE (last_webhook_at, last_unsigned_webhook_at) ON connections TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON repositories, model_leases, pull_requests TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, followups, poll_state TO ` + app,
