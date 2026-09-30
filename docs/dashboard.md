@@ -107,8 +107,8 @@ head, or cancelling a review that is not running, is a `409 Conflict`.
   serving; one the leader cannot apply to the store raises the
   `kritik_config_error` gauge (labelled `apply`) until a later attempt
   succeeds.
-- A secret, from a variable or a `file:` reference, is read at startup
-  too: restart the pods after rotating one.
+- A secret is read from its variable at startup too: restart the pods
+  after rotating one.
 - A role mapping is only as trustworthy as what it reads. Map on groups
   or roles the IdP controls, not on an email or name a user can set on
   their own profile.

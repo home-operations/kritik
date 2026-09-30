@@ -1,8 +1,6 @@
 package configfile
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -105,25 +103,21 @@ func TestAuthRejects(t *testing.T) {
 }
 
 // TestAuthEnv: every KRITIK_AUTH_* variable sets its key over the file's,
-// a secret's _FILE form reads a mounted file, and a variable naming no key
-// is refused.
+// a secret's variable carries the value, and a variable naming no key is
+// refused.
 func TestAuthEnv(t *testing.T) {
 	authEnv(t)
-	secret := filepath.Join(t.TempDir(), "gh-secret")
-	if err := os.WriteFile(secret, []byte("from-file\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	for k, v := range map[string]string{
-		"KRITIK_AUTH_SESSION_TTL":               "1h",
-		"KRITIK_AUTH_ADMIN_USER":                "root",
-		"KRITIK_AUTH_ADMIN_PASSWORD":            "from-env",
-		"KRITIK_AUTH_OIDC_NAME":                 "SSO",
-		"KRITIK_AUTH_OIDC_ISSUER":               "https://idp.example.com",
-		"KRITIK_AUTH_OIDC_SCOPES":               "openid, groups ,",
-		"KRITIK_AUTH_OIDC_DEFAULT_ROLE":         "member",
-		"KRITIK_AUTH_GITHUB_CLIENT_ID":          "Iv1.env",
-		"KRITIK_AUTH_GITHUB_CLIENT_SECRET_FILE": secret,
-		"KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR":  `"org-1" in orgs ? "admin" : ""`,
+		"KRITIK_AUTH_SESSION_TTL":              "1h",
+		"KRITIK_AUTH_ADMIN_USER":               "root",
+		"KRITIK_AUTH_ADMIN_PASSWORD":           "from-env",
+		"KRITIK_AUTH_OIDC_NAME":                "SSO",
+		"KRITIK_AUTH_OIDC_ISSUER":              "https://idp.example.com",
+		"KRITIK_AUTH_OIDC_SCOPES":              "openid, groups ,",
+		"KRITIK_AUTH_OIDC_DEFAULT_ROLE":        "member",
+		"KRITIK_AUTH_GITHUB_CLIENT_ID":         "Iv1.env",
+		"KRITIK_AUTH_GITHUB_CLIENT_SECRET":     "gh-secret\n",
+		"KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR": `"org-1" in orgs ? "admin" : ""`,
 	} {
 		t.Setenv(k, v)
 	}
@@ -141,7 +135,7 @@ func TestAuthEnv(t *testing.T) {
 	case oidc.Label() != "SSO", oidc.Issuer != "https://idp.example.com", strings.Join(oidc.Scopes, " ") != "openid groups",
 		!oidc.MembersByDefault(), oidc.ClientID != "kritik":
 		t.Fatalf("oidc = %+v", oidc)
-	case gh.ClientID != "Iv1.env", gh.ClientSecretValue().Value() != "from-file", gh.RoleMappingExpr != `"org-1" in orgs ? "admin" : ""`:
+	case gh.ClientID != "Iv1.env", gh.ClientSecretValue().Value() != "gh-secret", gh.RoleMappingExpr != `"org-1" in orgs ? "admin" : ""`:
 		t.Fatalf("github = %+v", gh)
 	}
 	for path, want := range map[string]bool{"oidc.issuer": true, "github.clientSecret": true, "oidc.clientId": false} {
@@ -161,9 +155,10 @@ func TestAuthEnv(t *testing.T) {
 			t.Fatal("the environment alone did not configure github")
 		}
 	})
-	t.Run("a secret set twice", func(t *testing.T) {
-		t.Setenv("KRITIK_AUTH_GITHUB_CLIENT_SECRET", "from-env")
-		if _, err := loadBytes(t, []byte(minimal)); err == nil || !strings.Contains(err.Error(), "both set auth.github.clientSecret") {
+	t.Run("a secret from a file", func(t *testing.T) {
+		t.Setenv("KRITIK_AUTH_GITHUB_CLIENT_SECRET_FILE", "/var/run/secrets/gh-secret")
+		if _, err := loadBytes(t, []byte(minimal)); err == nil ||
+			!strings.Contains(err.Error(), "KRITIK_AUTH_GITHUB_CLIENT_SECRET_FILE names no auth setting") {
 			t.Fatalf("Parse = %v", err)
 		}
 	})

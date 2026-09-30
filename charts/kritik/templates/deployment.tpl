@@ -111,6 +111,13 @@ spec:
             - name: KRITIK_WEB_URL
               value: {{ tpl $.Values.web.url $ | quote }}
             {{- include "kritik.authEnv" $ | nindent 12 }}
+            {{- range $.Values.secretEnv }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ tpl .secretName $ | quote }}
+                  key: {{ .key | quote }}
+            {{- end }}
             - name: KRITIK_LOG_LEVEL
               value: {{ tpl $.Values.config.logLevel $ | quote }}
             - name: KRITIK_LOG_FORMAT
@@ -223,11 +230,6 @@ spec:
               mountPath: /etc/kritik
               readOnly: true
             {{- end }}
-            {{- range $.Values.secretMounts }}
-            - name: {{ .name }}
-              mountPath: {{ tpl .mountPath $ }}
-              readOnly: true
-            {{- end }}
             {{- with $.Values.volumeMounts }}
             {{- tpl (toYaml .) $ | nindent 12 }}
             {{- end }}
@@ -236,11 +238,6 @@ spec:
         - name: config
           configMap:
             name: {{ include "kritik.configMapName" $ | quote }}
-        {{- end }}
-        {{- range $.Values.secretMounts }}
-        - name: {{ .name }}
-          secret:
-            secretName: {{ tpl .secretName $ | quote }}
         {{- end }}
         {{- with $.Values.volumes }}
         {{- tpl (toYaml .) $ | nindent 8 }}

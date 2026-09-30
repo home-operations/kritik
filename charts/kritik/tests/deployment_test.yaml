@@ -49,6 +49,17 @@ tests:
           path: spec.template.metadata.annotations["example.com/owner"]
           value: ops
 
+  - it: sets each secretEnv variable from its Secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GITHUB_APP_PRIVATE_KEY
+            valueFrom:
+              secretKeyRef:
+                name: kritik-bot
+                key: private-key.pem
+
   - it: gates the liveness and readiness probes on a startup probe, which can be turned off
     asserts:
       - equal:
@@ -99,7 +110,7 @@ tests:
             name: KRITIK_EXECUTOR
             value: kubernetes
 
-  - it: mounts the config and every secretMount read-only
+  - it: mounts the config read-only
     asserts:
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
@@ -107,18 +118,6 @@ tests:
             name: config
             mountPath: /etc/kritik
             readOnly: true
-      - contains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            name: bot
-            mountPath: /var/run/secrets/kritik/bot
-            readOnly: true
-      - contains:
-          path: spec.template.spec.volumes
-          content:
-            name: bot
-            secret:
-              secretName: kritik-bot
 
   - it: renders the split topology with an ingest, a worker and a web Deployment
     set:
@@ -372,10 +371,8 @@ tests:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIK_CONFIG_FILE }
           any: true
-      - notContains:
+      - isNullOrEmpty:
           path: spec.template.spec.volumes
-          content: { name: config }
-          any: true
 
   - it: fails when web.url is not an http(s) URL
     set:

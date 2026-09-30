@@ -2,8 +2,6 @@ package configfile
 
 import (
 	"maps"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -82,8 +80,8 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"connections is now apps", "connections: []\n", "field connections not found"},
 		{"a sealed reference", apps(strings.Replace(fileApp("a", "x"), "{ env: TEST_PRIVATE_KEY }", "{ sealed: abc }", 1)),
 			"field sealed not found"},
-		{"env and file", apps(strings.Replace(fileApp("a", "x"), "{ env: TEST_PRIVATE_KEY }", "{ env: TEST_PRIVATE_KEY, file: /x }", 1)),
-			"set either env or file, not both"},
+		{"a clientId from a file", apps(strings.Replace(fileApp("a", "x"), "clientId: Iv1.a", "clientId: { file: /x }", 1)),
+			"field file not found"},
 		{"a broken owner/* entry", "repositories: { acme/*: { models: { review: nope/x } } }\n", `repositories.acme/*.models.review references provider "nope"`},
 		{"a repository entry that turns it on or off", "repositories: { acme/x: { enabled: false } }\n",
 			"repositories.acme/x.enabled: turn a repository on or off in the dashboard"},
@@ -163,10 +161,6 @@ repositories:
 func TestConnectionEnv(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	key := filepath.Join(t.TempDir(), "key.pem")
-	if err := os.WriteFile(key, []byte("pem\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	env := func(t *testing.T, name string) {
 		t.Helper()
 		if name != "" {
@@ -174,7 +168,7 @@ func TestConnectionEnv(t *testing.T) {
 		}
 		t.Setenv("KRITIK_APPS_ACCOUNTS", "org-1, user-1,")
 		t.Setenv("KRITIK_APPS_CLIENT_ID", "Iv1.env")
-		t.Setenv("KRITIK_APPS_PRIVATE_KEY_FILE", key)
+		t.Setenv("KRITIK_APPS_PRIVATE_KEY", "pem\n")
 		t.Setenv("KRITIK_APPS_WEBHOOK_SECRET", "from-env")
 	}
 	file := []byte("apps:\n" + fileApp("acme-bot", "acme"))
@@ -204,10 +198,10 @@ func TestConnectionEnv(t *testing.T) {
 			t.Fatalf("connections = %+v", f.Connections)
 		}
 	})
-	t.Run("a secret set twice", func(t *testing.T) {
+	t.Run("a secret from a file", func(t *testing.T) {
 		env(t, "")
-		t.Setenv("KRITIK_APPS_PRIVATE_KEY", "pem")
-		if _, err := Parse(file); err == nil || !strings.Contains(err.Error(), "set the same app setting") {
+		t.Setenv("KRITIK_APPS_PRIVATE_KEY_FILE", "/var/run/secrets/key.pem")
+		if _, err := Parse(file); err == nil || !strings.Contains(err.Error(), "KRITIK_APPS_PRIVATE_KEY_FILE names no app setting") {
 			t.Fatalf("Parse = %v", err)
 		}
 	})

@@ -44,12 +44,11 @@ type Forge string
 // can be added back (ADR-0014).
 const ForgeGitHub Forge = "github"
 
-// SecretRef points at where a secret value lives: an environment variable
-// or a file, exactly one of them. Values are resolved at load and never
-// written back to disk or the database.
+// SecretRef names the environment variable a secret value lives in
+// (ADR-0022 §2.2). Values are resolved at load and never written back to
+// disk or the database.
 type SecretRef struct {
-	Env  string `yaml:"env,omitempty"`
-	File string `yaml:"file,omitempty"`
+	Env string `yaml:"env,omitempty"`
 }
 
 // ValueOrRef is a setting given inline, or by a reference to where it
@@ -68,7 +67,7 @@ func (v *ValueOrRef) UnmarshalYAML(n *yaml.Node) error {
 	// Node.Decode drops the strictness Parse asked for, so unknown keys are
 	// refused here.
 	for i := 0; n.Kind == yaml.MappingNode && i < len(n.Content); i += 2 {
-		if k := n.Content[i]; k.Value != "env" && k.Value != "file" {
+		if k := n.Content[i]; k.Value != "env" {
 			return fmt.Errorf("line %d: field %s not found in type configfile.SecretRef", k.Line, k.Value)
 		}
 	}
@@ -76,12 +75,12 @@ func (v *ValueOrRef) UnmarshalYAML(n *yaml.Node) error {
 }
 
 // resolve is the value, read from its reference when it has one.
-func (v ValueOrRef) resolve() (string, error) {
+func (v ValueOrRef) resolve(s *secrets) (string, error) {
 	if v.Ref.empty() {
 		return v.Value, nil
 	}
-	s, err := v.Ref.resolve()
-	return s.Value(), err
+	secret, err := s.read(v.Ref)
+	return secret.Value(), err
 }
 
 // Secret is a resolved secret value. Its String method redacts, so a Secret
@@ -596,7 +595,14 @@ type File struct {
 	// and envKeys holds the instance defaults it set, by dotted path.
 	envProvider string
 	envKeys     map[string]bool
+	// secretEnv are the variables f's secrets came from, sorted.
+	secretEnv []string
 }
+
+// SecretEnv is the environment variables f's secrets came from, sorted,
+// which main removes from its environment once f is loaded (ADR-0022
+// §2.2).
+func (f *File) SecretEnv() []string { return f.secretEnv }
 
 // Hash is the hex SHA-256 of the file's bytes as parsed. The leader records
 // it in the store after applying the configuration, and followers compare

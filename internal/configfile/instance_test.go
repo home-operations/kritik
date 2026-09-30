@@ -103,7 +103,7 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 		{"a settle that is not a duration", "KRITIK_DEFAULTS_SETTLE", "soon", "KRITIK_DEFAULTS_SETTLE"},
 		{"an unknown embedding key", "KRITIK_EMBEDDING_URL", "x", "KRITIK_EMBEDDING_URL names no embedding setting"},
 		{"dims that are not a number", "KRITIK_EMBEDDING_DIMS", "many", "KRITIK_EMBEDDING_DIMS must be a whole number"},
-		{"a key set twice", "KRITIK_PROVIDERS_API_KEY_FILE", "/nope", "set the same provider setting"},
+		{"a key from a file", "KRITIK_PROVIDERS_API_KEY_FILE", "/nope", "KRITIK_PROVIDERS_API_KEY_FILE names no provider setting"},
 		{"a name that is no type, without one", "KRITIK_PROVIDERS_NAME", "router", "providers.router.type must be"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

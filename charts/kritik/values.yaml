@@ -122,8 +122,9 @@ auth:
 # `auth` values above render some, and `extraEnv` can set the others. The
 # file is either inline as `file`, rendered into a chart-managed ConfigMap,
 # or an existing ConfigMap with a `config.yaml` key. Secret material never
-# goes in the file: it references files under `secretMounts` or environment
-# variables. kritik reads the file at startup (ADR-0022): the pods carry a
+# goes in the file: it names environment variables, `{ env: NAME }`, which
+# `secretEnv` sets from existing Secrets. kritik reads the file at startup
+# (ADR-0022): the pods carry a
 # checksum of `file`, so a change to it rolls them, while a change to an
 # `existingConfigMap` needs a restart, for example by stakater's Reloader
 # through `deploymentAnnotations`. The leader applies it to the store.
@@ -134,10 +135,10 @@ config:
   #   - name: github
   #     accounts: [org-1, user-1]
   #     clientId: Iv1.example
-  #     privateKey: { file: /var/run/secrets/kritik/bot/private-key.pem }
-  #     webhookSecret: { file: /var/run/secrets/kritik/bot/webhook-secret }
+  #     privateKey: { env: GITHUB_APP_PRIVATE_KEY }
+  #     webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
   # providers:
-  #   openrouter: { type: openrouter, apiKey: { file: /var/run/secrets/kritik/openrouter/api-key } }
+  #   openrouter: { type: openrouter, apiKey: { env: OPENROUTER_API_KEY } }
   # defaults:
   #   models: { review: openrouter/vendor/large-model }
 
@@ -193,18 +194,19 @@ database:
     # -- Name of the runner role, granted only what runner Jobs need.
     role: kritik_runner
 
-# Secrets the configuration file references by path (GitHub App private keys
-# and webhook secrets, sign-in secrets). Each entry mounts one Secret,
-# read-only, at `mountPath` in every role's pods; the file then points at
-# `<mountPath>/<key>`.
-# -- Secrets mounted as files for the configuration file to reference.
-secretMounts: []
-# - name: bot
+# The secrets the configuration file names (GitHub App private keys and
+# webhook secrets, model keys, sign-in secrets) and the `KRITIK_*` secret
+# variables (ADR-0022 §2.2). Each entry sets the variable `name` in every
+# role's pods from `key` of the existing Secret `secretName`; kritik drops
+# it from its own environment once read.
+# -- Environment variables set from existing Secrets, for the configuration file's `{ env: NAME }` references.
+secretEnv: []
+# - name: GITHUB_APP_PRIVATE_KEY
 #   secretName: kritik-bot
-#   mountPath: /var/run/secrets/kritik/bot
-# - name: auth
-#   secretName: kritik-auth
-#   mountPath: /var/run/secrets/kritik/auth
+#   key: private-key.pem
+# - name: OPENROUTER_API_KEY
+#   secretName: kritik-openrouter
+#   key: api-key
 
 # Runner Jobs: one pod per review or index run, created by the worker in the
 # release namespace from the same image, running as a service account with
