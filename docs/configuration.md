@@ -204,6 +204,45 @@ every repository's index, and the leader builds each again, a few at a
 time, as `KRITIK_ONBOARD_WINDOW` paces them. Removing the embedder keeps
 the index, and adding back the same model and dimension uses it again.
 
+### Local models
+
+A model served in your own network is a provider of type `openai` whose
+`baseUrl` is the server's OpenAI-compatible API, such as vLLM, Ollama or
+llama.cpp's server, or of type `anthropic` for a server that speaks the
+Anthropic API. It can serve reviews, the embedder, or both:
+
+```yaml
+providers:
+  local:
+    type: openai
+    baseUrl: http://llm.example.svc.cluster.local:8000/v1
+    apiKey: { env: LOCAL_LLM_KEY }
+    pricing:
+      large-model: { input: 0.1, output: 0.4 }
+defaults:
+  models: { review: local/large-model }
+embedding:
+  model: local/embed-model
+  dims: 768
+```
+
+- `apiKey` is required: a server that takes no key still needs a
+  reference, to a variable holding any value.
+- The model must support tool calls, and the server must honour a
+  request that forces a named one: kritik asks for a review's findings as
+  a call to a tool named for their schema, and an agentic review works
+  through tools.
+- The kritik pods call the server; an agentic review's runner reaches it
+  only through their gateway. With the chart's `networkPolicy.enabled`,
+  add the server's port to `networkPolicy.egressPorts`, which allows only
+  443 unless set.
+- A server that reports no cost makes every call cost nothing unless
+  `pricing` gives the model's prices, in dollars per million tokens of
+  `input`, `output`, `cacheRead` and `cacheWrite`, keyed by the model's
+  id on the server. Tokens count against an account's `limits` either
+  way.
+- The embedder's `dims` must be what its model returns.
+
 ## `defaults` and `repositories`
 
 `defaults` are the settings every repository gets, and `repositories` the
