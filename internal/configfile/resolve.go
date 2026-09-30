@@ -318,6 +318,7 @@ func (r Review) overlay(o ReviewSpec) Review {
 	if o.Context != nil {
 		r.Context = o.Context
 	}
+	r.Rules = WithRules(r.Rules, o.Rules)
 	if o.Thoroughness != nil {
 		r.Thoroughness = *o.Thoroughness
 	}

@@ -1,8 +1,9 @@
 <script lang="ts">
-  // The files the account's reviews read (ADR-0017 §2.4): instructions they
-  // follow and context files that explain the code, with where each is
-  // named and the repositories that read it. Read-only: rules are files in
-  // the repositories, named by the configuration or a .kritik.yaml.
+  // What the account's reviews check (ADR-0017 §2.4, ADR-0018): rules
+  // written in the configuration, instruction files they follow and
+  // context files that explain the code, with where each is set and the
+  // repositories that read it. Read-only: rules are set in the
+  // configuration or a repository's .kritik.yaml.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
@@ -13,7 +14,7 @@
   import StateView from '../components/StateView.svelte';
   import TokenSearch from '../components/TokenSearch.svelte';
   import Icon from '../Icon.svelte';
-  import { mdiTextBoxCheckOutline, mdiFileDocumentOutline } from '../icons';
+  import { mdiCheckDecagramOutline, mdiTextBoxCheckOutline, mdiFileDocumentOutline } from '../icons';
 
   let { slug }: { slug: string } = $props();
 
@@ -22,9 +23,10 @@
     void res.load();
   });
 
-  const KINDS: Record<RuleKind, { label: string; icon: string; what: string }> = {
-    instructions: { label: 'Instructions', icon: mdiTextBoxCheckOutline, what: 'what a review follows' },
-    context: { label: 'Context', icon: mdiFileDocumentOutline, what: 'a file that explains the code' },
+  const KINDS: Record<RuleKind, { label: string; icon: string; what: string; order: number }> = {
+    rule: { label: 'Rule', icon: mdiCheckDecagramOutline, what: 'a check written in the configuration', order: 0 },
+    instructions: { label: 'Instructions', icon: mdiTextBoxCheckOutline, what: 'what a review follows', order: 1 },
+    context: { label: 'Context', icon: mdiFileDocumentOutline, what: 'a file that explains the code', order: 2 },
   };
   const SOURCES: Record<RuleSource, string> = {
     default: "kritik's default",
@@ -33,14 +35,15 @@
     dashboard: 'Instance configuration',
     defaults: 'Instance defaults',
     account: 'Account entry',
+    entry: 'Repository entry',
     repository: '.kritik.yaml',
   };
 
   const repoNames = $derived([...new Set((res.data ?? []).flatMap((r) => r.repositories))].sort());
   const specs = $derived<TokenSpec[]>([
     { key: 'repo', hint: 'a repository', values: repoNames },
-    { key: 'kind', hint: 'instructions or context', values: ['instructions', 'context'] },
-    { key: 'source', hint: 'where it is named', values: ['default', 'env', 'file', 'defaults', 'account', 'repository'] },
+    { key: 'kind', hint: 'rule, instructions or context', values: ['rule', 'instructions', 'context'] },
+    { key: 'source', hint: 'where it is set', values: ['default', 'env', 'file', 'defaults', 'account', 'entry', 'repository'] },
   ]);
   let text = $state('');
   let applied = $state(parseTokens('', []));
@@ -48,13 +51,16 @@
   function shown(rules: Rule[]): Rule[] {
     const { tokens, q } = applied;
     const needle = q?.toLowerCase();
-    return rules.filter(
-      (r) =>
-        (!tokens.repo || r.repositories.includes(tokens.repo)) &&
-        (!tokens.kind || r.kind === tokens.kind) &&
-        (!tokens.source || r.source === tokens.source) &&
-        (!needle || r.path.toLowerCase().includes(needle) || r.description.toLowerCase().includes(needle)),
-    );
+    const has = (s: string) => !!needle && s.toLowerCase().includes(needle);
+    return rules
+      .filter(
+        (r) =>
+          (!tokens.repo || r.repositories.includes(tokens.repo)) &&
+          (!tokens.kind || r.kind === tokens.kind) &&
+          (!tokens.source || r.source === tokens.source) &&
+          (!needle || has(r.path) || has(r.description) || has(r.id) || has(r.text)),
+      )
+      .sort((a, b) => KINDS[a.kind].order - KINDS[b.kind].order);
   }
 </script>
 
@@ -65,8 +71,9 @@
     <header class="page-head">
       <h1>Rules</h1>
       <p class="muted small">
-        The files reviews read: instructions they follow, and context files that explain the code. They live in each repository, named
-        by the configuration's <span class="mono">review.instructions</span> and <span class="mono">review.context</span>
+        What reviews check: rules written in the configuration, instruction files they follow, and context files that explain the
+        code. Files live in each repository, named by the configuration's <span class="mono">review.instructions</span> and
+        <span class="mono">review.context</span>
         {#if isAdmin()}(<a href={href({ name: 'admin', slug, section: 'config' })}>Configuration</a>){/if}
         or by the repository's own <span class="mono">.kritik.yaml</span>.
       </p>
@@ -86,7 +93,7 @@
       {res}
       retry={() => res.load()}
       isEmpty={(d) => d.length === 0}
-      empty="No rules yet: name instruction or context files under review.instructions and review.context, in the configuration or a repository's .kritik.yaml."
+      empty="No rules yet: write them under review.rules, or name instruction or context files under review.instructions and review.context, in the configuration or a repository's .kritik.yaml."
     >
       {#snippet children(rules)}
         {@const rows = shown(rules)}
@@ -99,21 +106,28 @@
                 <tr>
                   <th scope="col">Rule</th>
                   <th scope="col">Applies to</th>
-                  <th scope="col">Named in</th>
+                  <th scope="col">Set in</th>
                   <th scope="col">Repositories</th>
                 </tr>
               </thead>
               <tbody>
-                {#each rows as r (`${r.kind}\u0000${r.path}\u0000${r.source}\u0000${r.description}\u0000${r.paths.join()}`)}
+                {#each rows as r (`${r.kind}\u0000${r.id}\u0000${r.path}\u0000${r.source}\u0000${r.description}\u0000${r.text}\u0000${r.paths.join()}\u0000${r.repositories.join()}`)}
                   {@const k = KINDS[r.kind]}
                   <tr>
                     <td class="wrap">
                       <div class="rule-main">
                         <span class="rule-kind" title="{k.label}: {k.what}"><Icon path={k.icon} size={14} label={k.label} /></span>
-                        <span class="rule-text">
-                          <span class="mono rule-path">{r.path}</span>
-                          {#if r.description}<span class="rule-sub">{r.description}</span>{/if}
-                        </span>
+                        {#if r.kind === 'rule'}
+                          <span class="rule-text">
+                            <span class="rule-body" title={r.text}>{r.text}</span>
+                            <span class="mono rule-sub">{r.id}</span>
+                          </span>
+                        {:else}
+                          <span class="rule-text">
+                            <span class="mono rule-path">{r.path}</span>
+                            {#if r.description}<span class="rule-sub">{r.description}</span>{/if}
+                          </span>
+                        {/if}
                       </div>
                     </td>
                     <td>

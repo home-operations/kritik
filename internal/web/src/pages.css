@@ -680,6 +680,16 @@ table.data td.wrap {
   font-weight: 600;
   word-break: break-all;
 }
+/* A written rule shows its first lines; the title holds the rest. */
+.rule-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  font-size: 13px;
+  white-space: pre-line;
+}
 .rule-sub {
   font-size: 12px;
   color: var(--muted);

@@ -29,12 +29,12 @@ at once, and holds a tab for each of an account's sections
   status, and suggests each as you type. An admin can pick pull requests,
   by checkbox or with Space on the keyboard's row, and re-run them
   together.
-- **Rules:** the files its reviews read, instructions they follow and
-  context files that explain the code, each with where it is named (a
-  layer of the configuration, or a repository's `.kritik.yaml` as its last
-  review read it), the paths it applies to, and the repositories that
-  read it. Rules stay files in the repositories; this page only lists
-  them.
+- **Rules:** what its reviews check: rules written in the configuration
+  ([ADR-0018](adr/0018-rules.md)), instruction files they follow and
+  context files that explain the code, each with where it is set (a layer
+  of the configuration, a repository's entry, or a repository's
+  `.kritik.yaml` as its last review read it), the paths it applies to,
+  and the repositories that read it. The page only lists them.
 - **Settings:** its repositories, and for an admin its configuration and
   audit log, and the admin console.
 

@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 import * as g from './golden';
-import type { AccountDetail, Pull, ReviewStatus } from '../src/lib/types';
+import type { AccountDetail, Pull, ReviewStatus, Rule } from '../src/lib/types';
 
 const T = `#/a/${g.SLUG}`;
 
@@ -348,29 +348,35 @@ test.describe('findings', () => {
 });
 
 test.describe('rules', () => {
-  test('lists each file reviews read, where it is named and which repositories read it', async ({ page }) => {
+  test('lists each rule reviews check, where it is set and which repositories read it', async ({ page }) => {
+    const file: Rule = { ...g.rule, kind: 'context', id: '', text: '', path: 'db/schema.sql', description: 'the schema', source: 'repository' };
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), [file, g.rule]], ...g.defaultApi()]);
     await page.goto(`/${T}/rules`);
     const r = g.rule;
-    const row = page.locator('.rule-table tbody tr');
-    await expect(row).toHaveCount(1);
-    await expect(row.locator('.rule-path')).toHaveText(r.path);
-    await expect(row).toContainText(r.description);
+    const rows = page.locator('.rule-table tbody tr');
+    await expect(rows).toHaveCount(2);
+    const row = rows.first();
+    await expect(row.locator('.rule-body')).toHaveText(r.text);
+    await expect(row.locator('.rule-sub')).toHaveText(r.id);
     await expect(row.locator('code')).toHaveText(r.paths);
-    await expect(row).toContainText('.kritik.yaml');
+    await expect(row).toContainText('Repository entry');
     await expect(row.getByRole('link', { name: r.repositories[0]! })).toHaveAttribute('href', `#/a/${g.SLUG}/repos/alpha/one`);
+    await expect(rows.last().locator('.rule-path')).toHaveText(file.path);
+    await expect(rows.last()).toContainText('.kritik.yaml');
     await expect(page.locator('.sections .section-tab.active')).toHaveText('Rules');
 
     const search = page.getByRole('combobox', { name: 'Search rules' });
     await search.fill('kind:instructions');
     await expect(page.locator('.state-msg')).toHaveText('No rule matches.');
-    await search.fill('kind:context schema');
-    await expect(row).toHaveCount(1);
+    await search.fill('kind:rule package');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.locator('.rule-sub')).toHaveText(r.id);
   });
 
   test('says how to add a rule when there is none', async ({ page }) => {
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), []], ...g.defaultApi()]);
     await page.goto(`/${T}/rules`);
-    await expect(page.locator('.state-msg')).toContainText('name instruction or context files under review.instructions and review.context');
+    await expect(page.locator('.state-msg')).toContainText('write them under review.rules, or name instruction or context files under review.instructions and review.context');
   });
 });
 

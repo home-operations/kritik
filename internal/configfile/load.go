@@ -506,6 +506,9 @@ func validateReview(where string, r *ReviewSpec) error {
 			return fmt.Errorf("configfile: %s.context[%d]: %w", where, i, err)
 		}
 	}
+	if err := CheckRules(r.Rules); err != nil {
+		return fmt.Errorf("configfile: %s.%w", where, err)
+	}
 	for _, t := range []struct {
 		name string
 		path *string

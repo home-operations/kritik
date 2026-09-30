@@ -29,6 +29,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/prfilter"
+	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/textcut"
 )
 
@@ -47,6 +48,10 @@ const (
 // MaxInstructionBytes caps the repository instructions, joined, so they
 // cannot crowd the diff out of the prompt budget.
 const MaxInstructionBytes = 32 << 10
+
+// MaxRulesBytes caps the rules a prompt lists, by their ids and text, for
+// the same reason.
+const MaxRulesBytes = 16 << 10
 
 // Templates names in-repo files whose contents replace kritik's built-in
 // summary/inline comment templates.
@@ -97,6 +102,9 @@ type Review struct {
 	// Context names files that explain the code, added after the
 	// admin's.
 	Context []configfile.ContextFile `yaml:"context,omitempty"`
+	// Rules are checks added after the admin's; one may not replace an
+	// admin's rule.
+	Rules []configfile.Rule `yaml:"rules,omitempty"`
 }
 
 // Skip decides whether a PR should be skipped outright based on the paths it
@@ -166,6 +174,9 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 		if err := c.Check(); err != nil {
 			return File{}, nil, fmt.Errorf("repoconfig: review.context[%d]: %w", i, err)
 		}
+	}
+	if err := configfile.CheckRules(f.Review.Rules); err != nil {
+		return File{}, nil, fmt.Errorf("repoconfig: review.%w", err)
 	}
 	for i, in := range f.Review.Instructions {
 		if in.Path == "" {
@@ -337,6 +348,26 @@ func ActiveContext(files []configfile.ContextFile, changed []string) []configfil
 		}
 	}
 	return out
+}
+
+// ActiveRules is the rules that apply to a change of the changed paths, in
+// order: each without paths, and each with them when a changed path
+// matches one, as long as their text fits MaxRulesBytes. left is how many
+// applied but did not fit.
+func ActiveRules(rules []configfile.Rule, changed []string) (out []review.Rule, left int) {
+	room := MaxRulesBytes
+	for _, r := range rules {
+		if len(r.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return matchesAny(r.Paths, c) }) {
+			continue
+		}
+		if size := len(r.ID) + len(r.Rule); size <= room {
+			room -= size
+			out = append(out, review.Rule{ID: r.ID, Text: r.Rule})
+		} else {
+			left++
+		}
+	}
+	return out, left
 }
 
 // Instructions returns the contents of the named files, trimmed and in

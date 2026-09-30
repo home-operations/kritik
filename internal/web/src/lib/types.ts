@@ -437,13 +437,19 @@ export interface Analytics {
   repositories: RepoActivity[];
 }
 
-export type RuleKind = 'instructions' | 'context';
-export type RuleSource = 'default' | 'env' | 'file' | 'dashboard' | 'defaults' | 'account' | 'repository';
+export type RuleKind = 'rule' | 'instructions' | 'context';
+// entry is an account's entry for the repository; repository is the
+// repository's own .kritik.yaml.
+export type RuleSource = 'default' | 'env' | 'file' | 'dashboard' | 'defaults' | 'account' | 'entry' | 'repository';
 
-// Rule is one file reviews read, with where it is set, the paths it
-// applies to (every change when empty), and the repositories that read it.
+// Rule is one written rule or file reviews read, with where it is set, the
+// paths it applies to (every change when empty), and the repositories that
+// read it. id and text are a written rule's, path and description a
+// file's.
 export interface Rule {
   kind: RuleKind;
+  id: string;
+  text: string;
   path: string;
   description: string;
   paths: string[];

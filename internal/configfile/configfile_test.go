@@ -467,6 +467,11 @@ func TestParseRejects(t *testing.T) {
 		{"context without a description", "defaults:\n  review: { context: [{ path: db/schema.sql }] }\n" + minimal, "defaults.review.context[0]: description is required"},
 		{"context outside the repository", "defaults:\n  review: { context: [{ path: ../x, description: x }] }\n" + minimal, "escapes the repository"},
 		{"context with a bad glob", "defaults:\n  review: { context: [{ path: x, description: x, paths: ['['] }] }\n" + minimal, "paths[0] \"[\" is not a valid glob"},
+		{"rule with a bad id", "defaults:\n  review: { rules: [{ id: Wrap_Errors, rule: x }] }\n" + minimal, `defaults.review.rules[0].id "Wrap_Errors" must be`},
+		{"rule listed twice", acme("    review: { rules: [{ id: a, rule: x }, { id: a, rule: y }] }\n"), `review.rules[1].id "a" is listed twice`},
+		{"blank rule", acme("    repositories: [{ name: x, review: { rules: [{ id: a, rule: ' ' }] } }]\n"), "review.rules[0].rule is required"},
+		{"overlong rule", "defaults:\n  review: { rules: [{ id: a, rule: " + strings.Repeat("x", MaxRuleChars+1) + " }] }\n" + minimal, "over the 2000 allowed"},
+		{"rule with a bad glob", "defaults:\n  review: { rules: [{ id: a, rule: x, paths: ['['] }] }\n" + minimal, `rules[0].paths[0] "[" is not a valid glob`},
 		{"negative settle account", acme("    settle: -1s\n"), "must not be negative"},
 		{"negative settle repository", acme("    repositories: [{ name: x, settle: -1s }]\n"), "must not be negative"},
 		{"indexing role removed", "defaults:\n  models:\n    indexing: p/m\n" + minimal, "field indexing not found"},
@@ -875,6 +880,31 @@ tools:
 				t.Fatalf("Parse = %v, want an error containing %q", err, want)
 			}
 		})
+	}
+}
+
+// TestRulesAddUp: each scope's rules follow the broader scope's, and one
+// with an id already listed replaces that rule where it stands.
+func TestRulesAddUp(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	f := mustLoad(t, "defaults:\n  review: { rules: [{ id: a, rule: A }, { id: b, rule: B }] }\n"+
+		acme("    review: { rules: [{ id: c, rule: C }] }\n    repositories: [{ name: x, review: { rules: [{ id: a, rule: A2, paths: ['**/*.go'] }] } }]\n"))
+	for repo, want := range map[string][]Rule{
+		"acme/x":        {{ID: "a", Rule: "A2", Paths: []string{"**/*.go"}}, {ID: "b", Rule: "B"}, {ID: "c", Rule: "C"}},
+		"acme/unlisted": {{ID: "a", Rule: "A"}, {ID: "b", Rule: "B"}, {ID: "c", Rule: "C"}},
+	} {
+		if got := f.Settings(&f.Accounts[0], repo).Review.Rules; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: rules = %+v, want %+v", repo, got, want)
+		}
+	}
+	for repo, want := range map[string]map[string]Scope{
+		"acme/x":        {"a": ScopeRepository, "b": ScopeDefaults, "c": ScopeAccount},
+		"acme/unlisted": {"a": ScopeDefaults, "b": ScopeDefaults, "c": ScopeAccount},
+	} {
+		if got := f.RuleScopes(&f.Accounts[0], repo); !maps.Equal(got, want) {
+			t.Errorf("%s: scopes = %v, want %v", repo, got, want)
+		}
 	}
 }
 

@@ -156,6 +156,7 @@ func (w *Review) agentPrompt(
 ) (*runner.Prompt, error) {
 	p := &runner.Prompt{
 		Repository: pr.repository, Instructions: eff.Review.Instructions, InstructionScopes: eff.Scoped, Context: eff.Review.Context,
+		Rules:               eff.Review.Rules,
 		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Focused: eff.Review.Thoroughness == configfile.ThoroughnessFocused,
 		SkipPaths: eff.Skip.OnlyPaths, MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),
 	}

@@ -21,11 +21,13 @@ import (
 
 // Effective is a repository's settings once its .kritik.yaml is applied.
 // Settings.Review names the files the runner reads; Instructions,
-// Templates and References hold their contents once it has.
+// Templates and References hold their contents once it has, and Rules
+// the rules that apply to the change.
 type Effective struct {
 	repoconfig.Merged
 	// Found is whether the repository has a .kritik.yaml.
 	Found        bool
+	Rules        []review.Rule
 	Instructions []string
 	Templates    review.Templates
 	References   []review.Reference
@@ -72,7 +74,8 @@ func (e *Effective) repoFiles() []string {
 
 // fill reads the contents of the files e names out of files, what the
 // runner read, into Instructions, Templates and References, leaving out
-// instructions and context files scoped to paths none of changed matches.
+// instructions, context files and rules scoped to paths none of changed
+// matches.
 // notes lead the returned ones; a named file missing from files is noted
 // unless they already say why.
 func (e *Effective) fill(files repoconfig.Files, notes, changed []string) []string {
@@ -89,6 +92,10 @@ func (e *Effective) fill(files repoconfig.Files, notes, changed []string) []stri
 	}
 	for _, p := range e.Review.Instructions {
 		read(p)
+	}
+	var left int
+	if e.Rules, left = repoconfig.ActiveRules(e.Review.Rules, changed); left > 0 {
+		notes = append(notes, fmt.Sprintf("%d review rules left out, past the 16 KiB of rules a review is given", left))
 	}
 	var truncated bool
 	active := repoconfig.Active(e.Review.Instructions, e.Scoped, changed)

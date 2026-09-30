@@ -91,8 +91,11 @@ type Prompt struct {
 	InstructionScopes map[string][]string `json:"instructionScopes,omitempty"`
 	// Context names the files that explain the code, which the agent is
 	// pointed at to read for itself.
-	Context             []configfile.ContextFile `json:"context,omitempty"`
-	RequireSuggestedFix bool                     `json:"requireSuggestedFix,omitempty"`
+	Context []configfile.ContextFile `json:"context,omitempty"`
+	// Rules are the configuration's rules, each applied when the change
+	// matches its paths.
+	Rules               []configfile.Rule `json:"rules,omitempty"`
+	RequireSuggestedFix bool              `json:"requireSuggestedFix,omitempty"`
 	// Focused is a focused review's: it reports only what would stop the
 	// review, where a thorough one reports anything actionable.
 	Focused bool `json:"focused,omitempty"`

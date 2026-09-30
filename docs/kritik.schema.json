@@ -129,6 +129,33 @@
               }
             }
           }
+        },
+        "rules": {
+          "type": "array",
+          "description": "Checks the review makes, added after the admin's. A rule may not reuse the id of an admin's.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "rule"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+                "description": "Names the rule to the findings that cite it."
+              },
+              "rule": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "What to check, and why."
+              },
+              "paths": {
+                "type": "array",
+                "description": "Apply the rule only when a changed path matches one of these.",
+                "items": { "$ref": "#/$defs/glob" }
+              }
+            }
+          }
         }
       }
     }
