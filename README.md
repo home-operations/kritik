@@ -75,12 +75,11 @@ Security notes:
 - Install kritik into a namespace of its own: runner Jobs run in the release
   namespace, and kritik's Role can create, patch and delete every Secret
   there, though it can never get or list one.
-- Keep the egress gateway on (the chart's default) with a NetworkPolicy:
-  runner pods then reach the outside only through kritik's forward proxy,
-  which allows destinations by hostname (github.com and the configuration's
+- Turn on the chart's NetworkPolicy: runner pods then reach the outside
+  only through kritik's egress gateway, a forward proxy that allows
+  destinations by hostname (github.com and the configuration's
   `egress.allowHosts`), and never hold the credentials `egress.credentials`
-  lets the gateway add. Every review needs it, since its model calls go
-  through it too.
+  lets the gateway add. Every review's model calls go through it too.
 - Run runner Jobs under a sandboxed RuntimeClass such as gVisor
   (`runner.runtimeClassName`) where the cluster has one, since the pod parses
   untrusted content.

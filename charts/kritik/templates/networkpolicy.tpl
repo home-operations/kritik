@@ -4,12 +4,8 @@
 {{- $metrics := int .Values.service.metricsPort }}
 {{- $gateway := int .Values.gateway.port }}
 {{- $postgres := int $np.postgresPort }}
-{{- /* Runner pods reach the outside through the gateway alone when it is on,
-       and over the egress ports to anywhere when it is off. */}}
+{{- /* Runner pods reach the outside through the gateway alone. */}}
 {{- $runnerPorts := list $postgres }}
-{{- if not .Values.gateway.enabled }}
-{{- $runnerPorts = concat $np.egressPorts $runnerPorts }}
-{{- end }}
 {{- $serverPorts := concat $np.egressPorts (list $postgres) }}
 {{- $serverSelector := printf "app.kubernetes.io/name == '%s' && app.kubernetes.io/instance == '%s'" (include "kritik.name" .) .Release.Name }}
 {{- if eq $np.type "default" }}
@@ -35,7 +31,6 @@ spec:
           protocol: TCP
         - port: {{ $metrics }}
           protocol: TCP
-    {{- if .Values.gateway.enabled }}
     # The gateway is for runner pods alone.
     - from:
         - podSelector:
@@ -44,7 +39,6 @@ spec:
       ports:
         - port: {{ $gateway }}
           protocol: TCP
-    {{- end }}
   egress:
     {{- if $np.allowDNS }}
     - ports:
@@ -65,10 +59,9 @@ spec:
         - port: 6443
           protocol: TCP
 ---
-# Runner pods: no ingress at all; egress to DNS, Postgres and, with the
-# gateway, the gateway port on the server pods, through which the git
-# remote, the model endpoint and every allowed host are reached. Without
-# the gateway, the egressPorts to anywhere, as before.
+# Runner pods: no ingress at all; egress to DNS, Postgres and the gateway
+# port on the server pods, through which the git remote, the model and
+# similar-code endpoints and every allowed host are reached.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -97,7 +90,6 @@ spec:
         - port: {{ . }}
           protocol: TCP
         {{- end }}
-    {{- if .Values.gateway.enabled }}
     - to:
         - podSelector:
             matchLabels:
@@ -105,7 +97,6 @@ spec:
       ports:
         - port: {{ $gateway }}
           protocol: TCP
-    {{- end }}
 {{- else if eq $np.type "cilium" }}
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -127,7 +118,6 @@ spec:
               protocol: TCP
             - port: {{ $metrics | quote }}
               protocol: TCP
-    {{- if .Values.gateway.enabled }}
     - fromEndpoints:
         - matchLabels:
             kritik.home-operations.com/role: runner
@@ -135,7 +125,6 @@ spec:
         - ports:
             - port: {{ $gateway | quote }}
               protocol: TCP
-    {{- end }}
   egress:
     {{- if $np.allowDNS }}
     - toEndpoints:
@@ -205,7 +194,6 @@ spec:
             - port: {{ . | quote }}
               protocol: TCP
             {{- end }}
-    {{- if .Values.gateway.enabled }}
     - toEndpoints:
         - matchLabels:
             {{- include "kritik.selectorLabels" . | nindent 12 }}
@@ -213,7 +201,6 @@ spec:
         - ports:
             - port: {{ $gateway | quote }}
               protocol: TCP
-    {{- end }}
 {{- else if eq $np.type "calico" }}
 apiVersion: projectcalico.org/v3
 kind: NetworkPolicy
@@ -234,7 +221,6 @@ spec:
         ports:
           - {{ $public }}
           - {{ $metrics }}
-    {{- if .Values.gateway.enabled }}
     - action: Allow
       protocol: TCP
       source:
@@ -242,7 +228,6 @@ spec:
       destination:
         ports:
           - {{ $gateway }}
-    {{- end }}
   egress:
     {{- if $np.allowDNS }}
     - action: Allow
@@ -304,14 +289,12 @@ spec:
           {{- range $runnerPorts }}
           - {{ . }}
           {{- end }}
-    {{- if .Values.gateway.enabled }}
     - action: Allow
       protocol: TCP
       destination:
         selector: {{ $serverSelector | quote }}
         ports:
           - {{ $gateway }}
-    {{- end }}
 {{- else }}
 {{- fail (printf "networkPolicy.type must be one of: default, cilium, calico (got %q)" $np.type) }}
 {{- end }}

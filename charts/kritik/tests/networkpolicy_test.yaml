@@ -63,24 +63,6 @@ tests:
           value: 8082
         documentIndex: 1
 
-  - it: gives runners direct egress on the egress ports when the gateway is disabled
-    set:
-      networkPolicy.enabled: true
-      gateway.enabled: false
-    asserts:
-      - contains:
-          path: spec.egress[1].ports
-          content:
-            port: 443
-            protocol: TCP
-        documentIndex: 1
-      - notExists:
-          path: spec.egress[2]
-        documentIndex: 1
-      - notExists:
-          path: spec.ingress[1]
-        documentIndex: 0
-
   - it: renders CiliumNetworkPolicies for type=cilium, with the gateway open to runner pods alone
     set:
       networkPolicy.enabled: true
@@ -188,25 +170,6 @@ tests:
           path: spec.egress[3].destination.selector
           value: app.kubernetes.io/name == 'kritik' && app.kubernetes.io/instance == 'RELEASE-NAME'
         documentIndex: 1
-
-  - it: gives runners the egress ports in every flavor when the gateway is disabled
-    set:
-      networkPolicy.enabled: true
-      networkPolicy.type: cilium
-      gateway.enabled: false
-    asserts:
-      - contains:
-          path: spec.egress[1].toPorts[0].ports
-          content:
-            port: "443"
-            protocol: TCP
-        documentIndex: 1
-      - notExists:
-          path: spec.egress[2]
-        documentIndex: 1
-      - notExists:
-          path: spec.ingress[1]
-        documentIndex: 0
 
   - it: fails fast on an unknown type
     set:

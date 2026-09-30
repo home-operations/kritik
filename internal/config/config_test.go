@@ -137,10 +137,12 @@ func TestCommandValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = cfg.ValidateServe()
-	if err == nil || !strings.Contains(err.Error(), "KRITIK_RUNNER_IMAGE") || !strings.Contains(err.Error(), "KRITIK_WEB_URL") {
-		t.Fatalf("serve without a runner image or a web URL = %v, want both named", err)
+	for _, want := range []string{"KRITIK_RUNNER_IMAGE", "KRITIK_WEB_URL", "KRITIK_GATEWAY_URL"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("serve without a runner image, a web URL or the gateway = %v, want %s named", err, want)
+		}
 	}
-	cfg.RunnerImage, cfg.WebURL = "img", "https://dash.example.com"
+	cfg.RunnerImage, cfg.WebURL, cfg.GatewayURL = "img", "https://dash.example.com", "http://kritik-gateway:8082"
 	if err := cfg.ValidateServe(); err != nil {
 		t.Fatal(err)
 	}

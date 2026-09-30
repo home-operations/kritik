@@ -186,11 +186,11 @@ when it ends, and hands it to the pod in place of a provider key; the
 gateway answers each step through the account's provider with the key only
 kritik serve holds, refuses a step once the run's token budget or the
 account's `tokensPerMonth` is spent, and records the step's usage. Provider
-endpoints are therefore not in a runner's allowlist.
-
-`gateway.enabled: false` removes the listener and the Service and gives runner
-pods the `networkPolicy.egressPorts` to anywhere instead. Reviews are refused
-without the gateway.
+endpoints are therefore not in a runner's allowlist. The runner also asks it
+once for the review's similar code: the gateway embeds the diff with the
+instance's embedder and answers from the repository's index, charging the
+embedding to the run. Every review runs through the gateway, so it has no
+switch (ADR-0026).
 
 ### Runner tools
 
@@ -310,8 +310,7 @@ Kubernetes: `>=1.25.0-0`
 | database.runner.role | string | `"kritik_runner"` | Name of the runner role, granted only what runner Jobs need. |
 | deploymentAnnotations | object | `{}` | Annotations added to the Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
 | fullnameOverride | string | `""` | Override the full release name. |
-| gateway.enabled | bool | `true` | Serve the gateway on the kritik serve pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint a runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Reviews are refused without it. |
-| gateway.port | int | `8082` | Gateway port on the pods and its Service. |
+| gateway.port | int | `8082` | Port of the gateway the kritik serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004, ADR-0026). |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
 | httpRoute.enabled | bool | `false` | Expose web.url through a Gateway API HTTPRoute. |
@@ -336,7 +335,7 @@ Kubernetes: `>=1.25.0-0`
 | monitoring.serviceMonitor.scrapeTimeout | string | `"10s"` | Scrape timeout. |
 | nameOverride | string | `""` | Override the chart name used in resource names. |
 | networkPolicy.allowDNS | bool | `true` | Allow DNS egress (UDP/TCP 53); the Cilium flavor allows it to kube-dns alone. |
-| networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to for forges and model endpoints. Runner pods get these only when the gateway is disabled; with it, they reach the gateway alone. |
+| networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone. |
 | networkPolicy.enabled | bool | `false` | Create the NetworkPolicies. |
 | networkPolicy.postgresPort | int | `5432` | Postgres port allowed for egress. |
 | networkPolicy.type | string | `"default"` | Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy) or "calico" (projectcalico.org/v3 NetworkPolicy). |

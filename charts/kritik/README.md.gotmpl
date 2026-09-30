@@ -191,11 +191,11 @@ when it ends, and hands it to the pod in place of a provider key; the
 gateway answers each step through the account's provider with the key only
 kritik serve holds, refuses a step once the run's token budget or the
 account's `tokensPerMonth` is spent, and records the step's usage. Provider
-endpoints are therefore not in a runner's allowlist.
-
-`gateway.enabled: false` removes the listener and the Service and gives runner
-pods the `networkPolicy.egressPorts` to anywhere instead. Reviews are refused
-without the gateway.
+endpoints are therefore not in a runner's allowlist. The runner also asks it
+once for the review's similar code: the gateway embeds the diff with the
+instance's embedder and answers from the repository's index, charging the
+embedding to the run. Every review runs through the gateway, so it has no
+switch (ADR-0026).
 
 ### Runner tools
 

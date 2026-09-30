@@ -215,9 +215,7 @@ runner:
     annotations: {}
 
 gateway:
-  # -- Serve the gateway on the kritik serve pods: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model endpoint a runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004). Reviews are refused without it.
-  enabled: true
-  # -- Gateway port on the pods and its Service.
+  # -- Port of the gateway the kritik serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004, ADR-0026).
   port: 8082
 
 serviceAccount:
@@ -302,7 +300,7 @@ networkPolicy:
   type: default
   # -- Allow DNS egress (UDP/TCP 53); the Cilium flavor allows it to kube-dns alone.
   allowDNS: true
-  # -- TCP ports the service pods may egress to for forges and model endpoints. Runner pods get these only when the gateway is disabled; with it, they reach the gateway alone.
+  # -- TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone.
   egressPorts:
     - 443
   # -- Postgres port allowed for egress.
