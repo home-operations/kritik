@@ -19,7 +19,9 @@ import (
 // nil, with a no-op cleanup, when there is nothing to offer or the
 // commands cannot be kept from the runner's secrets; the review then goes
 // on with the read-only tools alone. cleanup removes the scratch space.
-func commandTool(ctx context.Context, p Spec, tree *agent.Tree, maxOutput int, logger *slog.Logger) (run *agent.RunTool, cleanup func()) {
+func commandTool(
+	ctx context.Context, p Spec, tree *agent.Tree, gitToken string, maxOutput int, logger *slog.Logger,
+) (run *agent.RunTool, cleanup func()) {
 	cleanup = func() {}
 	found := map[string]string{}
 	for _, name := range p.Agent.Commands {
@@ -65,8 +67,11 @@ func commandTool(ctx context.Context, p Spec, tree *agent.Tree, maxOutput int, l
 		note += fmt.Sprintf(" It stopped at %d MiB, so the paths that sort last are missing.", agent.MaxCheckoutBytes>>20)
 	}
 	env, proxied := commandEnv(home)
+	// gh reaches GitHub over HTTPS, which the gateway cannot add a
+	// credential to, so it carries the run's read-only token (ADR-0023).
+	commandEnvs := map[string][]string{"gh": {"GH_TOKEN=" + gitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}
 	return agent.NewRunTool(agent.RunConfig{
-		Dir: dir, Env: env, Commands: found, Timeout: time.Duration(p.Agent.CommandTimeoutSeconds) * time.Second,
+		Dir: dir, Env: env, CommandEnv: commandEnvs, Commands: found, Timeout: time.Duration(p.Agent.CommandTimeoutSeconds) * time.Second,
 		MaxOutputBytes: maxOutput, Proxied: proxied, Note: note,
 	}), cleanup
 }

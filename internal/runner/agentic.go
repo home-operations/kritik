@@ -160,7 +160,7 @@ func runAgentic(
 	if err != nil {
 		return fmt.Errorf("runner: %w", err)
 	}
-	run, cleanup := commandTool(ctx, p, agent.NewTree(head, ignore), p.Agent.limits().MaxToolOutputBytes, logger)
+	run, cleanup := commandTool(ctx, p, agent.NewTree(head, ignore), secrets.GitToken, p.Agent.limits().MaxToolOutputBytes, logger)
 	defer cleanup()
 	var extra []agent.Tool
 	var commands []string

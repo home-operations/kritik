@@ -26,8 +26,8 @@ func TestEgressRules(t *testing.T) {
 	// without being listed, and an OpenRouter provider, which runners reach
 	// only through the gateway's model endpoint.
 	rules := f.EgressRules()
-	if !rules.Allows("github.com") {
-		t.Errorf("implicit host github.com not allowed; hosts = %v", rules.Hosts)
+	if !rules.Allows("github.com") || !rules.Allows("api.github.com") {
+		t.Errorf("implicit GitHub hosts not allowed; hosts = %v", rules.Hosts)
 	}
 	if rules.Allows("openrouter.ai") {
 		t.Errorf("a provider's host must not be allowed; hosts = %v", rules.Hosts)
@@ -71,7 +71,7 @@ func TestEgressRejects(t *testing.T) {
 		"scheme in host":         {"egress:\n  allowHosts: [\"https://ghcr.io\"]\n", "lowercase hostname"},
 		"port in host":           {"egress:\n  allowHosts: [\"ghcr.io:443\"]\n", "lowercase hostname"},
 		"uppercase host":         {"egress:\n  allowHosts: [GHCR.io]\n", "lowercase hostname"},
-		"credential not allowed": {"egress:\n  credentials:\n    api.github.com: { env: TEST_GH_TOKEN }\n", "not in egress.allowHosts"},
+		"credential not allowed": {"egress:\n  credentials:\n    registry.example.com: { env: TEST_GH_TOKEN }\n", "not in egress.allowHosts"},
 		"empty credential":       {"egress:\n  allowHosts: [api.github.com]\n  credentials:\n    api.github.com: { env: TEST_EMPTY }\n", "empty value"},
 	} {
 		t.Run(name, func(t *testing.T) {
