@@ -42,8 +42,7 @@ type Review struct {
 	Base
 	Executor executor.Executor
 	// GatewayURL is where a runner calls its model, and GatewayTokenTTL how
-	// long its run token outlives the Job's deadline. Reviews are refused
-	// without a gateway.
+	// long its run token outlives the Job's deadline.
 	GatewayURL      string
 	GatewayTokenTTL time.Duration
 

@@ -112,13 +112,10 @@ ConfigMap the file is read from.
 {{- end }}
 
 {{/*
-In-cluster URL runner Jobs are handed as HTTPS_PROXY, empty when the gateway
-is off.
+In-cluster URL runner Jobs are handed as HTTPS_PROXY and their model endpoint.
 */}}
 {{- define "kritik.gatewayURL" -}}
-{{- if .Values.gateway.enabled -}}
 {{- printf "http://%s-gateway.%s.svc.cluster.local:%d" (include "kritik.fullname" .) .Release.Namespace (int .Values.gateway.port) -}}
-{{- end -}}
 {{- end }}
 
 {{/*

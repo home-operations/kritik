@@ -80,17 +80,16 @@ type Config struct {
 	MetricsAddr string `env:"KRITIK_METRICS_ADDR" envDefault:":8081"`
 
 	// GatewayAddr is the listen address of the gateway serve runs: the
-	// forward proxy runner pods reach the outside through
-	// (ADR-0008), and the model endpoint an agentic runner calls with its
-	// run token (ADR-0004). Its own port, so the runner network policy can
+	// forward proxy runner pods reach the outside through (ADR-0008), and
+	// the model and similar-code endpoints a runner calls with its run
+	// token (ADR-0004, ADR-0026). Its own port, so the runner network policy can
 	// name it without opening the public or management listeners.
 	GatewayAddr string `env:"KRITIK_GATEWAY_ADDR" envDefault:":8082"`
 
 	// GatewayURL is the gateway's in-cluster address, http://host:port:
-	// runner Jobs are handed it as HTTPS_PROXY and HTTP_PROXY, and an
-	// agentic runner's job document names it as its model endpoint. Empty
-	// hands runners no proxy, which leaves them the direct egress an older
-	// network policy allowed, and refuses agentic reviews.
+	// runner Jobs are handed it as HTTPS_PROXY and HTTP_PROXY, and a
+	// review's job document names it as its model endpoint. serve needs
+	// it, since every review reaches its model through it (ADR-0026).
 	GatewayURL string `env:"KRITIK_GATEWAY_URL"`
 
 	// GatewayTokenTTL is how long a run token outlives its runner Job's
@@ -206,6 +205,9 @@ func (c *Config) ValidateServe() error {
 	}
 	if c.WebURL == "" {
 		errs = append(errs, errors.New("config: KRITIK_WEB_URL is required to serve"))
+	}
+	if c.GatewayURL == "" {
+		errs = append(errs, errors.New("config: KRITIK_GATEWAY_URL is required to serve: every review reaches its model through the gateway"))
 	}
 	return errors.Join(errs...)
 }

@@ -139,10 +139,8 @@ spec:
             {{- end }}
             - name: KRITIK_GATEWAY_ADDR
               value: {{ printf ":%d" (int $.Values.gateway.port) | quote }}
-            {{- with include "kritik.gatewayURL" $ }}
             - name: KRITIK_GATEWAY_URL
-              value: {{ . | quote }}
-            {{- end }}
+              value: {{ include "kritik.gatewayURL" $ | quote }}
             - name: KRITIK_REVIEW_WORKERS
               value: {{ $.Values.config.reviewWorkers | quote }}
             - name: KRITIK_INDEX_WORKERS
@@ -175,11 +173,9 @@ spec:
             - name: metrics
               containerPort: {{ $.Values.service.metricsPort }}
               protocol: TCP
-            {{- if $.Values.gateway.enabled }}
             - name: gateway
               containerPort: {{ $.Values.gateway.port }}
               protocol: TCP
-            {{- end }}
 
           livenessProbe:
             {{- tpl (toYaml $.Values.livenessProbe) $ | nindent 12 }}

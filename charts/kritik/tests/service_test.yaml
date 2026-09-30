@@ -25,14 +25,3 @@ tests:
           path: metadata.name
           value: RELEASE-NAME-kritik-metrics
         documentIndex: 2
-
-  - it: leaves the gateway Service out when the gateway is disabled
-    set:
-      gateway.enabled: false
-    asserts:
-      - hasDocuments:
-          count: 2
-      - equal:
-          path: metadata.name
-          value: RELEASE-NAME-kritik-metrics
-        documentIndex: 1

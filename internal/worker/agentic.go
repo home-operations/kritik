@@ -63,9 +63,9 @@ type admission struct {
 
 // agentAdmit settles what an agentic review may spend before its runner
 // starts, since the runner spends against the model through the gateway:
-// the gateway must be configured, a review model must be, the account's
-// caps must allow a review, and a free model lease is taken, renewed until
-// released, or errNoSlot returned. A non-empty status ends the review
+// a review model must be configured, the account's caps must allow a
+// review, and a free model lease is taken, renewed until released, or
+// errNoSlot returned. A non-empty status ends the review
 // before it runs, for the reason given.
 func (w *Review) agentAdmit(
 	ctx context.Context, logger *slog.Logger, file *configfile.File, account *configfile.Account, settings configfile.Settings, jobID int64,
@@ -73,9 +73,6 @@ func (w *Review) agentAdmit(
 	ref := settings.Models.Review
 	if ref == "" {
 		return admission{}, store.ReviewSkipped, "no review model is configured for this repository", nil
-	}
-	if w.GatewayURL == "" {
-		return admission{}, store.ReviewFailed, "a review needs the model gateway (KRITIK_GATEWAY_URL)", nil
 	}
 	if _, ok := file.Provider(account, ref.Provider()); !ok {
 		return admission{}, store.ReviewFailed, fmt.Sprintf("provider %q is not in the configuration", ref.Provider()), nil

@@ -219,6 +219,14 @@ tests:
             - { name: metrics, containerPort: 8081, protocol: TCP }
             - { name: gateway, containerPort: 8082, protocol: TCP }
 
+  - it: hands kritik serve the gateway's in-cluster address, which it requires
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIK_GATEWAY_URL
+            value: http://RELEASE-NAME-kritik-gateway.NAMESPACE.svc.cluster.local:8082
+
   - it: fails without web.url
     set:
       web.url: ""

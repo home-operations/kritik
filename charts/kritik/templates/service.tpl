@@ -15,10 +15,10 @@ spec:
       protocol: TCP
   selector:
     {{- include "kritik.selectorLabels" . | nindent 4 }}
-{{- if .Values.gateway.enabled }}
 ---
-# Egress gateway: the forward proxy runner Jobs reach the outside through
-# (ADR-0008).
+# The gateway: the forward proxy runner Jobs reach the outside through
+# (ADR-0008), and their model and similar-code endpoints (ADR-0004,
+# ADR-0026).
 apiVersion: v1
 kind: Service
 metadata:
@@ -36,7 +36,6 @@ spec:
       protocol: TCP
   selector:
     {{- include "kritik.selectorLabels" . | nindent 4 }}
-{{- end }}
 ---
 # Metrics.
 apiVersion: v1
