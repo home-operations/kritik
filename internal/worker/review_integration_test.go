@@ -1377,13 +1377,12 @@ func checkRepoConfig(
 	cfgBase := commit("configure kritik", map[string]string{
 		".kritik.yaml": `filter: '!pr.labels.exists(l, l.name == "skip-review")'
 ignore: ["docs/**", ".kritik.yaml"]
-review:
-  rules:
-    - { id: todos, file: .kritik/rules.md }
-    - { id: no-panics, rule: Return an error rather than panic. }
-    - { id: sql-placeholders, rule: Use query placeholders., paths: ["**/*.sql"] }
-  templates:
-    summary: ".kritik/summary.md.tmpl"
+rules:
+  - { id: todos, file: .kritik/rules.md }
+  - { id: no-panics, rule: Return an error rather than panic. }
+  - { id: sql-placeholders, rule: Use query placeholders., paths: ["**/*.sql"] }
+comments:
+  summaryTemplate: ".kritik/summary.md.tmpl"
 `,
 		".kritik/rules.md":        "Flag every TODO left in code.\n",
 		".kritik/summary.md.tmpl": "Custom summary for #{{ .Number }}: {{ .Result.Summary.Take }}\n",
@@ -1391,7 +1390,7 @@ review:
 		"web/AGENTS.md":           "Never inline styles.\n",
 	})
 	docsHead := commit("docs", map[string]string{"docs/guide.md": "# Guide\n"})
-	loosened := commit("drop the ignore globs", map[string]string{".kritik.yaml": "review: {}\n"})
+	loosened := commit("drop the ignore globs", map[string]string{".kritik.yaml": "rules: []\n"})
 	lf.setBase(cfgBase)
 
 	fc.mu.Lock()

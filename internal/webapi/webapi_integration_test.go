@@ -178,7 +178,7 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 		VALUES ($1, $2, 'head7', 'base7', 'patch7', $3, '{a.go}',
 			'[{"stage":"definitions","path":"b.go","start_line":1,"end_line":2,"text":"func F() {}"}]',
 			jsonb_build_object('.kritik.yaml', $4::text))`, s.runID, s.accountID, "diff of "+slug,
-		"mode: agentic\nreview:\n  rules: [{ id: house-style, file: docs/rules-of-"+slug+".md }]\n")
+		"mode: agentic\nrules: [{ id: house-style, file: docs/rules-of-"+slug+".md }]\n")
 	e.exec(`INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline, model, sources)
 		VALUES ($1, $2, 'submitted', '{"findings":[]}', 2, '{"grep":1}',
 			'[{"index":0,"tools":["grep"],"duration_ms":5,"output_bytes":7,"input_tokens":10,"output_tokens":2}]', 'acme/large',

@@ -132,7 +132,7 @@ func TestFileReviewDefaults(t *testing.T) {
 	t.Setenv("KRITIK_DEFAULTS_SETTLE", "45s")
 	models := "  models: { review: openrouter/big, fallback: openrouter/small }\n"
 	withDefaults := func(extra string) []byte { return []byte(strings.Replace(fileWithDefaults, models, models+extra, 1)) }
-	f, err := Parse(withDefaults("  mode: agentic\n  forks: true\n  review: { feedback: minimal }\n"))
+	f, err := Parse(withDefaults("  mode: agentic\n  forks: true\n  feedback: minimal\n"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -143,14 +143,14 @@ func TestFileReviewDefaults(t *testing.T) {
 			s.Mode, s.Forks, s.Settle, s.Review.Feedback)
 	}
 	src := f.Sources(a, "acme/x")
-	for key, want := range map[string]Source{"mode": SourceDefaults, "forks": SourceDefaults, "settle": SourceEnv, "review.feedback": SourceDefaults} {
+	for key, want := range map[string]Source{"mode": SourceDefaults, "forks": SourceDefaults, "settle": SourceEnv, "feedback": SourceDefaults} {
 		if src[key] != want {
 			t.Errorf("source of %s = %s, want %s", key, src[key], want)
 		}
 	}
 	want := []FileDefault{
 		{"mode", FileValue{Value: "agentic", Source: SourceFile}},
-		{"review.feedback", FileValue{Value: "minimal", Source: SourceFile}},
+		{"feedback", FileValue{Value: "minimal", Source: SourceFile}},
 		{"forks", FileValue{Value: "true", Source: SourceFile}},
 		{"settle", FileValue{Value: "45s", Source: SourceEnv}},
 	}

@@ -185,7 +185,7 @@ defaults:
     review: openrouter/vendor/large-model
     fallback: openrouter/vendor/small-model
   mode: agentic
-  review: { feedback: detailed }
+  feedback: detailed
   forks: false
   settle: 30s
 embedding:
@@ -199,7 +199,7 @@ A provider is `type` (`openrouter`, `openai` or `anthropic`), an optional
 `baseUrl` and `pricing`, and its `apiKey`. A model is named
 `<provider>/<model>`, on a provider the file declares.
 `mode` is `agentic` (the default, which needs the chart's `gateway`) or
-`single`, `review.feedback` is `detailed`, `standard` or `minimal`
+`single`, `feedback` is `detailed`, `standard` or `minimal`
 ([repository settings](repository-config.md)), `forks: true`
 reviews pull requests from forks without being asked (by default one is
 reviewed only when a maintainer comments `@<app slug> review`), and
@@ -218,7 +218,7 @@ The same defaults can come from the environment:
 | `KRITIK_DEFAULTS_MODELS_REVIEW`   | `defaults.models.review`                                                              |
 | `KRITIK_DEFAULTS_MODELS_FALLBACK` | `defaults.models.fallback`                                                            |
 | `KRITIK_DEFAULTS_MODE`            | `defaults.mode`                                                                       |
-| `KRITIK_DEFAULTS_FEEDBACK`        | `defaults.review.feedback`                                                            |
+| `KRITIK_DEFAULTS_FEEDBACK`        | `defaults.feedback`                                                                   |
 | `KRITIK_DEFAULTS_FORKS`           | `defaults.forks`, `true` or `false`                                                   |
 | `KRITIK_DEFAULTS_SETTLE`          | `defaults.settle`, a duration such as `30s`                                           |
 | `KRITIK_EMBEDDING_BASE_URL`       | `embedding.baseUrl`                                                                   |
@@ -255,24 +255,24 @@ accounts:
     name: org-1
     models: { review: openrouter/vendor/large-model }
     limits: { reviewsPerDay: 50, tokensPerMonth: 20000000 }
-    review:
-      rules:
-        - id: wrap-errors
-          rule: 'Wrap an error with fmt.Errorf("<package>: %w", err) before returning it.'
-          paths: ["**/*.go"]
+    rules:
+      - id: wrap-errors
+        rule: 'Wrap an error with fmt.Errorf("<package>: %w", err) before returning it.'
+        paths: ["**/*.go"]
     repositories:
       - name: repo-1
         mode: single
         settle: 2m
 ```
 
-An account and a repository entry take the defaults' settings: `models`,
-`mode`, `filter`, `forks`, `ignore`, `settle`, `agent`, `incremental`,
-`review` (rules, templates, context and the rest of
-[the repository settings](repository-config.md)) and `allow`, the bounds a
-repository's `.kritik.yaml` chooses within. A narrower scope's value
-replaces the broader one's, except `ignore` globs, which add up, and
-`review.rules`, which add up by id ([ADR-0018](adr/0018-rules.md)). An
+An account and a repository entry take the defaults' settings: the keys
+a repository's `.kritik.yaml` takes (`mode`, `models`, `feedback`,
+`comments`, `requireSuggestedFix`, `filter`, `ignore`, `rules`, `context`
+and `agentFiles`, see [the repository settings](repository-config.md)),
+and the admin's own `forks`, `settle`, `agent` and `incremental`. A
+narrower scope's value replaces the broader one's, except `ignore` globs,
+which add up, and `rules`, which add up by id
+([ADR-0018](adr/0018-rules.md)). An
 account also takes `limits` (`concurrency`, `reviewsPerDay`,
 `tokensPerMonth`), `runner` (the review and index Jobs' `resources` and
 `activeDeadlineSeconds`), and `providers`, its own model keys: a model

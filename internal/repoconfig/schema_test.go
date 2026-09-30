@@ -24,7 +24,6 @@ func TestSchemaMatchesFile(t *testing.T) {
 	if err := json.Unmarshal(raw, &schema); err != nil {
 		t.Fatal(err)
 	}
-	review := []string{"properties", "review", "properties"}
 	tests := []struct {
 		name string
 		path []string
@@ -32,11 +31,9 @@ func TestSchemaMatchesFile(t *testing.T) {
 	}{
 		{"the file", nil, yamlKeys[File]()},
 		{"models", []string{"properties", "models"}, yamlKeys[Models]()},
-		{"agent", []string{"properties", "agent"}, yamlKeys[Agent]()},
-		{"review", []string{"properties", "review"}, yamlKeys[Review]()},
-		{"review.templates", append(review, "templates"), yamlKeys[Templates]()},
-		{"review.context", append(review, "context", "items"), yamlKeys[configfile.ContextFile]()},
-		{"review.rules", append(review, "rules", "items"), yamlKeys[configfile.Rule]()},
+		{"comments", []string{"properties", "comments"}, yamlKeys[Comments]()},
+		{"context", []string{"properties", "context", "items"}, yamlKeys[configfile.ContextFile]()},
+		{"rules", []string{"properties", "rules", "items"}, yamlKeys[configfile.Rule]()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

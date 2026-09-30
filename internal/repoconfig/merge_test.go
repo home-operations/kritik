@@ -22,6 +22,7 @@ func adminSettings() configfile.Settings {
 			Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
 			Rules: []configfile.Rule{{ID: "wrap-errors", Rule: "Wrap errors."}, {ID: "house-style", File: "docs/rules.md"}}, AgentFiles: true,
 		},
+		Providers: []string{"own", "p"},
 	}
 }
 
@@ -30,7 +31,6 @@ func TestMerge(t *testing.T) {
 	tests := []struct {
 		name    string
 		doc     string
-		allow   configfile.Allow
 		want    func(*configfile.Settings)
 		filter  bool
 		dropped []string
@@ -40,8 +40,8 @@ func TestMerge(t *testing.T) {
 		{
 			name: "the file narrows, appends file rules and replaces presentation",
 			doc: "enabled: false\nfilter: '!pr.draft'\nignore: [gen/**, vendor/**]\n" +
-				"review:\n  rules: [{ id: repo-style, file: .kritik/rules.md }, { id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }]\n" +
-				"  templates:\n    inline: .kritik/inline.tmpl\n",
+				"rules: [{ id: repo-style, file: .kritik/rules.md }, { id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }]\n" +
+				"comments:\n  inlineTemplate: .kritik/inline.tmpl\n",
 			want: func(s *configfile.Settings) {
 				s.Enabled, s.Ignore = false, []string{"vendor/**", "gen/**"}
 				s.Review.Rules = append(s.Review.Rules, configfile.Rule{ID: "repo-style", File: ".kritik/rules.md"},
@@ -51,84 +51,61 @@ func TestMerge(t *testing.T) {
 			filter: true,
 		},
 		{
-			name: "an admin's file rule stays as the admin wrote it", doc: "review:\n  rules: [{ id: house-style, file: docs/rules.md, paths: ['**/*.sql'] }]\n",
-			dropped: []string{".kritik.yaml: review.rules house-style was dropped: an admin's rule has that id"},
+			name: "an admin's file rule stays as the admin wrote it", doc: "rules: [{ id: house-style, file: docs/rules.md, paths: ['**/*.sql'] }]\n",
+			dropped: []string{".kritik.yaml: rules house-style was dropped: an admin's rule has that id"},
 		},
 		{
-			name: "context files follow the admin's", doc: "review:\n  context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }]\n",
+			name: "context files follow the admin's", doc: "context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }]\n",
 			want: func(s *configfile.Settings) {
 				s.Review.Context = append(s.Review.Context, configfile.ContextFile{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}})
 			},
 		},
-		{name: "a context file without a description", doc: "review:\n  context: [{ path: db/schema.sql }]\n", wantErr: "description is required"},
+		{name: "a context file without a description", doc: "context: [{ path: db/schema.sql }]\n", wantErr: "description is required"},
 		{
-			name: "rules follow the admin's, and may not replace one",
-			doc:  "review:\n  rules:\n    - { id: wrap-errors, rule: Anything goes. }\n    - { id: no-tokens, rule: Never log a token., paths: ['**/*.go'] }\n",
+			name: "rules follow the admin's, and one with an admin's id is dropped",
+			doc:  "rules:\n  - { id: wrap-errors, rule: Anything goes. }\n  - { id: no-tokens, rule: Never log a token., paths: ['**/*.go'] }\n",
 			want: func(s *configfile.Settings) {
 				s.Review.Rules = append(s.Review.Rules, configfile.Rule{ID: "no-tokens", Rule: "Never log a token.", Paths: []string{"**/*.go"}})
 			},
-			dropped: []string{".kritik.yaml: review.rules wrap-errors was dropped: an admin's rule has that id"},
+			dropped: []string{".kritik.yaml: rules wrap-errors was dropped: an admin's rule has that id"},
 		},
-		{name: "a rule without an id", doc: "review:\n  rules: [{ rule: Never log a token. }]\n", wantErr: `review.rules[0].id "" must be`},
+		{name: "a rule without an id", doc: "rules: [{ rule: Never log a token. }]\n", wantErr: `rules[0].id "" must be`},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
-			name: "presentation replaces the admin's", doc: "review: { inlineComments: false, agentFiles: false }\n",
-			want: func(s *configfile.Settings) { s.Review.InlineComments, s.Review.AgentFiles = false, false },
+			name: "presentation replaces the admin's", doc: "comments: { inline: false, summaryTemplate: .kritik/summary.tmpl }\nagentFiles: false\n",
+			want: func(s *configfile.Settings) {
+				s.Review.InlineComments, s.Review.AgentFiles, s.Review.Templates.Summary = false, false, ".kritik/summary.tmpl"
+			},
 		},
 		{
-			name: "feedback replaces the admin's", doc: "review: { feedback: minimal }\n",
+			name: "feedback replaces the admin's", doc: "feedback: minimal\n",
 			want: func(s *configfile.Settings) { s.Review.Feedback = configfile.FeedbackMinimal },
 		},
 		{
-			name: "an unknown feedback level is dropped", doc: "review: { feedback: exhaustive }\n",
-			dropped: []string{`.kritik.yaml: review.feedback "exhaustive" was dropped; allowed: detailed, standard or minimal`},
+			name: "an unknown feedback level is dropped", doc: "feedback: exhaustive\n",
+			dropped: []string{`.kritik.yaml: feedback "exhaustive" was dropped; allowed: detailed, standard or minimal`},
 		},
 		{
-			name: "requireSuggestedFix may only turn on", doc: "review:\n  requireSuggestedFix: false\n",
-			dropped: []string{".kritik.yaml: review.requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
+			name: "requireSuggestedFix may only turn on", doc: "requireSuggestedFix: false\n",
+			dropped: []string{".kritik.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},
 		{
-			name: "with no bounds set, the admin's own values or lower",
-			doc:  "mode: single\nmodels: { review: p/big }\nagent: { maxSteps: 20, maxTokens: 5000, commands: [] }\nsettle: 30s\n",
+			name: "any mode, and a model of a provider the account may use",
+			doc:  "mode: agentic\nmodels: { review: own/small, fallback: p/big }\n",
 			want: func(s *configfile.Settings) {
-				s.Agent.MaxSteps, s.Agent.Commands, s.Settle = 20, []string{}, 30*time.Second
+				s.Mode, s.Models = configfile.ReviewAgentic, configfile.Models{Review: "own/small", Fallback: "p/big"}
 			},
 		},
 		{
-			name: "with no bounds set, anything else is dropped",
-			doc:  "mode: agentic\nmodels: { review: p/small, fallback: p/big }\nagent: { maxSteps: 31, timeout: 0s, commands: [rg, curl] }\nsettle: 3m\n",
+			name: "a model of another provider, or no model, is dropped", doc: "models: { review: q/big, fallback: p }\n",
 			dropped: []string{
-				`.kritik.yaml: mode "agentic" was dropped; allowed: single`,
-				`.kritik.yaml: models.review "p/small" was dropped; allowed: p/big`,
-				`.kritik.yaml: models.fallback "p/big" was dropped; allowed: none`,
-				`.kritik.yaml: agent.commands "curl" was dropped; allowed: rg`,
-				".kritik.yaml: agent.maxSteps 31 was dropped; allowed: above 0, at most 30",
-				".kritik.yaml: agent.timeout 0s was dropped; allowed: above 0, at most 10m0s",
-				".kritik.yaml: settle 3m0s was dropped; allowed: 0s to 2m0s",
+				`.kritik.yaml: models.review "q/big" was dropped; allowed: a model of own, p`,
+				`.kritik.yaml: models.fallback "p" was dropped; allowed: a model of own, p`,
 			},
 		},
-		{
-			name: "the bounds open choices past the admin's own",
-			doc:  "mode: agentic\nmodels: { review: p/small, fallback: p/big }\nagent: { maxSteps: 60, timeout: 20m, commands: [fd, curl] }\nsettle: 30m\n",
-			allow: configfile.Allow{
-				Modes: []configfile.ReviewMode{configfile.ReviewSingle, configfile.ReviewAgentic}, Models: []configfile.ModelRef{"p/big", "p/small"},
-				Commands: []string{"rg", "fd", "curl"}, Agent: configfile.AllowAgent{MaxSteps: new(60), Timeout: new(20 * time.Minute)},
-				Settle: new(30 * time.Minute),
-			},
-			want: func(s *configfile.Settings) {
-				s.Mode, s.Models = configfile.ReviewAgentic, configfile.Models{Review: "p/small", Fallback: "p/big"}
-				s.Agent.MaxSteps, s.Agent.Timeout, s.Agent.Commands = 60, 20*time.Minute, []string{"fd", "curl"}
-				s.Settle = 30 * time.Minute
-			},
-		},
-		{
-			name: "a value past its bound is dropped, not clamped", doc: "agent: { maxTokens: 9000 }\nsettle: 31m\n",
-			allow: configfile.Allow{Agent: configfile.AllowAgent{MaxTokens: new(int64(8000))}, Settle: new(30 * time.Minute)},
-			dropped: []string{
-				".kritik.yaml: agent.maxTokens 9000 was dropped; allowed: above 0, at most 8000",
-				".kritik.yaml: settle 31m0s was dropped; allowed: 0s to 30m0s",
-			},
-		},
+		{name: "an unknown mode is dropped", doc: "mode: turbo\n", dropped: []string{`.kritik.yaml: mode "turbo" was dropped; allowed: single, agentic`}},
+		{name: "agent limits are the admin's alone", doc: "agent: { maxSteps: 5 }\n", wantErr: "field agent not found"},
+		{name: "settle is the admin's alone", doc: "settle: 1m\n", wantErr: "field settle not found"},
 		{name: "a secret reference does not decode", doc: "models: { review: { env: KEY } }\n", wantErr: "cannot unmarshal"},
 		{name: "a file that does not parse leaves the admin's settings", doc: "unknown: 1\n", wantErr: "unknown"},
 	}
@@ -139,10 +116,7 @@ func TestMerge(t *testing.T) {
 			if tt.doc != "" {
 				doc = []byte(tt.doc)
 			}
-			op := adminSettings()
-			op.Allow = tt.allow
-			want := adminSettings()
-			want.Allow = tt.allow
+			op, want := adminSettings(), adminSettings()
 			if tt.want != nil {
 				tt.want(&want)
 			}
@@ -156,7 +130,7 @@ func TestMerge(t *testing.T) {
 			if (m.InRepoFilter != nil) != tt.filter || !slices.Equal(m.Dropped, tt.dropped) {
 				t.Fatalf("filter=%v dropped=%q", m.InRepoFilter != nil, m.Dropped)
 			}
-			if !reflect.DeepEqual(op, func() configfile.Settings { o := adminSettings(); o.Allow = tt.allow; return o }()) {
+			if !reflect.DeepEqual(op, adminSettings()) {
 				t.Fatal("Merge changed the admin's settings")
 			}
 		})

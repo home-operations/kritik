@@ -60,10 +60,6 @@ var goldenRepoSettings = RepoSettings{
 		CommandTimeoutSeconds: 30,
 	},
 	Limits: Limits{Concurrency: 2},
-	Allow: AllowBounds{
-		Modes: []configfile.ReviewMode{configfile.ReviewAgentic}, Models: []configfile.ModelRef{"openrouter/acme-large", "openrouter/acme-small"},
-		Agent: AllowAgentBounds{MaxSteps: new(60)}, SettleSeconds: new(int64(600)),
-	},
 }
 
 var goldenIndexRun = IndexRun{
@@ -124,7 +120,7 @@ var goldens = map[string]any{
 				return s
 			}(),
 			Filter:  "!pr.draft",
-			Dropped: []string{`.kritik.yaml: mode "single" was dropped; allowed: agentic`},
+			Dropped: []string{`.kritik.yaml: models.review "q/big" was dropped; allowed: a model of openrouter`},
 		},
 		IndexRuns: []IndexRun{goldenIndexRun},
 	},

@@ -3,8 +3,7 @@
 // the admin's own filter, path globs to ignore, which also skip a pull
 // request that changes nothing else),
 // add rules, context files and templates read from the repository itself,
-// and choose its mode, models, agent limits and settle time within the
-// bounds an admin allows.
+// and choose its mode and models among what its account may use.
 //
 // Everything here is read from the merge-base commit (the base branch history
 // a PR cannot rewrite), never the PR's own tree, so a PR cannot use its own
@@ -23,7 +22,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v3"
@@ -57,58 +55,42 @@ const (
 	MaxRuleFileBytes = 32 << 10
 )
 
-// Templates names in-repo files whose contents replace kritik's built-in
-// summary/inline comment templates.
-type Templates struct {
-	Summary string `yaml:"summary,omitempty"`
-	Inline  string `yaml:"inline,omitempty"`
-}
-
-// Review holds the repository's review customizations.
-type Review struct {
-	RequireSuggestedFix *bool     `yaml:"requireSuggestedFix,omitempty"`
-	Templates           Templates `yaml:"templates,omitempty"`
-	InlineComments      *bool     `yaml:"inlineComments,omitempty"`
-	// Feedback replaces the admin's: detailed, standard or minimal.
-	Feedback string `yaml:"feedback,omitempty"`
-	// Context names files that explain the code, added after the
-	// admin's.
-	Context []configfile.ContextFile `yaml:"context,omitempty"`
-	// Rules are checks added after the admin's; one may not replace an
-	// admin's rule.
-	Rules []configfile.Rule `yaml:"rules,omitempty"`
-	// AgentFiles replaces the admin's: whether AGENTS.md and CLAUDE.md
-	// files join the instructions.
-	AgentFiles *bool `yaml:"agentFiles,omitempty"`
+// Comments is how the repository's reviews comment: whether findings go
+// inline, and the in-repo files whose contents replace kritik's built-in
+// summary and inline comment templates.
+type Comments struct {
+	Inline          *bool  `yaml:"inline,omitempty"`
+	SummaryTemplate string `yaml:"summaryTemplate,omitempty"`
+	InlineTemplate  string `yaml:"inlineTemplate,omitempty"`
 }
 
 // Models are the review and fallback models a repository chooses, each a
-// "<provider>/<model>" the admin's bounds list.
+// "<provider>/<model>" of a provider its account may use.
 type Models struct {
 	Review   configfile.ModelRef `yaml:"review,omitempty"`
 	Fallback configfile.ModelRef `yaml:"fallback,omitempty"`
 }
 
-// Agent is the agent limits and commands a repository chooses.
-type Agent struct {
-	MaxSteps           *int           `yaml:"maxSteps,omitempty"`
-	MaxToolOutputBytes *int           `yaml:"maxToolOutputBytes,omitempty"`
-	MaxTokens          *int64         `yaml:"maxTokens,omitempty"`
-	Timeout            *time.Duration `yaml:"timeout,omitempty"`
-	Commands           []string       `yaml:"commands,omitempty"`
-}
-
-// File is the decoded content of .kritik.yaml. Nothing in it is a secret or
-// a reference to one: it can only name what an admin configured.
+// File is the decoded content of .kritik.yaml: the review keys the
+// configuration's defaults and repository entries take (ADR-0021 §2.1),
+// without the admin's own. Nothing in it is a secret or a reference to one.
 type File struct {
-	Enabled *bool                 `yaml:"enabled,omitempty"`
-	Mode    configfile.ReviewMode `yaml:"mode,omitempty"`
-	Models  Models                `yaml:"models,omitempty"`
-	Agent   Agent                 `yaml:"agent,omitempty"`
-	Settle  *time.Duration        `yaml:"settle,omitempty"`
-	Filter  string                `yaml:"filter,omitempty"`
-	Ignore  []string              `yaml:"ignore,omitempty"`
-	Review  Review                `yaml:"review,omitempty"`
+	Enabled             *bool                 `yaml:"enabled,omitempty"`
+	Mode                configfile.ReviewMode `yaml:"mode,omitempty"`
+	Models              Models                `yaml:"models,omitempty"`
+	Feedback            string                `yaml:"feedback,omitempty"`
+	Comments            Comments              `yaml:"comments,omitempty"`
+	RequireSuggestedFix *bool                 `yaml:"requireSuggestedFix,omitempty"`
+	Filter              string                `yaml:"filter,omitempty"`
+	Ignore              []string              `yaml:"ignore,omitempty"`
+	// Rules are checks added after the admin's; one may not replace an
+	// admin's rule.
+	Rules []configfile.Rule `yaml:"rules,omitempty"`
+	// Context names files that explain the code, added after the admin's.
+	Context []configfile.ContextFile `yaml:"context,omitempty"`
+	// AgentFiles replaces the admin's: whether AGENTS.md and CLAUDE.md
+	// files join the instructions.
+	AgentFiles *bool `yaml:"agentFiles,omitempty"`
 }
 
 // Parse decodes data as .kritik.yaml. Unknown fields, invalid glob patterns
@@ -133,13 +115,13 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 			return File{}, nil, fmt.Errorf("repoconfig: ignore[%d] %q is not a valid glob", i, g)
 		}
 	}
-	for i, c := range f.Review.Context {
+	for i, c := range f.Context {
 		if err := c.Check(); err != nil {
-			return File{}, nil, fmt.Errorf("repoconfig: review.context[%d]: %w", i, err)
+			return File{}, nil, fmt.Errorf("repoconfig: context[%d]: %w", i, err)
 		}
 	}
-	if err := configfile.CheckRules(f.Review.Rules); err != nil {
-		return File{}, nil, fmt.Errorf("repoconfig: review.%w", err)
+	if err := configfile.CheckRules(f.Rules); err != nil {
+		return File{}, nil, fmt.Errorf("repoconfig: %w", err)
 	}
 	for _, p := range f.Referenced() {
 		if err := validateRefPath(p); err != nil {
@@ -185,7 +167,7 @@ func validateRefPath(p string) error {
 // first, then the summary and inline templates, then the context files,
 // deduplicated in the order first seen.
 func (f File) Referenced() []string {
-	seen := make(map[string]bool, len(f.Review.Rules)+2)
+	seen := make(map[string]bool, len(f.Rules)+2)
 	var out []string
 	add := func(p string) {
 		if p == "" || seen[p] {
@@ -194,12 +176,12 @@ func (f File) Referenced() []string {
 		seen[p] = true
 		out = append(out, p)
 	}
-	for _, r := range f.Review.Rules {
+	for _, r := range f.Rules {
 		add(r.File)
 	}
-	add(f.Review.Templates.Summary)
-	add(f.Review.Templates.Inline)
-	for _, c := range f.Review.Context {
+	add(f.Comments.SummaryTemplate)
+	add(f.Comments.InlineTemplate)
+	for _, c := range f.Context {
 		add(c.Path)
 	}
 	return out

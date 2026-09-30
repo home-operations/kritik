@@ -195,21 +195,6 @@ export interface ReviewBlock {
 // with nits kept to the summary, or only bugs, risks and breaking changes.
 export type Feedback = 'detailed' | 'standard' | 'minimal';
 
-// What a repository's .kritik.yaml may choose; a null bound leaves it the
-// admin's own value, or a limit or settle time at or below it.
-export interface AllowBounds {
-  modes: ReviewMode[] | null;
-  models: string[] | null;
-  commands: string[] | null;
-  agent: {
-    maxSteps: number | null;
-    maxToolOutputBytes: number | null;
-    maxTokens: number | null;
-    timeoutSeconds: number | null;
-  };
-  settleSeconds: number | null;
-}
-
 export interface RepoSettings {
   enabled: boolean;
   mode: ReviewMode;
@@ -222,7 +207,6 @@ export interface RepoSettings {
   review: ReviewBlock;
   agent: AgentLimits;
   limits: Limits;
-  allow: AllowBounds;
 }
 
 // defaults is the instance spec's defaults, account an account's entry in

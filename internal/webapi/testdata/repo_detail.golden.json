@@ -59,18 +59,6 @@
       "concurrency": 2,
       "reviewsPerDay": 0,
       "tokensPerMonth": 0
-    },
-    "allow": {
-      "modes": ["agentic"],
-      "models": ["openrouter/acme-large", "openrouter/acme-small"],
-      "commands": null,
-      "agent": {
-        "maxSteps": 60,
-        "maxToolOutputBytes": null,
-        "maxTokens": null,
-        "timeoutSeconds": null
-      },
-      "settleSeconds": 600
     }
   },
   "sources": {
@@ -123,22 +111,10 @@
         "concurrency": 2,
         "reviewsPerDay": 0,
         "tokensPerMonth": 0
-      },
-      "allow": {
-        "modes": ["agentic"],
-        "models": ["openrouter/acme-large", "openrouter/acme-small"],
-        "commands": null,
-        "agent": {
-          "maxSteps": 60,
-          "maxToolOutputBytes": null,
-          "maxTokens": null,
-          "timeoutSeconds": null
-        },
-        "settleSeconds": 600
       }
     },
     "filter": "!pr.draft",
-    "dropped": [".kritik.yaml: mode \"single\" was dropped; allowed: agentic"]
+    "dropped": [".kritik.yaml: models.review \"q/big\" was dropped; allowed: a model of openrouter"]
   },
   "indexRuns": [
     {

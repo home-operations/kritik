@@ -146,7 +146,6 @@ test('repository settings say where each comes from and what .kritik.yaml chose'
   await expect(file).toContainText(rc.filter);
   await expect(file).toContainText(rc.dropped[0]!);
   await expect(file.getByRole('link', { name: 'the last review' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/${rc.reviewId}`);
-  await expect(page.locator('#repo-bounds').locator('../..')).toContainText(g.repoDetail.settings.allow.models!.join(', '));
 });
 
 test.describe('pulls list', () => {
@@ -399,7 +398,7 @@ test.describe('rules', () => {
   test('says how to add a rule when there is none', async ({ page }) => {
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), []], ...g.defaultApi()]);
     await page.goto(`/${T}/rules`);
-    await expect(page.locator('.state-msg')).toContainText('write them, or name files for them, under review.rules, and name context files under review.context');
+    await expect(page.locator('.state-msg')).toContainText('write them, or name files for them, under rules, and name context files under context');
   });
 });
 

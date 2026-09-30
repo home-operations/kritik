@@ -114,7 +114,7 @@ func collectRules(repos []repoRules) []Rule {
 	}
 	for _, rr := range repos {
 		own := rr.settings.Review
-		contextFrom := RuleSource(rr.sources["review.context"])
+		contextFrom := RuleSource(rr.sources["context"])
 		for _, c := range own.Context {
 			add(Rule{Kind: RuleContext, Path: c.Path, Description: c.Description, Paths: nonNil(c.Paths), Source: contextFrom}, rr.name)
 		}

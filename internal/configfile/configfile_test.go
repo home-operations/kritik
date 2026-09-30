@@ -458,15 +458,15 @@ func TestParseRejects(t *testing.T) {
 		{"negative deadline", acme("    runner: { activeDeadlineSeconds: -5 }\n"), "must not be negative"},
 		{"negative retention", "retention:\n  disabledIndexGrace: -1h\n" + minimal, "retention.disabledIndexGrace"},
 		{"negative settle default", "defaults:\n  settle: -1s\n" + minimal, "defaults.settle must not be negative"},
-		{"unknown feedback", "defaults:\n  review: { feedback: exhaustive }\n" + minimal, "defaults.review.feedback must be detailed, standard or minimal"},
-		{"context without a description", "defaults:\n  review: { context: [{ path: db/schema.sql }] }\n" + minimal, "defaults.review.context[0]: description is required"},
-		{"context outside the repository", "defaults:\n  review: { context: [{ path: ../x, description: x }] }\n" + minimal, "escapes the repository"},
-		{"context with a bad glob", "defaults:\n  review: { context: [{ path: x, description: x, paths: ['['] }] }\n" + minimal, "paths[0] \"[\" is not a valid glob"},
-		{"rule with a bad id", "defaults:\n  review: { rules: [{ id: Wrap_Errors, rule: x }] }\n" + minimal, `defaults.review.rules[0].id "Wrap_Errors" must be`},
-		{"rule listed twice", acme("    review: { rules: [{ id: a, rule: x }, { id: a, rule: y }] }\n"), `review.rules[1].id "a" is listed twice`},
-		{"blank rule", acme("    repositories: [{ name: x, review: { rules: [{ id: a, rule: ' ' }] } }]\n"), "review.rules[0]: set one of rule or file"},
-		{"overlong rule", "defaults:\n  review: { rules: [{ id: a, rule: " + strings.Repeat("x", MaxRuleChars+1) + " }] }\n" + minimal, "over the 2000 allowed"},
-		{"rule with a bad glob", "defaults:\n  review: { rules: [{ id: a, rule: x, paths: ['['] }] }\n" + minimal, `rules[0].paths[0] "[" is not a valid glob`},
+		{"unknown feedback", "defaults:\n  feedback: exhaustive\n" + minimal, "defaults.feedback must be detailed, standard or minimal"},
+		{"context without a description", "defaults:\n  context: [{ path: db/schema.sql }]\n" + minimal, "defaults.context[0]: description is required"},
+		{"context outside the repository", "defaults:\n  context: [{ path: ../x, description: x }]\n" + minimal, "escapes the repository"},
+		{"context with a bad glob", "defaults:\n  context: [{ path: x, description: x, paths: ['['] }]\n" + minimal, "paths[0] \"[\" is not a valid glob"},
+		{"rule with a bad id", "defaults:\n  rules: [{ id: Wrap_Errors, rule: x }]\n" + minimal, `defaults.rules[0].id "Wrap_Errors" must be`},
+		{"rule listed twice", acme("    rules: [{ id: a, rule: x }, { id: a, rule: y }]\n"), `accounts[0].rules[1].id "a" is listed twice`},
+		{"blank rule", acme("    repositories: [{ name: x, rules: [{ id: a, rule: ' ' }] }]\n"), "repositories[0].rules[0]: set one of rule or file"},
+		{"overlong rule", "defaults:\n  rules: [{ id: a, rule: " + strings.Repeat("x", MaxRuleChars+1) + " }]\n" + minimal, "over the 2000 allowed"},
+		{"rule with a bad glob", "defaults:\n  rules: [{ id: a, rule: x, paths: ['['] }]\n" + minimal, `rules[0].paths[0] "[" is not a valid glob`},
 		{"negative settle account", acme("    settle: -1s\n"), "must not be negative"},
 		{"negative settle repository", acme("    repositories: [{ name: x, settle: -1s }]\n"), "must not be negative"},
 		{"indexing role removed", "defaults:\n  models:\n    indexing: p/m\n" + minimal, "field indexing not found"},
@@ -675,7 +675,8 @@ defaults:
   mode: agentic
   agent: { maxSteps: 9 }
   incremental: { maxDeltaFiles: 3 }
-  review: { rules: [{ id: ops, file: ops/rules.md }], templates: { summary: ops/summary.tmpl } }
+  rules: [{ id: ops, file: ops/rules.md }]
+  comments: { summaryTemplate: ops/summary.tmpl }
   limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 `
 	account := func(accountKeys, repos string) string {
@@ -705,7 +706,7 @@ defaults:
     settle: 0s
     models: { fallback: "" }
     limits: { tokensPerMonth: 0 }
-`, `{ name: x, review: { templates: { summary: "" } } }`))
+`, `{ name: x, comments: { summaryTemplate: "" } }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Filter != nil || s.Settle != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
 			s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {
@@ -719,7 +720,7 @@ defaults:
 	t.Run("the narrowest scope written wins, field by field", func(t *testing.T) {
 		f := parse(t, account(`    mode: single
     agent: { maxSteps: 7 }
-    review: { requireSuggestedFix: true }
+    requireSuggestedFix: true
     ignore: ["account/**"]
 `, `{ name: x, models: { review: p/small }, forks: true, agent: { maxTokens: 500 }, ignore: ["repo/**"] }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
@@ -761,8 +762,8 @@ func TestReviewPresentation(t *testing.T) {
 	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || s.Review.Feedback != FeedbackDetailed || !s.Review.AgentFiles {
 		t.Fatalf("review = %+v, want every finding inline, from a detailed review that reads agent files", s.Review)
 	}
-	f = parse(t, "    review: { inlineComments: false, feedback: minimal, agentFiles: false }\n",
-		"{ name: x, review: { inlineComments: true } }, { name: y, review: { feedback: standard } }")
+	f = parse(t, "    comments: { inline: false }\n    feedback: minimal\n    agentFiles: false\n",
+		"{ name: x, comments: { inline: true } }, { name: y, feedback: standard }")
 	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments || s.Review.Feedback != FeedbackMinimal || s.Review.AgentFiles {
 		t.Fatalf("review = %+v, want the account's feedback and agent files with the repository's inline comments", s.Review)
 	}
@@ -771,62 +772,15 @@ func TestReviewPresentation(t *testing.T) {
 	}
 }
 
-// TestAllow checks the allow block resolves bound by bound like any other
-// setting, and that load refuses a bound a repository could not choose
-// and an admin value outside its own bounds.
-func TestAllow(t *testing.T) {
+// TestSettingsProviders: a repository's settings name the providers its
+// account may use, the instance's and its own, sorted.
+func TestSettingsProviders(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	const head = `providers:
-  p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }
-defaults:
-  models: { review: p/big }
-  allow:
-    modes: [single, agentic]
-    models: [p/big, p/small]
-    commands: [rg, fd]
-    agent: { maxSteps: 60, timeout: 20m }
-    settle: 30m
-`
-	doc := func(accountKeys, repos string) string {
-		return head + acme(""+accountKeys+"    repositories: ["+repos+"]\n")
-	}
-
-	f, err := loadBytes(t, []byte(doc("    allow: { models: [p/big] }\n", "{ name: x, allow: { settle: 5m, commands: [] } }")))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	s := f.Settings(&f.Accounts[0], "acme/x")
-	a := s.Allow
-	if !slices.Equal(a.Modes, []ReviewMode{ReviewSingle, ReviewAgentic}) || !slices.Equal(a.Models, []ModelRef{"p/big"}) ||
-		a.Commands == nil || len(a.Commands) != 0 || *a.Agent.MaxSteps != 60 || *a.Agent.Timeout != 20*time.Minute ||
-		a.Agent.MaxTokens != nil || *a.Settle != 5*time.Minute {
-		t.Fatalf("allow = %+v", a)
-	}
-	if account := f.Settings(&f.Accounts[0], ""); *account.Allow.Settle != 30*time.Minute || !slices.Equal(account.Allow.Commands, []string{"rg", "fd"}) {
-		t.Fatalf("account allow = %+v", account.Allow)
-	}
-
-	tests := []struct {
-		name, yaml, want string
-	}{
-		{"an unknown mode", doc("    allow: { modes: [turbo] }\n", ""), "accounts[0].allow.modes[0] must be single or agentic"},
-		{"a model of an undeclared provider", doc("    allow: { models: [q/big] }\n", ""), "allow.models[0] references provider \"q\""},
-		{"a command path", doc("", "{ name: x, allow: { commands: [/bin/sh] } }"), "allow.commands[0] \"/bin/sh\" must be a bare command name"},
-		{"a bound that is not positive", doc("    allow: { agent: { maxTokens: 0 } }\n", ""), "allow.agent bounds must be positive"},
-		{"a negative settle bound", doc("    allow: { settle: -1s }\n", ""), "allow.settle must not be negative"},
-		{"the admin's mode outside its bounds", doc("    mode: agentic\n    allow: { modes: [single] }\n", ""), "mode agentic is outside allow.modes"},
-		{"the admin's model outside its bounds", doc("    models: { fallback: p/tiny }\n", ""), "models.fallback \"p/tiny\" is outside allow.models"},
-		{"a repository's command outside its bounds", doc("", "{ name: x, agent: { commands: [curl] } }"), "agent.commands \"curl\" is outside allow.commands"},
-		{"a built-in limit above its bound", doc("    allow: { agent: { maxSteps: 10 } }\n", ""), "agent.maxSteps is above allow.agent.maxSteps"},
-		{"the admin's settle above its bound", doc("    settle: 1h\n", ""), "settle is above allow.settle"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if _, err := loadBytes(t, []byte(tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("Parse = %v, want an error mentioning %q", err, tt.want)
-			}
-		})
+	f := mustLoad(t, "providers:\n  p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }\n"+
+		acme("    providers:\n      own: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }\n"))
+	if got := f.Settings(&f.Accounts[0], "acme/x").Providers; !slices.Equal(got, []string{"own", "p"}) {
+		t.Fatalf("providers = %q, want [own p]", got)
 	}
 }
 
@@ -883,8 +837,8 @@ tools:
 func TestRulesAddUp(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	f := mustLoad(t, "defaults:\n  review: { rules: [{ id: a, rule: A }, { id: b, rule: B }] }\n"+
-		acme("    review: { rules: [{ id: c, rule: C }] }\n    repositories: [{ name: x, review: { rules: [{ id: a, rule: A2, paths: ['**/*.go'] }] } }]\n"))
+	f := mustLoad(t, "defaults:\n  rules: [{ id: a, rule: A }, { id: b, rule: B }]\n"+
+		acme("    rules: [{ id: c, rule: C }]\n    repositories: [{ name: x, rules: [{ id: a, rule: A2, paths: ['**/*.go'] }] }]\n"))
 	for repo, want := range map[string][]Rule{
 		"acme/x":        {{ID: "a", Rule: "A2", Paths: []string{"**/*.go"}}, {ID: "b", Rule: "B"}, {ID: "c", Rule: "C"}},
 		"acme/unlisted": {{ID: "a", Rule: "A"}, {ID: "b", Rule: "B"}, {ID: "c", Rule: "C"}},
@@ -933,8 +887,8 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		f, err := loadBytes(t, []byte(withRepo(`{ name: x, mode: agentic,
       agent: { maxSteps: 12, maxToolOutputBytes: 4096, maxTokens: 250000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
       incremental: { maxDeltaFiles: 5 },
-      review: { rules: [{ id: style, file: docs/rules.md }], requireSuggestedFix: true,
-        templates: { summary: .kritik/summary.md.tmpl, inline: .kritik/inline.md.tmpl } } }`)))
+      rules: [{ id: style, file: docs/rules.md }], requireSuggestedFix: true,
+      comments: { summaryTemplate: .kritik/summary.md.tmpl, inlineTemplate: .kritik/inline.md.tmpl } }`)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -990,9 +944,9 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		{"relative command path", "{ name: x, agent: { commands: [./tool] } }", "must be a bare command name"},
 		{"empty command", "{ name: x, agent: { commands: [''] } }", "must be a bare command name"},
 		{"duplicate command", "{ name: x, agent: { commands: [rg, rg] } }", "is listed twice"},
-		{"absolute rule file", "{ name: x, review: { rules: [{ id: a, file: /etc/passwd }] } }", "must be relative"},
-		{"escaping template path", "{ name: x, review: { templates: { summary: ../x.tmpl } } }", "escapes the repository"},
-		{"a rule with a file and text", "{ name: x, review: { rules: [{ id: a, rule: Check., file: a.md }] } }", "set one of rule or file"},
+		{"absolute rule file", "{ name: x, rules: [{ id: a, file: /etc/passwd }] }", "must be relative"},
+		{"escaping template path", "{ name: x, comments: { summaryTemplate: ../x.tmpl } }", "escapes the repository"},
+		{"a rule with a file and text", "{ name: x, rules: [{ id: a, rule: Check., file: a.md }] }", "set one of rule or file"},
 	}
 	for _, tt := range rejects {
 		t.Run("rejects "+tt.name, func(t *testing.T) {
