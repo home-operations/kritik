@@ -487,11 +487,6 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 // validateReview checks the review block one scope writes: its paths stay
 // inside the repository, and its feedback is a level.
 func validateReview(where string, r *ReviewSpec) error {
-	for i, p := range r.Instructions {
-		if err := checkRepoPath(p); err != nil {
-			return fmt.Errorf("configfile: %s.instructions[%d]: %w", where, i, err)
-		}
-	}
 	if fb := r.Feedback; fb != nil && !ValidFeedback(*fb) {
 		return fmt.Errorf("configfile: %s.feedback must be %s, got %q", where, FeedbackLevels, *fb)
 	}

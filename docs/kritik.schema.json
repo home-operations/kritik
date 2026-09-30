@@ -66,28 +66,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "instructions": {
-          "type": "array",
-          "description": "Files appended to the reviewer's instructions, after the admin's.",
-          "items": {
-            "oneOf": [
-              { "$ref": "#/$defs/path" },
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["path"],
-                "properties": {
-                  "path": { "$ref": "#/$defs/path" },
-                  "paths": {
-                    "type": "array",
-                    "description": "Include the file only when a changed path matches one of these.",
-                    "items": { "$ref": "#/$defs/glob" }
-                  }
-                }
-              }
-            ]
-          }
-        },
         "requireSuggestedFix": {
           "type": "boolean",
           "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."
@@ -136,7 +114,8 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "rule"],
+            "required": ["id"],
+            "oneOf": [{ "required": ["rule"] }, { "required": ["file"] }],
             "properties": {
               "id": {
                 "type": "string",
@@ -148,6 +127,10 @@
                 "minLength": 1,
                 "maxLength": 2000,
                 "description": "What to check, and why."
+              },
+              "file": {
+                "$ref": "#/$defs/path",
+                "description": "A repository file, read from the merge base, whose content is the check."
               },
               "paths": {
                 "type": "array",

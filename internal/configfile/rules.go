@@ -12,10 +12,13 @@ import (
 
 // Rule is a check a review makes, written in the configuration
 // (ADR-0018), by an id findings cite it by and narrower scopes replace it
-// by. With Paths it applies only when a changed path matches one of them.
+// by. The check is Rule's text or the content of File, a repository file
+// read from the merge base, exactly one of them (ADR-0021 §2.5). With
+// Paths it applies only when a changed path matches one of them.
 type Rule struct {
 	ID    string   `yaml:"id" json:"id"`
-	Rule  string   `yaml:"rule" json:"rule"`
+	Rule  string   `yaml:"rule,omitempty" json:"rule,omitempty"`
+	File  string   `yaml:"file,omitempty" json:"file,omitempty"`
 	Paths []string `yaml:"paths,omitempty" json:"paths,omitempty"`
 }
 
@@ -26,8 +29,9 @@ const MaxRuleChars = 2000
 var ruleIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // CheckRules rejects a list of rules with an id that is not valid or is
-// listed twice, a blank or overlong rule, or a glob that is not valid. The
-// error starts with the rule's place in the list, as rules[i].
+// listed twice, neither or both of a rule and a file, an overlong rule, a
+// file outside the repository, or a glob that is not valid. The error
+// starts with the rule's place in the list, as rules[i].
 func CheckRules(rules []Rule) error {
 	for i, r := range rules {
 		if !ruleIDRe.MatchString(r.ID) {
@@ -37,11 +41,16 @@ func CheckRules(rules []Rule) error {
 		if slices.ContainsFunc(rules[:i], func(o Rule) bool { return o.ID == r.ID }) {
 			return fmt.Errorf("rules[%d].id %q is listed twice", i, r.ID)
 		}
-		if strings.TrimSpace(r.Rule) == "" {
-			return fmt.Errorf("rules[%d].rule is required", i)
+		if (strings.TrimSpace(r.Rule) == "") == (r.File == "") {
+			return fmt.Errorf("rules[%d]: set one of rule or file", i)
 		}
 		if n := utf8.RuneCountInString(r.Rule); n > MaxRuleChars {
 			return fmt.Errorf("rules[%d].rule is %d characters, over the %d allowed", i, n, MaxRuleChars)
+		}
+		if r.File != "" {
+			if err := checkRepoPath(r.File); err != nil {
+				return fmt.Errorf("rules[%d].file: %w", i, err)
+			}
 		}
 		for j, g := range r.Paths {
 			if strings.TrimSpace(g) == "" || !doublestar.ValidatePattern(g) {

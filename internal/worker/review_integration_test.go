@@ -1342,9 +1342,9 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 	}
 }
 
-// checkRepoConfig commits a .kritik.yaml with a skip rule, instructions
-// and a summary template onto a new merge base, then reviews pull requests
-// against it.
+// checkRepoConfig commits a .kritik.yaml with a skip rule, rules, one of
+// them a file, and a summary template onto a new merge base, then reviews
+// pull requests against it.
 func checkRepoConfig(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
 	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), accountID string,
@@ -1379,8 +1379,8 @@ func checkRepoConfig(
 skip:
   onlyPaths: ["docs/**", ".kritik.yaml"]
 review:
-  instructions: [".kritik/rules.md"]
   rules:
+    - { id: todos, file: .kritik/rules.md }
     - { id: no-panics, rule: Return an error rather than panic. }
     - { id: sql-placeholders, rule: Use query placeholders., paths: ["**/*.sql"] }
   templates:
@@ -1437,14 +1437,15 @@ review:
 	fc.mu.Lock()
 	system := fc.systems[len(fc.systems)-1]
 	fc.mu.Unlock()
-	// The named instructions, then the root's AGENTS.md; web/ is untouched.
+	// The root's AGENTS.md is the instructions; web/ is untouched.
 	if !strings.Contains(system, "\n\n## Repository instructions\n\n") ||
-		!strings.HasSuffix(system, "\n\nFlag every TODO left in code.\n\nPrefer table-driven tests.") || strings.Contains(system, "inline styles") {
+		!strings.HasSuffix(system, "\n\nPrefer table-driven tests.") || strings.Contains(system, "inline styles") {
 		t.Fatalf("system prompt does not carry the instructions:\n%s", system)
 	}
-	// Only the rule whose paths the change matches.
-	if !strings.Contains(system, "\n\n- no-panics: Return an error rather than panic.\n\n## Repository instructions") ||
-		strings.Contains(system, "sql-placeholders") {
+	// Only the rules whose paths the change matches, the file rule under
+	// its own heading.
+	if !strings.Contains(system, "\n\n- no-panics: Return an error rather than panic.\n\n### todos (.kritik/rules.md)\n\n"+
+		"Flag every TODO left in code.\n\n## Repository instructions") || strings.Contains(system, "sql-placeholders") {
 		t.Fatalf("system prompt does not carry the rules:\n%s", system)
 	}
 	// The finding keeps the rule it was given and loses the one it was not.

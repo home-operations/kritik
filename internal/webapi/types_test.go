@@ -49,8 +49,8 @@ var goldenRepoSettings = RepoSettings{
 	Enabled: true, Mode: configfile.ReviewAgentic, Models: Models{Review: "openrouter/acme-large"}, Filter: "true", Forks: false,
 	Ignore: []string{"vendor/**"}, SettleSeconds: 30, MaxDeltaFiles: 40,
 	Review: ReviewBlock{
-		Instructions: []string{"docs/review.md"}, RequireSuggestedFix: true,
-		Templates: configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
+		RequireSuggestedFix: true,
+		Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
 		Context:    []configfile.ContextFile{{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}},
 		Feedback:   configfile.FeedbackStandard,
 		AgentFiles: true,

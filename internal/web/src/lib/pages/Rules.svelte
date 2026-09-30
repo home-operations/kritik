@@ -1,9 +1,9 @@
 <script lang="ts">
   // What the account's reviews check (ADR-0017 §2.4, ADR-0018): rules
-  // written in the configuration, instruction files they follow and
-  // context files that explain the code, with where each is set and the
-  // repositories that read it. Read-only: rules are set in the
-  // configuration or a repository's .kritik.yaml.
+  // written in the configuration, as text or a file, and context files
+  // that explain the code, with where each is set and the repositories
+  // that read it. Read-only: rules are set in the configuration or a
+  // repository's .kritik.yaml.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
@@ -14,7 +14,7 @@
   import StateView from '../components/StateView.svelte';
   import TokenSearch from '../components/TokenSearch.svelte';
   import Icon from '../Icon.svelte';
-  import { mdiCheckDecagramOutline, mdiTextBoxCheckOutline, mdiFileDocumentOutline } from '../icons';
+  import { mdiCheckDecagramOutline, mdiFileDocumentOutline } from '../icons';
 
   let { slug }: { slug: string } = $props();
 
@@ -25,8 +25,7 @@
 
   const KINDS: Record<RuleKind, { label: string; icon: string; what: string; order: number }> = {
     rule: { label: 'Rule', icon: mdiCheckDecagramOutline, what: 'a check written in the configuration', order: 0 },
-    instructions: { label: 'Instructions', icon: mdiTextBoxCheckOutline, what: 'what a review follows', order: 1 },
-    context: { label: 'Context', icon: mdiFileDocumentOutline, what: 'a file that explains the code', order: 2 },
+    context: { label: 'Context', icon: mdiFileDocumentOutline, what: 'a file that explains the code', order: 1 },
   };
   const SOURCES: Record<RuleSource, string> = {
     default: "kritik's default",
@@ -41,7 +40,7 @@
   const repoNames = $derived([...new Set((res.data ?? []).flatMap((r) => r.repositories))].sort());
   const specs = $derived<TokenSpec[]>([
     { key: 'repo', hint: 'a repository', values: repoNames },
-    { key: 'kind', hint: 'rule, instructions or context', values: ['rule', 'instructions', 'context'] },
+    { key: 'kind', hint: 'rule or context', values: ['rule', 'context'] },
     { key: 'source', hint: 'where it is set', values: ['default', 'env', 'file', 'defaults', 'account', 'entry', 'repository'] },
   ]);
   let text = $state('');
@@ -74,10 +73,10 @@
     <header class="page-head">
       <h1>Rules</h1>
       <p class="muted small">
-        What reviews check: rules written in the configuration, instruction files they follow, and context files that explain the
-        code. Rules are written, and files named, under <span class="mono">review.rules</span>,
-        <span class="mono">review.instructions</span> and <span class="mono">review.context</span> in the configuration file or
-        a repository's own <span class="mono">.kritik.yaml</span>.
+        What reviews check: rules written in the configuration, as text or a file, and context files that explain the code.
+        Rules are written, and files named, under <span class="mono">review.rules</span> and
+        <span class="mono">review.context</span> in the configuration file or a repository's own
+        <span class="mono">.kritik.yaml</span>.
       </p>
     </header>
     <div class="toolbar" role="search">
@@ -95,7 +94,7 @@
       {res}
       retry={() => res.load()}
       isEmpty={(d) => d.length === 0}
-      empty="No rules yet: write them under review.rules, or name instruction or context files under review.instructions and review.context, in the configuration or a repository's .kritik.yaml."
+      empty="No rules yet: write them, or name files for them, under review.rules, and name context files under review.context, in the configuration or a repository's .kritik.yaml."
     >
       {#snippet children(rules)}
         {@const rows = shown(rules)}
@@ -120,7 +119,12 @@
                     <td class="wrap">
                       <div class="rule-main">
                         <span class="rule-kind" title="{k.label}: {k.what}"><Icon path={k.icon} size={14} label={k.label} /></span>
-                        {#if r.kind === 'rule'}
+                        {#if r.kind === 'rule' && r.path}
+                          <span class="rule-text">
+                            <span class="mono rule-path">{r.path}</span>
+                            <span class="mono rule-sub">{r.id}</span>
+                          </span>
+                        {:else if r.kind === 'rule'}
                           <span class="rule-text">
                             <span class="rule-body" title={r.text}>{r.text}</span>
                             <span class="mono rule-sub">{r.id}</span>

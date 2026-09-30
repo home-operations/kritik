@@ -172,7 +172,6 @@ type AgentLimits struct {
 
 // ReviewBlock is a repository's review instructions and options.
 type ReviewBlock struct {
-	Instructions        []string                   `json:"instructions"`
 	RequireSuggestedFix bool                       `json:"requireSuggestedFix"`
 	Templates           configfile.ReviewTemplates `json:"templates"`
 	InlineComments      bool                       `json:"inlineComments"`
@@ -652,15 +651,14 @@ type UsageSeries struct {
 }
 
 // RuleKind is what a rule is to a review: a check written in the
-// configuration (ADR-0018), instructions it follows, or a context file
-// that explains the code.
+// configuration (ADR-0018), as text or a file, or a context file that
+// explains the code.
 type RuleKind string
 
 // Rule kinds.
 const (
-	RuleWritten      RuleKind = "rule"
-	RuleInstructions RuleKind = "instructions"
-	RuleContext      RuleKind = "context"
+	RuleWritten RuleKind = "rule"
+	RuleContext RuleKind = "context"
 )
 
 // RuleSource is where a rule is set: a layer of the configuration, as
@@ -676,8 +674,9 @@ const (
 
 // Rule is one written rule or file reviews read, with where it is set,
 // the paths it applies to (every change when empty), and the running
-// repositories whose reviews read it. ID and Text are a written rule's,
-// Path and Description a file's. Findings and Addressed are a written
+// repositories whose reviews read it. ID is a written rule's, with its
+// Text or, for a file rule, its Path; Path and Description are a context
+// file's. Findings and Addressed are a written
 // rule's too: its repositories' findings that cite its id, once per pull
 // request as the findings list counts them, and how many of those were
 // addressed.

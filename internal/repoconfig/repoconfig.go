@@ -1,7 +1,7 @@
 // Package repoconfig parses .kritik.yaml, the optional per-repository file
 // that lets a repository narrow how kritik reviews it (a filter ANDed with
 // the admin's own filter, path globs to ignore, a skip-review rule),
-// add review instructions and templates read from the repository itself,
+// add rules, context files and templates read from the repository itself,
 // and choose its mode, models, agent limits and settle time within the
 // bounds an admin allows.
 //
@@ -45,13 +45,16 @@ const (
 	MaxTotalBytes = 1 << 20
 )
 
-// MaxInstructionBytes caps the repository instructions, joined, so they
-// cannot crowd the diff out of the prompt budget.
+// MaxInstructionBytes caps the repository instructions, its agent files
+// joined, so they cannot crowd the diff out of the prompt budget.
 const MaxInstructionBytes = 32 << 10
 
-// MaxRulesBytes caps the rules a prompt lists, by their ids and text, for
-// the same reason.
-const MaxRulesBytes = 16 << 10
+// MaxRulesBytes caps the rules a prompt lists by their ids and text, and
+// MaxRuleFileBytes the content of its file rules, for the same reason.
+const (
+	MaxRulesBytes    = 16 << 10
+	MaxRuleFileBytes = 32 << 10
+)
 
 // Templates names in-repo files whose contents replace kritik's built-in
 // summary/inline comment templates.
@@ -60,42 +63,11 @@ type Templates struct {
 	Inline  string `yaml:"inline,omitempty"`
 }
 
-// Instruction is a file of review instructions in the repository: always
-// included, or with Paths only when a changed path matches one of them.
-type Instruction struct {
-	Path  string
-	Paths []string
-}
-
-// UnmarshalYAML takes a bare path, or a mapping of path and paths.
-func (in *Instruction) UnmarshalYAML(n *yaml.Node) error {
-	if n.Kind == yaml.ScalarNode {
-		return n.Decode(&in.Path)
-	}
-	// Node.Decode drops the strictness Parse asked for, so unknown keys are
-	// refused here.
-	for i := 0; n.Kind == yaml.MappingNode && i < len(n.Content); i += 2 {
-		if k := n.Content[i]; k.Value != "path" && k.Value != "paths" {
-			return fmt.Errorf("line %d: field %s not found in type repoconfig.Instruction", k.Line, k.Value)
-		}
-	}
-	var v struct {
-		Path  string   `yaml:"path"`
-		Paths []string `yaml:"paths"`
-	}
-	if err := n.Decode(&v); err != nil {
-		return err
-	}
-	in.Path, in.Paths = v.Path, v.Paths
-	return nil
-}
-
 // Review holds the repository's review customizations.
 type Review struct {
-	Instructions        []Instruction `yaml:"instructions,omitempty"`
-	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
-	Templates           Templates     `yaml:"templates,omitempty"`
-	InlineComments      *bool         `yaml:"inlineComments,omitempty"`
+	RequireSuggestedFix *bool     `yaml:"requireSuggestedFix,omitempty"`
+	Templates           Templates `yaml:"templates,omitempty"`
+	InlineComments      *bool     `yaml:"inlineComments,omitempty"`
 	// Feedback replaces the admin's: detailed, standard or minimal.
 	Feedback string `yaml:"feedback,omitempty"`
 	// Context names files that explain the code, added after the
@@ -147,8 +119,8 @@ type File struct {
 
 // Parse decodes data as .kritik.yaml. Unknown fields, invalid glob patterns
 // and a filter that fails to compile or that fails a smoke test against
-// configfile.SamplePR are rejected, as is any referenced path (an
-// instruction, template or context file) that is absolute or escapes the
+// configfile.SamplePR are rejected, as is any referenced path (a rule's
+// file, a template or a context file) that is absolute or escapes the
 // repository via "..". An empty document is valid (the file is optional) and yields a zero
 // File with no filter.
 func Parse(data []byte) (File, *prfilter.Program, error) {
@@ -179,16 +151,6 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 	}
 	if err := configfile.CheckRules(f.Review.Rules); err != nil {
 		return File{}, nil, fmt.Errorf("repoconfig: review.%w", err)
-	}
-	for i, in := range f.Review.Instructions {
-		if in.Path == "" {
-			return File{}, nil, fmt.Errorf("repoconfig: review.instructions[%d] needs a path", i)
-		}
-		for j, g := range in.Paths {
-			if !validGlob(g) {
-				return File{}, nil, fmt.Errorf("repoconfig: review.instructions[%d].paths[%d] %q is not a valid glob", i, j, g)
-			}
-		}
 	}
 	for _, p := range f.Referenced() {
 		if err := validateRefPath(p); err != nil {
@@ -230,11 +192,11 @@ func validateRefPath(p string) error {
 	return nil
 }
 
-// Referenced lists the in-repo paths the file names: review instructions
+// Referenced lists the in-repo paths the file names: its rules' files
 // first, then the summary and inline templates, then the context files,
 // deduplicated in the order first seen.
 func (f File) Referenced() []string {
-	seen := make(map[string]bool, len(f.Review.Instructions)+2)
+	seen := make(map[string]bool, len(f.Review.Rules)+2)
 	var out []string
 	add := func(p string) {
 		if p == "" || seen[p] {
@@ -243,8 +205,8 @@ func (f File) Referenced() []string {
 		seen[p] = true
 		out = append(out, p)
 	}
-	for _, in := range f.Review.Instructions {
-		add(in.Path)
+	for _, r := range f.Review.Rules {
+		add(r.File)
 	}
 	add(f.Review.Templates.Summary)
 	add(f.Review.Templates.Inline)
@@ -331,20 +293,6 @@ func matchesAny(patterns []string, p string) bool {
 	return false
 }
 
-// Active is the instruction paths that apply to a change of the changed
-// paths, in order: every path scoped does not name, and each one it does
-// when a changed path matches one of its globs.
-func Active(paths []string, scoped map[string][]string, changed []string) []string {
-	out := make([]string, 0, len(paths))
-	for _, p := range paths {
-		if globs, ok := scoped[p]; ok && !slices.ContainsFunc(changed, func(c string) bool { return matchesAny(globs, c) }) {
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
-}
-
 // ActiveContext is the context files that apply to a change of the changed
 // paths, in order: each without paths, and each with them when a changed
 // path matches one.
@@ -360,17 +308,25 @@ func ActiveContext(files []configfile.ContextFile, changed []string) []configfil
 
 // ActiveRules is the rules that apply to a change of the changed paths, in
 // order: each without paths, and each with them when a changed path
-// matches one, as long as their text fits MaxRulesBytes. left is how many
-// applied but did not fit.
-func ActiveRules(rules []configfile.Rule, changed []string) (out []review.Rule, left int) {
-	room := MaxRulesBytes
+// matches one. A rule's text counts against MaxRulesBytes and a file
+// rule's content, read from files, against MaxRuleFileBytes; left is how
+// many applied but did not fit. A file rule whose file files lacks or
+// holds nothing is left out, since reading it was already noted.
+func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []review.Rule, left int) {
+	room, fileRoom := MaxRulesBytes, MaxRuleFileBytes
 	for _, r := range rules {
 		if len(r.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return matchesAny(r.Paths, c) }) {
 			continue
 		}
-		if size := len(r.ID) + len(r.Rule); size <= room {
-			room -= size
-			out = append(out, review.Rule{ID: r.ID, Text: r.Rule})
+		text, budget := r.Rule, &room
+		if r.File != "" {
+			if text, budget = strings.TrimSpace(files[r.File]), &fileRoom; text == "" {
+				continue
+			}
+		}
+		if size := len(r.ID) + len(text); size <= *budget {
+			*budget -= size
+			out = append(out, review.Rule{ID: r.ID, Text: text, File: r.File})
 		} else {
 			left++
 		}

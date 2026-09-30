@@ -155,7 +155,7 @@ func (w *Review) agentPrompt(
 	ctx context.Context, accountID, reviewID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
 ) (*runner.Prompt, error) {
 	p := &runner.Prompt{
-		Repository: pr.repository, Instructions: eff.Review.Instructions, InstructionScopes: eff.Scoped, Context: eff.Review.Context,
+		Repository: pr.repository, Context: eff.Review.Context,
 		Rules:               eff.Review.Rules,
 		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Focused: eff.Review.Focused(),
 		SkipPaths: eff.Skip.OnlyPaths, MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings),

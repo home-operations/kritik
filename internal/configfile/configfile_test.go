@@ -464,7 +464,7 @@ func TestParseRejects(t *testing.T) {
 		{"context with a bad glob", "defaults:\n  review: { context: [{ path: x, description: x, paths: ['['] }] }\n" + minimal, "paths[0] \"[\" is not a valid glob"},
 		{"rule with a bad id", "defaults:\n  review: { rules: [{ id: Wrap_Errors, rule: x }] }\n" + minimal, `defaults.review.rules[0].id "Wrap_Errors" must be`},
 		{"rule listed twice", acme("    review: { rules: [{ id: a, rule: x }, { id: a, rule: y }] }\n"), `review.rules[1].id "a" is listed twice`},
-		{"blank rule", acme("    repositories: [{ name: x, review: { rules: [{ id: a, rule: ' ' }] } }]\n"), "review.rules[0].rule is required"},
+		{"blank rule", acme("    repositories: [{ name: x, review: { rules: [{ id: a, rule: ' ' }] } }]\n"), "review.rules[0]: set one of rule or file"},
 		{"overlong rule", "defaults:\n  review: { rules: [{ id: a, rule: " + strings.Repeat("x", MaxRuleChars+1) + " }] }\n" + minimal, "over the 2000 allowed"},
 		{"rule with a bad glob", "defaults:\n  review: { rules: [{ id: a, rule: x, paths: ['['] }] }\n" + minimal, `rules[0].paths[0] "[" is not a valid glob`},
 		{"negative settle account", acme("    settle: -1s\n"), "must not be negative"},
@@ -675,7 +675,7 @@ defaults:
   mode: agentic
   agent: { maxSteps: 9 }
   incremental: { maxDeltaFiles: 3 }
-  review: { instructions: [ops/rules.md], templates: { summary: ops/summary.tmpl } }
+  review: { rules: [{ id: ops, file: ops/rules.md }], templates: { summary: ops/summary.tmpl } }
   limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 `
 	account := func(accountKeys, repos string) string {
@@ -695,7 +695,7 @@ defaults:
 		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Filter == nil || s.Settle != 2*time.Minute || s.Mode != ReviewAgentic || s.Agent.MaxSteps != 9 ||
 			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
-			!slices.Equal(s.Review.Instructions, []string{"ops/rules.md"}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
+			!reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
 			t.Fatalf("inherited settings = %+v", s)
 		}
 	})
@@ -705,13 +705,13 @@ defaults:
     settle: 0s
     models: { fallback: "" }
     limits: { tokensPerMonth: 0 }
-`, `{ name: x, review: { instructions: [], templates: { summary: "" } } }`))
+`, `{ name: x, review: { templates: { summary: "" } } }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Filter != nil || s.Settle != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
 			s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {
 			t.Fatalf("cleared settings = %+v", s)
 		}
-		if len(s.Review.Instructions) != 0 || s.Review.Templates.Summary != "" {
+		if s.Review.Templates.Summary != "" {
 			t.Fatalf("cleared review = %+v", s.Review)
 		}
 	})
@@ -726,8 +726,8 @@ defaults:
 		if s.Mode != ReviewSingle || s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" || !s.Forks {
 			t.Fatalf("settings = %+v", s)
 		}
-		if !s.Review.RequireSuggestedFix || !slices.Equal(s.Review.Instructions, []string{"ops/rules.md"}) {
-			t.Fatalf("review = %+v, want the account's strictness over the defaults' instructions", s.Review)
+		if !s.Review.RequireSuggestedFix || !reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) {
+			t.Fatalf("review = %+v, want the account's strictness over the defaults' rules", s.Review)
 		}
 		want := append(append([]string(nil), DefaultIgnore...), "defaults/**", "account/**", "repo/**")
 		if !slices.Equal(s.Ignore, want) {
@@ -920,7 +920,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 			if s.Mode != ReviewAgentic || !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
 				t.Fatalf("%s: mode=%q agent=%+v incremental=%+v", repo, s.Mode, s.Agent, s.Incremental)
 			}
-			if s.Review.RequireSuggestedFix || len(s.Review.Instructions) != 0 || s.Review.Templates != (ReviewTemplates{}) {
+			if s.Review.RequireSuggestedFix || len(s.Review.Rules) != 0 || s.Review.Templates != (ReviewTemplates{}) {
 				t.Fatalf("%s: review = %+v", repo, s.Review)
 			}
 		}
@@ -933,7 +933,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		f, err := loadBytes(t, []byte(withRepo(`{ name: x, mode: agentic,
       agent: { maxSteps: 12, maxToolOutputBytes: 4096, maxTokens: 250000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
       incremental: { maxDeltaFiles: 5 },
-      review: { instructions: [docs/rules.md], requireSuggestedFix: true,
+      review: { rules: [{ id: style, file: docs/rules.md }], requireSuggestedFix: true,
         templates: { summary: .kritik/summary.md.tmpl, inline: .kritik/inline.md.tmpl } } }`)))
 		if err != nil {
 			t.Fatal(err)
@@ -944,7 +944,7 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		if s.Mode != ReviewAgentic || !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
 			t.Fatalf("mode=%q agent=%+v incremental=%+v", s.Mode, s.Agent, s.Incremental)
 		}
-		if !s.Review.RequireSuggestedFix || len(s.Review.Instructions) != 1 || s.Review.Instructions[0] != "docs/rules.md" ||
+		if !s.Review.RequireSuggestedFix || len(s.Review.Rules) != 1 || s.Review.Rules[0].File != "docs/rules.md" ||
 			s.Review.Templates.Summary != ".kritik/summary.md.tmpl" || s.Review.Templates.Inline != ".kritik/inline.md.tmpl" {
 			t.Fatalf("review = %+v", s.Review)
 		}
@@ -990,9 +990,9 @@ func TestRepositoryModeAgentReview(t *testing.T) {
 		{"relative command path", "{ name: x, agent: { commands: [./tool] } }", "must be a bare command name"},
 		{"empty command", "{ name: x, agent: { commands: [''] } }", "must be a bare command name"},
 		{"duplicate command", "{ name: x, agent: { commands: [rg, rg] } }", "is listed twice"},
-		{"absolute instruction path", "{ name: x, review: { instructions: [/etc/passwd] } }", "must be relative"},
+		{"absolute rule file", "{ name: x, review: { rules: [{ id: a, file: /etc/passwd }] } }", "must be relative"},
 		{"escaping template path", "{ name: x, review: { templates: { summary: ../x.tmpl } } }", "escapes the repository"},
-		{"empty instruction path", "{ name: x, review: { instructions: [''] } }", "must not be empty"},
+		{"a rule with a file and text", "{ name: x, review: { rules: [{ id: a, rule: Check., file: a.md }] } }", "set one of rule or file"},
 	}
 	for _, tt := range rejects {
 		t.Run("rejects "+tt.name, func(t *testing.T) {

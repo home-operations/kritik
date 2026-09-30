@@ -63,7 +63,6 @@
     { label: 'Ignore', key: 'ignore', value: (s) => list(s.ignore), mono: true },
     { label: 'Settle', key: 'settle', value: (s) => duration(s.settleSeconds * 1000) || '0s' },
     { label: 'Max delta files', key: 'incremental.maxDeltaFiles', value: (s) => String(s.maxDeltaFiles) },
-    { label: 'Instructions', key: 'review.instructions', value: (s) => list(s.review.instructions), mono: true },
     { label: 'Context files', key: 'review.context', value: (s) => list(s.review.context.map((c) => c.path)), mono: true },
     { label: 'AGENTS.md / CLAUDE.md', key: 'review.agentFiles', value: (s) => (s.review.agentFiles ? 'read' : 'not read') },
     { label: 'Require suggested fix', key: 'review.requireSuggestedFix', value: (s) => yes(s.review.requireSuggestedFix) },

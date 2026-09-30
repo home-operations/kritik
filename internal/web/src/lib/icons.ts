@@ -39,7 +39,6 @@ export {
   mdiBugOutline,
   mdiChartBoxOutline,
   mdiScaleBalance,
-  mdiTextBoxCheckOutline,
   mdiCheckDecagramOutline,
   mdiFileDocumentOutline,
   mdiThumbUpOutline,

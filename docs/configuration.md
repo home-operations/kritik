@@ -268,7 +268,7 @@ accounts:
 
 An account and a repository entry take the defaults' settings: `models`,
 `mode`, `filter`, `forks`, `ignore`, `settle`, `agent`, `incremental`,
-`review` (instructions, rules, templates, context and the rest of
+`review` (rules, templates, context and the rest of
 [the repository settings](repository-config.md)) and `allow`, the bounds a
 repository's `.kritik.yaml` chooses within. A narrower scope's value
 replaces the broader one's, except `ignore` globs, which add up, and

@@ -95,7 +95,6 @@ var Policies = []Policy{
 	{Key: "agent.commandTimeout", Scopes: everyScope},
 	{Key: keySettle, Scopes: everyScope, Repository: RepoAtMost},
 	{Key: "incremental.maxDeltaFiles", Scopes: everyScope},
-	{Key: "review.instructions", Scopes: everyScope, Repository: RepoAppend},
 	{Key: "review.requireSuggestedFix", Scopes: everyScope, Repository: RepoTurnOn},
 	{Key: "review.templates", Scopes: everyScope, Repository: RepoReplace},
 	{Key: "review.context", Scopes: everyScope, Repository: RepoAppend},

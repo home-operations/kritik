@@ -21,7 +21,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 6
+const SpecVersion = 7
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -85,15 +85,11 @@ type AgentLimits struct {
 type Prompt struct {
 	Repository  string                 `json:"repository"`
 	PullRequest repoconfig.PullRequest `json:"pullRequest"`
-	// Instructions name repository files, as the review settings do, and
-	// InstructionScopes the changed-path globs a scoped one applies to.
-	Instructions      []string            `json:"instructions,omitempty"`
-	InstructionScopes map[string][]string `json:"instructionScopes,omitempty"`
 	// Context names the files that explain the code, which the agent is
 	// pointed at to read for itself.
 	Context []configfile.ContextFile `json:"context,omitempty"`
 	// Rules are the configuration's rules, each applied when the change
-	// matches its paths.
+	// matches its paths; a file rule's file is among the spec's RepoFiles.
 	Rules               []configfile.Rule `json:"rules,omitempty"`
 	RequireSuggestedFix bool              `json:"requireSuggestedFix,omitempty"`
 	// Focused is a focused review's: it reports only what would stop the

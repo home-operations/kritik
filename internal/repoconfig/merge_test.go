@@ -18,9 +18,9 @@ func adminSettings() configfile.Settings {
 		Models: configfile.Models{Review: "p/big"},
 		Agent:  configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute, Commands: []string{"rg"}},
 		Review: configfile.Review{
-			Instructions: []string{"docs/rules.md"}, RequireSuggestedFix: true,
-			Templates: configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
-			Rules: []configfile.Rule{{ID: "wrap-errors", Rule: "Wrap errors."}}, AgentFiles: true,
+			RequireSuggestedFix: true,
+			Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
+			Rules: []configfile.Rule{{ID: "wrap-errors", Rule: "Wrap errors."}, {ID: "house-style", File: "docs/rules.md"}}, AgentFiles: true,
 		},
 	}
 }
@@ -34,25 +34,26 @@ func TestMerge(t *testing.T) {
 		want    func(*configfile.Settings)
 		filter  bool
 		skip    []string
-		scoped  map[string][]string
 		dropped []string
 		wantErr string
 	}{
 		{name: "no file"},
 		{
-			name: "the file narrows, appends instructions and replaces presentation",
+			name: "the file narrows, appends file rules and replaces presentation",
 			doc: "enabled: false\nfilter: '!pr.draft'\nignore: [gen/**, vendor/**]\nskip:\n  onlyPaths: [docs/**]\n" +
-				"review:\n  instructions: [.kritik/rules.md, docs/rules.md, { path: .kritik/sql.md, paths: ['**/*.sql'] }]\n" +
+				"review:\n  rules: [{ id: repo-style, file: .kritik/rules.md }, { id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }]\n" +
 				"  templates:\n    inline: .kritik/inline.tmpl\n",
 			want: func(s *configfile.Settings) {
 				s.Enabled, s.Ignore = false, []string{"vendor/**", "gen/**"}
-				s.Review.Instructions = []string{"docs/rules.md", ".kritik/rules.md", ".kritik/sql.md"}
+				s.Review.Rules = append(s.Review.Rules, configfile.Rule{ID: "repo-style", File: ".kritik/rules.md"},
+					configfile.Rule{ID: "sql", File: ".kritik/sql.md", Paths: []string{"**/*.sql"}})
 				s.Review.Templates.Inline = ".kritik/inline.tmpl"
 			},
-			filter: true, skip: []string{"docs/**"}, scoped: map[string][]string{".kritik/sql.md": {"**/*.sql"}},
+			filter: true, skip: []string{"docs/**"},
 		},
 		{
-			name: "an admin's instruction stays unscoped", doc: "review:\n  instructions: [{ path: docs/rules.md, paths: ['**/*.sql'] }]\n",
+			name: "an admin's file rule stays as the admin wrote it", doc: "review:\n  rules: [{ id: house-style, file: docs/rules.md, paths: ['**/*.sql'] }]\n",
+			dropped: []string{".kritik.yaml: review.rules house-style was dropped: an admin's rule has that id"},
 		},
 		{
 			name: "context files follow the admin's", doc: "review:\n  context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }]\n",
@@ -153,9 +154,8 @@ func TestMerge(t *testing.T) {
 			if !reflect.DeepEqual(m.Settings, want) {
 				t.Fatalf("settings = %+v\nwant       %+v", m.Settings, want)
 			}
-			if (m.InRepoFilter != nil) != tt.filter || !slices.Equal(m.Skip.OnlyPaths, tt.skip) || !slices.Equal(m.Dropped, tt.dropped) ||
-				!reflect.DeepEqual(m.Scoped, tt.scoped) {
-				t.Fatalf("filter=%v skip=%v scoped=%v dropped=%q", m.InRepoFilter != nil, m.Skip.OnlyPaths, m.Scoped, m.Dropped)
+			if (m.InRepoFilter != nil) != tt.filter || !slices.Equal(m.Skip.OnlyPaths, tt.skip) || !slices.Equal(m.Dropped, tt.dropped) {
+				t.Fatalf("filter=%v skip=%v dropped=%q", m.InRepoFilter != nil, m.Skip.OnlyPaths, m.Dropped)
 			}
 			if !reflect.DeepEqual(op, func() configfile.Settings { o := adminSettings(); o.Allow = tt.allow; return o }()) {
 				t.Fatal("Merge changed the admin's settings")

@@ -183,7 +183,6 @@ export interface ContextFile {
 }
 
 export interface ReviewBlock {
-  instructions: string[];
   requireSuggestedFix: boolean;
   templates: { summary?: string; inline?: string };
   inlineComments: boolean;
@@ -441,7 +440,7 @@ export interface Analytics {
   repositories: RepoActivity[];
 }
 
-export type RuleKind = 'rule' | 'instructions' | 'context';
+export type RuleKind = 'rule' | 'context';
 // entry is an account's entry for the repository; repository is the
 // repository's own .kritik.yaml.
 export type RuleSource = 'default' | 'env' | 'file' | 'defaults' | 'account' | 'entry' | 'repository';

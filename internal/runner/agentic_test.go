@@ -45,8 +45,6 @@ func TestAgentPrompt(t *testing.T) {
 	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritik/rules.md": "Repository rules.", "AGENTS.md": "Agent notes."}
 	tests := []struct {
 		name         string
-		paths        []string
-		scoped       map[string][]string
 		scope        review.Scope
 		instructions []string
 		rules        []configfile.Rule
@@ -55,17 +53,9 @@ func TestAgentPrompt(t *testing.T) {
 		focused      bool
 		agentFiles   bool
 	}{
-		{name: "the named instructions and strictness", paths: []string{"docs/rules.md"},
-			scope: review.ScopeFull, instructions: []string{"Admin rules."}, strict: true},
-		{name: "instructions in the order named", paths: []string{".kritik/rules.md", "docs/rules.md"},
-			scope: review.ScopeFull, instructions: []string{"Repository rules.", "Admin rules."}, strict: true},
-		{name: "an instruction scoped to paths the change does not touch is left out", paths: []string{"docs/rules.md", ".kritik/rules.md"},
-			scoped: map[string][]string{".kritik/rules.md": {"web/**"}}, scope: review.ScopeFull, instructions: []string{"Admin rules."}, strict: true},
-		{name: "one scoped to a path it touches is kept", paths: []string{"docs/rules.md", ".kritik/rules.md"},
-			scoped: map[string][]string{".kritik/rules.md": {"*.go"}}, scope: review.ScopeFull,
-			instructions: []string{"Admin rules.", "Repository rules."}, strict: true},
-		{name: "the root's AGENTS.md follows the named instructions", paths: []string{"docs/rules.md"}, agentFiles: true,
-			scope: review.ScopeFull, instructions: []string{"Admin rules.", "Agent notes."}, strict: true},
+		{name: "strictness", scope: review.ScopeFull, strict: true},
+		{name: "the root's AGENTS.md is the instructions", agentFiles: true,
+			scope: review.ScopeFull, instructions: []string{"Agent notes."}, strict: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
 		{name: "a focused review gets the focused prompt", scope: review.ScopeFull, focused: true},
 		{
@@ -73,12 +63,17 @@ func TestAgentPrompt(t *testing.T) {
 			rules:  []configfile.Rule{{ID: "go", Rule: "Wrap errors.", Paths: []string{"*.go"}}, {ID: "web", Rule: "No inline styles.", Paths: []string{"web/**"}}},
 			active: []review.Rule{{ID: "go", Text: "Wrap errors."}},
 		},
+		{
+			name: "a file rule carries its file, in the order written", scope: review.ScopeFull,
+			rules: []configfile.Rule{{ID: "repo", File: ".kritik/rules.md"}, {ID: "admin", File: "docs/rules.md", Paths: []string{"web/**"}},
+				{ID: "go", Rule: "Wrap errors."}},
+			active: []review.Rule{{ID: "repo", Text: "Repository rules.", File: ".kritik/rules.md"}, {ID: "go", Text: "Wrap errors."}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
-			s.Prompt.Instructions, s.Prompt.InstructionScopes, s.Prompt.RequireSuggestedFix = tt.paths, tt.scoped, tt.strict
-			s.Prompt.Focused, s.Prompt.Rules, s.AgentFiles = tt.focused, tt.rules, tt.agentFiles
+			s.Prompt.RequireSuggestedFix, s.Prompt.Focused, s.Prompt.Rules, s.AgentFiles = tt.strict, tt.focused, tt.rules, tt.agentFiles
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {
