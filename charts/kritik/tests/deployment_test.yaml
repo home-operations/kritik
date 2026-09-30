@@ -3,6 +3,10 @@ templates:
   - deployment.tpl
 values:
   - ../ci/lint-values.yaml
+# The runner tools tests need a cluster that mounts image volumes.
+capabilities:
+  majorVersion: 1
+  minorVersion: 33
 tests:
   - it: renders one Deployment of kritik serve by default
     asserts:
@@ -267,3 +271,70 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: web.url must be an http\(s\) URL
+
+  - it: rolls one replica at a time by default
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: RollingUpdate
+            rollingUpdate:
+              maxUnavailable: 0
+              maxSurge: 1
+
+  - it: renders an overridden strategy, with the rolling update's fields nulled out
+    set:
+      strategy:
+        type: Recreate
+        rollingUpdate: null
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: Recreate
+
+  - it: spreads the replicas across nodes by default, resolving the selector through tpl
+    asserts:
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].topologyKey
+          value: kubernetes.io/hostname
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable
+          value: ScheduleAnyway
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels
+          value:
+            app.kubernetes.io/name: kritik
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: leaves scheduling to Kubernetes when the spread is emptied
+    set:
+      topologySpreadConstraints: []
+    asserts:
+      - notExists:
+          path: spec.template.spec.topologySpreadConstraints
+
+  - it: refuses runner tools on a cluster older than 1.33, which cannot mount them
+    set:
+      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
+    capabilities:
+      majorVersion: 1
+      minorVersion: 32
+    asserts:
+      - failedTemplate:
+          errorPattern: runner.tools needs Kubernetes 1.33 or newer
+
+  - it: renders runner tools on a cluster that mounts image volumes
+    set:
+      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
+    capabilities:
+      majorVersion: 1
+      minorVersion: 33
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            {
+              name: KRITIK_RUNNER_TOOLS,
+              value: '[{"image":"registry.example/helm:3","name":"helm"}]',
+            }

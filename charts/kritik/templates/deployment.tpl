@@ -13,6 +13,9 @@
 {{- if not (regexMatch "^https?://" .Values.web.url) -}}
 {{- fail "web.url must be an http(s) URL" -}}
 {{- end -}}
+{{- if and .Values.runner.tools (semverCompare "<1.33.0-0" .Capabilities.KubeVersion.Version) -}}
+{{- fail (printf "runner.tools needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath (ADR-0011); this cluster is %s" .Capabilities.KubeVersion.Version) -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -27,6 +30,10 @@ metadata:
   {{- end }}
 spec:
   replicas: {{ $.Values.replicas }}
+  {{- with $.Values.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "kritik.selectorLabels" $ | nindent 6 }}
@@ -210,6 +217,10 @@ spec:
       {{- end }}
       {{- with $.Values.affinity }}
       affinity:
+        {{- tpl (toYaml .) $ | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
         {{- tpl (toYaml .) $ | nindent 8 }}
       {{- end }}
       {{- with $.Values.tolerations }}

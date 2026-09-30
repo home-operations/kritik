@@ -8,7 +8,11 @@ metadata:
     {{- include "kritik.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
 spec:
+  {{- if .Values.podDisruptionBudget.maxUnavailable }}
   maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- else }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "kritik.selectorLabels" . | nindent 6 }}

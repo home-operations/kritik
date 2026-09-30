@@ -1,5 +1,18 @@
 {{- if .Values.networkPolicy.enabled }}
 {{- $np := .Values.networkPolicy }}
+{{- $public := int .Values.service.port }}
+{{- $metrics := int .Values.service.metricsPort }}
+{{- $gateway := int .Values.gateway.port }}
+{{- $postgres := int $np.postgresPort }}
+{{- /* Runner pods reach the outside through the gateway alone when it is on,
+       and over the egress ports to anywhere when it is off. */}}
+{{- $runnerPorts := list $postgres }}
+{{- if not .Values.gateway.enabled }}
+{{- $runnerPorts = concat $np.egressPorts $runnerPorts }}
+{{- end }}
+{{- $serverPorts := concat $np.egressPorts (list $postgres) }}
+{{- $serverSelector := printf "app.kubernetes.io/name == '%s' && app.kubernetes.io/instance == '%s'" (include "kritik.name" .) .Release.Name }}
+{{- if eq $np.type "default" }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -18,9 +31,9 @@ spec:
     # No `from`: the public and metrics ports are reachable by any peer;
     # lock down per cluster with your own policy if needed.
     - ports:
-        - port: {{ .Values.service.port }}
+        - port: {{ $public }}
           protocol: TCP
-        - port: {{ .Values.service.metricsPort }}
+        - port: {{ $metrics }}
           protocol: TCP
     {{- if .Values.gateway.enabled }}
     # The gateway is for runner pods alone.
@@ -29,7 +42,7 @@ spec:
             matchLabels:
               kritik.home-operations.com/role: runner
       ports:
-        - port: {{ .Values.gateway.port }}
+        - port: {{ $gateway }}
           protocol: TCP
     {{- end }}
   egress:
@@ -41,12 +54,10 @@ spec:
           protocol: TCP
     {{- end }}
     - ports:
-        {{- range $np.egressPorts }}
+        {{- range $serverPorts }}
         - port: {{ . }}
           protocol: TCP
         {{- end }}
-        - port: {{ $np.postgresPort }}
-          protocol: TCP
     # The API server, to create and watch runner Jobs.
     - ports:
         - port: 443
@@ -82,21 +93,226 @@ spec:
           protocol: TCP
     {{- end }}
     - ports:
-        {{- if not .Values.gateway.enabled }}
-        {{- range $np.egressPorts }}
+        {{- range $runnerPorts }}
         - port: {{ . }}
           protocol: TCP
         {{- end }}
-        {{- end }}
-        - port: {{ $np.postgresPort }}
-          protocol: TCP
     {{- if .Values.gateway.enabled }}
     - to:
         - podSelector:
             matchLabels:
               {{- include "kritik.selectorLabels" . | nindent 14 }}
       ports:
-        - port: {{ .Values.gateway.port }}
+        - port: {{ $gateway }}
           protocol: TCP
     {{- end }}
+{{- else if eq $np.type "cilium" }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "kritik.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kritik.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "kritik.selectorLabels" . | nindent 6 }}
+  ingress:
+    - fromEntities:
+        - all
+      toPorts:
+        - ports:
+            - port: {{ $public | quote }}
+              protocol: TCP
+            - port: {{ $metrics | quote }}
+              protocol: TCP
+    {{- if .Values.gateway.enabled }}
+    - fromEndpoints:
+        - matchLabels:
+            kritik.home-operations.com/role: runner
+      toPorts:
+        - ports:
+            - port: {{ $gateway | quote }}
+              protocol: TCP
+    {{- end }}
+  egress:
+    {{- if $np.allowDNS }}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    {{- end }}
+    - toEntities:
+        - cluster
+        - world
+      toPorts:
+        - ports:
+            {{- range $serverPorts }}
+            - port: {{ . | quote }}
+              protocol: TCP
+            {{- end }}
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "kritik.fullname" . }}-runner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kritik.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
+spec:
+  endpointSelector:
+    matchLabels:
+      kritik.home-operations.com/role: runner
+  # An ingress section with one empty rule puts the pods into default deny
+  # for ingress without allowing any peer.
+  ingress:
+    - {}
+  egress:
+    {{- if $np.allowDNS }}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    {{- end }}
+    - toEntities:
+        - cluster
+        - world
+      toPorts:
+        - ports:
+            {{- range $runnerPorts }}
+            - port: {{ . | quote }}
+              protocol: TCP
+            {{- end }}
+    {{- if .Values.gateway.enabled }}
+    - toEndpoints:
+        - matchLabels:
+            {{- include "kritik.selectorLabels" . | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: {{ $gateway | quote }}
+              protocol: TCP
+    {{- end }}
+{{- else if eq $np.type "calico" }}
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kritik.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kritik.labels" . | nindent 4 }}
+spec:
+  selector: {{ $serverSelector }}
+  types:
+    - Ingress
+    - Egress
+  ingress:
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports:
+          - {{ $public }}
+          - {{ $metrics }}
+    {{- if .Values.gateway.enabled }}
+    - action: Allow
+      protocol: TCP
+      source:
+        selector: kritik.home-operations.com/role == 'runner'
+      destination:
+        ports:
+          - {{ $gateway }}
+    {{- end }}
+  egress:
+    {{- if $np.allowDNS }}
+    - action: Allow
+      protocol: UDP
+      destination:
+        ports:
+          - 53
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports:
+          - 53
+    {{- end }}
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports:
+          {{- range $serverPorts }}
+          - {{ . }}
+          {{- end }}
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports:
+          - 443
+          - 6443
+---
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kritik.fullname" . }}-runner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kritik.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
+spec:
+  selector: kritik.home-operations.com/role == 'runner'
+  # Ingress in types with no ingress rules: nothing may reach a runner pod.
+  types:
+    - Ingress
+    - Egress
+  egress:
+    {{- if $np.allowDNS }}
+    - action: Allow
+      protocol: UDP
+      destination:
+        ports:
+          - 53
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports:
+          - 53
+    {{- end }}
+    - action: Allow
+      protocol: TCP
+      destination:
+        ports:
+          {{- range $runnerPorts }}
+          - {{ . }}
+          {{- end }}
+    {{- if .Values.gateway.enabled }}
+    - action: Allow
+      protocol: TCP
+      destination:
+        selector: {{ $serverSelector | quote }}
+        ports:
+          - {{ $gateway }}
+    {{- end }}
+{{- else }}
+{{- fail (printf "networkPolicy.type must be one of: default, cilium, calico (got %q)" $np.type) }}
+{{- end }}
 {{- end }}

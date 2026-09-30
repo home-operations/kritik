@@ -86,6 +86,14 @@ otherwise it's repository:tag, with tag defaulting to the chart appVersion.
 {{- end }}
 
 {{/*
+The helm test pod's curl image.
+*/}}
+{{- define "kritik.testImage" -}}
+{{- $img := .Values.tests.image -}}
+{{- printf "%s:%s" $img.repository $img.tag -}}
+{{- end }}
+
+{{/*
 Runner image: the runner block's override, else the chart image.
 */}}
 {{- define "kritik.runnerImage" -}}

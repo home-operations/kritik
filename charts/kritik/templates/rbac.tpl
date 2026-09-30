@@ -1,6 +1,7 @@
 {{- if .Values.rbac.create }}
-# kritik serve creates runner Jobs in its own namespace and reads their pods
-# and logs; nothing cluster-wide, nothing else.
+# kritik serve creates runner Jobs in its own namespace, reads each back by
+# name, lists their pods and reads their logs; nothing cluster-wide, nothing
+# else, and no watches: it polls.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -11,10 +12,10 @@ metadata:
 rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
-    verbs: ["create", "get", "list", "watch", "delete"]
+    verbs: ["create", "get", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
