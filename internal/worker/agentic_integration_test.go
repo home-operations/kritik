@@ -234,7 +234,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
 	appStore := storetest.Open(t)
-	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL"), Logger: logger})
+	runnerStore, err := store.Open(ctx, store.Options{App: store.Conn{URL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL")}, Logger: logger})
 	if err != nil {
 		t.Fatalf("Open runner: %v", err)
 	}

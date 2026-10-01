@@ -39,13 +39,63 @@ const (
 	ownerPoolMaxConns = 4
 )
 
+// Conn is how a pool reaches Postgres as one role: a connection string, or
+// the parameters the connection is built from. Built from parameters, the
+// password never enters a string, so it needs no URI escaping and a role's
+// Secret can be the plain username and password its operator writes.
+type Conn struct {
+	// URL is a connection URI or keyword/value string. Set, the parameters
+	// are not read.
+	URL string
+
+	Host     string
+	Port     uint16
+	Database string
+	// SSLMode is libpq's sslmode.
+	SSLMode string
+	// ConnectTimeout bounds one connection attempt; zero leaves it to the
+	// kernel.
+	ConnectTimeout time.Duration
+	User           string
+	Password       string
+}
+
+// Set reports whether c names a connection at all.
+func (c Conn) Set() bool { return c.URL != "" || c.Host != "" }
+
+// config parses c into a pool configuration. Parameters go through the
+// keyword/value form with every value quoted, so none of them needs
+// escaping either; the password is set on the parsed configuration.
+func (c Conn) config() (*pgxpool.Config, error) {
+	if c.URL != "" {
+		return pgxpool.ParseConfig(c.URL)
+	}
+	dsn := fmt.Sprintf("host=%s port=%d dbname=%s sslmode=%s user=%s",
+		quoteKeywordValue(c.Host), c.Port, quoteKeywordValue(c.Database), quoteKeywordValue(c.SSLMode), quoteKeywordValue(c.User))
+	if c.ConnectTimeout > 0 {
+		dsn += fmt.Sprintf(" connect_timeout=%d", max(int64(c.ConnectTimeout/time.Second), 1))
+	}
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	cfg.ConnConfig.Password = c.Password
+	return cfg, nil
+}
+
+// quoteKeywordValue quotes v as a keyword/value connection string value:
+// libpq's single quotes, with a backslash before each quote or backslash.
+func quoteKeywordValue(v string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + "'"
+}
+
 // newPool opens a pool with server-side TCP keepalives, so Postgres drops
 // the session of a client that died without closing it (a node lost, a pod
 // killed) within about a minute, and with it any advisory lock the session
 // held. Postgres's own defaults leave that to the kernel's two hours. A
 // statement timeout, when given, bounds every statement on the pool.
-func newPool(ctx context.Context, url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Pool, error) {
-	cfg, err := poolConfig(url, application, statementTimeout, maxConns)
+func newPool(ctx context.Context, conn Conn, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Pool, error) {
+	cfg, err := poolConfig(conn, application, statementTimeout, maxConns)
 	if err != nil {
 		return nil, err
 	}
@@ -53,14 +103,14 @@ func newPool(ctx context.Context, url, application string, statementTimeout time
 }
 
 // poolConfig is newPool's configuration. maxConns is the pool's ceiling
-// unless the URI names its own with pool_max_conns, which pgx has already
-// read by the time the config is parsed.
-func poolConfig(url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Config, error) {
-	cfg, err := pgxpool.ParseConfig(url)
+// unless a connection string names its own with pool_max_conns, which pgx
+// has already read by the time the config is parsed.
+func poolConfig(conn Conn, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Config, error) {
+	cfg, err := conn.config()
 	if err != nil {
 		return nil, err
 	}
-	if !strings.Contains(url, "pool_max_conns") {
+	if !strings.Contains(conn.URL, "pool_max_conns") {
 		cfg.MaxConns = maxConns
 	}
 	params := cfg.ConnConfig.RuntimeParams
@@ -76,12 +126,12 @@ func poolConfig(url, application string, statementTimeout time.Duration, maxConn
 
 // Options configure Open.
 type Options struct {
-	// AppURL is the application role's DSN. Required.
-	AppURL string
-	// OwnerURL is the owner role's DSN. Optional; without it the process can
-	// never become leader.
-	OwnerURL string
-	Logger   *slog.Logger
+	// App is the application role's connection. Required.
+	App Conn
+	// Owner is the owner role's connection. Optional; without it the
+	// process can never become leader.
+	Owner  Conn
+	Logger *slog.Logger
 }
 
 // Open connects both pools and runs the startup assertions. It fails, rather
@@ -89,7 +139,7 @@ type Options struct {
 // the vector extension is missing, because either would be invisible at
 // runtime and wrong.
 func Open(ctx context.Context, opts Options) (*Store, error) {
-	app, err := newPool(ctx, opts.AppURL, "kritika-app", 0, appPoolMaxConns)
+	app, err := newPool(ctx, opts.App, "kritika-app", 0, appPoolMaxConns)
 	if err != nil {
 		return nil, fmt.Errorf("store: application pool: %w", err)
 	}
@@ -102,10 +152,10 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		app.Close()
 		return nil, err
 	}
-	if opts.OwnerURL != "" {
+	if opts.Owner.Set() {
 		// Migrations may build an index for minutes; anything longer on the
 		// owner connection is a hang worth breaking.
-		owner, err := newPool(ctx, opts.OwnerURL, "kritika-owner", 10*time.Minute, ownerPoolMaxConns)
+		owner, err := newPool(ctx, opts.Owner, "kritika-owner", 10*time.Minute, ownerPoolMaxConns)
 		if err != nil {
 			app.Close()
 			return nil, fmt.Errorf("store: owner pool: %w", err)

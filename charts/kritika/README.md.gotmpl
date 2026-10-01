@@ -21,6 +21,7 @@ roles, its public URL, a way to sign in, and its configuration file:
 
 ```sh
 helm install kritika oci://ghcr.io/home-operations/charts/kritika \
+  --set database.host=kritika-postgres-rw \
   --set database.app.existingSecret=kritika-postgres-app \
   --set database.owner.existingSecret=kritika-postgres-credentials \
   --set database.runner.existingSecret=kritika-postgres-runner \
@@ -101,8 +102,10 @@ that holds the lock.
 [Postgres with CloudNativePG](https://kritika.home-operations.com/database/)
 sets this up end to end: a two-instance cluster on TensorChord's VectorChord
 image, the extensions through a `Database` resource, the application and
-runner roles as `DatabaseRole` resources, the Secrets with their `uri` key
-for `database.*.existingSecret`, failover and backups.
+runner roles as `DatabaseRole` resources, whose username and password
+Secrets are what `database.*.existingSecret` name, failover and backups.
+kritika builds each connection from `database.host` and the role's Secret;
+a Secret holding a connection URI instead names its key in `uriKey`.
 
 ### Egress gateway
 

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // runnerRole names a runner pod's container, and its component and role
@@ -40,9 +42,16 @@ type Kube struct {
 	Image string
 	// ServiceAccount is the permissionless runner service account.
 	ServiceAccount string
-	// DatabaseSecret and DatabaseSecretKey reference the Secret holding the
-	// runner role's DSN, injected as KRITIKA_DATABASE_URL.
-	DatabaseSecret, DatabaseSecretKey string
+	// Database is the connection every role shares, without a role; the
+	// pod gets its host, port, database, sslmode and connect timeout as
+	// variables. DatabaseSecret is the Secret holding the runner role's
+	// credentials: its username and password under DatabaseSecretUserKey
+	// and DatabaseSecretPasswordKey, or, when DatabaseSecretKey is set, a
+	// connection URI under that key, injected as KRITIKA_DATABASE_URL
+	// instead.
+	Database                                         store.Conn
+	DatabaseSecret, DatabaseSecretKey                string
+	DatabaseSecretUserKey, DatabaseSecretPasswordKey string
 	// GatewayURL is the egress gateway the pod is handed as its HTTPS_PROXY
 	// and HTTP_PROXY: with the runner network policy allowing nothing else,
 	// every byte the runner sends out passes the gateway's host allowlist.
@@ -369,13 +378,27 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 		return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			Name: name, Key: key, Optional: new(optional)}}
 	}
+	databaseRef := func(key string) *corev1.EnvVarSource {
+		return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{Name: k.DatabaseSecret, Key: key}}
+	}
 	env := []corev1.EnvVar{
 		{Name: "KRITIKA_RUN_SPEC_FILE", Value: specDir + "/" + specFile},
 		{Name: "KRITIKA_GIT_TOKEN", ValueFrom: secretRef(secretKeyGitToken, false)},
 		{Name: "KRITIKA_GATEWAY_TOKEN", ValueFrom: secretRef(secretKeyGatewayToken, true)},
 		{Name: "KRITIKA_LOG_FORMAT", Value: "json"},
-		{Name: "KRITIKA_DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-			Name: k.DatabaseSecret, Key: k.DatabaseSecretKey}}},
+	}
+	if k.DatabaseSecretKey != "" {
+		env = append(env, corev1.EnvVar{Name: "KRITIKA_DATABASE_URL", ValueFrom: databaseRef(k.DatabaseSecretKey)})
+	} else {
+		env = append(env,
+			corev1.EnvVar{Name: "KRITIKA_DATABASE_HOST", Value: k.Database.Host},
+			corev1.EnvVar{Name: "KRITIKA_DATABASE_PORT", Value: strconv.Itoa(int(k.Database.Port))},
+			corev1.EnvVar{Name: "KRITIKA_DATABASE_NAME", Value: k.Database.Database},
+			corev1.EnvVar{Name: "KRITIKA_DATABASE_SSLMODE", Value: k.Database.SSLMode},
+			corev1.EnvVar{Name: "KRITIKA_DATABASE_CONNECT_TIMEOUT", Value: k.Database.ConnectTimeout.String()},
+			corev1.EnvVar{Name: "KRITIKA_DATABASE_USER", ValueFrom: databaseRef(k.DatabaseSecretUserKey)},
+			corev1.EnvVar{Name: "KRITIKA_DATABASE_PASSWORD", ValueFrom: databaseRef(k.DatabaseSecretPasswordKey)},
+		)
 	}
 	if k.GatewayURL != "" {
 		env = append(env,
