@@ -8,7 +8,7 @@ instance from install to its first review.
 
 ## Deploy
 
-Install the chart as its [README](../charts/kritik/README.md) shows, with:
+Install the chart as its [README](https://github.com/home-operations/kritik/blob/main/charts/kritik/README.md) shows, with:
 
 - `web.url`, the one public URL. The dashboard is served at it, and GitHub
   delivers each App's webhook under it, to `/hooks/<app name>`, both from

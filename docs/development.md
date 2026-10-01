@@ -1,6 +1,6 @@
 # Development
 
-Tool versions and tasks live in [`.mise/config.toml`](../.mise/config.toml):
+Tool versions and tasks live in [`.mise/config.toml`](https://github.com/home-operations/kritik/blob/main/.mise/config.toml):
 
 ```sh
 mise install
@@ -9,6 +9,20 @@ mise run test               # unit tests
 mise run test-integration   # store suite against a throwaway VectorChord container
 mise run lint
 ```
+
+## Docs
+
+This site is MkDocs Material, pinned in `pyproject.toml` and `uv.lock` and run
+through uv, which mise installs. Pages live in `docs/`, and their order in
+`mkdocs.yml`'s `nav`.
+
+```sh
+mise run docs-serve   # live preview at http://127.0.0.1:8000/
+mise run docs         # build into site/ with --strict, as CI does
+```
+
+`--strict` fails the build on a broken link or a page missing from `nav`.
+Pull requests build the site; a push to `main` publishes it to GitHub Pages.
 
 ## Evaluation
 
@@ -38,15 +52,17 @@ deploy` installs `charts/kritik` with them and the freshly pushed image,
   so every dev loop exercises the chart.
 - `.private/mise.local.toml`: `[env] KUBECONFIG = "..."`, symlinked from
   the repo root as `.mise.local.toml` so mise picks it up.
-- `.private/image`: the last image reference pushed to `ttl.sh`.
+- `.private/image` and `.private/runner-image`: the last image references
+  pushed.
 
 ```sh
-mise run deploy     # build, push to ttl.sh (24h TTL), apply, wait for rollout
+mise run deploy     # build, push, apply, wait for rollout
 mise run logs       # follow the pod
 mise run undeploy   # delete everything, database included
 ```
 
-Images go to `ttl.sh` under a fresh random name on every deploy, so a
-redeploy always pulls new code and nothing needs registry credentials.
+Images go to the registry `KRITIK_DEV_REGISTRY` names, or to `ttl.sh` (24h
+TTL) when it is unset, under a fresh name on every deploy, so a redeploy
+always pulls new code.
 The Helm chart is the supported way to run kritik; `.private/deploy` is a
 development harness, not an example to copy.
