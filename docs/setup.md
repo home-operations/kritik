@@ -16,12 +16,12 @@ Install the chart as its [README](https://github.com/home-operations/kritika/blo
   delivers each App's webhook under it, to `/hooks/<app name>`, both from
   one port. The chart's `ingress` or `httpRoute` routes the URL there;
   nothing else needs to be public.
-- A way to sign in: `auth.admin.passwordSecret` for the local admin, or
-  OIDC or GitHub with a role mapping that makes someone an admin
-  ([`auth`](configuration.md#auth)).
-- The [configuration file](configuration.md) as `config.file`, or an
-  existing ConfigMap, with the variables its secrets name set from
-  existing Secrets under `secretEnv`. It lives in git with the rest of the
+- A way to sign in: `KRITIKA_AUTH_ADMIN_PASSWORD` under `env`, from an
+  existing Secret, for the local admin, or OIDC or GitHub with a role
+  mapping that makes someone an admin ([`auth`](configuration.md#auth)).
+- The [configuration file](configuration.md) as `config`, or an existing
+  ConfigMap, with the variables its secrets name set from existing Secrets
+  under `env` or `envFrom`. It lives in git with the rest of the
   deployment; kritika reads it at startup, and the chart rolls the pods
   when it changes.
 
@@ -103,11 +103,12 @@ resolved, later reviews of the pull request are told not to raise it
 again, and the dashboard lists it dismissed with the reason.
 `@<app slug> pause` stops the pull request's automatic reviews, and
 `@<app slug> resume` starts them again. Put the private key and the webhook secret
-in a Secret, set a variable from each with `secretEnv`, and declare the
+in a Secret, set a variable from each under `env`, and declare the
 App under `apps` in the configuration file or the environment
 ([`apps`](configuration.md#apps)). To
 sign in with GitHub through the same App, generate a client secret on its
-settings page and set it, with the client ID, as `auth.github`.
+settings page and set it, with the client ID, as the `KRITIKA_AUTH_GITHUB_*`
+variables.
 
 ### Install it
 

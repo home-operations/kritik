@@ -90,8 +90,8 @@ Security notes:
   `egress.allowHosts`), and never hold the credentials `egress.credentials`
   lets the gateway add. Every review's model calls go through it too.
 - Run runner Jobs under a sandboxed RuntimeClass such as gVisor
-  (`runner.runtimeClassName`) where the cluster has one, since the pod parses
-  untrusted content.
+  (`KRITIKA_RUNNER_RUNTIME_CLASS`) where the cluster has one, since the pod
+  parses untrusted content.
 
 ## Documentation
 

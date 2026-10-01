@@ -50,8 +50,8 @@ spec:
         {{- tpl (toYaml .) $ | nindent 8 }}
         {{- end }}
       {{- $checksum := "" }}
-      {{- if and $.Values.config.file (not $.Values.config.existingConfigMap) }}
-      {{- $checksum = toYaml $.Values.config.file | sha256sum }}
+      {{- if and $.Values.config (not $.Values.existingConfigMap) }}
+      {{- $checksum = toYaml $.Values.config | sha256sum }}
       {{- end }}
       {{- if or $checksum $.Values.podAnnotations }}
       annotations:
@@ -87,114 +87,26 @@ spec:
             - serve
           securityContext:
             {{- tpl (toYaml $.Values.securityContext) $ | nindent 12 }}
+          {{- $serveEnv := include "kritika.serveEnv" $ | fromYamlArray }}
           env:
-            {{- if include "kritika.hasConfigFile" $ }}
-            - name: KRITIKA_CONFIG_FILE
-              value: /etc/kritika/config.yaml
-            {{- end }}
-            - name: KRITIKA_WEB_URL
-              value: {{ tpl $.Values.web.url $ | quote }}
-            {{- include "kritika.authEnv" $ | nindent 12 }}
-            {{- range $.Values.secretEnv }}
-            - name: {{ .name }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ tpl .secretName $ | quote }}
-                  key: {{ .key | quote }}
-            {{- end }}
-            - name: KRITIKA_LOG_LEVEL
-              value: {{ tpl $.Values.config.logLevel $ | quote }}
-            - name: KRITIKA_LOG_FORMAT
-              value: {{ tpl $.Values.config.logFormat $ | quote }}
-            - name: KRITIKA_ADDR
-              value: {{ printf ":%d" (int $.Values.service.port) | quote }}
-            - name: KRITIKA_METRICS_ADDR
-              value: {{ printf ":%d" (int $.Values.service.metricsPort) | quote }}
-            - name: KRITIKA_DATABASE_APP_ROLE
-              value: {{ $.Values.database.app.role | quote }}
-            - name: KRITIKA_DATABASE_RUNNER_ROLE
-              value: {{ $.Values.database.runner.role | quote }}
-            {{- with $.Values.database.host }}
-            - name: KRITIKA_DATABASE_HOST
-              value: {{ tpl . $ | quote }}
-            - name: KRITIKA_DATABASE_PORT
-              value: {{ $.Values.database.port | quote }}
-            - name: KRITIKA_DATABASE_NAME
-              value: {{ tpl $.Values.database.name $ | quote }}
-            - name: KRITIKA_DATABASE_SSLMODE
-              value: {{ tpl $.Values.database.sslmode $ | quote }}
-            - name: KRITIKA_DATABASE_CONNECT_TIMEOUT
-              value: {{ tpl (toString $.Values.database.connectTimeout) $ | quote }}
-            {{- end }}
-            {{- range $role := list (dict "prefix" "KRITIKA_DATABASE" "spec" $.Values.database.app) (dict "prefix" "KRITIKA_DATABASE_OWNER" "spec" $.Values.database.owner) }}
-            {{- if $role.spec.uriKey }}
-            - name: {{ $role.prefix }}_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ tpl $role.spec.existingSecret $ | quote }}
-                  key: {{ $role.spec.uriKey | quote }}
-            {{- else }}
-            - name: {{ $role.prefix }}_USER
-              valueFrom:
-                secretKeyRef:
-                  name: {{ tpl $role.spec.existingSecret $ | quote }}
-                  key: {{ $role.spec.usernameKey | quote }}
-            - name: {{ $role.prefix }}_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ tpl $role.spec.existingSecret $ | quote }}
-                  key: {{ $role.spec.passwordKey | quote }}
+            {{- toYaml $serveEnv | nindent 12 }}
+            {{- range $name, $value := $.Values.env }}
+            {{- range $serveEnv }}
+            {{- if eq .name $name }}
+            {{- fail (printf "env.%s: the chart sets this variable from its other values" $name) }}
             {{- end }}
             {{- end }}
-            - name: KRITIKA_EXECUTOR
-              value: kubernetes
-            - name: KRITIKA_RUNNER_IMAGE
-              value: {{ include "kritika.runnerImage" $ | quote }}
-            - name: KRITIKA_RUNNER_SERVICE_ACCOUNT
-              value: {{ include "kritika.runnerServiceAccountName" $ | quote }}
-            - name: KRITIKA_RUNNER_DATABASE_SECRET
-              value: {{ tpl $.Values.database.runner.existingSecret $ | quote }}
-            - name: KRITIKA_RUNNER_DATABASE_SECRET_KEY
-              value: {{ $.Values.database.runner.uriKey | quote }}
-            - name: KRITIKA_RUNNER_DATABASE_SECRET_USER_KEY
-              value: {{ $.Values.database.runner.usernameKey | quote }}
-            - name: KRITIKA_RUNNER_DATABASE_SECRET_PASSWORD_KEY
-              value: {{ $.Values.database.runner.passwordKey | quote }}
-            - name: KRITIKA_RUNNER_TTL
-              value: {{ tpl (toString $.Values.runner.ttl) $ | quote }}
-            {{- with $.Values.runner.runtimeClassName }}
-            - name: KRITIKA_RUNNER_RUNTIME_CLASS
-              value: {{ tpl . $ | quote }}
-            {{- end }}
-            - name: KRITIKA_GATEWAY_ADDR
-              value: {{ printf ":%d" (int $.Values.gateway.port) | quote }}
-            - name: KRITIKA_GATEWAY_URL
-              value: {{ include "kritika.gatewayURL" $ | quote }}
-            - name: KRITIKA_REVIEW_WORKERS
-              value: {{ $.Values.config.reviewWorkers | quote }}
-            - name: KRITIKA_INDEX_WORKERS
-              value: {{ $.Values.config.indexWorkers | quote }}
-            {{- range $name, $value := dict "KRITIKA_POLL_INTERVAL" $.Values.config.pollInterval "KRITIKA_POLL_LOOKBACK" $.Values.config.pollLookback "KRITIKA_INDEX_GRACE" $.Values.config.indexGrace "KRITIKA_TRANSCRIPT_RETENTION" $.Values.config.transcriptRetention "KRITIKA_DIFF_RETENTION" $.Values.config.diffRetention "KRITIKA_RUNNER_DEADLINE" $.Values.runner.deadline }}
-            {{- with $value }}
             - name: {{ $name }}
-              value: {{ . | quote }}
+              {{- if kindIs "map" $value }}
+              {{- tpl (toYaml $value) $ | nindent 14 }}
+              {{- else }}
+              value: {{ tpl (toString $value) $ | quote }}
+              {{- end }}
             {{- end }}
-            {{- end }}
-            {{- with $.Values.config.onboardWindow }}
-            - name: KRITIKA_ONBOARD_WINDOW
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with $.Values.runner.resources }}
-            - name: KRITIKA_RUNNER_RESOURCES
-              value: {{ toJson . | quote }}
-            {{- end }}
-            {{- with $.Values.runner.tools }}
-            - name: KRITIKA_RUNNER_TOOLS
-              value: {{ toJson . | quote }}
-            {{- end }}
-            {{- with $.Values.config.extraEnv }}
+          {{- with $.Values.envFrom }}
+          envFrom:
             {{- tpl (toYaml .) $ | nindent 12 }}
-            {{- end }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ $.Values.service.port }}
@@ -203,7 +115,7 @@ spec:
               containerPort: {{ $.Values.service.metricsPort }}
               protocol: TCP
             - name: gateway
-              containerPort: {{ $.Values.gateway.port }}
+              containerPort: {{ $.Values.service.gatewayPort }}
               protocol: TCP
 
           livenessProbe:

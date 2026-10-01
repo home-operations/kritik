@@ -22,7 +22,7 @@ tests:
 
   - it: renders nothing when an existing ConfigMap is named
     set:
-      config.existingConfigMap: my-config
+      existingConfigMap: my-config
     asserts:
       - hasDocuments:
           count: 0

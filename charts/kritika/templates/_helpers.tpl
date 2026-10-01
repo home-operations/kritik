@@ -104,8 +104,8 @@ Runner image: the runner block's override, else the chart image.
 ConfigMap the file is read from.
 */}}
 {{- define "kritika.configMapName" -}}
-{{- if .Values.config.existingConfigMap -}}
-{{- tpl .Values.config.existingConfigMap $ -}}
+{{- if .Values.existingConfigMap -}}
+{{- tpl .Values.existingConfigMap $ -}}
 {{- else -}}
 {{- include "kritika.fullname" . -}}
 {{- end -}}
@@ -115,7 +115,7 @@ ConfigMap the file is read from.
 In-cluster URL runner Jobs are handed as HTTPS_PROXY and their model endpoint.
 */}}
 {{- define "kritika.gatewayURL" -}}
-{{- printf "http://%s-gateway.%s.svc.cluster.local:%d" (include "kritika.fullname" .) .Release.Namespace (int .Values.gateway.port) -}}
+{{- printf "http://%s-gateway.%s.svc.cluster.local:%d" (include "kritika.fullname" .) .Release.Namespace (int .Values.service.gatewayPort) -}}
 {{- end }}
 
 {{/*
@@ -123,7 +123,7 @@ Whether a configuration file is mounted: the chart's, or an existing
 ConfigMap. Without one, kritika runs on its environment alone.
 */}}
 {{- define "kritika.hasConfigFile" -}}
-{{- if or .Values.config.existingConfigMap .Values.config.file -}}true{{- end -}}
+{{- if or .Values.existingConfigMap .Values.config -}}true{{- end -}}
 {{- end }}
 
 {{/*
@@ -140,43 +140,87 @@ webhook listener under it at /hooks.
 {{- end }}
 
 {{/*
-The auth values as KRITIKA_AUTH_* variables, each only when set so a value
-the configuration file gives is not overridden with an empty one.
+The variables the chart derives from its values: the kritika serve container's
+environment before `env`. Rendered as a list so the deployment can also refuse
+an `env` key that would duplicate one of them.
 */}}
-{{- define "kritika.authEnv" -}}
-{{- $a := .Values.auth -}}
-{{- $plain := list
-  (list "KRITIKA_AUTH_SESSION_TTL" $a.sessionTTL)
-  (list "KRITIKA_AUTH_ADMIN_USER" $a.admin.user)
-  (list "KRITIKA_AUTH_OIDC_NAME" $a.oidc.name)
-  (list "KRITIKA_AUTH_OIDC_ISSUER" $a.oidc.issuer)
-  (list "KRITIKA_AUTH_OIDC_CLIENT_ID" $a.oidc.clientId)
-  (list "KRITIKA_AUTH_OIDC_SCOPES" (join "," $a.oidc.scopes))
-  (list "KRITIKA_AUTH_OIDC_ROLES_CLAIM" $a.oidc.rolesClaim)
-  (list "KRITIKA_AUTH_OIDC_ROLE_MAPPING_EXPR" $a.oidc.roleMappingExpr)
-  (list "KRITIKA_AUTH_OIDC_DEFAULT_ROLE" $a.oidc.defaultRole)
-  (list "KRITIKA_AUTH_GITHUB_CLIENT_ID" $a.github.clientId)
-  (list "KRITIKA_AUTH_GITHUB_ROLE_MAPPING_EXPR" $a.github.roleMappingExpr)
--}}
-{{- range $plain }}
-{{- if index . 1 }}
-- name: {{ index . 0 }}
-  value: {{ tpl (toString (index . 1)) $ | quote }}
+{{- define "kritika.serveEnv" -}}
+{{- if include "kritika.hasConfigFile" . }}
+- name: KRITIKA_CONFIG_FILE
+  value: /etc/kritika/config.yaml
 {{- end }}
+- name: KRITIKA_WEB_URL
+  value: {{ tpl .Values.web.url . | quote }}
+- name: KRITIKA_LOG_LEVEL
+  value: {{ tpl .Values.logging.level . | quote }}
+- name: KRITIKA_LOG_FORMAT
+  value: {{ tpl .Values.logging.format . | quote }}
+- name: KRITIKA_ADDR
+  value: {{ printf ":%d" (int .Values.service.port) | quote }}
+- name: KRITIKA_METRICS_ADDR
+  value: {{ printf ":%d" (int .Values.service.metricsPort) | quote }}
+- name: KRITIKA_GATEWAY_ADDR
+  value: {{ printf ":%d" (int .Values.service.gatewayPort) | quote }}
+- name: KRITIKA_GATEWAY_URL
+  value: {{ include "kritika.gatewayURL" . | quote }}
+- name: KRITIKA_DATABASE_APP_ROLE
+  value: {{ .Values.database.app.role | quote }}
+- name: KRITIKA_DATABASE_RUNNER_ROLE
+  value: {{ .Values.database.runner.role | quote }}
+{{- with .Values.database.host }}
+- name: KRITIKA_DATABASE_HOST
+  value: {{ tpl . $ | quote }}
+- name: KRITIKA_DATABASE_PORT
+  value: {{ $.Values.database.port | quote }}
+- name: KRITIKA_DATABASE_NAME
+  value: {{ tpl $.Values.database.name $ | quote }}
+- name: KRITIKA_DATABASE_SSLMODE
+  value: {{ tpl $.Values.database.sslmode $ | quote }}
+- name: KRITIKA_DATABASE_CONNECT_TIMEOUT
+  value: {{ tpl (toString $.Values.database.connectTimeout) $ | quote }}
 {{- end }}
-{{- $secrets := list
-  (list "KRITIKA_AUTH_ADMIN_PASSWORD" $a.admin.passwordSecret)
-  (list "KRITIKA_AUTH_OIDC_CLIENT_SECRET" $a.oidc.clientSecretSecret)
-  (list "KRITIKA_AUTH_GITHUB_CLIENT_SECRET" $a.github.clientSecretSecret)
--}}
-{{- range $secrets }}
-{{- $ref := index . 1 }}
-{{- if $ref.name }}
-- name: {{ index . 0 }}
+{{- range $role := list (dict "prefix" "KRITIKA_DATABASE" "spec" .Values.database.app) (dict "prefix" "KRITIKA_DATABASE_OWNER" "spec" .Values.database.owner) }}
+{{- if $role.spec.uriKey }}
+- name: {{ $role.prefix }}_URL
   valueFrom:
     secretKeyRef:
-      name: {{ tpl $ref.name $ | quote }}
-      key: {{ $ref.key | quote }}
+      name: {{ tpl $role.spec.existingSecret $ | quote }}
+      key: {{ $role.spec.uriKey | quote }}
+{{- else }}
+- name: {{ $role.prefix }}_USER
+  valueFrom:
+    secretKeyRef:
+      name: {{ tpl $role.spec.existingSecret $ | quote }}
+      key: {{ $role.spec.usernameKey | quote }}
+- name: {{ $role.prefix }}_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ tpl $role.spec.existingSecret $ | quote }}
+      key: {{ $role.spec.passwordKey | quote }}
 {{- end }}
+{{- end }}
+- name: KRITIKA_EXECUTOR
+  value: kubernetes
+- name: KRITIKA_RUNNER_IMAGE
+  value: {{ include "kritika.runnerImage" . | quote }}
+- name: KRITIKA_RUNNER_SERVICE_ACCOUNT
+  value: {{ include "kritika.runnerServiceAccountName" . | quote }}
+- name: KRITIKA_RUNNER_DATABASE_SECRET
+  value: {{ tpl .Values.database.runner.existingSecret . | quote }}
+- name: KRITIKA_RUNNER_DATABASE_SECRET_KEY
+  value: {{ .Values.database.runner.uriKey | quote }}
+- name: KRITIKA_RUNNER_DATABASE_SECRET_USER_KEY
+  value: {{ .Values.database.runner.usernameKey | quote }}
+- name: KRITIKA_RUNNER_DATABASE_SECRET_PASSWORD_KEY
+  value: {{ .Values.database.runner.passwordKey | quote }}
+- name: KRITIKA_RUNNER_TTL
+  value: {{ tpl (toString .Values.runner.ttl) . | quote }}
+{{- with .Values.runner.resources }}
+- name: KRITIKA_RUNNER_RESOURCES
+  value: {{ toJson . | quote }}
+{{- end }}
+{{- with .Values.runner.tools }}
+- name: KRITIKA_RUNNER_TOOLS
+  value: {{ toJson . | quote }}
 {{- end }}
 {{- end }}

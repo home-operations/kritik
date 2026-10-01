@@ -6,17 +6,17 @@ kritika takes its settings from three places, each for what it suits:
 | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
 | The environment                                                                                                                                     | Process wiring: addresses, the database, logging and `KRITIKA_WEB_URL`                                                                           | a restart                          |
 | The configuration file, and its `KRITIKA_AUTH_*`, `KRITIKA_APPS_*`, `KRITIKA_PROVIDERS_*`, `KRITIKA_DEFAULTS_*` and `KRITIKA_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the defaults, the repository entries and the accounts | a restart                          |
-| The environment, set by the chart's values                                                                                                          | How kritika runs: polling, onboarding, retention and runner Jobs                                                                                 | a restart                          |
+| The environment                                                                                                                                     | How kritika runs: polling, onboarding, retention and runner Jobs                                                                                 | a restart                          |
 | The dashboard                                                                                                                                       | Whether each repository is on or off                                                                                                             | an admin, on the Repositories page |
 
 A repository's own [`.kritika.yaml`](repository-config.md) narrows what the
 configuration sets for it, from its own git.
 
 The file is optional: `KRITIKA_CONFIG_FILE` names it, and the chart's
-`config.file` renders it, so the configuration lives in git with the rest
+`config` renders it, so the configuration lives in git with the rest
 of the deployment. In the file a secret is `{ env: NAME }`, the variable
-holding it, never the value itself; the chart's `secretEnv` sets such a
-variable from an existing Secret. Sign-in, one app, one provider, the
+holding it, never the value itself; the chart's `env` and `envFrom` set
+such a variable from an existing Secret. Sign-in, one app, one provider, the
 default models and review settings, and the embedder also have
 variables, and a variable wins over the file, so a small deployment can
 be configured from the environment alone. A variable carries a secret
@@ -29,15 +29,15 @@ A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`:
 `filterExpr`, `roleMappingExpr` and a rule's `whenExpr`.
 
 kritika reads the file and its variables once, at startup: a change takes a
-restart, and the chart rolls the pods when its `config.file` changes.
+restart, and the chart rolls the pods when its `config` changes.
 Content that does not load, or that would leave the dashboard no way to
 sign in, fails startup, so a rolling update leaves the pods before it
 serving.
 
 ## `auth`
 
-`auth` sets how people sign in and what each may do. The chart's `auth`
-values render its variables.
+`auth` sets how people sign in and what each may do. Its variables go in
+the chart's `env`, the secrets among them from existing Secrets.
 
 | Key                      | Environment variable                        |
 | ------------------------ | ------------------------------------------- |
@@ -400,21 +400,23 @@ plain `http://` request to that host, so the runner never holds it.
 
 ## How kritika runs
 
-These come from the environment, which the chart's values set, rather
-than the file; a
-restart changes them.
+These come from the environment rather than the file, set in the chart's
+`env` by name except where noted; a restart changes them.
 
-| Variable                       | Chart value                  | What                                                                                                                                    |
-| ------------------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `KRITIKA_POLL_INTERVAL`        | `config.pollInterval`        | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set           |
-| `KRITIKA_POLL_LOOKBACK`        | `config.pollLookback`        | how far back a first or long-idle poll looks; 24h unless set                                                                            |
-| `KRITIKA_ONBOARD_WINDOW`       | `config.onboardWindow`       | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                 |
-| `KRITIKA_INDEX_GRACE`          | `config.indexGrace`          | how long the index of a repository that stopped running is kept; 720h unless set                                                        |
-| `KRITIKA_TRANSCRIPT_RETENTION` | `config.transcriptRetention` | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                        |
-| `KRITIKA_DIFF_RETENTION`       | `config.diffRetention`       | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set |
-| `KRITIKA_RUNNER_DEADLINE`      | `runner.deadline`            | a runner Job's deadline; 15m unless set                                                                                                 |
-| `KRITIKA_RUNNER_RESOURCES`     | `runner.resources`           | a runner pod's resources, as JSON                                                                                                       |
-| `KRITIKA_RUNNER_TOOLS`         | `runner.tools`               | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON                                                  |
+| Variable                       | What                                                                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `KRITIKA_POLL_INTERVAL`        | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set           |
+| `KRITIKA_POLL_LOOKBACK`        | how far back a first or long-idle poll looks; 24h unless set                                                                            |
+| `KRITIKA_ONBOARD_WINDOW`       | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                 |
+| `KRITIKA_INDEX_GRACE`          | how long the index of a repository that stopped running is kept; 720h unless set                                                        |
+| `KRITIKA_TRANSCRIPT_RETENTION` | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                        |
+| `KRITIKA_DIFF_RETENTION`       | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set |
+| `KRITIKA_REVIEW_WORKERS`       | review jobs one replica runs at once; 2 unless set                                                                                      |
+| `KRITIKA_INDEX_WORKERS`        | index jobs one replica runs at once; 1 unless set                                                                                       |
+| `KRITIKA_RUNNER_DEADLINE`      | a runner Job's deadline; 15m unless set                                                                                                 |
+| `KRITIKA_RUNNER_RUNTIME_CLASS` | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                          |
+| `KRITIKA_RUNNER_RESOURCES`     | a runner pod's resources, as JSON; the chart's `runner.resources` renders it                                                            |
+| `KRITIKA_RUNNER_TOOLS`         | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON; the chart's `runner.tools` renders it           |
 
 A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps

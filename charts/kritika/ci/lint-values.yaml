@@ -11,18 +11,20 @@ database:
     existingSecret: kritika-postgres-runner
 web:
   url: https://kritika.example.com
-auth:
-  admin:
-    passwordSecret:
-      name: kritika-auth
 config:
-  file:
-    apps:
-      - name: github
-        accounts: [org-1]
-        clientId: Iv1.example
-        privateKey: { env: GITHUB_APP_PRIVATE_KEY }
-        webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
-secretEnv:
-  - { name: GITHUB_APP_PRIVATE_KEY, secretName: kritika-bot, key: private-key.pem }
-  - { name: GITHUB_APP_WEBHOOK_SECRET, secretName: kritika-bot, key: webhook-secret }
+  apps:
+    - name: github
+      accounts: [org-1]
+      clientId: Iv1.example
+      privateKey: { env: GITHUB_APP_PRIVATE_KEY }
+      webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
+env:
+  KRITIKA_AUTH_ADMIN_PASSWORD:
+    valueFrom:
+      secretKeyRef: { name: kritika-auth, key: password }
+  GITHUB_APP_PRIVATE_KEY:
+    valueFrom:
+      secretKeyRef: { name: kritika-bot, key: private-key.pem }
+  GITHUB_APP_WEBHOOK_SECRET:
+    valueFrom:
+      secretKeyRef: { name: kritika-bot, key: webhook-secret }

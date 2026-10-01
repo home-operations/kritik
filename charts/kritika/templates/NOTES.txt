@@ -1,8 +1,9 @@
 kritika {{ .Chart.AppVersion }} is installed as {{ include "kritika.fullname" . }}, {{ .Values.replicas }} replica(s) of kritika serve.
 
 Open {{ tpl .Values.web.url . }} to sign in. The GitHub Apps, model providers
-and review settings come from config.file and its KRITIKA_* variables (see
-docs/configuration.md); the dashboard turns each repository on or off.
+and review settings come from the configuration file (config) and the
+KRITIKA_* variables in env (see docs/configuration.md); the dashboard turns
+each repository on or off.
 
 GitHub delivers each app's webhook to {{ tpl .Values.web.url . | trimSuffix "/" }}/hooks/<app name>,
 which kritika serves beside the dashboard:
