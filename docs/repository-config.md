@@ -58,7 +58,7 @@ context:
 
 | `feedback`           | What the review reports                                                                                                                                                                |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `detailed` (default) | every line a maintainer could act on, smaller improvements, missing tests and questions included, each inline, with a one-click suggestion wherever the fix is a change to those lines |
+| `detailed` (default) | every line a maintainer could act on, smaller improvements, missing tests and questions included, each inline, with a one-click suggestion wherever the fix changes those lines or adds lines after them |
 | `standard`           | the same review, with nits in the summary rather than inline                                                                                                                           |
 | `minimal`            | only what would stop the review: correctness, security and reliability findings; a finding of another category is dropped before it is posted                                        |
 

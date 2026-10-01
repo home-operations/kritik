@@ -121,6 +121,10 @@ type Finding struct {
 	// Replacement is what lines Line through EndLine should read instead,
 	// raw code the forge offers as a one-click suggestion.
 	Replacement string `json:"replacement,omitempty"`
+	// InsertAfter is the lines a fix adds right after Line, changing none.
+	// Parse folds it into Replacement, Line kept as the diff shows it, so
+	// the model never reproduces an existing line; it is empty after Parse.
+	InsertAfter string `json:"insert_after,omitempty"`
 	// AgentPrompt is one paragraph telling a coding agent how to apply the
 	// fix.
 	AgentPrompt string `json:"agent_prompt,omitempty"`
@@ -251,6 +255,7 @@ const (
 	keySuggestedFix = "suggested_fix"
 	keyEndLine      = "end_line"
 	keyReplacement  = "replacement"
+	keyInsertAfter  = "insert_after"
 	keyAgentPrompt  = "agent_prompt"
 	keyRules        = "rules"
 )
@@ -283,7 +288,11 @@ const (
 	describeEndLine = "Last line of the range the finding covers, in the new version of the file; " +
 		"omit when it covers line alone."
 	describeReplacement = "What lines line through end_line should read instead, complete and exactly as they " +
-		"should be committed: raw code, no fences, no commentary. Only when the fix is a change to those lines."
+		"should be committed: raw code, no fences, no commentary. Only when the fix is a change to those lines; " +
+		"lines to add after line go in insert_after."
+	describeInsertAfter = "Lines the fix adds right after line, which itself stays as it is: raw code, no fences, " +
+		"no commentary, indented as the file is, exactly as they should be committed. Omit it when the fix changes " +
+		"existing lines; replacement covers that."
 	describeAgentPrompt = "One plain-text paragraph telling a coding agent how to apply the fix: the file, " +
 		"the lines, the symbols and the exact change."
 	describeRules = "Ids of the review rules this finding enforces, as the Review rules section lists them; " +
@@ -346,6 +355,7 @@ func contractSchema(requireFix bool) json.RawMessage {
 						keySuggestedFix: {Type: schemaString, Description: fix},
 						keyEndLine:      {Type: "integer", Description: describeEndLine},
 						keyReplacement:  {Type: schemaString, Description: describeReplacement},
+						keyInsertAfter:  {Type: schemaString, Description: describeInsertAfter},
 						keyAgentPrompt:  {Type: schemaString, Description: describeAgentPrompt},
 						keyRules:        {Type: schemaArray, Description: describeRules, Items: &jsonSchema{Type: schemaString}},
 					},
@@ -389,11 +399,12 @@ func Check(raw json.RawMessage) error {
 // missing field, a missing fix when opts require one, or a line the diff
 // does not add or keep. Dropped findings are returned
 // with the reason so they can be logged and counted, never silently lost.
-// anchors maps a path to the head-side lines the diff covers. A range or a
-// replacement the diff does not wholly cover is cleared rather than the
-// finding dropped. Kept findings are ordered most severe first, then by
-// path and line.
-func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Result, []Dropped, error) {
+// anchors maps a path to the head-side lines the diff covers, each with
+// its text. A range or a replacement the diff does not wholly cover is
+// cleared rather than the finding dropped, and an insertion becomes a
+// replacement of its line by that line plus the added ones. Kept findings
+// are ordered most severe first, then by path and line.
+func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Result, []Dropped, error) {
 	var res Result
 	dec := json.NewDecoder(strings.NewReader(strings.TrimSpace(raw)))
 	if err := dec.Decode(&res); err != nil {
@@ -415,6 +426,7 @@ func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Resu
 		f.Explanation = strings.TrimSpace(f.Explanation)
 		f.SuggestedFix = strings.TrimSpace(f.SuggestedFix)
 		f.Replacement = stripFences(f.Replacement)
+		f.InsertAfter = stripFences(f.InsertAfter)
 		f.AgentPrompt = strings.TrimSpace(f.AgentPrompt)
 		f.Rules = citedRules(f.Rules, opts.Rules)
 		var reason DropReason
@@ -427,20 +439,30 @@ func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Resu
 			reason = DropOutsideFocus
 		case f.Path == "" || f.Line <= 0 || f.Title == "" || f.Explanation == "":
 			reason = DropIncomplete
-		case opts.RequireSuggestedFix && f.SuggestedFix == "" && f.Replacement == "":
+		case opts.RequireSuggestedFix && f.SuggestedFix == "" && f.Replacement == "" && f.InsertAfter == "":
 			reason = DropNoFix
-		case !anchors[f.Path][f.Line]:
+		}
+		text, anchored := anchors[f.Path][f.Line]
+		if reason == "" && !anchored {
 			reason = DropUnanchored
 		}
 		if reason != "" {
 			dropped = append(dropped, Dropped{Finding: f, Reason: reason})
 			continue
 		}
+		if f.InsertAfter != "" {
+			// A replacement given too says what the line becomes; an
+			// insertion alone keeps the line as the diff shows it.
+			if f.Replacement == "" {
+				f.EndLine, f.Replacement = 0, text+"\n"+f.InsertAfter
+			}
+			f.InsertAfter = ""
+		}
 		if f.EndLine <= f.Line {
 			f.EndLine = 0
 		}
 		for l := f.Line + 1; l <= f.EndLine; l++ {
-			if !anchors[f.Path][l] {
+			if _, ok := anchors[f.Path][l]; !ok {
 				f.EndLine, f.Replacement = 0, ""
 				break
 			}
@@ -494,10 +516,11 @@ func Fingerprint(f Finding) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Anchors reads a unified diff and returns, per head-side path, the set of
-// new-file line numbers the diff shows (added and context lines). A finding
-// may only be attached to one of these, which is also the set of lines
-// GitHub accepts an inline comment on.
-func Anchors(diff string) map[string]map[int]bool {
+// Anchors reads a unified diff and returns, per head-side path, the
+// new-file lines the diff shows (added and context lines) with their text.
+// A finding may only be attached to one of these, which is also the set of
+// lines GitHub accepts an inline comment on; the text is what an insertion
+// keeps above the lines it adds.
+func Anchors(diff string) map[string]map[int]string {
 	return contextpack.ShownLines(diff)
 }

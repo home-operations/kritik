@@ -171,7 +171,13 @@ func TestParseDiff(t *testing.T) {
 	if got := d.removed["x.go"]; len(got) != 1 || got[0] != 4 {
 		t.Fatalf("removed = %v", got)
 	}
-	if !d.shown["x.go"][3] || !d.shown["x.go"][7] || d.shown["x.go"][8] {
+	if _, ok3 := d.shown["x.go"][3]; !ok3 {
+		t.Fatalf("shown = %v", d.shown["x.go"])
+	}
+	if _, ok7 := d.shown["x.go"][7]; !ok7 {
+		t.Fatalf("shown = %v", d.shown["x.go"])
+	}
+	if _, ok8 := d.shown["x.go"][8]; ok8 {
 		t.Fatalf("shown = %v", d.shown["x.go"])
 	}
 	if r := runs([]int{1, 2, 3, 10, 30, 31}, 5); len(r) != 3 || r[0] != [2]int{1, 3} || r[1] != [2]int{10, 10} || r[2] != [2]int{30, 31} {
