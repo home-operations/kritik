@@ -119,8 +119,8 @@ func TestStoreOptionsOwnerDSN(t *testing.T) {
 	} {
 		t.Run(string(tt.command), func(t *testing.T) {
 			opts := storeOptions(tt.command, cfg, slog.New(slog.DiscardHandler))
-			if opts.Owner.URL != tt.owner || opts.App.URL != "postgres://app" {
-				t.Errorf("owner = %q, app = %q; want owner %q", opts.Owner.URL, opts.App.URL, tt.owner)
+			if opts.OwnerURL != tt.owner || opts.AppURL != "postgres://app" {
+				t.Errorf("owner = %q, app = %q; want owner %q", opts.OwnerURL, opts.AppURL, tt.owner)
 			}
 		})
 	}

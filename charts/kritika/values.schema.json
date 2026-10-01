@@ -14,20 +14,20 @@
       "type": "object"
     },
     "database": {
-      "description": "One Postgres, reached as three roles, each with its own Secret. The\napplication role must not own the tables (row-level security), the owner\nrole runs migrations and applies configuration on the leader, and the\nrunner role is handed to runner Jobs and can only write its own run.\nkritika builds each connection from `host`, `port`, `name`, `sslmode` and\n`connectTimeout` with the role's username and password, so a role's\nSecret is the plain `kubernetes.io/basic-auth` Secret CloudNativePG\nwrites for a `DatabaseRole` and for the bootstrap owner, and no password\nneeds URI escaping. A role whose Secret holds a connection URI instead\nnames its key in `uriKey`. See the README.",
+      "description": "Three Postgres connection strings, each from its own Secret. The\napplication role must not own the tables (row-level security), the owner\nrole runs migrations and applies configuration on the leader, and the\nrunner role is handed to runner Jobs and can only write its own run. On\nCloudNativePG, declare `app` and `runner` under `spec.managed.roles` and\nuse the bootstrap owner as `owner`; see the README.",
       "properties": {
         "app": {
           "properties": {
             "existingSecret": {
               "default": "",
-              "description": "(required) Secret holding the application role's credentials.",
+              "description": "(required) Secret holding the application role's connection URI.",
               "title": "existingSecret",
               "type": "string"
             },
-            "passwordKey": {
-              "default": "password",
-              "description": "Key in that Secret holding the password.",
-              "title": "passwordKey",
+            "key": {
+              "default": "uri",
+              "description": "Key in that Secret.",
+              "title": "key",
               "type": "string"
             },
             "role": {
@@ -35,66 +35,24 @@
               "description": "Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing).",
               "title": "role",
               "type": "string"
-            },
-            "uriKey": {
-              "default": "",
-              "description": "Key in that Secret holding a connection URI; set, it is used instead of the username, the password and `database.host`.",
-              "title": "uriKey",
-              "type": "string"
-            },
-            "usernameKey": {
-              "default": "username",
-              "description": "Key in that Secret holding the username.",
-              "title": "usernameKey",
-              "type": "string"
             }
           },
           "required": [],
           "title": "app",
           "type": "object"
         },
-        "connectTimeout": {
-          "default": "10s",
-          "description": "Connection attempt timeout (KRITIKA_DATABASE_CONNECT_TIMEOUT), so a dial to a Service address DNS still caches after a redeploy fails fast and the retry looks the name up again.",
-          "title": "connectTimeout",
-          "type": "string"
-        },
-        "host": {
-          "default": "",
-          "description": "Postgres host (KRITIKA_DATABASE_HOST), e.g. kritika-postgres-rw. Required unless every role's Secret holds a connection URI.",
-          "title": "host",
-          "type": "string"
-        },
-        "name": {
-          "default": "kritika",
-          "description": "Database name (KRITIKA_DATABASE_NAME).",
-          "title": "name",
-          "type": "string"
-        },
         "owner": {
           "properties": {
             "existingSecret": {
               "default": "",
-              "description": "(required) Secret holding the owner role's credentials, used only by the leader for migrations and configuration sync.",
+              "description": "(required) Secret holding the owner role's connection URI, used only by the leader for migrations and configuration sync.",
               "title": "existingSecret",
               "type": "string"
             },
-            "passwordKey": {
-              "default": "password",
-              "description": "Key in that Secret holding the password.",
-              "title": "passwordKey",
-              "type": "string"
-            },
-            "uriKey": {
-              "default": "",
-              "description": "Key in that Secret holding a connection URI; set, it is used instead of the username, the password and `database.host`.",
-              "title": "uriKey",
-              "type": "string"
-            },
-            "usernameKey": {
-              "default": "username",
-              "description": "Key in that Secret holding the username.",
-              "title": "usernameKey",
+            "key": {
+              "default": "uri",
+              "description": "Key in that Secret.",
+              "title": "key",
               "type": "string"
             }
           },
@@ -102,24 +60,18 @@
           "title": "owner",
           "type": "object"
         },
-        "port": {
-          "default": 5432,
-          "description": "Postgres port (KRITIKA_DATABASE_PORT).",
-          "title": "port",
-          "type": "integer"
-        },
         "runner": {
           "properties": {
             "existingSecret": {
               "default": "",
-              "description": "(required) Secret holding the runner role's credentials; referenced by runner Jobs, never read by kritika serve.",
+              "description": "(required) Secret holding the runner role's connection URI; referenced by runner Jobs, never read by kritika serve.",
               "title": "existingSecret",
               "type": "string"
             },
-            "passwordKey": {
-              "default": "password",
-              "description": "Key in that Secret holding the password.",
-              "title": "passwordKey",
+            "key": {
+              "default": "uri",
+              "description": "Key in that Secret.",
+              "title": "key",
               "type": "string"
             },
             "role": {
@@ -127,29 +79,11 @@
               "description": "Name of the runner role, granted only what runner Jobs need.",
               "title": "role",
               "type": "string"
-            },
-            "uriKey": {
-              "default": "",
-              "description": "Key in that Secret holding a connection URI; set, it is used instead of the username, the password and `database.host`.",
-              "title": "uriKey",
-              "type": "string"
-            },
-            "usernameKey": {
-              "default": "username",
-              "description": "Key in that Secret holding the username.",
-              "title": "usernameKey",
-              "type": "string"
             }
           },
           "required": [],
           "title": "runner",
           "type": "object"
-        },
-        "sslmode": {
-          "default": "require",
-          "description": "libpq sslmode (KRITIKA_DATABASE_SSLMODE). `require` encrypts without verifying the server, which an in-cluster Postgres with an operator-issued certificate offers without more setup.",
-          "title": "sslmode",
-          "type": "string"
         }
       },
       "required": [],
@@ -423,7 +357,7 @@
       "type": "string"
     },
     "networkPolicy": {
-      "description": "NetworkPolicies (off by default): one for the service pods (ingress to the\nwebhook and metrics ports; egress to DNS, the forges and models over the\negress ports, and Postgres) and one for runner pods (egress only: DNS, the\ngit remote over the egress ports, and Postgres). The Postgres port is\n`database.port`, allowed to any peer because the database may live in\nanother namespace; a role connecting by a URI on another port needs\n`database.port` set to match.",
+      "description": "NetworkPolicies (off by default): one for the service pods (ingress to the\nwebhook and metrics ports; egress to DNS, the forges and models over the\negress ports, and Postgres) and one for runner pods (egress only: DNS, the\ngit remote over the egress ports, and Postgres). The Postgres port is\nallowed to any peer because the database may live in another namespace.",
       "properties": {
         "allowDNS": {
           "default": true,
@@ -449,6 +383,12 @@
           "description": "Create the NetworkPolicies.",
           "title": "enabled",
           "type": "boolean"
+        },
+        "postgresPort": {
+          "default": 5432,
+          "description": "Postgres port allowed for egress.",
+          "title": "postgresPort",
+          "type": "integer"
         },
         "type": {
           "default": "default",

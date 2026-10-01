@@ -1,14 +1,11 @@
 {{- if not .Values.database.app.existingSecret -}}
-{{- fail "database.app.existingSecret is required: the Secret holding the application role's credentials" -}}
+{{- fail "database.app.existingSecret is required: the Secret holding the application role's connection URI" -}}
 {{- end -}}
 {{- if not .Values.database.owner.existingSecret -}}
 {{- fail "database.owner.existingSecret is required: the leader runs migrations with it" -}}
 {{- end -}}
 {{- if not .Values.database.runner.existingSecret -}}
 {{- fail "database.runner.existingSecret is required: runner Jobs connect with it" -}}
-{{- end -}}
-{{- if and (not .Values.database.host) (or (not .Values.database.app.uriKey) (not .Values.database.owner.uriKey) (not .Values.database.runner.uriKey)) -}}
-{{- fail "database.host is required: a role whose Secret holds a username and password connects to it; or set every role's uriKey" -}}
 {{- end -}}
 {{- if not .Values.web.url -}}
 {{- fail "web.url is required: the dashboard's public URL, which the webhook listener shares under /hooks" -}}

@@ -167,38 +167,16 @@ an `env` key that would duplicate one of them.
   value: {{ .Values.database.app.role | quote }}
 - name: KRITIKA_DATABASE_RUNNER_ROLE
   value: {{ .Values.database.runner.role | quote }}
-{{- with .Values.database.host }}
-- name: KRITIKA_DATABASE_HOST
-  value: {{ tpl . $ | quote }}
-- name: KRITIKA_DATABASE_PORT
-  value: {{ $.Values.database.port | quote }}
-- name: KRITIKA_DATABASE_NAME
-  value: {{ tpl $.Values.database.name $ | quote }}
-- name: KRITIKA_DATABASE_SSLMODE
-  value: {{ tpl $.Values.database.sslmode $ | quote }}
-- name: KRITIKA_DATABASE_CONNECT_TIMEOUT
-  value: {{ tpl (toString $.Values.database.connectTimeout) $ | quote }}
-{{- end }}
-{{- range $role := list (dict "prefix" "KRITIKA_DATABASE" "spec" .Values.database.app) (dict "prefix" "KRITIKA_DATABASE_OWNER" "spec" .Values.database.owner) }}
-{{- if $role.spec.uriKey }}
-- name: {{ $role.prefix }}_URL
+- name: KRITIKA_DATABASE_URL
   valueFrom:
     secretKeyRef:
-      name: {{ tpl $role.spec.existingSecret $ | quote }}
-      key: {{ $role.spec.uriKey | quote }}
-{{- else }}
-- name: {{ $role.prefix }}_USER
+      name: {{ tpl .Values.database.app.existingSecret . | quote }}
+      key: {{ .Values.database.app.key | quote }}
+- name: KRITIKA_DATABASE_OWNER_URL
   valueFrom:
     secretKeyRef:
-      name: {{ tpl $role.spec.existingSecret $ | quote }}
-      key: {{ $role.spec.usernameKey | quote }}
-- name: {{ $role.prefix }}_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: {{ tpl $role.spec.existingSecret $ | quote }}
-      key: {{ $role.spec.passwordKey | quote }}
-{{- end }}
-{{- end }}
+      name: {{ tpl .Values.database.owner.existingSecret . | quote }}
+      key: {{ .Values.database.owner.key | quote }}
 - name: KRITIKA_EXECUTOR
   value: kubernetes
 - name: KRITIKA_RUNNER_IMAGE
@@ -208,11 +186,7 @@ an `env` key that would duplicate one of them.
 - name: KRITIKA_RUNNER_DATABASE_SECRET
   value: {{ tpl .Values.database.runner.existingSecret . | quote }}
 - name: KRITIKA_RUNNER_DATABASE_SECRET_KEY
-  value: {{ .Values.database.runner.uriKey | quote }}
-- name: KRITIKA_RUNNER_DATABASE_SECRET_USER_KEY
-  value: {{ .Values.database.runner.usernameKey | quote }}
-- name: KRITIKA_RUNNER_DATABASE_SECRET_PASSWORD_KEY
-  value: {{ .Values.database.runner.passwordKey | quote }}
+  value: {{ .Values.database.runner.key | quote }}
 - name: KRITIKA_RUNNER_TTL
   value: {{ tpl (toString .Values.runner.ttl) . | quote }}
 {{- with .Values.runner.resources }}

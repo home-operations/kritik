@@ -68,7 +68,7 @@ flowchart LR
 - **[Setup](setup.md)**: install the chart, create the GitHub App, add a model
   key and an embedder, and get to the first review.
 - **[Postgres with CloudNativePG](database.md)**: the database, its three
-  roles, their Secrets, failover and backups.
+  roles, connection URIs, failover and backups.
 - **[Configuration file](configuration.md)**: sign-in and role mappings, GitHub
   Apps, providers, defaults, repository entries and accounts.
 - **[Repository settings](repository-config.md)**: what a repository's

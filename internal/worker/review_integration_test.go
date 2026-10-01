@@ -1016,7 +1016,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	if _, err := appStore.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
-	runnerStore, err := store.Open(ctx, store.Options{App: store.Conn{URL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL")}, Logger: logger})
+	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL"), Logger: logger})
 	if err != nil {
 		t.Fatalf("Open runner: %v", err)
 	}

@@ -189,7 +189,7 @@ func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 	openStore(t) // ensures Migrate/grant() have run against this schema
 	ctx := context.Background()
 	runner, err := Open(ctx, Options{
-		App:    Conn{URL: testEnv(t, "KRITIKA_TEST_RUNNER_URL")},
+		AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"),
 		Logger: slog.New(slog.DiscardHandler),
 	})
 	if err != nil {

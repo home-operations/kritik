@@ -29,7 +29,7 @@ func Open(t testing.TB) *store.Store {
 	t.Helper()
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Options{
-		App: store.Conn{URL: Env(t, "KRITIKA_TEST_APP_URL")}, Owner: store.Conn{URL: Env(t, "KRITIKA_TEST_OWNER_URL")},
+		AppURL: Env(t, "KRITIKA_TEST_APP_URL"), OwnerURL: Env(t, "KRITIKA_TEST_OWNER_URL"),
 		Logger: slog.New(slog.DiscardHandler),
 	})
 	if err != nil {

@@ -2,7 +2,6 @@
 # Values that make the chart render without a real cluster: helm lint,
 # helm template and CI use them. Nothing here is a working configuration.
 database:
-  host: kritika-postgres-rw
   app:
     existingSecret: kritika-postgres-app
   owner:
