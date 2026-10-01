@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritik/internal/agent"
+	"github.com/home-operations/kritika/internal/agent"
 )
 
 // commandTool is the run tool for the commands p allows that this image
@@ -39,7 +39,7 @@ func commandTool(
 		logger.Warn("commands not offered: the runner's environment cannot be hidden from them", "error", err)
 		return nil, cleanup
 	}
-	scratch, err := os.MkdirTemp("", "kritik-run-")
+	scratch, err := os.MkdirTemp("", "kritika-run-")
 	if err != nil {
 		logger.Warn("commands not offered: no scratch space", "error", err)
 		return nil, cleanup

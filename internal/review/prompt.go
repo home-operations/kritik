@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/home-operations/kritik/internal/contextpack"
-	"github.com/home-operations/kritik/internal/textcut"
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // Input is everything the prompt is built from.
@@ -64,7 +64,7 @@ const charsPerToken = 4
 // maxBodyChars bounds the pull request description in the prompt.
 const maxBodyChars = 4000
 
-const systemLead = "You are kritik, a code reviewer for pull requests. "
+const systemLead = "You are kritika, a code reviewer for pull requests. "
 
 // reportThorough and reportFocused are what a thorough and a focused
 // review report: anything a maintainer could act on, or only what would
@@ -111,7 +111,7 @@ Answer with a summary and findings. The summary's take is two to four sentences 
 it is sound, and mentions a concern only if it is also a finding: what is worth stating is worth a finding, and
 what is not worth a finding is not worth stating. It does not say what the diff cannot show or what you could not
 verify; the reader knows what a diff is. It does not give a verdict, count the findings or say there are none, and
-does not list what you read or how you read it: kritik states the count and lists the sources itself. Praise lists
+does not list what you read or how you read it: kritika states the count and lists the sources itself. Praise lists
 at most three specific things done well, and is empty when nothing stands out. Each
 finding points at one line in the new version of a changed file and has a severity: blocking for a defect that must
 be fixed before merging, important for something that should be fixed, nit for optional polish. Give it a one-line

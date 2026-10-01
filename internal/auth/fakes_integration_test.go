@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	fakeClientID     = "kritik-client"
-	fakeClientSecret = "tok" // KRITIK_TEST_TOKEN, which every clientSecret reads
+	fakeClientID     = "kritika-client"
+	fakeClientSecret = "tok" // KRITIKA_TEST_TOKEN, which every clientSecret reads
 )
 
 // fakeUser is one user on a fake provider.

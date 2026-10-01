@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // URL schemes the dashboard may be served on.
@@ -26,12 +26,12 @@ const (
 
 // sessionCookieBase is the dashboard session cookie's name before its
 // prefix; SessionCookieName is the name a browser sees.
-const sessionCookieBase = "kritik_session"
+const sessionCookieBase = "kritika_session"
 
 // loginCookieBase names the cookie binding an in-flight sign-in to the
 // browser that started it, so a callback URL carried into another browser
 // cannot sign that browser in as someone else (login CSRF).
-const loginCookieBase = "kritik_login"
+const loginCookieBase = "kritika_login"
 
 // defaultHTTPTimeout bounds each call to a sign-in provider.
 const defaultHTTPTimeout = 15 * time.Second
@@ -44,7 +44,7 @@ var returnToRe = regexp.MustCompile(`^#/[A-Za-z0-9/_.~%-]*$`)
 type Config struct {
 	Store   *store.Store
 	Current *configfile.Current
-	// WebURL is the dashboard's external URL, KRITIK_WEB_URL: callbacks,
+	// WebURL is the dashboard's external URL, KRITIKA_WEB_URL: callbacks,
 	// the cookie's path and Secure flag, and the allowed Origin derive from
 	// it.
 	WebURL *url.URL
@@ -280,7 +280,7 @@ func (h *Handler) home() string {
 
 const errorPage = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Sign-in failed</title></head>
-<body><h1>Sign-in failed</h1><p>Error code: <code>%s</code></p><p><a href="%s">Back to kritik</a></p></body></html>
+<body><h1>Sign-in failed</h1><p>Error code: <code>%s</code></p><p><a href="%s">Back to kritika</a></p></body></html>
 `
 
 // fail renders the sign-in error page with only a fixed error code; err,

@@ -21,7 +21,7 @@ export class ApiError extends Error {
   }
 }
 
-const commonHeaders: HeadersInit = { 'X-Kritik': '1' };
+const commonHeaders: HeadersInit = { 'X-Kritika': '1' };
 
 // Where SignIn.svelte should send the user back to after signing in: the
 // hash they were on when a 401 bounced them, captured before replace()

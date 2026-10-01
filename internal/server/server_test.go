@@ -65,7 +65,7 @@ func TestPublicRouting(t *testing.T) {
 		_, _ = w.Write([]byte("hook " + r.PathValue("connection")))
 	})
 	web := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("web")) })
-	srv := httptest.NewServer(Public("/kritik/", hooks, web))
+	srv := httptest.NewServer(Public("/kritika/", hooks, web))
 	defer srv.Close()
 
 	for _, tt := range []struct {
@@ -75,11 +75,11 @@ func TestPublicRouting(t *testing.T) {
 		want   string
 	}{
 		{"post to a connection", http.MethodPost, "/hooks/sticky-gecko", "hook sticky-gecko"},
-		{"post under the dashboard's base path", http.MethodPost, "/kritik/hooks/sticky-gecko", "hook sticky-gecko"},
+		{"post under the dashboard's base path", http.MethodPost, "/kritika/hooks/sticky-gecko", "hook sticky-gecko"},
 		{"a get is the dashboard's", http.MethodGet, "/hooks/sticky-gecko", "web"},
 		{"the bare hooks path is the dashboard's", http.MethodPost, "/hooks", "web"},
 		{"another base path is the dashboard's", http.MethodPost, "/other/hooks/sticky-gecko", "web"},
-		{"the dashboard", http.MethodGet, "/kritik/", "web"},
+		{"the dashboard", http.MethodGet, "/kritika/", "web"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			req, _ := http.NewRequest(tt.method, srv.URL+tt.path, nil)

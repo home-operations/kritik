@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/agent"
-	"github.com/home-operations/kritik/internal/contextpack"
-	"github.com/home-operations/kritik/internal/gitfetch"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/runner"
+	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runner"
 )
 
 // Modes are the ablations: what the prompt carries beyond the diff.
@@ -95,26 +95,26 @@ func envOr(key, def string) string {
 
 // TestBench runs the corpus. Environment:
 //
-//	OPENROUTER_API_KEY     model key (required unless KRITIK_BENCH_DRY=1)
-//	KRITIK_BENCH_MODEL     model id on OpenRouter (default openai/gpt-6-sol)
-//	KRITIK_BENCH_MODES     comma list of modes (default diff,context)
-//	KRITIK_BENCH_CASES     corpus glob (default bench/cases/*.yaml)
-//	KRITIK_BENCH_LIMIT     at most this many cases (default all)
-//	KRITIK_BENCH_ONLY      run one case id
-//	KRITIK_BENCH_DRY       1: fetch, build context and prompts, call no model
-//	KRITIK_BENCH_OUT       results directory (default bench/results)
+//	OPENROUTER_API_KEY     model key (required unless KRITIKA_BENCH_DRY=1)
+//	KRITIKA_BENCH_MODEL     model id on OpenRouter (default openai/gpt-6-sol)
+//	KRITIKA_BENCH_MODES     comma list of modes (default diff,context)
+//	KRITIKA_BENCH_CASES     corpus glob (default bench/cases/*.yaml)
+//	KRITIKA_BENCH_LIMIT     at most this many cases (default all)
+//	KRITIKA_BENCH_ONLY      run one case id
+//	KRITIKA_BENCH_DRY       1: fetch, build context and prompts, call no model
+//	KRITIKA_BENCH_OUT       results directory (default bench/results)
 func TestBench(t *testing.T) {
 	ctx := context.Background()
-	dry := os.Getenv("KRITIK_BENCH_DRY") == "1"
+	dry := os.Getenv("KRITIKA_BENCH_DRY") == "1"
 	key := os.Getenv("OPENROUTER_API_KEY")
 	if key == "" && !dry {
-		t.Skip("OPENROUTER_API_KEY not set (use KRITIK_BENCH_DRY=1 to run without a model)")
+		t.Skip("OPENROUTER_API_KEY not set (use KRITIKA_BENCH_DRY=1 to run without a model)")
 	}
-	cases, err := Load(envOr("KRITIK_BENCH_CASES", "cases/*.yaml"))
+	cases, err := Load(envOr("KRITIKA_BENCH_CASES", "cases/*.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if only := os.Getenv("KRITIK_BENCH_ONLY"); only != "" {
+	if only := os.Getenv("KRITIKA_BENCH_ONLY"); only != "" {
 		var sel []Case
 		for _, c := range cases {
 			if c.ID == only {
@@ -123,19 +123,19 @@ func TestBench(t *testing.T) {
 		}
 		cases = sel
 	}
-	if lim, _ := strconv.Atoi(os.Getenv("KRITIK_BENCH_LIMIT")); lim > 0 && lim < len(cases) {
+	if lim, _ := strconv.Atoi(os.Getenv("KRITIKA_BENCH_LIMIT")); lim > 0 && lim < len(cases) {
 		cases = cases[:lim]
 	}
 	if len(cases) == 0 {
 		t.Fatal("no cases selected")
 	}
-	modeNames := strings.Split(envOr("KRITIK_BENCH_MODES", "diff,context"), ",")
+	modeNames := strings.Split(envOr("KRITIKA_BENCH_MODES", "diff,context"), ",")
 	for _, m := range modeNames {
 		if _, ok := modes[m]; !ok {
 			t.Fatalf("unknown mode %q; modes are diff, overlay, context", m)
 		}
 	}
-	modelID := envOr("KRITIK_BENCH_MODEL", "openai/gpt-6-sol")
+	modelID := envOr("KRITIKA_BENCH_MODEL", "openai/gpt-6-sol")
 	var stepper model.Stepper
 	if !dry {
 		var err error
@@ -314,7 +314,7 @@ func printSummary(t *testing.T, rep report) {
 
 func writeReport(t *testing.T, rep report) {
 	t.Helper()
-	dir := envOr("KRITIK_BENCH_OUT", "results")
+	dir := envOr("KRITIKA_BENCH_OUT", "results")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

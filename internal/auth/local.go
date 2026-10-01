@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // Password guessing is held to maxFailedSignIns wrong answers per client

@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // The dashboard's read queries. Each takes a transaction opened by
@@ -280,7 +280,7 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 // RepoKind picks which of an account's repositories a list shows.
 type RepoKind string
 
-// Repository kinds. RepoInUse, the default, is the ones kritik can run:
+// Repository kinds. RepoInUse, the default, is the ones kritika can run:
 // neither archived nor a fork, but for the forks an admin turned on.
 // RepoForks is every fork not archived, and RepoArchived every archived
 // repository.
@@ -389,7 +389,7 @@ func ListIndexRuns(ctx context.Context, tx pgx.Tx, repositoryID string, p Page) 
 	return items, next, nil
 }
 
-// RepoFileRow is the repository's .kritik.yaml as the last review that ran
+// RepoFileRow is the repository's .kritika.yaml as the last review that ran
 // read it: the review, the merge base it read the file at, and the file,
 // nil when there was none there.
 type RepoFileRow struct {
@@ -399,11 +399,11 @@ type RepoFileRow struct {
 }
 
 // LastRepoFiles reads, for each of the account's repositories that has one,
-// the .kritik.yaml its last review with a context pack read, keyed by
+// the .kritika.yaml its last review with a context pack read, keyed by
 // repository id.
 func LastRepoFiles(ctx context.Context, tx pgx.Tx) (map[string]RepoFileRow, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT DISTINCT ON (p.repository_id) p.repository_id, r.id, c.base_sha, c.repo_files ->> '.kritik.yaml'
+		SELECT DISTINCT ON (p.repository_id) p.repository_id, r.id, c.base_sha, c.repo_files ->> '.kritika.yaml'
 		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
 		JOIN runner_runs rr ON rr.review_id = r.id JOIN context_packs c ON c.runner_run_id = rr.id
 		ORDER BY p.repository_id, c.created_at DESC`)
@@ -429,12 +429,12 @@ func LastRepoFiles(ctx context.Context, tx pgx.Tx) (map[string]RepoFileRow, erro
 	return out, nil
 }
 
-// LastRepoFile reads the .kritik.yaml the repository's last review with a
+// LastRepoFile reads the .kritika.yaml the repository's last review with a
 // context pack read; ErrNotFound when no review has one yet.
 func LastRepoFile(ctx context.Context, tx pgx.Tx, repositoryID string) (RepoFileRow, error) {
 	var row RepoFileRow
 	err := tx.QueryRow(ctx, `
-		SELECT r.id, c.base_sha, c.repo_files ->> '.kritik.yaml'
+		SELECT r.id, c.base_sha, c.repo_files ->> '.kritika.yaml'
 		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
 		JOIN runner_runs rr ON rr.review_id = r.id JOIN context_packs c ON c.runner_run_id = rr.id
 		WHERE p.repository_id = $1 ORDER BY c.created_at DESC LIMIT 1`, repositoryID).Scan(&row.ReviewID, &row.Commit, &row.Doc)

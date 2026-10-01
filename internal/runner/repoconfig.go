@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 
-	"github.com/home-operations/kritik/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/repoconfig"
 )
 
 // repoFiles reads the repository files the spec names from the merge-base

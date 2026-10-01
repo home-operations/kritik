@@ -52,7 +52,7 @@ const (
 // Names the sandbox adds to every template. Templates may not use
 // identifiers with this prefix, so they cannot call the guards themselves.
 const (
-	reservedPrefix = "__kritik_"
+	reservedPrefix = "__kritika_"
 	iterName       = reservedPrefix + "iter"
 	templateName   = "template"
 )

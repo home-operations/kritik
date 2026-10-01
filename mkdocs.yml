@@ -1,10 +1,10 @@
-# MkDocs configuration for the kritik documentation site.
+# MkDocs configuration for the kritika documentation site.
 #
 # The site source is the docs/ tree. Page order and grouping live in `nav:`
 # below; any docs/*.md not in `nav:` builds but is unlinked (--strict warns).
 #
 # `mise run docs` (scripts/build-docs.sh) builds this site with --strict and
-# publishes it to https://kritik.home-operations.com/ (served at the root, so
+# publishes it to https://kritika.home-operations.com/ (served at the root, so
 # site_url ends "/"). The domain is pinned by the CNAME file build-docs.sh
 # writes into the artifact; the repo's Settings -> Pages custom-domain field
 # must match.
@@ -12,13 +12,13 @@
 # The MkDocs + Material toolchain is pinned in pyproject.toml / uv.lock and
 # run via uv (see .mise/config.toml). Material bundles mermaid.js and the
 # admonition styling, so there are no committed preprocessor assets.
-site_name: kritik
+site_name: kritika
 site_description: Repository-aware AI pull request review for GitHub.
-site_author: kritik contributors
-site_url: https://kritik.home-operations.com/
+site_author: kritika contributors
+site_url: https://kritika.home-operations.com/
 
-repo_url: https://github.com/home-operations/kritik
-repo_name: home-operations/kritik
+repo_url: https://github.com/home-operations/kritika
+repo_name: home-operations/kritika
 edit_uri: edit/main/docs/
 
 docs_dir: docs
@@ -108,7 +108,7 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.snippets:
       # base_path = repo root so docs can pull real files from the tree via
-      # `--8<-- "charts/kritik/values.yaml"`. check_paths fails on a missing file.
+      # `--8<-- "charts/kritika/values.yaml"`. check_paths fails on a missing file.
       base_path:
         - "."
       check_paths: true
@@ -124,7 +124,7 @@ nav:
       - Configuration file: configuration.md
       - Repository settings: repository-config.md
       - Helm chart values: chart-values.md
-  - Using kritik:
+  - Using kritika:
       - Dashboard: dashboard.md
       - Metrics: metrics.md
   - Development: development.md

@@ -2,7 +2,7 @@
 /bench/results/
 /cover.out
 *.out
-/kritik
+/kritika
 /dist/
 
 # Everything that touches a private cluster: manifests, kubeconfig

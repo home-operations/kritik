@@ -21,7 +21,7 @@
   $effect(() => live((e) => e.account === slug && e.kind === 'followup', () => void paged.load()));
 </script>
 
-<svelte:head><title>Follow-ups · {slug} · kritik</title></svelte:head>
+<svelte:head><title>Follow-ups · {slug} · kritika</title></svelte:head>
 
 <main class="page">
   <div class="page-inner">

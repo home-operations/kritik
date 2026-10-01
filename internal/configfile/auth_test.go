@@ -13,11 +13,11 @@ const authMinimal = `auth:
   oidc:
     name: Zitadel
     issuer: https://sso.example.com
-    clientId: kritik
+    clientId: kritika
     clientSecret: { env: TEST_WEBHOOK_SECRET }
     scopes: [openid, profile, email]
     rolesClaim: "urn:zitadel:iam:org:project:1:roles"
-    roleMappingExpr: '"kritik-admin" in roles ? "admin" : ("kritik-user" in roles ? "member" : "")'
+    roleMappingExpr: '"kritika-admin" in roles ? "admin" : ("kritika-user" in roles ? "member" : "")'
     defaultRole: none
   github:
     clientId: Iv1.x
@@ -75,7 +75,7 @@ func TestAuthRejects(t *testing.T) {
 		{"issuer on github", rep("    clientId: Iv1.x\n", "    clientId: Iv1.x\n    issuer: https://x.example.com\n"), "auth.github.issuer is for oidc"},
 		{"scopes on github", rep("    clientId: Iv1.x\n", "    clientId: Iv1.x\n    scopes: [read:user]\n"), "auth.github.scopes is for oidc"},
 		{"github enterprise host", rep("    clientId: Iv1.x\n", "    clientId: Iv1.x\n    host: github.example.com\n"), "field host not found"},
-		{"no client id", rep("clientId: kritik", "clientId: \"\""), "auth.oidc.clientId is required"},
+		{"no client id", rep("clientId: kritika", "clientId: \"\""), "auth.oidc.clientId is required"},
 		{"unset secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ env: TEST_NOPE }"), "auth.oidc.clientSecret"},
 		{"empty secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ env: TEST_EMPTY }"), "auth.oidc.clientSecret resolved to an empty value"},
 		{"sealed secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ sealed: abc }"), "field sealed not found"},
@@ -102,22 +102,22 @@ func TestAuthRejects(t *testing.T) {
 	}
 }
 
-// TestAuthEnv: every KRITIK_AUTH_* variable sets its key over the file's,
+// TestAuthEnv: every KRITIKA_AUTH_* variable sets its key over the file's,
 // a secret's variable carries the value, and a variable naming no key is
 // refused.
 func TestAuthEnv(t *testing.T) {
 	authEnv(t)
 	for k, v := range map[string]string{
-		"KRITIK_AUTH_SESSION_TTL":              "1h",
-		"KRITIK_AUTH_ADMIN_USER":               "root",
-		"KRITIK_AUTH_ADMIN_PASSWORD":           "from-env",
-		"KRITIK_AUTH_OIDC_NAME":                "SSO",
-		"KRITIK_AUTH_OIDC_ISSUER":              "https://idp.example.com",
-		"KRITIK_AUTH_OIDC_SCOPES":              "openid, groups ,",
-		"KRITIK_AUTH_OIDC_DEFAULT_ROLE":        "member",
-		"KRITIK_AUTH_GITHUB_CLIENT_ID":         "Iv1.env",
-		"KRITIK_AUTH_GITHUB_CLIENT_SECRET":     "gh-secret\n",
-		"KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR": `"org-1" in orgs ? "admin" : ""`,
+		"KRITIKA_AUTH_SESSION_TTL":              "1h",
+		"KRITIKA_AUTH_ADMIN_USER":               "root",
+		"KRITIKA_AUTH_ADMIN_PASSWORD":           "from-env",
+		"KRITIKA_AUTH_OIDC_NAME":                "SSO",
+		"KRITIKA_AUTH_OIDC_ISSUER":              "https://idp.example.com",
+		"KRITIKA_AUTH_OIDC_SCOPES":              "openid, groups ,",
+		"KRITIKA_AUTH_OIDC_DEFAULT_ROLE":        "member",
+		"KRITIKA_AUTH_GITHUB_CLIENT_ID":         "Iv1.env",
+		"KRITIKA_AUTH_GITHUB_CLIENT_SECRET":     "gh-secret\n",
+		"KRITIKA_AUTH_GITHUB_ROLE_MAPPING_EXPR": `"org-1" in orgs ? "admin" : ""`,
 	} {
 		t.Setenv(k, v)
 	}
@@ -133,7 +133,7 @@ func TestAuthEnv(t *testing.T) {
 	case a.SessionTTL != time.Hour, user != "root", pw.Value() != "from-env":
 		t.Fatalf("session or admin = %s %q", a.SessionTTL, user)
 	case oidc.Label() != "SSO", oidc.Issuer != "https://idp.example.com", strings.Join(oidc.Scopes, " ") != "openid groups",
-		!oidc.MembersByDefault(), oidc.ClientID != "kritik":
+		!oidc.MembersByDefault(), oidc.ClientID != "kritika":
 		t.Fatalf("oidc = %+v", oidc)
 	case gh.ClientID != "Iv1.env", gh.ClientSecretValue().Value() != "gh-secret", gh.RoleMappingExpr != `"org-1" in orgs ? "admin" : ""`:
 		t.Fatalf("github = %+v", gh)
@@ -145,8 +145,8 @@ func TestAuthEnv(t *testing.T) {
 	}
 
 	t.Run("without a file block", func(t *testing.T) {
-		t.Setenv("KRITIK_AUTH_OIDC_CLIENT_ID", "kritik")
-		t.Setenv("KRITIK_AUTH_OIDC_CLIENT_SECRET", "oidc-secret")
+		t.Setenv("KRITIKA_AUTH_OIDC_CLIENT_ID", "kritika")
+		t.Setenv("KRITIKA_AUTH_OIDC_CLIENT_SECRET", "oidc-secret")
 		f, err := loadBytes(t, []byte(minimal))
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
@@ -156,15 +156,15 @@ func TestAuthEnv(t *testing.T) {
 		}
 	})
 	t.Run("a secret from a file", func(t *testing.T) {
-		t.Setenv("KRITIK_AUTH_GITHUB_CLIENT_SECRET_FILE", "/var/run/secrets/gh-secret")
+		t.Setenv("KRITIKA_AUTH_GITHUB_CLIENT_SECRET_FILE", "/var/run/secrets/gh-secret")
 		if _, err := loadBytes(t, []byte(minimal)); err == nil ||
-			!strings.Contains(err.Error(), "KRITIK_AUTH_GITHUB_CLIENT_SECRET_FILE names no auth setting") {
+			!strings.Contains(err.Error(), "KRITIKA_AUTH_GITHUB_CLIENT_SECRET_FILE names no auth setting") {
 			t.Fatalf("Parse = %v", err)
 		}
 	})
 	t.Run("a variable naming nothing", func(t *testing.T) {
-		t.Setenv("KRITIK_AUTH_OIDC_ISUER", "x")
-		if _, err := loadBytes(t, []byte(minimal)); err == nil || !strings.Contains(err.Error(), "KRITIK_AUTH_OIDC_ISUER names no auth setting") {
+		t.Setenv("KRITIKA_AUTH_OIDC_ISUER", "x")
+		if _, err := loadBytes(t, []byte(minimal)); err == nil || !strings.Contains(err.Error(), "KRITIKA_AUTH_OIDC_ISUER names no auth setting") {
 			t.Fatalf("Parse = %v", err)
 		}
 	})

@@ -1,6 +1,6 @@
-# Docs-site Python toolchain for kritik.
+# Docs-site Python toolchain for kritika.
 #
-# kritik is a Go module; this pyproject exists only to pin the MkDocs +
+# kritika is a Go module; this pyproject exists only to pin the MkDocs +
 # Material toolchain that builds the docs under docs/. Go tooling ignores
 # it. It is not an installable package (tool.uv.package = false): `uv run
 # mkdocs …` resolves the pinned tools below from the committed uv.lock.
@@ -9,9 +9,9 @@
 # are reproducible in CI (mise installs uv; uv installs from uv.lock). Bump
 # a tool here, then `uv lock` and commit the refreshed uv.lock.
 [project]
-name = "kritik-docs"
+name = "kritika-docs"
 version = "0.0.0"
-description = "MkDocs Material toolchain for the kritik documentation site."
+description = "MkDocs Material toolchain for the kritika documentation site."
 requires-python = ">=3.11"
 dependencies = [
     # Material brings mkdocs and a bundled mermaid.js.

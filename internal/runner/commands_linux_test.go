@@ -11,13 +11,13 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/agent"
+	"github.com/home-operations/kritika/internal/agent"
 )
 
 // environHelper names the role the test binary plays when TestHideEnviron
 // runs it again: "keep" or "hide" start a reader and report what it saw,
 // "read" is the reader.
-const environHelper = "KRITIK_TEST_ENVIRON"
+const environHelper = "KRITIKA_TEST_ENVIRON"
 
 // TestHideEnviron checks the property the run tool relies on: once the
 // runner is non-dumpable, a child with the runner's uid cannot read the
@@ -90,7 +90,7 @@ func TestCommandTool(t *testing.T) {
 		if !strings.Contains(def.Description, "leaves out ignored paths") || !strings.Contains(def.Description, "after 5s") {
 			t.Fatalf("description = %q", def.Description)
 		}
-		scratch, err := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "kritik-run-*"))
+		scratch, err := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "kritika-run-*"))
 		if err != nil || len(scratch) != 1 {
 			t.Fatalf("scratch = %v, %v", scratch, err)
 		}

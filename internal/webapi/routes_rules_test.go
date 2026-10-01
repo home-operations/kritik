@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestCollectRules(t *testing.T) {
@@ -22,11 +22,11 @@ func TestCollectRules(t *testing.T) {
 			name: "alpha/one", settings: settings(schema), sources: account,
 			doc: []byte("context:\n  - path: ARCHITECTURE.md\n    description: how it fits\n"),
 		},
-		// A .kritik.yaml that does not parse is ignored, as a review ignores it.
+		// A .kritika.yaml that does not parse is ignored, as a review ignores it.
 		{name: "alpha/three", settings: settings(), sources: map[string]configfile.Source{}, doc: []byte("rules: {")},
 	}
 	// Written rules: the account's text and file rules, one alpha/one's
-	// entry replaces, and a text and a file rule its .kritik.yaml adds.
+	// entry replaces, and a text and a file rule its .kritika.yaml adds.
 	wrap := configfile.Rule{ID: "wrap-errors", Rule: "Wrap errors."}
 	style := configfile.Rule{ID: "style", File: "docs/review.md"}
 	own := configfile.Rule{ID: "wrap-errors", Rule: "Wrap errors here too.", Paths: []string{"**/*.go"}}

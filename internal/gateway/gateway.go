@@ -18,13 +18,13 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/adapter"
-	"github.com/home-operations/kritik/internal/agent"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/metrics"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/adapter"
+	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // ModelName is the name a review's runner calls its model by; the gateway

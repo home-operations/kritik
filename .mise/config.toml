@@ -65,25 +65,25 @@ git diff --exit-code go.mod go.sum
 """
 
 [tasks.test-integration]
-description = "Run the Postgres integration suite against a throwaway VectorChord container with the three kritik roles"
+description = "Run the Postgres integration suite against a throwaway VectorChord container with the three kritika roles"
 run = """
 set -e
 cid=$(docker run -d --rm -e POSTGRES_PASSWORD=super -p 127.0.0.1::5432 ghcr.io/tensorchord/vchord-postgres:pg18-v1.1.1 -c shared_preload_libraries=vchord)
 trap 'docker stop "$cid" >/dev/null' EXIT
 port=$(docker port "$cid" 5432/tcp | head -1 | sed 's/.*://')
 for i in $(seq 1 30); do docker exec "$cid" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break; sleep 1; done
-docker exec "$cid" psql -U postgres -v ON_ERROR_STOP=1 -q -c "CREATE ROLE kritik LOGIN PASSWORD 'owner'" -c "CREATE ROLE kritik_app LOGIN PASSWORD 'app'" -c "CREATE ROLE kritik_runner LOGIN PASSWORD 'runner'" -c "CREATE DATABASE kritik OWNER kritik"
-docker exec "$cid" psql -U postgres -d kritik -v ON_ERROR_STOP=1 -q -c "CREATE EXTENSION vchord CASCADE" -c "GRANT ALL ON SCHEMA public TO kritik" -c "GRANT USAGE ON SCHEMA public TO kritik_app, kritik_runner"
-export KRITIK_TEST_SUPER_URL="postgres://postgres:super@127.0.0.1:${port}/kritik?sslmode=disable"
-export KRITIK_TEST_OWNER_URL="postgres://kritik:owner@127.0.0.1:${port}/kritik?sslmode=disable"
-export KRITIK_TEST_APP_URL="postgres://kritik_app:app@127.0.0.1:${port}/kritik?sslmode=disable"
-export KRITIK_TEST_RUNNER_URL="postgres://kritik_runner:runner@127.0.0.1:${port}/kritik?sslmode=disable"
+docker exec "$cid" psql -U postgres -v ON_ERROR_STOP=1 -q -c "CREATE ROLE kritika LOGIN PASSWORD 'owner'" -c "CREATE ROLE kritika_app LOGIN PASSWORD 'app'" -c "CREATE ROLE kritika_runner LOGIN PASSWORD 'runner'" -c "CREATE DATABASE kritika OWNER kritika"
+docker exec "$cid" psql -U postgres -d kritika -v ON_ERROR_STOP=1 -q -c "CREATE EXTENSION vchord CASCADE" -c "GRANT ALL ON SCHEMA public TO kritika" -c "GRANT USAGE ON SCHEMA public TO kritika_app, kritika_runner"
+export KRITIKA_TEST_SUPER_URL="postgres://postgres:super@127.0.0.1:${port}/kritika?sslmode=disable"
+export KRITIKA_TEST_OWNER_URL="postgres://kritika:owner@127.0.0.1:${port}/kritika?sslmode=disable"
+export KRITIKA_TEST_APP_URL="postgres://kritika_app:app@127.0.0.1:${port}/kritika?sslmode=disable"
+export KRITIKA_TEST_RUNNER_URL="postgres://kritika_runner:runner@127.0.0.1:${port}/kritika?sslmode=disable"
 # -p 1: every integration package shares the one database, so packages must not run concurrently.
 go test -race -tags integration -count=1 -p 1 ./... "$@"
 """
 
 [tasks.bench]
-description = "Run the evaluation harness against a live model (OPENROUTER_API_KEY; KRITIK_BENCH_DRY=1 runs it without model calls)"
+description = "Run the evaluation harness against a live model (OPENROUTER_API_KEY; KRITIKA_BENCH_DRY=1 runs it without model calls)"
 run = "go test -tags bench -run TestBench -v -count=1 -timeout 60m ./bench/"
 
 [tasks.bench-mine]
@@ -95,33 +95,33 @@ go run -tags bench ./bench/cmd/mine -repo ../konflate -name home-operations/konf
 
 [tasks.helm-lint]
 description = "Lint the Helm chart"
-run = "helm lint charts/kritik --values charts/kritik/ci/lint-values.yaml"
+run = "helm lint charts/kritika --values charts/kritika/ci/lint-values.yaml"
 
 [tasks.helm-unittest]
 description = "Run helm-unittest template tests (needs the helm-unittest plugin)"
-run = "helm unittest charts/kritik"
+run = "helm unittest charts/kritika"
 
 [tasks.helm-template]
 description = "Render the Helm chart with the lint values"
-run = "helm template kritik charts/kritik --values charts/kritik/ci/lint-values.yaml"
+run = "helm template kritika charts/kritika --values charts/kritika/ci/lint-values.yaml"
 
 [tasks.generate]
 description = "Regenerate the chart's committed README and values.schema.json from Chart.yaml and values.yaml"
 run = """
 helm-docs --chart-search-root=charts --log-level=warn
-helm-schema --chart-search-root charts/kritik --skip-auto-generation required,additionalProperties --append-newline
+helm-schema --chart-search-root charts/kritika --skip-auto-generation required,additionalProperties --append-newline
 """
 
 [tasks.generate-check]
 description = "Fail if the generated chart README or schema are stale (CI gate)"
 run = """
 mise run generate
-git diff --exit-code charts/kritik/README.md charts/kritik/values.schema.json
+git diff --exit-code charts/kritika/README.md charts/kritika/values.schema.json
 """
 
 [tasks.dev]
-description = "Run kritik serve locally"
-run = "go run ./cmd/kritik serve"
+description = "Run kritika serve locally"
+run = "go run ./cmd/kritika serve"
 
 # --- Cluster development loop -------------------------------------------
 # Everything cluster-specific lives in the gitignored .private/ folder: the
@@ -129,21 +129,21 @@ run = "go run ./cmd/kritik serve"
 # (.private/mise.local.toml, symlinked from the repo root as .mise.local.toml;
 # a local file inside .mise/ would make `mise lock` prune this file's lock)
 # and the last pushed image references (.private/image and
-# .private/runner-image). KRITIK_DEV_REGISTRY, set in the same file, names a
+# .private/runner-image). KRITIKA_DEV_REGISTRY, set in the same file, names a
 # registry the cluster pulls from to push to instead of ttl.sh.
 
 [tasks.image-push]
-description = "Build the image and its -tools runner image and push both to KRITIK_DEV_REGISTRY, or to ttl.sh (24h TTL) when unset, under a fresh name; the references land in .private/image and .private/runner-image"
+description = "Build the image and its -tools runner image and push both to KRITIKA_DEV_REGISTRY, or to ttl.sh (24h TTL) when unset, under a fresh name; the references land in .private/image and .private/runner-image"
 run = """
 set -e
 suffix="$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-if [ -n "${KRITIK_DEV_REGISTRY:-}" ]; then
-  image="$KRITIK_DEV_REGISTRY/kritik:dev-$suffix"
-  runner="$KRITIK_DEV_REGISTRY/kritik:dev-$suffix-tools"
+if [ -n "${KRITIKA_DEV_REGISTRY:-}" ]; then
+  image="$KRITIKA_DEV_REGISTRY/kritika:dev-$suffix"
+  runner="$KRITIKA_DEV_REGISTRY/kritika:dev-$suffix-tools"
 else
   # ttl.sh takes the TTL as the tag.
-  image="ttl.sh/kritik-$(id -un)-$suffix:24h"
-  runner="ttl.sh/kritik-$(id -un)-$suffix-tools:24h"
+  image="ttl.sh/kritika-$(id -un)-$suffix:24h"
+  runner="ttl.sh/kritika-$(id -un)-$suffix-tools:24h"
 fi
 build() {
   docker build --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" --build-arg NODE_VERSION="$(mise config get -f .mise/config.toml tools.node)" --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" "$@" .
@@ -159,15 +159,15 @@ echo "pushed $image and $runner"
 """
 
 [tasks.deploy]
-description = "Push fresh images, apply .private/deploy (namespace, database, secrets) and install the chart into kritik"
+description = "Push fresh images, apply .private/deploy (namespace, database, secrets) and install the chart into kritika"
 depends = ["image-push"]
 run = """
 set -e
 : "${KUBECONFIG:?set KUBECONFIG to the target cluster (see .private/mise.local.toml)}"
 image="$(cat .private/image)"
-kubectl apply --server-side --field-manager kritik-dev -k .private/deploy
+kubectl apply --server-side --field-manager kritika-dev -k .private/deploy
 # Split at the last colon: a registry host may carry a port.
-helm upgrade --install kritik charts/kritik -n kritik --values .private/values.yaml \
+helm upgrade --install kritika charts/kritika -n kritika --values .private/values.yaml \
   --set image.repository="${image%:*}" --set image.tag="${image##*:}" \
   --set runner.image="$(cat .private/runner-image)" --wait --timeout 10m
 """
@@ -176,15 +176,15 @@ helm upgrade --install kritik charts/kritik -n kritik --values .private/values.y
 description = "Uninstall the chart and delete everything .private/deploy created, database and namespace included"
 run = """
 : "${KUBECONFIG:?set KUBECONFIG to the target cluster (see .private/mise.local.toml)}"
-helm uninstall kritik -n kritik --ignore-not-found --wait 2>/dev/null || true
+helm uninstall kritika -n kritika --ignore-not-found --wait 2>/dev/null || true
 kubectl delete -k .private/deploy --ignore-not-found --wait=true
 """
 
 [tasks.logs]
-description = "Follow the kritik deployment's logs in the cluster"
+description = "Follow the kritika deployment's logs in the cluster"
 run = """
 : "${KUBECONFIG:?set KUBECONFIG to the target cluster (see .private/mise.local.toml)}"
-kubectl -n kritik logs deployment/kritik --follow
+kubectl -n kritika logs deployment/kritika --follow
 """
 
 [tasks.ui-install]

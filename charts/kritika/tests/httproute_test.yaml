@@ -1,0 +1,43 @@
+suite: httpRoute
+templates:
+  - httproute.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: is not rendered by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: routes web.url to the public Service, which serves the webhooks and the dashboard
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs:
+        - name: gateway
+          namespace: network
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: apiVersion
+          value: gateway.networking.k8s.io/v1
+      - equal:
+          path: spec.parentRefs[0].name
+          value: gateway
+      - equal:
+          path: spec.hostnames
+          value: [kritika.example.com]
+      - equal:
+          path: spec.rules
+          value:
+            - matches: [{ path: { type: PathPrefix, value: / } }]
+              backendRefs: [{ name: RELEASE-NAME-kritika, port: 8080 }]
+
+  - it: keeps web.url's path
+    set:
+      httpRoute.enabled: true
+      web.url: https://kritika.example.com/kritika
+    asserts:
+      - equal:
+          path: spec.rules[0].matches[0].path.value
+          value: /kritika

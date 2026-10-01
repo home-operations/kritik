@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/forge"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/forge"
 )
 
 // appConnection is a connection of an App with clientID, its private
@@ -30,7 +30,7 @@ apps:
 
 func TestBuildForgeRefusesAnotherForge(t *testing.T) {
 	if _, err := BuildForge(t.Context(), &configfile.Connection{Name: "x", Forge: "gitlab"}, "acme/widgets"); err == nil {
-		t.Fatal("BuildForge built a client for a forge kritik does not support")
+		t.Fatal("BuildForge built a client for a forge kritika does not support")
 	}
 }
 

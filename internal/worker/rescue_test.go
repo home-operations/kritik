@@ -10,7 +10,7 @@ import (
 
 	"github.com/riverqueue/river/rivertype"
 
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // fakeRescueStore hands out abandoned jobs and orphaned runs and records

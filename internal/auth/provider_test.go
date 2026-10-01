@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // githubAuth is an auth block with a GitHub sign-in whose client id is
@@ -27,7 +27,7 @@ func oidcAuth(issuer string) string {
 
 func TestForgeProviderURLs(t *testing.T) {
 	s, _ := testFile(t, githubAuth("cid")).Auth.SignInByType(configfile.SignInGitHub)
-	p, err := buildProvider(context.Background(), s, "https://kritik.example.com/auth/callback/github", http.DefaultClient, nil)
+	p, err := buildProvider(context.Background(), s, "https://kritika.example.com/auth/callback/github", http.DefaultClient, nil)
 	if err != nil {
 		t.Fatalf("buildProvider: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestForgeProviderURLs(t *testing.T) {
 	q := u.Query()
 	want := map[string]string{
 		"client_id": "cid", "state": "st", "response_type": "code", "scope": "read:user user:email read:org",
-		"redirect_uri":          "https://kritik.example.com/auth/callback/github",
+		"redirect_uri":          "https://kritika.example.com/auth/callback/github",
 		"code_challenge_method": "S256",
 	}
 	for k, v := range want {
@@ -60,9 +60,9 @@ func TestForgeProviderURLs(t *testing.T) {
 
 func TestRedirectURL(t *testing.T) {
 	tests := []struct{ web, want string }{
-		{"https://kritik.example.com", "https://kritik.example.com/auth/callback/gh"},
-		{"https://kritik.example.com/", "https://kritik.example.com/auth/callback/gh"},
-		{"https://example.com/kritik/", "https://example.com/kritik/auth/callback/gh"},
+		{"https://kritika.example.com", "https://kritika.example.com/auth/callback/gh"},
+		{"https://kritika.example.com/", "https://kritika.example.com/auth/callback/gh"},
+		{"https://example.com/kritika/", "https://example.com/kritika/auth/callback/gh"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.web, func(t *testing.T) {
@@ -76,7 +76,7 @@ func TestRedirectURL(t *testing.T) {
 
 func TestProvidersCacheRebuildsOnChange(t *testing.T) {
 	auth := testFile(t, githubAuth("one")).Auth
-	u, _ := url.Parse("https://kritik.example.com")
+	u, _ := url.Parse("https://kritika.example.com")
 	ps := newProviders(u, http.DefaultClient, nil)
 	a, _, err := ps.get(context.Background(), auth, "github")
 	if err != nil {
@@ -117,7 +117,7 @@ func TestProvidersRemembersFailedDiscovery(t *testing.T) {
 	}))
 	defer srv.Close()
 	now := time.Now()
-	u, _ := url.Parse("https://kritik.example.com")
+	u, _ := url.Parse("https://kritika.example.com")
 	ps := newProviders(u, srv.Client(), func() time.Time { return now })
 	auth := testFile(t, oidcAuth(srv.URL)).Auth
 	for range 3 {
@@ -142,7 +142,7 @@ func TestProvidersDoesNotRememberAnEndedRequest(t *testing.T) {
 		http.Error(w, "down", http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
-	u, _ := url.Parse("https://kritik.example.com")
+	u, _ := url.Parse("https://kritika.example.com")
 	ps := newProviders(u, srv.Client(), nil)
 	auth := testFile(t, oidcAuth(srv.URL)).Auth
 	canceled, cancel := context.WithCancel(context.Background())
@@ -169,7 +169,7 @@ func TestProvidersRemembersASlowIssuer(t *testing.T) {
 	defer close(release)
 	client := srv.Client()
 	client.Timeout = 50 * time.Millisecond
-	u, _ := url.Parse("https://kritik.example.com")
+	u, _ := url.Parse("https://kritika.example.com")
 	ps := newProviders(u, client, nil)
 	auth := testFile(t, oidcAuth(srv.URL)).Auth
 	if _, _, err := ps.get(context.Background(), auth, "oidc"); !errors.Is(err, context.DeadlineExceeded) {

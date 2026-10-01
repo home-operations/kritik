@@ -39,11 +39,11 @@ test.describe('router: parse()', () => {
   });
 
   test('#/a/github/acme/repos/<owner>/<repo>', async ({ page }) => {
-    await expectRoute(page, '#/a/github/acme/repos/kritik/kritik', {
+    await expectRoute(page, '#/a/github/acme/repos/kritika/kritika', {
       name: 'repo',
       slug: 'github/acme',
-      owner: 'kritik',
-      repo: 'kritik',
+      owner: 'kritika',
+      repo: 'kritika',
     });
   });
 
@@ -52,17 +52,17 @@ test.describe('router: parse()', () => {
   });
 
   test('#/a/github/acme/pulls/<owner>/<repo>/<n> parses the number as a JS number', async ({ page }) => {
-    await expectRoute(page, '#/a/github/acme/pulls/kritik/kritik/42', {
+    await expectRoute(page, '#/a/github/acme/pulls/kritika/kritika/42', {
       name: 'pull',
       slug: 'github/acme',
-      owner: 'kritik',
-      repo: 'kritik',
+      owner: 'kritika',
+      repo: 'kritika',
       number: 42,
     });
   });
 
   test('a non-numeric pull number falls back to the account overview', async ({ page }) => {
-    await expectRoute(page, '#/a/github/acme/pulls/kritik/kritik/abc', { name: 'account', slug: 'github/acme' });
+    await expectRoute(page, '#/a/github/acme/pulls/kritika/kritika/abc', { name: 'account', slug: 'github/acme' });
   });
 
   test('#/a/github/acme/reviews/<id> with no tab', async ({ page }) => {

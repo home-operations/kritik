@@ -31,22 +31,22 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
 
-	"github.com/home-operations/kritik/internal/adapter"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/configfile/configfiletest"
-	"github.com/home-operations/kritik/internal/executor"
-	"github.com/home-operations/kritik/internal/forge"
-	"github.com/home-operations/kritik/internal/gateway"
-	"github.com/home-operations/kritik/internal/gitfetch"
-	"github.com/home-operations/kritik/internal/ingest"
-	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/jobtimeout"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/runner"
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/store/storetest"
-	"github.com/home-operations/kritik/internal/webhook"
+	"github.com/home-operations/kritika/internal/adapter"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/gateway"
+	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/ingest"
+	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/webhook"
 )
 
 const configYAML = `
@@ -163,7 +163,7 @@ func (l *localForge) FileAt(_ context.Context, _, _, ref, path string) ([]byte, 
 
 func (l *localForge) CloneURL(string, string) string                   { return l.dir }
 func (l *localForge) GitToken(context.Context, string) (string, error) { return "", nil }
-func (l *localForge) BotLogin(context.Context) (string, error)         { return "kritik[bot]", nil }
+func (l *localForge) BotLogin(context.Context) (string, error)         { return "kritika[bot]", nil }
 
 func (l *localForge) BranchTip(context.Context, string, string, string) (string, string, error) {
 	l.mu.Lock()
@@ -228,7 +228,7 @@ func (l *localForge) CreateComment(_ context.Context, _, _ string, _ int, body s
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.addComment("kritik[bot]", body), nil
+	return l.addComment("kritika[bot]", body), nil
 }
 
 // commentBase puts fake comment ids where GitHub's are: beyond int32.
@@ -437,7 +437,7 @@ func testRepo(t *testing.T) (dir, base, head string) {
 	// head (e.g. EnqueueReindex's BranchTip-resolved commit) still satisfies
 	// upload-pack's allowReachableSHA1InWant check instead of failing "not
 	// our ref".
-	if _, err := r.CreateTag("kritik-head", plumbing.NewHash(head), nil); err != nil {
+	if _, err := r.CreateTag("kritika-head", plumbing.NewHash(head), nil); err != nil {
 		t.Fatal(err)
 	}
 	return dir, base, head
@@ -450,7 +450,7 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 	comments, inline, forgeStatus := lf.comments, lf.inline, lf.status
 	lf.mu.Unlock()
 	sticky := comments[commentBase+1]
-	if len(comments) != 1 || !strings.HasPrefix(sticky, "<!-- kritik:pr-1 -->\n") ||
+	if len(comments) != 1 || !strings.HasPrefix(sticky, "<!-- kritika:pr-1 -->\n") ||
 		!strings.Contains(sticky, "- **[important]** [`main.go:1`](local://onedr0p/home-ops/") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/1#r1001)") ||
 		!strings.Contains(sticky, "**1 finding** · 1 important\n") || strings.Contains(sticky, "What's good") ||
@@ -459,7 +459,7 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 		t.Fatalf("comments = %v", comments)
 	}
 	if len(inline) != 1 || inline[0].Line != 1 || !strings.Contains(inline[0].Body, "**[important]** **first line**") ||
-		!strings.Contains(inline[0].Body, "do this") || forgeStatus != "success: kritik: 1 finding(s)" {
+		!strings.Contains(inline[0].Body, "do this") || forgeStatus != "success: kritika: 1 finding(s)" {
 		t.Fatalf("inline = %+v status = %q", inline, forgeStatus)
 	}
 	fc.mu.Lock()
@@ -877,11 +877,11 @@ func checkFollowUps(
 ) {
 	t.Helper()
 	mention, waitFollowUp, lastComment := followUpHelpers(ctx, t, st, svc, lf, req, accountID)
-	id := mention("onedr0p", "@kritik why is b here?")
+	id := mention("onedr0p", "@kritika why is b here?")
 	if status, reason := waitFollowUp(id); status != "answered" {
 		t.Fatalf("status = %s (%s), want answered", status, reason)
 	}
-	if _, body := lastComment(); !strings.Contains(body, "Because b is new.") || !strings.Contains(body, "kritik follow-up with reviewer") {
+	if _, body := lastComment(); !strings.Contains(body, "Because b is new.") || !strings.Contains(body, "kritika follow-up with reviewer") {
 		t.Fatalf("reply = %q", body)
 	}
 	checkFollowUpTranscript(ctx, t, st, accountID, id, fc)
@@ -892,7 +892,7 @@ func checkFollowUps(
 	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
 		t.Fatalf("follow-up system prompt lacks AGENTS.md:\n%s", system)
 	}
-	for _, want := range []string{"Thread, oldest first", "<!-- kritik:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritik posted", "main.go:1 [important] first line: look here", "<description>\nAdds b.\n</description>"} {
+	for _, want := range []string{"Thread, oldest first", "<!-- kritika:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritika posted", "main.go:1 [important] first line: look here", "<description>\nAdds b.\n</description>"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("follow-up prompt missing %q:\n%s", want, prompt)
 		}
@@ -905,7 +905,7 @@ func checkFollowUps(
 		t.Fatalf("reply id %d not recorded as a bigint", replyID)
 	}
 
-	id = mention("outsider", "@kritik and me?")
+	id = mention("outsider", "@kritika and me?")
 	if status, reason := waitFollowUp(id); status != "ignored" || !strings.Contains(reason, "write is required") {
 		t.Fatalf("outsider: status = %s (%s)", status, reason)
 	}
@@ -925,7 +925,7 @@ func checkFollowUps(
 	if err != nil {
 		t.Fatal(err)
 	}
-	id = mention("onedr0p", "@kritik again?")
+	id = mention("onedr0p", "@kritika again?")
 	if status, _ := waitFollowUp(id); status != "limited" {
 		t.Fatalf("status = %s, want limited", status)
 	}
@@ -933,7 +933,7 @@ func checkFollowUps(
 	if !strings.Contains(body, "limit of follow-ups") {
 		t.Fatalf("limit notice not posted, last comment = %q", body)
 	}
-	id = mention("onedr0p", "@kritik and again?")
+	id = mention("onedr0p", "@kritika and again?")
 	status, _ := waitFollowUp(id)
 	after, _ := lastComment()
 	// The mention itself is one comment; no notice follows it.
@@ -942,7 +942,7 @@ func checkFollowUps(
 	}
 }
 
-// checkReviewRequest: "@kritik review" queues a review of the head for
+// checkReviewRequest: "@kritika review" queues a review of the head for
 // someone with write access, and replies; anyone else is ignored as for a
 // question. It runs last, as the review it queues changes pull request 1's
 // last review, and first clears the thread's follow-ups, so the hourly
@@ -982,11 +982,11 @@ func checkReviewRequest(
 	}
 	before, _ := manual()
 
-	id := mention("outsider", "@kritik review")
+	id := mention("outsider", "@kritika review")
 	if status, reason := waitFollowUp(id); status != "ignored" || !strings.Contains(reason, "write is required") {
 		t.Fatalf("outsider's review request: status = %s (%s)", status, reason)
 	}
-	id = mention("onedr0p", "Can you take another look? @kritik review")
+	id = mention("onedr0p", "Can you take another look? @kritika review")
 	if status, reason := waitFollowUp(id); status != "answered" || reason != "review requested" {
 		t.Fatalf("review request: status = %s (%s)", status, reason)
 	}
@@ -1002,10 +1002,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
 	appStore := storetest.Open(t)
-	if _, err := appStore.EnsureIndexSchema(ctx, "kritik_app", "fake-embed", 8); err != nil {
+	if _, err := appStore.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
-	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIK_TEST_RUNNER_URL"), Logger: logger})
+	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL"), Logger: logger})
 	if err != nil {
 		t.Fatalf("Open runner: %v", err)
 	}
@@ -1015,7 +1015,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	// Long enough that masking it out of the transcripts leaves the prompts
 	// they are checked against intact.
 	t.Setenv("TEST_SECRET", "test-provider-key")
-	t.Setenv("KRITIK_RUNNER_DEADLINE", "60s")
+	t.Setenv("KRITIKA_RUNNER_DEADLINE", "60s")
 	file := configfiletest.Load(t, configYAML)
 	if err := appStore.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
@@ -1163,7 +1163,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkSnoozeWhileSlotsHeld(ctx, t, appStore, dir, base, lf, dispatchPR, account.ID(), "test/reviewer")
 	})
 
-	t.Run("the merge-base .kritik.yaml skips, instructs and templates", func(t *testing.T) {
+	t.Run("the merge-base .kritika.yaml skips, instructs and templates", func(t *testing.T) {
 		checkRepoConfig(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, account.ID())
 	})
 
@@ -1195,7 +1195,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkActions(ctx, t, appStore, insertOnly, exec, dispatch, waitReview, dir, base, head, account.ID(), repoID, lf)
 	})
 
-	t.Run("a maintainer's @kritik review queues a review", func(t *testing.T) {
+	t.Run("a maintainer's @kritika review queues a review", func(t *testing.T) {
 		checkReviewRequest(ctx, t, appStore, svc, lf, ingest.Request{File: file, Account: account}, account.ID())
 	})
 }
@@ -1348,7 +1348,7 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 	}
 }
 
-// checkRepoConfig commits a .kritik.yaml with ignore globs, rules, one of
+// checkRepoConfig commits a .kritika.yaml with ignore globs, rules, one of
 // them a file, and a summary template onto a new merge base, then reviews
 // pull requests against it.
 func checkRepoConfig(
@@ -1380,26 +1380,26 @@ func checkRepoConfig(
 		}
 		return h.String()
 	}
-	cfgBase := commit("configure kritik", map[string]string{
-		".kritik.yaml": `filterExpr: '!pr.labels.exists(l, l.name == "skip-review")'
-ignore: ["docs/**", ".kritik.yaml"]
+	cfgBase := commit("configure kritika", map[string]string{
+		".kritika.yaml": `filterExpr: '!pr.labels.exists(l, l.name == "skip-review")'
+ignore: ["docs/**", ".kritika.yaml"]
 rules:
-  - { id: todos, file: .kritik/rules.md }
+  - { id: todos, file: .kritika/rules.md }
   - { id: no-panics, rule: Return an error rather than panic. }
   - { id: sql-placeholders, rule: Use query placeholders., paths: ["**/*.sql"] }
   - { id: into-main, rule: Keep main releasable., whenExpr: 'pr.baseRef == "main"' }
   - { id: renovate, rule: Say what the update breaks., whenExpr: 'pr.headRef.startsWith("renovate/")' }
 comments:
-  summaryTemplate: ".kritik/summary.md.tmpl"
+  summaryTemplate: ".kritika/summary.md.tmpl"
 approve: true
 `,
-		".kritik/rules.md":        "Flag every TODO left in code.\n",
-		".kritik/summary.md.tmpl": "Custom summary for #{{ .Number }}: {{ .Result.Summary.Take }}\n",
-		"AGENTS.md":               "Prefer table-driven tests.\n",
-		"web/AGENTS.md":           "Never inline styles.\n",
+		".kritika/rules.md":        "Flag every TODO left in code.\n",
+		".kritika/summary.md.tmpl": "Custom summary for #{{ .Number }}: {{ .Result.Summary.Take }}\n",
+		"AGENTS.md":                "Prefer table-driven tests.\n",
+		"web/AGENTS.md":            "Never inline styles.\n",
 	})
 	docsHead := commit("docs", map[string]string{"docs/guide.md": "# Guide\n"})
-	loosened := commit("drop the ignore globs", map[string]string{".kritik.yaml": "rules: []\n"})
+	loosened := commit("drop the ignore globs", map[string]string{".kritika.yaml": "rules: []\n"})
 	lf.setBase(cfgBase)
 
 	fc.mu.Lock()
@@ -1422,7 +1422,7 @@ approve: true
 		lf.mu.Lock()
 		forgeStatus := lf.status
 		lf.mu.Unlock()
-		if forgeStatus != "success: kritik: skipped (only ignored paths changed)" || skipReason(head) != "only_skipped_paths" {
+		if forgeStatus != "success: kritika: skipped (only ignored paths changed)" || skipReason(head) != "only_skipped_paths" {
 			t.Fatalf("status = %q reason = %q", forgeStatus, skipReason(head))
 		}
 	}
@@ -1452,7 +1452,7 @@ approve: true
 	// Only the rules whose paths the change matches and whose whenExpr the
 	// pull request meets, the file rule under its own heading.
 	if !strings.Contains(system, "\n\n- no-panics: Return an error rather than panic.\n- into-main: Keep main releasable.\n\n"+
-		"### todos (.kritik/rules.md)\n\nFlag every TODO left in code.\n\n## Repository instructions") ||
+		"### todos (.kritika/rules.md)\n\nFlag every TODO left in code.\n\n## Repository instructions") ||
 		strings.Contains(system, "sql-placeholders") || strings.Contains(system, "- renovate:") {
 		t.Fatalf("system prompt does not carry the rules:\n%s", system)
 	}
@@ -1470,12 +1470,12 @@ approve: true
 	lf.mu.Lock()
 	var sticky string
 	for _, body := range lf.comments {
-		if strings.HasPrefix(body, "<!-- kritik:pr-3 -->\n") {
+		if strings.HasPrefix(body, "<!-- kritika:pr-3 -->\n") {
 			sticky = body
 		}
 	}
 	lf.mu.Unlock()
-	if !strings.HasPrefix(sticky, "<!-- kritik:pr-3 -->\nCustom summary for #3: Changes main.go.") {
+	if !strings.HasPrefix(sticky, "<!-- kritika:pr-3 -->\nCustom summary for #3: Changes main.go.") {
 		t.Fatalf("sticky comment for PR 3 = %q", sticky)
 	}
 	checkWithdrawn(t, lf)
@@ -1489,13 +1489,13 @@ approve: true
 	lf.mu.Lock()
 	forgeStatus := lf.status
 	lf.mu.Unlock()
-	if forgeStatus != "success: kritik: skipped (filtered by .kritik.yaml)" {
+	if forgeStatus != "success: kritika: skipped (filtered by .kritika.yaml)" {
 		t.Fatalf("status = %q", forgeStatus)
 	}
 }
 
 // checkWithdrawn asserts what a review with an important finding does
-// where the merge-base .kritik.yaml opted in to approvals: no approval,
+// where the merge-base .kritika.yaml opted in to approvals: no approval,
 // and any standing one withdrawn.
 func checkWithdrawn(t *testing.T, lf *localForge) {
 	t.Helper()
@@ -1653,7 +1653,7 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 	lf.mu.Lock()
 	var sticky string
 	for _, body := range lf.comments {
-		if strings.HasPrefix(body, "<!-- kritik:pr-5 -->\n") {
+		if strings.HasPrefix(body, "<!-- kritika:pr-5 -->\n") {
 			sticky = body
 		}
 	}
@@ -1968,8 +1968,8 @@ func checkRequestCancelRunning(
 	lf.mu.Lock()
 	status := lf.status
 	lf.mu.Unlock()
-	if status != "error: kritik: review canceled" {
-		t.Fatalf("commit status = %q, want %q", status, "error: kritik: review canceled")
+	if status != "error: kritika: review canceled" {
+		t.Fatalf("commit status = %q, want %q", status, "error: kritika: review canceled")
 	}
 
 	var requestedAt sql.NullTime
@@ -2138,7 +2138,7 @@ func (g *gateExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 	g.mu.Unlock()
 	if spec.Job.Kind == runner.KindIndex && beforeIndex != nil {
 		if err := beforeIndex(); err != nil {
-			return executor.Result{JobName: "kritik-run-failed", Err: err}
+			return executor.Result{JobName: "kritika-run-failed", Err: err}
 		}
 	}
 	if spec.Job.Kind != runner.KindReview {
@@ -2156,7 +2156,7 @@ func (g *gateExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 	case <-ctx.Done():
 	}
 	<-ctx.Done()
-	return executor.Result{JobName: "kritik-run-blocked", Err: context.Cause(ctx)}
+	return executor.Result{JobName: "kritika-run-blocked", Err: context.Cause(ctx)}
 }
 
 func allowSHAFetch(t *testing.T, r *git.Repository) {
@@ -2236,8 +2236,8 @@ func checkJobEnded(
 		if n := countReviewsByStatus(ctx, t, appStore, accountID, head, "running"); n != 0 {
 			t.Fatalf("running reviews for %s = %d, want 0", head, n)
 		}
-		if got := lf.lastStatus(); got != "error: kritik: review timed out" {
-			t.Fatalf("commit status = %q, want error: kritik: review timed out", got)
+		if got := lf.lastStatus(); got != "error: kritika: review timed out" {
+			t.Fatalf("commit status = %q, want error: kritika: review timed out", got)
 		}
 	})
 
@@ -2353,7 +2353,7 @@ func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "test-provider-key")
-	t.Setenv("KRITIK_RUNNER_DEADLINE", "60s")
+	t.Setenv("KRITIKA_RUNNER_DEADLINE", "60s")
 	file := configfiletest.Load(t, configYAML)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)

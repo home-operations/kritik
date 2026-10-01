@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/transcript"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/transcript"
 )
 
 // pullFollowups bounds the follow-ups a pull request's detail lists.

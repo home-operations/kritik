@@ -42,7 +42,7 @@ func Starting() http.Handler {
 		w.Header().Set("Retry-After", strconv.Itoa(int(startingRetry/time.Second)))
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			http.Error(w, "kritik is starting: waiting for the database", http.StatusServiceUnavailable)
+			http.Error(w, "kritika is starting: waiting for the database", http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -61,7 +61,7 @@ const startingPage = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="5">
-<title>kritik is starting</title>
+<title>kritika is starting</title>
 <style>
 body { font: 16px/1.5 system-ui, sans-serif; color: #1f2328; background: #fff; margin: 0; }
 body { display: grid; place-items: center; min-height: 100vh; }
@@ -72,7 +72,7 @@ p { margin: 0.25rem 0; opacity: 0.8; }
 </head>
 <body>
 <main>
-<h1>kritik is starting</h1>
+<h1>kritika is starting</h1>
 <p>Waiting for the database. This page reloads on its own.</p>
 </main>
 </body>

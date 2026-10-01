@@ -43,12 +43,12 @@ func (f *fakeRunStore) MarkRunSecretsSwept(_ context.Context, accountID string, 
 }
 
 func runSecret(runID string) *corev1.Secret {
-	return &corev1.Secret{Name: jobName(runID), Namespace: "kritik"}
+	return &corev1.Secret{Name: jobName(runID), Namespace: "kritika"}
 }
 
 func secretNames(t *testing.T, client *fake.Clientset) []string {
 	t.Helper()
-	list, err := client.CoreV1().Secrets("kritik").List(t.Context(), metav1.ListOptions{})
+	list, err := client.CoreV1().Secrets("kritika").List(t.Context(), metav1.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestDeleteRunSecret(t *testing.T) {
 }
 
 func TestSweepRunSecrets(t *testing.T) {
-	client := fake.NewClientset(runSecret(runA), runSecret(runC), &corev1.Secret{Name: "kritik-postgres-runner", Namespace: "kritik"})
+	client := fake.NewClientset(runSecret(runA), runSecret(runC), &corev1.Secret{Name: "kritika-postgres-runner", Namespace: "kritika"})
 	st := &fakeRunStore{
 		pending: map[string][]string{"alpha": {runA, runB}, "beta": {runC}},
 		marked:  map[string][]string{},
@@ -111,7 +111,7 @@ func TestSweepRunSecrets(t *testing.T) {
 	if want := map[string][]string{"alpha": {runA, runB}, "beta": {runC}}; !maps.EqualFunc(st.marked, want, slices.Equal) {
 		t.Fatalf("marked = %v, want %v", st.marked, want)
 	}
-	if got, want := secretNames(t, client), []string{"kritik-postgres-runner"}; !slices.Equal(got, want) {
+	if got, want := secretNames(t, client), []string{"kritika-postgres-runner"}; !slices.Equal(got, want) {
 		t.Fatalf("left = %v, want %v", got, want)
 	}
 }
@@ -136,7 +136,7 @@ func TestSweepRunSecretsMarksOnlyDeleted(t *testing.T) {
 
 func TestDeleteRun(t *testing.T) {
 	runJob := func(runID string) *batchv1.Job {
-		return &batchv1.Job{Name: jobName(runID), Namespace: "kritik"}
+		return &batchv1.Job{Name: jobName(runID), Namespace: "kritika"}
 	}
 	tests := []struct {
 		name    string
@@ -156,12 +156,12 @@ func TestDeleteRun(t *testing.T) {
 					return true, nil, tt.failure
 				})
 			}
-			k := &Kube{Client: client, Namespace: "kritik"}
+			k := &Kube{Client: client, Namespace: "kritika"}
 			err := k.DeleteRun(t.Context(), runA)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("DeleteRun() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			list, err := client.BatchV1().Jobs("kritik").List(t.Context(), metav1.ListOptions{})
+			list, err := client.BatchV1().Jobs("kritika").List(t.Context(), metav1.ListOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 const canonicalBody = "Hello, World!"

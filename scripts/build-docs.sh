@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-docs.sh — assemble the kritik documentation site.
+# build-docs.sh — assemble the kritika documentation site.
 #
 # Produces one directory ready for GitHub Pages:
 #   site/    ← MkDocs Material user docs (site root)
@@ -19,7 +19,7 @@ OUT="site"
 # Custom domain the site is served from. Written into the artifact as a CNAME
 # so the domain survives every deploy (must match Settings -> Pages custom
 # domain).
-SITE_DOMAIN="kritik.home-operations.com"
+SITE_DOMAIN="kritika.home-operations.com"
 
 echo "==> checking snippet SECTION references (--strict only guards file paths)"
 # pymdownx.snippets' check_paths fails the build on a missing FILE, but a

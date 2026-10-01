@@ -13,8 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/home-operations/kritik/internal/repoconfig"
-	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 const (
@@ -27,7 +27,7 @@ func reviewSpec() Spec {
 		Version: SpecVersion, Kind: KindReview, RunID: "run-1", CloneURL: "https://forge.example.com/acme/widgets.git",
 		Head: shaA, Base: shaB, Ignore: []string{"vendor/**"}, RepoFiles: []string{"docs/rules.md"},
 		Agent: &AgentLimits{MaxSteps: 30, MaxToolOutputBytes: 16 << 10, MaxTokens: 200000},
-		Model: &ModelEndpoint{GatewayURL: "http://kritik-gateway:8082", Model: "review"},
+		Model: &ModelEndpoint{GatewayURL: "http://kritika-gateway:8082", Model: "review"},
 		Prompt: &Prompt{
 			Repository: "acme/widgets",
 			PullRequest: repoconfig.PullRequest{Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main", State: "open",
@@ -110,7 +110,7 @@ func TestSpecRoundTripKeepsAgentFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Agent.MaxSteps != 30 || got.Model.Model != "review" ||
-		got.Model.GatewayURL != "http://kritik-gateway:8082" || got.Prompt.PullRequest.Title != "Add b" || len(got.Prompt.Prior) != 1 {
+		got.Model.GatewayURL != "http://kritika-gateway:8082" || got.Prompt.PullRequest.Title != "Add b" || len(got.Prompt.Prior) != 1 {
 		t.Fatalf("round trip = %+v %+v %+v", got, got.Agent, got.Model)
 	}
 }

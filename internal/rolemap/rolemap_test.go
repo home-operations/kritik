@@ -40,11 +40,11 @@ func TestEval(t *testing.T) {
 		vars map[string]any
 		want Result
 	}{
-		{"an admin by role", OIDC, `"kritik-admin" in roles ? "admin" : ("kritik-user" in roles ? "member" : "")`,
-			oidc("kritik-admin"), Result{Role: RoleAdmin}},
-		{"a member by role", OIDC, `"kritik-admin" in roles ? "admin" : ("kritik-user" in roles ? "member" : "")`,
-			oidc("kritik-user"), Result{Role: RoleMember}},
-		{"nobody", OIDC, `"kritik-admin" in roles ? "admin" : ""`, oidc("other"), Result{}},
+		{"an admin by role", OIDC, `"kritika-admin" in roles ? "admin" : ("kritika-user" in roles ? "member" : "")`,
+			oidc("kritika-admin"), Result{Role: RoleAdmin}},
+		{"a member by role", OIDC, `"kritika-admin" in roles ? "admin" : ("kritika-user" in roles ? "member" : "")`,
+			oidc("kritika-user"), Result{Role: RoleMember}},
+		{"nobody", OIDC, `"kritika-admin" in roles ? "admin" : ""`, oidc("other"), Result{}},
 		{"a claim", OIDC, `claims.sub == "x" ? "member" : ""`, oidc(), Result{Role: RoleMember}},
 		{"an admin by login", GitHub, `login == "user-1" ? "admin" : ""`, github("user-1"), Result{Role: RoleAdmin}},
 		{"accounts by map", GitHub, `{"github/Org-2": "member", "github/org-3": ""}`, github("x"),

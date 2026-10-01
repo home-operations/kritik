@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritika/internal/model"
 )
 
 // StoredRow is a model_calls row as read back. System and Tools are nil

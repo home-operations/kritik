@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/transcript"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/transcript"
 )
 
 // ModelCallKind is what made a model call; see transcript.Kind.
@@ -73,7 +73,7 @@ func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
 // lock on the run's transcript, so two steps recorded at once are recorded
 // one after the other rather than as deltas against the same state.
 func AgentState(ctx context.Context, tx pgx.Tx, runnerRunID string) (transcript.State, int, error) {
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('kritik-transcript:' || $1, 0))`, runnerRunID); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('kritika-transcript:' || $1, 0))`, runnerRunID); err != nil {
 		return transcript.State{}, 0, fmt.Errorf("store: lock transcript: %w", err)
 	}
 	var st transcript.State

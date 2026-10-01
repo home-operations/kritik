@@ -5,9 +5,9 @@ import (
 
 	"github.com/riverqueue/river"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/jobtimeout"
 )
 
 // Timeout implements river.Worker: the runner's deadline, which the

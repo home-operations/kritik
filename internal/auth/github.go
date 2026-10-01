@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // githubScopes read the profile, its verified emails and org memberships.

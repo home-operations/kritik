@@ -12,8 +12,8 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 
-	"github.com/home-operations/kritik/internal/chunk"
-	"github.com/home-operations/kritik/internal/textcut"
+	"github.com/home-operations/kritika/internal/chunk"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // Chunk is one staged piece of a file.

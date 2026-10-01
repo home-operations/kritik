@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 func testHandler(t *testing.T, webURL string, f *configfile.File) *Handler {
@@ -29,32 +29,32 @@ func testHandler(t *testing.T, webURL string, f *configfile.File) *Handler {
 }
 
 func TestSameOrigin(t *testing.T) {
-	h := testHandler(t, "https://Kritik.Example.com/dash/", nil)
+	h := testHandler(t, "https://Kritika.Example.com/dash/", nil)
 	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
 	tests := []struct {
-		name, method, xKritik, origin, fetchSite string
-		want                                     int
+		name, method, xKritika, origin, fetchSite string
+		want                                      int
 	}{
 		{"GET needs nothing", http.MethodGet, "", "", "", http.StatusTeapot},
 		{"HEAD needs nothing", http.MethodHead, "", "https://evil.example", "cross-site", http.StatusTeapot},
-		{"POST with header and matching origin", http.MethodPost, "1", "https://kritik.example.com", "", http.StatusTeapot},
+		{"POST with header and matching origin", http.MethodPost, "1", "https://kritika.example.com", "", http.StatusTeapot},
 		{"POST with header and same-origin fetch site", http.MethodPost, "1", "", "same-origin", http.StatusTeapot},
-		{"DELETE with header and origin", http.MethodDelete, "1", "https://kritik.example.com", "same-origin", http.StatusTeapot},
-		{"POST without header", http.MethodPost, "", "https://kritik.example.com", "same-origin", http.StatusForbidden},
-		{"POST with wrong header value", http.MethodPost, "true", "https://kritik.example.com", "", http.StatusForbidden},
+		{"DELETE with header and origin", http.MethodDelete, "1", "https://kritika.example.com", "same-origin", http.StatusTeapot},
+		{"POST without header", http.MethodPost, "", "https://kritika.example.com", "same-origin", http.StatusForbidden},
+		{"POST with wrong header value", http.MethodPost, "true", "https://kritika.example.com", "", http.StatusForbidden},
 		{"POST with header but no origin evidence", http.MethodPost, "1", "", "", http.StatusForbidden},
 		{"POST cross-site origin", http.MethodPost, "1", "https://evil.example", "", http.StatusForbidden},
-		{"POST origin on another scheme", http.MethodPost, "1", "http://kritik.example.com", "", http.StatusForbidden},
-		{"POST origin on another port", http.MethodPost, "1", "https://kritik.example.com:8443", "", http.StatusForbidden},
+		{"POST origin on another scheme", http.MethodPost, "1", "http://kritika.example.com", "", http.StatusForbidden},
+		{"POST origin on another port", http.MethodPost, "1", "https://kritika.example.com:8443", "", http.StatusForbidden},
 		{"PUT same-site is not same-origin", http.MethodPut, "1", "", "same-site", http.StatusForbidden},
 		{"PATCH cross-site fetch with a forged-looking origin", http.MethodPatch, "1", "null", "cross-site", http.StatusForbidden},
-		{"POST origin with the default port spelled out", http.MethodPost, "1", "https://KRITIK.example.com:443", "", http.StatusTeapot},
+		{"POST origin with the default port spelled out", http.MethodPost, "1", "https://KRITIKA.example.com:443", "", http.StatusTeapot},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest(tt.method, "https://kritik.example.com/dash/api/x", nil)
-			if tt.xKritik != "" {
-				r.Header.Set("X-Kritik", tt.xKritik)
+			r := httptest.NewRequest(tt.method, "https://kritika.example.com/dash/api/x", nil)
+			if tt.xKritika != "" {
+				r.Header.Set("X-Kritika", tt.xKritika)
 			}
 			if tt.origin != "" {
 				r.Header.Set("Origin", tt.origin)
@@ -88,7 +88,7 @@ func assertCode(t *testing.T, w *httptest.ResponseRecorder, code string) {
 }
 
 func TestRequirePrincipal(t *testing.T) {
-	h := testHandler(t, "https://kritik.example.com", nil)
+	h := testHandler(t, "https://kritika.example.com", nil)
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if PrincipalFrom(r.Context()) == nil {
 			t.Fatal("next reached without a principal")
@@ -195,16 +195,16 @@ func TestHonoured(t *testing.T) {
 
 func TestNormalizeOrigin(t *testing.T) {
 	tests := []struct{ in, want string }{
-		{"https://Kritik.Example.com", "https://kritik.example.com"},
-		{"https://kritik.example.com:443", "https://kritik.example.com"},
-		{"http://kritik.example.com:80", "http://kritik.example.com"},
-		{"http://kritik.example.com:443", "http://kritik.example.com:443"},
-		{"https://kritik.example.com:8443", "https://kritik.example.com:8443"},
+		{"https://Kritika.Example.com", "https://kritika.example.com"},
+		{"https://kritika.example.com:443", "https://kritika.example.com"},
+		{"http://kritika.example.com:80", "http://kritika.example.com"},
+		{"http://kritika.example.com:443", "http://kritika.example.com:443"},
+		{"https://kritika.example.com:8443", "https://kritika.example.com:8443"},
 		{"https://[::1]:443", "https://[::1]"},
 		{"https://[::1]:8443", "https://[::1]:8443"},
 		{"null", ""},
 		{"", ""},
-		{"ftp://kritik.example.com", ""},
+		{"ftp://kritika.example.com", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
@@ -216,7 +216,7 @@ func TestNormalizeOrigin(t *testing.T) {
 }
 
 func TestNewRejectsBadWebURL(t *testing.T) {
-	for _, raw := range []string{"", "kritik.example.com", "/dash/", "ftp://kritik.example.com", "https://", "https://:443/", "mailto:ops@example.com"} {
+	for _, raw := range []string{"", "kritika.example.com", "/dash/", "ftp://kritika.example.com", "https://", "https://:443/", "mailto:ops@example.com"} {
 		t.Run(raw, func(t *testing.T) {
 			u, err := url.Parse(raw)
 			if err != nil {
@@ -235,7 +235,7 @@ func TestNewRejectsBadWebURL(t *testing.T) {
 func TestSameOriginEmptyOriginNeverMatches(t *testing.T) {
 	h := &Handler{}
 	r := httptest.NewRequest(http.MethodPost, "/api/x", nil)
-	r.Header.Set("X-Kritik", "1")
+	r.Header.Set("X-Kritika", "1")
 	w := httptest.NewRecorder()
 	h.SameOrigin(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("reached next") })).ServeHTTP(w, r)
 	if w.Code != http.StatusForbidden {

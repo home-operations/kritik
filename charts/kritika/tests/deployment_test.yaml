@@ -1,0 +1,348 @@
+suite: deployment
+templates:
+  - deployment.tpl
+values:
+  - ../ci/lint-values.yaml
+# The runner tools tests need a cluster that mounts image volumes.
+capabilities:
+  majorVersion: 1
+  minorVersion: 33
+tests:
+  - it: renders one Deployment of kritika serve by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_RUNTIME_CLASS
+          any: true
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kritika
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: server
+      - equal:
+          path: spec.replicas
+          value: 2
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [serve]
+      # The tag floats with the release-please-stamped appVersion.
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: ^ghcr\.io/home-operations/kritika:\d+\.\d+\.\d+$
+
+  - it: carries a checksum of the rendered configuration file, so a change rolls the pods
+    asserts:
+      - matchRegex:
+          path: spec.template.metadata.annotations["checksum/config"]
+          pattern: ^[0-9a-f]{64}$
+  - it: leaves an existing ConfigMap's restarts to the deployment, keeping pod annotations
+    set:
+      config.existingConfigMap: kritika-config
+      podAnnotations:
+        example.com/owner: ops
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/config"]
+      - equal:
+          path: spec.template.metadata.annotations["example.com/owner"]
+          value: ops
+
+  - it: sets each secretEnv variable from its Secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GITHUB_APP_PRIVATE_KEY
+            valueFrom:
+              secretKeyRef:
+                name: kritika-bot
+                key: private-key.pem
+
+  - it: gates the liveness and readiness probes on a startup probe, which can be turned off
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.failureThreshold
+          value: 30
+
+  - it: renders no startup probe when it is set to null
+    set:
+      startupProbe: null
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].startupProbe
+
+  - it: wires the three database secrets and the runner settings
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: kritika-postgres-app
+                key: uri
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_DATABASE_OWNER_URL
+            valueFrom:
+              secretKeyRef:
+                name: kritika-postgres-credentials
+                key: uri
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_DATABASE_SECRET
+            value: kritika-postgres-runner
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_SERVICE_ACCOUNT
+            value: RELEASE-NAME-kritika-runner
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_EXECUTOR
+            value: kubernetes
+
+  - it: mounts the config read-only
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/kritika
+            readOnly: true
+
+  - it: refuses to render without the owner secret
+    set:
+      database.owner.existingSecret: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: database.owner.existingSecret is required
+
+  - it: prefers the digest over the tag when set
+    set:
+      image.digest: sha256:deadbeef
+      image.tag: ignored
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/home-operations/kritika@sha256:deadbeef
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_IMAGE
+            value: ghcr.io/home-operations/kritika@sha256:deadbeef
+
+  - it: leaves how kritika runs to its defaults unless values set it
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_POLL_INTERVAL
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_TOOLS
+          any: true
+
+  - it: renders how kritika runs into its environment
+    set:
+      config.pollInterval: 0s
+      config.onboardWindow: 8
+      config.transcriptRetention: 48h
+      config.diffRetention: 72h
+      runner.deadline: 20m
+      runner.resources: { limits: { memory: 1Gi } }
+      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_POLL_INTERVAL, value: 0s }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_ONBOARD_WINDOW, value: "8" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_TRANSCRIPT_RETENTION, value: 48h }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_DIFF_RETENTION, value: 72h }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_RUNNER_DEADLINE, value: 20m }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_RUNNER_RESOURCES, value: '{"limits":{"memory":"1Gi"}}' }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            {
+              name: KRITIKA_RUNNER_TOOLS,
+              value: '[{"image":"registry.example/helm:3","name":"helm"}]',
+            }
+
+  - it: hands runners a RuntimeClass only when one is set
+    set:
+      runner.runtimeClassName: gvisor
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_RUNTIME_CLASS
+            value: gvisor
+
+  - it: hands kritika serve the dashboard's URL, and one public port for the webhooks and the dashboard
+    set:
+      web.url: https://dash.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_WEB_URL
+            value: https://dash.example.com
+      - equal:
+          path: spec.template.spec.containers[0].ports
+          value:
+            - { name: http, containerPort: 8080, protocol: TCP }
+            - { name: metrics, containerPort: 8081, protocol: TCP }
+            - { name: gateway, containerPort: 8082, protocol: TCP }
+
+  - it: hands kritika serve the gateway's in-cluster address, which it requires
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_GATEWAY_URL
+            value: http://RELEASE-NAME-kritika-gateway.NAMESPACE.svc.cluster.local:8082
+
+  - it: fails without web.url
+    set:
+      web.url: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: web.url is required
+
+  - it: renders each auth value set as its KRITIKA_AUTH_ variable, and no other
+    set:
+      auth.sessionTTL: 24h
+      auth.oidc.issuer: https://idp.example
+      auth.oidc.scopes: [openid, email]
+      auth.github.clientSecretSecret.name: kritika-github
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_AUTH_SESSION_TTL, value: 24h }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_AUTH_OIDC_SCOPES, value: "openid,email" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_AUTH_GITHUB_CLIENT_SECRET
+            valueFrom: { secretKeyRef: { name: kritika-github, key: client-secret } }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_AUTH_ADMIN_PASSWORD
+            valueFrom: { secretKeyRef: { name: kritika-auth, key: password } }
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_AUTH_OIDC_NAME }
+          any: true
+
+  - it: runs without a configuration file
+    set:
+      config.file: null
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_CONFIG_FILE }
+          any: true
+      - isNullOrEmpty:
+          path: spec.template.spec.volumes
+
+  - it: fails when web.url is not an http(s) URL
+    set:
+      web.url: ftp://dash.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: web.url must be an http\(s\) URL
+
+  - it: rolls one replica at a time by default
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: RollingUpdate
+            rollingUpdate:
+              maxUnavailable: 0
+              maxSurge: 1
+
+  - it: renders an overridden strategy, with the rolling update's fields nulled out
+    set:
+      strategy:
+        type: Recreate
+        rollingUpdate: null
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: Recreate
+
+  - it: spreads the replicas across nodes by default, resolving the selector through tpl
+    asserts:
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].topologyKey
+          value: kubernetes.io/hostname
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable
+          value: ScheduleAnyway
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels
+          value:
+            app.kubernetes.io/name: kritika
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: leaves scheduling to Kubernetes when the spread is emptied
+    set:
+      topologySpreadConstraints: []
+    asserts:
+      - notExists:
+          path: spec.template.spec.topologySpreadConstraints
+
+  - it: refuses runner tools on a cluster older than 1.33, which cannot mount them
+    set:
+      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
+    capabilities:
+      majorVersion: 1
+      minorVersion: 32
+    asserts:
+      - failedTemplate:
+          errorPattern: runner.tools needs Kubernetes 1.33 or newer
+
+  - it: renders runner tools on a cluster that mounts image volumes
+    set:
+      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
+    capabilities:
+      majorVersion: 1
+      minorVersion: 33
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            {
+              name: KRITIKA_RUNNER_TOOLS,
+              value: '[{"image":"registry.example/helm:3","name":"helm"}]',
+            }

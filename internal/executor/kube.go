@@ -21,7 +21,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/home-operations/kritik/internal/runner"
+	"github.com/home-operations/kritika/internal/runner"
 )
 
 // runnerRole names a runner pod's container, and its component and role
@@ -36,12 +36,12 @@ const noProxy = "localhost,127.0.0.1"
 type Kube struct {
 	Client    kubernetes.Interface
 	Namespace string
-	// Image is the kritik image the Job runs, normally the worker's own.
+	// Image is the kritika image the Job runs, normally the worker's own.
 	Image string
 	// ServiceAccount is the permissionless runner service account.
 	ServiceAccount string
 	// DatabaseSecret and DatabaseSecretKey reference the Secret holding the
-	// runner role's DSN, injected as KRITIK_DATABASE_URL.
+	// runner role's DSN, injected as KRITIKA_DATABASE_URL.
 	DatabaseSecret, DatabaseSecretKey string
 	// GatewayURL is the egress gateway the pod is handed as its HTTPS_PROXY
 	// and HTTP_PROXY: with the runner network policy allowing nothing else,
@@ -297,7 +297,7 @@ const (
 // The run's job document is mounted read-only from its Secret at
 // specDir/specFile.
 const (
-	specDir  = "/var/run/kritik"
+	specDir  = "/var/run/kritika"
 	specFile = "spec.json"
 )
 
@@ -305,11 +305,11 @@ const (
 // image's rather than extending it, so the tool directories go in front of
 // imagePath, the PATH both runner images set.
 const (
-	toolsDir  = "/opt/kritik/tools"
+	toolsDir  = "/opt/kritika/tools"
 	imagePath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
 
-func jobName(runID string) string { return "kritik-run-" + runID[:8] }
+func jobName(runID string) string { return "kritika-run-" + runID[:8] }
 
 // gatewayHost is the host of a gateway URL config has already checked.
 func gatewayHost(raw string) string {
@@ -325,10 +325,10 @@ func gatewayHost(raw string) string {
 // slash, which an owner/repo name does.
 func runnerLabels(spec Spec) map[string]string {
 	l := map[string]string{
-		"app.kubernetes.io/name": "kritik", "app.kubernetes.io/component": runnerRole, "kritik.home-operations.com/role": runnerRole,
+		"app.kubernetes.io/name": "kritika", "app.kubernetes.io/component": runnerRole, "kritika.home-operations.com/role": runnerRole,
 	}
 	for key, v := range spec.Labels {
-		l["kritik.home-operations.com/"+key] = strings.ReplaceAll(v, "/", "_")
+		l["kritika.home-operations.com/"+key] = strings.ReplaceAll(v, "/", "_")
 	}
 	return l
 }
@@ -362,7 +362,7 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 	labels := runnerLabels(spec)
 	annotations := map[string]string{}
 	for key, v := range spec.Annotations {
-		annotations["kritik.home-operations.com/"+key] = v
+		annotations["kritika.home-operations.com/"+key] = v
 	}
 	var backoff int32
 	secretRef := func(key string, optional bool) *corev1.EnvVarSource {
@@ -370,11 +370,11 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 			Name: name, Key: key, Optional: new(optional)}}
 	}
 	env := []corev1.EnvVar{
-		{Name: "KRITIK_RUN_SPEC_FILE", Value: specDir + "/" + specFile},
-		{Name: "KRITIK_GIT_TOKEN", ValueFrom: secretRef(secretKeyGitToken, false)},
-		{Name: "KRITIK_GATEWAY_TOKEN", ValueFrom: secretRef(secretKeyGatewayToken, true)},
-		{Name: "KRITIK_LOG_FORMAT", Value: "json"},
-		{Name: "KRITIK_DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		{Name: "KRITIKA_RUN_SPEC_FILE", Value: specDir + "/" + specFile},
+		{Name: "KRITIKA_GIT_TOKEN", ValueFrom: secretRef(secretKeyGitToken, false)},
+		{Name: "KRITIKA_GATEWAY_TOKEN", ValueFrom: secretRef(secretKeyGatewayToken, true)},
+		{Name: "KRITIKA_LOG_FORMAT", Value: "json"},
+		{Name: "KRITIKA_DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			Name: k.DatabaseSecret, Key: k.DatabaseSecretKey}}},
 	}
 	if k.GatewayURL != "" {

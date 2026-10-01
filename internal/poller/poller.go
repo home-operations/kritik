@@ -4,7 +4,7 @@
 // delivered them. Review jobs are unique on the head SHA, so a head the
 // webhook already enqueued is skipped as a duplicate, never reviewed twice.
 // An account's first poll records the pull requests last updated before
-// kritik knew the account as a baseline instead of reviewing them: no
+// kritika knew the account as a baseline instead of reviewing them: no
 // webhook for them was missed, and on a large install reviewing them all
 // would be one burst of model calls nobody asked for.
 package poller
@@ -19,12 +19,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/forge"
-	"github.com/home-operations/kritik/internal/ingest"
-	"github.com/home-operations/kritik/internal/metrics"
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/webhook"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/ingest"
+	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/webhook"
 )
 
 // Poller lists open pull requests on a schedule.
@@ -73,7 +73,7 @@ func (p *Poller) Run(ctx context.Context) {
 // SyncRepositories registers the repositories each running connection's
 // App reaches on the accounts it serves, as a webhook from each would, so
 // they are known, polled and indexed without one: an App installed before
-// kritik started sends no installation event. A connection whose listing
+// kritika started sends no installation event. A connection whose listing
 // fails, or takes longer than reachTimeout, is logged and left for the
 // next poll.
 func (p *Poller) SyncRepositories(ctx context.Context) {
@@ -225,7 +225,7 @@ const reactionWindow = 7 * 24 * time.Hour
 // open pull requests does not spend its API quota on them every poll.
 const reactionPulls = 30
 
-// pollReactions reads the 👍 and 👎 on the inline comments kritik posted
+// pollReactions reads the 👍 and 👎 on the inline comments kritika posted
 // on the account's recently reviewed pull requests, in the repositories
 // that run, into their findings. GitHub sends no webhook for a reaction.
 func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account, in *configfile.Connection, runs map[string]bool) error {

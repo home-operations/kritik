@@ -14,11 +14,11 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/configfile/configfiletest"
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/store/storetest"
-	"github.com/home-operations/kritik/internal/webhook"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/webhook"
 )
 
 // The store suite's TestMain resets the schema; this suite runs after it in
@@ -331,7 +331,7 @@ func TestDispatchStaleEvent(t *testing.T) {
 }
 
 // A new head is enqueued at once even where the repository settles: the
-// worker waits the settle time out, since .kritik.yaml may set it.
+// worker waits the settle time out, since .kritika.yaml may set it.
 // TestDispatchSkipsArchivedAndForks: nothing runs for an archived
 // repository, or a fork its own entry does not turn on, whatever the
 // account's settings say.

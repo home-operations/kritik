@@ -10,9 +10,9 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/configfile/configfiletest"
-	"github.com/home-operations/kritik/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
 // TestOnboarderKeepsToItsWindow checks the feeder queues onboarding jobs up

@@ -71,7 +71,7 @@ function scheduleReconnect(): void {
 async function probeSession(): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${basePath}/api/v1/me`, { headers: { 'X-Kritik': '1' }, credentials: 'same-origin' });
+    res = await fetch(`${basePath}/api/v1/me`, { headers: { 'X-Kritika': '1' }, credentials: 'same-origin' });
   } catch {
     return;
   }

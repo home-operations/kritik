@@ -1,4 +1,4 @@
-module github.com/home-operations/kritik
+module github.com/home-operations/kritika
 
 go 1.27.0
 

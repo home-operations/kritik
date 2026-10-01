@@ -9,8 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/auth"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/auth"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // registerAudit mounts the audit log reads.

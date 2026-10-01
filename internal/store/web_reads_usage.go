@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river/rivertype"
 
-	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritika/internal/jobs"
 )
 
 // UsageGroup is what a usage series is keyed by.

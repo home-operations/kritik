@@ -12,7 +12,7 @@ import (
 	"encoding/json"
 	"hash"
 
-	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritika/internal/model"
 )
 
 // Kind is what made a model call, as the model_calls table spells it.

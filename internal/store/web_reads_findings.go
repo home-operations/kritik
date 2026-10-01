@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // FindingStatus is whether a finding was addressed: a later completed

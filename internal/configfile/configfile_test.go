@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/jobtimeout"
-	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/model"
 )
 
 // fixture sets the variables testdata/full.yaml's secrets name and returns
@@ -171,7 +171,7 @@ func TestHashAndConnectionLookup(t *testing.T) {
 	}
 	// The environment overlay is part of the configuration, so a replica
 	// with another one does not hash alike.
-	t.Setenv("KRITIK_DEFAULTS_SETTLE", "90s")
+	t.Setenv("KRITIKA_DEFAULTS_SETTLE", "90s")
 	if g, err := load(t, fixture(t)); err != nil || g.Hash() == f.Hash() {
 		t.Fatalf("hash unchanged by an overlay variable: %v", err)
 	}
@@ -709,7 +709,7 @@ func TestRepositoryAgentReview(t *testing.T) {
       agent: { maxSteps: 12, maxToolOutputBytes: 4096, maxTokens: 250000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
       incremental: { maxDeltaFiles: 5 },
       rules: [{ id: style, file: docs/rules.md }], requireSuggestedFix: true,
-      comments: { summaryTemplate: .kritik/summary.md.tmpl, inlineTemplate: .kritik/inline.md.tmpl } }`)))
+      comments: { summaryTemplate: .kritika/summary.md.tmpl, inlineTemplate: .kritika/inline.md.tmpl } }`)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -720,10 +720,10 @@ func TestRepositoryAgentReview(t *testing.T) {
 			t.Fatalf("agent=%+v incremental=%+v", s.Agent, s.Incremental)
 		}
 		if !s.Review.RequireSuggestedFix || len(s.Review.Rules) != 1 || s.Review.Rules[0].File != "docs/rules.md" ||
-			s.Review.Templates.Summary != ".kritik/summary.md.tmpl" || s.Review.Templates.Inline != ".kritik/inline.md.tmpl" {
+			s.Review.Templates.Summary != ".kritika/summary.md.tmpl" || s.Review.Templates.Inline != ".kritika/inline.md.tmpl" {
 			t.Fatalf("review = %+v", s.Review)
 		}
-		if got := s.Review.Referenced(); strings.Join(got, ",") != "docs/rules.md,.kritik/summary.md.tmpl,.kritik/inline.md.tmpl" {
+		if got := s.Review.Referenced(); strings.Join(got, ",") != "docs/rules.md,.kritika/summary.md.tmpl,.kritika/inline.md.tmpl" {
 			t.Fatalf("referenced = %v", got)
 		}
 	})

@@ -6,12 +6,12 @@ import (
 
 	"github.com/riverqueue/river/rivertype"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/repoconfig"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/transcript"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/transcript"
 )
 
 // Every JSON shape the dashboard API returns. internal/web/src/lib/types.ts
@@ -98,7 +98,7 @@ type Connection struct {
 	HookPath    string           `json:"hookPath"`
 	// LastWebhookAt is when a webhook for the connection last passed
 	// signature verification, to the minute; null when none ever has, and
-	// kritik only polls it.
+	// kritika only polls it.
 	LastWebhookAt *time.Time `json:"lastWebhookAt"`
 	// LastUnsignedWebhookAt is when one last arrived with no signature, to
 	// the minute, which a GitHub App with no webhook secret sends; null when
@@ -150,7 +150,7 @@ type Repository struct {
 }
 
 // RepoSettings are a repository's settings as they resolve: the
-// admin's, or with the in-repo .kritik.yaml applied (RepoConfig). The
+// admin's, or with the in-repo .kritika.yaml applied (RepoConfig). The
 // blocks are the configuration's own resolved types; durations are served
 // in whole seconds.
 type RepoSettings struct {
@@ -166,7 +166,7 @@ type RepoSettings struct {
 	Limits        configfile.Limits        `json:"limits"`
 }
 
-// RepoConfig is the repository's .kritik.yaml as the last review that ran
+// RepoConfig is the repository's .kritika.yaml as the last review that ran
 // read it, applied to the admin's settings as they are now.
 type RepoConfig struct {
 	ReviewID string `json:"reviewId"`
@@ -204,8 +204,8 @@ type IndexRun struct {
 // RepoDetail is one repository, its settings and recent index runs.
 // Sources says, by the policy table's keys, which layer each of the
 // admin's settings comes from: the defaults, the account (its entry or the
-// repository's entry in it) or kritik's default. RepoConfig is null until a
-// review has read the repository's .kritik.yaml.
+// repository's entry in it) or kritika's default. RepoConfig is null until a
+// review has read the repository's .kritika.yaml.
 type RepoDetail struct {
 	Repository
 	Settings   RepoSettings                 `json:"settings"`
@@ -610,7 +610,7 @@ const (
 
 // RuleSource is where a rule is set: a layer of the configuration, as
 // configfile.Source names it, RuleFromEntry, an account's entry for the
-// repository, or RuleFromRepository, the repository's own .kritik.yaml.
+// repository, or RuleFromRepository, the repository's own .kritika.yaml.
 type RuleSource string
 
 // Rule sources beyond the configuration's layers.

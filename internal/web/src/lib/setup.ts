@@ -6,7 +6,7 @@ import type { AdminAccount, Connection, SetupStatus } from './types';
 export interface ChecklistItem {
   label: string;
   done: boolean;
-  // optional is a step kritik reviews without.
+  // optional is a step kritika reviews without.
   optional?: boolean;
   // how says what to do while the step is not done.
   how: string;
@@ -46,7 +46,7 @@ export function notReviewing(s: SetupStatus): string {
 }
 
 // unsignedWebhooks is whether c's App sends its webhooks with no signature,
-// which kritik refuses: its last unsigned delivery is newer than its last
+// which kritika refuses: its last unsigned delivery is newer than its last
 // verified one, so the App still has no webhook secret.
 export function unsignedWebhooks(c: Pick<Connection, 'lastWebhookAt' | 'lastUnsignedWebhookAt'>): boolean {
   if (!c.lastUnsignedWebhookAt) return false;

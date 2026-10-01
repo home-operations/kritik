@@ -40,7 +40,7 @@ func TestChatRoundTrip(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)
 	sent := StepRequest{
 		Model:  "review",
-		System: "You are kritik.",
+		System: "You are kritika.",
 		Messages: []Message{
 			{Role: RoleUser, Text: "Review this diff."},
 			{Role: RoleAssistant, Text: "Reading two files.", ToolCalls: []ToolCall{

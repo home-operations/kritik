@@ -2,7 +2,7 @@
 // over each account's reviews, repositories, usage and queue, and over the
 // running configuration, its setup and connections; re-runs, cancels,
 // reindexes and turning repositories on or off, with their audit log; and
-// the server-sent event stream that keeps the UI live. kritik serve runs
+// the server-sent event stream that keeps the UI live. kritika serve runs
 // it; internal/auth decides who a request acts as.
 package webapi
 
@@ -17,10 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritik/internal/auth"
-	"github.com/home-operations/kritik/internal/config"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/auth"
+	"github.com/home-operations/kritika/internal/config"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // Config wires a Server.

@@ -20,33 +20,33 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/home-operations/kritik/internal/auth"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/configfile/configfiletest"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/store/storetest"
-	"github.com/home-operations/kritik/internal/transcript"
+	"github.com/home-operations/kritika/internal/auth"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/transcript"
 )
 
 const integrationConfig = `
 auth:
   oidc:
     issuer: https://idp.example
-    clientId: kritik
-    clientSecret: { env: KRITIK_TEST_TOKEN }
-    roleMappingExpr: '"kritik-admin" in roles ? "admin" : ""'
+    clientId: kritika
+    clientSecret: { env: KRITIKA_TEST_TOKEN }
+    roleMappingExpr: '"kritika-admin" in roles ? "admin" : ""'
 apps:
   - name: webapi-a-bot
     accounts: [wa]
     clientId: Iv1.test
-    privateKey: { env: KRITIK_TEST_TOKEN }
-    webhookSecret: { env: KRITIK_TEST_TOKEN }
+    privateKey: { env: KRITIKA_TEST_TOKEN }
+    webhookSecret: { env: KRITIKA_TEST_TOKEN }
   - name: webapi-b-bot
     accounts: [wb]
     clientId: Iv1.test
-    privateKey: { env: KRITIK_TEST_TOKEN }
-    webhookSecret: { env: KRITIK_TEST_TOKEN }
+    privateKey: { env: KRITIKA_TEST_TOKEN }
+    webhookSecret: { env: KRITIKA_TEST_TOKEN }
 repositories:
   wa/one: {}
   wa/two: {}
@@ -81,18 +81,18 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
-	owner, err := pgxpool.New(ctx, storetest.Env(t, "KRITIK_TEST_OWNER_URL"))
+	owner, err := pgxpool.New(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(owner.Close)
-	t.Setenv("KRITIK_TEST_TOKEN", "tok")
+	t.Setenv("KRITIKA_TEST_TOKEN", "tok")
 	file := configfiletest.Load(t, integrationConfig)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	cur := configfile.NewCurrent(file)
-	webURL, _ := url.Parse("https://kritik.example")
+	webURL, _ := url.Parse("https://kritika.example")
 	h, err := auth.New(auth.Config{Store: st, Current: cur, WebURL: webURL, Logger: logger})
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
@@ -154,7 +154,7 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 	e.exec(`INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files)
 		VALUES ($1, $2, 'head7', 'base7', 'patch7', $3, '{a.go}',
 			'[{"stage":"definitions","path":"b.go","start_line":1,"end_line":2,"text":"func F() {}"}]',
-			jsonb_build_object('.kritik.yaml', $4::text))`, s.runID, s.accountID, "diff of "+slug,
+			jsonb_build_object('.kritika.yaml', $4::text))`, s.runID, s.accountID, "diff of "+slug,
 		"rules: [{ id: house-style, file: docs/rules-of-"+slug+".md }]\n")
 	e.exec(`INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline, model, sources)
 		VALUES ($1, $2, 'submitted', '{"findings":[]}', 2, '{"grep":1}',
@@ -231,7 +231,7 @@ func (e *apiEnv) signIn(name, subject string, g store.SessionGrant) {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.cookie[name] = &http.Cookie{Name: auth.SessionCookieName(&url.URL{Scheme: "https", Host: "kritik.example"}), Value: token}
+	e.cookie[name] = &http.Cookie{Name: auth.SessionCookieName(&url.URL{Scheme: "https", Host: "kritika.example"}), Value: token}
 }
 
 func (e *apiEnv) get(ctx context.Context, who, path string) (*http.Response, error) {

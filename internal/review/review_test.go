@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/contextpack"
+	"github.com/home-operations/kritika/internal/contextpack"
 )
 
 const sampleDiff = `diff --git a/main.go b/main.go
@@ -356,12 +356,12 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	in := Input{Repository: "a/b", Number: 1, Title: "t", Author: "u", BaseRef: "main", Changed: []string{"main.go"}, Diff: sampleDiff}
 	findings := []Finding{{Path: "main.go", Line: 11, Severity: SeverityImportant, Title: "y changed", Explanation: "why\nit matters"}}
 	thread := []Message{
-		{Author: "kritik[bot]", Body: "### kritik review\n\nFine."},
-		{Author: "onedr0p", Body: "@kritik why is y changed?", When: time.Date(2026, 9, 24, 21, 0, 0, 0, time.UTC)},
+		{Author: "kritika[bot]", Body: "### kritika review\n\nFine."},
+		{Author: "onedr0p", Body: "@kritika why is y changed?", When: time.Date(2026, 9, 24, 21, 0, 0, 0, time.UTC)},
 	}
 	msg := BuildFollowUp(in, findings, thread)
-	for _, want := range []string{"Diff (unified", "+	z := 4", "Findings kritik posted on this pull request (1)", "main.go:11 [important] y changed: why it matters",
-		"--- kritik[bot] ---", "--- onedr0p (2026-09-24 21:00) [answer this] ---", "Reply to the last message from onedr0p."} {
+	for _, want := range []string{"Diff (unified", "+	z := 4", "Findings kritika posted on this pull request (1)", "main.go:11 [important] y changed: why it matters",
+		"--- kritika[bot] ---", "--- onedr0p (2026-09-24 21:00) [answer this] ---", "Reply to the last message from onedr0p."} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)
 		}
@@ -376,7 +376,7 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	if _, err := ParseFollowUp(`{"reply": ""}`); err == nil {
 		t.Fatal("an empty reply must error")
 	}
-	if !strings.HasPrefix(FollowUpBody(reply, "m"), reply) || !strings.Contains(FollowUpBody(reply, "m"), "kritik follow-up with m") {
+	if !strings.HasPrefix(FollowUpBody(reply, "m"), reply) || !strings.Contains(FollowUpBody(reply, "m"), "kritika follow-up with m") {
 		t.Fatal("FollowUpBody")
 	}
 }

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/prfilter"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/prfilter"
 )
 
 // Merged is the admin's settings with the merge-base FileName applied.

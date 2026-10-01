@@ -62,13 +62,13 @@ func TestAttemptsStayBounded(t *testing.T) {
 // TestLocalSignInRefuses covers every way the password form says no before
 // it would touch the store.
 func TestLocalSignInRefuses(t *testing.T) {
-	h := testHandler(t, "https://kritik.example.com", testFile(t, "auth:\n"+adminPassword))
+	h := testHandler(t, "https://kritika.example.com", testFile(t, "auth:\n"+adminPassword))
 	mux := http.NewServeMux()
 	h.Register(mux)
 	post := func(body, from string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodPost, "/auth/local", strings.NewReader(body))
-		r.Header.Set("X-Kritik", "1")
-		r.Header.Set("Origin", "https://kritik.example.com")
+		r.Header.Set("X-Kritika", "1")
+		r.Header.Set("Origin", "https://kritika.example.com")
 		r.RemoteAddr = from + ":1234"
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)

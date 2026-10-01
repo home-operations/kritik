@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/jobs"
 )
 
 // EnsureIndexSchema makes index_chunks match the instance's embedder: it
@@ -27,7 +27,7 @@ func (s *Store) EnsureIndexSchema(ctx context.Context, appRole, model string, di
 		return false, fmt.Errorf("store: embedding dimension %d is outside the index limit of %d", dims, configfile.MaxEmbedDims)
 	}
 	err = pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritik-index-schema'))`); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
 			return fmt.Errorf("store: lock index schema: %w", err)
 		}
 		curModel, curDims, ok, err := IndexSchemaIn(ctx, tx)

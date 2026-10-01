@@ -10,7 +10,7 @@ import (
 var ErrNotFound = errors.New("store: not found")
 
 // RecordWebhookDelivery notes that the connection's webhook delivered a
-// request kritik verified, at most once a minute: the dashboard needs to
+// request kritika verified, at most once a minute: the dashboard needs to
 // know deliveries arrive, not to count them.
 func (s *Store) RecordWebhookDelivery(ctx context.Context, connectionID string) error {
 	if _, err := s.app.Exec(ctx, `UPDATE connections SET last_webhook_at = now()

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // Identity is who a sign-in provider says a human is. Provider is the

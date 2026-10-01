@@ -1,6 +1,6 @@
 # Dashboard
 
-kritik serves a dashboard: sign in with a local admin password,
+kritika serves a dashboard: sign in with a local admin password,
 GitHub or an OIDC provider, and see the accounts you can read, the
 GitHub App serving each and its repositories, live review and conversation state as it
 runs, and, for an admin, the running configuration and the audit log. An
@@ -15,13 +15,13 @@ at once, and holds a tab for each of an account's sections:
 - **Analytics:** the account's reviews over the last 7, 30 or 90 days
   against the same span before: pull requests reviewed, reviews,
   findings, the share addressed, the median review time, the median time
-  from opening to merging, the 👍 and 👎 on kritik's inline comments and
+  from opening to merging, the 👍 and 👎 on kritika's inline comments and
   spend, by day or week, and the most reviewed repositories. The poller
   reads reactions, for a week after a pull request's latest review, so
   they need polling on. Its Findings list has
   each finding once per pull request however many reviews repeated it,
   addressed once a later review of the pull request, at a newer head, no
-  longer reports it. A finding kritik posted inline links to its thread
+  longer reports it. A finding kritika posted inline links to its thread
   on GitHub, here and on its review, and one that enforces a written rule
   names it; `rule:<id>` narrows the list to the findings that cite it. Spend has the month so far against the account's
   caps, and usage by day, model, repository or role.
@@ -34,7 +34,7 @@ at once, and holds a tab for each of an account's sections:
 - **Rules:** what its reviews check: rules written in the configuration, as text or a file, and context files
   that explain the code, each with where it is set (a layer
   of the configuration, a repository's entry, or a repository's
-  `.kritik.yaml` as its last review read it), the paths it applies to,
+  `.kritika.yaml` as its last review read it), the paths it applies to,
   and the repositories that read it. A written rule also has the findings
   that cite it, counted as the Findings list counts them, and how many of
   those were addressed, so a noisy rule shows as many findings and few
@@ -46,13 +46,13 @@ A dot in the top bar shows whether live updates are connected. Once they
 have been down for two seconds it reads "Reconnecting…", and the page may
 be out of date until they are back.
 
-It is served at `KRITIK_WEB_URL`, the chart's `web.url`, which the webhook
+It is served at `KRITIKA_WEB_URL`, the chart's `web.url`, which the webhook
 listener shares under `/hooks`. People sign in as
 [`auth`](configuration.md#auth) configures, with the role it maps them to.
 
 ## First run
 
-The dashboard does not configure kritik: the configuration file does. Until an instance can
+The dashboard does not configure kritika: the configuration file does. Until an instance can
 review, with a GitHub App and a default review model, a banner
 tells an admin so and leads to the Configuration page, whose Setup
 checklist names each step still missing and what to set for it:
@@ -101,7 +101,7 @@ head, or cancelling a review that is not running, is a `409 Conflict`.
 - The configuration is read at startup. A file that does not load fails
   startup, so a rollout that brings one leaves the pods before it
   serving; one the leader cannot apply to the store raises the
-  `kritik_config_error` gauge until a later attempt
+  `kritika_config_error` gauge until a later attempt
   succeeds.
 - A secret is read from its variable at startup too: restart the pods
   after rotating one.

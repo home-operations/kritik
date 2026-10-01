@@ -10,12 +10,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/forge"
-	"github.com/home-operations/kritik/internal/repoconfig"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/runner"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // publishPhase writes a prepared review's answer back to the forge and the
@@ -31,7 +31,7 @@ type publishPhase struct {
 	runID    string
 	logger   *slog.Logger
 	// parse and templates are the repository's contract settings; the zero
-	// values are kritik's defaults.
+	// values are kritika's defaults.
 	parse     review.ParseOptions
 	templates review.Templates
 	// repoNotes are what the summary states about the repository's
@@ -102,7 +102,7 @@ func skipDescription(reason string) string {
 }
 
 // incomplete replaces the sticky comment with one saying why this head was
-// not fully reviewed, in kritik's own template, and records the model.
+// not fully reviewed, in kritika's own template, and records the model.
 func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string) error {
 	owner, repo := p.pr.ownerRepo()
 	body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
@@ -113,7 +113,7 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 	if err != nil {
 		return err
 	}
-	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: review incomplete ("+reason+")"); err != nil {
+	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritika: review incomplete ("+reason+")"); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
 	return p.persist(ctx, review.Result{}, nil, modelName, commentID)
@@ -253,7 +253,7 @@ func (p *publishPhase) writeBack(
 	if n := len(res.Findings); n > 0 {
 		desc = fmt.Sprintf("%d finding(s)", n)
 	}
-	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: "+desc); err != nil {
+	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritika: "+desc); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
 	if p.settings.Review.Approve {
@@ -332,7 +332,7 @@ func (p *publishPhase) approve(ctx context.Context, counts review.Counts) {
 	owner, repo := p.pr.ownerRepo()
 	if counts.Approvable() {
 		posted, err := p.client.Approve(ctx, owner, repo, p.pr.number, p.pr.headSHA,
-			fmt.Sprintf("kritik: nothing blocking or important found at %s.", review.ShortSHA(p.pr.headSHA)))
+			fmt.Sprintf("kritika: nothing blocking or important found at %s.", review.ShortSHA(p.pr.headSHA)))
 		if err != nil {
 			p.logger.Warn("pull request not approved", "error", err)
 		} else if posted {
@@ -341,7 +341,7 @@ func (p *publishPhase) approve(ctx context.Context, counts review.Counts) {
 		return
 	}
 	n, err := p.client.DismissApprovals(ctx, owner, repo, p.pr.number,
-		fmt.Sprintf("kritik: %d blocking and %d important finding(s) at %s.", counts.Blocking, counts.Important, review.ShortSHA(p.pr.headSHA)))
+		fmt.Sprintf("kritika: %d blocking and %d important finding(s) at %s.", counts.Blocking, counts.Important, review.ShortSHA(p.pr.headSHA)))
 	if err != nil {
 		p.logger.Warn("approval not dismissed", "error", err)
 	} else if n > 0 {

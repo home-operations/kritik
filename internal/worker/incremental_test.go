@@ -3,8 +3,8 @@ package worker
 import (
 	"testing"
 
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestAlreadyInline(t *testing.T) {

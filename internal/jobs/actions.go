@@ -35,7 +35,7 @@ var ErrRepositoryNotFound = errors.New("jobs: repository not found")
 var ErrReindexQueued = errors.New("jobs: reindex already queued")
 
 // EnqueueRerun re-queues a review of number's current head, the way a human
-// asks kritik to look again. It gives the job a fresh, random Request value
+// asks kritika to look again. It gives the job a fresh, random Request value
 // so it inserts even when a review of the same head already completed,
 // bypassing the push-triggered dedup that keys on
 // account+repository+number+head alone; while a review of that head is
@@ -58,7 +58,7 @@ func EnqueueRerun(
 	}
 	// Two re-runs of one pull request at once would each see the other's
 	// job not yet committed; the lock makes the second wait and see it.
-	key := "kritik:rerun:" + accountID + ":" + repositoryID + ":" + strconv.Itoa(number)
+	key := "kritika:rerun:" + accountID + ":" + repositoryID + ":" + strconv.Itoa(number)
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
 		return 0, fmt.Errorf("jobs: lock pull request: %w", err)
 	}

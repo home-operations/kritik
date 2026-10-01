@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// EventKind is the kind of row a kritik_events notification describes.
+// EventKind is the kind of row a kritika_events notification describes.
 type EventKind string
 
 const (
@@ -31,7 +31,7 @@ func (k EventKind) Valid() bool {
 	return false
 }
 
-// Event is one row change published on the kritik_events channel: a new or
+// Event is one row change published on the kritika_events channel: a new or
 // changed reviews, runner_runs, index_runs, followups or model_calls row.
 // ReviewID is nil for a row whose table has no review_id column, or whose
 // review_id is NULL.
@@ -42,7 +42,7 @@ type Event struct {
 	ReviewID  *string
 }
 
-// eventPayload mirrors the JSON kritik_notify_event() publishes.
+// eventPayload mirrors the JSON kritika_notify_event() publishes.
 type eventPayload struct {
 	AccountID string  `json:"account_id"`
 	Kind      string  `json:"kind"`
@@ -50,7 +50,7 @@ type eventPayload struct {
 	ReviewID  *string `json:"review_id"`
 }
 
-// parseEvent decodes one kritik_events notification payload.
+// parseEvent decodes one kritika_events notification payload.
 func parseEvent(payload string) (Event, error) {
 	var p eventPayload
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
@@ -130,7 +130,7 @@ func (w *dropWarner) drop() {
 	}
 }
 
-// Listen holds one dedicated connection LISTENing on kritik_events,
+// Listen holds one dedicated connection LISTENing on kritika_events,
 // reconnecting with backoff on any error, until ctx ends
 // (the only condition under which Listen returns).
 //
@@ -142,7 +142,7 @@ func (w *dropWarner) drop() {
 // apply backpressure to unrelated writers. See ListenHandlers for the
 // resulting callback contract.
 //
-// A malformed kritik_events payload is logged and skipped rather than
+// A malformed kritika_events payload is logged and skipped rather than
 // ending the listener.
 func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
 	notifications := make(chan func(), listenBufferSize)
@@ -208,7 +208,7 @@ func (s *Store) listenOnce(
 	if connConfig.RuntimeParams == nil {
 		connConfig.RuntimeParams = map[string]string{}
 	}
-	connConfig.RuntimeParams["application_name"] = "kritik-listen"
+	connConfig.RuntimeParams["application_name"] = "kritika-listen"
 
 	conn, err := pgx.ConnectConfig(ctx, connConfig)
 	if err != nil {
@@ -220,8 +220,8 @@ func (s *Store) listenOnce(
 		_ = conn.Close(closeCtx)
 	}()
 
-	if _, err := conn.Exec(ctx, `LISTEN kritik_events`); err != nil {
-		return false, fmt.Errorf("store: listen kritik_events: %w", err)
+	if _, err := conn.Exec(ctx, `LISTEN kritika_events`); err != nil {
+		return false, fmt.Errorf("store: listen kritika_events: %w", err)
 	}
 
 	// From here on this attempt counts as having reached the loop,
@@ -240,7 +240,7 @@ func (s *Store) listenOnce(
 			}
 			return reachedLoop, fmt.Errorf("store: wait for notification: %w", err)
 		}
-		if n.Channel != "kritik_events" {
+		if n.Channel != "kritika_events" {
 			continue
 		}
 		event, err := parseEvent(n.Payload)

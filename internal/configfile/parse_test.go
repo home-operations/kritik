@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritika/internal/model"
 )
 
 // fileApp is an app named name serving accounts, its secrets read from
@@ -162,7 +162,7 @@ repositories:
 	}
 }
 
-// TestConnectionEnv: the KRITIK_APPS_* variables declare one app,
+// TestConnectionEnv: the KRITIKA_APPS_* variables declare one app,
 // replacing the file's of its name or joining them, and a variable naming
 // no key is refused.
 func TestConnectionEnv(t *testing.T) {
@@ -171,12 +171,12 @@ func TestConnectionEnv(t *testing.T) {
 	env := func(t *testing.T, name string) {
 		t.Helper()
 		if name != "" {
-			t.Setenv("KRITIK_APPS_NAME", name)
+			t.Setenv("KRITIKA_APPS_NAME", name)
 		}
-		t.Setenv("KRITIK_APPS_ACCOUNTS", "org-1, user-1,")
-		t.Setenv("KRITIK_APPS_CLIENT_ID", "Iv1.env")
-		t.Setenv("KRITIK_APPS_PRIVATE_KEY", "pem\n")
-		t.Setenv("KRITIK_APPS_WEBHOOK_SECRET", "from-env")
+		t.Setenv("KRITIKA_APPS_ACCOUNTS", "org-1, user-1,")
+		t.Setenv("KRITIKA_APPS_CLIENT_ID", "Iv1.env")
+		t.Setenv("KRITIKA_APPS_PRIVATE_KEY", "pem\n")
+		t.Setenv("KRITIKA_APPS_WEBHOOK_SECRET", "from-env")
 	}
 	file := []byte("apps:\n" + fileApp("acme-bot", "acme"))
 
@@ -207,14 +207,14 @@ func TestConnectionEnv(t *testing.T) {
 	})
 	t.Run("a secret from a file", func(t *testing.T) {
 		env(t, "")
-		t.Setenv("KRITIK_APPS_PRIVATE_KEY_FILE", "/var/run/secrets/key.pem")
-		if _, err := Parse(file); err == nil || !strings.Contains(err.Error(), "KRITIK_APPS_PRIVATE_KEY_FILE names no app setting") {
+		t.Setenv("KRITIKA_APPS_PRIVATE_KEY_FILE", "/var/run/secrets/key.pem")
+		if _, err := Parse(file); err == nil || !strings.Contains(err.Error(), "KRITIKA_APPS_PRIVATE_KEY_FILE names no app setting") {
 			t.Fatalf("Parse = %v", err)
 		}
 	})
 	t.Run("a variable naming nothing", func(t *testing.T) {
-		t.Setenv("KRITIK_APPS_KEY", "x")
-		if _, err := Parse(file); err == nil || !strings.Contains(err.Error(), "KRITIK_APPS_KEY names no app setting") {
+		t.Setenv("KRITIKA_APPS_KEY", "x")
+		if _, err := Parse(file); err == nil || !strings.Contains(err.Error(), "KRITIKA_APPS_KEY names no app setting") {
 			t.Fatalf("Parse = %v", err)
 		}
 	})

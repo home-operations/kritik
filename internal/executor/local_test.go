@@ -37,11 +37,11 @@ func TestTail(t *testing.T) {
 func TestNamespaceFromServiceAccount(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "namespace")
-	if err := os.WriteFile(path, []byte("kritik\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("kritika\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	ns, err := readNamespace(path)
-	if err != nil || ns != "kritik" {
+	if err != nil || ns != "kritika" {
 		t.Fatalf("readNamespace = %q, %v", ns, err)
 	}
 	if _, err := readNamespace(filepath.Join(dir, "missing")); err == nil || !strings.Contains(err.Error(), "pod namespace") {

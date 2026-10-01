@@ -255,7 +255,7 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 }
 
 // CreateLoginState stores ls for LoginStateTTL, bound to browser, the value
-// of the kritik_login cookie set in the browser starting the sign-in, and
+// of the kritika_login cookie set in the browser starting the sign-in, and
 // returns the random state parameter that names it. Only SHA-256s of the
 // state and browser values are kept. Expired states are swept on the way.
 func (s *Store) CreateLoginState(ctx context.Context, ls LoginState, browser string, now time.Time) (string, error) {

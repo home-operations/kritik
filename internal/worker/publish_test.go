@@ -6,10 +6,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/forge"
-	"github.com/home-operations/kritik/internal/repoconfig"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/runner"
+	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runner"
 )
 
 func TestSplitDropped(t *testing.T) {
@@ -48,7 +48,7 @@ func TestSplitDropped(t *testing.T) {
 }
 
 func TestMarkedInline(t *testing.T) {
-	const login = "kritik[bot]"
+	const login = "kritika[bot]"
 	fp := review.Fingerprint(review.Finding{Path: "a.go", Title: "nil deref"})
 	marked := func(id int64, author, fingerprint string, inReplyTo int64) forge.Comment {
 		return forge.Comment{ID: id, Author: author, Body: "**nil deref**\n\n" + review.FindingMarker(fingerprint), InReplyTo: inReplyTo}
@@ -61,7 +61,7 @@ func TestMarkedInline(t *testing.T) {
 		{name: "the bot's root comment maps its fingerprint", comments: []forge.Comment{marked(5, login, fp, 0)}, want: map[string]int64{fp: 5}},
 		{name: "a reply is ignored", comments: []forge.Comment{marked(6, login, fp, 5)}, want: map[string]int64{}},
 		{name: "another author's planted marker is ignored", comments: []forge.Comment{marked(7, "mallory", fp, 0)}, want: map[string]int64{}},
-		{name: "the author match ignores case", comments: []forge.Comment{marked(8, "Kritik[Bot]", fp, 0)}, want: map[string]int64{fp: 8}},
+		{name: "the author match ignores case", comments: []forge.Comment{marked(8, "Kritika[Bot]", fp, 0)}, want: map[string]int64{fp: 8}},
 		{name: "a later comment for the same finding wins",
 			comments: []forge.Comment{marked(9, login, fp, 0), marked(10, login, fp, 0)}, want: map[string]int64{fp: 10}},
 		{name: "a comment without a marker contributes nothing",

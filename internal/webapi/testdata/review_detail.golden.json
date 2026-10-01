@@ -136,7 +136,7 @@
     "repoNotes": ["docs/missing.md: not found"],
     "repoFiles": [
       {
-        "path": ".kritik.yaml",
+        "path": ".kritika.yaml",
         "size": 42
       }
     ],

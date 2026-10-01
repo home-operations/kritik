@@ -8,7 +8,7 @@ import (
 )
 
 // leaderKey is the advisory lock every leader-eligible replica competes for.
-const leaderKey = "kritik-leader"
+const leaderKey = "kritika-leader"
 
 // RunAsLeader competes for the leader lock and, once held, calls lead with a
 // context that is cancelled if the lock is lost or ctx ends. It returns when

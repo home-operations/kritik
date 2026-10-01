@@ -1,4 +1,4 @@
-// Package store owns kritik's Postgres access: the two connection pools,
+// Package store owns kritika's Postgres access: the two connection pools,
 // the startup assertion that keeps row-level security honest, schema
 // migrations, the leader lock, account-scoped transactions, and applying
 // the running configuration, the file's and the dashboard's, to the rows
@@ -63,7 +63,7 @@ type Options struct {
 // the vector extension is missing, because either would be invisible at
 // runtime and wrong.
 func Open(ctx context.Context, opts Options) (*Store, error) {
-	app, err := newPool(ctx, opts.AppURL, "kritik-app", 0)
+	app, err := newPool(ctx, opts.AppURL, "kritika-app", 0)
 	if err != nil {
 		return nil, fmt.Errorf("store: application pool: %w", err)
 	}
@@ -79,7 +79,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if opts.OwnerURL != "" {
 		// Migrations may build an index for minutes; anything longer on the
 		// owner connection is a hang worth breaking.
-		owner, err := newPool(ctx, opts.OwnerURL, "kritik-owner", 10*time.Minute)
+		owner, err := newPool(ctx, opts.OwnerURL, "kritika-owner", 10*time.Minute)
 		if err != nil {
 			app.Close()
 			return nil, fmt.Errorf("store: owner pool: %w", err)

@@ -5,9 +5,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/configfile/configfiletest"
-	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/model"
 )
 
 func TestSteppersBuildOnce(t *testing.T) {
@@ -129,7 +129,7 @@ func TestMask(t *testing.T) {
 	f, err := configfiletest.Parse(t, `providers:
   p:
     type: openai
-    baseUrl: https://kritik:url-secret@llm.example/v1
+    baseUrl: https://kritika:url-secret@llm.example/v1
     apiKey: { env: TEST_PROVIDER_KEY }
 egress:
   allowHosts: [api.example.com]
@@ -142,7 +142,7 @@ egress:
 	mask := Mask(f, f.Providers["p"], "krk_run", "", `se"cr\et<x`)
 	tests := map[string]string{
 		"key sk-provider":                           "key ***",
-		"https://kritik:url-secret@llm/":            "https://***@llm/",
+		"https://kritika:url-secret@llm/":           "https://***@llm/",
 		"auth Bearer ghp-egress or bare ghp-egress": "auth *** or bare ***",
 		"token krk_run":                             "token ***",
 		`plain se"cr\et<x`:                          "plain ***",

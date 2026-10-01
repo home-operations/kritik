@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritika/internal/model"
 )
 
 func user(text string) model.Message { return model.Message{Role: model.RoleUser, Text: text} }
