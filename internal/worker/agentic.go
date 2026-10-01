@@ -13,6 +13,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -123,11 +124,13 @@ func agentBudget(agentMax, tokensPerMonth, usedThisMonth int64) (int64, string) 
 
 // agentPrompt reads what the runner needs to write the prompt and to tell
 // a review the worker will skip: the pull request as the repository filter
-// sees it and, for a bot author, the patch id of its last prepared review,
-// which afterRun skips as unchanged.
+// sees it, the issues its description says it closes, and, for a bot
+// author, the patch id of its last prepared review, which afterRun skips as
+// unchanged. The notes say which issues could not be read.
 func (w *Review) agentPrompt(
 	ctx context.Context, accountID, reviewID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
-) (*runner.Prompt, error) {
+	client forge.Client, logger *slog.Logger,
+) (*runner.Prompt, []string, error) {
 	p := &runner.Prompt{
 		Repository: pr.repository, Context: eff.Review.Context,
 		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Focused: eff.Review.Focused(),
@@ -152,8 +155,14 @@ func (w *Review) agentPrompt(
 		}
 		return err
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	owner, repo := pr.ownerRepo()
+	var notes []string
+	p.Issues, notes = linkedIssues(ctx, client, owner, repo, p.PullRequest.Body, logger)
 	p.Trim()
-	return p, err
+	return p, notes, nil
 }
 
 // loadAgentRun reads the agent_runs row of a runner run; found is false
@@ -203,15 +212,15 @@ func (w *Review) readAgentRun(
 // token for it, and the agent's bounds. The token is minted last, so an
 // error leaves none behind; the caller revokes it once the run ends. It
 // returns the runner Job's deadline, which the agent's timeout may
-// lengthen.
+// lengthen, and the prompt's notes.
 func (w *Review) agentSpec(
 	ctx context.Context, accountID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
-	admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
-) (time.Duration, error) {
+	admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration, client forge.Client, logger *slog.Logger,
+) (time.Duration, []string, error) {
 	settings := eff.Settings
-	prompt, err := w.agentPrompt(ctx, accountID, reviewID, trigger, pr, eff, prior)
+	prompt, notes, err := w.agentPrompt(ctx, accountID, reviewID, trigger, pr, eff, prior, client, logger)
 	if err != nil {
-		return deadline, err
+		return deadline, nil, err
 	}
 	deadline = agentDeadline(deadline, settings.Agent.Timeout)
 	token, err := w.Store.MintGatewayToken(ctx, store.GatewayGrant{
@@ -219,7 +228,7 @@ func (w *Review) agentSpec(
 		Model: string(settings.Models.Review), Fallback: string(settings.Models.Fallback), Budget: admitted.maxTokens,
 	}, time.Now().Add(deadline+w.GatewayTokenTTL))
 	if err != nil {
-		return deadline, err
+		return deadline, nil, err
 	}
 	spec.Prompt, secrets.GatewayToken = prompt, token
 	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gateway.ModelName}
@@ -228,7 +237,7 @@ func (w *Review) agentSpec(
 		TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
 		Commands:       settings.Agent.Commands, CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second),
 	}
-	return deadline, nil
+	return deadline, notes, nil
 }
 
 // revokeGatewayTokens ends the run's token once its runner is done, on a

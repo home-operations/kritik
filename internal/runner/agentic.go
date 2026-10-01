@@ -145,7 +145,7 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, s
 	pr := p.Prompt.PullRequest
 	user, omitted, contextOmitted := review.Build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
-		BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
+		Issues: p.Prompt.Issues, BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
 		Incremental: incremental, References: in.references, BudgetTokens: review.UserBudget(system),
 	})
 	return agentPrompt{system: system, user: user, strict: p.Prompt.RequireSuggestedFix, omitted: omitted, contextOmitted: contextOmitted}

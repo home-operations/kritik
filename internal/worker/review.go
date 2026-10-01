@@ -120,10 +120,12 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		accountID: args.AccountID, accountKey: account.Key(), reviewID: reviewID, headSHA: args.HeadSHA,
 		owner: owner, repo: repo, client: client, started: started, logger: logger,
 	}
-	deadline, err = w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, prior, admitted, &spec, &secrets, deadline)
+	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, prior, admitted, &spec, &secrets,
+		deadline, client, logger)
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
+	b.notes = append(b.notes, promptNotes...)
 	tools := file.ToolsFor(settings.Agent.Commands)
 	sup := runSupervision(w.Store, args.AccountID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{

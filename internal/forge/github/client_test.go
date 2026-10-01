@@ -214,6 +214,24 @@ func TestFileAt(t *testing.T) {
 	}
 }
 
+func TestIssue(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("GET /api/v3/repos/o/r/issues/12", 200, `{"number":12,"title":"Widgets leak","body":"Steps.","html_url":"https://github.com/o/r/issues/12"}`)
+	f.reply("GET /api/v3/repos/o/r/issues/13", 200, `{"number":13,"title":"A pull request","pull_request":{"url":"https://api.github.com/repos/o/r/pulls/13"}}`)
+	f.reply("GET /api/v3/repos/o/r/issues/14", 404, `{"message":"Not Found"}`)
+	got, err := c.Issue(t.Context(), "o", "r", 12)
+	want := forge.Issue{Number: 12, Title: "Widgets leak", Body: "Steps.", URL: "https://github.com/o/r/issues/12"}
+	if err != nil || got != want {
+		t.Fatalf("Issue = %+v, %v; want %+v", got, err, want)
+	}
+	if got, err := c.Issue(t.Context(), "o", "r", 13); err != nil || !got.PullRequest {
+		t.Fatalf("Issue of a pull request = %+v, %v; want PullRequest set", got, err)
+	}
+	if _, err := c.Issue(t.Context(), "o", "r", 14); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Issue of an unknown number = %v, want fs.ErrNotExist", err)
+	}
+}
+
 func TestPullRequestDiff(t *testing.T) {
 	f, c := newFakeAPI(t)
 	const diff = "diff --git a/a.go b/a.go\n+b\n"

@@ -74,6 +74,9 @@ type AgentLimits struct {
 type Prompt struct {
 	Repository  string                 `json:"repository"`
 	PullRequest repoconfig.PullRequest `json:"pullRequest"`
+	// Issues are the issues the pull request's description says it
+	// closes, as the worker read them from the forge.
+	Issues []review.Issue `json:"issues,omitempty"`
 	// Context names the files that explain the code, which the agent is
 	// pointed at to read for itself.
 	Context []configfile.ContextFile `json:"context,omitempty"`
@@ -182,6 +185,10 @@ const (
 	// can grow it sixfold (each '<' becomes \u003c), which the spec bound
 	// still holds.
 	MaxBodyBytes = 64 << 10
+	// MaxIssueBytes bounds each linked issue's body a spec carries: the
+	// prompt shows a few thousand characters of one, and three worst-case
+	// issues must leave the body and the findings their room.
+	MaxIssueBytes = 16 << 10
 )
 
 // maxPromptBytes is what Trim leaves an encoded prompt, under MaxSpecBytes
@@ -195,6 +202,9 @@ const maxPromptBytes = 768 << 10
 // worker read them.
 func (p *Prompt) Trim() {
 	p.PullRequest.Body = textcut.Prefix(p.PullRequest.Body, MaxBodyBytes)
+	for i := range p.Issues {
+		p.Issues[i].Body = textcut.Prefix(p.Issues[i].Body, MaxIssueBytes)
+	}
 	p.Prior = p.Prior[:min(len(p.Prior), MaxPriorFindings)]
 	for len(p.Prior) > 0 {
 		b, err := json.Marshal(p)

@@ -45,6 +45,19 @@ type Comment struct {
 	ReactionsUp, ReactionsDown int
 }
 
+// Issue is an issue of a repository, as a pull request's description links
+// one it closes.
+type Issue struct {
+	Number int
+	Title  string
+	Body   string
+	// URL is the issue's page in the forge's web UI.
+	URL string
+	// PullRequest is set when the number names a pull request, which the
+	// forge files among its issues.
+	PullRequest bool
+}
+
 // InlineComment is one finding attached to a line on the head side of the
 // PR diff. The forge rejects lines the diff does not show, so callers anchor
 // first.
@@ -139,6 +152,9 @@ type Client interface {
 	// that is not a file there is an error wrapping fs.ErrNotExist, and a
 	// file over MaxFileBytes one wrapping ErrFileTooLarge.
 	FileAt(ctx context.Context, owner, repo, ref, path string) ([]byte, error)
+	// Issue returns issue number of the repository. A number that names
+	// none is an error wrapping fs.ErrNotExist.
+	Issue(ctx context.Context, owner, repo string, number int) (Issue, error)
 
 	// BotLogin is the login comments posted through this client carry, so
 	// the sticky comment can be matched by author and marker together.
