@@ -9,7 +9,7 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: routes web.url to the public Service, which serves the webhooks and the dashboard
+  - it: routes each host's paths to the public Service, which serves the webhooks and the dashboard
     set:
       ingress.enabled: true
       ingress.className: nginx
@@ -29,14 +29,23 @@ tests:
               pathType: Prefix
               backend: { service: { name: RELEASE-NAME-kritika, port: { name: http } } }
 
-  - it: keeps web.url's path and drops its port
+  - it: resolves a templated host and defaults the path type
     set:
       ingress.enabled: true
-      web.url: https://kritika.example.com:8443/kritika/
+      ingress.hosts:
+        - host: "{{ .Release.Name }}.example.com"
+          paths: [{ path: /kritika }]
+      ingress.tls: [{ hosts: [kritika.example.com], secretName: kritika-tls }]
     asserts:
       - equal:
           path: spec.rules[0].host
-          value: kritika.example.com
+          value: RELEASE-NAME.example.com
       - equal:
           path: spec.rules[0].http.paths[0].path
           value: /kritika
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.tls[0].secretName
+          value: kritika-tls

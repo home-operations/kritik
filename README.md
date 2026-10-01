@@ -70,8 +70,9 @@ The chart's [README](charts/kritika/README.md) lists every value and shows the
 CloudNativePG setup for the three database roles. In short: a Postgres with
 [VectorChord](https://github.com/tensorchord/VectorChord) (and the pgvector it
 builds on) loaded, with an owner, an application and a runner role; the one
-public URL under `web.url`, which the dashboard and GitHub's webhooks share;
-a way to sign in under `auth`; and the configuration file under `config`.
+public URL under `config.webUrl`, which the dashboard and GitHub's webhooks
+share; a way to sign in under `auth`; and the configuration file under
+`configFile`.
 It runs as one Deployment of `kritika serve`, two replicas by default, which
 creates a runner Job for each review and index run.
 
@@ -90,7 +91,7 @@ Security notes:
   `egress.allowHosts`), and never hold the credentials `egress.credentials`
   lets the gateway add. Every review's model calls go through it too.
 - Run runner Jobs under a sandboxed RuntimeClass such as gVisor
-  (`KRITIKA_RUNNER_RUNTIME_CLASS`) where the cluster has one, since the pod
+  (the chart's `config.runnerRuntimeClass`) where the cluster has one, since the pod
   parses untrusted content.
 
 ## Documentation

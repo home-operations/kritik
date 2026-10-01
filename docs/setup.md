@@ -12,14 +12,14 @@ Install the chart as its [README](https://github.com/home-operations/kritika/blo
 
 - A Postgres database with VectorChord and kritika's three roles, under
   `database`: see [Postgres with CloudNativePG](database.md).
-- `web.url`, the one public URL. The dashboard is served at it, and GitHub
+- `config.webUrl`, the one public URL. The dashboard is served at it, and GitHub
   delivers each App's webhook under it, to `/hooks/<app name>`, both from
   one port. The chart's `ingress` or `httpRoute` routes the URL there;
   nothing else needs to be public.
 - A way to sign in: `KRITIKA_AUTH_ADMIN_PASSWORD` under `env`, from an
   existing Secret, for the local admin, or OIDC or GitHub with a role
   mapping that makes someone an admin ([`auth`](configuration.md#auth)).
-- The [configuration file](configuration.md) as `config`, or an existing
+- The [configuration file](configuration.md) as `configFile`, or an existing
   ConfigMap, with the variables its secrets name set from existing Secrets
   under `env` or `envFrom`. It lives in git with the rest of the
   deployment; kritika reads it at startup, and the chart rolls the pods
@@ -67,7 +67,7 @@ Register a GitHub App under the account whose repositories kritika reviews
 (a personal account's or an organization's Developer settings):
 
 - **Webhook:** Active, with the URL
-  `<web.url>/hooks/<app name>` and a random secret.
+  `<config.webUrl>/hooks/<app name>` and a random secret.
   This one webhook receives the events of every repository the App is
   installed on.
 - **Repository permissions:**

@@ -25,9 +25,9 @@ helm install kritika oci://ghcr.io/home-operations/charts/kritika \
 where `my-values.yaml` sets:
 
 ```yaml
-web:
-  url: https://kritika.example.com
 config:
+  webUrl: https://kritika.example.com
+configFile:
   apps:
     github:
       accounts: [org-1]
@@ -53,28 +53,30 @@ envFrom:
       name: kritika-bot
 ingress:
   enabled: true
+  hosts: [{ host: kritika.example.com, paths: [{ path: / }] }]
   tls: [{ hosts: [kritika.example.com], secretName: kritika-tls }]
 ```
 
-`web.url` is the one public URL: the dashboard at it, and the webhook
-listener under it at `/hooks`, which the chart's Ingress or HTTPRoute
-routes.
+`config` is how kritika runs, as camelCased keys the chart turns into the
+`KRITIKA_*` variables of the same name: `webUrl`, the one public URL, with
+the dashboard at it and the webhook listener under it at `/hooks`; logging;
+and, commented out in `values.yaml` with kritika's defaults, the workers,
+polling, retention and runner Jobs' deadline and RuntimeClass (see
+[the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
+The chart's Ingress or HTTPRoute must route `webUrl`'s host.
 
-`config` is the whole configuration: sign-in (`auth`), the GitHub `apps`,
-model `providers`, the `embedding`, the `defaults`, `repositories` entries
-keyed `owner/*` or `owner/name`, and `accounts`. kritika reads it at
-startup: the pods carry its checksum, so a change rolls them, and a pod
+`configFile` is what is reviewed and how: sign-in (`auth`), the GitHub
+`apps`, model `providers`, the `embedding`, the `defaults`, `repositories`
+entries keyed `owner/*` or `owner/name`, and `accounts`. kritika reads it
+at startup: the pods carry its checksum, so a change rolls them, and a pod
 whose file doesn't load never becomes ready while the ones before it keep
 serving. Secrets never go in it: it names environment variables, which
 `env` and `envFrom` set from existing Secrets, the way any Kubernetes
-container's environment is set. Every other `KRITIKA_*` variable goes in
-`env` too, by name: here the local admin's password, which is the way into
-a fresh instance; OIDC and GitHub sign-in with their role mappings, how
-kritika runs (polling, retention, workers) and runner Jobs' deadline and
-RuntimeClass are set the same way (see
-[the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
-The chart refuses a key it derives from its other values, such as the
-addresses or the database. The
+container's environment is set. A `KRITIKA_*` variable that carries a
+secret itself goes in `env` the same way: here the local admin's password,
+which is the way into a fresh instance. The chart refuses an `env` entry
+for a variable it derives from its other values, such as the addresses or
+the database, or that has a `config` key. The
 [setup guide](https://github.com/home-operations/kritika/blob/main/docs/setup.md)
 covers creating the GitHub App, and the dashboard's setup checklist shows
 what a fresh instance still lacks.
@@ -112,14 +114,14 @@ are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
 destination by hostname only. github.com is always allowed once an app
-is declared; `egress.allowHosts` in `config` adds the rest
+is declared; `egress.allowHosts` in `configFile` adds the rest
 (registries, release APIs), and `egress.credentials` names hosts the gateway
 adds a bearer token to when a runner sends it a plain `http://` request, so
 the runner never holds the token. The token is a secret reference like any
 other in the file:
 
 ```yaml
-config:
+configFile:
   egress:
     allowHosts: [api.github.com, "*.githubusercontent.com", ghcr.io]
     credentials:
@@ -161,10 +163,10 @@ runner:
   image: ghcr.io/home-operations/kritika:<version>-tools
 ```
 
-and, in `config`:
+and, in `configFile`:
 
 ```yaml
-config:
+configFile:
   egress:
     allowHosts: ["*.githubusercontent.com"]
   repositories:
@@ -183,7 +185,7 @@ Jobs under a sandboxed RuntimeClass.
 ### Runner sandbox
 
 Runner Jobs parse untrusted repository content and run what the model asks of
-them. Set `KRITIKA_RUNNER_RUNTIME_CLASS` in `env` to a sandboxed runtime
+them. Set `config.runnerRuntimeClass` to a sandboxed runtime
 the cluster offers (`gvisor` with runsc, or a Kata class) so a kernel
 vulnerability reachable from the pod is contained by the sandbox rather than
 the node. It is advised, not required: without it the pod's other bounds
@@ -196,7 +198,7 @@ it from the node.
 The chart runs one Deployment of `kritika serve`, `replicas: 2`
 by default with a PodDisruptionBudget. Every replica serves webhooks and the
 dashboard and works jobs, and one holds the leader lock at a time; two keep
-one serving while a rollout, such as the one a changed `config` starts,
+one serving while a rollout, such as the one a changed `configFile` starts,
 replaces the other. Runner pods are the Jobs `kritika serve` creates, one per
 review and index run, running `kritika run`. A replica that stops drains its
 jobs first; one that dies outright leaves them to the leader, which hands
@@ -222,7 +224,10 @@ Kubernetes: `>=1.25.0-0`
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
-| config | optional | `{}` | The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
+| config.logFormat | string | `"json"` | Log format (KRITIKA_LOG_FORMAT): json or text. |
+| config.logLevel | string | `"info"` | Log level (KRITIKA_LOG_LEVEL): debug, info, warn or error. |
+| config.webUrl | required | `""` | Public URL the dashboard is reached at (KRITIKA_WEB_URL), e.g. https://kritika.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment. GitHub delivers webhooks to it and sign-in redirects back to it, so the chart's Ingress or HTTPRoute must route this name. |
+| configFile | optional | `{}` | The configuration file, as YAML: what is reviewed and how, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritika_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |
@@ -234,12 +239,18 @@ Kubernetes: `>=1.25.0-0`
 | deploymentAnnotations | object | `{}` | Annotations added to the Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
 | env | object | `{}` | Environment variables of the kritika serve container, keyed by name: a plain value, or a map with the variable's `valueFrom` (a Secret, a ConfigMap or a field). Rendered through `tpl`. |
 | envFrom | list | `[]` | Secrets and ConfigMaps loaded as environment variables in bulk, each key a variable: the Kubernetes `envFrom` list. A Secret whose keys are the variable names the configuration file references sets them all at once. |
-| existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `config`. A change to it takes a restart. |
+| existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `configFile`. A change to it takes a restart. |
 | fullnameOverride | string | `""` | Override the full release name. |
+| httpRoute.additionalRules | list | `[]` | Custom rules prepended before the default rule (templated). |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
-| httpRoute.enabled | bool | `false` | Expose web.url through a Gateway API HTTPRoute. The host and path are web.url's and have no field of their own: GitHub delivers webhooks to that URL and sign-in redirects back to it, so a route for any other name would serve a dashboard that cannot sign in. |
+| httpRoute.enabled | bool | `false` | Expose the public Service through a Gateway API HTTPRoute (alternative to ingress). |
+| httpRoute.filters | list | `[]` | Filters applied to the default rule. |
+| httpRoute.hostnames | list | `[]` | Hostnames matched against the Host header; `config.webUrl`'s host (templated). |
+| httpRoute.httpsRedirect | bool | `false` | Redirect HTTP to HTTPS (301) instead of routing to the backend (needs HTTP+HTTPS listeners). |
+| httpRoute.kind | string | `""` | HTTPRoute kind; empty defaults to HTTPRoute. |
 | httpRoute.labels | object | `{}` | HTTPRoute labels. |
+| httpRoute.matches | list | `[{"path":{"type":"PathPrefix","value":"/"}}]` | Match conditions for the default rule. |
 | httpRoute.parentRefs | list | `[]` | Gateways (and listeners) this route attaches to. |
 | image.digest | string | `""` | Pin the image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published image's digest. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
@@ -248,11 +259,10 @@ Kubernetes: `>=1.25.0-0`
 | imagePullSecrets | list | `[]` | Image pull secrets for private registries, for the kritika serve pods and, through the runner ServiceAccount, runner Jobs and the tool images they mount. |
 | ingress.annotations | object | `{}` | Ingress annotations. |
 | ingress.className | string | `""` | IngressClass name. |
-| ingress.enabled | bool | `false` | Expose web.url through an Ingress. The host and path are web.url's and have no field of their own: GitHub delivers webhooks to that URL and sign-in redirects back to it, so a route for any other name would serve a dashboard that cannot sign in. |
-| ingress.tls | list | `[]` | Ingress TLS configuration, e.g. `[{hosts: [kritika.example.com], secretName: kritika-tls}]`. |
+| ingress.enabled | bool | `false` | Expose the public Service through an Ingress. |
+| ingress.hosts | list | `[{"host":"kritika.example.com","paths":[{"path":"/","pathType":"Prefix"}]}]` | Ingress hosts and their paths; the host is `config.webUrl`'s. |
+| ingress.tls | list | `[]` | Ingress TLS configuration. |
 | livenessProbe | object | `{"httpGet":{"path":"/healthz","port":"metrics"},"periodSeconds":20}` | Liveness probe, on the metrics port. |
-| logging.format | string | `"json"` | Log format: json or text. |
-| logging.level | string | `"info"` | Log level: debug, info, warn or error. |
 | monitoring.serviceMonitor.annotations | object | `{}` | ServiceMonitor annotations. |
 | monitoring.serviceMonitor.enabled | bool | `false` | Create a Prometheus Operator ServiceMonitor for the metrics Service (requires its CRDs). |
 | monitoring.serviceMonitor.interval | string | `"30s"` | Scrape interval. |
@@ -304,7 +314,6 @@ Kubernetes: `>=1.25.0-0`
 | topologySpreadConstraints | list | `[{"labelSelector":{"matchLabels":{"app.kubernetes.io/instance":"{{ .Release.Name }}","app.kubernetes.io/name":"{{ include \"kritika.name\" . }}"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway"}]` | Spread the kritika serve pods across nodes, so a node loss does not take both replicas: a soft constraint, so a one-node cluster still schedules them. Rendered through `tpl`; empty leaves scheduling to Kubernetes. |
 | volumeMounts | list | `[]` | Additional volume mounts on the kritika serve container. |
 | volumes | list | `[]` | Additional volumes on the Deployment. |
-| web.url | required | `""` | Public URL the dashboard is reached at, e.g. https://kritika.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment. |
 
 ---
 
