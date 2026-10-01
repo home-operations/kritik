@@ -349,6 +349,14 @@ func (l *localForge) FileURL(owner, repo, sha, path string, line, _ int) string 
 	return fmt.Sprintf("local://%s/%s/%s/%s#L%d", owner, repo, sha, path, line)
 }
 
+func (l *localForge) CommitURL(owner, repo, sha string) string {
+	return fmt.Sprintf("local://%s/%s/commit/%s", owner, repo, sha)
+}
+
+func (l *localForge) ThreadURL(owner, repo string, number int, id int64) string {
+	return fmt.Sprintf("local://%s/%s/pull/%d#r%d", owner, repo, number, id)
+}
+
 func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.StatusState, desc string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -452,8 +460,10 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 	sticky := comments[commentBase+1]
 	if len(comments) != 1 || !strings.HasPrefix(sticky, "<!-- kritik:pr-1 -->\n") ||
 		!strings.Contains(sticky, "- **[important]** [`main.go:1`](local://onedr0p/home-ops/") ||
-		!strings.Contains(sticky, "/main.go#L1) first line") || !strings.Contains(sticky, "**1 finding** · 0 blocking · 1 important · 0 nit") ||
-		!strings.Contains(sticky, "- Small and focused") || !strings.Contains(sticky, "_1 finding(s) were dropped (unanchored: 1)._") {
+		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/1#r1001)") ||
+		!strings.Contains(sticky, "**1 finding** · 1 important\n") || strings.Contains(sticky, "What's good") ||
+		!strings.Contains(sticky, "**Outside the diff**\n\n- **[blocking]** `main.go:500` off the diff\n\n  dropped\n") ||
+		strings.Contains(sticky, "were dropped") {
 		t.Fatalf("comments = %v", comments)
 	}
 	if len(inline) != 1 || inline[0].Line != 1 || !strings.Contains(inline[0].Body, "**[important]** **first line**") ||
@@ -1666,8 +1676,10 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 		}
 	}
 	lf.mu.Unlock()
-	if !strings.Contains(sticky, "_Incremental review of the changes since `"+prior[:7]+"`._") ||
-		!strings.Contains(sticky, "/main.go#L1) first line") {
+	if !strings.Contains(sticky, "_Incremental review of the changes since [`"+prior[:7]+"`](local://onedr0p/home-ops/commit/"+prior+")._") ||
+		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
+		!strings.Contains(sticky, "**Earlier findings**\n\n- **[important]** [`main.go:1`](local://onedr0p/home-ops/"+prior+"/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
+		!strings.Contains(sticky, " · still open\n") {
 		t.Fatalf("sticky comment = %q", sticky)
 	}
 

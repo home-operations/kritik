@@ -64,6 +64,16 @@ func TestFileURL(t *testing.T) {
 	}
 }
 
+func TestCommitAndThreadURL(t *testing.T) {
+	c := &Client{}
+	if got := c.CommitURL("o", "r", "abc"); got != "https://github.com/o/r/commit/abc" {
+		t.Fatalf("CommitURL = %q", got)
+	}
+	if got := c.ThreadURL("o", "r", 7, 5_800_000_001); got != "https://github.com/o/r/pull/7#discussion_r5800000001" {
+		t.Fatalf("ThreadURL = %q", got)
+	}
+}
+
 func TestPermission(t *testing.T) {
 	respond := func(body string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {

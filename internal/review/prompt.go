@@ -109,8 +109,9 @@ lines the diff itself shows.
 Answer with a summary and findings. The summary's take is two to four sentences on what the change does and whether
 it is sound, and mentions a concern only if it is also a finding: what is worth stating is worth a finding, and
 what is not worth a finding is not worth stating. It does not say what the diff cannot show or what you could not
-verify; the reader knows what a diff is. Praise lists at most three specific things done well, and is
-empty when nothing stands out. Each
+verify; the reader knows what a diff is. It does not give a verdict, count the findings or say there are none, and
+does not list what you read or how you read it: kritik states the count and lists the sources itself. Praise lists
+at most three specific things done well, and is empty when nothing stands out. Each
 finding points at one line in the new version of a changed file and has a severity: blocking for a defect that must
 be fixed before merging, important for something that should be fixed, nit for optional polish. Give it a one-line
 title and an explanation of why it matters. When the fix is a change to the lines the finding points at, give
@@ -118,7 +119,7 @@ replacement: those lines exactly as they should be committed, raw code without f
 one line is replaced; the forge offers it as a one-click suggestion, so it must be complete and correct as written.
 When the fix is elsewhere or not a code change, describe it in suggested_fix instead. Give every finding with a fix
 an agent_prompt: one plain-text paragraph telling a coding agent what to change, naming the file, lines and symbols.
-If nothing is worth flagging, return an empty findings list and say so in the take.`
+If nothing is worth flagging, return an empty findings list; the take still describes the change.`
 
 // agenticSees is what a reviewer that works through read-only tools over
 // the head commit sees, and agenticTools how it uses them and answers, by

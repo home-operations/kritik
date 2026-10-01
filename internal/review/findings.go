@@ -96,6 +96,18 @@ type Finding struct {
 	// URL links the finding's lines at the head commit. kritik sets it
 	// when rendering; the model never does.
 	URL string `json:"-"`
+	// ThreadURL links the finding's inline comment thread on the forge,
+	// "" when it has none. kritik sets it when rendering.
+	ThreadURL string `json:"-"`
+}
+
+// PriorFinding is a finding the last review made, as the summary of a
+// review that builds on it lists them.
+type PriorFinding struct {
+	Finding
+	// Resolved is whether this review, asked to report the finding again
+	// only if still present, did not.
+	Resolved bool
 }
 
 // AgentPromptFence is a code fence longer than any backtick run in

@@ -445,7 +445,7 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
 	if len(inline) != 1 || !strings.Contains(inline[0], "b is unused") || comments != 1 ||
-		!strings.Contains(sticky, "/main.go#L3) b is unused") || forgeStatus != "success: kritik: 1 finding(s)" {
+		!strings.Contains(sticky, "/main.go#L3) [b is unused](local://acme/widgets/pull/1#r1001)") || forgeStatus != "success: kritik: 1 finding(s)" {
 		t.Fatalf("inline=%v comments=%d status=%q sticky:\n%s", inline, comments, forgeStatus, sticky)
 	}
 	h.sm.mu.Lock()
@@ -770,7 +770,7 @@ func checkAgentNeverSubmits(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Lock()
 	comments, sticky, forgeStatus := len(h.lf.comments), h.lf.comments[commentBase+1], h.lf.status
 	h.lf.mu.Unlock()
-	if comments != 1 || !strings.Contains(sticky, "**Review incomplete for `"+next[:7]+"`:** agent stopped: no_submit.") ||
+	if comments != 1 || !strings.Contains(sticky, "**Review incomplete for [`"+next[:7]+"`](local://acme/widgets/commit/"+next+"):** agent stopped: no_submit.") ||
 		strings.Contains(sticky, "b is unused") || !strings.Contains(forgeStatus, "incomplete") {
 		t.Fatalf("comments=%d status=%q sticky:\n%s", comments, forgeStatus, sticky)
 	}

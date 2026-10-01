@@ -33,14 +33,29 @@ type Templates struct {
 // RenderData is what the summary template sees as its dot; the inline
 // template's dot is one Finding.
 type RenderData struct {
-	Number       int
-	HeadSHA      string
-	Model        string
+	Number  int
+	HeadSHA string
+	// HeadURL links the head commit on the forge, "" when unknown.
+	HeadURL string
+	Model   string
+	// AuthorIsBot is whether a bot opened the pull request; the default
+	// template then leaves out the praise, which a mechanical change
+	// earns nothing by.
+	AuthorIsBot  bool
 	Result       Result
 	Counts       Counts
 	Notes        []string
 	Incremental  bool
 	PriorHeadSHA string
+	// PriorHeadURL links the last review's head on the forge, "" when
+	// unknown.
+	PriorHeadURL string
+	// Prior are the last review's findings, each marked resolved or not,
+	// when this review builds on it.
+	Prior []PriorFinding
+	// Unanchored are findings on lines the diff does not show, which
+	// have no inline comment and are listed in the summary only.
+	Unanchored []Finding
 	// Incomplete, when set, says why the head was not fully reviewed; the
 	// default template then states that instead of a verdict.
 	Incomplete string

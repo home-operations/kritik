@@ -33,7 +33,7 @@ func TestRenderSummaryDefault(t *testing.T) {
 	}
 	for _, want := range []string{
 		"### kritik review",
-		"**2 findings** · 1 blocking · 0 important · 1 nit",
+		"**2 findings** · 1 blocking · 1 nit\n",
 		"Solid change with one real bug.",
 		"- Clear tests",
 		"- **[blocking]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write",
@@ -56,9 +56,52 @@ func TestRenderSummaryDefault(t *testing.T) {
 	empty.Result.Findings, empty.Counts, empty.Notes, empty.Result.Summary.Praise = nil, Counts{}, nil, nil
 	empty.Incremental, empty.PriorHeadSHA = true, "fedcba9876543210"
 	body, _ = RenderSummary(t.Context(), Templates{}, empty)
-	if !strings.Contains(body, "Nothing worth flagging") || strings.Contains(body, "_1 file") || !strings.Contains(body, "`fedcba9`") ||
-		strings.Contains(body, "0 findings") || strings.Contains(body, "\n\n\n") {
+	if !strings.Contains(body, "**No findings**\n\n_Incremental review of the changes since `fedcba9`._\n\nSolid change") ||
+		strings.Contains(body, "_1 file") || strings.Contains(body, "0 findings") || strings.Contains(body, "**Findings**") ||
+		strings.Contains(body, "\n\n\n") {
 		t.Fatalf("empty body:\n%s", body)
+	}
+}
+
+// TestRenderSummaryLinks renders what the worker adds once it knows the
+// forge: commit links, a thread per finding, the last review's findings
+// and the ones off the diff, and no praise for a bot's pull request.
+func TestRenderSummaryLinks(t *testing.T) {
+	d := sampleData()
+	d.HeadURL, d.AuthorIsBot = "https://forge.example/o/r/commit/0123456789abcdef", true
+	d.Result.Findings[0].ThreadURL = "https://forge.example/o/r/pull/42#r1"
+	d.Incremental, d.PriorHeadSHA, d.PriorHeadURL = true, "fedcba9876543210", "https://forge.example/o/r/commit/fedcba9876543210"
+	d.Prior = []PriorFinding{
+		{Path: "main.go", Line: 9, Severity: SeverityBlocking, Title: "nil map write",
+			URL: "https://forge.example/o/r/blob/fedcba9876543210/main.go#L9", ThreadURL: "https://forge.example/o/r/pull/42#r1"},
+		{Path: "util.go", Line: 3, Severity: SeverityImportant, Title: "unchecked error", Resolved: true},
+	}
+	d.Unanchored = []Finding{{Path: "other.go", Line: 7, Severity: SeverityImportant, Title: "stale cache", Explanation: "The cache is\nnever cleared."}}
+	body, notes := RenderSummary(t.Context(), Templates{}, d)
+	if len(notes) != 0 {
+		t.Fatalf("notes = %v", notes)
+	}
+	for _, want := range []string{
+		"_Incremental review of the changes since [`fedcba9`](https://forge.example/o/r/commit/fedcba9876543210)._",
+		"- **[blocking]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) [nil map write](https://forge.example/o/r/pull/42#r1)\n",
+		"- **[nit]** `README.md:2` typo\n",
+		"**Outside the diff**\n\n- **[important]** `other.go:7` stale cache\n\n  The cache is\n  never cleared.\n",
+		"**Earlier findings**\n\n" +
+			"- **[blocking]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r1) · still open\n" +
+			"- **[important]** `util.go:3` unchecked error · resolved\n",
+		"<sub>Reviewed [`0123456`](https://forge.example/o/r/commit/0123456789abcdef) by kritik with vendor/model-x.</sub>",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "What's good") || strings.Contains(body, "Clear tests") || strings.Contains(body, "\n\n\n") {
+		t.Fatalf("a bot's pull request is praised, or blank lines doubled:\n%s", body)
+	}
+	if strings.Index(body, "**Findings**") > strings.Index(body, "**Outside the diff**") ||
+		strings.Index(body, "**Outside the diff**") > strings.Index(body, "**Earlier findings**") ||
+		strings.Index(body, "**Earlier findings**") > strings.Index(body, "_1 file") {
+		t.Fatalf("sections out of order:\n%s", body)
 	}
 }
 
@@ -95,7 +138,7 @@ func TestRenderSummaryIncomplete(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, body)
 		}
 	}
-	for _, unwanted := range []string{"Nothing worth flagging", "blocking ·"} {
+	for _, unwanted := range []string{"No findings", "blocking"} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("an incomplete review must not claim %q:\n%s", unwanted, body)
 		}

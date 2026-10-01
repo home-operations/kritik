@@ -83,6 +83,17 @@ func (c *Client) FileURL(owner, repo, sha, path string, line, endLine int) strin
 	return u
 }
 
+// CommitURL implements forge.Client.
+func (c *Client) CommitURL(owner, repo, sha string) string {
+	return fmt.Sprintf("%s/%s/%s/commit/%s", webBase, owner, repo, sha)
+}
+
+// ThreadURL implements forge.Client: GitHub scrolls the conversation tab
+// to a review comment's thread by its discussion anchor.
+func (c *Client) ThreadURL(owner, repo string, number int, id int64) string {
+	return fmt.Sprintf("%s/%s/%s/pull/%d#discussion_r%d", webBase, owner, repo, number, id)
+}
+
 // GitToken implements forge.Client with a read-only installation token
 // for repo alone.
 func (c *Client) GitToken(ctx context.Context, repo string) (string, error) {
