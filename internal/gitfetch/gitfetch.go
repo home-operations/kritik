@@ -208,8 +208,7 @@ func diffCommits(ctx context.Context, from, to *object.Commit) (string, []string
 	}
 	var changed []string
 	for _, c := range changes {
-		name := c.To.Name
-		name = cmp.Or(name, c.From.Name)
+		name := cmp.Or(c.To.Name, c.From.Name)
 		changed = append(changed, name)
 	}
 	return patch.String(), changed, nil
@@ -230,8 +229,7 @@ func refSpecs(f Fetch) []config.RefSpec {
 func PatchID(diff string) string {
 	h := sha256.New()
 	for line := range strings.SplitSeq(diff, "\n") {
-		switch {
-		case strings.HasPrefix(line, "@@"), strings.HasPrefix(line, "index "):
+		if strings.HasPrefix(line, "@@") || strings.HasPrefix(line, "index ") {
 			continue
 		}
 		h.Write([]byte(strings.TrimRight(line, " \t\r")))

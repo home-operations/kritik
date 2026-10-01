@@ -1,10 +1,3 @@
-// actions.go holds the enqueue helpers the web dashboard's API handlers call,
-// each running inside the caller's account transaction (store.WithAccount) so
-// the dashboard can audit an action in the same transaction it takes effect
-// in. Row-level security on pull_requests/reviews already scopes every query
-// here to the transaction's account; the explicit account_id predicates below
-// are defense in depth, matching the rest of the codebase.
-
 package jobs
 
 import (
@@ -47,7 +40,9 @@ var ErrReindexQueued = errors.New("jobs: reindex already queued")
 // bypassing the push-triggered dedup that keys on
 // account+repository+number+head alone; while a review of that head is
 // running or prepared, or a review job for it has yet to finish, it is
-// ErrRerunQueued instead.
+// ErrRerunQueued instead. Row-level security on pull_requests and reviews
+// already scopes every query to the transaction's account; the explicit
+// account_id predicates are defense in depth.
 func EnqueueRerun(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
 ) (int64, error) {

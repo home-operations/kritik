@@ -1,6 +1,7 @@
 package review
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -95,10 +96,7 @@ func BuildFollowUp(in Input, findings []Finding, thread []Message) string {
 		fmt.Fprintf(&tail, "\nReply to the last message from %s.\n", thread[len(thread)-1].Author)
 	}
 
-	budget := in.BudgetTokens
-	if budget <= 0 {
-		budget = DefaultBudgetTokens
-	}
+	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens)
 	in.BudgetTokens = max(budget-tail.Len()/charsPerToken, 2_000)
 	msg, _, _ := Build(in)
 	return msg + tail.String()

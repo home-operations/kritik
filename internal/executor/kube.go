@@ -2,6 +2,7 @@ package executor
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -112,10 +113,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 		res.Err = err
 		return res
 	}
-	poll := k.Poll
-	if poll <= 0 {
-		poll = 3 * time.Second
-	}
+	poll := cmp.Or(k.Poll, 3*time.Second)
 	t := time.NewTicker(poll)
 	defer t.Stop()
 	unread := 0
@@ -206,10 +204,7 @@ func (k *Kube) deleteSecret(ctx context.Context, name string) {
 }
 
 func (k *Kube) logger() *slog.Logger {
-	if k.Logger == nil {
-		return slog.Default()
-	}
-	return k.Logger
+	return cmp.Or(k.Logger, slog.Default())
 }
 
 func jobFinished(j *batchv1.Job) bool {

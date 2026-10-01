@@ -3,6 +3,7 @@ package executor
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -41,7 +42,7 @@ func (l *Local) Run(ctx context.Context, spec Spec) Result {
 		res.Err = maskedError{msg: spec.Secrets.Mask(err.Error()), err: err}
 		res.ExitCode = 1
 		res.TerminationReason = "Error"
-		if ctx.Err() == context.DeadlineExceeded {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			res.DeadlineExceeded = true
 			res.TerminationReason = "DeadlineExceeded"
 		}

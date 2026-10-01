@@ -220,9 +220,13 @@ func TestRenderSummaryMarkerCannotBeRemoved(t *testing.T) {
 
 func TestRenderInline(t *testing.T) {
 	f := sampleData().Result.Findings[0]
+	marker := FindingMarker(Fingerprint(f)) + "\n"
 	body, notes := RenderInline(t.Context(), Templates{}, f)
 	if len(notes) != 0 {
 		t.Fatalf("notes = %v", notes)
+	}
+	if !strings.HasPrefix(body, marker) {
+		t.Fatalf("inline comment does not lead with its marker:\n%s", body)
 	}
 	for _, want := range []string{"**[blocking]** **nil map write**", "m is nil here.", "m = map[string]int{}"} {
 		if !strings.Contains(body, want) {
@@ -249,11 +253,11 @@ func TestRenderInline(t *testing.T) {
 	}
 
 	body, notes = RenderInline(t.Context(), Templates{Inline: "{{ .Severity }}|{{ .Path }}:{{ .Line }}|{{ .Title }}|{{ .Explanation }}|{{ .SuggestedFix }}"}, f)
-	if len(notes) != 0 || body != "blocking|main.go:11|nil map write|m is nil here.|m = map[string]int{}" {
+	if len(notes) != 0 || body != marker+"blocking|main.go:11|nil map write|m is nil here.|m = map[string]int{}" {
 		t.Fatalf("custom inline = %q, notes %v", body, notes)
 	}
 	body, notes = RenderInline(t.Context(), Templates{Inline: `{{ template "x" }}`}, f)
-	if len(notes) != 1 || !strings.Contains(body, "**nil map write**") {
+	if len(notes) != 1 || !strings.HasPrefix(body, marker) || !strings.Contains(body, "**nil map write**") {
 		t.Fatalf("fallback inline = %q, notes %v", body, notes)
 	}
 }

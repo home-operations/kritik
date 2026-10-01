@@ -37,6 +37,7 @@ import (
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/store/storetest"
 	"github.com/home-operations/kritik/internal/transcript"
 	"github.com/home-operations/kritik/internal/webhook"
 )
@@ -230,18 +231,8 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	t.Helper()
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	appStore, err := store.Open(ctx, store.Options{
-		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: logger,
-	})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(appStore.Close)
-	if err := appStore.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	runnerStore, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_RUNNER_URL"), Logger: logger})
+	appStore := storetest.Open(t)
+	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIK_TEST_RUNNER_URL"), Logger: logger})
 	if err != nil {
 		t.Fatalf("Open runner: %v", err)
 	}

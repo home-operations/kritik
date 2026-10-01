@@ -25,8 +25,7 @@ func parseTime(s string) (time.Time, bool) {
 // usageQuery reads ?group=, ?from= and ?to=: by day over the last 30 days
 // unless given.
 func (s *Server) usageQuery(r *http.Request) (store.UsageGroup, time.Time, time.Time, error) {
-	group := store.UsageGroup(r.URL.Query().Get("group"))
-	group = cmp.Or(group, store.UsageByDay)
+	group := cmp.Or(store.UsageGroup(r.URL.Query().Get("group")), store.UsageByDay)
 	if !group.Valid() {
 		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "group must be day, model, repo or role")
 	}

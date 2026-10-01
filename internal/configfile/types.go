@@ -354,7 +354,7 @@ type Connection struct {
 }
 
 // WebhookSecretValue returns the resolved webhook secret.
-func (i Connection) WebhookSecretValue() Secret { return i.App.webhookSecret }
+func (i *Connection) WebhookSecretValue() Secret { return i.App.webhookSecret }
 
 // Repository carries per-repository overrides, the configuration's
 // owner/name entry for it. Everything a connection grants access to is

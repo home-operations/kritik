@@ -5,8 +5,6 @@ package ingest
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,17 +17,9 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/store/storetest"
 	"github.com/home-operations/kritik/internal/webhook"
 )
-
-func env(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		t.Skipf("%s not set", key)
-	}
-	return v
-}
 
 // The store suite's TestMain resets the schema; this suite runs after it in
 // the same `go test ./...` invocation only by package order, so it starts by
@@ -37,18 +27,7 @@ func env(t *testing.T, key string) string {
 func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	t.Helper()
 	ctx := context.Background()
-	logger := slog.New(slog.DiscardHandler)
-	st, err := store.Open(ctx, store.Options{
-		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: logger,
-	})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
 	f := configfiletest.Load(t, configYAML+`repositories:
@@ -246,10 +225,108 @@ func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, pr))); err != nil || out != (Outcome{Status: Skipped, Reason: reasonReviewed}) {
 		t.Fatalf("poll of a reviewed head = %+v, %v; want it skipped as reviewed", out, err)
 	}
+	// A webhook event for the reviewed head, delivered again or reopening
+	// the pull request, is not news either, however long ago River cleaned
+	// the job up.
+	if out, err := svc.Dispatch(ctx, request(f, ev("reopened", pr))); err != nil || out != (Outcome{Status: Skipped, Reason: reasonReviewed}) {
+		t.Fatalf("reopened with a reviewed head = %+v, %v; want it skipped as reviewed", out, err)
+	}
 	moved := *pr
 	moved.HeadSHA = "ddd"
 	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, &moved))); err != nil || out.Status != Enqueued {
 		t.Fatalf("poll of a new head = %+v, %v; want it enqueued", out, err)
+	}
+	// A superseded review did not review its head: the poll picks the head
+	// up again where a stale event left it behind.
+	stranded := *pr
+	stranded.HeadSHA = "eee"
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, finished_at)
+			SELECT account_id, id, 'eee', 'superseded', now() FROM pull_requests WHERE repository_id = $1 AND number = $2`, rid, pr.Number)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, &stranded))); err != nil || out.Status != Enqueued {
+		t.Fatalf("poll of a superseded head = %+v, %v; want it enqueued", out, err)
+	}
+}
+
+// TestDispatchStaleEvent: an event the forge changed the pull request
+// after, delivered late or again, neither rewinds the head nor reopens a
+// closed pull request, and starts no review.
+func TestDispatchStaleEvent(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	at := func(h int) time.Time { return time.Date(2026, 9, 24, h, 0, 0, 0, time.UTC) }
+	pr := &webhook.PullRequest{Number: 272, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "s1", BaseRef: "main", UpdatedAt: at(10)}
+	ev := func(action string, pr *webhook.PullRequest) webhook.Event {
+		return webhook.Event{Kind: webhook.KindPullRequest, Action: action, Repository: repo("onedr0p/polled"), PullRequest: pr}
+	}
+	row := func() (head, state string, updated time.Time) {
+		t.Helper()
+		var forgeUpdated *time.Time
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT head_sha, state, forge_updated_at FROM pull_requests WHERE number = $1`, pr.Number).Scan(&head, &state, &forgeUpdated)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if forgeUpdated != nil {
+			updated = *forgeUpdated
+		}
+		return head, state, updated
+	}
+	if out, err := svc.Dispatch(ctx, request(f, ev("opened", pr))); err != nil || out.Status != Enqueued {
+		t.Fatalf("opened = %+v, %v", out, err)
+	}
+	newer := *pr
+	newer.HeadSHA, newer.UpdatedAt = "s2", at(12)
+	if out, err := svc.Dispatch(ctx, request(f, ev("synchronize", &newer))); err != nil || out.Status != Enqueued {
+		t.Fatalf("newer synchronize = %+v, %v", out, err)
+	}
+	stale := *pr
+	stale.HeadSHA, stale.UpdatedAt = "s1b", at(11)
+	if out, err := svc.Dispatch(ctx, request(f, ev("synchronize", &stale))); err != nil || out != (Outcome{Status: Skipped, Reason: reasonStale}) {
+		t.Fatalf("stale synchronize = %+v, %v; want it skipped as stale", out, err)
+	}
+	if head, state, updated := row(); head != "s2" || state != "open" || !updated.Equal(at(12)) {
+		t.Fatalf("after a stale event: head %q state %q updated %v; want s2, open, %v", head, state, updated, at(12))
+	}
+	closed := newer
+	closed.State, closed.Merged, closed.UpdatedAt = "closed", true, at(13)
+	if out, err := svc.Dispatch(ctx, request(f, ev("closed", &closed))); err != nil || out.Reason != "closed" {
+		t.Fatalf("closed = %+v, %v", out, err)
+	}
+	// The push right before the merge, delivered after it.
+	late := newer
+	late.UpdatedAt = at(12)
+	if out, err := svc.Dispatch(ctx, request(f, ev("synchronize", &late))); err != nil || out != (Outcome{Status: Skipped, Reason: reasonStale}) {
+		t.Fatalf("synchronize after closed = %+v, %v; want it skipped as stale", out, err)
+	}
+	staleClose := *pr
+	staleClose.State, staleClose.UpdatedAt = "closed", at(9)
+	if _, err := svc.Dispatch(ctx, request(f, ev("closed", &staleClose))); err != nil {
+		t.Fatal(err)
+	}
+	if head, state, updated := row(); head != "s2" || state != "closed" || !updated.Equal(at(13)) {
+		t.Fatalf("after late events: head %q state %q updated %v; want s2, closed, %v", head, state, updated, at(13))
+	}
+	// An event with no updated_at, as a forge that does not say sends,
+	// always applies.
+	undated := newer
+	undated.HeadSHA, undated.UpdatedAt = "s3", time.Time{}
+	if out, err := svc.Dispatch(ctx, request(f, ev("synchronize", &undated))); err != nil || out.Status != Enqueued {
+		t.Fatalf("undated synchronize = %+v, %v", out, err)
+	}
+	if head, state, updated := row(); head != "s3" || state != "open" || !updated.Equal(at(13)) {
+		t.Fatalf("after an undated event: head %q state %q updated %v; want s3, open, %v", head, state, updated, at(13))
+	}
+	var jobsN int
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'review' AND (args->>'number')::int = $1`, pr.Number).Scan(&jobsN)
+	}); err != nil || jobsN != 3 {
+		t.Fatalf("review jobs = %d, %v; want one each for s1, s2 and s3", jobsN, err)
 	}
 }
 

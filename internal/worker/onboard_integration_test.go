@@ -12,7 +12,7 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/store/storetest"
 )
 
 // TestOnboarderKeepsToItsWindow checks the feeder queues onboarding jobs up
@@ -20,17 +20,7 @@ import (
 func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	st, err := store.Open(ctx, store.Options{
-		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: logger,
-	})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
 	file, err := configfiletest.Parse(t, configYAML+`  onedr0p/a: {}

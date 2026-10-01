@@ -242,9 +242,7 @@ func (b *builder) overlay(ctx context.Context) error {
 		}
 	}
 	slices.SortFunc(b.identifiers, func(x, y string) int { return cmp.Or(cmp.Compare(idCount[y], idCount[x]), cmp.Compare(x, y)) })
-	if len(b.identifiers) > b.opts.MaxIdentifiers {
-		b.identifiers = b.identifiers[:b.opts.MaxIdentifiers]
-	}
+	b.identifiers = b.identifiers[:min(len(b.identifiers), b.opts.MaxIdentifiers)]
 	b.stats.Overlay = len(b.overlayChunks)
 	b.stats.Identifiers = len(b.identifiers)
 	b.stats.ChangedSymbols = len(b.changedSymbols)

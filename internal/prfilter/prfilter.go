@@ -41,7 +41,7 @@ const evalCostLimit = 1_000_000
 // built. pr is a string-keyed map of dynamic values (the caller fills it
 // from the PR); field access is therefore statically dyn, see the bool/dyn
 // check in Compile.
-var env = sync.OnceValues(func() (*cel.Env, error) {
+var newEnv = sync.OnceValues(func() (*cel.Env, error) {
 	return cel.NewEnv(cel.Variable("pr", cel.MapType(cel.StringType, cel.DynType)))
 })
 
@@ -49,7 +49,7 @@ var env = sync.OnceValues(func() (*cel.Env, error) {
 // when the expression is syntactically invalid, references unknown
 // variables/functions, or cannot produce a boolean.
 func Compile(expr string) (*Program, error) {
-	env, err := env()
+	env, err := newEnv()
 	if err != nil {
 		return nil, fmt.Errorf("prfilter: build env: %w", err)
 	}

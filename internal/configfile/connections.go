@@ -39,10 +39,6 @@ func validateConnections(conns []Connection) error {
 	return nil
 }
 
-// ValidConnectionName reports whether name may name a connection: it is
-// the connection's hook path segment.
-func ValidConnectionName(name string) bool { return nameRe.MatchString(name) }
-
 // connectionEnvPrefix starts every environment variable that declares the
 // environment's app.
 const connectionEnvPrefix = "KRITIK_APPS_"

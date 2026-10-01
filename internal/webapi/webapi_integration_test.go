@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -26,17 +25,9 @@ import (
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/store/storetest"
 	"github.com/home-operations/kritik/internal/transcript"
 )
-
-func testEnv(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		t.Skipf("%s not set", key)
-	}
-	return v
-}
 
 const integrationConfig = `
 auth:
@@ -89,18 +80,8 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	t.Helper()
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	st, err := store.Open(ctx, store.Options{
-		AppURL: testEnv(t, "KRITIK_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: logger,
-	})
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	owner, err := pgxpool.New(ctx, testEnv(t, "KRITIK_TEST_OWNER_URL"))
+	st := storetest.Open(t)
+	owner, err := pgxpool.New(ctx, storetest.Env(t, "KRITIK_TEST_OWNER_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}

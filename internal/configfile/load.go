@@ -307,15 +307,15 @@ func (a *Account) resolve(s *secrets) error {
 	return nil
 }
 
-func (in *Connection) resolve(where string, s *secrets) error {
+func (i *Connection) resolve(where string, s *secrets) error {
 	var err error
-	if in.App.clientID, err = in.App.ClientID.resolve(s); err != nil {
+	if i.App.clientID, err = i.App.ClientID.resolve(s); err != nil {
 		return fmt.Errorf("configfile: %s.clientId: %w", where, err)
 	}
-	if in.App.privateKey, err = s.read(in.App.PrivateKey); err != nil {
+	if i.App.privateKey, err = s.read(i.App.PrivateKey); err != nil {
 		return fmt.Errorf("configfile: %s.privateKey: %w", where, err)
 	}
-	if in.App.webhookSecret, err = s.read(in.App.WebhookSecret); err != nil {
+	if i.App.webhookSecret, err = s.read(i.App.WebhookSecret); err != nil {
 		return fmt.Errorf("configfile: %s.webhookSecret: %w", where, err)
 	}
 	return nil
@@ -579,20 +579,20 @@ func CheckRepoPath(p string) error {
 	return nil
 }
 
-func (in Connection) validate(where string) error {
-	switch in.Forge {
+func (i *Connection) validate(where string) error {
+	switch i.Forge {
 	case ForgeGitHub:
-		if in.App.clientID == "" {
+		if i.App.clientID == "" {
 			return fmt.Errorf("configfile: %s.clientId is required", where)
 		}
-		if in.App.privateKey.Value() == "" {
+		if i.App.privateKey.Value() == "" {
 			return fmt.Errorf("configfile: %s.privateKey is required", where)
 		}
-		if in.App.webhookSecret.Value() == "" {
+		if i.App.webhookSecret.Value() == "" {
 			return fmt.Errorf("configfile: %s.webhookSecret is required", where)
 		}
 	default:
-		return fmt.Errorf("configfile: %s.forge must be %s, got %q", where, ForgeGitHub, in.Forge)
+		return fmt.Errorf("configfile: %s.forge must be %s, got %q", where, ForgeGitHub, i.Forge)
 	}
 	return nil
 }

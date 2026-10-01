@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -20,7 +21,7 @@ const leaderKey = "kritik-leader"
 // lock server-side without the client noticing.
 func (s *Store) RunAsLeader(ctx context.Context, retry time.Duration, lead func(ctx context.Context) error) error {
 	if s.owner == nil {
-		return fmt.Errorf("store: leadership needs the owner DSN")
+		return errors.New("store: leadership needs the owner DSN")
 	}
 	for {
 		held, err := s.tryLead(ctx, retry, lead)

@@ -170,7 +170,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "dispatch failed", http.StatusInternalServerError)
 		return
 	}
-	logger.Info("webhook "+out.Status, "reason", out.Reason, "job", out.Job)
+	logger.Info("webhook handled", "status", out.Status, "reason", out.Reason, "job", out.Job)
 	h.Metrics.Webhook(name, out.Status)
 	w.WriteHeader(http.StatusAccepted)
 }

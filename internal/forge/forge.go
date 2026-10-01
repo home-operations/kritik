@@ -24,7 +24,6 @@ type Clients interface {
 // event.
 type OpenPullRequest struct {
 	webhook.PullRequest
-	UpdatedAt     time.Time
 	DefaultBranch string
 }
 

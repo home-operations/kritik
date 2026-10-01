@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // Limits bounds a Run: how many steps it may take, how much of a tool's
@@ -214,8 +215,7 @@ func (r Run) Do(ctx context.Context) Result {
 				return result
 			}
 			nudged = true
-			text := resp.Text
-			text = cmp.Or(text, noResponseText)
+			text := cmp.Or(resp.Text, noResponseText)
 			messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
 			messages = append(messages, model.Message{Role: model.RoleUser, Text: nudgeText})
 			continue
@@ -244,7 +244,7 @@ func (r Run) Do(ctx context.Context) Result {
 					}
 					toolResults = append(toolResults, model.ToolResult{
 						CallID: call.ID, IsError: true,
-						Content: truncate(fmt.Sprintf("agent: submit_review: %s", err), limits.MaxToolOutputBytes),
+						Content: textcut.Truncate(fmt.Sprintf("agent: submit_review: %s", err), limits.MaxToolOutputBytes),
 					})
 					continue
 				}
@@ -256,7 +256,7 @@ func (r Run) Do(ctx context.Context) Result {
 			if !ok {
 				toolResults = append(toolResults, model.ToolResult{
 					CallID: call.ID, IsError: true,
-					Content: truncate(fmt.Sprintf("agent: unknown tool %q", call.Name), limits.MaxToolOutputBytes),
+					Content: textcut.Truncate(fmt.Sprintf("agent: unknown tool %q", call.Name), limits.MaxToolOutputBytes),
 				})
 				continue
 			}
@@ -264,11 +264,11 @@ func (r Run) Do(ctx context.Context) Result {
 			if err != nil {
 				toolResults = append(toolResults, model.ToolResult{
 					CallID: call.ID, IsError: true,
-					Content: truncate(err.Error(), limits.MaxToolOutputBytes),
+					Content: textcut.Truncate(err.Error(), limits.MaxToolOutputBytes),
 				})
 				continue
 			}
-			out = truncate(out, limits.MaxToolOutputBytes)
+			out = textcut.Truncate(out, limits.MaxToolOutputBytes)
 			event.OutputBytes += len(out)
 			toolResults = append(toolResults, model.ToolResult{CallID: call.ID, Content: out})
 		}

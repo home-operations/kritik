@@ -243,21 +243,12 @@ func TestKubeRunWaitsForCompletion(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	k := &Kube{Client: client, Namespace: "kritik", Image: "img", ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}
 	ctx := t.Context()
+	created := reacted(client, "create", "jobs")
 	done := make(chan Result, 1)
 	go func() { done <- k.Run(ctx, spec()) }()
 
 	// Let the Job get created, then mark it succeeded with a finished pod.
-	var name string
-	for i := 0; i < 100 && name == ""; i++ {
-		time.Sleep(5 * time.Millisecond)
-		jobs, _ := client.BatchV1().Jobs("kritik").List(ctx, metav1.ListOptions{})
-		if len(jobs.Items) == 1 {
-			name = jobs.Items[0].Name
-		}
-	}
-	if name == "" {
-		t.Fatal("job was not created")
-	}
+	name := waitJob(t, client, created).Name
 	_, _ = client.CoreV1().Pods("kritik").Create(ctx, &corev1.Pod{
 		Name: name + "-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": name},
 		Spec: corev1.PodSpec{NodeName: "k8s-1"},
@@ -284,9 +275,10 @@ func TestKubeRunDeletesTheJobWhenCancelled(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	k := newKube(client)
 	ctx, cancel := context.WithCancel(t.Context())
+	created := reacted(client, "create", "jobs")
 	done := make(chan Result, 1)
 	go func() { done <- k.Run(ctx, spec()) }()
-	waitJob(t, client)
+	waitJob(t, client, created)
 	cancel()
 	select {
 	case res := <-done:
@@ -306,16 +298,10 @@ func TestKubeRunReportsFailure(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	k := &Kube{Client: client, Namespace: "kritik", Image: "img", ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}
 	ctx := t.Context()
+	created := reacted(client, "create", "jobs")
 	done := make(chan Result, 1)
 	go func() { done <- k.Run(ctx, spec()) }()
-	var j *batchv1.Job
-	for i := 0; i < 100 && j == nil; i++ {
-		time.Sleep(5 * time.Millisecond)
-		jobs, _ := client.BatchV1().Jobs("kritik").List(ctx, metav1.ListOptions{})
-		if len(jobs.Items) == 1 {
-			j = &jobs.Items[0]
-		}
-	}
+	j := waitJob(t, client, created)
 	j.Status.Failed = 1
 	j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "DeadlineExceeded"}}
 	_, _ = client.BatchV1().Jobs("kritik").UpdateStatus(ctx, j, metav1.UpdateOptions{})
@@ -339,9 +325,10 @@ func TestKubeRunRetriesAStatusRead(t *testing.T) {
 	})
 	k := newKube(client)
 	ctx := t.Context()
+	created := reacted(client, "create", "jobs")
 	done := make(chan Result, 1)
 	go func() { done <- k.Run(ctx, spec()) }()
-	j := waitJob(t, client)
+	j := waitJob(t, client, created)
 	j.Status.Succeeded = 1
 	_, _ = client.BatchV1().Jobs("kritik").UpdateStatus(ctx, j, metav1.UpdateOptions{})
 	select {
@@ -377,17 +364,42 @@ func newKube(client *fake.Clientset) *Kube {
 	return &Kube{Client: client, Namespace: "kritik", Image: "img", ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}
 }
 
-// waitJob returns the Job once Run has created it.
-func waitJob(t *testing.T, client *fake.Clientset) *batchv1.Job {
+// reacted hands over each action with verb on resource that Run sends the
+// fake. The Fake holds its lock from the reactor through storing the
+// object, so a read made after a receive sees the stored state.
+func reacted(client *fake.Clientset, verb, resource string) <-chan k8stesting.Action {
+	ch := make(chan k8stesting.Action, 8)
+	client.PrependReactor(verb, resource, func(a k8stesting.Action) (bool, runtime.Object, error) {
+		ch <- a
+		return false, nil, nil
+	})
+	return ch
+}
+
+// awaitAction returns the next action on ch, or fails the test.
+func awaitAction(t *testing.T, ch <-chan k8stesting.Action, what string) k8stesting.Action {
 	t.Helper()
-	for range 400 {
-		jobs, _ := client.BatchV1().Jobs("kritik").List(t.Context(), metav1.ListOptions{})
-		if len(jobs.Items) == 1 {
-			return &jobs.Items[0]
-		}
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case a := <-ch:
+		return a
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s did not happen", what)
+		return nil
 	}
-	t.Fatal("job was not created")
+}
+
+// waitJob returns the Job once Run has created it, as the fake holds it.
+func waitJob(t *testing.T, client *fake.Clientset, created <-chan k8stesting.Action) *batchv1.Job {
+	t.Helper()
+	name := awaitAction(t, created, "job creation").(k8stesting.CreateAction).GetObject().(*batchv1.Job).Name
+	jobs, err := client.BatchV1().Jobs("kritik").List(t.Context(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i := slices.IndexFunc(jobs.Items, func(j batchv1.Job) bool { return j.Name == name }); i >= 0 {
+		return &jobs.Items[i]
+	}
+	t.Fatalf("job %s is not held by the fake", name)
 	return nil
 }
 
@@ -395,21 +407,16 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	k := newKube(client)
 	ctx, cancel := context.WithCancel(t.Context())
+	created := reacted(client, "create", "jobs")
+	owned := reacted(client, "patch", "secrets")
 	done := make(chan Result, 1)
 	go func() { done <- k.Run(ctx, spec()) }()
-	j := waitJob(t, client)
+	j := waitJob(t, client, created)
 
-	var sec *corev1.Secret
-	for range 400 {
-		s, err := client.CoreV1().Secrets("kritik").Get(t.Context(), j.Name, metav1.GetOptions{})
-		if err == nil && len(s.OwnerReferences) == 1 {
-			sec = s
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if sec == nil {
-		t.Fatal("secret was not given an owner reference")
+	awaitAction(t, owned, "the owner reference patch")
+	sec, err := client.CoreV1().Secrets("kritik").Get(t.Context(), j.Name, metav1.GetOptions{})
+	if err != nil || len(sec.OwnerReferences) != 1 {
+		t.Fatalf("secret = %+v, %v; want one owner reference", sec, err)
 	}
 	if string(sec.Data["git-token"]) != "ghs_secret_token" || string(sec.Data["gateway-token"]) != "krk_run_token" {
 		t.Fatalf("secret data = %v", sec.Data)
@@ -466,9 +473,10 @@ func TestKubeRunCancelDeletesJobInForeground(t *testing.T) {
 	k := newKube(client)
 	cause := errors.New("superseded")
 	ctx, cancel := context.WithCancelCause(t.Context())
+	created := reacted(client, "create", "jobs")
 	done := make(chan Result, 1)
 	go func() { done <- k.Run(ctx, spec()) }()
-	j := waitJob(t, client)
+	j := waitJob(t, client, created)
 	_, _ = client.CoreV1().Pods("kritik").Create(t.Context(), &corev1.Pod{
 		Name: j.Name + "-abcde", Namespace: "kritik", Labels: map[string]string{"job-name": j.Name},
 	}, metav1.CreateOptions{})

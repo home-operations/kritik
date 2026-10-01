@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -94,11 +95,8 @@ func (s supervision) check(ctx context.Context) error {
 // measured by the database's clock, the same clock that stamped it. prID
 // empty skips the supersede check.
 func runSupervision(st *store.Store, accountID, runID, prID, head string, every time.Duration, logger *slog.Logger) supervision {
-	if every <= 0 {
-		every = superviseInterval
-	}
 	s := supervision{
-		every: every, stale: heartbeatStale, logger: logger,
+		every: cmp.Or(every, superviseInterval), stale: heartbeatStale, logger: logger,
 		heartbeat: func(ctx context.Context) (time.Duration, bool, error) {
 			var seconds *float64
 			err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {

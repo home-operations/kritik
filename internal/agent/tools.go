@@ -30,16 +30,6 @@ const (
 // a checkout leaves it out.
 const MaxBlobBytes = 1 << 20
 
-// truncate caps s at limit bytes, appending a note of how much was cut. A
-// non-positive limit disables truncation.
-func truncate(s string, limit int) string {
-	if limit <= 0 || len(s) <= limit {
-		return s
-	}
-	kept := textcut.Prefix(s, limit)
-	return kept + fmt.Sprintf("\n[truncated %d bytes]", len(s)-len(kept))
-}
-
 // decodeInput unmarshals input into v, treating a nil or empty input as
 // "no fields set" rather than a JSON error.
 func decodeInput(input json.RawMessage, v any) error {
@@ -105,9 +95,7 @@ func (rt *readFileTool) Run(_ context.Context, input json.RawMessage) (string, e
 	}
 	lines := splitLines(content)
 
-	start, end := req.StartLine, req.EndLine
-	start = cmp.Or(start, 1)
-	end = cmp.Or(end, len(lines))
+	start, end := cmp.Or(req.StartLine, 1), cmp.Or(req.EndLine, len(lines))
 	if start < 1 {
 		return "", fmt.Errorf("agent: read_file: %s: start_line must be >= 1", cleaned)
 	}
@@ -117,9 +105,7 @@ func (rt *readFileTool) Run(_ context.Context, input json.RawMessage) (string, e
 	if start > len(lines) {
 		return "", fmt.Errorf("agent: read_file: %s: start_line %d is beyond the file's %d lines", cleaned, start, len(lines))
 	}
-	if end > len(lines) {
-		end = len(lines)
-	}
+	end = min(end, len(lines))
 
 	var b strings.Builder
 	for i := start; i <= end; i++ {
@@ -128,7 +114,7 @@ func (rt *readFileTool) Run(_ context.Context, input json.RawMessage) (string, e
 		}
 		fmt.Fprintf(&b, "%d\t%s", i, lines[i-1])
 	}
-	return truncate(b.String(), rt.maxBytes), nil
+	return textcut.Truncate(b.String(), rt.maxBytes), nil
 }
 
 var grepSchema = json.RawMessage(`{
@@ -181,17 +167,15 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 	if err != nil {
 		return "", fmt.Errorf("agent: grep: invalid pattern: %w", err)
 	}
-	glob := req.PathGlob
-	glob = cmp.Or(glob, "**")
+	glob := cmp.Or(req.PathGlob, "**")
 	if !doublestar.ValidatePattern(glob) {
 		return "", fmt.Errorf("agent: grep: invalid path_glob %q", glob)
 	}
 	limit := req.MaxResults
 	if limit <= 0 {
 		limit = defaultGrepMaxResults
-	} else if limit > grepMaxResultsCap {
-		limit = grepMaxResultsCap
 	}
+	limit = min(limit, grepMaxResultsCap)
 
 	var matches []grepMatch
 	iter := gt.tree.root.Files()
@@ -238,7 +222,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 	for i, m := range matches {
 		lines[i] = fmt.Sprintf("%s:%d: %s", m.path, m.line, m.text)
 	}
-	return truncate(strings.Join(lines, "\n"), gt.maxBytes), nil
+	return textcut.Truncate(strings.Join(lines, "\n"), gt.maxBytes), nil
 }
 
 var listFilesSchema = json.RawMessage(`{
@@ -275,8 +259,7 @@ func (lt *listFilesTool) Run(ctx context.Context, input json.RawMessage) (string
 	if err := decodeInput(input, &req); err != nil {
 		return "", fmt.Errorf("agent: list_files: %w", err)
 	}
-	glob := req.Glob
-	glob = cmp.Or(glob, "**")
+	glob := cmp.Or(req.Glob, "**")
 	if !doublestar.ValidatePattern(glob) {
 		return "", fmt.Errorf("agent: list_files: invalid glob %q", glob)
 	}
@@ -301,5 +284,5 @@ func (lt *listFilesTool) Run(ctx context.Context, input json.RawMessage) (string
 	}
 
 	slices.Sort(paths)
-	return truncate(strings.Join(paths, "\n"), lt.maxBytes), nil
+	return textcut.Truncate(strings.Join(paths, "\n"), lt.maxBytes), nil
 }

@@ -97,10 +97,7 @@ func run() error {
 	// and force-terminates instead of being swallowed during a slow drain.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go func() {
-		<-ctx.Done()
-		stop()
-	}()
+	context.AfterFunc(ctx, stop)
 
 	// The management listener comes up first so liveness answers while the
 	// database is still starting.
@@ -173,7 +170,7 @@ func serve(
 	// on election, the other replica only compares hashes.
 	current := configfile.NewCurrent(file)
 	g.Go(func() error {
-		return reportDrift(ctx, st, current, drift, driftInterval)
+		return reportDrift(ctx, st, current, drift, driftInterval, logger)
 	})
 	exec, err := newExecutor(ctx, cfg, logger)
 	if err != nil {
@@ -347,13 +344,7 @@ const linger = 5 * time.Second
 // lingering is a context that ends d after ctx does, with ctx's values.
 func lingering(ctx context.Context, d time.Duration) context.Context {
 	lctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	go func() {
-		<-ctx.Done()
-		t := time.NewTimer(d)
-		defer t.Stop()
-		<-t.C
-		cancel()
-	}()
+	context.AfterFunc(ctx, func() { time.AfterFunc(d, cancel) })
 	return lctx
 }
 
@@ -556,35 +547,26 @@ type retentionStore interface {
 func retentionSweep(ctx context.Context, st retentionStore, current *configfile.Current, interval time.Duration, logger *slog.Logger) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
+	report := func(what, unit string, n int64, err error) {
+		if err != nil {
+			if ctx.Err() == nil {
+				logger.Warn(what+" not swept", "error", err)
+			}
+			return
+		}
+		if n > 0 {
+			logger.Info(what+" swept", unit, n)
+		}
+	}
 	for {
-		if n, err := st.SweepModelCalls(ctx, current.Get().TranscriptRetention()); err != nil {
-			if ctx.Err() == nil {
-				logger.Warn("model call transcripts not swept", "error", err)
-			}
-		} else if n > 0 {
-			logger.Info("model call transcripts swept", "rows", n)
-		}
-		if n, err := st.SweepDiffs(ctx, current.Get().DiffRetention()); err != nil {
-			if ctx.Err() == nil {
-				logger.Warn("review diffs not swept", "error", err)
-			}
-		} else if n > 0 {
-			logger.Info("review diffs swept", "packs", n)
-		}
-		if n, err := st.SweepSessions(ctx, time.Now()); err != nil {
-			if ctx.Err() == nil {
-				logger.Warn("dashboard sessions not swept", "error", err)
-			}
-		} else if n > 0 {
-			logger.Info("dashboard sessions swept", "rows", n)
-		}
-		if n, err := st.SweepDisabledIndexes(ctx, current.Get().DisabledIndexGrace()); err != nil {
-			if ctx.Err() == nil {
-				logger.Warn("disabled repositories' indexes not swept", "error", err)
-			}
-		} else if n > 0 {
-			logger.Info("disabled repositories' indexes swept", "repositories", n)
-		}
+		n, err := st.SweepModelCalls(ctx, current.Get().TranscriptRetention())
+		report("model call transcripts", "rows", n, err)
+		n, err = st.SweepDiffs(ctx, current.Get().DiffRetention())
+		report("review diffs", "packs", n, err)
+		n, err = st.SweepSessions(ctx, time.Now())
+		report("dashboard sessions", "rows", n, err)
+		n, err = st.SweepDisabledIndexes(ctx, current.Get().DisabledIndexGrace())
+		report("disabled repositories' indexes", "repositories", n, err)
 		select {
 		case <-ctx.Done():
 			return
@@ -628,6 +610,7 @@ const driftInterval = 10 * time.Second
 // ConfigMap on one node must not take an ingest replica out of the Service.
 func reportDrift(
 	ctx context.Context, st *store.Store, current *configfile.Current, gauge *server.ConfigDriftGauge, every time.Duration,
+	logger *slog.Logger,
 ) error {
 	t := time.NewTicker(every)
 	defer t.Stop()
@@ -638,7 +621,7 @@ func reportDrift(
 		case <-t.C:
 			applied, err := st.AppliedConfigHash(ctx)
 			if err != nil {
-				slog.Warn("could not read applied configuration hash", "error", err)
+				logger.Warn("could not read applied configuration hash", "error", err)
 				continue
 			}
 			gauge.Set(applied != "" && applied != current.Get().Hash())

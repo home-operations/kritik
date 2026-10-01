@@ -96,7 +96,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 // Handler is the whole dashboard: API, sign-in routes and UI.
 func (s *Server) Handler() http.Handler {
-	var h = s.routes()
+	h := s.routes()
 	if p := s.basePath; p != "" {
 		outer := http.NewServeMux()
 		// The bare prefix redirects to its trailing-slash form so the UI's
@@ -204,8 +204,7 @@ func (s *Server) uiHandler() http.Handler {
 // isBareDir reports whether urlPath names a directory of ui with no
 // index.html, which http.FileServerFS would otherwise list.
 func isBareDir(ui fs.FS, urlPath string) bool {
-	name := strings.TrimPrefix(path.Clean("/"+urlPath), "/")
-	name = cmp.Or(name, ".")
+	name := cmp.Or(strings.TrimPrefix(path.Clean("/"+urlPath), "/"), ".")
 	st, err := fs.Stat(ui, name)
 	if err != nil || !st.IsDir() {
 		return false

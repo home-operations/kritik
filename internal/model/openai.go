@@ -140,8 +140,7 @@ func (o *OpenAI) step(
 		if tc.Type != "function" {
 			continue
 		}
-		args := tc.Function.Arguments
-		args = cmp.Or(args, "{}")
+		args := cmp.Or(tc.Function.Arguments, "{}")
 		out.ToolCalls = append(out.ToolCalls, ToolCall{ID: tc.ID, Name: tc.Function.Name, Input: json.RawMessage(args)})
 	}
 
@@ -237,8 +236,7 @@ func openAIMessages(m Message) []openai.ChatCompletionMessageParamUnion {
 			a.Content.OfString = openai.String(m.Text)
 		}
 		for _, c := range m.ToolCalls {
-			args := string(c.Input)
-			args = cmp.Or(args, "{}")
+			args := cmp.Or(string(c.Input), "{}")
 			a.ToolCalls = append(a.ToolCalls, openai.ChatCompletionMessageToolCallUnionParam{
 				OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
 					ID: c.ID, Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{Name: c.Name, Arguments: args},

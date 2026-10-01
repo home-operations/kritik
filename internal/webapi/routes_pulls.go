@@ -63,7 +63,7 @@ func pull(p store.PullRow) Pull {
 	if v := p.LastReview; v != nil {
 		out.LastReview = &ReviewBrief{
 			ID: v.ID, Status: v.Status, Scope: v.Scope, CreatedAt: v.CreatedAt,
-			Findings: SeverityCounts{Blocking: v.Findings.Blocking, Important: v.Findings.Important, Nit: v.Findings.Nit},
+			Findings: severityCounts(v.Findings),
 		}
 	}
 	return out

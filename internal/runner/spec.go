@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -194,9 +195,7 @@ const maxPromptBytes = 768 << 10
 // worker read them.
 func (p *Prompt) Trim() {
 	p.PullRequest.Body = textcut.Prefix(p.PullRequest.Body, MaxBodyBytes)
-	if len(p.Prior) > MaxPriorFindings {
-		p.Prior = p.Prior[:MaxPriorFindings]
-	}
+	p.Prior = p.Prior[:min(len(p.Prior), MaxPriorFindings)]
 	for len(p.Prior) > 0 {
 		b, err := json.Marshal(p)
 		if err != nil || len(b) <= maxPromptBytes {
@@ -266,7 +265,7 @@ type Secrets struct {
 // "***". Longer secrets go first so one containing another is masked whole.
 func (s Secrets) Mask(text string) string {
 	values := []string{s.GitToken, s.GatewayToken}
-	slices.SortFunc(values, func(a, b string) int { return len(b) - len(a) })
+	slices.SortFunc(values, func(a, b string) int { return cmp.Compare(len(b), len(a)) })
 	for _, v := range values {
 		if v != "" {
 			text = strings.ReplaceAll(text, v, "***")

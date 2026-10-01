@@ -28,3 +28,24 @@ func TestPrefix(t *testing.T) {
 		})
 	}
 }
+
+func TestTruncate(t *testing.T) {
+	tests := []struct {
+		name, s string
+		n       int
+		want    string
+	}{
+		{"fits", "abc", 3, "abc"},
+		{"cut", "abcdef", 4, "abcd\n[truncated 2 bytes]"},
+		{"inside a rune", "aéb", 2, "a\n[truncated 3 bytes]"},
+		{"disabled", "abc", 0, "abc"},
+		{"negative", "abc", -1, "abc"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Truncate(tt.s, tt.n); got != tt.want {
+				t.Fatalf("Truncate(%q, %d) = %q, want %q", tt.s, tt.n, got, tt.want)
+			}
+		})
+	}
+}

@@ -248,8 +248,12 @@ func TestNewStepper(t *testing.T) {
 			host = r.URL.Host
 			return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
 		})}
-		if _, err := Probe(t.Context(), ProviderOpenAI, "", "k", client); err == nil || host != "api.openai.com" {
-			t.Fatalf("Probe reached %q (%v), want api.openai.com", host, err)
+		s, err := NewStepper(ProviderOpenAI, "", "k", nil, client)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.(*OpenAI).client.Models.List(t.Context()); err == nil || host != "api.openai.com" {
+			t.Fatalf("reached %q (%v), want api.openai.com", host, err)
 		}
 	})
 }

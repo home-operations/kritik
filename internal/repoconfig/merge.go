@@ -167,7 +167,7 @@ func (r SkipReason) Description() string {
 // variables vars that changes changed, or "" when it does not. A filter
 // that fails to evaluate skips, since the file may only narrow; the error
 // is returned for the log.
-func (m Merged) Check(vars map[string]any, changed []string) (SkipReason, error) {
+func (m *Merged) Check(vars map[string]any, changed []string) (SkipReason, error) {
 	if !m.Enabled {
 		return SkipDisabled, nil
 	}
