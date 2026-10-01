@@ -93,68 +93,11 @@ connection. A transaction-mode pooler, such as PgBouncer or a CloudNativePG
 between transactions, which breaks both. `kritika_leader` is 1 on the replica
 that holds the lock.
 
-On CloudNativePG, use TensorChord's image (`ghcr.io/tensorchord/cloudnative-vectorchord`,
-tagged `<postgres>-<vchord>`) or mount `ghcr.io/tensorchord/vchord-scratch` as an
-image-volume extension, load the library, make the bootstrap owner `owner`,
-declare the other two roles under `spec.managed.roles`, and let a `Database`
-resource create the extensions:
-
-```yaml
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: kritika-postgres
-spec:
-  instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:18-standard-trixie
-  enableSuperuserAccess: false
-  bootstrap:
-    initdb:
-      database: kritika
-      owner: kritika
-      secret:
-        name: kritika-postgres-credentials
-  managed:
-    roles:
-      - name: kritika_app
-        login: true
-        passwordSecret:
-          name: kritika-postgres-app
-      - name: kritika_runner
-        login: true
-        passwordSecret:
-          name: kritika-postgres-runner
----
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: kritika
-spec:
-  name: kritika
-  owner: kritika
-  cluster:
-    name: kritika-postgres
-  extensions:
-    - name: vector
-      ensure: present
-    - name: vchord
-      ensure: present
-```
-
-with, on the `Cluster`:
-
-```yaml
-spec:
-  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.6-1.1.1
-  postgresql:
-    shared_preload_libraries:
-      - vchord
-```
-
-Each `passwordSecret` is a basic-auth Secret; kritika reads a `uri` key from
-the Secrets named in `database.*.existingSecret`, so either use CNPG's
-generated `uri` for the owner or add one for the managed roles (an External
-Secrets `Password` generator plus a templated `uri` works).
+[Postgres with CloudNativePG](https://kritika.home-operations.com/database/)
+sets this up end to end: a two-instance cluster on TensorChord's VectorChord
+image, the extensions through a `Database` resource, the application and
+runner roles as `DatabaseRole` resources, the Secrets with their `uri` key
+for `database.*.existingSecret`, failover and backups.
 
 ### Egress gateway
 

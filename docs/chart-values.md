@@ -6,8 +6,8 @@ kept in step with `values.yaml` by helm-docs (CI fails if it goes stale). The
 chart also ships a
 [`values.schema.json`](https://github.com/home-operations/kritika/blob/main/charts/kritika/values.schema.json)
 for editor completion and `helm install` validation. The chart README also
-covers the CloudNativePG setup for the three database roles, the egress
-gateway, runner tools and the runner sandbox.
+covers the egress gateway, runner tools and the runner sandbox; the database
+has its own page, [Postgres with CloudNativePG](database.md).
 
 This page is the orientation: which groups of values exist and where their
 behavior is explained, followed by the full `values.yaml`.
