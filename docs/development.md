@@ -20,8 +20,7 @@ fetch, context and prompt code as one-step agentic reviews, what
 over the head commit and a `submit_review` the one step is told to make. Stage 4, the
 similar-code index, needs a database and is left out. Each case runs with
 the diff alone and with the context stages, reporting recall on the
-expected findings, cost and latency per ablation. See the ADR's
-evaluation section.
+expected findings, cost and latency per ablation.
 
 ## Cluster development loop
 

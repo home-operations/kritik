@@ -98,8 +98,6 @@ Security notes:
 - [Metrics](docs/metrics.md)
 - [Development](docs/development.md): building, testing, evaluation and the
   cluster loop
-- [Architecture decision records](docs/adr/), starting with
-  [ADR-0002](docs/adr/0002-kritik-pr-review-service.md)
 
 ## License
 

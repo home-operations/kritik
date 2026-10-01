@@ -9,8 +9,7 @@ import (
 )
 
 // How far the instance is from reviewing, for the Configuration page's
-// checklist (ADR-0019 §2.2), and re-reading the repositories a
-// connection's App reaches.
+// checklist, and re-reading the repositories a connection's App reaches.
 
 func (s *Server) registerSetup(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/setup", s.admin(s.getSetup))

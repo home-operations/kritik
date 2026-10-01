@@ -48,9 +48,9 @@ type RunConfig struct {
 }
 
 // RunTool executes one allowlisted binary with the model's arguments,
-// directly and without a shell, in a checkout of the head commit
-// (ADR-0008), and records as a source the review consulted every http(s)
-// URL curl is given and what each gh call reads (ADR-0023).
+// directly and without a shell, in a checkout of the head commit, and
+// records as a source the review consulted every http(s) URL curl is given
+// and what each gh call reads.
 type RunTool struct {
 	cfg     RunConfig
 	names   []string

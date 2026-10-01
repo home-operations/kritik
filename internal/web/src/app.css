@@ -30,7 +30,7 @@
   --ok: #1d7436;
   --merged: #6b43b5;
   --warn-bg: #faf1bf;
-  /* Charts are ink and greys (ADR-0017). Severity is an ordinal ramp of
+  /* Charts are ink and greys. Severity is an ordinal ramp of
      the ink, darkest for blocking: red pencil and ochre stacked side by
      side are alike to a deuteranope. */
   --chart-ink: #3d4556;
@@ -107,7 +107,7 @@ body {
 
 /* ---- shell + topbar -------------------------------------------------- */
 /* The top bar holds the brand, the account switcher and the actions, and
-   under them the section tabs (ADR-0017); the routed page fills the rest. */
+   under them the section tabs; the routed page fills the rest. */
 .app {
   display: flex;
   flex-direction: column;

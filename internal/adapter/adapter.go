@@ -1,7 +1,7 @@
 // Package adapter resolves the configuration's providers to model adapters,
-// built once for the life of the process, as the configuration is
-// (ADR-0022 §2.1), and records what they are asked for the transcript
-// view. The workers and the gateway share it.
+// built once for the life of the process, as the configuration is, and
+// records what they are asked for the transcript view. The workers and the
+// gateway share it.
 package adapter
 
 import (

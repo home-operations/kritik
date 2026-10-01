@@ -68,7 +68,7 @@ func commandTool(
 	}
 	env, proxied := commandEnv(home)
 	// gh reaches GitHub over HTTPS, which the gateway cannot add a
-	// credential to, so it carries the run's read-only token (ADR-0023).
+	// credential to, so it carries the run's read-only token.
 	commandEnvs := map[string][]string{"gh": {"GH_TOKEN=" + gitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}
 	return agent.NewRunTool(agent.RunConfig{
 		Dir: dir, Env: env, CommandEnv: commandEnvs, Commands: found, Timeout: time.Duration(p.Agent.CommandTimeoutSeconds) * time.Second,

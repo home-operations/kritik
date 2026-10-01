@@ -47,11 +47,11 @@ const connectionEnvPrefix = "KRITIK_APPS_"
 // is unset.
 const DefaultEnvConnection = "github"
 
-// overlayConnectionEnv declares the one app the environment may (ADR-0014
-// §2.2): it replaces the file's app of its name whole, or joins them. It
-// returns the app's name, "" when no KRITIK_APPS_* variable is set; a
-// secret's variable carries the value itself (ADR-0022 §2.2). A variable
-// that names no key is an error, so a typo is refused rather than ignored.
+// overlayConnectionEnv declares the one app the environment may: it
+// replaces the file's app of its name whole, or joins them. It returns the
+// app's name, "" when no KRITIK_APPS_* variable is set; a secret's variable
+// carries the value itself. A variable that names no key is an error, so a
+// typo is refused rather than ignored.
 func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error) {
 	in := Connection{Name: DefaultEnvConnection, Forge: ForgeGitHub}
 	set := false

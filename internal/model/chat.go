@@ -10,10 +10,10 @@ import (
 )
 
 // This file is the OpenAI chat completions wire format as kritik's model
-// gateway serves it (ADR-0004): the part of it the OpenAI adapter sends and
-// reads, decoded into a StepRequest and encoded from a StepResponse, so a
-// runner's adapter can talk to the gateway and the gateway can answer
-// through any provider's adapter.
+// gateway serves it: the part of it the OpenAI adapter sends and reads,
+// decoded into a StepRequest and encoded from a StepResponse, so a runner's
+// adapter can talk to the gateway and the gateway can answer through any
+// provider's adapter.
 
 // ErrBudget is a step the gateway refused because the run's token budget
 // or the account's monthly cap is spent.

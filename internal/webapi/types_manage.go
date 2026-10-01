@@ -30,7 +30,7 @@ type AppInstallation struct {
 }
 
 // SetupStatus is how far the instance is from reviewing, what the
-// Configuration page's checklist shows (ADR-0019 §2.2).
+// Configuration page's checklist shows.
 type SetupStatus struct {
 	// WebURL is the dashboard's URL, and HooksURL where each connection's
 	// webhook goes, its name appended.

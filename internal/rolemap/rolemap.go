@@ -1,6 +1,6 @@
 // Package rolemap compiles and evaluates a sign-in's role mapping: a CEL
 // expression over what the identity provider says about a person, whose
-// value decides what that person may do in the dashboard (ADR-0014 §2.5).
+// value decides what that person may do in the dashboard.
 //
 // The expression yields either an instance-wide role, "admin", "member" or
 // "" for none, or a map from forge account ("github/<name>", or "*" for

@@ -1,10 +1,9 @@
 // Package gateway is the worker's listener for runner pods: the egress
-// proxy they reach the outside through (ADR-0008), and the model and
-// similar-code endpoints a review's runner calls with its run token
-// (ADR-0004, ADR-0026). No provider key enters a runner pod: the gateway
-// reserves each call against the run's budget and checks the account's
-// monthly cap, answers it through the account's provider, and records
-// what it spent where the caps see it.
+// proxy they reach the outside through, and the model and similar-code
+// endpoints a review's runner calls with its run token. No provider key
+// enters a runner pod: the gateway reserves each call against the run's
+// budget and checks the account's monthly cap, answers it through the
+// account's provider, and records what it spent where the caps see it.
 package gateway
 
 import (

@@ -37,7 +37,7 @@ var toolNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,56}[a-z0-9])?$`)
 var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 
 // fileDoc is the configuration file's schema: sign-in and the whole
-// configuration (ADR-0019 §2.1, ADR-0021 §2.2).
+// configuration.
 type fileDoc struct {
 	Auth      Auth                `yaml:"auth,omitempty"`
 	Apps      []Connection        `yaml:"apps,omitempty"`
@@ -437,7 +437,7 @@ func (f *File) validateAccount(a *Account) error {
 	}
 	for _, r := range a.Repositories {
 		if r.Enabled != nil {
-			return fmt.Errorf("configfile: %s.enabled: turn a repository on or off in the dashboard (ADR-0019 §2.3)", r.where)
+			return fmt.Errorf("configfile: %s.enabled: turn a repository on or off in the dashboard", r.where)
 		}
 		if err := f.validateOverrides(r.where, a, &r.Overrides); err != nil {
 			return err

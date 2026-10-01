@@ -132,10 +132,10 @@ func (h *Handler) RequirePrincipal(next http.Handler) http.Handler {
 	})
 }
 
-// SameOrigin rejects a state-changing request that does not carry
-// X-Kritik: 1 and come from the dashboard's own origin (ADR-0009 §2.7). A
-// cross-site form cannot set a custom header, and a cross-site script that
-// does must pass a CORS preflight kritik never grants.
+// SameOrigin rejects a state-changing request that does not carry X-Kritik:
+// 1 and come from the dashboard's own origin. A cross-site form cannot set
+// a custom header, and a cross-site script that does must pass a CORS
+// preflight kritik never grants.
 func (h *Handler) SameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {

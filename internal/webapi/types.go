@@ -598,8 +598,8 @@ type UsageSeries struct {
 }
 
 // RuleKind is what a rule is to a review: a check written in the
-// configuration (ADR-0018), as text or a file, or a context file that
-// explains the code.
+// configuration, as text or a file, or a context file that explains the
+// code.
 type RuleKind string
 
 // Rule kinds.

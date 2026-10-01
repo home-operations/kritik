@@ -37,10 +37,10 @@ var (
 	ErrRoleMapping = errors.New("auth: role mapping")
 )
 
-// grant decides what a sign-in allows (ADR-0014 §2.5): the sign-in's role
-// mapping, evaluated over facts, and for a forge the served accounts the
-// person belongs to; where both speak, the higher role wins. The grant's
-// key binds the session to the configuration that decided it.
+// grant decides what a sign-in allows: the sign-in's role mapping,
+// evaluated over facts, and for a forge the served accounts the person
+// belongs to; where both speak, the higher role wins. The grant's key binds
+// the session to the configuration that decided it.
 func grant(ctx context.Context, file *configfile.File, s *configfile.SignIn, id Identity, facts Facts) (store.SessionGrant, error) {
 	var mapped rolemap.Result
 	if prg := s.Mapping(); prg != nil {

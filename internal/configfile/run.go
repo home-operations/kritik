@@ -14,9 +14,9 @@ import (
 	"github.com/home-operations/kritik/internal/jobtimeout"
 )
 
-// Run is how kritik runs rather than how it reviews, set by the
-// environment and so by the chart's values, not the configuration file
-// (ADR-0021 §2.7). A restart, not a reload, changes it.
+// Run is how kritik runs rather than how it reviews, set by the environment
+// and so by the chart's values, not the configuration file. A restart, not
+// a reload, changes it.
 type Run struct {
 	// PollInterval is how often the leader lists each app's open pull
 	// requests, its backstop for missed webhooks; 0s turns polling off.
@@ -43,8 +43,8 @@ type Run struct {
 	// verbatim into its pod spec, a JSON object of requests and limits.
 	RunnerDeadline  time.Duration `env:"KRITIK_RUNNER_DEADLINE" envDefault:"15m"`
 	RunnerResources jsonObject    `env:"KRITIK_RUNNER_RESOURCES"`
-	// Tools are the command-line tools a runner pod may mount from an
-	// image for the agent's run tool (ADR-0011), a JSON list.
+	// Tools are the command-line tools a runner pod may mount from an image
+	// for the agent's run tool, a JSON list.
 	Tools toolList `env:"KRITIK_RUNNER_TOOLS"`
 }
 

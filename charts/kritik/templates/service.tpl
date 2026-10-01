@@ -16,9 +16,8 @@ spec:
   selector:
     {{- include "kritik.selectorLabels" . | nindent 4 }}
 ---
-# The gateway: the forward proxy runner Jobs reach the outside through
-# (ADR-0008), and their model and similar-code endpoints (ADR-0004,
-# ADR-0026).
+# The gateway: the forward proxy runner Jobs reach the outside through, and
+# their model and similar-code endpoints.
 apiVersion: v1
 kind: Service
 metadata:

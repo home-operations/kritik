@@ -1,6 +1,6 @@
 // Command kritik reviews GitHub pull requests against an index of the
 // repository. "kritik serve" runs the service, and "kritik run" one review
-// or index run in a runner Job the service creates (ADR-0024).
+// or index run in a runner Job the service creates.
 package main
 
 import (
@@ -149,9 +149,9 @@ func run() error {
 	return nil
 }
 
-// serve starts the service on g (ADR-0024): the configuration read at
-// startup, the leader duties on the replica holding the leader lock, the
-// webhooks and the dashboard on public, the gateway and the job queues.
+// serve starts the service on g: the configuration read at startup, the
+// leader duties on the replica holding the leader lock, the webhooks and
+// the dashboard on public, the gateway and the job queues.
 func serve(
 	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, file *configfile.File, public *server.Switch,
 	reg *prometheus.Registry, logger *slog.Logger,
@@ -161,7 +161,7 @@ func serve(
 	m := metrics.New(reg)
 	logConfig(logger, file, "configuration loaded")
 	// Once read, a secret's variable is dropped, so no later lookup or
-	// child process sees it (ADR-0022 §2.2).
+	// child process sees it.
 	for _, name := range file.SecretEnv() {
 		if err := os.Unsetenv(name); err != nil {
 			return fmt.Errorf("unset %s: %w", name, err)
@@ -210,8 +210,7 @@ func serve(
 var errNoSignIn = errors.New("the dashboard has no way to sign in: set KRITIK_AUTH_ADMIN_PASSWORD, or auth in the configuration file")
 
 // loadConfig reads the configuration file at path, none when path is "",
-// for serve: it is read once, and a change takes a restart (ADR-0022
-// §2.1).
+// for serve: it is read once, and a change takes a restart.
 func loadConfig(path string) (*configfile.File, error) {
 	f, err := configfile.Load(path)
 	if err != nil {
@@ -223,9 +222,9 @@ func loadConfig(path string) (*configfile.File, error) {
 	return f, nil
 }
 
-// startPublic hands the public listener what it serves until ctx ends
-// (ADR-0024 §2.2): the webhooks, and the dashboard with its sign-in and
-// API, in place of the starting page.
+// startPublic hands the public listener what it serves until ctx ends: the
+// webhooks, and the dashboard with its sign-in and API, in place of the
+// starting page.
 func startPublic(
 	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current,
 	inserter *river.Client[pgx.Tx], svc *ingest.Service, m *metrics.Metrics, public *server.Switch, logger *slog.Logger,
@@ -258,9 +257,8 @@ func startWorker(
 	workers := river.NewWorkers()
 	base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
 	// The gateway: runner pods' one route out, allowed by the hosts the
-	// current configuration names (ADR-0008), and the model and similar-code
-	// endpoints a review's runner calls with its run token (ADR-0004,
-	// ADR-0026).
+	// current configuration names, and the model and similar-code endpoints
+	// a review's runner calls with its run token.
 	gatewayLogger := logger.With("listener", "gateway")
 	gw := &gateway.Server{
 		Store: st, Current: current, Logger: gatewayLogger, Metrics: m,
@@ -284,8 +282,8 @@ func startWorker(
 		// Review and index workers set their own timeouts from the
 		// runner deadline; rescue must wait out the longest of them.
 		RescueStuckJobsAfter: jobtimeout.RescueStuckJobsAfter,
-		// ctx ending starts a soft stop: running jobs get this long
-		// before their contexts end (ADR-0024 §2.3).
+		// ctx ending starts a soft stop: running jobs get this long before
+		// their contexts end.
 		SoftStopTimeout: queueDrain,
 		// Every job this replica works carries its heartbeat, so the
 		// leader can hand back the jobs of a replica that dies without
@@ -306,10 +304,10 @@ func startWorker(
 }
 
 // queueDrain is how long a stopping serve lets running jobs finish; a
-// review still running then is cut and retried (ADR-0024 §2.3).
-// queueStopHeadroom covers what a cut review does before it hands its job
-// back, waiting for its agent row above all. Both fit in the chart's
-// 150s termination grace period.
+// review still running then is cut and retried. queueStopHeadroom covers
+// what a cut review does before it hands its job back, waiting for its
+// agent row above all. Both fit in the chart's 150s termination grace
+// period.
 const (
 	queueDrain        = 100 * time.Second
 	queueStopHeadroom = 40 * time.Second

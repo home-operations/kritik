@@ -25,12 +25,12 @@ fullnameOverride: ""
 
 # kritik runs as one Deployment of `kritik serve`: webhooks, the dashboard,
 # the job queues, runner Jobs, the gateway and, on the replica holding the
-# leader lock, the leader duties (ADR-0024). Runner pods are not part of
-# it: serve creates them as Jobs, one per review and index run.
-# -- Replicas of kritik serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3).
+# leader lock, the leader duties. Runner pods are not part of it: serve
+# creates them as Jobs, one per review and index run.
+# -- Replicas of kritik serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other.
 replicas: 2
 
-# -- Deployment update strategy. A rolling update that surges one pod and takes none down keeps one replica serving while the other is replaced (ADR-0022 §2.3). Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`.
+# -- Deployment update strategy. A rolling update that surges one pod and takes none down keeps one replica serving while the other is replaced. Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`.
 strategy:
   type: RollingUpdate
   rollingUpdate:
@@ -89,19 +89,18 @@ auth:
     # -- CEL expression giving a role, or a map of accounts to roles (KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR).
     roleMappingExpr: ""
 
-# The configuration file holds the whole configuration (ADR-0019,
-# ADR-0021): sign-in (`auth`), the GitHub `apps`, the instance's
-# `providers`, `embedding` and `egress`, the `defaults` every repository
-# gets, the `repositories` entries keyed `owner/*` or `owner/name`, and the
-# `accounts` with their limits and providers. Sign-in, one app, one
-# provider, the default models and review settings and the embedder also
-# have `KRITIK_*` environment variables, which win over the file; the
-# `auth` values above render some, and `extraEnv` can set the others. The
-# file is either inline as `file`, rendered into a chart-managed ConfigMap,
-# or an existing ConfigMap with a `config.yaml` key. Secret material never
-# goes in the file: it names environment variables, `{ env: NAME }`, which
-# `secretEnv` sets from existing Secrets. kritik reads the file at startup
-# (ADR-0022): the pods carry a
+# The configuration file holds the whole configuration: sign-in (`auth`),
+# the GitHub `apps`, the instance's `providers`, `embedding` and `egress`,
+# the `defaults` every repository gets, the `repositories` entries keyed
+# `owner/*` or `owner/name`, and the `accounts` with their limits and
+# providers. Sign-in, one app, one provider, the default models and review
+# settings and the embedder also have `KRITIK_*` environment variables,
+# which win over the file; the `auth` values above render some, and
+# `extraEnv` can set the others. The file is either inline as `file`,
+# rendered into a chart-managed ConfigMap, or an existing ConfigMap with a
+# `config.yaml` key. Secret material never goes in the file: it names
+# environment variables, `{ env: NAME }`, which `secretEnv` sets from
+# existing Secrets. kritik reads the file at startup: the pods carry a
 # checksum of `file`, so a change to it rolls them, while a change to an
 # `existingConfigMap` needs a restart, for example by stakater's Reloader
 # through `deploymentAnnotations`. The leader applies it to the store.
@@ -175,10 +174,10 @@ database:
 
 # The secrets the configuration file names (GitHub App private keys and
 # webhook secrets, model keys, sign-in secrets) and the `KRITIK_*` secret
-# variables (ADR-0022 §2.2). Each entry sets the variable `name` in the
-# kritik serve pods from `key` of the existing Secret `secretName`; kritik
-# drops it from its own environment once read. Runner pods never get them:
-# each is handed its own per-run credentials.
+# variables. Each entry sets the variable `name` in the kritik serve pods
+# from `key` of the existing Secret `secretName`; kritik drops it from its
+# own environment once read. Runner pods never get them: each is handed its
+# own per-run credentials.
 # -- Environment variables set from existing Secrets, for the configuration file's `{ env: NAME }` references.
 secretEnv: []
 # - name: GITHUB_APP_PRIVATE_KEY
@@ -202,7 +201,7 @@ runner:
   deadline: ""
   # -- Resources for runner pods (KRITIK_RUNNER_RESOURCES), copied into the pod spec.
   resources: {}
-  # -- Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS, ADR-0011), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster.
+  # -- Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster.
   tools: []
   # -- RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default.
   runtimeClassName: ""
@@ -215,7 +214,7 @@ runner:
     annotations: {}
 
 gateway:
-  # -- Port of the gateway the kritik serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004, ADR-0026).
+  # -- Port of the gateway the kritik serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod.
   port: 8082
 
 serviceAccount:
@@ -258,7 +257,7 @@ securityContext:
 service:
   # -- Service type of the public Service.
   type: ClusterIP
-  # -- Public port: the webhooks (`POST /hooks/{app}`) and the dashboard (ADR-0024 §2.2).
+  # -- Public port: the webhooks (`POST /hooks/{app}`) and the dashboard.
   port: 8080
   # -- Metrics and probe port.
   metricsPort: 8081

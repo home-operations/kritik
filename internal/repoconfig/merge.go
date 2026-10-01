@@ -24,14 +24,14 @@ type Merged struct {
 }
 
 // Merge applies doc, the merge-base FileName or nil when the repository has
-// none, over the admin's settings op (ADR-0021 §2.3). The file narrows
-// what an admin allows (enabled, filter, ignore), appends its context
-// files and rules to the admin's, may only turn requireSuggestedFix on,
-// and replaces the models, the feedback level, how the review
-// comments, whether it approves and whether it reads agent files. A model must be one of a
-// provider op.Providers names. A value it may not take is dropped, and
-// Dropped says so. A file that does not parse is ignored as a whole: op
-// stands, and the error says why.
+// none, over the admin's settings op. The file narrows what an admin allows
+// (enabled, filter, ignore), appends its context files and rules to the
+// admin's, may only turn requireSuggestedFix on, and replaces the models,
+// the feedback level, how the review comments, whether it approves and
+// whether it reads agent files. A model must be one of a provider
+// op.Providers names. A value it may not take is dropped, and Dropped says
+// so. A file that does not parse is ignored as a whole: op stands, and the
+// error says why.
 func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	op.Ignore = slices.Clone(op.Ignore)
 	op.Review.Context = slices.Clone(op.Review.Context)

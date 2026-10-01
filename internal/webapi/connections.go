@@ -14,8 +14,8 @@ import (
 )
 
 // registerConnections mounts the admin's view of the running connections
-// and of the accounts each one's GitHub App is installed on (ADR-0014
-// §2.3), where an installation no connection serves can be removed.
+// and of the accounts each one's GitHub App is installed on, where an
+// installation no connection serves can be removed.
 func (s *Server) registerConnections(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/connections", s.admin(s.listConnections))
 	mux.HandleFunc("GET /api/v1/admin/connections/{name}/installations", s.admin(s.listInstallations))

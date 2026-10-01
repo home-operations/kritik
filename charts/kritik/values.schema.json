@@ -162,7 +162,7 @@
       "type": "object"
     },
     "config": {
-      "description": "The configuration file holds the whole configuration (ADR-0019,\nADR-0021): sign-in (`auth`), the GitHub `apps`, the instance's\n`providers`, `embedding` and `egress`, the `defaults` every repository\ngets, the `repositories` entries keyed `owner/*` or `owner/name`, and the\n`accounts` with their limits and providers. Sign-in, one app, one\nprovider, the default models and review settings and the embedder also\nhave `KRITIK_*` environment variables, which win over the file; the\n`auth` values above render some, and `extraEnv` can set the others. The\nfile is either inline as `file`, rendered into a chart-managed ConfigMap,\nor an existing ConfigMap with a `config.yaml` key. Secret material never\ngoes in the file: it names environment variables, `{ env: NAME }`, which\n`secretEnv` sets from existing Secrets. kritik reads the file at startup\n(ADR-0022): the pods carry a\nchecksum of `file`, so a change to it rolls them, while a change to an\n`existingConfigMap` needs a restart, for example by stakater's Reloader\nthrough `deploymentAnnotations`. The leader applies it to the store.",
+      "description": "The configuration file holds the whole configuration: sign-in (`auth`),\nthe GitHub `apps`, the instance's `providers`, `embedding` and `egress`,\nthe `defaults` every repository gets, the `repositories` entries keyed\n`owner/*` or `owner/name`, and the `accounts` with their limits and\nproviders. Sign-in, one app, one provider, the default models and review\nsettings and the embedder also have `KRITIK_*` environment variables,\nwhich win over the file; the `auth` values above render some, and\n`extraEnv` can set the others. The file is either inline as `file`,\nrendered into a chart-managed ConfigMap, or an existing ConfigMap with a\n`config.yaml` key. Secret material never goes in the file: it names\nenvironment variables, `{ env: NAME }`, which `secretEnv` sets from\nexisting Secrets. kritik reads the file at startup: the pods carry a\nchecksum of `file`, so a change to it rolls them, while a change to an\n`existingConfigMap` needs a restart, for example by stakater's Reloader\nthrough `deploymentAnnotations`. The leader applies it to the store.",
       "properties": {
         "diffRetention": {
           "default": "",
@@ -342,7 +342,7 @@
       "properties": {
         "port": {
           "default": 8082,
-          "description": "Port of the gateway the kritik serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004, ADR-0026).",
+          "description": "Port of the gateway the kritik serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod.",
           "title": "port",
           "type": "integer"
         }
@@ -748,7 +748,7 @@
     },
     "replicas": {
       "default": 2,
-      "description": "kritik runs as one Deployment of `kritik serve`: webhooks, the dashboard,\nthe job queues, runner Jobs, the gateway and, on the replica holding the\nleader lock, the leader duties (ADR-0024). Runner pods are not part of\nit: serve creates them as Jobs, one per review and index run.\nReplicas of kritik serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3).",
+      "description": "kritik runs as one Deployment of `kritik serve`: webhooks, the dashboard,\nthe job queues, runner Jobs, the gateway and, on the replica holding the\nleader lock, the leader duties. Runner pods are not part of it: serve\ncreates them as Jobs, one per review and index run.\nReplicas of kritik serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other.",
       "title": "replicas",
       "type": "integer"
     },
@@ -842,7 +842,7 @@
           "type": "object"
         },
         "tools": {
-          "description": "Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS, ADR-0011), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster.",
+          "description": "Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster.",
           "items": {
             "required": []
           },
@@ -861,7 +861,7 @@
       "type": "object"
     },
     "secretEnv": {
-      "description": "The secrets the configuration file names (GitHub App private keys and\nwebhook secrets, model keys, sign-in secrets) and the `KRITIK_*` secret\nvariables (ADR-0022 §2.2). Each entry sets the variable `name` in the\nkritik serve pods from `key` of the existing Secret `secretName`; kritik\ndrops it from its own environment once read. Runner pods never get them:\neach is handed its own per-run credentials.\nEnvironment variables set from existing Secrets, for the configuration file's `{ env: NAME }` references.",
+      "description": "The secrets the configuration file names (GitHub App private keys and\nwebhook secrets, model keys, sign-in secrets) and the `KRITIK_*` secret\nvariables. Each entry sets the variable `name` in the kritik serve pods\nfrom `key` of the existing Secret `secretName`; kritik drops it from its\nown environment once read. Runner pods never get them: each is handed its\nown per-run credentials.\nEnvironment variables set from existing Secrets, for the configuration file's `{ env: NAME }` references.",
       "items": {
         "required": []
       },
@@ -915,7 +915,7 @@
         },
         "port": {
           "default": 8080,
-          "description": "Public port: the webhooks (`POST /hooks/{app}`) and the dashboard (ADR-0024 §2.2).",
+          "description": "Public port: the webhooks (`POST /hooks/{app}`) and the dashboard.",
           "title": "port",
           "type": "integer"
         },
@@ -997,7 +997,7 @@
       "type": "object"
     },
     "strategy": {
-      "description": "Deployment update strategy. A rolling update that surges one pod and takes none down keeps one replica serving while the other is replaced (ADR-0022 §2.3). Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`.",
+      "description": "Deployment update strategy. A rolling update that surges one pod and takes none down keeps one replica serving while the other is replaced. Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`.",
       "properties": {
         "rollingUpdate": {
           "properties": {

@@ -14,7 +14,7 @@
 {{- fail "web.url must be an http(s) URL" -}}
 {{- end -}}
 {{- if and .Values.runner.tools (semverCompare "<1.33.0-0" .Capabilities.KubeVersion.Version) -}}
-{{- fail (printf "runner.tools needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath (ADR-0011); this cluster is %s" .Capabilities.KubeVersion.Version) -}}
+{{- fail (printf "runner.tools needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; this cluster is %s" .Capabilities.KubeVersion.Version) -}}
 {{- end -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -53,7 +53,7 @@ spec:
       {{- if or $checksum $.Values.podAnnotations }}
       annotations:
         {{- with $checksum }}
-        # kritik reads the file at startup (ADR-0022), so a change rolls the pods.
+        # kritik reads the file at startup, so a change rolls the pods.
         checksum/config: {{ . }}
         {{- end }}
         {{- with $.Values.podAnnotations }}

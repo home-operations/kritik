@@ -1,6 +1,6 @@
-// What an instance still lacks before it reviews (ADR-0019 §2.2), from its
-// setup status and the accounts its connections serve. Everything it names
-// is set in the configuration file. Rune-free so tests can import it.
+// What an instance still lacks before it reviews, from its setup status and
+// the accounts its connections serve. Everything it names is set in the
+// configuration file. Rune-free so tests can import it.
 import type { AdminAccount, Connection, SetupStatus } from './types';
 
 export interface ChecklistItem {

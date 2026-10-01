@@ -595,10 +595,10 @@ type endedReview struct {
 // finishEnded ends a review whose job ctx ended before the review could: a
 // remote cancel as canceled, River's job timeout as failed, both returning
 // nil, since an error would have River retry the review and pay for the
-// model again. A stopping worker's cut (ADR-0024 §2.3) is the exception:
-// the review ends superseded by its retry, and an error is returned for
-// River to retry it. A review that is already terminal is left as it is.
-// While ctx is still live it returns err as is.
+// model again. A stopping worker's cut is the exception: the review ends
+// superseded by its retry, and an error is returned for River to retry it.
+// A review that is already terminal is left as it is. While ctx is still
+// live it returns err as is.
 func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) error {
 	if ctx.Err() == nil {
 		return err
@@ -670,9 +670,9 @@ func errText(err error) string {
 	return err.Error()
 }
 
-// ForgeCache is the forge.Clients over configured GitHub Apps. One
-// client per App and repository owner, built on first use and kept for the
-// life of the process, as the configuration is (ADR-0022 §2.1).
+// ForgeCache is the forge.Clients over configured GitHub Apps. One client
+// per App and repository owner, built on first use and kept for the life of
+// the process, as the configuration is.
 type ForgeCache struct {
 	Build func(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error)
 

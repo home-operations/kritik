@@ -1,7 +1,6 @@
 # Configuration
 
-kritik takes its settings from three places, each for what it suits
-([ADR-0019](adr/0019-configuration-in-git.md)):
+kritik takes its settings from three places, each for what it suits:
 
 | Where                                                                                                                                          | What                                                                                                                                             | Changed by                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
@@ -22,16 +21,14 @@ default models and review settings, and the embedder also have
 variables, and a variable wins over the file, so a small deployment can
 be configured from the environment alone. A variable carries a secret
 itself. Once the configuration is read, kritik drops every variable a
-secret came from from its own environment
-([ADR-0022](adr/0022-configuration-at-startup.md) §2.2). A variable under
+secret came from from its own environment. A variable under
 one of these prefixes that names no key is refused at startup rather than
 ignored.
 
 A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`:
 `filterExpr`, `roleMappingExpr` and a rule's `whenExpr`.
 
-kritik reads the file and its variables once, at startup
-([ADR-0022](adr/0022-configuration-at-startup.md)): a change takes a
+kritik reads the file and its variables once, at startup: a change takes a
 restart, and the chart rolls the pods when its `config.file` changes.
 Content that does not load, or that would leave the dashboard no way to
 sign in, fails startup, so a rolling update leaves the pods before it
@@ -146,8 +143,7 @@ A mapping that fails to evaluate refuses the sign-in.
 
 ## `apps`
 
-`apps` declares the GitHub Apps kritik serves accounts through
-([ADR-0021](adr/0021-configuration-shape.md) §2.2). The
+`apps` declares the GitHub Apps kritik serves accounts through. The
 [setup guide](setup.md) covers creating one.
 
 ```yaml
@@ -256,13 +252,12 @@ embedding:
 
 `defaults` are the settings every repository gets, and `repositories` the
 entries that change them for some: `owner/*` for every repository of an
-account, and `owner/name` for one
-([ADR-0021](adr/0021-configuration-shape.md) §2.1).
+account, and `owner/name` for one.
 
 A `fallback` applies only on the review model's provider: the gateway
 hands a provider the fallback when both are its, as OpenRouter's
 server-side fallback is, and a fallback on another provider is ignored for
-reviews ([ADR-0026](adr/0026-agentic-only.md) §3).
+reviews.
 
 ```yaml
 defaults:
@@ -296,12 +291,10 @@ level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
 - `agent`: a review's `maxSteps`, `maxToolOutputBytes`, `maxTokens`,
   `timeout`, the `commands` its run tool may execute, and their
   `commandTimeout`. `maxSteps: 1` is the cheapest review: one call, which
-  must submit the findings, over the same prompt
-  ([ADR-0026](adr/0026-agentic-only.md)). The runner's `-tools` image has `gh`, `curl`,
+  must submit the findings, over the same prompt. The runner's `-tools` image has `gh`, `curl`,
   `fd`, `jq`, `rg` and `yq`; the agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under
-  review and public repositories
-  ([ADR-0023](adr/0023-gh-in-runners.md)).
+  review and public repositories.
 - `settle`: how long a new head waits before its review starts, so a
   burst of pushes is reviewed once.
 - `forks: true`: reviews pull requests from forks without being asked; by
@@ -315,7 +308,7 @@ level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
 A value applies in this order: kritik's default, `defaults`, `owner/*`,
 `owner/name`, and the repository's `.kritik.yaml`. A narrower value
 replaces the broader one's, except `ignore` globs, which add up, and
-`rules`, which add up by id ([ADR-0018](adr/0018-rules.md)).
+`rules`, which add up by id.
 
 The same defaults can come from the environment:
 
@@ -344,7 +337,7 @@ comes from.
 kritik registers every repository each App reaches, once the
 configuration is applied and again on every poll, and "Resync from GitHub"
 on the Repositories page does the same at once. Whether one runs is
-decided in this order ([ADR-0019](adr/0019-configuration-in-git.md)):
+decided in this order:
 
 1. an archived repository never runs: unarchive it on GitHub, then
    resync;
@@ -397,7 +390,7 @@ plain `http://` request to that host, so the runner never holds it.
 ## How kritik runs
 
 These come from the environment, which the chart's values set, rather
-than the file ([ADR-0021](adr/0021-configuration-shape.md) §2.7); a
+than the file; a
 restart changes them.
 
 | Variable                      | Chart value                  | What                                                                                                                                    |
@@ -410,7 +403,7 @@ restart changes them.
 | `KRITIK_DIFF_RETENTION`       | `config.diffRetention`       | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set |
 | `KRITIK_RUNNER_DEADLINE`      | `runner.deadline`            | a runner Job's deadline; 15m unless set                                                                                                 |
 | `KRITIK_RUNNER_RESOURCES`     | `runner.resources`           | a runner pod's resources, as JSON                                                                                                       |
-| `KRITIK_RUNNER_TOOLS`         | `runner.tools`               | command-line tools a runner pod mounts from an image for the agent's run tool ([ADR-0011](adr/0011-runner-tool-images.md)), as JSON     |
+| `KRITIK_RUNNER_TOOLS`         | `runner.tools`               | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON                                                  |
 
 A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps

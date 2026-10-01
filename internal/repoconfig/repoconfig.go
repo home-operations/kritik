@@ -73,8 +73,8 @@ type Models struct {
 }
 
 // File is the decoded content of .kritik.yaml: the review keys the
-// configuration's defaults and repository entries take (ADR-0021 §2.1),
-// without the admin's own. Nothing in it is a secret or a reference to one.
+// configuration's defaults and repository entries take, without the admin's
+// own. Nothing in it is a secret or a reference to one.
 type File struct {
 	Enabled             *bool    `yaml:"enabled,omitempty"`
 	Models              Models   `yaml:"models,omitempty"`
@@ -236,8 +236,8 @@ func TooLarge(name string) string {
 }
 
 // AllIgnored reports whether every path in changed matches one of the
-// ignore globs, so the pull request is skipped (ADR-0021 §2.6). It is
-// false when nothing changed: there is nothing to judge a skip against.
+// ignore globs, so the pull request is skipped. It is false when nothing
+// changed: there is nothing to judge a skip against.
 func AllIgnored(ignore, changed []string) bool {
 	if len(ignore) == 0 || len(changed) == 0 {
 		return false

@@ -3,8 +3,8 @@ package configfile
 import "sync/atomic"
 
 // Current holds the configuration the service runs with: read once, at
-// startup (ADR-0022 §2.1), and handed to every part of the service that
-// reads it per request or per job.
+// startup, and handed to every part of the service that reads it per
+// request or per job.
 type Current struct {
 	file atomic.Pointer[File]
 }

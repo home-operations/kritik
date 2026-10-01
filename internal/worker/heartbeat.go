@@ -29,8 +29,8 @@ type jobHeartbeater interface {
 // JobHeartbeat is River middleware that stamps a heartbeat on every job
 // this replica works, once before the job starts and then every
 // jobHeartbeatInterval until Work returns, so the leader's Rescuer can tell
-// a job whose replica died from one still being worked (ADR-0024 §2.3
-// covers a replica that stops; this covers one that does not get to).
+// a job whose replica died from one still being worked. A replica that
+// stops drains its own jobs; this covers one that does not get to.
 type JobHeartbeat struct {
 	river.MiddlewareDefaults
 	Store  jobHeartbeater

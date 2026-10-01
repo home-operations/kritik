@@ -1,7 +1,7 @@
 <script lang="ts">
-  // The running connections, and the accounts one's GitHub App is
-  // installed on (ADR-0014 §2.3): kritik serves only the accounts a
-  // connection lists, and an installation on any other can be removed.
+  // The running connections, and the accounts one's GitHub App is installed
+  // on: kritik serves only the accounts a connection lists, and an
+  // installation on any other can be removed.
   import { getJSON, sendJSON } from '../../api.svelte';
   import { Resource } from '../../resource.svelte';
   import { describe } from '../../manage';

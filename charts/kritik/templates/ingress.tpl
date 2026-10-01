@@ -1,7 +1,7 @@
 {{- if .Values.ingress.enabled -}}
 {{- $base := include "kritik.webPath" . -}}
 # One Ingress for web.url, to the public listener: the webhooks under /hooks
-# and the dashboard everywhere else (ADR-0024 §2.2).
+# and the dashboard everywhere else.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
