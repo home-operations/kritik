@@ -25,7 +25,7 @@ func parseAccount(t *testing.T, slug string) *configfile.File {
 	t.Setenv("TEST_MAIN_TOKEN", "tok")
 	return configfiletest.Load(t, `
 apps:
-  - name: `+slug+`-bot
+  `+slug+`-bot:
     accounts: [`+slug+`]
     clientId: Iv1.test
     privateKey: { env: TEST_MAIN_TOKEN }

@@ -37,7 +37,7 @@ auth:
     clientSecret: { env: KRITIKA_TEST_TOKEN }
     roleMappingExpr: '"kritika-admin" in roles ? "admin" : ""'
 apps:
-  - name: aj-bot
+  aj-bot:
     accounts: [aj]
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }

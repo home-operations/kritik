@@ -62,7 +62,7 @@ web:
 # -- (optional) The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md.
 config: {}
 # apps:
-#   - name: github
+#   github:
 #     accounts: [org-1, user-1]
 #     clientId: Iv1.example
 #     privateKey: { env: GITHUB_APP_PRIVATE_KEY }

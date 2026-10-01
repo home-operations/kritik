@@ -30,7 +30,7 @@ review model:
 
 ```yaml
 apps:
-  - name: github
+  github:
     accounts: [org-1]
     clientId: Iv1.example
     privateKey: { env: GITHUB_APP_PRIVATE_KEY }

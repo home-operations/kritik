@@ -18,7 +18,7 @@ func TestInstanceSettings(t *testing.T) {
 	f := configfiletest.Load(t, `providers:
   gw: { type: openai, baseUrl: "https://kritika:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
 apps:
-  - { name: acme-bot, accounts: [acme, org-1], clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } }
+  acme-bot: { accounts: [acme, org-1], clientId: Iv1.acme, privateKey: { env: TEST_KEY }, webhookSecret: { env: TEST_KEY } }
 `)
 	env := []config.EnvVar{
 		{Name: "KRITIKA_ADDR", Value: ":9090", Set: true},

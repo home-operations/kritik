@@ -54,12 +54,12 @@ defaults:
   limits:
     concurrency: 1
 apps:
-  - name: acme-bot
+  acme-bot:
     accounts: [acme]
     clientId: Iv1.x
     privateKey: { env: TEST_PEM }
     webhookSecret: { env: TEST_SECRET }
-  - name: globex-bot
+  globex-bot:
     accounts: [globex]
     clientId: Iv1.y
     privateKey: { env: TEST_PEM }

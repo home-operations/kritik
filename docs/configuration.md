@@ -148,26 +148,26 @@ A mapping that fails to evaluate refuses the sign-in.
 
 ```yaml
 apps:
-  - name: github
+  github:
     accounts: [org-1, user-1]
     clientId: Iv1.example
     privateKey: { env: GITHUB_APP_PRIVATE_KEY }
     webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
 ```
 
-`name` is the App's webhook path, `/hooks/<name>`, and `accounts` the users
-and organizations it serves: a webhook for any other is ignored, and an
+`apps` is keyed by app name, which is the App's webhook path,
+`/hooks/<name>`; `accounts` are the users and organizations it serves: a webhook for any other is ignored, and an
 account is served by one app. `clientId` is given inline or, like the
 secrets, as a reference. `webhookSecret` holds the same value as the App's
 webhook secret. The same app can come from the environment instead:
 
-| Variable                      | Key                         |
-| ----------------------------- | --------------------------- |
-| `KRITIKA_APPS_NAME`           | `name`, `github` unless set |
-| `KRITIKA_APPS_ACCOUNTS`       | `accounts`, comma-separated |
-| `KRITIKA_APPS_CLIENT_ID`      | `clientId`                  |
-| `KRITIKA_APPS_PRIVATE_KEY`    | `privateKey`                |
-| `KRITIKA_APPS_WEBHOOK_SECRET` | `webhookSecret`             |
+| Variable                      | Key                          |
+| ----------------------------- | ---------------------------- |
+| `KRITIKA_APPS_NAME`           | the key, `github` unless set |
+| `KRITIKA_APPS_ACCOUNTS`       | `accounts`, comma-separated  |
+| `KRITIKA_APPS_CLIENT_ID`      | `clientId`                   |
+| `KRITIKA_APPS_PRIVATE_KEY`    | `privateKey`                 |
+| `KRITIKA_APPS_WEBHOOK_SECRET` | `webhookSecret`              |
 
 The environment declares at most one app. It replaces the file's app of
 the same name whole, or is added to the file's when none has that name. A

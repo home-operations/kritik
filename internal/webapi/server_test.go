@@ -18,12 +18,12 @@ import (
 
 const testConfig = `
 apps:
-  - name: alpha-bot
+  alpha-bot:
     accounts: [alpha]
     clientId: Iv1.alpha
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-  - name: beta-bot
+  beta-bot:
     accounts: [beta]
     clientId: Iv1.beta
     privateKey: { env: KRITIKA_TEST_TOKEN }
