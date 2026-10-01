@@ -31,7 +31,8 @@ flowchart LR
 - **Context beyond the diff.** Whole declarations the diff touches,
   definitions of identifiers on changed lines and callers of changed
   declarations, cut by tree-sitter, plus the most similar chunks from a
-  VectorChord index of the default branch.
+  VectorChord index of the default branch, and the issues the description
+  says the pull request closes, which the review judges the change against.
 - **An agent, not one prompt.** Each review is a bounded, read-only tool loop
   over the head commit, optionally with allowlisted commands (`gh`, `curl`,
   `fd`, `jq`, `rg`, `yq`) so it can read a dependency bump's release notes;

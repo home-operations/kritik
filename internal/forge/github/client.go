@@ -142,6 +142,22 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 	return []byte(content), nil
 }
 
+// Issue implements forge.Client. GitHub files pull requests among a
+// repository's issues, so one is returned as such rather than as an error.
+func (c *Client) Issue(ctx context.Context, owner, repo string, number int) (forge.Issue, error) {
+	issue, resp, err := c.api.Issues.Get(ctx, owner, repo, number)
+	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return forge.Issue{}, fmt.Errorf("github: issue %d of %s/%s: %w", number, owner, repo, fs.ErrNotExist)
+	}
+	if err != nil {
+		return forge.Issue{}, fmt.Errorf("github: issue %d of %s/%s: %w", number, owner, repo, err)
+	}
+	return forge.Issue{
+		Number: issue.GetNumber(), Title: issue.GetTitle(), Body: issue.GetBody(), URL: issue.GetHTMLURL(),
+		PullRequest: issue.PullRequestLinks != nil,
+	}, nil
+}
+
 // BotLogin implements forge.Client. An App's comments are authored by the
 // user "<slug>[bot]"; the slug comes from the App itself, so nothing in the
 // configuration has to repeat it.

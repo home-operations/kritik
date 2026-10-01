@@ -162,7 +162,10 @@ func (l *localForge) FileAt(_ context.Context, _, _, ref, path string) ([]byte, 
 	return []byte(content), err
 }
 
-func (l *localForge) CloneURL(string, string) string                   { return l.dir }
+func (l *localForge) CloneURL(string, string) string { return l.dir }
+func (l *localForge) Issue(_ context.Context, _, _ string, number int) (forge.Issue, error) {
+	return forge.Issue{}, fmt.Errorf("issue %d: %w", number, fs.ErrNotExist)
+}
 func (l *localForge) GitToken(context.Context, string) (string, error) { return "", nil }
 func (l *localForge) BotLogin(context.Context) (string, error)         { return "kritika[bot]", nil }
 
