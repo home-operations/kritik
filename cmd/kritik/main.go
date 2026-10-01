@@ -27,11 +27,13 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
+	"github.com/home-operations/kritik/internal/adapter"
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/egress"
 	"github.com/home-operations/kritik/internal/executor"
+	"github.com/home-operations/kritik/internal/gateway"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/jobtimeout"
@@ -242,29 +244,29 @@ func startWorker(
 	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current, exec executor.Executor,
 	forges *worker.ForgeCache, m *metrics.Metrics, logger *slog.Logger,
 ) error {
-	embedders := &worker.Embedders{Build: worker.BuildEmbedder}
+	embedders := &adapter.Embedders{Build: adapter.BuildEmbedder}
+	steppers := &adapter.Steppers{Build: adapter.BuildStepper}
 	workers := river.NewWorkers()
 	base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
-	completers := &worker.Completers{Build: worker.BuildStepper}
 	// The gateway: runner pods' one route out, allowed by the hosts the
 	// current configuration names (ADR-0008), and the model and similar-code
 	// endpoints a review's runner calls with its run token (ADR-0004,
 	// ADR-0026).
 	gatewayLogger := logger.With("listener", "gateway")
-	gateway := &worker.Gateway{
+	gw := &gateway.Server{
 		Store: st, Current: current, Logger: gatewayLogger, Metrics: m,
 		Proxy: &egress.Proxy{
 			Rules: current.Get().EgressRules, Observe: m.Egress, Logger: gatewayLogger,
 		},
-		Steppers: completers, Embedders: embedders,
+		Steppers: steppers, Embedders: embedders,
 	}
 	g.Go(func() error {
-		return server.Serve(lingering(ctx, linger), cfg.GatewayAddr, gateway, worker.GatewayDrain, gatewayLogger)
+		return server.Serve(lingering(ctx, linger), cfg.GatewayAddr, gw, gateway.Drain, gatewayLogger)
 	})
 	river.AddWorker(workers, &worker.Review{
 		Base: base, Executor: exec, GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
 	})
-	river.AddWorker(workers, &worker.FollowUp{Base: base, Completers: completers})
+	river.AddWorker(workers, &worker.FollowUp{Base: base, Steppers: steppers})
 	river.AddWorker(workers, &worker.Index{
 		Base: base, Executor: exec, Embedders: embedders,
 	})

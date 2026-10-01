@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/home-operations/kritik/internal/adapter"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/forge"
@@ -41,7 +42,7 @@ const followUpMaxOutputTokens = 4096
 type FollowUp struct {
 	river.WorkerDefaults[jobs.FollowUpArgs]
 	Base
-	Completers *Completers
+	Steppers *adapter.Steppers
 }
 
 // Work implements river.Worker.
@@ -469,14 +470,14 @@ func (f *followUp) complete(ctx context.Context, system, msg, reviewID string) (
 	if ref == "" {
 		return model.CompletionResponse{}, errors.New("worker: no review model is configured for this repository")
 	}
-	stepper, err := f.w.Completers.Stepper(f.file, f.account, ref.Provider())
+	stepper, err := f.w.Steppers.Stepper(f.file, f.account, ref.Provider())
 	if err != nil {
 		return model.CompletionResponse{}, err
 	}
 	spec, _ := f.file.Provider(f.account, ref.Provider())
-	completer := model.Structured{Stepper: stepper, OnStep: f.w.onStep(ctx, f.logger, store.ModelCall{
+	completer := model.Structured{Stepper: stepper, OnStep: f.w.recorder().OnStep(ctx, f.logger, store.ModelCall{
 		AccountID: f.account.ID(), ReviewID: reviewID, FollowupCommentID: f.comment.ID, Kind: store.ModelCallFollowUp,
-	}, transcriptMask(f.file, spec))}
+	}, adapter.Mask(f.file, spec))}
 	req := model.CompletionRequest{
 		System: system, User: msg, Model: ref.Model(),
 		Schema: review.FollowUpSchema(), SchemaName: "reply", MaxTokens: followUpMaxOutputTokens,
@@ -488,7 +489,7 @@ func (f *followUp) complete(ctx context.Context, system, msg, reviewID string) (
 	err = f.w.withLease(ctx, f.account, string(ref), f.settings.Limits.Concurrency, f.jobID, func(ctx context.Context) error {
 		var err error
 		resp, err = completer.Complete(ctx, req)
-		f.w.Metrics.ModelCall(f.account.Key(), servedRef(ref, resp.Model), store.RoleFollowUp, callOutcome(err),
+		f.w.Metrics.ModelCall(f.account.Key(), adapter.ServedRef(ref, resp.Model), store.RoleFollowUp, adapter.Outcome(err),
 			resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 		return err
 	})

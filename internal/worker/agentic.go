@@ -13,6 +13,7 @@ import (
 	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
+	"github.com/home-operations/kritik/internal/gateway"
 	"github.com/home-operations/kritik/internal/jobtimeout"
 	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/runner"
@@ -42,7 +43,7 @@ func stopError(r store.AgentRunRow) error {
 
 // admission is what a review holds before its runner starts.
 type admission struct {
-	lease *lease
+	lease *store.Lease
 	// maxTokens is the agent's token budget for this review.
 	maxTokens int64
 }
@@ -63,7 +64,7 @@ func (w *Review) agentAdmit(
 	if _, ok := file.Provider(account, ref.Provider()); !ok {
 		return admission{}, store.ReviewFailed, fmt.Sprintf("provider %q is not in the configuration", ref.Provider()), nil
 	}
-	l, err := takeLease(ctx, w.Store, account.ID(), string(ref), settings.Limits.Concurrency, jobID)
+	l, err := w.Store.TakeLease(ctx, account.ID(), string(ref), settings.Limits.Concurrency, jobID)
 	if err != nil {
 		return admission{}, "", "", err
 	}
@@ -90,11 +91,11 @@ func (w *Review) agentCaps(ctx context.Context, account *configfile.Account, set
 	if limits.ReviewsPerDay <= 0 && limits.TokensPerMonth <= 0 {
 		return settings.Agent.MaxTokens, "", nil
 	}
-	u, err := readUsage(ctx, w.Store, account.ID())
+	u, err := w.Store.AccountUsage(ctx, account.ID())
 	if err != nil {
-		return 0, "", err
+		return 0, "", fmt.Errorf("worker: read caps: %w", err)
 	}
-	if capped := reached(u, limits); capped != "" {
+	if capped := store.CapReason(u, limits); capped != "" {
 		return 0, capped, nil
 	}
 	budget, capped := agentBudget(settings.Agent.MaxTokens, limits.TokensPerMonth, u.Tokens)
@@ -198,10 +199,6 @@ func (w *Review) readAgentRun(
 	return &run, nil
 }
 
-// gatewayModel is the name a review's runner calls its model by; the
-// gateway maps it to the provider model the run was granted.
-const gatewayModel = "review"
-
 // agentSpec gives spec its agent: the prompt, the gateway and a run
 // token for it, and the agent's bounds. The token is minted last, so an
 // error leaves none behind; the caller revokes it once the run ends. It
@@ -225,7 +222,7 @@ func (w *Review) agentSpec(
 		return deadline, err
 	}
 	spec.Prompt, secrets.GatewayToken = prompt, token
-	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gatewayModel}
+	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gateway.ModelName}
 	spec.Agent = &runner.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
 		TimeoutSeconds: int(settings.Agent.Timeout / time.Second),

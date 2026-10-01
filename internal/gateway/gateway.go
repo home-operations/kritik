@@ -1,61 +1,77 @@
-package worker
-
-import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"log/slog"
-	"net/http"
-	"net/url"
-	"strings"
-	"time"
-
-	"github.com/jackc/pgx/v5"
-
-	"github.com/home-operations/kritik/internal/agent"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/contextpack"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/textcut"
-)
-
-// Gateway serves the worker's gateway listener: the egress proxy runner
-// pods reach the outside through (ADR-0008), and the model and
+// Package gateway is the worker's listener for runner pods: the egress
+// proxy they reach the outside through (ADR-0008), and the model and
 // similar-code endpoints a review's runner calls with its run token
 // (ADR-0004, ADR-0026). No provider key enters a runner pod: the gateway
 // reserves each call against the run's budget and checks the account's
 // monthly cap, answers it through the account's provider, and records
 // what it spent where the caps see it.
-type Gateway struct {
-	Base
+package gateway
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritik/internal/adapter"
+	"github.com/home-operations/kritik/internal/agent"
+	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/metrics"
+	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/store"
+)
+
+// ModelName is the name a review's runner calls its model by; the gateway
+// maps it to the provider model the run was granted.
+const ModelName = "review"
+
+// Drain is how long a stopping gateway lets model steps in flight finish.
+// A step it cuts is paid for and not recorded, and the runner's retry is
+// paid for again, so it covers a long step rather than the usual few
+// seconds; the chart's grace period outlasts it.
+const Drain = 2 * time.Minute
+
+// Server serves the gateway listener.
+type Server struct {
+	Store   *store.Store
+	Current *configfile.Current
+	Logger  *slog.Logger
+	// Metrics may be nil.
+	Metrics *metrics.Metrics
 	// Proxy serves CONNECT and absolute-URI requests.
 	Proxy    http.Handler
-	Steppers *Completers
+	Steppers *adapter.Steppers
 	// Embedders resolves the instance's embedder for similar code; nil
 	// serves none.
-	Embedders *Embedders
+	Embedders *adapter.Embedders
 }
 
-// maxGatewayBody bounds one step's request: the whole conversation so far,
-// every tool output in it capped.
-const maxGatewayBody = 16 << 20
+// maxBody bounds one step's request: the whole conversation so far, every
+// tool output in it capped.
+const maxBody = 16 << 20
 
-// GatewayDrain is how long a stopping worker lets model steps in flight
-// finish. A step it cuts is paid for and not recorded, and the runner's
-// retry is paid for again, so it covers a long step rather than the usual
-// few seconds; the chart's grace period outlasts it.
-const GatewayDrain = 2 * time.Minute
-
-// maxStepOutput caps the answer to one step, whatever the runner asks: the
+// MaxStepOutput caps the answer to one step, whatever the runner asks: the
 // agent loop's own cap.
-var maxStepOutput = agent.DefaultLimits.MaxOutputTokensPerStep
+var MaxStepOutput = agent.DefaultLimits.MaxOutputTokensPerStep
+
+// detachTimeout bounds the writes that settle a step once the provider has
+// answered, which must land even if the request's ctx ends.
+const detachTimeout = 2 * time.Minute
+
+// detach is ctx without its cancellation, bounded by detachTimeout.
+func detach(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), detachTimeout)
+}
 
 // ServeHTTP implements http.Handler.
-func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodConnect || r.URL.IsAbs():
 		g.Proxy.ServeHTTP(w, r)
@@ -92,9 +108,9 @@ type runCall struct {
 }
 
 // admit authenticates r by its run token, finds the run's account in the
-// current configuration and checks the account's monthly cap, or refuses
-// r and reports false.
-func (g *Gateway) admit(w http.ResponseWriter, r *http.Request) (runCall, bool) {
+// configuration and checks the account's monthly cap, or refuses r and
+// reports false.
+func (g *Server) admit(w http.ResponseWriter, r *http.Request) (runCall, bool) {
 	ctx := r.Context()
 	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	grant, err := g.Store.LookupGatewayToken(ctx, token)
@@ -114,7 +130,9 @@ func (g *Gateway) admit(w http.ResponseWriter, r *http.Request) (runCall, bool) 
 		return runCall{}, false
 	}
 	logger := g.Logger.With("account", account.Key(), "run", review.ShortSHA(grant.RunID))
-	capped, err := g.monthCapped(ctx, file, account)
+	// A step spends tokens, not a review, so only the month's cap applies.
+	limits := file.Settings(account, "").Limits
+	capped, err := g.Store.CapReached(ctx, account.ID(), configfile.Limits{TokensPerMonth: limits.TokensPerMonth})
 	if err != nil {
 		logger.Error("gateway: caps not read", "error", err)
 		refuse(w, http.StatusInternalServerError, "server_error", "the caps could not be checked")
@@ -132,7 +150,7 @@ func (g *Gateway) admit(w http.ResponseWriter, r *http.Request) (runCall, bool) 
 // them, or refuses the request and reports false. Each reservation is
 // visible to the next at once, so concurrent calls cannot all pass a
 // budget one of them spends.
-func (g *Gateway) reserve(ctx context.Context, w http.ResponseWriter, c runCall, tokens int64) bool {
+func (g *Server) reserve(ctx context.Context, w http.ResponseWriter, c runCall, tokens int64) bool {
 	ok, err := g.Store.ReserveGatewayTokens(ctx, c.token, tokens)
 	if err != nil {
 		c.logger.Error("gateway: call not reserved", "error", err)
@@ -148,13 +166,13 @@ func (g *Gateway) reserve(ctx context.Context, w http.ResponseWriter, c runCall,
 	return true
 }
 
-func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
+func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	c, ok := g.admit(w, r)
 	if !ok {
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxGatewayBody))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
 	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		refuse(w, http.StatusRequestEntityTooLarge, "invalid_request", err.Error())
 		return
@@ -168,8 +186,8 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if req.Model != gatewayModel {
-		refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("the model is %q, not %q", gatewayModel, req.Model))
+	if req.Model != ModelName {
+		refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("the model is %q, not %q", ModelName, req.Model))
 		return
 	}
 
@@ -185,8 +203,8 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	if fb := configfile.ModelRef(c.grant.Fallback); fb != "" && fb.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fb.Model()}
 	}
-	if req.MaxTokens <= 0 || req.MaxTokens > maxStepOutput {
-		req.MaxTokens = maxStepOutput
+	if req.MaxTokens <= 0 || req.MaxTokens > MaxStepOutput {
+		req.MaxTokens = MaxStepOutput
 	}
 	// The step is reserved before it runs, its prompt estimated at four
 	// characters a token of the request; its actual spend replaces the
@@ -198,7 +216,7 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	resp, err := stepper.Step(ctx, req)
 	took := time.Since(start)
-	g.Metrics.ModelCall(c.account.Key(), servedRef(ref, resp.Model), store.RoleReview, callOutcome(err), resp.Usage.Prompt(),
+	g.Metrics.ModelCall(c.account.Key(), adapter.ServedRef(ref, resp.Model), store.RoleReview, adapter.Outcome(err), resp.Usage.Prompt(),
 		resp.Usage.CacheRead, resp.Usage.Output, resp.CostUSD)
 	if cerr := g.charge(ctx, c.grant, c.token, reserved, resp, err == nil); cerr != nil {
 		// A step that was answered is paid for either way; the run still
@@ -206,10 +224,10 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 		c.logger.Error("gateway: step not charged", "error", cerr)
 	}
 	// Recorded before the runner gets its answer, so the next step's delta
-	// is taken against this one; recordModelCall bounds how long it waits.
-	g.recordModelCall(ctx, c.logger, store.ModelCall{
+	// is taken against this one; the recorder bounds how long it waits.
+	adapter.Recorder{Store: g.Store, Metrics: g.Metrics}.Record(ctx, c.logger, store.ModelCall{
 		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, Kind: store.ModelCallAgentStep, Duration: took,
-	}, req, resp, err, transcriptMask(c.file, provider, c.token))
+	}, req, resp, err, adapter.Mask(c.file, provider, c.token))
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;
 		// it must not carry the key, or credentials in the provider's URL,
@@ -230,104 +248,11 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(out)
 }
 
-// maxSimilarBody bounds a similar-code request: its queries, each cut to
-// contextpack.SimilarQueryChars, with room for their encoding.
-const maxSimilarBody = 256 << 10
-
-// similarCode searches the run's repository index for the request's
-// queries (ADR-0026 §2.2): stage 4 of the review, asked once over the
-// diff's hunks before the agent starts, and the agent's own search_code
-// tool. The embedding is reserved against the run's budget at four
-// characters a token before it runs; what it returns is code of the
-// repository the runner has already checked out.
-func (g *Gateway) similarCode(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	c, ok := g.admit(w, r)
-	if !ok {
-		return
-	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSimilarBody))
-	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-		refuse(w, http.StatusRequestEntityTooLarge, "invalid_request", err.Error())
-		return
-	}
-	if err != nil {
-		refuse(w, http.StatusBadRequest, "invalid_request", "reading the request: "+err.Error())
-		return
-	}
-	var req contextpack.SimilarRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		refuse(w, http.StatusBadRequest, "invalid_request", "decoding the request: "+err.Error())
-		return
-	}
-	if len(req.Queries) == 0 || len(req.Queries) > contextpack.SimilarQueries {
-		refuse(w, http.StatusBadRequest, "invalid_request",
-			fmt.Sprintf("the request must carry between 1 and %d queries, not %d", contextpack.SimilarQueries, len(req.Queries)))
-		return
-	}
-	var chars int
-	for i, q := range req.Queries {
-		if strings.TrimSpace(q) == "" {
-			refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("query %d is empty", i))
-			return
-		}
-		req.Queries[i] = textcut.Prefix(q, contextpack.SimilarQueryChars)
-		chars += len(req.Queries[i])
-	}
-	var jobID int64
-	err = g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT coalesce(river_job_id, 0) FROM reviews WHERE id = $1`, c.grant.ReviewID).Scan(&jobID)
-	})
-	if err != nil {
-		c.logger.Error("gateway: review not read", "error", err)
-		refuse(w, http.StatusInternalServerError, "server_error", "the run's review could not be read")
-		return
-	}
-	reserved := int64(chars)/4 + 1
-	if !g.reserve(ctx, w, c, reserved) {
-		return
-	}
-	chunks, tokens, indexed, err := g.similar(ctx, g.Embedders, c.file, similarRequest{
-		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.grant.ReviewID, jobID: jobID,
-		slots: c.file.Settings(c.account, "").Limits.Concurrency, queries: req.Queries, exclude: req.Exclude,
-	}, c.logger)
-	cctx, cancel := detach(ctx)
-	defer cancel()
-	if cerr := g.Store.ChargeGatewayToken(cctx, c.token, tokens-reserved); cerr != nil {
-		c.logger.Error("gateway: similar code not charged", "error", cerr)
-	}
-	if err != nil {
-		// The embedder's error may carry its key or URL; the runner only
-		// learns that the search failed.
-		c.logger.Warn("gateway: similar code failed", "error", err)
-		refuse(w, http.StatusBadGateway, "upstream_error", "similar-code retrieval failed")
-		return
-	}
-	if chunks == nil {
-		chunks = []contextpack.Chunk{}
-	}
-	out, err := json.Marshal(contextpack.SimilarResponse{Chunks: chunks, Indexed: indexed})
-	if err != nil {
-		refuse(w, http.StatusInternalServerError, "server_error", err.Error())
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(out)
-}
-
-// monthCapped says why the account may not take another step this month,
-// or "". A step spends tokens, not a review, so only the month's cap
-// applies.
-func (g *Gateway) monthCapped(ctx context.Context, file *configfile.File, account *configfile.Account) (string, error) {
-	limits := file.Settings(account, "").Limits
-	return capReached(ctx, g.Store, account.ID(), configfile.Limits{TokensPerMonth: limits.TokensPerMonth})
-}
-
 // charge settles a step's reservation: an answered step's actual spend
 // replaces it and is recorded against the run's review, where the caps
 // count it; a failed step is refunded. The two writes are independent, so
 // a failed usage row still leaves the run's budget charged.
-func (g *Gateway) charge(
+func (g *Server) charge(
 	ctx context.Context, grant store.GatewayGrant, token string, reserved int64, resp model.StepResponse, answered bool,
 ) error {
 	ctx, cancel := detach(ctx)
@@ -349,23 +274,10 @@ func (g *Gateway) charge(
 // maskProvider removes a provider's key, and any credentials in its base
 // URL, from text bound for a runner.
 func maskProvider(text string, p configfile.Provider) string {
-	for _, s := range providerSecrets(p) {
+	for _, s := range adapter.ProviderSecrets(p) {
 		if s != "" {
 			text = strings.ReplaceAll(text, s, "***")
 		}
 	}
 	return text
-}
-
-// providerSecrets are a provider's key and the credentials in its base
-// URL, whole and the password alone; some may be empty.
-func providerSecrets(p configfile.Provider) []string {
-	secrets := []string{p.APIKeyValue().Value()}
-	if u, err := url.Parse(p.BaseURL); err == nil && u.User != nil {
-		secrets = append(secrets, u.User.String())
-		if pw, ok := u.User.Password(); ok {
-			secrets = append(secrets, pw)
-		}
-	}
-	return secrets
 }

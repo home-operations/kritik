@@ -152,7 +152,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 	settings := t.file.Settings(t.account, "")
 	d := AccountDetail{
 		Slug:   t.account.Slug(),
-		Models: models(settings.Models), Limits: limits(settings.Limits), Filter: filterSource(settings),
+		Models: settings.Models, Limits: settings.Limits, Filter: filterSource(settings),
 		Usage: monthUsage(month, settings.Limits),
 	}
 	if in := t.file.ConnectionFor(t.account); in != nil {
@@ -171,12 +171,6 @@ func connection(in *configfile.Connection) Connection {
 			WebhookSecret: in.WebhookSecretValue().Value() != "",
 		},
 	}
-}
-
-func models(m configfile.Models) Models { return Models{Review: m.Review, Fallback: m.Fallback} }
-
-func limits(l configfile.Limits) Limits {
-	return Limits{Concurrency: l.Concurrency, ReviewsPerDay: l.ReviewsPerDay, TokensPerMonth: l.TokensPerMonth}
 }
 
 func filterSource(s configfile.Settings) string {
@@ -298,21 +292,15 @@ func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfi
 	return out
 }
 
+// repoSettings is s as the API serves it; the slices the dashboard reads
+// are never null.
 func repoSettings(s configfile.Settings) RepoSettings {
+	review := s.Review
+	review.Context = nonNil(review.Context)
 	return RepoSettings{
-		Enabled: s.Enabled, Models: models(s.Models), Filter: filterSource(s), Forks: s.Forks,
+		Enabled: s.Enabled, Models: s.Models, Filter: filterSource(s), Forks: s.Forks,
 		Ignore: nonNil(slices.Clone(s.Ignore)), SettleSeconds: int64(s.Settle.Seconds()), MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
-		Review: ReviewBlock{
-			RequireSuggestedFix: s.Review.RequireSuggestedFix, Templates: s.Review.Templates,
-			InlineComments: s.Review.InlineComments, Approve: s.Review.Approve, Context: nonNil(s.Review.Context),
-			Feedback: s.Review.Feedback, AgentFiles: s.Review.AgentFiles,
-		},
-		Agent: AgentLimits{
-			MaxSteps: s.Agent.MaxSteps, MaxToolOutputBytes: s.Agent.MaxToolOutputBytes, MaxTokens: s.Agent.MaxTokens,
-			TimeoutSeconds: int64(s.Agent.Timeout.Seconds()), Commands: nonNil(s.Agent.Commands),
-			CommandTimeoutSeconds: int64(s.Agent.CommandTimeout.Seconds()),
-		},
-		Limits: limits(s.Limits),
+		Review: review, Agent: s.Agent, Limits: s.Limits,
 	}
 }
 

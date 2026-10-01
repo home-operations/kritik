@@ -31,10 +31,12 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
 
+	"github.com/home-operations/kritik/internal/adapter"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/forge"
+	"github.com/home-operations/kritik/internal/gateway"
 	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
@@ -1053,23 +1055,24 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	lf := &localForge{dir: dir, base: base, tip: head, permissions: map[string]forge.Permission{"onedr0p": forge.PermissionAdmin}}
 	fc := &fakeCompleter{}
 	fe := &fakeEmbedder{}
-	embedders := &Embedders{Build: func(configfile.Embedding) model.Embedder { return fe }}
+	embedders := &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return fe }}
 	exec := &gateExecutor{inner: &executor.Local{Store: runnerStore}, started: make(chan executor.Spec)}
 	deadline := &jobDeadline{}
 	workers := river.NewWorkers()
 	wb := Base{Store: appStore, Current: current, Forges: &forges{f: lf}, Logger: logger}
 	// The runner reaches fc, and the index through fe, by the gateway.
-	gateway := httptest.NewServer(&Gateway{
-		Base: wb, Proxy: http.NotFoundHandler(), Embedders: embedders,
-		Steppers: &Completers{Build: func(configfile.Provider) (model.Stepper, error) { return fc, nil }},
+	steppers := &adapter.Steppers{Build: func(configfile.Provider) (model.Stepper, error) { return fc, nil }}
+	gw := httptest.NewServer(&gateway.Server{
+		Store: wb.Store, Current: wb.Current, Logger: wb.Logger, Metrics: wb.Metrics, Proxy: http.NotFoundHandler(),
+		Embedders: embedders, Steppers: steppers,
 	})
-	t.Cleanup(gateway.Close)
+	t.Cleanup(gw.Close)
 	river.AddWorker(workers, &Review{
-		Base: wb, Executor: exec, GatewayURL: gateway.URL, GatewayTokenTTL: time.Hour,
+		Base: wb, Executor: exec, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour,
 		// A stopped run's runner never started here, so no agent row comes.
 		superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
 	})
-	river.AddWorker(workers, &FollowUp{Base: wb, Completers: &Completers{Build: func(configfile.Provider) (model.Stepper, error) { return fc, nil }}})
+	river.AddWorker(workers, &FollowUp{Base: wb, Steppers: steppers})
 	river.AddWorker(workers, &Index{
 		Base: wb, Executor: exec, Embedders: embedders,
 		// A chunk a batch, so a build commits several.
