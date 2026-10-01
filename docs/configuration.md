@@ -266,10 +266,15 @@ embedding:
 entries that change them for some: `owner/*` for every repository of an
 account, and `owner/name` for one.
 
-A `fallback` applies only on the review model's provider: the gateway
-hands a provider the fallback when both are its, as OpenRouter's
-server-side fallback is, and a fallback on another provider is ignored for
-reviews.
+A `fallback` on the review model's provider is handed to the provider
+with the request, as OpenRouter's server-side fallback is, and the
+provider or the adapter tries it when the review model fails. A fallback
+on another provider is tried by the gateway itself: once a review's step
+has failed on the review model, and its provider's `retries` are spent,
+the same step goes to the fallback, with that provider's own `retries`,
+and the review carries on there. The step's usage is recorded under the
+model that answered. A follow-up uses a fallback on its own provider
+alone.
 
 ```yaml
 defaults:

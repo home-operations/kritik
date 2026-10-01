@@ -51,8 +51,9 @@ context:
 - `models.review` / `models.fallback`: a `<provider>/<model>` of a
   provider the instance or the repository's account declares, used for
   the review and for follow-ups. A model of any other provider is
-  dropped; the account's limits bound what a choice can cost. A fallback
-  applies only on the review model's provider.
+  dropped; the account's limits bound what a choice can cost. A review
+  whose model fails goes on with the fallback, on the same provider or
+  another; a follow-up uses a fallback on its own provider alone.
 - `feedback`: how much the review says, replacing the
   admin's.
 

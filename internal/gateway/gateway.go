@@ -199,7 +199,8 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Model, req.Fallbacks = ref.Model(), nil
-	if fb := configfile.ModelRef(c.grant.Fallback); fb != "" && fb.Provider() == ref.Provider() {
+	fb := configfile.ModelRef(c.grant.Fallback)
+	if fb != "" && fb.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fb.Model()}
 	}
 	if req.MaxTokens <= 0 || req.MaxTokens > MaxStepOutput {
@@ -216,6 +217,22 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	resp, attempts, err := step(ctx, stepper, req, provider.Retries, sleep, func(err error) {
 		c.logger.Warn("gateway: step failed; trying again", "error", maskProvider(err.Error(), provider))
 	})
+	if err != nil && ctx.Err() == nil && fb != "" && fb.Provider() != ref.Provider() {
+		// The review model's attempts are spent; a fallback on another
+		// provider gets the same step, with that provider's retries. The
+		// request is provider-neutral, so the conversation carries over.
+		if fbStepper, fbProvider, ok := g.fallback(c, fb); ok {
+			c.logger.Warn("gateway: step failed on the review model; trying the fallback", "fallback", fb,
+				"error", maskProvider(err.Error(), provider))
+			req.Model = fb.Model()
+			var more int
+			resp, more, err = step(ctx, fbStepper, req, fbProvider.Retries, sleep, func(err error) {
+				c.logger.Warn("gateway: step failed; trying again", "error", maskProvider(err.Error(), fbProvider))
+			})
+			attempts += more
+			ref, provider = fb, fbProvider
+		}
+	}
 	took := time.Since(start)
 	g.Metrics.ModelCall(c.account.Key(), adapter.ServedRef(ref, resp.Model), store.RoleReview, adapter.Outcome(err), resp.Usage.Prompt(),
 		resp.Usage.CacheRead, resp.Usage.Output, resp.CostUSD)
@@ -247,6 +264,19 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
+}
+
+// fallback resolves the adapter and provider of a run's fallback model on
+// another provider, or reports false when the configuration no longer has
+// it, which the step then does without.
+func (g *Server) fallback(c runCall, fb configfile.ModelRef) (model.Stepper, configfile.Provider, bool) {
+	stepper, err := g.Steppers.Stepper(c.file, c.account, fb.Provider())
+	if err != nil {
+		c.logger.Error("gateway: no adapter for the fallback", "fallback", fb, "error", err)
+		return nil, configfile.Provider{}, false
+	}
+	provider, _ := c.file.Provider(c.account, fb.Provider())
+	return stepper, provider, true
 }
 
 // A step that failed in a way another attempt may not is tried again after

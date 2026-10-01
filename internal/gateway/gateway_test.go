@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,9 +11,47 @@ import (
 
 	"github.com/openai/openai-go/v3"
 
+	"github.com/home-operations/kritika/internal/adapter"
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/model"
 )
+
+func TestFallback(t *testing.T) {
+	t.Setenv("TEST_PROVIDER_KEY", "sk-provider")
+	f, err := configfiletest.Parse(t, `providers:
+  p:
+    type: openai
+    apiKey: { env: TEST_PROVIDER_KEY }
+  q:
+    type: anthropic
+    apiKey: { env: TEST_PROVIDER_KEY }
+    retries: 2
+apps:
+  acme-bot:
+    accounts: [acme]
+    clientId: Iv1.test
+    privateKey: { env: TEST_PROVIDER_KEY }
+    webhookSecret: { env: TEST_PROVIDER_KEY }
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := &f.Accounts[0]
+	built := 0
+	g := &Server{Logger: slog.Default(), Steppers: &adapter.Steppers{Build: func(configfile.Provider) (model.Stepper, error) {
+		built++
+		return &stepperFunc{}, nil
+	}}}
+	c := runCall{file: f, account: account, logger: slog.Default()}
+	stepper, provider, ok := g.fallback(c, "q/small")
+	if !ok || stepper == nil || provider.Type != configfile.ProviderAnthropic || provider.Retries != 2 || built != 1 {
+		t.Fatalf("fallback = %v, %+v, %v after %d builds; want q's adapter and provider", stepper, provider, ok, built)
+	}
+	if _, _, ok := g.fallback(c, "nowhere/small"); ok {
+		t.Fatal("fallback resolved a provider the configuration lacks")
+	}
+}
 
 // stepperFunc answers each step from the next error in errs, then the
 // answer; it records how many steps it took.
