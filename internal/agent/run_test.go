@@ -224,7 +224,12 @@ func TestRunToolDef(t *testing.T) {
 		t.Fatalf("description = %q", d)
 	}
 	if d := proxied.Def().Description; !strings.Contains(d, "rg searches file contents where the grep tool falls short") ||
-		strings.Contains(d, "fd finds") {
+		strings.Contains(d, "fd finds") || strings.Contains(d, "jq reads") || strings.Contains(d, "yq does") {
+		t.Fatalf("description = %q", d)
+	}
+	structured := NewRunTool(RunConfig{Commands: map[string]string{"jq": "/bin/jq", "yq": "/bin/yq"}, Timeout: time.Second})
+	if d := structured.Def().Description; !strings.Contains(d, "jq reads one path of a JSON file") ||
+		!strings.Contains(d, "yq does the same for a YAML file") {
 		t.Fatalf("description = %q", d)
 	}
 }

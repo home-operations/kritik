@@ -41,11 +41,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -o kritik ./cmd/kritik
 
 # ---- Runtime with runner tools ----------------------------------------------
-# kritik with curl, fd, gh and rg on PATH for the agent's run tool
+# kritik with curl, fd, gh, jq, rg and yq on PATH for the agent's run tool
 # (ADR-0008, ADR-0023), for runner Jobs through the chart's runner.image.
 # Built with --target tools; published as the -tools tag of each release.
 FROM alpine:3.24 AS tools
-RUN apk add --no-cache curl fd github-cli ripgrep
+RUN apk add --no-cache curl fd github-cli jq ripgrep yq-go
 COPY --from=builder /workspace/kritik /kritik
 USER 65532:65532
 EXPOSE 8080 8081

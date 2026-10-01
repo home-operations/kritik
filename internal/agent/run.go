@@ -94,6 +94,13 @@ func (rt *RunTool) Def() model.ToolDef {
 		desc += " fd finds files and directories by name, extension or type (`fd -e yaml values`, `fd -t d charts`), " +
 			"where the list_files tool's glob is not enough."
 	}
+	if slices.Contains(rt.names, "jq") {
+		desc += " jq reads one path of a JSON file (`jq '.dependencies' package.json`), where read_file would return " +
+			"the whole file."
+	}
+	if slices.Contains(rt.names, "yq") {
+		desc += " yq does the same for a YAML file (`yq '.spec.values.image' helmrelease.yaml`), and reads JSON too."
+	}
 	if slices.Contains(rt.names, "gh") {
 		desc += " Use gh, not curl, for anything on GitHub: it is signed in to read public repositories, such as " +
 			"`gh release view <tag> -R <owner>/<repo>`, `gh api repos/<owner>/<repo>/compare/<base>...<head>` or " +
