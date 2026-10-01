@@ -90,9 +90,16 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 		return StepResponse{}, err
 	}
 	if o.openRouter {
-		// OpenRouter walks the models list itself, primary first.
+		// OpenRouter walks the models list itself, primary first. The
+		// top-level cache_control is its automatic prompt caching, a
+		// breakpoint on the last cacheable block that moves forward as the
+		// conversation grows; without it, providers whose caching is not
+		// automatic (Anthropic, Gemini) cache none of a tool loop's steps.
 		var opts []option.RequestOption
-		opts = append(opts, option.WithJSONSet("usage", map[string]any{"include": true}))
+		opts = append(opts,
+			option.WithJSONSet("usage", map[string]any{"include": true}),
+			option.WithJSONSet("cache_control", map[string]any{"type": "ephemeral"}),
+		)
 		if len(req.Fallbacks) > 0 {
 			opts = append(opts, option.WithJSONSet("models", append([]string{req.Model}, req.Fallbacks...)))
 		}
