@@ -187,6 +187,11 @@ type Client interface {
 	// ReplyInline posts a reply in inline comment to's thread and returns
 	// its id, 0 when the forge does not say.
 	ReplyInline(ctx context.Context, owner, repo string, number int, to Comment, body string) (int64, error)
+	// ResolveThread resolves the review thread inline comment id opened,
+	// when it is still open and holds only the bot's own comments, and
+	// reports whether it did. A thread someone else has written in is a
+	// conversation, left to its people.
+	ResolveThread(ctx context.Context, owner, repo string, number int, id int64) (bool, error)
 	// ListOpenPullRequests returns the open pull requests updated since a
 	// time, most recently updated first.
 	ListOpenPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]OpenPullRequest, error)

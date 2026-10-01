@@ -39,7 +39,8 @@ metrics and development.
 - **Fixes you can apply.** A finding offers its fix as a one-click suggestion,
   with a prompt a coding agent can apply it from.
 - **Incremental reviews.** A later push is reviewed against what changed since
-  the last review, and `settle` folds a burst of force-pushes into one.
+  the last review, an earlier finding it no longer finds has its thread
+  resolved, and `settle` folds a burst of force-pushes into one.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
   answer in the thread.
 - **Approvals, opt-in.** A repository or the instance can have a review that

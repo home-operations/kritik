@@ -90,6 +90,7 @@ type localForge struct {
 	// permissions by login; unknown logins have read access.
 	permissions map[string]forge.Permission
 	replies     []string
+	resolved    []int64
 	// publishing, when set, runs once as a review writes its sticky
 	// comment, the first thing publishing does.
 	publishing func()
@@ -289,6 +290,13 @@ func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, _ forge.
 	defer l.mu.Unlock()
 	l.replies = append(l.replies, body)
 	return int64(len(l.replies)), nil
+}
+
+func (l *localForge) ResolveThread(_ context.Context, _, _ string, _ int, id int64) (bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.resolved = append(l.resolved, id)
+	return true, nil
 }
 
 func (l *localForge) UpdateComment(_ context.Context, _, _ string, id int64, body string) error {
@@ -1657,7 +1665,12 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 			sticky = body
 		}
 	}
+	resolved := len(lf.resolved)
 	lf.mu.Unlock()
+	// The earlier finding was reported again, so its thread stays open.
+	if resolved != 0 {
+		t.Fatalf("%d thread(s) resolved; the earlier finding is still open", resolved)
+	}
 	if !strings.Contains(sticky, "_Incremental review of the changes since [`"+prior[:7]+"`](local://onedr0p/home-ops/commit/"+prior+")._") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
 		!strings.Contains(sticky, "**Earlier findings**\n\n- **[important]** [`main.go:1`](local://onedr0p/home-ops/"+prior+"/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||

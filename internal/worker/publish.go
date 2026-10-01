@@ -212,6 +212,7 @@ func (p *publishPhase) writeBack(
 	if data.Incremental {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
 		data.Prior = p.priorFindings(res)
+		p.resolveThreads(ctx, resolvedThreads(res, p.prior.findings))
 	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, data)
 	for _, n := range renderNotes {
@@ -322,6 +323,40 @@ func (p *publishPhase) priorFindings(res review.Result) []review.PriorFinding {
 		out = append(out, review.PriorFinding{Finding: f, Resolved: !reported[review.Fingerprint(f)]})
 	}
 	return out
+}
+
+// resolvedThreads is the inline comment id of each of the last review's
+// findings this review, asked to report each again only if still present,
+// did not report: the threads the summary lists as resolved.
+func resolvedThreads(res review.Result, prior []priorFinding) []int64 {
+	reported := make(map[string]bool, len(res.Findings))
+	for _, f := range res.Findings {
+		reported[review.Fingerprint(f)] = true
+	}
+	var ids []int64
+	for _, pf := range prior {
+		if pf.commentID != 0 && !reported[review.Fingerprint(pf.Finding)] {
+			ids = append(ids, pf.commentID)
+		}
+	}
+	return ids
+}
+
+// resolveThreads resolves the threads of the findings this review found
+// gone, so the forge agrees with the summary that lists them resolved. The
+// forge client leaves a thread someone else wrote in open. Best effort,
+// like the inline review: the summary is the record either way.
+func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64) {
+	owner, repo := p.pr.ownerRepo()
+	for _, id := range ids {
+		resolved, err := p.client.ResolveThread(ctx, owner, repo, p.pr.number, id)
+		switch {
+		case err != nil:
+			p.logger.Warn("finding's thread not resolved", "comment", id, "error", err)
+		case resolved:
+			p.logger.Info("finding's thread resolved", "comment", id)
+		}
+	}
 }
 
 // approve approves the head when the review found nothing blocking or
