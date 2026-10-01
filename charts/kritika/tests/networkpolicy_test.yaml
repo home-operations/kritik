@@ -171,30 +171,6 @@ tests:
           value: app.kubernetes.io/name == 'kritika' && app.kubernetes.io/instance == 'RELEASE-NAME'
         documentIndex: 1
 
-  - it: allows egress to the port the database is on
-    set:
-      networkPolicy.enabled: true
-      database.port: 5433
-    asserts:
-      - contains:
-          path: spec.egress[1].ports
-          content:
-            port: 5433
-            protocol: TCP
-        documentIndex: 0
-      - contains:
-          path: spec.egress[1].ports
-          content:
-            port: 5433
-            protocol: TCP
-        documentIndex: 1
-      - notContains:
-          path: spec.egress[1].ports
-          content:
-            port: 5432
-            protocol: TCP
-        documentIndex: 1
-
   - it: fails fast on an unknown type
     set:
       networkPolicy.enabled: true

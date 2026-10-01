@@ -127,11 +127,11 @@ spec:
   databaseRoleReclaimPolicy: retain
 ```
 
-## Secrets and the connection
+## Secrets and connection URIs
 
-Each role's Secret is a `kubernetes.io/basic-auth` Secret with `username`
-and `password`, as CNPG writes it for a `DatabaseRole` and for the
-bootstrap owner, and that is all kritika needs:
+Each role's password Secret is a `kubernetes.io/basic-auth` Secret with
+`username` and `password`, as CNPG expects. The chart reads a connection
+URI from a `uri` key, so put it in the same Secret:
 
 ```yaml
 apiVersion: v1
@@ -142,20 +142,26 @@ type: kubernetes.io/basic-auth
 stringData:
   username: kritika_app
   password: <password>
+  uri: postgres://kritika_app:<password>@kritika-postgres-rw.kritika.svc:5432/kritika?sslmode=require&connect_timeout=10
 ```
 
 The owner's Secret, `kritika-postgres-credentials`, and the runner's,
 `kritika-postgres-runner`, look the same with their own role. A password
-generator, such as an External Secrets `Password` generator, can produce all
-three, and a password may hold any character: kritika builds the connection
-from the host and the role's username and password, so nothing is escaped
-into a URI.
+generator, such as an External Secrets `Password` generator feeding a
+templated `ExternalSecret`, can produce all three, `uri` included; keep the
+generated passwords free of characters that need escaping in a URI, or
+escape them.
 
-Point the chart at the cluster's read-write Service and the three Secrets:
+Set `connect_timeout`. Without it a connection attempt waits as long as the
+kernel does: after an undeploy and a quick redeploy, a pod's first dial can go
+to a Service address that DNS still caches but no longer exists, and that dial
+hangs for minutes before kritika retries. With a timeout the attempt fails
+fast and the retry looks the name up again.
+
+Point the chart at the three Secrets:
 
 ```yaml
 database:
-  host: kritika-postgres-rw
   owner:
     existingSecret: kritika-postgres-credentials
   app:
@@ -164,16 +170,8 @@ database:
     existingSecret: kritika-postgres-runner
 ```
 
-`database.port`, `database.name` and `database.sslmode` default to `5432`,
-`kritika` and `require`; `database.connectTimeout` (`10s`) bounds a
-connection attempt, so a dial to a Service address DNS still caches after a
-redeploy fails fast and the retry looks the name up again, rather than
-hanging for minutes. A Secret that holds a connection URI instead, such as
-one a password generator templates, names its key in that role's `uriKey`,
-and the URI is used as it is.
-
-`database.app.role` and `database.runner.role` must name the roles the
-Secrets log in as, if they are not `kritika_app` and `kritika_runner`.
+`database.app.role` and `database.runner.role` must name the roles the URIs
+log in as, if they are not `kritika_app` and `kritika_runner`.
 
 ## Connections
 

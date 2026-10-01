@@ -118,85 +118,29 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].startupProbe
 
-  - it: wires the database parameters, the three role secrets and the runner settings
+  - it: wires the three database secrets and the runner settings
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
-            name: KRITIKA_DATABASE_HOST
-            value: kritika-postgres-rw
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_PORT
-            value: "5432"
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_SSLMODE
-            value: require
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_CONNECT_TIMEOUT
-            value: 10s
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_USER
-            valueFrom:
-              secretKeyRef:
-                name: kritika-postgres-app
-                key: username
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: kritika-postgres-app
-                key: password
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_OWNER_USER
-            valueFrom:
-              secretKeyRef:
-                name: kritika-postgres-credentials
-                key: username
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_OWNER_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: kritika-postgres-credentials
-                key: password
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
             name: KRITIKA_DATABASE_URL
-          any: true
+            valueFrom:
+              secretKeyRef:
+                name: kritika-postgres-app
+                key: uri
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_DATABASE_OWNER_URL
+            valueFrom:
+              secretKeyRef:
+                name: kritika-postgres-credentials
+                key: uri
       - contains:
           path: spec.template.spec.containers[0].env
           content:
             name: KRITIKA_RUNNER_DATABASE_SECRET
             value: kritika-postgres-runner
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_DATABASE_SECRET_KEY
-            value: ""
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_DATABASE_SECRET_USER_KEY
-            value: username
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_DATABASE_SECRET_PASSWORD_KEY
-            value: password
       - contains:
           path: spec.template.spec.containers[0].env
           content:
@@ -223,60 +167,6 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: database.owner.existingSecret is required
-
-  - it: connects a role by its URI when its Secret holds one
-    set:
-      database.app.uriKey: uri
-      database.runner.uriKey: dsn
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_URL
-            valueFrom:
-              secretKeyRef:
-                name: kritika-postgres-app
-                key: uri
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_USER
-          any: true
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_OWNER_USER
-            valueFrom:
-              secretKeyRef:
-                name: kritika-postgres-credentials
-                key: username
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_DATABASE_SECRET_KEY
-            value: dsn
-
-  - it: refuses to render without a host unless every role has a URI
-    set:
-      database.host: ""
-      database.app.uriKey: uri
-      database.owner.uriKey: uri
-    asserts:
-      - failedTemplate:
-          errorPattern: database.host is required
-
-  - it: renders without a host when every role has a URI
-    set:
-      database.host: ""
-      database.app.uriKey: uri
-      database.owner.uriKey: uri
-      database.runner.uriKey: uri
-    asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_DATABASE_HOST
-          any: true
 
   - it: prefers the digest over the tag when set
     set:

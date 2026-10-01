@@ -42,7 +42,7 @@ func openStore(t *testing.T) *Store {
 	t.Helper()
 	ctx := context.Background()
 	s, err := Open(ctx, Options{
-		App: Conn{URL: testEnv(t, "KRITIKA_TEST_APP_URL")}, Owner: Conn{URL: testEnv(t, "KRITIKA_TEST_OWNER_URL")},
+		AppURL: testEnv(t, "KRITIKA_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIKA_TEST_OWNER_URL"),
 		Logger: slog.New(slog.DiscardHandler),
 	})
 	if err != nil {
@@ -70,46 +70,18 @@ func TestOpenRefusesUnsafeApplicationDSN(t *testing.T) {
 	openStore(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Open(ctx, Options{App: Conn{URL: tt.url}, Logger: logger})
+			_, err := Open(ctx, Options{AppURL: tt.url, Logger: logger})
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("Open = %v, want %v", err, tt.want)
 			}
 		})
 	}
 	t.Run("superuser as owner", func(t *testing.T) {
-		_, err := Open(ctx, Options{App: Conn{URL: testEnv(t, "KRITIKA_TEST_APP_URL")}, Owner: Conn{URL: testEnv(t, "KRITIKA_TEST_SUPER_URL")}, Logger: logger})
+		_, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIKA_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIKA_TEST_SUPER_URL"), Logger: logger})
 		if err == nil || !strings.Contains(err.Error(), "superuser") {
 			t.Fatalf("Open = %v, want a superuser refusal", err)
 		}
 	})
-}
-
-// TestOpenWithParameters opens the pools from the test URIs' parts rather
-// than the URIs, as a deployment with username and password Secrets does.
-func TestOpenWithParameters(t *testing.T) {
-	ctx := context.Background()
-	fromURL := func(name string) Conn {
-		c, err := pgconn.ParseConfig(testEnv(t, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return Conn{Host: c.Host, Port: c.Port, Database: c.Database, SSLMode: "disable", ConnectTimeout: 5 * time.Second, User: c.User, Password: c.Password}
-	}
-	s, err := Open(ctx, Options{App: fromURL("KRITIKA_TEST_APP_URL"), Owner: fromURL("KRITIKA_TEST_OWNER_URL"), Logger: slog.New(slog.DiscardHandler)})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer s.Close()
-	var app, owner string
-	if err := s.app.QueryRow(ctx, `SELECT current_user`).Scan(&app); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.owner.QueryRow(ctx, `SELECT current_user`).Scan(&owner); err != nil {
-		t.Fatal(err)
-	}
-	if app != "kritika_app" || owner != "kritika" {
-		t.Fatalf("connected as %q and %q", app, owner)
-	}
 }
 
 func TestMigrateIsIdempotent(t *testing.T) {
@@ -429,7 +401,7 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	runner, err := Open(ctx, Options{App: Conn{URL: testEnv(t, "KRITIKA_TEST_RUNNER_URL")}, Logger: slog.New(slog.DiscardHandler)})
+	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"), Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatalf("Open runner: %v", err)
 	}

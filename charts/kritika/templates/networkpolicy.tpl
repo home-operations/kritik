@@ -3,7 +3,7 @@
 {{- $public := int .Values.service.port }}
 {{- $metrics := int .Values.service.metricsPort }}
 {{- $gateway := int .Values.service.gatewayPort }}
-{{- $postgres := int .Values.database.port }}
+{{- $postgres := int $np.postgresPort }}
 {{- /* Runner pods reach the outside through the gateway alone. */}}
 {{- $runnerPorts := list $postgres }}
 {{- $serverPorts := concat $np.egressPorts (list $postgres) }}
