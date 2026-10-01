@@ -288,6 +288,16 @@
           "title": "providersName",
           "type": "string"
         },
+        "providersRetries": {
+          "default": "",
+          "description": "How many more times a review's model step is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5.",
+          "required": [],
+          "title": "providersRetries",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
         "providersType": {
           "default": "",
           "description": "The provider's type, `openrouter`, `openai` or `anthropic`; the name unless set, when the name is one of those.",

@@ -113,9 +113,19 @@ type Provider struct {
 	// does not report a cost for; without it such calls cost zero while
 	// their tokens still count against limits.
 	Pricing model.Pricing `yaml:"pricing,omitempty"`
+	// Retries is how many more times the gateway tries a review's model
+	// step that failed in a way another attempt may not (a 5xx, a timeout,
+	// a cut connection), at most MaxProviderRetries; zero tries once. A
+	// routing proxy that picks a model per request is where it earns its
+	// keep. Follow-ups and the embedder do not retry.
+	Retries int `yaml:"retries,omitempty"`
 
 	apiKey Secret
 }
+
+// MaxProviderRetries bounds Provider.Retries: with backoff, five more
+// attempts span about a minute, which a runner's deadline absorbs.
+const MaxProviderRetries = 5
 
 // APIKeyValue returns the resolved API key.
 func (p Provider) APIKeyValue() Secret { return p.apiKey }

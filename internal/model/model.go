@@ -10,7 +10,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/openai/openai-go/v3"
 )
 
 // ProviderType selects the adapter a provider uses.
@@ -253,6 +258,28 @@ func checkRequest(req StepRequest) error {
 		return fmt.Errorf("model: tool choice %s must name a tool exactly when the mode is %s", c.Mode, ToolChoiceTool)
 	}
 	return nil
+}
+
+// Transient reports whether a step failed in a way another attempt may
+// not: the provider answered 408, 429 or a 5xx, or the connection failed,
+// timed out or was cut. A provider's refusal of the request itself, any
+// other 4xx, and a spent budget fail the same way again.
+func Transient(err error) bool {
+	if err == nil || errors.Is(err, ErrBudget) {
+		return false
+	}
+	status := 0
+	if e, ok := errors.AsType[*openai.Error](err); ok {
+		status = e.StatusCode
+	} else if e, ok := errors.AsType[*anthropic.Error](err); ok {
+		status = e.StatusCode
+	}
+	if status != 0 {
+		return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) ||
+		errors.Is(err, context.DeadlineExceeded)
 }
 
 // eachModel calls step with Model, then each fallback in turn until one

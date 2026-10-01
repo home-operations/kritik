@@ -33,6 +33,9 @@ func (p Provider) validate(where string) error {
 	if p.apiKey.Value() == "" {
 		return fmt.Errorf("configfile: %s.apiKey resolved to an empty value", where)
 	}
+	if p.Retries < 0 || p.Retries > MaxProviderRetries {
+		return fmt.Errorf("configfile: %s.retries must be between 0 and %d, got %d", where, MaxProviderRetries, p.Retries)
+	}
 	for _, id := range slices.Sorted(maps.Keys(p.Pricing)) {
 		if price := p.Pricing[id]; price.Input < 0 || price.Output < 0 || price.CacheRead < 0 || price.CacheWrite < 0 {
 			return fmt.Errorf("configfile: %s.pricing.%s: prices must not be negative", where, id)

@@ -191,8 +191,18 @@ embedding:
 ```
 
 A provider is `type` (`openrouter`, `openai` or `anthropic`), an optional
-`baseUrl` and `pricing`, and its `apiKey`. A model is named
+`baseUrl`, `pricing` and `retries`, and its `apiKey`. A model is named
 `<provider>/<model>`, on a provider the file declares.
+
+`retries` is how many more times a review's model step is tried when the
+provider fails it in a way another attempt may not: a 5xx, a 429, a
+timeout or a cut connection. The gateway waits a second, then twice as
+long each time, up to 30 seconds; it never retries a refusal of the
+request itself, such as a prompt over the model's input limit, or a spent
+budget. It is 0 unless set, one attempt, and at most 5. A routing proxy
+that picks a model per request is where it earns its keep: a step the
+proxy routed badly is answered on the next attempt. Follow-ups and the
+embedder do not retry.
 
 The embedder's `model` is a model of an `openrouter` or `openai` provider
 of the instance, whose endpoint, or the type's default, and key it uses;
@@ -332,6 +342,7 @@ The same defaults can come from the environment:
 | `KRITIKA_PROVIDERS_TYPE`           | `type`, which defaults to the name when that is `openrouter`, `openai` or `anthropic` |
 | `KRITIKA_PROVIDERS_BASE_URL`       | `baseUrl`                                                                             |
 | `KRITIKA_PROVIDERS_API_KEY`        | `apiKey`                                                                              |
+| `KRITIKA_PROVIDERS_RETRIES`        | `retries`                                                                             |
 | `KRITIKA_DEFAULTS_MODELS_REVIEW`   | `defaults.models.review`                                                              |
 | `KRITIKA_DEFAULTS_MODELS_FALLBACK` | `defaults.models.fallback`                                                            |
 | `KRITIKA_DEFAULTS_FEEDBACK`        | `defaults.feedback`                                                                   |

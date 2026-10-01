@@ -77,7 +77,7 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	a := &f.Accounts[0]
-	if p, _ := f.Provider(a, "openrouter"); p.APIKeyValue().Value() != "sk-env" || p.Type != ProviderOpenRouter {
+	if p, _ := f.Provider(a, "openrouter"); p.APIKeyValue().Value() != "sk-env" || p.Type != ProviderOpenRouter || p.Retries != 0 {
 		t.Fatalf("provider = %+v; want the environment's, typed after its default name", p)
 	}
 	if s := f.Settings(a, "acme/x"); s.Models.Review != "openrouter/env-model" || s.Models.Fallback != "openrouter/small" {
@@ -98,6 +98,8 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 
 	for _, tt := range []struct{ name, key, value, want string }{
 		{"an unknown provider key", "KRITIKA_PROVIDERS_MODEL", "x", "KRITIKA_PROVIDERS_MODEL names no provider setting"},
+		{"retries that are not a number", "KRITIKA_PROVIDERS_RETRIES", "some", "KRITIKA_PROVIDERS_RETRIES must be a whole number"},
+		{"retries past the bound", "KRITIKA_PROVIDERS_RETRIES", "6", "providers.openrouter.retries must be between 0 and 5"},
 		{"an unknown defaults key", "KRITIKA_DEFAULTS_FILTER", "true", "KRITIKA_DEFAULTS_FILTER names no defaults setting"},
 		{"forks that are not a bool", "KRITIKA_DEFAULTS_FORKS", "sometimes", "KRITIKA_DEFAULTS_FORKS must be true or false"},
 		{"a settle that is not a duration", "KRITIKA_DEFAULTS_SETTLE", "soon", "KRITIKA_DEFAULTS_SETTLE"},
@@ -112,6 +114,33 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 				t.Fatalf("Parse = %v; want it to mention %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestProviderRetries: a provider's retries come from the file or the
+// environment, within the bound.
+func TestProviderRetries(t *testing.T) {
+	setInstanceEnv(t)
+	withRetries := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, retries: 2 }", 1)
+	f, err := Parse([]byte(withRetries))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Retries != 2 {
+		t.Fatalf("retries = %d, want 2", p.Retries)
+	}
+	if _, err := Parse([]byte(strings.Replace(withRetries, "retries: 2", "retries: -1", 1))); err == nil ||
+		!strings.Contains(err.Error(), "providers.openrouter.retries must be between 0 and 5") {
+		t.Fatalf("Parse with negative retries = %v", err)
+	}
+	t.Setenv("KRITIKA_PROVIDERS_RETRIES", "3")
+	t.Setenv("KRITIKA_PROVIDERS_API_KEY", "sk-env")
+	f, err = Parse([]byte(fileWithDefaults))
+	if err != nil {
+		t.Fatalf("Parse with the environment's retries: %v", err)
+	}
+	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Retries != 3 {
+		t.Fatalf("retries = %d, want the environment's 3", p.Retries)
 	}
 }
 
