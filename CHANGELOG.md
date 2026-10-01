@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.2](https://github.com/home-operations/kritika/compare/0.0.1...0.0.2) (2026-10-01)
+
+
+### Bug Fixes
+
+* **release:** install cosign so the Helm job signs the chart ([#303](https://github.com/home-operations/kritika/issues/303)) ([edcd833](https://github.com/home-operations/kritika/commit/edcd83301bd6392c669d4e7af4e6d2af157404d9))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update action jdx/mise-action (v4.3.0 → v5.0.0) ([#302](https://github.com/home-operations/kritika/issues/302)) ([84eb3dd](https://github.com/home-operations/kritika/commit/84eb3ddc1cfb2d0e31df7cc1a389825f7506259d))
+* **github-release:** update release helm-unittest/helm-unittest (v1.1.2 → v1.2.0) ([#301](https://github.com/home-operations/kritika/issues/301)) ([d64a2a8](https://github.com/home-operations/kritika/commit/d64a2a80b93b426b1543a3ebf6efab73f05f829c))
+
 ## 0.0.1 (2026-10-01)
 
 
