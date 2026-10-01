@@ -215,10 +215,13 @@ type Overrides struct {
 	Ignore     []string `yaml:"ignore,omitempty"`
 	// Settle delays a review job for a new head, so a burst of pushes
 	// collapses onto the last one before anything is spent.
-	Settle      *time.Duration `yaml:"settle,omitempty"`
-	Agent       Agent          `yaml:"agent,omitempty"`
-	Incremental Incremental    `yaml:"incremental,omitempty"`
-	Review      ReviewSpec     `yaml:",inline"`
+	Settle *time.Duration `yaml:"settle,omitempty"`
+	// MaxAutoReviews pauses a pull request's automatic reviews once that
+	// many have completed, until someone resumes them; zero never pauses.
+	MaxAutoReviews *int        `yaml:"maxAutoReviews,omitempty"`
+	Agent          Agent       `yaml:"agent,omitempty"`
+	Incremental    Incremental `yaml:"incremental,omitempty"`
+	Review         ReviewSpec  `yaml:",inline"`
 
 	filter *prfilter.Program
 }
@@ -642,10 +645,13 @@ type Settings struct {
 	// file's globs are unioned in by the caller that has the checkout.
 	Ignore []string
 	// Settle delays a review job for a new head; zero means immediate.
-	Settle      time.Duration
-	Agent       AgentSettings
-	Incremental IncrementalSettings
-	Review      Review
+	Settle time.Duration
+	// MaxAutoReviews pauses a pull request's automatic reviews once that
+	// many have completed; zero never pauses.
+	MaxAutoReviews int
+	Agent          AgentSettings
+	Incremental    IncrementalSettings
+	Review         Review
 	// Providers name the model providers the repository's account may use,
 	// the instance's and its own, sorted: the ones a .kritika.yaml may
 	// choose a model of.

@@ -139,8 +139,8 @@ A value the file may not take, such as an unknown feedback level or a
 model of an undeclared provider, is dropped: the admin's value applies for
 that field, a note in the review's summary says which field was dropped
 and what it may be, and the rest of the file still applies. `agent`,
-`settle`, `forks`, `incremental`, `limits` and `runner` are the admin's
-alone; a file naming one of them, or any other unknown key, does not
+`settle`, `maxAutoReviews`, `forks`, `incremental`, `limits` and `runner`
+are the admin's alone; a file naming one of them, or any other unknown key, does not
 parse.
 
 ## `filterExpr` recipes

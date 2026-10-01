@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runner"
@@ -29,7 +30,10 @@ type publishPhase struct {
 	pr       *pullRequest
 	reviewID string
 	runID    string
-	logger   *slog.Logger
+	// trigger is why the review ran; one a human asked for does not
+	// count towards the pull request's automatic reviews.
+	trigger string
+	logger  *slog.Logger
 	// parse and templates are the repository's contract settings; the zero
 	// values are kritika's defaults.
 	parse     review.ParseOptions
@@ -85,6 +89,11 @@ func (p *publishPhase) run(ctx context.Context) (store.ReviewStatus, error) {
 	if res.Findings, dismissed = dropDismissed(res.Findings, p.prior.dismissed); dismissed > 0 {
 		notes = append(notes, fmt.Sprintf("%d finding(s) a maintainer dismissed were left out", dismissed))
 	}
+	if note, err := p.countAutoReview(ctx); err != nil {
+		return store.ReviewFailed, err
+	} else if note != "" {
+		notes = append(notes, note)
+	}
 	commentID, inline, err := p.writeBack(ctx, res, unanchored, run.Model, append(notes, p.repoNotes...))
 	if err != nil {
 		return store.ReviewFailed, err
@@ -94,6 +103,30 @@ func (p *publishPhase) run(ctx context.Context) (store.ReviewStatus, error) {
 		return store.ReviewFailed, err
 	}
 	return store.ReviewCompleted, nil
+}
+
+// countAutoReview counts this review towards the pull request's automatic
+// reviews, unless a human asked for it, and returns the note the summary
+// states when it was the last the repository allows.
+func (p *publishPhase) countAutoReview(ctx context.Context) (string, error) {
+	if p.trigger == jobs.TriggerManual {
+		return "", nil
+	}
+	var pausedNow bool
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		var err error
+		pausedNow, err = store.CountAutoReview(ctx, tx, p.pr.id, p.settings.MaxAutoReviews)
+		return err
+	})
+	if err != nil || !pausedNow {
+		return "", err
+	}
+	login, err := p.client.BotLogin(ctx)
+	if err != nil {
+		return "", err
+	}
+	p.logger.Info("automatic reviews paused", "after", p.settings.MaxAutoReviews)
+	return review.AutoPausedNote(strings.TrimSuffix(login, "[bot]"), p.settings.MaxAutoReviews), nil
 }
 
 // skipDescription is how the commit status states a skip the runner

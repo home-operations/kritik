@@ -299,8 +299,9 @@ func repoSettings(s configfile.Settings) RepoSettings {
 	review.Context = nonNil(review.Context)
 	return RepoSettings{
 		Enabled: s.Enabled, Models: s.Models, Filter: filterSource(s), Forks: s.Forks,
-		Ignore: nonNil(slices.Clone(s.Ignore)), SettleSeconds: int64(s.Settle.Seconds()), MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
-		Review: review, Agent: s.Agent, Limits: s.Limits,
+		Ignore: nonNil(slices.Clone(s.Ignore)), SettleSeconds: int64(s.Settle.Seconds()), MaxAutoReviews: s.MaxAutoReviews,
+		MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
+		Review:        review, Agent: s.Agent, Limits: s.Limits,
 	}
 }
 

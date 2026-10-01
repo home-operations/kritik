@@ -454,6 +454,7 @@ func TestParseRejects(t *testing.T) {
 		{"negative limit", "defaults:\n  limits:\n    reviewsPerDay: -1\n" + minimal, "must not be negative"},
 		{"negative account limit", acmeAccount("    limits: { tokensPerMonth: -1 }\n"), "accounts.acme.limits: limits must not be negative"},
 		{"negative settle default", "defaults:\n  settle: -1s\n" + minimal, "defaults.settle must not be negative"},
+		{"negative maxAutoReviews", acme("  acme/x: { maxAutoReviews: -1 }\n"), "repositories.acme/x.maxAutoReviews must not be negative"},
 		{"unknown feedback", "defaults:\n  feedback: exhaustive\n" + minimal, "defaults.feedback must be detailed, standard or minimal"},
 		{"context without a description", "defaults:\n  context: [{ path: db/schema.sql }]\n" + minimal, "defaults.context[0]: description is required"},
 		{"context outside the repository", "defaults:\n  context: [{ path: ../x, description: x }]\n" + minimal, "escapes the repository"},
@@ -535,6 +536,7 @@ defaults:
   models: { review: p/big, fallback: p/small }
   filterExpr: "!pr.draft"
   settle: 2m
+  maxAutoReviews: 4
   ignore: ["defaults/**"]
   agent: { maxSteps: 9 }
   incremental: { maxDeltaFiles: 3 }
@@ -563,7 +565,7 @@ defaults:
 	t.Run("an account inherits what it leaves out", func(t *testing.T) {
 		f := parse(t, doc("", "", ""))
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		if s.Filter == nil || s.Settle != 2*time.Minute || s.Agent.MaxSteps != 9 ||
+		if s.Filter == nil || s.Settle != 2*time.Minute || s.MaxAutoReviews != 4 || s.Agent.MaxSteps != 9 ||
 			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
 			!reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
 			t.Fatalf("inherited settings = %+v", s)

@@ -41,7 +41,9 @@ flowchart LR
   with a prompt a coding agent can apply it from.
 - **Incremental reviews.** A later push is reviewed against what changed since
   the last review, an earlier finding it no longer finds has its thread
-  resolved, and `settle` folds a burst of force-pushes into one.
+  resolved, `settle` folds a burst of force-pushes into one, and
+  `maxAutoReviews` pauses a long-lived pull request's automatic reviews,
+  as `@<bot> pause` does on request.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
   answer in the thread, or reply `@<bot> dismiss <reason>` in a finding's
   thread to have it resolved and never raised again on that pull request.

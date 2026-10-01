@@ -125,6 +125,12 @@ CREATE TABLE pull_requests (
     -- says. An event older than it is stale and does not touch the row, so
     -- a delivery that arrives late or again cannot rewind the head.
     forge_updated_at timestamptz,
+    -- paused stops the pull request's automatic reviews: a maintainer
+    -- asked with "@<bot> pause", or auto_reviews, the automatic reviews
+    -- completed since it was last resumed, reached the repository's
+    -- maxAutoReviews. A review someone asks for still runs.
+    paused        boolean     NOT NULL DEFAULT false,
+    auto_reviews  int         NOT NULL DEFAULT 0,
     UNIQUE (repository_id, number)
 );
 CREATE INDEX pull_requests_account_updated_idx ON pull_requests (account_id, updated_at DESC, id DESC);

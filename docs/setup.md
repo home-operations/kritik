@@ -100,7 +100,9 @@ its own, since its code comes from outside the organization, and this is
 how a maintainer gets it one. `@<app slug> dismiss <reason>`, as a reply in
 one of kritika's finding threads, dismisses that finding: its thread is
 resolved, later reviews of the pull request are told not to raise it
-again, and the dashboard lists it dismissed with the reason. Put the private key and the webhook secret
+again, and the dashboard lists it dismissed with the reason.
+`@<app slug> pause` stops the pull request's automatic reviews, and
+`@<app slug> resume` starts them again. Put the private key and the webhook secret
 in a Secret, set a variable from each with `secretEnv`, and declare the
 App under `apps` in the configuration file or the environment
 ([`apps`](configuration.md#apps)). To

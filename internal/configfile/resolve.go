@@ -169,6 +169,9 @@ func (s *Settings) apply(o *Overrides) {
 	if o.Settle != nil {
 		s.Settle = *o.Settle
 	}
+	if o.MaxAutoReviews != nil {
+		s.MaxAutoReviews = *o.MaxAutoReviews
+	}
 	s.Agent = s.Agent.overlay(o.Agent)
 	if o.Incremental.MaxDeltaFiles != nil {
 		s.Incremental.MaxDeltaFiles = *o.Incremental.MaxDeltaFiles

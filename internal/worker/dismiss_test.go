@@ -56,3 +56,21 @@ func TestDropDismissed(t *testing.T) {
 		t.Fatalf("dropDismissed without dismissals = %+v, %d", kept, n)
 	}
 }
+
+func TestRequestsPause(t *testing.T) {
+	for _, tt := range []struct {
+		body       string
+		paused, ok bool
+	}{
+		{"@kritika pause", true, true},
+		{"@Kritika Resume please", false, true},
+		{"@kritika paused?", false, false},
+		{"@kritikabot pause", false, false},
+		{"pause @kritika", false, false},
+	} {
+		paused, ok := requestsPause(tt.body, "kritika")
+		if ok != tt.ok || paused != tt.paused {
+			t.Errorf("requestsPause(%q) = %v, %v; want %v, %v", tt.body, paused, ok, tt.paused, tt.ok)
+		}
+	}
+}

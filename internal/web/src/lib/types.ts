@@ -203,6 +203,7 @@ export interface RepoSettings {
   forks: boolean;
   ignore: string[];
   settleSeconds: number;
+  maxAutoReviews: number;
   maxDeltaFiles: number;
   review: ReviewBlock;
   agent: AgentLimits;

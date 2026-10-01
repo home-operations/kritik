@@ -297,6 +297,12 @@ level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
   review and public repositories.
 - `settle`: how long a new head waits before its review starts, so a
   burst of pushes is reviewed once.
+- `maxAutoReviews`: how many automatic reviews a pull request gets before
+  kritika pauses them, so a long-lived pull request stops spending on
+  every push; unlimited unless set. The summary of the last one says so.
+  `@<app slug> review` still reviews a paused pull request, and
+  `@<app slug> resume` turns its automatic reviews back on, as
+  `@<app slug> pause` turns them off at any time.
 - `forks: true`: reviews pull requests from forks without being asked; by
   default one is reviewed only when a maintainer comments
   `@<app slug> review`.
