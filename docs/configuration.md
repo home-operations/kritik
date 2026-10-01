@@ -13,7 +13,7 @@ A repository's own [`.kritika.yaml`](repository-config.md) narrows what the
 configuration sets for it, from its own git.
 
 The file is optional: `KRITIKA_CONFIG_FILE` names it, and the chart's
-`config` renders it, so the configuration lives in git with the rest
+`configFile` renders it, so the configuration lives in git with the rest
 of the deployment. In the file a secret is `{ env: NAME }`, the variable
 holding it, never the value itself; the chart's `env` and `envFrom` set
 such a variable from an existing Secret. Sign-in, one app, one provider, the
@@ -29,7 +29,7 @@ A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`:
 `filterExpr`, `roleMappingExpr` and a rule's `whenExpr`.
 
 kritika reads the file and its variables once, at startup: a change takes a
-restart, and the chart rolls the pods when its `config` changes.
+restart, and the chart rolls the pods when its `configFile` changes.
 Content that does not load, or that would leave the dashboard no way to
 sign in, fails startup, so a rolling update leaves the pods before it
 serving.
@@ -401,8 +401,9 @@ plain `http://` request to that host, so the runner never holds it.
 
 ## How kritika runs
 
-These come from the environment rather than the file, set in the chart's
-`env` by name except where noted; a restart changes them.
+These come from the environment rather than the file, each a camelCased
+key of the chart's `config` (`KRITIKA_POLL_INTERVAL` is `pollInterval`)
+except where noted; a restart changes them.
 
 | Variable                       | What                                                                                                                                    |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |

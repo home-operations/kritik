@@ -8,9 +8,9 @@ database:
     existingSecret: kritika-postgres-credentials
   runner:
     existingSecret: kritika-postgres-runner
-web:
-  url: https://kritika.example.com
 config:
+  webUrl: https://kritika.example.com
+configFile:
   apps:
     github:
       accounts: [org-1]

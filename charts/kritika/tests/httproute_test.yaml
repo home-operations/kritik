@@ -9,9 +9,10 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: routes web.url to the public Service, which serves the webhooks and the dashboard
+  - it: routes the hostnames to the public Service, which serves the webhooks and the dashboard
     set:
       httpRoute.enabled: true
+      httpRoute.hostnames: [kritika.example.com]
       httpRoute.parentRefs:
         - name: gateway
           namespace: network
@@ -22,6 +23,9 @@ tests:
           path: apiVersion
           value: gateway.networking.k8s.io/v1
       - equal:
+          path: kind
+          value: HTTPRoute
+      - equal:
           path: spec.parentRefs[0].name
           value: gateway
       - equal:
@@ -30,14 +34,35 @@ tests:
       - equal:
           path: spec.rules
           value:
-            - matches: [{ path: { type: PathPrefix, value: / } }]
-              backendRefs: [{ name: RELEASE-NAME-kritika, port: 8080 }]
+            - backendRefs: [{ name: RELEASE-NAME-kritika, port: 8080 }]
+              matches: [{ path: { type: PathPrefix, value: / } }]
 
-  - it: keeps web.url's path
+  - it: resolves templated hostnames and prepends additional rules
     set:
       httpRoute.enabled: true
-      web.url: https://kritika.example.com/kritika
+      httpRoute.hostnames: ["{{ .Release.Name }}.example.com"]
+      httpRoute.additionalRules:
+        - matches: [{ path: { type: PathPrefix, value: /metrics } }]
+          filters: [{ type: RequestRedirect, requestRedirect: { statusCode: 404 } }]
     asserts:
       - equal:
+          path: spec.hostnames
+          value: [RELEASE-NAME.example.com]
+      - equal:
           path: spec.rules[0].matches[0].path.value
-          value: /kritika
+          value: /metrics
+      - equal:
+          path: spec.rules[1].backendRefs[0].port
+          value: 8080
+
+  - it: redirects to https instead of routing when asked
+    set:
+      httpRoute.enabled: true
+      httpRoute.httpsRedirect: true
+    asserts:
+      - equal:
+          path: spec.rules
+          value:
+            - filters:
+                - type: RequestRedirect
+                  requestRedirect: { scheme: https, statusCode: 301 }

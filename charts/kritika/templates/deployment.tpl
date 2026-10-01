@@ -7,11 +7,12 @@
 {{- if not .Values.database.runner.existingSecret -}}
 {{- fail "database.runner.existingSecret is required: runner Jobs connect with it" -}}
 {{- end -}}
-{{- if not .Values.web.url -}}
-{{- fail "web.url is required: the dashboard's public URL, which the webhook listener shares under /hooks" -}}
+{{- $webURL := tpl (.Values.config.webUrl | default "" | toString) $ -}}
+{{- if not $webURL -}}
+{{- fail "config.webUrl is required: the dashboard's public URL, which the webhook listener shares under /hooks" -}}
 {{- end -}}
-{{- if not (regexMatch "^https?://" .Values.web.url) -}}
-{{- fail "web.url must be an http(s) URL" -}}
+{{- if not (regexMatch "^https?://" $webURL) -}}
+{{- fail "config.webUrl must be an http(s) URL" -}}
 {{- end -}}
 {{- if and .Values.runner.tools (semverCompare "<1.33.0-0" .Capabilities.KubeVersion.Version) -}}
 {{- fail (printf "runner.tools needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; this cluster is %s" .Capabilities.KubeVersion.Version) -}}
@@ -47,8 +48,8 @@ spec:
         {{- tpl (toYaml .) $ | nindent 8 }}
         {{- end }}
       {{- $checksum := "" }}
-      {{- if and $.Values.config (not $.Values.existingConfigMap) }}
-      {{- $checksum = toYaml $.Values.config | sha256sum }}
+      {{- if and $.Values.configFile (not $.Values.existingConfigMap) }}
+      {{- $checksum = toYaml $.Values.configFile | sha256sum }}
       {{- end }}
       {{- if or $checksum $.Values.podAnnotations }}
       annotations:
@@ -85,9 +86,15 @@ spec:
           securityContext:
             {{- tpl (toYaml $.Values.securityContext) $ | nindent 12 }}
           {{- $serveEnv := include "kritika.serveEnv" $ | fromYamlArray }}
+          {{- $configEnv := include "kritika.configEnv" $ | fromYaml }}
           env:
             {{- toYaml $serveEnv | nindent 12 }}
             {{- range $name, $value := $.Values.env }}
+            {{- range $key, $var := $configEnv }}
+            {{- if eq $var $name }}
+            {{- fail (printf "env.%s: set config.%s instead" $name $key) }}
+            {{- end }}
+            {{- end }}
             {{- range $serveEnv }}
             {{- if eq .name $name }}
             {{- fail (printf "env.%s: the chart sets this variable from its other values" $name) }}

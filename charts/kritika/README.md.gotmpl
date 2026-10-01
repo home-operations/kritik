@@ -30,9 +30,9 @@ helm install kritika oci://ghcr.io/home-operations/charts/kritika \
 where `my-values.yaml` sets:
 
 ```yaml
-web:
-  url: https://kritika.example.com
 config:
+  webUrl: https://kritika.example.com
+configFile:
   apps:
     github:
       accounts: [org-1]
@@ -58,28 +58,30 @@ envFrom:
       name: kritika-bot
 ingress:
   enabled: true
+  hosts: [{ host: kritika.example.com, paths: [{ path: / }] }]
   tls: [{ hosts: [kritika.example.com], secretName: kritika-tls }]
 ```
 
-`web.url` is the one public URL: the dashboard at it, and the webhook
-listener under it at `/hooks`, which the chart's Ingress or HTTPRoute
-routes.
+`config` is how kritika runs, as camelCased keys the chart turns into the
+`KRITIKA_*` variables of the same name: `webUrl`, the one public URL, with
+the dashboard at it and the webhook listener under it at `/hooks`; logging;
+and, commented out in `values.yaml` with kritika's defaults, the workers,
+polling, retention and runner Jobs' deadline and RuntimeClass (see
+[the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
+The chart's Ingress or HTTPRoute must route `webUrl`'s host.
 
-`config` is the whole configuration: sign-in (`auth`), the GitHub `apps`,
-model `providers`, the `embedding`, the `defaults`, `repositories` entries
-keyed `owner/*` or `owner/name`, and `accounts`. kritika reads it at
-startup: the pods carry its checksum, so a change rolls them, and a pod
+`configFile` is what is reviewed and how: sign-in (`auth`), the GitHub
+`apps`, model `providers`, the `embedding`, the `defaults`, `repositories`
+entries keyed `owner/*` or `owner/name`, and `accounts`. kritika reads it
+at startup: the pods carry its checksum, so a change rolls them, and a pod
 whose file doesn't load never becomes ready while the ones before it keep
 serving. Secrets never go in it: it names environment variables, which
 `env` and `envFrom` set from existing Secrets, the way any Kubernetes
-container's environment is set. Every other `KRITIKA_*` variable goes in
-`env` too, by name: here the local admin's password, which is the way into
-a fresh instance; OIDC and GitHub sign-in with their role mappings, how
-kritika runs (polling, retention, workers) and runner Jobs' deadline and
-RuntimeClass are set the same way (see
-[the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
-The chart refuses a key it derives from its other values, such as the
-addresses or the database. The
+container's environment is set. A `KRITIKA_*` variable that carries a
+secret itself goes in `env` the same way: here the local admin's password,
+which is the way into a fresh instance. The chart refuses an `env` entry
+for a variable it derives from its other values, such as the addresses or
+the database, or that has a `config` key. The
 [setup guide](https://github.com/home-operations/kritika/blob/main/docs/setup.md)
 covers creating the GitHub App, and the dashboard's setup checklist shows
 what a fresh instance still lacks.
@@ -117,14 +119,14 @@ are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
 destination by hostname only. github.com is always allowed once an app
-is declared; `egress.allowHosts` in `config` adds the rest
+is declared; `egress.allowHosts` in `configFile` adds the rest
 (registries, release APIs), and `egress.credentials` names hosts the gateway
 adds a bearer token to when a runner sends it a plain `http://` request, so
 the runner never holds the token. The token is a secret reference like any
 other in the file:
 
 ```yaml
-config:
+configFile:
   egress:
     allowHosts: [api.github.com, "*.githubusercontent.com", ghcr.io]
     credentials:
@@ -166,10 +168,10 @@ runner:
   image: ghcr.io/home-operations/kritika:<version>-tools
 ```
 
-and, in `config`:
+and, in `configFile`:
 
 ```yaml
-config:
+configFile:
   egress:
     allowHosts: ["*.githubusercontent.com"]
   repositories:
@@ -188,7 +190,7 @@ Jobs under a sandboxed RuntimeClass.
 ### Runner sandbox
 
 Runner Jobs parse untrusted repository content and run what the model asks of
-them. Set `KRITIKA_RUNNER_RUNTIME_CLASS` in `env` to a sandboxed runtime
+them. Set `config.runnerRuntimeClass` to a sandboxed runtime
 the cluster offers (`gvisor` with runsc, or a Kata class) so a kernel
 vulnerability reachable from the pod is contained by the sandbox rather than
 the node. It is advised, not required: without it the pod's other bounds
@@ -201,7 +203,7 @@ it from the node.
 The chart runs one Deployment of `kritika serve`, `replicas: 2`
 by default with a PodDisruptionBudget. Every replica serves webhooks and the
 dashboard and works jobs, and one holds the leader lock at a time; two keep
-one serving while a rollout, such as the one a changed `config` starts,
+one serving while a rollout, such as the one a changed `configFile` starts,
 replaces the other. Runner pods are the Jobs `kritika serve` creates, one per
 review and index run, running `kritika run`. A replica that stops drains its
 jobs first; one that dies outright leaves them to the leader, which hands

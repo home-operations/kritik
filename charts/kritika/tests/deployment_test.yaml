@@ -57,8 +57,7 @@ tests:
     set:
       env:
         KRITIKA_EMBEDDING_DIMS: 1024
-        KRITIKA_RUNNER_RUNTIME_CLASS: gvisor
-        KRITIKA_POLL_INTERVAL: "{{ .Release.Name }}-0s"
+        KRITIKA_DEFAULTS_SETTLE: "{{ .Release.Name }}-0s"
       envFrom:
         - secretRef:
             name: kritika-bot
@@ -76,10 +75,7 @@ tests:
           content: { name: KRITIKA_EMBEDDING_DIMS, value: "1024" }
       - contains:
           path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_RUNNER_RUNTIME_CLASS, value: gvisor }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_POLL_INTERVAL, value: RELEASE-NAME-0s }
+          content: { name: KRITIKA_DEFAULTS_SETTLE, value: RELEASE-NAME-0s }
       - equal:
           path: spec.template.spec.containers[0].env[0].name
           value: KRITIKA_CONFIG_FILE
@@ -92,10 +88,52 @@ tests:
   - it: refuses an env key the chart sets from its other values
     set:
       env:
-        KRITIKA_WEB_URL: https://elsewhere.example.com
+        KRITIKA_GATEWAY_URL: http://elsewhere.example.com
     asserts:
       - failedTemplate:
-          errorPattern: env.KRITIKA_WEB_URL
+          errorPattern: env.KRITIKA_GATEWAY_URL
+
+  - it: refuses an env key that has a config key, naming it
+    set:
+      env:
+        KRITIKA_POLL_INTERVAL: 5m
+    asserts:
+      - failedTemplate:
+          errorPattern: "env.KRITIKA_POLL_INTERVAL: set config.pollInterval instead"
+
+  - it: turns each config key into its variable, numbers and templates included, and leaves the rest to kritika's defaults
+    set:
+      config:
+        pollInterval: "{{ .Release.Name }}-0s"
+        reviewWorkers: 4
+        runnerRuntimeClass: gvisor
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_POLL_INTERVAL, value: RELEASE-NAME-0s }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_REVIEW_WORKERS, value: "4" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_RUNNER_RUNTIME_CLASS, value: gvisor }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_LOG_LEVEL, value: info }
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_INDEX_WORKERS
+          any: true
+
+  - it: refuses a config key kritika has no setting for
+    set:
+      config:
+        pollInterval: 5m
+        polInterval: 5m
+    asserts:
+      - failedTemplate:
+          errorPattern: "config.polInterval: not a kritika setting"
 
   - it: renders no envFrom by default
     asserts:
@@ -213,7 +251,7 @@ tests:
 
   - it: hands kritika serve the dashboard's URL, and one public port for the webhooks and the dashboard
     set:
-      web.url: https://dash.example.com
+      config.webUrl: https://dash.example.com
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -242,12 +280,12 @@ tests:
             name: KRITIKA_GATEWAY_URL
             value: http://RELEASE-NAME-kritika-gateway.NAMESPACE.svc.cluster.local:9090
 
-  - it: fails without web.url
+  - it: fails without config.webUrl
     set:
-      web.url: ""
+      config.webUrl: ""
     asserts:
       - failedTemplate:
-          errorPattern: web.url is required
+          errorPattern: config.webUrl is required
 
   - it: sets the local admin's password from the Secret env names
     asserts:
@@ -259,7 +297,7 @@ tests:
 
   - it: runs without a configuration file
     set:
-      config: null
+      configFile: null
     asserts:
       - notContains:
           path: spec.template.spec.containers[0].env
@@ -268,12 +306,12 @@ tests:
       - isNullOrEmpty:
           path: spec.template.spec.volumes
 
-  - it: fails when web.url is not an http(s) URL
+  - it: fails when config.webUrl is not an http(s) URL
     set:
-      web.url: ftp://dash.example.com
+      config.webUrl: ftp://dash.example.com
     asserts:
       - failedTemplate:
-          errorPattern: web.url must be an http\(s\) URL
+          errorPattern: config.webUrl must be an http\(s\) URL
 
   - it: rolls one replica at a time by default
     asserts:

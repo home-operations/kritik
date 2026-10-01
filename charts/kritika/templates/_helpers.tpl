@@ -123,20 +123,30 @@ Whether a configuration file is mounted: the chart's, or an existing
 ConfigMap. Without one, kritika runs on its environment alone.
 */}}
 {{- define "kritika.hasConfigFile" -}}
-{{- if or .Values.existingConfigMap .Values.config -}}true{{- end -}}
+{{- if or .Values.existingConfigMap .Values.configFile -}}true{{- end -}}
 {{- end }}
 
 {{/*
-web.url's host, without a port, and its path without a trailing slash: the
-one URL the Ingress or HTTPRoute serves, the dashboard at the path and the
-webhook listener under it at /hooks.
+The variable each `config` key sets. The whole table, not just the keys set,
+so the deployment can refuse an `env` entry for any of them and a key the
+table lacks.
 */}}
-{{- define "kritika.webHost" -}}
-{{- (urlParse (tpl .Values.web.url .)).host | splitList ":" | first -}}
-{{- end }}
-
-{{- define "kritika.webPath" -}}
-{{- (urlParse (tpl .Values.web.url .)).path | trimSuffix "/" -}}
+{{- define "kritika.configEnv" -}}
+webUrl: KRITIKA_WEB_URL
+logLevel: KRITIKA_LOG_LEVEL
+logFormat: KRITIKA_LOG_FORMAT
+leaderRetryInterval: KRITIKA_LEADER_RETRY_INTERVAL
+reviewWorkers: KRITIKA_REVIEW_WORKERS
+indexWorkers: KRITIKA_INDEX_WORKERS
+gatewayTokenTtl: KRITIKA_GATEWAY_TOKEN_TTL
+pollInterval: KRITIKA_POLL_INTERVAL
+pollLookback: KRITIKA_POLL_LOOKBACK
+onboardWindow: KRITIKA_ONBOARD_WINDOW
+indexGrace: KRITIKA_INDEX_GRACE
+transcriptRetention: KRITIKA_TRANSCRIPT_RETENTION
+diffRetention: KRITIKA_DIFF_RETENTION
+runnerDeadline: KRITIKA_RUNNER_DEADLINE
+runnerRuntimeClass: KRITIKA_RUNNER_RUNTIME_CLASS
 {{- end }}
 
 {{/*
@@ -149,12 +159,15 @@ an `env` key that would duplicate one of them.
 - name: KRITIKA_CONFIG_FILE
   value: /etc/kritika/config.yaml
 {{- end }}
-- name: KRITIKA_WEB_URL
-  value: {{ tpl .Values.web.url . | quote }}
-- name: KRITIKA_LOG_LEVEL
-  value: {{ tpl .Values.logging.level . | quote }}
-- name: KRITIKA_LOG_FORMAT
-  value: {{ tpl .Values.logging.format . | quote }}
+{{- $configEnv := include "kritika.configEnv" . | fromYaml }}
+{{- range $key, $value := .Values.config }}
+{{- $name := get $configEnv $key }}
+{{- if not $name }}
+{{- fail (printf "config.%s: not a kritika setting; values.yaml lists the keys" $key) }}
+{{- end }}
+- name: {{ $name }}
+  value: {{ tpl (toString $value) $ | quote }}
+{{- end }}
 - name: KRITIKA_ADDR
   value: {{ printf ":%d" (int .Values.service.port) | quote }}
 - name: KRITIKA_METRICS_ADDR

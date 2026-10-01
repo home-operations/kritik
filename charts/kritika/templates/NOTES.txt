@@ -1,14 +1,14 @@
 kritika {{ .Chart.AppVersion }} is installed as {{ include "kritika.fullname" . }}, {{ .Values.replicas }} replica(s) of kritika serve.
 
-Open {{ tpl .Values.web.url . }} to sign in. The GitHub Apps, model providers
-and review settings come from the configuration file (config) and the
-KRITIKA_* variables in env (see docs/configuration.md); the dashboard turns
+Open {{ tpl .Values.config.webUrl . }} to sign in. The GitHub Apps, model providers
+and review settings come from the configuration file (configFile), how kritika
+runs from the keys of config (see docs/configuration.md); the dashboard turns
 each repository on or off.
 
-GitHub delivers each app's webhook to {{ tpl .Values.web.url . | trimSuffix "/" }}/hooks/<app name>,
+GitHub delivers each app's webhook to {{ tpl .Values.config.webUrl . | trimSuffix "/" }}/hooks/<app name>,
 which kritika serves beside the dashboard:
 {{- if or .Values.ingress.enabled .Values.httpRoute.enabled }} the chart's
-{{ if .Values.ingress.enabled }}Ingress{{ else }}HTTPRoute{{ end }} routes that URL to it.
+{{ if .Values.ingress.enabled }}Ingress{{ else }}HTTPRoute{{ end }} routes to it; its host must be that URL's.
 {{- else }} route that URL to
 {{ include "kritika.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}.
 {{- end }}

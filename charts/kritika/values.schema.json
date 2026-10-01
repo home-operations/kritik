@@ -8,9 +8,35 @@
       "type": "object"
     },
     "config": {
-      "description": "(optional) The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md.",
+      "description": "How kritika runs, as camelCased keys the chart turns into the KRITIKA_*\nvariables of the same name (docs/configuration.md): the public URL,\nlogging, the workers, polling, retention and the runner Jobs' deadline\nand RuntimeClass. Each key has one variable and nothing else sets it: the\nchart refuses a key it does not know and an `env` entry for a variable\nthat has a key here. A key left out, as the commented ones are, has\nkritika's own default, which the comment shows. What is reviewed and how\nis the configuration file, `configFile` below, not a key here. Every\nvalue is rendered through `tpl`.",
+      "properties": {
+        "logFormat": {
+          "default": "json",
+          "description": "Log format (KRITIKA_LOG_FORMAT): json or text.",
+          "title": "logFormat",
+          "type": "string"
+        },
+        "logLevel": {
+          "default": "info",
+          "description": "Log level (KRITIKA_LOG_LEVEL): debug, info, warn or error.",
+          "title": "logLevel",
+          "type": "string"
+        },
+        "webUrl": {
+          "default": "",
+          "description": "(required) Public URL the dashboard is reached at (KRITIKA_WEB_URL), e.g. https://kritika.example.com; the webhooks share it under `/hooks/\u003capp name\u003e`. Must be an absolute http(s) URL with no query or fragment. GitHub delivers webhooks to it and sign-in redirects back to it, so the chart's Ingress or HTTPRoute must route this name.",
+          "title": "webUrl",
+          "type": "string"
+        }
+      },
       "required": [],
       "title": "config",
+      "type": "object"
+    },
+    "configFile": {
+      "description": "(optional) The configuration file, as YAML: what is reviewed and how, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md.",
+      "required": [],
+      "title": "configFile",
       "type": "object"
     },
     "database": {
@@ -112,7 +138,7 @@
     },
     "existingConfigMap": {
       "default": "",
-      "description": "Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `config`. A change to it takes a restart.",
+      "description": "Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `configFile`. A change to it takes a restart.",
       "title": "existingConfigMap",
       "type": "string"
     },
@@ -129,7 +155,16 @@
       "type": "object"
     },
     "httpRoute": {
+      "description": "Gateway API HTTPRoute, an alternative to `ingress`; one route to the public\nService. Named `httpRoute`, not `route`, to keep clear of the OpenShift\nRoute kind.",
       "properties": {
+        "additionalRules": {
+          "description": "Custom rules prepended before the default rule (templated).",
+          "items": {
+            "required": []
+          },
+          "title": "additionalRules",
+          "type": "array"
+        },
         "annotations": {
           "description": "HTTPRoute annotations.",
           "required": [],
@@ -144,15 +179,76 @@
         },
         "enabled": {
           "default": false,
-          "description": "Expose web.url through a Gateway API HTTPRoute. The host and path are web.url's and have no field of their own: GitHub delivers webhooks to that URL and sign-in redirects back to it, so a route for any other name would serve a dashboard that cannot sign in.",
+          "description": "Expose the public Service through a Gateway API HTTPRoute (alternative to ingress).",
           "title": "enabled",
           "type": "boolean"
+        },
+        "filters": {
+          "description": "Filters applied to the default rule.",
+          "items": {
+            "required": []
+          },
+          "title": "filters",
+          "type": "array"
+        },
+        "hostnames": {
+          "description": "Hostnames matched against the Host header; `config.webUrl`'s host (templated).",
+          "items": {
+            "required": []
+          },
+          "title": "hostnames",
+          "type": "array"
+        },
+        "httpsRedirect": {
+          "default": false,
+          "description": "Redirect HTTP to HTTPS (301) instead of routing to the backend (needs HTTP+HTTPS listeners).",
+          "title": "httpsRedirect",
+          "type": "boolean"
+        },
+        "kind": {
+          "default": "",
+          "description": "HTTPRoute kind; empty defaults to HTTPRoute.",
+          "title": "kind",
+          "type": "string"
         },
         "labels": {
           "description": "HTTPRoute labels.",
           "required": [],
           "title": "labels",
           "type": "object"
+        },
+        "matches": {
+          "description": "Match conditions for the default rule.",
+          "items": {
+            "anyOf": [
+              {
+                "properties": {
+                  "path": {
+                    "properties": {
+                      "type": {
+                        "default": "PathPrefix",
+                        "title": "type",
+                        "type": "string"
+                      },
+                      "value": {
+                        "default": "/",
+                        "title": "value",
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "title": "path",
+                    "type": "object"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              }
+            ],
+            "required": []
+          },
+          "title": "matches",
+          "type": "array"
         },
         "parentRefs": {
           "description": "Gateways (and listeners) this route attaches to.",
@@ -168,7 +264,7 @@
       "type": "object"
     },
     "image": {
-      "description": "Default values for kritika.\n\nMost string, list and map values below are rendered through Helm's `tpl`, so\nthey may carry template expressions that resolve at install time, e.g.\n  ingress.hosts[0].host: kritika.{{ .Values.global.domain }}\nPlain numbers and booleans, and `config`, are passed through as they are.",
+      "description": "Default values for kritika.\n\nMost string, list and map values below are rendered through Helm's `tpl`, so\nthey may carry template expressions that resolve at install time, e.g.\n  ingress.hosts[0].host: kritika.{{ .Values.global.domain }}\nPlain numbers and booleans, and `configFile`, are passed through as they are.",
       "properties": {
         "digest": {
           "default": "",
@@ -208,7 +304,7 @@
       "type": "array"
     },
     "ingress": {
-      "description": "One Ingress, or one Gateway API HTTPRoute, for `web.url`, to the public\nService, which serves the webhooks under `/hooks` and the dashboard. The\nhost and path come from `web.url`.",
+      "description": "One Ingress, or one Gateway API HTTPRoute, to the public Service, which\nserves the webhooks under `/hooks` and the dashboard. Its host must be\n`config.webUrl`'s: GitHub delivers webhooks to that URL and sign-in\nredirects back to it, so a route for another name serves a dashboard\nthat cannot sign in.",
       "properties": {
         "annotations": {
           "description": "Ingress annotations.",
@@ -224,12 +320,58 @@
         },
         "enabled": {
           "default": false,
-          "description": "Expose web.url through an Ingress. The host and path are web.url's and have no field of their own: GitHub delivers webhooks to that URL and sign-in redirects back to it, so a route for any other name would serve a dashboard that cannot sign in.",
+          "description": "Expose the public Service through an Ingress.",
           "title": "enabled",
           "type": "boolean"
         },
+        "hosts": {
+          "description": "Ingress hosts and their paths; the host is `config.webUrl`'s.",
+          "items": {
+            "anyOf": [
+              {
+                "properties": {
+                  "host": {
+                    "default": "kritika.example.com",
+                    "title": "host",
+                    "type": "string"
+                  },
+                  "paths": {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "path": {
+                              "default": "/",
+                              "title": "path",
+                              "type": "string"
+                            },
+                            "pathType": {
+                              "default": "Prefix",
+                              "title": "pathType",
+                              "type": "string"
+                            }
+                          },
+                          "required": [],
+                          "type": "object"
+                        }
+                      ],
+                      "required": []
+                    },
+                    "title": "paths",
+                    "type": "array"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              }
+            ],
+            "required": []
+          },
+          "title": "hosts",
+          "type": "array"
+        },
         "tls": {
-          "description": "Ingress TLS configuration, e.g. `[{hosts: [kritika.example.com], secretName: kritika-tls}]`.",
+          "description": "Ingress TLS configuration.",
           "items": {
             "required": []
           },
@@ -269,25 +411,6 @@
       },
       "required": [],
       "title": "livenessProbe",
-      "type": "object"
-    },
-    "logging": {
-      "properties": {
-        "format": {
-          "default": "json",
-          "description": "Log format: json or text.",
-          "title": "format",
-          "type": "string"
-        },
-        "level": {
-          "default": "info",
-          "description": "Log level: debug, info, warn or error.",
-          "title": "level",
-          "type": "string"
-        }
-      },
-      "required": [],
-      "title": "logging",
       "type": "object"
     },
     "monitoring": {
@@ -580,7 +703,7 @@
       "type": "object"
     },
     "runner": {
-      "description": "Runner Jobs: one pod per review or index run, created by kritika serve in the\nrelease namespace from the same image, running as a service account with\nno permissions and a database role that can only touch its own run. The\nserver's Role reaches every Secret in the release namespace, so install\nkritika into a namespace of its own. Their deadline and RuntimeClass are\nvariables (KRITIKA_RUNNER_DEADLINE, KRITIKA_RUNNER_RUNTIME_CLASS) set in\n`env`; a sandboxed RuntimeClass (gVisor, Kata) is advised, since a runner\nparses untrusted repository content and runs what the model asks.",
+      "description": "Runner Jobs: one pod per review or index run, created by kritika serve in the\nrelease namespace from the same image, running as a service account with\nno permissions and a database role that can only touch its own run. The\nserver's Role reaches every Secret in the release namespace, so install\nkritika into a namespace of its own. Their deadline and RuntimeClass are\n`config.runnerDeadline` and `config.runnerRuntimeClass`; a sandboxed\nRuntimeClass (gVisor, Kata) is advised, since a runner parses untrusted\nrepository content and runs what the model asks.",
       "properties": {
         "image": {
           "default": "",
@@ -919,20 +1042,6 @@
       },
       "title": "volumes",
       "type": "array"
-    },
-    "web": {
-      "description": "The one public URL: the dashboard at `web.url`, and the webhooks under it\nat `/hooks`, both served on `service.port`, which the Ingress or HTTPRoute\nbelow route to.",
-      "properties": {
-        "url": {
-          "default": "",
-          "description": "(required) Public URL the dashboard is reached at, e.g. https://kritika.example.com; the webhooks share it under `/hooks/\u003capp name\u003e`. Must be an absolute http(s) URL with no query or fragment.",
-          "title": "url",
-          "type": "string"
-        }
-      },
-      "required": [],
-      "title": "web",
-      "type": "object"
     }
   },
   "required": [],

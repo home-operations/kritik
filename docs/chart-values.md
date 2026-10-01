@@ -14,14 +14,16 @@ behavior is explained, followed by the full `values.yaml`.
 
 - **`image`**, **`replicas`**, **`strategy`**, **`resources`** and the pod
   settings: the one Deployment of `kritika serve`.
-- **`web`**: the public URL the dashboard and GitHub's webhooks share.
-- **`config`** and **`existingConfigMap`**: the configuration file, inline or
-  from an existing ConfigMap. See [Configuration file](configuration.md).
-- **`env`** and **`envFrom`**: every other `KRITIKA_*` variable by name (sign-in,
-  polling, retention, workers, the runner Jobs' deadline and RuntimeClass) and
-  the Secrets that set the variables the configuration file names. See
+- **`config`**: how kritika runs, as camelCased keys the chart turns into
+  `KRITIKA_*` variables: the public URL the dashboard and GitHub's webhooks
+  share, logging, the workers, polling, retention and the runner Jobs'
+  deadline and RuntimeClass. See [Configuration file](configuration.md).
+- **`configFile`** and **`existingConfigMap`**: the configuration file,
+  inline or from an existing ConfigMap. See
   [Configuration file](configuration.md).
-- **`logging`**: log level and format.
+- **`env`** and **`envFrom`**: the Secrets that set the variables the
+  configuration file names, and any `KRITIKA_*` variable that carries a
+  secret itself. See [Configuration file](configuration.md).
 - **`database`**: the Postgres host and the owner, application and runner
   roles' Secrets.
 - **`runner`**: the image, TTL, resources and tools of the runner Jobs.
