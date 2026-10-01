@@ -206,7 +206,7 @@
       {/snippet}
     </StateView>
     <p class="muted small key-hints">
-      <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search{#if isAdmin()}{' · '}<kbd>space</kbd> select{/if}
+      <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search{#if isAdmin()} · <kbd>space</kbd> select{/if}
     </p>
   </div>
 </main>

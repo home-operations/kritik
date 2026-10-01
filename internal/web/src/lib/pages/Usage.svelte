@@ -121,7 +121,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each s.rows as r, i (i)}
+              {#each s.rows as r (r.key)}
                 <tr>
                   <td class="mono small">{r.key}</td>
                   <td class="num">{wholeNumber(r.calls)}</td>

@@ -25,6 +25,7 @@
     mdiCheck,
   } from './lib/icons';
   import { SECTIONS, SECTION_ORDER, sectionOf, type Section } from './lib/sections';
+  import { focusOnMount, revealInNav } from './lib/focus';
   import Icon from './lib/Icon.svelte';
   import Palette from './lib/Palette.svelte';
   import SignIn from './lib/SignIn.svelte';
@@ -98,10 +99,6 @@
   // Escape (global handler) and the backdrop close it.
   function trapTab(e: KeyboardEvent): void {
     if (e.key === 'Tab') e.preventDefault();
-  }
-
-  function focusOnMount(node: HTMLElement): void {
-    node.focus();
   }
 
   // The account and user menus are native <details>, which have no built-in
@@ -227,6 +224,7 @@
               class:active={currentSection === s}
               aria-current={currentSection === s ? 'page' : undefined}
               href={href(SECTIONS[s].home(currentSlug))}
+              {@attach currentSection === s && revealInNav}
             >
               <Icon path={sectionIcon[s]} size={15} />
               <span class="section-label">{SECTIONS[s].label}</span>
@@ -251,7 +249,7 @@
           aria-modal="true"
           aria-label="Keyboard shortcuts"
           tabindex="-1"
-          use:focusOnMount
+          {@attach focusOnMount}
           onkeydown={trapTab}
         >
           <h2>Keyboard shortcuts</h2>

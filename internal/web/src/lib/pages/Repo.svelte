@@ -100,7 +100,6 @@
     const eff = d.repoConfig?.settings ?? d.settings;
     return rows.filter((r) => matches(r.label, r.key, r.value(eff)));
   }
-
 </script>
 
 <svelte:head><title>{fullName} · kritik</title></svelte:head>
@@ -140,112 +139,112 @@
       {/if}
     </header>
     <StateView {res} retry={() => res.load()}>
-        {#snippet children(d)}
-          {@const rc = d.repoConfig}
-          {@const enabled = d.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'}
-          {@const why = d.archived ? 'archived on GitHub' : d.fork && !d.enabled ? 'a fork not turned on' : d.managedBy === 'file' ? 'listed in the configuration file' : 'reported by the forge'}
-          {@const rows = shown(d, settingRows)}
-          {@const agent = shown(d, agentRows)}
-          <div class="grid-2">
-            <section class="panel" aria-labelledby="repo-settings">
-              <header class="panel-head">
-                <h2 id="repo-settings">Effective settings</h2>
-                <input class="settings-filter" type="search" aria-label="Filter settings" placeholder="Filter settings" bind:value={settingFilter} />
-              </header>
-              <dl class="deflist">
-                {#if matches('Enabled', 'enabled', enabled)}
-                  <dt>Enabled</dt><dd>{enabled} <span class="muted small">({why})</span></dd>
-                {/if}
-                {#if matches('Default branch', d.defaultBranch)}<dt>Default branch</dt><dd class="mono">{d.defaultBranch}</dd>{/if}
-                {#each rows as r (r.label)}
-                  {@render setting(d, r)}
-                {/each}
-              </dl>
-              {#if rows.length === 0 && agent.length === 0}<p class="state-msg">No setting matches “{settingFilter.trim()}”.</p>{/if}
-            </section>
-            <section class="panel" aria-labelledby="repo-agent">
-              <header class="panel-head"><h2 id="repo-agent">Agent limits</h2></header>
-              <dl class="deflist">
-                {#each agent as r (r.label)}
-                  {@render setting(d, r)}
-                {/each}
-              </dl>
-            </section>
-          </div>
-
-          <section class="panel" aria-labelledby="repo-file">
-            <header class="panel-head"><h2 id="repo-file" class="mono">.kritik.yaml</h2></header>
-            {#if !rc}
-              <p class="state-msg">No review has read it yet.</p>
-            {:else}
-              <dl class="deflist">
-                <dt>Read at</dt>
-                <dd>
-                  <span class="mono" title={rc.commit}>{shortSha(rc.commit)}</span>
-                  <span class="muted small">(merge base of <a href={href({ name: 'review', slug, id: rc.reviewId })}>the last review</a>)</span>
-                </dd>
-                {#if rc.found}
-                  <dt>Filter</dt><dd class="mono">{rc.filter || '—'} <span class="muted small">(ANDed with the admin's)</span></dd>
-                {/if}
-              </dl>
-              {#if !rc.found}
-                <p class="state-msg">There was no .kritik.yaml at that commit.</p>
+      {#snippet children(d)}
+        {@const rc = d.repoConfig}
+        {@const enabled = d.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'}
+        {@const why = d.archived ? 'archived on GitHub' : d.fork && !d.enabled ? 'a fork not turned on' : d.managedBy === 'file' ? 'listed in the configuration file' : 'reported by the forge'}
+        {@const rows = shown(d, settingRows)}
+        {@const agent = shown(d, agentRows)}
+        <div class="grid-2">
+          <section class="panel" aria-labelledby="repo-settings">
+            <header class="panel-head">
+              <h2 id="repo-settings">Effective settings</h2>
+              <input class="settings-filter" type="search" aria-label="Filter settings" placeholder="Filter settings" bind:value={settingFilter} />
+            </header>
+            <dl class="deflist">
+              {#if matches('Enabled', 'enabled', enabled)}
+                <dt>Enabled</dt><dd>{enabled} <span class="muted small">({why})</span></dd>
               {/if}
-              {#if rc.ignored}
-                <p class="notice" role="note">Ignored as a whole: {rc.ignored}</p>
-              {/if}
-              {#if rc.dropped.length}
-                <p class="small">Values the file may not set, where the admin's apply instead:</p>
-                <ul class="small">
-                  {#each rc.dropped as note (note)}<li>{note}</li>{/each}
-                </ul>
-              {/if}
-            {/if}
+              {#if matches('Default branch', d.defaultBranch)}<dt>Default branch</dt><dd class="mono">{d.defaultBranch}</dd>{/if}
+              {#each rows as r (r.label)}
+                {@render setting(d, r)}
+              {/each}
+            </dl>
+            {#if rows.length === 0 && agent.length === 0}<p class="state-msg">No setting matches “{settingFilter.trim()}”.</p>{/if}
           </section>
+          <section class="panel" aria-labelledby="repo-agent">
+            <header class="panel-head"><h2 id="repo-agent">Agent limits</h2></header>
+            <dl class="deflist">
+              {#each agent as r (r.label)}
+                {@render setting(d, r)}
+              {/each}
+            </dl>
+          </section>
+        </div>
 
-          <section class="panel" aria-labelledby="repo-index">
-            <header class="panel-head"><h2 id="repo-index">Index runs</h2></header>
-            {#if d.indexRuns.length === 0}
-              <p class="state-msg">Never indexed.</p>
-            {:else}
-              <div class="table-wrap">
-                <table class="data">
-                  <thead>
+        <section class="panel" aria-labelledby="repo-file">
+          <header class="panel-head"><h2 id="repo-file" class="mono">.kritik.yaml</h2></header>
+          {#if !rc}
+            <p class="state-msg">No review has read it yet.</p>
+          {:else}
+            <dl class="deflist">
+              <dt>Read at</dt>
+              <dd>
+                <span class="mono" title={rc.commit}>{shortSha(rc.commit)}</span>
+                <span class="muted small">(merge base of <a href={href({ name: 'review', slug, id: rc.reviewId })}>the last review</a>)</span>
+              </dd>
+              {#if rc.found}
+                <dt>Filter</dt><dd class="mono">{rc.filter || '—'} <span class="muted small">(ANDed with the admin's)</span></dd>
+              {/if}
+            </dl>
+            {#if !rc.found}
+              <p class="state-msg">There was no .kritik.yaml at that commit.</p>
+            {/if}
+            {#if rc.ignored}
+              <p class="notice" role="note">Ignored as a whole: {rc.ignored}</p>
+            {/if}
+            {#if rc.dropped.length}
+              <p class="small">Values the file may not set, where the admin's apply instead:</p>
+              <ul class="small">
+                {#each rc.dropped as note (note)}<li>{note}</li>{/each}
+              </ul>
+            {/if}
+          {/if}
+        </section>
+
+        <section class="panel" aria-labelledby="repo-index">
+          <header class="panel-head"><h2 id="repo-index">Index runs</h2></header>
+          {#if d.indexRuns.length === 0}
+            <p class="state-msg">Never indexed.</p>
+          {:else}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th scope="col">Status</th><th scope="col">Mode</th><th scope="col">Commit</th><th scope="col">Trigger</th>
+                    <th scope="col" class="num">Chunks</th><th scope="col">Embed model</th><th scope="col">Started</th>
+                    <th scope="col">Took</th><th scope="col">Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each d.indexRuns as run (run.id)}
                     <tr>
-                      <th scope="col">Status</th><th scope="col">Mode</th><th scope="col">Commit</th><th scope="col">Trigger</th>
-                      <th scope="col" class="num">Chunks</th><th scope="col">Embed model</th><th scope="col">Started</th>
-                      <th scope="col">Took</th><th scope="col">Error</th>
+                      <td><Pill tone={indexTone[run.status]} label={run.status} /></td>
+                      <td>{run.mode}</td>
+                      <td class="mono small" title={run.commitSha}>{shortSha(run.commitSha)}{run.baseSha ? ` ← ${shortSha(run.baseSha)}` : ''}</td>
+                      <td>{run.trigger}</td>
+                      <td class="num">{run.chunkCount}</td>
+                      <td class="mono small">{run.embedModel}</td>
+                      <td><Time iso={run.createdAt} /></td>
+                      <td>{run.finishedAt ? duration(Date.parse(run.finishedAt) - Date.parse(run.createdAt)) : '…'}</td>
+                      <td class="error-cell">{run.error}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {#each d.indexRuns as run (run.id)}
-                      <tr>
-                        <td><Pill tone={indexTone[run.status]} label={run.status} /></td>
-                        <td>{run.mode}</td>
-                        <td class="mono small" title={run.commitSha}>{shortSha(run.commitSha)}{run.baseSha ? ` ← ${shortSha(run.baseSha)}` : ''}</td>
-                        <td>{run.trigger}</td>
-                        <td class="num">{run.chunkCount}</td>
-                        <td class="mono small">{run.embedModel}</td>
-                        <td><Time iso={run.createdAt} /></td>
-                        <td>{run.finishedAt ? duration(Date.parse(run.finishedAt) - Date.parse(run.createdAt)) : '…'}</td>
-                        <td class="error-cell">{run.error}</td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              </div>
-            {/if}
-          </section>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </section>
+      {/snippet}
+    </StateView>
+
+    <section class="panel" aria-labelledby="repo-pulls">
+      <header class="panel-head"><h2 id="repo-pulls">Pull requests</h2></header>
+      <StateView res={pulls} retry={() => pulls.load()} isEmpty={(p) => p.items.length === 0} empty="No pull requests seen yet.">
+        {#snippet children(p)}
+          <PullTable {slug} items={p.items} />
         {/snippet}
       </StateView>
-
-      <section class="panel" aria-labelledby="repo-pulls">
-        <header class="panel-head"><h2 id="repo-pulls">Pull requests</h2></header>
-        <StateView res={pulls} retry={() => pulls.load()} isEmpty={(p) => p.items.length === 0} empty="No pull requests seen yet.">
-          {#snippet children(p)}
-            <PullTable {slug} items={p.items} />
-          {/snippet}
-        </StateView>
-      </section>
+    </section>
   </div>
 </main>

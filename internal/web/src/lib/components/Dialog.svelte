@@ -19,7 +19,7 @@
     wide?: boolean;
   }
   let { open = $bindable(false), title, children, footer, onclose, fallback = 'main h1', wide = false }: Props = $props();
-  const id = `d${Math.random().toString(36).slice(2, 9)}`;
+  const id = $props.id();
   let el = $state<HTMLDialogElement | undefined>(undefined);
   let restore: HTMLElement | null = null;
 

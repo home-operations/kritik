@@ -1,3 +1,17 @@
+import type { Attachment } from 'svelte/attachments';
+
+// focusOnMount focuses an overlay's first field, or the overlay itself, as
+// soon as it is in the DOM.
+export const focusOnMount: Attachment<HTMLElement> = (node) => {
+  node.focus();
+};
+
+// revealInNav scrolls a navigation's current item into view, for a strip
+// that scrolls sideways on a narrow screen.
+export const revealInNav: Attachment<HTMLElement> = (node) => {
+  node.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+};
+
 // focusWhenShown focuses the element target selects once the page shows
 // it, since a page loads its data first: the field inside it, as a search
 // lands on a setting, or with section the element itself, scrolled to the
