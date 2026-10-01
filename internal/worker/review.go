@@ -556,6 +556,11 @@ func (w *Review) start(
 		if prior, err = lastCompleted(ctx, tx, pr.id); err != nil {
 			return err
 		}
+		dismissed, err := store.Dismissals(ctx, tx, pr.id)
+		if err != nil {
+			return err
+		}
+		prior.withDismissals(dismissed)
 		reviewID, runID, err = store.StartReview(ctx, tx, store.NewReview{
 			AccountID: args.AccountID, PullRequestID: pr.id, HeadSHA: args.HeadSHA, MergeBaseSHA: mergeBase,
 			ForgePatchID: forgePatchID, Trigger: args.Trigger, JobID: jobID,

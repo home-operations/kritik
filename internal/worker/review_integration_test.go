@@ -295,7 +295,7 @@ func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, _ forge.
 	return int64(len(l.replies)), nil
 }
 
-func (l *localForge) ResolveThread(_ context.Context, _, _ string, _ int, id int64) (bool, error) {
+func (l *localForge) ResolveThread(_ context.Context, _, _ string, _ int, id int64, _ bool) (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.resolved = append(l.resolved, id)

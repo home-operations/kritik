@@ -304,6 +304,28 @@ CREATE TABLE findings (
 CREATE INDEX findings_account_id_idx ON findings (account_id);
 CREATE INDEX findings_review_idx ON findings (review_id);
 
+-- dismissals are the findings a maintainer dismissed by replying "@<bot>
+-- dismiss <reason>" in a finding's thread, one per pull request and
+-- fingerprint, the identity a finding keeps across the pull request's
+-- reviews. The finding is kept as it last read, so a later review can be
+-- told not to raise it again whether or not its own last review had it.
+CREATE TABLE dismissals (
+    account_id      uuid        NOT NULL REFERENCES accounts (id),
+    pull_request_id uuid        NOT NULL REFERENCES pull_requests (id),
+    fingerprint     text        NOT NULL,
+    path            text        NOT NULL DEFAULT '',
+    line            int         NOT NULL DEFAULT 0,
+    severity        text        NOT NULL DEFAULT '',
+    title           text        NOT NULL DEFAULT '',
+    explanation     text        NOT NULL DEFAULT '',
+    reason          text        NOT NULL DEFAULT '',
+    author          text        NOT NULL DEFAULT '',
+    comment_id      bigint      NOT NULL,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (pull_request_id, fingerprint)
+);
+CREATE INDEX dismissals_account_idx ON dismissals (account_id);
+
 CREATE TABLE sticky_comments (
     pull_request_id  uuid   PRIMARY KEY REFERENCES pull_requests (id),
     account_id       uuid   NOT NULL REFERENCES accounts (id),
@@ -617,6 +639,7 @@ ALTER TABLE index_runs      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE index_packs     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE index_staging   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE followups       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dismissals      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE poll_state      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_runs      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE model_calls     ENABLE ROW LEVEL SECURITY;
@@ -661,6 +684,9 @@ CREATE POLICY account_isolation ON index_staging
     USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
     WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
 CREATE POLICY account_isolation ON followups
+    USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
+    WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
+CREATE POLICY account_isolation ON dismissals
     USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
     WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid);
 CREATE POLICY account_isolation ON poll_state

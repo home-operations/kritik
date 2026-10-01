@@ -12,20 +12,23 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
-// FindingStatus is whether a finding was addressed: a later completed
-// review of its pull request, at another head, no longer reported it.
-// An incremental review re-checks each finding of the last one and
-// reports it again only while it is still present.
+// FindingStatus is whether a finding was addressed, a later completed
+// review of its pull request, at another head, no longer reporting it, or
+// dismissed by a maintainer. An incremental review re-checks each finding
+// of the last one and reports it again only while it is still present.
 type FindingStatus string
 
 // Finding statuses.
 const (
 	FindingOpen      FindingStatus = "open"
 	FindingAddressed FindingStatus = "addressed"
+	FindingDismissed FindingStatus = "dismissed"
 )
 
 // Valid reports whether s is a finding status.
-func (s FindingStatus) Valid() bool { return s == FindingOpen || s == FindingAddressed }
+func (s FindingStatus) Valid() bool {
+	return s == FindingOpen || s == FindingAddressed || s == FindingDismissed
+}
 
 // AccountFinding is one finding of a pull request, however many of its
 // reviews reported it, as the latest of them did.
@@ -34,6 +37,8 @@ type AccountFinding struct {
 	ReviewID    string
 	PullRequest PullRef
 	Status      FindingStatus
+	// DismissReason is the reason a dismissed finding was dismissed with.
+	DismissReason string
 	// FirstSeenAt and LastSeenAt are when the first and the latest
 	// reviews that reported it ran.
 	FirstSeenAt time.Time
@@ -63,9 +68,10 @@ type FindingFilter struct {
 // findingIssues are the common table expressions over every finding of
 // the account's completed reviews: seen is each report of one, and latest
 // one row per pull request and fingerprint, as its latest review reported
-// it, with when it was first reported and whether a later completed review
-// at another head dropped it. A finding stored without a fingerprint is
-// its own.
+// it, with when it was first reported, whether a maintainer dismissed it,
+// and whether a later completed review at another head dropped it, which
+// a dismissed finding does not count as. A finding stored without a
+// fingerprint is its own.
 const findingIssues = `seen AS (
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix, f.replacement,
 			f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up, f.reactions_down, f.rules,
@@ -76,14 +82,16 @@ const findingIssues = `seen AS (
 		WINDOW issue AS (PARTITION BY v.pull_request_id, coalesce(nullif(f.fingerprint, ''), f.id::text)),
 			newest AS (issue ORDER BY v.created_at DESC, v.id DESC)),
 	latest AS (
-		SELECT s.*, EXISTS (SELECT 1 FROM reviews n WHERE n.pull_request_id = s.pull_request_id AND n.status = 'completed'
-			AND n.created_at > s.seen_at AND n.head_sha <> s.head_sha) AS addressed
-		FROM seen s WHERE s.nth = 1)`
+		SELECT s.*, d.pull_request_id IS NOT NULL AS dismissed, coalesce(d.reason, '') AS dismiss_reason,
+			d.pull_request_id IS NULL AND EXISTS (SELECT 1 FROM reviews n WHERE n.pull_request_id = s.pull_request_id
+				AND n.status = 'completed' AND n.created_at > s.seen_at AND n.head_sha <> s.head_sha) AS addressed
+		FROM seen s LEFT JOIN dismissals d ON d.pull_request_id = s.pull_request_id AND d.fingerprint = s.fingerprint
+		WHERE s.nth = 1)`
 
 const accountFindings = `WITH ` + findingIssues + `
 	SELECT l.id, l.path, l.line, l.end_line, l.severity, l.title, l.explanation, l.suggested_fix, l.replacement,
 		l.agent_prompt, l.fingerprint, l.posted_inline, l.forge_comment_id, l.created_at, l.reactions_up, l.reactions_down, l.rules,
-		l.review_id, r.name, p.number, p.title, p.url, l.addressed, l.first_at, l.seen_at
+		l.review_id, r.name, p.number, p.title, p.url, l.addressed, l.dismissed, l.dismiss_reason, l.first_at, l.seen_at
 	FROM latest l JOIN pull_requests p ON p.id = l.pull_request_id JOIN repositories r ON r.id = p.repository_id`
 
 // ListAccountFindings returns a page of the account's findings, most
@@ -103,7 +111,7 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 	rows, err := tx.Query(ctx, accountFindings+`
 		WHERE ($1::uuid IS NULL OR p.repository_id = $1)
 			AND ($2 = '' OR l.severity = $2)
-			AND ($3 = '' OR l.addressed = ($3 = 'addressed'))
+			AND ($3 = '' OR CASE $3 WHEN 'dismissed' THEN l.dismissed WHEN 'addressed' THEN l.addressed ELSE NOT l.addressed AND NOT l.dismissed END)
 			AND ($4 = '' OR l.title ILIKE $5 OR l.explanation ILIKE $5 OR l.path ILIKE $5 OR p.title ILIKE $5 OR p.number = $6)
 			AND ($7 OR (l.seen_at, l.id) < ($8, $9::uuid))
 			AND ($11 = '' OR $11 = ANY (l.rules))
@@ -116,13 +124,16 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (AccountFinding, error) {
 		var a AccountFinding
 		var sev string
-		var addressed bool
+		var addressed, dismissed bool
 		err := row.Scan(&a.ID, &a.Path, &a.Line, &a.EndLine, &sev, &a.Title, &a.Explanation, &a.SuggestedFix, &a.Replacement,
 			&a.AgentPrompt, &a.Fingerprint, &a.PostedInline, &a.ForgeCommentID, &a.CreatedAt, &a.ReactionsUp, &a.ReactionsDown, &a.Rules,
 			&a.ReviewID, &a.PullRequest.Repository, &a.PullRequest.Number, &a.PullRequest.Title, &a.PullRequest.URL,
-			&addressed, &a.FirstSeenAt, &a.LastSeenAt)
+			&addressed, &dismissed, &a.DismissReason, &a.FirstSeenAt, &a.LastSeenAt)
 		a.Severity, a.Status = review.Severity(sev), FindingOpen
-		if addressed {
+		switch {
+		case dismissed:
+			a.Status = FindingDismissed
+		case addressed:
 			a.Status = FindingAddressed
 		}
 		return a, err

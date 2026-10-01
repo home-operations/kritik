@@ -43,7 +43,7 @@ type reviewThread struct {
 }
 
 // ResolveThread implements forge.Client.
-func (c *Client) ResolveThread(ctx context.Context, owner, repo string, number int, id int64) (bool, error) {
+func (c *Client) ResolveThread(ctx context.Context, owner, repo string, number int, id int64, onlyOwn bool) (bool, error) {
 	login, err := c.BotLogin(ctx)
 	if err != nil {
 		return false, err
@@ -56,7 +56,7 @@ func (c *Client) ResolveThread(ctx context.Context, owner, repo string, number i
 		return false, nil
 	}
 	for _, cm := range thread.Comments.Nodes {
-		if !sameLogin(cm.Author.Login, login) {
+		if onlyOwn && !sameLogin(cm.Author.Login, login) {
 			return false, nil
 		}
 	}

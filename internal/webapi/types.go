@@ -355,14 +355,16 @@ type Finding struct {
 
 // AccountFinding is one finding of a pull request, however many of its
 // reviews reported it, as the latest of them did. Status is whether a
-// later review no longer reported it.
+// later review no longer reported it, or a maintainer dismissed it, with
+// DismissReason the reason they gave.
 type AccountFinding struct {
 	Finding
-	ReviewID    string              `json:"reviewId"`
-	Pull        PullRef             `json:"pull"`
-	Status      store.FindingStatus `json:"status"`
-	FirstSeenAt time.Time           `json:"firstSeenAt"`
-	LastSeenAt  time.Time           `json:"lastSeenAt"`
+	ReviewID      string              `json:"reviewId"`
+	Pull          PullRef             `json:"pull"`
+	Status        store.FindingStatus `json:"status"`
+	DismissReason string              `json:"dismissReason"`
+	FirstSeenAt   time.Time           `json:"firstSeenAt"`
+	LastSeenAt    time.Time           `json:"lastSeenAt"`
 }
 
 // RunnerRun is the Kubernetes Job that prepared a review.

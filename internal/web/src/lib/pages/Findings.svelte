@@ -1,6 +1,7 @@
 <script lang="ts">
   // Every finding of the account, once per pull request however many of
-  // its reviews repeated it, and whether a later review found it addressed.
+  // its reviews repeated it, and whether a later review found it addressed
+  // or a maintainer dismissed it.
   import { untrack } from 'svelte';
   import { getJSON } from '../api.svelte';
   import { href, navigate, replace } from '../router.svelte';
@@ -17,7 +18,9 @@
   import Reactions from '../components/Reactions.svelte';
   import Time from '../components/Time.svelte';
   import Icon from '../Icon.svelte';
-  import { mdiCheck, mdiCircleOutline, mdiOpenInNew } from '../icons';
+  import { mdiCancel, mdiCheck, mdiCircleOutline, mdiOpenInNew } from '../icons';
+
+  const statusIcon = { open: mdiCircleOutline, addressed: mdiCheck, dismissed: mdiCancel } as const;
 
   let { slug, filter }: { slug: string; filter?: FindingFilter } = $props();
 
@@ -45,7 +48,7 @@
   const specs = $derived<TokenSpec[]>([
     { key: 'repo', hint: 'a repository', values: (repos.data?.items ?? []).map((r) => r.fullName) },
     { key: 'severity', hint: 'blocking, important or nit', values: SEVERITIES },
-    { key: 'status', hint: 'open or addressed', values: FINDING_STATUSES },
+    { key: 'status', hint: 'open, addressed or dismissed', values: FINDING_STATUSES },
     { key: 'rule', hint: 'a rule id', values: [...new Set(paged.items.flatMap((f) => f.rules))].sort(), open: true },
   ]);
   const boxText = (f: FindingFilter | undefined) =>
@@ -115,7 +118,7 @@
                   <th scope="col">Finding</th>
                   <th scope="col">Severity</th>
                   <th scope="col">Pull request</th>
-                  <th scope="col" title="Addressed once a later review of the pull request no longer reports it">Status</th>
+                  <th scope="col" title="Addressed once a later review of the pull request no longer reports it; dismissed when a maintainer replied so in its thread">Status</th>
                   <th scope="col" class="num">Found</th>
                 </tr>
               </thead>
@@ -147,8 +150,8 @@
                       </span>
                     </td>
                     <td>
-                      <span class="status" class:tone-ok={f.status === 'addressed'} class:tone-muted={f.status === 'open'}>
-                        <span class="status-tile"><Icon path={f.status === 'addressed' ? mdiCheck : mdiCircleOutline} size={12} /></span>
+                      <span class="status" class:tone-ok={f.status === 'addressed'} class:tone-muted={f.status !== 'addressed'} title={f.dismissReason}>
+                        <span class="status-tile"><Icon path={statusIcon[f.status]} size={12} /></span>
                         <span class="status-word">{f.status}</span>
                       </span>
                       <Reactions up={f.reactionsUp} down={f.reactionsDown} />

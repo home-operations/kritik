@@ -21,7 +21,8 @@ at once, and holds a tab for each of an account's sections:
   they need polling on. Its Findings list has
   each finding once per pull request however many reviews repeated it,
   addressed once a later review of the pull request, at a newer head, no
-  longer reports it. A finding kritika posted inline links to its thread
+  longer reports it, or dismissed, with the reason, once a maintainer
+  replied `@<bot> dismiss <reason>` in its thread. A finding kritika posted inline links to its thread
   on GitHub, here and on its review, and one that enforces a written rule
   names it; `rule:<id>` narrows the list to the findings that cite it. Spend has the month so far against the account's
   caps, and usage by day, model, repository or role.

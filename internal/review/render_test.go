@@ -75,6 +75,7 @@ func TestRenderSummaryLinks(t *testing.T) {
 		{Path: "main.go", Line: 9, Severity: SeverityBlocking, Title: "nil map write",
 			URL: "https://forge.example/o/r/blob/fedcba9876543210/main.go#L9", ThreadURL: "https://forge.example/o/r/pull/42#r1"},
 		{Path: "util.go", Line: 3, Severity: SeverityImportant, Title: "unchecked error", Resolved: true},
+		{Path: "cache.go", Line: 5, Severity: SeverityNit, Title: "terse name", Dismissed: true, DismissReason: "house style"},
 	}
 	d.Unanchored = []Finding{{Path: "other.go", Line: 7, Severity: SeverityImportant, Title: "stale cache", Explanation: "The cache is\nnever cleared."}}
 	body, notes := RenderSummary(t.Context(), Templates{}, d)
@@ -88,7 +89,8 @@ func TestRenderSummaryLinks(t *testing.T) {
 		"**Outside the diff**\n\n- **[important]** `other.go:7` stale cache\n\n  The cache is\n  never cleared.\n",
 		"**Earlier findings**\n\n" +
 			"- **[blocking]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r1) · still open\n" +
-			"- **[important]** `util.go:3` unchecked error · resolved\n",
+			"- **[important]** `util.go:3` unchecked error · resolved\n" +
+			"- **[nit]** `cache.go:5` terse name · dismissed: house style\n",
 		"<sub>Reviewed [`0123456`](https://forge.example/o/r/commit/0123456789abcdef) by kritika with vendor/model-x.</sub>",
 	} {
 		if !strings.Contains(body, want) {

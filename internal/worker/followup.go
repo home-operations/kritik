@@ -179,8 +179,12 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 		f.logger.Info("follow-up ignored", "reason", reason)
 		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, reason, 0, "")
 	}
-	if requestsReview(f.comment.Body, strings.TrimSuffix(f.botLogin, "[bot]")) {
+	slug := strings.TrimSuffix(f.botLogin, "[bot]")
+	if requestsReview(f.comment.Body, slug) {
 		return f.requestReview(ctx)
+	}
+	if reason, ok := requestsDismiss(f.comment.Body, slug); ok {
+		return f.dismiss(ctx, reason)
 	}
 	reason, err := f.repoConfig(ctx)
 	if err != nil {
@@ -256,6 +260,7 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 var (
 	mentionPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)`)
 	reviewPattern  = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+review\b`)
+	dismissPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+dismiss(?:ed)?\b`)
 )
 
 // requestsReview reports whether body asks slug for a review: "@<slug>
@@ -267,6 +272,96 @@ func requestsReview(body, slug string) bool {
 		}
 	}
 	return false
+}
+
+// requestsDismiss reports whether body asks slug to dismiss the finding it
+// replies to, "@<slug> dismiss", and returns the reason: the rest of the
+// comment.
+func requestsDismiss(body, slug string) (string, bool) {
+	for _, m := range dismissPattern.FindAllStringSubmatchIndex(body, -1) {
+		if strings.EqualFold(body[m[4]:m[5]], slug) {
+			return strings.TrimSpace(strings.TrimLeft(body[m[1]:], " \t\r\n,:;.-")), true
+		}
+	}
+	return "", false
+}
+
+// dismiss records the finding the comment replies to as dismissed, with
+// reason, resolves its thread and says so: later reviews of the pull
+// request are told not to raise it again. Only a reply in one of the bot's
+// finding threads names a finding; anywhere else, the reply says how to
+// use it. It counts against the hourly follow-up limit.
+func (f *followUp) dismiss(ctx context.Context, reason string) (store.FollowupStatus, error) {
+	limited, err := f.rateLimited(ctx)
+	if err != nil {
+		return store.FollowupFailed, err
+	}
+	if limited {
+		return store.FollowupLimited, nil
+	}
+	fingerprint, err := f.dismissedFinding(ctx)
+	if err != nil {
+		return store.FollowupFailed, err
+	}
+	if fingerprint == "" {
+		return f.answer(ctx, review.DismissHintBody, "dismiss outside a finding thread")
+	}
+	var found bool
+	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
+		finding, ok, err := store.LatestFinding(ctx, tx, f.pr.id, fingerprint)
+		if err != nil || !ok {
+			return err
+		}
+		found = true
+		return store.RecordDismissal(ctx, tx, store.Dismissal{
+			AccountID: f.account.ID(), PullRequestID: f.pr.id, Fingerprint: fingerprint, Finding: finding,
+			Reason: reason, Author: f.comment.Author, CommentID: f.comment.ID,
+		})
+	})
+	if err != nil {
+		return store.FollowupFailed, err
+	}
+	if !found {
+		return f.answer(ctx, review.DismissUnknownBody, "finding unknown")
+	}
+	// Best effort, like the review's own thread resolution: the record and
+	// the reply stand either way.
+	if _, err := f.client.ResolveThread(ctx, f.owner, f.repo, f.pr.number, f.comment.InReplyTo, false); err != nil {
+		f.logger.Warn("dismissed finding's thread not resolved", "comment", f.comment.InReplyTo, "error", err)
+	}
+	f.logger.Info("finding dismissed", "fingerprint", fingerprint, "reason", reason)
+	return f.answer(ctx, review.DismissedBody, "finding dismissed")
+}
+
+// dismissedFinding is the fingerprint of the finding the comment replies
+// to: the one the bot's root comment of its thread carries a FindingMarker
+// for. "" when the comment is not such a reply.
+func (f *followUp) dismissedFinding(ctx context.Context) (string, error) {
+	if !f.comment.Inline || f.comment.InReplyTo == 0 {
+		return "", nil
+	}
+	root, err := f.client.GetComment(ctx, f.owner, f.repo, f.comment.InReplyTo, true)
+	if err != nil {
+		return "", err
+	}
+	if !strings.EqualFold(root.Author, f.botLogin) {
+		return "", nil
+	}
+	fingerprint, _ := review.MarkedFinding(root.Body)
+	return fingerprint, nil
+}
+
+// answer posts body as the reply and records the mention answered, for
+// reason.
+func (f *followUp) answer(ctx context.Context, body, reason string) (store.FollowupStatus, error) {
+	replyID, err := f.reply(ctx, body)
+	if err != nil {
+		return store.FollowupFailed, err
+	}
+	if err := f.record(ctx, store.FollowupAnswered, reason, replyID, ""); err != nil {
+		f.logger.Error("follow-up not recorded", "error", err, "reply", replyID)
+	}
+	return store.FollowupAnswered, nil
 }
 
 // requestReview queues a review of the pull request's head, as the

@@ -97,7 +97,10 @@ the bot as `@<app slug>`, and only someone with write access gets an
 answer. `@<app slug> review` queues a review of the pull request's head
 instead of asking a question: a pull request from a fork is not reviewed on
 its own, since its code comes from outside the organization, and this is
-how a maintainer gets it one. Put the private key and the webhook secret
+how a maintainer gets it one. `@<app slug> dismiss <reason>`, as a reply in
+one of kritika's finding threads, dismisses that finding: its thread is
+resolved, later reviews of the pull request are told not to raise it
+again, and the dashboard lists it dismissed with the reason. Put the private key and the webhook secret
 in a Secret, set a variable from each with `secretEnv`, and declare the
 App under `apps` in the configuration file or the environment
 ([`apps`](configuration.md#apps)). To

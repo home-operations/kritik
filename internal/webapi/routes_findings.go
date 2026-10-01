@@ -24,7 +24,7 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request, t *account
 		return errBadRequest(CodeBadRequest, "severity must be blocking, important or nit")
 	}
 	if f.Status != "" && !f.Status.Valid() {
-		return errBadRequest(CodeBadRequest, "status must be open or addressed")
+		return errBadRequest(CodeBadRequest, "status must be open, addressed or dismissed")
 	}
 	ctx := r.Context()
 	var rows []store.AccountFinding
@@ -41,8 +41,8 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request, t *account
 	items := make([]AccountFinding, len(rows))
 	for i, a := range rows {
 		items[i] = AccountFinding{
-			Finding: finding(a.FindingRow), ReviewID: a.ReviewID, Status: a.Status, FirstSeenAt: a.FirstSeenAt, LastSeenAt: a.LastSeenAt,
-			Pull: pullRef(a.PullRequest),
+			Finding: finding(a.FindingRow), ReviewID: a.ReviewID, Status: a.Status, DismissReason: a.DismissReason,
+			FirstSeenAt: a.FirstSeenAt, LastSeenAt: a.LastSeenAt, Pull: pullRef(a.PullRequest),
 		}
 	}
 	writeJSON(w, http.StatusOK, newPage(items, next))

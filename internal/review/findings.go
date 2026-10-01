@@ -108,6 +108,17 @@ type PriorFinding struct {
 	// Resolved is whether this review, asked to report the finding again
 	// only if still present, did not.
 	Resolved bool
+	// Dismissed is whether a maintainer dismissed the finding, with
+	// DismissReason the reason they gave, "" for none.
+	Dismissed     bool
+	DismissReason string
+}
+
+// DismissedFinding is a finding a maintainer dismissed on the pull
+// request, with their reason, which a review is told not to raise again.
+type DismissedFinding struct {
+	Finding
+	Reason string `json:"reason,omitempty"`
 }
 
 // AgentPromptFence is a code fence longer than any backtick run in
