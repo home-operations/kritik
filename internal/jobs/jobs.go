@@ -5,6 +5,8 @@
 package jobs
 
 import (
+	"strings"
+
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 )
@@ -49,6 +51,22 @@ const (
 // timeout, a runner killed at its deadline) get River's backoff, and an
 // onboarding that fails every try is offered again later.
 const indexAttempts = 3
+
+// LiveStates are the states a job is in while queued or running: what a
+// job's unique key spans, and what counts as a job still to come.
+var LiveStates = []rivertype.JobState{
+	rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRetryable,
+	rivertype.JobStateRunning, rivertype.JobStateScheduled,
+}
+
+// LiveStatesSQL is LiveStates as a SQL list, for a state IN (...) clause.
+func LiveStatesSQL() string {
+	quoted := make([]string, len(LiveStates))
+	for i, s := range LiveStates {
+		quoted[i] = "'" + string(s) + "'"
+	}
+	return strings.Join(quoted, ", ")
+}
 
 // ReviewArgs reviews one head of one pull request.
 type ReviewArgs struct {
@@ -127,9 +145,6 @@ func (a IndexArgs) InsertOpts() river.InsertOpts {
 	}
 	return river.InsertOpts{
 		Queue: QueueIndex, Priority: priority, MaxAttempts: indexAttempts,
-		UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: []rivertype.JobState{
-			rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRetryable,
-			rivertype.JobStateRunning, rivertype.JobStateScheduled,
-		}},
+		UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates},
 	}
 }

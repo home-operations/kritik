@@ -11,7 +11,9 @@
   which adds `review.agentFiles`, and [ADR-0021](0021-configuration-shape.md),
   which makes the scopes of §2.4 the defaults, `owner/*` and `owner/name`,
   gives them and `.kritik.yaml` one set of keys, and drops the `allow`
-  bounds of §2.5.
+  bounds of §2.5, and [ADR-0026](0026-agentic-only.md), which removes the
+  `mode` key this ADR's tables and examples still show: every review is
+  agentic, and `agent.maxSteps: 1` is the one-call review.
 - **Amends:** [ADR-0002](0002-kritik-pr-review-service.md) §2.6 (the two
   configuration sources), [ADR-0003](0003-forgejo-agentic-review.md) §2.3
   (`.kritik.yaml`) and [ADR-0009](0009-web-dashboard.md) §2.12 (collisions),

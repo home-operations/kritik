@@ -288,6 +288,6 @@ results reported back.
   tiers keyed on pull request size.
 - A follow-up responder that edits code.
 - The GitLab client.
-- In agentic mode, a fallback model on another provider (the runner holds
-  one provider's key) and similar-code context from the index (the agent
-  greps instead).
+- A fallback model on another provider: the gateway hands a provider the
+  fallback only when it is on the same one (ADR-0026). Similar-code
+  context reaches the agent through the gateway since ADR-0026.

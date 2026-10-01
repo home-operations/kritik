@@ -17,8 +17,8 @@ const (
 	LeaseWaitHeadroom = 15 * time.Minute
 	// PublishHeadroom covers the worker's side of a review after the
 	// runner: reading the agent's run and the pack, and the forge
-	// write-back.
-	PublishHeadroom = 15 * time.Minute
+	// write-back, a few requests at most.
+	PublishHeadroom = 5 * time.Minute
 	// IndexWriteHeadroom covers embedding a repository's staged chunks and
 	// swapping the generation after the index runner ends; the embedding
 	// pass of a large repository is many model calls.

@@ -13,7 +13,7 @@ func TestBounds(t *testing.T) {
 	}{
 		{"max runner deadline", MaxRunnerDeadline, 2 * time.Hour},
 		{"index at the max runner deadline", MaxRunnerDeadline + IndexWriteHeadroom, MaxJobTimeout},
-		{"max agent timeout", MaxAgentTimeout, 3*time.Hour - 35*time.Minute},
+		{"max agent timeout", MaxAgentTimeout, 3*time.Hour - 25*time.Minute},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -2,27 +2,21 @@ package worker
 
 import (
 	"fmt"
-	"maps"
 	"sync"
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/model"
 )
 
-// Completers resolves a configured provider to its model adapter, building
-// each on first use and again whenever its configuration changes. The
-// follow-up worker wraps its steppers in a model.Structured; the gateway
-// calls them directly.
+// Completers resolves a configured provider to its model adapter, built on
+// first use and kept for the life of the process, as the configuration is
+// (ADR-0022 §2.1). The follow-up worker wraps its steppers in a
+// model.Structured; the gateway calls them directly.
 type Completers struct {
 	Build func(p configfile.Provider) (model.Stepper, error)
 
-	mu      sync.Mutex
-	entries map[string]stepperEntry
-}
-
-type stepperEntry struct {
-	spec    configfile.Provider
-	stepper model.Stepper
+	mu       sync.Mutex
+	steppers map[string]model.Stepper
 }
 
 // Stepper returns the adapter for the named provider of account t in f: the
@@ -41,23 +35,18 @@ func (c *Completers) Stepper(f *configfile.File, t *configfile.Account, name str
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if e, ok := c.entries[key]; ok && sameProvider(e.spec, spec) {
-		return e.stepper, nil
+	if s, ok := c.steppers[key]; ok {
+		return s, nil
 	}
 	stepper, err := c.Build(spec)
 	if err != nil {
 		return nil, err
 	}
-	if c.entries == nil {
-		c.entries = map[string]stepperEntry{}
+	if c.steppers == nil {
+		c.steppers = map[string]model.Stepper{}
 	}
-	c.entries[key] = stepperEntry{spec: spec, stepper: stepper}
+	c.steppers[key] = stepper
 	return stepper, nil
-}
-
-func sameProvider(a, b configfile.Provider) bool {
-	return a.Type == b.Type && a.BaseURL == b.BaseURL && a.APIKeyValue().Value() == b.APIKeyValue().Value() &&
-		maps.Equal(a.Pricing, b.Pricing)
 }
 
 // BuildStepper constructs the adapter a provider's type selects.

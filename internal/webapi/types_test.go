@@ -40,7 +40,7 @@ var goldenSummary = AccountSummary{
 }
 
 var goldenRepo = Repository{
-	ID: "repo-1", FullName: "alpha/one", Enabled: true, ManagedBy: "dashboard", DefaultBranch: "main",
+	ID: "repo-1", FullName: "alpha/one", Enabled: true, ManagedBy: "file", DefaultBranch: "main",
 	Index:      IndexState{ActiveCommit: "def456", ActiveAt: &t0, LastRunStatus: store.IndexCompleted, LastRunAt: &t1},
 	LastReview: &ReviewRef{ID: "rev-1", Status: store.ReviewCompleted, CreatedAt: t0},
 }
@@ -96,7 +96,7 @@ var goldens = map[string]any{
 	"account_detail": AccountDetail{
 		Slug: "github/alpha",
 		Connection: Connection{
-			Name: "alpha-bot", Forge: configfile.ForgeGitHub, ManagedBy: configfile.OriginFile, Accounts: []string{"alpha"},
+			Name: "alpha-bot", Forge: configfile.ForgeGitHub, Accounts: []string{"alpha"},
 			Credentials: CredentialsSet{ClientID: true, PrivateKey: true, WebhookSecret: true},
 			HookPath:    "/hooks/alpha-bot", LastWebhookAt: &t0,
 		},

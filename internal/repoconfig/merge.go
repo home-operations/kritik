@@ -58,11 +58,11 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	} else if v != nil && op.Review.RequireSuggestedFix {
 		m.drop("requireSuggestedFix", "false", "true, since an admin requires a suggested fix")
 	}
-	if f.Comments.SummaryTemplate != "" {
-		m.Review.Templates.Summary = f.Comments.SummaryTemplate
+	if f.Comments.SummaryTemplate != nil {
+		m.Review.Templates.Summary = *f.Comments.SummaryTemplate
 	}
-	if f.Comments.InlineTemplate != "" {
-		m.Review.Templates.Inline = f.Comments.InlineTemplate
+	if f.Comments.InlineTemplate != nil {
+		m.Review.Templates.Inline = *f.Comments.InlineTemplate
 	}
 	if f.Comments.Inline != nil {
 		m.Review.InlineComments = *f.Comments.Inline

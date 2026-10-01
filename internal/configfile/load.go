@@ -71,6 +71,34 @@ func Load(name string) (*File, error) {
 	return Parse(raw)
 }
 
+// overlayPrefixes start the environment variables that overlay the file;
+// their values are part of the configuration, and so of its hash.
+var overlayPrefixes = []string{authEnvPrefix, connectionEnvPrefix, providerEnvPrefix, defaultsEnvPrefix, embeddingEnvPrefix}
+
+// configHash identifies a configuration: the file's bytes, the overlay
+// variables that change what it says, and the values of the secrets it
+// names, so two replicas with the same file but another environment do not
+// compare equal.
+func configHash(raw []byte, environ, secretEnv []string) string {
+	h := sha256.New()
+	h.Write(raw)
+	var overlay []string
+	for _, kv := range environ {
+		name, _, _ := strings.Cut(kv, "=")
+		if slices.ContainsFunc(overlayPrefixes, func(p string) bool { return strings.HasPrefix(name, p) }) {
+			overlay = append(overlay, kv)
+		}
+	}
+	slices.Sort(overlay)
+	for _, kv := range overlay {
+		h.Write([]byte("\x00" + kv))
+	}
+	for _, name := range secretEnv {
+		h.Write([]byte("\x00" + name + "=" + os.Getenv(name)))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // Parse is Load for bytes already in hand; nil or blank bytes are no file.
 func Parse(raw []byte) (*File, error) {
 	var doc fileDoc
@@ -135,8 +163,7 @@ func Parse(raw []byte) (*File, error) {
 		return nil, err
 	}
 	f.Accounts, f.unserved = servedAccounts(f.Connections, accounts)
-	sum := sha256.Sum256(raw)
-	f.hash = hex.EncodeToString(sum[:])
+	f.hash = configHash(raw, environ, s.env)
 	return f, nil
 }
 
@@ -436,7 +463,7 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 		return fmt.Errorf("configfile: %s.settle must not be negative", where)
 	}
 	for gi, g := range r.Ignore {
-		if !doublestar.ValidatePattern(g) || strings.TrimSpace(g) == "" {
+		if !ValidGlob(g) {
 			return fmt.Errorf("configfile: %s.ignore[%d] %q is not a valid glob", where, gi, g)
 		}
 	}
@@ -498,7 +525,7 @@ func validateReview(where string, r *ReviewSpec) error {
 		if t.path == nil || *t.path == "" {
 			continue
 		}
-		if err := checkRepoPath(*t.path); err != nil {
+		if err := CheckRepoPath(*t.path); err != nil {
 			return fmt.Errorf("configfile: %s.comments.%s: %w", where, t.name, err)
 		}
 	}
@@ -508,19 +535,22 @@ func validateReview(where string, r *ReviewSpec) error {
 // Check rejects a context file with no description, a path outside the
 // repository, or a glob that is not valid.
 func (c ContextFile) Check() error {
-	if err := checkRepoPath(c.Path); err != nil {
+	if err := CheckRepoPath(c.Path); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.Description) == "" {
 		return errors.New("description is required")
 	}
 	for i, g := range c.Paths {
-		if strings.TrimSpace(g) == "" || !doublestar.ValidatePattern(g) {
+		if !ValidGlob(g) {
 			return fmt.Errorf("paths[%d] %q is not a valid glob", i, g)
 		}
 	}
 	return nil
 }
+
+// ValidGlob reports whether g is a doublestar glob a setting may take.
+func ValidGlob(g string) bool { return strings.TrimSpace(g) != "" && doublestar.ValidatePattern(g) }
 
 // ValidFeedback reports whether s is a feedback level.
 func ValidFeedback(s string) bool {
@@ -530,9 +560,10 @@ func ValidFeedback(s string) bool {
 // FeedbackLevels lists the feedback levels for a message.
 const FeedbackLevels = FeedbackDetailed + ", " + FeedbackStandard + " or " + FeedbackMinimal
 
-// checkRepoPath rejects a repository path that is empty, absolute or
-// escapes the repository root.
-func checkRepoPath(p string) error {
+// CheckRepoPath rejects a repository path that is empty, absolute or
+// escapes the repository root: every path a configuration names is read
+// in a checkout, so an unbounded one would read outside the repository.
+func CheckRepoPath(p string) error {
 	if strings.TrimSpace(p) == "" {
 		return errors.New("path must not be empty")
 	}

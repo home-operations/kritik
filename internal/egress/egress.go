@@ -22,8 +22,7 @@ import (
 	"time"
 )
 
-// Rules is what the proxy allows and adds, read on every request so a
-// configuration reload takes effect at once.
+// Rules is what the proxy allows and adds.
 type Rules struct {
 	// Hosts are allowed destinations, lowercase, with a leading "*." for a
 	// suffix match. The port is not part of a rule: CONNECT is allowed to

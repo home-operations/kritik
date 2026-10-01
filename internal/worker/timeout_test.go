@@ -57,12 +57,13 @@ func TestJobTimeouts(t *testing.T) {
 		followUp     time.Duration
 	}{
 		// The agent's 20m plus 5m of fetch headroom outlasts the runner
-		// deadline; 15m + 60m to embed.
-		{name: "the default agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: 55 * time.Minute,
+		// deadline, plus 15m to take the lease and 5m to publish; the index
+		// has 15m + 60m to embed.
+		{name: "the default agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: 45 * time.Minute,
 			index: 75 * time.Minute, followUp: 30 * time.Minute},
 		{name: "a longer agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/slow-agent"),
-			review: 85 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
-		{name: "unknown account", accountID: "missing", repositoryID: "missing", review: 45 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
+			review: 75 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
+		{name: "unknown account", accountID: "missing", repositoryID: "missing", review: 35 * time.Minute, index: 75 * time.Minute, followUp: 30 * time.Minute},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

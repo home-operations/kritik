@@ -24,9 +24,33 @@ const (
 	StageOverlay    = "overlay"
 	StageDefinition = "definition"
 	StageCaller     = "caller"
-	// StageSimilar is added by the worker from the embedding index.
+	// StageSimilar is what the gateway finds in the embedding index for
+	// the diff's hunks (ADR-0026 §2.2).
 	StageSimilar = "similar"
 )
+
+// Similar-code bounds the gateway enforces on one request and a run keeps
+// to: texts embedded per request, and characters per text.
+const (
+	SimilarQueries    = 12
+	SimilarQueryChars = 3000
+)
+
+// SimilarRequest is what a run sends the gateway to search its
+// repository's index: the texts to embed, and the paths to leave out of
+// the answer, which the prompt already carries.
+type SimilarRequest struct {
+	Queries []string `json:"queries"`
+	Exclude []string `json:"exclude,omitempty"`
+}
+
+// SimilarResponse is the gateway's answer: the nearest chunks, StageSimilar
+// each, and whether the repository has an index to search at all, so a run
+// can tell an empty answer from no index.
+type SimilarResponse struct {
+	Chunks  []Chunk `json:"chunks"`
+	Indexed bool    `json:"indexed"`
+}
 
 // Chunk is one piece of context and the stage that contributed it.
 type Chunk struct {

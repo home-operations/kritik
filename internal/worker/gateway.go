@@ -20,6 +20,7 @@ import (
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/textcut"
 )
 
 // Gateway serves the worker's gateway listener: the egress proxy runner
@@ -34,8 +35,8 @@ type Gateway struct {
 	// Proxy serves CONNECT and absolute-URI requests.
 	Proxy    http.Handler
 	Steppers *Completers
-	// Embedders resolves the instance's embedder for stage 4; nil serves
-	// no similar code.
+	// Embedders resolves the instance's embedder for similar code; nil
+	// serves none.
 	Embedders *Embedders
 }
 
@@ -197,8 +198,8 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	resp, err := stepper.Step(ctx, req)
 	took := time.Since(start)
-	g.Metrics.ModelCall(c.account.Key(), servedRef(ref, resp.Model), roleReview, callOutcome(err), resp.Usage.Prompt(), resp.Usage.CacheRead,
-		resp.Usage.Output, resp.CostUSD)
+	g.Metrics.ModelCall(c.account.Key(), servedRef(ref, resp.Model), store.RoleReview, callOutcome(err), resp.Usage.Prompt(),
+		resp.Usage.CacheRead, resp.Usage.Output, resp.CostUSD)
 	if cerr := g.charge(ctx, c.grant, c.token, reserved, resp, err == nil); cerr != nil {
 		// A step that was answered is paid for either way; the run still
 		// gets the answer.
@@ -229,52 +230,75 @@ func (g *Gateway) chat(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(out)
 }
 
-// similarReserve is what a stage 4 request is reserved against its run's
-// budget before it embeds: every hunk it may send, at four characters a
-// token.
-const similarReserve = similarHunks * similarHunkChar / 4
+// maxSimilarBody bounds a similar-code request: its queries, each cut to
+// contextpack.SimilarQueryChars, with room for their encoding.
+const maxSimilarBody = 256 << 10
 
-// similarCode serves a run stage 4 over the diff of the context pack it
-// wrote: the nearest chunks of its repository's index, embedded against
-// its budget. The request carries nothing, and what it returns is code of
-// the repository the runner has already checked out.
+// similarCode searches the run's repository index for the request's
+// queries (ADR-0026 §2.2): stage 4 of the review, asked once over the
+// diff's hunks before the agent starts, and the agent's own search_code
+// tool. The embedding is reserved against the run's budget at four
+// characters a token before it runs; what it returns is code of the
+// repository the runner has already checked out.
 func (g *Gateway) similarCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	c, ok := g.admit(w, r)
 	if !ok {
 		return
 	}
-	var diff string
-	var changed []string
-	var jobID int64
-	err := g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT p.diff, p.changed_paths, r.river_job_id FROM context_packs p, reviews r
-			WHERE p.runner_run_id = $1 AND r.id = $2`, c.grant.RunID, c.grant.ReviewID).Scan(&diff, &changed, &jobID)
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		refuse(w, http.StatusBadRequest, "invalid_request", "the run has written no context pack")
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSimilarBody))
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		refuse(w, http.StatusRequestEntityTooLarge, "invalid_request", err.Error())
 		return
 	}
 	if err != nil {
-		c.logger.Error("gateway: context pack not read", "error", err)
-		refuse(w, http.StatusInternalServerError, "server_error", "the run's context pack could not be read")
+		refuse(w, http.StatusBadRequest, "invalid_request", "reading the request: "+err.Error())
 		return
 	}
-	if !g.reserve(ctx, w, c, similarReserve) {
+	var req contextpack.SimilarRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		refuse(w, http.StatusBadRequest, "invalid_request", "decoding the request: "+err.Error())
 		return
 	}
-	chunks, tokens, err := g.similar(ctx, g.Embedders, c.file, similarRequest{
+	if len(req.Queries) == 0 || len(req.Queries) > contextpack.SimilarQueries {
+		refuse(w, http.StatusBadRequest, "invalid_request",
+			fmt.Sprintf("the request must carry between 1 and %d queries, not %d", contextpack.SimilarQueries, len(req.Queries)))
+		return
+	}
+	var chars int
+	for i, q := range req.Queries {
+		if strings.TrimSpace(q) == "" {
+			refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("query %d is empty", i))
+			return
+		}
+		req.Queries[i] = textcut.Prefix(q, contextpack.SimilarQueryChars)
+		chars += len(req.Queries[i])
+	}
+	var jobID int64
+	err = g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT coalesce(river_job_id, 0) FROM reviews WHERE id = $1`, c.grant.ReviewID).Scan(&jobID)
+	})
+	if err != nil {
+		c.logger.Error("gateway: review not read", "error", err)
+		refuse(w, http.StatusInternalServerError, "server_error", "the run's review could not be read")
+		return
+	}
+	reserved := int64(chars)/4 + 1
+	if !g.reserve(ctx, w, c, reserved) {
+		return
+	}
+	chunks, tokens, indexed, err := g.similar(ctx, g.Embedders, c.file, similarRequest{
 		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.grant.ReviewID, jobID: jobID,
-		slots: c.file.Settings(c.account, "").Limits.Concurrency, diff: diff, changed: changed,
+		slots: c.file.Settings(c.account, "").Limits.Concurrency, queries: req.Queries, exclude: req.Exclude,
 	}, c.logger)
 	cctx, cancel := detach(ctx)
 	defer cancel()
-	if cerr := g.Store.ChargeGatewayToken(cctx, c.token, tokens-similarReserve); cerr != nil {
+	if cerr := g.Store.ChargeGatewayToken(cctx, c.token, tokens-reserved); cerr != nil {
 		c.logger.Error("gateway: similar code not charged", "error", cerr)
 	}
 	if err != nil {
 		// The embedder's error may carry its key or URL; the runner only
-		// learns that the stage failed.
+		// learns that the search failed.
 		c.logger.Warn("gateway: similar code failed", "error", err)
 		refuse(w, http.StatusBadGateway, "upstream_error", "similar-code retrieval failed")
 		return
@@ -282,18 +306,13 @@ func (g *Gateway) similarCode(w http.ResponseWriter, r *http.Request) {
 	if chunks == nil {
 		chunks = []contextpack.Chunk{}
 	}
-	out, err := json.Marshal(similarResponse{Chunks: chunks})
+	out, err := json.Marshal(contextpack.SimilarResponse{Chunks: chunks, Indexed: indexed})
 	if err != nil {
 		refuse(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
-}
-
-// similarResponse is the body /v1/similar answers with.
-type similarResponse struct {
-	Chunks []contextpack.Chunk `json:"chunks"`
 }
 
 // monthCapped says why the account may not take another step this month,
@@ -319,9 +338,9 @@ func (g *Gateway) charge(
 	spent := resp.Usage.Prompt() + resp.Usage.Output
 	budgetErr := g.Store.ChargeGatewayToken(ctx, token, spent-reserved)
 	usageErr := g.Store.WithAccount(ctx, grant.AccountID, func(tx pgx.Tx) error {
-		return insertUsage(ctx, tx, usageRow{
-			accountID: grant.AccountID, repositoryID: grant.RepositoryID, reviewID: grant.ReviewID, role: roleReview, model: resp.Model,
-			upstream: resp.Upstream, input: resp.Usage.Prompt(), output: resp.Usage.Output, costUSD: resp.CostUSD,
+		return store.InsertUsage(ctx, tx, store.Usage{
+			AccountID: grant.AccountID, RepositoryID: grant.RepositoryID, ReviewID: grant.ReviewID, Role: store.RoleReview, Model: resp.Model,
+			Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
 		})
 	})
 	return errors.Join(budgetErr, usageErr)

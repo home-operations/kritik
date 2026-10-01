@@ -260,11 +260,8 @@ func (w *Index) start(
 			args.AccountID, args.RepositoryID, commit, base, emb.Model, emb.Dims, mode, args.Trigger).Scan(&runID); err != nil {
 			return fmt.Errorf("worker: insert index run: %w", err)
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, index_run_id, kind) VALUES ($1, $2, 'index') RETURNING id`,
-			args.AccountID, runID).Scan(&runnerRunID); err != nil {
-			return fmt.Errorf("worker: insert runner run: %w", err)
-		}
-		return nil
+		runnerRunID, err = store.InsertRunnerRun(ctx, tx, args.AccountID, store.RunnerKindIndex, runID)
+		return err
 	})
 	return runID, runnerRunID, err
 }
@@ -357,10 +354,10 @@ func (w *Index) embed(
 			}
 			vectors, used, err := embedder.Embed(ctx, texts)
 			if err != nil {
-				w.Metrics.ModelCall(account.Key(), embedModel, roleEmbedding, "error", 0, 0, 0, 0)
+				w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, "error", 0, 0, 0, 0)
 				return err
 			}
-			w.Metrics.ModelCall(account.Key(), embedModel, roleEmbedding, "ok", used, 0, 0, 0)
+			w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, "ok", used, 0, 0, 0)
 			tokens += used
 			err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 				return insertChunks(ctx, tx, args.AccountID, args.RepositoryID, runID, batch, vectors)
@@ -404,8 +401,8 @@ func (w *Index) embed(
 		if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID); err != nil {
 			return fmt.Errorf("worker: clear staging: %w", err)
 		}
-		return insertUsage(ctx, tx, usageRow{
-			accountID: args.AccountID, repositoryID: args.RepositoryID, role: roleEmbedding, model: embedModel, input: tokens,
+		return store.InsertUsage(ctx, tx, store.Usage{
+			AccountID: args.AccountID, RepositoryID: args.RepositoryID, Role: store.RoleEmbedding, Model: embedModel, Input: tokens,
 		})
 	})
 	return total, pack.mode, err
@@ -470,24 +467,17 @@ func insertChunks(ctx context.Context, tx pgx.Tx, accountID, repositoryID, runID
 func recordRun(
 	ctx context.Context, st *store.Store, m *metrics.Metrics, account, accountID, runID, kind string, res executor.Result,
 ) error {
-	outcome := runOutcome(res)
 	var took time.Duration
 	if !res.StartedAt.IsZero() {
 		took = time.Since(res.StartedAt)
 	}
-	m.RunnerRun(account, kind, outcome, took)
+	m.RunnerRun(account, kind, runOutcome(res), took)
 	return st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE runner_runs SET job_name = $2, pod_name = $3, node_name = $4,
-			scheduled_at = nullif($5, '0001-01-01'::timestamptz), started_at = nullif($6, '0001-01-01'::timestamptz), finished_at = now(),
-			exit_code = $7, termination_reason = $8, deadline_exceeded = $9, log_tail = $10,
-			phase = CASE WHEN $11 THEN phase ELSE 'failed' END, error = CASE WHEN $11 THEN error ELSE left($12, 2000) END
-			WHERE id = $1`,
-			runID, res.JobName, res.PodName, res.NodeName, res.ScheduledAt, res.StartedAt,
-			res.ExitCode, res.TerminationReason, res.DeadlineExceeded, res.LogTail, res.Err == nil, errText(res.Err))
-		if err != nil {
-			return fmt.Errorf("worker: record runner run: %w", err)
-		}
-		return nil
+		return store.RecordRunnerRun(ctx, tx, runID, store.RunnerResult{
+			JobName: res.JobName, PodName: res.PodName, NodeName: res.NodeName, ScheduledAt: res.ScheduledAt, StartedAt: res.StartedAt,
+			ExitCode: res.ExitCode, TerminationReason: res.TerminationReason, DeadlineExceeded: res.DeadlineExceeded, LogTail: res.LogTail,
+			Error: errText(res.Err),
+		})
 	})
 }
 

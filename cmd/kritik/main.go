@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -29,7 +30,6 @@ import (
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/config"
 	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/configsource"
 	"github.com/home-operations/kritik/internal/egress"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/ingest"
@@ -140,8 +140,7 @@ func serve(
 	drift := server.NewConfigDriftGauge(reg)
 	configErrors := server.NewConfigErrorGauge(reg)
 	m := metrics.New(reg)
-	src := &configsource.Source{RequireSignIn: true}
-	file, err := src.Load(cfg.ConfigFile)
+	file, err := loadConfig(cfg.ConfigFile)
 	if err != nil {
 		return err
 	}
@@ -155,7 +154,7 @@ func serve(
 	}
 	// current is the configuration read at startup; the leader applies it
 	// on election, the other replica only compares hashes.
-	current := src.Current
+	current := configfile.NewCurrent(file)
 	g.Go(func() error {
 		return reportDrift(ctx, st, current, drift, driftInterval)
 	})
@@ -163,42 +162,59 @@ func serve(
 	if err != nil {
 		return err
 	}
+	// Insert-only client: the webhooks, the dashboard and the leader
+	// enqueue jobs with it; startWorker's own client works the queues.
+	inserter, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
+	if err != nil {
+		return fmt.Errorf("river: %w", err)
+	}
+	// One forge client per App and account, shared by the workers and the
+	// leader's poll, so an installation's token is minted once.
+	forges := &worker.ForgeCache{Build: worker.BuildForge}
+	svc := ingest.NewService(st, inserter)
 	if st.LeaderEligible() {
 		sweeper, _ := exec.(*executor.Kube)
-		// Insert-only client: the leader enqueues onboarding index jobs.
-		leaderQueue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
-		if err != nil {
-			return fmt.Errorf("river: %w", err)
-		}
 		g.Go(func() error {
 			return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
 				m.Leading(true)
 				defer m.Leading(false)
-				return lead(ctx, st, cfg, current, leaderQueue, sweeper, m, configErrors, logger)
+				return lead(ctx, st, cfg, current, inserter, svc, forges, sweeper, m, configErrors, logger)
 			})
 		})
 	} else {
 		logger.Warn("no owner DSN configured; this replica can never migrate or apply configuration")
 	}
-	if err := startPublic(ctx, g, st, cfg, current, m, logger); err != nil {
+	if err := startPublic(ctx, g, st, cfg, current, inserter, svc, m, logger); err != nil {
 		return err
 	}
-	return startWorker(ctx, g, st, cfg, current, exec, m, logger)
+	return startWorker(ctx, g, st, cfg, current, exec, forges, m, logger)
+}
+
+// errNoSignIn is a configuration that leaves the dashboard no way to sign
+// in, which serve refuses to start with.
+var errNoSignIn = errors.New("the dashboard has no way to sign in: set KRITIK_AUTH_ADMIN_PASSWORD, or auth in the configuration file")
+
+// loadConfig reads the configuration file at path, none when path is "",
+// for serve: it is read once, and a change takes a restart (ADR-0022
+// §2.1).
+func loadConfig(path string) (*configfile.File, error) {
+	f, err := configfile.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	if !f.Auth.Configured() {
+		return nil, errNoSignIn
+	}
+	return f, nil
 }
 
 // startPublic serves the one public listener on Addr until ctx ends
 // (ADR-0024 §2.2): the webhooks, and the dashboard with its sign-in and
-// API. Their River clients only insert: the queues are worked by
-// startWorker's.
+// API.
 func startPublic(
-	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current, m *metrics.Metrics,
-	logger *slog.Logger,
+	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current,
+	inserter *river.Client[pgx.Tx], svc *ingest.Service, m *metrics.Metrics, logger *slog.Logger,
 ) error {
-	hookQueue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: logger})
-	if err != nil {
-		return fmt.Errorf("river: %w", err)
-	}
-	svc := ingest.NewService(st, hookQueue)
 	hooks := ingest.NewHandler(current, svc, logger.With("listener", "hooks"))
 	hooks.Metrics = m
 	hooks.Deliveries = svc
@@ -208,13 +224,9 @@ func startPublic(
 	if err != nil {
 		return err
 	}
-	webQueue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{Logger: webLogger})
-	if err != nil {
-		return fmt.Errorf("river: %w", err)
-	}
 	api := webapi.New(webapi.Config{
 		Store: st, Current: current, Auth: authHandler, UI: web.FS(),
-		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: webQueue}, Env: cfg.Env(),
+		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: inserter}, Env: cfg.Env(),
 	})
 	lctx := lingering(ctx, linger)
 	g.Go(func() error { return api.Run(lctx) })
@@ -228,10 +240,9 @@ func startPublic(
 // startWorker serves the gateway and works the job queues until ctx ends.
 func startWorker(
 	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current, exec executor.Executor,
-	m *metrics.Metrics, logger *slog.Logger,
+	forges *worker.ForgeCache, m *metrics.Metrics, logger *slog.Logger,
 ) error {
 	embedders := &worker.Embedders{Build: worker.BuildEmbedder}
-	forges := &worker.ForgeCache{Build: worker.BuildForge}
 	workers := river.NewWorkers()
 	base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
 	completers := &worker.Completers{Build: worker.BuildStepper}
@@ -243,8 +254,7 @@ func startWorker(
 	gateway := &worker.Gateway{
 		Store: st, Current: current, Logger: gatewayLogger, Metrics: m,
 		Proxy: &egress.Proxy{
-			Rules:   func() egress.Rules { return current.Get().EgressRules() },
-			Observe: m.Egress, Logger: gatewayLogger,
+			Rules: current.Get().EgressRules, Observe: m.Egress, Logger: gatewayLogger,
 		},
 		Steppers: completers, Embedders: embedders,
 	}
@@ -429,13 +439,15 @@ func openStore(ctx context.Context, opts store.Options, logger *slog.Logger) (*s
 const secretSweepInterval = 5 * time.Minute
 
 // lead runs for as long as this replica holds the leader lock: migrate,
-// apply the current configuration and register the repositories its Apps
-// reach, then do both again whenever it changes. While
-// the configuration has an embedder it also keeps the index schema to it
-// and enqueues an onboarding index job for every repository that has none.
+// apply the configuration and register the repositories its Apps reach,
+// then keep the backstop poll, the Secret sweep, onboarding and retention
+// going. While the configuration has an embedder it also keeps the index
+// schema to it and enqueues an onboarding index job for every repository
+// that has none.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	sweeper *executor.Kube, m *metrics.Metrics, configErrors *server.ConfigErrorGauge, logger *slog.Logger,
+	svc *ingest.Service, forges *worker.ForgeCache, sweeper *executor.Kube, m *metrics.Metrics, configErrors *server.ConfigErrorGauge,
+	logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
@@ -448,9 +460,7 @@ func lead(
 	defer stopPoll()
 	// The backstop poll is a leader duty: one lister per connection.
 	poll := &poller.Poller{
-		Store: st, Current: current, Forges: &worker.ForgeCache{Build: worker.BuildForge}, Reach: worker.ReachRepositories,
-		Dispatcher: ingest.NewService(st, queue),
-		Logger:     logger, Metrics: m,
+		Store: st, Current: current, Forges: forges, Reach: worker.ReachRepositories, Dispatcher: svc, Logger: logger, Metrics: m,
 	}
 	duties.Go(func() { poll.Run(pollCtx) })
 	// So is deleting, by name, run Secrets a dead worker left without an
@@ -476,7 +486,7 @@ func lead(
 	// (owner pool, bypassing row-level security), and expired dashboard
 	// sessions (app pool).
 	duties.Go(func() { retentionSweep(pollCtx, st, current, retentionSweepInterval, logger) })
-	return applyLoop(ctx, current, func(ctx context.Context, f *configfile.File) error {
+	if err := applyConfig(ctx, current.Get(), func(ctx context.Context, f *configfile.File) error {
 		if err := st.ApplyConfig(ctx, f); err != nil {
 			return err
 		}
@@ -487,7 +497,11 @@ func lead(
 		// knows its repositories before any webhook names one.
 		poll.SyncRepositories(ctx)
 		return nil
-	}, onboarder.Offer, refusedRetryInterval, configErrors, logger)
+	}, onboarder.Offer, configErrors, logger); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	return nil
 }
 
 // ensureIndexSchema keeps the index table to the configuration's embedder,
@@ -566,61 +580,30 @@ func retentionSweep(ctx context.Context, st retentionStore, current *configfile.
 	}
 }
 
-// refusedRetryInterval is how often the leader re-applies a configuration
-// the store refused. A refusal is expected to need a new configuration, but
-// one misclassified race must not leave the store stale until the next edit.
-const refusedRetryInterval = time.Minute
-
-// applyLoop applies current's snapshot, then each replacement, until ctx
-// ends, calling onApplied after each success. A snapshot the store refuses
-// for its content (store.IsConfigContentError) must not end leadership, or
-// every replica would crash-loop on it in turn: it is logged once per
-// distinct error and raised on the gauge, the last applied state stays, and
-// the loop waits for the next snapshot, retrying the refused one every
-// retry. Any other error is returned, which ends the process for a restart.
-func applyLoop(
-	ctx context.Context, current *configfile.Current, apply func(context.Context, *configfile.File) error,
-	onApplied func(context.Context) error, retry time.Duration, gauge *server.ConfigErrorGauge, logger *slog.Logger,
+// applyConfig applies f to the store once, on election, and calls
+// onApplied on success. A configuration the store refuses for its content
+// (store.IsConfigContentError) must not end leadership, or every replica
+// would crash-loop on it in turn: it is logged and raised on the gauge,
+// the last applied state stays, and the same content would be refused
+// again, so it is not retried before a restart. Any other error is
+// returned, which ends the process for a restart.
+func applyConfig(
+	ctx context.Context, f *configfile.File, apply func(context.Context, *configfile.File) error,
+	onApplied func(context.Context) error, gauge *server.ConfigErrorGauge, logger *slog.Logger,
 ) error {
-	applied, refused, logged := "", "", ""
-	for {
-		// Taken before Get, so a replacement that lands while applying still
-		// wakes the loop.
-		changed := current.Changed()
-		f := current.Get()
-		if h := f.Hash(); h != applied && h != refused {
-			err := apply(ctx, f)
-			switch {
-			case err != nil && store.IsConfigContentError(err):
-				refused = h
-				gauge.Set(true)
-				if err.Error() != logged {
-					logged = err.Error()
-					logger.Error("configuration refused by the store, keeping the last applied one", "hash", h[:12], "error", err)
-				}
-			case err != nil:
-				return err
-			default:
-				applied, refused, logged = h, "", ""
-				gauge.Set(false)
-				logger.Info("configuration applied to the store", "hash", h[:12])
-				if err := onApplied(ctx); err != nil {
-					return err
-				}
-			}
-		}
-		var retryC <-chan time.Time
-		if refused != "" {
-			retryC = time.After(retry)
-		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-changed:
-		case <-retryC:
-			refused = ""
-		}
+	h := f.Hash()
+	err := apply(ctx, f)
+	switch {
+	case err != nil && store.IsConfigContentError(err):
+		gauge.Set(true)
+		logger.Error("configuration refused by the store, keeping the last applied one", "hash", h[:12], "error", err)
+		return nil
+	case err != nil:
+		return err
 	}
+	gauge.Set(false)
+	logger.Info("configuration applied to the store", "hash", h[:12])
+	return onApplied(ctx)
 }
 
 // driftInterval is how often a replica compares its configuration with

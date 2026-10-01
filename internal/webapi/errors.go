@@ -20,11 +20,10 @@ const (
 	CodeAmbiguous     ErrorCode = "ambiguous"
 	CodeInternal      ErrorCode = "internal"
 
-	CodeForbidden       ErrorCode = "forbidden"
-	CodeNoHead          ErrorCode = "no_head"
-	CodeNotCancelable   ErrorCode = "not_cancelable"
-	CodeActionsDisabled ErrorCode = "actions_disabled"
-	CodeAlreadyQueued   ErrorCode = "already_queued"
+	CodeForbidden     ErrorCode = "forbidden"
+	CodeNoHead        ErrorCode = "no_head"
+	CodeNotCancelable ErrorCode = "not_cancelable"
+	CodeAlreadyQueued ErrorCode = "already_queued"
 	// CodeForgeError is GitHub failing or refusing a call an admin asked
 	// for; the message is GitHub's.
 	CodeForgeError ErrorCode = "forge_error"

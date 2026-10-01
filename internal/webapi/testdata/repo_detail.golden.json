@@ -2,7 +2,7 @@
   "id": "repo-1",
   "fullName": "alpha/one",
   "enabled": true,
-  "managedBy": "dashboard",
+  "managedBy": "file",
   "defaultBranch": "main",
   "archived": false,
   "fork": false,
@@ -32,8 +32,8 @@
     "review": {
       "requireSuggestedFix": true,
       "templates": {
-        "Summary": "docs/summary.tmpl",
-        "Inline": ""
+        "summary": "docs/summary.tmpl",
+        "inline": ""
       },
       "inlineComments": true,
       "approve": false,
@@ -84,8 +84,8 @@
       "review": {
         "requireSuggestedFix": true,
         "templates": {
-          "Summary": "docs/summary.tmpl",
-          "Inline": ""
+          "summary": "docs/summary.tmpl",
+          "inline": ""
         },
         "inlineComments": true,
         "approve": false,

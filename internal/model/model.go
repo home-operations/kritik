@@ -206,11 +206,6 @@ type CompletionResponse struct {
 	CostUSD float64
 }
 
-// Completer produces structured answers.
-type Completer interface {
-	Complete(ctx context.Context, req CompletionRequest) (CompletionResponse, error)
-}
-
 // Embedder turns texts into vectors and reports the tokens it spent.
 type Embedder interface {
 	Embed(ctx context.Context, inputs []string) (vectors [][]float32, tokens int64, err error)

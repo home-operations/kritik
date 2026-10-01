@@ -165,7 +165,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 
 func connection(in *configfile.Connection) Connection {
 	return Connection{
-		Name: in.Name, Forge: in.Forge, ManagedBy: in.Origin(), Accounts: in.Accounts, HookPath: "/hooks/" + in.Name,
+		Name: in.Name, Forge: in.Forge, Accounts: in.Accounts, HookPath: "/hooks/" + in.Name,
 		Credentials: CredentialsSet{
 			ClientID: in.App.ClientIDValue() != "", PrivateKey: in.App.PrivateKeyValue().Value() != "",
 			WebhookSecret: in.WebhookSecretValue().Value() != "",

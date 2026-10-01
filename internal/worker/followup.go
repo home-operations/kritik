@@ -32,12 +32,16 @@ const (
 	threadMessages   = 20
 )
 
+// followUpMaxOutputTokens bounds one reply. Replies are short by
+// instruction; this is a guard against a runaway model, not a target.
+const followUpMaxOutputTokens = 4096
+
 // FollowUp works the followup queue: one job answers one comment that
 // @-mentioned the bot, scoped to its thread.
 type FollowUp struct {
 	river.WorkerDefaults[jobs.FollowUpArgs]
 	Base
-	Completers CompleterSource
+	Completers *Completers
 }
 
 // Work implements river.Worker.
@@ -192,9 +196,9 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	f.logger.Info("follow-up answered", "model", resp.Model, "reply", replyID, "input_tokens", resp.InputTokens,
 		"output_tokens", resp.OutputTokens, "cost_usd", resp.CostUSD)
 	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
-		return insertUsage(ctx, tx, usageRow{
-			accountID: f.account.ID(), repositoryID: f.pr.repositoryID, role: roleFollowUp, model: resp.Model, upstream: resp.Upstream,
-			input: resp.InputTokens, output: resp.OutputTokens, costUSD: resp.CostUSD,
+		return store.InsertUsage(ctx, tx, store.Usage{
+			AccountID: f.account.ID(), RepositoryID: f.pr.repositoryID, Role: store.RoleFollowUp, Model: resp.Model, Upstream: resp.Upstream,
+			Input: resp.InputTokens, Output: resp.OutputTokens, CostUSD: resp.CostUSD,
 		})
 	})
 	if err != nil {
@@ -401,10 +405,8 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 		if err != nil {
 			return fmt.Errorf("worker: load review record: %w", err)
 		}
-		if len(stages) > 0 && stages[0] == '[' {
-			if err := json.Unmarshal(stages, &rec.context); err != nil {
-				return fmt.Errorf("worker: decode context pack: %w", err)
-			}
+		if err := json.Unmarshal(stages, &rec.context); err != nil {
+			return fmt.Errorf("worker: decode context pack: %w", err)
 		}
 		if err := json.Unmarshal(files, &rec.files); err != nil {
 			return fmt.Errorf("worker: decode repository files: %w", err)
@@ -477,7 +479,7 @@ func (f *followUp) complete(ctx context.Context, system, msg, reviewID string) (
 	}, transcriptMask(f.file, spec))}
 	req := model.CompletionRequest{
 		System: system, User: msg, Model: ref.Model(),
-		Schema: review.FollowUpSchema(), SchemaName: "reply", MaxTokens: maxOutputTokens,
+		Schema: review.FollowUpSchema(), SchemaName: "reply", MaxTokens: followUpMaxOutputTokens,
 	}
 	if fb := f.settings.Models.Fallback; fb != "" && fb.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fb.Model()}
@@ -486,7 +488,7 @@ func (f *followUp) complete(ctx context.Context, system, msg, reviewID string) (
 	err = f.w.withLease(ctx, f.account, string(ref), f.settings.Limits.Concurrency, f.jobID, func(ctx context.Context) error {
 		var err error
 		resp, err = completer.Complete(ctx, req)
-		f.w.Metrics.ModelCall(f.account.Key(), servedRef(ref, resp.Model), "followup", callOutcome(err),
+		f.w.Metrics.ModelCall(f.account.Key(), servedRef(ref, resp.Model), store.RoleFollowUp, callOutcome(err),
 			resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 		return err
 	})

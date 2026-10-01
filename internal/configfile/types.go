@@ -4,11 +4,10 @@
 // (ADR-0021 §2.7). Process configuration (addresses, database, log level)
 // is environment variables too and lives in internal/config.
 //
-// Each layer is applied atomically: the whole document is decoded with
-// unknown keys rejected, every secret reference resolved, every filter
-// compiled and smoke-tested, and every invariant checked before any of it
-// is returned. A bad document is an error and the caller keeps the last
-// good state.
+// The file is loaded whole: the document is decoded with unknown keys
+// rejected, every secret reference resolved, every filter compiled and
+// smoke-tested, and every invariant checked before any of it is returned.
+// A bad document is an error, and startup fails on it (ADR-0022 §2.1).
 package configfile
 
 import (
@@ -421,8 +420,8 @@ const DefaultMaxDeltaFiles = 25
 // ReviewTemplates name repository files, read from the merge base, that
 // replace the built-in comment templates.
 type ReviewTemplates struct {
-	Summary string `yaml:"summary,omitempty"`
-	Inline  string `yaml:"inline,omitempty"`
+	Summary string `json:"summary"`
+	Inline  string `json:"inline"`
 }
 
 // Review is the admin's resolved presentation and strictness for a
@@ -500,18 +499,16 @@ type CommentsSpec struct {
 	InlineTemplate  *string `yaml:"inlineTemplate,omitempty"`
 }
 
-// Referenced lists the repository paths the block names: the rules'
-// files first, then the summary and inline templates and the context
-// files, deduplicated.
+// Referenced lists the repository paths the block names whose contents a
+// review reads: the rules' files first, then the summary and inline
+// templates, deduplicated. Context files are not among them: the agent is
+// pointed at those and reads them with its tools.
 func (r Review) Referenced() []string {
-	paths := make([]string, 0, len(r.Rules)+2+len(r.Context))
+	paths := make([]string, 0, len(r.Rules)+2)
 	for _, rule := range r.Rules {
 		paths = append(paths, rule.File)
 	}
 	paths = append(paths, r.Templates.Summary, r.Templates.Inline)
-	for _, c := range r.Context {
-		paths = append(paths, c.Path)
-	}
 	var out []string
 	for _, p := range paths {
 		if p != "" && !slices.Contains(out, p) {

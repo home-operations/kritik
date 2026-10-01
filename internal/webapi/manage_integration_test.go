@@ -25,7 +25,6 @@ import (
 
 	"github.com/home-operations/kritik/internal/auth"
 	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/configsource"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/store"
 )
@@ -94,7 +93,7 @@ type manageEnv struct {
 	t       *testing.T
 	st      *store.Store
 	owner   *pgxpool.Pool
-	src     *configsource.Source
+	current *configfile.Current
 	actions *fakeActions
 	srv     *Server
 	http    *httptest.Server
@@ -129,8 +128,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 	if err := os.WriteFile(path, []byte(manageConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	e.src = &configsource.Source{}
-	file, err := e.src.Load(path)
+	file, err := configfile.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -139,11 +137,12 @@ func newManageEnv(t *testing.T) *manageEnv {
 	}
 
 	webURL, _ := url.Parse("https://kritik.example")
-	h, err := auth.New(auth.Config{Store: st, Current: e.src.Current, WebURL: webURL, Logger: logger})
+	e.current = configfile.NewCurrent(file)
+	h, err := auth.New(auth.Config{Store: st, Current: e.current, WebURL: webURL, Logger: logger})
 	if err != nil {
 		t.Fatalf("auth.New: %v", err)
 	}
-	e.srv = New(Config{Store: st, Current: e.src.Current, Auth: h, Actions: e.actions, WebURL: webURL, Logger: logger})
+	e.srv = New(Config{Store: st, Current: e.current, Auth: h, Actions: e.actions, WebURL: webURL, Logger: logger})
 	e.http = httptest.NewServer(e.srv.Handler())
 	t.Cleanup(e.http.Close)
 	e.signIn("admin", "mgr-op", store.SessionGrant{Role: store.RoleAdmin})
@@ -167,7 +166,7 @@ func (e *manageEnv) signIn(name, subject string, g store.SessionGrant) {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	g.Key, _ = auth.GrantKey(e.src.Current.Get().Auth, "oidc")
+	g.Key, _ = auth.GrantKey(e.current.Get().Auth, "oidc")
 	token, err := e.st.CreateSession(ctx, user.ID, "oidc", origin, g, now, now.Add(time.Hour))
 	if err != nil {
 		e.t.Fatal(err)

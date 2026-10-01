@@ -1,6 +1,8 @@
 // Package runner is what a runner pod does: fetch the head and merge-base
 // (and the last reviewed head when there is one), diff them, compute the
-// patch id, and write a context pack under its own run id. It works from
+// patch id, decide what the review builds on and whether it is skipped,
+// write a context pack under its own run id, and run the review's agent
+// over it. It works from
 // one versioned job document (Spec); its credentials, a git token for one
 // repository and for a review a token for the worker's model gateway,
 // arrive apart from it (Secrets). Its database role can only touch
@@ -17,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/chunk"
 	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/gitfetch"
@@ -83,7 +86,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if p.AgentFiles {
 		agentChanged = res.Changed
 	}
-	files, repoNotes, err := repoFiles(baseTree, p.RepoFiles, agentChanged)
+	files, notes, err := repoFiles(baseTree, p.RepoFiles, agentChanged)
 	if err != nil {
 		return err
 	}
@@ -106,6 +109,41 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	logger.Info("context built", "overlay", stats.Overlay, "definitions", stats.Definitions, "callers", stats.Callers,
 		"identifiers", stats.Identifiers, "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
 		"scan_truncated", stats.ScanTruncated, "elapsed", stats.Elapsed.Round(time.Millisecond))
+
+	// Everything the worker reads back is decided here, before the pack is
+	// written: whether the review is skipped, what it builds on, and what
+	// the prompt was given. A skipped review spends nothing on a model.
+	scope, scopeReason := review.DecideScope(p.PriorHead != "", priorHead != nil, len(deltaPaths), p.Prompt.MaxDeltaFiles)
+	skip := agentSkip(p, res.Changed, res.PatchID)
+	in := newPromptInputs(p, files, res.Changed)
+	notes = append(notes, in.notes...)
+	var tools agentTools
+	var prompt agentPrompt
+	if skip == "" {
+		// Stage 4, best effort: an instance without an embedder, a
+		// repository without a completed index, or a refused or failed
+		// request leaves it out and the review goes on.
+		if queries := hunkQueries(res.Diff); len(queries) > 0 {
+			out, err := similarCode(ctx, p.Model.GatewayURL, secrets.GatewayToken,
+				contextpack.SimilarRequest{Queries: queries, Exclude: res.Changed})
+			switch {
+			case err != nil:
+				logger.Warn("similar-code retrieval skipped", "error", err)
+			case out.Indexed:
+				chunks = append(chunks, out.Chunks...)
+				tools.search = &searchTool{
+					gatewayURL: p.Model.GatewayURL, token: secrets.GatewayToken, exclude: res.Changed, maxBytes: p.Agent.limits().MaxToolOutputBytes,
+				}
+			}
+		}
+		var cleanup func()
+		tools.run, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets.GitToken, p.Agent.limits().MaxToolOutputBytes, logger)
+		defer cleanup()
+		prompt = newAgentPrompt(p, in, packView{
+			Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
+		}, tools.commands(), tools.search != nil)
+		notes = append(notes, prompt.notes()...)
+	}
 	stagesJSON, err := json.Marshal(chunks)
 	if err != nil {
 		return fmt.Errorf("runner: encode context: %w", err)
@@ -114,8 +152,8 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err != nil {
 		return fmt.Errorf("runner: encode repository files: %w", err)
 	}
-	if repoNotes == nil {
-		repoNotes = []string{}
+	if notes == nil {
+		notes = []string{}
 	}
 
 	if err := setPhase(ctx, st, p.RunID, "writing"); err != nil {
@@ -126,12 +164,15 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		// and cannot invent one, and the policy only opens its own run.
 		_, err := tx.Exec(ctx, `
 			INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes,
-				prior_head_sha, delta_diff, delta_paths)
-			SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM runner_runs WHERE id = $1`,
-			p.RunID, p.Head, p.Base, res.PatchID, res.Diff, res.Changed, stagesJSON, filesJSON, repoNotes,
-			priorHead, res.DeltaDiff, deltaPaths)
+				prior_head_sha, delta_diff, delta_paths, scope, scope_reason, skip_reason, rule_ids)
+			SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16 FROM runner_runs WHERE id = $1`,
+			p.RunID, p.Head, p.Base, res.PatchID, res.Diff, res.Changed, stagesJSON, filesJSON, notes,
+			priorHead, res.DeltaDiff, deltaPaths, string(scope), scopeReason, skip, in.ruleIDs())
 		if err != nil {
 			return fmt.Errorf("runner: write context pack: %w", err)
+		}
+		if skip != "" {
+			return setPhaseTx(ctx, tx, p.RunID, "done")
 		}
 		// A review is not done until its agent has run too.
 		return setPhaseTx(ctx, tx, p.RunID, "reviewing")
@@ -139,11 +180,12 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err != nil {
 		return err
 	}
-	logger.Info("context pack written", "run", p.RunID, "patch_id", res.PatchID[:12])
-	scope, _ := review.DecideScope(p.PriorHead != "", priorHead != nil, len(deltaPaths), p.Prompt.MaxDeltaFiles)
-	return runAgentic(ctx, st, p, secrets, headTree, files, packView{
-		Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
-	}, ignore, res.PatchID, logger)
+	logger.Info("context pack written", "run", p.RunID, "patch_id", res.PatchID[:12], "scope", scope, "skip", skip)
+	if skip != "" {
+		logger.Info("agent not run", "reason", skip)
+		return nil
+	}
+	return runAgentic(ctx, st, p, secrets, headTree, ignore, tools, prompt, scope, logger)
 }
 
 // notIgnored returns the paths no ignore glob matches, never nil.

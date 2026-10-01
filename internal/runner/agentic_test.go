@@ -3,10 +3,12 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -79,8 +81,13 @@ func TestAgentPrompt(t *testing.T) {
 			if tt.scope == review.ScopeIncremental {
 				pack.DeltaDiff = agentDiff
 			}
-			system, user, strict := agentPrompt(s, files, pack, nil)
-			if want := review.SystemPrompt(tt.active, tt.instructions, nil, tt.focused); system != want {
+			in := newPromptInputs(s, files, pack.Changed)
+			if !slices.Equal(in.ruleIDs(), ruleIDs(tt.active)) {
+				t.Fatalf("rule ids = %v, want %v", in.ruleIDs(), ruleIDs(tt.active))
+			}
+			prompt := newAgentPrompt(s, in, pack, nil, false)
+			system, user, strict := prompt.system, prompt.user, prompt.strict
+			if want := review.SystemPrompt(tt.active, tt.instructions, nil, tt.focused, false); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
@@ -110,9 +117,44 @@ func TestAgentPromptPointsAtContext(t *testing.T) {
 		{Path: "docs/arch.md", Description: "how the parts fit"},
 		{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}},
 	}
-	_, user, _ := agentPrompt(s, repoconfig.Files{"docs/arch.md": "never inlined"}, packView{Diff: agentDiff, Changed: []string{"main.go"}}, nil)
+	files := repoconfig.Files{"docs/arch.md": "never inlined"}
+	pack := packView{Diff: agentDiff, Changed: []string{"main.go"}}
+	user := newAgentPrompt(s, newPromptInputs(s, files, pack.Changed), pack, nil, false).user
 	if !strings.Contains(user, "### docs/arch.md: how the parts fit\n") || strings.Contains(user, "never inlined") || strings.Contains(user, "schema") {
 		t.Fatalf("user message:\n%s", user)
+	}
+}
+
+// ruleIDs is the ids of rules, for comparing with a prompt's inputs.
+func ruleIDs(rules []review.Rule) []string {
+	ids := make([]string, 0, len(rules))
+	for _, r := range rules {
+		ids = append(ids, r.ID)
+	}
+	return ids
+}
+
+// TestPromptInputsNotes: the notes say what the prompt's budgets cut.
+func TestPromptInputsNotes(t *testing.T) {
+	s := agentPromptSpec()
+	s.AgentFiles = true
+	s.Prompt.Rules = []configfile.Rule{{ID: "big", Rule: strings.Repeat("x", repoconfig.MaxRulesBytes)}, {ID: "left", Rule: "Wrap errors."}}
+	files := repoconfig.Files{"AGENTS.md": strings.Repeat("y", repoconfig.MaxInstructionBytes+1)}
+	in := newPromptInputs(s, files, []string{"main.go"})
+	if want := []string{noteInstructionsTruncated, "1 review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"}; !slices.Equal(in.notes, want) {
+		t.Fatalf("notes = %q, want %q", in.notes, want)
+	}
+	const lines = 60_000
+	big := "diff --git a/big.go b/big.go\n--- a/big.go\n+++ b/big.go\n@@ -0,0 +1," + strconv.Itoa(lines) + " @@\n" + strings.Repeat("+x\n", lines)
+	long := packView{Diff: agentDiff + big, Changed: []string{"main.go", "big.go"}}
+	prompt := newAgentPrompt(s, in, long, nil, false)
+	if notes := prompt.notes(); len(notes) != 1 || notes[0] != "1 diff file(s) left out of the prompt to fit its budget: big.go" {
+		t.Fatalf("prompt notes = %q", notes)
+	}
+	many := agentPrompt{omitted: []string{"a", "b", "c", "d", "e", "f", "g"}, contextOmitted: 2}
+	want := []string{"7 diff file(s) left out of the prompt to fit its budget: a, b, c, d, e, and 2 more", "2 context chunk(s) left out of the prompt to fit its budget"}
+	if notes := many.notes(); !slices.Equal(notes, want) {
+		t.Fatalf("notes = %q, want %q", notes, want)
 	}
 }
 
@@ -258,26 +300,27 @@ func TestSimilarCode(t *testing.T) {
 		name    string
 		status  int
 		body    string
-		want    []contextpack.Chunk
+		want    contextpack.SimilarResponse
 		wantErr string
 	}{
 		{name: "chunks", status: http.StatusOK, body: `{"chunks":[{"stage":"similar","path":"other.go","start_line":3,"end_line":9,` +
-			`"ref":"similarity 0.81","text":"func a() {}"}]}`, want: []contextpack.Chunk{chunk}},
-		{name: "none", status: http.StatusOK, body: `{"chunks":[]}`, want: []contextpack.Chunk{}},
+			`"ref":"similarity 0.81","text":"func a() {}"}],"indexed":true}`, want: contextpack.SimilarResponse{Chunks: []contextpack.Chunk{chunk}, Indexed: true}},
+		{name: "no index", status: http.StatusOK, body: `{"chunks":[],"indexed":false}`, want: contextpack.SimilarResponse{Chunks: []contextpack.Chunk{}}},
 		{name: "refused", status: http.StatusTooManyRequests, body: `{"error":{"code":"budget_exceeded"}}` + "\n",
 			wantErr: `429 Too Many Requests: {"error":{"code":"budget_exceeded"}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var path, auth string
+			var path, auth, body string
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				path, auth = r.Method+" "+r.URL.Path, r.Header.Get("Authorization")
+				b, _ := io.ReadAll(r.Body)
+				path, auth, body = r.Method+" "+r.URL.Path, r.Header.Get("Authorization"), string(b)
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte(tc.body))
 			}))
 			defer srv.Close()
-			got, err := similarCode(context.Background(), srv.URL+"/", "krk_run")
-			if path != "POST /v1/similar" || auth != "Bearer krk_run" {
-				t.Fatalf("request = %s with %q", path, auth)
+			got, err := similarCode(context.Background(), srv.URL+"/", "krk_run", contextpack.SimilarRequest{Queries: []string{"main.go\nfunc b() {}"}, Exclude: []string{"main.go"}})
+			if path != "POST /v1/similar" || auth != "Bearer krk_run" || body != `{"queries":["main.go\nfunc b() {}"],"exclude":["main.go"]}` {
+				t.Fatalf("request = %s with %q: %s", path, auth, body)
 			}
 			if tc.wantErr != "" {
 				if err == nil || !strings.HasSuffix(err.Error(), tc.wantErr) {
@@ -285,9 +328,64 @@ func TestSimilarCode(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || !slices.Equal(got, tc.want) {
+			if err != nil || !slices.Equal(got.Chunks, tc.want.Chunks) || got.Indexed != tc.want.Indexed {
 				t.Fatalf("similarCode = %+v, %v; want %+v", got, err, tc.want)
 			}
 		})
+	}
+}
+
+// TestHunkQueries: each hunk is led by its path, the removed lines are
+// left out, and the count and size are bounded.
+func TestHunkQueries(t *testing.T) {
+	got := hunkQueries(agentDiff)
+	if want := []string{"main.go\npackage main\n\nfunc b() {}\n"}; !slices.Equal(got, want) {
+		t.Fatalf("hunkQueries = %q, want %q", got, want)
+	}
+	var many strings.Builder
+	for range contextpack.SimilarQueries + 3 {
+		many.WriteString(agentDiff)
+	}
+	if got := hunkQueries(many.String()); len(got) != contextpack.SimilarQueries {
+		t.Fatalf("%d queries, want %d", len(got), contextpack.SimilarQueries)
+	}
+	if got := hunkQueries(""); len(got) != 0 {
+		t.Fatalf("queries of an empty diff = %q", got)
+	}
+}
+
+// TestSearchTool: search_code asks the gateway once per call, formats what
+// it gets back, and stops at its call limit.
+func TestSearchTool(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var req contextpack.SimilarRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if len(req.Queries) != 1 || req.Queries[0] != "where is the retry" || !slices.Equal(req.Exclude, []string{"main.go"}) {
+			t.Errorf("request = %+v", req)
+		}
+		_, _ = w.Write([]byte(`{"chunks":[{"stage":"similar","path":"retry.go","start_line":3,"end_line":9,"symbol":"retry","kind":"function",` +
+			`"ref":"similarity 0.81","text":"func retry() {}"}],"indexed":true}`))
+	}))
+	defer srv.Close()
+	tool := &searchTool{gatewayURL: srv.URL, token: "krk_run", exclude: []string{"main.go"}, maxBytes: 1 << 10}
+	if def := tool.Def(); def.Name != "search_code" {
+		t.Fatalf("tool name = %q", def.Name)
+	}
+	out, err := tool.Run(context.Background(), json.RawMessage(`{"query":"where is the retry"}`))
+	if err != nil || out != "retry.go:3-9 (function retry) similarity 0.81\nfunc retry() {}" {
+		t.Fatalf("Run = %q, %v", out, err)
+	}
+	if _, err := tool.Run(context.Background(), json.RawMessage(`{"query":" "}`)); err == nil {
+		t.Fatal("an empty query ran")
+	}
+	for range searchCalls - 1 {
+		if _, err := tool.Run(context.Background(), json.RawMessage(`{"query":"where is the retry"}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := tool.Run(context.Background(), json.RawMessage(`{"query":"where is the retry"}`)); err == nil || calls != searchCalls {
+		t.Fatalf("past the limit: err=%v calls=%d", err, calls)
 	}
 }

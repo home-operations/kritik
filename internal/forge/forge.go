@@ -9,8 +9,15 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/webhook"
 )
+
+// Clients builds a forge client per App and repository owner: a GitHub
+// App's installation, and with it the token, is its owner's.
+type Clients interface {
+	For(ctx context.Context, in *configfile.Connection, repo string) (Client, error)
+}
 
 // OpenPullRequest is a pull request as the forge lists it, in the same
 // shape the webhook parser produces so the poller can dispatch it as an

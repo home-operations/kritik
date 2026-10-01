@@ -6,8 +6,6 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/bmatcuk/doublestar/v4"
 )
 
 // Rule is a check a review makes, written in the configuration
@@ -52,12 +50,12 @@ func CheckRules(rules []Rule) error {
 			return fmt.Errorf("rules[%d].rule is %d characters, over the %d allowed", i, n, MaxRuleChars)
 		}
 		if r.File != "" {
-			if err := checkRepoPath(r.File); err != nil {
+			if err := CheckRepoPath(r.File); err != nil {
 				return fmt.Errorf("rules[%d].file: %w", i, err)
 			}
 		}
 		for j, g := range r.Paths {
-			if strings.TrimSpace(g) == "" || !doublestar.ValidatePattern(g) {
+			if !ValidGlob(g) {
 				return fmt.Errorf("rules[%d].paths[%d] %q is not a valid glob", i, j, g)
 			}
 		}

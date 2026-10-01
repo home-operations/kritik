@@ -289,7 +289,7 @@ func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
 	if err := s.ApplyConfig(ctx, listed); err != nil {
 		t.Fatalf("ApplyConfig listed: %v", err)
 	}
-	check("dashboard", true)
+	check("file", true)
 }
 
 // TestRepositoryNamesIgnoreCase: GitHub's spelling of a listed repository
@@ -330,7 +330,7 @@ func TestRepositoryNamesIgnoreCase(t *testing.T) {
 		FROM repositories WHERE id = $2`, alpha, id).Scan(&name, &origin, &rows); err != nil {
 		t.Fatal(err)
 	}
-	if name != "Alpha/ONE" || origin != "dashboard" || rows != 2 {
+	if name != "Alpha/ONE" || origin != "file" || rows != 2 {
 		t.Fatalf("name %q, managed_by %s, %d rows; want GitHub's spelling on the one listed row", name, origin, rows)
 	}
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
@@ -785,7 +785,7 @@ func TestFindRepo(t *testing.T) {
 		})
 		return row, err
 	}
-	if row, err := find("alpha", "alpha/one"); err != nil || row.FullName != "alpha/one" || !row.Enabled || row.ManagedBy != "dashboard" {
+	if row, err := find("alpha", "alpha/one"); err != nil || row.FullName != "alpha/one" || !row.Enabled || row.ManagedBy != "file" {
 		t.Fatalf("FindRepo(alpha/one) = %+v, %v", row, err)
 	}
 	if _, err := find("beta", "alpha/one"); !errors.Is(err, ErrNotFound) {
