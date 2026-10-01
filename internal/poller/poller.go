@@ -10,6 +10,7 @@
 package poller
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -56,11 +57,7 @@ const reachTimeout = time.Minute
 func (p *Poller) Run(ctx context.Context) {
 	for {
 		interval := p.Current.Get().PollInterval()
-		wait := interval
-		if interval <= 0 {
-			wait = pollOffRecheck
-		}
-		t := time.NewTimer(wait)
+		t := time.NewTimer(cmp.Or(interval, pollOffRecheck))
 		select {
 		case <-ctx.Done():
 			t.Stop()
@@ -205,7 +202,8 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 				return handled, err
 			}
 			handled++
-			p.Logger.Info("polled pull request "+out.Status, "connection", in.Name, "repository", repo, "pr", pr.Number, "reason", out.Reason)
+			p.Logger.Info("polled pull request", "status", out.Status, "connection", in.Name, "repository", repo,
+				"pr", pr.Number, "reason", out.Reason)
 		}
 	}
 	if err := p.pollReactions(ctx, account, in, runs); err != nil {
@@ -291,6 +289,6 @@ func (p *Poller) pollTip(
 	if err != nil {
 		return err
 	}
-	p.Logger.Info("polled default branch "+out.Status, "connection", in.Name, "repository", r.Name, "tip", tip, "reason", out.Reason)
+	p.Logger.Info("polled default branch", "status", out.Status, "connection", in.Name, "repository", r.Name, "tip", tip, "reason", out.Reason)
 	return nil
 }

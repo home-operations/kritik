@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/url"
@@ -100,10 +101,7 @@ func (s *SignIn) Label() string {
 	if s.typ == SignInGitHub {
 		return "GitHub"
 	}
-	if s.Name == "" {
-		return DefaultOIDCName
-	}
-	return s.Name
+	return cmp.Or(s.Name, DefaultOIDCName)
 }
 
 // ClientSecretValue returns the resolved client secret.
@@ -126,15 +124,12 @@ const (
 )
 
 // SessionTTLOrDefault returns the session lifetime or its default.
-func (a Auth) SessionTTLOrDefault() time.Duration {
-	if a.SessionTTL > 0 {
-		return a.SessionTTL
-	}
-	return DefaultSessionTTL
+func (a *Auth) SessionTTLOrDefault() time.Duration {
+	return cmp.Or(a.SessionTTL, DefaultSessionTTL)
 }
 
 // SignIns lists the configured providers, OIDC first.
-func (a Auth) SignIns() []*SignIn {
+func (a *Auth) SignIns() []*SignIn {
 	var out []*SignIn
 	for _, s := range []*SignIn{a.OIDC, a.GitHub} {
 		if s != nil {
@@ -145,7 +140,7 @@ func (a Auth) SignIns() []*SignIn {
 }
 
 // SignInByType returns the provider of type typ.
-func (a Auth) SignInByType(typ SignInType) (*SignIn, bool) {
+func (a *Auth) SignInByType(typ SignInType) (*SignIn, bool) {
 	for _, s := range a.SignIns() {
 		if s.typ == typ {
 			return s, true
@@ -156,29 +151,26 @@ func (a Auth) SignInByType(typ SignInType) (*SignIn, bool) {
 
 // AdminUser is the local admin's name and password, ok only while a
 // password is set.
-func (a Auth) AdminUser() (user string, password Secret, ok bool) {
+func (a *Auth) AdminUser() (user string, password Secret, ok bool) {
 	if a.Admin.password.Value() == "" {
 		return "", Secret{}, false
 	}
 	return a.adminUser(), a.Admin.password, true
 }
 
-func (a Auth) adminUser() string {
-	if a.Admin.User == "" {
-		return DefaultAdminUser
-	}
-	return a.Admin.User
+func (a *Auth) adminUser() string {
+	return cmp.Or(a.Admin.User, DefaultAdminUser)
 }
 
 // Configured reports whether any way to sign in is set.
-func (a Auth) Configured() bool {
+func (a *Auth) Configured() bool {
 	_, _, local := a.AdminUser()
 	return local || len(a.SignIns()) > 0
 }
 
 // FromEnv reports whether an environment variable set the auth key at the
 // dotted path, such as "oidc.issuer".
-func (a Auth) FromEnv(path string) bool { return a.fromEnv[path] }
+func (a *Auth) FromEnv(path string) bool { return a.fromEnv[path] }
 
 func (a *Auth) resolve(sec *secrets) error {
 	if !a.Admin.Password.empty() {
@@ -212,7 +204,7 @@ func (a *Auth) resolve(sec *secrets) error {
 	return nil
 }
 
-func (a Auth) validate() error {
+func (a *Auth) validate() error {
 	if a.SessionTTL != 0 && (a.SessionTTL < minSessionTTL || a.SessionTTL > maxSessionTTL) {
 		return fmt.Errorf("configfile: auth.sessionTTL must be between %s and %s", minSessionTTL, maxSessionTTL)
 	}

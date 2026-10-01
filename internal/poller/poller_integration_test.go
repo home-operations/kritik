@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -24,6 +23,7 @@ import (
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/store/storetest"
 )
 
 const configYAML = `
@@ -59,29 +59,10 @@ func (f *forges) For(context.Context, *configfile.Connection, string) (forge.Cli
 	return f.f, nil
 }
 
-func env(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		t.Skipf("%s not set", key)
-	}
-	return v
-}
-
 func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	st, err := store.Open(ctx, store.Options{
-		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: logger,
-	})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
 	file := configfiletest.Load(t, configYAML)
@@ -259,14 +240,7 @@ func (f *tipForge) BranchTip(context.Context, string, string, string) (string, s
 func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	st, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"), Logger: logger})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
 	file := configfiletest.Load(t, configYAML)
@@ -361,17 +335,7 @@ func TestSyncRepositories(t *testing.T) {
 	ctx := context.Background()
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	st, err := store.Open(ctx, store.Options{
-		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: logger,
-	})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
 	file := configfiletest.Load(t, configYAML)
@@ -471,17 +435,7 @@ func (f *reactionForge) ListInline(_ context.Context, _, _ string, number int) (
 func TestPollerReadsReactions(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	st, err := store.Open(ctx, store.Options{
-		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: logger,
-	})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
 	file := configfiletest.Load(t, configYAML)
@@ -492,7 +446,7 @@ func TestPollerReadsReactions(t *testing.T) {
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 
 	var recent, stale string
-	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+	err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = true WHERE name = 'onedr0p/home-ops'`); err != nil {
 			return err
 		}

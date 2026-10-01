@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 
@@ -67,7 +68,8 @@ func (s *Server) writeAudit(w http.ResponseWriter, r *http.Request, accountID st
 	items := make([]AuditEvent, len(events))
 	for i, e := range events {
 		items[i] = AuditEvent{
-			ID: fmt.Sprint(e.ID), At: e.At, Account: slugs[e.AccountID], Action: AuditAction(e.Action), Target: e.Target, Detail: e.Detail,
+			ID: strconv.FormatInt(e.ID, 10), At: e.At, Account: slugs[e.AccountID], Action: AuditAction(e.Action),
+			Target: e.Target, Detail: e.Detail,
 		}
 		if e.Actor != nil {
 			a := toUser(*e.Actor)

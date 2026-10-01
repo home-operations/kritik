@@ -2,20 +2,29 @@ package worker
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/home-operations/kritik/internal/forge"
+	"github.com/home-operations/kritik/internal/review"
 )
 
 // threadForge answers the comment listings from fixed comments and counts
-// the inline ones.
+// the inline ones, and answers every permission lookup the same way.
 type threadForge struct {
 	forge.Client
 	inline       []forge.Comment
 	conversation []forge.Comment
 	inlineLists  int
+	permission   forge.Permission
+	permErr      error
+}
+
+func (f *threadForge) Permission(context.Context, string, string, string) (forge.Permission, error) {
+	return f.permission, f.permErr
 }
 
 func (f *threadForge) ListInline(context.Context, string, string, int) ([]forge.Comment, error) {
@@ -83,5 +92,57 @@ func TestRequestsReview(t *testing.T) {
 		if got := requestsReview(tt.body, "kritik"); got != tt.want {
 			t.Errorf("requestsReview(%q) = %v, want %v", tt.body, got, tt.want)
 		}
+	}
+}
+
+func TestMarkedReply(t *testing.T) {
+	const login = "kritik[bot]"
+	reply := func(id int64, author string, commentID int64) forge.Comment {
+		return forge.Comment{ID: id, Author: author, Body: "Here is why.\n\n" + review.FollowUpMarker(commentID)}
+	}
+	tests := []struct {
+		name     string
+		comments []forge.Comment
+		want     int64
+	}{
+		{name: "the bot's reply to the comment is found", comments: []forge.Comment{reply(20, login, 7)}, want: 20},
+		{name: "a reply to another comment is not", comments: []forge.Comment{reply(21, login, 8)}},
+		{name: "another author's marker is not", comments: []forge.Comment{reply(22, "mallory", 7)}},
+		{name: "no comments"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := markedReply(tt.comments, login, 7); got != tt.want {
+				t.Errorf("markedReply = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDisqualified(t *testing.T) {
+	tests := []struct {
+		name       string
+		comment    forge.Comment
+		permission forge.Permission
+		permErr    error
+		want       string
+	}{
+		{name: "a bot author", comment: forge.Comment{Author: "renovate[bot]", AuthorIsBot: true, Body: "@kritik explain"}, want: "author is a bot"},
+		{name: "the bot's own login, whatever its case", comment: forge.Comment{Author: "Kritik[Bot]", Body: "@kritik explain"}, want: "author is a bot"},
+		{name: "no mention of the bot", comment: forge.Comment{Author: "alice", Body: "looks good"}, want: "does not mention @kritik"},
+		{name: "a permission lookup that fails", comment: forge.Comment{Author: "alice", Body: "@kritik explain"},
+			permErr: errors.New("boom"), want: "permission unknown"},
+		{name: "read access", comment: forge.Comment{Author: "alice", Body: "@kritik explain"},
+			permission: forge.PermissionRead, want: "author has read access, write is required"},
+		{name: "write access", comment: forge.Comment{Author: "alice", Body: "@kritik explain"}, permission: forge.PermissionWrite},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &threadForge{permission: tt.permission, permErr: tt.permErr}
+			f := &followUp{client: client, owner: "o", repo: "r", comment: tt.comment, botLogin: "kritik[bot]", logger: slog.New(slog.DiscardHandler)}
+			if got := f.disqualified(t.Context()); got != tt.want {
+				t.Errorf("disqualified = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

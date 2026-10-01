@@ -26,6 +26,7 @@ import (
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/jobs"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/store/storetest"
 )
 
 const actionsConfig = `
@@ -65,18 +66,8 @@ func newActionsEnv(t *testing.T) *actionsEnv {
 	t.Helper()
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	st, err := store.Open(ctx, store.Options{
-		AppURL: testEnv(t, "KRITIK_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: logger,
-	})
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	owner, err := pgxpool.New(ctx, testEnv(t, "KRITIK_TEST_OWNER_URL"))
+	st := storetest.Open(t)
+	owner, err := pgxpool.New(ctx, storetest.Env(t, "KRITIK_TEST_OWNER_URL"))
 	if err != nil {
 		t.Fatalf("pgxpool.New: %v", err)
 	}

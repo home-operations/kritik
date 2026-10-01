@@ -72,7 +72,7 @@ func (a *Account) Repository(fullName string) *Repository {
 func (f *File) Settings(a *Account, fullName string) Settings {
 	s := Settings{
 		Enabled:     true,
-		Ignore:      append([]string(nil), DefaultIgnore...),
+		Ignore:      slices.Clone(DefaultIgnore),
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
 		Review:      Review{InlineComments: true, Feedback: FeedbackDetailed, AgentFiles: true},

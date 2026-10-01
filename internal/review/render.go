@@ -95,22 +95,25 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 	return marker + out, notes
 }
 
-// RenderInline renders one finding as an inline review comment, falling
-// back to the default template as RenderSummary does.
+// RenderInline renders one finding as an inline review comment, led by its
+// FindingMarker, falling back to the default template as RenderSummary
+// does.
 func RenderInline(ctx context.Context, t Templates, f Finding) (string, []string) {
+	marker := FindingMarker(Fingerprint(f)) + "\n"
+	limit := MaxRenderBytes - len(marker)
 	var notes []string
 	if t.Inline != "" {
-		out, err := render(ctx, t.Inline, f, MaxRenderBytes)
+		out, err := render(ctx, t.Inline, f, limit)
 		if err == nil {
-			return out, nil
+			return marker + out, nil
 		}
 		notes = append(notes, fallbackNote("inline", err))
 	}
-	out, err := render(context.WithoutCancel(ctx), defaultInline, f, MaxRenderBytes)
+	out, err := render(context.WithoutCancel(ctx), defaultInline, f, limit)
 	if err != nil {
-		out = textcut.Prefix(fmt.Sprintf("**[%s]** **%s**\n\n%s\n", f.Severity, f.Title, f.Explanation), MaxRenderBytes)
+		out = textcut.Prefix(fmt.Sprintf("**[%s]** **%s**\n\n%s\n", f.Severity, f.Title, f.Explanation), limit)
 	}
-	return out, notes
+	return marker + out, notes
 }
 
 func fallbackNote(which string, err error) string {

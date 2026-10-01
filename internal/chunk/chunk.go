@@ -166,8 +166,7 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 	var walk func(ss []gotreesitter.OutlineSymbol, owner string)
 	walk = func(ss []gotreesitter.OutlineSymbol, owner string) {
 		for _, s := range ss {
-			scope := s.Owner
-			scope = cmp.Or(scope, owner)
+			scope := cmp.Or(s.Owner, owner)
 			add(Decl{
 				Symbol: s.Name, Kind: s.Kind, Scope: scope,
 				StartLine: int(s.Range.StartPoint.Row) + 1, EndLine: int(s.Range.EndPoint.Row) + 1,

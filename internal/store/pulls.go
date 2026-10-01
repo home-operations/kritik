@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,51 +18,89 @@ type PullRequestRow struct {
 	Number                           int
 	Title, Author                    string
 	AuthorIsBot, Draft, Fork, Merged bool
-	HeadRef, HeadSHA, BaseRef, URL   string
-	Body                             string
-	OpenedAt                         time.Time
-	Labels                           json.RawMessage
+	// State is open or closed.
+	State                          string
+	HeadRef, HeadSHA, BaseRef, URL string
+	Body                           string
+	OpenedAt                       time.Time
+	// UpdatedAt is when the forge last changed the pull request, zero when
+	// the event did not say.
+	UpdatedAt time.Time
+	ClosedAt  *time.Time
+	Labels    json.RawMessage
 }
 
-// UpsertPullRequest records a pull request as open with what the forge
-// says of it.
-func UpsertPullRequest(ctx context.Context, tx pgx.Tx, p PullRequestRow) error {
-	var opened any
+// UpsertPullRequest records a pull request with what the forge says of it,
+// and reports whether it did: an event the forge changed the pull request
+// after, by its UpdatedAt, is stale and leaves the row alone, so a delivery
+// that arrives late or again cannot rewind the head. An event with no
+// UpdatedAt always applies.
+func UpsertPullRequest(ctx context.Context, tx pgx.Tx, p PullRequestRow) (bool, error) {
+	var opened, updated any
 	if !p.OpenedAt.IsZero() {
 		opened = p.OpenedAt
 	}
-	if _, err := tx.Exec(ctx, `
+	if !p.UpdatedAt.IsZero() {
+		updated = p.UpdatedAt
+	}
+	tag, err := tx.Exec(ctx, `
 		INSERT INTO pull_requests (account_id, repository_id, number, title, author, author_is_bot, draft, fork, state,
-			head_ref, head_sha, base_ref, url, body, opened_at, labels, merged)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11, $12, $13, $14, $15, $16)
+			head_ref, head_sha, base_ref, url, body, opened_at, labels, merged, closed_at, forge_updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		ON CONFLICT (repository_id, number) DO UPDATE SET
 			title = EXCLUDED.title, author = EXCLUDED.author, author_is_bot = EXCLUDED.author_is_bot, draft = EXCLUDED.draft,
-			fork = EXCLUDED.fork, state = 'open', head_ref = EXCLUDED.head_ref, head_sha = EXCLUDED.head_sha,
+			fork = EXCLUDED.fork, state = EXCLUDED.state, head_ref = EXCLUDED.head_ref, head_sha = EXCLUDED.head_sha,
 			base_ref = EXCLUDED.base_ref, url = EXCLUDED.url, body = EXCLUDED.body,
-			labels = EXCLUDED.labels, merged = EXCLUDED.merged, closed_at = NULL, updated_at = now()`,
-		p.AccountID, p.RepositoryID, p.Number, p.Title, p.Author, p.AuthorIsBot, p.Draft, p.Fork,
-		p.HeadRef, p.HeadSHA, p.BaseRef, p.URL, p.Body, opened, p.Labels, p.Merged); err != nil {
-		return fmt.Errorf("store: upsert pull request: %w", err)
+			labels = EXCLUDED.labels, merged = EXCLUDED.merged, closed_at = EXCLUDED.closed_at,
+			forge_updated_at = coalesce(EXCLUDED.forge_updated_at, pull_requests.forge_updated_at), updated_at = now()
+		WHERE EXCLUDED.forge_updated_at IS NULL OR pull_requests.forge_updated_at IS NULL
+			OR EXCLUDED.forge_updated_at >= pull_requests.forge_updated_at`,
+		p.AccountID, p.RepositoryID, p.Number, p.Title, p.Author, p.AuthorIsBot, p.Draft, p.Fork, cmp.Or(p.State, "open"),
+		p.HeadRef, p.HeadSHA, p.BaseRef, p.URL, p.Body, opened, p.Labels, p.Merged, p.ClosedAt, updated)
+	if err != nil {
+		return false, fmt.Errorf("store: upsert pull request: %w", err)
 	}
-	return nil
+	return tag.RowsAffected() > 0, nil
 }
 
 // ClosePullRequest records a pull request as closed, merged or not, when
-// the forge says it closed; a nil closedAt is now.
-func ClosePullRequest(ctx context.Context, tx pgx.Tx, repositoryID string, number int, merged bool, closedAt *time.Time) error {
-	if _, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = $3, closed_at = coalesce($4, now()), updated_at = now()
-		WHERE repository_id = $1 AND number = $2`, repositoryID, number, merged, closedAt); err != nil {
+// the forge says it closed; a nil closedAt is now. A zero updatedAt always
+// applies; otherwise, as with UpsertPullRequest, an event older than the
+// row leaves it alone.
+func ClosePullRequest(
+	ctx context.Context, tx pgx.Tx, repositoryID string, number int, merged bool, closedAt *time.Time, updatedAt time.Time,
+) error {
+	var updated any
+	if !updatedAt.IsZero() {
+		updated = updatedAt
+	}
+	if _, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = $3, closed_at = coalesce($4, now()),
+		forge_updated_at = coalesce($5, forge_updated_at), updated_at = now()
+		WHERE repository_id = $1 AND number = $2 AND ($5::timestamptz IS NULL OR forge_updated_at IS NULL OR $5 >= forge_updated_at)`,
+		repositoryID, number, merged, closedAt, updated); err != nil {
 		return fmt.Errorf("store: close pull request: %w", err)
 	}
 	return nil
 }
 
-// HeadReviewed reports whether any review has seen the head of the pull
-// request.
-func HeadReviewed(ctx context.Context, tx pgx.Tx, repositoryID string, number int, headSHA string) (bool, error) {
+// ReviewedStatuses are the review statuses under which a head was
+// reviewed: an event for it again (a redelivery, a reopen) starts nothing.
+var ReviewedStatuses = []ReviewStatus{ReviewCompleted, ReviewCapped}
+
+// SettledStatuses are the review statuses under which a head needs nothing
+// from a poll, which lists a pull request whenever anything about it moved:
+// the reviewed ones, a skip the repository's own settings decided, and a
+// cancellation someone asked for. A superseded or failed review leaves the
+// head unreviewed, so the poll picks it up again.
+var SettledStatuses = []ReviewStatus{ReviewCompleted, ReviewCapped, ReviewSkipped, ReviewCanceled}
+
+// HeadReviewed reports whether a review of the pull request's head ended in
+// one of statuses.
+func HeadReviewed(ctx context.Context, tx pgx.Tx, repositoryID string, number int, headSHA string, statuses []ReviewStatus) (bool, error) {
 	var reviewed bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
-		WHERE p.repository_id = $1 AND p.number = $2 AND r.head_sha = $3)`, repositoryID, number, headSHA).Scan(&reviewed); err != nil {
+		WHERE p.repository_id = $1 AND p.number = $2 AND r.head_sha = $3 AND r.status = ANY($4))`,
+		repositoryID, number, headSHA, statuses).Scan(&reviewed); err != nil {
 		return false, fmt.Errorf("store: read reviews of the head: %w", err)
 	}
 	return reviewed, nil

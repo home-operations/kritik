@@ -207,9 +207,7 @@ func keepSimilar(hits []store.SimilarHit, floor float64) []contextpack.Chunk {
 		kept = append(kept, h)
 	}
 	slices.SortStableFunc(kept, func(a, b store.SimilarHit) int { return cmp.Compare(b.Similarity, a.Similarity) })
-	if len(kept) > similarMax {
-		kept = kept[:similarMax]
-	}
+	kept = kept[:min(len(kept), similarMax)]
 	chunks := make([]contextpack.Chunk, 0, len(kept))
 	for _, h := range kept {
 		chunks = append(chunks, h.Chunk)

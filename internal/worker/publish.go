@@ -168,6 +168,9 @@ func (p *publishPhase) writeBack(
 ) (int64, []store.InlinePosted, error) {
 	owner, repo := p.pr.ownerRepo()
 	onForge := alreadyInline(res.Findings, p.prior.findings)
+	if p.settings.Review.InlineComments && len(res.Findings) > 0 {
+		p.markOnForge(ctx, res.Findings, onForge)
+	}
 	for i := range res.Findings {
 		f := &res.Findings[i]
 		f.URL = p.client.FileURL(owner, repo, p.pr.headSHA, f.Path, f.Line, f.EndLine)
@@ -257,6 +260,47 @@ func (p *publishPhase) writeBack(
 		p.approve(ctx, res.Counts())
 	}
 	return commentID, onForge, nil
+}
+
+// markOnForge marks the findings whose inline comment the bot has already
+// posted on the pull request, by the FindingMarker each carries, which the
+// database may not know: an attempt that posted and then died before
+// recording them, or a review whose record failed to write. A forge that
+// cannot be read leaves the database's answer to stand.
+func (p *publishPhase) markOnForge(ctx context.Context, findings []review.Finding, onForge []store.InlinePosted) {
+	owner, repo := p.pr.ownerRepo()
+	login, err := p.client.BotLogin(ctx)
+	if err != nil {
+		p.logger.Warn("inline comments on the forge not checked", "error", err)
+		return
+	}
+	comments, err := p.client.ListInline(ctx, owner, repo, p.pr.number)
+	if err != nil {
+		p.logger.Warn("inline comments on the forge not checked", "error", err)
+		return
+	}
+	posted := markedInline(comments, login)
+	for i, f := range findings {
+		if id, ok := posted[review.Fingerprint(f)]; ok && !onForge[i].Posted {
+			onForge[i] = store.InlinePosted{Posted: true, ID: id}
+		}
+	}
+}
+
+// markedInline maps the fingerprint each of the bot's root inline comments
+// carries a FindingMarker for to the comment's id; a later comment for the
+// same finding wins, as the one a reader sees as current.
+func markedInline(comments []forge.Comment, login string) map[string]int64 {
+	posted := map[string]int64{}
+	for _, c := range comments {
+		if c.InReplyTo != 0 || !strings.EqualFold(c.Author, login) {
+			continue
+		}
+		if fp, ok := review.MarkedFinding(c.Body); ok {
+			posted[fp] = c.ID
+		}
+	}
+	return posted
 }
 
 // priorFindings is the last review's findings as this review's summary

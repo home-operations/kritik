@@ -45,17 +45,9 @@ import (
 	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/store/storetest"
 	"github.com/home-operations/kritik/internal/webhook"
 )
-
-func env(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		t.Skipf("%s not set", key)
-	}
-	return v
-}
 
 const configYAML = `
 providers:
@@ -1009,21 +1001,11 @@ func checkReviewRequest(
 func TestReviewWorkerEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	appStore, err := store.Open(ctx, store.Options{
-		AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: logger,
-	})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(appStore.Close)
-	if err := appStore.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	appStore := storetest.Open(t)
 	if _, err := appStore.EnsureIndexSchema(ctx, "kritik_app", "fake-embed", 8); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
-	runnerStore, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_RUNNER_URL"), Logger: logger})
+	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIK_TEST_RUNNER_URL"), Logger: logger})
 	if err != nil {
 		t.Fatalf("Open runner: %v", err)
 	}
@@ -2368,14 +2350,7 @@ func checkEnqueueReindexSentinels(
 func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	st, err := store.Open(ctx, store.Options{AppURL: env(t, "KRITIK_TEST_APP_URL"), OwnerURL: env(t, "KRITIK_TEST_OWNER_URL"), Logger: logger})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "test-provider-key")
 	t.Setenv("KRITIK_RUNNER_DEADLINE", "60s")

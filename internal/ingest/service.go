@@ -38,6 +38,7 @@ const (
 	reasonNotIndexed   = "not-indexed"
 	reasonFork         = "fork"
 	reasonReviewed     = "reviewed"
+	reasonStale        = "stale"
 )
 
 // The poller's synthetic actions: ActionPoll for an open pull request it
@@ -106,7 +107,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	if !ok {
 		if ev.Action == "closed" {
 			err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
-				return store.ClosePullRequest(ctx, tx, repoID(req, ev.Repository.FullName), pr.Number, pr.Merged, pr.ClosedAt)
+				return store.ClosePullRequest(ctx, tx, repoID(req, ev.Repository.FullName), pr.Number, pr.Merged, pr.ClosedAt, pr.UpdatedAt)
 			})
 			return Outcome{Status: Ignored, Reason: "closed"}, err
 		}
@@ -144,14 +145,19 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		if err != nil {
 			return err
 		}
-		if err := store.UpsertPullRequest(ctx, tx, store.PullRequestRow{
+		applied, err := store.UpsertPullRequest(ctx, tx, store.PullRequestRow{
 			AccountID: req.Account.ID(), RepositoryID: rid, Number: pr.Number, Title: pr.Title, Author: pr.Author,
-			AuthorIsBot: pr.AuthorIsBot, Draft: pr.Draft, Fork: pr.Fork, Merged: pr.Merged, HeadRef: pr.HeadRef, HeadSHA: pr.HeadSHA,
-			BaseRef: pr.BaseRef, URL: pr.URL, Body: pr.Body, OpenedAt: pr.CreatedAt, Labels: labels,
-		}); err != nil {
+			AuthorIsBot: pr.AuthorIsBot, Draft: pr.Draft, Fork: pr.Fork, Merged: pr.Merged, State: pr.State, HeadRef: pr.HeadRef,
+			HeadSHA: pr.HeadSHA, BaseRef: pr.BaseRef, URL: pr.URL, Body: pr.Body, OpenedAt: pr.CreatedAt, UpdatedAt: pr.UpdatedAt,
+			ClosedAt: pr.ClosedAt, Labels: labels,
+		})
+		if err != nil {
 			return err
 		}
 		switch {
+		case !applied:
+			out = Outcome{Status: Skipped, Reason: reasonStale}
+			return nil
 		case fork:
 			out = Outcome{Status: Skipped, Reason: reasonFork}
 			return nil
@@ -159,19 +165,22 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			out = Outcome{Status: Skipped, Reason: ev.Action}
 			return nil
 		}
-		// A poll lists a pull request whenever anything about it moved, a
-		// comment or a label included; only a head no review has seen is
-		// news. The queue's unique key alone would not say so once River
-		// has cleaned the earlier job up.
+		// A head a review has seen is not news: a poll lists a pull request
+		// whenever anything about it moved, a comment or a label included,
+		// and a webhook event may be delivered again, or reopen a pull
+		// request whose head stands reviewed. The queue's unique key alone
+		// would not say so once River has cleaned the earlier job up.
+		statuses := store.ReviewedStatuses
 		if ev.Action == ActionPoll {
-			reviewed, err := store.HeadReviewed(ctx, tx, rid, pr.Number, pr.HeadSHA)
-			if err != nil {
-				return err
-			}
-			if reviewed {
-				out = Outcome{Status: Skipped, Reason: reasonReviewed}
-				return nil
-			}
+			statuses = store.SettledStatuses
+		}
+		reviewed, err := store.HeadReviewed(ctx, tx, rid, pr.Number, pr.HeadSHA, statuses)
+		if err != nil {
+			return err
+		}
+		if reviewed {
+			out = Outcome{Status: Skipped, Reason: reasonReviewed}
+			return nil
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
 			AccountID: req.Account.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: ev.Action,

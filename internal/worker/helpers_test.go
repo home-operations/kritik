@@ -8,42 +8,78 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-func TestSmallHelpers(t *testing.T) {
-	if errText(nil) != "" || errText(errors.New("x")) != "x" {
-		t.Fatal("errText")
+func TestErrText(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "nil is empty", err: nil, want: ""},
+		{name: "an error is its message", err: errors.New("x"), want: "x"},
 	}
-	if embedText(store.StagedChunk{Path: "a/b.go", Symbol: "Build", Kind: "function", Text: "func Build() {}"}) != "a/b.go function Build\nfunc Build() {}" {
-		t.Fatal("embedText with a symbol")
-	}
-	if embedText(store.StagedChunk{Path: "values.yaml", Text: "a: 1"}) != "values.yaml\na: 1" {
-		t.Fatal("embedText without a symbol")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := errText(tt.err); got != tt.want {
+				t.Errorf("errText(%v) = %q, want %q", tt.err, got, tt.want)
+			}
+		})
 	}
 }
 
-func TestRunOutcomeAndMention(t *testing.T) {
-	cases := []struct {
+func TestEmbedText(t *testing.T) {
+	tests := []struct {
+		name  string
+		chunk store.StagedChunk
+		want  string
+	}{
+		{name: "with a symbol", chunk: store.StagedChunk{Path: "a/b.go", Symbol: "Build", Kind: "function", Text: "func Build() {}"},
+			want: "a/b.go function Build\nfunc Build() {}"},
+		{name: "without a symbol", chunk: store.StagedChunk{Path: "values.yaml", Text: "a: 1"}, want: "values.yaml\na: 1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := embedText(tt.chunk); got != tt.want {
+				t.Errorf("embedText(%+v) = %q, want %q", tt.chunk, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunOutcome(t *testing.T) {
+	tests := []struct {
+		name string
 		res  executor.Result
 		want string
 	}{
-		{executor.Result{}, "success"},
-		{executor.Result{Err: errors.New("x")}, "failed"},
-		{executor.Result{Err: errors.New("x"), DeadlineExceeded: true}, "deadline"},
+		{name: "no error", res: executor.Result{}, want: "success"},
+		{name: "an error", res: executor.Result{Err: errors.New("x")}, want: "failed"},
+		{name: "a deadline", res: executor.Result{Err: errors.New("x"), DeadlineExceeded: true}, want: "deadline"},
 	}
-	for _, c := range cases {
-		if got := runOutcome(c.res); got != c.want {
-			t.Errorf("runOutcome(%+v) = %s, want %s", c.res, got, c.want)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := runOutcome(tt.res); got != tt.want {
+				t.Errorf("runOutcome(%+v) = %s, want %s", tt.res, got, tt.want)
+			}
+		})
 	}
-	mentions := map[string]bool{
-		"@kritik please":     true,
-		"hey @Kritik, why?":  true,
-		"email me@kritik.io": false,
-		"@kritikbot no":      false,
-		"no mention":         false,
+}
+
+func TestMentioned(t *testing.T) {
+	tests := []struct {
+		body string
+		want bool
+	}{
+		{"@kritik please", true},
+		{"hey @Kritik, why?", true},
+		{"email me@kritik.io", false},
+		{"@kritikbot no", false},
+		{"no mention", false},
 	}
-	for body, want := range mentions {
-		if got := mentioned(body, "kritik"); got != want {
-			t.Errorf("mentioned(%q) = %v, want %v", body, got, want)
-		}
+	for _, tt := range tests {
+		t.Run(tt.body, func(t *testing.T) {
+			if got := mentioned(tt.body, "kritik"); got != tt.want {
+				t.Errorf("mentioned(%q) = %v, want %v", tt.body, got, tt.want)
+			}
+		})
 	}
 }

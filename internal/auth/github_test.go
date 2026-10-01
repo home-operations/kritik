@@ -84,3 +84,52 @@ func TestGitHubMappingVars(t *testing.T) {
 		t.Fatalf("vars = %v", vars)
 	}
 }
+
+func TestGitHubIdentity(t *testing.T) {
+	const user = `{"id":7,"login":"alice","name":"Alice","email":"profile@example.com","avatar_url":"https://avatars.example.com/7"}`
+	fromProfile := Identity{Subject: "7", Login: "alice", Email: "profile@example.com", DisplayName: "Alice", AvatarURL: "https://avatars.example.com/7"}
+	verified := fromProfile
+	verified.Email, verified.EmailVerified = "alice@example.com", true
+	tests := []struct {
+		name         string
+		userStatus   int
+		user         string
+		emailsStatus int
+		emails       string
+		want         Identity
+		wantErr      bool
+	}{
+		{name: "verified primary email", userStatus: 200, user: user, emailsStatus: 200,
+			emails: `[{"email":"alice@example.com","primary":true,"verified":true}]`, want: verified},
+		{name: "no scope to list addresses", userStatus: 200, user: user, emailsStatus: 404, want: fromProfile},
+		{name: "no id", userStatus: 200, user: `{"id":0,"login":"alice"}`, emailsStatus: 200, emails: `[]`, wantErr: true},
+		{name: "no login", userStatus: 200, user: `{"id":7}`, emailsStatus: 200, emails: `[]`, wantErr: true},
+		{name: "profile unavailable", userStatus: 502, emailsStatus: 200, emails: `[]`, wantErr: true},
+		{name: "unreadable addresses", userStatus: 200, user: user, emailsStatus: 200, emails: `{}`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer tok" {
+					t.Errorf("request %s with %q", r.URL.Path, r.Header.Get("Authorization"))
+				}
+				switch r.URL.Path {
+				case "/user":
+					w.WriteHeader(tt.userStatus)
+					_, _ = w.Write([]byte(tt.user))
+				case "/user/emails":
+					w.WriteHeader(tt.emailsStatus)
+					_, _ = w.Write([]byte(tt.emails))
+				default:
+					t.Errorf("unexpected request %s", r.URL)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer srv.Close()
+			got, err := githubAPI{}.identity(context.Background(), apiClient{base: srv.URL, token: "tok", client: srv.Client()})
+			if tt.wantErr != (err != nil) || (err != nil && !errors.Is(err, ErrForgeAPI)) || got != tt.want {
+				t.Fatalf("identity = %+v, %v; want %+v, error %v", got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}

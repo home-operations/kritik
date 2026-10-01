@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -111,17 +110,6 @@ const (
 	listenBackoffMax = 30 * time.Second
 )
 
-// listenBackoff returns how long to wait before reconnect attempt number
-// attempt (0-based). It uses "equal jitter": half of the exponential delay
-// is guaranteed, and a random amount up to the other half is added, so the
-// wait is never near-zero but also never fully predictable.
-func listenBackoff(attempt int) time.Duration {
-	shift := min(attempt, 5) // 1s<<5 == 32s already exceeds listenBackoffMax; avoid shifting further
-	delay := min(listenBackoffMin<<shift, listenBackoffMax)
-	half := delay / 2
-	return half + time.Duration(rand.Int64N(int64(half)+1))
-}
-
 // dropWarner logs that the listen buffer is full and notifications are
 // being dropped, at most once per second, summarizing how many were
 // dropped since the last warning. It is only ever called from Listen's
@@ -196,7 +184,7 @@ func (s *Store) Listen(ctx context.Context, handlers ListenHandlers) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(listenBackoff(attempt)):
+		case <-time.After(Backoff(attempt, listenBackoffMin, listenBackoffMax)):
 		}
 		attempt++
 	}

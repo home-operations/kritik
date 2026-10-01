@@ -72,6 +72,10 @@ func severityCounts(c store.SeverityCounts) SeverityCounts {
 	return SeverityCounts{Blocking: c.Blocking, Important: c.Important, Nit: c.Nit}
 }
 
+func pullRef(p store.PullRef) PullRef {
+	return PullRef{Repository: p.Repository, Number: p.Number, Title: p.Title, URL: p.URL}
+}
+
 // window reads ?from= and ?to=: the last 30 days unless given.
 func (s *Server) window(r *http.Request) (time.Time, time.Time, error) {
 	q := r.URL.Query()

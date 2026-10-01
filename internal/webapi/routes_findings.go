@@ -42,7 +42,7 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request, t *account
 	for i, a := range rows {
 		items[i] = AccountFinding{
 			Finding: finding(a.FindingRow), ReviewID: a.ReviewID, Status: a.Status, FirstSeenAt: a.FirstSeenAt, LastSeenAt: a.LastSeenAt,
-			Pull: PullRef{Repository: a.PullRequest.Repository, Number: a.PullRequest.Number, Title: a.PullRequest.Title, URL: a.PullRequest.URL},
+			Pull: pullRef(a.PullRequest),
 		}
 	}
 	writeJSON(w, http.StatusOK, newPage(items, next))

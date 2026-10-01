@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -71,10 +72,7 @@ func grant(ctx context.Context, file *configfile.File, s *configfile.SignIn, id 
 				accounts[a] = true
 			}
 		}
-		for a := range accounts {
-			g.Accounts = append(g.Accounts, a)
-		}
-		slices.Sort(g.Accounts)
+		g.Accounts = slices.Sorted(maps.Keys(accounts))
 		switch {
 		case len(g.Accounts) > 0:
 		case s.Type() == configfile.SignInOIDC && s.MembersByDefault():

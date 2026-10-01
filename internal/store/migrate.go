@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"slices"
@@ -24,7 +25,7 @@ var migrationFS embed.FS
 // GRANT is idempotent.
 func (s *Store) Migrate(ctx context.Context, appRole, runnerRole string) error {
 	if s.owner == nil {
-		return fmt.Errorf("store: migrate needs the owner DSN")
+		return errors.New("store: migrate needs the owner DSN")
 	}
 	migrator, err := rivermigrate.New(riverpgxv5.New(s.owner), nil)
 	if err != nil {

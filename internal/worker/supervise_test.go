@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/home-operations/kritik/internal/executor"
@@ -72,43 +73,49 @@ func TestSupervise(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			state := &fakeState{head: head}
-			s := supervision{
-				every: 5 * time.Millisecond, stale: 90 * time.Second, heartbeat: state.heartbeat,
-				logger: slog.New(slog.DiscardHandler),
-			}
-			if tt.checkHead {
-				s.head, s.want = state.headSHA, head
-			}
-			if b, ok := tt.exec.(*blockingExecutor); ok {
+			synctest.Test(t, func(t *testing.T) {
+				state := &fakeState{head: head}
+				s := supervision{
+					every: 5 * time.Millisecond, stale: 90 * time.Second, heartbeat: state.heartbeat,
+					logger: slog.New(slog.DiscardHandler),
+				}
+				if tt.checkHead {
+					s.head, s.want = state.headSHA, head
+				}
+				done := make(chan struct{})
+				var res executor.Result
+				var cause error
 				go func() {
+					res, cause = supervise(t.Context(), s, tt.exec, executor.Spec{})
+					close(done)
+				}()
+				if b, ok := tt.exec.(*blockingExecutor); ok {
 					<-b.started
 					// A fresh heartbeat before start must not end the run.
 					time.Sleep(20 * time.Millisecond)
+					synctest.Wait()
+					select {
+					case <-done:
+						t.Fatalf("the run ended before anything changed, cause = %v", cause)
+					default:
+					}
 					state.set(tt.change)
-				}()
-			}
-			done := make(chan struct{})
-			var res executor.Result
-			var cause error
-			go func() {
-				res, cause = supervise(t.Context(), s, tt.exec, executor.Spec{})
-				close(done)
-			}()
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				t.Fatal("supervise did not return")
-			}
-			if !errors.Is(cause, tt.wantCause) {
-				t.Fatalf("cause = %v, want %v", cause, tt.wantCause)
-			}
-			if tt.wantCause == nil && res.Err != nil {
-				t.Fatalf("result err = %v", res.Err)
-			}
-			if tt.wantCause != nil && !errors.Is(res.Err, tt.wantCause) {
-				t.Fatalf("the executor must see the cause, got %v", res.Err)
-			}
+				}
+				select {
+				case <-done:
+				case <-time.After(5 * time.Second):
+					t.Fatal("supervise did not return")
+				}
+				if !errors.Is(cause, tt.wantCause) {
+					t.Fatalf("cause = %v, want %v", cause, tt.wantCause)
+				}
+				if tt.wantCause == nil && res.Err != nil {
+					t.Fatalf("result err = %v", res.Err)
+				}
+				if tt.wantCause != nil && !errors.Is(res.Err, tt.wantCause) {
+					t.Fatalf("the executor must see the cause, got %v", res.Err)
+				}
+			})
 		})
 	}
 }

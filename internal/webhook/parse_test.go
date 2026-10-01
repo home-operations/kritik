@@ -13,7 +13,7 @@ const ghPullRequest = `{
   "number": 42,
   "pull_request": {
     "number": 42, "title": "feat: thing", "body": "a body", "state": "open", "draft": false, "merged": false,
-    "html_url": "https://github.com/onedr0p/home-ops/pull/42", "created_at": "2026-09-24T10:00:00Z",
+    "html_url": "https://github.com/onedr0p/home-ops/pull/42", "created_at": "2026-09-24T10:00:00Z", "updated_at": "2026-09-24T11:30:00Z",
     "user": {"login": "renovate[bot]", "type": "Bot"},
     "head": {"ref": "renovate/x", "sha": "aaa111", "repo": {"full_name": "onedr0p/home-ops"}},
     "base": {"ref": "main", "sha": "bbb222", "repo": {"full_name": "onedr0p/home-ops"}},
@@ -40,7 +40,8 @@ func TestParseGitHubPullRequest(t *testing.T) {
 		t.Fatalf("event = %+v", ev)
 	}
 	pr := ev.PullRequest
-	if pr.Number != 42 || pr.HeadSHA != "aaa111" || pr.BaseRef != "main" || !pr.AuthorIsBot || pr.Fork {
+	if pr.Number != 42 || pr.HeadSHA != "aaa111" || pr.BaseRef != "main" || !pr.AuthorIsBot || pr.Fork ||
+		!pr.UpdatedAt.Equal(time.Date(2026, 9, 24, 11, 30, 0, 0, time.UTC)) {
 		t.Fatalf("pr = %+v", pr)
 	}
 	if ev.Repository.FullName != "onedr0p/home-ops" || ev.Repository.DefaultBranch != "main" {

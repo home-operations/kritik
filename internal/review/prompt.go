@@ -1,6 +1,7 @@
 package review
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
 	"strings"
@@ -244,10 +245,7 @@ func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 	writeDescription(&b, in.Body)
 	b.WriteString("\nDiff (unified, base to head):\n\n")
 
-	budget := in.BudgetTokens * charsPerToken
-	if budget <= 0 {
-		budget = DefaultBudgetTokens * charsPerToken
-	}
+	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
 	room := budget - b.Len() - 512 // headroom for the omission note
 	diff, omitted := fitDiff(in.Diff, room)
 	b.WriteString(diff)

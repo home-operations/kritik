@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 	"unicode/utf8"
 
@@ -138,30 +139,35 @@ func TestSecretsMask(t *testing.T) {
 }
 
 func TestHeartbeatBeatsOnInterval(t *testing.T) {
-	var beats atomic.Int32
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() {
-		heartbeat(ctx, 5*time.Millisecond, func(context.Context) error {
-			beats.Add(1)
-			return nil
-		}, slog.New(slog.DiscardHandler))
-		close(done)
-	}()
-	deadline := time.Now().Add(2 * time.Second)
-	for beats.Load() < 3 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	cancel()
-	<-done
-	if n := beats.Load(); n < 3 {
-		t.Fatalf("beats = %d, want at least 3 (one immediately, then on the interval)", n)
-	}
-	after := beats.Load()
-	time.Sleep(20 * time.Millisecond)
-	if beats.Load() != after {
-		t.Fatal("heartbeat kept beating after its context ended")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		const interval = time.Second
+		var beats atomic.Int32
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() {
+			heartbeat(ctx, interval, func(context.Context) error {
+				beats.Add(1)
+				return nil
+			}, slog.New(slog.DiscardHandler))
+			close(done)
+		}()
+		synctest.Wait()
+		if n := beats.Load(); n != 1 {
+			t.Fatalf("beats = %d at start, want 1 (one immediately)", n)
+		}
+		time.Sleep(3 * interval)
+		synctest.Wait()
+		if n := beats.Load(); n != 4 {
+			t.Fatalf("beats = %d after 3 intervals, want 4", n)
+		}
+		cancel()
+		<-done
+		time.Sleep(3 * interval)
+		synctest.Wait()
+		if n := beats.Load(); n != 4 {
+			t.Fatalf("beats = %d after cancel, want 4: heartbeat kept beating after its context ended", n)
+		}
+	})
 }
 
 func TestPromptTrim(t *testing.T) {

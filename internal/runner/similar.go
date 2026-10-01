@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -110,7 +111,7 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 		}
 	}
 	if strings.TrimSpace(req.Query) == "" {
-		return "", fmt.Errorf("agent: search_code: query is empty")
+		return "", errors.New("agent: search_code: query is empty")
 	}
 	if s.calls >= searchCalls {
 		return "", fmt.Errorf("agent: search_code: the limit of %d searches per review is reached", searchCalls)
@@ -136,16 +137,7 @@ func (s *searchTool) Run(ctx context.Context, input json.RawMessage) (string, er
 		}
 		fmt.Fprintf(&b, " %s\n%s", c.Ref, c.Text)
 	}
-	return truncate(b.String(), s.maxBytes), nil
-}
-
-// truncate caps s at limit bytes, as the agent's own tools do.
-func truncate(s string, limit int) string {
-	if limit <= 0 || len(s) <= limit {
-		return s
-	}
-	kept := textcut.Prefix(s, limit)
-	return kept + fmt.Sprintf("\n[truncated %d bytes]", len(s)-len(kept))
+	return textcut.Truncate(b.String(), s.maxBytes), nil
 }
 
 var _ agent.Tool = (*searchTool)(nil)

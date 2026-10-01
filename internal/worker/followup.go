@@ -10,6 +10,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -72,7 +73,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		return err
 	}
 	f := &followUp{w: w, file: file, account: account, settings: file.Settings(account, pr.repository), client: client, pr: pr,
-		comment: comment, owner: owner, repo: repo, botLogin: login, jobID: job.ID, logger: logger}
+		comment: comment, owner: owner, repo: repo, botLogin: login, jobID: job.ID, attempt: job.Attempt, logger: logger}
 	if done, err := f.alreadyAnswered(ctx); err != nil || done {
 		return err
 	}
@@ -104,11 +105,16 @@ type followUp struct {
 	repo      string
 	botLogin  string
 	jobID     int64
-	logger    *slog.Logger
+	// attempt is the job's, 1 the first time.
+	attempt int
+	logger  *slog.Logger
 }
 
 // alreadyAnswered guards a retried job: once a reply is on the forge the
-// mention is done, whatever happened after posting.
+// mention is done, whatever happened after posting. The record says so
+// first; on a retry, the forge is asked too, by the FollowUpMarker the
+// reply carries, since an attempt killed between posting and recording
+// left none.
 func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	var status store.FollowupStatus
 	var replyID *int64
@@ -116,17 +122,53 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 		return tx.QueryRow(ctx, `SELECT status, reply_comment_id FROM followups WHERE pull_request_id = $1 AND comment_id = $2`,
 			f.pr.id, f.comment.ID).Scan(&status, &replyID)
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return false, fmt.Errorf("worker: read follow-up: %w", err)
 	}
 	if status == store.FollowupAnswered || status == store.FollowupLimited || replyID != nil {
 		f.logger.Info("follow-up already handled", "status", status)
 		return true, nil
 	}
-	return false, nil
+	if f.attempt <= 1 {
+		return false, nil
+	}
+	id, err := f.repliedOnForge(ctx)
+	if err != nil || id == 0 {
+		return false, err
+	}
+	f.logger.Info("follow-up already answered on the forge", "reply", id)
+	return true, f.record(ctx, store.FollowupAnswered, "", id, "")
+}
+
+// repliedOnForge returns the id of the bot's reply to the comment, by its
+// FollowUpMarker, where the reply would be posted, or 0.
+func (f *followUp) repliedOnForge(ctx context.Context) (int64, error) {
+	var comments []forge.Comment
+	var err error
+	if f.comment.Inline {
+		comments, err = f.client.ListInline(ctx, f.owner, f.repo, f.pr.number)
+	} else {
+		comments, err = f.client.ListConversation(ctx, f.owner, f.repo, f.pr.number)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return markedReply(comments, f.botLogin, f.comment.ID), nil
+}
+
+// markedReply is the id of the comment by login whose FollowUpMarker names
+// commentID, or 0.
+func markedReply(comments []forge.Comment, login string, commentID int64) int64 {
+	want := strconv.FormatInt(commentID, 10)
+	for _, c := range comments {
+		if !strings.EqualFold(c.Author, login) {
+			continue
+		}
+		if id, ok := review.MarkedFollowUp(c.Body); ok && id == want {
+			return c.ID
+		}
+	}
+	return 0
 }
 
 // run qualifies the mention (ADR-0002 §2.7), gathers the thread and the review's
@@ -496,9 +538,10 @@ func (f *followUp) complete(ctx context.Context, system, msg, reviewID string) (
 	return resp, err
 }
 
-// reply posts body where the mention was made: in its inline thread, or on
-// the conversation.
+// reply posts body, led by its FollowUpMarker, where the mention was made:
+// in its inline thread, or on the conversation.
 func (f *followUp) reply(ctx context.Context, body string) (int64, error) {
+	body = review.FollowUpMarker(f.comment.ID) + "\n" + body
 	if f.comment.Inline {
 		return f.client.ReplyInline(ctx, f.owner, f.repo, f.pr.number, f.comment, body)
 	}

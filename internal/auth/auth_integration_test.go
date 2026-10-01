@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -20,16 +19,8 @@ import (
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritik/internal/store/storetest"
 )
-
-func testEnv(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		t.Skipf("%s not set", key)
-	}
-	return v
-}
 
 func randomHex(t *testing.T) string {
 	t.Helper()
@@ -88,23 +79,14 @@ type authEnv struct {
 func newAuthEnv(t *testing.T) *authEnv {
 	t.Helper()
 	ctx := context.Background()
-	st, err := store.Open(ctx, store.Options{
-		AppURL: testEnv(t, "KRITIK_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIK_TEST_OWNER_URL"),
-		Logger: slog.New(slog.DiscardHandler),
-	})
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx, "kritik_app", "kritik_runner"); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	st := storetest.Open(t)
 	e := &authEnv{
 		t: t, st: st, oidc: newFakeOIDC(t), oidc2: newFakeOIDC(t), gh: newFakeGitHub(t),
 		now: time.Now(), accountID: map[string]string{},
 	}
 	t.Setenv("KRITIK_TEST_TOKEN", fakeClientSecret)
 	t.Setenv("KRITIK_TEST_ADMIN_PASSWORD", adminTestPassword)
+	var err error
 	e.file, err = configfiletest.Parse(t, fmt.Sprintf(authConfigYAML, e.oidc.srv.URL))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

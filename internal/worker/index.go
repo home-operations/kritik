@@ -184,9 +184,6 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	logger.Info("index completed", "mode", mode, "chunks", n)
 	w.Metrics.IndexRun(account.Key(), mode, string(store.IndexCompleted), n)
-	if err := w.finish(ctx, args.AccountID, runID, store.IndexCompleted, n, ""); err != nil {
-		return err
-	}
 	// A push while this ran was absorbed into this job: if the branch has
 	// moved, index again at once, as a snooze that is not an attempt. A
 	// forced rebuild leaves the new tip to the update job the push queued.
@@ -242,10 +239,11 @@ func (w *Index) finish(ctx context.Context, accountID, runID string, status stor
 
 // embed turns the staged chunks into index_chunks rows under the run, a
 // batch at a time with no transaction open while the embedder works, then
-// swaps them in with one short transaction, so a review never sees a
-// half-built index: a full build makes its run the active generation, and
-// an incremental step moves its chunks into the active generation, in place
-// of the changed paths' chunks.
+// swaps them in and ends the run as completed with one short transaction,
+// so a review never sees a half-built index and a retry never finds an
+// active generation still running: a full build makes its run the active
+// generation, and an incremental step moves its chunks into the active
+// generation, in place of the changed paths' chunks.
 func (w *Index) embed(
 	ctx context.Context, args jobs.IndexArgs, account *configfile.Account, embedder model.Embedder, embedModel string,
 	commit, runID, runnerRunID string, active *store.Generation, settings configfile.Settings, jobID int64,
@@ -312,6 +310,9 @@ func (w *Index) embed(
 			}
 		}
 		if err := store.ClearIndexStaging(ctx, tx, runID, runnerRunID); err != nil {
+			return err
+		}
+		if err := store.FinishIndexRun(ctx, tx, runID, store.IndexCompleted, total, ""); err != nil {
 			return err
 		}
 		return store.InsertUsage(ctx, tx, store.Usage{

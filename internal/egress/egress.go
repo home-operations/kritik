@@ -152,8 +152,7 @@ func tunnel(client net.Conn, buffered io.Reader, upstream net.Conn) {
 	}
 	touch()
 	var wg sync.WaitGroup
-	copy := func(dst io.Writer, src io.Reader) {
-		defer wg.Done()
+	pipe := func(dst io.Writer, src io.Reader) {
 		defer stop()
 		buf := make([]byte, 32<<10)
 		for {
@@ -169,9 +168,8 @@ func tunnel(client net.Conn, buffered io.Reader, upstream net.Conn) {
 			}
 		}
 	}
-	wg.Add(2)
-	go copy(upstream, buffered)
-	go copy(client, upstream)
+	wg.Go(func() { pipe(upstream, buffered) })
+	wg.Go(func() { pipe(client, upstream) })
 	wg.Wait()
 }
 
