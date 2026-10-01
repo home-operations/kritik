@@ -713,3 +713,60 @@ func TestRecordUnsigned(t *testing.T) {
 		t.Fatalf("deliveries %+v then %+v; want only the unsigned time set", before, after)
 	}
 }
+
+// TestDispatchRecordsEdits: an edit, a label change or a draft conversion
+// updates what kritika holds of the pull request, past the filter, and
+// queues no review.
+func TestDispatchRecordsEdits(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	pr := &webhook.PullRequest{Number: 77, Title: "bump x (1.0 ➔ 1.1)", Body: "old", Author: "renovate[bot]", AuthorIsBot: true,
+		State: "open", HeadRef: "renovate/x", HeadSHA: "e01", BaseRef: "main"}
+	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "synchronize", Repository: repo("onedr0p/home-ops"), PullRequest: pr})); err != nil || out.Status != Enqueued {
+		t.Fatalf("synchronize = %+v, %v", out, err)
+	}
+	row := func() (title, body string, draft bool, labels string, jobs int) {
+		t.Helper()
+		err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			if err := tx.QueryRow(ctx, `SELECT title, body, draft, labels::text FROM pull_requests WHERE number = 77`).Scan(&title, &body, &draft, &labels); err != nil {
+				return err
+			}
+			return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'review' AND args->>'number' = '77'`).Scan(&jobs)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return title, body, draft, labels, jobs
+	}
+	edited := *pr
+	edited.Title, edited.Body = "bump x (1.0 ➔ 1.2)", "new"
+	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "edited", Repository: repo("onedr0p/home-ops"), PullRequest: &edited})); err != nil || out != (Outcome{Status: Skipped, Reason: "edited"}) {
+		t.Fatalf("edited = %+v, %v; want skipped as edited", out, err)
+	}
+	if title, body, _, _, jobs := row(); title != edited.Title || body != "new" || jobs != 1 {
+		t.Fatalf("after edited: title %q body %q jobs %d; want the new title and body and the one job", title, body, jobs)
+	}
+	labeled := edited
+	labeled.Labels = []webhook.Label{{Name: "skip-review", Color: "000000"}}
+	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "labeled", Repository: repo("onedr0p/home-ops"), PullRequest: &labeled})); err != nil || out.Status != Skipped || out.Reason != "labeled" {
+		t.Fatalf("labeled = %+v, %v", out, err)
+	}
+	if _, _, _, labels, _ := row(); !strings.Contains(labels, "skip-review") {
+		t.Fatalf("after labeled: labels %s; want skip-review recorded", labels)
+	}
+	// The repository's filter skips drafts; the conversion is recorded
+	// all the same, so the filter has the draft state to judge next time.
+	draft := labeled
+	draft.Draft = true
+	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "converted_to_draft", Repository: repo("onedr0p/home-ops"), PullRequest: &draft})); err != nil || out.Status != Skipped || out.Reason != "converted_to_draft" {
+		t.Fatalf("converted_to_draft = %+v, %v", out, err)
+	}
+	if _, _, isDraft, _, jobs := row(); !isDraft || jobs != 1 {
+		t.Fatalf("after converted_to_draft: draft %v jobs %d; want the draft recorded and no new job", isDraft, jobs)
+	}
+	// A disabled repository records nothing, edits included.
+	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "edited", Repository: repo("onedr0p/disabled"), PullRequest: &edited})); err != nil || out.Reason != reasonDisabled {
+		t.Fatalf("edited on a disabled repository = %+v, %v", out, err)
+	}
+}
