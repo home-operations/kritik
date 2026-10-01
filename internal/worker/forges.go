@@ -3,22 +3,35 @@ package worker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/forge/github"
+	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
 )
 
 // BuildForge constructs the forge client for a connection from its
 // credentials in the configuration file, for repositories of repo's owner.
-func BuildForge(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
+// Rate limits the forge answers with are logged and counted on m, which
+// may be nil.
+func BuildForge(ctx context.Context, in *configfile.Connection, repo string, m *metrics.Metrics) (forge.Client, error) {
 	switch in.Forge {
 	case configfile.ForgeGitHub:
 		app, err := github.NewApp(in.App.ClientIDValue(), in.App.PrivateKeyValue().Value(), "")
 		if err != nil {
 			return nil, err
+		}
+		app.OnRateLimit = func(wait time.Duration, waited bool) {
+			outcome := "waited"
+			if !waited {
+				outcome = "refused"
+			}
+			slog.Warn("github rate limit hit", "connection", in.Name, "wait", wait.Round(time.Second), "outcome", outcome)
+			m.ForgeRateLimited(in.Name, outcome)
 		}
 		// An App is installed, and mints tokens, once per account: the
 		// installation that sees repo is its owner's.

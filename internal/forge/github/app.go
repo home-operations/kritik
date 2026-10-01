@@ -24,6 +24,14 @@ type App struct {
 	clientID string
 	apiBase  string // "" for api.github.com
 	apps     *gh.Client
+	// limited is the transport under every client of the App, which waits
+	// out a rate limit that resets soon.
+	limited *rateLimitTransport
+
+	// OnRateLimit, when set, is told of every response GitHub refused for a
+	// rate limit: the wait it asked for, and whether the request waited it
+	// out and was sent again. Set it before the App is used.
+	OnRateLimit func(wait time.Duration, waited bool)
 
 	// tokens holds one InstallationTokens per installation, so every
 	// client and listing of an installation shares its token instead of
@@ -41,12 +49,19 @@ func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
 		return nil, fmt.Errorf("github: parse App private key: %w", err)
 	}
 	a := &App{clientID: clientID, apiBase: apiBase}
-	client, err := newClient(&appJWTTransport{base: http.DefaultTransport, clientID: clientID, key: key}, apiBase)
+	a.limited = &rateLimitTransport{base: http.DefaultTransport, maxWait: rateLimitMaxWait, observe: a.rateLimited}
+	client, err := newClient(&appJWTTransport{base: a.limited, clientID: clientID, key: key}, apiBase)
 	if err != nil {
 		return nil, err
 	}
 	a.apps = client
 	return a, nil
+}
+
+func (a *App) rateLimited(wait time.Duration, waited bool) {
+	if a.OnRateLimit != nil {
+		a.OnRateLimit(wait, waited)
+	}
 }
 
 // Slug returns the App's URL slug, which names the bot user its comments
@@ -190,7 +205,7 @@ func (a *App) Uninstall(ctx context.Context, id int64) error {
 
 // Client returns a go-github client authenticated as the installation.
 func (a *App) Client(tokens *InstallationTokens) (*gh.Client, error) {
-	return newClient(&installTransport{base: http.DefaultTransport, tokens: tokens}, a.apiBase)
+	return newClient(&installTransport{base: a.limited, tokens: tokens}, a.apiBase)
 }
 
 func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
