@@ -382,3 +382,25 @@ func TestNewOpenAIRejects(t *testing.T) {
 		})
 	}
 }
+
+// TestOpenAIOpenRouterCaching: an OpenRouter request asks for automatic
+// prompt caching and usage accounting at the top level; a plain OpenAI
+// request, whose API rejects unknown fields, sends neither.
+func TestOpenAIOpenRouterCaching(t *testing.T) {
+	body := chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", plainUsage, "")
+	for _, openRouter := range []bool{true, false} {
+		srv, got := fakeProvider(t, http.StatusOK, body)
+		c := newTestOpenAI(t, srv, openRouter, nil)
+		if _, err := c.Step(t.Context(), StepRequest{Model: "acme/large", Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatalf("Step: %v", err)
+		}
+		_, hasCache := got.body["cache_control"]
+		_, hasUsage := got.body["usage"]
+		if hasCache != openRouter || hasUsage != openRouter {
+			t.Fatalf("openRouter %v: cache_control present %v, usage present %v", openRouter, hasCache, hasUsage)
+		}
+		if openRouter && field(got.body, "cache_control", "type") != "ephemeral" {
+			t.Fatalf("cache_control = %v", got.body["cache_control"])
+		}
+	}
+}
