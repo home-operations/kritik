@@ -240,7 +240,7 @@
         },
         "transcriptRetention": {
           "default": "",
-          "description": "How long an agentic review's transcript is kept, at least 24h (KRITIK_TRANSCRIPT_RETENTION, Go duration). Empty is kritik's default, 720h.",
+          "description": "How long a review's transcript is kept, at least 24h (KRITIK_TRANSCRIPT_RETENTION, Go duration). Empty is kritik's default, 720h.",
           "title": "transcriptRetention",
           "type": "string"
         }

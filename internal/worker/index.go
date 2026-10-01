@@ -27,12 +27,6 @@ import (
 // embedBatch is how many staged chunks are embedded and inserted at once.
 const embedBatch = 128
 
-// Index modes, as index_runs and index_packs spell them.
-const (
-	modeFull        = "full"
-	modeIncremental = "incremental"
-)
-
 // Index works the index queue: one job builds or advances a repository's
 // embedding index to a commit. The runner Job chunks the tree; this worker
 // embeds the chunks and swaps or advances the active generation.
@@ -50,18 +44,6 @@ type Index struct {
 	batch int
 }
 
-type indexRepo struct {
-	name, defaultBranch string
-	enabled             bool
-	activeRun           string
-	traits              configfile.RepoTraits
-}
-
-type activeGeneration struct {
-	id, commit, model string
-	dims              int
-}
-
 // Work implements river.Worker.
 func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error {
 	args := job.Args
@@ -74,33 +56,40 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	if err != nil {
 		return err
 	}
-	repo, err := w.loadRepo(ctx, args)
+	var repo store.IndexRepo
+	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
+		var err error
+		repo, err = store.FindIndexRepo(ctx, tx, args.RepositoryID)
+		return err
+	})
+	if errors.Is(err, store.ErrNotFound) {
+		return river.JobCancel(fmt.Errorf("worker: repository %s is unknown", args.RepositoryID))
+	}
 	if err != nil {
 		return err
 	}
-	logger := w.Logger.With("account", account.Key(), "repository", repo.name, "trigger", args.Trigger)
-	settings := file.Settings(account, repo.name)
-	if !repo.enabled || !file.Runs(account, repo.name, repo.traits) {
+	logger := w.Logger.With("account", account.Key(), "repository", repo.Name, "trigger", args.Trigger)
+	settings := file.Settings(account, repo.Name)
+	if !repo.Enabled || !file.Runs(account, repo.Name, repo.Traits) {
 		logger.Info("index skipped, repository disabled")
 		return nil
 	}
-	client, err := w.client(ctx, file, account, repo.name)
+	client, err := w.client(ctx, file, account, repo.Name)
 	if err != nil {
 		return err
 	}
-	owner, name, _ := strings.Cut(repo.name, "/")
+	owner, name, _ := strings.Cut(repo.Name, "/")
 	// The job indexes the tip, not the commit of the push that queued it:
 	// pushes while it waited were absorbed into it.
-	commit, branch, err := client.BranchTip(ctx, owner, name, repo.defaultBranch)
+	commit, branch, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch)
 	if err != nil {
 		return err
 	}
-	if repo.defaultBranch == "" {
+	if repo.DefaultBranch == "" {
 		// Best effort: the run has the branch either way, and the next one
 		// looks it up again until this lands.
 		err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `UPDATE repositories SET default_branch = $2 WHERE id = $1 AND default_branch = ''`, args.RepositoryID, branch)
-			return err
+			return store.RecordDefaultBranch(ctx, tx, args.RepositoryID, branch)
 		})
 		if err != nil {
 			logger.Warn("default branch not recorded", "branch", branch, "error", err)
@@ -108,17 +97,17 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	logger = logger.With("commit", review.ShortSHA(commit))
 
-	active, err := w.activeGeneration(ctx, args.AccountID, repo.activeRun)
+	active, err := w.activeGeneration(ctx, args.AccountID, repo.ActiveRun)
 	if err != nil {
 		return err
 	}
-	mode, base := modeFull, ""
-	if !args.Full && active != nil && active.model == emb.Model && active.dims == emb.Dims {
-		if active.commit == commit {
+	mode, base := store.IndexModeFull, ""
+	if !args.Full && active != nil && active.Model == emb.Model && active.Dims == emb.Dims {
+		if active.Commit == commit {
 			logger.Info("index already at this commit")
 			return nil
 		}
-		mode, base = modeIncremental, active.commit
+		mode, base = store.IndexModeIncremental, active.Commit
 	}
 	// The repository's own .kritik.yaml, as of the commit indexed, can stop
 	// indexing and add ignore globs.
@@ -135,7 +124,15 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	if err != nil {
 		return err
 	}
-	runID, runnerRunID, err := w.start(ctx, args, emb, commit, base, mode)
+	var runID, runnerRunID string
+	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
+		var err error
+		runID, runnerRunID, err = store.StartIndexRun(ctx, tx, store.NewIndexRun{
+			AccountID: args.AccountID, RepositoryID: args.RepositoryID, Commit: commit, Base: base, Mode: mode, Trigger: args.Trigger,
+			Embedding: *emb, StrayAfter: jobtimeout.RescueStuckJobsAfter,
+		})
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -147,7 +144,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	sup := runSupervision(w.Store, args.AccountID, runnerRunID, "", "", w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		Labels: map[string]string{
-			"account": account.Key(), "repository": repo.name, "kind": jobs.QueueIndex,
+			"account": account.Key(), "repository": repo.Name, "kind": jobs.QueueIndex,
 		},
 		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": commit},
 		Job: runner.Spec{
@@ -193,7 +190,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	// moved, index again at once, as a snooze that is not an attempt. A
 	// forced rebuild leaves the new tip to the update job the push queued.
 	if !args.Full {
-		if tip, _, err := client.BranchTip(ctx, owner, name, repo.defaultBranch); err == nil && tip != commit {
+		if tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch); err == nil && tip != commit {
 			logger.Info("index again: the branch moved while it ran", "tip", review.ShortSHA(tip))
 			return river.JobSnooze(0)
 		}
@@ -201,69 +198,25 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	return nil
 }
 
-func (w *Index) loadRepo(ctx context.Context, args jobs.IndexArgs) (*indexRepo, error) {
-	var r indexRepo
-	var active *string
-	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `
-			SELECT name, default_branch, enabled, active_index_run_id::text, archived, fork, turned_on
-			FROM repositories WHERE id = $1`, args.RepositoryID).
-			Scan(&r.name, &r.defaultBranch, &r.enabled, &active, &r.traits.Archived, &r.traits.Fork, &r.traits.TurnedOn)
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, river.JobCancel(fmt.Errorf("worker: repository %s is unknown", args.RepositoryID))
-	}
-	if err != nil {
-		return nil, fmt.Errorf("worker: load repository: %w", err)
-	}
-	if active != nil {
-		r.activeRun = *active
-	}
-	return &r, nil
-}
-
-func (w *Index) activeGeneration(ctx context.Context, accountID, runID string) (*activeGeneration, error) {
+// activeGeneration reads the repository's active generation, nil when it
+// has none or the generation is not completed.
+func (w *Index) activeGeneration(ctx context.Context, accountID, runID string) (*store.Generation, error) {
 	if runID == "" {
 		return nil, nil
 	}
-	g := &activeGeneration{id: runID}
+	var g store.Generation
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT commit_sha, embed_model, embed_dims FROM index_runs WHERE id = $1 AND status = 'completed'`, runID).
-			Scan(&g.commit, &g.model, &g.dims)
+		var err error
+		g, err = store.FindGeneration(ctx, tx, runID)
+		return err
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, store.ErrNotFound) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("worker: read active generation: %w", err)
+		return nil, err
 	}
-	return g, nil
-}
-
-func (w *Index) start(
-	ctx context.Context, args jobs.IndexArgs, emb *configfile.Embedding, commit, base, mode string,
-) (runID, runnerRunID string, err error) {
-	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		// Only the active generation keeps its chunks: any other run's were
-		// left by a job that could not clear them, such as one killed
-		// mid-build. A forced rebuild can run beside an update, so a run is
-		// swept only once River would have given its job up for dead.
-		if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id IN (
-			SELECT x.id FROM index_runs x JOIN repositories r ON r.id = x.repository_id
-			WHERE r.id = $1 AND x.id IS DISTINCT FROM r.active_index_run_id AND x.created_at < now() - make_interval(secs => $2))`,
-			args.RepositoryID, jobtimeout.RescueStuckJobsAfter.Seconds()); err != nil {
-			return fmt.Errorf("worker: drop stray chunks: %w", err)
-		}
-		if err := tx.QueryRow(ctx, `INSERT INTO index_runs
-			(account_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, mode, status, trigger)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8) RETURNING id`,
-			args.AccountID, args.RepositoryID, commit, base, emb.Model, emb.Dims, mode, args.Trigger).Scan(&runID); err != nil {
-			return fmt.Errorf("worker: insert index run: %w", err)
-		}
-		runnerRunID, err = store.InsertRunnerRun(ctx, tx, args.AccountID, store.RunnerKindIndex, runID)
-		return err
-	})
-	return runID, runnerRunID, err
+	return &g, nil
 }
 
 // clearStaging deletes a run's staged chunks, and the chunks it embedded
@@ -273,12 +226,7 @@ func (w *Index) clearStaging(ctx context.Context, logger *slog.Logger, accountID
 	ctx, cancel := detach(ctx)
 	defer cancel()
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID); err != nil {
-			return err
-		}
-		_, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1
-			AND NOT EXISTS (SELECT 1 FROM repositories WHERE active_index_run_id = $1)`, runID)
-		return err
+		return store.ClearIndexStaging(ctx, tx, runID, runnerRunID)
 	})
 	if err != nil {
 		logger.Warn("staged chunks not cleared", "run", runnerRunID, "error", err)
@@ -287,24 +235,8 @@ func (w *Index) clearStaging(ctx context.Context, logger *slog.Logger, accountID
 
 func (w *Index) finish(ctx context.Context, accountID, runID string, status store.IndexRunStatus, chunks int, errText string) error {
 	return w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE index_runs SET status = $2, chunk_count = $3, error = left($4, 2000), finished_at = now() WHERE id = $1`,
-			runID, status, chunks, errText)
-		if err != nil {
-			return fmt.Errorf("worker: finish index run: %w", err)
-		}
-		return nil
+		return store.FinishIndexRun(ctx, tx, runID, status, chunks, errText)
 	})
-}
-
-type indexPack struct {
-	mode, base   string
-	changedPaths []string
-}
-
-type stagedChunk struct {
-	id                                        int64
-	path, language, symbol, kind, scope, text string
-	startLine, endLine                        int
 }
 
 // embed turns the staged chunks into index_chunks rows under the run, a
@@ -315,34 +247,26 @@ type stagedChunk struct {
 // of the changed paths' chunks.
 func (w *Index) embed(
 	ctx context.Context, args jobs.IndexArgs, account *configfile.Account, embedder model.Embedder, embedModel string,
-	commit, runID, runnerRunID string, active *activeGeneration, settings configfile.Settings, jobID int64,
+	commit, runID, runnerRunID string, active *store.Generation, settings configfile.Settings, jobID int64,
 ) (int, string, error) {
-	var pack indexPack
+	var pack store.IndexPack
 	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT mode, base_sha, changed_paths FROM index_packs WHERE runner_run_id = $1`, runnerRunID).
-			Scan(&pack.mode, &pack.base, &pack.changedPaths)
-	})
-	if err != nil {
-		return 0, "", fmt.Errorf("worker: read index pack: %w", err)
-	}
-	// The runner may have fallen back to a full build; the run row says
-	// what actually happened.
-	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE index_runs SET mode = $2, base_sha = $3 WHERE id = $1`, runID, pack.mode, pack.base)
+		var err error
+		pack, err = store.ReadIndexPack(ctx, tx, runID, runnerRunID)
 		return err
 	})
 	if err != nil {
-		return 0, pack.mode, fmt.Errorf("worker: record index mode: %w", err)
+		return 0, pack.Mode, err
 	}
 	var total int
 	var tokens int64
 	err = w.withLease(ctx, account, "embed:"+embedModel, settings.Limits.Concurrency, jobID, func(ctx context.Context) error {
 		var last int64
 		for {
-			var batch []stagedChunk
+			var batch []store.StagedChunk
 			err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 				var err error
-				batch, err = readStaged(ctx, tx, runnerRunID, last, cmp.Or(w.batch, embedBatch))
+				batch, err = store.ReadStagedChunks(ctx, tx, runnerRunID, last, cmp.Or(w.batch, embedBatch))
 				return err
 			})
 			if err != nil || len(batch) == 0 {
@@ -360,106 +284,51 @@ func (w *Index) embed(
 			w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, "ok", used, 0, 0, 0)
 			tokens += used
 			err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-				return insertChunks(ctx, tx, args.AccountID, args.RepositoryID, runID, batch, vectors)
+				return store.InsertIndexChunks(ctx, tx, args.AccountID, args.RepositoryID, runID, batch, vectors)
 			})
 			if err != nil {
 				return err
 			}
 			total += len(batch)
-			last = batch[len(batch)-1].id
+			last = batch[len(batch)-1].ID
 		}
 	})
 	if err != nil {
-		return total, pack.mode, err
+		return total, pack.Mode, err
 	}
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		if pack.mode == modeIncremental && active != nil {
-			if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`,
-				active.id, pack.changedPaths); err != nil {
-				return fmt.Errorf("worker: drop stale chunks: %w", err)
-			}
-			if _, err := tx.Exec(ctx, `UPDATE index_chunks SET index_run_id = $2 WHERE index_run_id = $1`, runID, active.id); err != nil {
-				return fmt.Errorf("worker: move chunks into the generation: %w", err)
-			}
-			if _, err := tx.Exec(ctx, `UPDATE index_runs SET commit_sha = $2 WHERE id = $1`, active.id, commit); err != nil {
-				return fmt.Errorf("worker: advance generation: %w", err)
+		if pack.Mode == store.IndexModeIncremental && active != nil {
+			if err := store.AdvanceGeneration(ctx, tx, active.ID, runID, commit, pack.ChangedPaths); err != nil {
+				return err
 			}
 		} else {
-			if _, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, args.RepositoryID, runID); err != nil {
-				return fmt.Errorf("worker: activate generation: %w", err)
-			}
+			previous := ""
 			if active != nil {
-				if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now())
-				WHERE id = $1`, active.id); err != nil {
-					return fmt.Errorf("worker: supersede generation: %w", err)
-				}
-				if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1`, active.id); err != nil {
-					return fmt.Errorf("worker: drop superseded chunks: %w", err)
-				}
+				previous = active.ID
+			}
+			if err := store.ActivateGeneration(ctx, tx, args.RepositoryID, runID, previous); err != nil {
+				return err
 			}
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM index_staging WHERE runner_run_id = $1`, runnerRunID); err != nil {
-			return fmt.Errorf("worker: clear staging: %w", err)
+		if err := store.ClearIndexStaging(ctx, tx, runID, runnerRunID); err != nil {
+			return err
 		}
 		return store.InsertUsage(ctx, tx, store.Usage{
 			AccountID: args.AccountID, RepositoryID: args.RepositoryID, Role: store.RoleEmbedding, Model: embedModel, Input: tokens,
 		})
 	})
-	return total, pack.mode, err
-}
-
-func readStaged(ctx context.Context, tx pgx.Tx, runnerRunID string, after int64, limit int) ([]stagedChunk, error) {
-	rows, err := tx.Query(ctx, `SELECT id, path, start_line, end_line, language, symbol, kind, scope, text
-		FROM index_staging WHERE runner_run_id = $1 AND id > $2 ORDER BY id LIMIT $3`, runnerRunID, after, limit)
-	if err != nil {
-		return nil, fmt.Errorf("worker: read staged chunks: %w", err)
-	}
-	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (stagedChunk, error) {
-		var c stagedChunk
-		err := row.Scan(&c.id, &c.path, &c.startLine, &c.endLine, &c.language, &c.symbol, &c.kind, &c.scope, &c.text)
-		return c, err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("worker: read staged chunks: %w", err)
-	}
-	return out, nil
+	return total, pack.Mode, err
 }
 
 // embedText is what the embedder sees: the path and symbol give the
 // vector a little of the file's identity, the way a reader would know
 // where a snippet came from.
-func embedText(c stagedChunk) string {
-	head := c.path
-	if c.symbol != "" {
-		head += " " + c.kind + " " + c.symbol
+func embedText(c store.StagedChunk) string {
+	head := c.Path
+	if c.Symbol != "" {
+		head += " " + c.Kind + " " + c.Symbol
 	}
-	return head + "\n" + c.text
-}
-
-func insertChunks(ctx context.Context, tx pgx.Tx, accountID, repositoryID, runID string, batch []stagedChunk, vectors [][]float32) error {
-	if len(vectors) != len(batch) {
-		return fmt.Errorf("worker: %d vectors for %d chunks", len(vectors), len(batch))
-	}
-	n := len(batch)
-	strs := func() []string { return make([]string, n) }
-	paths, langs, symbols, kinds, scopes, texts, embeddings := strs(), strs(), strs(), strs(), strs(), strs(), strs()
-	starts, ends := make([]int32, n), make([]int32, n)
-	for i, c := range batch {
-		paths[i], langs[i], symbols[i], kinds[i], scopes[i], texts[i] = c.path, c.language, c.symbol, c.kind, c.scope, c.text
-		starts[i], ends[i] = int32(c.startLine), int32(c.endLine)
-		embeddings[i] = model.VectorLiteral(vectors[i])
-	}
-	_, err := tx.Exec(ctx, `
-		INSERT INTO index_chunks
-			(account_id, repository_id, index_run_id, path, start_line, end_line, language, symbol, kind, scope, text, embedding)
-		SELECT $1, $2, $3, c.path, c.start_line, c.end_line, c.language, c.symbol, c.kind, c.scope, c.text, c.embedding::halfvec
-		FROM unnest($4::text[], $5::int[], $6::int[], $7::text[], $8::text[], $9::text[], $10::text[], $11::text[], $12::text[])
-			AS c (path, start_line, end_line, language, symbol, kind, scope, text, embedding)`,
-		accountID, repositoryID, runID, paths, starts, ends, langs, symbols, kinds, scopes, texts, embeddings)
-	if err != nil {
-		return fmt.Errorf("worker: insert chunks: %w", err)
-	}
-	return nil
+	return head + "\n" + c.Text
 }
 
 // recordRun writes what the executor learned about a runner Job and counts

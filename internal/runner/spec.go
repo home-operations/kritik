@@ -66,7 +66,7 @@ type AgentLimits struct {
 	CommandTimeoutSeconds int      `json:"commandTimeoutSeconds,omitempty"`
 }
 
-// Prompt is what an agentic run needs beyond the checkout to write its
+// Prompt is what a review run needs beyond the checkout to write its
 // review prompt and to tell whether the worker will skip the review: the
 // pull request, the review settings with the merge-base .kritik.yaml
 // applied, and the last completed review's findings.

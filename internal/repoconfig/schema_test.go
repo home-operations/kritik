@@ -68,22 +68,19 @@ func yamlKeys[T any]() []string {
 	return out
 }
 
-// TestFileFollowsPolicies checks the keys .kritik.yaml takes are the
-// settings the policy table gives the repository a rule for.
-func TestFileFollowsPolicies(t *testing.T) {
-	var ruled []string
+// TestFileKeysAreSettings checks the keys .kritik.yaml takes are settings
+// an admin writes too, spelled the same (ADR-0021 §2.1).
+func TestFileKeysAreSettings(t *testing.T) {
+	keys := make([]string, 0, len(configfile.Policies))
 	for _, p := range configfile.Policies {
-		if p.Repository == "" {
-			continue
-		}
-		ruled = append(ruled, p.Key)
-		if _, ok := configfile.SpecValue(&File{}, p.Key); !ok {
-			t.Errorf("the table gives %s a repository rule, but the file has no such key", p.Key)
-		}
+		keys = append(keys, p.Key)
 	}
 	for _, key := range leafKeys(reflect.TypeFor[File](), "") {
-		if !slices.ContainsFunc(ruled, func(r string) bool { return key == r || strings.HasPrefix(key, r+".") }) {
-			t.Errorf("the file takes %s, but the table gives the repository no rule for it", key)
+		if !slices.ContainsFunc(keys, func(k string) bool { return key == k || strings.HasPrefix(key, k+".") }) {
+			t.Errorf("the file takes %s, which is no setting an admin writes", key)
+		}
+		if _, ok := configfile.SpecValue(&configfile.Overrides{}, key); !ok {
+			t.Errorf("the file takes %s, which an admin's entry has no key for", key)
 		}
 	}
 }

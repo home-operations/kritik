@@ -19,7 +19,7 @@ import (
 	"github.com/home-operations/kritik/internal/store"
 )
 
-// agentDeadline bounds an agentic runner Job: the account's runner deadline,
+// agentDeadline bounds a review's runner Job: the account's runner deadline,
 // unless the agent's timeout plus the fetch headroom needs longer.
 func agentDeadline(runnerDeadline, agentTimeout time.Duration) time.Duration {
 	return max(runnerDeadline, agentTimeout+jobtimeout.AgentFetchHeadroom)
@@ -47,7 +47,7 @@ type admission struct {
 	maxTokens int64
 }
 
-// agentAdmit settles what an agentic review may spend before its runner
+// agentAdmit settles what a review may spend before its runner
 // starts, since the runner spends against the model through the gateway:
 // a review model must be configured, the account's caps must allow a
 // review, and a free model lease is taken, renewed until released, or
@@ -83,7 +83,7 @@ func (w *Review) agentAdmit(
 	return admission{lease: l, maxTokens: budget}, "", "", nil
 }
 
-// agentCaps is the token budget an agentic review may spend, or the cap
+// agentCaps is the token budget a review may spend, or the cap
 // that stops it.
 func (w *Review) agentCaps(ctx context.Context, account *configfile.Account, settings configfile.Settings) (int64, string, error) {
 	limits := settings.Limits
@@ -101,11 +101,11 @@ func (w *Review) agentCaps(ctx context.Context, account *configfile.Account, set
 	return budget, capped, nil
 }
 
-// minAgentTokens is the least monthly headroom an agentic review starts
+// minAgentTokens is the least monthly headroom a review starts
 // with: below it the agent could not read the diff before running out.
 const minAgentTokens = 50_000
 
-// agentBudget is how many tokens one agentic review may spend: the
+// agentBudget is how many tokens one review may spend: the
 // repository's agent budget, cut to what is left of the account's monthly
 // cap when one is set. A non-empty reason caps the review instead, when
 // too little is left for an agent to do anything with.
@@ -198,7 +198,7 @@ func (w *Review) readAgentRun(
 	return &run, nil
 }
 
-// gatewayModel is the name an agentic runner calls its model by; the
+// gatewayModel is the name a review's runner calls its model by; the
 // gateway maps it to the provider model the run was granted.
 const gatewayModel = "review"
 

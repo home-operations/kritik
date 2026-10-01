@@ -25,7 +25,7 @@ import (
 
 // Gateway serves the worker's gateway listener: the egress proxy runner
 // pods reach the outside through (ADR-0008), and the model and
-// similar-code endpoints an agentic runner calls with its run token
+// similar-code endpoints a review's runner calls with its run token
 // (ADR-0004, ADR-0026). No provider key enters a runner pod: the gateway
 // reserves each call against the run's budget and checks the account's
 // monthly cap, answers it through the account's provider, and records

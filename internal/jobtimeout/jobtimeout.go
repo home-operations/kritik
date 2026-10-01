@@ -23,7 +23,7 @@ const (
 	// swapping the generation after the index runner ends; the embedding
 	// pass of a large repository is many model calls.
 	IndexWriteHeadroom = 60 * time.Minute
-	// AgentFetchHeadroom is the job time an agentic run keeps for fetching
+	// AgentFetchHeadroom is the job time a review run keeps for fetching
 	// and the context pack on top of the agent's own timeout.
 	AgentFetchHeadroom = 5 * time.Minute
 	// FollowUpTimeout is the time a follow-up job may spend waiting for a
