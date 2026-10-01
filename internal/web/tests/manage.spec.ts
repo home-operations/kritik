@@ -180,7 +180,7 @@ test.describe('configuration page', () => {
     const sent = await g.mockWrites(page, [['DELETE', new RegExp(`${path}/${g.appInstallation.id}$`), { status: 204 }]]);
     await page.goto('/#/admin');
     const panel = page.locator('#op-connections').locator('../..');
-    await expect(panel.getByRole('row').filter({ hasText: conn.name })).toContainText('config file');
+    await expect(panel.getByRole('row').filter({ hasText: conn.name })).toContainText(conn.accounts[0]);
     await panel.getByRole('button', { name: 'Installations' }).click();
     const table = panel.getByRole('table', { name: `Installations of ${conn.name}` });
     const stranger = table.getByRole('row').filter({ hasText: g.appInstallation.account });
