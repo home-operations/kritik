@@ -28,7 +28,7 @@ import (
 
 const configYAML = `
 apps:
-  - name: bot-ross
+  bot-ross:
     accounts: [onedr0p]
     clientId: Iv1.x
     privateKey: { env: TEST_PEM }

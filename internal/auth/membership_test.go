@@ -14,10 +14,10 @@ import (
 // connectionsYAML is the apps the grant tests read forge accounts from.
 const connectionsYAML = `
 apps:
-  - { name: personal-bot, accounts: [Alice], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
-  - { name: org-bot, accounts: [acme], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
-  - { name: adminorg-bot, accounts: [widgets], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
-  - { name: several-bot, accounts: [nobody, Initech], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
+  personal-bot: { accounts: [Alice], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
+  org-bot: { accounts: [acme], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
+  adminorg-bot: { accounts: [widgets], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
+  several-bot: { accounts: [nobody, Initech], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
 `
 
 // adminPassword is an auth block's local admin, so a file whose sign-ins

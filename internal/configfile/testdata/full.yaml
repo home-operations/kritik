@@ -1,10 +1,10 @@
 apps:
-  - name: sticky-gecko
+  sticky-gecko:
     accounts: [home-operations]
     clientId: Iv1.xxxxxxxx
     privateKey: { env: TEST_PRIVATE_KEY }
     webhookSecret: { env: TEST_WEBHOOK_SECRET }
-  - name: bot-ross
+  bot-ross:
     accounts: [onedr0p]
     clientId: { env: TEST_CLIENT_ID }
     privateKey: { env: TEST_PRIVATE_KEY }

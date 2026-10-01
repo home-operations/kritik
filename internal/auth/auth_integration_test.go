@@ -55,11 +55,11 @@ auth:
     clientSecret: { env: KRITIKA_TEST_TOKEN }
     roleMappingExpr: 'login == "opgh" ? "admin" : ("mapped-org" in orgs ? dyn({"github/acme": "member"}) : "")'
 apps:
-  - {name: auth-personal-bot, accounts: [alice-gh], clientId: Iv1.x, privateKey: {env: KRITIKA_TEST_TOKEN}, webhookSecret: {env: KRITIKA_TEST_TOKEN}}
-  - {name: auth-acme-bot, accounts: [acme], clientId: Iv1.x, privateKey: {env: KRITIKA_TEST_TOKEN}, webhookSecret: {env: KRITIKA_TEST_TOKEN}}
-  - {name: auth-widgets-bot, accounts: [Widgets], clientId: Iv1.x, privateKey: {env: KRITIKA_TEST_TOKEN}, webhookSecret: {env: KRITIKA_TEST_TOKEN}}
-  - {name: auth-pending-bot, accounts: [pendco], clientId: Iv1.x, privateKey: {env: KRITIKA_TEST_TOKEN}, webhookSecret: {env: KRITIKA_TEST_TOKEN}}
-  - {name: auth-other-bot, accounts: [nobody], clientId: Iv1.x, privateKey: {env: KRITIKA_TEST_TOKEN}, webhookSecret: {env: KRITIKA_TEST_TOKEN}}
+  auth-personal-bot: {accounts: [alice-gh], clientId: Iv1.x, privateKey: {env: KRITIKA_TEST_TOKEN}, webhookSecret: {env: KRITIKA_TEST_TOKEN}}
+  auth-acme-bot: {accounts: [acme], clientId: Iv1.x, privateKey: {env: KRITIKA_TEST_TOKEN}, webhookSecret: {env: KRITIKA_TEST_TOKEN}}
+  auth-widgets-bot: {accounts: [Widgets], clientId: Iv1.x, privateKey: {env: KRITIKA_TEST_TOKEN}, webhookSecret: {env: KRITIKA_TEST_TOKEN}}
+  auth-pending-bot: {accounts: [pendco], clientId: Iv1.x, privateKey: {env: KRITIKA_TEST_TOKEN}, webhookSecret: {env: KRITIKA_TEST_TOKEN}}
+  auth-other-bot: {accounts: [nobody], clientId: Iv1.x, privateKey: {env: KRITIKA_TEST_TOKEN}, webhookSecret: {env: KRITIKA_TEST_TOKEN}}
 `
 
 type authEnv struct {

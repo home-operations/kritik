@@ -14,22 +14,22 @@ import (
 
 const onboardAccounts = `
 apps:
-  - name: alpha-bot
+  alpha-bot:
     accounts: [alpha]
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-  - name: beta-bot
+  beta-bot:
     accounts: [beta]
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-  - name: east-bot
+  east-bot:
     accounts: [east]
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-  - name: west-bot
+  west-bot:
     accounts: [west]
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }

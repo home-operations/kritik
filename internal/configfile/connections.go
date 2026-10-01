@@ -2,25 +2,34 @@ package configfile
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 )
 
+// connectionsOf lists the file's apps in the order of their names, each
+// carrying its key as its name.
+func connectionsOf(apps map[string]Connection) []Connection {
+	conns := make([]Connection, 0, len(apps))
+	for _, name := range slices.Sorted(maps.Keys(apps)) {
+		in := apps[name]
+		in.Name, in.Forge = name, ForgeGitHub
+		conns = append(conns, in)
+	}
+	return conns
+}
+
 // validateConnections checks one layer's connections: names that are hook
-// paths, unique; accounts listed; credentials that resolved; and every
-// account served by one connection alone.
+// paths; accounts listed; credentials that resolved; and every account
+// served by one connection alone.
 func validateConnections(conns []Connection) error {
-	names := map[string]int{}
 	served := map[string]string{}
 	for i := range conns {
 		in := &conns[i]
-		where := fmt.Sprintf("apps[%d]", i)
+		where := "apps." + in.Name
 		if !nameRe.MatchString(in.Name) {
-			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 63 characters", where, in.Name)
+			return fmt.Errorf("configfile: %s: an app's name must be lowercase alphanumerics and hyphens, 1 to 63 characters", where)
 		}
-		if prev, dup := names[in.Name]; dup {
-			return fmt.Errorf("configfile: %s.name %q duplicates apps[%d]; names are hook paths and must be unique", where, in.Name, prev)
-		}
-		names[in.Name] = i
 		if err := validateAccountNames(in.Accounts, where); err != nil {
 			return err
 		}
@@ -52,7 +61,7 @@ const DefaultEnvConnection = "github"
 // app's name, "" when no KRITIKA_APPS_* variable is set; a secret's variable
 // carries the value itself. A variable that names no key is an error, so a
 // typo is refused rather than ignored.
-func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error) {
+func overlayConnectionEnv(apps map[string]Connection, environ []string) (string, error) {
 	in := Connection{Name: DefaultEnvConnection, Forge: ForgeGitHub}
 	set := false
 	for _, kv := range environ {
@@ -80,13 +89,7 @@ func overlayConnectionEnv(conns *[]Connection, environ []string) (string, error)
 	if !set {
 		return "", nil
 	}
-	for i := range *conns {
-		if (*conns)[i].Name == in.Name {
-			(*conns)[i] = in
-			return in.Name, nil
-		}
-	}
-	*conns = append(*conns, in)
+	apps[in.Name] = in
 	return in.Name, nil
 }
 

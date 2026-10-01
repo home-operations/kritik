@@ -237,7 +237,7 @@ func TestDismissedFindings(t *testing.T) {
 func soloAccount(name string) string {
 	return fmt.Sprintf(`
 apps:
-  - name: %[1]s-bot
+  %[1]s-bot:
     accounts: [%[1]s]
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }

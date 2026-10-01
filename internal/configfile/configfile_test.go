@@ -234,7 +234,7 @@ var minimal = githubMinimal("clientId: Iv1.acme, ")
 func githubMinimal(clientFields string) string {
 	return `
 apps:
-  - { name: acme-bot, accounts: [acme], ` + clientFields + `privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
+  acme-bot: { accounts: [acme], ` + clientFields + `privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 `
 }
 
@@ -420,11 +420,11 @@ func TestParseRejects(t *testing.T) {
 	}{
 		{"unknown top-level key", minimal + "account: []\n", "field account not found"},
 		{"unknown nested key", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme], owner: acme", 1), "field owner not found"},
-		{"a forge key", strings.Replace(minimal, "name: acme-bot, ", "name: acme-bot, forge: github, ", 1), "field forge not found"},
-		{"bad app name", strings.Replace(minimal, "name: acme-bot", "name: Acme Bot", 1), "lowercase"},
-		{"duplicate app", minimal + "  - { name: acme-bot, accounts: [other], clientId: x, " +
-			"privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n", "names are hook paths"},
-		{"an account two apps serve", minimal + "  - { name: acme-two, accounts: [ACME], clientId: x, " +
+		{"a forge key", strings.Replace(minimal, "acme-bot: { ", "acme-bot: { forge: github, ", 1), "field forge not found"},
+		{"bad app name", strings.Replace(minimal, "acme-bot:", "Acme Bot:", 1), "lowercase"},
+		{"duplicate app", minimal + "  acme-bot: { accounts: [other], clientId: x, " +
+			"privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n", "already defined"},
+		{"an account two apps serve", minimal + "  acme-two: { accounts: [ACME], clientId: x, " +
 			"privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n", "an account is served by one app"},
 		{"duplicate account entry", minimal + "accounts:\n  acme: {}\n  Acme: {}\n", "duplicates accounts.Acme"},
 		{"an account entry with its owner", minimal + "accounts:\n  acme/x: {}\n", "must be the account's name"},
@@ -433,13 +433,13 @@ func TestParseRejects(t *testing.T) {
 		{"blank account", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ' ']", 1), `accounts[1] " " must be the account's name`},
 		{"a served account with its owner", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme/x]", 1), `accounts[0] "acme/x" must be the account's name`},
 		{"account listed twice", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme, ACME]", 1), `accounts[1] "ACME" is listed twice`},
-		{"an app without a client id", githubMinimal(""), "apps[0].clientId is required"},
+		{"an app without a client id", githubMinimal(""), "apps.acme-bot.clientId is required"},
 		{"a client id reference with an unknown key", githubMinimal("clientId: { vault: x }, "), "field vault not found"},
-		{"missing private key", strings.Replace(minimal, "privateKey: { env: TEST_PRIVATE_KEY }, ", "", 1), "apps[0].privateKey: reference must set env"},
+		{"missing private key", strings.Replace(minimal, "privateKey: { env: TEST_PRIVATE_KEY }, ", "", 1), "apps.acme-bot.privateKey: reference must set env"},
 		{"unset env reference", strings.Replace(minimal, "TEST_PRIVATE_KEY", "TEST_DOES_NOT_EXIST", 1), "is not set"},
 		{"empty env reference", strings.Replace(minimal, "TEST_PRIVATE_KEY", "TEST_EMPTY", 1), "privateKey is required"},
 		{"a file reference", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{ file: /var/run/secrets/token }", 1), "field file not found"},
-		{"empty reference", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{}", 1), "apps[0].privateKey: reference must set env"},
+		{"empty reference", strings.Replace(minimal, "{ env: TEST_PRIVATE_KEY }", "{}", 1), "apps.acme-bot.privateKey: reference must set env"},
 		{"unknown provider type", "providers:\n  p:\n    type: cohere\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" + minimal, "type must be"},
 		{"negative pricing", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
 			"    pricing: { acme-large: { input: 3, output: -1 } }\n" + minimal, "providers.p.pricing.acme-large"},

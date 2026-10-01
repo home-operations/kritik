@@ -10,7 +10,7 @@ import (
 // fileWithDefaults is minimal's app with instance defaults: a provider,
 // both default models and an embedder of the provider, and acme's entry.
 const fileWithDefaults = `apps:
-  - { name: acme-bot, accounts: [acme], clientId: x, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
+  acme-bot: { accounts: [acme], clientId: x, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 providers:
   openrouter: { type: openrouter, apiKey: { env: TEST_PROVIDER_KEY } }
 defaults:

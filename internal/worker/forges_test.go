@@ -15,7 +15,7 @@ func appConnection(t *testing.T, clientID string) *configfile.Connection {
 	t.Helper()
 	file, err := configfile.Parse([]byte(`
 apps:
-  - name: acme-bot
+  acme-bot:
     accounts: [acme]
     clientId: ` + clientID + `
     privateKey: { env: TEST_PRIVATE_KEY }

@@ -341,10 +341,11 @@ func (a GitHubApp) ClientIDValue() string { return a.clientID }
 func (a GitHubApp) PrivateKeyValue() Secret { return a.privateKey }
 
 // Connection is one GitHub App serving the accounts it lists, an entry of
-// the configuration's apps. Its name is the hook path, /hooks/{name}, and
-// is unique across the configuration.
+// the configuration's apps, which are keyed by name. The name is the hook
+// path, /hooks/{name}.
 type Connection struct {
-	Name string `yaml:"name"`
+	// Name is the entry's key under apps.
+	Name string `yaml:"-"`
 	// Forge is always ForgeGitHub; the file does not name it.
 	Forge Forge `yaml:"-"`
 	// Accounts are the users and organizations the connection serves: a

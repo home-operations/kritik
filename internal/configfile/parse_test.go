@@ -13,7 +13,7 @@ import (
 // fileApp is an app named name serving accounts, its secrets read from
 // TEST_PRIVATE_KEY and TEST_WEBHOOK_SECRET.
 func fileApp(name string, accounts ...string) string {
-	return "  - { name: " + name + ", accounts: [" + strings.Join(accounts, ", ") + "], clientId: Iv1." + name +
+	return "  " + name + ": { accounts: [" + strings.Join(accounts, ", ") + "], clientId: Iv1." + name +
 		", privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n"
 }
 
@@ -78,6 +78,7 @@ func TestParseRejectsEntries(t *testing.T) {
 	for _, tt := range []struct{ name, yaml, want string }{
 		{"an unknown key", "tenants: []\n", "field tenants not found"},
 		{"connections is now apps", "connections: []\n", "field connections not found"},
+		{"apps as a list", "apps:\n  - { name: a, accounts: [x] }\n", "!!seq"},
 		{"a sealed reference", apps(strings.Replace(fileApp("a", "x"), "{ env: TEST_PRIVATE_KEY }", "{ sealed: abc }", 1)),
 			"field sealed not found"},
 		{"a clientId from a file", apps(strings.Replace(fileApp("a", "x"), "clientId: Iv1.a", "clientId: { file: /x }", 1)),
@@ -85,7 +86,7 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"a broken owner/* entry", "repositories: { acme/*: { models: { review: nope/x } } }\n", `repositories.acme/*.models.review references provider "nope"`},
 		{"a repository entry that turns it on or off", "repositories: { acme/x: { enabled: false } }\n",
 			"repositories.acme/x.enabled: turn a repository on or off in the dashboard"},
-		{"a duplicate app", apps(fileApp("a", "x"), fileApp("a", "y")), "names are hook paths"},
+		{"a duplicate app", apps(fileApp("a", "x"), fileApp("a", "y")), "already defined"},
 		{"an account two apps serve", apps(fileApp("a", "x"), fileApp("b", "X")), "an account is served by one app"},
 		{"two documents", "egress: {}\n---\negress: {}\n", "one document"},
 		{"an embedder without a provider", embeddingDoc("model: voyage-code-3"), `embedding.model must be "<provider>/<model>"`},

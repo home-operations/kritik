@@ -116,7 +116,7 @@ func TestOutcomeAndServedRef(t *testing.T) {
 
 // minimalFile is the rest of a configuration file a provider sits in.
 const minimalFile = `apps:
-  - name: acme-bot
+  acme-bot:
     accounts: [acme]
     clientId: Iv1.test
     privateKey: { env: TEST_PROVIDER_KEY }

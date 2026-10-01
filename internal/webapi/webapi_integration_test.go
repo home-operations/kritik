@@ -37,12 +37,12 @@ auth:
     clientSecret: { env: KRITIKA_TEST_TOKEN }
     roleMappingExpr: '"kritika-admin" in roles ? "admin" : ""'
 apps:
-  - name: webapi-a-bot
+  webapi-a-bot:
     accounts: [wa]
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-  - name: webapi-b-bot
+  webapi-b-bot:
     accounts: [wb]
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }

@@ -39,12 +39,12 @@ var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 // fileDoc is the configuration file's schema: sign-in and the whole
 // configuration.
 type fileDoc struct {
-	Auth      Auth                `yaml:"auth,omitempty"`
-	Apps      []Connection        `yaml:"apps,omitempty"`
-	Providers map[string]Provider `yaml:"providers,omitempty"`
-	Embedding *Embedding          `yaml:"embedding,omitempty"`
-	Egress    Egress              `yaml:"egress,omitempty"`
-	Defaults  Defaults            `yaml:"defaults,omitempty"`
+	Auth      Auth                  `yaml:"auth,omitempty"`
+	Apps      map[string]Connection `yaml:"apps,omitempty"`
+	Providers map[string]Provider   `yaml:"providers,omitempty"`
+	Embedding *Embedding            `yaml:"embedding,omitempty"`
+	Egress    Egress                `yaml:"egress,omitempty"`
+	Defaults  Defaults              `yaml:"defaults,omitempty"`
 	// Repositories are the owner/* and owner/name entries.
 	Repositories map[string]Overrides  `yaml:"repositories,omitempty"`
 	Accounts     map[string]accountDoc `yaml:"accounts,omitempty"`
@@ -113,14 +113,14 @@ func Parse(raw []byte) (*File, error) {
 			return nil, errors.New("configfile: parse: the file must hold one document")
 		}
 	}
-	for i := range doc.Apps {
-		doc.Apps[i].Forge = ForgeGitHub
+	if doc.Apps == nil {
+		doc.Apps = map[string]Connection{}
 	}
 	environ := os.Environ()
 	if err := doc.Auth.overlayEnv(environ); err != nil {
 		return nil, err
 	}
-	envConnection, err := overlayConnectionEnv(&doc.Apps, environ)
+	envConnection, err := overlayConnectionEnv(doc.Apps, environ)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func Parse(raw []byte) (*File, error) {
 		return nil, err
 	}
 	f := &File{
-		Auth: doc.Auth, Connections: doc.Apps, Providers: doc.Providers, Defaults: doc.Defaults, Egress: doc.Egress,
+		Auth: doc.Auth, Connections: connectionsOf(doc.Apps), Providers: doc.Providers, Defaults: doc.Defaults, Egress: doc.Egress,
 		Embedding: doc.Embedding, Run: run, envConnection: envConnection, envProvider: envProvider, envKeys: envKeys,
 	}
 	s := &secrets{}
@@ -194,7 +194,7 @@ func (f *File) resolve(accounts []Account, s *secrets) error {
 		return fmt.Errorf("configfile: defaults.filterExpr: %w", err)
 	}
 	for i := range f.Connections {
-		if err := f.Connections[i].resolve(fmt.Sprintf("apps[%d]", i), s); err != nil {
+		if err := f.Connections[i].resolve("apps."+f.Connections[i].Name, s); err != nil {
 			return err
 		}
 	}

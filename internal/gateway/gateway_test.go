@@ -32,7 +32,7 @@ func TestMaskProvider(t *testing.T) {
     baseUrl: https://kritika:url-secret@llm.example/v1
     apiKey: { env: TEST_PROVIDER_KEY }
 apps:
-  - name: acme-bot
+  acme-bot:
     accounts: [acme]
     clientId: Iv1.test
     privateKey: { env: TEST_PROVIDER_KEY }
