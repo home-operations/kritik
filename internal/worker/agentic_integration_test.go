@@ -205,15 +205,17 @@ type agentRunRow struct {
 // agenticHarness drives agentic reviews of acme/widgets#1 through River,
 // the local executor and the real runner.
 type agenticHarness struct {
-	ctx     context.Context
-	st      *store.Store
-	svc     *ingest.Service
-	file    *configfile.File
-	account *configfile.Account
-	other   *configfile.Account
-	lf      *localForge
-	exec    *hookExecutor
-	review  *Review
+	ctx context.Context
+	st  *store.Store
+	svc *ingest.Service
+	// insertOnly enqueues jobs without working them, as the web API does.
+	insertOnly *river.Client[pgx.Tx]
+	file       *configfile.File
+	account    *configfile.Account
+	other      *configfile.Account
+	lf         *localForge
+	exec       *hookExecutor
+	review     *Review
 	// gatewayURL is the worker's gateway the runner calls its model
 	// through, which calls sm with the account's key.
 	gatewayURL string
@@ -273,6 +275,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 		t.Fatal(err)
 	}
 	h.svc = ingest.NewService(appStore, insertOnly)
+	h.insertOnly = insertOnly
 	workers := river.NewWorkers()
 	h.review = &Review{
 		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf},
@@ -367,6 +370,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a key the provider echoes back is masked", func(t *testing.T) { checkAgentKeyMasked(t, h) })
 	t.Run("the merge-base filter skips before the runner starts", func(t *testing.T) { checkAgentFiltered(t, h) })
 	t.Run("a runner skip the worker does not repeat still sets the status", func(t *testing.T) { checkRunnerOnlySkip(t, h) })
+	t.Run("a diff over maxChangedLines is skipped unless asked for", func(t *testing.T) { checkTooLarge(t, h) })
 	t.Run("a review outlives the client's job timeout", func(t *testing.T) { checkAgentOutlivesJobTimeout(t, h) })
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
 	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
@@ -386,9 +390,9 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		// One review per check that ran an agent; the runner-only skip ran
-		// none.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 9 || foreign != 0 {
+		// One review per check that ran an agent; the runner-only skips ran
+		// none, and the too-large check's asked-for review ran one.
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 10 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1191,6 +1195,82 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Unlock()
 	if forgeStatus != "success: kritika: skipped (patch unchanged since the last review)" {
 		t.Fatalf("forge status = %q", forgeStatus)
+	}
+}
+
+// checkTooLarge sets maxChangedLines under what a push changes: the runner
+// skips the review before any model call and the commit status says so,
+// while a review someone asks for runs the agent anyway.
+func checkTooLarge(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	h.sm.mu.Lock()
+	before := h.sm.requests
+	h.sm.mu.Unlock()
+	limited := *h.file
+	limited.Defaults.MaxChangedLines = new(2)
+	h.review.Current.Set(&limited)
+	t.Cleanup(func() { h.review.Current.Set(h.file) })
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc large() {}\n\nfunc larger() {}\n")
+	h.lf.mu.Lock()
+	h.lf.status = ""
+	h.lf.mu.Unlock()
+	h.dispatch(t, next)
+	reviewID, status, _ := h.waitReview(t, next)
+	if status != "skipped" {
+		t.Fatalf("status = %s, want skipped", status)
+	}
+	var skip string
+	var agentRows int
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT c.skip_reason, (SELECT count(*) FROM agent_runs a WHERE a.runner_run_id = r.id)
+			FROM runner_runs r JOIN context_packs c ON c.runner_run_id = r.id WHERE r.review_id = $1`, reviewID).Scan(&skip, &agentRows)
+	})
+	if err != nil || skip != runner.SkipTooLarge || agentRows != 0 {
+		t.Fatalf("pack skip = %q with %d agent run(s), %v; want %s with none", skip, agentRows, err, runner.SkipTooLarge)
+	}
+	h.sm.mu.Lock()
+	after := h.sm.requests
+	h.sm.mu.Unlock()
+	if after != before {
+		t.Fatalf("a skipped review called the model %d time(s)", after-before)
+	}
+	h.lf.mu.Lock()
+	forgeStatus := h.lf.status
+	h.lf.mu.Unlock()
+	if forgeStatus != "success: kritika: skipped (more than 2 changed lines)" {
+		t.Fatalf("forge status = %q", forgeStatus)
+	}
+
+	// Asked for, as "@acme-bot review" does, the same head is reviewed
+	// whatever its size. The skipped review is already finished, so the
+	// second finished one is waited for.
+	err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		_, err := jobs.EnqueueRerun(h.ctx, tx, h.insertOnly, h.account.ID(), configfile.RepositoryID(h.account.ID(), "acme/widgets"), 1)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("EnqueueRerun: %v", err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var finished int
+		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(h.ctx, `SELECT count(*), coalesce((SELECT status FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL
+				ORDER BY created_at DESC LIMIT 1), '') FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL`, next).Scan(&finished, &status)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if finished >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no second finished review for %s", next)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if status != "completed" {
+		t.Fatalf("status = %s, want completed: a review someone asked for is never too large", status)
 	}
 }
 

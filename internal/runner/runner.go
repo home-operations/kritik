@@ -120,7 +120,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	// written: whether the review is skipped, what it builds on, and what
 	// the prompt was given. A skipped review spends nothing on a model.
 	scope, scopeReason := review.DecideScope(p.PriorHead != "", priorHead != nil, len(deltaPaths), p.Prompt.MaxDeltaFiles)
-	skip := agentSkip(p, res.Changed, res.PatchID)
+	skip := agentSkip(p, res.Changed, res.PatchID, res.Diff)
 	in := newPromptInputs(p, files, res.Changed)
 	notes = append(notes, in.notes...)
 	var tools agentTools

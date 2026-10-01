@@ -172,6 +172,9 @@ func (s *Settings) apply(o *Overrides) {
 	if o.MaxAutoReviews != nil {
 		s.MaxAutoReviews = *o.MaxAutoReviews
 	}
+	if o.MaxChangedLines != nil {
+		s.MaxChangedLines = *o.MaxChangedLines
+	}
 	s.Agent = s.Agent.overlay(o.Agent)
 	if o.Incremental.MaxDeltaFiles != nil {
 		s.Incremental.MaxDeltaFiles = *o.Incremental.MaxDeltaFiles

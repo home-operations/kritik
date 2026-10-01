@@ -130,10 +130,14 @@ func (p *publishPhase) countAutoReview(ctx context.Context) (string, error) {
 }
 
 // skipDescription is how the commit status states a skip the runner
-// decided: a repository's own reason, or a bot's unchanged patch.
-func skipDescription(reason string) string {
-	if reason == runner.SkipUnchangedPatch {
+// decided: a repository's own reason, a bot's unchanged patch, or a diff
+// over the repository's maxChangedLines.
+func skipDescription(reason string, maxChangedLines int) string {
+	switch reason {
+	case runner.SkipUnchangedPatch:
 		return "patch unchanged since the last review"
+	case runner.SkipTooLarge:
+		return fmt.Sprintf("more than %d changed lines", maxChangedLines)
 	}
 	return repoconfig.SkipReason(reason).Description()
 }

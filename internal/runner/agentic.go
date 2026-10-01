@@ -47,9 +47,13 @@ type packView struct {
 	Scope     review.Scope
 }
 
-// SkipUnchangedPatch is the skip reason for a bot's pull request whose patch
-// id equals its last prepared review's. The others are repoconfig's.
-const SkipUnchangedPatch = "unchanged_patch"
+// Skip reasons the runner decides beyond repoconfig's: a bot's pull request
+// whose patch id equals its last prepared review's, and a diff that changes
+// more lines than the repository's maxChangedLines.
+const (
+	SkipUnchangedPatch = "unchanged_patch"
+	SkipTooLarge       = "too_large"
+)
 
 // Notes the runner adds to the pack about the repository's files, which
 // the review's summary states.
@@ -154,12 +158,14 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, s
 // agentSkip returns why the worker will skip this review whatever the
 // agent finds, or "": decided before the agent runs, so a skipped review
 // spends nothing.
-func agentSkip(p Spec, changed []string, patchID string) string {
+func agentSkip(p Spec, changed []string, patchID, diff string) string {
 	switch {
 	case p.Prompt.UnchangedPatchID != "" && patchID == p.Prompt.UnchangedPatchID:
 		return SkipUnchangedPatch
 	case repoconfig.AllIgnored(p.Ignore, changed):
 		return string(repoconfig.SkipOnlyPaths)
+	case p.Prompt.MaxChangedLines > 0 && contextpack.ChangedLines(diff, p.Ignore) > p.Prompt.MaxChangedLines:
+		return SkipTooLarge
 	}
 	return ""
 }

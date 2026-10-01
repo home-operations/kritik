@@ -296,7 +296,7 @@ func (w *Review) afterRun(
 		}
 		owner, repo := pr.ownerRepo()
 		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusSuccess,
-			"kritika: skipped ("+skipDescription(pack.SkipReason)+")"); err != nil {
+			"kritika: skipped ("+skipDescription(pack.SkipReason, eff.MaxChangedLines)+")"); err != nil {
 			logger.Warn("commit status not set", "error", err)
 		}
 		return prepared{}, store.ReviewSkipped, nil

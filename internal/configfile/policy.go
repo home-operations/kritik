@@ -69,6 +69,7 @@ var Policies = []Policy{
 	{Key: "agent.commandTimeout", Scopes: everyScope},
 	{Key: keySettle, Scopes: everyScope},
 	{Key: "maxAutoReviews", Scopes: everyScope},
+	{Key: "maxChangedLines", Scopes: everyScope},
 	{Key: "incremental.maxDeltaFiles", Scopes: everyScope},
 	{Key: "limits", Scopes: accountScopes},
 }

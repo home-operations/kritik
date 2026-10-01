@@ -268,7 +268,7 @@ CREATE TABLE context_packs (
     delta_paths    text[]      NOT NULL DEFAULT '{}',
     scope          text        NOT NULL DEFAULT 'full' CHECK (scope IN ('full', 'incremental')),
     scope_reason   text        NOT NULL DEFAULT '',
-    skip_reason    text        NOT NULL DEFAULT '' CHECK (skip_reason IN ('', 'only_skipped_paths', 'unchanged_patch')),
+    skip_reason    text        NOT NULL DEFAULT '' CHECK (skip_reason IN ('', 'only_skipped_paths', 'unchanged_patch', 'too_large')),
     rule_ids       text[]      NOT NULL DEFAULT '{}',
     swept_at       timestamptz
 );

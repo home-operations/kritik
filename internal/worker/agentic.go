@@ -15,6 +15,7 @@ import (
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gateway"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/runner"
@@ -150,6 +151,10 @@ func (w *Review) agentPrompt(
 			return err
 		}
 		p.Rules = repoconfig.RulesFor(eff.Review.Rules, vars)
+		if trigger != jobs.TriggerManual {
+			// A review someone asked for is never too large.
+			p.MaxChangedLines = eff.MaxChangedLines
+		}
 		if pr.dedupesBotPatch(trigger) {
 			p.UnchangedPatchID, err = lastPatchID(ctx, tx, pr.id, reviewID)
 		}

@@ -457,7 +457,8 @@ func (o *Overrides) compile() (err error) {
 
 // validateOverrides checks the settings one scope writes: its models name
 // providers declared for account t (nil for the defaults), and its settle,
-// maxAutoReviews, ignore globs, agent, incremental and review keys are in
+// maxAutoReviews, maxChangedLines, ignore globs, agent, incremental and
+// review keys are in
 // range.
 func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	if err := f.checkModels(where+".models", t, r.Models); err != nil {
@@ -468,6 +469,9 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	}
 	if r.MaxAutoReviews != nil && *r.MaxAutoReviews < 0 {
 		return fmt.Errorf("configfile: %s.maxAutoReviews must not be negative", where)
+	}
+	if r.MaxChangedLines != nil && *r.MaxChangedLines < 0 {
+		return fmt.Errorf("configfile: %s.maxChangedLines must not be negative", where)
 	}
 	for gi, g := range r.Ignore {
 		if !ValidGlob(g) {
