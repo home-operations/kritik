@@ -1,11 +1,14 @@
 {{- if not .Values.database.app.existingSecret -}}
-{{- fail "database.app.existingSecret is required: the Secret holding the application role's connection URI" -}}
+{{- fail "database.app.existingSecret is required: the Secret holding the application role's credentials" -}}
 {{- end -}}
 {{- if not .Values.database.owner.existingSecret -}}
 {{- fail "database.owner.existingSecret is required: the leader runs migrations with it" -}}
 {{- end -}}
 {{- if not .Values.database.runner.existingSecret -}}
 {{- fail "database.runner.existingSecret is required: runner Jobs connect with it" -}}
+{{- end -}}
+{{- if and (not .Values.database.host) (or (not .Values.database.app.uriKey) (not .Values.database.owner.uriKey) (not .Values.database.runner.uriKey)) -}}
+{{- fail "database.host is required: a role whose Secret holds a username and password connects to it; or set every role's uriKey" -}}
 {{- end -}}
 {{- if not .Values.web.url -}}
 {{- fail "web.url is required: the dashboard's public URL, which the webhook listener shares under /hooks" -}}
@@ -111,16 +114,38 @@ spec:
               value: {{ $.Values.database.app.role | quote }}
             - name: KRITIKA_DATABASE_RUNNER_ROLE
               value: {{ $.Values.database.runner.role | quote }}
-            - name: KRITIKA_DATABASE_URL
+            {{- with $.Values.database.host }}
+            - name: KRITIKA_DATABASE_HOST
+              value: {{ tpl . $ | quote }}
+            - name: KRITIKA_DATABASE_PORT
+              value: {{ $.Values.database.port | quote }}
+            - name: KRITIKA_DATABASE_NAME
+              value: {{ tpl $.Values.database.name $ | quote }}
+            - name: KRITIKA_DATABASE_SSLMODE
+              value: {{ tpl $.Values.database.sslmode $ | quote }}
+            - name: KRITIKA_DATABASE_CONNECT_TIMEOUT
+              value: {{ tpl (toString $.Values.database.connectTimeout) $ | quote }}
+            {{- end }}
+            {{- range $role := list (dict "prefix" "KRITIKA_DATABASE" "spec" $.Values.database.app) (dict "prefix" "KRITIKA_DATABASE_OWNER" "spec" $.Values.database.owner) }}
+            {{- if $role.spec.uriKey }}
+            - name: {{ $role.prefix }}_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ tpl $.Values.database.app.existingSecret $ | quote }}
-                  key: {{ $.Values.database.app.key | quote }}
-            - name: KRITIKA_DATABASE_OWNER_URL
+                  name: {{ tpl $role.spec.existingSecret $ | quote }}
+                  key: {{ $role.spec.uriKey | quote }}
+            {{- else }}
+            - name: {{ $role.prefix }}_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ tpl $.Values.database.owner.existingSecret $ | quote }}
-                  key: {{ $.Values.database.owner.key | quote }}
+                  name: {{ tpl $role.spec.existingSecret $ | quote }}
+                  key: {{ $role.spec.usernameKey | quote }}
+            - name: {{ $role.prefix }}_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ tpl $role.spec.existingSecret $ | quote }}
+                  key: {{ $role.spec.passwordKey | quote }}
+            {{- end }}
+            {{- end }}
             - name: KRITIKA_EXECUTOR
               value: kubernetes
             - name: KRITIKA_RUNNER_IMAGE
@@ -130,7 +155,11 @@ spec:
             - name: KRITIKA_RUNNER_DATABASE_SECRET
               value: {{ tpl $.Values.database.runner.existingSecret $ | quote }}
             - name: KRITIKA_RUNNER_DATABASE_SECRET_KEY
-              value: {{ $.Values.database.runner.key | quote }}
+              value: {{ $.Values.database.runner.uriKey | quote }}
+            - name: KRITIKA_RUNNER_DATABASE_SECRET_USER_KEY
+              value: {{ $.Values.database.runner.usernameKey | quote }}
+            - name: KRITIKA_RUNNER_DATABASE_SECRET_PASSWORD_KEY
+              value: {{ $.Values.database.runner.passwordKey | quote }}
             - name: KRITIKA_RUNNER_TTL
               value: {{ tpl (toString $.Values.runner.ttl) $ | quote }}
             {{- with $.Values.runner.runtimeClassName }}

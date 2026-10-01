@@ -16,6 +16,7 @@ roles, its public URL, a way to sign in, and its configuration file:
 
 ```sh
 helm install kritika oci://ghcr.io/home-operations/charts/kritika \
+  --set database.host=kritika-postgres-rw \
   --set database.app.existingSecret=kritika-postgres-app \
   --set database.owner.existingSecret=kritika-postgres-credentials \
   --set database.runner.existingSecret=kritika-postgres-runner \
@@ -96,8 +97,10 @@ that holds the lock.
 [Postgres with CloudNativePG](https://kritika.home-operations.com/database/)
 sets this up end to end: a two-instance cluster on TensorChord's VectorChord
 image, the extensions through a `Database` resource, the application and
-runner roles as `DatabaseRole` resources, the Secrets with their `uri` key
-for `database.*.existingSecret`, failover and backups.
+runner roles as `DatabaseRole` resources, whose username and password
+Secrets are what `database.*.existingSecret` name, failover and backups.
+kritika builds each connection from `database.host` and the role's Secret;
+a Secret holding a connection URI instead names its key in `uriKey`.
 
 ### Egress gateway
 
@@ -246,14 +249,25 @@ Kubernetes: `>=1.25.0-0`
 | config.pollLookback | string | `""` | How far back a first or long-idle poll looks (KRITIKA_POLL_LOOKBACK, Go duration). Empty is kritika's default, 24h. |
 | config.reviewWorkers | int | `2` | Review jobs one replica runs at once (KRITIKA_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed `replicas` × (reviewWorkers + indexWorkers). |
 | config.transcriptRetention | string | `""` | How long a review's transcript is kept, at least 24h (KRITIKA_TRANSCRIPT_RETENTION, Go duration). Empty is kritika's default, 720h. |
-| database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
-| database.app.key | string | `"uri"` | Key in that Secret. |
+| database.app.existingSecret | required | `""` | Secret holding the application role's credentials. |
+| database.app.passwordKey | string | `"password"` | Key in that Secret holding the password. |
 | database.app.role | string | `"kritika_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |
-| database.owner.existingSecret | required | `""` | Secret holding the owner role's connection URI, used only by the leader for migrations and configuration sync. |
-| database.owner.key | string | `"uri"` | Key in that Secret. |
-| database.runner.existingSecret | required | `""` | Secret holding the runner role's connection URI; referenced by runner Jobs, never read by kritika serve. |
-| database.runner.key | string | `"uri"` | Key in that Secret. |
+| database.app.uriKey | string | `""` | Key in that Secret holding a connection URI; set, it is used instead of the username, the password and `database.host`. |
+| database.app.usernameKey | string | `"username"` | Key in that Secret holding the username. |
+| database.connectTimeout | string | `"10s"` | Connection attempt timeout (KRITIKA_DATABASE_CONNECT_TIMEOUT), so a dial to a Service address DNS still caches after a redeploy fails fast and the retry looks the name up again. |
+| database.host | string | `""` | Postgres host (KRITIKA_DATABASE_HOST), e.g. kritika-postgres-rw. Required unless every role's Secret holds a connection URI. |
+| database.name | string | `"kritika"` | Database name (KRITIKA_DATABASE_NAME). |
+| database.owner.existingSecret | required | `""` | Secret holding the owner role's credentials, used only by the leader for migrations and configuration sync. |
+| database.owner.passwordKey | string | `"password"` | Key in that Secret holding the password. |
+| database.owner.uriKey | string | `""` | Key in that Secret holding a connection URI; set, it is used instead of the username, the password and `database.host`. |
+| database.owner.usernameKey | string | `"username"` | Key in that Secret holding the username. |
+| database.port | int | `5432` | Postgres port (KRITIKA_DATABASE_PORT). |
+| database.runner.existingSecret | required | `""` | Secret holding the runner role's credentials; referenced by runner Jobs, never read by kritika serve. |
+| database.runner.passwordKey | string | `"password"` | Key in that Secret holding the password. |
 | database.runner.role | string | `"kritika_runner"` | Name of the runner role, granted only what runner Jobs need. |
+| database.runner.uriKey | string | `""` | Key in that Secret holding a connection URI; set, it is used instead of the username, the password and `database.host`. |
+| database.runner.usernameKey | string | `"username"` | Key in that Secret holding the username. |
+| database.sslmode | string | `"require"` | libpq sslmode (KRITIKA_DATABASE_SSLMODE). `require` encrypts without verifying the server, which an in-cluster Postgres with an operator-issued certificate offers without more setup. |
 | deploymentAnnotations | object | `{}` | Annotations added to the Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
 | fullnameOverride | string | `""` | Override the full release name. |
 | gateway.port | int | `8082` | Port of the gateway the kritika serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod. |

@@ -91,7 +91,7 @@ func run() error {
 		"gateway_addr", cfg.GatewayAddr,
 		"gateway_url", cfg.GatewayURL,
 		"config_file", cfg.ConfigFile,
-		"owner_dsn", cfg.DatabaseOwnerURL != "",
+		"owner_dsn", cfg.OwnerDatabase().Set(),
 	)
 
 	// Graceful shutdown on the usual termination signals. stop() runs as soon
@@ -331,11 +331,9 @@ func validate(command config.Command, cfg *config.Config) (runner.Spec, error) {
 // storeOptions is how command connects to the database: serve with the
 // owner DSN too, which leading needs, a runner never.
 func storeOptions(command config.Command, cfg *config.Config, logger *slog.Logger) store.Options {
-	opts := store.Options{
-		AppURL: cfg.DatabaseURL, Logger: logger,
-	}
+	opts := store.Options{App: cfg.Database(), Logger: logger}
 	if command == config.CommandServe {
-		opts.OwnerURL = cfg.DatabaseOwnerURL
+		opts.Owner = cfg.OwnerDatabase()
 	}
 	return opts
 }
@@ -404,7 +402,7 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 // newExecutor builds the runner executor the configuration selects.
 func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (executor.Executor, error) {
 	if cfg.Executor == config.ExecutorLocal {
-		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, Logger: logger})
+		runnerStore, err := store.Open(ctx, store.Options{App: cfg.RunnerDatabase(), Logger: logger})
 		if err != nil {
 			return nil, err
 		}
@@ -416,7 +414,8 @@ func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (
 	}
 	return &executor.Kube{
 		Client: client, Namespace: ns, Image: cfg.RunnerImage, ServiceAccount: cfg.RunnerServiceAccount,
-		DatabaseSecret: cfg.RunnerDatabaseSecret, DatabaseSecretKey: cfg.RunnerDatabaseSecretKey,
+		Database: cfg.DatabaseParams(), DatabaseSecret: cfg.RunnerDatabaseSecret, DatabaseSecretKey: cfg.RunnerDatabaseSecretKey,
+		DatabaseSecretUserKey: cfg.RunnerDatabaseSecretUserKey, DatabaseSecretPasswordKey: cfg.RunnerDatabaseSecretPasswordKey,
 		GatewayURL: cfg.GatewayURL, RuntimeClass: cfg.RunnerRuntimeClass, TTL: cfg.RunnerTTL, Logger: logger,
 	}, nil
 }

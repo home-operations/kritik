@@ -145,30 +145,56 @@ config:
   # - name: KRITIKA_LEADER_RETRY_INTERVAL
   #   value: 30s
 
-# Three Postgres connection strings, each from its own Secret. The
+# One Postgres, reached as three roles, each with its own Secret. The
 # application role must not own the tables (row-level security), the owner
 # role runs migrations and applies configuration on the leader, and the
-# runner role is handed to runner Jobs and can only write its own run. On
-# CloudNativePG, declare `app` and `runner` under `spec.managed.roles` and
-# use the bootstrap owner as `owner`; see the README.
+# runner role is handed to runner Jobs and can only write its own run.
+# kritika builds each connection from `host`, `port`, `name`, `sslmode` and
+# `connectTimeout` with the role's username and password, so a role's
+# Secret is the plain `kubernetes.io/basic-auth` Secret CloudNativePG
+# writes for a `DatabaseRole` and for the bootstrap owner, and no password
+# needs URI escaping. A role whose Secret holds a connection URI instead
+# names its key in `uriKey`. See the README.
 database:
+  # -- Postgres host (KRITIKA_DATABASE_HOST), e.g. kritika-postgres-rw. Required unless every role's Secret holds a connection URI.
+  host: ""
+  # -- Postgres port (KRITIKA_DATABASE_PORT).
+  port: 5432
+  # -- Database name (KRITIKA_DATABASE_NAME).
+  name: kritika
+  # -- libpq sslmode (KRITIKA_DATABASE_SSLMODE). `require` encrypts without verifying the server, which an in-cluster Postgres with an operator-issued certificate offers without more setup.
+  sslmode: require
+  # -- Connection attempt timeout (KRITIKA_DATABASE_CONNECT_TIMEOUT), so a dial to a Service address DNS still caches after a redeploy fails fast and the retry looks the name up again.
+  connectTimeout: 10s
   app:
-    # -- (required) Secret holding the application role's connection URI.
+    # -- (required) Secret holding the application role's credentials.
     existingSecret: ""
-    # -- Key in that Secret.
-    key: uri
+    # -- Key in that Secret holding the username.
+    usernameKey: username
+    # -- Key in that Secret holding the password.
+    passwordKey: password
+    # -- Key in that Secret holding a connection URI; set, it is used instead of the username, the password and `database.host`.
+    uriKey: ""
     # -- Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing).
     role: kritika_app
   owner:
-    # -- (required) Secret holding the owner role's connection URI, used only by the leader for migrations and configuration sync.
+    # -- (required) Secret holding the owner role's credentials, used only by the leader for migrations and configuration sync.
     existingSecret: ""
-    # -- Key in that Secret.
-    key: uri
+    # -- Key in that Secret holding the username.
+    usernameKey: username
+    # -- Key in that Secret holding the password.
+    passwordKey: password
+    # -- Key in that Secret holding a connection URI; set, it is used instead of the username, the password and `database.host`.
+    uriKey: ""
   runner:
-    # -- (required) Secret holding the runner role's connection URI; referenced by runner Jobs, never read by kritika serve.
+    # -- (required) Secret holding the runner role's credentials; referenced by runner Jobs, never read by kritika serve.
     existingSecret: ""
-    # -- Key in that Secret.
-    key: uri
+    # -- Key in that Secret holding the username.
+    usernameKey: username
+    # -- Key in that Secret holding the password.
+    passwordKey: password
+    # -- Key in that Secret holding a connection URI; set, it is used instead of the username, the password and `database.host`.
+    uriKey: ""
     # -- Name of the runner role, granted only what runner Jobs need.
     role: kritika_runner
 

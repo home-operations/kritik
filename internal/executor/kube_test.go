@@ -18,6 +18,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 const (
@@ -626,5 +627,36 @@ func TestTailKeepsValidUTF8(t *testing.T) {
 	got := tail("ab€cd", 4)
 	if got != "cd" || !utf8.ValidString(got) {
 		t.Fatalf("tail = %q", got)
+	}
+}
+
+// TestJobSpecDatabaseParameters: without a URI key, the runner is handed
+// the shared database parameters as values and the runner role's username
+// and password as references into the database Secret.
+func TestJobSpecDatabaseParameters(t *testing.T) {
+	k := &Kube{Namespace: "kritika", Image: "img", ServiceAccount: "sa", GatewayURL: "http://kritika-gateway:8082",
+		Database:       store.Conn{Host: "kritika-postgres-rw", Port: 5432, Database: "kritika", SSLMode: "require", ConnectTimeout: 10 * time.Second},
+		DatabaseSecret: "kritika-postgres-runner", DatabaseSecretUserKey: "username", DatabaseSecretPasswordKey: "password"}
+	j := mustJob(t, k, spec())
+	env := map[string]corev1.EnvVar{}
+	for _, e := range j.Spec.Template.Spec.Containers[0].Env {
+		env[e.Name] = e
+	}
+	for name, want := range map[string]string{
+		"KRITIKA_DATABASE_HOST": "kritika-postgres-rw", "KRITIKA_DATABASE_PORT": "5432", "KRITIKA_DATABASE_NAME": "kritika",
+		"KRITIKA_DATABASE_SSLMODE": "require", "KRITIKA_DATABASE_CONNECT_TIMEOUT": "10s",
+	} {
+		if env[name].Value != want {
+			t.Errorf("%s = %+v, want %q", name, env[name], want)
+		}
+	}
+	for name, key := range map[string]string{"KRITIKA_DATABASE_USER": "username", "KRITIKA_DATABASE_PASSWORD": "password"} {
+		ref := env[name].ValueFrom
+		if ref == nil || ref.SecretKeyRef == nil || ref.SecretKeyRef.Name != "kritika-postgres-runner" || ref.SecretKeyRef.Key != key {
+			t.Errorf("%s = %+v, want the %s key of the database Secret", name, env[name], key)
+		}
+	}
+	if _, ok := env["KRITIKA_DATABASE_URL"]; ok {
+		t.Error("a runner connecting by username must get no URL")
 	}
 }
