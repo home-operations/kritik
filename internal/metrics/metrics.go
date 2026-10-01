@@ -32,6 +32,7 @@ type Metrics struct {
 	modelTokens    *prometheus.CounterVec
 	modelCost      *prometheus.CounterVec
 	egress         *prometheus.CounterVec
+	forgeLimits    *prometheus.CounterVec
 	transcripts    *prometheus.CounterVec
 	leader         prometheus.Gauge
 }
@@ -61,6 +62,10 @@ func New(reg prometheus.Registerer) *Metrics {
 		reviews: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_reviews_total", Help: "Reviews finished, by terminal status.",
 		}, []string{lblAccount, "status"}),
+		forgeLimits: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_forge_rate_limits_total",
+			Help: "Responses the forge refused for a rate limit, by connection and whether the wait was taken.",
+		}, []string{lblConnection, lblOutcome}),
 		egress: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_egress_requests_total",
 			Help: "Requests runner pods made through the gateway, by kind (connect, http) and outcome (allowed, refused, error).",
@@ -124,7 +129,7 @@ func New(reg prometheus.Registerer) *Metrics {
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,
 		m.indexRuns, m.indexChunks, m.contextChunks,
 		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.jobsRescued, m.modelCalls, m.modelTokens, m.modelCost, m.egress,
-		m.transcripts,
+		m.forgeLimits, m.transcripts,
 		m.leader)
 	return m
 }
@@ -240,6 +245,15 @@ func (m *Metrics) ModelCall(account, model, role, outcome string, inputTokens, c
 	}
 	if costUSD > 0 {
 		m.modelCost.WithLabelValues(account, model, role).Add(costUSD)
+	}
+}
+
+// ForgeRateLimited counts a response the forge refused for a rate limit:
+// outcome is waited when the request waited the limit out and was sent
+// again, refused when the wait was too long or the request could not be.
+func (m *Metrics) ForgeRateLimited(connection, outcome string) {
+	if m != nil {
+		m.forgeLimits.WithLabelValues(connection, outcome).Inc()
 	}
 }
 

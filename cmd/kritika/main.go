@@ -34,6 +34,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
@@ -185,7 +186,9 @@ func serve(
 	}
 	// One forge client per App and account, shared by the workers and the
 	// leader's poll, so an installation's token is minted once.
-	forges := &worker.ForgeCache{Build: worker.BuildForge}
+	forges := &worker.ForgeCache{Build: func(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
+		return worker.BuildForge(ctx, in, repo, m)
+	}}
 	svc := ingest.NewService(st, inserter)
 	if st.LeaderEligible() {
 		sweeper, _ := exec.(*executor.Kube)

@@ -29,7 +29,7 @@ apps:
 }
 
 func TestBuildForgeRefusesAnotherForge(t *testing.T) {
-	if _, err := BuildForge(t.Context(), &configfile.Connection{Name: "x", Forge: "gitlab"}, "acme/widgets"); err == nil {
+	if _, err := BuildForge(t.Context(), &configfile.Connection{Name: "x", Forge: "gitlab"}, "acme/widgets", nil); err == nil {
 		t.Fatal("BuildForge built a client for a forge kritika does not support")
 	}
 }

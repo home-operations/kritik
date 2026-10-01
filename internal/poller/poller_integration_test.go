@@ -524,3 +524,94 @@ func TestPollerReadsReactions(t *testing.T) {
 		t.Fatalf("a pull request reviewed a month ago was read: %v", got)
 	}
 }
+
+// skipForge lists one pull request for every repository but fails the
+// listing of the one named failing, and has no inline comments to read
+// reactions from.
+type skipForge struct {
+	forge.Client
+	failing string
+}
+
+func (f *skipForge) ListInline(context.Context, string, string, int) ([]forge.Comment, error) {
+	return nil, nil
+}
+
+func (f *skipForge) ListOpenPullRequests(_ context.Context, _, name string, _ time.Time) ([]forge.OpenPullRequest, error) {
+	if name == f.failing {
+		return nil, errors.New("secondary rate limit")
+	}
+	return []forge.OpenPullRequest{{
+		Number: 9, Title: "poll me", Author: "onedr0p", State: "open", HeadRef: "h", HeadSHA: "abc999", BaseRef: "main",
+		UpdatedAt: time.Now(), DefaultBranch: "main",
+	}}, nil
+}
+
+// TestPollerPollsPastAFailingRepository: a repository the forge will not
+// list is skipped, the others are still polled, and the poll state is left
+// for the next pass to cover the skipped one.
+func TestPollerPollsPastAFailingRepository(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _ := file.Connection("bot-ross")
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	if _, err := st.RegisterRepositories(ctx, account.ID(), []store.ReachedRepository{
+		{FullName: "onedr0p/flaky", DefaultBranch: "main", Traits: &configfile.RepoTraits{}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A webhook reached the connection lately, so no default branch is
+	// checked: this poll is about the listing alone.
+	if err := st.RecordWebhookDelivery(ctx, in.ID()); err != nil {
+		t.Fatal(err)
+	}
+	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE account_id = $1`, account.ID()); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = name IN ('onedr0p/home-ops', 'onedr0p/flaky')`); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE number = 9`)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false WHERE name = 'onedr0p/flaky'`)
+			return err
+		})
+	})
+	p := &Poller{
+		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: &skipForge{failing: "flaky"}},
+		Dispatcher: ingest.NewService(st, queue), Logger: slog.New(slog.DiscardHandler),
+	}
+	n, err := p.Poll(ctx, file, account, in)
+	if err == nil || !strings.Contains(err.Error(), "1 of 2 repositories not polled") || !strings.Contains(err.Error(), "onedr0p/flaky") {
+		t.Fatalf("Poll() error = %v, want the skipped repository named", err)
+	}
+	if n != 1 {
+		t.Fatalf("Poll() handled %d, want home-ops's pull request polled past the failure", n)
+	}
+	var polled int
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM poll_state WHERE account_id = $1`, account.ID()).Scan(&polled)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if polled != 0 {
+		t.Fatal("poll state recorded although a repository was skipped")
+	}
+}

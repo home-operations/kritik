@@ -12,6 +12,7 @@ package poller
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -139,7 +140,10 @@ func (p *Poller) PollAll(ctx context.Context) {
 // Poll lists one account's repositories through the connection serving it
 // and returns how many pull requests were handed to the dispatcher. For a
 // connection no webhook has reached lately, it also checks each indexed
-// repository's default branch, since no push webhook will say it moved.
+// repository's default branch, since no push webhook will say it moved. A
+// repository the forge will not answer for is skipped and the rest polled;
+// the poll state is then left where it was, so the next poll covers the
+// skipped repository's window too, and the error names each one.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) (int, error) {
 	var repos []store.PollRepo
 	var state store.PollState
@@ -162,6 +166,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	started := time.Now()
 	handled := 0
 	runs := map[string]bool{}
+	var skipped []error
 	for _, r := range repos {
 		if ctx.Err() != nil {
 			return handled, ctx.Err()
@@ -173,6 +178,8 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 			continue
 		}
 		runs[repo] = true
+		// The client is the account's, not the repository's: without it
+		// nothing else can be polled either.
 		client, err := p.Forges.For(ctx, in, repo)
 		if err != nil {
 			return handled, err
@@ -180,12 +187,13 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		owner, name, _ := strings.Cut(repo, "/")
 		if checkTips && r.IndexedCommit != "" {
 			if err := p.pollTip(ctx, file, account, in, client, r, started); err != nil {
-				return handled, err
+				skipped = append(skipped, fmt.Errorf("%s: %w", repo, err))
 			}
 		}
 		prs, err := client.ListOpenPullRequests(ctx, owner, name, since)
 		if err != nil {
-			return handled, err
+			skipped = append(skipped, fmt.Errorf("%s: %w", repo, err))
+			continue
 		}
 		for _, pr := range prs {
 			action := ingest.ActionPoll
@@ -208,6 +216,9 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 	}
 	if err := p.pollReactions(ctx, account, in, runs); err != nil {
 		p.Logger.Warn("reactions not read", "connection", in.Name, "account", account.Key(), "error", err)
+	}
+	if len(skipped) > 0 {
+		return handled, fmt.Errorf("poller: %d of %d repositories not polled: %w", len(skipped), len(runs), errors.Join(skipped...))
 	}
 	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		return store.RecordPoll(ctx, tx, account.ID(), started)
