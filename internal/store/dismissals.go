@@ -64,15 +64,17 @@ func Dismissals(ctx context.Context, tx pgx.Tx, pullRequestID string) ([]Dismiss
 func LatestFinding(ctx context.Context, tx pgx.Tx, pullRequestID, fingerprint string) (review.Finding, bool, error) {
 	var f review.Finding
 	var sev string
-	err := tx.QueryRow(ctx, `SELECT f.path, f.line, f.severity, f.title, f.explanation FROM findings f JOIN reviews v ON v.id = f.review_id
+	var cat string
+	err := tx.QueryRow(ctx, `SELECT f.path, f.line, f.severity, f.category, f.title, f.explanation FROM findings f
+		JOIN reviews v ON v.id = f.review_id
 		WHERE v.pull_request_id = $1 AND v.status = 'completed' AND f.fingerprint = $2 ORDER BY v.created_at DESC, v.id DESC LIMIT 1`,
-		pullRequestID, fingerprint).Scan(&f.Path, &f.Line, &sev, &f.Title, &f.Explanation)
+		pullRequestID, fingerprint).Scan(&f.Path, &f.Line, &sev, &cat, &f.Title, &f.Explanation)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return review.Finding{}, false, nil
 	}
 	if err != nil {
 		return review.Finding{}, false, fmt.Errorf("store: read latest finding: %w", err)
 	}
-	f.Severity = review.Severity(sev)
+	f.Severity, f.Category = review.Severity(sev), review.Category(cat)
 	return f, true, nil
 }

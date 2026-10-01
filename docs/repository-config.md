@@ -60,10 +60,13 @@ context:
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `detailed` (default) | every line a maintainer could act on, smaller improvements, missing tests and questions included, each inline, with a one-click suggestion wherever the fix is a change to those lines |
 | `standard`           | the same review, with nits in the summary rather than inline                                                                                                                           |
-| `minimal`            | only what would stop the review: bugs, risks and breaking changes                                                                                                                      |
+| `minimal`            | only what would stop the review: correctness, security and reliability findings; a finding of another category is dropped before it is posted                                        |
 
   A `blocking` finding is always posted inline, and the summary lists
-  every finding.
+  every finding. Every finding carries a category beside its severity,
+  what kind of problem it is: `correctness`, `security`, `performance`,
+  `reliability`, `maintainability` or `tests`; the comments show it, the
+  dashboard filters by it, and `kritika_findings_total` counts by it.
 
 - `comments.inline: false`: posts the summary alone, without inline
   comments.
@@ -84,7 +87,7 @@ context:
   `.PriorHeadURL`, `.Prior`, the last review's findings each with
   `.Resolved`, and the dismissed ones each with `.Dismissed` and
   `.DismissReason`, `.Sources` and `.Incomplete`). The inline template's dot is
-  one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Title`,
+  one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Category`, `.Title`,
   `.Explanation`, `.SuggestedFix`, `.Replacement`, `.AgentPrompt`, `.Rules`,
   the ids of the rules it enforces, `.URL`, a link to the lines at the head
   commit, and `.ThreadURL`, a link to its inline comment thread once one

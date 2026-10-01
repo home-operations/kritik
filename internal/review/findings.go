@@ -63,6 +63,38 @@ func (s Severity) Rank() int {
 	return len(severities)
 }
 
+// Category is what kind of problem a finding is: the dimension of the
+// review it comes from, apart from how serious it is.
+type Category string
+
+// Categories a finding may carry.
+const (
+	CategoryCorrectness     Category = "correctness"
+	CategorySecurity        Category = "security"
+	CategoryPerformance     Category = "performance"
+	CategoryReliability     Category = "reliability"
+	CategoryMaintainability Category = "maintainability"
+	CategoryTests           Category = "tests"
+)
+
+var categories = []Category{
+	CategoryCorrectness, CategorySecurity, CategoryPerformance, CategoryReliability, CategoryMaintainability, CategoryTests,
+}
+
+// Categories lists the categories, in the order the dashboard shows them.
+func Categories() []Category { return slices.Clone(categories) }
+
+// Valid reports whether c is one of the categories.
+func (c Category) Valid() bool { return slices.Contains(categories, c) }
+
+// focusedCategories are the categories a focused (minimal) review keeps:
+// what would stop the review. The rest is dropped before it is posted.
+var focusedCategories = []Category{CategoryCorrectness, CategorySecurity, CategoryReliability}
+
+// Focused reports whether a finding of category c belongs in a focused
+// review.
+func (c Category) Focused() bool { return slices.Contains(focusedCategories, c) }
+
 // Summary is the review's overall judgement for the sticky comment.
 type Summary struct {
 	Take   string   `json:"take"`
@@ -75,9 +107,11 @@ const maxPraise = 3
 // Finding is one thing the reviewer wants a human to look at, anchored to a
 // line on the head side of the diff, or to the range Line through EndLine.
 type Finding struct {
-	Path         string   `json:"path"`
-	Line         int      `json:"line"`
-	Severity     Severity `json:"severity"`
+	Path     string   `json:"path"`
+	Line     int      `json:"line"`
+	Severity Severity `json:"severity"`
+	// Category is what kind of problem it is; see Category.
+	Category     Category `json:"category"`
 	Title        string   `json:"title"`
 	Explanation  string   `json:"explanation"`
 	SuggestedFix string   `json:"suggested_fix,omitempty"`
@@ -177,6 +211,10 @@ const (
 	DropIncomplete  DropReason = "incomplete"
 	DropNoFix       DropReason = "no_suggested_fix"
 	DropBadSeverity DropReason = "bad_severity"
+	DropBadCategory DropReason = "bad_category"
+	// DropOutsideFocus is a finding whose category a focused review does
+	// not report.
+	DropOutsideFocus DropReason = "outside_minimal"
 )
 
 // Dropped is a finding Parse discarded, with the reason.
@@ -189,6 +227,9 @@ type Dropped struct {
 type ParseOptions struct {
 	// RequireSuggestedFix drops findings that carry no suggested fix.
 	RequireSuggestedFix bool
+	// Focused drops findings of the categories a focused review leaves
+	// out, whatever the model was told.
+	Focused bool
 	// Rules are the ids of the rules the review was given, the only ones a
 	// finding may cite.
 	Rules []string
@@ -204,6 +245,7 @@ const (
 	keyPath         = "path"
 	keyLine         = "line"
 	keySeverity     = "severity"
+	keyCategory     = "category"
 	keyTitle        = "title"
 	keyExplanation  = "explanation"
 	keySuggestedFix = "suggested_fix"
@@ -246,12 +288,16 @@ const (
 		"the lines, the symbols and the exact change."
 	describeRules = "Ids of the review rules this finding enforces, as the Review rules section lists them; " +
 		"omit when it enforces none."
+	describeCategory = "What kind of problem it is. correctness: wrong behaviour, a bug, a broken contract. " +
+		"security: exposure, injection, secrets, unsafe defaults, data loss. performance: cost in time, memory or calls. " +
+		"reliability: error handling, retries, timeouts, concurrency, resource leaks. maintainability: structure, " +
+		"naming, clarity, duplication, dead code. tests: a test the change needs or a test that is wrong."
 )
 
 // contractSchema is kept minimal on purpose: every extra field is something
 // a model can get wrong.
 func contractSchema(requireFix bool) json.RawMessage {
-	required := []string{keyPath, keyLine, keySeverity, keyTitle, keyExplanation}
+	required := []string{keyPath, keyLine, keySeverity, keyCategory, keyTitle, keyExplanation}
 	fix := "A concrete fix: replacement code or a precise instruction. Markdown allowed, no headings."
 	if requireFix {
 		required = append(required, keySuggestedFix)
@@ -261,6 +307,10 @@ func contractSchema(requireFix bool) json.RawMessage {
 	enum := make([]string, len(severities))
 	for i, s := range severities {
 		enum[i] = string(s)
+	}
+	kinds := make([]string, len(categories))
+	for i, c := range categories {
+		kinds[i] = string(c)
 	}
 	return jsonSchema{
 		Type: schemaObject,
@@ -290,6 +340,7 @@ func contractSchema(requireFix bool) json.RawMessage {
 						keyLine: {Type: "integer", Description: "Line number in the new version of the file (a + or context line inside a hunk)."},
 						keySeverity: {Type: schemaString, Enum: enum,
 							Description: "blocking: must be fixed before merging. important: should be fixed. nit: optional polish."},
+						keyCategory:     {Type: schemaString, Enum: kinds, Description: describeCategory},
 						keyTitle:        {Type: schemaString, Description: "One line, under 80 characters."},
 						keyExplanation:  {Type: schemaString, Description: "Why it matters. Markdown allowed, no headings."},
 						keySuggestedFix: {Type: schemaString, Description: fix},
@@ -334,8 +385,9 @@ func Check(raw json.RawMessage) error {
 }
 
 // Parse decodes the model's JSON and drops findings kritika cannot post: an
-// unknown severity, a missing field, a missing fix when opts require one,
-// or a line the diff does not add or keep. Dropped findings are returned
+// unknown severity or category, a category a focused review leaves out, a
+// missing field, a missing fix when opts require one, or a line the diff
+// does not add or keep. Dropped findings are returned
 // with the reason so they can be logged and counted, never silently lost.
 // anchors maps a path to the head-side lines the diff covers. A range or a
 // replacement the diff does not wholly cover is cleared rather than the
@@ -369,6 +421,10 @@ func Parse(raw string, anchors map[string]map[int]bool, opts ParseOptions) (Resu
 		switch {
 		case !f.Severity.Valid():
 			reason = DropBadSeverity
+		case !f.Category.Valid():
+			reason = DropBadCategory
+		case opts.Focused && !f.Category.Focused():
+			reason = DropOutsideFocus
 		case f.Path == "" || f.Line <= 0 || f.Title == "" || f.Explanation == "":
 			reason = DropIncomplete
 		case opts.RequireSuggestedFix && f.SuggestedFix == "" && f.Replacement == "":

@@ -31,8 +31,8 @@
 // otherwise, including when the malformation is what prevents the slug
 // itself from being parsed (e.g. "#/a//acme").
 
-import type { FindingStatus, ReviewStatus, Severity } from './types';
-import { SEVERITIES } from './format';
+import type { FindingStatus, ReviewStatus, Severity, Category } from './types';
+import { SEVERITIES, CATEGORIES } from './format';
 
 export const REVIEW_TABS = ['summary', 'diff', 'conversation', 'timeline', 'raw', 'usage'] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
@@ -72,6 +72,7 @@ export function pullFilter(f: { state?: string; outcome?: string; repo?: string;
 // PullFilter's; a field is present only when it narrows the list.
 export interface FindingFilter {
   severity?: Severity;
+  category?: Category;
   status?: FindingStatus;
   repo?: string;
   rule?: string;
@@ -82,10 +83,19 @@ export const FINDING_STATUSES: readonly FindingStatus[] = ['open', 'addressed', 
 
 // findingFilter drops the fields of f that match everything; undefined when
 // nothing is left.
-export function findingFilter(f: { severity?: string; status?: string; repo?: string; rule?: string; q?: string }): FindingFilter | undefined {
+export function findingFilter(f: {
+  severity?: string;
+  category?: string;
+  status?: string;
+  repo?: string;
+  rule?: string;
+  q?: string;
+}): FindingFilter | undefined {
   const out: FindingFilter = {};
   const severity = SEVERITIES.find((s) => s === f.severity);
   if (severity) out.severity = severity;
+  const category = CATEGORIES.find((c) => c === f.category);
+  if (category) out.category = category;
   const status = FINDING_STATUSES.find((s) => s === f.status);
   if (status) out.status = status;
   if (f.repo) out.repo = f.repo;

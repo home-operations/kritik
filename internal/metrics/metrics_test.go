@@ -21,7 +21,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	m := New(reg)
 	m.Webhook("onedr0p-github", "enqueued")
 	m.Review("onedr0p", "completed", 12*time.Second)
-	m.Findings("onedr0p", "important", 2)
+	m.Findings("onedr0p", "important", "correctness", 2)
 	m.IndexRun("onedr0p", "full", "completed", 565)
 	m.RunnerRun("onedr0p", "index", "success", 4*time.Second)
 	m.LeaseWait("onedr0p", "openai/gpt-6-sol", 5*time.Millisecond)

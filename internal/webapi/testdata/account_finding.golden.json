@@ -4,6 +4,7 @@
   "line": 3,
   "endLine": 5,
   "severity": "blocking",
+  "category": "",
   "title": "nil deref",
   "explanation": "x may be nil",
   "suggestedFix": "check x",

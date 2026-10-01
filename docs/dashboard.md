@@ -24,7 +24,8 @@ at once, and holds a tab for each of an account's sections:
   longer reports it, or dismissed, with the reason, once a maintainer
   replied `@<bot> dismiss <reason>` in its thread. A finding kritika posted inline links to its thread
   on GitHub, here and on its review, and one that enforces a written rule
-  names it; `rule:<id>` narrows the list to the findings that cite it. Spend has the month so far against the account's
+  names it; `rule:<id>` narrows the list to the findings that cite it, and
+  `category:<kind>` to findings of one kind, which the tab also counts by. Spend has the month so far against the account's
   caps, and usage by day, model, repository or role.
 - **Pull requests:** its pull requests and their reviews, the run queue
   and the follow-up questions. The search box takes text, or narrows the

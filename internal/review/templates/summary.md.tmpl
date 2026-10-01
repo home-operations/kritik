@@ -24,14 +24,14 @@ _Incremental review of the changes since {{ if .PriorHeadURL }}[`{{ trunc 7 .Pri
 **Findings**
 
 {{ range .Result.Findings -}}
-- **[{{ .Severity }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}
+- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}
 {{ end -}}
 {{ end -}}
 {{ if .Unanchored }}
 **Outside the diff**
 
 {{ range .Unanchored -}}
-- **[{{ .Severity }}]** `{{ .Path }}:{{ .Line }}` {{ .Title }}
+- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** `{{ .Path }}:{{ .Line }}` {{ .Title }}
 
 {{ .Explanation | indent 2 }}
 {{ end -}}
@@ -40,7 +40,7 @@ _Incremental review of the changes since {{ if .PriorHeadURL }}[`{{ trunc 7 .Pri
 **Earlier findings**
 
 {{ range .Prior -}}
-- **[{{ .Severity }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }} · {{ if .Dismissed }}dismissed{{ if .DismissReason }}: {{ .DismissReason }}{{ end }}{{ else if .Resolved }}resolved{{ else }}still open{{ end }}
+- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }} · {{ if .Dismissed }}dismissed{{ if .DismissReason }}: {{ .DismissReason }}{{ end }}{{ else if .Resolved }}resolved{{ else }}still open{{ end }}
 {{ end -}}
 {{ end -}}
 {{ end -}}

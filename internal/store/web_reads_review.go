@@ -22,6 +22,7 @@ type FindingRow struct {
 	Line           int
 	EndLine        int
 	Severity       review.Severity
+	Category       review.Category
 	Title          string
 	Explanation    string
 	SuggestedFix   string
@@ -40,7 +41,7 @@ type FindingRow struct {
 // ListFindings returns a review's findings, most serious first.
 func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow, error) {
 	rows, err := tx.Query(ctx, `SELECT id, path, line, end_line, severity, title, explanation, suggested_fix, replacement,
-		agent_prompt, fingerprint, posted_inline, forge_comment_id, created_at, reactions_up, reactions_down, rules
+		agent_prompt, fingerprint, posted_inline, forge_comment_id, created_at, reactions_up, reactions_down, rules, category
 		FROM findings WHERE review_id = $1
 		ORDER BY CASE severity WHEN 'blocking' THEN 0 WHEN 'important' THEN 1 ELSE 2 END, path, line, id`, reviewID)
 	if err != nil {
@@ -48,10 +49,10 @@ func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (FindingRow, error) {
 		var f FindingRow
-		var sev string
+		var sev, cat string
 		err := row.Scan(&f.ID, &f.Path, &f.Line, &f.EndLine, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.Replacement,
-			&f.AgentPrompt, &f.Fingerprint, &f.PostedInline, &f.ForgeCommentID, &f.CreatedAt, &f.ReactionsUp, &f.ReactionsDown, &f.Rules)
-		f.Severity = review.Severity(sev)
+			&f.AgentPrompt, &f.Fingerprint, &f.PostedInline, &f.ForgeCommentID, &f.CreatedAt, &f.ReactionsUp, &f.ReactionsDown, &f.Rules, &cat)
+		f.Severity, f.Category = review.Severity(sev), review.Category(cat)
 		return f, err
 	})
 	if err != nil {

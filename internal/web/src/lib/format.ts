@@ -1,6 +1,6 @@
 // Pure display formatting shared by every page. No runes, so tests and
 // tooling can import it directly.
-import type { JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus } from './types';
+import type { JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus, Category } from './types';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 const whole = new Intl.NumberFormat('en');
@@ -94,6 +94,7 @@ export const followupTone: Record<FollowupStatus, Tone> = {
 };
 
 export const SEVERITIES: readonly Severity[] = ['blocking', 'important', 'nit'];
+export const CATEGORIES: readonly Category[] = ['correctness', 'security', 'performance', 'reliability', 'maintainability', 'tests'];
 
 // isActive reports whether a review is still moving, i.e. its page should
 // follow live events.

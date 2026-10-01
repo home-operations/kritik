@@ -157,12 +157,12 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 }
 
 func (p *publishPhase) countFindings(res review.Result) {
-	bySeverity := map[string]int{}
+	byKind := map[[2]string]int{}
 	for _, f := range res.Findings {
-		bySeverity[string(f.Severity)]++
+		byKind[[2]string{string(f.Severity), string(f.Category)}]++
 	}
-	for severity, n := range bySeverity {
-		p.w.Metrics.Findings(p.account.Key(), severity, n)
+	for kind, n := range byKind {
+		p.w.Metrics.Findings(p.account.Key(), kind[0], kind[1], n)
 	}
 }
 

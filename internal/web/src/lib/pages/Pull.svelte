@@ -124,6 +124,7 @@
                     {#each SEVERITIES.flatMap((s) => ld.findings.filter((f) => f.severity === s)) as f (f.id)}
                       <li>
                         <span class="sev sev-{f.severity}">{f.severity}</span>
+                        {#if f.category}<span class="badge">{f.category}</span>{/if}
                         <a href={href({ name: 'review', slug, id: r.id })}>{f.title}</a>
                         <span class="mono small muted">{f.path}:{f.line}</span>
                         {#if threadUrl(p.url, f.forgeCommentId)}

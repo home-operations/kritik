@@ -13,8 +13,8 @@ func sampleData() RenderData {
 	res := Result{
 		Summary: Summary{Take: "Solid change with one real bug.", Praise: []string{"Clear tests"}},
 		Findings: []Finding{
-			{Path: "main.go", Line: 11, Severity: SeverityBlocking, Title: "nil map write", Explanation: "m is nil here.", SuggestedFix: "m = map[string]int{}",
-				URL: "https://forge.example/o/r/blob/0123456789abcdef/main.go#L11"},
+			{Path: "main.go", Line: 11, Severity: SeverityBlocking, Category: CategoryCorrectness, Title: "nil map write", Explanation: "m is nil here.",
+				SuggestedFix: "m = map[string]int{}", URL: "https://forge.example/o/r/blob/0123456789abcdef/main.go#L11"},
 			{Path: "README.md", Line: 2, Severity: SeverityNit, Title: "typo", Explanation: "the the"},
 		},
 	}
@@ -36,7 +36,7 @@ func TestRenderSummaryDefault(t *testing.T) {
 		"**2 findings** · 1 blocking · 1 nit\n",
 		"Solid change with one real bug.",
 		"- Clear tests",
-		"- **[blocking]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write",
+		"- **[blocking · correctness]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write",
 		"- **[nit]** `README.md:2` typo",
 		"_1 file(s) were omitted from the diff to fit the context budget._",
 		"<sub>Reviewed `0123456` by kritika with vendor/model-x.</sub>",
@@ -84,7 +84,7 @@ func TestRenderSummaryLinks(t *testing.T) {
 	}
 	for _, want := range []string{
 		"_Incremental review of the changes since [`fedcba9`](https://forge.example/o/r/commit/fedcba9876543210)._",
-		"- **[blocking]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) [nil map write](https://forge.example/o/r/pull/42#r1)\n",
+		"- **[blocking · correctness]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) [nil map write](https://forge.example/o/r/pull/42#r1)\n",
 		"- **[nit]** `README.md:2` typo\n",
 		"**Outside the diff**\n\n- **[important]** `other.go:7` stale cache\n\n  The cache is\n  never cleared.\n",
 		"**Earlier findings**\n\n" +
@@ -230,7 +230,7 @@ func TestRenderInline(t *testing.T) {
 	if !strings.HasPrefix(body, marker) {
 		t.Fatalf("inline comment does not lead with its marker:\n%s", body)
 	}
-	for _, want := range []string{"**[blocking]** **nil map write**", "m is nil here.", "m = map[string]int{}"} {
+	for _, want := range []string{"**[blocking · correctness]** **nil map write**", "m is nil here.", "m = map[string]int{}"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)
 		}

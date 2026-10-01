@@ -368,6 +368,7 @@ export interface Finding {
   line: number;
   endLine: number;
   severity: Severity;
+  category: Category | '';
   title: string;
   explanation: string;
   suggestedFix: string;
@@ -390,6 +391,7 @@ export interface AnalyticsTotals {
   reviews: number;
   failed: number;
   findings: SeverityCounts;
+  categories: Record<Category, number>;
   addressed: number;
   reactionsUp: number;
   reactionsDown: number;
@@ -449,6 +451,10 @@ export interface Rule {
 }
 
 export type FindingStatus = 'open' | 'addressed' | 'dismissed';
+
+// Category is what kind of problem a finding is; '' on a finding recorded
+// before it had one.
+export type Category = 'correctness' | 'security' | 'performance' | 'reliability' | 'maintainability' | 'tests';
 
 // AccountFinding is one finding of a pull request, however many of its
 // reviews reported it, as the latest of them did; dismissReason is the

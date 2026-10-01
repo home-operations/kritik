@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // TestReadAnalytics checks the window totals, a series with every bucket
@@ -100,9 +102,13 @@ func TestReadAnalytics(t *testing.T) {
 	// naming was dropped by the review at h2, and typo by the one after the
 	// window; race is still open. old counts before the window.
 	median := int64(3 * time.Minute / time.Millisecond)
+	// The seeded findings predate categories, so every category counts zero.
 	want := AnalyticsTotals{
 		PullRequests: 2, Reviews: 3, Failed: 1, Findings: SeverityCounts{Important: 1, Nit: 2}, Addressed: 2, ReactionsUp: 3, CostUSD: 2,
-		MedianReviewMs: &median,
+		MedianReviewMs: &median, Categories: map[review.Category]int{},
+	}
+	for _, c := range review.Categories() {
+		want.Categories[c] = 0
 	}
 	if !reflect.DeepEqual(totals, want) {
 		t.Errorf("totals = %+v (median %v, merge %v), want %+v (median %v)", totals, deref(totals.MedianReviewMs),

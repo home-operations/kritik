@@ -54,12 +54,14 @@ type PullRef struct {
 }
 
 // FindingFilter narrows ListAccountFindings. Zero fields match everything;
-// Rule matches a finding that cites that rule id; Query matches a title,
+// Category matches a finding of that kind; Rule matches a finding that
+// cites that rule id; Query matches a title,
 // explanation, path or pull request title substring, or a pull request
 // number.
 type FindingFilter struct {
 	RepositoryID string
 	Severity     review.Severity
+	Category     review.Category
 	Status       FindingStatus
 	Rule         string
 	Query        string
@@ -73,7 +75,7 @@ type FindingFilter struct {
 // a dismissed finding does not count as. A finding stored without a
 // fingerprint is its own.
 const findingIssues = `seen AS (
-		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix, f.replacement,
+		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.category, f.title, f.explanation, f.suggested_fix, f.replacement,
 			f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up, f.reactions_down, f.rules,
 			v.id AS review_id, v.pull_request_id, v.head_sha, v.created_at AS seen_at,
 			row_number() OVER newest AS nth, min(v.created_at) OVER issue AS first_at
@@ -89,7 +91,7 @@ const findingIssues = `seen AS (
 		WHERE s.nth = 1)`
 
 const accountFindings = `WITH ` + findingIssues + `
-	SELECT l.id, l.path, l.line, l.end_line, l.severity, l.title, l.explanation, l.suggested_fix, l.replacement,
+	SELECT l.id, l.path, l.line, l.end_line, l.severity, l.category, l.title, l.explanation, l.suggested_fix, l.replacement,
 		l.agent_prompt, l.fingerprint, l.posted_inline, l.forge_comment_id, l.created_at, l.reactions_up, l.reactions_down, l.rules,
 		l.review_id, r.name, p.number, p.title, p.url, l.addressed, l.dismissed, l.dismiss_reason, l.first_at, l.seen_at
 	FROM latest l JOIN pull_requests p ON p.id = l.pull_request_id JOIN repositories r ON r.id = p.repository_id`
@@ -100,7 +102,7 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 	if err := p.check(); err != nil {
 		return nil, nil, err
 	}
-	if (f.Severity != "" && !f.Severity.Valid()) || (f.Status != "" && !f.Status.Valid()) {
+	if (f.Severity != "" && !f.Severity.Valid()) || (f.Category != "" && !f.Category.Valid()) || (f.Status != "" && !f.Status.Valid()) {
 		return nil, nil, ErrFilter
 	}
 	number := -1
@@ -115,21 +117,22 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 			AND ($4 = '' OR l.title ILIKE $5 OR l.explanation ILIKE $5 OR l.path ILIKE $5 OR p.title ILIKE $5 OR p.number = $6)
 			AND ($7 OR (l.seen_at, l.id) < ($8, $9::uuid))
 			AND ($11 = '' OR $11 = ANY (l.rules))
+			AND ($12 = '' OR l.category = $12)
 		ORDER BY l.seen_at DESC, l.id DESC LIMIT $10`,
 		uuidParam(f.RepositoryID), string(f.Severity), string(f.Status), f.Query, like, number,
-		p.After.First(), p.After.T, p.afterID(), p.Limit+1, f.Rule)
+		p.After.First(), p.After.T, p.afterID(), p.Limit+1, f.Rule, string(f.Category))
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list account findings: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (AccountFinding, error) {
 		var a AccountFinding
-		var sev string
+		var sev, cat string
 		var addressed, dismissed bool
-		err := row.Scan(&a.ID, &a.Path, &a.Line, &a.EndLine, &sev, &a.Title, &a.Explanation, &a.SuggestedFix, &a.Replacement,
+		err := row.Scan(&a.ID, &a.Path, &a.Line, &a.EndLine, &sev, &cat, &a.Title, &a.Explanation, &a.SuggestedFix, &a.Replacement,
 			&a.AgentPrompt, &a.Fingerprint, &a.PostedInline, &a.ForgeCommentID, &a.CreatedAt, &a.ReactionsUp, &a.ReactionsDown, &a.Rules,
 			&a.ReviewID, &a.PullRequest.Repository, &a.PullRequest.Number, &a.PullRequest.Title, &a.PullRequest.URL,
 			&addressed, &dismissed, &a.DismissReason, &a.FirstSeenAt, &a.LastSeenAt)
-		a.Severity, a.Status = review.Severity(sev), FindingOpen
+		a.Severity, a.Category, a.Status = review.Severity(sev), review.Category(cat), FindingOpen
 		switch {
 		case dismissed:
 			a.Status = FindingDismissed
