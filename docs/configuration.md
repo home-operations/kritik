@@ -298,7 +298,7 @@ level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
   `commandTimeout`. `maxSteps: 1` is the cheapest review: one call, which
   must submit the findings, over the same prompt
   ([ADR-0026](adr/0026-agentic-only.md)). The runner's `-tools` image has `gh`, `curl`,
-  `fd` and `rg`; the agent is told to use `gh` for GitHub, which signs in
+  `fd`, `jq`, `rg` and `yq`; the agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under
   review and public repositories
   ([ADR-0023](adr/0023-gh-in-runners.md)).
