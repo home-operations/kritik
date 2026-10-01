@@ -269,6 +269,11 @@ type Embedding struct {
 	MaxBatch      int `yaml:"maxBatch,omitempty"`
 	MaxBatchChars int `yaml:"maxBatchChars,omitempty"`
 	MaxItemChars  int `yaml:"maxItemChars,omitempty"`
+	// SimilarFloor is the cosine similarity an index chunk needs to count
+	// as similar code, for the review's similar-code stage and the agent's
+	// search_code tool alike. Where useful matches part from noise depends
+	// on the model and the repository; unset is DefaultSimilarFloor.
+	SimilarFloor float64 `yaml:"similarFloor,omitempty"`
 
 	// BaseURL, Model and the key are the provider's, resolved at load:
 	// its endpoint, the model's id on it, and its key.
@@ -289,6 +294,13 @@ func (e *Embedding) Bounds() (batch, batchChars, itemChars int) {
 	return cmp.Or(e.MaxBatch, model.DefaultEmbedMaxBatch), cmp.Or(e.MaxBatchChars, model.DefaultEmbedMaxBatchChars),
 		cmp.Or(e.MaxItemChars, model.DefaultEmbedMaxItemChars)
 }
+
+// DefaultSimilarFloor is the similar-code floor when the embedder sets
+// none.
+const DefaultSimilarFloor = 0.5
+
+// Floor returns SimilarFloor, DefaultSimilarFloor when unset.
+func (e *Embedding) Floor() float64 { return cmp.Or(e.SimilarFloor, DefaultSimilarFloor) }
 
 // minRetention is the shortest transcript or diff retention that may be
 // set.

@@ -717,7 +717,7 @@
       "type": "object"
     },
     "readinessProbe": {
-      "description": "Readiness probe, on the metrics port. A replica is ready once it has a database connection and its listeners are up.",
+      "description": "Readiness probe, on the metrics port. A replica is ready once its configuration file has loaded and its listeners are up, before the database answers: until it does, the dashboard shows that kritik is starting and webhooks are refused with a reason, from kritik rather than the ingress.",
       "properties": {
         "httpGet": {
           "properties": {
@@ -850,7 +850,7 @@
           "type": "array"
         },
         "ttl": {
-          "default": "1h",
+          "default": "10m",
           "description": "How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew.",
           "title": "ttl",
           "type": "string"

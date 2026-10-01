@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -90,6 +91,7 @@ type runCase struct {
 	name      string
 	tools     []Tool
 	limits    Limits
+	validate  func(json.RawMessage) error
 	setup     func(t *testing.T) (stepper model.Stepper, ctx context.Context, scripted *scriptedStepper)
 	wantStop  StopReason
 	wantSteps int
@@ -157,6 +159,44 @@ func checkInvalidSubmitJSONThenValid(t *testing.T, result Result, _ []StepEvent,
 	if string(result.Submitted) != validSubmitInput {
 		t.Fatalf("Submitted = %s, want %s", result.Submitted, validSubmitInput)
 	}
+}
+
+// rejectVerdict is a Validate that refuses the submit inputs without a
+// "verdict" key, with a message the model is expected to see.
+func rejectVerdict(input json.RawMessage) error {
+	if !strings.Contains(string(input), "verdict") {
+		return errors.New("verdict is required")
+	}
+	return nil
+}
+
+func setupRejectedSubmitThenValid(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", `{"wrong":"shape"}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("2", "submit_review", validSubmitInput)}},
+	}}
+	return st, nil, st
+}
+
+func checkRejectedSubmitThenValid(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
+	if string(result.Submitted) != validSubmitInput {
+		t.Fatalf("Submitted = %s, want %s", result.Submitted, validSubmitInput)
+	}
+	last := scripted.calls[len(scripted.calls)-1]
+	lastMsg := last.Messages[len(last.Messages)-1]
+	if len(lastMsg.ToolResults) != 1 || !lastMsg.ToolResults[0].IsError {
+		t.Fatalf("expected an error ToolResult for the rejected submit, got %+v", lastMsg.ToolResults)
+	}
+	if got := lastMsg.ToolResults[0].Content; !strings.Contains(got, "verdict is required") {
+		t.Fatalf("ToolResult = %q, want the validator's message", got)
+	}
+}
+
+func setupForcedRejectedSubmitStopsNoSubmit(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", `{"wrong":"shape"}`)}},
+	}}
+	return st, nil, st
 }
 
 func setupForcedInvalidSubmitStopsNoSubmit(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
@@ -482,6 +522,23 @@ func TestRun(t *testing.T) {
 			check:     checkForcedInvalidSubmitStopsNoSubmit,
 		},
 		{
+			name:      "rejected_submit_then_valid",
+			validate:  rejectVerdict,
+			setup:     setupRejectedSubmitThenValid,
+			wantStop:  StopSubmitted,
+			wantSteps: 2,
+			check:     checkRejectedSubmitThenValid,
+		},
+		{
+			name:      "forced_rejected_submit_stops_no_submit",
+			limits:    Limits{MaxSteps: 1},
+			validate:  rejectVerdict,
+			setup:     setupForcedRejectedSubmitStopsNoSubmit,
+			wantStop:  StopNoSubmit,
+			wantSteps: 1,
+			check:     checkForcedInvalidSubmitStopsNoSubmit,
+		},
+		{
 			name:      "text_only_twice_stops_no_submit",
 			setup:     setupTextOnlyTwiceStopsNoSubmit,
 			wantStop:  StopNoSubmit,
@@ -630,11 +687,12 @@ func TestRun(t *testing.T) {
 			}
 			var events []StepEvent
 			run := Run{
-				Stepper: stepper,
-				Tools:   tt.tools,
-				Submit:  testSubmitDef,
-				Limits:  tt.limits,
-				OnStep:  func(e StepEvent) { events = append(events, e) },
+				Stepper:  stepper,
+				Tools:    tt.tools,
+				Submit:   testSubmitDef,
+				Validate: tt.validate,
+				Limits:   tt.limits,
+				OnStep:   func(e StepEvent) { events = append(events, e) },
 			}
 
 			result := run.Do(ctx)

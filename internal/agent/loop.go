@@ -93,7 +93,12 @@ type Run struct {
 	// Submit is the submit_review tool; its schema is the review contract.
 	// The loop never runs it: a call to Submit ends the Run.
 	Submit model.ToolDef
-	Limits Limits
+	// Validate, if set, checks a Submit input against the contract beyond
+	// its being JSON. A rejected input goes back to the model as the
+	// tool's error, so it can correct it; on a forced step it ends the
+	// Run as no submit, like invalid JSON.
+	Validate func(input json.RawMessage) error
+	Limits   Limits
 	// OnStep, if set, is called after each step completes.
 	OnStep func(StepEvent)
 }
@@ -105,6 +110,18 @@ const nudgeText = "call submit_review"
 // noResponseText replaces an empty Text on an appended assistant message, so
 // the conversation never carries a message with neither text nor tool calls.
 const noResponseText = "(no response)"
+
+// checkSubmit says why input is not an acceptable Submit input.
+func (r Run) checkSubmit(input json.RawMessage) error {
+	var scratch any
+	if err := json.Unmarshal(input, &scratch); err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+	if r.Validate != nil {
+		return r.Validate(input)
+	}
+	return nil
+}
 
 // Do runs the loop to completion.
 func (r Run) Do(ctx context.Context) Result {
@@ -202,15 +219,14 @@ func (r Run) Do(ctx context.Context) Result {
 			result.ToolCalls[call.Name]++
 
 			if call.Name == r.Submit.Name {
-				var scratch any
-				if err := json.Unmarshal(call.Input, &scratch); err != nil {
+				if err := r.checkSubmit(call.Input); err != nil {
 					if forced {
 						submitFailed = true
 						break
 					}
 					toolResults = append(toolResults, model.ToolResult{
 						CallID: call.ID, IsError: true,
-						Content: truncate(fmt.Sprintf("agent: submit_review: invalid JSON: %s", err), limits.MaxToolOutputBytes),
+						Content: truncate(fmt.Sprintf("agent: submit_review: %s", err), limits.MaxToolOutputBytes),
 					})
 					continue
 				}

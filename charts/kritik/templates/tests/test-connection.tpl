@@ -30,9 +30,9 @@ spec:
         capabilities:
           drop:
             - ALL
-      # /readyz answers once a replica has its database connection and its
-      # listeners up, so this checks that the metrics Service routes to a
-      # replica that is serving. curl -f fails on a non-2xx or a refused
+      # /readyz answers once a replica has loaded its configuration and its
+      # listeners are up, so this checks that the metrics Service routes to
+      # a replica that answers. curl -f fails on a non-2xx or a refused
       # connection, failing `helm test`; -sS stays quiet but surfaces errors,
       # and the body goes to stdout, so the rootfs stays read-only.
       command:

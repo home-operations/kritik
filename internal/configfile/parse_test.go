@@ -94,6 +94,7 @@ func TestParseRejectsEntries(t *testing.T) {
 			"embeddings need an openrouter or openai one"},
 		{"an embedder too wide for the index", embeddingDoc("dims: 4096"), "embedding.dims must be between 1 and 4000"},
 		{"an embedder with a negative bound", embeddingDoc("maxBatch: -1"), "must not be negative"},
+		{"an embedder with a floor above 1", embeddingDoc("similarFloor: 1.5"), "embedding.similarFloor must be between 0 and 1"},
 		{"an embedder with an endpoint of its own", embeddingDoc("baseUrl: https://embed.example/v1"), "field baseUrl not found"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -129,6 +130,12 @@ func TestParseEmbedding(t *testing.T) {
 	}
 	if batch, chars, item := e.Bounds(); batch != 8 || chars != model.DefaultEmbedMaxBatchChars || item != model.DefaultEmbedMaxItemChars {
 		t.Fatalf("Bounds = %d, %d, %d", batch, chars, item)
+	}
+	if e.Floor() != DefaultSimilarFloor {
+		t.Fatalf("Floor = %g, want the default %g", e.Floor(), DefaultSimilarFloor)
+	}
+	if f, err := Parse([]byte(embeddingDoc("similarFloor: 0.7"))); err != nil || f.Embedding.Floor() != 0.7 {
+		t.Fatalf("Parse(similarFloor: 0.7) = %v, floor %v", err, f)
 	}
 	f, err = Parse([]byte("providers:\n  gw: { type: openai, baseUrl: https://gw.example/v1, apiKey: { env: TEST_KEY } }\n" +
 		"embedding: { model: gw/embed-large, dims: 8 }\n"))

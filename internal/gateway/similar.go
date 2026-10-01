@@ -21,12 +21,11 @@ import (
 	"github.com/home-operations/kritik/internal/textcut"
 )
 
-// Similarity retrieval bounds: neighbours per query, chunks kept, and the
-// cosine similarity floor below which a neighbour is noise.
+// Similarity retrieval bounds: neighbours per query and chunks kept. The
+// floor below which a neighbour is noise is the embedder's.
 const (
 	similarPerQuery = 4
 	similarMax      = 10
-	similarFloor    = 0.5
 )
 
 // maxSimilarBody bounds a similar-code request: its queries, each cut to
@@ -187,11 +186,20 @@ func (g *Server) similar(
 	if err != nil {
 		return nil, tokens, true, err
 	}
+	chunks = keepSimilar(hits, emb.Floor())
+	logger.Info("similar chunks", "queries", len(r.queries), "floor", emb.Floor(), "kept", len(chunks), "tokens", tokens)
+	return chunks, tokens, true, nil
+}
+
+// keepSimilar is the hits at or above floor, each chunk once, the most
+// similar first and at most similarMax of them, each labelled with its
+// similarity.
+func keepSimilar(hits []store.SimilarHit, floor float64) []contextpack.Chunk {
 	seen := map[string]bool{}
 	kept := make([]store.SimilarHit, 0, len(hits))
 	for _, h := range hits {
 		key := fmt.Sprintf("%s:%d", h.Chunk.Path, h.Chunk.StartLine)
-		if h.Similarity < similarFloor || seen[key] {
+		if h.Similarity < floor || seen[key] {
 			continue
 		}
 		seen[key] = true
@@ -202,10 +210,9 @@ func (g *Server) similar(
 	if len(kept) > similarMax {
 		kept = kept[:similarMax]
 	}
-	chunks = make([]contextpack.Chunk, 0, len(kept))
+	chunks := make([]contextpack.Chunk, 0, len(kept))
 	for _, h := range kept {
 		chunks = append(chunks, h.Chunk)
 	}
-	logger.Info("similar chunks", "queries", len(r.queries), "kept", len(chunks), "tokens", tokens)
-	return chunks, tokens, true, nil
+	return chunks
 }

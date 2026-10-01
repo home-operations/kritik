@@ -32,6 +32,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -292,6 +293,22 @@ func Schema() json.RawMessage { return slices.Clone(findingsSchema) }
 
 // SchemaStrict is Schema with suggested_fix required on every finding.
 func SchemaStrict() json.RawMessage { return slices.Clone(findingsSchemaStrict) }
+
+// Check says why raw is not a review in the contract's shape: a field of
+// the wrong type, or no summary take. It is what the agent loop answers a
+// submit_review call with, so the model can correct it before the review
+// ends; Parse applies the rest of the contract to the submission that
+// ended it.
+func Check(raw json.RawMessage) error {
+	var res Result
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return fmt.Errorf("review: %w; the input is an object with a summary object {take, praise} and a findings array", err)
+	}
+	if strings.TrimSpace(res.Summary.Take) == "" {
+		return errors.New("review: summary.take is required: two to four sentences on the change")
+	}
+	return nil
+}
 
 // Parse decodes the model's JSON and drops findings kritik cannot post: an
 // unknown severity, a missing field, a missing fix when opts require one,

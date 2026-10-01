@@ -222,6 +222,25 @@ func call(id, name, input string) model.ToolCall {
 	return model.ToolCall{ID: id, Name: name, Input: json.RawMessage(input)}
 }
 
+func TestReviewAgentReturnsAFlattenedSummaryToTheModel(t *testing.T) {
+	head := tree(t, map[string]string{"main.go": "package main\n"})
+	flattened := `{"summary":"ok","take":"ok","praise":"[]","findings":[]}`
+	submitted := `{"summary":{"take":"ok","praise":[]},"findings":[]}`
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{call("1", "submit_review", flattened)}},
+		{ToolCalls: []model.ToolCall{call("2", "submit_review", submitted)}},
+	}}
+	logger := slog.New(slog.DiscardHandler)
+	res, _ := reviewAgent(t.Context(), st, agentPromptSpec(), head, nil, nil, "system", "user", false, time.Minute, logger)
+	if res.Stop != agent.StopSubmitted || res.Steps != 2 || string(res.Submitted) != submitted {
+		t.Fatalf("result = %+v", res)
+	}
+	last := st.reqs[1].Messages[len(st.reqs[1].Messages)-1]
+	if len(last.ToolResults) != 1 || !last.ToolResults[0].IsError || !strings.Contains(last.ToolResults[0].Content, "Result.summary") {
+		t.Fatalf("the flattened submit's result = %+v, want the contract's error", last.ToolResults)
+	}
+}
+
 func TestReviewAgentRecordsATimeline(t *testing.T) {
 	head := tree(t, map[string]string{"main.go": "package main\n\nfunc b() {}\n", "vendor/x.go": "func b() {}\n"})
 	st := &scriptedStepper{steps: []model.StepResponse{

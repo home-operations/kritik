@@ -103,11 +103,30 @@ func run() error {
 	}()
 
 	// The management listener comes up first so liveness answers while the
-	// database is still starting; readiness stays false until the store is
-	// open, so the pod waits rather than being killed by its own probe.
+	// database is still starting.
 	mgmt := server.NewManagement(cfg.MetricsAddr, logger)
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return mgmt.Run(ctx) })
+
+	// serve's public listener comes up next, before the database answers,
+	// and the replica is ready as soon as it does: a browser then sees
+	// that kritik is starting rather than the ingress's own error, and a
+	// forge's delivery is refused by kritik with a reason. The
+	// configuration file is read before that, so a file that does not
+	// load ends the process before the replica is ever ready, and a
+	// rollout stops at it with the previous pods serving.
+	var file *configfile.File
+	var public *server.Switch
+	if command == config.CommandServe {
+		if file, err = loadConfig(cfg.ConfigFile); err != nil {
+			return err
+		}
+		public = server.NewSwitch(server.Starting())
+		g.Go(func() error {
+			return server.Serve(lingering(ctx, linger), cfg.Addr, public, publicDrain, logger.With("listener", "public"))
+		})
+		mgmt.SetReady(true)
+	}
 
 	// Both commands connect with the application DSN and refuse to start if
 	// it could bypass row-level security or the vector extension is
@@ -122,10 +141,9 @@ func run() error {
 		// A runner does one thing and exits; it never becomes ready.
 		return runner.Run(ctx, st, runSpec, runner.Secrets{GitToken: cfg.GitToken, GatewayToken: cfg.GatewayToken}, logger)
 	}
-	if err := serve(ctx, g, st, cfg, mgmt.Registry(), logger); err != nil {
+	if err := serve(ctx, g, st, cfg, file, public, mgmt.Registry(), logger); err != nil {
 		return err
 	}
-	mgmt.SetReady(true)
 
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("%s: %w", command, err)
@@ -135,17 +153,14 @@ func run() error {
 
 // serve starts the service on g (ADR-0024): the configuration read at
 // startup, the leader duties on the replica holding the leader lock, the
-// webhooks, the dashboard, the gateway and the job queues.
+// webhooks and the dashboard on public, the gateway and the job queues.
 func serve(
-	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, reg *prometheus.Registry, logger *slog.Logger,
+	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, file *configfile.File, public *server.Switch,
+	reg *prometheus.Registry, logger *slog.Logger,
 ) error {
 	drift := server.NewConfigDriftGauge(reg)
 	configErrors := server.NewConfigErrorGauge(reg)
 	m := metrics.New(reg)
-	file, err := loadConfig(cfg.ConfigFile)
-	if err != nil {
-		return err
-	}
 	logConfig(logger, file, "configuration loaded")
 	// Once read, a secret's variable is dropped, so no later lookup or
 	// child process sees it (ADR-0022 §2.2).
@@ -186,7 +201,7 @@ func serve(
 	} else {
 		logger.Warn("no owner DSN configured; this replica can never migrate or apply configuration")
 	}
-	if err := startPublic(ctx, g, st, cfg, current, inserter, svc, m, logger); err != nil {
+	if err := startPublic(ctx, g, st, cfg, current, inserter, svc, m, public, logger); err != nil {
 		return err
 	}
 	return startWorker(ctx, g, st, cfg, current, exec, forges, m, logger)
@@ -210,12 +225,12 @@ func loadConfig(path string) (*configfile.File, error) {
 	return f, nil
 }
 
-// startPublic serves the one public listener on Addr until ctx ends
+// startPublic hands the public listener what it serves until ctx ends
 // (ADR-0024 §2.2): the webhooks, and the dashboard with its sign-in and
-// API.
+// API, in place of the starting page.
 func startPublic(
 	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current,
-	inserter *river.Client[pgx.Tx], svc *ingest.Service, m *metrics.Metrics, logger *slog.Logger,
+	inserter *river.Client[pgx.Tx], svc *ingest.Service, m *metrics.Metrics, public *server.Switch, logger *slog.Logger,
 ) error {
 	hooks := ingest.NewHandler(current, svc, logger.With("listener", "hooks"))
 	hooks.Metrics = m
@@ -230,12 +245,8 @@ func startPublic(
 		Store: st, Current: current, Auth: authHandler, UI: web.FS(),
 		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: inserter}, Env: cfg.Env(),
 	})
-	lctx := lingering(ctx, linger)
-	g.Go(func() error { return api.Run(lctx) })
-	public := server.Public(cfg.WebBasePath(), hooks, api.Handler())
-	g.Go(func() error {
-		return server.Serve(lctx, cfg.Addr, public, publicDrain, logger.With("listener", "public"))
-	})
+	g.Go(func() error { return api.Run(lingering(ctx, linger)) })
+	public.Set(server.Public(cfg.WebBasePath(), hooks, api.Handler()))
 	return nil
 }
 
