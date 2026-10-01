@@ -47,6 +47,12 @@ func overlayProviderEnv(providers *map[string]Provider, environ []string) (strin
 			p.BaseURL = value
 		case "API_KEY":
 			p.APIKey = SecretRef{Env: env}
+		case "RETRIES":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return "", fmt.Errorf("configfile: environment variable %s must be a whole number, got %q", env, value)
+			}
+			p.Retries = n
 		default:
 			return "", fmt.Errorf("configfile: environment variable %s names no provider setting", env)
 		}
