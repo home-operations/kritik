@@ -238,10 +238,9 @@ embedding:
 
 - `apiKey` is required: a server that takes no key still needs a
   reference, to a variable holding any value.
-- The model must support tool calls, and the server must honour a
-  request that forces a named one: a review works through tools and
-  submits its findings as a call to `submit_review`, forced on its last
-  step, and a follow-up's reply is a forced call too.
+- The model must support tool calls: a review works through tools and
+  submits its findings as a call to `submit_review`, which its last step
+  tells it to make, and a follow-up's reply is a tool call too.
 - The kritik pods call the server; a review's runner reaches it only
   through their gateway. With the chart's `networkPolicy.enabled`,
   add the server's port to `networkPolicy.egressPorts`, which allows only

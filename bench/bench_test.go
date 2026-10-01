@@ -170,7 +170,7 @@ func TestBench(t *testing.T) {
 			}
 			// The prompt a review sends when agent.maxSteps is 1: the agentic
 			// system prompt, the user message within its budget, the read-only
-			// tools over the head and one forced submit_review. Stage 4 needs
+			// tools over the head and the submit_review its one step is told to make. Stage 4 needs
 			// an index, which the bench has none of.
 			system := review.SystemPrompt(nil, nil, nil, false, false)
 			msg, _, _ := review.Build(review.Input{

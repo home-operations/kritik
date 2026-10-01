@@ -23,7 +23,7 @@ type Limits struct {
 
 // DefaultLimits are the fleet defaults. The configuration's agent defaults
 // take theirs from here.
-var DefaultLimits = Limits{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, MaxOutputTokensPerStep: 8192}
+var DefaultLimits = Limits{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, MaxOutputTokensPerStep: 16384}
 
 // WithDefaults fills every zero-valued field of l from DefaultLimits,
 // leaving any field the caller already set untouched.
@@ -44,6 +44,8 @@ const (
 	StopMaxSteps  StopReason = "max_steps"
 	StopBudget    StopReason = "budget"
 	StopNoSubmit  StopReason = "no_submit"
+	// StopTruncated is a submit_review cut off at the step's output cap.
+	StopTruncated StopReason = "truncated"
 	StopCanceled  StopReason = "canceled"
 	StopError     StopReason = "error"
 )
@@ -107,6 +109,11 @@ type Run struct {
 // no tool call, before a second such turn ends the Run.
 const nudgeText = "call submit_review"
 
+// submitNowText ends the last user message of a step the model must submit
+// on. It is told rather than forced through tool_choice, which the newest
+// models reject.
+const submitNowText = "Call submit_review now with the summary and findings you have, and call nothing else."
+
 // noResponseText replaces an empty Text on an appended assistant message, so
 // the conversation never carries a message with neither text nor tool calls.
 const noResponseText = "(no response)"
@@ -155,6 +162,13 @@ func (r Run) Do(ctx context.Context) Result {
 
 		lastStep := step == limits.MaxSteps-1
 		forced := lastStep || total*10 >= limits.MaxTokens*9
+		if forced {
+			last := &messages[len(messages)-1]
+			if last.Text != "" {
+				last.Text += "\n\n"
+			}
+			last.Text += submitNowText
+		}
 
 		req := model.StepRequest{
 			Model:     r.Model,
@@ -162,9 +176,6 @@ func (r Run) Do(ctx context.Context) Result {
 			Messages:  messages,
 			Tools:     toolDefs,
 			MaxTokens: limits.MaxOutputTokensPerStep,
-		}
-		if forced {
-			req.ToolChoice = model.ToolChoice{Mode: model.ToolChoiceTool, Name: r.Submit.Name}
 		}
 
 		start := time.Now()
@@ -212,7 +223,7 @@ func (r Run) Do(ctx context.Context) Result {
 
 		var toolResults []model.ToolResult
 		var submitted json.RawMessage
-		var submitFailed bool
+		var submitFailed, truncated bool
 
 		for _, call := range resp.ToolCalls {
 			event.Tools = append(event.Tools, call.Name)
@@ -220,6 +231,13 @@ func (r Run) Do(ctx context.Context) Result {
 
 			if call.Name == r.Submit.Name {
 				if err := r.checkSubmit(call.Input); err != nil {
+					// A submission the output cap cut off is not sent back
+					// as an error: the model would re-emit it whole and be
+					// cut off again, step after step.
+					if resp.Stop == model.StopMaxTokens {
+						truncated = true
+						break
+					}
 					if forced {
 						submitFailed = true
 						break
@@ -261,6 +279,11 @@ func (r Run) Do(ctx context.Context) Result {
 		if submitted != nil {
 			result.Stop = StopSubmitted
 			result.Submitted = submitted
+			return result
+		}
+		if truncated {
+			result.Stop = StopTruncated
+			result.Err = fmt.Sprintf("submit_review was cut off at the %d output tokens a step may produce", limits.MaxOutputTokensPerStep)
 			return result
 		}
 		if submitFailed {

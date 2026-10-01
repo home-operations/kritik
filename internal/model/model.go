@@ -1,6 +1,6 @@
 // Package model is kritik's view of a language model and an embedder. A
 // Stepper performs one model turn over typed messages and tools; Completer,
-// a single forced tool call returning structured JSON, is built on it.
+// a single tool call returning structured JSON, is built on it.
 // Adapters speak to the vendors' official SDKs.
 package model
 
