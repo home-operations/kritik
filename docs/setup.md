@@ -10,6 +10,8 @@ instance from install to its first review.
 
 Install the chart as its [README](https://github.com/home-operations/kritika/blob/main/charts/kritika/README.md) shows, with:
 
+- A Postgres database with VectorChord and kritika's three roles, under
+  `database`: see [Postgres with CloudNativePG](database.md).
 - `web.url`, the one public URL. The dashboard is served at it, and GitHub
   delivers each App's webhook under it, to `/hooks/<app name>`, both from
   one port. The chart's `ingress` or `httpRoute` routes the URL there;

@@ -120,6 +120,7 @@ nav:
   - Introduction: index.md
   - Getting started:
       - Setup: setup.md
+      - Postgres with CloudNativePG: database.md
   - Configuration:
       - Configuration file: configuration.md
       - Repository settings: repository-config.md
