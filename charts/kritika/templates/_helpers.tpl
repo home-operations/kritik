@@ -127,26 +127,31 @@ ConfigMap. Without one, kritika runs on its environment alone.
 {{- end }}
 
 {{/*
-The variable each `config` key sets. The whole table, not just the keys set,
-so the deployment can refuse an `env` entry for any of them and a key the
-table lacks.
+The kritika serve container's variables from `config`: each key is a
+KRITIKA_* variable, its name without the prefix in camelCase. A key left
+empty sets nothing; a map is the variable's valueFrom. A key for a variable
+the chart derives from its other values is refused.
 */}}
 {{- define "kritika.configEnv" -}}
-webUrl: KRITIKA_WEB_URL
-logLevel: KRITIKA_LOG_LEVEL
-logFormat: KRITIKA_LOG_FORMAT
-leaderRetryInterval: KRITIKA_LEADER_RETRY_INTERVAL
-reviewWorkers: KRITIKA_REVIEW_WORKERS
-indexWorkers: KRITIKA_INDEX_WORKERS
-gatewayTokenTtl: KRITIKA_GATEWAY_TOKEN_TTL
-pollInterval: KRITIKA_POLL_INTERVAL
-pollLookback: KRITIKA_POLL_LOOKBACK
-onboardWindow: KRITIKA_ONBOARD_WINDOW
-indexGrace: KRITIKA_INDEX_GRACE
-transcriptRetention: KRITIKA_TRANSCRIPT_RETENTION
-diffRetention: KRITIKA_DIFF_RETENTION
-runnerDeadline: KRITIKA_RUNNER_DEADLINE
-runnerRuntimeClass: KRITIKA_RUNNER_RUNTIME_CLASS
+{{- $derived := list }}
+{{- range (include "kritika.serveEnv" . | fromYamlArray) }}
+{{- $derived = append $derived .name }}
+{{- end }}
+{{- range $key, $value := .Values.config }}
+{{- $name := printf "KRITIKA_%s" (snakecase $key | upper) }}
+{{- if has $name $derived }}
+{{- fail (printf "config.%s: the chart sets %s from its other values" $key $name) }}
+{{- end }}
+{{- if kindIs "map" $value }}
+{{- with $value }}
+- name: {{ $name }}
+  {{- tpl (toYaml .) $ | nindent 2 }}
+{{- end }}
+{{- else if ne (toString $value) "" }}
+- name: {{ $name }}
+  value: {{ tpl (toString $value) $ | quote }}
+{{- end }}
+{{- end }}
 {{- end }}
 
 {{/*
@@ -158,15 +163,6 @@ an `env` key that would duplicate one of them.
 {{- if include "kritika.hasConfigFile" . }}
 - name: KRITIKA_CONFIG_FILE
   value: /etc/kritika/config.yaml
-{{- end }}
-{{- $configEnv := include "kritika.configEnv" . | fromYaml }}
-{{- range $key, $value := .Values.config }}
-{{- $name := get $configEnv $key }}
-{{- if not $name }}
-{{- fail (printf "config.%s: not a kritika setting; values.yaml lists the keys" $key) }}
-{{- end }}
-- name: {{ $name }}
-  value: {{ tpl (toString $value) $ | quote }}
 {{- end }}
 - name: KRITIKA_ADDR
   value: {{ printf ":%d" (int .Values.service.port) | quote }}

@@ -20,7 +20,9 @@ such a variable from an existing Secret. Sign-in, one app, one provider, the
 default models and review settings, and the embedder also have
 variables, and a variable wins over the file, so a small deployment can
 be configured from the environment alone. A variable carries a secret
-itself. Once the configuration is read, kritika drops every variable a
+itself. The chart's `config` has a key for every `KRITIKA_*` variable, its
+name without the prefix in camelCase (`KRITIKA_AUTH_OIDC_ISSUER` is
+`authOidcIssuer`), a secret's taking a `valueFrom` from a Secret. Once the configuration is read, kritika drops every variable a
 secret came from from its own environment. A variable under
 one of these prefixes that names no key is refused at startup rather than
 ignored.
@@ -36,8 +38,8 @@ serving.
 
 ## `auth`
 
-`auth` sets how people sign in and what each may do. Its variables go in
-the chart's `env`, the secrets among them from existing Secrets.
+`auth` sets how people sign in and what each may do. Its variables are
+keys of the chart's `config`, the secrets among them from existing Secrets.
 
 | Key                      | Environment variable                        |
 | ------------------------ | ------------------------------------------- |

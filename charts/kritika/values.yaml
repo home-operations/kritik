@@ -37,55 +37,163 @@ strategy:
     maxUnavailable: 0
     maxSurge: 1
 
-# How kritika runs, as camelCased keys the chart turns into the KRITIKA_*
-# variables of the same name (docs/configuration.md): the public URL,
-# logging, the workers, polling, retention and the runner Jobs' deadline
-# and RuntimeClass. Each key has one variable and nothing else sets it: the
-# chart refuses a key it does not know and an `env` entry for a variable
-# that has a key here. A key left out, as the commented ones are, has
-# kritika's own default, which the comment shows. What is reviewed and how
-# is the configuration file, `configFile` below, not a key here. Every
-# value is rendered through `tpl`.
+# How kritika runs and what it reviews with, as the KRITIKA_* variables
+# (docs/configuration.md) keyed by their names without the prefix, in
+# camelCase: `pollInterval` is KRITIKA_POLL_INTERVAL, `authOidcIssuer` is
+# KRITIKA_AUTH_OIDC_ISSUER. The keys below are every variable that can be
+# set; a key left empty sets nothing and kritika's own default applies,
+# which each description names. A value is a plain value, rendered
+# through `tpl`, or, for a secret, a map with the variable's `valueFrom`
+# (a Secret key). The variables that stand in for the configuration
+# file's sections (auth*, apps*, providers*, defaults*, embedding*) win
+# over the file. The variables the chart derives from its other values
+# (the addresses, the database, the config file, the runner image,
+# ServiceAccount, TTL, resources and tools) cannot be set here; the chart
+# refuses them, as it refuses a KRITIKA_* variable under `env`.
 config:
-  # -- (required) Public URL the dashboard is reached at (KRITIKA_WEB_URL), e.g. https://kritika.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment. GitHub delivers webhooks to it and sign-in redirects back to it, so the chart's Ingress or HTTPRoute must route this name.
+  # -- (required) Public URL the dashboard is reached at, e.g. https://kritika.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment. GitHub delivers webhooks to it and sign-in redirects back to it, so the chart's Ingress or HTTPRoute must route this name.
   webUrl: ""
-  # -- Log level (KRITIKA_LOG_LEVEL): debug, info, warn or error.
+  # -- Log level: debug, info, warn or error.
   logLevel: info
-  # -- Log format (KRITIKA_LOG_FORMAT): json or text.
+  # -- Log format: json or text.
   logFormat: json
-  # How often a replica retries the leader lock, and the holder checks it
-  # still has it (KRITIKA_LEADER_RETRY_INTERVAL).
-  # leaderRetryInterval: 15s
-  # Review and index jobs one replica runs at once, each holding a runner
-  # pod open (KRITIKA_REVIEW_WORKERS, KRITIKA_INDEX_WORKERS).
-  # reviewWorkers: 2
-  # indexWorkers: 1
-  # How long a run's gateway token outlives its Job's deadline
-  # (KRITIKA_GATEWAY_TOKEN_TTL).
-  # gatewayTokenTtl: 1h
-  # How often the leader lists each app's open pull requests, its backstop
-  # for missed webhooks, 0s turning it off, and how far back a first or
-  # long-idle poll looks (KRITIKA_POLL_INTERVAL, KRITIKA_POLL_LOOKBACK).
-  # pollInterval: 10m
-  # pollLookback: 24h
-  # Onboarding index jobs the leader keeps queued or running at once
-  # (KRITIKA_ONBOARD_WINDOW).
-  # onboardWindow: 4
-  # How long the index of a repository that stopped running is kept
-  # (KRITIKA_INDEX_GRACE).
-  # indexGrace: 720h
-  # How long a review's model transcript, and the diff and context it was
-  # made from, are kept; at least 24h (KRITIKA_TRANSCRIPT_RETENTION,
-  # KRITIKA_DIFF_RETENTION).
-  # transcriptRetention: 720h
-  # diffRetention: 720h
-  # A runner Job's deadline (KRITIKA_RUNNER_DEADLINE).
-  # runnerDeadline: 15m
-  # The RuntimeClass runner Jobs run under (KRITIKA_RUNNER_RUNTIME_CLASS),
-  # e.g. gvisor or a Kata class; the cluster default unless set. Advised:
-  # a runner parses untrusted repository content and runs what the model
-  # asks.
-  # runnerRuntimeClass: gvisor
+  # -- How often a replica retries the leader lock, and the holder checks it still has it; 15s unless set.
+  leaderRetryInterval: ""
+  # -- Review jobs one replica runs at once, each holding a runner pod open; 2 unless set.
+  # @schema
+  # type: [integer, string]
+  # @schema
+  reviewWorkers: ""
+  # -- Index jobs one replica runs at once, rate-limited apart from reviews so onboarding a large account cannot starve them; 1 unless set.
+  # @schema
+  # type: [integer, string]
+  # @schema
+  indexWorkers: ""
+  # -- How long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies before revoking it; 1h unless set.
+  gatewayTokenTtl: ""
+  # -- How often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set.
+  pollInterval: ""
+  # -- How far back a first or long-idle poll looks; 24h unless set.
+  pollLookback: ""
+  # -- Onboarding index jobs the leader keeps queued or running at once; 4 unless set.
+  # @schema
+  # type: [integer, string]
+  # @schema
+  onboardWindow: ""
+  # -- How long the index of a repository that stopped running is kept; 720h unless set.
+  indexGrace: ""
+  # -- How long a review's full model transcript is kept, at least 24h; 720h unless set.
+  transcriptRetention: ""
+  # -- How long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set.
+  diffRetention: ""
+  # -- A runner Job's deadline; 15m unless set.
+  runnerDeadline: ""
+  # -- RuntimeClass runner Jobs run under, e.g. `gvisor` or a Kata class; the cluster default unless set. Advised: a runner parses untrusted repository content and runs what the model asks.
+  runnerRuntimeClass: ""
+
+  # Sign-in (`auth` in the configuration file). The dashboard refuses to
+  # start with no way to sign in, and the configuration is refused when
+  # nothing could make an admin: an admin password, or a provider's role
+  # mapping. A provider must allow the callback URL
+  # <webUrl>/auth/callback/oidc or <webUrl>/auth/callback/github.
+
+  # -- How long a dashboard session lasts, between 5m and 720h; 12h unless set.
+  authSessionTtl: ""
+  # -- The local admin's username; `admin` unless set.
+  authAdminUser: ""
+  # -- The local admin's password, from a Secret. The local admin exists only while one is set: the way into a fresh instance, and a way in when every provider is down.
+  # @schema
+  # type: [string, object]
+  # @schema
+  authAdminPassword: ""
+  # -- Label of the OIDC provider on the sign-in page; "SSO" unless set.
+  authOidcName: ""
+  # -- OpenID Connect issuer, an https URL; set it to sign in through OIDC.
+  authOidcIssuer: ""
+  # -- OIDC client id.
+  authOidcClientId: ""
+  # -- OIDC client secret, from a Secret.
+  # @schema
+  # type: [string, object]
+  # @schema
+  authOidcClientSecret: ""
+  # -- OIDC scopes, comma-separated; `openid,email,profile` unless set.
+  authOidcScopes: ""
+  # -- The ID token claim holding the person's roles or groups, read by `authOidcRoleMappingExpr`.
+  authOidcRolesClaim: ""
+  # -- CEL expression mapping an OIDC sign-in to a kritika role, `admin`, `member` or "" for none, e.g. `"kritika-admins" in roles ? "admin" : "member"`.
+  authOidcRoleMappingExpr: ""
+  # -- Role of an OIDC sign-in the mapping gives none; none unless set.
+  authOidcDefaultRole: ""
+  # -- Client id for signing in with GitHub: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub.
+  authGithubClientId: ""
+  # -- Client secret for signing in with GitHub, from a Secret.
+  # @schema
+  # type: [string, object]
+  # @schema
+  authGithubClientSecret: ""
+  # -- CEL expression mapping a GitHub sign-in to a kritika role, e.g. `login == "user-1" ? "admin" : ""`.
+  authGithubRoleMappingExpr: ""
+
+  # One GitHub App (an `apps` entry in the configuration file), which
+  # replaces the file's app of the same name whole, or is added to them.
+
+  # -- The app's name, which is its webhook path, `/hooks/<name>`; `github` unless set.
+  appsName: ""
+  # -- The users and organizations the app serves, comma-separated; set it to declare the app here.
+  appsAccounts: ""
+  # -- The GitHub App's client id, inline or from a Secret.
+  # @schema
+  # type: [string, object]
+  # @schema
+  appsClientId: ""
+  # -- The GitHub App's private key (PEM), from a Secret.
+  # @schema
+  # type: [string, object]
+  # @schema
+  appsPrivateKey: ""
+  # -- The GitHub App's webhook secret, from a Secret.
+  # @schema
+  # type: [string, object]
+  # @schema
+  appsWebhookSecret: ""
+
+  # One model provider (a `providers` entry), which replaces the file's of
+  # the same name whole or is added to them, the default models every
+  # repository gets (`defaults`), and the embedder (`embedding`) that
+  # builds each repository's similar-code index.
+
+  # -- The provider's name, which models are addressed through as `<name>/<model>`; `openrouter` unless set.
+  providersName: ""
+  # -- The provider's type, `openrouter`, `openai` or `anthropic`; the name unless set, when the name is one of those.
+  providersType: ""
+  # -- The provider's base URL, for an OpenAI-compatible endpoint; the type's own unless set.
+  providersBaseUrl: ""
+  # -- The provider's API key, from a Secret; set it to declare the provider here.
+  # @schema
+  # type: [string, object]
+  # @schema
+  providersApiKey: ""
+  # -- The model every review runs on unless a repository names another, `<provider>/<model>`.
+  defaultsModelsReview: ""
+  # -- The model a review falls back to when the review model fails.
+  defaultsModelsFallback: ""
+  # -- How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set.
+  defaultsFeedback: ""
+  # -- Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@<app slug> review`.
+  # @schema
+  # type: [boolean, string]
+  # @schema
+  defaultsForks: ""
+  # -- How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set.
+  defaultsSettle: ""
+  # -- The embedding model, `<provider>/<model>`; set it to index each repository for similar code.
+  embeddingModel: ""
+  # -- The embedding's dimensions, which the model must produce.
+  # @schema
+  # type: [integer, string]
+  # @schema
+  embeddingDims: ""
 
 # The configuration file (docs/configuration.md) holds what is reviewed and
 # how: sign-in (`auth`), the GitHub `apps`, the instance's `providers`,
@@ -118,23 +226,18 @@ configFile: {}
 existingConfigMap: ""
 
 # The variables the configuration file names as `{ env: NAME }`, from
-# existing Secrets, and the KRITIKA_* variables that carry a secret
-# themselves: the local admin's password, an OIDC client secret, a
-# provider's API key. The variables that stand in for the file's sections
-# (KRITIKA_AUTH_*, KRITIKA_APPS_*, KRITIKA_PROVIDERS_*, KRITIKA_DEFAULTS_*,
-# KRITIKA_EMBEDDING_*) may be set here too; a variable wins over the file.
-# The variables the chart derives from its other values (the addresses,
-# the database, the config file, the runner image and ServiceAccount) and
-# the ones `config` above has a key for cannot be set here; the chart
-# refuses them. kritika drops every variable a secret came from from its
-# own environment once read; runner pods never get them, each is handed
-# its own per-run credentials.
+# existing Secrets, and anything else the container's environment needs.
+# A KRITIKA_* variable does not go here: it is a key of `config`, and the
+# chart refuses it under `env`, as it refuses the variables it derives
+# from its other values. kritika drops every variable a secret came from
+# from its own environment once read; runner pods never get them, each
+# is handed its own per-run credentials.
 
 # -- Environment variables of the kritika serve container, keyed by name: a plain value, or a map with the variable's `valueFrom` (a Secret, a ConfigMap or a field). Rendered through `tpl`.
 env: {}
-# KRITIKA_AUTH_ADMIN_PASSWORD:
+# GITHUB_APP_PRIVATE_KEY:
 #   valueFrom:
-#     secretKeyRef: { name: kritika-admin, key: password }
+#     secretKeyRef: { name: kritika-bot, key: private-key.pem }
 # OPENROUTER_API_KEY:
 #   valueFrom:
 #     secretKeyRef: { name: kritika-openrouter, key: api-key }

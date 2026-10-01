@@ -8,23 +8,323 @@
       "type": "object"
     },
     "config": {
-      "description": "How kritika runs, as camelCased keys the chart turns into the KRITIKA_*\nvariables of the same name (docs/configuration.md): the public URL,\nlogging, the workers, polling, retention and the runner Jobs' deadline\nand RuntimeClass. Each key has one variable and nothing else sets it: the\nchart refuses a key it does not know and an `env` entry for a variable\nthat has a key here. A key left out, as the commented ones are, has\nkritika's own default, which the comment shows. What is reviewed and how\nis the configuration file, `configFile` below, not a key here. Every\nvalue is rendered through `tpl`.",
+      "description": "How kritika runs and what it reviews with, as the KRITIKA_* variables\n(docs/configuration.md) keyed by their names without the prefix, in\ncamelCase: `pollInterval` is KRITIKA_POLL_INTERVAL, `authOidcIssuer` is\nKRITIKA_AUTH_OIDC_ISSUER. The keys below are every variable that can be\nset; a key left empty sets nothing and kritika's own default applies,\nwhich each description names. A value is a plain value, rendered\nthrough `tpl`, or, for a secret, a map with the variable's `valueFrom`\n(a Secret key). The variables that stand in for the configuration\nfile's sections (auth*, apps*, providers*, defaults*, embedding*) win\nover the file. The variables the chart derives from its other values\n(the addresses, the database, the config file, the runner image,\nServiceAccount, TTL, resources and tools) cannot be set here; the chart\nrefuses them, as it refuses a KRITIKA_* variable under `env`.",
       "properties": {
+        "appsAccounts": {
+          "default": "",
+          "description": "The users and organizations the app serves, comma-separated; set it to declare the app here.",
+          "title": "appsAccounts",
+          "type": "string"
+        },
+        "appsClientId": {
+          "default": "",
+          "description": "The GitHub App's client id, inline or from a Secret.",
+          "required": [],
+          "title": "appsClientId",
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "appsName": {
+          "default": "",
+          "description": "The app's name, which is its webhook path, `/hooks/\u003cname\u003e`; `github` unless set.",
+          "title": "appsName",
+          "type": "string"
+        },
+        "appsPrivateKey": {
+          "default": "",
+          "description": "The GitHub App's private key (PEM), from a Secret.",
+          "required": [],
+          "title": "appsPrivateKey",
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "appsWebhookSecret": {
+          "default": "",
+          "description": "The GitHub App's webhook secret, from a Secret.",
+          "required": [],
+          "title": "appsWebhookSecret",
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "authAdminPassword": {
+          "default": "",
+          "description": "The local admin's password, from a Secret. The local admin exists only while one is set: the way into a fresh instance, and a way in when every provider is down.",
+          "required": [],
+          "title": "authAdminPassword",
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "authAdminUser": {
+          "default": "",
+          "description": "The local admin's username; `admin` unless set.",
+          "title": "authAdminUser",
+          "type": "string"
+        },
+        "authGithubClientId": {
+          "default": "",
+          "description": "Client id for signing in with GitHub: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub.",
+          "title": "authGithubClientId",
+          "type": "string"
+        },
+        "authGithubClientSecret": {
+          "default": "",
+          "description": "Client secret for signing in with GitHub, from a Secret.",
+          "required": [],
+          "title": "authGithubClientSecret",
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "authGithubRoleMappingExpr": {
+          "default": "",
+          "description": "CEL expression mapping a GitHub sign-in to a kritika role, e.g. `login == \"user-1\" ? \"admin\" : \"\"`.",
+          "title": "authGithubRoleMappingExpr",
+          "type": "string"
+        },
+        "authOidcClientId": {
+          "default": "",
+          "description": "OIDC client id.",
+          "title": "authOidcClientId",
+          "type": "string"
+        },
+        "authOidcClientSecret": {
+          "default": "",
+          "description": "OIDC client secret, from a Secret.",
+          "required": [],
+          "title": "authOidcClientSecret",
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "authOidcDefaultRole": {
+          "default": "",
+          "description": "Role of an OIDC sign-in the mapping gives none; none unless set.",
+          "title": "authOidcDefaultRole",
+          "type": "string"
+        },
+        "authOidcIssuer": {
+          "default": "",
+          "description": "OpenID Connect issuer, an https URL; set it to sign in through OIDC.",
+          "title": "authOidcIssuer",
+          "type": "string"
+        },
+        "authOidcName": {
+          "default": "",
+          "description": "Label of the OIDC provider on the sign-in page; \"SSO\" unless set.",
+          "title": "authOidcName",
+          "type": "string"
+        },
+        "authOidcRoleMappingExpr": {
+          "default": "",
+          "description": "CEL expression mapping an OIDC sign-in to a kritika role, `admin`, `member` or \"\" for none, e.g. `\"kritika-admins\" in roles ? \"admin\" : \"member\"`.",
+          "title": "authOidcRoleMappingExpr",
+          "type": "string"
+        },
+        "authOidcRolesClaim": {
+          "default": "",
+          "description": "The ID token claim holding the person's roles or groups, read by `authOidcRoleMappingExpr`.",
+          "title": "authOidcRolesClaim",
+          "type": "string"
+        },
+        "authOidcScopes": {
+          "default": "",
+          "description": "OIDC scopes, comma-separated; `openid,email,profile` unless set.",
+          "title": "authOidcScopes",
+          "type": "string"
+        },
+        "authSessionTtl": {
+          "default": "",
+          "description": "How long a dashboard session lasts, between 5m and 720h; 12h unless set.",
+          "title": "authSessionTtl",
+          "type": "string"
+        },
+        "defaultsFeedback": {
+          "default": "",
+          "description": "How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set.",
+          "title": "defaultsFeedback",
+          "type": "string"
+        },
+        "defaultsForks": {
+          "default": "",
+          "description": "Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@\u003capp slug\u003e review`.",
+          "required": [],
+          "title": "defaultsForks",
+          "type": [
+            "boolean",
+            "string"
+          ]
+        },
+        "defaultsModelsFallback": {
+          "default": "",
+          "description": "The model a review falls back to when the review model fails.",
+          "title": "defaultsModelsFallback",
+          "type": "string"
+        },
+        "defaultsModelsReview": {
+          "default": "",
+          "description": "The model every review runs on unless a repository names another, `\u003cprovider\u003e/\u003cmodel\u003e`.",
+          "title": "defaultsModelsReview",
+          "type": "string"
+        },
+        "defaultsSettle": {
+          "default": "",
+          "description": "How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set.",
+          "title": "defaultsSettle",
+          "type": "string"
+        },
+        "diffRetention": {
+          "default": "",
+          "description": "How long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set.",
+          "title": "diffRetention",
+          "type": "string"
+        },
+        "embeddingDims": {
+          "default": "",
+          "description": "The embedding's dimensions, which the model must produce.",
+          "required": [],
+          "title": "embeddingDims",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "embeddingModel": {
+          "default": "",
+          "description": "The embedding model, `\u003cprovider\u003e/\u003cmodel\u003e`; set it to index each repository for similar code.",
+          "title": "embeddingModel",
+          "type": "string"
+        },
+        "gatewayTokenTtl": {
+          "default": "",
+          "description": "How long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies before revoking it; 1h unless set.",
+          "title": "gatewayTokenTtl",
+          "type": "string"
+        },
+        "indexGrace": {
+          "default": "",
+          "description": "How long the index of a repository that stopped running is kept; 720h unless set.",
+          "title": "indexGrace",
+          "type": "string"
+        },
+        "indexWorkers": {
+          "default": "",
+          "description": "Index jobs one replica runs at once, rate-limited apart from reviews so onboarding a large account cannot starve them; 1 unless set.",
+          "required": [],
+          "title": "indexWorkers",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "leaderRetryInterval": {
+          "default": "",
+          "description": "How often a replica retries the leader lock, and the holder checks it still has it; 15s unless set.",
+          "title": "leaderRetryInterval",
+          "type": "string"
+        },
         "logFormat": {
           "default": "json",
-          "description": "Log format (KRITIKA_LOG_FORMAT): json or text.",
+          "description": "Log format: json or text.",
           "title": "logFormat",
           "type": "string"
         },
         "logLevel": {
           "default": "info",
-          "description": "Log level (KRITIKA_LOG_LEVEL): debug, info, warn or error.",
+          "description": "Log level: debug, info, warn or error.",
           "title": "logLevel",
+          "type": "string"
+        },
+        "onboardWindow": {
+          "default": "",
+          "description": "Onboarding index jobs the leader keeps queued or running at once; 4 unless set.",
+          "required": [],
+          "title": "onboardWindow",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "pollInterval": {
+          "default": "",
+          "description": "How often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set.",
+          "title": "pollInterval",
+          "type": "string"
+        },
+        "pollLookback": {
+          "default": "",
+          "description": "How far back a first or long-idle poll looks; 24h unless set.",
+          "title": "pollLookback",
+          "type": "string"
+        },
+        "providersApiKey": {
+          "default": "",
+          "description": "The provider's API key, from a Secret; set it to declare the provider here.",
+          "required": [],
+          "title": "providersApiKey",
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "providersBaseUrl": {
+          "default": "",
+          "description": "The provider's base URL, for an OpenAI-compatible endpoint; the type's own unless set.",
+          "title": "providersBaseUrl",
+          "type": "string"
+        },
+        "providersName": {
+          "default": "",
+          "description": "The provider's name, which models are addressed through as `\u003cname\u003e/\u003cmodel\u003e`; `openrouter` unless set.",
+          "title": "providersName",
+          "type": "string"
+        },
+        "providersType": {
+          "default": "",
+          "description": "The provider's type, `openrouter`, `openai` or `anthropic`; the name unless set, when the name is one of those.",
+          "title": "providersType",
+          "type": "string"
+        },
+        "reviewWorkers": {
+          "default": "",
+          "description": "Review jobs one replica runs at once, each holding a runner pod open; 2 unless set.",
+          "required": [],
+          "title": "reviewWorkers",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "runnerDeadline": {
+          "default": "",
+          "description": "A runner Job's deadline; 15m unless set.",
+          "title": "runnerDeadline",
+          "type": "string"
+        },
+        "runnerRuntimeClass": {
+          "default": "",
+          "description": "RuntimeClass runner Jobs run under, e.g. `gvisor` or a Kata class; the cluster default unless set. Advised: a runner parses untrusted repository content and runs what the model asks.",
+          "title": "runnerRuntimeClass",
+          "type": "string"
+        },
+        "transcriptRetention": {
+          "default": "",
+          "description": "How long a review's full model transcript is kept, at least 24h; 720h unless set.",
+          "title": "transcriptRetention",
           "type": "string"
         },
         "webUrl": {
           "default": "",
-          "description": "(required) Public URL the dashboard is reached at (KRITIKA_WEB_URL), e.g. https://kritika.example.com; the webhooks share it under `/hooks/\u003capp name\u003e`. Must be an absolute http(s) URL with no query or fragment. GitHub delivers webhooks to it and sign-in redirects back to it, so the chart's Ingress or HTTPRoute must route this name.",
+          "description": "(required) Public URL the dashboard is reached at, e.g. https://kritika.example.com; the webhooks share it under `/hooks/\u003capp name\u003e`. Must be an absolute http(s) URL with no query or fragment. GitHub delivers webhooks to it and sign-in redirects back to it, so the chart's Ingress or HTTPRoute must route this name.",
           "title": "webUrl",
           "type": "string"
         }

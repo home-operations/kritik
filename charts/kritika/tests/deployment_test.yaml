@@ -55,9 +55,9 @@ tests:
 
   - it: renders each env entry after the chart's own, a plain value quoted and a map spliced in
     set:
-      env:
-        KRITIKA_EMBEDDING_DIMS: 1024
-        KRITIKA_DEFAULTS_SETTLE: "{{ .Release.Name }}-0s"
+      config:
+        embeddingDims: 1024
+        defaultsSettle: "{{ .Release.Name }}-0s"
       envFrom:
         - secretRef:
             name: kritika-bot
@@ -93,21 +93,31 @@ tests:
       - failedTemplate:
           errorPattern: env.KRITIKA_GATEWAY_URL
 
-  - it: refuses an env key that has a config key, naming it
+  - it: refuses a KRITIKA_* variable under env, naming its config key
     set:
       env:
-        KRITIKA_POLL_INTERVAL: 5m
+        KRITIKA_AUTH_OIDC_ISSUER: https://sso.example.com
     asserts:
       - failedTemplate:
-          errorPattern: "env.KRITIKA_POLL_INTERVAL: set config.pollInterval instead"
+          errorPattern: "env.KRITIKA_AUTH_OIDC_ISSUER: set config.authOidcIssuer instead"
 
-  - it: turns each config key into its variable, numbers and templates included, and leaves the rest to kritika's defaults
+  - it: turns each config key into its variable, numbers, booleans and templates included, and leaves the empty ones to kritika's defaults
     set:
       config:
         pollInterval: "{{ .Release.Name }}-0s"
         reviewWorkers: 4
         runnerRuntimeClass: gvisor
+        defaultsForks: false
+        authOidcClientSecret: {}
     asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_DEFAULTS_FORKS, value: "false" }
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_AUTH_OIDC_CLIENT_SECRET
+          any: true
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_POLL_INTERVAL, value: RELEASE-NAME-0s }
@@ -126,14 +136,13 @@ tests:
             name: KRITIKA_INDEX_WORKERS
           any: true
 
-  - it: refuses a config key kritika has no setting for
+  - it: refuses a config key for a variable the chart derives from its other values
     set:
       config:
-        pollInterval: 5m
-        polInterval: 5m
+        addr: ":9000"
     asserts:
       - failedTemplate:
-          errorPattern: "config.polInterval: not a kritika setting"
+          errorPattern: "config.addr: the chart sets KRITIKA_ADDR from its other values"
 
   - it: renders no envFrom by default
     asserts:
@@ -287,7 +296,7 @@ tests:
       - failedTemplate:
           errorPattern: config.webUrl is required
 
-  - it: sets the local admin's password from the Secret env names
+  - it: sets the local admin's password from a Secret through a config map value
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env

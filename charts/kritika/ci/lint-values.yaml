@@ -10,6 +10,9 @@ database:
     existingSecret: kritika-postgres-runner
 config:
   webUrl: https://kritika.example.com
+  authAdminPassword:
+    valueFrom:
+      secretKeyRef: { name: kritika-auth, key: password }
 configFile:
   apps:
     github:
@@ -18,9 +21,6 @@ configFile:
       privateKey: { env: GITHUB_APP_PRIVATE_KEY }
       webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
 env:
-  KRITIKA_AUTH_ADMIN_PASSWORD:
-    valueFrom:
-      secretKeyRef: { name: kritika-auth, key: password }
   GITHUB_APP_PRIVATE_KEY:
     valueFrom:
       secretKeyRef: { name: kritika-bot, key: private-key.pem }

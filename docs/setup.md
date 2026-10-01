@@ -16,9 +16,9 @@ Install the chart as its [README](https://github.com/home-operations/kritika/blo
   delivers each App's webhook under it, to `/hooks/<app name>`, both from
   one port. The chart's `ingress` or `httpRoute` routes the URL there;
   nothing else needs to be public.
-- A way to sign in: `KRITIKA_AUTH_ADMIN_PASSWORD` under `env`, from an
-  existing Secret, for the local admin, or OIDC or GitHub with a role
-  mapping that makes someone an admin ([`auth`](configuration.md#auth)).
+- A way to sign in: `config.authAdminPassword`, from an existing Secret,
+  for the local admin, or OIDC or GitHub with a role mapping that makes
+  someone an admin ([`auth`](configuration.md#auth)).
 - The [configuration file](configuration.md) as `configFile`, or an existing
   ConfigMap, with the variables its secrets name set from existing Secrets
   under `env` or `envFrom`. It lives in git with the rest of the
