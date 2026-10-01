@@ -8,7 +8,7 @@
   import { FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
   import { Paged, Resource, live } from '../resource.svelte';
   import { accountApi, pullRoute, threadUrl } from '../links';
-  import { SEVERITIES } from '../format';
+  import { CATEGORIES, SEVERITIES } from '../format';
   import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
   import type { AccountFinding, Page, Repository } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -27,7 +27,7 @@
   const account = $derived(accountApi(slug));
   function query(after?: string): string {
     const p = new URLSearchParams({ limit: '50' });
-    for (const k of ['severity', 'status', 'repo', 'rule', 'q'] as const) {
+    for (const k of ['severity', 'category', 'status', 'repo', 'rule', 'q'] as const) {
       const v = filter?.[k];
       if (v) p.set(k, v);
     }
@@ -48,11 +48,12 @@
   const specs = $derived<TokenSpec[]>([
     { key: 'repo', hint: 'a repository', values: (repos.data?.items ?? []).map((r) => r.fullName) },
     { key: 'severity', hint: 'blocking, important or nit', values: SEVERITIES },
+    { key: 'category', hint: 'what kind of problem', values: CATEGORIES },
     { key: 'status', hint: 'open, addressed or dismissed', values: FINDING_STATUSES },
     { key: 'rule', hint: 'a rule id', values: [...new Set(paged.items.flatMap((f) => f.rules))].sort(), open: true },
   ]);
   const boxText = (f: FindingFilter | undefined) =>
-    formatTokens(specs, { repo: f?.repo, severity: f?.severity, status: f?.status, rule: f?.rule }, f?.q);
+    formatTokens(specs, { repo: f?.repo, severity: f?.severity, category: f?.category, status: f?.status, rule: f?.rule }, f?.q);
 
   // As on the pull request list: written is the box's text for the filter it
   // last wrote to the URL, and any other change to the filter rewrites it.
@@ -93,7 +94,7 @@
       <TokenSearch
         id="finding-search"
         label="Search findings"
-        placeholder="Search, or filter by repo:, severity:, status: or rule:"
+        placeholder="Search, or filter by repo:, severity:, category:, status: or rule:"
         {specs}
         bind:text
         bind:input={searchEl}
@@ -116,7 +117,7 @@
               <thead>
                 <tr>
                   <th scope="col">Finding</th>
-                  <th scope="col">Severity</th>
+                  <th scope="col">Severity · kind</th>
                   <th scope="col">Pull request</th>
                   <th scope="col" title="Addressed once a later review of the pull request no longer reports it; dismissed when a maintainer replied so in its thread">Status</th>
                   <th scope="col" class="num">Found</th>
@@ -137,7 +138,10 @@
                         </span>
                       {/if}
                     </td>
-                    <td><span class="sev sev-{f.severity}">{f.severity}</span></td>
+                    <td>
+                      <span class="sev sev-{f.severity}">{f.severity}</span>
+                      {#if f.category}<a class="badge" href={href({ name: 'findings', slug, filter: { category: f.category } })} title="Findings of this kind">{f.category}</a>{/if}
+                    </td>
                     <td class="finding-pull">
                       <a href={href(pullRoute(slug, f.pull))} title={f.pull.title}><span class="mono">{f.pull.repository}</span> #{f.pull.number}</a>
                       <span class="finding-sub mono">

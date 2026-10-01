@@ -212,7 +212,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	phase := &publishPhase{
 		w: w, account: account, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, trigger: args.Trigger, logger: logger,
-		parse:     review.ParseOptions{RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Rules: prep.ruleIDs},
+		parse: review.ParseOptions{
+			RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Focused: prep.eff.Review.Focused(), Rules: prep.ruleIDs,
+		},
 		repoNotes: prep.notes, prior: prior, scope: prep.scope, templates: prep.templates,
 		agent: agentOutcome,
 	}

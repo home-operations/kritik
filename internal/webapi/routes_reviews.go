@@ -96,7 +96,8 @@ func (s *Server) getReview(w http.ResponseWriter, r *http.Request, t *accountSco
 
 func finding(f store.FindingRow) Finding {
 	return Finding{
-		ID: f.ID, Path: f.Path, Line: f.Line, EndLine: f.EndLine, Severity: f.Severity, Title: f.Title, Explanation: f.Explanation,
+		ID: f.ID, Path: f.Path, Line: f.Line, EndLine: f.EndLine, Severity: f.Severity, Category: f.Category, Title: f.Title,
+		Explanation:  f.Explanation,
 		SuggestedFix: f.SuggestedFix, Replacement: f.Replacement, AgentPrompt: f.AgentPrompt, Fingerprint: f.Fingerprint,
 		PostedInline: f.PostedInline, ForgeCommentID: f.ForgeCommentID, CreatedAt: f.CreatedAt,
 		ReactionsUp: f.ReactionsUp, ReactionsDown: f.ReactionsDown, Rules: nonNil(f.Rules),

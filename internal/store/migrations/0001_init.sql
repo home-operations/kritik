@@ -291,6 +291,9 @@ CREATE TABLE findings (
     path             text        NOT NULL,
     line             int         NOT NULL,
     severity         text        NOT NULL CHECK (severity IN ('blocking', 'important', 'nit')),
+    -- category is what kind of problem the finding is, one of the review
+    -- package's categories; '' for a finding recorded before it had one.
+    category         text        NOT NULL DEFAULT '',
     title            text        NOT NULL,
     explanation      text        NOT NULL,
     forge_comment_id bigint,

@@ -85,8 +85,8 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritika_followups_total", Help: "Follow-up mentions handled, by outcome: answered, limited, ignored, failed.",
 		}, []string{lblAccount, lblOutcome}),
 		findings: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritika_findings_total", Help: "Findings posted, by severity.",
-		}, []string{lblAccount, "severity"}),
+			Name: "kritika_findings_total", Help: "Findings posted, by severity and category.",
+		}, []string{lblAccount, "severity", "category"}),
 		indexRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_index_runs_total", Help: "Index runs finished, by mode and status.",
 		}, []string{lblAccount, "mode", "status"}),
@@ -167,9 +167,9 @@ func (m *Metrics) FollowUp(account, outcome string) {
 }
 
 // Findings counts posted findings of one severity.
-func (m *Metrics) Findings(account, severity string, n int) {
+func (m *Metrics) Findings(account, severity, category string, n int) {
 	if m != nil && n > 0 {
-		m.findings.WithLabelValues(account, severity).Add(float64(n))
+		m.findings.WithLabelValues(account, severity, category).Add(float64(n))
 	}
 }
 

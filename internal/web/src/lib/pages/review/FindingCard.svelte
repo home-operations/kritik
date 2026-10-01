@@ -18,6 +18,7 @@
 <article class="finding sev-edge-{f.severity}" aria-label="{f.severity}: {f.title}">
   <header class="finding-head">
     <span class="sev sev-{f.severity}">{f.severity}</span>
+    {#if f.category}<span class="badge" title="What kind of problem it is">{f.category}</span>{/if}
     <span class="finding-title">{f.title}</span>
     {#each f.rules as id (id)}<span class="badge mono" title="Enforces the review rule {id}">{id}</span>{/each}
     {#if !compact}<span class="mono small muted">{where}</span>{/if}

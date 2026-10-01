@@ -185,7 +185,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			message = tool("read_file", `{"path":"main.go"}`)
 		default:
 			message = tool("submit_review", `{"summary":{"take":"Adds b.","praise":[]},"findings":[`+
-				`{"path":"main.go","line":3,"severity":"important","title":"b is unused","explanation":"Nothing calls b."}]}`)
+				`{"path":"main.go","line":3,"severity":"important","category":"correctness","title":"b is unused","explanation":"Nothing calls b."}]}`)
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")

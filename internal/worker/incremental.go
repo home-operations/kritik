@@ -42,17 +42,17 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 	if err != nil {
 		return priorReview{}, fmt.Errorf("worker: load last completed review: %w", err)
 	}
-	rows, err := tx.Query(ctx, `SELECT path, line, severity, title, explanation, suggested_fix, posted_inline,
+	rows, err := tx.Query(ctx, `SELECT path, line, severity, category, title, explanation, suggested_fix, posted_inline,
 		end_line, replacement, agent_prompt, coalesce(forge_comment_id, 0), rules FROM findings WHERE review_id = $1 ORDER BY path, line`, p.id)
 	if err != nil {
 		return priorReview{}, fmt.Errorf("worker: load findings: %w", err)
 	}
 	p.findings, err = pgx.AppendRows(p.findings, rows, func(row pgx.CollectableRow) (priorFinding, error) {
 		var f priorFinding
-		var sev string
-		err := row.Scan(&f.Path, &f.Line, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.postedInline,
+		var sev, cat string
+		err := row.Scan(&f.Path, &f.Line, &sev, &cat, &f.Title, &f.Explanation, &f.SuggestedFix, &f.postedInline,
 			&f.EndLine, &f.Replacement, &f.AgentPrompt, &f.commentID, &f.Rules)
-		f.Severity = review.Severity(sev)
+		f.Severity, f.Category = review.Severity(sev), review.Category(cat)
 		return f, err
 	})
 	if err != nil {

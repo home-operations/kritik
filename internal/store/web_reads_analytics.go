@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // AnalyticsGroup is the width of one bucket of an analytics series.
@@ -29,10 +31,13 @@ func (g AnalyticsGroup) Valid() bool {
 // Addressed how many of those a later review no longer reported, and the
 // reactions the ones posted inline drew.
 type AnalyticsTotals struct {
-	PullRequests  int
-	Reviews       int
-	Failed        int
-	Findings      SeverityCounts
+	PullRequests int
+	Reviews      int
+	Failed       int
+	Findings     SeverityCounts
+	// Categories counts the same findings by category; a finding
+	// recorded before it had one is under none of them.
+	Categories    map[review.Category]int
 	Addressed     int
 	ReactionsUp   int
 	ReactionsDown int
@@ -68,6 +73,23 @@ func ReadAnalyticsTotals(ctx context.Context, tx pgx.Tx, from, to time.Time) (An
 		Scan(&t.Findings.Blocking, &t.Findings.Important, &t.Findings.Nit, &t.Addressed, &t.ReactionsUp, &t.ReactionsDown)
 	if err != nil {
 		return t, fmt.Errorf("store: analytics findings: %w", err)
+	}
+	rows, err := tx.Query(ctx, `WITH `+findingIssues+`
+		SELECT category, count(*) FROM latest WHERE first_at >= $1 AND first_at < $2 AND category <> '' GROUP BY category`, from, to)
+	if err != nil {
+		return t, fmt.Errorf("store: analytics categories: %w", err)
+	}
+	t.Categories = map[review.Category]int{}
+	for _, c := range review.Categories() {
+		t.Categories[c] = 0
+	}
+	var category string
+	var n int
+	if _, err := pgx.ForEachRow(rows, []any{&category, &n}, func() error {
+		t.Categories[review.Category(category)] = n
+		return nil
+	}); err != nil {
+		return t, fmt.Errorf("store: analytics categories: %w", err)
 	}
 	err = tx.QueryRow(ctx, `SELECT coalesce(sum(cost_usd), 0)::float8 FROM usage WHERE created_at >= $1 AND created_at < $2`, from, to).
 		Scan(&t.CostUSD)

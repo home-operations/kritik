@@ -108,40 +108,58 @@ func TestParse(t *testing.T) {
 		{
 			name: "valid findings are kept and sorted by severity, then path and line",
 			raw: `{"summary": {"take": " Changes y and adds z. ", "praise": []}, "findings": [
-			  {"path": "main.go", "line": 12, "severity": "nit", "title": "n", "explanation": "e"},
-			  {"path": "main.go", "line": 11, "severity": "important", "title": "i2", "explanation": "e"},
-			  {"path": "README.md", "line": 2, "severity": "important", "title": "i1", "explanation": "e"},
-			  {"path": "main.go", "line": 13, "severity": "blocking", "title": "b", "explanation": "e", "suggested_fix": "do x"}
+			  {"path": "main.go", "line": 12, "severity": "nit", "category": "correctness", "title": "n", "explanation": "e"},
+			  {"path": "main.go", "line": 11, "severity": "important", "category": "correctness", "title": "i2", "explanation": "e"},
+			  {"path": "README.md", "line": 2, "severity": "important", "category": "correctness", "title": "i1", "explanation": "e"},
+			  {"path": "main.go", "line": 13, "severity": "blocking", "category": "correctness", "title": "b", "explanation": "e", "suggested_fix": "do x"}
 			]}`,
 			take: "Changes y and adds z.",
 			kept: []string{"main.go:13:b", "README.md:2:i1", "main.go:11:i2", "main.go:12:n"},
 		},
 		{
 			name: "an unknown severity is dropped, not coerced",
-			raw:  `{"summary": {"take": "t"}, "findings": [{"path": "main.go", "line": 11, "severity": "error", "title": "old", "explanation": "e"}]}`,
+			raw:  `{"summary": {"take": "t"}, "findings": [{"path": "main.go", "line": 11, "severity": "error", "category": "correctness", "title": "old", "explanation": "e"}]}`,
 			take: "t", dropped: map[string]DropReason{"old": DropBadSeverity},
+		},
+		{
+			name: "an unknown or missing category is dropped",
+			raw: `{"summary": {"take": "t"}, "findings": [
+			  {"path": "main.go", "line": 11, "severity": "nit", "category": "style", "title": "styled", "explanation": "e"},
+			  {"path": "main.go", "line": 12, "severity": "nit", "title": "uncategorised", "explanation": "e"}
+			]}`,
+			take: "t", dropped: map[string]DropReason{"styled": DropBadCategory, "uncategorised": DropBadCategory},
+		},
+		{
+			name: "a focused review keeps correctness, security and reliability",
+			raw: `{"summary": {"take": "t"}, "findings": [
+			  {"path": "main.go", "line": 11, "severity": "important", "category": "security", "title": "leak", "explanation": "e"},
+			  {"path": "main.go", "line": 12, "severity": "important", "category": "maintainability", "title": "naming", "explanation": "e"},
+			  {"path": "main.go", "line": 13, "severity": "blocking", "category": "tests", "title": "untested", "explanation": "e"}
+			]}`,
+			opts: ParseOptions{Focused: true},
+			take: "t", kept: []string{"main.go:11:leak"}, dropped: map[string]DropReason{"naming": DropOutsideFocus, "untested": DropOutsideFocus},
 		},
 		{
 			name: "a finding without a title or explanation is incomplete",
 			raw: `{"summary": {"take": "t"}, "findings": [
-			  {"path": "main.go", "line": 11, "severity": "nit", "title": " ", "explanation": "no title"},
-			  {"path": "main.go", "line": 11, "severity": "nit", "title": "no explanation", "explanation": ""}
+			  {"path": "main.go", "line": 11, "severity": "nit", "category": "correctness", "title": " ", "explanation": "no title"},
+			  {"path": "main.go", "line": 11, "severity": "nit", "category": "correctness", "title": "no explanation", "explanation": ""}
 			]}`,
 			take: "t", dropped: map[string]DropReason{"": DropIncomplete, "no explanation": DropIncomplete},
 		},
 		{
 			name: "a finding off the diff is unanchored",
 			raw: `{"summary": {"take": "t"}, "findings": [
-			  {"path": "main.go", "line": 99, "severity": "nit", "title": "off", "explanation": "e"},
-			  {"path": "nope.go", "line": 1, "severity": "nit", "title": "unknown file", "explanation": "e"}
+			  {"path": "main.go", "line": 99, "severity": "nit", "category": "correctness", "title": "off", "explanation": "e"},
+			  {"path": "nope.go", "line": 1, "severity": "nit", "category": "correctness", "title": "unknown file", "explanation": "e"}
 			]}`,
 			take: "t", dropped: map[string]DropReason{"off": DropUnanchored, "unknown file": DropUnanchored},
 		},
 		{
 			name: "RequireSuggestedFix drops a finding without a fix",
 			raw: `{"summary": {"take": "t"}, "findings": [
-			  {"path": "main.go", "line": 11, "severity": "important", "title": "no fix", "explanation": "e", "suggested_fix": "  "},
-			  {"path": "main.go", "line": 12, "severity": "important", "title": "fixed", "explanation": "e", "suggested_fix": "x"}
+			  {"path": "main.go", "line": 11, "severity": "important", "category": "correctness", "title": "no fix", "explanation": "e", "suggested_fix": "  "},
+			  {"path": "main.go", "line": 12, "severity": "important", "category": "correctness", "title": "fixed", "explanation": "e", "suggested_fix": "x"}
 			]}`,
 			opts: ParseOptions{RequireSuggestedFix: true},
 			take: "t", kept: []string{"main.go:12:fixed"}, dropped: map[string]DropReason{"no fix": DropNoFix},
@@ -155,16 +173,16 @@ func TestParse(t *testing.T) {
 		{
 			name: "a replacement is kept only over anchored lines, without fences",
 			raw: `{"summary": {"take": "t"}, "findings": [
-			  {"path": "main.go", "line": 11, "end_line": 12, "severity": "nit", "title": "ranged", "explanation": "e", "replacement": "` + "```go\\na\\nb\\n```" + `"},
-			  {"path": "main.go", "line": 11, "end_line": 99, "severity": "nit", "title": "off range", "explanation": "e", "replacement": "a"},
-			  {"path": "main.go", "line": 12, "end_line": 12, "severity": "nit", "title": "same line", "explanation": "e", "replacement": "a", "agent_prompt": " p "}
+			  {"path": "main.go", "line": 11, "end_line": 12, "severity": "nit", "category": "correctness", "title": "ranged", "explanation": "e", "replacement": "` + "```go\\na\\nb\\n```" + `"},
+			  {"path": "main.go", "line": 11, "end_line": 99, "severity": "nit", "category": "correctness", "title": "off range", "explanation": "e", "replacement": "a"},
+			  {"path": "main.go", "line": 12, "end_line": 12, "severity": "nit", "category": "correctness", "title": "same line", "explanation": "e", "replacement": "a", "agent_prompt": " p "}
 			]}`,
 			take: "t", kept: []string{"main.go:11:ranged", "main.go:11:off range", "main.go:12:same line"},
 		},
 		{
 			name: "RequireSuggestedFix accepts a replacement as the fix",
 			raw: `{"summary": {"take": "t"}, "findings": [
-			  {"path": "main.go", "line": 11, "severity": "important", "title": "replaced", "explanation": "e", "replacement": "x"}
+			  {"path": "main.go", "line": 11, "severity": "important", "category": "correctness", "title": "replaced", "explanation": "e", "replacement": "x"}
 			]}`,
 			opts: ParseOptions{RequireSuggestedFix: true},
 			take: "t", kept: []string{"main.go:11:replaced"},
@@ -172,9 +190,9 @@ func TestParse(t *testing.T) {
 		{
 			name: "a finding cites only the rules the review was given, once each",
 			raw: `{"summary": {"take": "t"}, "findings": [
-			  {"path": "main.go", "line": 11, "severity": "nit", "title": "cites", "explanation": "e",
+			  {"path": "main.go", "line": 11, "severity": "nit", "category": "correctness", "title": "cites", "explanation": "e",
 			   "rules": ["wrap-errors", " no-tokens ", "made-up", "wrap-errors"]},
-			  {"path": "main.go", "line": 12, "severity": "nit", "title": "cites none", "explanation": "e", "rules": ["made-up"]}
+			  {"path": "main.go", "line": 12, "severity": "nit", "category": "correctness", "title": "cites none", "explanation": "e", "rules": ["made-up"]}
 			]}`,
 			opts: ParseOptions{Rules: []string{"no-tokens", "wrap-errors"}},
 			take: "t", kept: []string{"main.go:11:cites", "main.go:12:cites none"},
@@ -435,7 +453,8 @@ func checkContract(t *testing.T, n node, required []string) {
 	if n.Properties["findings"].Type != "array" || items == nil || items.Type != "object" ||
 		!slices.Equal(items.Required, required) ||
 		items.Properties["line"].Type != "integer" || items.Properties["suggested_fix"].Type != "string" ||
-		!slices.Equal(items.Properties["severity"].Enum, []string{"blocking", "important", "nit"}) {
+		!slices.Equal(items.Properties["severity"].Enum, []string{"blocking", "important", "nit"}) ||
+		!slices.Equal(items.Properties["category"].Enum, []string{"correctness", "security", "performance", "reliability", "maintainability", "tests"}) {
 		t.Fatalf("findings item = %+v", items)
 	}
 }
@@ -448,10 +467,10 @@ func TestSchemas(t *testing.T) {
 		check    func(t *testing.T, n node)
 	}{
 		{"findings", Schema(), []string{"summary", "findings"}, func(t *testing.T, n node) {
-			checkContract(t, n, []string{"path", "line", "severity", "title", "explanation"})
+			checkContract(t, n, []string{"path", "line", "severity", "category", "title", "explanation"})
 		}},
 		{"strict findings", SchemaStrict(), []string{"summary", "findings"}, func(t *testing.T, n node) {
-			checkContract(t, n, []string{"path", "line", "severity", "title", "explanation", "suggested_fix"})
+			checkContract(t, n, []string{"path", "line", "severity", "category", "title", "explanation", "suggested_fix"})
 		}},
 		{"follow-up", FollowUpSchema(), []string{"reply"}, func(t *testing.T, n node) {
 			if n.Properties["reply"].Type != "string" {

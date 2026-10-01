@@ -337,6 +337,7 @@ type Finding struct {
 	Line           int             `json:"line"`
 	EndLine        int             `json:"endLine"`
 	Severity       review.Severity `json:"severity"`
+	Category       review.Category `json:"category"`
 	Title          string          `json:"title"`
 	Explanation    string          `json:"explanation"`
 	SuggestedFix   string          `json:"suggestedFix"`
@@ -651,16 +652,19 @@ type Rule struct {
 // the reactions to those posted inline, spend, the median time a
 // completed review took, and the median time from opening to merging.
 type AnalyticsTotals struct {
-	PullRequests   int            `json:"pullRequests"`
-	Reviews        int            `json:"reviews"`
-	Failed         int            `json:"failed"`
-	Findings       SeverityCounts `json:"findings"`
-	Addressed      int            `json:"addressed"`
-	ReactionsUp    int            `json:"reactionsUp"`
-	ReactionsDown  int            `json:"reactionsDown"`
-	CostUSD        float64        `json:"costUsd"`
-	MedianReviewMs *int64         `json:"medianReviewMs"`
-	MedianMergeMs  *int64         `json:"medianMergeMs"`
+	PullRequests int            `json:"pullRequests"`
+	Reviews      int            `json:"reviews"`
+	Failed       int            `json:"failed"`
+	Findings     SeverityCounts `json:"findings"`
+	// Categories counts the same findings by category, every category
+	// present.
+	Categories     map[review.Category]int `json:"categories"`
+	Addressed      int                     `json:"addressed"`
+	ReactionsUp    int                     `json:"reactionsUp"`
+	ReactionsDown  int                     `json:"reactionsDown"`
+	CostUSD        float64                 `json:"costUsd"`
+	MedianReviewMs *int64                  `json:"medianReviewMs"`
+	MedianMergeMs  *int64                  `json:"medianMergeMs"`
 }
 
 // AnalyticsPoint is one bucket of the series, keyed by its first date.

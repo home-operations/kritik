@@ -18,10 +18,14 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request, t *account
 	}
 	q := r.URL.Query()
 	f := store.FindingFilter{
-		Severity: review.Severity(q.Get("severity")), Status: store.FindingStatus(q.Get("status")), Rule: q.Get("rule"), Query: q.Get("q"),
+		Severity: review.Severity(q.Get("severity")), Category: review.Category(q.Get("category")),
+		Status: store.FindingStatus(q.Get("status")), Rule: q.Get("rule"), Query: q.Get("q"),
 	}
 	if f.Severity != "" && !f.Severity.Valid() {
 		return errBadRequest(CodeBadRequest, "severity must be blocking, important or nit")
+	}
+	if f.Category != "" && !f.Category.Valid() {
+		return errBadRequest(CodeBadRequest, "category must be correctness, security, performance, reliability, maintainability or tests")
 	}
 	if f.Status != "" && !f.Status.Valid() {
 		return errBadRequest(CodeBadRequest, "status must be open, addressed or dismissed")

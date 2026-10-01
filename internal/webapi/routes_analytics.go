@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -63,9 +64,20 @@ func (s *Server) getAnalytics(w http.ResponseWriter, r *http.Request, t *account
 func analyticsTotals(t store.AnalyticsTotals) AnalyticsTotals {
 	return AnalyticsTotals{
 		PullRequests: t.PullRequests, Reviews: t.Reviews, Failed: t.Failed, Findings: severityCounts(t.Findings),
-		Addressed: t.Addressed, ReactionsUp: t.ReactionsUp, ReactionsDown: t.ReactionsDown, CostUSD: t.CostUSD,
+		Categories: categoryCounts(t.Categories), Addressed: t.Addressed, ReactionsUp: t.ReactionsUp, ReactionsDown: t.ReactionsDown,
+		CostUSD:        t.CostUSD,
 		MedianReviewMs: t.MedianReviewMs, MedianMergeMs: t.MedianMergeMs,
 	}
+}
+
+// categoryCounts is counts with every category present, so the dashboard
+// never reads a missing key.
+func categoryCounts(counts map[review.Category]int) map[review.Category]int {
+	out := make(map[review.Category]int, len(review.Categories()))
+	for _, c := range review.Categories() {
+		out[c] = counts[c]
+	}
+	return out
 }
 
 func severityCounts(c store.SeverityCounts) SeverityCounts {

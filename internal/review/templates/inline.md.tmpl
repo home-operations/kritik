@@ -1,4 +1,4 @@
-**[{{ .Severity }}]** **{{ .Title }}**
+**[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** **{{ .Title }}**
 
 {{ .Explanation }}
 {{ if .SuggestedFix }}

@@ -402,9 +402,9 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 		return answer(`{"reply":"Because b is new."}`, model.Usage{Input: 20, Output: 5}, "", 0), nil
 	}
 	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
-		  {"path":"main.go","line":1,"severity":"important","title":"first line","explanation":"look here","suggested_fix":"do this",
+		  {"path":"main.go","line":1,"severity":"important","category":"correctness","title":"first line","explanation":"look here","suggested_fix":"do this",
 		   "rules":["no-panics","sql-placeholders"]},
-		  {"path":"main.go","line":500,"severity":"blocking","title":"off the diff","explanation":"dropped"}]}`,
+		  {"path":"main.go","line":500,"severity":"blocking","category":"correctness","title":"off the diff","explanation":"dropped"}]}`,
 		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil
 }
 
@@ -462,14 +462,14 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 	lf.mu.Unlock()
 	sticky := comments[commentBase+1]
 	if len(comments) != 1 || !strings.HasPrefix(sticky, "<!-- kritika:pr-1 -->\n") ||
-		!strings.Contains(sticky, "- **[important]** [`main.go:1`](local://onedr0p/home-ops/") ||
+		!strings.Contains(sticky, "- **[important · correctness]** [`main.go:1`](local://onedr0p/home-ops/") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/1#r1001)") ||
 		!strings.Contains(sticky, "**1 finding** · 1 important\n") || strings.Contains(sticky, "What's good") ||
-		!strings.Contains(sticky, "**Outside the diff**\n\n- **[blocking]** `main.go:500` off the diff\n\n  dropped\n") ||
+		!strings.Contains(sticky, "**Outside the diff**\n\n- **[blocking · correctness]** `main.go:500` off the diff\n\n  dropped\n") ||
 		strings.Contains(sticky, "were dropped") {
 		t.Fatalf("comments = %v", comments)
 	}
-	if len(inline) != 1 || inline[0].Line != 1 || !strings.Contains(inline[0].Body, "**[important]** **first line**") ||
+	if len(inline) != 1 || inline[0].Line != 1 || !strings.Contains(inline[0].Body, "**[important · correctness]** **first line**") ||
 		!strings.Contains(inline[0].Body, "do this") || forgeStatus != "success: kritika: 1 finding(s)" {
 		t.Fatalf("inline = %+v status = %q", inline, forgeStatus)
 	}
@@ -1676,7 +1676,7 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 	}
 	if !strings.Contains(sticky, "_Incremental review of the changes since [`"+prior[:7]+"`](local://onedr0p/home-ops/commit/"+prior+")._") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
-		!strings.Contains(sticky, "**Earlier findings**\n\n- **[important]** [`main.go:1`](local://onedr0p/home-ops/"+prior+"/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
+		!strings.Contains(sticky, "**Earlier findings**\n\n- **[important · correctness]** [`main.go:1`](local://onedr0p/home-ops/"+prior+"/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
 		!strings.Contains(sticky, " · still open\n") {
 		t.Fatalf("sticky comment = %q", sticky)
 	}

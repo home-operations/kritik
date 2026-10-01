@@ -123,7 +123,9 @@ verify; the reader knows what a diff is. It does not give a verdict, count the f
 does not list what you read or how you read it: kritika states the count and lists the sources itself. Praise lists
 at most three specific things done well, and is empty when nothing stands out. Each
 finding points at one line in the new version of a changed file and has a severity: blocking for a defect that must
-be fixed before merging, important for something that should be fixed, nit for optional polish. Give it a one-line
+be fixed before merging, important for something that should be fixed, nit for optional polish. It has a category
+too, what kind of problem it is: correctness, security, performance, reliability, maintainability or tests, as the
+schema defines them; pick the one the fix is really about, and never call a style point security. Give it a one-line
 title and an explanation of why it matters. When the fix is a change to the lines the finding points at, give
 replacement: those lines exactly as they should be committed, raw code without fences, with end_line when more than
 one line is replaced; the forge offers it as a one-click suggestion, so it must be complete and correct as written.

@@ -7,7 +7,7 @@
   import { unsignedWebhooks } from '../setup';
   import { Resource, live } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
-  import { daysAgo, duration, reviewTone, usd, wholeNumber } from '../format';
+  import { daysAgo, duration, reviewTone, usd, wholeNumber, CATEGORIES } from '../format';
   import type { AccountDetail, Analytics, AnalyticsPoint, Page, Pull } from '../types';
   import StateView from '../components/StateView.svelte';
   import SectionTabs from '../components/SectionTabs.svelte';
@@ -234,6 +234,11 @@
                 format={wholeNumber}
                 view={findingsView}
               />
+              <p class="panel-foot">
+                {#each CATEGORIES as k (k)}
+                  <a class="badge" href={href({ name: 'findings', slug, filter: { category: k } })} title="Findings of this kind first reported in the period">{k} {wholeNumber(c.categories[k])}</a>
+                {/each}
+              </p>
               <p class="panel-foot"><a href={href({ name: 'findings', slug })}>See every finding</a></p>
             </section>
           </div>
