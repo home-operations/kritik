@@ -86,19 +86,17 @@ spec:
           securityContext:
             {{- tpl (toYaml $.Values.securityContext) $ | nindent 12 }}
           {{- $serveEnv := include "kritika.serveEnv" $ | fromYamlArray }}
-          {{- $configEnv := include "kritika.configEnv" $ | fromYaml }}
           env:
             {{- toYaml $serveEnv | nindent 12 }}
+            {{- include "kritika.configEnv" $ | nindent 12 }}
             {{- range $name, $value := $.Values.env }}
-            {{- range $key, $var := $configEnv }}
-            {{- if eq $var $name }}
-            {{- fail (printf "env.%s: set config.%s instead" $name $key) }}
-            {{- end }}
-            {{- end }}
             {{- range $serveEnv }}
             {{- if eq .name $name }}
             {{- fail (printf "env.%s: the chart sets this variable from its other values" $name) }}
             {{- end }}
+            {{- end }}
+            {{- if hasPrefix "KRITIKA_" $name }}
+            {{- fail (printf "env.%s: set config.%s instead" $name (trimPrefix "KRITIKA_" $name | lower | camelcase | untitle)) }}
             {{- end }}
             - name: {{ $name }}
               {{- if kindIs "map" $value }}

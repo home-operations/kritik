@@ -32,6 +32,13 @@ where `my-values.yaml` sets:
 ```yaml
 config:
   webUrl: https://kritika.example.com
+  authAdminPassword:
+    valueFrom:
+      secretKeyRef: { name: kritika-admin, key: password }
+  providersApiKey:
+    valueFrom:
+      secretKeyRef: { name: kritika-openrouter, key: api-key }
+  defaultsModelsReview: openrouter/vendor/large-model
 configFile:
   apps:
     github:
@@ -39,19 +46,6 @@ configFile:
       clientId: Iv1.example
       privateKey: { env: GITHUB_APP_PRIVATE_KEY }
       webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
-  providers:
-    openrouter:
-      type: openrouter
-      apiKey: { env: OPENROUTER_API_KEY }
-  defaults:
-    models: { review: openrouter/vendor/large-model }
-env:
-  KRITIKA_AUTH_ADMIN_PASSWORD:
-    valueFrom:
-      secretKeyRef: { name: kritika-admin, key: password }
-  OPENROUTER_API_KEY:
-    valueFrom:
-      secretKeyRef: { name: kritika-openrouter, key: api-key }
 # A Secret with the keys GITHUB_APP_PRIVATE_KEY and GITHUB_APP_WEBHOOK_SECRET.
 envFrom:
   - secretRef:
@@ -62,26 +56,30 @@ ingress:
   tls: [{ hosts: [kritika.example.com], secretName: kritika-tls }]
 ```
 
-`config` is how kritika runs, as camelCased keys the chart turns into the
-`KRITIKA_*` variables of the same name: `webUrl`, the one public URL, with
-the dashboard at it and the webhook listener under it at `/hooks`; logging;
-and, commented out in `values.yaml` with kritika's defaults, the workers,
-polling, retention and runner Jobs' deadline and RuntimeClass (see
+`config` is every `KRITIKA_*` variable, keyed by its name without the
+prefix in camelCase (`pollInterval` is `KRITIKA_POLL_INTERVAL`): `webUrl`,
+the one public URL, with the dashboard at it and the webhook listener
+under it at `/hooks`; logging, the workers, polling, retention and runner
+Jobs' deadline and RuntimeClass; and the variables that stand in for the
+configuration file's sections, sign-in, one app, one provider, the default
+models and the embedder (see
 [the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
-The chart's Ingress or HTTPRoute must route `webUrl`'s host.
+A key left empty sets nothing and kritika's default applies; a secret
+takes a `valueFrom` map, like the admin password above, which is the way
+into a fresh instance. The chart's Ingress or HTTPRoute must route
+`webUrl`'s host.
 
 `configFile` is what is reviewed and how: sign-in (`auth`), the GitHub
 `apps`, model `providers`, the `embedding`, the `defaults`, `repositories`
-entries keyed `owner/*` or `owner/name`, and `accounts`. kritika reads it
-at startup: the pods carry its checksum, so a change rolls them, and a pod
-whose file doesn't load never becomes ready while the ones before it keep
-serving. Secrets never go in it: it names environment variables, which
-`env` and `envFrom` set from existing Secrets, the way any Kubernetes
-container's environment is set. A `KRITIKA_*` variable that carries a
-secret itself goes in `env` the same way: here the local admin's password,
-which is the way into a fresh instance. The chart refuses an `env` entry
-for a variable it derives from its other values, such as the addresses or
-the database, or that has a `config` key. The
+entries keyed `owner/*` or `owner/name`, and `accounts`, with the
+`config` variables winning over it. kritika reads it at startup: the pods
+carry its checksum, so a change rolls them, and a pod whose file doesn't
+load never becomes ready while the ones before it keep serving. Secrets
+never go in it: it names environment variables, which `env` and `envFrom`
+set from existing Secrets, the way any Kubernetes container's environment
+is set. The chart refuses a `KRITIKA_*` variable under `env`, naming its
+`config` key, and a `config` key for a variable it derives from its other
+values, such as the addresses or the database. The
 [setup guide](https://github.com/home-operations/kritika/blob/main/docs/setup.md)
 covers creating the GitHub App, and the dashboard's setup checklist shows
 what a fresh instance still lacks.
