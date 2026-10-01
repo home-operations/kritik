@@ -303,6 +303,11 @@ level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
   `@<app slug> review` still reviews a paused pull request, and
   `@<app slug> resume` turns its automatic reviews back on, as
   `@<app slug> pause` turns them off at any time.
+- `maxChangedLines`: the most lines a pull request's diff may add and
+  remove, paths the `ignore` globs match left out, for an automatic review
+  to run; a larger one is skipped before any model is called, and the
+  commit status says so. Unlimited unless set. `@<app slug> review` reviews
+  it anyway.
 - `forks: true`: reviews pull requests from forks without being asked; by
   default one is reviewed only when a maintainer comments
   `@<app slug> review`.

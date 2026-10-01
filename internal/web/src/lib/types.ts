@@ -204,6 +204,7 @@ export interface RepoSettings {
   ignore: string[];
   settleSeconds: number;
   maxAutoReviews: number;
+  maxChangedLines: number;
   maxDeltaFiles: number;
   review: ReviewBlock;
   agent: AgentLimits;

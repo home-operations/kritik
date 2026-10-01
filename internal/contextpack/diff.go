@@ -3,6 +3,8 @@ package contextpack
 import (
 	"strconv"
 	"strings"
+
+	"github.com/home-operations/kritika/internal/chunk"
 )
 
 // diffLines is what a unified diff says per path: the head-side lines it
@@ -98,6 +100,26 @@ func parseDiff(diff string) diffLines {
 		}
 	})
 	return d
+}
+
+// ChangedLines counts the lines a unified diff adds and removes in the
+// files no ignore glob matches. A file is matched by its head-side path,
+// or its base-side path once deleted.
+func ChangedLines(diff string, ignore []string) int {
+	n := 0
+	walkDiff(diff, func(l diffLine) {
+		if l.kind == ' ' {
+			return
+		}
+		path := l.newPath
+		if path == "" {
+			path = l.oldPath
+		}
+		if !chunk.Ignored(ignore, path) {
+			n++
+		}
+	})
+	return n
 }
 
 // ShownLines returns, per head-side path, the head-side lines a unified

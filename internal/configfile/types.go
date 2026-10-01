@@ -218,10 +218,14 @@ type Overrides struct {
 	Settle *time.Duration `yaml:"settle,omitempty"`
 	// MaxAutoReviews pauses a pull request's automatic reviews once that
 	// many have completed, until someone resumes them; zero never pauses.
-	MaxAutoReviews *int        `yaml:"maxAutoReviews,omitempty"`
-	Agent          Agent       `yaml:"agent,omitempty"`
-	Incremental    Incremental `yaml:"incremental,omitempty"`
-	Review         ReviewSpec  `yaml:",inline"`
+	MaxAutoReviews *int `yaml:"maxAutoReviews,omitempty"`
+	// MaxChangedLines skips an automatic review of a pull request whose
+	// diff, ignored paths left out, adds and removes more lines than this;
+	// zero reviews any size. A review someone asks for still runs.
+	MaxChangedLines *int        `yaml:"maxChangedLines,omitempty"`
+	Agent           Agent       `yaml:"agent,omitempty"`
+	Incremental     Incremental `yaml:"incremental,omitempty"`
+	Review          ReviewSpec  `yaml:",inline"`
 
 	filter *prfilter.Program
 }
@@ -649,9 +653,12 @@ type Settings struct {
 	// MaxAutoReviews pauses a pull request's automatic reviews once that
 	// many have completed; zero never pauses.
 	MaxAutoReviews int
-	Agent          AgentSettings
-	Incremental    IncrementalSettings
-	Review         Review
+	// MaxChangedLines skips an automatic review whose diff changes more
+	// lines than this, ignored paths left out; zero reviews any size.
+	MaxChangedLines int
+	Agent           AgentSettings
+	Incremental     IncrementalSettings
+	Review          Review
 	// Providers name the model providers the repository's account may use,
 	// the instance's and its own, sorted: the ones a .kritika.yaml may
 	// choose a model of.

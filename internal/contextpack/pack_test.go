@@ -216,6 +216,15 @@ func TestDiffEdges(t *testing.T) {
 	if shown := ShownLines(diff); len(shown["q.sql"]) != 3 || len(shown["new.go"]) != 2 || shown["gone.go"] != nil {
 		t.Errorf("shown = %v", shown)
 	}
+	// The deleted file is matched by its base-side path, the only one it has.
+	for _, tt := range []struct {
+		ignore []string
+		want   int
+	}{{nil, 6}, {[]string{"*.sql"}, 4}, {[]string{"gone.go"}, 4}, {[]string{"**"}, 0}} {
+		if got := ChangedLines(diff, tt.ignore); got != tt.want {
+			t.Errorf("ChangedLines(ignore %v) = %d, want %d", tt.ignore, got, tt.want)
+		}
+	}
 	h := Hunks(diff)
 	if len(h) != 2 || h[0] != (Hunk{Path: "new.go", Text: "package x\nfunc F() {}\n"}) ||
 		h[1] != (Hunk{Path: "q.sql", Text: "SELECT 1;\n++ new comment\nSELECT 2;\n"}) {

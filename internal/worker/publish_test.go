@@ -83,12 +83,13 @@ func TestSkipDescription(t *testing.T) {
 		want   string
 	}{
 		{name: "the runner's unchanged patch", reason: runner.SkipUnchangedPatch, want: "patch unchanged since the last review"},
+		{name: "the runner's too large diff", reason: runner.SkipTooLarge, want: "more than 800 changed lines"},
 		{name: "a repository skip reason", reason: string(repoconfig.SkipOnlyPaths), want: repoconfig.SkipOnlyPaths.Description()},
 		{name: "disabled", reason: string(repoconfig.SkipDisabled), want: "disabled in " + repoconfig.FileName},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := skipDescription(tt.reason); got != tt.want {
+			if got := skipDescription(tt.reason, 800); got != tt.want {
 				t.Errorf("skipDescription(%q) = %q, want %q", tt.reason, got, tt.want)
 			}
 		})

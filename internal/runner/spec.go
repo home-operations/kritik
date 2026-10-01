@@ -96,6 +96,10 @@ type Prompt struct {
 	// UnchangedPatchID, when the head's patch id equals it, means the
 	// worker will skip the review, so the agent is not run.
 	UnchangedPatchID string `json:"unchangedPatchId,omitempty"`
+	// MaxChangedLines, when positive, skips the review of a diff that adds
+	// and removes more lines than it, ignored paths left out. The worker
+	// leaves it zero for a review someone asked for.
+	MaxChangedLines int `json:"maxChangedLines,omitempty"`
 }
 
 // Spec is the job document a worker hands a runner: everything the run

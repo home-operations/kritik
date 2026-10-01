@@ -159,24 +159,33 @@ func TestPromptInputsNotes(t *testing.T) {
 }
 
 func TestAgentSkip(t *testing.T) {
+	// Three lines change in main.go and two in docs/a.md.
+	const diff = "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1,2 +1,3 @@\n-a\n+A\n+B\n c\n" +
+		"diff --git a/docs/a.md b/docs/a.md\n--- a/docs/a.md\n+++ b/docs/a.md\n@@ -1,2 +1,2 @@\n-x\n+X\n y\n"
 	tests := []struct {
-		name    string
-		ignore  []string
-		changed []string
-		patchID string
-		want    string
+		name     string
+		ignore   []string
+		changed  []string
+		patchID  string
+		maxLines int
+		want     string
 	}{
 		{name: "reviewed", changed: []string{"main.go"}, patchID: "p2"},
 		{name: "unchanged bot patch", changed: []string{"main.go"}, patchID: "p1", want: SkipUnchangedPatch},
 		{name: "only ignored paths", ignore: []string{"**/*.md"}, changed: []string{"docs/a.md"}, patchID: "p2",
 			want: string(repoconfig.SkipOnlyPaths)},
 		{name: "a path the ignore globs do not cover", ignore: []string{"**/*.md"}, changed: []string{"docs/a.md", "main.go"}, patchID: "p2"},
+		{name: "more changed lines than allowed", changed: []string{"main.go", "docs/a.md"}, patchID: "p2", maxLines: 4, want: SkipTooLarge},
+		{name: "ignored paths do not count toward the limit", ignore: []string{"**/*.md"}, changed: []string{"main.go", "docs/a.md"},
+			patchID: "p2", maxLines: 4},
+		{name: "exactly the allowed lines", changed: []string{"main.go", "docs/a.md"}, patchID: "p2", maxLines: 5},
+		{name: "an unchanged bot patch is skipped as such first", changed: []string{"main.go"}, patchID: "p1", maxLines: 1, want: SkipUnchangedPatch},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
-			s.Prompt.UnchangedPatchID, s.Ignore = "p1", tt.ignore
-			if got := agentSkip(s, tt.changed, tt.patchID); got != tt.want {
+			s.Prompt.UnchangedPatchID, s.Prompt.MaxChangedLines, s.Ignore = "p1", tt.maxLines, tt.ignore
+			if got := agentSkip(s, tt.changed, tt.patchID, diff); got != tt.want {
 				t.Fatalf("agentSkip = %q, want %q", got, tt.want)
 			}
 		})
