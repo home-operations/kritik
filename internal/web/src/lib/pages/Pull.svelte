@@ -81,7 +81,7 @@
             <span class="lifecycle-badge tone-{life.tone}"><Icon path={life.icon} size={13} /> {life.label}</span>
             <span><strong>{p.author}</strong> wants to merge <span class="mono">{p.headRef}</span> into <span class="mono">{p.baseRef}</span></span>
             <span>at <span class="mono" title={p.headSha}>{shortSha(p.headSha)}</span>, updated <Time iso={p.updatedAt} /></span>
-            {#each p.labels as l, i (i)}<span class="label-chip" style:--label={labelColor(l.color)}>{l.name}</span>{/each}
+            {#each p.labels as l (l.name)}<span class="label-chip" style:--label={labelColor(l.color)}>{l.name}</span>{/each}
             {#if forgeUrl}
               <a class="external" href={forgeUrl} target="_blank" rel="noopener noreferrer">View on GitHub <Icon path={mdiOpenInNew} size={12} /></a>
             {/if}
@@ -113,7 +113,7 @@
               <p class="meta-line">
                 <ReviewStatusTile status={r.status} />
                 <span>started <Time iso={r.createdAt} /></span>
-                {#if r.skipReason}<span>skipped: {skipText[r.skipReason] ?? r.skipReason}</span>{/if}
+                {#if r.status === 'skipped' && r.skipReason}<span>skipped: {skipText[r.skipReason] ?? r.skipReason}</span>{/if}
               </p>
               {#if r.error}<p class="error-text">{r.error}</p>{/if}
               {#if latest.data && latest.data.review.id === r.id}
@@ -150,7 +150,7 @@
                     <span class="timeline-top">
                       <ReviewStatusTile status={r.status} />
                       <Time iso={r.createdAt} />
-                      {#if r.skipReason}<span class="small muted">skipped: {skipText[r.skipReason] ?? r.skipReason}</span>{/if}
+                      {#if r.status === 'skipped' && r.skipReason}<span class="small muted">skipped: {skipText[r.skipReason] ?? r.skipReason}</span>{/if}
                     </span>
                     <ReviewMeta {r} />
                     {#if r.error}<span class="error-text">{r.error}</span>{/if}

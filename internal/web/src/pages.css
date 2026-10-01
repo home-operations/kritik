@@ -1628,6 +1628,9 @@ table.diff td.code {
   .subnav-group {
     margin: 0 6px;
   }
+  .subnav-parts {
+    display: none;
+  }
   .row {
     flex-wrap: wrap;
   }

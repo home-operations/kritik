@@ -122,7 +122,6 @@
               <tbody>
                 {#each paged.items as f (f.id)}
                   <!-- The title is the row's link; the click is a larger target for a pointer. -->
-                  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
                   <tr class="finding-row" onclick={(e) => onRowClick(e, f)}>
                     <td class="finding-main">
                       <a class="finding-link" href={href(reviewOf(f))}>{f.title}</a>

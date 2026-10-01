@@ -13,7 +13,7 @@
     children: Snippet;
   }
   let { title, meta, open = $bindable(false), tone = '', children }: Props = $props();
-  const id = `c${Math.random().toString(36).slice(2, 9)}`;
+  const id = $props.id();
 </script>
 
 <div class="collapsible" class:tone-danger-edge={tone === 'danger'}>

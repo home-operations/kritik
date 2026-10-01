@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ReviewDetail, RunnerRun } from '../../types';
   import { between, duration, tokens, usd, wholeNumber, bytes } from '../../format';
-  import { absolute, clock } from '../../time.svelte';
+  import { clock } from '../../time.svelte';
   import Time from '../../components/Time.svelte';
   import ColumnChart from '../../components/ColumnChart.svelte';
 
@@ -58,7 +58,7 @@
         <thead><tr><th scope="col">Phase</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Took</th></tr></thead>
         <tbody>
           {#each segs as s (s.name)}
-            <tr><td>{s.name}</td><td title={absolute(s.from)}><Time iso={s.from} /></td><td><Time iso={s.to} /></td><td>{s.to ? duration(s.ms) : `${duration(s.ms)} so far`}</td></tr>
+            <tr><td>{s.name}</td><td><Time iso={s.from} /></td><td><Time iso={s.to} /></td><td>{s.to ? duration(s.ms) : `${duration(s.ms)} so far`}</td></tr>
           {/each}
         </tbody>
       </table>

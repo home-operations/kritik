@@ -5,14 +5,14 @@
   // the admin Configuration page, which the palette focuses once its page
   // shows them.
   import type { Route } from './router.svelte';
-  import { router, navigate } from './router.svelte';
+  import { router, navigate, href } from './router.svelte';
   import { palette, togglePalette } from './keyboard.svelte';
   import Icon from './Icon.svelte';
   import type { Me, Page, Pull } from './types';
   import { getJSON } from './api.svelte';
   import { pullRoute, accountApi } from './links';
   import { CONSOLE_SECTIONS } from './settingsindex';
-  import { focusWhenShown } from './focus';
+  import { focusWhenShown, focusOnMount } from './focus';
   import {
     mdiMagnify,
     mdiLogin,
@@ -155,10 +155,6 @@
     }
     e.preventDefault();
   }
-
-  function focusOnMount(node: HTMLElement): void {
-    node.focus();
-  }
 </script>
 
 {#if palette.open}
@@ -170,10 +166,9 @@
     <div class="palette" role="dialog" aria-modal="true" aria-label="Go to" tabindex="-1" onkeydown={onKeydown}>
       <div class="palette-input">
         <Icon path={mdiMagnify} size={16} />
-        <!-- svelte-ignore a11y_autofocus -->
         <input
           bind:value={q}
-          use:focusOnMount
+          {@attach focusOnMount}
           oninput={() => (idx = 0)}
           placeholder="Go to…"
           aria-label="Go to"
@@ -182,7 +177,7 @@
       </div>
 
       <div class="palette-body">
-        {#each rows as row, i (i)}
+        {#each rows as row, i (`${row.label}\u0000${href(row.route)}`)}
           <button
             class="palette-row"
             class:active={i === idx}

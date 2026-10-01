@@ -79,7 +79,7 @@
     autocomplete="off"
     aria-autocomplete="list"
     aria-expanded={listOpen}
-    aria-controls="{id}-suggest"
+    aria-controls={listOpen ? `${id}-suggest` : undefined}
     aria-activedescendant={listOpen && active >= 0 ? `${id}-suggest-${active}` : undefined}
     {placeholder}
     bind:value={text}

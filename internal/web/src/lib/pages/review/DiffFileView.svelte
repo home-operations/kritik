@@ -13,7 +13,7 @@
     initiallyOpen = true,
   }: { file: DiffFile; findings: Finding[]; pullUrl: string; initiallyOpen?: boolean } = $props();
   let open = $state(untrack(() => initiallyOpen));
-  const id = `df${Math.random().toString(36).slice(2, 9)}`;
+  const id = $props.id();
 
   // Findings keyed by the new-side line they point at; anything that points
   // outside the hunks shown is listed under the file header instead.
