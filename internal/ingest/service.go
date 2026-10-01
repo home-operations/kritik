@@ -53,14 +53,23 @@ const (
 // request, each saying whether it also starts a review; ActionPoll and
 // ActionBaseline are the poller's synthetic ones. The review job starts at
 // once: the worker waits out the repository's settle time (jobs.Settles),
-// since .kritika.yaml may set it.
+// since .kritika.yaml may set it. The record-only actions keep the title,
+// body, labels and draft state current between pushes: a review job reads
+// them when it builds its prompt, and the filter and the rules judge them,
+// so an edit that arrives after the push that queued the job, as
+// Renovate's title update does a second after its force-push, must land
+// on the row before the job reads it.
 var pullRequestActions = map[string]bool{
-	"opened":           true,
-	"reopened":         true,
-	"ready_for_review": true,
-	"synchronize":      true,
-	ActionPoll:         true,
-	ActionBaseline:     false,
+	"opened":             true,
+	"reopened":           true,
+	"ready_for_review":   true,
+	"synchronize":        true,
+	ActionPoll:           true,
+	ActionBaseline:       false,
+	"edited":             false,
+	"labeled":            false,
+	"unlabeled":          false,
+	"converted_to_draft": false,
 }
 
 // RecordDelivery implements DeliveryRecorder.
@@ -122,10 +131,13 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	if err != nil {
 		return Outcome{}, err
 	}
+	// The filter says what is reviewed, not what is recorded: an action
+	// that records only is not judged by it, or a draft's edit would leave
+	// the row behind under a filter that skips drafts.
 	switch {
 	case !runs:
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
-	case !fork && settings.Filter != nil:
+	case review && !fork && settings.Filter != nil:
 		ok, err := settings.Filter.Eval(pr.FilterVars(ev.Action))
 		if err != nil {
 			return Outcome{}, fmt.Errorf("ingest: filter: %w", err)
