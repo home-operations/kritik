@@ -30,7 +30,7 @@ spec:
   type: ClusterIP
   ports:
     - name: gateway
-      port: {{ .Values.gateway.port }}
+      port: {{ .Values.service.gatewayPort }}
       targetPort: gateway
       protocol: TCP
   selector:

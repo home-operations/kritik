@@ -15,20 +15,19 @@ behavior is explained, followed by the full `values.yaml`.
 - **`image`**, **`replicas`**, **`strategy`**, **`resources`** and the pod
   settings: the one Deployment of `kritika serve`.
 - **`web`**: the public URL the dashboard and GitHub's webhooks share.
-- **`auth`**: how people sign in to the dashboard, as a local admin, through
-  OIDC or with GitHub. See [Configuration file](configuration.md).
-- **`config`**: the configuration file, inline or from an existing ConfigMap,
-  and how kritika runs (polling, retention, log level, workers). See
+- **`config`** and **`existingConfigMap`**: the configuration file, inline or
+  from an existing ConfigMap. See [Configuration file](configuration.md).
+- **`env`** and **`envFrom`**: every other `KRITIKA_*` variable by name (sign-in,
+  polling, retention, workers, the runner Jobs' deadline and RuntimeClass) and
+  the Secrets that set the variables the configuration file names. See
   [Configuration file](configuration.md).
-- **`database`** and **`secretEnv`**: the owner, application and runner DSNs,
-  and the Secrets that set the environment variables the configuration file
-  names.
-- **`runner`**: the image, TTL, deadline, resources, tools and RuntimeClass of
-  the runner Jobs.
-- **`gateway`**: the port of the egress gateway runner pods reach the outside
-  and their model through.
-- **`service`**, **`ingress`** and **`httpRoute`**: the public and metrics
-  ports and how the public one is exposed.
+- **`logging`**: log level and format.
+- **`database`**: the Postgres host and the owner, application and runner
+  roles' Secrets.
+- **`runner`**: the image, TTL, resources and tools of the runner Jobs.
+- **`service`**, **`ingress`** and **`httpRoute`**: the public, metrics and
+  gateway ports and how the public one is exposed. The gateway is the egress
+  proxy runner pods reach the outside and their model through.
 - **`networkPolicy`**: the policies that confine runner pods to the gateway.
 - **`monitoring`** and the probes: see [Metrics](metrics.md).
 

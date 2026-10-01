@@ -33,27 +33,30 @@ where `my-values.yaml` sets:
 ```yaml
 web:
   url: https://kritika.example.com
-auth:
-  admin:
-    passwordSecret: { name: kritika-admin }
 config:
-  file:
-    apps:
-      - name: github
-        accounts: [org-1]
-        clientId: Iv1.example
-        privateKey: { env: GITHUB_APP_PRIVATE_KEY }
-        webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
-    providers:
-      openrouter:
-        type: openrouter
-        apiKey: { env: OPENROUTER_API_KEY }
-    defaults:
-      models: { review: openrouter/vendor/large-model }
-secretEnv:
-  - { name: GITHUB_APP_PRIVATE_KEY, secretName: kritika-bot, key: private-key.pem }
-  - { name: GITHUB_APP_WEBHOOK_SECRET, secretName: kritika-bot, key: webhook-secret }
-  - { name: OPENROUTER_API_KEY, secretName: kritika-openrouter, key: api-key }
+  apps:
+    - name: github
+      accounts: [org-1]
+      clientId: Iv1.example
+      privateKey: { env: GITHUB_APP_PRIVATE_KEY }
+      webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
+  providers:
+    openrouter:
+      type: openrouter
+      apiKey: { env: OPENROUTER_API_KEY }
+  defaults:
+    models: { review: openrouter/vendor/large-model }
+env:
+  KRITIKA_AUTH_ADMIN_PASSWORD:
+    valueFrom:
+      secretKeyRef: { name: kritika-admin, key: password }
+  OPENROUTER_API_KEY:
+    valueFrom:
+      secretKeyRef: { name: kritika-openrouter, key: api-key }
+# A Secret with the keys GITHUB_APP_PRIVATE_KEY and GITHUB_APP_WEBHOOK_SECRET.
+envFrom:
+  - secretRef:
+      name: kritika-bot
 ingress:
   enabled: true
   tls: [{ hosts: [kritika.example.com], secretName: kritika-tls }]
@@ -61,20 +64,23 @@ ingress:
 
 `web.url` is the one public URL: the dashboard at it, and the webhook
 listener under it at `/hooks`, which the chart's Ingress or HTTPRoute
-routes. `auth` renders the `KRITIKA_AUTH_*` variables: here the local admin,
-with its password from an existing Secret, which is the way into a fresh
-instance. OIDC and GitHub sign-in, with role mappings, set the same way
-(see [the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
+routes.
 
-`config.file` is the whole configuration: the GitHub `apps`, model
-`providers`, the `embedding`, the `defaults`, `repositories` entries keyed
-`owner/*` or `owner/name`, and `accounts`. How kritika runs, polling,
-retention and runner Jobs, is set by values instead (`config.pollInterval`,
-`runner.deadline`, `runner.tools` and the rest below). kritika reads it
-at startup: the pods carry its checksum, so a change rolls them, and a
-pod whose file doesn't load never becomes ready while the ones before it
-keep serving. Secrets never go in it: it names
-environment variables, which `secretEnv` sets from existing Secrets. The
+`config` is the whole configuration: sign-in (`auth`), the GitHub `apps`,
+model `providers`, the `embedding`, the `defaults`, `repositories` entries
+keyed `owner/*` or `owner/name`, and `accounts`. kritika reads it at
+startup: the pods carry its checksum, so a change rolls them, and a pod
+whose file doesn't load never becomes ready while the ones before it keep
+serving. Secrets never go in it: it names environment variables, which
+`env` and `envFrom` set from existing Secrets, the way any Kubernetes
+container's environment is set. Every other `KRITIKA_*` variable goes in
+`env` too, by name: here the local admin's password, which is the way into
+a fresh instance; OIDC and GitHub sign-in with their role mappings, how
+kritika runs (polling, retention, workers) and runner Jobs' deadline and
+RuntimeClass are set the same way (see
+[the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
+The chart refuses a key it derives from its other values, such as the
+addresses or the database. The
 [setup guide](https://github.com/home-operations/kritika/blob/main/docs/setup.md)
 covers creating the GitHub App, and the dashboard's setup checklist shows
 what a fresh instance still lacks.
@@ -109,12 +115,12 @@ a Secret holding a connection URI instead names its key in `uriKey`.
 
 ### Egress gateway
 
-The kritika serve pods serve a forward proxy on `gateway.port`, and runner Jobs
+The kritika serve pods serve a forward proxy on `service.gatewayPort`, and runner Jobs
 are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
 destination by hostname only. github.com is always allowed once an app
-is declared; `egress.allowHosts` in `config.file` adds the rest
+is declared; `egress.allowHosts` in `config` adds the rest
 (registries, release APIs), and `egress.credentials` names hosts the gateway
 adds a bearer token to when a runner sends it a plain `http://` request, so
 the runner never holds the token. The token is a secret reference like any
@@ -122,13 +128,14 @@ other in the file:
 
 ```yaml
 config:
-  file:
-    egress:
-      allowHosts: [api.github.com, "*.githubusercontent.com", ghcr.io]
-      credentials:
-        api.github.com: { env: GITHUB_TOKEN }
-secretEnv:
-  - { name: GITHUB_TOKEN, secretName: kritika-github-token, key: token }
+  egress:
+    allowHosts: [api.github.com, "*.githubusercontent.com", ghcr.io]
+    credentials:
+      api.github.com: { env: GITHUB_TOKEN }
+env:
+  GITHUB_TOKEN:
+    valueFrom:
+      secretKeyRef: { name: kritika-github-token, key: token }
 ```
 
 The same port is a runner's model endpoint. kritika serve mints a
@@ -162,16 +169,15 @@ runner:
   image: ghcr.io/home-operations/kritika:<version>-tools
 ```
 
-and, in `config.file`:
+and, in `config`:
 
 ```yaml
 config:
-  file:
-    egress:
-      allowHosts: ["*.githubusercontent.com"]
-    repositories:
-      org-1/repo-1:
-        agent: { commands: [gh, curl, fd, rg] }
+  egress:
+    allowHosts: ["*.githubusercontent.com"]
+  repositories:
+    org-1/repo-1:
+      agent: { commands: [gh, curl, fd, rg] }
 ```
 
 A command runs without a shell, with an environment of `PATH`, its own
@@ -180,12 +186,12 @@ A command runs without a shell, with an environment of `PATH`, its own
 so a command cannot read the runner's credentials from `/proc`. The
 `-tools` image does have one, though, and `fd -x` or `rg --pre` can start
 it, and with it a script from the checkout: another reason to run runner
-Jobs under a sandboxed `runner.runtimeClassName`.
+Jobs under a sandboxed RuntimeClass.
 
 ### Runner sandbox
 
 Runner Jobs parse untrusted repository content and run what the model asks of
-them. Set `runner.runtimeClassName` to a sandboxed runtime
+them. Set `KRITIKA_RUNNER_RUNTIME_CLASS` in `env` to a sandboxed runtime
 the cluster offers (`gvisor` with runsc, or a Kata class) so a kernel
 vulnerability reachable from the pod is contained by the sandbox rather than
 the node. It is advised, not required: without it the pod's other bounds
@@ -198,7 +204,7 @@ it from the node.
 The chart runs one Deployment of `kritika serve`, `replicas: 2`
 by default with a PodDisruptionBudget. Every replica serves webhooks and the
 dashboard and works jobs, and one holds the leader lock at a time; two keep
-one serving while a rollout, such as the one a changed `config.file` starts,
+one serving while a rollout, such as the one a changed `config` starts,
 replaces the other. Runner pods are the Jobs `kritika serve` creates, one per
 review and index run, running `kritika run`. A replica that stops drains its
 jobs first; one that dies outright leaves them to the leader, which hands

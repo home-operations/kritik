@@ -43,7 +43,7 @@ tests:
           pattern: ^[0-9a-f]{64}$
   - it: leaves an existing ConfigMap's restarts to the deployment, keeping pod annotations
     set:
-      config.existingConfigMap: kritika-config
+      existingConfigMap: kritika-config
       podAnnotations:
         example.com/owner: ops
     asserts:
@@ -53,7 +53,15 @@ tests:
           path: spec.template.metadata.annotations["example.com/owner"]
           value: ops
 
-  - it: sets each secretEnv variable from its Secret
+  - it: renders each env entry after the chart's own, a plain value quoted and a map spliced in
+    set:
+      env:
+        KRITIKA_EMBEDDING_DIMS: 1024
+        KRITIKA_RUNNER_RUNTIME_CLASS: gvisor
+        KRITIKA_POLL_INTERVAL: "{{ .Release.Name }}-0s"
+      envFrom:
+        - secretRef:
+            name: kritika-bot
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -63,6 +71,36 @@ tests:
               secretKeyRef:
                 name: kritika-bot
                 key: private-key.pem
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_EMBEDDING_DIMS, value: "1024" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_RUNNER_RUNTIME_CLASS, value: gvisor }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_POLL_INTERVAL, value: RELEASE-NAME-0s }
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: KRITIKA_CONFIG_FILE
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - secretRef:
+                name: kritika-bot
+
+  - it: refuses an env key the chart sets from its other values
+    set:
+      env:
+        KRITIKA_WEB_URL: https://elsewhere.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: env.KRITIKA_WEB_URL
+
+  - it: renders no envFrom by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
 
   - it: gates the liveness and readiness probes on a startup probe, which can be turned off
     asserts:
@@ -267,31 +305,11 @@ tests:
             name: KRITIKA_RUNNER_TOOLS
           any: true
 
-  - it: renders how kritika runs into its environment
+  - it: renders the runner pods' resources and tools as JSON
     set:
-      config.pollInterval: 0s
-      config.onboardWindow: 8
-      config.transcriptRetention: 48h
-      config.diffRetention: 72h
-      runner.deadline: 20m
       runner.resources: { limits: { memory: 1Gi } }
       runner.tools: [{ name: helm, image: registry.example/helm:3 }]
     asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_POLL_INTERVAL, value: 0s }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_ONBOARD_WINDOW, value: "8" }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_TRANSCRIPT_RETENTION, value: 48h }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_DIFF_RETENTION, value: 72h }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_RUNNER_DEADLINE, value: 20m }
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_RUNNER_RESOURCES, value: '{"limits":{"memory":"1Gi"}}' }
@@ -302,16 +320,6 @@ tests:
               name: KRITIKA_RUNNER_TOOLS,
               value: '[{"image":"registry.example/helm:3","name":"helm"}]',
             }
-
-  - it: hands runners a RuntimeClass only when one is set
-    set:
-      runner.runtimeClassName: gvisor
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_RUNTIME_CLASS
-            value: gvisor
 
   - it: hands kritika serve the dashboard's URL, and one public port for the webhooks and the dashboard
     set:
@@ -330,12 +338,19 @@ tests:
             - { name: gateway, containerPort: 8082, protocol: TCP }
 
   - it: hands kritika serve the gateway's in-cluster address, which it requires
+    set:
+      service.gatewayPort: 9090
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
+            name: KRITIKA_GATEWAY_ADDR
+            value: ":9090"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
             name: KRITIKA_GATEWAY_URL
-            value: http://RELEASE-NAME-kritika-gateway.NAMESPACE.svc.cluster.local:8082
+            value: http://RELEASE-NAME-kritika-gateway.NAMESPACE.svc.cluster.local:9090
 
   - it: fails without web.url
     set:
@@ -344,37 +359,17 @@ tests:
       - failedTemplate:
           errorPattern: web.url is required
 
-  - it: renders each auth value set as its KRITIKA_AUTH_ variable, and no other
-    set:
-      auth.sessionTTL: 24h
-      auth.oidc.issuer: https://idp.example
-      auth.oidc.scopes: [openid, email]
-      auth.github.clientSecretSecret.name: kritika-github
+  - it: sets the local admin's password from the Secret env names
     asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_AUTH_SESSION_TTL, value: 24h }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_AUTH_OIDC_SCOPES, value: "openid,email" }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_AUTH_GITHUB_CLIENT_SECRET
-            valueFrom: { secretKeyRef: { name: kritika-github, key: client-secret } }
       - contains:
           path: spec.template.spec.containers[0].env
           content:
             name: KRITIKA_AUTH_ADMIN_PASSWORD
             valueFrom: { secretKeyRef: { name: kritika-auth, key: password } }
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_AUTH_OIDC_NAME }
-          any: true
 
   - it: runs without a configuration file
     set:
-      config.file: null
+      config: null
     asserts:
       - notContains:
           path: spec.template.spec.containers[0].env

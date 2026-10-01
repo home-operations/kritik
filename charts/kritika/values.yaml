@@ -4,7 +4,7 @@
 # Most string, list and map values below are rendered through Helm's `tpl`, so
 # they may carry template expressions that resolve at install time, e.g.
 #   ingress.hosts[0].host: kritika.{{ .Values.global.domain }}
-# Plain numbers and booleans, and `config.file`, are passed through as they are.
+# Plain numbers and booleans, and `config`, are passed through as they are.
 
 image:
   # -- Image repository.
@@ -44,106 +44,69 @@ web:
   # -- (required) Public URL the dashboard is reached at, e.g. https://kritika.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment.
   url: ""
 
-# How people sign in (see docs/configuration.md), rendered to the
-# KRITIKA_AUTH_* variables, which win over the configuration file's `auth`
-# block. Each is left out when empty; secrets come from existing Secrets.
-auth:
-  # -- How long a dashboard session lasts (Go duration, 5m to 720h); empty is 12h.
-  sessionTTL: ""
-  admin:
-    # -- The local admin's username; empty is `admin`.
-    user: ""
-    passwordSecret:
-      # -- Existing Secret holding the local admin's password; the local admin exists only while one is set.
-      name: ""
-      # -- Key in that Secret.
-      key: password
-  oidc:
-    # -- The sign-in button's label; empty is "SSO".
-    name: ""
-    # -- OIDC issuer (https); set, with a client, to sign in through it.
-    issuer: ""
-    # -- OAuth client ID at the issuer.
-    clientId: ""
-    clientSecretSecret:
-      # -- Existing Secret holding the client secret.
-      name: ""
-      # -- Key in that Secret.
-      key: client-secret
-    # -- Scopes to request; empty is openid, email and profile.
-    scopes: []
-    # -- ID token or UserInfo claim a role mapping reads as `roles`.
-    rolesClaim: ""
-    # -- CEL expression giving a role, or a map of accounts to roles (KRITIKA_AUTH_OIDC_ROLE_MAPPING_EXPR, docs/configuration.md).
-    roleMappingExpr: ""
-    # -- Role when the mapping places nobody: none (the default) or member.
-    defaultRole: ""
-  github:
-    # -- Client ID of an OAuth App, or of a GitHub App, to sign in with GitHub.
-    clientId: ""
-    clientSecretSecret:
-      # -- Existing Secret holding the client secret.
-      name: ""
-      # -- Key in that Secret.
-      key: client-secret
-    # -- CEL expression giving a role, or a map of accounts to roles (KRITIKA_AUTH_GITHUB_ROLE_MAPPING_EXPR).
-    roleMappingExpr: ""
+# The configuration file (docs/configuration.md) holds the whole
+# configuration: sign-in (`auth`), the GitHub `apps`, the instance's
+# `providers`, `embedding` and `egress`, the `defaults` every repository
+# gets, the `repositories` entries keyed `owner/*` or `owner/name`, and the
+# `accounts` with their limits and providers. It is either inline as
+# `config`, rendered into a chart-managed ConfigMap, or an existing
+# ConfigMap with a `config.yaml` key. Secret material never goes in the
+# file: it names environment variables, `{ env: NAME }`, which `env` and
+# `envFrom` below set from existing Secrets. kritika reads the file at
+# startup: the pods carry a checksum of `config`, so a change to it rolls
+# them, while a change to an `existingConfigMap` needs a restart, for
+# example by stakater's Reloader through `deploymentAnnotations`. The
+# leader applies it to the store. In konflate's chart `config` is the
+# map of plain variables; here that is `env`.
 
-# The configuration file holds the whole configuration: sign-in (`auth`),
-# the GitHub `apps`, the instance's `providers`, `embedding` and `egress`,
-# the `defaults` every repository gets, the `repositories` entries keyed
-# `owner/*` or `owner/name`, and the `accounts` with their limits and
-# providers. Sign-in, one app, one provider, the default models and review
-# settings and the embedder also have `KRITIKA_*` environment variables,
-# which win over the file; the `auth` values above render some, and
-# `extraEnv` can set the others. The file is either inline as `file`,
-# rendered into a chart-managed ConfigMap, or an existing ConfigMap with a
-# `config.yaml` key. Secret material never goes in the file: it names
-# environment variables, `{ env: NAME }`, which `secretEnv` sets from
-# existing Secrets. kritika reads the file at startup: the pods carry a
-# checksum of `file`, so a change to it rolls them, while a change to an
-# `existingConfigMap` needs a restart, for example by stakater's Reloader
-# through `deploymentAnnotations`. The leader applies it to the store.
-config:
-  # -- (optional) The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md.
-  file: {}
-  # apps:
-  #   - name: github
-  #     accounts: [org-1, user-1]
-  #     clientId: Iv1.example
-  #     privateKey: { env: GITHUB_APP_PRIVATE_KEY }
-  #     webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
-  # providers:
-  #   openrouter: { type: openrouter, apiKey: { env: OPENROUTER_API_KEY } }
-  # defaults:
-  #   models: { review: openrouter/vendor/large-model }
+# -- (optional) The configuration file, as YAML: the whole configuration, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md.
+config: {}
+# apps:
+#   - name: github
+#     accounts: [org-1, user-1]
+#     clientId: Iv1.example
+#     privateKey: { env: GITHUB_APP_PRIVATE_KEY }
+#     webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
+# providers:
+#   openrouter: { type: openrouter, apiKey: { env: OPENROUTER_API_KEY } }
+# defaults:
+#   models: { review: openrouter/vendor/large-model }
 
-  # -- Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `file`. A change to it takes a restart.
-  existingConfigMap: ""
-  # -- How often the leader lists each app's open pull requests, its backstop for missed webhooks (KRITIKA_POLL_INTERVAL, Go duration); `0s` turns polling off. Empty is kritika's default, 10m.
-  pollInterval: ""
-  # -- How far back a first or long-idle poll looks (KRITIKA_POLL_LOOKBACK, Go duration). Empty is kritika's default, 24h.
-  pollLookback: ""
-  # -- How many onboarding index jobs the leader keeps queued or running at once (KRITIKA_ONBOARD_WINDOW). 0 is kritika's default, 4.
-  onboardWindow: 0
-  # -- How long the index of a repository that stopped running is kept (KRITIKA_INDEX_GRACE, Go duration). Empty is kritika's default, 720h.
-  indexGrace: ""
-  # -- How long a review's transcript is kept, at least 24h (KRITIKA_TRANSCRIPT_RETENTION, Go duration). Empty is kritika's default, 720h.
-  transcriptRetention: ""
-  # -- How long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h (KRITIKA_DIFF_RETENTION, Go duration). Empty is kritika's default, 720h.
-  diffRetention: ""
+# -- Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `config`. A change to it takes a restart.
+existingConfigMap: ""
+
+logging:
   # -- Log level: debug, info, warn or error.
-  logLevel: info
+  level: info
   # -- Log format: json or text.
-  logFormat: json
-  # -- Review jobs one replica runs at once (KRITIKA_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed `replicas` × (reviewWorkers + indexWorkers).
-  reviewWorkers: 2
-  # -- Index jobs one replica runs at once (KRITIKA_INDEX_WORKERS), rate-limited apart from reviews.
-  indexWorkers: 1
-  # -- Extra raw env vars merged into the kritika serve container (advanced).
-  extraEnv: []
-  # - name: KRITIKA_LEADER_RETRY_INTERVAL
-  #   value: 30s
+  format: json
+
+# Every other KRITIKA_* variable (docs/configuration.md), and the variables
+# the configuration file names as `{ env: NAME }`: sign-in, the variables
+# that stand in for the file's sections (KRITIKA_AUTH_*, KRITIKA_APPS_*,
+# KRITIKA_PROVIDERS_*, KRITIKA_DEFAULTS_*, KRITIKA_EMBEDDING_*), how kritika
+# runs (polling, retention, workers, runner deadline and RuntimeClass), and
+# the secrets. A variable left out has kritika's default. The variables
+# the chart derives from its other values (the addresses, the database,
+# the config file, the runner image and ServiceAccount) cannot be set here;
+# the chart refuses a key it renders itself. kritika drops every variable
+# a secret came from from its own environment once read; runner pods never
+# get them, each is handed its own per-run credentials.
+
+# -- Environment variables of the kritika serve container, keyed by name: a plain value, or a map with the variable's `valueFrom` (a Secret, a ConfigMap or a field). Rendered through `tpl`.
+env: {}
+# KRITIKA_POLL_INTERVAL: 10m
+# KRITIKA_AUTH_OIDC_ISSUER: https://sso.example.com
+# KRITIKA_DEFAULTS_MODELS_REVIEW: openrouter/vendor/large-model
+# KRITIKA_RUNNER_RUNTIME_CLASS: gvisor
+# OPENROUTER_API_KEY:
+#   valueFrom:
+#     secretKeyRef: { name: kritika-openrouter, key: api-key }
+
+# -- Secrets and ConfigMaps loaded as environment variables in bulk, each key a variable: the Kubernetes `envFrom` list. A Secret whose keys are the variable names the configuration file references sets them all at once.
+envFrom: []
+# - secretRef:
+#     name: kritika-bot
 
 # One Postgres, reached as three roles, each with its own Secret. The
 # application role must not own the tables (row-level security), the owner
@@ -198,39 +161,23 @@ database:
     # -- Name of the runner role, granted only what runner Jobs need.
     role: kritika_runner
 
-# The secrets the configuration file names (GitHub App private keys and
-# webhook secrets, model keys, sign-in secrets) and the `KRITIKA_*` secret
-# variables. Each entry sets the variable `name` in the kritika serve pods
-# from `key` of the existing Secret `secretName`; kritika drops it from its
-# own environment once read. Runner pods never get them: each is handed its
-# own per-run credentials.
-# -- Environment variables set from existing Secrets, for the configuration file's `{ env: NAME }` references.
-secretEnv: []
-# - name: GITHUB_APP_PRIVATE_KEY
-#   secretName: kritika-bot
-#   key: private-key.pem
-# - name: OPENROUTER_API_KEY
-#   secretName: kritika-openrouter
-#   key: api-key
-
 # Runner Jobs: one pod per review or index run, created by kritika serve in the
 # release namespace from the same image, running as a service account with
 # no permissions and a database role that can only touch its own run. The
 # server's Role reaches every Secret in the release namespace, so install
-# kritika into a namespace of its own.
+# kritika into a namespace of its own. Their deadline and RuntimeClass are
+# variables (KRITIKA_RUNNER_DEADLINE, KRITIKA_RUNNER_RUNTIME_CLASS) set in
+# `env`; a sandboxed RuntimeClass (gVisor, Kata) is advised, since a runner
+# parses untrusted repository content and runs what the model asks.
 runner:
   # -- Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritika:1.2.3-tools`) adds curl, fd, gh and rg for an agentic review's `agent.commands`.
   image: ""
   # -- How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew.
   ttl: 10m
-  # -- Deadline of a runner Job (KRITIKA_RUNNER_DEADLINE, Go duration). Empty is kritika's default, 15m.
-  deadline: ""
   # -- Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec.
   resources: {}
   # -- Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIKA_RUNNER_TOOLS), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster.
   tools: []
-  # -- RuntimeClass for runner Jobs (e.g. `gvisor`, `kata`). Advised: a runner parses untrusted repository content and runs what the model asks; a sandboxed runtime keeps it from the node's kernel. Empty uses the cluster default.
-  runtimeClassName: ""
   serviceAccount:
     # -- Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry.
     create: true
@@ -238,10 +185,6 @@ runner:
     name: ""
     # -- Annotations for the runner ServiceAccount.
     annotations: {}
-
-gateway:
-  # -- Port of the gateway the kritika serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod.
-  port: 8082
 
 serviceAccount:
   # -- Create the ServiceAccount kritika serve runs as.
@@ -287,12 +230,14 @@ service:
   port: 8080
   # -- Metrics and probe port.
   metricsPort: 8081
+  # -- Port of the gateway the kritika serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod.
+  gatewayPort: 8082
 
 # One Ingress, or one Gateway API HTTPRoute, for `web.url`, to the public
 # Service, which serves the webhooks under `/hooks` and the dashboard. The
 # host and path come from `web.url`.
 ingress:
-  # -- Expose web.url through an Ingress.
+  # -- Expose web.url through an Ingress. The host and path are web.url's and have no field of their own: GitHub delivers webhooks to that URL and sign-in redirects back to it, so a route for any other name would serve a dashboard that cannot sign in.
   enabled: false
   # -- IngressClass name.
   className: ""
@@ -302,7 +247,7 @@ ingress:
   tls: []
 
 httpRoute:
-  # -- Expose web.url through a Gateway API HTTPRoute.
+  # -- Expose web.url through a Gateway API HTTPRoute. The host and path are web.url's and have no field of their own: GitHub delivers webhooks to that URL and sign-in redirects back to it, so a route for any other name would serve a dashboard that cannot sign in.
   enabled: false
   # -- HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1.
   apiVersion: ""
