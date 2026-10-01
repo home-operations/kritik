@@ -176,11 +176,13 @@ log in as, if they are not `kritika_app` and `kritika_runner`.
 ## Connections
 
 Postgres allows 100 connections unless `max_connections` says otherwise.
-Each kritika replica keeps an application pool and an owner pool, each up to
-the greater of 4 and the node's CPU count, plus its `LISTEN` connections,
-and every runner Job opens its own. On large nodes two replicas can approach
-the limit under load. Cap a pool with `pool_max_conns` in its URI, or raise
-`max_connections` under the Cluster's `postgresql.parameters`. CNPG's
+Each kritika replica keeps an application pool of up to 16 connections and
+an owner pool of up to 4, plus its `LISTEN` connections, and every runner
+Job opens a pool of its own, of which it uses one or two. Connections open
+on demand, so an idle replica holds few. A `pool_max_conns` in a URI
+replaces that pool's ceiling: raise the application pool's if jobs wait on
+the pool, or raise `max_connections` under the Cluster's
+`postgresql.parameters` for more replicas. CNPG's
 `cnpg_backends_total` metric shows what each `application_name`
 (`kritika-app`, `kritika-owner`, `kritika-listen`) holds.
 

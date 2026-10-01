@@ -27,15 +27,41 @@ type Store struct {
 	logger *slog.Logger
 }
 
+// Pool ceilings when the URI sets no pool_max_conns. pgx's own default is
+// the node's CPU count, and a serve pod has no CPU limit, so on a large
+// node two replicas alone could take most of Postgres's 100 connections.
+// The application pool carries River's fetchers, a handful of jobs and the
+// requests runner pods and the dashboard make; the owner pool only the
+// leader's duties. Connections open on demand, so a ceiling costs an idle
+// process nothing.
+const (
+	appPoolMaxConns   = 16
+	ownerPoolMaxConns = 4
+)
+
 // newPool opens a pool with server-side TCP keepalives, so Postgres drops
 // the session of a client that died without closing it (a node lost, a pod
 // killed) within about a minute, and with it any advisory lock the session
 // held. Postgres's own defaults leave that to the kernel's two hours. A
 // statement timeout, when given, bounds every statement on the pool.
-func newPool(ctx context.Context, url, application string, statementTimeout time.Duration) (*pgxpool.Pool, error) {
+func newPool(ctx context.Context, url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Pool, error) {
+	cfg, err := poolConfig(url, application, statementTimeout, maxConns)
+	if err != nil {
+		return nil, err
+	}
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
+// poolConfig is newPool's configuration. maxConns is the pool's ceiling
+// unless the URI names its own with pool_max_conns, which pgx has already
+// read by the time the config is parsed.
+func poolConfig(url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Config, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, err
+	}
+	if !strings.Contains(url, "pool_max_conns") {
+		cfg.MaxConns = maxConns
 	}
 	params := cfg.ConnConfig.RuntimeParams
 	params["application_name"] = application
@@ -45,7 +71,7 @@ func newPool(ctx context.Context, url, application string, statementTimeout time
 	if statementTimeout > 0 {
 		params["statement_timeout"] = strconv.FormatInt(statementTimeout.Milliseconds(), 10)
 	}
-	return pgxpool.NewWithConfig(ctx, cfg)
+	return cfg, nil
 }
 
 // Options configure Open.
@@ -63,7 +89,7 @@ type Options struct {
 // the vector extension is missing, because either would be invisible at
 // runtime and wrong.
 func Open(ctx context.Context, opts Options) (*Store, error) {
-	app, err := newPool(ctx, opts.AppURL, "kritika-app", 0)
+	app, err := newPool(ctx, opts.AppURL, "kritika-app", 0, appPoolMaxConns)
 	if err != nil {
 		return nil, fmt.Errorf("store: application pool: %w", err)
 	}
@@ -79,7 +105,7 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if opts.OwnerURL != "" {
 		// Migrations may build an index for minutes; anything longer on the
 		// owner connection is a hang worth breaking.
-		owner, err := newPool(ctx, opts.OwnerURL, "kritika-owner", 10*time.Minute)
+		owner, err := newPool(ctx, opts.OwnerURL, "kritika-owner", 10*time.Minute, ownerPoolMaxConns)
 		if err != nil {
 			app.Close()
 			return nil, fmt.Errorf("store: owner pool: %w", err)
