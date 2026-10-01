@@ -171,9 +171,9 @@ func markedReply(comments []forge.Comment, login string, commentID int64) int64 
 	return 0
 }
 
-// run qualifies the mention (ADR-0002 §2.7), gathers the thread and the review's
-// record, asks the model, and posts the reply. Nothing after the reply is
-// posted may fail the job: a retry would answer twice.
+// run qualifies the mention, gathers the thread and the review's record,
+// asks the model, and posts the reply. Nothing after the reply is posted
+// may fail the job: a retry would answer twice.
 func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	if reason := f.disqualified(ctx); reason != "" {
 		f.logger.Info("follow-up ignored", "reason", reason)

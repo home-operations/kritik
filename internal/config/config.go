@@ -20,8 +20,8 @@ import (
 	"github.com/home-operations/kritik/internal/egress"
 )
 
-// Command selects what a kritik process runs (ADR-0024): the service, or
-// one review or index run in a runner Job.
+// Command selects what a kritik process runs: the service, or one review or
+// index run in a runner Job.
 type Command string
 
 // Commands a kritik process can run.
@@ -65,10 +65,9 @@ const (
 // from environment variables via caarlos0/env. Call [Load] to parse and
 // validate; do not construct directly.
 type Config struct {
-	// Addr is the listen address of serve's one public listener (ADR-0024
-	// §2.2): the webhooks, /hooks/{connection}, and the dashboard. Port 8080
-	// matches the container image's EXPOSE and the other services in the
-	// fleet.
+	// Addr is the listen address of serve's one public listener: the
+	// webhooks, /hooks/{connection}, and the dashboard. Port 8080 matches
+	// the container image's EXPOSE and the other services in the fleet.
 	Addr string `env:"KRITIK_ADDR" envDefault:":8080"`
 
 	// MetricsAddr is the listen address for /healthz, /readyz and /metrics.
@@ -78,16 +77,16 @@ type Config struct {
 	MetricsAddr string `env:"KRITIK_METRICS_ADDR" envDefault:":8081"`
 
 	// GatewayAddr is the listen address of the gateway serve runs: the
-	// forward proxy runner pods reach the outside through (ADR-0008), and
-	// the model and similar-code endpoints a runner calls with its run
-	// token (ADR-0004, ADR-0026). Its own port, so the runner network policy can
-	// name it without opening the public or management listeners.
+	// forward proxy runner pods reach the outside through, and the model
+	// and similar-code endpoints a runner calls with its run token. Its own
+	// port, so the runner network policy can name it without opening the
+	// public or management listeners.
 	GatewayAddr string `env:"KRITIK_GATEWAY_ADDR" envDefault:":8082"`
 
 	// GatewayURL is the gateway's in-cluster address, http://host:port:
 	// runner Jobs are handed it as HTTPS_PROXY and HTTP_PROXY, and a
-	// review's job document names it as its model endpoint. serve needs
-	// it, since every review reaches its model through it (ADR-0026).
+	// review's job document names it as its model endpoint. serve needs it,
+	// since every review reaches its model through it.
 	GatewayURL string `env:"KRITIK_GATEWAY_URL"`
 
 	// GatewayTokenTTL is how long a run token outlives its runner Job's
@@ -105,9 +104,9 @@ type Config struct {
 	WebURL string `env:"KRITIK_WEB_URL"`
 
 	// ConfigFile is the path of the optional configuration file: sign-in
-	// and the connections an admin keeps in git. serve loads it at
-	// startup, and a change takes a restart (ADR-0022 §2.1).
-	// Empty means no file, and the environment alone declares them.
+	// and the connections an admin keeps in git. serve loads it at startup,
+	// and a change takes a restart. Empty means no file, and the
+	// environment alone declares them.
 	ConfigFile string `env:"KRITIK_CONFIG_FILE"`
 
 	// DatabaseURL is the DSN every process connects with for request and
@@ -164,7 +163,7 @@ type Config struct {
 	// RunnerRuntimeClass is the RuntimeClass runner pods run under, such as
 	// a gVisor or Kata class, so a pod that parses untrusted repository
 	// content is kept from the node's kernel. Empty uses the cluster's
-	// default runtime. Advised, not required (ADR-0008 §2.4).
+	// default runtime. Advised, not required.
 	RunnerRuntimeClass string `env:"KRITIK_RUNNER_RUNTIME_CLASS"`
 
 	// RunnerDatabaseURL is the runner database role's DSN, needed only by

@@ -7,12 +7,10 @@ runs, and, for an admin, the running configuration and the audit log. An
 admin can also queue a re-run of a specific pull request, cancel a review
 in progress, reindex a repository's embeddings, or turn a repository on or
 off. Everything else is set in the [configuration file](configuration.md),
-which the dashboard shows but does not change
-([ADR-0019](adr/0019-configuration-in-git.md)).
+which the dashboard shows but does not change.
 
 The top bar switches between the accounts you can read, or all of them
-at once, and holds a tab for each of an account's sections
-([ADR-0017](adr/0017-dashboard-sections.md)):
+at once, and holds a tab for each of an account's sections:
 
 - **Analytics:** the account's reviews over the last 7, 30 or 90 days
   against the same span before: pull requests reviewed, reviews,
@@ -33,8 +31,7 @@ at once, and holds a tab for each of an account's sections
   status, and suggests each as you type. An admin can pick pull requests,
   by checkbox or with Space on the keyboard's row, and re-run them
   together.
-- **Rules:** what its reviews check: rules written in the configuration
-  ([ADR-0018](adr/0018-rules.md)), as text or a file, and context files
+- **Rules:** what its reviews check: rules written in the configuration, as text or a file, and context files
   that explain the code, each with where it is set (a layer
   of the configuration, a repository's entry, or a repository's
   `.kritik.yaml` as its last review read it), the paths it applies to,
@@ -55,8 +52,7 @@ listener shares under `/hooks`. People sign in as
 
 ## First run
 
-The dashboard does not configure kritik: the configuration file does
-([ADR-0019](adr/0019-configuration-in-git.md)). Until an instance can
+The dashboard does not configure kritik: the configuration file does. Until an instance can
 review, with a GitHub App and a default review model, a banner
 tells an admin so and leads to the Configuration page, whose Setup
 checklist names each step still missing and what to set for it:

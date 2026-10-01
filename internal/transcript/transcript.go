@@ -1,9 +1,9 @@
 // Package transcript records model calls for the dashboard's transcript
-// view (ADR-0009 §2.8). An agent run's request is the whole conversation
-// so far, so each step is stored as a delta against what the run has
-// already recorded; a follow-up's call is a delta against nothing. Rows are
-// masked and size-capped before they are encoded, and Rebuild turns stored
-// rows back into one turn per call.
+// view. An agent run's request is the whole conversation so far, so each
+// step is stored as a delta against what the run has already recorded; a
+// follow-up's call is a delta against nothing. Rows are masked and
+// size-capped before they are encoded, and Rebuild turns stored rows back
+// into one turn per call.
 package transcript
 
 import (

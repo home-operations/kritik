@@ -43,10 +43,10 @@ const (
 // Valid reports whether k is a kind of run the runner implements.
 func (k Kind) Valid() bool { return k == KindReview || k == KindIndex }
 
-// ModelEndpoint is where a review's model calls go: the worker's
-// gateway, which holds the provider key, picks the provider model and its
-// fallbacks, and counts what the run spends (ADR-0004). The run's token for
-// it reaches the pod as a job-scoped secret.
+// ModelEndpoint is where a review's model calls go: the worker's gateway,
+// which holds the provider key, picks the provider model and its fallbacks,
+// and counts what the run spends. The run's token for it reaches the pod as
+// a job-scoped secret.
 type ModelEndpoint struct {
 	// GatewayURL is the gateway's address, http://host:port.
 	GatewayURL string `json:"gatewayUrl"`

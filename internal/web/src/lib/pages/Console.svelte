@@ -1,8 +1,8 @@
 <script lang="ts">
-  // The instance's configuration for an admin, read-only (ADR-0019 §2.2):
-  // what setup still lacks, the accounts its connections serve, each
-  // setting with where it comes from, the connections and their
-  // installations, and the admin audit log.
+  // The instance's configuration for an admin, read-only: what setup still
+  // lacks, the accounts its connections serve, each setting with where it
+  // comes from, the connections and their installations, and the admin
+  // audit log.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';

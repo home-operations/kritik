@@ -2,7 +2,7 @@
 {{- $route := .Values.httpRoute -}}
 {{- $base := include "kritik.webPath" . -}}
 # One HTTPRoute for web.url, to the public listener: the webhooks under
-# /hooks and the dashboard everywhere else (ADR-0024 §2.2).
+# /hooks and the dashboard everywhere else.
 apiVersion: {{ $route.apiVersion | default "gateway.networking.k8s.io/v1" }}
 kind: HTTPRoute
 metadata:

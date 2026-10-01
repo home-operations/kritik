@@ -1,10 +1,10 @@
 //go:build bench
 
-// Package bench is the offline evaluation harness (ADR-0002 §2.14): a
-// corpus of pull requests with known defects, run through the same fetch,
-// context and prompt code the service uses, against a live model, with
-// recall on must-find cases and cost per review as the output. It runs
-// only locally with a model key, never in CI.
+// Package bench is the offline evaluation harness: a corpus of pull
+// requests with known defects, run through the same fetch, context and
+// prompt code the service uses, against a live model, with recall on
+// must-find cases and cost per review as the output. It runs only locally
+// with a model key, never in CI.
 package bench
 
 import (

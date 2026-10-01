@@ -75,7 +75,7 @@
   }
 
   // setEnabled turns each of names on or off, one request at a time: the
-  // dashboard owns a repository's on or off (ADR-0019 §2.3).
+  // dashboard owns a repository's on or off.
   async function setEnabled(names: string[], on: boolean): Promise<void> {
     busy = true;
     const body: TurnOnRequest = { on };

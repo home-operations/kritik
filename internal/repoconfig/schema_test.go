@@ -69,7 +69,7 @@ func yamlKeys[T any]() []string {
 }
 
 // TestFileKeysAreSettings checks the keys .kritik.yaml takes are settings
-// an admin writes too, spelled the same (ADR-0021 §2.1).
+// an admin writes too, spelled the same.
 func TestFileKeysAreSettings(t *testing.T) {
 	keys := make([]string, 0, len(configfile.Policies))
 	for _, p := range configfile.Policies {

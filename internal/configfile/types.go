@@ -1,13 +1,13 @@
-// Package configfile is kritik's configuration: the configuration file
-// (ADR-0019, ADR-0021) with its KRITIK_* environment overlay, and the
-// settings for how kritik runs that come from the environment alone
-// (ADR-0021 §2.7). Process configuration (addresses, database, log level)
-// is environment variables too and lives in internal/config.
+// Package configfile is kritik's configuration: the configuration file with
+// its KRITIK_* environment overlay, and the settings for how kritik runs
+// that come from the environment alone. Process configuration (addresses,
+// database, log level) is environment variables too and lives in
+// internal/config.
 //
 // The file is loaded whole: the document is decoded with unknown keys
 // rejected, every secret reference resolved, every filter compiled and
-// smoke-tested, and every invariant checked before any of it is returned.
-// A bad document is an error, and startup fails on it (ADR-0022 §2.1).
+// smoke-tested, and every invariant checked before any of it is returned. A
+// bad document is an error, and startup fails on it.
 package configfile
 
 import (
@@ -41,11 +41,10 @@ type Forge string
 
 // ForgeGitHub is github.com, the one forge kritik supports. Forge stays a
 // type, and the code that switches on it keeps its switch, so another forge
-// can be added back (ADR-0014).
+// can be added back.
 const ForgeGitHub Forge = "github"
 
-// SecretRef names the environment variable a secret value lives in
-// (ADR-0022 §2.2). Values are resolved at load and never written back to
+// SecretRef names the environment variable a secret value lives in. Values are resolved at load and never written back to
 // disk or the database.
 type SecretRef struct {
 	Env string `yaml:"env,omitempty"`
@@ -203,13 +202,11 @@ type Defaults struct {
 // Overrides are the repository settings every admin scope may set: the
 // defaults, an account and a repository entry. A field a narrower scope
 // writes replaces the broader scope's, even when it is empty or zero; a
-// field it leaves out inherits (ADR-0010 §2.4). Ignore globs are unioned
-// instead. The review keys are the ones a .kritik.yaml takes too, at the
-// same level (ADR-0021 §2.1).
+// field it leaves out inherits. Ignore globs are unioned instead. The
+// review keys are the ones a .kritik.yaml takes too, at the same level.
 type Overrides struct {
 	// Enabled is where a repository starts, on or off, until an admin turns
-	// it on or off in the dashboard (ADR-0019 §2.3). A repository entry may
-	// not set it.
+	// it on or off in the dashboard. A repository entry may not set it.
 	Enabled *bool      `yaml:"enabled,omitempty"`
 	Models  ModelsSpec `yaml:"models,omitempty"`
 	// FilterExpr is CEL over pr; a key whose value is CEL ends in Expr.
@@ -227,8 +224,8 @@ type Overrides struct {
 }
 
 // Tool is a command-line tool a runner pod mounts from an image, read-only,
-// for the agent's run tool (ADR-0011). The runner image's own tools (curl,
-// fd and rg in the -tools image) need no entry.
+// for the agent's run tool. The runner image's own tools (curl, fd and rg
+// in the -tools image) need no entry.
 type Tool struct {
 	// Name identifies the tool; it names the pod volume.
 	Name string `json:"name"`
@@ -253,9 +250,9 @@ func (t Tool) Provides() []string {
 
 // Embedding is the instance's embedder, which builds the similar-code
 // index: a model of one of the instance's openrouter or openai providers,
-// on its endpoint and key (ADR-0021 §2.2). There is one per instance
-// because the index has one vector dimension (ADR-0014 §2.6). Unset,
-// indexing is off and reviews run without vector retrieval.
+// on its endpoint and key. There is one per instance because the index has
+// one vector dimension. Unset, indexing is off and reviews run without
+// vector retrieval.
 type Embedding struct {
 	// Ref is the model as the configuration names it, "<provider>/<model>".
 	Ref ModelRef `yaml:"model"`
@@ -337,8 +334,8 @@ func (a GitHubApp) ClientIDValue() string { return a.clientID }
 func (a GitHubApp) PrivateKeyValue() Secret { return a.privateKey }
 
 // Connection is one GitHub App serving the accounts it lists, an entry of
-// the configuration's apps (ADR-0021 §2.2). Its name is the hook path,
-// /hooks/{name}, and is unique across the configuration.
+// the configuration's apps. Its name is the hook path, /hooks/{name}, and
+// is unique across the configuration.
 type Connection struct {
 	Name string `yaml:"name"`
 	// Forge is always ForgeGitHub; the file does not name it.
@@ -370,10 +367,10 @@ type Repository struct {
 	where string
 }
 
-// RepoTraits is what kritik knows of a repository beyond its name: what
-// the forge says of it, that an archived repository is read-only and a
-// fork a copy of another one, and whether an admin turned it on or off
-// from the dashboard, nil until one does (ADR-0019 §2.3).
+// RepoTraits is what kritik knows of a repository beyond its name: what the
+// forge says of it, that an archived repository is read-only and a fork a
+// copy of another one, and whether an admin turned it on or off from the
+// dashboard, nil until one does.
 type RepoTraits struct {
 	Archived, Fork bool
 	TurnedOn       *bool
@@ -388,9 +385,9 @@ type Agent struct {
 	// may spend across all its steps.
 	MaxTokens *int64         `yaml:"maxTokens,omitempty"`
 	Timeout   *time.Duration `yaml:"timeout,omitempty"`
-	// Commands name the binaries the agent's run tool may execute (ADR-0008),
-	// such as curl, fd and rg. The tool is offered only for names the
-	// runner image has on its PATH, so the distroless image offers none.
+	// Commands name the binaries the agent's run tool may execute, such as
+	// curl, fd and rg. The tool is offered only for names the runner image
+	// has on its PATH, so the distroless image offers none.
 	Commands []string `yaml:"commands,omitempty"`
 	// CommandTimeout bounds one command the run tool executes.
 	CommandTimeout *time.Duration `yaml:"commandTimeout,omitempty"`
@@ -467,21 +464,21 @@ type Review struct {
 	Templates           ReviewTemplates `json:"templates"`
 	// InlineComments is false to post the summary alone.
 	InlineComments bool `json:"inlineComments"`
-	// Approve is true to approve a pull request whose review found
-	// nothing blocking or important, and to dismiss that approval when a
-	// later review does (ADR-0025). Off unless set.
+	// Approve is true to approve a pull request whose review found nothing
+	// blocking or important, and to dismiss that approval when a later
+	// review does. Off unless set.
 	Approve bool          `json:"approve"`
 	Context []ContextFile `json:"context"`
 	// Rules are the checks the configuration writes, the broadest scope's
-	// first (ADR-0018). The API serves them from the rules routes, with
-	// what each enforced, not with the settings.
+	// first. The API serves them from the rules routes, with what each
+	// enforced, not with the settings.
 	Rules []Rule `json:"-"`
-	// Feedback is how much a review says (ADR-0021 §2.4): FeedbackDetailed,
+	// Feedback is how much a review says: FeedbackDetailed,
 	// FeedbackStandard or FeedbackMinimal.
 	Feedback string `json:"feedback"`
 	// AgentFiles is true to add the repository's AGENTS.md files, or a
 	// directory's CLAUDE.md where it has none, to the instructions: the
-	// root's and those of the directories a change touches (ADR-0020).
+	// root's and those of the directories a change touches.
 	AgentFiles bool `json:"agentFiles"`
 }
 
@@ -555,12 +552,11 @@ func (r Review) Referenced() []string {
 	return out
 }
 
-// Account is a forge account, github/<name>, and the unit of isolation
-// (ADR-0014 §2.4). It exists because a connection serves it. Its entry
-// under the configuration's accounts holds what is its alone, its limits
-// and providers, and its owner/* and owner/name entries under repositories
-// its repositories' settings (ADR-0021 §2.2); an account with neither
-// inherits the defaults.
+// Account is a forge account, github/<name>, and the unit of isolation. It
+// exists because a connection serves it. Its entry under the
+// configuration's accounts holds what is its alone, its limits and
+// providers, and its owner/* and owner/name entries under repositories its
+// repositories' settings; an account with neither inherits the defaults.
 type Account struct {
 	Forge Forge  `yaml:"-"`
 	Name  string `yaml:"-"`
@@ -596,7 +592,7 @@ type Egress struct {
 }
 
 // File is the running configuration, as the configuration file and its
-// environment set it (ADR-0019 §2.1).
+// environment set it.
 type File struct {
 	Auth        Auth
 	Connections []Connection
@@ -605,7 +601,7 @@ type File struct {
 	Egress      Egress
 	// Embedding is the instance's embedder, nil when indexing is off.
 	Embedding *Embedding
-	// Run is how kritik runs, from the environment (ADR-0021 §2.7).
+	// Run is how kritik runs, from the environment.
 	Run Run
 	// Accounts are every account a running connection serves, in the order
 	// the connections list them.
@@ -626,8 +622,7 @@ type File struct {
 }
 
 // SecretEnv is the environment variables f's secrets came from, sorted,
-// which main removes from its environment once f is loaded (ADR-0022
-// §2.2).
+// which main removes from its environment once f is loaded.
 func (f *File) SecretEnv() []string { return f.secretEnv }
 
 // Hash is the hex SHA-256 of the file's bytes as parsed. The leader records
@@ -653,6 +648,6 @@ type Settings struct {
 	Review      Review
 	// Providers name the model providers the repository's account may use,
 	// the instance's and its own, sorted: the ones a .kritik.yaml may
-	// choose a model of (ADR-0021 §2.3).
+	// choose a model of.
 	Providers []string
 }

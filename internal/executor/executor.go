@@ -30,8 +30,8 @@ type Spec struct {
 	// runner block in the configuration file spells them.
 	Resources map[string]any
 	// Tools are mounted read-only from their images and put first on the
-	// runner's PATH, for the agent's run tool (ADR-0011). The local
-	// executor has no images to mount and leaves them out.
+	// runner's PATH, for the agent's run tool. The local executor has no
+	// images to mount and leaves them out.
 	Tools []configfile.Tool
 }
 

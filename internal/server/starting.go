@@ -32,11 +32,11 @@ func (s *Switch) ServeHTTP(w http.ResponseWriter, r *http.Request) { (*s.h.Load(
 const startingRetry = 5 * time.Second
 
 // Starting is what the public listener serves until the database answers
-// and the service is built on it (ADR-0024 §2.2): a 503 for everything,
-// with a page a browser renders and a plain line for a forge's delivery,
-// which it refuses rather than queues since nothing can hold it yet. The
-// forge marks the delivery failed; the leader's backstop poll picks the
-// pull request up once the service is up.
+// and the service is built on it: a 503 for everything, with a page a
+// browser renders and a plain line for a forge's delivery, which it refuses
+// rather than queues since nothing can hold it yet. The forge marks the
+// delivery failed; the leader's backstop poll picks the pull request up
+// once the service is up.
 func Starting() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(startingRetry/time.Second)))

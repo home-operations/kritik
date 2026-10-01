@@ -1,9 +1,8 @@
 <script lang="ts">
-  // What the account's reviews check (ADR-0017 §2.4, ADR-0018): rules
-  // written in the configuration, as text or a file, and context files
-  // that explain the code, with where each is set and the repositories
-  // that read it. Read-only: rules are set in the configuration or a
-  // repository's .kritik.yaml.
+  // What the account's reviews check: rules written in the configuration,
+  // as text or a file, and context files that explain the code, with where
+  // each is set and the repositories that read it. Read-only: rules are set
+  // in the configuration or a repository's .kritik.yaml.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';

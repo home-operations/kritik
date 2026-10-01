@@ -1,7 +1,7 @@
 // Package auth signs humans in to the dashboard, as the local admin or
-// through the file's OIDC and GitHub sign-ins, decides what each may do from
-// the sign-in's role mapping and the forge, keeps their sessions, and guards
-// the dashboard's routes (ADR-0009 §2.7, ADR-0014 §2.5).
+// through the file's OIDC and GitHub sign-ins, decides what each may do
+// from the sign-in's role mapping and the forge, keeps their sessions, and
+// guards the dashboard's routes.
 package auth
 
 import (

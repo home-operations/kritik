@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The account's home (ADR-0017 §2.2): what its reviews came to over a
-  // window, against the window before, and what needs attention now.
+  // The account's home: what its reviews came to over a window, against the
+  // window before, and what needs attention now.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { hookURL } from '../session.svelte';

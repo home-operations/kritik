@@ -1,5 +1,5 @@
-// The dashboard's sections (ADR-0017): the tabs under the top bar, and the
-// pages each holds. Rune-free, like routes.ts, so tests can import it.
+// The dashboard's sections: the tabs under the top bar, and the pages each
+// holds. Rune-free, like routes.ts, so tests can import it.
 import type { Route } from './routes';
 
 export type Section = 'analytics' | 'pulls' | 'rules' | 'settings';

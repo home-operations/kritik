@@ -6,7 +6,7 @@ import (
 	"github.com/home-operations/kritik/internal/textcut"
 )
 
-// Size caps (ADR-0009 §2.8).
+// Size caps.
 const (
 	// ToolResultCap bounds one tool result's content.
 	ToolResultCap = 64 << 10

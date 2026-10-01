@@ -33,11 +33,11 @@ const (
 const maxSimilarBody = 256 << 10
 
 // similarCode searches the run's repository index for the request's
-// queries (ADR-0026 §2.2): stage 4 of the review, asked once over the
-// diff's hunks before the agent starts, and the agent's own search_code
-// tool. The embedding is reserved against the run's budget at four
-// characters a token before it runs; what it returns is code of the
-// repository the runner has already checked out.
+// queries: stage 4 of the review, asked once over the diff's hunks before
+// the agent starts, and the agent's own search_code tool. The embedding is
+// reserved against the run's budget at four characters a token before it
+// runs; what it returns is code of the repository the runner has already
+// checked out.
 func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	c, ok := g.admit(w, r)

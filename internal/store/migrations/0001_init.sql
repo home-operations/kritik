@@ -14,9 +14,9 @@
 -- configured embedder's, so the leader creates it once one is configured
 -- (see EnsureIndexSchema).
 
--- An account is a forge account, github/<name> (ADR-0014 §2.4). Its id
--- derives from the forge and the lowercased name, so every role can address
--- it without a lookup; it exists while a connection serves it.
+-- An account is a forge account, github/<name>. Its id derives from the
+-- forge and the lowercased name, so every role can address it without a
+-- lookup; it exists while a connection serves it.
 CREATE TABLE accounts (
     id          uuid        PRIMARY KEY,
     forge       text        NOT NULL CHECK (forge IN ('github')),
@@ -62,10 +62,10 @@ CREATE TABLE repositories (
     -- What the forge last said of the repository; false until it says.
     archived        boolean     NOT NULL DEFAULT false,
     fork            boolean     NOT NULL DEFAULT false,
-    -- An admin's choice to review the repository or not (ADR-0019 §2.3),
-    -- NULL until one is made: the configuration decides until then. A
-    -- repository turned off has its index dropped once turned_at is older
-    -- than retention.disabledIndexGrace.
+    -- An admin's choice to review the repository or not, NULL until one is
+    -- made: the configuration decides until then. A repository turned off
+    -- has its index dropped once turned_at is older than
+    -- retention.disabledIndexGrace.
     turned_on       boolean,
     turned_at       timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
@@ -127,8 +127,8 @@ CREATE INDEX pull_requests_account_updated_idx ON pull_requests (account_id, upd
 -- users, identities, sessions and login_states are all looked up before any
 -- account is known (a session cookie or an OAuth callback carries no
 -- account), so, like gateway_tokens, they carry no row-level security on
--- purpose: web code enforces who may see what. A user is a person who
--- signs in to the dashboard (ADR-0009).
+-- purpose: web code enforces who may see what. A user is a person who signs
+-- in to the dashboard.
 CREATE TABLE users (
     id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     display_name   text        NOT NULL DEFAULT '',
@@ -406,13 +406,13 @@ CREATE TABLE poll_state (
     updated_at     timestamptz NOT NULL DEFAULT now()
 );
 
--- A review's tool loop, written by the runner after its context
--- pack: how it stopped ('skipped', with the skip reason as the error, when
--- the runner did not run it because the worker will skip the review), the
--- submitted review when it did, the tool histogram, usage and cost, a
--- per-step timeline of tool names, duration, output bytes and tokens, and
--- the URLs its run tool gave curl (ADR-0008), which the sticky comment
--- lists as the sources consulted.
+-- A review's tool loop, written by the runner after its context pack: how
+-- it stopped ('skipped', with the skip reason as the error, when the runner
+-- did not run it because the worker will skip the review), the submitted
+-- review when it did, the tool histogram, usage and cost, a per-step
+-- timeline of tool names, duration, output bytes and tokens, and the URLs
+-- its run tool gave curl, which the sticky comment lists as the sources
+-- consulted.
 CREATE TABLE agent_runs (
     runner_run_id      uuid           PRIMARY KEY REFERENCES runner_runs (id),
     account_id         uuid           NOT NULL REFERENCES accounts (id),
@@ -435,10 +435,10 @@ CREATE TABLE agent_runs (
 );
 CREATE INDEX agent_runs_account_id_idx ON agent_runs (account_id);
 
--- Per-run credentials for the worker's model gateway (ADR-0004). A token
--- is looked up by its SHA-256 before any account is known, so the table has
--- no row-level security on purpose: holding the token is the
--- authorisation, and a row reveals only the ids of the run it belongs to.
+-- Per-run credentials for the worker's model gateway. A token is looked up
+-- by its SHA-256 before any account is known, so the table has no row-level
+-- security on purpose: holding the token is the authorisation, and a row
+-- reveals only the ids of the run it belongs to.
 CREATE TABLE gateway_tokens (
     token_hash    bytea       PRIMARY KEY,
     runner_run_id uuid        NOT NULL REFERENCES runner_runs (id),
@@ -473,13 +473,13 @@ CREATE TABLE identities (
 CREATE INDEX identities_user_id_idx ON identities (user_id);
 
 -- A session is looked up by the SHA-256 of its cookie value; the value
--- itself is never stored. It records the origin it signed in through, and
--- a session whose sign-in has since moved to another origin is no longer
--- honoured. Roles come from sign-in (ADR-0014 §2.5): role is the instance
--- role, and a member reads every account when all_accounts is set and
--- otherwise the forge accounts in accounts, lowercased as
--- "<forge>/<name>". grant_key fingerprints the sign-in configuration that
--- decided the grant, so a session outlives no change to it.
+-- itself is never stored. It records the origin it signed in through, and a
+-- session whose sign-in has since moved to another origin is no longer
+-- honoured. Roles come from sign-in: role is the instance role, and a
+-- member reads every account when all_accounts is set and otherwise the
+-- forge accounts in accounts, lowercased as "<forge>/<name>". grant_key
+-- fingerprints the sign-in configuration that decided the grant, so a
+-- session outlives no change to it.
 CREATE TABLE sessions (
     token_hash      bytea       PRIMARY KEY,
     user_id         uuid        NOT NULL REFERENCES users (id) ON DELETE CASCADE,

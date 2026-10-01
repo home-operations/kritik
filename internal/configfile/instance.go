@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-// The environment may set the instance's defaults key by key (ADR-0015
-// §2): one model provider, the review and fallback models, feedback,
-// forks and settle every account and repository inherits, and the
-// embedder. Each wins over the file's.
+// The environment may set the instance's defaults key by key: one model
+// provider, the review and fallback models, feedback, forks and settle
+// every account and repository inherits, and the embedder. Each wins over
+// the file's.
 
 // Environment variable prefixes of the file's instance defaults.
 const (

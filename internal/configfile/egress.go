@@ -9,8 +9,8 @@ import (
 	"github.com/home-operations/kritik/internal/egress"
 )
 
-// GitHubHost is the forge every connection and GitHub sign-in talks to,
-// and GitHubAPIHost its API, which a runner's gh calls (ADR-0023).
+// GitHubHost is the forge every connection and GitHub sign-in talks to, and
+// GitHubAPIHost its API, which a runner's gh calls.
 const (
 	GitHubHost    = "github.com"
 	GitHubAPIHost = "api.github.com"
@@ -52,9 +52,9 @@ func checkHost(h string) error {
 // EgressRules is what the gateway allows for this file: the configured
 // hosts and, once any connection exists, GitHub and its API, since runners
 // fetch from the one and gh reads the other, plus the credentials as
-// Authorization header values. Provider endpoints
-// are not among them: a runner reaches its model through the gateway's
-// model endpoint, and the worker calls the provider (ADR-0004).
+// Authorization header values. Provider endpoints are not among them: a
+// runner reaches its model through the gateway's model endpoint, and the
+// worker calls the provider.
 func (f *File) EgressRules() egress.Rules {
 	hosts := slices.Clone(f.Egress.AllowHosts)
 	add := func(h string) {

@@ -28,7 +28,7 @@ const maxSimilarBody = 1 << 20
 const searchCalls = 10
 
 // similarCode asks the gateway for the chunks of the repository's index
-// nearest each query, outside the excluded paths (ADR-0026 §2.2).
+// nearest each query, outside the excluded paths.
 func similarCode(ctx context.Context, gatewayURL, token string, req contextpack.SimilarRequest) (contextpack.SimilarResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, similarTimeout)
 	defer cancel()

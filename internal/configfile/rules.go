@@ -8,13 +8,12 @@ import (
 	"unicode/utf8"
 )
 
-// Rule is a check a review makes, written in the configuration
-// (ADR-0018), by an id findings cite it by and narrower scopes replace it
-// by. The check is Rule's text or the content of File, a repository file
-// read from the merge base, exactly one of them (ADR-0021 §2.5). With
-// Paths it applies only when a changed path matches one of them, and with
-// WhenExpr, a CEL expression over the pull request as a filter sees it,
-// only when that is true (ADR-0021 §2.9).
+// Rule is a check a review makes, written in the configuration, by an id
+// findings cite it by and narrower scopes replace it by. The check is
+// Rule's text or the content of File, a repository file read from the merge
+// base, exactly one of them. With Paths it applies only when a changed path
+// matches one of them, and with WhenExpr, a CEL expression over the pull
+// request as a filter sees it, only when that is true.
 type Rule struct {
 	ID       string   `yaml:"id" json:"id"`
 	Rule     string   `yaml:"rule,omitempty" json:"rule,omitempty"`

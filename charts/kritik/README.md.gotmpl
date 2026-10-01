@@ -195,7 +195,7 @@ endpoints are therefore not in a runner's allowlist. The runner also asks it
 once for the review's similar code: the gateway embeds the diff with the
 instance's embedder and answers from the repository's index, charging the
 embedding to the run. Every review runs through the gateway, so it has no
-switch (ADR-0026).
+switch.
 
 ### Runner tools
 
@@ -249,7 +249,7 @@ it from the node.
 
 ### Topology
 
-The chart runs one Deployment of `kritik serve` (ADR-0024), `replicas: 2`
+The chart runs one Deployment of `kritik serve`, `replicas: 2`
 by default with a PodDisruptionBudget. Every replica serves webhooks and the
 dashboard and works jobs, and one holds the leader lock at a time; two keep
 one serving while a rollout, such as the one a changed `config.file` starts,

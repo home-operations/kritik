@@ -22,8 +22,7 @@ its first line names the schema:
 ## What it may set
 
 The file takes the review keys the configuration's `defaults` and
-repository entries take, at its top level
-([ADR-0021](adr/0021-configuration-shape.md) §2.1). It narrows what an
+repository entries take, at its top level. It narrows what an
 admin allows, adds to the review's rules and context, and replaces the
 rest:
 
@@ -54,8 +53,7 @@ context:
   the review and for follow-ups. A model of any other provider is
   dropped; the account's limits bound what a choice can cost. A fallback
   applies only on the review model's provider.
-- `feedback`: how much the review says
-  ([ADR-0021](adr/0021-configuration-shape.md) §2.4), replacing the
+- `feedback`: how much the review says, replacing the
   admin's.
 
   | `feedback`           | What the review reports                                                                                                                                                                |
@@ -100,7 +98,7 @@ context:
   alone do not withhold it. A later review of the same pull request that
   does find something dismisses kritik's approval. It replaces the
   admin's, in either direction: a repository turns it on where the
-  instance leaves it off ([ADR-0025](adr/0025-approvals.md)). Off unless
+  instance leaves it off. Off unless
   set.
 - `filterExpr`: a filter expression ANDed with the admin's own. It is
   compiled and smoke-tested against a sample pull request when the file is
@@ -109,20 +107,16 @@ context:
 - `ignore`: path globs added to the admin's own ignore list, for
   reviews and indexing alike. A pull request whose every changed path is
   ignored, by these, the admin's globs or kritik's defaults (vendored
-  trees and lockfiles), is skipped
-  ([ADR-0021](adr/0021-configuration-shape.md) §2.6).
-- `rules`: checks the review makes, added after the admin's
-  ([ADR-0018](adr/0018-rules.md)). Each has an `id` (lowercase letters,
+  trees and lockfiles), is skipped.
+- `rules`: checks the review makes, added after the admin's. Each has an `id` (lowercase letters,
   digits and hyphens, at most 64 characters) that findings cite it by,
   and either the `rule` itself (at most 2000 characters) or a `file`,
-  read from the same merge-base tree, whose content is the check
-  ([ADR-0021](adr/0021-configuration-shape.md) §2.5); optional `paths`
+  read from the same merge-base tree, whose content is the check; optional `paths`
   globs apply it only when a changed path matches one, so checks for one
   part of the repository do not spend the room on changes elsewhere. An
   optional `whenExpr`, a CEL expression over the `pr` that `filterExpr`
   sees, applies it only to a pull request it is true of, such as
-  `pr.headRef.startsWith("renovate/")` for Renovate's
-  ([ADR-0021](adr/0021-configuration-shape.md) §2.9); it is compiled and
+  `pr.headRef.startsWith("renovate/")` for Renovate's; it is compiled and
   smoke-tested like `filterExpr`, and a rule whose `whenExpr` fails to
   evaluate is left out. A rule whose `id` an admin's rule has is
   dropped, and the review's summary says so. The rules a change matches
@@ -137,8 +131,7 @@ context:
 - `agentFiles: false`: leaves the repository's agent files out. Unless
   set, a review adds to its instructions the `AGENTS.md` of the root and
   of each directory above a changed path, or a directory's `CLAUDE.md`
-  where it has no `AGENTS.md`, read from the merge base, within 32 KiB
-  ([ADR-0020](adr/0020-agent-files.md)). They follow the rules in the
+  where it has no `AGENTS.md`, read from the merge base, within 32 KiB. They follow the rules in the
   prompt.
 
 A value the file may not take, such as an unknown feedback level or a

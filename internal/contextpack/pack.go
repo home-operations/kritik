@@ -24,8 +24,8 @@ const (
 	StageOverlay    = "overlay"
 	StageDefinition = "definition"
 	StageCaller     = "caller"
-	// StageSimilar is what the gateway finds in the embedding index for
-	// the diff's hunks (ADR-0026 §2.2).
+	// StageSimilar is what the gateway finds in the embedding index for the
+	// diff's hunks.
 	StageSimilar = "similar"
 )
 

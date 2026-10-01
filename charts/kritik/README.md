@@ -190,7 +190,7 @@ endpoints are therefore not in a runner's allowlist. The runner also asks it
 once for the review's similar code: the gateway embeds the diff with the
 instance's embedder and answers from the repository's index, charging the
 embedding to the run. Every review runs through the gateway, so it has no
-switch (ADR-0026).
+switch.
 
 ### Runner tools
 
@@ -244,7 +244,7 @@ it from the node.
 
 ### Topology
 
-The chart runs one Deployment of `kritik serve` (ADR-0024), `replicas: 2`
+The chart runs one Deployment of `kritik serve`, `replicas: 2`
 by default with a PodDisruptionBudget. Every replica serves webhooks and the
 dashboard and works jobs, and one holds the leader lock at a time; two keep
 one serving while a rollout, such as the one a changed `config.file` starts,
@@ -313,7 +313,7 @@ Kubernetes: `>=1.25.0-0`
 | database.runner.role | string | `"kritik_runner"` | Name of the runner role, granted only what runner Jobs need. |
 | deploymentAnnotations | object | `{}` | Annotations added to the Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
 | fullnameOverride | string | `""` | Override the full release name. |
-| gateway.port | int | `8082` | Port of the gateway the kritik serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress (ADR-0008), and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod (ADR-0004, ADR-0026). |
+| gateway.port | int | `8082` | Port of the gateway the kritik serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod. |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
 | httpRoute.enabled | bool | `false` | Expose web.url through a Gateway API HTTPRoute. |
@@ -352,7 +352,7 @@ Kubernetes: `>=1.25.0-0`
 | priorityClassName | string | `""` | PriorityClass for the pods. Empty uses the cluster default. |
 | rbac.create | bool | `true` | Create the Role and RoleBinding kritik serve needs: Jobs in the release namespace, their pods and logs, and the Secrets it hands them. Nothing cluster-wide. |
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"metrics"},"periodSeconds":10}` | Readiness probe, on the metrics port. A replica is ready once its configuration file has loaded and its listeners are up, before the database answers: until it does, the dashboard shows that kritik is starting and webhooks are refused with a reason, from kritik rather than the ingress. |
-| replicas | int | `2` | Replicas of kritik serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other (ADR-0022 §2.3). |
+| replicas | int | `2` | Replicas of kritik serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other. |
 | resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests and limits of the kritik serve pods. |
 | runner.deadline | string | `""` | Deadline of a runner Job (KRITIK_RUNNER_DEADLINE, Go duration). Empty is kritik's default, 15m. |
 | runner.image | string | `""` | Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritik:1.2.3-tools`) adds curl, fd, gh and rg for an agentic review's `agent.commands`. |
@@ -361,19 +361,19 @@ Kubernetes: `>=1.25.0-0`
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
 | runner.serviceAccount.create | bool | `true` | Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry. |
 | runner.serviceAccount.name | string | `""` | Runner ServiceAccount name; generated from the release name if empty. |
-| runner.tools | list | `[]` | Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS, ADR-0011), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster. |
+| runner.tools | list | `[]` | Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIK_RUNNER_TOOLS), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster. |
 | runner.ttl | string | `"10m"` | How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew. |
 | secretEnv | list | `[]` | Environment variables set from existing Secrets, for the configuration file's `{ env: NAME }` references. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container securityContext (no privilege escalation, read-only root filesystem, drops ALL capabilities). |
 | service.metricsPort | int | `8081` | Metrics and probe port. |
-| service.port | int | `8080` | Public port: the webhooks (`POST /hooks/{app}`) and the dashboard (ADR-0024 §2.2). |
+| service.port | int | `8080` | Public port: the webhooks (`POST /hooks/{app}`) and the dashboard. |
 | service.type | string | `"ClusterIP"` | Service type of the public Service. |
 | serviceAccount.annotations | object | `{}` | Annotations for the ServiceAccount. |
 | serviceAccount.automount | bool | `true` | Automount the API token, which kritik serve needs to create runner Jobs. |
 | serviceAccount.create | bool | `true` | Create the ServiceAccount kritik serve runs as. |
 | serviceAccount.name | string | `""` | ServiceAccount name; generated from the release name if empty. |
 | startupProbe | object | `{"failureThreshold":30,"httpGet":{"path":"/healthz","port":"metrics"},"periodSeconds":2}` | Startup probe, on the metrics port. The liveness and readiness probes wait until it passes, so a pod still opening its listeners is not reported unready; it allows a minute. |
-| strategy | object | `{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"}` | Deployment update strategy. A rolling update that surges one pod and takes none down keeps one replica serving while the other is replaced (ADR-0022 §2.3). Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`. |
+| strategy | object | `{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"}` | Deployment update strategy. A rolling update that surges one pod and takes none down keeps one replica serving while the other is replaced. Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`. |
 | terminationGracePeriodSeconds | int | `150` | Grace period for a clean shutdown: kritik serve keeps accepting webhooks, dashboard requests and model steps for 5s while traffic moves off the pod, stops taking jobs and lets running ones finish for up to 100s, then retries the reviews it cut, and its gateway lets model steps in flight finish for up to 2m. |
 | tests.image.pullPolicy | string | `"IfNotPresent"` | `helm test` image pull policy. |
 | tests.image.repository | string | `"mirror.gcr.io/curlimages/curl"` | `helm test` connection-pod image; a gcr-mirrored curl, so the test never pulls from Docker Hub. |
