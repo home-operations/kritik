@@ -94,3 +94,28 @@ func TestSkipDescription(t *testing.T) {
 		})
 	}
 }
+
+func TestResolvedThreads(t *testing.T) {
+	prior := []priorFinding{
+		{Path: "a.go", Title: "Unchecked error", commentID: 11},
+		{Path: "b.go", Title: "Stale comment", commentID: 12},
+		{Path: "c.go", Title: "Never posted inline"},
+	}
+	tests := []struct {
+		name     string
+		reported []review.Finding
+		want     []int64
+	}{
+		{name: "every finding gone resolves every posted thread", want: []int64{11, 12}},
+		{name: "a finding reported again keeps its thread", reported: []review.Finding{{Path: "a.go", Title: "unchecked  ERROR"}}, want: []int64{12}},
+		{name: "a different finding on the same path resolves nothing of it", reported: []review.Finding{{Path: "a.go", Title: "Other"}, {Path: "b.go", Title: "Stale comment"}}, want: []int64{11}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolvedThreads(review.Result{Findings: tt.reported}, prior)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("resolvedThreads() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
