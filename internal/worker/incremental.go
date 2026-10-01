@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 
@@ -12,10 +13,13 @@ import (
 )
 
 // priorReview is a pull request's last completed review; id is "" when it
-// has none.
+// has none. Its findings leave out the ones maintainers dismissed, which
+// dismissed holds: their threads are resolved already, and the next
+// review is told of them apart.
 type priorReview struct {
 	id, headSHA, trigger string
 	findings             []priorFinding
+	dismissed            []store.Dismissal
 }
 
 type priorFinding struct {
@@ -55,6 +59,40 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 		return priorReview{}, fmt.Errorf("worker: load findings: %w", err)
 	}
 	return p, nil
+}
+
+// withDismissals gives p the pull request's dismissals and drops the
+// findings they name from its findings.
+func (p *priorReview) withDismissals(dismissed []store.Dismissal) {
+	p.dismissed = dismissed
+	gone := make(map[string]bool, len(dismissed))
+	for _, d := range dismissed {
+		gone[d.Fingerprint] = true
+	}
+	p.findings = slices.DeleteFunc(p.findings, func(f priorFinding) bool { return gone[review.Fingerprint(f.Finding)] })
+}
+
+// dismissedFindings is what the prompt is told of the dismissals.
+func dismissedFindings(dismissed []store.Dismissal) []review.DismissedFinding {
+	out := make([]review.DismissedFinding, len(dismissed))
+	for i, d := range dismissed {
+		out[i] = review.DismissedFinding{Finding: d.Finding, Reason: d.Reason}
+	}
+	return out
+}
+
+// dropDismissed leaves out the findings maintainers dismissed on the pull
+// request, should the model raise one again, and counts them.
+func dropDismissed(findings []review.Finding, dismissed []store.Dismissal) ([]review.Finding, int) {
+	if len(dismissed) == 0 {
+		return findings, 0
+	}
+	gone := make(map[string]bool, len(dismissed))
+	for _, d := range dismissed {
+		gone[d.Fingerprint] = true
+	}
+	kept := slices.DeleteFunc(slices.Clone(findings), func(f review.Finding) bool { return gone[review.Fingerprint(f)] })
+	return kept, len(findings) - len(kept)
 }
 
 // reviewFindings drops the bookkeeping from prior findings.

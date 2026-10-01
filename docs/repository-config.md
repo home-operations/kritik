@@ -82,7 +82,8 @@ context:
   `.Counts.Blocking`/`.Important`/`.Nit`, `.Unanchored`, the findings on
   lines the diff does not show, `.Notes`, `.Incremental`, `.PriorHeadSHA`,
   `.PriorHeadURL`, `.Prior`, the last review's findings each with
-  `.Resolved`, `.Sources` and `.Incomplete`). The inline template's dot is
+  `.Resolved`, and the dismissed ones each with `.Dismissed` and
+  `.DismissReason`, `.Sources` and `.Incomplete`). The inline template's dot is
   one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Title`,
   `.Explanation`, `.SuggestedFix`, `.Replacement`, `.AgentPrompt`, `.Rules`,
   the ids of the rules it enforces, `.URL`, a link to the lines at the head

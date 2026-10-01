@@ -15,8 +15,9 @@ import (
 )
 
 // TestListAccountFindings checks that a finding is listed once per pull
-// request and fingerprint, as its latest completed review reported it, and
-// is addressed once a later completed review at another head drops it.
+// request and fingerprint, as its latest completed review reported it, is
+// addressed once a later completed review at another head drops it, and
+// is dismissed, not addressed, once a maintainer dismisses it.
 func TestListAccountFindings(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
@@ -152,6 +153,83 @@ func TestListAccountFindings(t *testing.T) {
 	}
 	page2, _ := list(FindingFilter{}, Page{Limit: 2, After: *next})
 	check("paged", append(page1, page2...), rows(all)[0], rows(all)[1], rows(all)[2])
+}
+
+// TestDismissedFindings checks that a finding a maintainer dismissed is
+// listed dismissed with its reason, never addressed, whatever the reviews
+// after it report.
+func TestDismissedFindings(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("dismissed"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "dismissed")
+	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	var pull string
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var repoID string
+		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'dismissed/one'`, account).Scan(&repoID); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, title, head_sha, url)
+			VALUES ($1, $2, 7, 'Add widgets', 'h', 'https://git.example/pr') RETURNING id`, account, repoID).Scan(&pull); err != nil {
+			return err
+		}
+		for i, head := range []string{"h1", "h2"} {
+			var id string
+			if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at)
+				VALUES ($1, $2, $3, 'completed', $4) RETURNING id`, account, pull, head, t0.Add(time.Duration(i)*time.Minute)).Scan(&id); err != nil {
+				return err
+			}
+			// The second review drops naming, which would address it.
+			findings := [][2]string{{"nil deref", "fp-a"}, {"naming", "fp-b"}}[:2-i]
+			for _, f := range findings {
+				if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation, fingerprint)
+					VALUES ($1, $2, 'a.go', 3, 'nit', $3, 'why', $4)`, account, id, f[0], f[1]); err != nil {
+					return err
+				}
+			}
+		}
+		finding, found, err := LatestFinding(ctx, tx, pull, "fp-b")
+		if err != nil || !found || finding.Title != "naming" || finding.Severity != review.SeverityNit {
+			t.Fatalf("LatestFinding = %+v, %v, %v", finding, found, err)
+		}
+		if _, found, err := LatestFinding(ctx, tx, pull, "fp-none"); err != nil || found {
+			t.Fatalf("LatestFinding of an unknown fingerprint = %v, %v", found, err)
+		}
+		return RecordDismissal(ctx, tx, Dismissal{AccountID: account, PullRequestID: pull, Fingerprint: "fp-b", Finding: finding,
+			Reason: "house style", Author: "devin", CommentID: 99})
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	statuses := map[FindingStatus][]string{}
+	var reason string
+	var ds []Dismissal
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		for _, status := range []FindingStatus{FindingOpen, FindingAddressed, FindingDismissed} {
+			items, _, err := ListAccountFindings(ctx, tx, FindingFilter{Status: status}, Page{Limit: 10})
+			if err != nil {
+				return err
+			}
+			for _, a := range items {
+				statuses[status] = append(statuses[status], a.Title)
+				reason += a.DismissReason
+			}
+		}
+		var err error
+		ds, err = Dismissals(ctx, tx, pull)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(statuses[FindingOpen], []string{"nil deref"}) || len(statuses[FindingAddressed]) != 0 ||
+		!slices.Equal(statuses[FindingDismissed], []string{"naming"}) || reason != "house style" {
+		t.Fatalf("statuses = %v with reason %q; want naming dismissed, not addressed", statuses, reason)
+	}
+	if len(ds) != 1 || ds[0].Fingerprint != "fp-b" || ds[0].Finding.Title != "naming" || ds[0].CommentID != 99 {
+		t.Fatalf("Dismissals = %+v", ds)
+	}
 }
 
 // soloAccount serves one account of its own, with one repository, so a

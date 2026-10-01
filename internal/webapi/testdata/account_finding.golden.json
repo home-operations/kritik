@@ -24,6 +24,7 @@
     "url": "https://git.example/alpha/one/pulls/7"
   },
   "status": "addressed",
+  "dismissReason": "",
   "firstSeenAt": "2026-09-01T12:00:00Z",
   "lastSeenAt": "2026-09-01T12:01:30Z"
 }

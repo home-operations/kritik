@@ -81,6 +81,10 @@ func (p *publishPhase) run(ctx context.Context) (store.ReviewStatus, error) {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
 	unanchored, notes := splitDropped(dropped)
+	var dismissed int
+	if res.Findings, dismissed = dropDismissed(res.Findings, p.prior.dismissed); dismissed > 0 {
+		notes = append(notes, fmt.Sprintf("%d finding(s) a maintainer dismissed were left out", dismissed))
+	}
 	commentID, inline, err := p.writeBack(ctx, res, unanchored, run.Model, append(notes, p.repoNotes...))
 	if err != nil {
 		return store.ReviewFailed, err
@@ -306,7 +310,9 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 
 // priorFindings is the last review's findings as this review's summary
 // lists them: resolved when the model, asked to report each again only if
-// still present, did not, and linked to their threads where they have one.
+// still present, did not, and linked to their threads where they have one,
+// then the findings maintainers dismissed, each linked to the comment that
+// dismissed it.
 func (p *publishPhase) priorFindings(res review.Result) []review.PriorFinding {
 	reported := make(map[string]bool, len(res.Findings))
 	for _, f := range res.Findings {
@@ -321,6 +327,12 @@ func (p *publishPhase) priorFindings(res review.Result) []review.PriorFinding {
 			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, pf.commentID)
 		}
 		out = append(out, review.PriorFinding{Finding: f, Resolved: !reported[review.Fingerprint(f)]})
+	}
+	for _, d := range p.prior.dismissed {
+		f := d.Finding
+		f.URL = p.client.FileURL(owner, repo, p.prior.headSHA, f.Path, f.Line, f.EndLine)
+		f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, d.CommentID)
+		out = append(out, review.PriorFinding{Finding: f, Dismissed: true, DismissReason: d.Reason})
 	}
 	return out
 }
@@ -349,7 +361,7 @@ func resolvedThreads(res review.Result, prior []priorFinding) []int64 {
 func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64) {
 	owner, repo := p.pr.ownerRepo()
 	for _, id := range ids {
-		resolved, err := p.client.ResolveThread(ctx, owner, repo, p.pr.number, id)
+		resolved, err := p.client.ResolveThread(ctx, owner, repo, p.pr.number, id, true)
 		switch {
 		case err != nil:
 			p.logger.Warn("finding's thread not resolved", "comment", id, "error", err)

@@ -43,7 +43,8 @@ flowchart LR
   the last review, an earlier finding it no longer finds has its thread
   resolved, and `settle` folds a burst of force-pushes into one.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
-  answer in the thread.
+  answer in the thread, or reply `@<bot> dismiss <reason>` in a finding's
+  thread to have it resolved and never raised again on that pull request.
 - **Approvals, opt-in.** A repository or the instance can have a review that
   finds nothing blocking or important approve the pull request, and a later
   review that does withdraw it.

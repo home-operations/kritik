@@ -447,14 +447,16 @@ export interface Rule {
   addressed: number;
 }
 
-export type FindingStatus = 'open' | 'addressed';
+export type FindingStatus = 'open' | 'addressed' | 'dismissed';
 
 // AccountFinding is one finding of a pull request, however many of its
-// reviews reported it, as the latest of them did.
+// reviews reported it, as the latest of them did; dismissReason is the
+// reason a dismissed one was dismissed with.
 export interface AccountFinding extends Finding {
   reviewId: string;
   pull: PullRef;
   status: FindingStatus;
+  dismissReason: string;
   firstSeenAt: string;
   lastSeenAt: string;
 }

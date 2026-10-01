@@ -118,6 +118,20 @@ func FollowUpBody(reply, model string) string {
 // LimitBody is posted once when a thread hits its follow-up rate limit.
 const LimitBody = "kritika has answered the limit of follow-ups for this pull request in the past hour and will pick up again later.\n"
 
+// DismissedBody is the reply to a dismissal of the finding a comment
+// replies to.
+const DismissedBody = "Dismissed: later reviews of this pull request will not raise this finding again.\n"
+
+// DismissHintBody is the reply to a dismissal made anywhere but as a reply
+// in one of kritika's finding threads, where there is no finding to
+// dismiss.
+const DismissHintBody = "`dismiss` works as a reply in one of kritika's finding threads: it dismisses that finding, " +
+	"with the rest of the comment as the reason.\n"
+
+// DismissUnknownBody is the reply to a dismissal of a finding kritika has
+// no record of.
+const DismissUnknownBody = "kritika has no record of this finding, so there is nothing to dismiss.\n"
+
 // ReviewQueuedBody is the reply to a request for a review of headSHA:
 // queued, or already queued or running.
 func ReviewQueuedBody(headSHA string, already bool) string {

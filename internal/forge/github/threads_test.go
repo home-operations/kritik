@@ -57,6 +57,7 @@ func TestResolveThread(t *testing.T) {
 		name         string
 		pages        []string
 		id           int64
+		anyAuthor    bool
 		want         bool
 		wantResolved []string
 	}{
@@ -69,6 +70,11 @@ func TestResolveThread(t *testing.T) {
 			name:  "a thread someone else wrote in is left open",
 			pages: []string{"[" + thread("T1", false, "kritika#11", "devin#12") + "]"},
 			id:    11,
+		},
+		{
+			name:  "a thread someone else wrote in is resolved when asked",
+			pages: []string{"[" + thread("T1", false, "kritika#11", "devin#12") + "]"},
+			id:    11, anyAuthor: true, want: true, wantResolved: []string{"T1"},
 		},
 		{
 			name:  "a thread already resolved is left alone",
@@ -92,7 +98,7 @@ func TestResolveThread(t *testing.T) {
 			c.login = "kritika[bot]"
 			api := &threadsAPI{pages: tt.pages}
 			api.serve(f)
-			got, err := c.ResolveThread(t.Context(), "o", "r", 7, tt.id)
+			got, err := c.ResolveThread(t.Context(), "o", "r", 7, tt.id, !tt.anyAuthor)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -121,7 +127,7 @@ func TestResolveThreadErrors(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": "Could not resolve to a PullRequest"}}})
 	})
-	if _, err := c.ResolveThread(t.Context(), "o", "r", 7, 11); err == nil || !strings.Contains(err.Error(), "Could not resolve") {
+	if _, err := c.ResolveThread(t.Context(), "o", "r", 7, 11, true); err == nil || !strings.Contains(err.Error(), "Could not resolve") {
 		t.Fatalf("ResolveThread() error = %v, want the GraphQL error", err)
 	}
 }

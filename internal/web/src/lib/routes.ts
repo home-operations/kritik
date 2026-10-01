@@ -78,7 +78,7 @@ export interface FindingFilter {
   q?: string;
 }
 
-export const FINDING_STATUSES: readonly FindingStatus[] = ['open', 'addressed'];
+export const FINDING_STATUSES: readonly FindingStatus[] = ['open', 'addressed', 'dismissed'];
 
 // findingFilter drops the fields of f that match everything; undefined when
 // nothing is left.

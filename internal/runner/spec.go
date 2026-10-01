@@ -90,6 +90,9 @@ type Prompt struct {
 	// MaxDeltaFiles is the incremental re-review threshold.
 	MaxDeltaFiles int              `json:"maxDeltaFiles"`
 	Prior         []review.Finding `json:"prior,omitempty"`
+	// Dismissed are the findings maintainers dismissed on the pull
+	// request, which the review is told not to raise again.
+	Dismissed []review.DismissedFinding `json:"dismissed,omitempty"`
 	// UnchangedPatchID, when the head's patch id equals it, means the
 	// worker will skip the review, so the agent is not run.
 	UnchangedPatchID string `json:"unchangedPatchId,omitempty"`
@@ -179,7 +182,7 @@ const (
 	// git and gateway tokens.
 	MaxSpecBytes = 900 << 10
 	// MaxPriorFindings is how many of the last review's findings a spec
-	// carries.
+	// carries, and how many dismissed ones.
 	MaxPriorFindings = 200
 	// MaxBodyBytes bounds the pull request body a spec carries. Encoding
 	// can grow it sixfold (each '<' becomes \u003c), which the spec bound
@@ -206,12 +209,14 @@ func (p *Prompt) Trim() {
 		p.Issues[i].Body = textcut.Prefix(p.Issues[i].Body, MaxIssueBytes)
 	}
 	p.Prior = p.Prior[:min(len(p.Prior), MaxPriorFindings)]
-	for len(p.Prior) > 0 {
+	p.Dismissed = p.Dismissed[:min(len(p.Dismissed), MaxPriorFindings)]
+	for len(p.Prior) > 0 || len(p.Dismissed) > 0 {
 		b, err := json.Marshal(p)
 		if err != nil || len(b) <= maxPromptBytes {
 			return
 		}
 		p.Prior = p.Prior[:len(p.Prior)/2]
+		p.Dismissed = p.Dismissed[:len(p.Dismissed)/2]
 	}
 }
 
