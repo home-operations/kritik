@@ -48,7 +48,13 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 	if spec.Kind == KindIndex {
 		run = runIndex
 	}
-	err := run(ctx, st, spec, secrets, logger)
+	// The first thing either kind does is fetch through the gateway, which
+	// a runner started with the service may reach before its Service
+	// does.
+	err := waitForGateway(ctx, logger)
+	if err == nil {
+		err = run(ctx, st, spec, secrets, logger)
+	}
 	if err != nil {
 		// The worker still sees the Job fail; the row only loses why.
 		if ferr := fail(ctx, st, spec.RunID, secrets, err); ferr != nil {

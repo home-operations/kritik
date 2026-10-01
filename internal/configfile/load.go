@@ -385,6 +385,9 @@ func (f *File) validateEmbedding() error {
 	if e.MaxBatch < 0 || e.MaxBatchChars < 0 || e.MaxItemChars < 0 {
 		return errors.New("configfile: embedding.maxBatch, maxBatchChars and maxItemChars must not be negative")
 	}
+	if e.SimilarFloor < 0 || e.SimilarFloor > 1 {
+		return fmt.Errorf("configfile: embedding.similarFloor must be between 0 and 1 (a cosine similarity), got %g", e.SimilarFloor)
+	}
 	return nil
 }
 

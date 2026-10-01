@@ -82,11 +82,11 @@ func commandTool(
 // HTTPS proxy, the egress gateway.
 func commandEnv(home string) (env []string, proxied bool) {
 	env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home}
-	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} {
+	for _, name := range []string{"HTTP_PROXY", httpsProxyEnv, "NO_PROXY"} {
 		lower := strings.ToLower(name)
 		if v := cmp.Or(os.Getenv(name), os.Getenv(lower)); v != "" {
 			env = append(env, name+"="+v, lower+"="+v)
-			proxied = proxied || name == "HTTPS_PROXY"
+			proxied = proxied || name == httpsProxyEnv
 		}
 	}
 	return env, proxied

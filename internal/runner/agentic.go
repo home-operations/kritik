@@ -191,8 +191,9 @@ func reviewAgent(
 			agent.GrepTool(tree, limits.MaxToolOutputBytes),
 			agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
 		}, extra...),
-		Submit: SubmitTool(strict),
-		Limits: limits,
+		Submit:   SubmitTool(strict),
+		Validate: review.Check,
+		Limits:   limits,
 		OnStep: func(e agent.StepEvent) {
 			tools := e.Tools
 			if tools == nil {

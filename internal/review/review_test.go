@@ -59,6 +59,40 @@ func TestAnchors(t *testing.T) {
 	}
 }
 
+func TestCheck(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{name: "the contract's shape", raw: `{"summary":{"take":"Fine.","praise":[]},"findings":[]}`},
+		{name: "findings omitted", raw: `{"summary":{"take":"Fine.","praise":["clear"]}}`},
+		{name: "summary flattened to a string", raw: `{"summary":"Fine.","take":"Fine.","praise":"[]","findings":[]}`,
+			wantErr: "cannot unmarshal string into Go struct field Result.summary"},
+		{name: "praise as a string", raw: `{"summary":{"take":"Fine.","praise":"clear"},"findings":[]}`,
+			wantErr: "cannot unmarshal string into Go struct field"},
+		{name: "a finding's line as a string", raw: `{"summary":{"take":"Fine.","praise":[]},"findings":[{"path":"a","line":"3"}]}`,
+			wantErr: "cannot unmarshal string into Go struct field"},
+		{name: "summary left out", raw: `{"take":"Fine.","praise":[],"findings":[]}`, wantErr: "summary.take is required"},
+		{name: "blank take", raw: `{"summary":{"take":"  ","praise":[]},"findings":[]}`, wantErr: "summary.take is required"},
+		{name: "an array", raw: `[]`, wantErr: "cannot unmarshal array"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Check(json.RawMessage(tt.raw))
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Check() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Check() = %v, want an error containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestParse(t *testing.T) {
 	anchors := Anchors(sampleDiff)
 	tests := []struct {

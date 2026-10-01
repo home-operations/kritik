@@ -202,7 +202,12 @@ of the instance, whose endpoint, or the type's default, and key it uses;
 `maxBatchChars` and `maxItemChars` bound one request to 64 inputs, 200,000
 characters and 16,000 characters per input unless set. With one, a
 review's prompt carries the index's chunks nearest the change and the
-agent gets a `search_code` tool over the same index. Without an
+agent gets a `search_code` tool over the same index; both keep a chunk
+whose cosine similarity to the query is at least `similarFloor`, 0.5
+unless set. Where useful matches part from noise depends on the model and
+the repository: a small embedder on a repository of similar files can
+score nearly everything above 0.5, and a floor of about 0.7 keeps the
+matches that mean something. Without an
 embedder, indexing is off and reviews run without similar code. The index
 holds one model and dimension: a configuration that changes either drops
 every repository's index, and the leader builds each again, a few at a
