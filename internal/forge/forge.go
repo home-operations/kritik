@@ -169,6 +169,11 @@ type Client interface {
 	// FileURL links lines line through endLine (0 for line alone) of path
 	// at sha in the forge's web UI.
 	FileURL(owner, repo, sha, path string, line, endLine int) string
+	// CommitURL links commit sha in the forge's web UI.
+	CommitURL(owner, repo, sha string) string
+	// ThreadURL links the thread of inline comment id on pull request
+	// number in the forge's web UI.
+	ThreadURL(owner, repo string, number int, id int64) string
 
 	// GetComment fetches one comment; inline selects the review-comment
 	// namespace, which the forge keeps apart from conversation comments.

@@ -80,7 +80,8 @@ func (p *publishPhase) run(ctx context.Context) (store.ReviewStatus, error) {
 	for _, d := range dropped {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
-	commentID, inline, err := p.writeBack(ctx, res, run.Model, append(reviewNotes(dropped), p.repoNotes...))
+	unanchored, notes := splitDropped(dropped)
+	commentID, inline, err := p.writeBack(ctx, res, unanchored, run.Model, append(notes, p.repoNotes...))
 	if err != nil {
 		return store.ReviewFailed, err
 	}
@@ -103,14 +104,15 @@ func skipDescription(reason string) string {
 // incomplete replaces the sticky comment with one saying why this head was
 // not fully reviewed, in kritik's own template, and records the model.
 func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string) error {
+	owner, repo := p.pr.ownerRepo()
 	body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
-		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Incomplete: reason, Notes: p.repoNotes,
+		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
+		Incomplete: reason, Notes: p.repoNotes,
 	})
 	commentID, err := p.upsertSticky(ctx, body)
 	if err != nil {
 		return err
 	}
-	owner, repo := p.pr.ownerRepo()
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: review incomplete ("+reason+")"); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
@@ -127,22 +129,29 @@ func (p *publishPhase) countFindings(res review.Result) {
 	}
 }
 
-// reviewNotes are the caveats the sticky comment states about a review.
-func reviewNotes(dropped []review.Dropped) []string {
-	var notes []string
-	if len(dropped) > 0 {
-		byReason := map[review.DropReason]int{}
-		for _, d := range dropped {
-			byReason[d.Reason]++
+// splitDropped sorts what Parse dropped into the findings on lines the
+// diff does not show, which the summary lists since no inline comment can
+// carry them, and a note counting the rest.
+func splitDropped(dropped []review.Dropped) (unanchored []review.Finding, notes []string) {
+	byReason := map[review.DropReason]int{}
+	total := 0
+	for _, d := range dropped {
+		if d.Reason == review.DropUnanchored {
+			unanchored = append(unanchored, d.Finding)
+			continue
 		}
-		reasons := make([]string, 0, len(byReason))
-		for r, n := range byReason {
-			reasons = append(reasons, fmt.Sprintf("%s: %d", r, n))
-		}
-		slices.Sort(reasons)
-		notes = append(notes, fmt.Sprintf("%d finding(s) were dropped (%s)", len(dropped), strings.Join(reasons, ", ")))
+		byReason[d.Reason]++
+		total++
 	}
-	return notes
+	if total == 0 {
+		return unanchored, nil
+	}
+	reasons := make([]string, 0, len(byReason))
+	for r, n := range byReason {
+		reasons = append(reasons, fmt.Sprintf("%s: %d", r, n))
+	}
+	slices.Sort(reasons)
+	return unanchored, []string{fmt.Sprintf("%d finding(s) were dropped (%s)", total, strings.Join(reasons, ", "))}
 }
 
 // writeBack posts the sticky comment (created once, edited after), the
@@ -150,17 +159,21 @@ func reviewNotes(dropped []review.Dropped) []string {
 // required: the other two are best effort and logged when they fail, so a
 // forge quirk cannot turn a finished review into a retry storm. A finding
 // the last review already posted inline, or one the settings keep out of
-// inline comments, is listed in the summary only. The returned comments
-// say, per finding, whether an inline comment for it is on the forge, and
-// its id there.
+// inline comments, is listed in the summary only. Once the inline review
+// is posted, the sticky comment is edited again to link each finding to
+// its thread. The returned comments say, per finding, whether an inline
+// comment for it is on the forge, and its id there.
 func (p *publishPhase) writeBack(
-	ctx context.Context, res review.Result, modelName string, notes []string,
+	ctx context.Context, res review.Result, unanchored []review.Finding, modelName string, notes []string,
 ) (int64, []store.InlinePosted, error) {
 	owner, repo := p.pr.ownerRepo()
 	onForge := alreadyInline(res.Findings, p.prior.findings)
 	for i := range res.Findings {
 		f := &res.Findings[i]
 		f.URL = p.client.FileURL(owner, repo, p.pr.headSHA, f.Path, f.Line, f.EndLine)
+		if onForge[i].ID != 0 {
+			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, onForge[i].ID)
+		}
 	}
 	// Inline comments render first so a failing inline template is noted
 	// in the summary. After one failure the rest use the default, so a
@@ -188,10 +201,16 @@ func (p *publishPhase) writeBack(
 	if p.agent != nil {
 		sources = review.SourceLinks(p.agent.Sources)
 	}
-	body, renderNotes := review.RenderSummary(ctx, p.templates, review.RenderData{
-		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Result: res, Counts: res.Counts(), Notes: notes,
+	data := review.RenderData{
+		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
+		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: res.Counts(), Notes: notes, Unanchored: unanchored,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources,
-	})
+	}
+	if data.Incremental {
+		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
+		data.Prior = p.priorFindings(res)
+	}
+	body, renderNotes := review.RenderSummary(ctx, p.templates, data)
 	for _, n := range renderNotes {
 		p.logger.Warn("template fell back to the default", "note", n)
 	}
@@ -208,9 +227,23 @@ func (p *publishPhase) writeBack(
 	case err != nil:
 		p.logger.Warn("inline review posted, but its comments' ids not read back", "error", err)
 	}
+	linked := false
 	for j, i := range posted {
 		if ids != nil {
 			onForge[i] = store.InlinePosted{Posted: true, ID: ids[j]}
+		}
+		if ids != nil && ids[j] != 0 {
+			res.Findings[i].ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, ids[j])
+			linked = true
+		}
+	}
+	if linked {
+		// The threads exist only now, so the summary is written a second
+		// time with the links; losing them is not worth failing the review.
+		data.Result = res
+		body, _ = review.RenderSummary(ctx, p.templates, data)
+		if err := p.client.UpdateComment(ctx, owner, repo, commentID, body); err != nil {
+			p.logger.Warn("summary not linked to its inline comments", "error", err)
 		}
 	}
 	desc := "no findings"
@@ -224,6 +257,27 @@ func (p *publishPhase) writeBack(
 		p.approve(ctx, res.Counts())
 	}
 	return commentID, onForge, nil
+}
+
+// priorFindings is the last review's findings as this review's summary
+// lists them: resolved when the model, asked to report each again only if
+// still present, did not, and linked to their threads where they have one.
+func (p *publishPhase) priorFindings(res review.Result) []review.PriorFinding {
+	reported := make(map[string]bool, len(res.Findings))
+	for _, f := range res.Findings {
+		reported[review.Fingerprint(f)] = true
+	}
+	owner, repo := p.pr.ownerRepo()
+	out := make([]review.PriorFinding, 0, len(p.prior.findings))
+	for _, pf := range p.prior.findings {
+		f := pf.Finding
+		f.URL = p.client.FileURL(owner, repo, p.prior.headSHA, f.Path, f.Line, f.EndLine)
+		if pf.commentID != 0 {
+			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, pf.commentID)
+		}
+		out = append(out, review.PriorFinding{Finding: f, Resolved: !reported[review.Fingerprint(f)]})
+	}
+	return out
 }
 
 // approve approves the head when the review found nothing blocking or

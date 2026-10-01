@@ -79,13 +79,17 @@ context:
   or checksum, and not `set` or `unset`). The `template`, `define` and
   `block` actions are refused, so a template cannot read any file or call
   any other template. The summary template's dot is the review (`.Number`,
-  `.HeadSHA`, `.Model`, `.Result.Summary.Take`, `.Result.Summary.Praise`,
-  `.Result.Findings`, `.Counts.Blocking`/`.Important`/`.Nit`, `.Notes`,
-  `.Incremental`, `.PriorHeadSHA`, `.Incomplete`). The inline template's dot
-  is one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Title`,
+  `.HeadSHA`, `.HeadURL`, `.Model`, `.AuthorIsBot`, `.Result.Summary.Take`,
+  `.Result.Summary.Praise`, `.Result.Findings`,
+  `.Counts.Blocking`/`.Important`/`.Nit`, `.Unanchored`, the findings on
+  lines the diff does not show, `.Notes`, `.Incremental`, `.PriorHeadSHA`,
+  `.PriorHeadURL`, `.Prior`, the last review's findings each with
+  `.Resolved`, `.Sources` and `.Incomplete`). The inline template's dot is
+  one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Title`,
   `.Explanation`, `.SuggestedFix`, `.Replacement`, `.AgentPrompt`, `.Rules`,
-  the ids of the rules it enforces, and `.URL`, a link to the lines at the
-  head commit). Rendering is bounded (loop iterations, bytes per function
+  the ids of the rules it enforces, `.URL`, a link to the lines at the head
+  commit, and `.ThreadURL`, a link to its inline comment thread once one
+  is posted). Rendering is bounded (loop iterations, bytes per function
   call, output size, a deadline), so a template cannot hang or exhaust
   memory; one that exceeds a bound falls back to the default with a note
   in the comment.
