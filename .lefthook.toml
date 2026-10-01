@@ -3,6 +3,27 @@ git_url = "https://github.com/home-operations/.github"
 ref = "main"
 configs = ["lefthook.common.toml"]
 
+# Regenerate the chart's committed README and values.schema.json whenever
+# their inputs change, and stage them. CI's generate-check is the backstop.
+[pre-commit.commands.helm-docs]
+glob = [
+  "charts/kritika/Chart.yaml",
+  "charts/kritika/values.yaml",
+  "charts/kritika/README.md.gotmpl",
+]
+run = "mise run generate && git add charts/kritika/README.md charts/kritika/values.schema.json"
+
+# The generated chart README and schema and the authored MkDocs site under
+# docs/ are .prettierignore'd; exclude them from the shared formatters too.
+# The hooks pass staged paths explicitly, so a commit whose only Markdown or
+# JSON is ignored hands oxfmt an empty target set, and it exits non-zero
+# ("Expected at least one target file"), failing the whole hook.
+[pre-commit.commands.format-markdown]
+exclude = ["charts/kritika/README.md", "docs/**"]
+
+[pre-commit.commands.format-json]
+exclude = ["charts/kritika/values.schema.json"]
+
 [pre-commit.commands.golangci-lint]
 glob = "*.go"
 run = "mise exec -- golangci-lint run"
