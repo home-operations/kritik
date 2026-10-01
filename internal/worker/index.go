@@ -130,7 +130,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		var err error
 		runID, runnerRunID, err = store.StartIndexRun(ctx, tx, store.NewIndexRun{
 			AccountID: args.AccountID, RepositoryID: args.RepositoryID, Commit: commit, Base: base, Mode: mode, Trigger: args.Trigger,
-			Embedding: *emb, StrayAfter: jobtimeout.RescueStuckJobsAfter,
+			Embedding: *emb, StrayAfter: jobtimeout.RescueStuckJobsAfter, JobID: job.ID,
 		})
 		return err
 	})

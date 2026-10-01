@@ -36,7 +36,7 @@ func StartReview(ctx context.Context, tx pgx.Tx, r NewReview) (reviewID, runID s
 		r.AccountID, r.PullRequestID, r.HeadSHA, r.MergeBaseSHA, r.ForgePatchID, r.Trigger, r.JobID).Scan(&reviewID); err != nil {
 		return "", "", fmt.Errorf("store: insert review: %w", err)
 	}
-	runID, err = InsertRunnerRun(ctx, tx, r.AccountID, RunnerKindReview, reviewID)
+	runID, err = InsertRunnerRun(ctx, tx, r.AccountID, RunnerKindReview, reviewID, r.JobID)
 	return reviewID, runID, err
 }
 
@@ -118,15 +118,15 @@ const (
 )
 
 // InsertRunnerRun records a runner run of kind for its parent, a review or
-// an index generation, and returns its id.
-func InsertRunnerRun(ctx context.Context, tx pgx.Tx, accountID string, kind RunnerKind, parentID string) (string, error) {
+// an index generation, started by River job jobID, and returns its id.
+func InsertRunnerRun(ctx context.Context, tx pgx.Tx, accountID string, kind RunnerKind, parentID string, jobID int64) (string, error) {
 	parent := "review_id"
 	if kind == RunnerKindIndex {
 		parent = "index_run_id"
 	}
 	var runID string
-	if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, `+parent+`, kind) VALUES ($1, $2, $3) RETURNING id`,
-		accountID, parentID, string(kind)).Scan(&runID); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, `+parent+`, kind, river_job_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+		accountID, parentID, string(kind), jobID).Scan(&runID); err != nil {
 		return "", fmt.Errorf("store: insert runner run: %w", err)
 	}
 	return runID, nil

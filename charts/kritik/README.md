@@ -249,7 +249,10 @@ by default with a PodDisruptionBudget. Every replica serves webhooks and the
 dashboard and works jobs, and one holds the leader lock at a time; two keep
 one serving while a rollout, such as the one a changed `config.file` starts,
 replaces the other. Runner pods are the Jobs `kritik serve` creates, one per
-review and index run, running `kritik run`.
+review and index run, running `kritik run`. A replica that stops drains its
+jobs first; one that dies outright leaves them to the leader, which hands
+them back to the queue within a few minutes and deletes the runner Jobs they
+left, and the remaining replica works them.
 
 ## Maintainers
 

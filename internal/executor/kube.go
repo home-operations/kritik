@@ -186,12 +186,25 @@ func (k *Kube) cancel(ctx context.Context, res *Result, secrets runner.Secrets) 
 // deleteJob removes a Job and, with foreground propagation, its pod. It
 // runs without ctx's cancellation because ctx has usually ended.
 func (k *Kube) deleteJob(ctx context.Context, name string) {
+	if err := k.removeJob(ctx, name); err != nil {
+		k.logger().Warn("delete runner job", "job", name, "error", err)
+	}
+}
+
+// DeleteRun deletes the Job of run runID, pod and Secret with it, for a run
+// whose worker is gone. A Job already gone counts as deleted.
+func (k *Kube) DeleteRun(ctx context.Context, runID string) error {
+	return k.removeJob(ctx, jobName(runID))
+}
+
+func (k *Kube) removeJob(ctx context.Context, name string) error {
 	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	opts := metav1.DeleteOptions{PropagationPolicy: new(metav1.DeletePropagationForeground)}
 	if err := k.Client.BatchV1().Jobs(k.Namespace).Delete(dctx, name, opts); err != nil && !apierrors.IsNotFound(err) {
-		k.logger().Warn("delete runner job", "job", name, "error", err)
+		return fmt.Errorf("executor: delete runner job %s: %w", name, err)
 	}
+	return nil
 }
 
 // deleteSecret removes a Secret no Job owns yet.

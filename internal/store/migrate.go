@@ -144,7 +144,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, followups, poll_state TO ` + app,
 		`GRANT SELECT ON index_schema, agent_runs TO ` + app,
-		`GRANT SELECT, INSERT, UPDATE, DELETE ON gateway_tokens TO ` + app,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON gateway_tokens, job_heartbeats TO ` + app,
 		// The web dashboard's own tables (ADR-0009): all instance-level (no
 		// RLS, access control lives in web code) except model_calls, which is
 		// account content gated by its own account_isolation policy.
