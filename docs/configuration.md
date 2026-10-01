@@ -402,7 +402,7 @@ restart changes them.
 | `KRITIK_POLL_LOOKBACK`        | `config.pollLookback`        | how far back a first or long-idle poll looks; 24h unless set                                                                            |
 | `KRITIK_ONBOARD_WINDOW`       | `config.onboardWindow`       | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                 |
 | `KRITIK_INDEX_GRACE`          | `config.indexGrace`          | how long the index of a repository that stopped running is kept; 720h unless set                                                        |
-| `KRITIK_TRANSCRIPT_RETENTION` | `config.transcriptRetention` | how long an agentic review's full model transcript is kept, at least 24h; 720h unless set                                               |
+| `KRITIK_TRANSCRIPT_RETENTION` | `config.transcriptRetention` | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                        |
 | `KRITIK_DIFF_RETENTION`       | `config.diffRetention`       | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set |
 | `KRITIK_RUNNER_DEADLINE`      | `runner.deadline`            | a runner Job's deadline; 15m unless set                                                                                                 |
 | `KRITIK_RUNNER_RESOURCES`     | `runner.resources`           | a runner pod's resources, as JSON                                                                                                       |

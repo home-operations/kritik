@@ -139,9 +139,6 @@ func (f *File) Sources(a *Account, fullName string) map[string]Source {
 	}
 	out := map[string]Source{}
 	for _, p := range Policies {
-		if len(p.Scopes) == 0 {
-			continue
-		}
 		out[p.Key] = SourceDefault
 		for _, sc := range scopes {
 			if v, ok := SpecValue(sc.spec, p.Key); ok && !reflect.ValueOf(v).IsZero() {

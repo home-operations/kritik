@@ -364,12 +364,12 @@ type RepoTraits struct {
 	TurnedOn       *bool
 }
 
-// Agent bounds an agentic review. A field left unset takes its default from
+// Agent bounds a review's agent. A field left unset takes its default from
 // DefaultAgent; one that is set must be positive.
 type Agent struct {
 	MaxSteps           *int `yaml:"maxSteps,omitempty"`
 	MaxToolOutputBytes *int `yaml:"maxToolOutputBytes,omitempty"`
-	// MaxTokens bounds the prompt plus output tokens one agentic review
+	// MaxTokens bounds the prompt plus output tokens one review
 	// may spend across all its steps.
 	MaxTokens *int64         `yaml:"maxTokens,omitempty"`
 	Timeout   *time.Duration `yaml:"timeout,omitempty"`

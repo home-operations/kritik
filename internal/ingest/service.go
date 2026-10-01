@@ -106,12 +106,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	if !ok {
 		if ev.Action == "closed" {
 			err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = $3, closed_at = coalesce($4, now()),
-					updated_at = now() WHERE repository_id = $1 AND number = $2`,
-					repoID(req, ev.Repository.FullName), pr.Number, pr.Merged, pr.ClosedAt); err != nil {
-					return fmt.Errorf("ingest: close pull request: %w", err)
-				}
-				return nil
+				return store.ClosePullRequest(ctx, tx, repoID(req, ev.Repository.FullName), pr.Number, pr.Merged, pr.ClosedAt)
 			})
 			return Outcome{Status: Ignored, Reason: "closed"}, err
 		}
@@ -149,18 +144,12 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO pull_requests (account_id, repository_id, number, title, author, author_is_bot, draft, fork, state,
-				head_ref, head_sha, base_ref, url, body, opened_at, labels, merged)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11, $12, $13, $14, $15, $16)
-			ON CONFLICT (repository_id, number) DO UPDATE SET
-				title = EXCLUDED.title, author = EXCLUDED.author, author_is_bot = EXCLUDED.author_is_bot, draft = EXCLUDED.draft,
-				fork = EXCLUDED.fork, state = 'open', head_ref = EXCLUDED.head_ref, head_sha = EXCLUDED.head_sha,
-				base_ref = EXCLUDED.base_ref, url = EXCLUDED.url, body = EXCLUDED.body,
-				labels = EXCLUDED.labels, merged = EXCLUDED.merged, closed_at = NULL, updated_at = now()`,
-			req.Account.ID(), rid, pr.Number, pr.Title, pr.Author, pr.AuthorIsBot, pr.Draft, pr.Fork,
-			pr.HeadRef, pr.HeadSHA, pr.BaseRef, pr.URL, pr.Body, nullTime(pr), labels, pr.Merged); err != nil {
-			return fmt.Errorf("ingest: upsert pull request: %w", err)
+		if err := store.UpsertPullRequest(ctx, tx, store.PullRequestRow{
+			AccountID: req.Account.ID(), RepositoryID: rid, Number: pr.Number, Title: pr.Title, Author: pr.Author,
+			AuthorIsBot: pr.AuthorIsBot, Draft: pr.Draft, Fork: pr.Fork, Merged: pr.Merged, HeadRef: pr.HeadRef, HeadSHA: pr.HeadSHA,
+			BaseRef: pr.BaseRef, URL: pr.URL, Body: pr.Body, OpenedAt: pr.CreatedAt, Labels: labels,
+		}); err != nil {
+			return err
 		}
 		switch {
 		case fork:
@@ -175,10 +164,9 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		// news. The queue's unique key alone would not say so once River
 		// has cleaned the earlier job up.
 		if ev.Action == ActionPoll {
-			var reviewed bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
-				WHERE p.repository_id = $1 AND p.number = $2 AND r.head_sha = $3)`, rid, pr.Number, pr.HeadSHA).Scan(&reviewed); err != nil {
-				return fmt.Errorf("ingest: read reviews of the head: %w", err)
+			reviewed, err := store.HeadReviewed(ctx, tx, rid, pr.Number, pr.HeadSHA)
+			if err != nil {
+				return err
 			}
 			if reviewed {
 				out = Outcome{Status: Skipped, Reason: reasonReviewed}
@@ -261,9 +249,9 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 		// A repository without an index waits for the leader's onboarding
 		// feeder, which paces full builds; a push would queue its full build
 		// ahead of every other repository's.
-		var indexed bool
-		if err := tx.QueryRow(ctx, `SELECT active_index_run_id IS NOT NULL FROM repositories WHERE id = $1`, rid).Scan(&indexed); err != nil {
-			return fmt.Errorf("ingest: read index state: %w", err)
+		indexed, err := store.RepositoryIndexed(ctx, tx, rid)
+		if err != nil {
+			return err
 		}
 		if !indexed {
 			out = Outcome{Status: Skipped, Reason: reasonNotIndexed}
@@ -300,11 +288,7 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 		if disable && len(inst.Repositories) == 0 {
 			// The App left this account: its repositories go, not those of
 			// the other accounts the connection serves.
-			if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-				WHERE account_id = $1 AND managed_by = 'forge'`, req.Account.ID()); err != nil {
-				return fmt.Errorf("ingest: disable the account's repositories: %w", err)
-			}
-			return nil
+			return store.DisableForgeRepositories(ctx, tx, req.Account.ID(), "")
 		}
 		for _, name := range inst.Repositories {
 			if enable {
@@ -315,9 +299,8 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 				}
 				continue
 			}
-			if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-				WHERE id = $1 AND managed_by = 'forge'`, repoID(req, name)); err != nil {
-				return fmt.Errorf("ingest: disable repository %s: %w", name, err)
+			if err := store.DisableForgeRepositories(ctx, tx, req.Account.ID(), repoID(req, name)); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -364,11 +347,4 @@ func (s *Service) runs(ctx context.Context, req Request) (bool, error) {
 
 func repoID(req Request, fullName string) string {
 	return configfile.RepositoryID(req.Account.ID(), fullName)
-}
-
-func nullTime(pr *webhook.PullRequest) any {
-	if pr.CreatedAt.IsZero() {
-		return nil
-	}
-	return pr.CreatedAt
 }

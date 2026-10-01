@@ -183,7 +183,7 @@ func (m Merged) Check(vars map[string]any, changed []string) (SkipReason, error)
 	return "", nil
 }
 
-// PullRequest is what a filter sees of a pull request, and what an agentic
+// PullRequest is what a filter sees of a pull request, and what a review
 // run's job document carries of it.
 type PullRequest struct {
 	Number    int       `json:"number"`

@@ -406,7 +406,7 @@ CREATE TABLE poll_state (
     updated_at     timestamptz NOT NULL DEFAULT now()
 );
 
--- An agentic review's tool loop, written by the runner after its context
+-- A review's tool loop, written by the runner after its context
 -- pack: how it stopped ('skipped', with the skip reason as the error, when
 -- the runner did not run it because the worker will skip the review), the
 -- submitted review when it did, the tool histogram, usage and cost, a

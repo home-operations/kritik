@@ -248,7 +248,7 @@ func startWorker(
 	completers := &worker.Completers{Build: worker.BuildStepper}
 	// The gateway: runner pods' one route out, allowed by the hosts the
 	// current configuration names (ADR-0008), and the model and similar-code
-	// endpoints an agentic runner calls with its run token (ADR-0004,
+	// endpoints a review's runner calls with its run token (ADR-0004,
 	// ADR-0026).
 	gatewayLogger := logger.With("listener", "gateway")
 	gateway := &worker.Gateway{

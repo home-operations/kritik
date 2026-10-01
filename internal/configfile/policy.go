@@ -15,37 +15,15 @@ const (
 	ScopeRepository Scope = "repository"
 )
 
-// RepoRule is what a repository's own .kritik.yaml may do with a setting.
-type RepoRule string
-
-// Repository rules. The empty rule is none: the file cannot name the
-// setting at all.
-const (
-	// RepoTurnOff may only turn the setting off.
-	RepoTurnOff RepoRule = "turnOff"
-	// RepoTurnOn may only turn the setting on.
-	RepoTurnOn RepoRule = "turnOn"
-	// RepoAnd is ANDed with the admin's.
-	RepoAnd RepoRule = "and"
-	// RepoUnion is added to the admin's.
-	RepoUnion RepoRule = "union"
-	// RepoAppend follows the admin's.
-	RepoAppend RepoRule = "append"
-	// RepoReplace replaces the admin's.
-	RepoReplace RepoRule = "replace"
-)
-
-// Policy is one row of the table that says where a repository setting is
-// written (ADR-0010 §2.4, §2.7): the scopes an admin writes it at, and what
-// the repository's .kritik.yaml may do with it. Sources reports where each
-// setting it lists comes from, and the keys the repository file takes
-// follow it. Instance-wide settings are not in it.
+// Policy names one repository setting and the scopes an admin writes it
+// at (ADR-0021 §2.1). Sources reports where each setting it lists comes
+// from. What the repository's own .kritik.yaml may do with a setting is
+// repoconfig.Merge's to say. Instance-wide settings are not in it.
 type Policy struct {
 	// Key is the setting as the configuration spells it; a dotted key is
 	// nested.
-	Key        string
-	Scopes     []Scope
-	Repository RepoRule
+	Key    string
+	Scopes []Scope
 }
 
 var (
@@ -70,18 +48,18 @@ const (
 
 // Policies is the table.
 var Policies = []Policy{
-	{Key: "enabled", Scopes: everyScope, Repository: RepoTurnOff},
-	{Key: "models.review", Scopes: everyScope, Repository: RepoReplace},
-	{Key: "models.fallback", Scopes: everyScope, Repository: RepoReplace},
-	{Key: keyFeedback, Scopes: everyScope, Repository: RepoReplace},
-	{Key: "comments", Scopes: everyScope, Repository: RepoReplace},
-	{Key: "requireSuggestedFix", Scopes: everyScope, Repository: RepoTurnOn},
-	{Key: "approve", Scopes: everyScope, Repository: RepoReplace},
-	{Key: "filterExpr", Scopes: everyScope, Repository: RepoAnd},
-	{Key: "ignore", Scopes: everyScope, Repository: RepoUnion},
-	{Key: "rules", Scopes: everyScope, Repository: RepoAppend},
-	{Key: "context", Scopes: everyScope, Repository: RepoAppend},
-	{Key: "agentFiles", Scopes: everyScope, Repository: RepoReplace},
+	{Key: "enabled", Scopes: everyScope},
+	{Key: "models.review", Scopes: everyScope},
+	{Key: "models.fallback", Scopes: everyScope},
+	{Key: keyFeedback, Scopes: everyScope},
+	{Key: "comments", Scopes: everyScope},
+	{Key: "requireSuggestedFix", Scopes: everyScope},
+	{Key: "approve", Scopes: everyScope},
+	{Key: "filterExpr", Scopes: everyScope},
+	{Key: "ignore", Scopes: everyScope},
+	{Key: "rules", Scopes: everyScope},
+	{Key: "context", Scopes: everyScope},
+	{Key: "agentFiles", Scopes: everyScope},
 	{Key: keyForks, Scopes: everyScope},
 	{Key: keyMaxSteps, Scopes: everyScope},
 	{Key: keyMaxToolOutputBytes, Scopes: everyScope},

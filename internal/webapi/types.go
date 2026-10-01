@@ -162,7 +162,7 @@ type Repository struct {
 	LastReview *ReviewRef `json:"lastReview"`
 }
 
-// AgentLimits are an agentic review's resolved limits.
+// AgentLimits are a review's resolved agent limits.
 type AgentLimits struct {
 	MaxSteps              int      `json:"maxSteps"`
 	MaxToolOutputBytes    int      `json:"maxToolOutputBytes"`
@@ -434,7 +434,7 @@ type TimelineStep struct {
 	OutputTokens int64    `json:"outputTokens"`
 }
 
-// AgentRun is an agentic review's tool loop. Result is the submitted
+// AgentRun is a review's tool loop. Result is the submitted
 // review JSON, null unless the agent submitted.
 type AgentRun struct {
 	StopReason string          `json:"stopReason"`

@@ -31,7 +31,7 @@ type Run struct {
 	// IndexGrace is how long the index of a repository that stopped running
 	// is kept, so turning it back on within the window reuses the index.
 	IndexGrace time.Duration `env:"KRITIK_INDEX_GRACE" envDefault:"720h"`
-	// TranscriptRetention is how long an agentic review's transcript is
+	// TranscriptRetention is how long a review's transcript is
 	// kept; at least a day, since members read it after the review.
 	TranscriptRetention time.Duration `env:"KRITIK_TRANSCRIPT_RETENTION" envDefault:"720h"`
 	// DiffRetention is how long a review keeps the diff it was made from,
@@ -108,7 +108,7 @@ func (f *File) OnboardWindow() int { return f.Run.OnboardWindow }
 // running is kept.
 func (f *File) DisabledIndexGrace() time.Duration { return f.Run.IndexGrace }
 
-// TranscriptRetention is how long an agentic review's transcript is kept.
+// TranscriptRetention is how long a review's transcript is kept.
 func (f *File) TranscriptRetention() time.Duration { return f.Run.TranscriptRetention }
 
 // DiffRetention is how long a review's diff, context and repository files

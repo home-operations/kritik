@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritik/internal/executor"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 func TestSmallHelpers(t *testing.T) {
@@ -14,10 +15,10 @@ func TestSmallHelpers(t *testing.T) {
 	if callOutcome(nil) != "ok" || callOutcome(errors.New("x")) != "error" {
 		t.Fatal("callOutcome")
 	}
-	if embedText(stagedChunk{path: "a/b.go", symbol: "Build", kind: "function", text: "func Build() {}"}) != "a/b.go function Build\nfunc Build() {}" {
+	if embedText(store.StagedChunk{Path: "a/b.go", Symbol: "Build", Kind: "function", Text: "func Build() {}"}) != "a/b.go function Build\nfunc Build() {}" {
 		t.Fatal("embedText with a symbol")
 	}
-	if embedText(stagedChunk{path: "values.yaml", text: "a: 1"}) != "values.yaml\na: 1" {
+	if embedText(store.StagedChunk{Path: "values.yaml", Text: "a: 1"}) != "values.yaml\na: 1" {
 		t.Fatal("embedText without a symbol")
 	}
 }

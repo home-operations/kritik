@@ -194,7 +194,7 @@ switch (ADR-0026).
 
 ### Runner tools
 
-An agentic repository's `agent.commands` lets the model run allowlisted
+A repository's `agent.commands` lets the model run allowlisted
 binaries over a checkout of the head commit: to read a dependency bump's
 release notes and compare view with `gh`, fetch anything else with
 `curl`, or search with `rg` and `fd`. The chart's image has none of them,
@@ -299,7 +299,7 @@ Kubernetes: `>=1.25.0-0`
 | config.pollInterval | string | `""` | How often the leader lists each app's open pull requests, its backstop for missed webhooks (KRITIK_POLL_INTERVAL, Go duration); `0s` turns polling off. Empty is kritik's default, 10m. |
 | config.pollLookback | string | `""` | How far back a first or long-idle poll looks (KRITIK_POLL_LOOKBACK, Go duration). Empty is kritik's default, 24h. |
 | config.reviewWorkers | int | `2` | Review jobs one replica runs at once (KRITIK_REVIEW_WORKERS); follow-ups share the count. A review or index job holds at most one runner pod, so runner pods never exceed `replicas` × (reviewWorkers + indexWorkers). |
-| config.transcriptRetention | string | `""` | How long an agentic review's transcript is kept, at least 24h (KRITIK_TRANSCRIPT_RETENTION, Go duration). Empty is kritik's default, 720h. |
+| config.transcriptRetention | string | `""` | How long a review's transcript is kept, at least 24h (KRITIK_TRANSCRIPT_RETENTION, Go duration). Empty is kritik's default, 720h. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritik_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |

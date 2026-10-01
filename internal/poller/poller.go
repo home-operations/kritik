@@ -139,47 +139,29 @@ func (p *Poller) PollAll(ctx context.Context) {
 	}
 }
 
-// pollRepo is one enabled repository as a poll sees it. indexed is the
-// commit its active index generation covers, "" when it has none.
-type pollRepo struct {
-	name, defaultBranch, indexed string
-	configfile.RepoTraits
-}
-
 // Poll lists one account's repositories through the connection serving it
 // and returns how many pull requests were handed to the dispatcher. For a
 // connection no webhook has reached lately, it also checks each indexed
 // repository's default branch, since no push webhook will say it moved.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) (int, error) {
-	var repos []pollRepo
-	var known time.Time
-	var polled, delivered *time.Time
+	var repos []store.PollRepo
+	var state store.PollState
 	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, ''), r.archived, r.fork, r.turned_on
-			FROM repositories r LEFT JOIN index_runs g ON g.id = r.active_index_run_id
-			WHERE r.enabled ORDER BY r.name`)
-		if err != nil {
+		var err error
+		if repos, err = store.PollRepositories(ctx, tx); err != nil {
 			return err
 		}
-		if repos, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (pollRepo, error) {
-			var r pollRepo
-			err := row.Scan(&r.name, &r.defaultBranch, &r.indexed, &r.Archived, &r.Fork, &r.TurnedOn)
-			return r, err
-		}); err != nil {
-			return err
-		}
-		return tx.QueryRow(ctx, `SELECT a.created_at, s.last_polled_at, c.last_webhook_at FROM accounts a
-			CROSS JOIN connections c LEFT JOIN poll_state s ON s.account_id = a.id
-			WHERE a.id = $1 AND c.id = $2`, account.ID(), in.ID()).Scan(&known, &polled, &delivered)
+		state, err = store.ReadPollState(ctx, tx, account.ID(), in.ID())
+		return err
 	})
 	if err != nil {
-		return 0, fmt.Errorf("poller: read state: %w", err)
+		return 0, err
 	}
 	since := time.Now().Add(-file.PollLookback())
-	if polled != nil && polled.After(since) {
-		since = *polled
+	if state.Polled != nil && state.Polled.After(since) {
+		since = *state.Polled
 	}
-	checkTips := delivered == nil || delivered.Before(time.Now().Add(-file.PollLookback()))
+	checkTips := state.Delivered == nil || state.Delivered.Before(time.Now().Add(-file.PollLookback()))
 	started := time.Now()
 	handled := 0
 	runs := map[string]bool{}
@@ -187,10 +169,10 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		if ctx.Err() != nil {
 			return handled, ctx.Err()
 		}
-		repo := r.name
+		repo := r.Name
 		// The App can reach it, but it is archived, a fork not turned on,
 		// or off in the settings.
-		if !file.Runs(account, repo, r.RepoTraits) {
+		if !file.Runs(account, repo, r.Traits) {
 			continue
 		}
 		runs[repo] = true
@@ -199,7 +181,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 			return handled, err
 		}
 		owner, name, _ := strings.Cut(repo, "/")
-		if checkTips && r.indexed != "" {
+		if checkTips && r.IndexedCommit != "" {
 			if err := p.pollTip(ctx, file, account, in, client, r, started); err != nil {
 				return handled, err
 			}
@@ -210,12 +192,12 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		}
 		for _, pr := range prs {
 			action := ingest.ActionPoll
-			if polled == nil && !pr.UpdatedAt.After(known) {
+			if state.Polled == nil && !pr.UpdatedAt.After(state.Known) {
 				action = ingest.ActionBaseline
 			}
 			ev := webhook.Event{
 				Kind: webhook.KindPullRequest, Action: action, Delivery: fmt.Sprintf("poll-%s-%d", started.UTC().Format("20060102T150405"), pr.Number),
-				Repository: &webhook.Repository{FullName: repo, DefaultBranch: pr.DefaultBranch, RepoTraits: r.RepoTraits},
+				Repository: &webhook.Repository{FullName: repo, DefaultBranch: pr.DefaultBranch, RepoTraits: r.Traits},
 				Account:    owner, PullRequest: &pr.PullRequest,
 			}
 			out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Account: account, Event: ev})
@@ -230,14 +212,9 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		p.Logger.Warn("reactions not read", "connection", in.Name, "account", account.Key(), "error", err)
 	}
 	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO poll_state (account_id, last_polled_at) VALUES ($1, $2)
-			ON CONFLICT (account_id) DO UPDATE SET last_polled_at = excluded.last_polled_at, updated_at = now()`, account.ID(), started)
-		return err
+		return store.RecordPoll(ctx, tx, account.ID(), started)
 	})
-	if err != nil {
-		return handled, fmt.Errorf("poller: write state: %w", err)
-	}
-	return handled, nil
+	return handled, err
 }
 
 // reactionWindow is how long after its latest review a pull request's
@@ -254,58 +231,37 @@ const reactionPulls = 30
 // on the account's recently reviewed pull requests, in the repositories
 // that run, into their findings. GitHub sends no webhook for a reaction.
 func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account, in *configfile.Connection, runs map[string]bool) error {
-	type pull struct {
-		id, repo string
-		number   int
-	}
-	var pulls []pull
+	var pulls []store.ReviewedPull
 	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT p.id, r.name, p.number FROM findings f
-			JOIN reviews v ON v.id = f.review_id JOIN pull_requests p ON p.id = v.pull_request_id
-			JOIN repositories r ON r.id = p.repository_id
-			WHERE f.forge_comment_id IS NOT NULL AND v.created_at > $1
-			GROUP BY p.id, r.name, p.number ORDER BY max(v.created_at) DESC LIMIT $2`, time.Now().Add(-reactionWindow), reactionPulls)
-		if err != nil {
-			return err
-		}
-		pulls, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (pull, error) {
-			var x pull
-			err := row.Scan(&x.id, &x.repo, &x.number)
-			return x, err
-		})
+		var err error
+		pulls, err = store.RecentlyReviewedPulls(ctx, tx, time.Now().Add(-reactionWindow), reactionPulls)
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("poller: read reviewed pull requests: %w", err)
+		return err
 	}
 	for _, pr := range pulls {
-		if !runs[pr.repo] || ctx.Err() != nil {
+		if !runs[pr.Repository] || ctx.Err() != nil {
 			continue
 		}
-		client, err := p.Forges.For(ctx, in, pr.repo)
+		client, err := p.Forges.For(ctx, in, pr.Repository)
 		if err != nil {
 			return err
 		}
-		owner, name, _ := strings.Cut(pr.repo, "/")
-		comments, err := client.ListInline(ctx, owner, name, pr.number)
+		owner, name, _ := strings.Cut(pr.Repository, "/")
+		comments, err := client.ListInline(ctx, owner, name, pr.Number)
 		if err != nil {
 			return err
 		}
-		ids := make([]int64, len(comments))
-		up := make([]int, len(comments))
-		down := make([]int, len(comments))
+		reactions := make([]store.Reaction, len(comments))
 		for i, c := range comments {
-			ids[i], up[i], down[i] = c.ID, c.ReactionsUp, c.ReactionsDown
+			reactions[i] = store.Reaction{CommentID: c.ID, Up: c.ReactionsUp, Down: c.ReactionsDown}
 		}
 		err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `UPDATE findings f SET reactions_up = x.up, reactions_down = x.down
-				FROM reviews v, unnest($2::bigint[], $3::int[], $4::int[]) AS x(id, up, down)
-				WHERE v.id = f.review_id AND v.pull_request_id = $1 AND f.forge_comment_id = x.id
-					AND (f.reactions_up, f.reactions_down) IS DISTINCT FROM (x.up, x.down)`, pr.id, ids, up, down)
-			return err
+			return store.RecordReactions(ctx, tx, pr.ID, reactions)
 		})
 		if err != nil {
-			return fmt.Errorf("poller: write reactions of %s#%d: %w", pr.repo, pr.number, err)
+			return fmt.Errorf("poller: write reactions of %s#%d: %w", pr.Repository, pr.Number, err)
 		}
 	}
 	return nil
@@ -315,26 +271,26 @@ func (p *Poller) pollReactions(ctx context.Context, account *configfile.Account,
 // not the commit r's index covers, so the index follows the branch as a
 // push webhook would have made it.
 func (p *Poller) pollTip(
-	ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection, client forge.Client, r pollRepo,
+	ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection, client forge.Client, r store.PollRepo,
 	started time.Time,
 ) error {
-	owner, name, _ := strings.Cut(r.name, "/")
-	tip, branch, err := client.BranchTip(ctx, owner, name, r.defaultBranch)
+	owner, name, _ := strings.Cut(r.Name, "/")
+	tip, branch, err := client.BranchTip(ctx, owner, name, r.DefaultBranch)
 	if err != nil {
 		return err
 	}
-	if tip == r.indexed {
+	if tip == r.IndexedCommit {
 		return nil
 	}
 	ev := webhook.Event{
 		Kind: webhook.KindPush, Delivery: fmt.Sprintf("poll-%s-push", started.UTC().Format("20060102T150405")),
-		Repository: &webhook.Repository{FullName: r.name, DefaultBranch: branch, RepoTraits: r.RepoTraits}, Account: owner,
+		Repository: &webhook.Repository{FullName: r.Name, DefaultBranch: branch, RepoTraits: r.Traits}, Account: owner,
 		Push: &webhook.Push{Ref: "refs/heads/" + branch, After: tip},
 	}
 	out, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Account: account, Event: ev})
 	if err != nil {
 		return err
 	}
-	p.Logger.Info("polled default branch "+out.Status, "connection", in.Name, "repository", r.name, "tip", tip, "reason", out.Reason)
+	p.Logger.Info("polled default branch "+out.Status, "connection", in.Name, "repository", r.Name, "tip", tip, "reason", out.Reason)
 	return nil
 }
