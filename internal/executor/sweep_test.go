@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -130,5 +131,48 @@ func TestSweepRunSecretsMarksOnlyDeleted(t *testing.T) {
 	}
 	if got := st.marked["alpha"]; !slices.Equal(got, []string{runA}) {
 		t.Fatalf("marked = %v, want only the deleted run", got)
+	}
+}
+
+func TestDeleteRun(t *testing.T) {
+	runJob := func(runID string) *batchv1.Job {
+		return &batchv1.Job{Name: jobName(runID), Namespace: "kritik"}
+	}
+	tests := []struct {
+		name    string
+		objects []runtime.Object
+		failure error
+		wantErr bool
+	}{
+		{name: "present", objects: []runtime.Object{runJob(runA), runJob(runB)}},
+		{name: "already gone", objects: []runtime.Object{runJob(runB)}},
+		{name: "api failure", objects: []runtime.Object{runJob(runA)}, failure: apierrors.NewForbidden(batchv1.Resource("jobs"), "x", errors.New("no")), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewClientset(tt.objects...)
+			if tt.failure != nil {
+				client.PrependReactor("delete", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, tt.failure
+				})
+			}
+			k := &Kube{Client: client, Namespace: "kritik"}
+			err := k.DeleteRun(t.Context(), runA)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("DeleteRun() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			list, err := client.BatchV1().Jobs("kritik").List(t.Context(), metav1.ListOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, j := range list.Items {
+				if j.Name == jobName(runA) && !tt.wantErr {
+					t.Fatalf("job %s still present", j.Name)
+				}
+			}
+			if len(tt.objects) > 1 && len(list.Items) == 0 {
+				t.Fatal("the other run's Job was deleted too")
+			}
+		})
 	}
 }

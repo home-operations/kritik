@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritik/internal/adapter"
 	"github.com/home-operations/kritik/internal/auth"
@@ -286,6 +287,10 @@ func startWorker(
 		// ctx ending starts a soft stop: running jobs get this long
 		// before their contexts end (ADR-0024 §2.3).
 		SoftStopTimeout: queueDrain,
+		// Every job this replica works carries its heartbeat, so the
+		// leader can hand back the jobs of a replica that dies without
+		// a soft stop long before River's rescuer may.
+		Middleware: []rivertype.Middleware{&worker.JobHeartbeat{Store: st, Logger: logger}},
 		Queues: map[string]river.QueueConfig{
 			jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
 			jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
@@ -485,6 +490,13 @@ func lead(
 	// So is feeding the index queue its onboarding jobs, a few at a time.
 	onboarder := &worker.Onboarder{Store: st, Queue: queue, Current: current, Logger: logger}
 	duties.Go(func() { onboarder.Run(pollCtx) })
+	// And so is rescuing the jobs of a replica that died, and reaping the
+	// runner Jobs they left, which only a Kubernetes executor has.
+	rescuer := &worker.Rescuer{Store: st, Logger: logger, Metrics: m}
+	if sweeper != nil {
+		rescuer.Runs = sweeper
+	}
+	duties.Go(func() { rescuer.Run(pollCtx) })
 	// And so is retention: model-call transcripts past their configured
 	// window and the indexes of repositories disabled past their grace
 	// (owner pool, bypassing row-level security), and expired dashboard

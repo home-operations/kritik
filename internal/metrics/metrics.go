@@ -27,6 +27,7 @@ type Metrics struct {
 	runnerDuration *prometheus.HistogramVec
 	leaseWait      *prometheus.HistogramVec
 	reviewSnoozes  *prometheus.CounterVec
+	jobsRescued    *prometheus.CounterVec
 	modelCalls     *prometheus.CounterVec
 	modelTokens    *prometheus.CounterVec
 	modelCost      *prometheus.CounterVec
@@ -105,6 +106,9 @@ func New(reg prometheus.Registerer) *Metrics {
 		reviewSnoozes: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_review_snoozes_total", Help: "Reviews put back on the queue because every model slot was held.",
 		}, []string{lblAccount, lblModel}),
+		jobsRescued: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritik_jobs_rescued_total", Help: "Jobs of a dead replica handed back to the queue by the leader, by kind and state.",
+		}, []string{lblKind, "state"}),
 		modelCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_model_calls_total", Help: "Model calls, by the model that answered, role and outcome.",
 		}, []string{lblAccount, lblModel, lblRole, lblOutcome}),
@@ -119,7 +123,8 @@ func New(reg prometheus.Registerer) *Metrics {
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,
 		m.indexRuns, m.indexChunks, m.contextChunks,
-		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.modelCalls, m.modelTokens, m.modelCost, m.egress, m.transcripts,
+		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.jobsRescued, m.modelCalls, m.modelTokens, m.modelCost, m.egress,
+		m.transcripts,
 		m.leader)
 	return m
 }
@@ -202,6 +207,14 @@ func (m *Metrics) LeaseWait(account, model string, took time.Duration) {
 func (m *Metrics) ReviewSnoozed(account, model string) {
 	if m != nil {
 		m.reviewSnoozes.WithLabelValues(account, model).Inc()
+	}
+}
+
+// JobRescued counts a job of a dead replica handed back to the queue by
+// the leader, by job kind and the state it was handed back in.
+func (m *Metrics) JobRescued(kind, state string) {
+	if m != nil {
+		m.jobsRescued.WithLabelValues(kind, state).Inc()
 	}
 }
 

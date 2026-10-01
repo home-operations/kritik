@@ -82,6 +82,8 @@ func FindGeneration(ctx context.Context, tx pgx.Tx, runID string) (Generation, e
 type NewIndexRun struct {
 	AccountID, RepositoryID, Commit, Base, Mode, Trigger string
 	Embedding                                            configfile.Embedding
+	// JobID is the River job working the run.
+	JobID int64
 	// StrayAfter is how old a run other than the active generation must be
 	// before its chunks are dropped as left behind by a job that could not
 	// clear them.
@@ -106,7 +108,7 @@ func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runner
 		r.AccountID, r.RepositoryID, r.Commit, r.Base, r.Embedding.Model, r.Embedding.Dims, r.Mode, r.Trigger).Scan(&runID); err != nil {
 		return "", "", fmt.Errorf("store: insert index run: %w", err)
 	}
-	runnerRunID, err = InsertRunnerRun(ctx, tx, r.AccountID, RunnerKindIndex, runID)
+	runnerRunID, err = InsertRunnerRun(ctx, tx, r.AccountID, RunnerKindIndex, runID, r.JobID)
 	return runID, runnerRunID, err
 }
 
