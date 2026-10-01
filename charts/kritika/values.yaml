@@ -317,7 +317,9 @@ httpRoute:
 # webhook and metrics ports; egress to DNS, the forges and models over the
 # egress ports, and Postgres) and one for runner pods (egress only: DNS, the
 # git remote over the egress ports, and Postgres). The Postgres port is
-# allowed to any peer because the database may live in another namespace.
+# `database.port`, allowed to any peer because the database may live in
+# another namespace; a role connecting by a URI on another port needs
+# `database.port` set to match.
 networkPolicy:
   # -- Create the NetworkPolicies.
   enabled: false
@@ -328,8 +330,6 @@ networkPolicy:
   # -- TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone.
   egressPorts:
     - 443
-  # -- Postgres port allowed for egress.
-  postgresPort: 5432
 
 # -- Resource requests and limits of the kritika serve pods.
 resources:
