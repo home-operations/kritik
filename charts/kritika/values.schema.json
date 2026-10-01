@@ -633,7 +633,7 @@
       "type": "string"
     },
     "networkPolicy": {
-      "description": "NetworkPolicies (off by default): one for the service pods (ingress to the\nwebhook and metrics ports; egress to DNS, the forges and models over the\negress ports, and Postgres) and one for runner pods (egress only: DNS, the\ngit remote over the egress ports, and Postgres). The Postgres port is\nallowed to any peer because the database may live in another namespace.",
+      "description": "NetworkPolicies (off by default): one for the service pods (ingress to the\nwebhook and metrics ports; egress to DNS, the forges and models over the\negress ports, and Postgres) and one for runner pods (egress only: DNS, the\ngit remote over the egress ports, and Postgres). The Postgres port is\n`database.port`, allowed to any peer because the database may live in\nanother namespace; a role connecting by a URI on another port needs\n`database.port` set to match.",
       "properties": {
         "allowDNS": {
           "default": true,
@@ -659,12 +659,6 @@
           "description": "Create the NetworkPolicies.",
           "title": "enabled",
           "type": "boolean"
-        },
-        "postgresPort": {
-          "default": 5432,
-          "description": "Postgres port allowed for egress.",
-          "title": "postgresPort",
-          "type": "integer"
         },
         "type": {
           "default": "default",

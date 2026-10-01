@@ -297,7 +297,6 @@ Kubernetes: `>=1.25.0-0`
 | networkPolicy.allowDNS | bool | `true` | Allow DNS egress (UDP/TCP 53); the Cilium flavor allows it to kube-dns alone. |
 | networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone. |
 | networkPolicy.enabled | bool | `false` | Create the NetworkPolicies. |
-| networkPolicy.postgresPort | int | `5432` | Postgres port allowed for egress. |
 | networkPolicy.type | string | `"default"` | Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy) or "calico" (projectcalico.org/v3 NetworkPolicy). |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | podAnnotations | object | `{}` | Annotations added to the pods. |
