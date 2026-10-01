@@ -39,22 +39,24 @@ func TestAnchors(t *testing.T) {
 		path string
 		line int
 		want bool
+		text string
 	}{
-		{"main.go", 10, true},  // context " x := 1"
-		{"main.go", 11, true},  // "+ y := 3"
-		{"main.go", 12, true},  // "+ z := 4"
-		{"main.go", 13, true},  // context return
-		{"main.go", 14, true},  // "+}"
-		{"main.go", 15, false}, // past the hunk
-		{"main.go", 9, false},  // before the hunk
-		{"README.md", 2, true}, // "+new line"
-		{"README.md", 3, true}, // context tail
-		{"README.md", 4, false},
-		{"other.go", 1, false},
+		{"main.go", 10, true, "\tx := 1"},       // context
+		{"main.go", 11, true, "\ty := 3"},       // added
+		{"main.go", 12, true, "\tz := 4"},       // added
+		{"main.go", 13, true, "\treturn x + y"}, // context
+		{"main.go", 14, true, "}"},              // added
+		{"main.go", 15, false, ""},              // past the hunk
+		{"main.go", 9, false, ""},               // before the hunk
+		{"README.md", 2, true, "new line"},      // added
+		{"README.md", 3, true, "tail"},          // context
+		{"README.md", 4, false, ""},
+		{"other.go", 1, false, ""},
 	}
 	for _, tt := range tests {
-		if got := a[tt.path][tt.line]; got != tt.want {
-			t.Errorf("%s:%d anchored = %v, want %v", tt.path, tt.line, got, tt.want)
+		text, got := a[tt.path][tt.line]
+		if got != tt.want || text != tt.text {
+			t.Errorf("%s:%d anchored = %v %q, want %v %q", tt.path, tt.line, got, text, tt.want, tt.text)
 		}
 	}
 }
@@ -180,6 +182,23 @@ func TestParse(t *testing.T) {
 			take: "t", kept: []string{"main.go:11:ranged", "main.go:11:off range", "main.go:12:same line"},
 		},
 		{
+			name: "an insertion becomes a replacement of its line by that line and the added ones",
+			raw: `{"summary": {"take": "t"}, "findings": [
+			  {"path": "main.go", "line": 11, "severity": "nit", "category": "correctness", "title": "inserted", "explanation": "e", "insert_after": "` + "```go\\n\\tw := 5\\n```" + `"},
+			  {"path": "main.go", "line": 11, "end_line": 12, "severity": "nit", "category": "correctness", "title": "both", "explanation": "e", "replacement": "a\nb", "insert_after": "c"},
+			  {"path": "main.go", "line": 99, "severity": "nit", "category": "correctness", "title": "inserted off", "explanation": "e", "insert_after": "c"}
+			]}`,
+			take: "t", kept: []string{"main.go:11:inserted", "main.go:11:both"}, dropped: map[string]DropReason{"inserted off": DropUnanchored},
+		},
+		{
+			name: "RequireSuggestedFix accepts an insertion as the fix",
+			raw: `{"summary": {"take": "t"}, "findings": [
+			  {"path": "README.md", "line": 3, "severity": "important", "category": "correctness", "title": "appended", "explanation": "e", "insert_after": "more"}
+			]}`,
+			opts: ParseOptions{RequireSuggestedFix: true},
+			take: "t", kept: []string{"README.md:3:appended"},
+		},
+		{
 			name: "RequireSuggestedFix accepts a replacement as the fix",
 			raw: `{"summary": {"take": "t"}, "findings": [
 			  {"path": "main.go", "line": 11, "severity": "important", "category": "correctness", "title": "replaced", "explanation": "e", "replacement": "x"}
@@ -224,28 +243,27 @@ func TestParse(t *testing.T) {
 			if !slices.Equal(kept, tt.kept) {
 				t.Errorf("kept = %q, want %q", kept, tt.kept)
 			}
+			// The fix fields a kept finding ends up with, by title; a title
+			// not listed is not checked.
+			fixes := map[string]Finding{
+				"ranged":     {EndLine: 12, Replacement: "a\nb"},
+				"off range":  {},
+				"same line":  {Replacement: "a", AgentPrompt: "p"},
+				"inserted":   {Replacement: "\ty := 3\n\tw := 5"},
+				"both":       {EndLine: 12, Replacement: "a\nb"},
+				"appended":   {Replacement: "tail\nmore"},
+				"cites":      {Rules: []string{"wrap-errors", "no-tokens"}},
+				"cites none": {},
+			}
 			for _, f := range res.Findings {
-				switch f.Title {
-				case "ranged":
-					if f.EndLine != 12 || f.Replacement != "a\nb" {
-						t.Errorf("ranged = %+v", f)
-					}
-				case "off range":
-					if f.EndLine != 0 || f.Replacement != "" {
-						t.Errorf("off range = %+v", f)
-					}
-				case "same line":
-					if f.EndLine != 0 || f.Replacement != "a" || f.AgentPrompt != "p" {
-						t.Errorf("same line = %+v", f)
-					}
-				case "cites":
-					if !slices.Equal(f.Rules, []string{"wrap-errors", "no-tokens"}) {
-						t.Errorf("cites rules = %q", f.Rules)
-					}
-				case "cites none":
-					if f.Rules != nil {
-						t.Errorf("cites none rules = %q", f.Rules)
-					}
+				want, ok := fixes[f.Title]
+				if !ok {
+					continue
+				}
+				got := Finding{EndLine: f.EndLine, Replacement: f.Replacement, InsertAfter: f.InsertAfter, AgentPrompt: f.AgentPrompt, Rules: f.Rules}
+				if got.EndLine != want.EndLine || got.Replacement != want.Replacement || got.InsertAfter != want.InsertAfter ||
+					got.AgentPrompt != want.AgentPrompt || !slices.Equal(got.Rules, want.Rules) {
+					t.Errorf("%s fix fields = %+v, want %+v", f.Title, got, want)
 				}
 			}
 			if len(dropped) != len(tt.dropped) {
@@ -506,7 +524,7 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 	raw, err := json.Marshal(Result{
 		Summary: Summary{Take: "t", Praise: []string{"p"}},
 		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityNit, Title: "t", Explanation: "e", SuggestedFix: "f",
-			EndLine: 2, Replacement: "r", AgentPrompt: "p", Rules: []string{"r"}, URL: "ignored"}},
+			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, URL: "ignored"}},
 	})
 	if err != nil {
 		t.Fatal(err)

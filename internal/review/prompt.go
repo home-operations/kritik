@@ -129,6 +129,8 @@ schema defines them; pick the one the fix is really about, and never call a styl
 title and an explanation of why it matters. When the fix is a change to the lines the finding points at, give
 replacement: those lines exactly as they should be committed, raw code without fences, with end_line when more than
 one line is replaced; the forge offers it as a one-click suggestion, so it must be complete and correct as written.
+When the fix adds lines right after that line and changes none, give insert_after instead: the added lines, raw code
+without fences, indented as the file is; kritika offers them as a one-click suggestion that keeps the line itself.
 When the fix is elsewhere or not a code change, describe it in suggested_fix instead. Give every finding with a fix
 an agent_prompt: one plain-text paragraph telling a coding agent what to change, naming the file, lines and symbols.
 If nothing is worth flagging, return an empty findings list; the take still describes the change.`

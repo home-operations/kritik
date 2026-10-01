@@ -8,11 +8,11 @@ import (
 )
 
 // diffLines is what a unified diff says per path: the head-side lines it
-// added, the head-side lines it shows at all (added plus context), and the
-// base-side lines it removed.
+// added, the head-side lines it shows at all (added plus context) with
+// their text, and the base-side lines it removed.
 type diffLines struct {
 	added   map[string][]int
-	shown   map[string]map[int]bool
+	shown   map[string]map[int]string
 	removed map[string][]int
 }
 
@@ -87,16 +87,16 @@ func walkDiff(diff string, fn func(diffLine)) {
 // shown, base-side for removed; a rename therefore keys the two sides
 // differently, which is what the two trees need.
 func parseDiff(diff string) diffLines {
-	d := diffLines{added: map[string][]int{}, shown: map[string]map[int]bool{}, removed: map[string][]int{}}
+	d := diffLines{added: map[string][]int{}, shown: map[string]map[int]string{}, removed: map[string][]int{}}
 	walkDiff(diff, func(l diffLine) {
 		switch {
 		case l.kind == '-' && l.oldPath != "":
 			d.removed[l.oldPath] = append(d.removed[l.oldPath], l.oldLine)
 		case l.kind == '+' && l.newPath != "":
 			d.added[l.newPath] = append(d.added[l.newPath], l.newLine)
-			d.show(l.newPath, l.newLine)
+			d.show(l.newPath, l.newLine, l.text)
 		case l.kind == ' ' && l.newPath != "":
-			d.show(l.newPath, l.newLine)
+			d.show(l.newPath, l.newLine, l.text)
 		}
 	})
 	return d
@@ -123,16 +123,16 @@ func ChangedLines(diff string, ignore []string) int {
 }
 
 // ShownLines returns, per head-side path, the head-side lines a unified
-// diff shows: its added and context lines.
-func ShownLines(diff string) map[string]map[int]bool {
+// diff shows, its added and context lines, each with its text.
+func ShownLines(diff string) map[string]map[int]string {
 	return parseDiff(diff).shown
 }
 
-func (d *diffLines) show(path string, line int) {
+func (d *diffLines) show(path string, line int, text string) {
 	if d.shown[path] == nil {
-		d.shown[path] = map[int]bool{}
+		d.shown[path] = map[int]string{}
 	}
-	d.shown[path][line] = true
+	d.shown[path][line] = text
 }
 
 func stripPrefix(p, prefix string) string {

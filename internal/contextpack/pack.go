@@ -249,9 +249,9 @@ func (b *builder) overlay(ctx context.Context) error {
 	return nil
 }
 
-func subset(start, end int, shown map[int]bool) bool {
+func subset(start, end int, shown map[int]string) bool {
 	for l := start; l <= end; l++ {
-		if !shown[l] {
+		if _, ok := shown[l]; !ok {
 			return false
 		}
 	}
