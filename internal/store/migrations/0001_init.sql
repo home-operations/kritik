@@ -120,6 +120,11 @@ CREATE TABLE pull_requests (
     -- closed_at is when the pull request was closed or merged; NULL while
     -- it is open.
     closed_at     timestamptz,
+    -- forge_updated_at is when the forge last changed the pull request, as
+    -- the event or the poll that recorded the row said; NULL until one
+    -- says. An event older than it is stale and does not touch the row, so
+    -- a delivery that arrives late or again cannot rewind the head.
+    forge_updated_at timestamptz,
     UNIQUE (repository_id, number)
 );
 CREATE INDEX pull_requests_account_updated_idx ON pull_requests (account_id, updated_at DESC, id DESC);
@@ -203,12 +208,30 @@ CREATE TABLE runner_runs (
     log_tail           text        NOT NULL DEFAULT '',
     error              text        NOT NULL DEFAULT '',
     heartbeat_at       timestamptz,
-    secret_swept_at    timestamptz
+    secret_swept_at    timestamptz,
+    -- river_job_id is the River job that started the run, so a run whose
+    -- job is no longer running, left by a replica that died, can be found
+    -- and its Kubernetes Job deleted rather than left to run beside the
+    -- retry.
+    river_job_id       bigint
 );
 CREATE INDEX runner_runs_account_id_idx ON runner_runs (account_id);
 CREATE INDEX runner_runs_secret_pending_idx ON runner_runs (account_id, created_at) WHERE secret_swept_at IS NULL;
 -- A review's newest runner run.
 CREATE INDEX runner_runs_review_created_idx ON runner_runs (review_id, created_at DESC) WHERE review_id IS NOT NULL;
+CREATE INDEX runner_runs_unfinished_job_idx ON runner_runs (river_job_id) WHERE finished_at IS NULL;
+
+-- job_heartbeats is a replica's own sign of life on a River job it is
+-- working: stamped as the job starts and every so often until Work
+-- returns. River itself treats a running job as stuck only after the
+-- longest job timeout has passed, so a job whose replica died outright
+-- would otherwise hold its pull request, and its unique key, for hours;
+-- the leader rescues one whose heartbeat has gone stale instead. Not
+-- account-scoped, as River's own rows are not.
+CREATE TABLE job_heartbeats (
+    job_id       bigint      PRIMARY KEY,
+    heartbeat_at timestamptz NOT NULL DEFAULT now()
+);
 
 -- context_packs is the record of what a review's Job gave its agent and
 -- decided: the diff, the changed paths, the context stages (similar code
