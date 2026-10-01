@@ -7,10 +7,11 @@ import (
 	"time"
 )
 
-// Structured implements Completer on a Stepper by forcing a call to one tool
-// named SchemaName whose input schema is the answer's; the call's input is
-// the answer. Every provider supports forced tool calls, unlike response
-// formats.
+// Structured implements Completer on a Stepper by offering one tool named
+// SchemaName whose input schema is the answer's and telling the model to
+// answer by calling it; the call's input is the answer. The call is asked
+// for in the prompt rather than forced through tool_choice, which the
+// newest models reject.
 type Structured struct {
 	Stepper Stepper
 	// OnStep, when set, is called after every Step Complete makes, with the
@@ -19,14 +20,18 @@ type Structured struct {
 	OnStep func(req StepRequest, resp StepResponse, err error, d time.Duration)
 }
 
+// answerWith ends the user message with the call the answer is.
+func answerWith(name string) string {
+	return fmt.Sprintf("Answer by calling the %s tool, and call nothing else; its input is your answer.", name)
+}
+
 // Complete implements Completer.
 func (s Structured) Complete(ctx context.Context, req CompletionRequest) (CompletionResponse, error) {
 	step := StepRequest{
 		Model: req.Model, Fallbacks: req.Fallbacks, System: req.System,
-		Messages:   []Message{{Role: RoleUser, Text: req.User}},
-		Tools:      []ToolDef{{Name: req.SchemaName, InputSchema: req.Schema}},
-		ToolChoice: ToolChoice{Mode: ToolChoiceTool, Name: req.SchemaName},
-		MaxTokens:  req.MaxTokens,
+		Messages:  []Message{{Role: RoleUser, Text: req.User + "\n\n" + answerWith(req.SchemaName)}},
+		Tools:     []ToolDef{{Name: req.SchemaName, InputSchema: req.Schema}},
+		MaxTokens: req.MaxTokens,
 	}
 	start := time.Now()
 	resp, err := s.Stepper.Step(ctx, step)

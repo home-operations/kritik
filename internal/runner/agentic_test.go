@@ -282,7 +282,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 	if submit.Name != "submit_review" || string(submit.InputSchema) != string(review.SchemaStrict()) {
 		t.Fatalf("submit tool = %+v", submit)
 	}
-	if st.reqs[0].Model != "review" || st.reqs[0].System != "system" || st.reqs[0].MaxTokens != 8192 {
+	if st.reqs[0].Model != "review" || st.reqs[0].System != "system" || st.reqs[0].MaxTokens != agent.DefaultLimits.MaxOutputTokensPerStep {
 		t.Fatalf("request = %+v", st.reqs[0])
 	}
 }

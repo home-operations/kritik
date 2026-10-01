@@ -251,7 +251,7 @@ func setupNudgeOncePerRunNotResetByToolTurn(t *testing.T) (model.Stepper, contex
 	return st, nil, st
 }
 
-func setupBudgetForcesToolChoice(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+func setupBudgetTellsToSubmit(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
 	st := &scriptedStepper{steps: []model.StepResponse{
 		{ToolCalls: []model.ToolCall{toolCall("1", "noop", `{}`)}, Usage: model.Usage{Input: 80, Output: 10}},
 		{ToolCalls: []model.ToolCall{toolCall("2", "submit_review", validSubmitInput)}},
@@ -259,18 +259,43 @@ func setupBudgetForcesToolChoice(t *testing.T) (model.Stepper, context.Context, 
 	return st, nil, st
 }
 
-func checkBudgetForcesToolChoice(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
+func checkBudgetTellsToSubmit(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
 	if len(scripted.calls) != 2 {
 		t.Fatalf("expected 2 calls, got %d", len(scripted.calls))
 	}
-	forcedReq := scripted.calls[1]
-	if forcedReq.ToolChoice.Mode != model.ToolChoiceTool || forcedReq.ToolChoice.Name != "submit_review" {
-		t.Fatalf("ToolChoice = %+v, want a forced submit_review", forcedReq.ToolChoice)
+	// The step is told to submit in its last user message, with the tool
+	// choice left to the model, never forced.
+	if !toldToSubmit(scripted.calls[1]) || scripted.calls[1].ToolChoice != (model.ToolChoice{}) {
+		t.Fatalf("second request = %+v, want the submit instruction in its last user message and no tool choice", scripted.calls[1])
 	}
-	// The first request must NOT have been forced: the budget only crosses
+	// The first request must NOT have been told: the budget only crosses
 	// the 90% threshold after step 0's usage lands.
-	if scripted.calls[0].ToolChoice.Mode == model.ToolChoiceTool {
-		t.Fatalf("first request was forced, want unforced: %+v", scripted.calls[0].ToolChoice)
+	if toldToSubmit(scripted.calls[0]) {
+		t.Fatalf("first request was told to submit: %+v", scripted.calls[0].Messages)
+	}
+}
+
+// toldToSubmit reports whether req's last message is a user message that
+// ends with the submit instruction.
+func toldToSubmit(req model.StepRequest) bool {
+	last := req.Messages[len(req.Messages)-1]
+	return last.Role == model.RoleUser && strings.HasSuffix(last.Text, submitNowText)
+}
+
+func setupTruncatedSubmitStops(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", `{"verdict":"app`)}, Stop: model.StopMaxTokens},
+		{ToolCalls: []model.ToolCall{toolCall("2", "submit_review", validSubmitInput)}},
+	}}
+	return st, nil, st
+}
+
+func checkTruncatedSubmitStops(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
+	if len(scripted.calls) != 1 {
+		t.Fatalf("expected the loop to stop without retrying, got %d calls", len(scripted.calls))
+	}
+	if !strings.Contains(result.Err, "cut off") || !strings.Contains(result.Err, "16384") {
+		t.Fatalf("Err = %q, want the cap the submission was cut off at", result.Err)
 	}
 }
 
@@ -297,11 +322,10 @@ func setupMaxStepsReachedWithoutSubmit(t *testing.T) (model.Stepper, context.Con
 }
 
 func checkMaxStepsReachedWithoutSubmit(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
-	// The final step must still have been forced to offer submit_review,
-	// even though the model chose not to take it.
-	last := scripted.calls[len(scripted.calls)-1]
-	if last.ToolChoice.Mode != model.ToolChoiceTool || last.ToolChoice.Name != "submit_review" {
-		t.Fatalf("final ToolChoice = %+v, want a forced submit_review", last.ToolChoice)
+	// The final step must still have been told to submit, even though the
+	// model chose not to.
+	if last := scripted.calls[len(scripted.calls)-1]; !toldToSubmit(last) {
+		t.Fatalf("final request = %+v, want the submit instruction in its last user message", last.Messages)
 	}
 }
 
@@ -556,13 +580,23 @@ func TestRun(t *testing.T) {
 			wantSteps: 3,
 		},
 		{
-			name:      "budget_forces_tool_choice",
+			name:      "budget_tells_to_submit",
 			tools:     []Tool{&fakeTool{name: "noop", output: "ok"}},
 			limits:    Limits{MaxTokens: 100},
-			setup:     setupBudgetForcesToolChoice,
+			setup:     setupBudgetTellsToSubmit,
 			wantStop:  StopSubmitted,
 			wantSteps: 2,
-			check:     checkBudgetForcesToolChoice,
+			check:     checkBudgetTellsToSubmit,
+		},
+		{
+			// A submission the output cap cut off ends the run at once:
+			// sent back as an error, the model would only be cut off
+			// again.
+			name:      "truncated_submit_stops",
+			setup:     setupTruncatedSubmitStops,
+			wantStop:  StopTruncated,
+			wantSteps: 1,
+			check:     checkTruncatedSubmitStops,
 		},
 		{
 			name:      "budget_exhausted_stops_immediately",
@@ -713,7 +747,7 @@ func TestRun(t *testing.T) {
 func TestLimitsWithDefaults(t *testing.T) {
 	t.Run("all zero", func(t *testing.T) {
 		got := Limits{}.WithDefaults()
-		want := Limits{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, MaxOutputTokensPerStep: 8192}
+		want := Limits{MaxSteps: 60, MaxToolOutputBytes: 32 << 10, MaxTokens: 4_000_000, MaxOutputTokensPerStep: 16384}
 		if got != want {
 			t.Fatalf("WithDefaults() = %+v, want %+v", got, want)
 		}
@@ -724,7 +758,7 @@ func TestLimitsWithDefaults(t *testing.T) {
 		if got.MaxSteps != 5 || got.MaxTokens != 10 {
 			t.Fatalf("WithDefaults() = %+v, want set fields preserved", got)
 		}
-		if got.MaxToolOutputBytes != 32<<10 || got.MaxOutputTokensPerStep != 8192 {
+		if got.MaxToolOutputBytes != 32<<10 || got.MaxOutputTokensPerStep != 16384 {
 			t.Fatalf("WithDefaults() = %+v, want zero fields filled", got)
 		}
 	})
