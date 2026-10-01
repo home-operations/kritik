@@ -62,7 +62,7 @@ defaults:
     concurrency: 1
 embedding: { model: test/fake-embed, dims: 8 }
 apps:
-  - name: bot-ross
+  bot-ross:
     accounts: [onedr0p]
     clientId: Iv1.x
     privateKey: { env: TEST_PEM }
@@ -1861,7 +1861,8 @@ func checkEnqueueRerun(
 	}
 	// The review row completes just before River records its job
 	// completed, and a re-run is refused while that job is still running.
-	waitRiverJobCompleted(ctx, t, appStore, accountID, latestReviewID(ctx, t, appStore, accountID, rerunHead))
+	firstID := latestReviewID(ctx, t, appStore, accountID, rerunHead)
+	waitRiverJobCompleted(ctx, t, appStore, accountID, firstID)
 
 	rerun := func() (int64, error) {
 		var jobID int64
@@ -1885,6 +1886,11 @@ func checkEnqueueRerun(
 	}
 	if n := countReviewsByStatus(ctx, t, appStore, accountID, rerunHead, "completed"); n != 2 {
 		t.Fatalf("completed reviews for %s = %d, want 2 after the rerun", rerunHead[:7], n)
+	}
+	// The head is the one the first review saw, so there is nothing to
+	// review incrementally: the re-run looks at the whole pull request.
+	if row := scopeRow(ctx, t, appStore, accountID, rerunHead); row.scope != "full" || row.reason != "re-run at the reviewed head" || row.prior != firstID {
+		t.Fatalf("rerun review = %+v, want full on %s because the head was already reviewed", row, firstID)
 	}
 	return rerunHead
 }

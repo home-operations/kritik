@@ -312,7 +312,8 @@ level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
   default one is reviewed only when a maintainer comments
   `@<app slug> review`.
 - `incremental.maxDeltaFiles`: how many files may change since the last
-  review before a re-review covers the whole pull request again.
+  review before a re-review covers the whole pull request again. A re-run
+  at the head the last review saw always covers the whole pull request.
 - `enabled`, at `defaults` and `owner/*` only: where repositories start
   (see below).
 

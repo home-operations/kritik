@@ -93,6 +93,7 @@ func TestDecideScope(t *testing.T) {
 	cases := []struct {
 		name         string
 		hasPrior     bool
+		sameHead     bool
 		priorFetched bool
 		deltaFiles   int
 		maxDelta     int
@@ -103,6 +104,11 @@ func TestDecideScope(t *testing.T) {
 		{name: "prior head unreachable", hasPrior: true, deltaFiles: 0, maxDelta: 25, want: ScopeFull, wantReason: "prior head unreachable"},
 		{name: "small delta", hasPrior: true, priorFetched: true, deltaFiles: 3, maxDelta: 25, want: ScopeIncremental},
 		{name: "nothing changed", hasPrior: true, priorFetched: true, deltaFiles: 0, maxDelta: 25, want: ScopeIncremental},
+		{
+			name: "re-run at the reviewed head", hasPrior: true, sameHead: true, priorFetched: true, deltaFiles: 0, maxDelta: 25,
+			want: ScopeFull, wantReason: "re-run at the reviewed head",
+		},
+		{name: "same head not fetched", hasPrior: true, sameHead: true, maxDelta: 25, want: ScopeFull, wantReason: "re-run at the reviewed head"},
 		{name: "one under the limit", hasPrior: true, priorFetched: true, deltaFiles: 24, maxDelta: 25, want: ScopeIncremental},
 		{
 			name: "at the limit", hasPrior: true, priorFetched: true, deltaFiles: 25, maxDelta: 25,
@@ -115,7 +121,7 @@ func TestDecideScope(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, reason := DecideScope(tc.hasPrior, tc.priorFetched, tc.deltaFiles, tc.maxDelta)
+			got, reason := DecideScope(tc.hasPrior, tc.sameHead, tc.priorFetched, tc.deltaFiles, tc.maxDelta)
 			if got != tc.want || reason != tc.wantReason {
 				t.Fatalf("DecideScope = %q, %q; want %q, %q", got, reason, tc.want, tc.wantReason)
 			}
