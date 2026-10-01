@@ -1243,7 +1243,9 @@ func checkTooLarge(t *testing.T, h *agenticHarness) {
 
 	// Asked for, as "@acme-bot review" does, the same head is reviewed
 	// whatever its size. The skipped review is already finished, so the
-	// second finished one is waited for.
+	// second finished one is waited for. Its job settles after the review
+	// row does, and a re-run is refused while the job is still live.
+	waitRiverJobCompleted(h.ctx, t, h.st, h.account.ID(), latestReviewID(h.ctx, t, h.st, h.account.ID(), next))
 	err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		_, err := jobs.EnqueueRerun(h.ctx, tx, h.insertOnly, h.account.ID(), configfile.RepositoryID(h.account.ID(), "acme/widgets"), 1)
 		return err
