@@ -1,14 +1,12 @@
 package runner
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,6 +27,17 @@ const submitReview = "submit_review"
 const submitDescription = "Submit the review and end it. The input is the whole review: a summary and the findings, " +
 	"each anchored to a line added or changed on the head side of the diff. Call it exactly once, when you are done."
 
+// SubmitTool is the submit_review tool as the agent is offered it: its
+// input is the review contract, strict when a suggested fix is required.
+// The bench sends it too, so it measures what a review sends.
+func SubmitTool(strict bool) model.ToolDef {
+	schema := review.Schema()
+	if strict {
+		schema = review.SchemaStrict()
+	}
+	return model.ToolDef{Name: submitReview, Description: submitDescription, InputSchema: schema}
+}
+
 // packView is the context pack as the review prompt reads it.
 type packView struct {
 	Diff      string
@@ -38,49 +47,113 @@ type packView struct {
 	Scope     review.Scope
 }
 
-// AgentSkipped is the stop reason an agent_runs row records when the
-// runner did not run the agent because the worker will skip the review; its
-// error column holds the reason, repoconfig.SkipOnlyPaths or
-// SkipUnchangedPatch.
-const AgentSkipped agent.StopReason = "skipped"
-
 // SkipUnchangedPatch is the skip reason for a bot's pull request whose patch
-// id equals its last prepared review's.
+// id equals its last prepared review's. The others are repoconfig's.
 const SkipUnchangedPatch = "unchanged_patch"
 
-// agentPrompt composes the system prompt and user message from the
-// repository files and the pack, whose context includes the similar code
-// the gateway found, and describes the run tool when commands are offered.
-// strict says whether the contract requires a suggested fix.
-func agentPrompt(p Spec, files repoconfig.Files, pack packView, commands []string) (system, user string, strict bool) {
+// Notes the runner adds to the pack about the repository's files, which
+// the review's summary states.
+const (
+	noteInstructionsTruncated = "AGENTS.md and CLAUDE.md files truncated to 32 KiB"
+	noteRulesLeft             = "%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"
+	noteDiffOmitted           = "%d diff file(s) left out of the prompt to fit its budget: %s"
+	noteContextOmitted        = "%d context chunk(s) left out of the prompt to fit its budget"
+)
+
+// promptInputs is what the repository's files and the settings give the
+// review prompt for this change: the rules and reference files that apply
+// to its paths, and the instructions of its agent files. notes say what
+// was left out.
+type promptInputs struct {
+	rules        []review.Rule
+	instructions []string
+	references   []review.Reference
+	notes        []string
+}
+
+// ruleIDs is the ids of the rules the prompt was given.
+func (in promptInputs) ruleIDs() []string {
+	ids := make([]string, len(in.rules))
+	for i, r := range in.rules {
+		ids[i] = r.ID
+	}
+	return ids
+}
+
+// newPromptInputs selects, for a change of the changed paths, the spec's
+// rules, whose whenExpr the worker has already judged, the context files
+// and, when the spec asks, the agent files of the changed directories.
+func newPromptInputs(p Spec, files repoconfig.Files, changed []string) promptInputs {
+	var in promptInputs
 	var agentFiles []string
 	if p.AgentFiles {
-		agentFiles = repoconfig.AgentFiles(files, pack.Changed)
+		agentFiles = repoconfig.AgentFiles(files, changed)
 	}
-	instructions, _ := repoconfig.Instructions(files, agentFiles)
-	rules, _ := repoconfig.ActiveRules(p.Prompt.Rules, files, pack.Changed)
-	system = review.SystemPrompt(rules, instructions, commands, p.Prompt.Focused)
+	var truncated bool
+	if in.instructions, truncated = repoconfig.Instructions(files, agentFiles); truncated {
+		in.notes = append(in.notes, noteInstructionsTruncated)
+	}
+	var left int
+	if in.rules, left = repoconfig.ActiveRules(p.Prompt.Rules, files, changed); left > 0 {
+		in.notes = append(in.notes, fmt.Sprintf(noteRulesLeft, left))
+	}
+	for _, c := range repoconfig.ActiveContext(p.Prompt.Context, changed) {
+		in.references = append(in.references, review.Reference{Path: c.Path, Description: c.Description})
+	}
+	return in
+}
+
+// agentPrompt is what the agent is sent: the system prompt, the first user
+// message, and whether the contract requires a suggested fix. omitted
+// names the diff files, and contextOmitted counts the chunks, the budget
+// left out of the message.
+type agentPrompt struct {
+	system, user   string
+	strict         bool
+	omitted        []string
+	contextOmitted int
+}
+
+// noteOmittedPaths is how many omitted paths a note names.
+const noteOmittedPaths = 5
+
+// notes are what the summary states about the prompt's cuts.
+func (a agentPrompt) notes() []string {
+	var notes []string
+	if n := len(a.omitted); n > 0 {
+		named := a.omitted
+		if n > noteOmittedPaths {
+			named = append(slices.Clone(a.omitted[:noteOmittedPaths]), fmt.Sprintf("and %d more", n-noteOmittedPaths))
+		}
+		notes = append(notes, fmt.Sprintf(noteDiffOmitted, n, strings.Join(named, ", ")))
+	}
+	if a.contextOmitted > 0 {
+		notes = append(notes, fmt.Sprintf(noteContextOmitted, a.contextOmitted))
+	}
+	return notes
+}
+
+// newAgentPrompt composes the prompt from the inputs and the pack, whose
+// context includes the similar code the gateway found. commands are what
+// the run tool offers, and search says search_code is offered.
+func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, search bool) agentPrompt {
+	system := review.SystemPrompt(in.rules, in.instructions, commands, p.Prompt.Focused, search)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior}
 	}
-	active := repoconfig.ActiveContext(p.Prompt.Context, pack.Changed)
-	references := make([]review.Reference, 0, len(active))
-	for _, c := range active {
-		references = append(references, review.Reference{Path: c.Path, Description: c.Description})
-	}
 	pr := p.Prompt.PullRequest
-	user, _, _ = review.Build(review.Input{
+	user, omitted, contextOmitted := review.Build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
-		Incremental: incremental, References: references, BudgetTokens: review.UserBudget(system),
+		Incremental: incremental, References: in.references, BudgetTokens: review.UserBudget(system),
 	})
-	return system, user, p.Prompt.RequireSuggestedFix
+	return agentPrompt{system: system, user: user, strict: p.Prompt.RequireSuggestedFix, omitted: omitted, contextOmitted: contextOmitted}
 }
 
 // agentSkip returns why the worker will skip this review whatever the
-// agent finds, or "": the checks the worker makes after the run, made
-// before it so a skipped review spends nothing.
+// agent finds, or "": decided before the agent runs, so a skipped review
+// spends nothing.
 func agentSkip(p Spec, changed []string, patchID string) string {
 	switch {
 	case p.Prompt.UnchangedPatchID != "" && patchID == p.Prompt.UnchangedPatchID:
@@ -109,10 +182,6 @@ func reviewAgent(
 	}
 	defer cancel()
 	limits := p.Agent.limits()
-	schema := review.Schema()
-	if strict {
-		schema = review.SchemaStrict()
-	}
 	tree := agent.NewTree(head, ignore)
 	timeline := []store.TimelineStep{}
 	res := agent.Run{
@@ -122,7 +191,7 @@ func reviewAgent(
 			agent.GrepTool(tree, limits.MaxToolOutputBytes),
 			agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
 		}, extra...),
-		Submit: model.ToolDef{Name: submitReview, Description: submitDescription, InputSchema: schema},
+		Submit: SubmitTool(strict),
 		Limits: limits,
 		OnStep: func(e agent.StepEvent) {
 			tools := e.Tools
@@ -143,44 +212,54 @@ func reviewAgent(
 	return res, timeline
 }
 
-// runAgentic runs the agent over the fetched head and writes its
-// agent_runs row, then marks the run done. A review the worker will skip
-// anyway is recorded as skipped without running the agent.
-func runAgentic(
-	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, files repoconfig.Files,
-	pack packView, ignore []string, patchID string, logger *slog.Logger,
-) error {
-	if reason := agentSkip(p, pack.Changed, patchID); reason != "" {
-		logger.Info("agent not run", "reason", reason)
-		rec := agentRecord{stop: AgentSkipped, toolCalls: []byte("{}"), timeline: []byte("[]"), sources: []byte("[]"), err: reason}
-		return writeAgentRun(ctx, st, p, rec, "done")
+// agentTools is what the agent gets beside the read-only tools: the run
+// tool, when commands are offered, and search_code, when the repository
+// has an index.
+type agentTools struct {
+	run    *agent.RunTool
+	search *searchTool
+}
+
+// extra lists the tools to offer.
+func (t agentTools) extra() []agent.Tool {
+	var out []agent.Tool
+	if t.run != nil {
+		out = append(out, t.run)
 	}
+	if t.search != nil {
+		out = append(out, t.search)
+	}
+	return out
+}
+
+// commands names the run tool's commands, none without it.
+func (t agentTools) commands() []string {
+	if t.run == nil {
+		return nil
+	}
+	return t.run.Names()
+}
+
+// runAgentic runs the agent over the fetched head with the prompt already
+// composed, writes its agent_runs row and marks the run done.
+func runAgentic(
+	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools,
+	prompt agentPrompt, scope review.Scope, logger *slog.Logger,
+) error {
 	stepper, err := model.NewOpenAI(model.OpenAIConfig{
 		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true,
 	})
 	if err != nil {
 		return fmt.Errorf("runner: %w", err)
 	}
-	if chunks, err := similarCode(ctx, p.Model.GatewayURL, secrets.GatewayToken); err != nil {
-		// Stage 4 is best effort: the index may be absent or mid-rebuild.
-		logger.Warn("similar-code retrieval skipped", "error", err)
-	} else {
-		pack.Context = append(pack.Context, chunks...)
-	}
-	run, cleanup := commandTool(ctx, p, agent.NewTree(head, ignore), secrets.GitToken, p.Agent.limits().MaxToolOutputBytes, logger)
-	defer cleanup()
-	var extra []agent.Tool
-	var commands []string
-	if run != nil {
-		extra, commands = []agent.Tool{run}, run.Names()
-	}
-	system, user, strict := agentPrompt(p, files, pack, commands)
-	logger.Info("agent started", "model", p.Model.Model, "scope", pack.Scope, "prompt_chars", len(system)+len(user), "commands", commands)
-	res, timeline := reviewAgent(ctx, stepper, p, head, ignore, extra, system, user, strict,
+	commands := tools.commands()
+	logger.Info("agent started", "model", p.Model.Model, "scope", scope, "prompt_chars", len(prompt.system)+len(prompt.user),
+		"commands", commands, "search", tools.search != nil)
+	res, timeline := reviewAgent(ctx, stepper, p, head, ignore, tools.extra(), prompt.system, prompt.user, prompt.strict,
 		time.Duration(p.Agent.TimeoutSeconds)*time.Second, logger)
 	sources := []string{}
-	if run != nil {
-		sources = run.Sources()
+	if tools.run != nil {
+		sources = tools.run.Sources()
 	}
 	if cerr := ctx.Err(); cerr != nil {
 		// The run was cancelled, deleted or ran out of Job time: what the
@@ -212,44 +291,6 @@ func runAgentic(
 // canceledWriteTimeout bounds writing a cancelled agent's row, well inside
 // a runner pod's termination grace period.
 const canceledWriteTimeout = 5 * time.Second
-
-// similarTimeout bounds asking the gateway for stage 4, which may wait for
-// the account's embedding slot.
-const similarTimeout = time.Minute
-
-// maxSimilarBody bounds the gateway's stage 4 answer: ten chunks.
-const maxSimilarBody = 1 << 20
-
-// similarCode asks the gateway for stage 4: the chunks of the repository's
-// index nearest the diff of the context pack the run has written.
-func similarCode(ctx context.Context, gatewayURL, token string) ([]contextpack.Chunk, error) {
-	ctx, cancel := context.WithTimeout(ctx, similarTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(gatewayURL, "/")+"/v1/similar", nil)
-	if err != nil {
-		return nil, fmt.Errorf("runner: similar code: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("runner: similar code: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSimilarBody))
-	if err != nil {
-		return nil, fmt.Errorf("runner: similar code: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("runner: similar code: %s: %s", resp.Status, bytes.TrimSpace(body))
-	}
-	var out struct {
-		Chunks []contextpack.Chunk `json:"chunks"`
-	}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, fmt.Errorf("runner: similar code: %w", err)
-	}
-	return out.Chunks, nil
-}
 
 // agentRecord is an agent_runs row.
 type agentRecord struct {

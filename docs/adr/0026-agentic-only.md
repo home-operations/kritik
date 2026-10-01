@@ -87,6 +87,42 @@ reaches it is chunks of the repository it has already checked out.
 `kritik serve` always runs the gateway (ADR-0024), and every review now
 needs it, so the chart's `gateway.enabled`, which could turn it off, goes.
 
+### 2.4 As built (2026-09-30)
+
+Where the build differs from §2.2:
+
+- **The request carries its queries.** `POST /v1/similar` takes a body,
+  `{"queries": [...], "exclude": [...]}`: up to 12 texts of 3,000
+  characters, and the paths to leave out of the answer. The gateway
+  embeds the texts and searches the run's repository; it no longer reads
+  the run's context pack, so the runner can ask before it writes the pack,
+  and the agent can ask with a query of its own. The answer says whether
+  the repository has an index at all (`indexed`), so a run tells an empty
+  answer from no index. The reservation is the queries' characters at four
+  a token.
+- **`search_code` is an agent tool.** A repository with an index gives the
+  agent `search_code(query)`, the same route with the agent's text, at
+  most ten calls a run, and the system prompt says the index is of the
+  default branch and may lag the head. §4's "left until reviews show the
+  agent wanting it" is settled the other way: without the tool, nothing
+  could show it.
+- **The pack records the review's decisions, stage 4 included.** The
+  runner asks for similar code, builds the prompt and decides everything
+  the worker reads back before it writes the pack: whether the review is
+  skipped (`skip_reason`: only ignored paths changed, or a bot's patch
+  unchanged), what it builds on (`scope`, `scope_reason`), which rules the
+  prompt was given (`rule_ids`), and the notes the summary states, the
+  files it could not read and the prompt's cuts among them. The stages
+  include the similar chunks, so the dashboard and follow-ups see them.
+  The worker no longer repeats the skip, scope and rule decisions after
+  the run, and a skipped review writes no agent run.
+- **`kritik_context_chunks_total`** counts, by stage, the chunks each
+  review's prompt was given, so whether stage 4 reaches prompts is
+  measurable.
+- **The bench sends one agent step**: the agentic system prompt, the
+  read-only tools and one forced `submit_review`, what `agent.maxSteps: 1`
+  sends, less stage 4, which needs an index.
+
 ## 3. Consequences
 
 - **One review path.** Admission, leases, caps, rule judgement and

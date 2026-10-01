@@ -51,7 +51,8 @@ func checkReviewTranscript(ctx context.Context, t *testing.T, st *store.Store, a
 	for i, tool := range conv.Tools {
 		tools[i] = tool.Name
 	}
-	if len(conv.Turns) != 1 || conv.System != system || !slices.Equal(tools, []string{"read_file", "grep", "list_files", "submit_review"}) {
+	// The repository is indexed by then, so the agent is offered search_code.
+	if len(conv.Turns) != 1 || conv.System != system || !slices.Equal(tools, []string{"read_file", "grep", "list_files", "search_code", "submit_review"}) {
 		t.Fatalf("conversation = %+v", conv)
 	}
 	turn := conv.Turns[0]

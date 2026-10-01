@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 func TestAlreadyInline(t *testing.T) {
@@ -15,22 +16,22 @@ func TestAlreadyInline(t *testing.T) {
 		{Finding: seen, postedInline: true, commentID: 55},
 		{Finding: notPosted, postedInline: false},
 	}
-	none := inlineComment{}
+	none := store.InlinePosted{}
 	cases := []struct {
 		name        string
 		findings    []review.Finding
 		prior       []priorFinding
-		wantCarried []inlineComment
+		wantCarried []store.InlinePosted
 	}{
-		{name: "no prior review", findings: []review.Finding{seen, fresh}, wantCarried: []inlineComment{none, none}},
+		{name: "no prior review", findings: []review.Finding{seen, fresh}, wantCarried: []store.InlinePosted{none, none}},
 		{
 			// The fingerprint ignores the line and title case and spacing,
 			// so a finding that moved is still the one already posted, and
 			// keeps its thread.
 			name: "posted before", findings: []review.Finding{moved, fresh}, prior: prior,
-			wantCarried: []inlineComment{{posted: true, id: 55}, none},
+			wantCarried: []store.InlinePosted{{Posted: true, ID: 55}, none},
 		},
-		{name: "found before but never posted", findings: []review.Finding{notPosted}, prior: prior, wantCarried: []inlineComment{none}},
+		{name: "found before but never posted", findings: []review.Finding{notPosted}, prior: prior, wantCarried: []store.InlinePosted{none}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

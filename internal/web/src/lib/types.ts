@@ -4,7 +4,6 @@
 
 // Where a connection is declared: the configuration file (or its
 // environment), or the dashboard.
-export type ConnectionOrigin = 'file' | 'dashboard';
 
 // A person signed in to the dashboard.
 export interface User {
@@ -109,7 +108,6 @@ export interface CredentialsSet {
 export interface Connection {
   name: string;
   forge: Forge;
-  managedBy: ConnectionOrigin;
   accounts: string[];
   credentials: CredentialsSet;
   hookPath: string;
@@ -158,7 +156,7 @@ export interface Repository {
   id: string;
   fullName: string;
   enabled: boolean;
-  managedBy: 'dashboard' | 'forge';
+  managedBy: 'file' | 'forge';
   defaultBranch: string;
   archived: boolean;
   fork: boolean;
@@ -704,7 +702,6 @@ export type ManagementErrorCode =
   | 'forbidden'
   | 'no_head'
   | 'not_cancelable'
-  | 'actions_disabled'
   | 'already_queued'
   | 'forge_error'
   | 'installation_served';

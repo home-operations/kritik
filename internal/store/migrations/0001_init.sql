@@ -36,7 +36,6 @@ CREATE TABLE connections (
     -- The accounts the connection serves, as a public GitHub App
     -- installed on several organizations does.
     accounts        text[]      NOT NULL DEFAULT '{}',
-    managed_by      text        NOT NULL CHECK (managed_by IN ('file', 'dashboard')),
     enabled         boolean     NOT NULL DEFAULT true,
     disabled_at     timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
@@ -55,7 +54,9 @@ CREATE TABLE repositories (
     account_id      uuid        NOT NULL REFERENCES accounts (id),
     name            text        NOT NULL,
     default_branch  text        NOT NULL DEFAULT '',
-    managed_by      text        NOT NULL CHECK (managed_by IN ('dashboard', 'forge')),
+    -- Whether the configuration file lists the repository or the forge
+    -- reported it.
+    managed_by      text        NOT NULL CHECK (managed_by IN ('file', 'forge')),
     enabled         boolean     NOT NULL DEFAULT true,
     disabled_at     timestamptz,
     -- What the forge last said of the repository; false until it says.
@@ -209,15 +210,18 @@ CREATE INDEX runner_runs_secret_pending_idx ON runner_runs (account_id, created_
 -- A review's newest runner run.
 CREATE INDEX runner_runs_review_created_idx ON runner_runs (review_id, created_at DESC) WHERE review_id IS NOT NULL;
 
--- context_packs is what a review's Job produced: the diff, the changed
--- paths, the context stages, .kritik.yaml and the files it and the operator
+-- context_packs is the record of what a review's Job gave its agent and
+-- decided: the diff, the changed paths, the context stages (similar code
+-- from the index included), .kritik.yaml and the files it and the operator
 -- name as read from the merge-base tree (repo_files; repo_notes says what
--- could not be read), and for a re-review the head of the last completed
--- review when the runner could fetch it (prior_head_sha, NULL when there
--- was none or it was unreachable), the diff from it and the paths it
--- touches that no ignore glob covers. The retention sweep empties the
--- bodies (diff, delta_diff, stage texts and repo_files) of a pack past
--- KRITIK_DIFF_RETENTION and stamps swept_at; the metadata stays.
+-- could not be read or fit), and for a re-review the head of the last
+-- completed review when the runner could fetch it (prior_head_sha, NULL
+-- when there was none or it was unreachable), the diff from it and the
+-- paths it touches that no ignore glob covers. scope says whether the
+-- review built on the prior one, skip_reason why the runner ran no agent,
+-- and rule_ids which rules the prompt was given. The retention sweep
+-- empties the bodies (diff, delta_diff, stage texts and repo_files) of a
+-- pack past KRITIK_DIFF_RETENTION and stamps swept_at; the metadata stays.
 CREATE TABLE context_packs (
     runner_run_id  uuid        PRIMARY KEY REFERENCES runner_runs (id),
     account_id     uuid        NOT NULL REFERENCES accounts (id),
@@ -226,13 +230,17 @@ CREATE TABLE context_packs (
     patch_id       text        NOT NULL,
     diff           text        NOT NULL,
     changed_paths  text[]      NOT NULL DEFAULT '{}',
-    stages         jsonb       NOT NULL DEFAULT '{}'::jsonb,
+    stages         jsonb       NOT NULL DEFAULT '[]'::jsonb,
     created_at     timestamptz NOT NULL DEFAULT now(),
     repo_files     jsonb       NOT NULL DEFAULT '{}'::jsonb,
     repo_notes     text[]      NOT NULL DEFAULT '{}',
     prior_head_sha text,
     delta_diff     text        NOT NULL DEFAULT '',
     delta_paths    text[]      NOT NULL DEFAULT '{}',
+    scope          text        NOT NULL DEFAULT 'full' CHECK (scope IN ('full', 'incremental')),
+    scope_reason   text        NOT NULL DEFAULT '',
+    skip_reason    text        NOT NULL DEFAULT '' CHECK (skip_reason IN ('', 'only_skipped_paths', 'unchanged_patch')),
+    rule_ids       text[]      NOT NULL DEFAULT '{}',
     swept_at       timestamptz
 );
 CREATE INDEX context_packs_account_id_idx ON context_packs (account_id);

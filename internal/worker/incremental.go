@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/store"
 )
 
 // priorReview is a pull request's last completed review; id is "" when it
@@ -65,24 +66,17 @@ func reviewFindings(prior []priorFinding) []review.Finding {
 	return out
 }
 
-// inlineComment is whether a finding has an inline comment on the forge,
-// and its id there, 0 when the forge did not say.
-type inlineComment struct {
-	posted bool
-	id     int64
-}
-
 // alreadyInline reports, per finding, the inline comment a prior finding
 // with the same fingerprint already has on the forge, in which case it is
 // not posted again and its thread carries on.
-func alreadyInline(findings []review.Finding, prior []priorFinding) []inlineComment {
-	posted := map[string]inlineComment{}
+func alreadyInline(findings []review.Finding, prior []priorFinding) []store.InlinePosted {
+	posted := map[string]store.InlinePosted{}
 	for _, p := range prior {
 		if p.postedInline {
-			posted[review.Fingerprint(p.Finding)] = inlineComment{posted: true, id: p.commentID}
+			posted[review.Fingerprint(p.Finding)] = store.InlinePosted{Posted: true, ID: p.commentID}
 		}
 	}
-	out := make([]inlineComment, len(findings))
+	out := make([]store.InlinePosted, len(findings))
 	for i, f := range findings {
 		out[i] = posted[review.Fingerprint(f)]
 	}

@@ -2,7 +2,7 @@
   "id": "repo-1",
   "fullName": "alpha/one",
   "enabled": true,
-  "managedBy": "dashboard",
+  "managedBy": "file",
   "defaultBranch": "main",
   "archived": false,
   "fork": false,

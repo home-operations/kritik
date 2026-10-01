@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritik/internal/jobs"
 )
 
 // EnsureIndexSchema makes index_chunks match the instance's embedder: it
@@ -159,7 +160,7 @@ type RepoRef struct{ ID, AccountID string }
 
 // liveIndexJob is an index job of a repository still queued or running,
 // in River's own table: the states its unique key spans.
-const liveIndexJob = `j.kind = 'index' AND j.state IN ('available', 'pending', 'running', 'scheduled', 'retryable')`
+var liveIndexJob = `j.kind = 'index' AND j.state IN (` + jobs.LiveStatesSQL() + `)`
 
 // OnboardingInFlight counts onboarding index jobs queued or running.
 // Owner connection: it spans every account.

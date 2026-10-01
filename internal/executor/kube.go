@@ -42,10 +42,11 @@ type Kube struct {
 	// DatabaseSecret and DatabaseSecretKey reference the Secret holding the
 	// runner role's DSN, injected as KRITIK_DATABASE_URL.
 	DatabaseSecret, DatabaseSecretKey string
-	// GatewayURL, when set, is the egress gateway the pod is handed as its
-	// HTTPS_PROXY and HTTP_PROXY: with the runner network policy allowing
-	// nothing else, every byte the runner sends out passes the gateway's
-	// host allowlist (ADR-0008).
+	// GatewayURL is the egress gateway the pod is handed as its HTTPS_PROXY
+	// and HTTP_PROXY: with the runner network policy allowing nothing else,
+	// every byte the runner sends out passes the gateway's host allowlist
+	// (ADR-0008). Every review needs it, so serve refuses to start without
+	// one; the check here only keeps a test's spec honest.
 	GatewayURL string
 	// RuntimeClass, when set, is the RuntimeClass the pod runs under.
 	RuntimeClass string

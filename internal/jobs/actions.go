@@ -74,7 +74,7 @@ func EnqueueRerun(
 				AND r.status IN ('running', 'prepared'))
 		OR EXISTS (
 			SELECT 1 FROM river_job
-			WHERE kind = $5 AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled')
+			WHERE kind = $5 AND state IN (`+LiveStatesSQL()+`)
 				AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
 				AND args->>'head_sha' = $4)`,
 		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&busy)

@@ -94,7 +94,8 @@ comments:
 		if f.RequireSuggestedFix == nil || !*f.RequireSuggestedFix {
 			t.Fatalf("RequireSuggestedFix = %v, want true", f.RequireSuggestedFix)
 		}
-		if f.Comments.SummaryTemplate != "docs/summary.tmpl" || f.Comments.InlineTemplate != "docs/inline.tmpl" {
+		if f.Comments.SummaryTemplate == nil || *f.Comments.SummaryTemplate != "docs/summary.tmpl" ||
+			f.Comments.InlineTemplate == nil || *f.Comments.InlineTemplate != "docs/inline.tmpl" {
 			t.Fatalf("Comments = %+v", f.Comments)
 		}
 	})
@@ -163,7 +164,7 @@ func TestFile_Referenced(t *testing.T) {
 	t.Parallel()
 	f := File{
 		Rules:    []configfile.Rule{{ID: "a", File: "docs/a.md"}, {ID: "b", File: "docs/b.md", Paths: []string{"b/**"}}, {ID: "c", Rule: "Check."}},
-		Comments: Comments{SummaryTemplate: "docs/a.md", InlineTemplate: "docs/c.md"},
+		Comments: Comments{SummaryTemplate: new("docs/a.md"), InlineTemplate: new("docs/c.md")},
 	}
 	want := []string{"docs/a.md", "docs/b.md", "docs/c.md"}
 	if got := f.Referenced(); !slices.Equal(got, want) {

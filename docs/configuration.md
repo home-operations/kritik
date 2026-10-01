@@ -200,7 +200,9 @@ The embedder's `model` is a model of an `openrouter` or `openai` provider
 of the instance, whose endpoint, or the type's default, and key it uses;
 `dims` is its dimension, at most 4000, and the optional `maxBatch`,
 `maxBatchChars` and `maxItemChars` bound one request to 64 inputs, 200,000
-characters and 16,000 characters per input unless set. Without an
+characters and 16,000 characters per input unless set. With one, a
+review's prompt carries the index's chunks nearest the change and the
+agent gets a `search_code` tool over the same index. Without an
 embedder, indexing is off and reviews run without similar code. The index
 holds one model and dimension: a configuration that changes either drops
 every repository's index, and the leader builds each again, a few at a
@@ -252,6 +254,11 @@ embedding:
 entries that change them for some: `owner/*` for every repository of an
 account, and `owner/name` for one
 ([ADR-0021](adr/0021-configuration-shape.md) §2.1).
+
+A `fallback` applies only on the review model's provider: the gateway
+hands a provider the fallback when both are its, as OpenRouter's
+server-side fallback is, and a fallback on another provider is ignored for
+reviews ([ADR-0026](adr/0026-agentic-only.md) §3).
 
 ```yaml
 defaults:

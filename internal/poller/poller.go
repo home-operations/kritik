@@ -26,17 +26,11 @@ import (
 	"github.com/home-operations/kritik/internal/webhook"
 )
 
-// Forges builds a forge client per connection and repository owner, as
-// the worker does.
-type Forges interface {
-	For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error)
-}
-
 // Poller lists open pull requests on a schedule.
 type Poller struct {
 	Store      *store.Store
 	Current    *configfile.Current
-	Forges     Forges
+	Forges     forge.Clients
 	Dispatcher ingest.Dispatcher
 	Logger     *slog.Logger
 	// Metrics may be nil.

@@ -194,8 +194,9 @@ differs from the text above:
   forward proxy on the same port, so the gateway's own host is excepted,
   or a model call would arrive as a proxy request for a host the allowlist
   does not name.
-- **Not built:** `search_index` on the gateway, and a fallback model on
-  another provider, which the gateway now makes possible (ADR-0003 §4).
+- **Not built:** a fallback model on another provider, which the gateway
+  now makes possible (ADR-0003 §4). The index is reached through the
+  gateway since ADR-0026, as `POST /v1/similar`.
 
 ## 3. Consequences
 

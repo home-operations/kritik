@@ -3,7 +3,6 @@
   "connection": {
     "name": "alpha-bot",
     "forge": "github",
-    "managedBy": "file",
     "accounts": ["alpha"],
     "credentials": {
       "clientId": true,

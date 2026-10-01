@@ -20,7 +20,7 @@ import (
 type Base struct {
 	Store   *store.Store
 	Current *configfile.Current
-	Forges  Forges
+	Forges  forge.Clients
 	Logger  *slog.Logger
 	// Metrics may be nil.
 	Metrics *metrics.Metrics

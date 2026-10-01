@@ -89,15 +89,13 @@ type CredentialsSet struct {
 }
 
 // Connection is one GitHub App and the accounts it serves. HookPath is
-// where its webhook arrives, under the dashboard's URL. ManagedBy is where
-// it is declared.
+// where its webhook arrives, under the dashboard's URL.
 type Connection struct {
-	Name        string            `json:"name"`
-	Forge       configfile.Forge  `json:"forge"`
-	ManagedBy   configfile.Origin `json:"managedBy"`
-	Accounts    []string          `json:"accounts"`
-	Credentials CredentialsSet    `json:"credentials"`
-	HookPath    string            `json:"hookPath"`
+	Name        string           `json:"name"`
+	Forge       configfile.Forge `json:"forge"`
+	Accounts    []string         `json:"accounts"`
+	Credentials CredentialsSet   `json:"credentials"`
+	HookPath    string           `json:"hookPath"`
 	// LastWebhookAt is when a webhook for the connection last passed
 	// signature verification, to the minute; null when none ever has, and
 	// kritik only polls it.

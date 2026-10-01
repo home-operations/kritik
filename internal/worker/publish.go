@@ -2,7 +2,7 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -12,27 +12,10 @@ import (
 
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/forge"
-	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritik/internal/repoconfig"
 	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
-)
-
-// CompleterSource resolves a provider name, the account's own or the
-// file's, to its model adapter; each call wraps it in a model.Structured
-// that records its steps.
-type CompleterSource interface {
-	Stepper(f *configfile.File, t *configfile.Account, name string) (model.Stepper, error)
-}
-
-// maxOutputTokens bounds one review answer. Findings are short by
-// instruction; this is a guard against a runaway model, not a target.
-const maxOutputTokens = 4096
-
-// Usage roles, matching the usage table's CHECK.
-const (
-	roleReview    = "review"
-	roleEmbedding = "embedding"
-	roleFollowUp  = "followup"
 )
 
 // publishPhase writes a prepared review's answer back to the forge and the
@@ -60,7 +43,78 @@ type publishPhase struct {
 	scope review.Scope
 	// agent is the review's agent run, whose usage the gateway recorded
 	// step by step.
-	agent *agentRun
+	agent *store.AgentRunRow
+}
+
+// run publishes what the runner's agent submitted; the run's usage is
+// already recorded. An agent that stopped without submitting fails the
+// review, and the sticky comment says this head was not fully reviewed so
+// an earlier verdict does not stand in for it.
+func (p *publishPhase) run(ctx context.Context) (store.ReviewStatus, error) {
+	// The agent has already answered, so publishing runs to the end even if
+	// the job's ctx ends meanwhile.
+	ctx, cancel := detach(ctx)
+	defer cancel()
+	if p.agent == nil {
+		return store.ReviewFailed, errors.New("worker: the runner wrote no agent run")
+	}
+	run := *p.agent
+	var diff string
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		var err error
+		diff, _, _, err = store.ContextPackDiffs(ctx, tx, p.runID)
+		return err
+	})
+	if err != nil {
+		return store.ReviewFailed, fmt.Errorf("worker: read context pack: %w", err)
+	}
+	p.logger.Info("agent answered", "stop", run.StopReason, "steps", run.Steps, "model", run.Model, "input_tokens", run.Usage.Prompt(),
+		"cached_tokens", run.Usage.CacheRead, "output_tokens", run.Usage.Output, "cost_usd", run.CostUSD)
+	if stopErr := stopError(run); stopErr != nil {
+		return store.ReviewFailed, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+run.StopReason, run.Model))
+	}
+	res, dropped, err := review.Parse(string(run.Result), review.Anchors(diff), p.parse)
+	if err != nil {
+		return store.ReviewFailed, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", run.Model))
+	}
+	for _, d := range dropped {
+		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
+	}
+	commentID, inline, err := p.writeBack(ctx, res, run.Model, append(reviewNotes(dropped), p.repoNotes...))
+	if err != nil {
+		return store.ReviewFailed, err
+	}
+	p.countFindings(res)
+	if err := p.persist(ctx, res, inline, run.Model, commentID); err != nil {
+		return store.ReviewFailed, err
+	}
+	return store.ReviewCompleted, nil
+}
+
+// skipDescription is how the commit status states a skip the runner
+// decided: a repository's own reason, or a bot's unchanged patch.
+func skipDescription(reason string) string {
+	if reason == runner.SkipUnchangedPatch {
+		return "patch unchanged since the last review"
+	}
+	return repoconfig.SkipReason(reason).Description()
+}
+
+// incomplete replaces the sticky comment with one saying why this head was
+// not fully reviewed, in kritik's own template, and records the model.
+func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string) error {
+	body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
+		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Incomplete: reason, Notes: p.repoNotes,
+	})
+	commentID, err := p.upsertSticky(ctx, body)
+	if err != nil {
+		return err
+	}
+	owner, repo := p.pr.ownerRepo()
+	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: review incomplete ("+reason+")"); err != nil {
+		p.logger.Warn("commit status not set", "error", err)
+	}
+	return p.persist(ctx, review.Result{}, nil, modelName, commentID)
 }
 
 func (p *publishPhase) countFindings(res review.Result) {
@@ -71,65 +125,6 @@ func (p *publishPhase) countFindings(res review.Result) {
 	for severity, n := range bySeverity {
 		p.w.Metrics.Findings(p.account.Key(), severity, n)
 	}
-}
-
-// capReached returns a description of the account's cap that is exhausted,
-// or "".
-func capReached(ctx context.Context, st *store.Store, accountID string, limits configfile.Limits) (string, error) {
-	if limits.ReviewsPerDay <= 0 && limits.TokensPerMonth <= 0 {
-		return "", nil
-	}
-	u, err := readUsage(ctx, st, accountID)
-	if err != nil {
-		return "", err
-	}
-	return reached(u, limits), nil
-}
-
-// readUsage is what an account's caps count: completed reviews today and
-// tokens this month.
-func readUsage(ctx context.Context, st *store.Store, accountID string) (store.MonthUsage, error) {
-	var m store.MonthUsage
-	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		var err error
-		m, err = store.ReadMonthUsage(ctx, tx)
-		return err
-	})
-	if err != nil {
-		return store.MonthUsage{}, fmt.Errorf("worker: read caps: %w", err)
-	}
-	return m, nil
-}
-
-// usageRow is one model call charged to an account, and to the review it
-// served when there is one: its whole prompt, cached part included, as
-// input.
-type usageRow struct {
-	accountID, repositoryID, reviewID, role, model, upstream string
-	input, output                                            int64
-	costUSD                                                  float64
-}
-
-// insertUsage records u, where the caps count it.
-func insertUsage(ctx context.Context, tx pgx.Tx, u usageRow) error {
-	if _, err := tx.Exec(ctx, `INSERT INTO usage
-		(account_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd)
-		VALUES ($1, $2, nullif($3, '')::uuid, $4, $5, $6, $7, $8, $9)`,
-		u.accountID, u.repositoryID, u.reviewID, u.role, u.model, u.upstream, u.input, u.output, u.costUSD); err != nil {
-		return fmt.Errorf("worker: insert usage: %w", err)
-	}
-	return nil
-}
-
-// reached says which cap u has reached, or "".
-func reached(u store.MonthUsage, limits configfile.Limits) string {
-	if limits.ReviewsPerDay > 0 && u.ReviewsToday >= int64(limits.ReviewsPerDay) {
-		return fmt.Sprintf("reviewsPerDay (%d) reached", limits.ReviewsPerDay)
-	}
-	if limits.TokensPerMonth > 0 && u.Tokens >= limits.TokensPerMonth {
-		return fmt.Sprintf("tokensPerMonth (%d) reached", limits.TokensPerMonth)
-	}
-	return ""
 }
 
 // reviewNotes are the caveats the sticky comment states about a review.
@@ -158,7 +153,9 @@ func reviewNotes(dropped []review.Dropped) []string {
 // inline comments, is listed in the summary only. The returned comments
 // say, per finding, whether an inline comment for it is on the forge, and
 // its id there.
-func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelName string, notes []string) (int64, []inlineComment, error) {
+func (p *publishPhase) writeBack(
+	ctx context.Context, res review.Result, modelName string, notes []string,
+) (int64, []store.InlinePosted, error) {
 	owner, repo := p.pr.ownerRepo()
 	onForge := alreadyInline(res.Findings, p.prior.findings)
 	for i := range res.Findings {
@@ -172,7 +169,7 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	inline := make([]forge.InlineComment, 0, len(res.Findings))
 	var posted []int
 	for i, f := range res.Findings {
-		if onForge[i].posted || !p.postsInline(f) {
+		if onForge[i].Posted || !p.postsInline(f) {
 			continue
 		}
 		body, inlineNotes := review.RenderInline(ctx, templates, f)
@@ -189,7 +186,7 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	}
 	var sources []string
 	if p.agent != nil {
-		sources = review.SourceLinks(p.agent.sources)
+		sources = review.SourceLinks(p.agent.Sources)
 	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Result: res, Counts: res.Counts(), Notes: notes,
@@ -213,7 +210,7 @@ func (p *publishPhase) writeBack(ctx context.Context, res review.Result, modelNa
 	}
 	for j, i := range posted {
 		if ids != nil {
-			onForge[i] = inlineComment{posted: true, id: ids[j]}
+			onForge[i] = store.InlinePosted{Posted: true, ID: ids[j]}
 		}
 	}
 	desc := "no findings"
@@ -292,31 +289,14 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 	return commentID, nil
 }
 
-func (p *publishPhase) persist(ctx context.Context, res review.Result, inline []inlineComment, modelName string, commentID int64) error {
+func (p *publishPhase) persist(
+	ctx context.Context, res review.Result, inline []store.InlinePosted, modelName string, commentID int64,
+) error {
 	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		for i, f := range res.Findings {
-			if _, err := tx.Exec(ctx, `INSERT INTO findings
-				(account_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint, posted_inline,
-				 end_line, replacement, agent_prompt, forge_comment_id, rules)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, nullif($14::bigint, 0), coalesce($15::text[], '{}'))`,
-				p.account.ID(), p.reviewID, f.Path, f.Line, string(f.Severity), f.Title, f.Explanation, f.SuggestedFix,
-				review.Fingerprint(f), inline[i].posted, f.EndLine, f.Replacement, f.AgentPrompt, inline[i].id, f.Rules); err != nil {
-				return fmt.Errorf("worker: insert finding: %w", err)
-			}
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO sticky_comments (pull_request_id, account_id, forge_comment_id) VALUES ($1, $2, $3)
-			ON CONFLICT (pull_request_id) DO UPDATE SET forge_comment_id = excluded.forge_comment_id, updated_at = now()`,
-			p.pr.id, p.account.ID(), commentID); err != nil {
-			return fmt.Errorf("worker: upsert sticky comment: %w", err)
-		}
-		summary, err := json.Marshal(res.Summary)
-		if err != nil {
-			return fmt.Errorf("worker: encode summary: %w", err)
-		}
-		if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2, summary = $3 WHERE id = $1`, p.reviewID, modelName, summary); err != nil {
-			return fmt.Errorf("worker: record model: %w", err)
-		}
-		return nil
+		return store.RecordReviewResult(ctx, tx, store.ReviewResult{
+			AccountID: p.account.ID(), ReviewID: p.reviewID, PullRequestID: p.pr.id, Result: res, Inline: inline, Model: modelName,
+			CommentID: commentID,
+		})
 	})
 }
 

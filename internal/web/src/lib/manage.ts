@@ -7,7 +7,6 @@ import type { ErrorCode, ManagementErrorCode } from './types';
 const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
   forge_error: 'GitHub refused or failed the request.',
   installation_served: 'The App serves this account.',
-  actions_disabled: 'This server process cannot queue dashboard actions.',
   already_queued: 'That is already queued or running; it will show up here when it finishes.',
   unauthenticated: 'Your session has ended; sign in again.',
   csrf: 'The request was refused as not coming from this page; reload and try again.',

@@ -13,11 +13,8 @@ import (
 	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
-	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/jobtimeout"
-	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/repoconfig"
-	"github.com/home-operations/kritik/internal/review"
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
 )
@@ -28,30 +25,19 @@ func agentDeadline(runnerDeadline, agentTimeout time.Duration) time.Duration {
 	return max(runnerDeadline, agentTimeout+jobtimeout.AgentFetchHeadroom)
 }
 
-// agentRun is the agent_runs row a runner wrote.
-type agentRun struct {
-	stop    agent.StopReason
-	result  []byte
-	steps   int
-	usage   model.Usage
-	costUSD float64
-	model   string
-	errText string
-	sources []string
-}
-
 // stopError is nil for a run that submitted a review, and otherwise the
 // review's error.
-func (r agentRun) stopError() error {
+func stopError(r store.AgentRunRow) error {
+	stop := agent.StopReason(r.StopReason)
 	switch {
-	case r.stop == agent.StopSubmitted && len(r.result) > 0:
+	case stop == agent.StopSubmitted && len(r.Result) > 0:
 		return nil
-	case r.stop == agent.StopSubmitted:
+	case stop == agent.StopSubmitted:
 		return errors.New("agent stopped: submitted without a result")
-	case r.errText != "":
-		return fmt.Errorf("agent stopped: %s: %s", r.stop, r.errText)
+	case r.Error != "":
+		return fmt.Errorf("agent stopped: %s: %s", stop, r.Error)
 	}
-	return fmt.Errorf("agent stopped: %s", r.stop)
+	return fmt.Errorf("agent stopped: %s", stop)
 }
 
 // admission is what a review holds before its runner starts.
@@ -171,21 +157,18 @@ func (w *Review) agentPrompt(
 
 // loadAgentRun reads the agent_runs row of a runner run; found is false
 // when the runner wrote none.
-func (w *Review) loadAgentRun(ctx context.Context, accountID, runID string) (run agentRun, found bool, err error) {
-	var stop string
+func (w *Review) loadAgentRun(ctx context.Context, accountID, runID string) (run store.AgentRunRow, found bool, err error) {
 	err = w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT stop_reason, result::text, steps, input_tokens, cache_read_tokens, cache_write_tokens,
-			output_tokens, cost_usd::float8, model, error, sources FROM agent_runs WHERE runner_run_id = $1`, runID).
-			Scan(&stop, &run.result, &run.steps, &run.usage.Input, &run.usage.CacheRead, &run.usage.CacheWrite,
-				&run.usage.Output, &run.costUSD, &run.model, &run.errText, &run.sources)
+		var err error
+		run, err = store.FindAgentRun(ctx, tx, runID)
+		return err
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return agentRun{}, false, nil
+	if errors.Is(err, store.ErrNotFound) {
+		return store.AgentRunRow{}, false, nil
 	}
 	if err != nil {
-		return agentRun{}, false, fmt.Errorf("worker: read agent run: %w", err)
+		return store.AgentRunRow{}, false, fmt.Errorf("worker: read agent run: %w", err)
 	}
-	run.stop = agent.StopReason(stop)
 	return run, true, nil
 }
 
@@ -198,7 +181,9 @@ func (w *Review) loadAgentRun(ctx context.Context, accountID, runID string) (run
 // pod records how its agent stopped while it terminates. await waits for
 // that, until the run settles or agentRowWait passes. ctx's cancellation is
 // not inherited, so a job River cancels still reads the row.
-func (w *Review) readAgentRun(ctx context.Context, accountID, runID string, ref configfile.ModelRef, await bool) (*agentRun, error) {
+func (w *Review) readAgentRun(
+	ctx context.Context, accountID, runID string, ref configfile.ModelRef, await bool,
+) (*store.AgentRunRow, error) {
 	wait := cmp.Or(w.rowWait, agentRowWait)
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), wait+10*time.Second)
 	defer cancel()
@@ -209,7 +194,7 @@ func (w *Review) readAgentRun(ctx context.Context, accountID, runID string, ref 
 	if err != nil || !found {
 		return nil, err
 	}
-	run.model = cmp.Or(run.model, ref.Model())
+	run.Model = cmp.Or(run.Model, ref.Model())
 	return &run, nil
 }
 
@@ -275,7 +260,7 @@ const agentRowPoll = time.Second
 
 // awaitAgentRun polls for a run's agent_runs row until it appears, the
 // run's phase settles without one, or wait passes.
-func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string, wait time.Duration) (agentRun, bool, error) {
+func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string, wait time.Duration) (store.AgentRunRow, bool, error) {
 	deadline := time.After(wait)
 	for {
 		var phase string
@@ -283,7 +268,7 @@ func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string, wai
 			return tx.QueryRow(ctx, `SELECT phase FROM runner_runs WHERE id = $1`, runID).Scan(&phase)
 		})
 		if err != nil {
-			return agentRun{}, false, fmt.Errorf("worker: read run phase: %w", err)
+			return store.AgentRunRow{}, false, fmt.Errorf("worker: read run phase: %w", err)
 		}
 		// The runner writes its agent row before it settles the phase.
 		settled := phase == "done" || phase == "failed"
@@ -293,99 +278,10 @@ func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string, wai
 		}
 		select {
 		case <-deadline:
-			return agentRun{}, false, nil
+			return store.AgentRunRow{}, false, nil
 		case <-ctx.Done():
-			return agentRun{}, false, nil
+			return store.AgentRunRow{}, false, nil
 		case <-time.After(agentRowPoll):
 		}
 	}
-}
-
-// run publishes what the runner's agent submitted; the run's usage is
-// already recorded. An agent that stopped without submitting fails the
-// review, and the sticky comment says this head was not fully reviewed so
-// an earlier verdict does not stand in for it. A run the runner skipped
-// ends the review skipped.
-func (p *publishPhase) run(ctx context.Context) (store.ReviewStatus, error) {
-	// The agent has already answered, so publishing runs to the end even if
-	// the job's ctx ends meanwhile.
-	ctx, cancel := detach(ctx)
-	defer cancel()
-	if p.agent == nil {
-		return store.ReviewFailed, errors.New("worker: the runner wrote no agent run")
-	}
-	run := *p.agent
-	if run.stop == runner.AgentSkipped {
-		p.logger.Info("review skipped by the runner", "reason", run.errText)
-		p.skippedStatus(ctx, run.errText)
-		if reason := repoconfig.SkipReason(run.errText); reason.Valid() {
-			err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `UPDATE reviews SET skip_reason = $2 WHERE id = $1`, p.reviewID, string(reason))
-				return err
-			})
-			if err != nil {
-				return store.ReviewFailed, fmt.Errorf("worker: record skip reason: %w", err)
-			}
-		}
-		return store.ReviewSkipped, nil
-	}
-	var diff string
-	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT diff FROM context_packs WHERE runner_run_id = $1`, p.runID).Scan(&diff)
-	})
-	if err != nil {
-		return store.ReviewFailed, fmt.Errorf("worker: read context pack: %w", err)
-	}
-	p.logger.Info("agent answered", "stop", run.stop, "steps", run.steps, "model", run.model, "input_tokens", run.usage.Prompt(),
-		"cached_tokens", run.usage.CacheRead, "output_tokens", run.usage.Output, "cost_usd", run.costUSD)
-	if stopErr := run.stopError(); stopErr != nil {
-		return store.ReviewFailed, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+string(run.stop), run.model))
-	}
-	res, dropped, err := review.Parse(string(run.result), review.Anchors(diff), p.parse)
-	if err != nil {
-		return store.ReviewFailed, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", run.model))
-	}
-	for _, d := range dropped {
-		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
-	}
-	commentID, inline, err := p.writeBack(ctx, res, run.model, append(reviewNotes(dropped), p.repoNotes...))
-	if err != nil {
-		return store.ReviewFailed, err
-	}
-	p.countFindings(res)
-	if err := p.persist(ctx, res, inline, run.model, commentID); err != nil {
-		return store.ReviewFailed, err
-	}
-	return store.ReviewCompleted, nil
-}
-
-// skippedStatus says on the head why the runner skipped its review: the
-// worker only reaches the runner's skip when its own checks did not skip,
-// and so did not say so itself.
-func (p *publishPhase) skippedStatus(ctx context.Context, reason string) {
-	desc := repoconfig.SkipReason(reason).Description()
-	if reason == runner.SkipUnchangedPatch {
-		desc = "patch unchanged since the last review"
-	}
-	owner, repo := p.pr.ownerRepo()
-	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: skipped ("+desc+")"); err != nil {
-		p.logger.Warn("commit status not set", "error", err)
-	}
-}
-
-// incomplete replaces the sticky comment with one saying why this head was
-// not fully reviewed, in kritik's own template, and records the model.
-func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string) error {
-	body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
-		Number: p.pr.number, HeadSHA: p.pr.headSHA, Model: modelName, Incomplete: reason, Notes: p.repoNotes,
-	})
-	commentID, err := p.upsertSticky(ctx, body)
-	if err != nil {
-		return err
-	}
-	owner, repo := p.pr.ownerRepo()
-	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritik: review incomplete ("+reason+")"); err != nil {
-		p.logger.Warn("commit status not set", "error", err)
-	}
-	return p.persist(ctx, review.Result{}, nil, modelName, commentID)
 }

@@ -2,10 +2,7 @@ package worker
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/home-operations/kritik/internal/configfile"
@@ -62,18 +59,4 @@ func ReachRepositories(ctx context.Context, in *configfile.Connection) (map[stri
 		out[strings.ToLower(a.Account)] = repos
 	}
 	return out, nil
-}
-
-// credentialFingerprint identifies what BuildForge builds a client from, so a
-// cached client is rebuilt once any of it changes: an App key rotated
-// through the file or the dashboard. It is a hash, never the
-// material itself.
-func credentialFingerprint(in *configfile.Connection) string {
-	parts := []string{string(in.Forge), in.App.ClientIDValue(), in.App.PrivateKeyValue().Value()}
-	h := sha256.New()
-	for _, p := range parts {
-		// Length-prefixed, so no two different part lists hash alike.
-		h.Write([]byte(strconv.Itoa(len(p)) + ":" + p))
-	}
-	return hex.EncodeToString(h.Sum(nil))
 }

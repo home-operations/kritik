@@ -395,12 +395,6 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil
 }
 
-type completers struct{ c model.Stepper }
-
-func (c *completers) Stepper(*configfile.File, *configfile.Account, string) (model.Stepper, error) {
-	return c.c, nil
-}
-
 type forges struct{ f forge.Client }
 
 func (f *forges) For(context.Context, *configfile.Connection, string) (forge.Client, error) {
@@ -540,9 +534,10 @@ func checkContextPack(
 	if err != nil || phase != "done" || len(changed) != 1 || changed[0] != "main.go" || logTail == "" || !heartbeat {
 		t.Fatalf("pack: err=%v phase=%s changed=%v log=%q heartbeat=%v", err, phase, changed, logTail, heartbeat)
 	}
-	// The whole three-line file is shown by the diff, so the pack is an
-	// empty array rather than the pre-context '{}' default.
-	if stages != "[]" {
+	// The whole three-line file is shown by the diff, so stages 1 to 3
+	// give nothing; the index built earlier gives stage 4, which the pack
+	// records too.
+	if !strings.HasPrefix(stages, "[{") || strings.Count(stages, `"stage": "similar"`) != strings.Count(stages, `"stage"`) {
 		t.Fatalf("stages = %s", stages)
 	}
 	if diff == "" {
@@ -1074,7 +1069,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		// A stopped run's runner never started here, so no agent row comes.
 		superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
 	})
-	river.AddWorker(workers, &FollowUp{Base: wb, Completers: &completers{c: fc}})
+	river.AddWorker(workers, &FollowUp{Base: wb, Completers: &Completers{Build: func(configfile.Provider) (model.Stepper, error) { return fc, nil }}})
 	river.AddWorker(workers, &Index{
 		Base: wb, Executor: exec, Embedders: embedders,
 		// A chunk a batch, so a build commits several.
@@ -1577,10 +1572,10 @@ func checkIncremental(
 	if strings.Contains(prompt, "Changed since the last review") {
 		t.Fatalf("a first review has no incremental sections:\n%s", prompt)
 	}
-	if p := postedInline(ctx, t, appStore, accountID, firstRow.id); len(p) != 1 || !p[0].posted || p[0].id == 0 {
+	if p := postedInline(ctx, t, appStore, accountID, firstRow.id); len(p) != 1 || !p[0].Posted || p[0].ID == 0 {
 		t.Fatalf("posted_inline, forge_comment_id = %+v", p)
 	}
-	thread := postedInline(ctx, t, appStore, accountID, firstRow.id)[0].id
+	thread := postedInline(ctx, t, appStore, accountID, firstRow.id)[0].ID
 
 	second := commit("package main\n\nfunc f1() {}\n\nfunc f2() {}\n")
 	secondRow, prompt, inline := reviewHead(second)
@@ -1596,7 +1591,7 @@ func checkIncremental(
 			t.Fatalf("missing %q in the incremental prompt:\n%s", want, prompt)
 		}
 	}
-	if p := postedInline(ctx, t, appStore, accountID, secondRow.id); len(p) != 1 || !p[0].posted || p[0].id != thread {
+	if p := postedInline(ctx, t, appStore, accountID, secondRow.id); len(p) != 1 || !p[0].Posted || p[0].ID != thread {
 		t.Fatalf("a finding carried from the last review keeps posted_inline and its thread %d, got %+v", thread, p)
 	}
 	checkIncrementalRecord(ctx, t, appStore, lf, accountID, secondRow.id, first)
@@ -1628,17 +1623,17 @@ func scopeRow(ctx context.Context, t *testing.T, appStore *store.Store, accountI
 	return out
 }
 
-func postedInline(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID string) []inlineComment {
+func postedInline(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID string) []store.InlinePosted {
 	t.Helper()
-	var out []inlineComment
+	var out []store.InlinePosted
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT posted_inline, coalesce(forge_comment_id, 0) FROM findings WHERE review_id = $1`, reviewID)
 		if err != nil {
 			return err
 		}
-		out, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (inlineComment, error) {
-			var c inlineComment
-			err := row.Scan(&c.posted, &c.id)
+		out, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (store.InlinePosted, error) {
+			var c store.InlinePosted
+			err := row.Scan(&c.Posted, &c.ID)
 			return c, err
 		})
 		return err

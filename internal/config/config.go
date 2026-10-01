@@ -1,9 +1,7 @@
 // Package config loads kritik's process configuration from environment
-// variables. What the service manages lives elsewhere: sign-in and
-// connections in the configuration file and its KRITIK_AUTH_* and
-// KRITIK_CONNECTIONS_* overlay, and everything else in the instance spec
-// the dashboard edits (internal/configfile). This package covers only what
-// the process itself needs to start.
+// variables: what the process itself needs to start. What kritik reviews
+// and how lives in the configuration file and its KRITIK_* overlay
+// (internal/configfile).
 package config
 
 import (

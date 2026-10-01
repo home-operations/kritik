@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,13 +29,6 @@ import (
 	"github.com/home-operations/kritik/internal/runner"
 	"github.com/home-operations/kritik/internal/store"
 )
-
-// Forges builds and caches a forge client per connection and repository
-// owner. repo is the repository the client is for: a GitHub App's
-// installation, and with it the token, is its owner's.
-type Forges interface {
-	For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error)
-}
 
 // Review works the review queue.
 type Review struct {
@@ -201,7 +195,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		w.Metrics.Review(account.Key(), string(store.ReviewFailed), time.Since(started))
 		return w.finishReview(cctx, args.AccountID, reviewID, store.ReviewFailed, "", res.Err.Error())
 	}
-	prep, status, err := w.afterRun(ctx, args, pr, eff, b.notes, client, reviewID, runID, prior, logger)
+	prep, status, err := w.afterRun(ctx, args, account, pr, eff, b.notes, client, reviewID, runID, prior, logger)
 	if err != nil {
 		// ctx stayed live through afterRun, so a cancel or a timeout that
 		// arrived while it ran surfaces here as a plain error; the review
@@ -216,8 +210,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	phase := &publishPhase{
 		w: w, account: account, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, logger: logger,
-		parse:     review.ParseOptions{RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Rules: ruleIDs(prep.eff.Rules)},
-		repoNotes: prep.notes, prior: prior, scope: prep.scope, templates: prep.eff.Templates,
+		parse:     review.ParseOptions{RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Rules: prep.ruleIDs},
+		repoNotes: prep.notes, prior: prior, scope: prep.scope, templates: prep.templates,
 		agent: agentOutcome,
 	}
 	status, perr := phase.run(ctx)
@@ -238,37 +232,32 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	return w.finishReview(fctx, args.AccountID, reviewID, status, patchID, errText(perr))
 }
 
-// prepared is what afterRun hands the model phase: the patch id, the
-// settings with the repository's .kritik.yaml applied, the notes the
-// summary states about that file, and whether the review builds on the
-// last completed one.
+// prepared is what afterRun hands the publish phase: the patch id, the
+// settings with the repository's .kritik.yaml applied and its templates
+// read, the notes the summary states, whether the review builds on the
+// last completed one, and the ids of the rules the agent was given.
 type prepared struct {
-	patchID string
-	eff     Effective
-	notes   []string
-	scope   review.Scope
+	patchID   string
+	eff       Effective
+	templates review.Templates
+	notes     []string
+	scope     review.Scope
+	ruleIDs   []string
 }
 
-// afterRun re-checks the head under the account transaction, lifts the patch
-// id and the merge-base repository files out of the context pack, and
-// finishes applying .kritik.yaml: a review whose changes its skip rule
-// covers ends skipped with a success status saying why. A bot-authored PR
-// whose patch id equals its last prepared review is skipped too: a
-// Renovate rebase changes nothing. notes are the worker's own on the file.
-// It returns a patch id when the review should go on to the model, and ""
-// plus the terminal status it recorded otherwise.
+// afterRun re-checks the head under the account transaction and reads the
+// context pack: the runner decided whether the review is skipped and what
+// it builds on, and read the merge-base repository files. A skipped
+// review ends with a success status saying why. notes are the worker's
+// own on the repository's file. It returns a patch id when the review
+// should go on to publishing, and "" plus the terminal status it recorded
+// otherwise.
 func (w *Review) afterRun(
-	ctx context.Context, args jobs.ReviewArgs, pr *pullRequest, eff Effective, notes []string, client forge.Client,
-	reviewID, runID string, prior priorReview, logger *slog.Logger,
+	ctx context.Context, args jobs.ReviewArgs, account *configfile.Account, pr *pullRequest, eff Effective, notes []string,
+	client forge.Client, reviewID, runID string, prior priorReview, logger *slog.Logger,
 ) (prepared, store.ReviewStatus, error) {
-	var (
-		patchID, lastPatch             string
-		priorFetched                   *string
-		superseded                     bool
-		changed, repoNotes, deltaPaths []string
-		filesJSON                      []byte
-		vars                           map[string]any
-	)
+	var pack store.ContextPackRecord
+	var superseded bool
 	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		var currentHead string
 		if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1`, pr.id).Scan(&currentHead); err != nil {
@@ -278,72 +267,47 @@ func (w *Review) afterRun(
 			superseded = true
 			return nil
 		}
-		if err := tx.QueryRow(ctx, `SELECT patch_id, changed_paths, repo_files, repo_notes, prior_head_sha, delta_paths
-			FROM context_packs WHERE runner_run_id = $1`, runID).
-			Scan(&patchID, &changed, &filesJSON, &repoNotes, &priorFetched, &deltaPaths); err != nil {
-			return fmt.Errorf("worker: read context pack: %w", err)
-		}
 		var err error
-		if vars, err = filterVars(ctx, tx, pr.id, args.Trigger); err != nil {
-			return err
-		}
-		if pr.dedupesBotPatch(args.Trigger) {
-			lastPatch, err = lastPatchID(ctx, tx, pr.id, reviewID)
-		}
+		pack, err = store.ReadContextPack(ctx, tx, runID)
 		return err
 	})
 	if err != nil {
 		return prepared{}, "", err
 	}
 	if superseded {
-		logger.Info("review superseded", "patch_id", review.ShortSHA(patchID))
-		return prepared{}, store.ReviewSuperseded, w.finishReview(ctx, args.AccountID, reviewID, store.ReviewSuperseded, patchID, "")
+		logger.Info("review superseded", "patch_id", review.ShortSHA(pack.PatchID))
+		return prepared{}, store.ReviewSuperseded, w.finishReview(ctx, args.AccountID, reviewID, store.ReviewSuperseded, pack.PatchID, "")
 	}
-
-	var files repoconfig.Files
-	if err := json.Unmarshal(filesJSON, &files); err != nil {
-		return prepared{}, "", fmt.Errorf("worker: decode repository files: %w", err)
+	for stage, n := range pack.StageCounts {
+		w.Metrics.ContextChunks(account.Key(), stage, n)
 	}
-	notes = eff.fill(files, append(notes, repoNotes...), changed, vars)
-	reason, ferr := eff.Check(vars, changed)
-	if ferr != nil {
-		logger.Warn("repository filter failed to evaluate", "error", ferr)
-	}
-	if reason != "" {
-		logger.Info("review skipped", "reason", reason, "patch_id", review.ShortSHA(patchID))
-		if err := w.finishSkipped(ctx, args.AccountID, reviewID, patchID, reason); err != nil {
+	if pack.SkipReason != "" {
+		logger.Info("review skipped", "reason", pack.SkipReason, "patch_id", review.ShortSHA(pack.PatchID))
+		end := store.ReviewEnd{Status: store.ReviewSkipped, PatchID: pack.PatchID}
+		if reason := repoconfig.SkipReason(pack.SkipReason); reason.Valid() {
+			end.SkipReason = reason
+		}
+		if _, err := w.endReview(ctx, args.AccountID, reviewID, end); err != nil {
 			return prepared{}, "", err
 		}
 		owner, repo := pr.ownerRepo()
 		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusSuccess,
-			"kritik: skipped ("+reason.Description()+")"); err != nil {
+			"kritik: skipped ("+skipDescription(pack.SkipReason)+")"); err != nil {
 			logger.Warn("commit status not set", "error", err)
 		}
 		return prepared{}, store.ReviewSkipped, nil
 	}
-	if pr.authorIsBot && lastPatch != "" && lastPatch == patchID {
-		logger.Info("review skipped", "patch_id", review.ShortSHA(patchID))
-		return prepared{}, store.ReviewSkipped, w.finishReview(ctx, args.AccountID, reviewID, store.ReviewSkipped, patchID, "")
-	}
-
-	scope, scopeReason := review.DecideScope(prior.id != "", priorFetched != nil, len(deltaPaths), eff.Incremental.MaxDeltaFiles)
-	var priorID *string
-	if prior.id != "" {
-		priorID = &prior.id
-	}
-	// Prepared is not terminal: the model phase follows, so finished_at
-	// stays NULL until it ends one way or the other.
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, scope = $4, scope_reason = $5, prior_review_id = $6
-			WHERE id = $1`, reviewID, store.ReviewPrepared, patchID, string(scope), scopeReason, priorID)
-		return err
+		return store.MarkReviewPrepared(ctx, tx, reviewID, pack.PatchID, pack.Scope, pack.ScopeReason, prior.id)
 	})
 	if err != nil {
-		return prepared{}, "", fmt.Errorf("worker: mark review prepared: %w", err)
+		return prepared{}, "", err
 	}
-	logger.Info("review prepared", "patch_id", review.ShortSHA(patchID), "scope", scope, "scope_reason", scopeReason,
-		"delta_paths", len(deltaPaths))
-	return prepared{patchID: patchID, eff: eff, notes: notes, scope: scope}, store.ReviewPrepared, nil
+	logger.Info("review prepared", "patch_id", review.ShortSHA(pack.PatchID), "scope", pack.Scope, "scope_reason", pack.ScopeReason)
+	return prepared{
+		patchID: pack.PatchID, eff: eff, templates: eff.templates(pack.Files), notes: append(slices.Clone(notes), pack.Notes...),
+		scope: pack.Scope, ruleIDs: pack.RuleIDs,
+	}, store.ReviewPrepared, nil
 }
 
 // loadPullRequest reads a job's pull request. One the store does not know
@@ -383,11 +347,10 @@ type earlyEnd struct {
 func (w *Review) end(ctx context.Context, e earlyEnd, status store.ReviewStatus, reason string) error {
 	w.Metrics.Review(e.accountKey, string(status), time.Since(e.started))
 	return w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO reviews
-			(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error, finished_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())`,
-			e.args.AccountID, e.pr.id, e.args.HeadSHA, e.mergeBase, e.forgePatch, status, string(e.skip), e.args.Trigger, reason)
-		return err
+		return store.RecordEndedReview(ctx, tx, store.EndedReview{
+			AccountID: e.args.AccountID, PullRequestID: e.pr.id, HeadSHA: e.args.HeadSHA, MergeBaseSHA: e.mergeBase,
+			ForgePatchID: e.forgePatch, Status: status, SkipReason: e.skip, Trigger: e.args.Trigger, Error: reason,
+		})
 	})
 }
 
@@ -583,37 +546,32 @@ func (w *Review) start(
 		if prior, err = lastCompleted(ctx, tx, pr.id); err != nil {
 			return err
 		}
-		// An earlier attempt of this job that never finished its review (a
-		// write that failed and was retried, a worker that died) left it
-		// running, and a running review blocks every re-run of its head.
-		if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = 'its job was retried', finished_at = now()
-			WHERE pull_request_id = $1 AND river_job_id = $2 AND finished_at IS NULL`, pr.id, jobID); err != nil {
-			return fmt.Errorf("worker: end an earlier attempt's review: %w", err)
-		}
-		if err := tx.QueryRow(ctx, `INSERT INTO reviews
-			(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, trigger, river_job_id)
-			VALUES ($1, $2, $3, $4, $5, 'running', $6, $7) RETURNING id`,
-			args.AccountID, pr.id, args.HeadSHA, mergeBase, forgePatchID, args.Trigger, jobID).Scan(&reviewID); err != nil {
-			return fmt.Errorf("worker: insert review: %w", err)
-		}
-		if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, review_id, kind) VALUES ($1, $2, 'review') RETURNING id`,
-			args.AccountID, reviewID).Scan(&runID); err != nil {
-			return fmt.Errorf("worker: insert runner run: %w", err)
-		}
-		return nil
+		reviewID, runID, err = store.StartReview(ctx, tx, store.NewReview{
+			AccountID: args.AccountID, PullRequestID: pr.id, HeadSHA: args.HeadSHA, MergeBaseSHA: mergeBase,
+			ForgePatchID: forgePatchID, Trigger: args.Trigger, JobID: jobID,
+		})
+		return err
 	})
 	return reviewID, runID, prior, err
 }
 
-func (w *Review) finishReview(ctx context.Context, accountID, reviewID string, status store.ReviewStatus, patchID, errText string) error {
-	return w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, error = left($4, 2000), finished_at = now() WHERE id = $1`,
-			reviewID, status, patchID, errText)
-		if err != nil {
-			return fmt.Errorf("worker: finish review: %w", err)
-		}
-		return nil
+// endReview ends a review as end says, and reports whether it did (see
+// store.EndReview).
+func (w *Review) endReview(ctx context.Context, accountID, reviewID string, end store.ReviewEnd) (bool, error) {
+	var ended bool
+	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		var err error
+		ended, err = store.EndReview(ctx, tx, reviewID, end)
+		return err
 	})
+	return ended, err
+}
+
+// finishReview ends a review as status, recording its patch id when known
+// and why it failed.
+func (w *Review) finishReview(ctx context.Context, accountID, reviewID string, status store.ReviewStatus, patchID, errText string) error {
+	_, err := w.endReview(ctx, accountID, reviewID, store.ReviewEnd{Status: status, PatchID: patchID, Error: errText})
+	return err
 }
 
 // endedReview is what finishEnded needs to know of the review whose job
@@ -641,7 +599,9 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 	defer cancel()
 	cause := context.Cause(ctx)
 	if workerStopping(ctx) {
-		if _, ferr := w.finishUnfinished(cctx, e.accountID, e.reviewID, store.ReviewSuperseded, "cut by a restart and retried"); ferr != nil {
+		if _, ferr := w.endReview(cctx, e.accountID, e.reviewID, store.ReviewEnd{
+			Status: store.ReviewSuperseded, Error: "cut by a restart and retried", OnlyUnfinished: true,
+		}); ferr != nil {
 			return ferr
 		}
 		e.logger.Info("review cut by a restart; its job is retried", "job", e.jobName)
@@ -652,7 +612,7 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 	if !errors.Is(cause, river.ErrJobCancelledRemotely) {
 		status, errText, desc = store.ReviewFailed, "review timed out: "+cause.Error(), "kritik: review timed out"
 	}
-	finished, ferr := w.finishUnfinished(cctx, e.accountID, e.reviewID, status, errText)
+	finished, ferr := w.endReview(cctx, e.accountID, e.reviewID, store.ReviewEnd{Status: status, Error: errText, OnlyUnfinished: true})
 	if ferr != nil || !finished {
 		return ferr
 	}
@@ -690,46 +650,9 @@ func workerStopping(ctx context.Context) bool {
 	return ctx.Err() != nil && !errors.Is(cause, river.ErrJobCancelledRemotely) && !errors.Is(cause, context.DeadlineExceeded)
 }
 
-// finishUnfinished ends a review only if nothing has ended it yet, and
-// reports whether it did.
-func (w *Review) finishUnfinished(
-	ctx context.Context, accountID, reviewID string, status store.ReviewStatus, errText string,
-) (bool, error) {
-	var finished bool
-	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, error = left($3, 2000), finished_at = now()
-			WHERE id = $1 AND finished_at IS NULL`, reviewID, status, errText)
-		if err != nil {
-			return fmt.Errorf("worker: finish review: %w", err)
-		}
-		finished = tag.RowsAffected() == 1
-		return nil
-	})
-	return finished, err
-}
-
-// failRun ends a runner run that never got a Job, so it does not stay
-// 'created' for good.
+// failRun ends a runner run that never got a Job.
 func failRun(ctx context.Context, st *store.Store, accountID, runID, errText string) error {
-	return st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE runner_runs SET phase = 'failed', error = left($2, 2000), finished_at = now() WHERE id = $1`,
-			runID, errText)
-		if err != nil {
-			return fmt.Errorf("worker: fail runner run: %w", err)
-		}
-		return nil
-	})
-}
-
-func (w *Review) finishSkipped(ctx context.Context, accountID, reviewID, patchID string, reason repoconfig.SkipReason) error {
-	return w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = $3, skip_reason = $4, finished_at = now() WHERE id = $1`,
-			reviewID, store.ReviewSkipped, patchID, string(reason))
-		if err != nil {
-			return fmt.Errorf("worker: finish review: %w", err)
-		}
-		return nil
-	})
+	return st.WithAccount(ctx, accountID, func(tx pgx.Tx) error { return store.FailRunnerRun(ctx, tx, runID, errText) })
 }
 
 func errText(err error) string {
@@ -739,38 +662,32 @@ func errText(err error) string {
 	return err.Error()
 }
 
-// ForgeCache is the Forges implementation over configured GitHub Apps. One
-// client per connection and repository owner, built on first use and
-// rebuilt when the connection's credentials change.
+// ForgeCache is the forge.Clients over configured GitHub Apps. One
+// client per App and repository owner, built on first use and kept for the
+// life of the process, as the configuration is (ADR-0022 §2.1).
 type ForgeCache struct {
 	Build func(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error)
 
 	mu      sync.Mutex
-	clients map[string]cachedForge
+	clients map[string]forge.Client
 }
 
-type cachedForge struct {
-	fingerprint string
-	client      forge.Client
-}
-
-// For implements Forges.
+// For implements forge.Clients.
 func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
-	fp := credentialFingerprint(in)
 	owner, _, _ := strings.Cut(repo, "/")
 	key := in.Name + "/" + strings.ToLower(owner)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if cached, ok := c.clients[key]; ok && cached.fingerprint == fp {
-		return cached.client, nil
+	if client, ok := c.clients[key]; ok {
+		return client, nil
 	}
 	client, err := c.Build(ctx, in, repo)
 	if err != nil {
 		return nil, err
 	}
 	if c.clients == nil {
-		c.clients = map[string]cachedForge{}
+		c.clients = map[string]forge.Client{}
 	}
-	c.clients[key] = cachedForge{fingerprint: fp, client: client}
+	c.clients[key] = client
 	return client, nil
 }

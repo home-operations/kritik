@@ -5,16 +5,6 @@ import (
 	"strings"
 )
 
-// Origin is where a connection is declared.
-type Origin string
-
-// OriginFile is the configuration file or its environment, which declare
-// every connection (ADR-0019).
-const OriginFile Origin = "file"
-
-// Origin reports where the connection is declared.
-func (i *Connection) Origin() Origin { return OriginFile }
-
 // validateConnections checks one layer's connections: names that are hook
 // paths, unique; accounts listed; credentials that resolved; and every
 // account served by one connection alone.

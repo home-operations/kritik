@@ -393,7 +393,9 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			}
 			return n
 		}
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 10 || foreign != 0 {
+		// One review per check that ran an agent; the runner-only skip ran
+		// none.
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 9 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1182,8 +1184,14 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	if status != "skipped" {
 		t.Fatalf("status = %s, want skipped", status)
 	}
-	if run := h.agentRow(t, reviewID); run.stop != "skipped" || run.errText != runner.SkipUnchangedPatch {
-		t.Fatalf("agent run = %+v", run)
+	var skip string
+	var agentRows int
+	err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT c.skip_reason, (SELECT count(*) FROM agent_runs a WHERE a.runner_run_id = r.id)
+			FROM runner_runs r JOIN context_packs c ON c.runner_run_id = r.id WHERE r.review_id = $1`, reviewID).Scan(&skip, &agentRows)
+	})
+	if err != nil || skip != runner.SkipUnchangedPatch || agentRows != 0 {
+		t.Fatalf("pack skip = %q with %d agent run(s), %v; want %s with none", skip, agentRows, err, runner.SkipUnchangedPatch)
 	}
 	h.lf.mu.Lock()
 	forgeStatus := h.lf.status
@@ -1221,8 +1229,16 @@ func checkGatewaySimilar(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Lock()
 	prompt := string(h.sm.bodies[first])
 	h.sm.mu.Unlock()
-	if !strings.Contains(prompt, "### similar: other.go") || strings.Contains(prompt, "### similar: main.go") {
-		t.Fatalf("stage 4 missing or wrong in the agent's first request:\n%s", prompt)
+	if !strings.Contains(prompt, "### similar: other.go") || strings.Contains(prompt, "### similar: main.go") ||
+		!strings.Contains(prompt, `"name":"search_code"`) || !strings.Contains(prompt, "search the repository by meaning") {
+		t.Fatalf("stage 4 or search_code missing or wrong in the agent's first request:\n%s", prompt)
+	}
+	var stages string
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT c.stages::text FROM context_packs c JOIN runner_runs r ON r.id = c.runner_run_id
+			WHERE r.review_id = $1`, reviewID).Scan(&stages)
+	}); err != nil || !strings.Contains(stages, `"stage": "similar"`) || !strings.Contains(stages, `"path": "other.go"`) {
+		t.Fatalf("the pack lacks stage 4: %v\n%s", err, stages)
 	}
 	var embedded int
 	var tokens int64
@@ -1270,13 +1286,14 @@ func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoI
 }
 
 // checkSimilarRoute calls /v1/similar the way a runner does: refused
-// without a valid token or a context pack, answered from the index, and
+// without a valid token or without queries, answered from the index, and
 // refused once the run's budget is spent.
 func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 	t.Helper()
-	similar := func(token string) (int, similarResponse) {
+	query := "main.go\n" + code
+	similar := func(token string, body string) (int, contextpack.SimilarResponse) {
 		t.Helper()
-		req, err := http.NewRequestWithContext(h.ctx, http.MethodPost, h.gatewayURL+"/v1/similar", nil)
+		req, err := http.NewRequestWithContext(h.ctx, http.MethodPost, h.gatewayURL+"/v1/similar", strings.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1286,11 +1303,15 @@ func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 			t.Fatal(err)
 		}
 		defer func() { _ = resp.Body.Close() }()
-		var out similarResponse
+		var out contextpack.SimilarResponse
 		_ = json.NewDecoder(resp.Body).Decode(&out)
 		return resp.StatusCode, out
 	}
-	if code, _ := similar("krk_" + strings.Repeat("0", 64)); code != http.StatusUnauthorized {
+	encode := func(req contextpack.SimilarRequest) string {
+		b, _ := json.Marshal(req)
+		return string(b)
+	}
+	if code, _ := similar("krk_"+strings.Repeat("0", 64), encode(contextpack.SimilarRequest{Queries: []string{query}})); code != http.StatusUnauthorized {
 		t.Fatalf("an unknown token = %d", code)
 	}
 	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: repoID, Number: 1, HeadSHA: strings.Repeat("d", 40), Trigger: "test"}
@@ -1310,28 +1331,43 @@ func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := similar(token); code != http.StatusBadRequest {
-		t.Fatalf("a run without a context pack = %d", code)
+	for name, body := range map[string]string{
+		"no queries": `{"queries":[]}`, "an empty query": `{"queries":[" "]}`, "not json": `{`,
+		"too many queries": encode(contextpack.SimilarRequest{Queries: slices.Repeat([]string{query}, contextpack.SimilarQueries+1)}),
+	} {
+		if code, _ := similar(token, body); code != http.StatusBadRequest {
+			t.Fatalf("%s = %d", name, code)
+		}
 	}
+	code200, out := similar(token, encode(contextpack.SimilarRequest{Queries: []string{query}, Exclude: []string{"main.go"}}))
+	if code200 != http.StatusOK || !out.Indexed || len(out.Chunks) != 1 || out.Chunks[0].Path != "other.go" || out.Chunks[0].Stage != contextpack.StageSimilar {
+		t.Fatalf("similar = %d %+v", code200, out)
+	}
+	grant, err := h.st.LookupGatewayToken(h.ctx, token)
+	if err != nil || grant.Spent <= 0 || grant.Spent >= int64(len(query))/4+1 {
+		t.Fatalf("spent = %d, %v; want the embedding's tokens, not the reservation", grant.Spent, err)
+	}
+	if code, _ := similar(token, encode(contextpack.SimilarRequest{Queries: []string{query}})); code != http.StatusTooManyRequests {
+		t.Fatalf("a call past the run's budget = %d", code)
+	}
+	// A repository without an index answers indexed false, so the runner
+	// offers no search tool.
+	otherRepo := configfile.RepositoryID(h.account.ID(), "acme/gadgets")
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-		_, err := tx.Exec(h.ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths)
-			VALUES ($1, $2, $3, $4, 'p', $5, '{main.go}')`, runID, h.account.ID(), args.HeadSHA, h.base,
-			"diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1,1 +1,4 @@\n package main\n+\n+"+
-				strings.ReplaceAll(strings.TrimSuffix(code, "\n"), "\n", "\n+")+"\n")
+		_, err := tx.Exec(h.ctx, `INSERT INTO repositories (id, account_id, name, managed_by) VALUES ($1, $2, 'acme/gadgets', 'forge')
+			ON CONFLICT DO NOTHING`, otherRepo, h.account.ID())
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
-	code200, out := similar(token)
-	if code200 != http.StatusOK || len(out.Chunks) != 1 || out.Chunks[0].Path != "other.go" || out.Chunks[0].Stage != contextpack.StageSimilar {
-		t.Fatalf("similar = %d %+v", code200, out)
+	token2, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
+		RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: otherRepo, Model: "gateway/agent-model", Budget: 1000,
+	}, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
 	}
-	grant, err := h.st.LookupGatewayToken(h.ctx, token)
-	if err != nil || grant.Spent <= 0 || grant.Spent >= similarReserve {
-		t.Fatalf("spent = %d, %v; want the embedding's tokens, not the reservation", grant.Spent, err)
-	}
-	if code, _ := similar(token); code != http.StatusTooManyRequests {
-		t.Fatalf("a call past the run's budget = %d", code)
+	if code, out := similar(token2, encode(contextpack.SimilarRequest{Queries: []string{query}})); code != http.StatusOK || out.Indexed || len(out.Chunks) != 0 {
+		t.Fatalf("an unindexed repository = %d %+v", code, out)
 	}
 	if err := h.st.RevokeGatewayTokens(h.ctx, runID); err != nil {
 		t.Fatal(err)

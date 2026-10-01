@@ -7,6 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river/rivertype"
+
+	"github.com/home-operations/kritik/internal/jobs"
 )
 
 // UsageGroup is what a usage series is keyed by.
@@ -125,7 +127,7 @@ func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
 		coalesce((j.args->>'comment_id')::bigint, 0), coalesce(j.errors[array_length(j.errors, 1)]->>'error', '')
 		FROM river_job j LEFT JOIN repositories r ON r.id::text = j.args->>'repository_id'
 		WHERE j.args->>'account_id' = current_setting('app.account_id', true) AND j.kind IN ('review', 'followup', 'index')`
-	rows, err := tx.Query(ctx, `(SELECT `+cols+` AND j.state IN ('available', 'scheduled', 'running', 'retryable')
+	rows, err := tx.Query(ctx, `(SELECT `+cols+` AND j.state IN (`+jobs.LiveStatesSQL()+`)
 			ORDER BY j.scheduled_at, j.id LIMIT $1)
 		UNION ALL
 		(SELECT `+cols+` AND j.state IN ('completed', 'cancelled', 'discarded')

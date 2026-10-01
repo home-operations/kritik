@@ -62,7 +62,6 @@
           <thead>
             <tr>
               <th scope="col">App</th>
-              <th scope="col">From</th>
               <th scope="col">Accounts</th>
               <th scope="col">Webhooks</th>
               <th scope="col"><span class="sr-only">Actions</span></th>
@@ -72,7 +71,6 @@
             {#each list as c (c.name)}
               <tr>
                 <td class="mono">{c.name}</td>
-                <td>{c.managedBy === 'file' ? 'config file' : 'dashboard'}</td>
                 <td class="mono small">{c.accounts.join(', ')}</td>
                 <td>
                   {#if unsignedWebhooks(c)}<Pill tone="danger" label="unsigned" title="GitHub sends this App's webhooks with no signature, so kritik refuses them: set the App's webhook secret" />

@@ -25,9 +25,9 @@ func (c *ConfigDriftGauge) Set(drifting bool) {
 	c.g.Set(0)
 }
 
-// ConfigErrorGauge is 1 while the leader's latest attempt to apply the
-// merged configuration to the store was refused; the last applied state
-// stays live meanwhile.
+// ConfigErrorGauge is 1 while the leader's attempt to apply the
+// configuration to the store was refused; the last applied state stays
+// live meanwhile.
 type ConfigErrorGauge struct{ g prometheus.Gauge }
 
 // NewConfigErrorGauge registers the gauge on reg, at 0.

@@ -43,47 +43,43 @@ func TestEffective(t *testing.T) {
 	}
 	adminDefaults := review.Templates{Summary: "op summary", Inline: "op inline"}
 	adminPaths := []string{"ops/rules.md", "ops/summary.tmpl", "ops/inline.tmpl"}
-	adminRules := []review.Rule{{ID: "ops", Text: "admin rules", File: "ops/rules.md"}}
-	repoRule := review.Rule{ID: "repo", Text: "repo rules", File: ".kritik/rules.md"}
 
 	tests := []struct {
 		name string
 		// doc is the merge-base .kritik.yaml, none when empty; files are
-		// what the runner read, and runnerNotes what it noted.
+		// what the runner read.
 		doc          string
 		files        repoconfig.Files
-		runnerNotes  []string
 		enabled      bool
 		inRepoFilter bool
 		ignore       []string
 		repoFiles    []string
-		rules        []review.Rule
 		templates    review.Templates
 		strict       bool
 		notes        []string
 	}{
 		{
 			name: "no file keeps the admin's settings", files: adminFiles, enabled: true, ignore: []string{"vendor/**"},
-			repoFiles: adminPaths, rules: adminRules, templates: adminDefaults, strict: true,
+			repoFiles: adminPaths, templates: adminDefaults, strict: true,
 		},
 		{
 			name: "disable", doc: "enabled: false\n", files: adminFiles, ignore: []string{"vendor/**"},
-			repoFiles: append(adminPaths, repoconfig.FileName), rules: adminRules, templates: adminDefaults, strict: true,
+			repoFiles: append(adminPaths, repoconfig.FileName), templates: adminDefaults, strict: true,
 		},
 		{
 			name: "filter is kept apart to be ANDed", doc: "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", files: adminFiles,
 			enabled: true, inRepoFilter: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
-			rules: adminRules, templates: adminDefaults, strict: true,
+			templates: adminDefaults, strict: true,
 		},
 		{
 			name: "ignore globs add to the admin's", doc: "ignore: [gen/**, vendor/**]\n",
 			files: adminFiles, enabled: true, ignore: []string{"vendor/**", "gen/**"},
-			repoFiles: append(adminPaths, repoconfig.FileName), rules: adminRules, templates: adminDefaults, strict: true,
+			repoFiles: append(adminPaths, repoconfig.FileName), templates: adminDefaults, strict: true,
 		},
 		{
 			name: "requireSuggestedFix may only turn on", doc: "requireSuggestedFix: false\n", files: adminFiles,
 			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
-			rules: adminRules, templates: adminDefaults, strict: true,
+			templates: adminDefaults, strict: true,
 			notes: []string{".kritik.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},
 		{
@@ -92,41 +88,18 @@ func TestEffective(t *testing.T) {
 			files:   with(repoconfig.Files{".kritik/rules.md": "repo rules", ".kritik/summary.tmpl": "repo summary"}),
 			enabled: true, ignore: []string{"vendor/**"},
 			repoFiles: []string{"ops/rules.md", ".kritik/rules.md", ".kritik/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			rules:     append(slices.Clone(adminRules), repoRule), templates: review.Templates{Summary: "repo summary", Inline: "op inline"}, strict: true,
+			templates: review.Templates{Summary: "repo summary", Inline: "op inline"}, strict: true,
 		},
 		{
-			name: "a missing rule file is noted", doc: "rules: [{ id: repo, file: .kritik/rules.md }, { id: gone, file: .kritik/gone.md }]\n",
-			files: with(repoconfig.Files{".kritik/rules.md": "repo rules"}), enabled: true, ignore: []string{"vendor/**"},
-			repoFiles: []string{"ops/rules.md", ".kritik/rules.md", ".kritik/gone.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			rules:     append(slices.Clone(adminRules), repoRule), templates: adminDefaults, strict: true,
-			notes: []string{".kritik/gone.md: referenced but not found"},
-		},
-		{
-			name: "a file the runner noted is not noted again", doc: "rules: [{ id: big, file: .kritik/big.md }, { id: gone, file: .kritik/gone.md }]\n",
-			files: adminFiles,
-			runnerNotes: []string{
-				".kritik/big.md: skipped, it exceeds the 262144 byte per-file limit", ".kritik/gone.md: referenced but not found",
-			},
-			enabled: true, ignore: []string{"vendor/**"},
-			repoFiles: []string{"ops/rules.md", ".kritik/big.md", ".kritik/gone.md", "ops/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
-			rules:     adminRules, templates: adminDefaults, strict: true,
-			notes: []string{
-				".kritik/big.md: skipped, it exceeds the 262144 byte per-file limit", ".kritik/gone.md: referenced but not found",
-			},
-		},
-		{
-			// The file is one byte too long by its last character, whose
-			// first byte would still fit.
-			name: "agent files over the cap are noted", doc: "agentFiles: true\n",
-			files:   with(repoconfig.Files{"AGENTS.md": strings.Repeat("a", repoconfig.MaxInstructionBytes-1) + "é"}),
-			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
-			rules: adminRules, templates: adminDefaults, strict: true,
-			notes: []string{"AGENTS.md and CLAUDE.md files truncated to 32 KiB"},
+			name: "a template the runner could not read leaves the built-in one", doc: "comments:\n  summaryTemplate: .kritik/gone.tmpl\n",
+			files: adminFiles, enabled: true, ignore: []string{"vendor/**"},
+			repoFiles: []string{"ops/rules.md", ".kritik/gone.tmpl", "ops/inline.tmpl", repoconfig.FileName},
+			templates: review.Templates{Inline: "op inline"}, strict: true,
 		},
 		{
 			name: "invalid yaml is noted and the admin's settings apply", doc: "enabled: false\nunknown: 1\n", files: adminFiles,
 			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
-			rules: adminRules, templates: adminDefaults, strict: true,
+			templates: adminDefaults, strict: true,
 			notes: []string{".kritik.yaml was ignored: repoconfig: parse: yaml: unmarshal errors:\n  line 2: field unknown not found in type repoconfig.File"},
 		},
 	}
@@ -147,9 +120,8 @@ func TestEffective(t *testing.T) {
 			if got := e.repoFiles(); !slices.Equal(got, tt.repoFiles) {
 				t.Fatalf("repoFiles = %v, want %v", got, tt.repoFiles)
 			}
-			notes = e.fill(tt.files, append(notes, tt.runnerNotes...), []string{"main.go"}, nil)
-			if !reflect.DeepEqual(e.Rules, tt.rules) || e.Templates != tt.templates || e.Review.RequireSuggestedFix != tt.strict {
-				t.Fatalf("rules=%+v templates=%+v strict=%v", e.Rules, e.Templates, e.Review.RequireSuggestedFix)
+			if got := e.templates(tt.files); got != tt.templates || e.Review.RequireSuggestedFix != tt.strict {
+				t.Fatalf("templates=%+v strict=%v", got, e.Review.RequireSuggestedFix)
 			}
 			if !slices.Equal(notes, tt.notes) {
 				t.Fatalf("notes = %q, want %q", notes, tt.notes)
@@ -353,43 +325,5 @@ func TestPostsInline(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestFillScopesRules(t *testing.T) {
-	e, _ := effective(adminSettings(t), []byte("rules: [{ id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }, "+
-		"{ id: renovate, rule: Say what the update breaks., whenExpr: 'pr.headRef.startsWith(\"renovate/\")' }]\n"))
-	files := repoconfig.Files{"ops/rules.md": "admin rules", ".kritik/sql.md": "sql rules"}
-	feature := map[string]any{"headRef": "feat/x"}
-	for _, tt := range []struct {
-		changed []string
-		vars    map[string]any
-		want    []string
-	}{
-		{[]string{"main.go"}, feature, []string{"ops"}},
-		{[]string{"main.go", "db/0001.sql"}, feature, []string{"ops", "sql"}},
-		{[]string{"main.go"}, map[string]any{"headRef": "renovate/go-1.x"}, []string{"ops", "renovate"}},
-	} {
-		e.fill(files, nil, tt.changed, tt.vars)
-		got := make([]string, 0, len(e.Rules))
-		for _, r := range e.Rules {
-			got = append(got, r.ID)
-		}
-		if !slices.Equal(got, tt.want) {
-			t.Fatalf("changed %v: rules = %q, want %q", tt.changed, got, tt.want)
-		}
-	}
-}
-
-func TestFillNotesMissingContext(t *testing.T) {
-	settings := adminSettings(t)
-	settings.Review.Context = []configfile.ContextFile{{Path: "docs/arch.md", Description: "how the parts fit"}}
-	e, _ := effective(settings, []byte("context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }, "+
-		"{ path: docs/gone.md, description: gone }]\n"))
-	files := repoconfig.Files{
-		"ops/rules.md": "admin rules", "ops/summary.tmpl": "s", "ops/inline.tmpl": "i", "docs/arch.md": "arch", "db/schema.sql": "schema",
-	}
-	if notes := e.fill(files, nil, []string{"main.go"}, nil); !slices.Equal(notes, []string{"docs/gone.md: referenced but not found"}) {
-		t.Fatalf("notes = %q", notes)
 	}
 }

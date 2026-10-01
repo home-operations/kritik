@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,15 +19,12 @@ import (
 )
 
 // Effective is a repository's settings once its .kritik.yaml is applied.
-// Settings.Review names the files the runner reads; Templates holds their
-// contents once it has, and Rules the rules that apply to the change, a
-// file rule with its file's content.
+// Settings.Review names the files the runner reads from the merge base and
+// keeps in the review's context pack.
 type Effective struct {
 	repoconfig.Merged
 	// Found is whether the repository has a .kritik.yaml.
-	Found     bool
-	Rules     []review.Rule
-	Templates review.Templates
+	Found bool
 }
 
 // readRepoConfig reads .kritik.yaml at ref through the forge: nil when the
@@ -70,53 +66,11 @@ func (e *Effective) repoFiles() []string {
 	return paths
 }
 
-// fill reads the contents of the files e names out of files, what the
-// runner read, into Rules and Templates, leaving out rules scoped to paths
-// none of changed matches and rules whose whenExpr is false of vars, the
-// pull request's filter variables.
-// notes lead the returned ones; a named file missing from files is noted
-// unless they already say why, and instructions past their cap are too.
-func (e *Effective) fill(files repoconfig.Files, notes, changed []string, vars map[string]any) []string {
-	notes = slices.Clone(notes)
-	read := func(p string) string {
-		if p == "" {
-			return ""
-		}
-		content, ok := files[p]
-		if !ok && !slices.ContainsFunc(notes, func(n string) bool { return strings.HasPrefix(n, p+": ") }) {
-			notes = append(notes, fmt.Sprintf("%s: referenced but not found", p))
-		}
-		return content
-	}
-	for _, r := range e.Review.Rules {
-		read(r.File)
-	}
-	var left int
-	if e.Rules, left = repoconfig.ActiveRules(repoconfig.RulesFor(e.Review.Rules, vars), files, changed); left > 0 {
-		notes = append(notes, fmt.Sprintf("%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given",
-			left))
-	}
-	var agent []string
-	if e.Review.AgentFiles {
-		agent = repoconfig.AgentFiles(files, changed)
-	}
-	if _, truncated := repoconfig.Instructions(files, agent); truncated {
-		notes = append(notes, "AGENTS.md and CLAUDE.md files truncated to 32 KiB")
-	}
-	e.Templates = review.Templates{Summary: read(e.Review.Templates.Summary), Inline: read(e.Review.Templates.Inline)}
-	for _, c := range e.Review.Context {
-		read(c.Path)
-	}
-	return notes
-}
-
-// ruleIDs is the ids of the rules a review was given.
-func ruleIDs(rules []review.Rule) []string {
-	ids := make([]string, len(rules))
-	for i, r := range rules {
-		ids[i] = r.ID
-	}
-	return ids
+// templates are the repository's comment templates, read out of files,
+// what the runner read from the merge base; a named file it could not
+// read leaves the built-in template in use, as the pack's notes say.
+func (e *Effective) templates(files repoconfig.Files) review.Templates {
+	return review.Templates{Summary: files[e.Review.Templates.Summary], Inline: files[e.Review.Templates.Inline]}
 }
 
 // settleLeft is how much longer a review job started by trigger, enqueued

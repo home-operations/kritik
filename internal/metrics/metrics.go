@@ -22,6 +22,7 @@ type Metrics struct {
 	findings       *prometheus.CounterVec
 	indexRuns      *prometheus.CounterVec
 	indexChunks    *prometheus.CounterVec
+	contextChunks  *prometheus.CounterVec
 	runnerRuns     *prometheus.CounterVec
 	runnerDuration *prometheus.HistogramVec
 	leaseWait      *prometheus.HistogramVec
@@ -68,7 +69,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		}),
 		transcripts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_transcript_writes_total",
-			Help: "Model calls recorded for the transcript view, by kind (agent_step, review, fallback, followup) and outcome (ok, error).",
+			Help: "Model calls recorded for the transcript view, by kind (agent_step, followup) and outcome (ok, error).",
 		}, []string{lblKind, lblOutcome}),
 		reviewDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritik_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",
@@ -86,6 +87,10 @@ func New(reg prometheus.Registerer) *Metrics {
 		indexChunks: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_index_chunks_total", Help: "Chunks embedded into the index.",
 		}, []string{lblAccount}),
+		contextChunks: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritik_context_chunks_total",
+			Help: "Context chunks a review's prompt was given, by stage (overlay, definition, caller, similar).",
+		}, []string{lblAccount, "stage"}),
 		runnerRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritik_runner_runs_total", Help: "Runner Jobs finished, by kind and outcome.",
 		}, []string{lblAccount, "kind", lblOutcome}),
@@ -113,7 +118,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		}, []string{lblAccount, lblModel, lblRole}),
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,
-		m.indexRuns, m.indexChunks,
+		m.indexRuns, m.indexChunks, m.contextChunks,
 		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.modelCalls, m.modelTokens, m.modelCost, m.egress, m.transcripts,
 		m.leader)
 	return m
@@ -165,6 +170,13 @@ func (m *Metrics) IndexRun(account, mode, status string, chunks int) {
 		if chunks > 0 {
 			m.indexChunks.WithLabelValues(account).Add(float64(chunks))
 		}
+	}
+}
+
+// ContextChunks counts the chunks one stage gave a review's prompt.
+func (m *Metrics) ContextChunks(account, stage string, n int) {
+	if m != nil && n > 0 {
+		m.contextChunks.WithLabelValues(account, stage).Add(float64(n))
 	}
 }
 

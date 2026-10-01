@@ -52,7 +52,8 @@ context:
 - `models.review` / `models.fallback`: a `<provider>/<model>` of a
   provider the instance or the repository's account declares, used for
   the review and for follow-ups. A model of any other provider is
-  dropped; the account's limits bound what a choice can cost.
+  dropped; the account's limits bound what a choice can cost. A fallback
+  applies only on the review model's provider.
 - `feedback`: how much the review says
   ([ADR-0021](adr/0021-configuration-shape.md) §2.4), replacing the
   admin's.
@@ -70,7 +71,8 @@ context:
   comments.
 - `comments.summaryTemplate` / `comments.inlineTemplate`: paths to Go
   [text/template](https://pkg.go.dev/text/template) templates that replace
-  kritik's built-in summary and inline comment templates, with the
+  kritik's built-in summary and inline comment templates; an empty path
+  restores the built-in one where the admin set a template. They use the
   [sprout](https://github.com/go-sprout/sprout) helpers tuppr and chaski
   expose (std, strings, conversion, encoding, numeric, slices, maps, regex,
   time, semver and reflect; not env, filesystem, network, random, uniqueid

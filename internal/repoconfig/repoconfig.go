@@ -19,11 +19,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"path"
 	"slices"
 	"strings"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/home-operations/kritik/internal/chunk"
@@ -60,9 +58,11 @@ const (
 // inline, and the in-repo files whose contents replace kritik's built-in
 // summary and inline comment templates.
 type Comments struct {
-	Inline          *bool  `yaml:"inline,omitempty"`
-	SummaryTemplate string `yaml:"summaryTemplate,omitempty"`
-	InlineTemplate  string `yaml:"inlineTemplate,omitempty"`
+	Inline *bool `yaml:"inline,omitempty"`
+	// SummaryTemplate and InlineTemplate replace the admin's; an empty
+	// path restores the built-in template.
+	SummaryTemplate *string `yaml:"summaryTemplate,omitempty"`
+	InlineTemplate  *string `yaml:"inlineTemplate,omitempty"`
 }
 
 // Models are the review and fallback models a repository chooses, each a
@@ -114,7 +114,7 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 	}
 
 	for i, g := range f.Ignore {
-		if !validGlob(g) {
+		if !configfile.ValidGlob(g) {
 			return File{}, nil, fmt.Errorf("repoconfig: ignore[%d] %q is not a valid glob", i, g)
 		}
 	}
@@ -147,28 +147,21 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 	return f, prg, nil
 }
 
-func validGlob(g string) bool {
-	return strings.TrimSpace(g) != "" && doublestar.ValidatePattern(g)
-}
-
-// validateRefPath rejects a referenced path that is absolute or that, once
-// cleaned, escapes the repository root - both are read through Collect's
-// caller-supplied read function, so an unbounded path would let a
-// repository's own config read arbitrary files on the runner's checkout.
+// validateRefPath rejects a referenced path that is absolute or escapes
+// the repository root: every path is read through Collect's caller-supplied
+// read function, so an unbounded one would let a repository's own config
+// read arbitrary files on the runner's checkout.
 func validateRefPath(p string) error {
-	if path.IsAbs(p) {
-		return fmt.Errorf("repoconfig: referenced path %q must be relative", p)
-	}
-	clean := path.Clean(p)
-	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return fmt.Errorf("repoconfig: referenced path %q escapes the repository", p)
+	if err := configfile.CheckRepoPath(p); err != nil {
+		return fmt.Errorf("repoconfig: referenced %w", err)
 	}
 	return nil
 }
 
-// Referenced lists the in-repo paths the file names: its rules' files
-// first, then the summary and inline templates, then the context files,
-// deduplicated in the order first seen.
+// Referenced lists the in-repo paths the file names whose contents a
+// review reads: its rules' files first, then the summary and inline
+// templates, deduplicated in the order first seen. Context files are
+// pointers the agent follows with its tools.
 func (f File) Referenced() []string {
 	seen := make(map[string]bool, len(f.Rules)+2)
 	var out []string
@@ -182,10 +175,10 @@ func (f File) Referenced() []string {
 	for _, r := range f.Rules {
 		add(r.File)
 	}
-	add(f.Comments.SummaryTemplate)
-	add(f.Comments.InlineTemplate)
-	for _, c := range f.Context {
-		add(c.Path)
+	for _, t := range []*string{f.Comments.SummaryTemplate, f.Comments.InlineTemplate} {
+		if t != nil {
+			add(*t)
+		}
 	}
 	return out
 }

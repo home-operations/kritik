@@ -15,9 +15,12 @@ mise run lint
 Review quality is measured offline: `mise run bench-mine` builds a corpus
 of pull requests whose lines a later fix commit changed, and `mise run
 bench` (with `OPENROUTER_API_KEY`) runs them through the service's own
-fetch, context and prompt code as one-call reviews, what `agent.maxSteps: 1`
-sends, in diff-only and full-context modes, reporting
-recall on the expected findings, cost and latency per mode. See the ADR's
+fetch, context and prompt code as one-step agentic reviews, what
+`agent.maxSteps: 1` sends: the agentic system prompt, the read-only tools
+over the head commit and one forced `submit_review`. Stage 4, the
+similar-code index, needs a database and is left out. Each case runs with
+the diff alone and with the context stages, reporting recall on the
+expected findings, cost and latency per ablation. See the ADR's
 evaluation section.
 
 ## Cluster development loop

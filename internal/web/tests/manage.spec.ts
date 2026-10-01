@@ -94,7 +94,7 @@ test.describe('actions', () => {
             : g.apiError(409, 'already_queued', 'a review of this head is already queued or running'),
       ],
       ['POST', new RegExp(`${API}/reviews/rev-1/cancel$`), g.apiError(409, 'not_cancelable', 'the review is not running')],
-      ['POST', new RegExp(`${API}/repos/alpha/one/reindex$`), g.apiError(503, 'actions_disabled', 'this process does not queue dashboard actions')],
+      ['POST', new RegExp(`${API}/repos/alpha/one/reindex$`), g.apiError(409, 'already_queued', 'a reindex is already queued for this repository')],
     ]);
 
     await page.goto(`/#/a/${S}/reviews/rev-1`);
@@ -121,7 +121,7 @@ test.describe('actions', () => {
     await page.goto(`/#/a/${S}/repos/alpha/one`);
     await page.getByRole('button', { name: 'Reindex' }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Reindex' }).click();
-    await expect(page.getByRole('status')).toContainText('cannot queue dashboard actions');
+    await expect(page.getByRole('status')).toContainText('already queued or running');
   });
 
   test('are hidden from an account member', async ({ page }) => {

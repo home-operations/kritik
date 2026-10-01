@@ -14,10 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/home-operations/kritik/internal/agent"
 	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/model"
 	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritik/internal/runner"
 )
 
 // Modes are the ablations: what the prompt carries beyond the diff.
@@ -134,13 +136,12 @@ func TestBench(t *testing.T) {
 		}
 	}
 	modelID := envOr("KRITIK_BENCH_MODEL", "openai/gpt-6-sol")
-	var completer model.Completer
+	var stepper model.Stepper
 	if !dry {
-		s, err := model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil)
-		if err != nil {
+		var err error
+		if stepper, err = model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil); err != nil {
 			t.Fatal(err)
 		}
-		completer = model.Structured{Stepper: s}
 	}
 
 	rep := report{Model: modelID, When: time.Now().UTC(), Dry: dry, Cases: len(cases), Modes: map[string]modeTotals{}}
@@ -167,11 +168,16 @@ func TestBench(t *testing.T) {
 			for _, ch := range selected {
 				cr.Context[ch.Stage]++
 			}
+			// The prompt a review sends when agent.maxSteps is 1: the agentic
+			// system prompt, the user message within its budget, the read-only
+			// tools over the head and one forced submit_review. Stage 4 needs
+			// an index, which the bench has none of.
+			system := review.SystemPrompt(nil, nil, nil, false, false)
 			msg, _, _ := review.Build(review.Input{
 				Repository: c.Repository, Number: c.PR, Title: c.Title, Author: "author", BaseRef: "main",
-				Changed: res.Changed, Diff: res.Diff, Context: selected,
+				Changed: res.Changed, Diff: res.Diff, Context: selected, BudgetTokens: review.UserBudget(system),
 			})
-			cr.PromptChars = len(msg)
+			cr.PromptChars = len(system) + len(msg)
 			for _, e := range c.Expected {
 				if e.Must {
 					cr.MustTotal++
@@ -180,18 +186,28 @@ func TestBench(t *testing.T) {
 				}
 			}
 			if !dry {
+				tree := agent.NewTree(headTree, nil)
+				limits := agent.Limits{MaxSteps: 1}.WithDefaults()
 				started := time.Now()
-				resp, err := completer.Complete(ctx, model.CompletionRequest{
-					System: review.SystemPrompt(nil, nil, nil, false), User: msg, Model: modelID, Schema: review.Schema(), SchemaName: "submit_review",
-					MaxTokens: 4096,
-				})
+				out := agent.Run{
+					Stepper: stepper, Model: modelID, System: system, User: msg,
+					Tools: []agent.Tool{
+						agent.ReadFileTool(tree, limits.MaxToolOutputBytes),
+						agent.GrepTool(tree, limits.MaxToolOutputBytes),
+						agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
+					},
+					Submit: runner.SubmitTool(false), Limits: limits,
+				}.Do(ctx)
 				cr.Latency = time.Since(started)
-				if err != nil {
-					cr.Error = err.Error()
-					t.Logf("%s [%s]: model error: %v", c.ID, m, err)
-				} else {
-					cr.Input, cr.Cached, cr.Output, cr.CostUSD = resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD
-					parsed, dropped, err := review.Parse(resp.Raw, anchors, review.ParseOptions{})
+				cr.Input, cr.Cached, cr.Output, cr.CostUSD = out.Usage.Prompt(), out.Usage.CacheRead, out.Usage.Output, out.CostUSD
+				switch {
+				case out.Stop == agent.StopError:
+					cr.Error = out.Err
+					t.Logf("%s [%s]: model error: %s", c.ID, m, out.Err)
+				case out.Stop != agent.StopSubmitted:
+					cr.Error = "agent stopped: " + string(out.Stop)
+				default:
+					parsed, dropped, err := review.Parse(string(out.Submitted), anchors, review.ParseOptions{})
 					if err != nil {
 						cr.Error = err.Error()
 					} else {

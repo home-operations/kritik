@@ -146,7 +146,7 @@ func TestConnectionCredentials(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	in, ok := f.Connection("sticky-gecko")
-	if !ok || !in.Serves("Home-Operations") || in.Origin() != OriginFile {
+	if !ok || !in.Serves("Home-Operations") {
 		t.Fatalf("Connection(sticky-gecko) = %v, %v", in, ok)
 	}
 	if in.App.PrivateKeyValue().Value() == "" || in.WebhookSecretValue().Value() != "whsec" || in.App.ClientIDValue() != "Iv1.xxxxxxxx" {
@@ -168,6 +168,12 @@ func TestHashAndConnectionLookup(t *testing.T) {
 	}
 	if len(f.Hash()) != 64 {
 		t.Fatalf("hash = %q", f.Hash())
+	}
+	// The environment overlay is part of the configuration, so a replica
+	// with another one does not hash alike.
+	t.Setenv("KRITIK_DEFAULTS_SETTLE", "90s")
+	if g, err := load(t, fixture(t)); err != nil || g.Hash() == f.Hash() {
+		t.Fatalf("hash unchanged by an overlay variable: %v", err)
 	}
 	ho, ok := f.Account(ForgeGitHub, "Home-Operations")
 	if !ok || ho.Name != "home-operations" || ho.ID() != AccountID(ForgeGitHub, "home-operations") || ho.Slug() != "github/home-operations" {
