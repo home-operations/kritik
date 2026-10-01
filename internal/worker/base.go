@@ -8,6 +8,7 @@ import (
 
 	"github.com/riverqueue/river"
 
+	"github.com/home-operations/kritik/internal/adapter"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/forge"
 	"github.com/home-operations/kritik/internal/metrics"
@@ -66,7 +67,7 @@ func (b *Base) withLease(
 	ctx context.Context, account *configfile.Account, key string, slots int, jobID int64, fn func(ctx context.Context) error,
 ) error {
 	waited := time.Now()
-	l, err := acquireLease(ctx, b.Store, account.ID(), key, slots, jobID)
+	l, err := b.Store.AcquireLease(ctx, account.ID(), key, slots, jobID)
 	if err != nil {
 		return err
 	}
@@ -78,10 +79,15 @@ func (b *Base) withLease(
 // releaseLease releases l on a context of its own, since the job's has
 // usually ended by the time a lease is let go, and logs a failure to
 // logger, which carries whatever the caller knows of the job.
-func (b *Base) releaseLease(ctx context.Context, logger *slog.Logger, l *lease, key string) {
+func (b *Base) releaseLease(ctx context.Context, logger *slog.Logger, l *store.Lease, key string) {
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
-	if err := l.release(rctx); err != nil {
+	if err := l.Release(rctx); err != nil {
 		logger.Warn("lease not released", "key", key, "error", err)
 	}
+}
+
+// recorder writes model calls to the transcript view.
+func (b *Base) recorder() adapter.Recorder {
+	return adapter.Recorder{Store: b.Store, Metrics: b.Metrics}
 }

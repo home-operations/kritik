@@ -12,9 +12,6 @@ func TestSmallHelpers(t *testing.T) {
 	if errText(nil) != "" || errText(errors.New("x")) != "x" {
 		t.Fatal("errText")
 	}
-	if callOutcome(nil) != "ok" || callOutcome(errors.New("x")) != "error" {
-		t.Fatal("callOutcome")
-	}
 	if embedText(store.StagedChunk{Path: "a/b.go", Symbol: "Build", Kind: "function", Text: "func Build() {}"}) != "a/b.go function Build\nfunc Build() {}" {
 		t.Fatal("embedText with a symbol")
 	}

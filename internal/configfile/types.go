@@ -12,6 +12,7 @@ package configfile
 
 import (
 	"cmp"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -147,10 +148,12 @@ func (m ModelRef) Model() string {
 
 // Models are the resolved completion roles; a role empty after resolution
 // means the feature is off. The embedding model is not here: it is the
-// instance's Embedding, since changing it reindexes every repository.
+// instance's Embedding, since changing it reindexes every repository. The
+// resolved types carry json tags because the dashboard's API serves them
+// as they are.
 type Models struct {
-	Review   ModelRef
-	Fallback ModelRef
+	Review   ModelRef `json:"review"`
+	Fallback ModelRef `json:"fallback"`
 }
 
 // ModelsSpec sets the completion roles at one scope. A role written here,
@@ -165,12 +168,12 @@ type ModelsSpec struct {
 type Limits struct {
 	// Concurrency is the number of advisory-lock slots per account and model:
 	// how many model calls may run at once.
-	Concurrency int
+	Concurrency int `json:"concurrency"`
 	// ReviewsPerDay caps review passes per account per calendar day.
-	ReviewsPerDay int
+	ReviewsPerDay int `json:"reviewsPerDay"`
 	// TokensPerMonth caps input plus output tokens per account per calendar
 	// month.
-	TokensPerMonth int64
+	TokensPerMonth int64 `json:"tokensPerMonth"`
 }
 
 // LimitsSpec sets limits at one scope. A limit written here replaces the
@@ -391,6 +394,27 @@ type AgentSettings struct {
 	CommandTimeout     time.Duration
 }
 
+// MarshalJSON is the API's form of the bounds: the durations in whole
+// seconds, as the dashboard shows them, and commands never null.
+func (a AgentSettings) MarshalJSON() ([]byte, error) {
+	commands := a.Commands
+	if commands == nil {
+		commands = []string{}
+	}
+	return json.Marshal(struct {
+		MaxSteps              int      `json:"maxSteps"`
+		MaxToolOutputBytes    int      `json:"maxToolOutputBytes"`
+		MaxTokens             int64    `json:"maxTokens"`
+		TimeoutSeconds        int64    `json:"timeoutSeconds"`
+		Commands              []string `json:"commands"`
+		CommandTimeoutSeconds int64    `json:"commandTimeoutSeconds"`
+	}{
+		MaxSteps: a.MaxSteps, MaxToolOutputBytes: a.MaxToolOutputBytes, MaxTokens: a.MaxTokens,
+		TimeoutSeconds: int64(a.Timeout.Seconds()), Commands: commands,
+		CommandTimeoutSeconds: int64(a.CommandTimeout.Seconds()),
+	})
+}
+
 // DefaultAgent applies to every agent bound a repository leaves unset. Its
 // steps, tool output and tokens are the agent loop's own defaults. No
 // command is allowed by default: a repository is opted into the run tool.
@@ -427,25 +451,26 @@ type ReviewTemplates struct {
 // Review is the admin's resolved presentation and strictness for a
 // repository. Paths name files in the repository's merge-base tree.
 type Review struct {
-	RequireSuggestedFix bool
-	Templates           ReviewTemplates
+	RequireSuggestedFix bool            `json:"requireSuggestedFix"`
+	Templates           ReviewTemplates `json:"templates"`
 	// InlineComments is false to post the summary alone.
-	InlineComments bool
+	InlineComments bool `json:"inlineComments"`
 	// Approve is true to approve a pull request whose review found
 	// nothing blocking or important, and to dismiss that approval when a
 	// later review does (ADR-0025). Off unless set.
-	Approve bool
-	Context []ContextFile
+	Approve bool          `json:"approve"`
+	Context []ContextFile `json:"context"`
 	// Rules are the checks the configuration writes, the broadest scope's
-	// first (ADR-0018).
-	Rules []Rule
+	// first (ADR-0018). The API serves them from the rules routes, with
+	// what each enforced, not with the settings.
+	Rules []Rule `json:"-"`
 	// Feedback is how much a review says (ADR-0021 §2.4): FeedbackDetailed,
 	// FeedbackStandard or FeedbackMinimal.
-	Feedback string
+	Feedback string `json:"feedback"`
 	// AgentFiles is true to add the repository's AGENTS.md files, or a
 	// directory's CLAUDE.md where it has none, to the instructions: the
 	// root's and those of the directories a change touches (ADR-0020).
-	AgentFiles bool
+	AgentFiles bool `json:"agentFiles"`
 }
 
 // ContextFile is a repository file that explains the code, named to the

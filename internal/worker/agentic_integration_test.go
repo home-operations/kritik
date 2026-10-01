@@ -25,10 +25,12 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
+	"github.com/home-operations/kritik/internal/adapter"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/configfile/configfiletest"
 	"github.com/home-operations/kritik/internal/contextpack"
 	"github.com/home-operations/kritik/internal/executor"
+	"github.com/home-operations/kritik/internal/gateway"
 	"github.com/home-operations/kritik/internal/gitfetch"
 	"github.com/home-operations/kritik/internal/ingest"
 	"github.com/home-operations/kritik/internal/jobs"
@@ -285,14 +287,14 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf},
 		Executor: h.exec, Logger: logger, superviseEvery: 50 * time.Millisecond,
 	}
-	gateway := httptest.NewServer(&Gateway{
+	gw := httptest.NewServer(&gateway.Server{
 		Store: appStore, Current: h.review.Current, Logger: logger,
-		Proxy: http.NotFoundHandler(), Steppers: &Completers{Build: BuildStepper},
-		Embedders: &Embedders{Build: func(configfile.Embedding) model.Embedder { return h.fe }},
+		Proxy: http.NotFoundHandler(), Steppers: &adapter.Steppers{Build: adapter.BuildStepper},
+		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return h.fe }},
 	})
-	t.Cleanup(gateway.Close)
-	h.gatewayURL = gateway.URL
-	h.review.GatewayURL, h.review.GatewayTokenTTL = gateway.URL, time.Hour
+	t.Cleanup(gw.Close)
+	h.gatewayURL = gw.URL
+	h.review.GatewayURL, h.review.GatewayTokenTTL = gw.URL, time.Hour
 	river.AddWorker(workers, h.review)
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{jobs.QueueReview: {MaxWorkers: 1}}, Workers: workers,
@@ -610,15 +612,15 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 		return c.Step(h.ctx, model.StepRequest{Model: name, Messages: []model.Message{{Role: model.RoleUser,
 			Text: "review with " + token + " and model-key"}}, MaxTokens: 1 << 20})
 	}
-	resp, err := step(token, gatewayModel)
+	resp, err := step(token, gateway.ModelName)
 	if err != nil || resp.Model != "agent-model" || len(resp.ToolCalls) != 1 || resp.Usage.Prompt() != 100 || resp.CostUSD != 0.01 {
 		t.Fatalf("step = %+v, %v", resp, err)
 	}
 	h.sm.mu.Lock()
 	asked := h.sm.maxTokens[len(h.sm.maxTokens)-1]
 	h.sm.mu.Unlock()
-	if asked != maxStepOutput {
-		t.Fatalf("the provider was asked for %d tokens, want the step cap %d", asked, maxStepOutput)
+	if asked != gateway.MaxStepOutput {
+		t.Fatalf("the provider was asked for %d tokens, want the step cap %d", asked, gateway.MaxStepOutput)
 	}
 	if grant, err := h.st.LookupGatewayToken(h.ctx, token); err != nil || grant.Spent != 110 {
 		t.Fatalf("spent after a step = %d, %v; want the step's actual spend", grant.Spent, err)
@@ -631,18 +633,18 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 		t.Fatalf("a model other than the run's = %v", err)
 	}
 	for _, bad := range []string{"krk_", "krk_" + strings.Repeat("0", 64), "model-key"} {
-		if _, err := step(bad, gatewayModel); err == nil || !strings.Contains(err.Error(), "401") {
+		if _, err := step(bad, gateway.ModelName); err == nil || !strings.Contains(err.Error(), "401") {
 			t.Fatalf("token %q = %v", bad, err)
 		}
 	}
 	// A second step is still within the budget; the third is not.
-	if _, err := step(token, gatewayModel); err != nil {
+	if _, err := step(token, gateway.ModelName); err != nil {
 		t.Fatal(err)
 	}
 	h.sm.mu.Lock()
 	before := h.sm.requests
 	h.sm.mu.Unlock()
-	if _, err := step(token, gatewayModel); !errors.Is(err, model.ErrBudget) || !strings.Contains(err.Error(), "budget of 150 tokens") {
+	if _, err := step(token, gateway.ModelName); !errors.Is(err, model.ErrBudget) || !strings.Contains(err.Error(), "budget of 150 tokens") {
 		t.Fatalf("a step past the budget = %v", err)
 	}
 	h.sm.mu.Lock()
@@ -657,7 +659,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	if err := h.st.RevokeGatewayTokens(h.ctx, runID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := step(token, gatewayModel); err == nil || !strings.Contains(err.Error(), "401") {
+	if _, err := step(token, gateway.ModelName); err == nil || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("a revoked token = %v", err)
 	}
 	// The suites share one database; count only this account's tokens.
@@ -687,7 +689,7 @@ func checkParallelSteps(t *testing.T, h *agenticHarness, grant store.GatewayGran
 	errs := make(chan error, 5)
 	for range 5 {
 		go func() {
-			_, err := step(token, gatewayModel)
+			_, err := step(token, gateway.ModelName)
 			errs <- err
 		}()
 	}

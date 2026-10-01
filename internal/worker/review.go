@@ -483,7 +483,7 @@ func (w *Review) slotsHeld(
 	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], accountID string, settings configfile.Settings,
 ) (bool, error) {
 	ref := string(settings.Models.Review)
-	free, err := slotFree(ctx, w.Store, accountID, ref, settings.Limits.Concurrency)
+	free, err := w.Store.SlotFree(ctx, accountID, ref, settings.Limits.Concurrency)
 	if err != nil {
 		e.logger.Warn("model slots not read; the review goes on", "error", err)
 		return false, nil
@@ -493,6 +493,14 @@ func (w *Review) slotsHeld(
 	}
 	return true, w.snooze(e, job, ref)
 }
+
+// A review that has not started its runner is snoozed while every model
+// slot is held, between snoozeMin and snoozeMax, and gives its worker back
+// to the queue meanwhile.
+const (
+	snoozeMin = 5 * time.Second
+	snoozeMax = 5 * time.Minute
+)
 
 // snooze puts a review that found every model slot held back on the
 // queue, for longer each time, without counting an attempt: it gives its
@@ -505,7 +513,7 @@ func (w *Review) snooze(e earlyEnd, job *river.Job[jobs.ReviewArgs], modelKey st
 	if err := json.Unmarshal(job.Metadata, &meta); err != nil {
 		e.logger.Warn("job metadata not read; snoozing as if for the first time", "error", err)
 	}
-	d := backoff(meta.Snoozes, snoozeMin, snoozeMax)
+	d := store.Backoff(meta.Snoozes, snoozeMin, snoozeMax)
 	e.logger.Info("review snoozed: every model slot is held", "model", modelKey, "snoozes", meta.Snoozes+1, "for", d.Round(time.Second))
 	w.Metrics.ReviewSnoozed(e.accountKey, modelKey)
 	return river.JobSnooze(d)

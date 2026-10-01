@@ -299,20 +299,3 @@ func (p *publishPhase) persist(
 		})
 	})
 }
-
-func callOutcome(err error) string {
-	if err != nil {
-		return "error"
-	}
-	return "ok"
-}
-
-// servedRef is the model that answered a call made to ref, as a model
-// reference, for metrics: OpenRouter's server-side fallback may answer with
-// a model other than the one asked for, and served names it, "" for none.
-func servedRef(ref configfile.ModelRef, served string) string {
-	if served == "" {
-		return string(ref)
-	}
-	return ref.Provider() + "/" + served
-}

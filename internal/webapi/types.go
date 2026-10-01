@@ -106,28 +106,15 @@ type Connection struct {
 	LastUnsignedWebhookAt *time.Time `json:"lastUnsignedWebhookAt"`
 }
 
-// Models names the review and fallback models, "provider/model".
-type Models struct {
-	Review   configfile.ModelRef `json:"review"`
-	Fallback configfile.ModelRef `json:"fallback"`
-}
-
-// Limits are resolved limits; zero is unset.
-type Limits struct {
-	Concurrency    int   `json:"concurrency"`
-	ReviewsPerDay  int   `json:"reviewsPerDay"`
-	TokensPerMonth int64 `json:"tokensPerMonth"`
-}
-
 // AccountDetail is one account's configuration and usage, and the
 // connection serving it.
 type AccountDetail struct {
-	Slug       string     `json:"slug"`
-	Connection Connection `json:"connection"`
-	Models     Models     `json:"models"`
-	Limits     Limits     `json:"limits"`
-	Filter     string     `json:"filter"`
-	Usage      MonthUsage `json:"usage"`
+	Slug       string            `json:"slug"`
+	Connection Connection        `json:"connection"`
+	Models     configfile.Models `json:"models"`
+	Limits     configfile.Limits `json:"limits"`
+	Filter     string            `json:"filter"`
+	Usage      MonthUsage        `json:"usage"`
 }
 
 // IndexState is a repository's embedding index: the active generation and
@@ -162,40 +149,21 @@ type Repository struct {
 	LastReview *ReviewRef `json:"lastReview"`
 }
 
-// AgentLimits are a review's resolved agent limits.
-type AgentLimits struct {
-	MaxSteps              int      `json:"maxSteps"`
-	MaxToolOutputBytes    int      `json:"maxToolOutputBytes"`
-	MaxTokens             int64    `json:"maxTokens"`
-	TimeoutSeconds        int64    `json:"timeoutSeconds"`
-	Commands              []string `json:"commands"`
-	CommandTimeoutSeconds int64    `json:"commandTimeoutSeconds"`
-}
-
-// ReviewBlock is a repository's review instructions and options.
-type ReviewBlock struct {
-	RequireSuggestedFix bool                       `json:"requireSuggestedFix"`
-	Templates           configfile.ReviewTemplates `json:"templates"`
-	InlineComments      bool                       `json:"inlineComments"`
-	Approve             bool                       `json:"approve"`
-	Context             []configfile.ContextFile   `json:"context"`
-	Feedback            string                     `json:"feedback"`
-	AgentFiles          bool                       `json:"agentFiles"`
-}
-
 // RepoSettings are a repository's settings as they resolve: the
-// admin's, or with the in-repo .kritik.yaml applied (RepoConfig).
+// admin's, or with the in-repo .kritik.yaml applied (RepoConfig). The
+// blocks are the configuration's own resolved types; durations are served
+// in whole seconds.
 type RepoSettings struct {
-	Enabled       bool        `json:"enabled"`
-	Models        Models      `json:"models"`
-	Filter        string      `json:"filter"`
-	Forks         bool        `json:"forks"`
-	Ignore        []string    `json:"ignore"`
-	SettleSeconds int64       `json:"settleSeconds"`
-	MaxDeltaFiles int         `json:"maxDeltaFiles"`
-	Review        ReviewBlock `json:"review"`
-	Agent         AgentLimits `json:"agent"`
-	Limits        Limits      `json:"limits"`
+	Enabled       bool                     `json:"enabled"`
+	Models        configfile.Models        `json:"models"`
+	Filter        string                   `json:"filter"`
+	Forks         bool                     `json:"forks"`
+	Ignore        []string                 `json:"ignore"`
+	SettleSeconds int64                    `json:"settleSeconds"`
+	MaxDeltaFiles int                      `json:"maxDeltaFiles"`
+	Review        configfile.Review        `json:"review"`
+	Agent         configfile.AgentSettings `json:"agent"`
+	Limits        configfile.Limits        `json:"limits"`
 }
 
 // RepoConfig is the repository's .kritik.yaml as the last review that ran

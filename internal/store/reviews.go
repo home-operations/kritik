@@ -98,6 +98,16 @@ func MarkReviewPrepared(
 	return nil
 }
 
+// ReviewJobID is the River job working the review, 0 when none is
+// recorded.
+func ReviewJobID(ctx context.Context, tx pgx.Tx, reviewID string) (int64, error) {
+	var jobID int64
+	if err := tx.QueryRow(ctx, `SELECT coalesce(river_job_id, 0) FROM reviews WHERE id = $1`, reviewID).Scan(&jobID); err != nil {
+		return 0, fmt.Errorf("store: read review job: %w", err)
+	}
+	return jobID, nil
+}
+
 // RunnerKind is what a runner run is for.
 type RunnerKind string
 

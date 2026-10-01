@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/home-operations/kritik/internal/adapter"
 	"github.com/home-operations/kritik/internal/configfile"
 	"github.com/home-operations/kritik/internal/executor"
 	"github.com/home-operations/kritik/internal/jobs"
@@ -36,7 +37,7 @@ type Index struct {
 	Executor executor.Executor
 	// Embedders resolves the instance's embedder; a generation built with
 	// another model or dimension is rebuilt in full.
-	Embedders *Embedders
+	Embedders *adapter.Embedders
 
 	// superviseEvery overrides superviseInterval.
 	superviseEvery time.Duration

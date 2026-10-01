@@ -46,20 +46,20 @@ var goldenRepo = Repository{
 }
 
 var goldenRepoSettings = RepoSettings{
-	Enabled: true, Models: Models{Review: "openrouter/acme-large"}, Filter: "true", Forks: false,
+	Enabled: true, Models: configfile.Models{Review: "openrouter/acme-large"}, Filter: "true", Forks: false,
 	Ignore: []string{"vendor/**"}, SettleSeconds: 30, MaxDeltaFiles: 40,
-	Review: ReviewBlock{
+	Review: configfile.Review{
 		RequireSuggestedFix: true,
 		Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
 		Context:    []configfile.ContextFile{{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}},
 		Feedback:   configfile.FeedbackStandard,
 		AgentFiles: true,
 	},
-	Agent: AgentLimits{
-		MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, TimeoutSeconds: 1200, Commands: []string{"go"},
-		CommandTimeoutSeconds: 30,
+	Agent: configfile.AgentSettings{
+		MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, Timeout: 20 * time.Minute, Commands: []string{"go"},
+		CommandTimeout: 30 * time.Second,
 	},
-	Limits: Limits{Concurrency: 2},
+	Limits: configfile.Limits{Concurrency: 2},
 }
 
 var goldenIndexRun = IndexRun{
@@ -100,8 +100,8 @@ var goldens = map[string]any{
 			Credentials: CredentialsSet{ClientID: true, PrivateKey: true, WebhookSecret: true},
 			HookPath:    "/hooks/alpha-bot", LastWebhookAt: &t0,
 		},
-		Models: Models{Review: "openrouter/acme-large", Fallback: "openrouter/acme-small"},
-		Limits: Limits{Concurrency: 2, ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filter: "!pr.draft",
+		Models: configfile.Models{Review: "openrouter/acme-large", Fallback: "openrouter/acme-small"},
+		Limits: configfile.Limits{Concurrency: 2, ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filter: "!pr.draft",
 		Usage: goldenSummary.Usage,
 	},
 	"repository":       goldenRepo,
