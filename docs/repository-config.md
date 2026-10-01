@@ -16,7 +16,7 @@ using the YAML language server validates the file as it is written when
 its first line names the schema:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/home-operations/kritik/main/docs/kritik.schema.json
+# yaml-language-server: $schema=https://kritik.home-operations.com/kritik.schema.json
 ```
 
 ## What it may set

@@ -22,6 +22,10 @@ reviewed when a maintainer asks with `@<bot> review`. One deployment serves any
 number of forge accounts, and every index and review job runs in its own
 Kubernetes Job pod that holds no secrets.
 
+📖 **Docs site: <https://kritik.home-operations.com/>**: setup, the
+configuration file, repository settings, chart values, the dashboard,
+metrics and development.
+
 ## Features
 
 - **Context beyond the diff.** Whole declarations the diff touches,
@@ -66,7 +70,7 @@ a way to sign in under `auth`; and the configuration file under `config`.
 It runs as one Deployment of `kritik serve`, two replicas by default, which
 creates a runner Job for each review and index run.
 
-The [setup guide](docs/setup.md) takes a fresh instance through its GitHub
+The [setup guide](https://kritik.home-operations.com/setup/) takes a fresh instance through its GitHub
 App, model key and embedder to its first review; the dashboard's setup
 checklist shows what is still missing.
 
@@ -86,17 +90,17 @@ Security notes:
 
 ## Documentation
 
-- [Setup](docs/setup.md): from install to the first review, the GitHub App,
+- [Setup](https://kritik.home-operations.com/setup/): from install to the first review, the GitHub App,
   its permissions and its webhook
-- [Configuration](docs/configuration.md): the configuration file, sign-in and
+- [Configuration](https://kritik.home-operations.com/configuration/): the configuration file, sign-in and
   role mappings, GitHub Apps, repository entries, accounts and which
   repositories run
 - [Chart values](charts/kritik/README.md)
-- [`.kritik.yaml` reference](docs/repository-config.md)
-- [Dashboard](docs/dashboard.md): the setup checklist, the Configuration
+- [`.kritik.yaml` reference](https://kritik.home-operations.com/repository-config/)
+- [Dashboard](https://kritik.home-operations.com/dashboard/): the setup checklist, the Configuration
   page, repository on/off and actions
-- [Metrics](docs/metrics.md)
-- [Development](docs/development.md): building, testing, evaluation and the
+- [Metrics](https://kritik.home-operations.com/metrics/)
+- [Development](https://kritik.home-operations.com/development/): building, testing, evaluation and the
   cluster loop
 
 ## License
