@@ -83,6 +83,42 @@ func ClosePullRequest(
 	return nil
 }
 
+// PullRequestPaused reports whether the pull request's automatic reviews
+// are paused.
+func PullRequestPaused(ctx context.Context, tx pgx.Tx, repositoryID string, number int) (bool, error) {
+	var paused bool
+	if err := tx.QueryRow(ctx, `SELECT paused FROM pull_requests WHERE repository_id = $1 AND number = $2`, repositoryID, number).
+		Scan(&paused); err != nil {
+		return false, fmt.Errorf("store: read pull request pause: %w", err)
+	}
+	return paused, nil
+}
+
+// PausePullRequest pauses or resumes the pull request's automatic reviews;
+// resuming starts its count of automatic reviews over.
+func PausePullRequest(ctx context.Context, tx pgx.Tx, pullRequestID string, paused bool) error {
+	if _, err := tx.Exec(ctx, `UPDATE pull_requests SET paused = $2, auto_reviews = CASE WHEN $2 THEN auto_reviews ELSE 0 END,
+		updated_at = now() WHERE id = $1`, pullRequestID, paused); err != nil {
+		return fmt.Errorf("store: pause pull request: %w", err)
+	}
+	return nil
+}
+
+// CountAutoReview counts one automatic review of the pull request and
+// pauses it once the count reaches maxAuto, when that is positive. It
+// reports whether this review paused it.
+func CountAutoReview(ctx context.Context, tx pgx.Tx, pullRequestID string, maxAuto int) (bool, error) {
+	var pausedNow bool
+	if err := tx.QueryRow(ctx, `WITH before AS (SELECT id, paused FROM pull_requests WHERE id = $1 FOR UPDATE)
+		UPDATE pull_requests p SET auto_reviews = p.auto_reviews + 1, paused = p.paused OR ($2 > 0 AND p.auto_reviews + 1 >= $2),
+			updated_at = now()
+		FROM before WHERE p.id = before.id RETURNING p.paused AND NOT before.paused`,
+		pullRequestID, maxAuto).Scan(&pausedNow); err != nil {
+		return false, fmt.Errorf("store: count automatic review: %w", err)
+	}
+	return pausedNow, nil
+}
+
 // ReviewedStatuses are the review statuses under which a head was
 // reviewed: an event for it again (a redelivery, a reopen) starts nothing.
 var ReviewedStatuses = []ReviewStatus{ReviewCompleted, ReviewCapped}

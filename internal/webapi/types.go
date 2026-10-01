@@ -154,16 +154,17 @@ type Repository struct {
 // blocks are the configuration's own resolved types; durations are served
 // in whole seconds.
 type RepoSettings struct {
-	Enabled       bool                     `json:"enabled"`
-	Models        configfile.Models        `json:"models"`
-	Filter        string                   `json:"filter"`
-	Forks         bool                     `json:"forks"`
-	Ignore        []string                 `json:"ignore"`
-	SettleSeconds int64                    `json:"settleSeconds"`
-	MaxDeltaFiles int                      `json:"maxDeltaFiles"`
-	Review        configfile.Review        `json:"review"`
-	Agent         configfile.AgentSettings `json:"agent"`
-	Limits        configfile.Limits        `json:"limits"`
+	Enabled        bool                     `json:"enabled"`
+	Models         configfile.Models        `json:"models"`
+	Filter         string                   `json:"filter"`
+	Forks          bool                     `json:"forks"`
+	Ignore         []string                 `json:"ignore"`
+	SettleSeconds  int64                    `json:"settleSeconds"`
+	MaxAutoReviews int                      `json:"maxAutoReviews"`
+	MaxDeltaFiles  int                      `json:"maxDeltaFiles"`
+	Review         configfile.Review        `json:"review"`
+	Agent          configfile.AgentSettings `json:"agent"`
+	Limits         configfile.Limits        `json:"limits"`
 }
 
 // RepoConfig is the repository's .kritika.yaml as the last review that ran

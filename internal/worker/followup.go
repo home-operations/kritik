@@ -186,6 +186,9 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	if reason, ok := requestsDismiss(f.comment.Body, slug); ok {
 		return f.dismiss(ctx, reason)
 	}
+	if paused, ok := requestsPause(f.comment.Body, slug); ok {
+		return f.pause(ctx, slug, paused)
+	}
 	reason, err := f.repoConfig(ctx)
 	if err != nil {
 		return store.FollowupFailed, err
@@ -261,6 +264,7 @@ var (
 	mentionPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)`)
 	reviewPattern  = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+review\b`)
 	dismissPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+dismiss(?:ed)?\b`)
+	pausePattern   = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+(pause|resume)\b`)
 )
 
 // requestsReview reports whether body asks slug for a review: "@<slug>
@@ -362,6 +366,43 @@ func (f *followUp) answer(ctx context.Context, body, reason string) (store.Follo
 		f.logger.Error("follow-up not recorded", "error", err, "reply", replyID)
 	}
 	return store.FollowupAnswered, nil
+}
+
+// requestsPause reports whether body asks slug to pause or resume the pull
+// request's automatic reviews, "@<slug> pause" or "@<slug> resume", and
+// which.
+func requestsPause(body, slug string) (paused, ok bool) {
+	for _, m := range pausePattern.FindAllStringSubmatch(body, -1) {
+		if strings.EqualFold(m[2], slug) {
+			return strings.EqualFold(m[3], "pause"), true
+		}
+	}
+	return false, false
+}
+
+// pause pauses or resumes the pull request's automatic reviews, as someone
+// with write access asked, and says so. It counts against the hourly
+// follow-up limit.
+func (f *followUp) pause(ctx context.Context, slug string, paused bool) (store.FollowupStatus, error) {
+	limited, err := f.rateLimited(ctx)
+	if err != nil {
+		return store.FollowupFailed, err
+	}
+	if limited {
+		return store.FollowupLimited, nil
+	}
+	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
+		return store.PausePullRequest(ctx, tx, f.pr.id, paused)
+	})
+	if err != nil {
+		return store.FollowupFailed, err
+	}
+	if paused {
+		f.logger.Info("automatic reviews paused")
+		return f.answer(ctx, review.PausedBody(slug), "reviews paused")
+	}
+	f.logger.Info("automatic reviews resumed")
+	return f.answer(ctx, review.ResumedBody, "reviews resumed")
 }
 
 // requestReview queues a review of the pull request's head, as the

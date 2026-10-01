@@ -132,6 +132,23 @@ const DismissHintBody = "`dismiss` works as a reply in one of kritika's finding 
 // no record of.
 const DismissUnknownBody = "kritika has no record of this finding, so there is nothing to dismiss.\n"
 
+// PausedBody is the reply to a request to pause the pull request's
+// automatic reviews; slug names the bot.
+func PausedBody(slug string) string {
+	return fmt.Sprintf("Automatic reviews of this pull request are paused. `@%s review` still reviews it, and `@%s resume` "+
+		"turns them back on.\n", slug, slug)
+}
+
+// ResumedBody is the reply to a request to resume them.
+const ResumedBody = "Automatic reviews of this pull request are back on: the next push is reviewed.\n"
+
+// AutoPausedNote is what the summary says when the review that just ran
+// was the last automatic one the repository allows the pull request.
+func AutoPausedNote(slug string, max int) string {
+	return fmt.Sprintf("Automatic reviews of this pull request are paused after %d. `@%s review` reviews it again, and "+
+		"`@%s resume` turns them back on", max, slug, slug)
+}
+
 // ReviewQueuedBody is the reply to a request for a review of headSHA:
 // queued, or already queued or running.
 func ReviewQueuedBody(headSHA string, already bool) string {

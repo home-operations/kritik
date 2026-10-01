@@ -28,6 +28,7 @@
     "forks": false,
     "ignore": ["vendor/**"],
     "settleSeconds": 30,
+    "maxAutoReviews": 0,
     "maxDeltaFiles": 40,
     "review": {
       "requireSuggestedFix": true,
@@ -80,6 +81,7 @@
       "forks": false,
       "ignore": ["vendor/**"],
       "settleSeconds": 30,
+      "maxAutoReviews": 0,
       "maxDeltaFiles": 40,
       "review": {
         "requireSuggestedFix": true,

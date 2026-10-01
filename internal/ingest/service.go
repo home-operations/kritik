@@ -39,6 +39,7 @@ const (
 	reasonFork         = "fork"
 	reasonReviewed     = "reviewed"
 	reasonStale        = "stale"
+	reasonPaused       = "paused"
 )
 
 // The poller's synthetic actions: ActionPoll for an open pull request it
@@ -175,6 +176,16 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			return nil
 		case !review:
 			out = Outcome{Status: Skipped, Reason: ev.Action}
+			return nil
+		}
+		// A paused pull request is recorded, not reviewed, until someone
+		// resumes it or asks for a review.
+		paused, err := store.PullRequestPaused(ctx, tx, rid, pr.Number)
+		if err != nil {
+			return err
+		}
+		if paused {
+			out = Outcome{Status: Skipped, Reason: reasonPaused}
 			return nil
 		}
 		// A head a review has seen is not news: a poll lists a pull request

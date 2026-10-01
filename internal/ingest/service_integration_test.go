@@ -190,6 +190,48 @@ func TestDispatchForkRecorded(t *testing.T) {
 	}
 }
 
+// TestDispatchSkipsPaused: a paused pull request is recorded, not reviewed,
+// until it is resumed.
+func TestDispatchSkipsPaused(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	pr := &webhook.PullRequest{Number: 80, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "p1", BaseRef: "main"}
+	ev := func(action string, pr *webhook.PullRequest) webhook.Event {
+		return webhook.Event{Kind: webhook.KindPullRequest, Action: action, Repository: repo("onedr0p/home-ops"), PullRequest: pr}
+	}
+	if out, err := svc.Dispatch(ctx, request(f, ev("opened", pr))); err != nil || out.Status != Enqueued {
+		t.Fatalf("opened = %+v, %v", out, err)
+	}
+	var id string
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT id FROM pull_requests WHERE number = 80`).Scan(&id); err != nil {
+			return err
+		}
+		return store.PausePullRequest(ctx, tx, id, true)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pushed := *pr
+	pushed.HeadSHA, pushed.Title = "p2", "renamed"
+	out, err := svc.Dispatch(ctx, request(f, ev("synchronize", &pushed)))
+	if err != nil || out != (Outcome{Status: Skipped, Reason: reasonPaused}) {
+		t.Fatalf("push while paused = %+v, %v; want skipped as paused", out, err)
+	}
+	var head, title string
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT head_sha, title FROM pull_requests WHERE number = 80`).Scan(&head, &title); err != nil {
+			return err
+		}
+		return store.PausePullRequest(ctx, tx, id, false)
+	}); err != nil || head != "p2" || title != "renamed" {
+		t.Fatalf("head = %q title = %q, %v; want the push recorded while paused", head, title, err)
+	}
+	if out, err := svc.Dispatch(ctx, request(f, ev("synchronize", &pushed))); err != nil || out.Status != Enqueued {
+		t.Fatalf("push once resumed = %+v, %v; want enqueued", out, err)
+	}
+}
+
 // TestDispatchPollSkipsReviewedHead: a poll lists a pull request whenever it
 // moved, so a head a review has already seen is skipped rather than
 // reviewed again, while a new head is reviewed.
