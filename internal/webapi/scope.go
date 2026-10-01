@@ -6,8 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/auth"
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/auth"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // accountScope is a request resolved to one account its principal may read.

@@ -11,8 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/transcript"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/transcript"
 )
 
 func TestModelCalls(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestWriteError(t *testing.T) {

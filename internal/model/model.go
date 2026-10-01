@@ -1,4 +1,4 @@
-// Package model is kritik's view of a language model and an embedder. A
+// Package model is kritika's view of a language model and an embedder. A
 // Stepper performs one model turn over typed messages and tools; Completer,
 // a single tool call returning structured JSON, is built on it.
 // Adapters speak to the vendors' official SDKs.
@@ -16,7 +16,7 @@ import (
 // ProviderType selects the adapter a provider uses.
 type ProviderType string
 
-// Provider types kritik implements. OpenRouter is the OpenAI adapter at
+// Provider types kritika implements. OpenRouter is the OpenAI adapter at
 // OpenRouter's URL with its server-side fallback and reported cost.
 const (
 	ProviderOpenRouter ProviderType = "openrouter"
@@ -24,7 +24,7 @@ const (
 	ProviderAnthropic  ProviderType = "anthropic"
 )
 
-// Valid reports whether p is a provider type kritik implements.
+// Valid reports whether p is a provider type kritika implements.
 func (p ProviderType) Valid() bool {
 	switch p {
 	case ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic:
@@ -162,7 +162,7 @@ type StepResponse struct {
 	// else zero.
 	CostUSD float64
 	// Model is the model that answered: the one OpenRouter reports after
-	// its server-side fallback, else the one kritik asked for.
+	// its server-side fallback, else the one kritika asked for.
 	Model string
 	// Upstream is the provider that served the request, when known.
 	Upstream string

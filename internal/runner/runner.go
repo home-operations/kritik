@@ -19,12 +19,12 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/agent"
-	"github.com/home-operations/kritik/internal/chunk"
-	"github.com/home-operations/kritik/internal/contextpack"
-	"github.com/home-operations/kritik/internal/gitfetch"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/chunk"
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // Run executes one run and reports success or failure in the run row,

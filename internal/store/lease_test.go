@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 func TestBackoff(t *testing.T) {

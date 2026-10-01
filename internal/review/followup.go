@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritik/internal/textcut"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // Message is one comment in a thread, as the follow-up prompt shows it.
@@ -21,8 +21,8 @@ type Message struct {
 
 // FollowUpSystem is the reviewer's standing instructions when answering a
 // thread rather than reviewing a diff.
-const FollowUpSystem = `You are kritik, a code reviewer for pull requests, now answering a question in a pull request thread. You see
-the diff, the context kritik gathered for its review, the findings it posted, and the thread. You cannot run code,
+const FollowUpSystem = `You are kritika, a code reviewer for pull requests, now answering a question in a pull request thread. You see
+the diff, the context kritika gathered for its review, the findings it posted, and the thread. You cannot run code,
 open other files, or change anything; say so when a request needs that.
 
 Answer the last message directly and concisely in plain markdown without headings. Refer to lines of the diff by
@@ -66,13 +66,13 @@ func ParseFollowUp(raw string) (string, error) {
 const maxMessageChars = 2000
 
 // BuildFollowUp renders the follow-up user message: the review input as
-// Build renders it, then the findings kritik posted, then the thread with
+// Build renders it, then the findings kritika posted, then the thread with
 // the message to answer last. The thread is never cut; the diff and
 // context give way to it, since the question is what matters.
 func BuildFollowUp(in Input, findings []Finding, thread []Message) string {
 	var tail strings.Builder
 	if len(findings) > 0 {
-		fmt.Fprintf(&tail, "\n\nFindings kritik posted on this pull request (%d):\n", len(findings))
+		fmt.Fprintf(&tail, "\n\nFindings kritika posted on this pull request (%d):\n", len(findings))
 		for _, f := range findings {
 			tail.WriteString(findingLine(f))
 		}
@@ -112,11 +112,11 @@ func oneLine(s string) string {
 
 // FollowUpBody renders the reply as posted.
 func FollowUpBody(reply, model string) string {
-	return reply + fmt.Sprintf("\n\n<sub>kritik follow-up with %s.</sub>\n", model)
+	return reply + fmt.Sprintf("\n\n<sub>kritika follow-up with %s.</sub>\n", model)
 }
 
 // LimitBody is posted once when a thread hits its follow-up rate limit.
-const LimitBody = "kritik has answered the limit of follow-ups for this pull request in the past hour and will pick up again later.\n"
+const LimitBody = "kritika has answered the limit of follow-ups for this pull request in the past hour and will pick up again later.\n"
 
 // ReviewQueuedBody is the reply to a request for a review of headSHA:
 // queued, or already queued or running.

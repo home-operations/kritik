@@ -30,7 +30,7 @@ export function rerunPath(slug: string, p: { repository: string; number: number 
 }
 
 // threadUrl links the thread of an inline comment on a pull request; none
-// for a finding kritik did not post inline, or whose comment id it lacks.
+// for a finding kritika did not post inline, or whose comment id it lacks.
 export function threadUrl(pullUrl: string, commentId: number | null): string | undefined {
   return commentId ? safeHref(`${pullUrl}#discussion_r${commentId}`) : undefined;
 }

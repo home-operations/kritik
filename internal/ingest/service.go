@@ -9,10 +9,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/webhook"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/webhook"
 )
 
 // Service is the store-backed Dispatcher: every write happens in one
@@ -42,7 +42,7 @@ const (
 )
 
 // The poller's synthetic actions: ActionPoll for an open pull request it
-// lists, and ActionBaseline for one that predates kritik's knowing its
+// lists, and ActionBaseline for one that predates kritika's knowing its
 // connection, which is recorded, not reviewed.
 const (
 	ActionPoll     = "poll"
@@ -53,7 +53,7 @@ const (
 // request, each saying whether it also starts a review; ActionPoll and
 // ActionBaseline are the poller's synthetic ones. The review job starts at
 // once: the worker waits out the repository's settle time (jobs.Settles),
-// since .kritik.yaml may set it.
+// since .kritika.yaml may set it.
 var pullRequestActions = map[string]bool{
 	"opened":           true,
 	"reopened":         true,

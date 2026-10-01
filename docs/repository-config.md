@@ -1,9 +1,9 @@
-# `.kritik.yaml` reference
+# `.kritika.yaml` reference
 
-A repository may commit an optional `.kritik.yaml` at its root to tune how
-kritik reviews it. It is read from the merge-base commit, never the pull
+A repository may commit an optional `.kritika.yaml` at its root to tune how
+kritika reviews it. It is read from the merge-base commit, never the pull
 request's own tree, so a pull request cannot use its own copy to weaken the
-review applied to it. kritik reads it before the review starts, and applies
+review applied to it. kritika reads it before the review starts, and applies
 it to follow-ups (from the pull request's merge base) and to indexing (from
 the commit indexed) too.
 
@@ -11,12 +11,12 @@ The file holds nothing secret: no field takes a credential, a URL, a host
 or a secret reference, and a model it names is a `<provider>/<model>` of a
 provider an admin configured.
 
-[`kritik.schema.json`](kritik.schema.json) is its JSON Schema. An editor
+[`kritika.schema.json`](kritika.schema.json) is its JSON Schema. An editor
 using the YAML language server validates the file as it is written when
 its first line names the schema:
 
 ```yaml
-# yaml-language-server: $schema=https://kritik.home-operations.com/kritik.schema.json
+# yaml-language-server: $schema=https://kritika.home-operations.com/kritika.schema.json
 ```
 
 ## What it may set
@@ -38,7 +38,7 @@ rules:
       rule: 'Wrap errors with fmt.Errorf("<package>: %w", err).',
       paths: ["**/*.go"],
     }
-  - { id: house-style, file: .kritik/review.md }
+  - { id: house-style, file: .kritika/review.md }
   - id: renovate
     rule: Say what the update breaks, from the release notes in the body.
     whenExpr: pr.headRef.startsWith("renovate/")
@@ -56,11 +56,11 @@ context:
 - `feedback`: how much the review says, replacing the
   admin's.
 
-  | `feedback`           | What the review reports                                                                                                                                                                |
-  | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `detailed` (default) | every line a maintainer could act on, smaller improvements, missing tests and questions included, each inline, with a one-click suggestion wherever the fix is a change to those lines |
-  | `standard`           | the same review, with nits in the summary rather than inline                                                                                                                           |
-  | `minimal`            | only what would stop the review: bugs, risks and breaking changes                                                                                                                      |
+| `feedback`           | What the review reports                                                                                                                                                                |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `detailed` (default) | every line a maintainer could act on, smaller improvements, missing tests and questions included, each inline, with a one-click suggestion wherever the fix is a change to those lines |
+| `standard`           | the same review, with nits in the summary rather than inline                                                                                                                           |
+| `minimal`            | only what would stop the review: bugs, risks and breaking changes                                                                                                                      |
 
   A `blocking` finding is always posted inline, and the summary lists
   every finding.
@@ -69,7 +69,7 @@ context:
   comments.
 - `comments.summaryTemplate` / `comments.inlineTemplate`: paths to Go
   [text/template](https://pkg.go.dev/text/template) templates that replace
-  kritik's built-in summary and inline comment templates; an empty path
+  kritika's built-in summary and inline comment templates; an empty path
   restores the built-in one where the admin set a template. They use the
   [sprout](https://github.com/go-sprout/sprout) helpers tuppr and chaski
   expose (std, strings, conversion, encoding, numeric, slices, maps, regex,
@@ -96,7 +96,7 @@ context:
 - `approve: true`: a review that finds nothing blocking or important
   approves the pull request, as a review pinned to the head it saw; nits
   alone do not withhold it. A later review of the same pull request that
-  does find something dismisses kritik's approval. It replaces the
+  does find something dismisses kritika's approval. It replaces the
   admin's, in either direction: a repository turns it on where the
   instance leaves it off. Off unless
   set.
@@ -106,7 +106,7 @@ context:
   every review. A review it filters out ends before any runner starts.
 - `ignore`: path globs added to the admin's own ignore list, for
   reviews and indexing alike. A pull request whose every changed path is
-  ignored, by these, the admin's globs or kritik's defaults (vendored
+  ignored, by these, the admin's globs or kritika's defaults (vendored
   trees and lockfiles), is skipped.
 - `rules`: checks the review makes, added after the admin's. Each has an `id` (lowercase letters,
   digits and hyphens, at most 64 characters) that findings cite it by,
@@ -150,7 +150,7 @@ expression over `pr`, which has the pull request's `number`, `title`,
 `headSha`, `baseRef`, `url`, `createdAt` and `labels` (each with a `name`
 and a `color`), and `event`, what started the review: `opened`,
 `reopened`, `ready_for_review`, `synchronize` (a push), `poll` (a push
-kritik found without its webhook) or `manual` (a re-run from the
+kritika found without its webhook) or `manual` (a re-run from the
 dashboard).
 
 Some filters, each the whole `filterExpr` value:
@@ -167,6 +167,6 @@ Some filters, each the whole `filterExpr` value:
 ## Limits
 
 A file that fails to parse is ignored as a whole, and noted rather than
-failing the review. Every referenced file, plus `.kritik.yaml` itself, is
+failing the review. Every referenced file, plus `.kritika.yaml` itself, is
 capped at 256 KiB, and 1 MiB in total; a file over either limit is skipped
 and noted rather than failing the review.

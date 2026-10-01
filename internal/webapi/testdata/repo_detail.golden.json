@@ -114,7 +114,9 @@
       }
     },
     "filter": "!pr.draft",
-    "dropped": [".kritik.yaml: models.review \"q/big\" was dropped; allowed: a model of openrouter"]
+    "dropped": [
+      ".kritika.yaml: models.review \"q/big\" was dropped; allowed: a model of openrouter"
+    ]
   },
   "indexRuns": [
     {

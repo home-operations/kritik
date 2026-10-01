@@ -11,9 +11,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/metrics"
-	"github.com/home-operations/kritik/internal/webhook"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/webhook"
 )
 
 // Request is a verified, parsed webhook with the configuration it applies to.
@@ -51,7 +51,7 @@ type Dispatcher interface {
 }
 
 // DeliveryRecorder notes that a connection's webhook delivered a request
-// kritik verified, or one with no signature, which a GitHub App with no
+// kritika verified, or one with no signature, which a GitHub App with no
 // webhook secret sends. The store-backed implementation is Service.
 type DeliveryRecorder interface {
 	RecordDelivery(ctx context.Context, connectionID string) error

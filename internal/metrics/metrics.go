@@ -1,4 +1,4 @@
-// Package metrics is every Prometheus series kritik exports beyond the Go
+// Package metrics is every Prometheus series kritika exports beyond the Go
 // runtime. One Metrics value is registered per process and shared by its
 // parts; a nil *Metrics records nothing, so tests need not register one.
 package metrics
@@ -50,75 +50,75 @@ const (
 func New(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
 		webhooks: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_webhooks_total", Help: "Webhook deliveries by connection and what became of them.",
+			Name: "kritika_webhooks_total", Help: "Webhook deliveries by connection and what became of them.",
 		}, []string{lblConnection, lblOutcome}),
 		polls: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_polls_total", Help: "Backstop polls per connection, by outcome (ok, error).",
+			Name: "kritika_polls_total", Help: "Backstop polls per connection, by outcome (ok, error).",
 		}, []string{lblConnection, lblOutcome}),
 		polled: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_polled_pull_requests_total", Help: "Open pull requests the backstop poll handed to ingest.",
+			Name: "kritika_polled_pull_requests_total", Help: "Open pull requests the backstop poll handed to ingest.",
 		}, []string{lblConnection}),
 		reviews: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_reviews_total", Help: "Reviews finished, by terminal status.",
+			Name: "kritika_reviews_total", Help: "Reviews finished, by terminal status.",
 		}, []string{lblAccount, "status"}),
 		egress: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_egress_requests_total",
+			Name: "kritika_egress_requests_total",
 			Help: "Requests runner pods made through the gateway, by kind (connect, http) and outcome (allowed, refused, error).",
 		}, []string{lblKind, lblOutcome}),
 		leader: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "kritik_leader", Help: "1 while this replica holds the leader lock, else 0.",
+			Name: "kritika_leader", Help: "1 while this replica holds the leader lock, else 0.",
 		}),
 		transcripts: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_transcript_writes_total",
+			Name: "kritika_transcript_writes_total",
 			Help: "Model calls recorded for the transcript view, by kind (agent_step, followup) and outcome (ok, error).",
 		}, []string{lblKind, lblOutcome}),
 		reviewDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "kritik_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",
+			Name: "kritika_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",
 			Buckets: []float64{5, 10, 20, 30, 60, 120, 300, 600, 900},
 		}, []string{lblAccount}),
 		followups: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_followups_total", Help: "Follow-up mentions handled, by outcome: answered, limited, ignored, failed.",
+			Name: "kritika_followups_total", Help: "Follow-up mentions handled, by outcome: answered, limited, ignored, failed.",
 		}, []string{lblAccount, lblOutcome}),
 		findings: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_findings_total", Help: "Findings posted, by severity.",
+			Name: "kritika_findings_total", Help: "Findings posted, by severity.",
 		}, []string{lblAccount, "severity"}),
 		indexRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_index_runs_total", Help: "Index runs finished, by mode and status.",
+			Name: "kritika_index_runs_total", Help: "Index runs finished, by mode and status.",
 		}, []string{lblAccount, "mode", "status"}),
 		indexChunks: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_index_chunks_total", Help: "Chunks embedded into the index.",
+			Name: "kritika_index_chunks_total", Help: "Chunks embedded into the index.",
 		}, []string{lblAccount}),
 		contextChunks: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_context_chunks_total",
+			Name: "kritika_context_chunks_total",
 			Help: "Context chunks a review's prompt was given, by stage (overlay, definition, caller, similar).",
 		}, []string{lblAccount, "stage"}),
 		runnerRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_runner_runs_total", Help: "Runner Jobs finished, by kind and outcome.",
+			Name: "kritika_runner_runs_total", Help: "Runner Jobs finished, by kind and outcome.",
 		}, []string{lblAccount, "kind", lblOutcome}),
 		runnerDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "kritik_runner_duration_seconds", Help: "Runner Job time from start to finish.",
+			Name: "kritika_runner_duration_seconds", Help: "Runner Job time from start to finish.",
 			Buckets: []float64{2, 5, 10, 20, 30, 60, 120, 300, 600, 900},
 		}, []string{"kind"}),
 		leaseWait: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "kritik_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
+			Name: "kritika_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
 			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300},
 		}, []string{lblAccount, lblModel}),
 		reviewSnoozes: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_review_snoozes_total", Help: "Reviews put back on the queue because every model slot was held.",
+			Name: "kritika_review_snoozes_total", Help: "Reviews put back on the queue because every model slot was held.",
 		}, []string{lblAccount, lblModel}),
 		jobsRescued: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_jobs_rescued_total", Help: "Jobs of a dead replica handed back to the queue by the leader, by kind and state.",
+			Name: "kritika_jobs_rescued_total", Help: "Jobs of a dead replica handed back to the queue by the leader, by kind and state.",
 		}, []string{lblKind, "state"}),
 		modelCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_model_calls_total", Help: "Model calls, by the model that answered, role and outcome.",
+			Name: "kritika_model_calls_total", Help: "Model calls, by the model that answered, role and outcome.",
 		}, []string{lblAccount, lblModel, lblRole, lblOutcome}),
 		modelTokens: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_model_tokens_total",
+			Name: "kritika_model_tokens_total",
 			Help: "Tokens spent, by role and direction (input, cached, output); " +
 				"cached is the part of input the provider served from its prompt cache.",
 		}, []string{lblAccount, lblModel, lblRole, "direction"}),
 		modelCost: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritik_model_cost_usd_total", Help: "Provider-reported cost in US dollars, by role.",
+			Name: "kritika_model_cost_usd_total", Help: "Provider-reported cost in US dollars, by role.",
 		}, []string{lblAccount, lblModel, lblRole}),
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,

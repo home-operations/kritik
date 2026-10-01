@@ -2,7 +2,7 @@
   // What the account's reviews check: rules written in the configuration,
   // as text or a file, and context files that explain the code, with where
   // each is set and the repositories that read it. Read-only: rules are set
-  // in the configuration or a repository's .kritik.yaml.
+  // in the configuration or a repository's .kritika.yaml.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
@@ -27,13 +27,13 @@
     context: { label: 'Context', icon: mdiFileDocumentOutline, what: 'a file that explains the code', order: 1 },
   };
   const SOURCES: Record<RuleSource, string> = {
-    default: "kritik's default",
+    default: "kritika's default",
     env: 'Environment',
     file: 'Config file',
     defaults: 'Instance defaults',
     account: 'Account entry',
     entry: 'Repository entry',
-    repository: '.kritik.yaml',
+    repository: '.kritika.yaml',
   };
 
   const repoNames = $derived([...new Set((res.data ?? []).flatMap((r) => r.repositories))].sort());
@@ -65,7 +65,7 @@
   }
 </script>
 
-<svelte:head><title>Rules · {slug} · kritik</title></svelte:head>
+<svelte:head><title>Rules · {slug} · kritika</title></svelte:head>
 
 <main class="page">
   <div class="page-inner">
@@ -75,7 +75,7 @@
         What reviews check: rules written in the configuration, as text or a file, and context files that explain the code.
         Rules are written, and files named, under <span class="mono">rules</span> and
         <span class="mono">context</span> in the configuration file or a repository's own
-        <span class="mono">.kritik.yaml</span>.
+        <span class="mono">.kritika.yaml</span>.
       </p>
     </header>
     <div class="toolbar" role="search">
@@ -93,7 +93,7 @@
       {res}
       retry={() => res.load()}
       isEmpty={(d) => d.length === 0}
-      empty="No rules yet: write them, or name files for them, under rules, and name context files under context, in the configuration or a repository's .kritik.yaml."
+      empty="No rules yet: write them, or name files for them, under rules, and name context files under context, in the configuration or a repository's .kritika.yaml."
     >
       {#snippet children(rules)}
         {@const rows = shown(rules)}

@@ -142,10 +142,10 @@ jobs:
           DIGEST: ${{ needs.release.outputs.digest }}
         run: |
           [ -n "${DIGEST}" ] || { echo "::error::empty image digest from build job"; exit 1; }
-          yq -i '.image.digest = strenv(DIGEST)' charts/kritik/values.yaml
+          yq -i '.image.digest = strenv(DIGEST)' charts/kritika/values.yaml
 
       - name: Package Helm chart
-        run: helm package charts/kritik --version "${VERSION}" --app-version "${VERSION}"
+        run: helm package charts/kritika --version "${VERSION}" --app-version "${VERSION}"
 
       - name: Log in to Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -155,7 +155,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish Helm chart to GHCR (OCI)
-        run: helm push "kritik-${VERSION}.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"
+        run: helm push "kritika-${VERSION}.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"
 
       - name: Sign the published chart with Cosign
-        run: cosign sign --yes "ghcr.io/${{ github.repository_owner }}/charts/kritik:${VERSION}"
+        run: cosign sign --yes "ghcr.io/${{ github.repository_owner }}/charts/kritika:${VERSION}"

@@ -1,5 +1,5 @@
 // Package prfilter compiles and evaluates a CEL boolean expression that decides
-// which pull requests kritik reviews (the `filter` setting in the configuration file).
+// which pull requests kritika reviews (the `filter` setting in the configuration file).
 //
 // The expression sees a single variable, pr — a map of the PR's fields. The
 // caller supplies that map (ingest builds it from the webhook's pull request,
@@ -75,7 +75,7 @@ func Compile(expr string) (*Program, error) {
 
 // Eval runs the expression against the given pr field map and reports whether
 // the PR is allowed. A runtime error or a non-boolean result is returned as an
-// error (the caller decides the fail-safe; kritik skips the PR and logs).
+// error (the caller decides the fail-safe; kritika skips the PR and logs).
 func (p *Program) Eval(pr map[string]any) (bool, error) {
 	out, _, err := p.prg.Eval(map[string]any{"pr": pr})
 	if err != nil {

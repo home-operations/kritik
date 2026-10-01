@@ -19,15 +19,15 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/executor"
-	"github.com/home-operations/kritik/internal/forge"
-	"github.com/home-operations/kritik/internal/gitfetch"
-	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/repoconfig"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/runner"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // Review works the review queue.
@@ -233,7 +233,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 }
 
 // prepared is what afterRun hands the publish phase: the patch id, the
-// settings with the repository's .kritik.yaml applied and its templates
+// settings with the repository's .kritika.yaml applied and its templates
 // read, the notes the summary states, whether the review builds on the
 // last completed one, and the ids of the rules the agent was given.
 type prepared struct {
@@ -292,7 +292,7 @@ func (w *Review) afterRun(
 		}
 		owner, repo := pr.ownerRepo()
 		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusSuccess,
-			"kritik: skipped ("+skipDescription(pack.SkipReason)+")"); err != nil {
+			"kritika: skipped ("+skipDescription(pack.SkipReason)+")"); err != nil {
 			logger.Warn("commit status not set", "error", err)
 		}
 		return prepared{}, store.ReviewSkipped, nil
@@ -336,7 +336,7 @@ type earlyEnd struct {
 	args                              jobs.ReviewArgs
 	pr                                *pullRequest
 	accountKey, mergeBase, forgePatch string
-	// skip is why the repository's .kritik.yaml skipped the review.
+	// skip is why the repository's .kritika.yaml skipped the review.
 	skip    repoconfig.SkipReason
 	started time.Time
 	logger  *slog.Logger
@@ -374,7 +374,7 @@ func (w *Review) skipUnchangedBot(ctx context.Context, e earlyEnd, client forge.
 
 // begun is a review job past everything before its admission: its pull
 // request is current, a model slot was free when it looked, the forge
-// answered, the repository's .kritik.yaml is applied and does not skip it,
+// answered, the repository's .kritika.yaml is applied and does not skip it,
 // its settle time is over, and it is not an unchanged bot rebase. notes are
 // what the review's summary says about the file.
 type begun struct {
@@ -387,7 +387,7 @@ type begun struct {
 
 // begin takes a review job up to its admission, or ends it: superseded,
 // snoozed while every model slot is held or until its settle time is over,
-// or skipped by the merge-base .kritik.yaml or as an unchanged bot rebase.
+// or skipped by the merge-base .kritika.yaml or as an unchanged bot rebase.
 // The admin's model's slots are checked before any forge call, so a job
 // snoozed through a busy spell costs the forge nothing each time it wakes;
 // a repository that chooses another model then waits for that model's
@@ -616,9 +616,9 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 		w.Metrics.Review(e.accountKey, string(store.ReviewSuperseded), time.Since(e.started))
 		return fmt.Errorf("worker: review cut by a restart: %w", cause)
 	}
-	status, errText, desc := store.ReviewCanceled, "", "kritik: review canceled"
+	status, errText, desc := store.ReviewCanceled, "", "kritika: review canceled"
 	if !errors.Is(cause, river.ErrJobCancelledRemotely) {
-		status, errText, desc = store.ReviewFailed, "review timed out: "+cause.Error(), "kritik: review timed out"
+		status, errText, desc = store.ReviewFailed, "review timed out: "+cause.Error(), "kritika: review timed out"
 	}
 	finished, ferr := w.endReview(cctx, e.accountID, e.reviewID, store.ReviewEnd{Status: status, Error: errText, OnlyUnfinished: true})
 	if ferr != nil || !finished {

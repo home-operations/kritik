@@ -1,4 +1,4 @@
--- kritik's schema. Account-scoped tables carry account_id and a row-level
+-- kritika's schema. Account-scoped tables carry account_id and a row-level
 -- security policy keyed on the transaction-local setting app.account_id. The
 -- policy normalises the setting with NULLIF because after a transaction-local
 -- set_config ends the setting reads back as '' rather than NULL, and ''::uuid
@@ -40,9 +40,9 @@ CREATE TABLE connections (
     disabled_at     timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
-    -- When the connection's webhook last delivered a request kritik
+    -- When the connection's webhook last delivered a request kritika
     -- verified, so the dashboard can tell a connection whose forge sends
-    -- webhooks from one kritik only polls, and when one last arrived with
+    -- webhooks from one kritika only polls, and when one last arrived with
     -- no signature at all, which a GitHub App with no webhook secret sends.
     -- The listener writes each at most once a minute.
     last_webhook_at          timestamptz,
@@ -94,7 +94,7 @@ CREATE TABLE config_state (
     applied_hash text NOT NULL
 );
 
--- body, labels ([{name, color}]) and merged feed the .kritik.yaml filter's
+-- body, labels ([{name, color}]) and merged feed the .kritika.yaml filter's
 -- pr variable, which the worker rebuilds after the runner; body also goes
 -- into the review prompt.
 CREATE TABLE pull_requests (
@@ -235,7 +235,7 @@ CREATE TABLE job_heartbeats (
 
 -- context_packs is the record of what a review's Job gave its agent and
 -- decided: the diff, the changed paths, the context stages (similar code
--- from the index included), .kritik.yaml and the files it and the operator
+-- from the index included), .kritika.yaml and the files it and the operator
 -- name as read from the merge-base tree (repo_files; repo_notes says what
 -- could not be read or fit), and for a re-review the head of the last
 -- completed review when the runner could fetch it (prior_head_sha, NULL
@@ -244,7 +244,7 @@ CREATE TABLE job_heartbeats (
 -- review built on the prior one, skip_reason why the runner ran no agent,
 -- and rule_ids which rules the prompt was given. The retention sweep
 -- empties the bodies (diff, delta_diff, stage texts and repo_files) of a
--- pack past KRITIK_DIFF_RETENTION and stamps swept_at; the metadata stays.
+-- pack past KRITIKA_DIFF_RETENTION and stamps swept_at; the metadata stays.
 CREATE TABLE context_packs (
     runner_run_id  uuid        PRIMARY KEY REFERENCES runner_runs (id),
     account_id     uuid        NOT NULL REFERENCES accounts (id),
@@ -521,7 +521,7 @@ CREATE INDEX sessions_user_id_idx ON sessions (user_id);
 -- login_states holds one in-flight OAuth authorization request, keyed by
 -- the SHA-256 of its state parameter, until the callback consumes it or it
 -- expires. It is bound to the browser that started it: browser_hash is the
--- SHA-256 of a random value held in that browser's kritik_login cookie, so
+-- SHA-256 of a random value held in that browser's kritika_login cookie, so
 -- a callback URL replayed into another browser (login CSRF) cannot
 -- complete.
 CREATE TABLE login_states (
@@ -550,7 +550,7 @@ CREATE INDEX audit_events_account_id_idx ON audit_events (account_id, id DESC);
 CREATE INDEX audit_events_user_id_idx ON audit_events (user_id) WHERE user_id IS NOT NULL;
 
 -- model_calls is account content (row-level security applies, unlike the
--- tables above): one row per model call kritik made, an agent's step or a
+-- tables above): one row per model call kritika made, an agent's step or a
 -- followup reply, kept for the dashboard's transcript view and cost
 -- accounting. A NULL system or
 -- tools means "unchanged from the previous row of the same run/review",
@@ -698,7 +698,7 @@ CREATE POLICY runner_job ON agent_runs
     WITH CHECK (runner_run_id = NULLIF(current_setting('app.runner_job_id', true), '')::uuid
                 AND account_id = (SELECT r.account_id FROM runner_runs r WHERE r.id = runner_run_id));
 
--- kritik_notify_event publishes one row's change on the kritik_events
+-- kritika_notify_event publishes one row's change on the kritika_events
 -- channel for the dashboard's live views: the kind is baked into the
 -- trigger via TG_ARGV[0], and the id and (where the row has one) review_id
 -- are read generically through jsonb so one function serves every table,
@@ -706,11 +706,11 @@ CREATE POLICY runner_job ON agent_runs
 -- yields SQL NULL for a column that isn't there). No SECURITY DEFINER is
 -- needed: pg_notify requires no privilege beyond reading NEW, so this also
 -- fires correctly when the writer is the runner role.
-CREATE FUNCTION kritik_notify_event() RETURNS trigger AS $$
+CREATE FUNCTION kritika_notify_event() RETURNS trigger AS $$
 DECLARE
     row_json jsonb := to_jsonb(NEW);
 BEGIN
-    PERFORM pg_notify('kritik_events', jsonb_build_object(
+    PERFORM pg_notify('kritika_events', jsonb_build_object(
         'account_id', row_json ->> 'account_id',
         'kind', TG_ARGV[0],
         'id', row_json ->> 'id',
@@ -720,7 +720,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- kritik_notify_review, kritik_notify_runner_run and kritik_notify_index_run
+-- kritika_notify_review, kritika_notify_runner_run and kritika_notify_index_run
 -- are split into separate INSERT/UPDATE triggers rather than one combined
 -- "INSERT OR UPDATE ... WHEN (TG_OP = 'INSERT' OR ...)" trigger: a trigger's
 -- WHEN clause is parsed as a plain boolean expression over OLD/NEW, and
@@ -728,45 +728,45 @@ $$ LANGUAGE plpgsql;
 -- body) is not a resolvable column there, so it fails with "column tg_op
 -- does not exist". An unconditional INSERT trigger plus a column-comparing
 -- UPDATE trigger has the same effect without referencing TG_OP.
-CREATE TRIGGER kritik_notify_review_insert
+CREATE TRIGGER kritika_notify_review_insert
     AFTER INSERT ON reviews
     FOR EACH ROW
-    EXECUTE FUNCTION kritik_notify_event('review');
+    EXECUTE FUNCTION kritika_notify_event('review');
 
-CREATE TRIGGER kritik_notify_review_update
+CREATE TRIGGER kritika_notify_review_update
     AFTER UPDATE ON reviews
     FOR EACH ROW
     WHEN (OLD.status IS DISTINCT FROM NEW.status)
-    EXECUTE FUNCTION kritik_notify_event('review');
+    EXECUTE FUNCTION kritika_notify_event('review');
 
-CREATE TRIGGER kritik_notify_runner_run_insert
+CREATE TRIGGER kritika_notify_runner_run_insert
     AFTER INSERT ON runner_runs
     FOR EACH ROW
-    EXECUTE FUNCTION kritik_notify_event('runner_run');
+    EXECUTE FUNCTION kritika_notify_event('runner_run');
 
-CREATE TRIGGER kritik_notify_runner_run_update
+CREATE TRIGGER kritika_notify_runner_run_update
     AFTER UPDATE ON runner_runs
     FOR EACH ROW
     WHEN (OLD.phase IS DISTINCT FROM NEW.phase)
-    EXECUTE FUNCTION kritik_notify_event('runner_run');
+    EXECUTE FUNCTION kritika_notify_event('runner_run');
 
-CREATE TRIGGER kritik_notify_index_run_insert
+CREATE TRIGGER kritika_notify_index_run_insert
     AFTER INSERT ON index_runs
     FOR EACH ROW
-    EXECUTE FUNCTION kritik_notify_event('index_run');
+    EXECUTE FUNCTION kritika_notify_event('index_run');
 
-CREATE TRIGGER kritik_notify_index_run_update
+CREATE TRIGGER kritika_notify_index_run_update
     AFTER UPDATE ON index_runs
     FOR EACH ROW
     WHEN (OLD.status IS DISTINCT FROM NEW.status)
-    EXECUTE FUNCTION kritik_notify_event('index_run');
+    EXECUTE FUNCTION kritika_notify_event('index_run');
 
-CREATE TRIGGER kritik_notify_followup
+CREATE TRIGGER kritika_notify_followup
     AFTER INSERT OR UPDATE ON followups
     FOR EACH ROW
-    EXECUTE FUNCTION kritik_notify_event('followup');
+    EXECUTE FUNCTION kritika_notify_event('followup');
 
-CREATE TRIGGER kritik_notify_model_call
+CREATE TRIGGER kritika_notify_model_call
     AFTER INSERT ON model_calls
     FOR EACH ROW
-    EXECUTE FUNCTION kritik_notify_event('model_call');
+    EXECUTE FUNCTION kritika_notify_event('model_call');

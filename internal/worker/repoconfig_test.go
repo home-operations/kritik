@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/forge"
-	"github.com/home-operations/kritik/internal/prfilter"
-	"github.com/home-operations/kritik/internal/repoconfig"
-	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/prfilter"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 func adminSettings(t *testing.T) configfile.Settings {
@@ -46,7 +46,7 @@ func TestEffective(t *testing.T) {
 
 	tests := []struct {
 		name string
-		// doc is the merge-base .kritik.yaml, none when empty; files are
+		// doc is the merge-base .kritika.yaml, none when empty; files are
 		// what the runner read.
 		doc          string
 		files        repoconfig.Files
@@ -80,27 +80,27 @@ func TestEffective(t *testing.T) {
 			name: "requireSuggestedFix may only turn on", doc: "requireSuggestedFix: false\n", files: adminFiles,
 			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
 			templates: adminDefaults, strict: true,
-			notes: []string{".kritik.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
+			notes: []string{".kritika.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},
 		{
 			name:    "repository file rules follow the admin's, and its summary template replaces the admin's",
-			doc:     "rules: [{ id: repo, file: .kritik/rules.md }]\ncomments:\n  summaryTemplate: .kritik/summary.tmpl\n",
-			files:   with(repoconfig.Files{".kritik/rules.md": "repo rules", ".kritik/summary.tmpl": "repo summary"}),
+			doc:     "rules: [{ id: repo, file: .kritika/rules.md }]\ncomments:\n  summaryTemplate: .kritika/summary.tmpl\n",
+			files:   with(repoconfig.Files{".kritika/rules.md": "repo rules", ".kritika/summary.tmpl": "repo summary"}),
 			enabled: true, ignore: []string{"vendor/**"},
-			repoFiles: []string{"ops/rules.md", ".kritik/rules.md", ".kritik/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
+			repoFiles: []string{"ops/rules.md", ".kritika/rules.md", ".kritika/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
 			templates: review.Templates{Summary: "repo summary", Inline: "op inline"}, strict: true,
 		},
 		{
-			name: "a template the runner could not read leaves the built-in one", doc: "comments:\n  summaryTemplate: .kritik/gone.tmpl\n",
+			name: "a template the runner could not read leaves the built-in one", doc: "comments:\n  summaryTemplate: .kritika/gone.tmpl\n",
 			files: adminFiles, enabled: true, ignore: []string{"vendor/**"},
-			repoFiles: []string{"ops/rules.md", ".kritik/gone.tmpl", "ops/inline.tmpl", repoconfig.FileName},
+			repoFiles: []string{"ops/rules.md", ".kritika/gone.tmpl", "ops/inline.tmpl", repoconfig.FileName},
 			templates: review.Templates{Inline: "op inline"}, strict: true,
 		},
 		{
 			name: "invalid yaml is noted and the admin's settings apply", doc: "enabled: false\nunknown: 1\n", files: adminFiles,
 			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
 			templates: adminDefaults, strict: true,
-			notes: []string{".kritik.yaml was ignored: repoconfig: parse: yaml: unmarshal errors:\n  line 2: field unknown not found in type repoconfig.File"},
+			notes: []string{".kritika.yaml was ignored: repoconfig: parse: yaml: unmarshal errors:\n  line 2: field unknown not found in type repoconfig.File"},
 		},
 	}
 	for _, tt := range tests {
@@ -165,7 +165,7 @@ func TestEffectiveSkip(t *testing.T) {
 		})
 	}
 	for r, want := range map[repoconfig.SkipReason]string{
-		repoconfig.SkipDisabled: "disabled in .kritik.yaml", repoconfig.SkipFiltered: "filtered by .kritik.yaml", repoconfig.SkipOnlyPaths: "only ignored paths changed",
+		repoconfig.SkipDisabled: "disabled in .kritika.yaml", repoconfig.SkipFiltered: "filtered by .kritika.yaml", repoconfig.SkipOnlyPaths: "only ignored paths changed",
 	} {
 		if r.Description() != want {
 			t.Fatalf("%q.Description() = %q, want %q", r, r.Description(), want)
@@ -258,7 +258,7 @@ func (f fileForge) MergeBase(context.Context, string, string, string, string) (s
 }
 
 func TestFollowUpRepoConfig(t *testing.T) {
-	files := map[string]string{"ops/rules.md": "admin rules", ".kritik/rules.md": "repo rules"}
+	files := map[string]string{"ops/rules.md": "admin rules", ".kritika/rules.md": "repo rules"}
 	with := func(doc string) map[string]string {
 		m := maps.Clone(files)
 		m[repoconfig.FileName] = doc
@@ -273,11 +273,11 @@ func TestFollowUpRepoConfig(t *testing.T) {
 	}{
 		{name: "no file", files: files, model: "p/big", rules: []string{"admin rules"}},
 		{
-			name: "the repository's model and file rules", files: with("models: { review: p/small }\nrules: [{ id: repo, file: .kritik/rules.md }]\n"),
+			name: "the repository's model and file rules", files: with("models: { review: p/small }\nrules: [{ id: repo, file: .kritika/rules.md }]\n"),
 			model: "p/small", rules: []string{"admin rules", "repo rules"},
 		},
 		{name: "a model of a provider the account may not use is dropped", files: with("models: { review: q/huge }\n"), model: "p/big", rules: []string{"admin rules"}},
-		{name: "disabled", files: with("enabled: false\n"), reason: "disabled in .kritik.yaml", model: "p/big"},
+		{name: "disabled", files: with("enabled: false\n"), reason: "disabled in .kritika.yaml", model: "p/big"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

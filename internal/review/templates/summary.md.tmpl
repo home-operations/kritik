@@ -1,4 +1,4 @@
-### kritik review
+### kritika review
 
 {{ if .Incomplete -}}
 **Review incomplete for {{ if .HeadURL }}[`{{ trunc 7 .HeadSHA }}`]({{ .HeadURL }}){{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }}:** {{ .Incomplete }}. Findings posted for earlier heads may no longer apply.
@@ -58,4 +58,4 @@ _Incremental review of the changes since {{ if .PriorHeadURL }}[`{{ trunc 7 .Pri
 _{{ . }}._
 {{ end -}}
 {{ end }}
-<sub>Reviewed {{ if .HeadURL }}[`{{ trunc 7 .HeadSHA }}`]({{ .HeadURL }}){{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }} by kritik with {{ .Model }}.</sub>
+<sub>Reviewed {{ if .HeadURL }}[`{{ trunc 7 .HeadSHA }}`]({{ .HeadURL }}){{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }} by kritika with {{ .Model }}.</sub>

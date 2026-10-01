@@ -9,7 +9,7 @@ var goldenUser = User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com"
 
 func init() {
 	maps.Copy(goldens, map[string]any{
-		"meta":            Meta{Version: "v1.2.3", WebURL: "https://kritik.example"},
+		"meta":            Meta{Version: "v1.2.3", WebURL: "https://kritika.example"},
 		"turn_on_request": TurnOnRequest{On: true},
 		"accepted":        Accepted{JobID: 42},
 		"app_installation": AppInstallation{
@@ -17,7 +17,7 @@ func init() {
 			URL: "https://github.com/settings/installations/2",
 		},
 		"setup_status": SetupStatus{
-			WebURL: "https://kritik.example", HooksURL: "https://kritik.example/hooks/", Connections: []string{"alpha-bot"},
+			WebURL: "https://kritika.example", HooksURL: "https://kritika.example/hooks/", Connections: []string{"alpha-bot"},
 			ReviewModel: "openrouter/acme-large",
 		},
 		"register_result": RegisterResult{Added: 3},

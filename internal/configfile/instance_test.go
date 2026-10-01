@@ -68,10 +68,10 @@ func TestFileInstanceDefaults(t *testing.T) {
 // the file's, and refuses a variable naming no key.
 func TestInstanceDefaultsEnv(t *testing.T) {
 	setInstanceEnv(t)
-	t.Setenv("KRITIK_PROVIDERS_API_KEY", "sk-env")
-	t.Setenv("KRITIK_DEFAULTS_MODELS_REVIEW", "openrouter/env-model")
-	t.Setenv("KRITIK_EMBEDDING_MODEL", "openrouter/e-env")
-	t.Setenv("KRITIK_EMBEDDING_DIMS", "32")
+	t.Setenv("KRITIKA_PROVIDERS_API_KEY", "sk-env")
+	t.Setenv("KRITIKA_DEFAULTS_MODELS_REVIEW", "openrouter/env-model")
+	t.Setenv("KRITIKA_EMBEDDING_MODEL", "openrouter/e-env")
+	t.Setenv("KRITIKA_EMBEDDING_DIMS", "32")
 	f, err := Parse([]byte(fileWithDefaults))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -97,14 +97,14 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 	}
 
 	for _, tt := range []struct{ name, key, value, want string }{
-		{"an unknown provider key", "KRITIK_PROVIDERS_MODEL", "x", "KRITIK_PROVIDERS_MODEL names no provider setting"},
-		{"an unknown defaults key", "KRITIK_DEFAULTS_FILTER", "true", "KRITIK_DEFAULTS_FILTER names no defaults setting"},
-		{"forks that are not a bool", "KRITIK_DEFAULTS_FORKS", "sometimes", "KRITIK_DEFAULTS_FORKS must be true or false"},
-		{"a settle that is not a duration", "KRITIK_DEFAULTS_SETTLE", "soon", "KRITIK_DEFAULTS_SETTLE"},
-		{"an unknown embedding key", "KRITIK_EMBEDDING_URL", "x", "KRITIK_EMBEDDING_URL names no embedding setting"},
-		{"dims that are not a number", "KRITIK_EMBEDDING_DIMS", "many", "KRITIK_EMBEDDING_DIMS must be a whole number"},
-		{"a key from a file", "KRITIK_PROVIDERS_API_KEY_FILE", "/nope", "KRITIK_PROVIDERS_API_KEY_FILE names no provider setting"},
-		{"a name that is no type, without one", "KRITIK_PROVIDERS_NAME", "router", "providers.router.type must be"},
+		{"an unknown provider key", "KRITIKA_PROVIDERS_MODEL", "x", "KRITIKA_PROVIDERS_MODEL names no provider setting"},
+		{"an unknown defaults key", "KRITIKA_DEFAULTS_FILTER", "true", "KRITIKA_DEFAULTS_FILTER names no defaults setting"},
+		{"forks that are not a bool", "KRITIKA_DEFAULTS_FORKS", "sometimes", "KRITIKA_DEFAULTS_FORKS must be true or false"},
+		{"a settle that is not a duration", "KRITIKA_DEFAULTS_SETTLE", "soon", "KRITIKA_DEFAULTS_SETTLE"},
+		{"an unknown embedding key", "KRITIKA_EMBEDDING_URL", "x", "KRITIKA_EMBEDDING_URL names no embedding setting"},
+		{"dims that are not a number", "KRITIKA_EMBEDDING_DIMS", "many", "KRITIKA_EMBEDDING_DIMS must be a whole number"},
+		{"a key from a file", "KRITIKA_PROVIDERS_API_KEY_FILE", "/nope", "KRITIKA_PROVIDERS_API_KEY_FILE names no provider setting"},
+		{"a name that is no type, without one", "KRITIKA_PROVIDERS_NAME", "router", "providers.router.type must be"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(tt.key, tt.value)
@@ -130,7 +130,7 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 // the environment's source. mode is no longer a setting in either.
 func TestFileReviewDefaults(t *testing.T) {
 	setInstanceEnv(t)
-	t.Setenv("KRITIK_DEFAULTS_SETTLE", "45s")
+	t.Setenv("KRITIKA_DEFAULTS_SETTLE", "45s")
 	models := "  models: { review: openrouter/big, fallback: openrouter/small }\n"
 	withDefaults := func(extra string) []byte { return []byte(strings.Replace(fileWithDefaults, models, models+extra, 1)) }
 	f, err := Parse(withDefaults("  forks: true\n  feedback: minimal\n"))
@@ -160,8 +160,8 @@ func TestFileReviewDefaults(t *testing.T) {
 	if _, err := Parse(withDefaults("  mode: agentic\n")); err == nil || !strings.Contains(err.Error(), "mode") {
 		t.Fatalf("defaults.mode = %v, want it refused as an unknown key", err)
 	}
-	t.Setenv("KRITIK_DEFAULTS_MODE", "agentic")
-	if _, err := Parse(withDefaults("")); err == nil || !strings.Contains(err.Error(), "KRITIK_DEFAULTS_MODE names no defaults setting") {
-		t.Fatalf("KRITIK_DEFAULTS_MODE = %v, want it refused", err)
+	t.Setenv("KRITIKA_DEFAULTS_MODE", "agentic")
+	if _, err := Parse(withDefaults("")); err == nil || !strings.Contains(err.Error(), "KRITIKA_DEFAULTS_MODE names no defaults setting") {
+		t.Fatalf("KRITIKA_DEFAULTS_MODE = %v, want it refused", err)
 	}
 }

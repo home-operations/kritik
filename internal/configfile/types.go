@@ -1,5 +1,5 @@
-// Package configfile is kritik's configuration: the configuration file with
-// its KRITIK_* environment overlay, and the settings for how kritik runs
+// Package configfile is kritika's configuration: the configuration file with
+// its KRITIKA_* environment overlay, and the settings for how kritika runs
 // that come from the environment alone. Process configuration (addresses,
 // database, log level) is environment variables too and lives in
 // internal/config.
@@ -20,15 +20,15 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/home-operations/kritik/internal/agent"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/prfilter"
+	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/prfilter"
 )
 
 // ProviderType selects the model adapter a provider uses.
 type ProviderType = model.ProviderType
 
-// Provider types kritik implements. Each accepts a baseUrl, so any gateway
+// Provider types kritika implements. Each accepts a baseUrl, so any gateway
 // compatible with the OpenAI or Anthropic API is a provider.
 const (
 	ProviderOpenRouter = model.ProviderOpenRouter
@@ -39,7 +39,7 @@ const (
 // Forge identifies which forge a connection talks to.
 type Forge string
 
-// ForgeGitHub is github.com, the one forge kritik supports. Forge stays a
+// ForgeGitHub is github.com, the one forge kritika supports. Forge stays a
 // type, and the code that switches on it keeps its switch, so another forge
 // can be added back.
 const ForgeGitHub Forge = "github"
@@ -188,7 +188,7 @@ type LimitsSpec struct {
 // DefaultConcurrency applies when no level of the configuration sets one.
 const DefaultConcurrency = 2
 
-// DefaultRunnerDeadline bounds a runner Job when KRITIK_RUNNER_DEADLINE
+// DefaultRunnerDeadline bounds a runner Job when KRITIKA_RUNNER_DEADLINE
 // sets none.
 const DefaultRunnerDeadline = 15 * time.Minute
 
@@ -203,7 +203,7 @@ type Defaults struct {
 // defaults, an account and a repository entry. A field a narrower scope
 // writes replaces the broader scope's, even when it is empty or zero; a
 // field it leaves out inherits. Ignore globs are unioned instead. The
-// review keys are the ones a .kritik.yaml takes too, at the same level.
+// review keys are the ones a .kritika.yaml takes too, at the same level.
 type Overrides struct {
 	// Enabled is where a repository starts, on or off, until an admin turns
 	// it on or off in the dashboard. A repository entry may not set it.
@@ -343,7 +343,7 @@ type Connection struct {
 	// Accounts are the users and organizations the connection serves: a
 	// webhook for any other account is ignored, and a repository belongs to
 	// the connection serving its owner. A public GitHub App installed on
-	// several organizations lists each one kritik reviews for; nothing is
+	// several organizations lists each one kritika reviews for; nothing is
 	// served that is not listed.
 	Accounts []string `yaml:"accounts"`
 
@@ -367,7 +367,7 @@ type Repository struct {
 	where string
 }
 
-// RepoTraits is what kritik knows of a repository beyond its name: what the
+// RepoTraits is what kritika knows of a repository beyond its name: what the
 // forge says of it, that an archived repository is read-only and a fork a
 // copy of another one, and whether an admin turned it on or off from the
 // dashboard, nil until one does.
@@ -601,7 +601,7 @@ type File struct {
 	Egress      Egress
 	// Embedding is the instance's embedder, nil when indexing is off.
 	Embedding *Embedding
-	// Run is how kritik runs, from the environment.
+	// Run is how kritika runs, from the environment.
 	Run Run
 	// Accounts are every account a running connection serves, in the order
 	// the connections list them.
@@ -647,7 +647,7 @@ type Settings struct {
 	Incremental IncrementalSettings
 	Review      Review
 	// Providers name the model providers the repository's account may use,
-	// the instance's and its own, sorted: the ones a .kritik.yaml may
+	// the instance's and its own, sorted: the ones a .kritika.yaml may
 	// choose a model of.
 	Providers []string
 }

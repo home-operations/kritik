@@ -15,7 +15,7 @@ type Meta struct {
 }
 
 // AppInstallation is one account a connection's GitHub App is installed
-// on. Served is whether the connection lists the account: kritik reviews
+// on. Served is whether the connection lists the account: kritika reviews
 // nothing on one it does not, and an admin may uninstall the App there.
 type AppInstallation struct {
 	ID          int64  `json:"id"`

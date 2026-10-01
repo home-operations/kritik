@@ -1,5 +1,5 @@
-// Package web embeds the built kritik UI (see internal/web/src) so the
-// kritik binary serves it without any external static-file dependency.
+// Package web embeds the built kritika UI (see internal/web/src) so the
+// kritika binary serves it without any external static-file dependency.
 //
 // dist/ is populated by `mise run ui-build` (see .mise/config.toml and the
 // Dockerfile's ui stage); only dist/favicon.svg is committed so `go build`

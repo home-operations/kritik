@@ -13,8 +13,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/textcut"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // defaultGrepMaxResults and grepMaxResultsCap bound grep's max_results

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritik/internal/agent"
-	"github.com/home-operations/kritik/internal/contextpack"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/textcut"
+	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // similarTimeout bounds one similar-code request to the gateway, which

@@ -9,7 +9,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/home-operations/kritik/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/jobtimeout"
 )
 
 const (

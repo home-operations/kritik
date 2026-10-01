@@ -3,7 +3,7 @@
 /* ---- theme tokens ---------------------------------------------------- */
 /* A marked-up proof: ink on proof paper, a pen-blue for what can be
    followed, red pencil for what blocks, and a highlighter (--mark) for what
-   kritik has something to say about. --mark only ever sits behind --text,
+   kritika has something to say about. --mark only ever sits behind --text,
    dimmed in the dark theme as an e-reader's night highlight is; the state
    it marks carries an --edge that contrasts on its own, since the
    highlighter itself does not reach 3:1 on the light sheet. */
@@ -340,7 +340,7 @@ kbd {
   font-size: 11px;
 }
 
-/* ---- brand + nav (kritik-specific: no konflate equivalent) ------------ */
+/* ---- brand + nav (kritika-specific: no konflate equivalent) ------------ */
 /* The highlighter stroke: a band over the lower two thirds of the text,
    with the slightly uneven ends of a felt tip. */
 .marked {

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/contextpack"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestKeepSimilar(t *testing.T) {

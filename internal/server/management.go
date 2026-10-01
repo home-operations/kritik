@@ -1,4 +1,4 @@
-// Package server holds kritik's HTTP listeners. The management listener
+// Package server holds kritika's HTTP listeners. The management listener
 // (health and metrics) runs in every role; the hook listener runs only in the
 // roles that ingest forge webhooks.
 package server

@@ -1,6 +1,6 @@
 <script lang="ts">
   // The running connections, and the accounts one's GitHub App is installed
-  // on: kritik serves only the accounts a connection lists, and an
+  // on: kritika serves only the accounts a connection lists, and an
   // installation on any other can be removed.
   import { getJSON, sendJSON } from '../../api.svelte';
   import { Resource } from '../../resource.svelte';
@@ -73,7 +73,7 @@
                 <td class="mono">{c.name}</td>
                 <td class="mono small">{c.accounts.join(', ')}</td>
                 <td>
-                  {#if unsignedWebhooks(c)}<Pill tone="danger" label="unsigned" title="GitHub sends this App's webhooks with no signature, so kritik refuses them: set the App's webhook secret" />
+                  {#if unsignedWebhooks(c)}<Pill tone="danger" label="unsigned" title="GitHub sends this App's webhooks with no signature, so kritika refuses them: set the App's webhook secret" />
                     <span class="small muted"><Time iso={c.lastUnsignedWebhookAt} /></span>
                   {:else if c.lastWebhookAt}<Pill tone="ok" label="receiving" /> <span class="small muted"><Time iso={c.lastWebhookAt} /></span>
                   {:else}<Pill tone="warn" label="none yet" />{/if}
@@ -133,7 +133,7 @@
 
 <Dialog bind:open={confirmOpen} title="Uninstall the App?" fallback="#op-connections">
   <p>
-    GitHub removes <span class="mono">{selected}</span>'s App from <span class="mono">{removing?.account}</span>. kritik does
+    GitHub removes <span class="mono">{selected}</span>'s App from <span class="mono">{removing?.account}</span>. kritika does
     not serve that account, so nothing it reviews changes.
   </p>
   {#snippet footer()}

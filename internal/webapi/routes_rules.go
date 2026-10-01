@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/repoconfig"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // rulesRepoPage is how many repositories one read of the list takes.
@@ -18,7 +18,7 @@ const rulesRepoPage = 500
 
 // listRules serves the rules, review instructions and context files the
 // account's running repositories read: the configuration's, and each
-// repository's own from its .kritik.yaml as its last review read it; a
+// repository's own from its .kritika.yaml as its last review read it; a
 // written rule with the findings that cite it.
 func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx := r.Context()
@@ -89,13 +89,13 @@ type repoRules struct {
 	settings   configfile.Settings
 	sources    map[string]configfile.Source
 	ruleScopes map[string]configfile.Scope
-	// doc is the .kritik.yaml its last review read, nil for none.
+	// doc is the .kritika.yaml its last review read, nil for none.
 	doc []byte
 }
 
 // collectRules lists each rule once, with every repository that reads it,
 // ordered by kind, path or id, and source; a rule a repository's entry
-// sets is listed for that repository alone. A .kritik.yaml that does not
+// sets is listed for that repository alone. A .kritika.yaml that does not
 // parse adds nothing, as a review ignores it.
 func collectRules(repos []repoRules) []Rule {
 	byKey := map[string]*Rule{}

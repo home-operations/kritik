@@ -15,7 +15,7 @@ test.describe('signed-out shell', () => {
     );
     await page.goto('/');
     await expect(page).toHaveURL(/#\/signin$/);
-    await expect(page.locator('.signin-card h1')).toHaveText('kritik');
+    await expect(page.locator('.signin-card h1')).toHaveText('kritika');
 
     const link = page.locator('.signin-provider');
     await expect(link).toHaveAttribute('href', /return_to=%23%2F$/);
@@ -32,7 +32,7 @@ test.describe('signed-out shell', () => {
     );
     await page.goto('/#/a/github/acme/repos');
     await expect(page).toHaveURL(/#\/signin$/);
-    await expect(page.locator('.signin-card h1')).toHaveText('kritik');
+    await expect(page.locator('.signin-card h1')).toHaveText('kritika');
 
     const link = page.locator('.signin-provider');
     await expect(link).toHaveAttribute('href', /return_to=%23%2Fa%2Fgithub%2Facme%2Frepos/);
@@ -50,7 +50,7 @@ test.describe('signed-out shell', () => {
       }),
     );
     await page.goto('/#/signin/');
-    await expect(page.locator('.signin-card h1')).toHaveText('kritik');
+    await expect(page.locator('.signin-card h1')).toHaveText('kritika');
 
     const link = page.locator('.signin-provider');
     await expect(link).toHaveAttribute('href', /return_to=%23%2F$/);
@@ -83,7 +83,7 @@ test.describe('sign-in page', () => {
     let sent: unknown;
     await page.route('**/auth/local', async (route) => {
       sent = route.request().postDataJSON();
-      expect(route.request().headers()['x-kritik']).toBe('1');
+      expect(route.request().headers()['x-kritika']).toBe('1');
       signedIn = true;
       await route.fulfill({ status: 204 });
     });
@@ -206,7 +206,7 @@ test.describe('theme toggle', () => {
     await page.goto('/');
     const button = page.locator('.actions button[title^="Theme:"]');
     const currentClass = () => page.evaluate(() => document.documentElement.className);
-    const stored = () => page.evaluate(() => localStorage.getItem('kritik-theme'));
+    const stored = () => page.evaluate(() => localStorage.getItem('kritika-theme'));
 
     // auto, resolved against a light-scheme test environment
     await expect.poll(currentClass).toBe('light');
@@ -232,7 +232,7 @@ test.describe('theme toggle', () => {
     await page.goto('/');
     expect(await currentClass()).toBe('dark');
 
-    await page.addInitScript(() => localStorage.setItem('kritik-theme', 'light'));
+    await page.addInitScript(() => localStorage.setItem('kritika-theme', 'light'));
     await page.reload();
     expect(await currentClass()).toBe('light');
   });

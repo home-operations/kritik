@@ -9,7 +9,7 @@ type ConfigDriftGauge struct{ g prometheus.Gauge }
 // NewConfigDriftGauge registers the gauge on reg.
 func NewConfigDriftGauge(reg prometheus.Registerer) *ConfigDriftGauge {
 	g := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "kritik_config_drift",
+		Name: "kritika_config_drift",
 		Help: "1 when this replica's configuration file differs from the one the leader applied, else 0.",
 	})
 	reg.MustRegister(g)
@@ -33,7 +33,7 @@ type ConfigErrorGauge struct{ g prometheus.Gauge }
 // NewConfigErrorGauge registers the gauge on reg, at 0.
 func NewConfigErrorGauge(reg prometheus.Registerer) *ConfigErrorGauge {
 	g := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "kritik_config_error",
+		Name: "kritika_config_error",
 		Help: "1 while the latest attempt to apply the configuration to the store failed, else 0.",
 	})
 	reg.MustRegister(g)

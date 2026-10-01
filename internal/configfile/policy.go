@@ -17,7 +17,7 @@ const (
 
 // Policy names one repository setting and the scopes an admin writes it at.
 // Sources reports where each setting it lists comes from. What the
-// repository's own .kritik.yaml may do with a setting is repoconfig.Merge's
+// repository's own .kritika.yaml may do with a setting is repoconfig.Merge's
 // to say. Instance-wide settings are not in it.
 type Policy struct {
 	// Key is the setting as the configuration spells it; a dotted key is

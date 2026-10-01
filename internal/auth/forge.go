@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // maxAPIBody bounds how much of a forge API response is read.
@@ -20,7 +20,7 @@ const maxAPIBody = 1 << 20
 // ErrForgeAPI is a forge API call that failed or answered unexpectedly.
 var ErrForgeAPI = errors.New("auth: forge API")
 
-// forgeAPI is what differs between the forges kritik signs in through once
+// forgeAPI is what differs between the forges kritika signs in through once
 // the OAuth dance is done.
 type forgeAPI interface {
 	identity(ctx context.Context, c apiClient) (Identity, error)

@@ -93,7 +93,7 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 // reviewed, polled and indexed. An archived repository never is: it is
 // read-only until unarchived. One an admin turned on or off runs as they
 // chose. A fork does not otherwise, since an account can reach many forks
-// it never meant kritik to spend on. Any other repository runs as its
+// it never meant kritika to spend on. Any other repository runs as its
 // settings say.
 func (f *File) Runs(a *Account, fullName string, t RepoTraits) bool {
 	switch {
@@ -113,7 +113,7 @@ type Source string
 
 // Sources of a setting.
 const (
-	// SourceDefault is kritik's built-in default.
+	// SourceDefault is kritika's built-in default.
 	SourceDefault Source = "default"
 	SourceEnv     Source = "env"
 	SourceFile    Source = "file"

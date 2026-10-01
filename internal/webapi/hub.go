@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/home-operations/kritik/internal/auth"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/auth"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // SSE tuning: how often an idle stream carries a comment so proxies and

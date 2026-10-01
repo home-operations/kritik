@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 func TestParse_Invalid(t *testing.T) {

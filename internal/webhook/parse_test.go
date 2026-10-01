@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 const ghPullRequest = `{
@@ -170,7 +170,7 @@ func TestParseGitHubRepositoryTraits(t *testing.T) {
 	}
 	ev, err := Parse(configfile.ForgeGitHub, gh("repository"), []byte(`{"action":"edited","repository":{"full_name":"a/b"}}`))
 	if err != nil || ev.Kind != KindIgnored || ev.Action != "repository" {
-		t.Fatalf("an edit changes nothing kritik keeps: %+v %v", ev, err)
+		t.Fatalf("an edit changes nothing kritika keeps: %+v %v", ev, err)
 	}
 }
 

@@ -23,12 +23,12 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
-// Refs the commits are fetched into. They are private to kritik so the bare
+// Refs the commits are fetched into. They are private to kritika so the bare
 // repository never gains a branch a later fetch could confuse.
 const (
-	headRef  = "refs/kritik/head"
-	baseRef  = "refs/kritik/base"
-	priorRef = "refs/kritik/prior"
+	headRef  = "refs/kritika/head"
+	baseRef  = "refs/kritika/base"
+	priorRef = "refs/kritika/prior"
 )
 
 const remoteName = "origin"
@@ -81,7 +81,7 @@ func Run(ctx context.Context, f Fetch) (*Result, error) {
 	if !IsSHA(f.Head) || (f.Base != "" && !IsSHA(f.Base)) || (f.Prior != "" && !IsSHA(f.Prior)) {
 		return nil, fmt.Errorf("gitfetch: head %q, base %q and prior %q must be full commit SHAs", f.Head, f.Base, f.Prior)
 	}
-	dir, err := os.MkdirTemp("", "kritik-fetch-")
+	dir, err := os.MkdirTemp("", "kritika-fetch-")
 	if err != nil {
 		return nil, fmt.Errorf("gitfetch: temp dir: %w", err)
 	}

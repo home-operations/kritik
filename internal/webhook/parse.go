@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
-// stateOpen is the pull request state kritik acts on; everything else is
+// stateOpen is the pull request state kritika acts on; everything else is
 // closed, merged or not.
 const stateOpen = "open"
 
@@ -29,7 +29,7 @@ const (
 // Kind is what a webhook is about, after the forge-specific shape is gone.
 type Kind string
 
-// Event kinds kritik acts on. Anything else parses to KindIgnored.
+// Event kinds kritika acts on. Anything else parses to KindIgnored.
 const (
 	KindPing         Kind = "ping"
 	KindPullRequest  Kind = "pull_request"
@@ -386,7 +386,7 @@ func parsePush(delivery string, body []byte) (Event, error) {
 }
 
 // repositoryActions are the repository event actions that change what
-// kritik records of one; the rest, such as edited, change nothing it keeps.
+// kritika records of one; the rest, such as edited, change nothing it keeps.
 var repositoryActions = map[string]bool{"created": true, "archived": true, "unarchived": true}
 
 func parseRepository(delivery string, body []byte) (Event, error) {

@@ -58,7 +58,7 @@
   };
 </script>
 
-<svelte:head><title>{title} · kritik</title></svelte:head>
+<svelte:head><title>{title} · kritika</title></svelte:head>
 
 <main class="page">
   <div class="page-inner">

@@ -10,14 +10,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/agent"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/executor"
-	"github.com/home-operations/kritik/internal/gateway"
-	"github.com/home-operations/kritik/internal/jobtimeout"
-	"github.com/home-operations/kritik/internal/repoconfig"
-	"github.com/home-operations/kritik/internal/runner"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/gateway"
+	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // agentDeadline bounds a review's runner Job: the account's runner deadline,

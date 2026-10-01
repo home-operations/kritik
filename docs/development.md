@@ -1,6 +1,6 @@
 # Development
 
-Tool versions and tasks live in [`.mise/config.toml`](https://github.com/home-operations/kritik/blob/main/.mise/config.toml):
+Tool versions and tasks live in [`.mise/config.toml`](https://github.com/home-operations/kritika/blob/main/.mise/config.toml):
 
 ```sh
 mise install
@@ -48,7 +48,7 @@ pointers never enter the repository:
   its roles, the bot and provider credentials as ExternalSecrets). It
   expects the CloudNativePG, External Secrets and Prometheus operators.
 - `.private/values.yaml`: the chart values for that cluster; `mise run
-deploy` installs `charts/kritik` with them and the freshly pushed image,
+deploy` installs `charts/kritika` with them and the freshly pushed image,
   so every dev loop exercises the chart.
 - `.private/mise.local.toml`: `[env] KUBECONFIG = "..."`, symlinked from
   the repo root as `.mise.local.toml` so mise picks it up.
@@ -61,8 +61,8 @@ mise run logs       # follow the pod
 mise run undeploy   # delete everything, database included
 ```
 
-Images go to the registry `KRITIK_DEV_REGISTRY` names, or to `ttl.sh` (24h
+Images go to the registry `KRITIKA_DEV_REGISTRY` names, or to `ttl.sh` (24h
 TTL) when it is unset, under a fresh name on every deploy, so a redeploy
 always pulls new code.
-The Helm chart is the supported way to run kritik; `.private/deploy` is a
+The Helm chart is the supported way to run kritika; `.private/deploy` is a
 development harness, not an example to copy.

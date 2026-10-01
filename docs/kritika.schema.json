@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kritika.home-operations.com/kritika.schema.json",
+  "title": ".kritika.yaml",
+  "description": "A repository's kritika configuration, read from the merge base. See docs/repository-config.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "description": "false stops reviews, follow-ups and indexing; true cannot turn a disabled repository on."
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "review": { "$ref": "#/$defs/model" },
+        "fallback": { "$ref": "#/$defs/model" }
+      }
+    },
+    "feedback": {
+      "enum": ["detailed", "standard", "minimal"],
+      "description": "How much the review says: detailed, anything a maintainer could act on, every finding inline; standard, the same with nits kept to the summary; minimal, only bugs, risks and breaking changes."
+    },
+    "comments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inline": {
+          "type": "boolean",
+          "description": "false posts the summary alone."
+        },
+        "summaryTemplate": { "$ref": "#/$defs/path" },
+        "inlineTemplate": { "$ref": "#/$defs/path" }
+      }
+    },
+    "requireSuggestedFix": {
+      "type": "boolean",
+      "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."
+    },
+    "approve": {
+      "type": "boolean",
+      "description": "true approves a pull request whose review finds nothing blocking or important, and dismisses that approval when a later review does; replaces the admin's."
+    },
+    "filterExpr": {
+      "type": "string",
+      "description": "A CEL expression over pr, ANDed with the admin's filter."
+    },
+    "ignore": {
+      "type": "array",
+      "description": "Path globs added to the admin's ignore list; a pull request that changes only ignored paths is skipped.",
+      "items": { "$ref": "#/$defs/glob" }
+    },
+    "rules": {
+      "type": "array",
+      "description": "Checks the review makes, added after the admin's. A rule may not reuse the id of an admin's.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "oneOf": [{ "required": ["rule"] }, { "required": ["file"] }],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+            "description": "Names the rule to the findings that cite it."
+          },
+          "rule": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "What to check, and why."
+          },
+          "file": {
+            "$ref": "#/$defs/path",
+            "description": "A repository file, read from the merge base, whose content is the check."
+          },
+          "paths": {
+            "type": "array",
+            "description": "Apply the rule only when a changed path matches one of these.",
+            "items": { "$ref": "#/$defs/glob" }
+          },
+          "whenExpr": {
+            "type": "string",
+            "description": "A CEL expression over pr, as filterExpr sees it; the rule applies only when it is true."
+          }
+        }
+      }
+    },
+    "context": {
+      "type": "array",
+      "description": "Files that explain the code, added after the admin's.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "description"],
+        "properties": {
+          "path": { "$ref": "#/$defs/path" },
+          "description": { "type": "string", "minLength": 1 },
+          "paths": {
+            "type": "array",
+            "description": "Name the file only when a changed path matches one of these.",
+            "items": { "$ref": "#/$defs/glob" }
+          }
+        }
+      }
+    },
+    "agentFiles": {
+      "type": "boolean",
+      "description": "false leaves the repository's AGENTS.md and CLAUDE.md files out of the instructions."
+    }
+  },
+  "$defs": {
+    "model": {
+      "type": "string",
+      "pattern": "^[^/]+/.+$",
+      "description": "A <provider>/<model> reference, of a provider the instance or the account declares."
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "not": { "pattern": "^(/|\\.\\.(/|$))" },
+      "description": "A path relative to the repository root."
+    },
+    "glob": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A doublestar glob, such as docs/** or **/*.sql."
+    }
+  }
+}

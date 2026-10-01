@@ -1,18 +1,18 @@
 # Configuration
 
-kritik takes its settings from three places, each for what it suits:
+kritika takes its settings from three places, each for what it suits:
 
-| Where                                                                                                                                          | What                                                                                                                                             | Changed by                         |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
-| The environment                                                                                                                                | Process wiring: addresses, the database, logging and `KRITIK_WEB_URL`                                                                            | a restart                          |
-| The configuration file, and its `KRITIK_AUTH_*`, `KRITIK_APPS_*`, `KRITIK_PROVIDERS_*`, `KRITIK_DEFAULTS_*` and `KRITIK_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the defaults, the repository entries and the accounts | a restart                          |
-| The environment, set by the chart's values                                                                                                     | How kritik runs: polling, onboarding, retention and runner Jobs                                                                                  | a restart                          |
-| The dashboard                                                                                                                                  | Whether each repository is on or off                                                                                                             | an admin, on the Repositories page |
+| Where                                                                                                                                               | What                                                                                                                                             | Changed by                         |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| The environment                                                                                                                                     | Process wiring: addresses, the database, logging and `KRITIKA_WEB_URL`                                                                           | a restart                          |
+| The configuration file, and its `KRITIKA_AUTH_*`, `KRITIKA_APPS_*`, `KRITIKA_PROVIDERS_*`, `KRITIKA_DEFAULTS_*` and `KRITIKA_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the defaults, the repository entries and the accounts | a restart                          |
+| The environment, set by the chart's values                                                                                                          | How kritika runs: polling, onboarding, retention and runner Jobs                                                                                 | a restart                          |
+| The dashboard                                                                                                                                       | Whether each repository is on or off                                                                                                             | an admin, on the Repositories page |
 
-A repository's own [`.kritik.yaml`](repository-config.md) narrows what the
+A repository's own [`.kritika.yaml`](repository-config.md) narrows what the
 configuration sets for it, from its own git.
 
-The file is optional: `KRITIK_CONFIG_FILE` names it, and the chart's
+The file is optional: `KRITIKA_CONFIG_FILE` names it, and the chart's
 `config.file` renders it, so the configuration lives in git with the rest
 of the deployment. In the file a secret is `{ env: NAME }`, the variable
 holding it, never the value itself; the chart's `secretEnv` sets such a
@@ -20,7 +20,7 @@ variable from an existing Secret. Sign-in, one app, one provider, the
 default models and review settings, and the embedder also have
 variables, and a variable wins over the file, so a small deployment can
 be configured from the environment alone. A variable carries a secret
-itself. Once the configuration is read, kritik drops every variable a
+itself. Once the configuration is read, kritika drops every variable a
 secret came from from its own environment. A variable under
 one of these prefixes that names no key is refused at startup rather than
 ignored.
@@ -28,7 +28,7 @@ ignored.
 A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`:
 `filterExpr`, `roleMappingExpr` and a rule's `whenExpr`.
 
-kritik reads the file and its variables once, at startup: a change takes a
+kritika reads the file and its variables once, at startup: a change takes a
 restart, and the chart rolls the pods when its `config.file` changes.
 Content that does not load, or that would leave the dashboard no way to
 sign in, fails startup, so a rolling update leaves the pods before it
@@ -39,22 +39,22 @@ serving.
 `auth` sets how people sign in and what each may do. The chart's `auth`
 values render its variables.
 
-| Key                      | Environment variable                       |
-| ------------------------ | ------------------------------------------ |
-| `sessionTTL`             | `KRITIK_AUTH_SESSION_TTL`                  |
-| `admin.user`             | `KRITIK_AUTH_ADMIN_USER`                   |
-| `admin.password`         | `KRITIK_AUTH_ADMIN_PASSWORD`               |
-| `oidc.name`              | `KRITIK_AUTH_OIDC_NAME`                    |
-| `oidc.issuer`            | `KRITIK_AUTH_OIDC_ISSUER`                  |
-| `oidc.clientId`          | `KRITIK_AUTH_OIDC_CLIENT_ID`               |
-| `oidc.clientSecret`      | `KRITIK_AUTH_OIDC_CLIENT_SECRET`           |
-| `oidc.scopes`            | `KRITIK_AUTH_OIDC_SCOPES`, comma-separated |
-| `oidc.rolesClaim`        | `KRITIK_AUTH_OIDC_ROLES_CLAIM`             |
-| `oidc.roleMappingExpr`   | `KRITIK_AUTH_OIDC_ROLE_MAPPING_EXPR`       |
-| `oidc.defaultRole`       | `KRITIK_AUTH_OIDC_DEFAULT_ROLE`            |
-| `github.clientId`        | `KRITIK_AUTH_GITHUB_CLIENT_ID`             |
-| `github.clientSecret`    | `KRITIK_AUTH_GITHUB_CLIENT_SECRET`         |
-| `github.roleMappingExpr` | `KRITIK_AUTH_GITHUB_ROLE_MAPPING_EXPR`     |
+| Key                      | Environment variable                        |
+| ------------------------ | ------------------------------------------- |
+| `sessionTTL`             | `KRITIKA_AUTH_SESSION_TTL`                  |
+| `admin.user`             | `KRITIKA_AUTH_ADMIN_USER`                   |
+| `admin.password`         | `KRITIKA_AUTH_ADMIN_PASSWORD`               |
+| `oidc.name`              | `KRITIKA_AUTH_OIDC_NAME`                    |
+| `oidc.issuer`            | `KRITIKA_AUTH_OIDC_ISSUER`                  |
+| `oidc.clientId`          | `KRITIKA_AUTH_OIDC_CLIENT_ID`               |
+| `oidc.clientSecret`      | `KRITIKA_AUTH_OIDC_CLIENT_SECRET`           |
+| `oidc.scopes`            | `KRITIKA_AUTH_OIDC_SCOPES`, comma-separated |
+| `oidc.rolesClaim`        | `KRITIKA_AUTH_OIDC_ROLES_CLAIM`             |
+| `oidc.roleMappingExpr`   | `KRITIKA_AUTH_OIDC_ROLE_MAPPING_EXPR`       |
+| `oidc.defaultRole`       | `KRITIKA_AUTH_OIDC_DEFAULT_ROLE`            |
+| `github.clientId`        | `KRITIKA_AUTH_GITHUB_CLIENT_ID`             |
+| `github.clientSecret`    | `KRITIKA_AUTH_GITHUB_CLIENT_SECRET`         |
+| `github.roleMappingExpr` | `KRITIKA_AUTH_GITHUB_ROLE_MAPPING_EXPR`     |
 
 ```yaml
 auth:
@@ -63,11 +63,11 @@ auth:
   oidc:
     name: Company SSO
     issuer: https://idp.example.com
-    clientId: kritik-dashboard
+    clientId: kritika-dashboard
     clientSecret: { env: OIDC_CLIENT_SECRET }
     scopes: [openid, email, profile]
     rolesClaim: groups
-    roleMappingExpr: '"kritik-admins" in roles ? "admin" : ("kritik-users" in roles ? "member" : "")'
+    roleMappingExpr: '"kritika-admins" in roles ? "admin" : ("kritika-users" in roles ? "member" : "")'
   github:
     clientId: Iv1.abc123
     clientSecret: { env: GITHUB_CLIENT_SECRET }
@@ -83,13 +83,13 @@ auth:
 - `oidc` signs in through any OpenID Connect issuer, an `https` URL. The
   sign-in page labels it `name`, or "SSO" when unset.
 - `github` signs in on github.com with an OAuth App's client, or a GitHub
-  App's own: the App kritik reviews through can serve both, with a client
+  App's own: the App kritika reviews through can serve both, with a client
   secret generated on its settings page (see [setup](setup.md)).
 - `sessionTTL` is how long a dashboard session lasts, between 5 minutes and
   30 days. It defaults to 12 hours.
 
-A provider must allow the callback URL `<KRITIK_WEB_URL>/auth/callback/oidc`
-or `<KRITIK_WEB_URL>/auth/callback/github`. The dashboard refuses to start
+A provider must allow the callback URL `<KRITIKA_WEB_URL>/auth/callback/oidc`
+or `<KRITIKA_WEB_URL>/auth/callback/github`. The dashboard refuses to start
 with no way to sign in. The configuration is refused when nothing could
 make an admin: set an admin password, or a `roleMappingExpr` on a
 provider.
@@ -103,7 +103,7 @@ There are two roles:
   every account, the audit log and the
   [Configuration page](dashboard.md#configuration-page), which lists the
   instance settings read-only, each with its source: the environment, the
-  configuration file, or kritik's default. A secret shows only whether it
+  configuration file, or kritika's default. A secret shows only whether it
   is set, and a URL's credentials are hidden. Every write is audit-logged
   in the same transaction as the change it makes.
 - **Member** reads reviews, conversations and transcripts, with no write
@@ -143,7 +143,7 @@ A mapping that fails to evaluate refuses the sign-in.
 
 ## `apps`
 
-`apps` declares the GitHub Apps kritik serves accounts through. The
+`apps` declares the GitHub Apps kritika serves accounts through. The
 [setup guide](setup.md) covers creating one.
 
 ```yaml
@@ -161,17 +161,17 @@ account is served by one app. `clientId` is given inline or, like the
 secrets, as a reference. `webhookSecret` holds the same value as the App's
 webhook secret. The same app can come from the environment instead:
 
-| Variable                     | Key                         |
-| ---------------------------- | --------------------------- |
-| `KRITIK_APPS_NAME`           | `name`, `github` unless set |
-| `KRITIK_APPS_ACCOUNTS`       | `accounts`, comma-separated |
-| `KRITIK_APPS_CLIENT_ID`      | `clientId`                  |
-| `KRITIK_APPS_PRIVATE_KEY`    | `privateKey`                |
-| `KRITIK_APPS_WEBHOOK_SECRET` | `webhookSecret`             |
+| Variable                      | Key                         |
+| ----------------------------- | --------------------------- |
+| `KRITIKA_APPS_NAME`           | `name`, `github` unless set |
+| `KRITIKA_APPS_ACCOUNTS`       | `accounts`, comma-separated |
+| `KRITIKA_APPS_CLIENT_ID`      | `clientId`                  |
+| `KRITIKA_APPS_PRIVATE_KEY`    | `privateKey`                |
+| `KRITIKA_APPS_WEBHOOK_SECRET` | `webhookSecret`             |
 
 The environment declares at most one app. It replaces the file's app of
 the same name whole, or is added to the file's when none has that name. A
-`KRITIK_APPS_*` variable that names no key is refused at startup.
+`KRITIKA_APPS_*` variable that names no key is refused at startup.
 
 ## `providers` and `embedding`
 
@@ -207,7 +207,7 @@ matches that mean something. Without an
 embedder, indexing is off and reviews run without similar code. The index
 holds one model and dimension: a configuration that changes either drops
 every repository's index, and the leader builds each again, a few at a
-time, as `KRITIK_ONBOARD_WINDOW` paces them. Removing the embedder keeps
+time, as `KRITIKA_ONBOARD_WINDOW` paces them. Removing the embedder keeps
 the index, and adding back the same model and dimension uses it again.
 
 ### Local models
@@ -237,7 +237,7 @@ embedding:
 - The model must support tool calls: a review works through tools and
   submits its findings as a call to `submit_review`, which its last step
   tells it to make, and a follow-up's reply is a tool call too.
-- The kritik pods call the server; a review's runner reaches it only
+- The kritika pods call the server; a review's runner reaches it only
   through their gateway. With the chart's `networkPolicy.enabled`,
   add the server's port to `networkPolicy.egressPorts`, which allows only
   443 unless set.
@@ -283,7 +283,7 @@ repositories:
     agent: { commands: [gh, curl] }
 ```
 
-Each takes the keys a repository's own `.kritik.yaml` takes, at the same
+Each takes the keys a repository's own `.kritika.yaml` takes, at the same
 level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
 `approve`, `filterExpr`, `ignore`, `rules`, `context` and `agentFiles`; see
 [the repository settings](repository-config.md)), and the admin's own:
@@ -305,26 +305,26 @@ level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
 - `enabled`, at `defaults` and `owner/*` only: where repositories start
   (see below).
 
-A value applies in this order: kritik's default, `defaults`, `owner/*`,
-`owner/name`, and the repository's `.kritik.yaml`. A narrower value
+A value applies in this order: kritika's default, `defaults`, `owner/*`,
+`owner/name`, and the repository's `.kritika.yaml`. A narrower value
 replaces the broader one's, except `ignore` globs, which add up, and
 `rules`, which add up by id.
 
 The same defaults can come from the environment:
 
-| Variable                          | Key                                                                                   |
-| --------------------------------- | ------------------------------------------------------------------------------------- |
-| `KRITIK_PROVIDERS_NAME`           | the provider's name, `openrouter` unless set                                          |
-| `KRITIK_PROVIDERS_TYPE`           | `type`, which defaults to the name when that is `openrouter`, `openai` or `anthropic` |
-| `KRITIK_PROVIDERS_BASE_URL`       | `baseUrl`                                                                             |
-| `KRITIK_PROVIDERS_API_KEY`        | `apiKey`                                                                              |
-| `KRITIK_DEFAULTS_MODELS_REVIEW`   | `defaults.models.review`                                                              |
-| `KRITIK_DEFAULTS_MODELS_FALLBACK` | `defaults.models.fallback`                                                            |
-| `KRITIK_DEFAULTS_FEEDBACK`        | `defaults.feedback`                                                                   |
-| `KRITIK_DEFAULTS_FORKS`           | `defaults.forks`, `true` or `false`                                                   |
-| `KRITIK_DEFAULTS_SETTLE`          | `defaults.settle`, a duration such as `30s`                                           |
-| `KRITIK_EMBEDDING_MODEL`          | `embedding.model`                                                                     |
-| `KRITIK_EMBEDDING_DIMS`           | `embedding.dims`                                                                      |
+| Variable                           | Key                                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------------- |
+| `KRITIKA_PROVIDERS_NAME`           | the provider's name, `openrouter` unless set                                          |
+| `KRITIKA_PROVIDERS_TYPE`           | `type`, which defaults to the name when that is `openrouter`, `openai` or `anthropic` |
+| `KRITIKA_PROVIDERS_BASE_URL`       | `baseUrl`                                                                             |
+| `KRITIKA_PROVIDERS_API_KEY`        | `apiKey`                                                                              |
+| `KRITIKA_DEFAULTS_MODELS_REVIEW`   | `defaults.models.review`                                                              |
+| `KRITIKA_DEFAULTS_MODELS_FALLBACK` | `defaults.models.fallback`                                                            |
+| `KRITIKA_DEFAULTS_FEEDBACK`        | `defaults.feedback`                                                                   |
+| `KRITIKA_DEFAULTS_FORKS`           | `defaults.forks`, `true` or `false`                                                   |
+| `KRITIKA_DEFAULTS_SETTLE`          | `defaults.settle`, a duration such as `30s`                                           |
+| `KRITIKA_EMBEDDING_MODEL`          | `embedding.model`                                                                     |
+| `KRITIKA_EMBEDDING_DIMS`           | `embedding.dims`                                                                      |
 
 The environment declares at most one provider, which replaces the file's
 of the same name whole or is added to the file's. The embedding variables
@@ -334,7 +334,7 @@ comes from.
 
 ### Which repositories run
 
-kritik registers every repository each App reaches, once the
+kritika registers every repository each App reaches, once the
 configuration is applied and again on every poll, and "Resync from GitHub"
 on the Repositories page does the same at once. Whether one runs is
 decided in this order:
@@ -352,7 +352,7 @@ An `owner/name` entry may not set `enabled`: the dashboard owns a
 repository's on or off, and the configuration only says where one starts.
 A repository that is off is neither reviewed, polled nor indexed. One an
 admin turned off, or that the App no longer reaches, has its index dropped
-once `KRITIK_INDEX_GRACE` has passed.
+once `KRITIKA_INDEX_GRACE` has passed.
 
 ## `accounts`
 
@@ -373,7 +373,7 @@ accounts:
   account's.
 - `providers`: its own model keys. A model named `<key name>/<model>` in
   its `owner/*` or `owner/name` entries, or in one of its repositories'
-  `.kritik.yaml`, runs on that key and the account pays for it; a key's
+  `.kritika.yaml`, runs on that key and the account pays for it; a key's
   name may not be one the instance's providers use.
 
 An account runs while an app serves it. An entry for an account no app
@@ -382,28 +382,28 @@ served.
 
 ## `egress`
 
-`egress` is what runner pods may reach through kritik's gateway beyond
+`egress` is what runner pods may reach through kritika's gateway beyond
 `github.com` and `api.github.com`, which an app allows: `allowHosts`,
 exact or `*.`-prefixed, and `credentials`, a token the gateway adds to a
 plain `http://` request to that host, so the runner never holds it.
 
-## How kritik runs
+## How kritika runs
 
 These come from the environment, which the chart's values set, rather
 than the file; a
 restart changes them.
 
-| Variable                      | Chart value                  | What                                                                                                                                    |
-| ----------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `KRITIK_POLL_INTERVAL`        | `config.pollInterval`        | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set           |
-| `KRITIK_POLL_LOOKBACK`        | `config.pollLookback`        | how far back a first or long-idle poll looks; 24h unless set                                                                            |
-| `KRITIK_ONBOARD_WINDOW`       | `config.onboardWindow`       | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                 |
-| `KRITIK_INDEX_GRACE`          | `config.indexGrace`          | how long the index of a repository that stopped running is kept; 720h unless set                                                        |
-| `KRITIK_TRANSCRIPT_RETENTION` | `config.transcriptRetention` | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                        |
-| `KRITIK_DIFF_RETENTION`       | `config.diffRetention`       | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set |
-| `KRITIK_RUNNER_DEADLINE`      | `runner.deadline`            | a runner Job's deadline; 15m unless set                                                                                                 |
-| `KRITIK_RUNNER_RESOURCES`     | `runner.resources`           | a runner pod's resources, as JSON                                                                                                       |
-| `KRITIK_RUNNER_TOOLS`         | `runner.tools`               | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON                                                  |
+| Variable                       | Chart value                  | What                                                                                                                                    |
+| ------------------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `KRITIKA_POLL_INTERVAL`        | `config.pollInterval`        | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set           |
+| `KRITIKA_POLL_LOOKBACK`        | `config.pollLookback`        | how far back a first or long-idle poll looks; 24h unless set                                                                            |
+| `KRITIKA_ONBOARD_WINDOW`       | `config.onboardWindow`       | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                 |
+| `KRITIKA_INDEX_GRACE`          | `config.indexGrace`          | how long the index of a repository that stopped running is kept; 720h unless set                                                        |
+| `KRITIKA_TRANSCRIPT_RETENTION` | `config.transcriptRetention` | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                        |
+| `KRITIKA_DIFF_RETENTION`       | `config.diffRetention`       | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set |
+| `KRITIKA_RUNNER_DEADLINE`      | `runner.deadline`            | a runner Job's deadline; 15m unless set                                                                                                 |
+| `KRITIKA_RUNNER_RESOURCES`     | `runner.resources`           | a runner pod's resources, as JSON                                                                                                       |
+| `KRITIKA_RUNNER_TOOLS`         | `runner.tools`               | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON                                                  |
 
 A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps

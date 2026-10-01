@@ -62,12 +62,12 @@
   }
 </script>
 
-<svelte:head><title>Sign in · kritik</title></svelte:head>
+<svelte:head><title>Sign in · kritika</title></svelte:head>
 
 <div class="signin">
   <div class="signin-card">
     <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />
-    <h1><span class="marked">kritik</span></h1>
+    <h1><span class="marked">kritika</span></h1>
     <p class="signin-sub">Sign in to continue</p>
 
     {#if loading}

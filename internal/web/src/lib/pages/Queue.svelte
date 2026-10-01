@@ -25,7 +25,7 @@
   });
 </script>
 
-<svelte:head><title>Queue · {slug} · kritik</title></svelte:head>
+<svelte:head><title>Queue · {slug} · kritika</title></svelte:head>
 
 <main class="page">
   <div class="page-inner">

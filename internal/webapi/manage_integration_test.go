@@ -23,26 +23,26 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/home-operations/kritik/internal/auth"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/auth"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
 const manageConfig = `
 auth:
   oidc:
     issuer: https://idp.example
-    clientId: kritik
-    clientSecret: { env: KRITIK_TEST_TOKEN }
-    roleMappingExpr: '"kritik-admin" in roles ? "admin" : ""'
+    clientId: kritika
+    clientSecret: { env: KRITIKA_TEST_TOKEN }
+    roleMappingExpr: '"kritika-admin" in roles ? "admin" : ""'
 apps:
   - name: mgr-file-bot
     accounts: [mf, md]
     clientId: Iv1.test
-    privateKey: { env: KRITIK_TEST_TOKEN }
-    webhookSecret: { env: KRITIK_TEST_TOKEN }
+    privateKey: { env: KRITIKA_TEST_TOKEN }
+    webhookSecret: { env: KRITIKA_TEST_TOKEN }
 repositories:
   md/one: {}
 `
@@ -107,15 +107,15 @@ func newManageEnv(t *testing.T) *manageEnv {
 	t.Cleanup(cancel)
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
-	owner, err := pgxpool.New(ctx, storetest.Env(t, "KRITIK_TEST_OWNER_URL"))
+	owner, err := pgxpool.New(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(owner.Close)
 	e := &manageEnv{t: t, st: st, owner: owner, actions: &fakeActions{}, cookie: map[string]*http.Cookie{}}
 
-	t.Setenv("KRITIK_TEST_TOKEN", "tok")
-	path := filepath.Join(t.TempDir(), "kritik.yaml")
+	t.Setenv("KRITIKA_TEST_TOKEN", "tok")
+	path := filepath.Join(t.TempDir(), "kritika.yaml")
 	if err := os.WriteFile(path, []byte(manageConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 
-	webURL, _ := url.Parse("https://kritik.example")
+	webURL, _ := url.Parse("https://kritika.example")
 	e.current = configfile.NewCurrent(file)
 	h, err := auth.New(auth.Config{Store: st, Current: e.current, WebURL: webURL, Logger: logger})
 	if err != nil {
@@ -162,7 +162,7 @@ func (e *manageEnv) signIn(name, subject string, g store.SessionGrant) {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.cookie[name] = &http.Cookie{Name: auth.SessionCookieName(&url.URL{Scheme: "https", Host: "kritik.example"}), Value: token}
+	e.cookie[name] = &http.Cookie{Name: auth.SessionCookieName(&url.URL{Scheme: "https", Host: "kritika.example"}), Value: token}
 }
 
 // do sends a request as who; a mutation carries the same-origin headers
@@ -177,8 +177,8 @@ func (e *manageEnv) do(who, method, path string, csrf ...bool) (int, []byte) {
 		req.AddCookie(c)
 	}
 	if len(csrf) == 0 || csrf[0] {
-		req.Header.Set("Origin", "https://kritik.example")
-		req.Header.Set("X-Kritik", "1")
+		req.Header.Set("Origin", "https://kritika.example")
+		req.Header.Set("X-Kritika", "1")
 	}
 	resp, err := e.http.Client().Do(req)
 	if err != nil {

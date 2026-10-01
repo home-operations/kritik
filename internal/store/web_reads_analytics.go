@@ -38,7 +38,7 @@ type AnalyticsTotals struct {
 	ReactionsDown int
 	CostUSD       float64
 	// MedianReviewMs is nil when no review completed, and MedianMergeMs,
-	// from opened to merged, when no pull request kritik knows merged.
+	// from opened to merged, when no pull request kritika knows merged.
 	MedianReviewMs *int64
 	MedianMergeMs  *int64
 }

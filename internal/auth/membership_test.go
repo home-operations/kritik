@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 )
 
 // connectionsYAML is the apps the grant tests read forge accounts from.
@@ -112,15 +112,15 @@ func TestGrant(t *testing.T) {
 			facts: func(o *orgs) Facts { return githubFacts(o, "bob", "acme") }, role: RoleMember, all: true,
 		},
 		{
-			name: "an oidc member reads everything", auth: oidc(`"kritik-user" in roles ? "member" : ""`, ""), typ: configfile.SignInOIDC,
-			facts: func(*orgs) Facts { return oidcFacts("kritik-user") }, role: RoleMember, all: true,
+			name: "an oidc member reads everything", auth: oidc(`"kritika-user" in roles ? "member" : ""`, ""), typ: configfile.SignInOIDC,
+			facts: func(*orgs) Facts { return oidcFacts("kritika-user") }, role: RoleMember, all: true,
 		},
 		{
 			name: "an oidc map of every account", auth: oidc(`{"*": "member"}`, ""), typ: configfile.SignInOIDC,
 			facts: func(*orgs) Facts { return oidcFacts() }, role: RoleMember, all: true,
 		},
 		{
-			name: "an oidc default of member", auth: oidc(`"kritik-admin" in roles ? "admin" : ""`, "member"), typ: configfile.SignInOIDC,
+			name: "an oidc default of member", auth: oidc(`"kritika-admin" in roles ? "admin" : ""`, "member"), typ: configfile.SignInOIDC,
 			facts: func(*orgs) Facts { return oidcFacts("other") }, role: RoleMember, all: true,
 		},
 	}
@@ -161,7 +161,7 @@ func TestGrantRefuses(t *testing.T) {
 		"    roleMappingExpr: 'claims.groups[0] == \"a\" ? \"admin\" : \"\"'\n")
 	od, _ := oidc.Auth.SignInByType(configfile.SignInOIDC)
 	oidcNone := testFile(t, "auth:\n  oidc:\n    issuer: https://id.example.com\n    clientId: k\n    clientSecret: { env: TEST_AUTH_SECRET }\n"+
-		"    roleMappingExpr: '\"kritik-admin\" in roles ? \"admin\" : \"\"'\n")
+		"    roleMappingExpr: '\"kritika-admin\" in roles ? \"admin\" : \"\"'\n")
 	on, _ := oidcNone.Auth.SignInByType(configfile.SignInOIDC)
 	for _, tt := range []struct {
 		name  string

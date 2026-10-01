@@ -1,8 +1,8 @@
 *.toml
 CHANGELOG.md
 .release-please-manifest.json
-charts/kritik/README.md
-charts/kritik/values.schema.json
+charts/kritika/README.md
+charts/kritika/values.schema.json
 # Authored MkDocs docs site (pymdownx blocks admonitions/tabs break under
 # oxfmt) and its build output.
 docs/

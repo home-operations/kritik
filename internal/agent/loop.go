@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/textcut"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // Limits bounds a Run: how many steps it may take, how much of a tool's

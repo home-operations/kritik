@@ -141,7 +141,7 @@
       <div class="topbar-row">
         <a class="brand" href="#/">
           <img src="{basePath}/favicon.svg" width="22" height="22" alt="" />
-          <span class="wordmark marked">kritik</span>
+          <span class="wordmark marked">kritika</span>
         </a>
 
         {#if me && me.accounts.length > 0}
@@ -208,7 +208,7 @@
                   <Icon path={mdiLogout} size={14} /> Sign out
                 </button>
                 {#if session.meta?.version}
-                  <p class="user-version mono" title="kritik {session.meta.version}">kritik {session.meta.version}</p>
+                  <p class="user-version mono" title="kritika {session.meta.version}">kritika {session.meta.version}</p>
                 {/if}
               </div>
             </details>

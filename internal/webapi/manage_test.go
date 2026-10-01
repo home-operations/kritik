@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/auth"
+	"github.com/home-operations/kritika/internal/auth"
 )
 
 // mutate builds a state-changing request that passes the same-origin
@@ -19,13 +19,13 @@ func mutate(method, path, body string) *http.Request {
 		r = strings.NewReader(body)
 	}
 	req := httptest.NewRequest(method, path, r)
-	req.Header.Set("Origin", "https://kritik.example")
-	req.Header.Set("X-Kritik", "1")
+	req.Header.Set("Origin", "https://kritika.example")
+	req.Header.Set("X-Kritika", "1")
 	return req
 }
 
 func TestMetaNeedsNoSession(t *testing.T) {
-	ts := newTestServer(t, "https://kritik.example")
+	ts := newTestServer(t, "https://kritika.example")
 	w := ts.as(nil, httptest.NewRequest("GET", "/api/v1/meta", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body)
@@ -34,7 +34,7 @@ func TestMetaNeedsNoSession(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.WebURL != "https://kritik.example" {
+	if m.WebURL != "https://kritika.example" {
 		t.Errorf("meta = %+v", m)
 	}
 	if w.Header().Get("Cache-Control") != "no-store" {
@@ -43,7 +43,7 @@ func TestMetaNeedsNoSession(t *testing.T) {
 }
 
 func TestManagementRefusals(t *testing.T) {
-	ts := newTestServer(t, "https://kritik.example")
+	ts := newTestServer(t, "https://kritika.example")
 	admin := &auth.Principal{Admin: true}
 	member := memberOf(t, ts.file, "alpha")
 	tests := []struct {
@@ -77,7 +77,7 @@ func TestManagementRefusals(t *testing.T) {
 }
 
 func TestManagementNeedsSameOrigin(t *testing.T) {
-	ts := newTestServer(t, "https://kritik.example")
+	ts := newTestServer(t, "https://kritika.example")
 	admin := &auth.Principal{Admin: true}
 	for _, route := range []struct{ method, path string }{
 		{"PUT", "/api/v1/accounts/github/alpha/repos/o/r/turned-on"},
@@ -86,9 +86,9 @@ func TestManagementNeedsSameOrigin(t *testing.T) {
 	} {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
 			req := httptest.NewRequest(route.method, route.path, strings.NewReader("{}"))
-			req.Header.Set("Origin", "https://kritik.example")
+			req.Header.Set("Origin", "https://kritika.example")
 			if w := ts.as(admin, req); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "csrf") {
-				t.Errorf("without X-Kritik: %d %s, want 403 csrf", w.Code, w.Body)
+				t.Errorf("without X-Kritika: %d %s, want 403 csrf", w.Code, w.Body)
 			}
 		})
 	}

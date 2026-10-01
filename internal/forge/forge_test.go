@@ -56,7 +56,7 @@ func TestStatusDescription(t *testing.T) {
 	tests := []struct {
 		name, in, want string
 	}{
-		{"short text stays", "kritik: 2 finding(s)", "kritik: 2 finding(s)"},
+		{"short text stays", "kritika: 2 finding(s)", "kritika: 2 finding(s)"},
 		{"exactly the limit stays", strings.Repeat("a", MaxStatusDescription), strings.Repeat("a", MaxStatusDescription)},
 		{"longer is cut with an ellipsis", strings.Repeat("a", 150), strings.Repeat("a", MaxStatusDescription-1) + "…"},
 		{"characters count, not bytes", strings.Repeat("é", 150), strings.Repeat("é", MaxStatusDescription-1) + "…"},

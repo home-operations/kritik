@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/webhook"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/webhook"
 )
 
 func adminSettings() configfile.Settings {
@@ -40,19 +40,19 @@ func TestMerge(t *testing.T) {
 		{
 			name: "the file narrows, appends file rules and replaces presentation",
 			doc: "enabled: false\nfilterExpr: '!pr.draft'\nignore: [gen/**, vendor/**]\n" +
-				"rules: [{ id: repo-style, file: .kritik/rules.md }, { id: sql, file: .kritik/sql.md, paths: ['**/*.sql'] }]\n" +
-				"comments:\n  inlineTemplate: .kritik/inline.tmpl\n",
+				"rules: [{ id: repo-style, file: .kritika/rules.md }, { id: sql, file: .kritika/sql.md, paths: ['**/*.sql'] }]\n" +
+				"comments:\n  inlineTemplate: .kritika/inline.tmpl\n",
 			want: func(s *configfile.Settings) {
 				s.Enabled, s.Ignore = false, []string{"vendor/**", "gen/**"}
-				s.Review.Rules = append(s.Review.Rules, configfile.Rule{ID: "repo-style", File: ".kritik/rules.md"},
-					configfile.Rule{ID: "sql", File: ".kritik/sql.md", Paths: []string{"**/*.sql"}})
-				s.Review.Templates.Inline = ".kritik/inline.tmpl"
+				s.Review.Rules = append(s.Review.Rules, configfile.Rule{ID: "repo-style", File: ".kritika/rules.md"},
+					configfile.Rule{ID: "sql", File: ".kritika/sql.md", Paths: []string{"**/*.sql"}})
+				s.Review.Templates.Inline = ".kritika/inline.tmpl"
 			},
 			filter: true,
 		},
 		{
 			name: "an admin's file rule stays as the admin wrote it", doc: "rules: [{ id: house-style, file: docs/rules.md, paths: ['**/*.sql'] }]\n",
-			dropped: []string{".kritik.yaml: rules house-style was dropped: an admin's rule has that id"},
+			dropped: []string{".kritika.yaml: rules house-style was dropped: an admin's rule has that id"},
 		},
 		{
 			name: "context files follow the admin's", doc: "context: [{ path: db/schema.sql, description: the schema, paths: ['**/*.sql'] }]\n",
@@ -67,7 +67,7 @@ func TestMerge(t *testing.T) {
 			want: func(s *configfile.Settings) {
 				s.Review.Rules = append(s.Review.Rules, configfile.Rule{ID: "no-tokens", Rule: "Never log a token.", Paths: []string{"**/*.go"}})
 			},
-			dropped: []string{".kritik.yaml: rules wrap-errors was dropped: an admin's rule has that id"},
+			dropped: []string{".kritika.yaml: rules wrap-errors was dropped: an admin's rule has that id"},
 		},
 		{name: "a rule without an id", doc: "rules: [{ rule: Never log a token. }]\n", wantErr: `rules[0].id "" must be`},
 		{
@@ -80,9 +80,9 @@ func TestMerge(t *testing.T) {
 		{name: "a rule whose whenExpr fails the smoke test", doc: "rules: [{ id: a, rule: x, whenExpr: 'pr.labels[5].name == \"x\"' }]\n", wantErr: "rules[0].whenExpr: smoke test"},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
-			name: "presentation replaces the admin's", doc: "comments: { inline: false, summaryTemplate: .kritik/summary.tmpl }\nagentFiles: false\n",
+			name: "presentation replaces the admin's", doc: "comments: { inline: false, summaryTemplate: .kritika/summary.tmpl }\nagentFiles: false\n",
 			want: func(s *configfile.Settings) {
-				s.Review.InlineComments, s.Review.AgentFiles, s.Review.Templates.Summary = false, false, ".kritik/summary.tmpl"
+				s.Review.InlineComments, s.Review.AgentFiles, s.Review.Templates.Summary = false, false, ".kritika/summary.tmpl"
 			},
 		},
 		{
@@ -91,7 +91,7 @@ func TestMerge(t *testing.T) {
 		},
 		{
 			name: "an unknown feedback level is dropped", doc: "feedback: exhaustive\n",
-			dropped: []string{`.kritik.yaml: feedback "exhaustive" was dropped; allowed: detailed, standard or minimal`},
+			dropped: []string{`.kritika.yaml: feedback "exhaustive" was dropped; allowed: detailed, standard or minimal`},
 		},
 		{
 			name: "approve replaces the admin's", doc: "approve: true\n",
@@ -99,7 +99,7 @@ func TestMerge(t *testing.T) {
 		},
 		{
 			name: "requireSuggestedFix may only turn on", doc: "requireSuggestedFix: false\n",
-			dropped: []string{".kritik.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
+			dropped: []string{".kritika.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},
 		{
 			name: "a model of a provider the account may use",
@@ -111,8 +111,8 @@ func TestMerge(t *testing.T) {
 		{
 			name: "a model of another provider, or no model, is dropped", doc: "models: { review: q/big, fallback: p }\n",
 			dropped: []string{
-				`.kritik.yaml: models.review "q/big" was dropped; allowed: a model of own, p`,
-				`.kritik.yaml: models.fallback "p" was dropped; allowed: a model of own, p`,
+				`.kritika.yaml: models.review "q/big" was dropped; allowed: a model of own, p`,
+				`.kritika.yaml: models.fallback "p" was dropped; allowed: a model of own, p`,
 			},
 		},
 		{name: "a mode is no longer a key", doc: "mode: agentic\n", wantErr: "field mode not found"},
@@ -184,7 +184,7 @@ func TestMergedCheck(t *testing.T) {
 		})
 	}
 	for r, want := range map[SkipReason]string{
-		SkipDisabled: "disabled in .kritik.yaml", SkipFiltered: "filtered by .kritik.yaml", SkipOnlyPaths: "only ignored paths changed",
+		SkipDisabled: "disabled in .kritika.yaml", SkipFiltered: "filtered by .kritika.yaml", SkipOnlyPaths: "only ignored paths changed",
 	} {
 		if !r.Valid() || r.Description() != want {
 			t.Fatalf("%q.Description() = %q, want %q", r, r.Description(), want)

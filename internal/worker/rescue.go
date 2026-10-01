@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/home-operations/kritik/internal/metrics"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // Rescue pace: how often the leader looks, and how many jobs and runs one

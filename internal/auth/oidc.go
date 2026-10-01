@@ -15,7 +15,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // oidcScopes ask for the claims Identity is built from.

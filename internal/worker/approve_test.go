@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/home-operations/kritik/internal/forge"
-	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // approvalForge records the approval calls a publish makes.
@@ -35,11 +35,11 @@ func TestApprove(t *testing.T) {
 		err                 error
 		approved, dismissed string
 	}{
-		{name: "nothing found approves", approved: "o/r#7@abcdef1234: kritik: nothing blocking or important found at abcdef1."},
-		{name: "nits alone approve", counts: review.Counts{Nit: 3}, approved: "o/r#7@abcdef1234: kritik: nothing blocking or important found at abcdef1."},
-		{name: "an important finding withdraws", counts: review.Counts{Important: 1, Nit: 1}, dismissed: "o/r#7: kritik: 0 blocking and 1 important finding(s) at abcdef1."},
-		{name: "a blocking finding withdraws", counts: review.Counts{Blocking: 2}, dismissed: "o/r#7: kritik: 2 blocking and 0 important finding(s) at abcdef1."},
-		{name: "a forge error is logged, not raised", err: errors.New("forbidden"), approved: "o/r#7@abcdef1234: kritik: nothing blocking or important found at abcdef1."},
+		{name: "nothing found approves", approved: "o/r#7@abcdef1234: kritika: nothing blocking or important found at abcdef1."},
+		{name: "nits alone approve", counts: review.Counts{Nit: 3}, approved: "o/r#7@abcdef1234: kritika: nothing blocking or important found at abcdef1."},
+		{name: "an important finding withdraws", counts: review.Counts{Important: 1, Nit: 1}, dismissed: "o/r#7: kritika: 0 blocking and 1 important finding(s) at abcdef1."},
+		{name: "a blocking finding withdraws", counts: review.Counts{Blocking: 2}, dismissed: "o/r#7: kritika: 2 blocking and 0 important finding(s) at abcdef1."},
+		{name: "a forge error is logged, not raised", err: errors.New("forbidden"), approved: "o/r#7@abcdef1234: kritika: nothing blocking or important found at abcdef1."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

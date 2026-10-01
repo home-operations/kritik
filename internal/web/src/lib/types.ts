@@ -112,7 +112,7 @@ export interface Connection {
   credentials: CredentialsSet;
   hookPath: string;
   // lastWebhookAt is null until a webhook for the connection reaches
-  // kritik; until then kritik only polls it.
+  // kritika; until then kritika only polls it.
   lastWebhookAt: string | null;
   // lastUnsignedWebhookAt is when one last arrived with no signature, which
   // an App with no webhook secret sends; null when none has.
@@ -222,7 +222,7 @@ export interface InstanceSetting {
   source: ConfigSource;
 }
 
-// The repository's .kritik.yaml as the last review that ran read it, at
+// The repository's .kritika.yaml as the last review that ran read it, at
 // its merge base, applied to the admin's settings as they are now.
 export interface RepoConfig {
   reviewId: string;
@@ -423,7 +423,7 @@ export interface Analytics {
 
 export type RuleKind = 'rule' | 'context';
 // entry is an account's entry for the repository; repository is the
-// repository's own .kritik.yaml.
+// repository's own .kritika.yaml.
 export type RuleSource = 'default' | 'env' | 'file' | 'defaults' | 'account' | 'entry' | 'repository';
 
 // Rule is one written rule or file reviews read, with where it is set, the
@@ -716,7 +716,7 @@ export interface Accepted {
 }
 
 // One account a connection's GitHub App is installed on. served is whether
-// the connection lists the account; kritik reviews nothing on one it does
+// the connection lists the account; kritika reviews nothing on one it does
 // not, and an admin may uninstall the App there.
 export interface AppInstallation {
   id: number;

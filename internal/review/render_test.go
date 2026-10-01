@@ -32,14 +32,14 @@ func TestRenderSummaryDefault(t *testing.T) {
 		t.Fatalf("first line = %q", first)
 	}
 	for _, want := range []string{
-		"### kritik review",
+		"### kritika review",
 		"**2 findings** · 1 blocking · 1 nit\n",
 		"Solid change with one real bug.",
 		"- Clear tests",
 		"- **[blocking]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write",
 		"- **[nit]** `README.md:2` typo",
 		"_1 file(s) were omitted from the diff to fit the context budget._",
-		"<sub>Reviewed `0123456` by kritik with vendor/model-x.</sub>",
+		"<sub>Reviewed `0123456` by kritika with vendor/model-x.</sub>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)
@@ -89,7 +89,7 @@ func TestRenderSummaryLinks(t *testing.T) {
 		"**Earlier findings**\n\n" +
 			"- **[blocking]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r1) · still open\n" +
 			"- **[important]** `util.go:3` unchecked error · resolved\n",
-		"<sub>Reviewed [`0123456`](https://forge.example/o/r/commit/0123456789abcdef) by kritik with vendor/model-x.</sub>",
+		"<sub>Reviewed [`0123456`](https://forge.example/o/r/commit/0123456789abcdef) by kritika with vendor/model-x.</sub>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)
@@ -132,7 +132,7 @@ func TestRenderSummaryIncomplete(t *testing.T) {
 		t.Fatalf("notes = %v", notes)
 	}
 	for _, want := range []string{
-		Marker(7), "### kritik review", "**Review incomplete for `0123456`:** agent stopped: max_steps.", "_a note._",
+		Marker(7), "### kritika review", "**Review incomplete for `0123456`:** agent stopped: max_steps.", "_a note._",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)
@@ -171,7 +171,7 @@ func TestRenderSummaryCustom(t *testing.T) {
 		{name: "deadline", template: "{{ .Number }}", note: "time"},
 		{name: "loop iteration budget", template: `{{ range until 10000 }}{{ range until 10000 }}{{ end }}{{ end }}`, note: "summary template"},
 		{name: "integer range", template: `{{ range 1000000000 }}{{ end }}`, note: "summary template"},
-		{name: "reserved names", template: `{{ __kritik_iter 1 }}`, note: "summary template"},
+		{name: "reserved names", template: `{{ __kritika_iter 1 }}`, note: "summary template"},
 		{name: "mutating a dict", template: `{{ $d := dict "a" 1 }}{{ set $d "b" $d }}`, note: "summary template"},
 		{name: "random is not defined", template: `{{ randAlpha 8 }}`, note: "summary template"},
 	}
@@ -201,7 +201,7 @@ func TestRenderSummaryCustom(t *testing.T) {
 			if len(notes) != 1 || !strings.Contains(notes[0], tt.note) {
 				t.Fatalf("notes = %v, want one containing %q", notes, tt.note)
 			}
-			if !strings.Contains(body, "### kritik review") || !strings.Contains(body, notes[0]) {
+			if !strings.Contains(body, "### kritika review") || !strings.Contains(body, notes[0]) {
 				t.Fatalf("fallback body should be the default and carry the note:\n%s", body)
 			}
 			if len(body) > MaxRenderBytes {

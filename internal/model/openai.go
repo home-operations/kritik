@@ -16,8 +16,8 @@ import (
 
 // Attribution headers OpenRouter shows in its dashboard; harmless elsewhere.
 var attribution = map[string]string{
-	"HTTP-Referer": "https://github.com/home-operations/kritik",
-	"X-Title":      "kritik",
+	"HTTP-Referer": "https://github.com/home-operations/kritika",
+	"X-Title":      "kritika",
 }
 
 // OpenAIConfig configures an OpenAI chat-completions adapter.
@@ -32,7 +32,7 @@ type OpenAIConfig struct {
 	// ReportsModel.
 	OpenRouter bool
 	// ReportsModel trusts the response's model field to name the model
-	// that answered, as kritik's model gateway sets it.
+	// that answered, as kritika's model gateway sets it.
 	ReportsModel bool
 	Pricing      Pricing
 }

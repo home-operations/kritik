@@ -1,14 +1,14 @@
 # Setup
 
-kritik reviews pull requests on github.com through a GitHub App. Events
-reach kritik through the App's own webhook, which covers every repository
+kritika reviews pull requests on github.com through a GitHub App. Events
+reach kritika through the App's own webhook, which covers every repository
 the App is installed on. No repository needs a file: a
-[`.kritik.yaml`](repository-config.md) is optional. This guide takes a new
+[`.kritika.yaml`](repository-config.md) is optional. This guide takes a new
 instance from install to its first review.
 
 ## Deploy
 
-Install the chart as its [README](https://github.com/home-operations/kritik/blob/main/charts/kritik/README.md) shows, with:
+Install the chart as its [README](https://github.com/home-operations/kritika/blob/main/charts/kritika/README.md) shows, with:
 
 - `web.url`, the one public URL. The dashboard is served at it, and GitHub
   delivers each App's webhook under it, to `/hooks/<app name>`, both from
@@ -20,7 +20,7 @@ Install the chart as its [README](https://github.com/home-operations/kritik/blob
 - The [configuration file](configuration.md) as `config.file`, or an
   existing ConfigMap, with the variables its secrets name set from
   existing Secrets under `secretEnv`. It lives in git with the rest of the
-  deployment; kritik reads it at startup, and the chart rolls the pods
+  deployment; kritika reads it at startup, and the chart rolls the pods
   when it changes.
 
 A minimal file names the GitHub App (below), a model key and the default
@@ -55,13 +55,13 @@ checklist names each step and what to set for it
 
 ## The GitHub App
 
-An entry of `apps` is one GitHub App that kritik serves accounts through.
+An entry of `apps` is one GitHub App that kritika serves accounts through.
 It serves the users and organizations its `accounts` lists, and each of
-them is a kritik account, `github/<name>`, that this App alone serves.
+them is a kritika account, `github/<name>`, that this App alone serves.
 
 ### Register it
 
-Register a GitHub App under the account whose repositories kritik reviews
+Register a GitHub App under the account whose repositories kritika reviews
 (a personal account's or an organization's Developer settings):
 
 - **Webhook:** Active, with the URL
@@ -77,7 +77,7 @@ Register a GitHub App under the account whose repositories kritik reviews
   - Issues: read-only. GitHub delivers a pull request's conversation
     comments as issue comments, and an App subscribes to those only with
     this permission.
-  - Commit statuses: read and write, for the `kritik/review` status.
+  - Commit statuses: read and write, for the `kritika/review` status.
 - **Organization permissions:** Members: read-only, only for signing in
   with GitHub through this App, whose role mapping reads the
   organizations a person belongs to.
@@ -86,7 +86,7 @@ Register a GitHub App under the account whose repositories kritik reviews
   or unarchived. Installation events arrive without subscribing.
 - **Where it can be installed:** only on this account, unless it should
   serve several. A public App can be installed on many organizations: list
-  each one kritik should review in the App's `accounts`. A
+  each one kritika should review in the App's `accounts`. A
   delivery for any account not listed is accepted and ignored, so nobody
   else who installs the App gets reviews.
 
@@ -112,25 +112,25 @@ repository that runs
 
 Anyone can install a public App by its slug. The Configuration page's
 GitHub Apps panel lists every account each App is installed on, marks
-those it does not serve, and uninstalls the App from any of them. kritik
+those it does not serve, and uninstalls the App from any of them. kritika
 reviews nothing on an account the App's entry does not list, whether or
 not the App is installed there.
 
 ## Check that it works
 
-GitHub keeps the App webhook's recent deliveries with kritik's response:
+GitHub keeps the App webhook's recent deliveries with kritika's response:
 204 for a ping, 202 for anything accepted, 401 when the secrets differ or
 the App has none, and 404 when the path names no App. The account
 overview's Connection panel shows when its App last had a delivery,
 explains where the webhook goes while none has, and says to set the App's
 webhook secret when its deliveries arrive from GitHub with no signature,
 which the Configuration page's GitHub Apps panel marks `unsigned`.
-`kritik_webhooks_total{connection,outcome}` counts deliveries by outcome.
+`kritika_webhooks_total{connection,outcome}` counts deliveries by outcome.
 
 ## Without webhooks
 
 When the forge cannot reach the listener, polling alone still reviews:
-every `KRITIK_POLL_INTERVAL` (10 minutes unless set, `0s` turns it off), the
+every `KRITIKA_POLL_INTERVAL` (10 minutes unless set, `0s` turns it off), the
 leader lists the open pull requests updated since the last poll. It is a
 backstop, not a substitute:
 
@@ -138,7 +138,7 @@ backstop, not a substitute:
 - no mention is answered, since the poller does not read comments;
 - the index catches up with the default branch at the next poll, not on
   each push: while no webhook has reached an App within
-  `KRITIK_POLL_LOOKBACK`, each poll also checks its indexed repositories'
+  `KRITIKA_POLL_LOOKBACK`, each poll also checks its indexed repositories'
   default branches;
-- only repositories kritik already knows, from the configuration or an
+- only repositories kritika already knows, from the configuration or an
   earlier event, are polled.

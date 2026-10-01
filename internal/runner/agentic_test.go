@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/agent"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/contextpack"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/repoconfig"
-	"github.com/home-operations/kritik/internal/review"
+	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 const agentDiff = `diff --git a/main.go b/main.go
@@ -44,7 +44,7 @@ func TestAgentPrompt(t *testing.T) {
 		Context: []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 1, EndLine: 2, Text: "func u() {}"}},
 		Scope:   review.ScopeFull,
 	}
-	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritik/rules.md": "Repository rules.", "AGENTS.md": "Agent notes."}
+	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritika/rules.md": "Repository rules.", "AGENTS.md": "Agent notes."}
 	tests := []struct {
 		name         string
 		scope        review.Scope
@@ -67,9 +67,9 @@ func TestAgentPrompt(t *testing.T) {
 		},
 		{
 			name: "a file rule carries its file, in the order written", scope: review.ScopeFull,
-			rules: []configfile.Rule{{ID: "repo", File: ".kritik/rules.md"}, {ID: "admin", File: "docs/rules.md", Paths: []string{"web/**"}},
+			rules: []configfile.Rule{{ID: "repo", File: ".kritika/rules.md"}, {ID: "admin", File: "docs/rules.md", Paths: []string{"web/**"}},
 				{ID: "go", Rule: "Wrap errors."}},
-			active: []review.Rule{{ID: "repo", Text: "Repository rules.", File: ".kritik/rules.md"}, {ID: "go", Text: "Wrap errors."}},
+			active: []review.Rule{{ID: "repo", Text: "Repository rules.", File: ".kritika/rules.md"}, {ID: "go", Text: "Wrap errors."}},
 		},
 	}
 	for _, tt := range tests {

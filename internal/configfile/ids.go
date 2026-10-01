@@ -6,18 +6,18 @@ import (
 	"github.com/google/uuid"
 )
 
-// namespace roots every deterministic identifier kritik derives. Accounts
+// namespace roots every deterministic identifier kritika derives. Accounts
 // and connections get their ids from their names so that any role can
 // address them without a lookup that row-level security would forbid before
 // the account is known: the webhook listener derives the account id from the
 // repository owner a webhook names and opens the account transaction
 // directly.
-var namespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://github.com/home-operations/kritik"))
+var namespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://github.com/home-operations/kritika"))
 
 // ID is the account's stable identifier, derived from its forge and name.
 func (a *Account) ID() string { return AccountID(a.Forge, a.Name) }
 
-// Key is how the account is named across kritik: "<forge>/<name>",
+// Key is how the account is named across kritika: "<forge>/<name>",
 // lowercased, since forge account names are not case sensitive.
 func (a *Account) Key() string { return AccountKey(a.Forge, a.Name) }
 

@@ -14,19 +14,19 @@ import (
 
 // Environment variable prefixes of the file's instance defaults.
 const (
-	providerEnvPrefix  = "KRITIK_PROVIDERS_"
-	defaultsEnvPrefix  = "KRITIK_DEFAULTS_"
-	embeddingEnvPrefix = "KRITIK_EMBEDDING_"
+	providerEnvPrefix  = "KRITIKA_PROVIDERS_"
+	defaultsEnvPrefix  = "KRITIKA_DEFAULTS_"
+	embeddingEnvPrefix = "KRITIKA_EMBEDDING_"
 )
 
 // DefaultEnvProvider names the environment's provider when
-// KRITIK_PROVIDERS_NAME is unset.
+// KRITIKA_PROVIDERS_NAME is unset.
 const DefaultEnvProvider = "openrouter"
 
 // overlayProviderEnv declares the one provider the environment may: it
 // replaces the file's provider of its name whole, or joins them. Its type
 // defaults to its name when that is a provider type. It returns the
-// provider's name, "" when no KRITIK_PROVIDERS_* variable is set; a
+// provider's name, "" when no KRITIKA_PROVIDERS_* variable is set; a
 // variable that names no key is an error.
 func overlayProviderEnv(providers *map[string]Provider, environ []string) (string, error) {
 	name, p := DefaultEnvProvider, Provider{}
@@ -64,7 +64,7 @@ func overlayProviderEnv(providers *map[string]Provider, environ []string) (strin
 	return name, nil
 }
 
-// overlayDefaultsEnv sets the file's defaults from KRITIK_DEFAULTS_*,
+// overlayDefaultsEnv sets the file's defaults from KRITIKA_DEFAULTS_*,
 // recording each key it sets in from.
 func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) error {
 	for _, kv := range environ {
@@ -104,7 +104,7 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 }
 
 // overlayEmbeddingEnv sets the file's embedder key by key from
-// KRITIK_EMBEDDING_*, starting one when the file has none, and records in
+// KRITIKA_EMBEDDING_*, starting one when the file has none, and records in
 // from that the environment set it.
 func overlayEmbeddingEnv(e **Embedding, environ []string, from map[string]bool) error {
 	for _, kv := range environ {

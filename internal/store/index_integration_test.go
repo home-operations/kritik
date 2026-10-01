@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 const onboardAccounts = `
@@ -17,23 +17,23 @@ apps:
   - name: alpha-bot
     accounts: [alpha]
     clientId: Iv1.test
-    privateKey: { env: KRITIK_TEST_TOKEN }
-    webhookSecret: { env: KRITIK_TEST_TOKEN }
+    privateKey: { env: KRITIKA_TEST_TOKEN }
+    webhookSecret: { env: KRITIKA_TEST_TOKEN }
   - name: beta-bot
     accounts: [beta]
     clientId: Iv1.test
-    privateKey: { env: KRITIK_TEST_TOKEN }
-    webhookSecret: { env: KRITIK_TEST_TOKEN }
+    privateKey: { env: KRITIKA_TEST_TOKEN }
+    webhookSecret: { env: KRITIKA_TEST_TOKEN }
   - name: east-bot
     accounts: [east]
     clientId: Iv1.test
-    privateKey: { env: KRITIK_TEST_TOKEN }
-    webhookSecret: { env: KRITIK_TEST_TOKEN }
+    privateKey: { env: KRITIKA_TEST_TOKEN }
+    webhookSecret: { env: KRITIKA_TEST_TOKEN }
   - name: west-bot
     accounts: [west]
     clientId: Iv1.test
-    privateKey: { env: KRITIK_TEST_TOKEN }
-    webhookSecret: { env: KRITIK_TEST_TOKEN }
+    privateKey: { env: KRITIKA_TEST_TOKEN }
+    webhookSecret: { env: KRITIKA_TEST_TOKEN }
 repositories:
   alpha/one: {}
   alpha/two: {}

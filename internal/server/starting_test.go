@@ -15,8 +15,8 @@ func TestStarting(t *testing.T) {
 		name, method, path string
 		wantType, wantBody string
 	}{
-		{name: "the dashboard gets a page", method: http.MethodGet, path: "/", wantType: "text/html; charset=utf-8", wantBody: "kritik is starting"},
-		{name: "a dashboard route too", method: http.MethodGet, path: "/reviews/1", wantType: "text/html; charset=utf-8", wantBody: "kritik is starting"},
+		{name: "the dashboard gets a page", method: http.MethodGet, path: "/", wantType: "text/html; charset=utf-8", wantBody: "kritika is starting"},
+		{name: "a dashboard route too", method: http.MethodGet, path: "/reviews/1", wantType: "text/html; charset=utf-8", wantBody: "kritika is starting"},
 		{name: "a webhook delivery is refused in plain text", method: http.MethodPost, path: "/hooks/github", wantType: "text/plain; charset=utf-8", wantBody: "waiting for the database"},
 		{name: "a head has no body", method: http.MethodHead, path: "/", wantType: "text/html; charset=utf-8"},
 	}

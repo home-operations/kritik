@@ -86,7 +86,7 @@
     file: 'config file',
     defaults: 'defaults',
     account: 'account',
-    repository: '.kritik.yaml',
+    repository: '.kritika.yaml',
   };
 
   // settingFilter narrows the settings shown to those whose label, key or
@@ -102,7 +102,7 @@
   }
 </script>
 
-<svelte:head><title>{fullName} · kritik</title></svelte:head>
+<svelte:head><title>{fullName} · kritika</title></svelte:head>
 
 {#snippet setting(d: RepoDetail, r: Row)}
   {@const eff = d.repoConfig?.settings ?? d.settings}
@@ -173,7 +173,7 @@
         </div>
 
         <section class="panel" aria-labelledby="repo-file">
-          <header class="panel-head"><h2 id="repo-file" class="mono">.kritik.yaml</h2></header>
+          <header class="panel-head"><h2 id="repo-file" class="mono">.kritika.yaml</h2></header>
           {#if !rc}
             <p class="state-msg">No review has read it yet.</p>
           {:else}
@@ -188,7 +188,7 @@
               {/if}
             </dl>
             {#if !rc.found}
-              <p class="state-msg">There was no .kritik.yaml at that commit.</p>
+              <p class="state-msg">There was no .kritika.yaml at that commit.</p>
             {/if}
             {#if rc.ignored}
               <p class="notice" role="note">Ignored as a whole: {rc.ignored}</p>

@@ -1,0 +1,27 @@
+---
+# Values that make the chart render without a real cluster: helm lint,
+# helm template and CI use them. Nothing here is a working configuration.
+database:
+  app:
+    existingSecret: kritika-postgres-app
+  owner:
+    existingSecret: kritika-postgres-credentials
+  runner:
+    existingSecret: kritika-postgres-runner
+web:
+  url: https://kritika.example.com
+auth:
+  admin:
+    passwordSecret:
+      name: kritika-auth
+config:
+  file:
+    apps:
+      - name: github
+        accounts: [org-1]
+        clientId: Iv1.example
+        privateKey: { env: GITHUB_APP_PRIVATE_KEY }
+        webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
+secretEnv:
+  - { name: GITHUB_APP_PRIVATE_KEY, secretName: kritika-bot, key: private-key.pem }
+  - { name: GITHUB_APP_WEBHOOK_SECRET, secretName: kritika-bot, key: webhook-secret }

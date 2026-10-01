@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritik/internal/model"
+	"github.com/home-operations/kritika/internal/model"
 )
 
 // Source bounds: how many URLs one run records, and how long each may be.

@@ -9,7 +9,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/home-operations/kritik/internal/executor"
+	"github.com/home-operations/kritika/internal/executor"
 )
 
 // fakeState is a run as the database would report it, changed by the test
@@ -46,13 +46,13 @@ type blockingExecutor struct{ started chan struct{} }
 func (b *blockingExecutor) Run(ctx context.Context, _ executor.Spec) executor.Result {
 	close(b.started)
 	<-ctx.Done()
-	return executor.Result{JobName: "kritik-run-x", Err: context.Cause(ctx)}
+	return executor.Result{JobName: "kritika-run-x", Err: context.Cause(ctx)}
 }
 
 type instantExecutor struct{}
 
 func (instantExecutor) Run(context.Context, executor.Spec) executor.Result {
-	return executor.Result{JobName: "kritik-run-x"}
+	return executor.Result{JobName: "kritika-run-x"}
 }
 
 func TestSupervise(t *testing.T) {

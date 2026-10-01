@@ -18,7 +18,7 @@ import (
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
-// Migrate applies River's schema and then kritik's own migrations, in order,
+// Migrate applies River's schema and then kritika's own migrations, in order,
 // each in its own transaction, recording each in schema_migrations. It runs
 // as the owner and is idempotent. Grants to the application and runner
 // roles are re-applied after every run because a new table needs them and
@@ -61,7 +61,7 @@ func (s *Store) applyMigration(ctx context.Context, name, version string) error 
 	defer func() { _ = tx.Rollback(ctx) }()
 	// Serialise concurrent migrators; the leader lock already does, but a
 	// manual run from a shell must not race it.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritik-migrate'))`); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-migrate'))`); err != nil {
 		return fmt.Errorf("store: migration lock: %w", err)
 	}
 	var applied bool

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/home-operations/kritik/internal/agent"
-	"github.com/home-operations/kritik/internal/executor"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestAgentRunStopError(t *testing.T) {

@@ -232,7 +232,7 @@ wheels = [
 ]
 
 [[package]]
-name = "kritik-docs"
+name = "kritika-docs"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [

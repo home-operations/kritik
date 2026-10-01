@@ -8,7 +8,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/home-operations/kritik/internal/textcut"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // MaxRenderBytes bounds a rendered comment, marker included. GitHub rejects
@@ -70,7 +70,7 @@ var (
 	errSandbox  = errors.New("review: template exceeded a sandbox limit")
 )
 
-// RenderSummary renders the sticky comment. kritik's marker always leads,
+// RenderSummary renders the sticky comment. kritika's marker always leads,
 // whatever the template does, so sticky discovery cannot be defeated by a
 // template. When the repository's template fails, the default is used and
 // the returned note, also shown in the comment, says why.
@@ -88,9 +88,9 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 	}
 	out, err := render(context.WithoutCancel(ctx), defaultSummary, d, limit)
 	if err != nil {
-		// The default renders data kritik bounds itself; failing here is a
+		// The default renders data kritika bounds itself; failing here is a
 		// bug, but the comment must still carry the marker and the take.
-		out = textcut.Prefix(fmt.Sprintf("### kritik review\n\n%s\n", d.Result.Summary.Take), limit)
+		out = textcut.Prefix(fmt.Sprintf("### kritika review\n\n%s\n", d.Result.Summary.Take), limit)
 	}
 	return marker + out, notes
 }
@@ -124,7 +124,7 @@ func fallbackNote(which string, err error) string {
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		why = "ran out of time"
 	}
-	return fmt.Sprintf("The repository's %s template %s, so kritik's default was used", which, why)
+	return fmt.Sprintf("The repository's %s template %s, so kritika's default was used", which, why)
 }
 
 // render parses and executes src in a sandbox, bounded by ctx and

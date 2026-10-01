@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/webhook"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/webhook"
 )
 
 // Clients builds a forge client per App and repository owner: a GitHub
@@ -57,20 +57,20 @@ type InlineComment struct {
 	Body      string
 }
 
-// StatusState is the outcome a commit status reports. kritik never reports
+// StatusState is the outcome a commit status reports. kritika never reports
 // failure for a review that ran: a review informs, it does not block.
 // StatusError is the one exception, for a review that did not run to a
 // verdict at all (canceled), which is not a finding to weigh.
 type StatusState string
 
-// States kritik reports.
+// States kritika reports.
 const (
 	StatusSuccess StatusState = "success"
 	StatusError   StatusState = "error"
 )
 
-// StatusContext is the commit status context kritik reports under.
-const StatusContext = "kritik/review"
+// StatusContext is the commit status context kritika reports under.
+const StatusContext = "kritika/review"
 
 // MaxStatusDescription is the length, in characters, GitHub truncates a
 // commit status description to.
@@ -163,7 +163,7 @@ type Client interface {
 	// DismissApprovals dismisses each of the bot's standing approvals of
 	// the pull request with message, and returns how many it dismissed.
 	DismissApprovals(ctx context.Context, owner, repo string, number int, message string) (int, error)
-	// SetStatus sets the kritik commit status on sha.
+	// SetStatus sets the kritika commit status on sha.
 	SetStatus(ctx context.Context, owner, repo, sha string, state StatusState, description string) error
 	// FileURL links lines line through endLine (0 for line alone) of path
 	// at sha in the forge's web UI.

@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // defaultUsageWindow is the span a usage series covers without ?from=.

@@ -20,7 +20,7 @@ import (
 // helperEnv makes the test binary act as a command for the run tool, so
 // the tests run a real process without depending on what the host has on
 // its PATH.
-const helperEnv = "KRITIK_AGENT_TEST_HELPER"
+const helperEnv = "KRITIKA_AGENT_TEST_HELPER"
 
 func TestMain(m *testing.M) {
 	if os.Getenv(helperEnv) == "1" {

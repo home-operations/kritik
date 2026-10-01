@@ -9,7 +9,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 
-	"github.com/home-operations/kritik/internal/jobs"
+	"github.com/home-operations/kritika/internal/jobs"
 )
 
 func TestDedupesBotPatch(t *testing.T) {

@@ -13,16 +13,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
-	"github.com/home-operations/kritik/internal/adapter"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/executor"
-	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/jobtimeout"
-	"github.com/home-operations/kritik/internal/metrics"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/runner"
-	"github.com/home-operations/kritik/internal/store"
+	"github.com/home-operations/kritika/internal/adapter"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // embedBatch is how many staged chunks are embedded and inserted at once.
@@ -110,7 +110,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		}
 		mode, base = store.IndexModeIncremental, active.Commit
 	}
-	// The repository's own .kritik.yaml, as of the commit indexed, can stop
+	// The repository's own .kritika.yaml, as of the commit indexed, can stop
 	// indexing and add ignore globs.
 	doc, _, err := readRepoConfig(ctx, client, owner, name, commit)
 	if err != nil {
@@ -118,7 +118,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	eff, _ := effective(settings, doc)
 	if !eff.Enabled {
-		logger.Info("index skipped, disabled in .kritik.yaml")
+		logger.Info("index skipped, disabled in .kritika.yaml")
 		return nil
 	}
 	token, err := client.GitToken(ctx, name)

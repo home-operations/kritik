@@ -9,10 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritik/internal/contextpack"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/transcript"
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/transcript"
 )
 
 // reviewRecord is a review and what its newest runner run left behind;

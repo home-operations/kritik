@@ -41,7 +41,7 @@ func insertReview(t *testing.T, ctx context.Context, s *Store, account string) s
 
 // TestListenPublishesReviewEvents exercises the notify.go/0001_init.sql
 // contract end to end: a reviews.status change must produce an Event on the
-// kritik_events channel that Listen decodes and hands to onEvent.
+// kritika_events channel that Listen decodes and hands to onEvent.
 func TestListenPublishesReviewEvents(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
@@ -76,7 +76,7 @@ func TestListenPublishesReviewEvents(t *testing.T) {
 }
 
 // TestListenSkipsRunnerRunHeartbeatOnlyUpdates checks the WHEN clause on
-// kritik_notify_runner_run: a heartbeat-only update must not notify, while a
+// kritika_notify_runner_run: a heartbeat-only update must not notify, while a
 // phase change (the positive control, proving the listener itself works)
 // must, and must not fire more than once for it.
 func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
@@ -189,7 +189,7 @@ func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 	openStore(t) // ensures Migrate/grant() have run against this schema
 	ctx := context.Background()
 	runner, err := Open(ctx, Options{
-		AppURL: testEnv(t, "KRITIK_TEST_RUNNER_URL"),
+		AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"),
 		Logger: slog.New(slog.DiscardHandler),
 	})
 	if err != nil {

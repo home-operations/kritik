@@ -38,23 +38,23 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
-    -o kritik ./cmd/kritik
+    -o kritika ./cmd/kritika
 
 # ---- Runtime with runner tools ----------------------------------------------
-# kritik with curl, fd, gh, jq, rg and yq on PATH for the agent's run tool,
+# kritika with curl, fd, gh, jq, rg and yq on PATH for the agent's run tool,
 # for runner Jobs through the chart's runner.image. Built with --target
 # tools; published as the -tools tag of each release.
 FROM alpine:3.24 AS tools
 RUN apk add --no-cache curl fd github-cli jq ripgrep yq-go
-COPY --from=builder /workspace/kritik /kritik
+COPY --from=builder /workspace/kritika /kritika
 USER 65532:65532
 EXPOSE 8080 8081
-ENTRYPOINT ["/kritik"]
+ENTRYPOINT ["/kritika"]
 
 # ---- Runtime --------------------------------------------------------------
 # The default target, last so a build without --target produces it.
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-COPY --from=builder /workspace/kritik /kritik
+COPY --from=builder /workspace/kritika /kritika
 EXPOSE 8080 8081
-ENTRYPOINT ["/kritik"]
+ENTRYPOINT ["/kritika"]

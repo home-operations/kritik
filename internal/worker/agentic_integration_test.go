@@ -25,21 +25,21 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
-	"github.com/home-operations/kritik/internal/adapter"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/configfile/configfiletest"
-	"github.com/home-operations/kritik/internal/contextpack"
-	"github.com/home-operations/kritik/internal/executor"
-	"github.com/home-operations/kritik/internal/gateway"
-	"github.com/home-operations/kritik/internal/gitfetch"
-	"github.com/home-operations/kritik/internal/ingest"
-	"github.com/home-operations/kritik/internal/jobs"
-	"github.com/home-operations/kritik/internal/model"
-	"github.com/home-operations/kritik/internal/runner"
-	"github.com/home-operations/kritik/internal/store"
-	"github.com/home-operations/kritik/internal/store/storetest"
-	"github.com/home-operations/kritik/internal/transcript"
-	"github.com/home-operations/kritik/internal/webhook"
+	"github.com/home-operations/kritika/internal/adapter"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/contextpack"
+	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/gateway"
+	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/ingest"
+	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/transcript"
+	"github.com/home-operations/kritika/internal/webhook"
 )
 
 const agenticConfigYAML = `
@@ -232,7 +232,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
 	appStore := storetest.Open(t)
-	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIK_TEST_RUNNER_URL"), Logger: logger})
+	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL"), Logger: logger})
 	if err != nil {
 		t.Fatalf("Open runner: %v", err)
 	}
@@ -243,12 +243,12 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	t.Cleanup(srv.Close)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "model-key")
-	t.Setenv("KRITIK_RUNNER_DEADLINE", "60s")
-	t.Setenv("KRITIK_RUNNER_TOOLS", `[{"name": "helm", "image": "registry.example/helm:3"},
+	t.Setenv("KRITIKA_RUNNER_DEADLINE", "60s")
+	t.Setenv("KRITIKA_RUNNER_TOOLS", `[{"name": "helm", "image": "registry.example/helm:3"},
 		{"name": "kurl", "image": "registry.example/kurl:1", "path": "/usr/bin", "commands": ["curl"]}]`)
 	// Credentials in the provider's URL, which the SDK prints in its errors,
 	// must not reach a runner either.
-	providerURL := strings.Replace(srv.URL, "http://", "http://kritik:provider-secret@", 1)
+	providerURL := strings.Replace(srv.URL, "http://", "http://kritika:provider-secret@", 1)
 	h.config = fmt.Sprintf(agenticConfigYAML, providerURL)
 	if h.file, err = configfiletest.Parse(t, h.config); err != nil {
 		t.Fatal(err)
@@ -436,13 +436,13 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
 	if len(inline) != 1 || !strings.Contains(inline[0], "b is unused") || comments != 1 ||
-		!strings.Contains(sticky, "/main.go#L3) [b is unused](local://acme/widgets/pull/1#r1001)") || forgeStatus != "success: kritik: 1 finding(s)" {
+		!strings.Contains(sticky, "/main.go#L3) [b is unused](local://acme/widgets/pull/1#r1001)") || forgeStatus != "success: kritika: 1 finding(s)" {
 		t.Fatalf("inline=%v comments=%d status=%q sticky:\n%s", inline, comments, forgeStatus, sticky)
 	}
 	h.sm.mu.Lock()
 	auth, system := h.sm.auth[0], h.sm.systems[0]
 	h.sm.mu.Unlock()
-	if auth != "Bearer model-key" || !strings.HasPrefix(system, "You are kritik") {
+	if auth != "Bearer model-key" || !strings.HasPrefix(system, "You are kritika") {
 		t.Fatalf("auth=%q system=%.40q", auth, system)
 	}
 	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
@@ -808,7 +808,7 @@ func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 	select {
 	case <-time.After(hold):
 	case <-ctx.Done():
-		return executor.Result{JobName: "kritik-run-held", Err: context.Cause(ctx)}
+		return executor.Result{JobName: "kritika-run-held", Err: context.Cause(ctx)}
 	}
 	res := e.inner.Run(ctx, spec)
 	e.mu.Lock()
@@ -832,7 +832,7 @@ func (e *hookExecutor) runDetached(ctx context.Context, spec executor.Spec) exec
 	case <-ctx.Done():
 		cause := context.Cause(ctx)
 		time.AfterFunc(300*time.Millisecond, func() { icancel(cause) })
-		return executor.Result{JobName: "kritik-run-deleted", Err: cause}
+		return executor.Result{JobName: "kritika-run-deleted", Err: cause}
 	}
 }
 
@@ -918,7 +918,7 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Lock()
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
-	if !strings.Contains(sticky, "by kritik with agent-model.") {
+	if !strings.Contains(sticky, "by kritika with agent-model.") {
 		t.Fatalf("sticky:\n%s", sticky)
 	}
 	// The provider refused the step, so nothing was spent.
@@ -947,7 +947,7 @@ func checkAgentFiltered(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Lock()
 	before := h.sm.requests
 	h.sm.mu.Unlock()
-	base := h.commit(t, ".kritik.yaml", "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n")
+	base := h.commit(t, ".kritika.yaml", "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n")
 	h.lf.setBase(base)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc f() {}\n")
 	h.lf.mu.Lock()
@@ -976,7 +976,7 @@ func checkAgentFiltered(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Lock()
 	forgeStatus := h.lf.status
 	h.lf.mu.Unlock()
-	if forgeStatus != "success: kritik: skipped (filtered by .kritik.yaml)" {
+	if forgeStatus != "success: kritika: skipped (filtered by .kritika.yaml)" {
 		t.Fatalf("forge status = %q", forgeStatus)
 	}
 }
@@ -1189,7 +1189,7 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Lock()
 	forgeStatus := h.lf.status
 	h.lf.mu.Unlock()
-	if forgeStatus != "success: kritik: skipped (patch unchanged since the last review)" {
+	if forgeStatus != "success: kritika: skipped (patch unchanged since the last review)" {
 		t.Fatalf("forge status = %q", forgeStatus)
 	}
 }
@@ -1249,7 +1249,7 @@ func checkGatewaySimilar(t *testing.T, h *agenticHarness) {
 // other.go and at main.go, which the pull request changes.
 func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoID, code string) {
 	t.Helper()
-	if _, err := h.st.EnsureIndexSchema(h.ctx, "kritik_app", emb.Model, emb.Dims); err != nil {
+	if _, err := h.st.EnsureIndexSchema(h.ctx, "kritika_app", emb.Model, emb.Dims); err != nil {
 		t.Fatal(err)
 	}
 	vectors, _, err := h.fe.Embed(h.ctx, []string{code})

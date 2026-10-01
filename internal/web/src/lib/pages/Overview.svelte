@@ -28,7 +28,7 @@
   }
 </script>
 
-<svelte:head><title>All accounts · kritik</title></svelte:head>
+<svelte:head><title>All accounts · kritika</title></svelte:head>
 
 <main class="page">
   <div class="page-inner">

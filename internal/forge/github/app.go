@@ -1,4 +1,4 @@
-// Package github is kritik's forge: the App's credentials, a transport
+// Package github is kritika's forge: the App's credentials, a transport
 // that signs requests as the App with a short-lived JWT and one that mints,
 // caches and refreshes an installation token, the forge.Client over an
 // installation, and the App manifest flow. The installation token

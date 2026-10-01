@@ -1,5 +1,5 @@
-// Package repoconfig parses .kritik.yaml, the optional per-repository file
-// that lets a repository narrow how kritik reviews it (a filter ANDed with
+// Package repoconfig parses .kritika.yaml, the optional per-repository file
+// that lets a repository narrow how kritika reviews it (a filter ANDed with
 // the admin's own filter, path globs to ignore, which also skip a pull
 // request that changes nothing else),
 // add rules, context files and templates read from the repository itself,
@@ -7,7 +7,7 @@
 //
 // Everything here is read from the merge-base commit (the base branch history
 // a PR cannot rewrite), never the PR's own tree, so a PR cannot use its own
-// .kritik.yaml to weaken the review applied to it. The worker reads the
+// .kritika.yaml to weaken the review applied to it. The worker reads the
 // file itself and hands it to Merge; Collect's read callback is how the
 // runner reads the files it names from the same commit. This package only
 // decides which paths to read and how much of what comes back to keep.
@@ -24,15 +24,15 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/home-operations/kritik/internal/chunk"
-	"github.com/home-operations/kritik/internal/configfile"
-	"github.com/home-operations/kritik/internal/prfilter"
-	"github.com/home-operations/kritik/internal/review"
-	"github.com/home-operations/kritik/internal/textcut"
+	"github.com/home-operations/kritika/internal/chunk"
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/prfilter"
+	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // FileName is the repository-relative path of the per-repository config file.
-const FileName = ".kritik.yaml"
+const FileName = ".kritika.yaml"
 
 // Byte budgets for Collect. A repository config is meant to point at a
 // handful of small instruction/template files, not embed arbitrary content;
@@ -55,7 +55,7 @@ const (
 )
 
 // Comments is how the repository's reviews comment: whether findings go
-// inline, and the in-repo files whose contents replace kritik's built-in
+// inline, and the in-repo files whose contents replace kritika's built-in
 // summary and inline comment templates.
 type Comments struct {
 	Inline *bool `yaml:"inline,omitempty"`
@@ -72,7 +72,7 @@ type Models struct {
 	Fallback configfile.ModelRef `yaml:"fallback,omitempty"`
 }
 
-// File is the decoded content of .kritik.yaml: the review keys the
+// File is the decoded content of .kritika.yaml: the review keys the
 // configuration's defaults and repository entries take, without the admin's
 // own. Nothing in it is a secret or a reference to one.
 type File struct {
@@ -96,7 +96,7 @@ type File struct {
 	AgentFiles *bool `yaml:"agentFiles,omitempty"`
 }
 
-// Parse decodes data as .kritik.yaml. Unknown fields, invalid glob patterns
+// Parse decodes data as .kritika.yaml. Unknown fields, invalid glob patterns
 // and a filter that fails to compile or that fails a smoke test against
 // configfile.SamplePR are rejected, as is any referenced path (a rule's
 // file, a template or a context file) that is absolute or escapes the

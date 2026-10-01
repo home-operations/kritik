@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/home-operations/kritik/internal/configfile"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // Verification outcomes. Callers map any non-nil error to HTTP 401.

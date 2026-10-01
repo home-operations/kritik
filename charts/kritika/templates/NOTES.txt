@@ -1,0 +1,19 @@
+kritika {{ .Chart.AppVersion }} is installed as {{ include "kritika.fullname" . }}, {{ .Values.replicas }} replica(s) of kritika serve.
+
+Open {{ tpl .Values.web.url . }} to sign in. The GitHub Apps, model providers
+and review settings come from config.file and its KRITIKA_* variables (see
+docs/configuration.md); the dashboard turns each repository on or off.
+
+GitHub delivers each app's webhook to {{ tpl .Values.web.url . | trimSuffix "/" }}/hooks/<app name>,
+which kritika serves beside the dashboard:
+{{- if or .Values.ingress.enabled .Values.httpRoute.enabled }} the chart's
+{{ if .Values.ingress.enabled }}Ingress{{ else }}HTTPRoute{{ end }} routes that URL to it.
+{{- else }} route that URL to
+{{ include "kritika.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}.
+{{- end }}
+
+Runner Jobs appear in this namespace as kritika-run-*; every run is also recorded
+in the runner_runs table.
+
+Health: /healthz and /readyz, metrics: /metrics, all on port {{ .Values.service.metricsPort }}
+of every pod ({{ include "kritika.fullname" . }}-metrics Service).
