@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.11](https://github.com/home-operations/kritika/compare/0.0.10...0.0.11) (2026-10-02)
+
+
+### Features
+
+* **webhook:** parse review thread resolution events ([#359](https://github.com/home-operations/kritika/issues/359)) ([f41e866](https://github.com/home-operations/kritika/commit/f41e866ef4fa86a4f1bd94d659c10624d305e8de))
+* **worker:** dismiss a finding when its thread is resolved ([#360](https://github.com/home-operations/kritika/issues/360)) ([e0b76d9](https://github.com/home-operations/kritika/commit/e0b76d9965de78ab6b4f72beaa8c8e113c9f6df4))
+
+
+### Documentation
+
+* subscribe the App to review thread events ([#362](https://github.com/home-operations/kritika/issues/362)) ([6e4b9bb](https://github.com/home-operations/kritika/commit/6e4b9bb41eaabc6c028a098a72c59a372d584bcc))
+
 ## [0.0.10](https://github.com/home-operations/kritika/compare/0.0.9...0.0.10) (2026-10-02)
 
 
