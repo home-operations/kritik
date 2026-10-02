@@ -2,21 +2,6 @@
 
 lockfile_version = 2
 
-[[tools."aqua:stunnel/static-curl"]]
-version = "8.22.0"
-backend = "aqua:stunnel/static-curl"
-specifiers = ["8.22.0"]
-
-[tools."aqua:stunnel/static-curl"."platforms.linux-arm64"]
-checksum = "sha256:73958bd2cb2116e7f4860100826424d44d4961a4fe81c20a50304744617d5dc9"
-url = "https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-aarch64-dev-8.22.0.tar.xz"
-url_api = "https://api.github.com/repos/stunnel/static-curl/releases/assets/543753143"
-
-[tools."aqua:stunnel/static-curl"."platforms.linux-x64"]
-checksum = "sha256:93a928c9bab36604ff646e7de31c9d4b789145acf8c7cda75e7da2e1221c5cc7"
-url = "https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-x86_64-dev-8.22.0.tar.xz"
-url_api = "https://api.github.com/repos/stunnel/static-curl/releases/assets/543753136"
-
 [[tools.fd]]
 version = "10.5.0"
 backend = "aqua:sharkdp/fd"
@@ -48,6 +33,24 @@ checksum = "sha256:bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019
 url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_amd64.tar.gz"
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854672"
 provenance = "github-attestations"
+
+[[tools."github:stunnel/static-curl"]]
+version = "8.22.0"
+backend = "github:stunnel/static-curl"
+specifiers = ["8.22.0"]
+
+[tools."github:stunnel/static-curl".options]
+matching = "glibc"
+
+[tools."github:stunnel/static-curl"."platforms.linux-arm64"]
+checksum = "sha256:fa4de50f80fb2fbbf77a7bf8385891b6cb1a501a2e28b1ed18cf25e11fd66b66"
+url = "https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-aarch64-glibc-8.22.0.tar.xz"
+url_api = "https://api.github.com/repos/stunnel/static-curl/releases/assets/543753115"
+
+[tools."github:stunnel/static-curl"."platforms.linux-x64"]
+checksum = "sha256:d74460e43c0e6eaf40ec1fdda92c53dee94da8a6e6db066711541ada5aab0fa6"
+url = "https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-x86_64-glibc-8.22.0.tar.xz"
+url_api = "https://api.github.com/repos/stunnel/static-curl/releases/assets/543753112"
 
 [[tools.jq]]
 version = "1.8.2"

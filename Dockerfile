@@ -53,11 +53,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
 WORKDIR /tools
 COPY build/tools/mise.toml build/tools/mise.lock ./
-# The manifest's symlink_bins leaves each tool's bin path holding only the
-# executables its recipe provides; of those, only the ELF binaries can run in
-# an image without a shell.
-RUN mise trust && mise install --locked && mkdir /out \
-    && for f in $(mise bin-paths | sed 's|$|/*|'); do if head -c 4 "$f" | grep -q ELF; then cp -L "$f" /out/; fi; done
+# The manifest keeps each tool's bin path down to the executables it is
+# there for, so the bin paths are copied whole.
+RUN mise trust && mise install --locked \
+    && mkdir /out && mise bin-paths | xargs -I{} cp -rL {}/. /out/
 
 # ---- Runtime with runner tools ----------------------------------------------
 # kritika with the agent's commands on PATH for its run tool, the chart's

@@ -5,10 +5,11 @@
 # be static. After changing a version, refresh the lock with
 # `mise -C build/tools lock -p linux-x64,linux-arm64`.
 [tools]
-# symlink_bins exposes only the executables a tool's recipe provides, so the
-# Dockerfile copies every bin path as is. No registry short name for the
-# first; the short names resolve to aqua packages as well.
-"aqua:stunnel/static-curl" = { version = "8.22.0", symlink_bins = true }
+# Each entry exposes only the executable it is there for, filter_bins for a
+# release archive and symlink_bins for an aqua recipe, so the Dockerfile
+# copies every bin path as is. curl has no registry short name; the others
+# resolve to aqua packages.
+"github:stunnel/static-curl" = { version = "8.22.0", matching = "glibc", filter_bins = "curl" }
 fd = { version = "10.5.0", symlink_bins = true }
 gh = { version = "2.102.0", symlink_bins = true }
 jq = { version = "1.8.2", symlink_bins = true }
