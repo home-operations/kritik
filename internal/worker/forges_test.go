@@ -2,8 +2,11 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
@@ -72,5 +75,64 @@ func TestForgeCacheBuildsPerOwner(t *testing.T) {
 	}
 	if want := []string{"acme/widgets", "Other/tools"}; !slices.Equal(built, want) {
 		t.Fatalf("built for %q, want %q", built, want)
+	}
+}
+
+// TestForgeCacheBuildsOutsideItsLock: a build that hangs on the forge
+// holds up neither another connection's client nor a caller whose context
+// ends meanwhile, and the callers of its own key share the one build.
+func TestForgeCacheBuildsOutsideItsLock(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "pem")
+	t.Setenv("TEST_WEBHOOK_SECRET", "s")
+	slow, fast := appConnection(t, "Iv1.slow"), appConnection(t, "Iv1.fast")
+	fast.Name = "fast-bot"
+	release := make(chan struct{})
+	var mu sync.Mutex
+	builds := map[string]int{}
+	cache := &ForgeCache{Build: func(_ context.Context, in *configfile.Connection, _ string) (forge.Client, error) {
+		mu.Lock()
+		builds[in.Name]++
+		mu.Unlock()
+		if in == slow {
+			<-release
+		}
+		return nil, nil
+	}}
+	// Two callers of the slow connection share one build.
+	started := make(chan struct{}, 2)
+	for range 2 {
+		go func() {
+			started <- struct{}{}
+			_, _ = cache.For(context.Background(), slow, "acme/widgets")
+		}()
+	}
+	<-started
+	<-started
+	done := make(chan error, 1)
+	go func() {
+		_, err := cache.For(context.Background(), fast, "acme/widgets")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("another connection's client waited on the slow build")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := cache.For(ctx, slow, "acme/gadgets"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a caller whose context ended got %v, want its deadline", err)
+	}
+	close(release)
+	if _, err := cache.For(context.Background(), slow, "acme/widgets"); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if builds[slow.Name] != 1 || builds[fast.Name] != 1 {
+		t.Fatalf("builds = %v, want one per connection", builds)
 	}
 }

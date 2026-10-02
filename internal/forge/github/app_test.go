@@ -248,3 +248,26 @@ func TestReach(t *testing.T) {
 		t.Fatalf("Reach = %+v, want %+v", got, want)
 	}
 }
+
+// TestBaseTransportBoundsTheHeaderWait: a server that accepts a request
+// and never answers fails the request after responseHeaderTimeout, so a
+// caller with no deadline of its own does not wait for good.
+func TestBaseTransportBoundsTheHeaderWait(t *testing.T) {
+	if baseTransport.ResponseHeaderTimeout != responseHeaderTimeout {
+		t.Fatalf("ResponseHeaderTimeout = %s, want %s", baseTransport.ResponseHeaderTimeout, responseHeaderTimeout)
+	}
+	hang := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-hang }))
+	// Close waits for the handler, which waits for hang.
+	defer srv.Close()
+	defer close(hang)
+	tr := baseTransport.Clone()
+	tr.ResponseHeaderTimeout = 50 * time.Millisecond
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tr.RoundTrip(req); err == nil || !strings.Contains(err.Error(), "timeout awaiting response headers") {
+		t.Fatalf("RoundTrip error = %v, want a response header timeout", err)
+	}
+}

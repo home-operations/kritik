@@ -49,7 +49,7 @@ func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
 		return nil, fmt.Errorf("github: parse App private key: %w", err)
 	}
 	a := &App{clientID: clientID, apiBase: apiBase}
-	a.limited = &rateLimitTransport{base: http.DefaultTransport, maxWait: rateLimitMaxWait, observe: a.rateLimited}
+	a.limited = &rateLimitTransport{base: baseTransport, maxWait: rateLimitMaxWait, observe: a.rateLimited}
 	client, err := newClient(&appJWTTransport{base: a.limited, clientID: clientID, key: key}, apiBase)
 	if err != nil {
 		return nil, err
@@ -57,6 +57,21 @@ func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
 	a.apps = client
 	return a, nil
 }
+
+// responseHeaderTimeout bounds how long a request waits for GitHub to
+// start answering. The leader's poll runs on a context with no deadline,
+// and a worker's job on one of hours, so a server that accepts a request
+// and never answers would otherwise hold either for as long.
+const responseHeaderTimeout = time.Minute
+
+// baseTransport is under every App's clients: the default transport, which
+// bounds the dial and the TLS handshake, with the wait for response headers
+// bounded too. One transport, so every App shares its connection pool.
+var baseTransport = func() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.ResponseHeaderTimeout = responseHeaderTimeout
+	return t
+}()
 
 func (a *App) rateLimited(wait time.Duration, waited bool) {
 	if a.OnRateLimit != nil {
