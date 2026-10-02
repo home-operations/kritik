@@ -22,6 +22,7 @@ const (
 	evPullRequest   = "pull_request"
 	evIssueComment  = "issue_comment"
 	evReviewComment = "pull_request_review_comment"
+	evReviewThread  = "pull_request_review_thread"
 	evPush          = "push"
 	evRepository    = "repository"
 )
@@ -34,6 +35,7 @@ const (
 	KindPing         Kind = "ping"
 	KindPullRequest  Kind = "pull_request"
 	KindComment      Kind = "comment"
+	KindThread       Kind = "thread"
 	KindPush         Kind = "push"
 	KindInstallation Kind = "installation"
 	// KindRepository is a repository created, archived or unarchived; its
@@ -58,6 +60,7 @@ type Event struct {
 
 	PullRequest  *PullRequest
 	Comment      *Comment
+	Thread       *Thread
 	Push         *Push
 	Installation *Installation
 }
@@ -144,6 +147,18 @@ type Comment struct {
 	Body        string
 	// Inline is set for review comments on a diff line.
 	Inline bool
+}
+
+// Thread is an inline review thread someone resolved or unresolved.
+type Thread struct {
+	Number int // the pull request
+	// CommentID is the inline comment that opened the thread, 0 when the
+	// payload lists none.
+	CommentID int64
+	// Resolved is the thread's state now.
+	Resolved    bool
+	Sender      string
+	SenderIsBot bool
 }
 
 // Push is a branch update.
@@ -284,6 +299,8 @@ func parseGitHub(event, delivery string, body []byte) (Event, error) {
 		return parseIssueComment(delivery, body)
 	case evReviewComment:
 		return parseReviewComment(delivery, body)
+	case evReviewThread:
+		return parseReviewThread(delivery, body)
 	case evPush:
 		return parsePush(delivery, body)
 	case "installation", "installation_repositories":
@@ -366,6 +383,46 @@ func parseReviewComment(delivery string, body []byte) (Event, error) {
 			AuthorIsBot: p.Comment.User.isBot(), Body: p.Comment.Body,
 			Inline: true,
 		},
+	}, nil
+}
+
+// threadActions are the review thread actions, each with the resolved
+// state it leaves the thread in.
+var threadActions = map[string]bool{"resolved": true, "unresolved": false}
+
+func parseReviewThread(delivery string, body []byte) (Event, error) {
+	var p struct {
+		Action      string `json:"action"`
+		Repository  ghRepo `json:"repository"`
+		PullRequest struct {
+			Number int `json:"number"`
+		} `json:"pull_request"`
+		Sender ghUser `json:"sender"`
+		Thread struct {
+			Comments []struct {
+				ID        int64 `json:"id"`
+				InReplyTo int64 `json:"in_reply_to_id"`
+			} `json:"comments"`
+		} `json:"thread"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		return Event{}, fmt.Errorf("webhook: pull_request_review_thread payload: %w", err)
+	}
+	resolved, ok := threadActions[p.Action]
+	if !ok {
+		return Event{Kind: KindIgnored, Action: evReviewThread, Delivery: delivery}, nil
+	}
+	thread := &Thread{Number: p.PullRequest.Number, Resolved: resolved, Sender: p.Sender.Login, SenderIsBot: p.Sender.isBot()}
+	for _, c := range p.Thread.Comments {
+		if c.InReplyTo == 0 {
+			thread.CommentID = c.ID
+			break
+		}
+	}
+	return Event{
+		Kind: KindThread, Action: p.Action, Delivery: delivery,
+		Repository: p.Repository.event(), Account: p.Repository.Owner.Login,
+		Thread: thread,
 	}, nil
 }
 
