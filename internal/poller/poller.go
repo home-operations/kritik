@@ -54,7 +54,9 @@ const reachTimeout = time.Minute
 // Run polls until ctx ends, every polling.interval of the file current at
 // the time. The first poll happens after one interval, so a freshly
 // elected leader does not hammer the forge while ingest is already serving
-// webhooks.
+// webhooks. A poll is given the interval: one that outlasts it, on a forge
+// that answers slowly for every repository of a large account, is cut
+// there, and its accounts' poll state is left where it was for the next.
 func (p *Poller) Run(ctx context.Context) {
 	for {
 		interval := p.Current.Get().PollInterval()
@@ -65,7 +67,12 @@ func (p *Poller) Run(ctx context.Context) {
 			return
 		case <-t.C:
 			if interval > 0 {
-				p.PollAll(ctx)
+				pctx, cancel := context.WithTimeout(ctx, interval)
+				p.PollAll(pctx)
+				if pctx.Err() != nil && ctx.Err() == nil {
+					p.Logger.Warn("poll cut at its interval", "interval", interval)
+				}
+				cancel()
 			}
 		}
 	}

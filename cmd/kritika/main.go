@@ -34,7 +34,6 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/executor"
-	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
@@ -189,11 +188,11 @@ func serve(
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
 	}
-	// One forge client per App and account, shared by the workers and the
-	// leader's poll, so an installation's token is minted once.
-	forges := &worker.ForgeCache{Build: func(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
-		return worker.BuildForge(ctx, in, repo, m)
-	}}
+	// One App per connection and one forge client per App and account,
+	// shared by the workers and the leader's poll, so an installation's
+	// token is minted once.
+	apps := &worker.Apps{Metrics: m}
+	forges := &worker.ForgeCache{Build: apps.Build}
 	svc := ingest.NewService(st, inserter)
 	if st.LeaderEligible() {
 		sweeper, _ := exec.(*executor.Kube)
@@ -201,7 +200,7 @@ func serve(
 			return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
 				m.Leading(true)
 				defer m.Leading(false)
-				return lead(ctx, st, cfg, current, inserter, svc, forges, sweeper, m, configErrors, logger)
+				return lead(ctx, st, cfg, current, inserter, svc, apps, forges, sweeper, m, configErrors, logger)
 			})
 		})
 	} else {
@@ -461,8 +460,8 @@ const secretSweepInterval = 5 * time.Minute
 // that has none.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	svc *ingest.Service, forges *worker.ForgeCache, sweeper *executor.Kube, m *metrics.Metrics, configErrors *server.ConfigErrorGauge,
-	logger *slog.Logger,
+	svc *ingest.Service, apps *worker.Apps, forges *worker.ForgeCache, sweeper *executor.Kube, m *metrics.Metrics,
+	configErrors *server.ConfigErrorGauge, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
@@ -475,7 +474,7 @@ func lead(
 	defer stopPoll()
 	// The backstop poll is a leader duty: one lister per connection.
 	poll := &poller.Poller{
-		Store: st, Current: current, Forges: forges, Reach: worker.ReachRepositories, Dispatcher: svc, Logger: logger, Metrics: m,
+		Store: st, Current: current, Forges: forges, Reach: apps.Reach, Dispatcher: svc, Logger: logger, Metrics: m,
 	}
 	duties.Go(func() { poll.Run(pollCtx) })
 	// So is deleting, by name, run Secrets a dead worker left without an
