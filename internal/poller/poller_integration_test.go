@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -613,5 +614,77 @@ func TestPollerPollsPastAFailingRepository(t *testing.T) {
 	}
 	if polled != 0 {
 		t.Fatal("poll state recorded although a repository was skipped")
+	}
+}
+
+// stallForge lists nothing until its context ends, and counts the polls
+// that reached it.
+type stallForge struct {
+	forge.Client
+	polls atomic.Int32
+}
+
+func (f *stallForge) ListOpenPullRequests(ctx context.Context, _, _ string, _ time.Time) ([]forge.OpenPullRequest, error) {
+	f.polls.Add(1)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// TestPollerRunCutsAPollAtItsInterval: a poll that outlasts the interval
+// is cut, the next one starts on time, and the poll state is left for it.
+func TestPollerRunCutsAPollAtItsInterval(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	t.Setenv("KRITIKA_POLL_INTERVAL", "100ms")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _ := file.Connection("bot-ross")
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	if err := st.RecordWebhookDelivery(ctx, in.ID()); err != nil {
+		t.Fatal(err)
+	}
+	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE account_id = $1`, account.ID())
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	sf := &stallForge{}
+	p := &Poller{
+		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: sf},
+		Dispatcher: ingest.NewService(st, queue), Logger: slog.New(slog.NewTextHandler(&log, nil)),
+	}
+	rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.Run(rctx)
+	}()
+	<-done
+	if n := sf.polls.Load(); n < 2 {
+		t.Fatalf("the forge was polled %d times in 2s at a 100ms interval; want the stalled poll cut and another started", n)
+	}
+	if !strings.Contains(log.String(), "poll cut at its interval") {
+		t.Fatalf("log = %q, want the cut poll reported", log.String())
+	}
+	var polled int
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM poll_state WHERE account_id = $1`, account.ID()).Scan(&polled)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if polled != 0 {
+		t.Fatal("poll state recorded although the poll was cut")
 	}
 }

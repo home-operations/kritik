@@ -2,6 +2,10 @@ package worker
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"slices"
 	"sync"
@@ -31,9 +35,44 @@ apps:
 	return in
 }
 
-func TestBuildForgeRefusesAnotherForge(t *testing.T) {
-	if _, err := BuildForge(t.Context(), &configfile.Connection{Name: "x", Forge: "gitlab"}, "acme/widgets", nil); err == nil {
-		t.Fatal("BuildForge built a client for a forge kritika does not support")
+func TestAppsRefuseAnotherForge(t *testing.T) {
+	apps := &Apps{}
+	other := &configfile.Connection{Name: "x", Forge: "gitlab"}
+	if _, err := apps.Build(t.Context(), other, "acme/widgets"); err == nil {
+		t.Fatal("Build built a client for a forge kritika does not support")
+	}
+	if _, err := apps.Reach(t.Context(), other); err == nil {
+		t.Fatal("Reach listed a forge kritika does not support")
+	}
+}
+
+// TestAppsBuildOnePerConnection: a connection's clients and listings
+// share one App, and with it its installation tokens; another connection
+// gets its own.
+func TestAppsBuildOnePerConnection(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_PRIVATE_KEY", string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})))
+	t.Setenv("TEST_WEBHOOK_SECRET", "s")
+	acme, globex := appConnection(t, "Iv1.acme"), appConnection(t, "Iv1.globex")
+	globex.Name = "globex-bot"
+	apps := &Apps{}
+	first, err := apps.app(acme)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := apps.app(acme)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := apps.app(globex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != again || first == other || len(apps.apps) != 2 {
+		t.Fatalf("apps = %d, want one per connection, the same on every use", len(apps.apps))
 	}
 }
 

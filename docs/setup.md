@@ -152,4 +152,8 @@ backstop, not a substitute:
   `KRITIKA_POLL_LOOKBACK`, each poll also checks its indexed repositories'
   default branches;
 - only repositories kritika already knows, from the configuration or an
-  earlier event, are polled.
+  earlier event, are polled;
+- each poll costs the App about one request per repository polled, so
+  the interval bounds how many repositories a connection can poll within
+  GitHub's rate limit, and a poll that outlasts its interval is cut there
+  and the rest covered by the next.
