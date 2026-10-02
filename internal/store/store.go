@@ -39,11 +39,22 @@ const (
 	ownerPoolMaxConns = 4
 )
 
+// pingTimeout bounds the ping a pool gives an idle connection before
+// handing it out. Without it the ping waits on the kernel's TCP
+// retransmissions, about fifteen minutes, when the server died without
+// closing the socket: every acquire on the pool hangs that long, the
+// leader's lock attempt included. A ping is an empty query, so a few
+// seconds is generous for a server that is up.
+const pingTimeout = 5 * time.Second
+
 // newPool opens a pool with server-side TCP keepalives, so Postgres drops
 // the session of a client that died without closing it (a node lost, a pod
 // killed) within about a minute, and with it any advisory lock the session
-// held. Postgres's own defaults leave that to the kernel's two hours. A
-// statement timeout, when given, bounds every statement on the pool.
+// held. Postgres's own defaults leave that to the kernel's two hours. The
+// pool's own ping of an idle connection is bounded by pingTimeout, so a
+// server that died the same way costs a client seconds, not the kernel's
+// retransmissions. A statement timeout, when given, bounds every statement
+// on the pool.
 func newPool(ctx context.Context, url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Pool, error) {
 	cfg, err := poolConfig(url, application, statementTimeout, maxConns)
 	if err != nil {
@@ -53,8 +64,9 @@ func newPool(ctx context.Context, url, application string, statementTimeout time
 }
 
 // poolConfig is newPool's configuration. maxConns is the pool's ceiling
-// unless the URI names its own with pool_max_conns, which pgx has already
-// read by the time the config is parsed.
+// and pingTimeout its ping bound unless the URI names its own with
+// pool_max_conns or pool_ping_timeout, which pgx has already read by the
+// time the config is parsed.
 func poolConfig(url, application string, statementTimeout time.Duration, maxConns int32) (*pgxpool.Config, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
@@ -62,6 +74,9 @@ func poolConfig(url, application string, statementTimeout time.Duration, maxConn
 	}
 	if !strings.Contains(url, "pool_max_conns") {
 		cfg.MaxConns = maxConns
+	}
+	if !strings.Contains(url, "pool_ping_timeout") {
+		cfg.PingTimeout = pingTimeout
 	}
 	params := cfg.ConnConfig.RuntimeParams
 	params["application_name"] = application

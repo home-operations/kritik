@@ -242,6 +242,20 @@ lock loses it with its owner connection and steps down, and another takes it
 within a few seconds; until then the leader's duties and job fetching pause.
 No kritika pod restarts.
 
+How fast that happens does not depend on the Cluster's settings. kritika's
+pools ask Postgres for TCP keepalives of 30s idle, 10s apart, three missed,
+so a kritika pod that dies without closing its sockets loses its session,
+and with it the leader lock, within about a minute; the Cluster's own
+`tcp_keepalives_*` parameters are not involved. In the other direction, a
+primary whose node dies answers nothing, and kritika bounds every ping of an
+idle pooled connection and every lock attempt to five seconds, so the leader
+steps down within one `KRITIKA_LEADER_RETRY_INTERVAL` plus that bound and a
+standby leads once its connections reach the new primary. A switchover
+terminates the old primary's sessions outright, so the handover is one
+retry interval at most, during which the new leader may start its duties
+before the old one has noticed it lost the lock; `KritikaMultipleLeaders`
+in the chart's alerts waits longer than one interval for that reason.
+
 CNPG's disruption budget for the primary allows no eviction, so draining the
 primary's node waits until the primary moves. Switch over first, with the
 [`cnpg` kubectl plugin](https://cloudnative-pg.io/docs/1.30/kubectl-plugin/):
