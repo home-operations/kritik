@@ -54,10 +54,12 @@ repositories:
 `
 
 // followupComment is answered in both accounts, as comment ids from two
-// forges may collide; onlyBComment is answered only in account B.
+// forges may collide; onlyBComment is answered only in account B. Both
+// exceed int4, as GitHub's comment ids do, so the queries must bind them
+// as bigint.
 const (
-	followupComment = 4242
-	onlyBComment    = 4343
+	followupComment = 4168513971
+	onlyBComment    = 4168513972
 )
 
 // seeded is what seedAccount wrote for one account.
@@ -293,8 +295,8 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/index-runs?repo=wa/one", `"commitSha":"commit7"`},
 		{a + "/findings?repo=wa/one&severity=blocking&status=open", `"title":"nil deref"`},
 		{a + "/rules", `"path":"docs/rules-of-webapi-a.md","description":"","paths":[],"whenExpr":"","source":"repository","repositories":["wa/one"]`},
-		{a + "/followups?repo=wa/one", `"commentId":4242`},
-		{a + "/followups/4242/transcript", `"system":"follow of webapi-a"`},
+		{a + "/followups?repo=wa/one", fmt.Sprintf(`"commentId":%d`, followupComment)},
+		{a + fmt.Sprintf("/followups/%d/transcript", followupComment), `"system":"follow of webapi-a"`},
 		{a + "/usage?group=repo", `"key":"wa/one"`},
 		{a + "/analytics?group=week", `"repository":"wa/one"`},
 		{a + "/queue", `"repository":"wa/one"`},
@@ -439,7 +441,7 @@ func testTranscriptsEqualRebuild(t *testing.T, e *apiEnv) {
 		rows []transcript.StoredRow
 	}{
 		{"/api/v1/accounts/github/wa/reviews/" + e.a.reviewID + "/transcript", steps},
-		{"/api/v1/accounts/github/wa/followups/4242/transcript", followups},
+		{fmt.Sprintf("/api/v1/accounts/github/wa/followups/%d/transcript", followupComment), followups},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			status, body := e.getBody("member-a", tc.path)

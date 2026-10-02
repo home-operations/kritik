@@ -287,7 +287,7 @@ func ListFollowups(ctx context.Context, tx pgx.Tx, f FollowupFilter, p Page) ([]
 		f.status, f.reason, f.reply_comment_id, f.model, f.created_at
 		FROM followups f JOIN pull_requests p ON p.id = f.pull_request_id JOIN repositories r ON r.id = p.repository_id
 		WHERE ($1::uuid IS NULL OR p.repository_id = $1) AND ($2::uuid IS NULL OR f.pull_request_id = $2)
-			AND ($3 = 0 OR f.comment_id = $3) AND ($4 OR (f.created_at, f.id) < ($5, $6::uuid))
+			AND ($3::bigint = 0 OR f.comment_id = $3) AND ($4 OR (f.created_at, f.id) < ($5, $6::uuid))
 		ORDER BY f.created_at DESC, f.id DESC LIMIT $7`,
 		uuidParam(f.RepositoryID), uuidParam(f.PullRequestID), f.CommentID, p.After.First(), p.After.T, p.afterID(), p.Limit+1)
 	if err != nil {
