@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
@@ -687,24 +688,44 @@ type ForgeCache struct {
 
 	mu      sync.Mutex
 	clients map[string]forge.Client
+	// building shares one build per key among the callers that find none
+	// cached, outside mu: a build asks the forge, and a slow answer must
+	// not hold up the callers of every other connection and owner.
+	building singleflight.Group
 }
 
-// For implements forge.Clients.
+// For implements forge.Clients. A caller whose ctx ends while a build is
+// under way returns with ctx's error; the build goes on for the others.
 func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
 	owner, _, _ := strings.Cut(repo, "/")
 	key := in.Name + "/" + strings.ToLower(owner)
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if client, ok := c.clients[key]; ok {
+	client, ok := c.clients[key]
+	c.mu.Unlock()
+	if ok {
 		return client, nil
 	}
-	client, err := c.Build(ctx, in, repo)
-	if err != nil {
-		return nil, err
+	results := c.building.DoChan(key, func() (any, error) {
+		client, err := c.Build(ctx, in, repo)
+		if err != nil {
+			return nil, err
+		}
+		c.mu.Lock()
+		if c.clients == nil {
+			c.clients = map[string]forge.Client{}
+		}
+		c.clients[key] = client
+		c.mu.Unlock()
+		return client, nil
+	})
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("worker: forge client for %s: %w", key, ctx.Err())
+	case res := <-results:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		client, _ := res.Val.(forge.Client)
+		return client, nil
 	}
-	if c.clients == nil {
-		c.clients = map[string]forge.Client{}
-	}
-	c.clients[key] = client
-	return client, nil
 }
