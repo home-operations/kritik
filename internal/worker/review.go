@@ -215,6 +215,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		reviewID: reviewID, runID: runID, trigger: args.Trigger, logger: logger,
 		parse: review.ParseOptions{
 			RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Focused: prep.eff.Review.Focused(), Rules: prep.ruleIDs,
+			Repository: pr.repository,
 		},
 		repoNotes: prep.notes, prior: prior, scope: prep.scope, templates: prep.templates,
 		agent: agentOutcome,

@@ -47,15 +47,17 @@ var followUpSchema = jsonSchema{
 // FollowUpSchema is the answer shape: one reply.
 func FollowUpSchema() json.RawMessage { return slices.Clone(followUpSchema) }
 
-// ParseFollowUp decodes the model's answer.
-func ParseFollowUp(raw string) (string, error) {
+// ParseFollowUp decodes the model's answer, with its GitHub references
+// redirected as Parse does for a review; repository is the "owner/repo"
+// the pull request is on.
+func ParseFollowUp(raw, repository string) (string, error) {
 	var out struct {
 		Reply string `json:"reply"`
 	}
 	if err := json.NewDecoder(strings.NewReader(strings.TrimSpace(raw))).Decode(&out); err != nil {
 		return "", fmt.Errorf("review: model output is not the expected JSON: %w", err)
 	}
-	out.Reply = strings.TrimSpace(out.Reply)
+	out.Reply = prose(out.Reply, repository)
 	if out.Reply == "" {
 		return "", errors.New("review: model returned an empty reply")
 	}
