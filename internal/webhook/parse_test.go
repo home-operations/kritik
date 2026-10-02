@@ -174,6 +174,44 @@ func TestParseGitHubRepositoryTraits(t *testing.T) {
 	}
 }
 
+func TestParseGitHubReviewThread(t *testing.T) {
+	const repo = `"repository":{"full_name":"a/b","owner":{"login":"a"}}`
+	tests := []struct {
+		name string
+		body string
+		kind Kind
+		want Thread
+	}{
+		{"resolved by a person", `{"action":"resolved","pull_request":{"number":8},"sender":{"login":"devin","type":"User"},
+		  "thread":{"comments":[{"id":100,"in_reply_to_id":null},{"id":101,"in_reply_to_id":100}]},` + repo + `}`,
+			KindThread, Thread{Number: 8, CommentID: 100, Resolved: true, Sender: "devin"}},
+		{"unresolved by the bot", `{"action":"unresolved","pull_request":{"number":8},"sender":{"login":"kritika[bot]","type":"Bot"},
+		  "thread":{"comments":[{"id":101,"in_reply_to_id":100},{"id":100}]},` + repo + `}`,
+			KindThread, Thread{Number: 8, CommentID: 100, Sender: "kritika[bot]", SenderIsBot: true}},
+		{"no comments", `{"action":"resolved","pull_request":{"number":8},"sender":{"login":"devin"},"thread":{"comments":[]},` + repo + `}`,
+			KindThread, Thread{Number: 8, Resolved: true, Sender: "devin"}},
+		{"other action", `{"action":"edited","pull_request":{"number":8},"sender":{"login":"devin"},"thread":{},` + repo + `}`,
+			KindIgnored, Thread{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev, err := Parse(configfile.ForgeGitHub, gh("pull_request_review_thread"), []byte(tt.body))
+			if err != nil || ev.Kind != tt.kind {
+				t.Fatalf("event = %+v, %v; want kind %s", ev, err, tt.kind)
+			}
+			if tt.kind == KindIgnored {
+				if ev.Action != "pull_request_review_thread" || ev.Thread != nil {
+					t.Fatalf("ignored event = %+v", ev)
+				}
+				return
+			}
+			if *ev.Thread != tt.want || ev.Account != "a" || ev.Repository.FullName != "a/b" {
+				t.Fatalf("thread = %+v (account %q), want %+v", *ev.Thread, ev.Account, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseFormEncodedPayload(t *testing.T) {
 	h := gh("push")
 	h.Set("Content-Type", "application/x-www-form-urlencoded")
