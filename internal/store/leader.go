@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -12,13 +11,17 @@ const leaderKey = "kritika-leader"
 
 // RunAsLeader competes for the leader lock and, once held, calls lead with a
 // context that is cancelled if the lock is lost or ctx ends. It returns when
-// ctx ends. Only one replica per database holds the lock at a time; the
-// holder is the only replica that migrates and writes configuration.
+// ctx ends, or when lead returns an error. Only one replica per database
+// holds the lock at a time; the holder is the only replica that migrates
+// and writes configuration.
 //
 // The lock is session-level on a dedicated connection held for the whole
 // tenure, so it releases on its own if the process dies. The holder pings
 // that connection every interval, because a dropped connection releases the
-// lock server-side without the client noticing.
+// lock server-side without the client noticing. A database that cannot be
+// reached when the lock is tried, as during a failover, is tried again
+// after retry rather than ending the process: a standby that restarts on
+// every failover is no standby.
 func (s *Store) RunAsLeader(ctx context.Context, retry time.Duration, lead func(ctx context.Context) error) error {
 	if s.owner == nil {
 		return errors.New("store: leadership needs the owner DSN")
@@ -43,25 +46,26 @@ func (s *Store) RunAsLeader(ctx context.Context, retry time.Duration, lead func(
 }
 
 // tryLead makes one attempt. It reports whether the lock was held during
-// this attempt; a false return means someone else has it. The lock
+// this attempt; a false return means someone else has it, or the database
+// did not answer, which is logged. The error is lead's own. The lock
 // connection is only ever touched from this goroutine: lead runs on its own
 // goroutine and never sees the connection.
 func (s *Store) tryLead(ctx context.Context, interval time.Duration, lead func(ctx context.Context) error) (bool, error) {
 	conn, err := s.owner.Acquire(ctx)
 	if err != nil {
-		if ctx.Err() != nil {
-			return false, nil
+		if ctx.Err() == nil {
+			s.logger.Warn("leader connection not acquired, retrying", "error", err, "after", interval)
 		}
-		return false, fmt.Errorf("store: acquire leader connection: %w", err)
+		return false, nil
 	}
 	defer conn.Release()
 
 	var got bool
 	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtext($1))`, leaderKey).Scan(&got); err != nil {
-		if ctx.Err() != nil {
-			return false, nil
+		if ctx.Err() == nil {
+			s.logger.Warn("leader lock not tried, retrying", "error", err, "after", interval)
 		}
-		return false, fmt.Errorf("store: try leader lock: %w", err)
+		return false, nil
 	}
 	if !got {
 		return false, nil
