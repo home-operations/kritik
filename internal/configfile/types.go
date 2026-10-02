@@ -322,13 +322,29 @@ const minRetention = 24 * time.Hour
 
 // DefaultIgnore is always skipped by chunking and the caller search, on top
 // of whatever the admin's file and the in-repo file add. Vendored and
-// generated trees otherwise dominate both.
+// generated trees otherwise dominate both, and lockfiles have nothing a
+// review can act on. Build output directories like dist/ and build/ are
+// left in: real source lives under those names often enough.
 var DefaultIgnore = []string{
-	"vendor/**",
-	"node_modules/**",
+	"**/vendor/**",
+	"**/node_modules/**",
 	"**/*.lock",
 	"**/package-lock.json",
+	"**/pnpm-lock.yaml",
+	"**/bun.lockb",
+	"**/.terraform.lock.hcl",
 	"**/go.sum",
+	"**/go.work.sum",
+	"**/zz_generated*.go",
+	"**/*.pb.go",
+	"**/*.pb.gw.go",
+	"**/*.generated.*",
+	"**/*.min.js",
+	"**/*.min.css",
+	"**/*.map",
+	"**/generated/**",
+	"**/__generated__/**",
+	"**/*.log",
 }
 
 // GitHubApp is a GitHub App credential owned by a connection. The client
