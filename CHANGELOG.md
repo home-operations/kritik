@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.4](https://github.com/home-operations/kritika/compare/0.0.3...0.0.4) (2026-10-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **chart:** give runner Jobs their own image block, defaulting to the -tools image ([#309](https://github.com/home-operations/kritika/issues/309))
+
+### Features
+
+* **chart:** give runner Jobs their own image block, defaulting to the -tools image ([#309](https://github.com/home-operations/kritika/issues/309)) ([01d7924](https://github.com/home-operations/kritika/commit/01d7924c0179a336e1d0d23ece89272c42e615ed))
+
 ## [0.0.3](https://github.com/home-operations/kritika/compare/0.0.2...0.0.3) (2026-10-02)
 
 
