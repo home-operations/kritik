@@ -28,6 +28,13 @@ import (
 // embedBatch is how many staged chunks are embedded and inserted at once.
 const embedBatch = 128
 
+// indexSlots is how many of an account's embed slots index runs may hold
+// at once: all but one, so a review's similar-code lookup, which takes a
+// slot for one short call, always has one to take while an onboarding
+// wave holds the rest for the length of a repository's embedding pass. An
+// account with one slot has none to spare.
+func indexSlots(concurrency int) int { return max(1, concurrency-1) }
+
 // Index works the index queue: one job builds or advances a repository's
 // embedding index to a commit. The runner Job chunks the tree; this worker
 // embeds the chunks and swaps or advances the active generation.
@@ -259,7 +266,7 @@ func (w *Index) embed(
 	}
 	var total int
 	var tokens int64
-	err = w.withLease(ctx, account, "embed:"+embedModel, settings.Limits.Concurrency, jobID, func(ctx context.Context) error {
+	err = w.withLease(ctx, account, "embed:"+embedModel, indexSlots(settings.Limits.Concurrency), jobID, func(ctx context.Context) error {
 		var last int64
 		for {
 			var batch []store.StagedChunk
