@@ -1,0 +1,2 @@
+# The dashboard linter's exclusions are a repository concern, not the chart's.
+dashboards/.lint

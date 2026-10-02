@@ -1,0 +1,6 @@
+# grafana/dashboard-linter configuration, read by `mise run dashboard-lint`.
+exclusions:
+  template-instance-rule:
+    reason: The dashboard filters by the metrics Service's namespace and job, then by pod, as the chart's alerts group; an instance is a pod IP and port, which identifies nothing to a reader.
+  target-instance-rule:
+    reason: The dashboard filters by the metrics Service's namespace and job, then by pod, as the chart's alerts group; an instance is a pod IP and port, which identifies nothing to a reader.
