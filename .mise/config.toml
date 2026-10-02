@@ -83,6 +83,10 @@ export KRITIKA_TEST_RUNNER_URL="postgres://kritika_runner:runner@127.0.0.1:${por
 go test -race -tags integration -count=1 -p 1 ./... "$@"
 """
 
+[tasks.smoke]
+description = "Boot kritika serve with two replicas in a throwaway kind cluster against a CloudNativePG Postgres with VectorChord, as the chart deploys it, and check readiness, helm test, one leader and the applied configuration (needs docker, kind, kubectl and helm)"
+run = "scripts/smoke.sh"
+
 [tasks.bench]
 description = "Run the evaluation harness against a live model (OPENROUTER_API_KEY; KRITIKA_BENCH_DRY=1 runs it without model calls)"
 run = "go test -tags bench -run TestBench -v -count=1 -timeout 60m ./bench/"

@@ -1,0 +1,37 @@
+---
+# Chart values for scripts/smoke.sh: kritika serve as the chart deploys it,
+# two replicas so the owner DSN, the leader lock and a standby are all
+# exercised, against the CloudNativePG cluster the script creates. The
+# image is set by the script; the Secrets are the ones it generates.
+replicas: 2
+database:
+  owner:
+    existingSecret: kritika-postgres-credentials
+  app:
+    existingSecret: kritika-postgres-app
+  runner:
+    existingSecret: kritika-postgres-runner
+config:
+  webUrl: http://kritika.kritika.svc:8080
+  # The app below is not a real GitHub App, so the backstop poll stays off.
+  pollInterval: 0s
+  authAdminPassword:
+    valueFrom:
+      secretKeyRef: { name: kritika-smoke-auth, key: password }
+configFile:
+  apps:
+    github:
+      accounts: [home-operations]
+      clientId: Iv1.smoke
+      privateKey: { env: GITHUB_APP_PRIVATE_KEY }
+      webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
+env:
+  GITHUB_APP_PRIVATE_KEY:
+    valueFrom:
+      secretKeyRef: { name: kritika-smoke-bot, key: private-key.pem }
+  GITHUB_APP_WEBHOOK_SECRET:
+    valueFrom:
+      secretKeyRef: { name: kritika-smoke-bot, key: webhook-secret }
+resources:
+  requests: { cpu: 10m, memory: 64Mi }
+  limits: { memory: 512Mi }

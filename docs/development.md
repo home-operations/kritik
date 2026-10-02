@@ -6,9 +6,19 @@ Tool versions and tasks live in [`.mise/config.toml`](https://github.com/home-op
 mise install
 mise run build
 mise run test               # unit tests
-mise run test-integration   # store suite against a throwaway VectorChord container
+mise run test-integration   # Postgres suites against a throwaway VectorChord container
 mise run lint
+mise run smoke              # kritika serve in a kind cluster with CloudNativePG (needs docker, kind, kubectl, helm)
 ```
+
+`mise run smoke` is what CI's Serve Smoke job runs: it builds the image,
+creates a kind cluster, installs CloudNativePG and a one-instance Postgres
+with VectorChord as an image volume extension and the three roles, installs
+the chart with two replicas and waits for both to be ready, runs `helm
+test`, and checks that the replicas settle on one leader with the
+configuration applied. `KRITIKA_SMOKE_KEEP=1` leaves the cluster running
+for a look afterwards, and `KRITIKA_SMOKE_IMAGE` names an image already
+built, to skip the build.
 
 ## Docs
 
