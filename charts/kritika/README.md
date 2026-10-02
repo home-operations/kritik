@@ -147,9 +147,9 @@ switch.
 A repository's `agent.commands` lets the model run allowlisted
 binaries over a checkout of the head commit: to read a dependency bump's
 release notes and compare view with `gh`, fetch anything else with
-`curl`, or search with `rg` and `fd`. Runner Jobs run on the release's
-`-tools` image, an Alpine image with all four, pinned by digest like the
-chart's image; a command is offered only when the runner image has it on
+`curl`, search with `rg` and `fd`, or read JSON and YAML with `jq` and
+`yq`. Runner Jobs run on the release's `-tools` image, an Alpine image
+with all six, pinned by digest like the chart's image; a command is offered only when the runner image has it on
 its `PATH`, so an image set in `runner.image` without them offers none.
 `gh` signs in with the run's own token, which can read only the
 repository under review and public repositories, and an app already
@@ -184,6 +184,19 @@ the node. It is advised, not required: without it the pod's other bounds
 still hold (no long-lived secret, egress by hostname through the gateway,
 read-only root, no capabilities), but the container runtime alone separates
 it from the node.
+
+Set `runner.resources` too. Without them runner pods are BestEffort, with no
+memory limit, so a runaway run presses on its whole node rather than being
+killed in its own cgroup. Index and review runs have stayed under 100 MiB of
+working set so far, so a `128Mi` request with a `1Gi` limit leaves ample
+room:
+
+```yaml
+runner:
+  resources:
+    requests: { cpu: 10m, memory: 128Mi }
+    limits: { memory: 1Gi }
+```
 
 ### Topology
 

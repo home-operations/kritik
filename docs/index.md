@@ -4,9 +4,10 @@
 
 /// warning | Not production ready
 
-kritika is under active development and has no release yet: configuration,
-the database schema and the APIs change without notice, and there is no
-upgrade path from one commit to the next.
+kritika is early and under active development: configuration and the APIs
+can still change from one release to the next, so read the
+[changelog](https://github.com/home-operations/kritika/blob/main/CHANGELOG.md)
+before upgrading. Schema changes arrive as migrations the leader applies.
 
 ///
 
