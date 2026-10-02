@@ -37,7 +37,9 @@ func NewAnthropic(cfg AnthropicConfig) (*Anthropic, error) {
 	if cfg.APIKey == "" {
 		return nil, errors.New("model: anthropic: an API key is required")
 	}
-	opts := []option.RequestOption{option.WithoutEnvironmentDefaults(), option.WithAPIKey(cfg.APIKey)}
+	opts := []option.RequestOption{
+		option.WithoutEnvironmentDefaults(), option.WithAPIKey(cfg.APIKey), option.WithHeader("User-Agent", userAgent()),
+	}
 	if cfg.BaseURL != "" {
 		if err := checkBaseURL(cfg.BaseURL); err != nil {
 			return nil, fmt.Errorf("model: anthropic: %w", err)

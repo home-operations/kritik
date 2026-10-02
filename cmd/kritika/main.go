@@ -40,6 +40,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/metrics"
+	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/poller"
 	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/server"
@@ -81,6 +82,7 @@ func run() error {
 		return err
 	}
 	slog.SetDefault(logger)
+	model.Version = version
 
 	logger.Info("starting kritika",
 		"version", version,

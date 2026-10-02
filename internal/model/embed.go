@@ -36,8 +36,8 @@ const (
 // vectors match the table; models that ignore it return their native size
 // and the caller must check.
 func NewOpenAIEmbedder(baseURL, apiKey, model string, dims int) *OpenAIEmbedder {
-	opts := make([]option.RequestOption, 0, 2+len(attribution))
-	opts = append(opts, option.WithBaseURL(baseURL), option.WithAPIKey(apiKey))
+	opts := make([]option.RequestOption, 0, 3+len(attribution))
+	opts = append(opts, option.WithBaseURL(baseURL), option.WithAPIKey(apiKey), option.WithHeader("User-Agent", userAgent()))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}
