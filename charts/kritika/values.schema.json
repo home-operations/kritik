@@ -1232,7 +1232,7 @@
       "type": "object"
     },
     "strategy": {
-      "description": "Deployment update strategy. A rolling update that surges one pod and takes none down keeps one replica serving while the other is replaced. Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`.",
+      "description": "Deployment update strategy. A rolling update that surges one pod and takes none down keeps a replica serving while each is replaced. Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`.",
       "properties": {
         "rollingUpdate": {
           "properties": {
@@ -1309,7 +1309,7 @@
       "type": "array"
     },
     "topologySpreadConstraints": {
-      "description": "Spread the kritika serve pods across nodes, so a node loss does not take both replicas: a soft constraint, so a one-node cluster still schedules them. Rendered through `tpl`; empty leaves scheduling to Kubernetes.",
+      "description": "Spread the kritika serve pods across nodes, so with `replicas: 2` a node loss takes one of them: a soft constraint, so a one-node cluster still schedules them. Rendered through `tpl`; empty leaves scheduling to Kubernetes.",
       "items": {
         "anyOf": [
           {
