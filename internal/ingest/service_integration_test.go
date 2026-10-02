@@ -385,6 +385,7 @@ func TestDispatchSkipsArchivedAndForks(t *testing.T) {
 		for _, ev := range []webhook.Event{
 			{Kind: webhook.KindPullRequest, Action: "opened", Repository: r, PullRequest: &webhook.PullRequest{Number: 99, HeadSHA: "x"}},
 			{Kind: webhook.KindComment, Action: "created", Repository: r, Comment: &webhook.Comment{ID: 9, Number: 99, Body: "@bot why"}},
+			{Kind: webhook.KindThread, Action: "resolved", Repository: r, Thread: &webhook.Thread{Number: 99, CommentID: 9, Resolved: true}},
 			{Kind: webhook.KindPush, Repository: r, Push: &webhook.Push{Ref: "refs/heads/main", After: "abc"}},
 		} {
 			if out, err := svc.Dispatch(ctx, request(f, ev)); err != nil || out != (Outcome{Status: Skipped, Reason: reasonDisabled}) {
@@ -503,6 +504,36 @@ func TestDispatchCommentPush(t *testing.T) {
 		}
 		if count("followup") != 1 {
 			t.Fatalf("followup jobs = %d", count("followup"))
+		}
+	})
+
+	t.Run("thread resolved and unresolved enqueues each once, not the bot's", func(t *testing.T) {
+		th := &webhook.Thread{Number: 7, CommentID: 601, Resolved: true, Sender: "devin"}
+		ev := webhook.Event{Kind: webhook.KindThread, Action: "resolved", Repository: repo("onedr0p/home-ops"), Thread: th}
+		if out, err := svc.Dispatch(ctx, request(f, ev)); err != nil || out.Status != Enqueued || out.Job != "thread" {
+			t.Fatalf("out = %+v, %v", out, err)
+		}
+		if out, _ := svc.Dispatch(ctx, request(f, ev)); out.Reason != "duplicate" {
+			t.Fatalf("redelivery = %+v", out)
+		}
+		back := *th
+		back.Resolved = false
+		ev.Action, ev.Thread = "unresolved", &back
+		if out, err := svc.Dispatch(ctx, request(f, ev)); err != nil || out.Status != Enqueued {
+			t.Fatalf("unresolved = %+v, %v", out, err)
+		}
+		bot := *th
+		bot.CommentID, bot.SenderIsBot = 602, true
+		ev.Action, ev.Thread = "resolved", &bot
+		if out, _ := svc.Dispatch(ctx, request(f, ev)); out.Reason != "bot" {
+			t.Fatalf("bot resolution = %+v", out)
+		}
+		ev.Thread = &webhook.Thread{Number: 7, Sender: "devin"}
+		if out, _ := svc.Dispatch(ctx, request(f, ev)); out.Status != Ignored {
+			t.Fatalf("thread without a comment = %+v", out)
+		}
+		if count("thread") != 2 {
+			t.Fatalf("thread jobs = %d", count("thread"))
 		}
 	})
 

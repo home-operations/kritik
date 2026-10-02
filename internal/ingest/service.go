@@ -96,6 +96,8 @@ func (s *Service) Dispatch(ctx context.Context, req Request) (Outcome, error) {
 		return s.pullRequest(ctx, req)
 	case webhook.KindComment:
 		return s.comment(ctx, req)
+	case webhook.KindThread:
+		return s.thread(ctx, req)
 	case webhook.KindPush:
 		return s.push(ctx, req)
 	case webhook.KindInstallation:
@@ -252,6 +254,46 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 		}
 		if res.UniqueSkippedAsDuplicate {
 			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: "followup"}
+		}
+		return nil
+	})
+	return out, err
+}
+
+// thread queues the thread a person resolved or unresolved for the worker,
+// which dismisses or restores the finding it holds. The bot resolves the
+// threads of the findings a review found gone and of the ones a mention
+// dismissed; neither is a person's decision.
+func (s *Service) thread(ctx context.Context, req Request) (Outcome, error) {
+	ev := req.Event
+	th := ev.Thread
+	if ev.Repository == nil {
+		return Outcome{Status: Ignored, Reason: reasonNoRepository}, nil
+	}
+	if th == nil || th.CommentID == 0 {
+		return Outcome{Status: Ignored, Reason: "no thread"}, nil
+	}
+	if th.SenderIsBot {
+		return Outcome{Status: Skipped, Reason: "bot"}, nil
+	}
+	if runs, err := s.runs(ctx, req); err != nil || !runs {
+		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
+	}
+	out := Outcome{Status: Enqueued, Job: "thread"}
+	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
+		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
+		if err != nil {
+			return err
+		}
+		res, err := s.queue.InsertTx(ctx, tx, jobs.ThreadArgs{
+			AccountID: req.Account.ID(), RepositoryID: rid, Number: th.Number, CommentID: th.CommentID,
+			Resolved: th.Resolved, Sender: th.Sender,
+		}, nil)
+		if err != nil {
+			return fmt.Errorf("ingest: enqueue thread: %w", err)
+		}
+		if res.UniqueSkippedAsDuplicate {
+			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: "thread"}
 		}
 		return nil
 	})

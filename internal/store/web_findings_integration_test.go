@@ -232,6 +232,43 @@ func TestDismissedFindings(t *testing.T) {
 	}
 }
 
+// TestDeleteDismissal: a dismissal taken back is gone, and taking back one
+// that is not there says so.
+func TestDeleteDismissal(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("undismissed"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "undismissed")
+	var ds []Dismissal
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var pull string
+		if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha)
+			SELECT $1, id, 7, 'h' FROM repositories WHERE account_id = $1 AND name = 'undismissed/one' RETURNING id`, account).Scan(&pull); err != nil {
+			return err
+		}
+		d := Dismissal{AccountID: account, PullRequestID: pull, Fingerprint: "fp-a", Reason: "intended", Author: "devin", CommentID: 99}
+		if err := RecordDismissal(ctx, tx, d); err != nil {
+			return err
+		}
+		if deleted, err := DeleteDismissal(ctx, tx, pull, "fp-a"); err != nil || !deleted {
+			t.Fatalf("DeleteDismissal = %v, %v", deleted, err)
+		}
+		if deleted, err := DeleteDismissal(ctx, tx, pull, "fp-a"); err != nil || deleted {
+			t.Fatalf("DeleteDismissal again = %v, %v", deleted, err)
+		}
+		var err error
+		ds, err = Dismissals(ctx, tx, pull)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ds) != 0 {
+		t.Fatalf("Dismissals after the delete = %+v", ds)
+	}
+}
+
 // soloAccount serves one account of its own, with one repository, so a
 // test's rows are the only ones its account reads in the shared database.
 func soloAccount(name string) string {

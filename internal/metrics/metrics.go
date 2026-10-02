@@ -19,6 +19,7 @@ type Metrics struct {
 	reviews        *prometheus.CounterVec
 	reviewDuration *prometheus.HistogramVec
 	followups      *prometheus.CounterVec
+	threads        *prometheus.CounterVec
 	findings       *prometheus.CounterVec
 	indexRuns      *prometheus.CounterVec
 	indexChunks    *prometheus.CounterVec
@@ -84,6 +85,10 @@ func New(reg prometheus.Registerer) *Metrics {
 		followups: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_followups_total", Help: "Follow-up mentions handled, by outcome: answered, limited, ignored, failed.",
 		}, []string{lblAccount, lblOutcome}),
+		threads: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_threads_total",
+			Help: "Finding threads a person resolved or unresolved, by outcome: dismissed, restored, ignored, failed.",
+		}, []string{lblAccount, lblOutcome}),
 		findings: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_findings_total", Help: "Findings posted, by severity and category.",
 		}, []string{lblAccount, "severity", "category"}),
@@ -126,7 +131,7 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritika_model_cost_usd_total", Help: "Provider-reported cost in US dollars, by role.",
 		}, []string{lblAccount, lblModel, lblRole}),
 	}
-	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.findings,
+	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.threads, m.findings,
 		m.indexRuns, m.indexChunks, m.contextChunks,
 		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.jobsRescued, m.modelCalls, m.modelTokens, m.modelCost, m.egress,
 		m.forgeLimits, m.transcripts,
@@ -163,6 +168,13 @@ func (m *Metrics) Review(account, status string, took time.Duration) {
 func (m *Metrics) FollowUp(account, outcome string) {
 	if m != nil {
 		m.followups.WithLabelValues(account, outcome).Inc()
+	}
+}
+
+// Thread counts one resolved or unresolved finding thread handled.
+func (m *Metrics) Thread(account, outcome string) {
+	if m != nil {
+		m.threads.WithLabelValues(account, outcome).Inc()
 	}
 }
 

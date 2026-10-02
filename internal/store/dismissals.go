@@ -38,6 +38,16 @@ func RecordDismissal(ctx context.Context, tx pgx.Tx, d Dismissal) error {
 	return nil
 }
 
+// DeleteDismissal takes back the dismissal of the finding, and reports
+// whether there was one.
+func DeleteDismissal(ctx context.Context, tx pgx.Tx, pullRequestID, fingerprint string) (bool, error) {
+	tag, err := tx.Exec(ctx, `DELETE FROM dismissals WHERE pull_request_id = $1 AND fingerprint = $2`, pullRequestID, fingerprint)
+	if err != nil {
+		return false, fmt.Errorf("store: delete dismissal: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // Dismissals lists the pull request's dismissed findings, oldest first.
 func Dismissals(ctx context.Context, tx pgx.Tx, pullRequestID string) ([]Dismissal, error) {
 	rows, err := tx.Query(ctx, `SELECT account_id, pull_request_id, fingerprint, path, line, severity, title, explanation, reason, author,
