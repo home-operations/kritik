@@ -22,8 +22,8 @@ func (f *File) Provider(t *Account, name string) (Provider, bool) {
 // validate checks a provider's type, endpoint, key and prices.
 func (p Provider) validate(where string) error {
 	if !p.Type.Valid() {
-		return fmt.Errorf("configfile: %s.type must be %s, %s or %s, got %q",
-			where, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, p.Type)
+		return fmt.Errorf("configfile: %s.type must be %s, %s, %s or %s, got %q",
+			where, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode, p.Type)
 	}
 	if p.BaseURL != "" {
 		if u, err := url.Parse(p.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {

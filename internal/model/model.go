@@ -22,17 +22,20 @@ import (
 type ProviderType string
 
 // Provider types kritika implements. OpenRouter is the OpenAI adapter at
-// OpenRouter's URL with its server-side fallback and reported cost.
+// OpenRouter's URL with its server-side fallback and reported cost;
+// OpenCode is the OpenAI adapter at OpenCode Go's URL, naming the
+// conversation each step belongs to as the gateway asks.
 const (
 	ProviderOpenRouter ProviderType = "openrouter"
 	ProviderOpenAI     ProviderType = "openai"
 	ProviderAnthropic  ProviderType = "anthropic"
+	ProviderOpenCode   ProviderType = "opencode"
 )
 
 // Valid reports whether p is a provider type kritika implements.
 func (p ProviderType) Valid() bool {
 	switch p {
-	case ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic:
+	case ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode:
 		return true
 	}
 	return false
@@ -236,15 +239,21 @@ func NewStepper(t ProviderType, baseURL, apiKey string, pricing Pricing, client 
 		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, Pricing: pricing})
 	case ProviderAnthropic:
 		return NewAnthropic(AnthropicConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, Pricing: pricing})
+	case ProviderOpenCode:
+		baseURL = cmp.Or(baseURL, OpenCodeBaseURL)
+		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, OpenCode: true, Pricing: pricing})
 	default:
 		return nil, fmt.Errorf("model: provider type %q has no adapter", t)
 	}
 }
 
-// Where an openrouter or openai provider without a baseUrl goes.
+// Where an openrouter, openai or opencode provider without a baseUrl goes.
+// OpenCode Zen, the same gateway, is an opencode provider with its own
+// baseUrl.
 const (
 	OpenRouterBaseURL = "https://openrouter.ai/api/v1"
 	OpenAIBaseURL     = "https://api.openai.com/v1"
+	OpenCodeBaseURL   = "https://opencode.ai/zen/go/v1"
 )
 
 // checkRequest rejects a request no provider could serve.

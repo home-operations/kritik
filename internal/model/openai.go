@@ -42,8 +42,15 @@ type OpenAIConfig struct {
 	// ReportsModel trusts the response's model field to name the model
 	// that answered, as kritika's model gateway sets it.
 	ReportsModel bool
-	Pricing      Pricing
+	// OpenCode names the step's conversation in the header OpenCode Go
+	// and Zen route and cache prompts by; without it they refuse the
+	// request.
+	OpenCode bool
+	Pricing  Pricing
 }
+
+// sessionHeader carries StepRequest.Session to OpenCode.
+const sessionHeader = "x-opencode-session"
 
 // OpenAI is a Stepper over the chat completions API of OpenAI or any server
 // compatible with it.
@@ -51,6 +58,7 @@ type OpenAI struct {
 	client       openai.Client
 	openRouter   bool
 	reportsModel bool
+	openCode     bool
 	pricing      Pricing
 }
 
@@ -74,7 +82,8 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 		opts = append(opts, option.WithHeader(k, v))
 	}
 	return &OpenAI{
-		client: openai.NewClient(opts...), openRouter: cfg.OpenRouter, reportsModel: cfg.OpenRouter || cfg.ReportsModel, pricing: cfg.Pricing,
+		client: openai.NewClient(opts...), openRouter: cfg.OpenRouter, reportsModel: cfg.OpenRouter || cfg.ReportsModel,
+		openCode: cfg.OpenCode, pricing: cfg.Pricing,
 	}, nil
 }
 
@@ -98,13 +107,16 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 	if err != nil {
 		return StepResponse{}, err
 	}
+	var opts []option.RequestOption
+	if o.openCode && req.Session != "" {
+		opts = append(opts, option.WithHeader(sessionHeader, req.Session))
+	}
 	if o.openRouter {
 		// OpenRouter walks the models list itself, primary first. The
 		// top-level cache_control is its automatic prompt caching, a
 		// breakpoint on the last cacheable block that moves forward as the
 		// conversation grows; without it, providers whose caching is not
 		// automatic (Anthropic, Gemini) cache none of a tool loop's steps.
-		var opts []option.RequestOption
 		opts = append(opts,
 			option.WithJSONSet("usage", map[string]any{"include": true}),
 			option.WithJSONSet("cache_control", map[string]any{"type": "ephemeral"}),
@@ -118,7 +130,7 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 		}
 		return resp, nil
 	}
-	return eachModel(ctx, req, func(id string) (StepResponse, error) { return o.step(ctx, params, id) })
+	return eachModel(ctx, req, func(id string) (StepResponse, error) { return o.step(ctx, params, id, opts...) })
 }
 
 func (o *OpenAI) step(
