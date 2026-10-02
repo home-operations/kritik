@@ -110,12 +110,14 @@ func run() error {
 	g.Go(func() error { return mgmt.Run(ctx) })
 
 	// serve's public listener comes up next, before the database answers,
-	// and the replica is ready as soon as it does: a browser then sees
-	// that kritika is starting rather than the ingress's own error, and a
-	// forge's delivery is refused by kritika with a reason. The
-	// configuration file is read before that, so a file that does not
-	// load ends the process before the replica is ever ready, and a
-	// rollout stops at it with the previous pods serving.
+	// so a request that reaches the pod directly meanwhile sees that
+	// kritika is starting. The replica is not ready until the database
+	// answers and the webhooks and the dashboard are served: a rollout
+	// takes the previous pod down only once this one can hold a delivery,
+	// since the forge does not send one again. The configuration file is
+	// read before that, so a file that does not load ends the process
+	// before the replica is ever ready, and a rollout stops at it with the
+	// previous pods serving.
 	var file *configfile.File
 	var public *server.Switch
 	if command == config.CommandServe {
@@ -126,7 +128,6 @@ func run() error {
 		g.Go(func() error {
 			return server.Serve(lingering(ctx, linger), cfg.Addr, public, publicDrain, logger.With("listener", "public"))
 		})
-		mgmt.SetReady(true)
 	}
 
 	// Both commands connect with the application DSN and refuse to start if
@@ -145,6 +146,7 @@ func run() error {
 	if err := serve(ctx, g, st, cfg, file, public, mgmt.Registry(), logger); err != nil {
 		return err
 	}
+	mgmt.SetReady(true)
 
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("%s: %w", command, err)
@@ -154,7 +156,8 @@ func run() error {
 
 // serve starts the service on g: the configuration read at startup, the
 // leader duties on the replica holding the leader lock, the webhooks and
-// the dashboard on public, the gateway and the job queues.
+// the dashboard on public, the gateway and the job queues. When it
+// returns, public serves the webhooks and the dashboard.
 func serve(
 	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, file *configfile.File, public *server.Switch,
 	reg *prometheus.Registry, logger *slog.Logger,
