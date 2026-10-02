@@ -145,6 +145,11 @@ func (u Usage) Prompt() int64 { return u.Input + u.CacheRead + u.CacheWrite }
 type StepRequest struct {
 	// Model is the primary model id in the provider's namespace.
 	Model string
+	// Session names the conversation the step belongs to, the same for
+	// every step of it: a review run's steps share one and a follow-up has
+	// its own. Adapters whose provider routes or caches by conversation
+	// send it; the others ignore it.
+	Session string
 	// Fallbacks are tried, in order, if Model fails: by OpenRouter itself,
 	// by the adapter for every other provider.
 	Fallbacks []string
@@ -184,6 +189,8 @@ type CompletionRequest struct {
 	User   string
 	// Model is the primary model id in the provider's namespace.
 	Model string
+	// Session is the conversation the call is, as StepRequest.Session.
+	Session string
 	// Fallbacks are tried, in order, if Model fails.
 	Fallbacks []string
 	// Schema is the JSON Schema the answer must satisfy; the response

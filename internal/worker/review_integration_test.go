@@ -372,10 +372,11 @@ func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.St
 // follow-up with a fixed reply, as the forced tool call a model.Structured
 // makes.
 type fakeCompleter struct {
-	mu      sync.Mutex
-	calls   int
-	users   []string
-	systems []string
+	mu       sync.Mutex
+	calls    int
+	users    []string
+	systems  []string
+	sessions []string
 }
 
 func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
@@ -383,6 +384,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	f.calls++
 	f.users = append(f.users, req.Messages[0].Text)
 	f.systems = append(f.systems, req.System)
+	f.sessions = append(f.sessions, req.Session)
 	isReply := req.Tools[0].Name == "reply"
 	f.mu.Unlock()
 	// A review's agent is offered its read-only tools too; it submits at once.
@@ -897,8 +899,11 @@ func checkFollowUps(
 	}
 	checkFollowUpTranscript(ctx, t, st, accountID, id, fc)
 	fc.mu.Lock()
-	prompt, system := fc.users[len(fc.users)-1], fc.systems[len(fc.systems)-1]
+	prompt, system, session := fc.users[len(fc.users)-1], fc.systems[len(fc.systems)-1], fc.sessions[len(fc.sessions)-1]
 	fc.mu.Unlock()
+	if want := fmt.Sprintf("followup-%d", id); session != want {
+		t.Fatalf("follow-up session = %q, want %q: the mention is the conversation", session, want)
+	}
 	// The root's AGENTS.md, as the review's runner read it.
 	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
 		t.Fatalf("follow-up system prompt lacks AGENTS.md:\n%s", system)
