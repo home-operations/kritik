@@ -28,7 +28,7 @@ func answerWith(name string) string {
 // Complete implements Completer.
 func (s Structured) Complete(ctx context.Context, req CompletionRequest) (CompletionResponse, error) {
 	step := StepRequest{
-		Model: req.Model, Fallbacks: req.Fallbacks, System: req.System,
+		Model: req.Model, Fallbacks: req.Fallbacks, Session: req.Session, System: req.System,
 		Messages:  []Message{{Role: RoleUser, Text: req.User + "\n\n" + answerWith(req.SchemaName)}},
 		Tools:     []ToolDef{{Name: req.SchemaName, InputSchema: req.Schema}},
 		MaxTokens: req.MaxTokens,

@@ -657,7 +657,7 @@ func (f *followUp) complete(ctx context.Context, system, msg, reviewID string) (
 		AccountID: f.account.ID(), ReviewID: reviewID, FollowupCommentID: f.comment.ID, Kind: store.ModelCallFollowUp,
 	}, adapter.Mask(f.file, spec))}
 	req := model.CompletionRequest{
-		System: system, User: msg, Model: ref.Model(),
+		System: system, User: msg, Model: ref.Model(), Session: "followup-" + strconv.FormatInt(f.comment.ID, 10),
 		Schema: review.FollowUpSchema(), SchemaName: "reply", MaxTokens: followUpMaxOutputTokens,
 	}
 	if fb := f.settings.Models.Fallback; fb != "" && fb.Provider() == ref.Provider() {

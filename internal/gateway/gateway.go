@@ -198,7 +198,8 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusInternalServerError, "server_error", "the run's model is not configured")
 		return
 	}
-	req.Model, req.Fallbacks = ref.Model(), nil
+	// A run's steps are one conversation, whichever provider answers.
+	req.Model, req.Fallbacks, req.Session = ref.Model(), nil, c.grant.RunID
 	fb := configfile.ModelRef(c.grant.Fallback)
 	if fb != "" && fb.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fb.Model()}
