@@ -273,6 +273,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("repository pagination", func(t *testing.T) { testRepoPagination(t, e) })
 	t.Run("repository kinds", func(t *testing.T) { testRepoKinds(t, e) })
 	t.Run("pull requests by author", func(t *testing.T) { testPullsByAuthor(t, e) })
+	t.Run("pull numbers outside int4", func(t *testing.T) { testPullNumbersOutsideInt4(t, e) })
 	t.Run("event stream scopes to the account", func(t *testing.T) { testEventStreamScopesToAccount(t, e) })
 }
 
@@ -489,6 +490,26 @@ func testPullsByAuthor(t *testing.T, e *apiEnv) {
 		status, body := e.getBody("member-a", "/api/v1/accounts/github/wa/pulls?state=all&author="+author)
 		if status != 200 || !bytes.Contains(body, []byte(want)) {
 			t.Errorf("author=%s: status %d, body %s, want %s", author, status, body, want)
+		}
+	}
+}
+
+// testPullNumbersOutsideInt4 asks for pull numbers no int4 column can
+// hold: no such pull exists, so a search matches nothing and a lookup is
+// not found, rather than a failure to bind the number.
+func testPullNumbersOutsideInt4(t *testing.T, e *apiEnv) {
+	a := "/api/v1/accounts/github/wa"
+	for path, want := range map[string]struct {
+		status int
+		marker string
+	}{
+		a + "/pulls?state=all&q=%233000000000": {200, `"items":[]`},
+		a + "/findings?q=%233000000000":        {200, `"items":[]`},
+		a + "/pulls/wa/one/3000000000":         {404, `"code":"not_found"`},
+	} {
+		status, body := e.getBody("member-a", path)
+		if status != want.status || !bytes.Contains(body, []byte(want.marker)) {
+			t.Errorf("%s: status %d, body %s, want %d with %s", path, status, body, want.status, want.marker)
 		}
 	}
 }
