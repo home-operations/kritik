@@ -317,6 +317,15 @@ Kubernetes: `>=1.25.0-0`
 | ingress.hosts | list | `[{"host":"kritika.example.com","paths":[{"path":"/","pathType":"Prefix"}]}]` | Ingress hosts and their paths; the host is `config.webUrl`'s. |
 | ingress.tls | list | `[]` | Ingress TLS configuration. |
 | livenessProbe | object | `{"httpGet":{"path":"/healthz","port":"metrics"},"periodSeconds":20}` | Liveness probe, on the metrics port. |
+| monitoring.dashboards.annotations | object | `{}` | Annotations added to the dashboard ConfigMap (templated). |
+| monitoring.dashboards.enabled | bool | `false` | Render the Grafana dashboard ConfigMap (for the kube-prometheus-stack sidecar or grafana-operator): kritika's health, intake, reviews, model spend, runner Jobs and database pools, from the metrics the ServiceMonitor scrapes. |
+| monitoring.dashboards.grafanaOperator.allowCrossNamespaceImport | bool | `true` | Allow a Grafana in any namespace to import this GrafanaDashboard. |
+| monitoring.dashboards.grafanaOperator.enabled | bool | `false` | Render a GrafanaDashboard CR (grafana-operator) referencing the ConfigMap, instead of relying on the sidecar label. |
+| monitoring.dashboards.grafanaOperator.folder | string | `""` | Folder to create the dashboard in (templated); empty uses the Grafana default. |
+| monitoring.dashboards.grafanaOperator.matchLabels | object | `{}` | Label selector matching the target Grafana instance (templated; required when grafanaOperator is enabled). |
+| monitoring.dashboards.grafanaOperator.resyncPeriod | string | `"10m"` | Resync period for the operator to re-check the dashboard. |
+| monitoring.dashboards.labels | object | `{}` | Labels added to the dashboard ConfigMap (templated). |
+| monitoring.dashboards.namespace | string | `""` | Namespace for the dashboard objects; defaults to the release namespace. |
 | monitoring.prometheusRule.additionalRuleAnnotations | object | `{}` | Extra annotations on every alert rule. |
 | monitoring.prometheusRule.additionalRuleLabels | object | `{}` | Extra labels on every alert rule, e.g. a routing label for Alertmanager. The rule's own `severity` wins. |
 | monitoring.prometheusRule.annotations | object | `{}` | PrometheusRule annotations. |

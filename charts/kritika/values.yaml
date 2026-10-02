@@ -517,6 +517,26 @@ monitoring:
     configErrorFor: 5m
     # -- How long a replica's configuration file may differ from the applied one before KritikaConfigDrift fires; a rollout drifts briefly until the new leader applies its file.
     configDriftFor: 15m
+  dashboards:
+    # -- Render the Grafana dashboard ConfigMap (for the kube-prometheus-stack sidecar or grafana-operator): kritika's health, intake, reviews, model spend, runner Jobs and database pools, from the metrics the ServiceMonitor scrapes.
+    enabled: false
+    # -- Namespace for the dashboard objects; defaults to the release namespace.
+    namespace: ""
+    # -- Annotations added to the dashboard ConfigMap (templated).
+    annotations: {}
+    # -- Labels added to the dashboard ConfigMap (templated).
+    labels: {}
+    grafanaOperator:
+      # -- Render a GrafanaDashboard CR (grafana-operator) referencing the ConfigMap, instead of relying on the sidecar label.
+      enabled: false
+      # -- Allow a Grafana in any namespace to import this GrafanaDashboard.
+      allowCrossNamespaceImport: true
+      # -- Folder to create the dashboard in (templated); empty uses the Grafana default.
+      folder: ""
+      # -- Resync period for the operator to re-check the dashboard.
+      resyncPeriod: "10m"
+      # -- Label selector matching the target Grafana instance (templated; required when grafanaOperator is enabled).
+      matchLabels: {}
 
 podDisruptionBudget:
   # -- Create a PodDisruptionBudget when there is more than one replica.
