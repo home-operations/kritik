@@ -170,8 +170,8 @@ github.com/odvcencio/gotreesitter v0.55.1 h1:/UabDnEwB4usEs/bd6UqRfxh5tf+ByWr3iG
 github.com/odvcencio/gotreesitter v0.55.1/go.mod h1:hBVkghd0paaYAVwd2087vfwdeU984bQbMo9LvpE0moo=
 github.com/onsi/gomega v1.37.0 h1:CdEG8g0S133B4OswTDC/5XPSzE1OeP29QOioj2PID2Y=
 github.com/onsi/gomega v1.37.0/go.mod h1:8D9+Txp43QWKhM24yyOBEdpkzN8FvJyAwecBgsU4KU0=
-github.com/openai/openai-go/v3 v3.67.0 h1:7lCZTEhdqmQNPEj8PMIyPojUfVmsmSU6l/l9oopsI+s=
-github.com/openai/openai-go/v3 v3.67.0/go.mod h1:+dSPa+nbX+dNoXg1jecMnVpgRP+E/5IBA6Jiz9Pc8WM=
+github.com/openai/openai-go/v3 v3.68.0 h1:NjMHR8v59G1MvZGzPsKZ590oxrtI26zGcACIDD5h0xw=
+github.com/openai/openai-go/v3 v3.68.0/go.mod h1:+dSPa+nbX+dNoXg1jecMnVpgRP+E/5IBA6Jiz9Pc8WM=
 github.com/pb33f/ordered-map/v2 v2.3.1 h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=
 github.com/pb33f/ordered-map/v2 v2.3.1/go.mod h1:qxFQgd0PkVUtOMCkTapqotNgzRhMPL7VvaHKbd1HnmQ=
 github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 h1:onHthvaw9LFnH4t2DcNVpwGmV9E1BkGknEliJkfwQj0=
