@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.0.6](https://github.com/home-operations/kritika/compare/0.0.5...0.0.6) (2026-10-02)
+
+
+### Features
+
+* **chart:** run one replica by default ([#319](https://github.com/home-operations/kritika/issues/319)) ([d2acd42](https://github.com/home-operations/kritika/commit/d2acd4285a0a62e21aae6cb6d2113d7176db611f))
+* **metrics:** report each connection pool's live state ([#337](https://github.com/home-operations/kritika/issues/337)) ([513a56c](https://github.com/home-operations/kritika/commit/513a56c5ba703f8aac1ff0fad885a422cacf2636))
+* **model:** an opencode provider type ([#327](https://github.com/home-operations/kritika/issues/327)) ([97ba016](https://github.com/home-operations/kritika/commit/97ba016e22945522d87a9259f19c7ca365d415cd))
+* **model:** carry the conversation on a step ([#325](https://github.com/home-operations/kritika/issues/325)) ([ce75006](https://github.com/home-operations/kritika/commit/ce75006ba279d317c2e24f9cefc173f1262c1820))
+* **model:** identify kritika in the user agent ([#324](https://github.com/home-operations/kritika/issues/324)) ([bd56313](https://github.com/home-operations/kritika/commit/bd56313c5800b782c42bf606e98377cff11bb147))
+
+
+### Bug Fixes
+
+* **forge:** build a forge client outside the cache lock, and bound the wait for GitHub's answer ([#333](https://github.com/home-operations/kritika/issues/333)) ([aed66d2](https://github.com/home-operations/kritika/commit/aed66d2da83ee044508a856aa8bc0e05707545d8))
+* **forge:** report the commit status as "Kritika / Review" ([#323](https://github.com/home-operations/kritika/issues/323)) ([5d10839](https://github.com/home-operations/kritika/commit/5d108394ac22ed393f80f9a58721e44a51fe1e10))
+* **model:** send each provider request once, so retries are the gateway's alone ([#334](https://github.com/home-operations/kritika/issues/334)) ([0652797](https://github.com/home-operations/kritika/commit/065279781b218e7150d0fd70848544ea2ac6dc40))
+* **serve:** ready only once the database answers and webhooks are served ([#330](https://github.com/home-operations/kritika/issues/330)) ([d3f8865](https://github.com/home-operations/kritika/commit/d3f8865fa4b6957cb0f71021b8537db5f1147f0a))
+* **store:** keep trying for the leader lock when the database does not answer ([#329](https://github.com/home-operations/kritika/issues/329)) ([0de532c](https://github.com/home-operations/kritika/commit/0de532ce5361c16ce403605fe95451bce1d98f75))
+* **worker:** leave one embed slot to similar-code lookups while indexing ([#332](https://github.com/home-operations/kritika/issues/332)) ([cd88ea4](https://github.com/home-operations/kritika/commit/cd88ea486b0db511278447fb5cd7f3b87452708e))
+
+
+### Performance Improvements
+
+* **poller:** share one App per connection and give a poll its interval ([#335](https://github.com/home-operations/kritika/issues/335)) ([9fb9724](https://github.com/home-operations/kritika/commit/9fb97244e0f870d14126cbf5e65550af3abe666f))
+* **store:** index River's index jobs by repository for the onboarding feeder ([#336](https://github.com/home-operations/kritika/issues/336)) ([2d12082](https://github.com/home-operations/kritika/commit/2d120828920aaa46cc49b6886c889b808610d261))
+
+
+### Documentation
+
+* **chart:** describe the one-replica default accurately ([#321](https://github.com/home-operations/kritika/issues/321)) ([3fe317b](https://github.com/home-operations/kritika/commit/3fe317bf6cad3d87dddfee128be3cf5eedbb24a7))
+* **configuration:** describe the opencode provider type ([#328](https://github.com/home-operations/kritika/issues/328)) ([914bb3b](https://github.com/home-operations/kritika/commit/914bb3b469e472e8693e8aaad1d084381ca530ae))
+
 ## [0.0.5](https://github.com/home-operations/kritika/compare/0.0.4...0.0.5) (2026-10-02)
 
 
