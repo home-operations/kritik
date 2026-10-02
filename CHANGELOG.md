@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.12](https://github.com/home-operations/kritika/compare/0.0.11...0.0.12) (2026-10-02)
+
+
+### Bug Fixes
+
+* **review:** redirect the GitHub references the model writes ([#366](https://github.com/home-operations/kritika/issues/366)) ([ea248dc](https://github.com/home-operations/kritika/commit/ea248dc6406c3c70b6aed6dae31b463128c0a1ca))
+
 ## [0.0.11](https://github.com/home-operations/kritika/compare/0.0.10...0.0.11) (2026-10-02)
 
 
