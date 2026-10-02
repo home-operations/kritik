@@ -234,7 +234,7 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	if err != nil {
 		return store.FollowupFailed, err
 	}
-	reply, err := review.ParseFollowUp(resp.Raw)
+	reply, err := review.ParseFollowUp(resp.Raw, f.pr.repository)
 	if err != nil {
 		return store.FollowupFailed, err
 	}

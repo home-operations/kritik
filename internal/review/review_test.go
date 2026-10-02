@@ -119,6 +119,16 @@ func TestParse(t *testing.T) {
 			kept: []string{"main.go:13:b", "README.md:2:i1", "main.go:11:i2", "main.go:12:n"},
 		},
 		{
+			name: "references to other repositories are redirected, the review's own kept",
+			raw: `{"summary": {"take": "Bumps a/b#1 per https://github.com/a/b/pull/2.", "praise": ["Cites me/home#3 and ` + "`a/b#4`" + `."]}, "findings": [
+			  {"path": "main.go", "line": 11, "severity": "nit", "category": "correctness", "title": "see a/b#5", "explanation": "as a/b#6 says", "suggested_fix": "a/b#7", "replacement": "a/b#8", "agent_prompt": "a/b#9"}
+			]}`,
+			opts:   ParseOptions{Repository: "me/home"},
+			take:   "Bumps [a/b#1](https://redirect.github.com/a/b/issues/1) per https://redirect.github.com/a/b/pull/2.",
+			praise: []string{"Cites me/home#3 and `a/b#4`."},
+			kept:   []string{"main.go:11:see [a/b#5](https://redirect.github.com/a/b/issues/5)"},
+		},
+		{
 			name: "an unknown severity is dropped, not coerced",
 			raw:  `{"summary": {"take": "t"}, "findings": [{"path": "main.go", "line": 11, "severity": "error", "category": "correctness", "title": "old", "explanation": "e"}]}`,
 			take: "t", dropped: map[string]DropReason{"old": DropBadSeverity},
@@ -254,6 +264,7 @@ func TestParse(t *testing.T) {
 				"appended":   {Replacement: "tail\nmore"},
 				"cites":      {Rules: []string{"wrap-errors", "no-tokens"}},
 				"cites none": {},
+				"see [a/b#5](https://redirect.github.com/a/b/issues/5)": {Replacement: "a/b#8", AgentPrompt: "a/b#9"},
 			}
 			for _, f := range res.Findings {
 				want, ok := fixes[f.Title]
@@ -405,11 +416,11 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	if strings.Index(msg, "Thread, oldest first") < strings.Index(msg, "Diff (unified") {
 		t.Fatal("thread must come after the diff")
 	}
-	reply, err := ParseFollowUp(`{"reply": " Because the base value moved. "}`)
+	reply, err := ParseFollowUp(`{"reply": " Because the base value moved. "}`, "me/home")
 	if err != nil || reply != "Because the base value moved." {
 		t.Fatalf("reply = %q, %v", reply, err)
 	}
-	if _, err := ParseFollowUp(`{"reply": ""}`); err == nil {
+	if _, err := ParseFollowUp(`{"reply": ""}`, "me/home"); err == nil {
 		t.Fatal("an empty reply must error")
 	}
 	if !strings.HasPrefix(FollowUpBody(reply, "m"), reply) || !strings.Contains(FollowUpBody(reply, "m"), "kritika follow-up with m") {

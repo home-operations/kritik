@@ -237,6 +237,9 @@ type ParseOptions struct {
 	// Rules are the ids of the rules the review was given, the only ones a
 	// finding may cite.
 	Rules []string
+	// Repository is the "owner/repo" under review, whose references the
+	// model's text keeps; RedirectReferences rewrites the others.
+	Repository string
 }
 
 // Field names of the contract, shared by its JSON Schema and the template
@@ -410,10 +413,10 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 	if err := dec.Decode(&res); err != nil {
 		return Result{}, nil, fmt.Errorf("review: model output is not the expected JSON: %w", err)
 	}
-	res.Summary.Take = strings.TrimSpace(res.Summary.Take)
+	res.Summary.Take = prose(res.Summary.Take, opts.Repository)
 	praise := make([]string, 0, maxPraise)
 	for _, p := range res.Summary.Praise {
-		if p = strings.TrimSpace(p); p != "" && len(praise) < maxPraise {
+		if p = prose(p, opts.Repository); p != "" && len(praise) < maxPraise {
 			praise = append(praise, p)
 		}
 	}
@@ -422,9 +425,9 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 	var dropped []Dropped
 	for _, f := range res.Findings {
 		f.Path = strings.TrimSpace(f.Path)
-		f.Title = strings.TrimSpace(f.Title)
-		f.Explanation = strings.TrimSpace(f.Explanation)
-		f.SuggestedFix = strings.TrimSpace(f.SuggestedFix)
+		f.Title = prose(f.Title, opts.Repository)
+		f.Explanation = prose(f.Explanation, opts.Repository)
+		f.SuggestedFix = prose(f.SuggestedFix, opts.Repository)
 		f.Replacement = stripFences(f.Replacement)
 		f.InsertAfter = stripFences(f.InsertAfter)
 		f.AgentPrompt = strings.TrimSpace(f.AgentPrompt)
@@ -490,6 +493,14 @@ func citedRules(cited, given []string) []string {
 		}
 	}
 	return out
+}
+
+// prose is a text field the model wrote for a human, trimmed, with its
+// GitHub references redirected as RedirectReferences does. Code fields,
+// the replacement and the agent prompt, are not prose: they render in
+// code blocks, which the forge does not link.
+func prose(s, repository string) string {
+	return RedirectReferences(strings.TrimSpace(s), repository)
 }
 
 // stripFences drops the fence lines a model wraps replacement code in and
