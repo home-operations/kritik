@@ -45,12 +45,12 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # mise from build/tools/mise.toml at the URLs and checksums its lockfile pins
 # for this platform. A glibc stage, so mise records the same linux-x64 and
 # linux-arm64 platforms as the repository's own lockfile. mise's image has no
-# shell to copy the binaries out with, so only its static binary is taken
-# from it.
+# shell to copy the binaries out with, so its static binary and the CA roots
+# it downloads with are taken from it instead.
 FROM docker.io/jdxcode/mise:2026.10.0 AS mise
 FROM docker.io/library/debian:trixie-slim AS runner-tools
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
+COPY --from=mise /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 WORKDIR /tools
 COPY build/tools/mise.toml build/tools/mise.lock ./
 # The manifest keeps each tool's bin path down to the executables it is
