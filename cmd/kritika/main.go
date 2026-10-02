@@ -164,6 +164,9 @@ func serve(
 	drift := server.NewConfigDriftGauge(reg)
 	configErrors := server.NewConfigErrorGauge(reg)
 	m := metrics.New(reg)
+	for name, stat := range st.PoolStats() {
+		reg.MustRegister(metrics.NewPoolCollector(name, stat))
+	}
 	logConfig(logger, file, "configuration loaded")
 	// Once read, a secret's variable is dropped, so no later lookup or
 	// child process sees it.
