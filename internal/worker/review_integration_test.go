@@ -81,8 +81,10 @@ type localForge struct {
 	tip      string
 	comments map[int64]string
 	authors  map[int64]string
-	inline   []forge.InlineComment
-	status   string
+	// threads are the inline comments GetComment serves, by id.
+	threads map[int64]forge.Comment
+	inline  []forge.InlineComment
+	status  string
 	// approvals are the heads the bot's standing approvals cover, and
 	// dismissals how often they were withdrawn.
 	approvals  []string
@@ -253,8 +255,14 @@ func (l *localForge) addComment(author, body string) int64 {
 func (l *localForge) GetComment(_ context.Context, _, _ string, id int64, inline bool) (forge.Comment, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if inline {
+		if c, ok := l.threads[id]; ok {
+			return c, nil
+		}
+		return forge.Comment{}, fmt.Errorf("inline comment %d does not exist", id)
+	}
 	body, ok := l.comments[id]
-	if !ok || inline {
+	if !ok {
 		return forge.Comment{}, fmt.Errorf("comment %d does not exist", id)
 	}
 	return forge.Comment{ID: id, Author: l.authors[id], Body: body, CreatedAt: time.Unix(id-commentBase, 0)}, nil

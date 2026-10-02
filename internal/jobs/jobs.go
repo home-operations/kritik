@@ -1,7 +1,8 @@
 // Package jobs defines the River job arguments that ingest, the leader and
 // the dashboard enqueue and the worker consumes. Uniqueness lives here because it is the contract
 // between the two: a review is unique per head SHA so no push is ever lost,
-// a follow-up per comment, an index run per target commit.
+// a follow-up per comment, a thread change per thread and state, an index
+// run per target commit.
 package jobs
 
 import (
@@ -108,6 +109,31 @@ func (FollowUpArgs) Kind() string { return "followup" }
 // InsertOpts implements river.JobArgsWithInsertOpts.
 func (FollowUpArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{Queue: QueueFollowUp, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+}
+
+// ThreadArgs applies a review thread someone resolved or unresolved to the
+// finding it holds.
+type ThreadArgs struct {
+	AccountID    string `json:"account_id"`
+	RepositoryID string `json:"repository_id"`
+	Number       int    `json:"number"`
+	// CommentID is the inline comment that opened the thread.
+	CommentID int64 `json:"comment_id" river:"unique"`
+	// Resolved is the thread's state now.
+	Resolved bool `json:"resolved" river:"unique"`
+	// Sender is who changed it.
+	Sender string `json:"sender"`
+}
+
+// Kind implements river.JobArgs.
+func (ThreadArgs) Kind() string { return "thread" }
+
+// InsertOpts implements river.JobArgsWithInsertOpts. A job is unique per
+// thread and state while queued or running: a thread resolved and then
+// unresolved is two jobs, the same change delivered twice is one, and a
+// thread resolved again later is a new job.
+func (ThreadArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{Queue: QueueFollowUp, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates}}
 }
 
 // IndexArgs builds or advances a repository's index to its default branch

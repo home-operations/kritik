@@ -30,6 +30,17 @@ func TestReviewArgsUniqueTags(t *testing.T) {
 	}
 }
 
+func TestThreadArgsUniqueTags(t *testing.T) {
+	got := uniqueFields(ThreadArgs{})
+	want := map[string]bool{"CommentID": true, "Resolved": true}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("river:\"unique\" fields = %v, want %v", got, want)
+	}
+	if opts := (ThreadArgs{}).InsertOpts(); !reflect.DeepEqual(opts.UniqueOpts.ByState, LiveStates) {
+		t.Fatalf("ByState = %v, want the live states", opts.UniqueOpts.ByState)
+	}
+}
+
 // TestJobArgs pins each job's kind, queue and ByArgs uniqueness, and
 // whether "request" is in the JSON River hashes: a non-manual review
 // (Request left empty) must serialize with no "request" key at all, not an
@@ -50,6 +61,8 @@ func TestJobArgs(t *testing.T) {
 			Request: "11111111-1111-1111-1111-111111111111"}, wantKind: "review", wantQueue: QueueReview, wantRequest: true},
 		{name: "follow-up", args: FollowUpArgs{AccountID: "t", RepositoryID: "r", Number: 1, CommentID: 7},
 			wantKind: "followup", wantQueue: QueueFollowUp},
+		{name: "thread", args: ThreadArgs{AccountID: "t", RepositoryID: "r", Number: 1, CommentID: 7, Resolved: true, Sender: "devin"},
+			wantKind: "thread", wantQueue: QueueFollowUp},
 		{name: "index", args: IndexArgs{AccountID: "t", RepositoryID: "r", Trigger: TriggerPush},
 			wantKind: "index", wantQueue: QueueIndex},
 	}
