@@ -230,17 +230,17 @@ Kubernetes: `>=1.25.0-0`
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
 | config.appsAccounts | string | `""` | The users and organizations the app serves, comma-separated; set it to declare the app here. |
-| config.appsClientId | string | `""` | The GitHub App's client id, inline or from a Secret. @schema type: [string, object] @schema |
+| config.appsClientId | string | `""` | The GitHub App's client id, inline or from a Secret. |
 | config.appsName | string | `""` | The app's name, which is its webhook path, `/hooks/<name>`; `github` unless set. |
-| config.appsPrivateKey | string | `""` | The GitHub App's private key (PEM), from a Secret. @schema type: [string, object] @schema |
-| config.appsWebhookSecret | string | `""` | The GitHub App's webhook secret, from a Secret. @schema type: [string, object] @schema |
-| config.authAdminPassword | string | `""` | The local admin's password, from a Secret. The local admin exists only while one is set: the way into a fresh instance, and a way in when every provider is down. @schema type: [string, object] @schema |
+| config.appsPrivateKey | string | `""` | The GitHub App's private key (PEM), from a Secret. |
+| config.appsWebhookSecret | string | `""` | The GitHub App's webhook secret, from a Secret. |
+| config.authAdminPassword | string | `""` | The local admin's password, from a Secret. The local admin exists only while one is set: the way into a fresh instance, and a way in when every provider is down. |
 | config.authAdminUser | string | `""` | The local admin's username; `admin` unless set. |
 | config.authGithubClientId | string | `""` | Client id for signing in with GitHub: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub. |
-| config.authGithubClientSecret | string | `""` | Client secret for signing in with GitHub, from a Secret. @schema type: [string, object] @schema |
+| config.authGithubClientSecret | string | `""` | Client secret for signing in with GitHub, from a Secret. |
 | config.authGithubRoleMappingExpr | string | `""` | CEL expression mapping a GitHub sign-in to a kritika role, e.g. `login == "user-1" ? "admin" : ""`. |
 | config.authOidcClientId | string | `""` | OIDC client id. |
-| config.authOidcClientSecret | string | `""` | OIDC client secret, from a Secret. @schema type: [string, object] @schema |
+| config.authOidcClientSecret | string | `""` | OIDC client secret, from a Secret. |
 | config.authOidcDefaultRole | string | `""` | Role of an OIDC sign-in the mapping gives none; none unless set. |
 | config.authOidcIssuer | string | `""` | OpenID Connect issuer, an https URL; set it to sign in through OIDC. |
 | config.authOidcName | string | `""` | Label of the OIDC provider on the sign-in page; "SSO" unless set. |
@@ -249,28 +249,28 @@ Kubernetes: `>=1.25.0-0`
 | config.authOidcScopes | string | `""` | OIDC scopes, comma-separated; `openid,email,profile` unless set. |
 | config.authSessionTtl | string | `""` | How long a dashboard session lasts, between 5m and 720h; 12h unless set. |
 | config.defaultsFeedback | string | `""` | How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set. |
-| config.defaultsForks | string | `""` | Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@<app slug> review`. @schema type: [boolean, string] @schema |
+| config.defaultsForks | string | `""` | Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@<app slug> review`. |
 | config.defaultsModelsFallback | string | `""` | The model a review falls back to when the review model fails. |
 | config.defaultsModelsReview | string | `""` | The model every review runs on unless a repository names another, `<provider>/<model>`. |
 | config.defaultsSettle | string | `""` | How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set. |
 | config.diffRetention | string | `""` | How long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set. |
-| config.embeddingDims | string | `""` | The embedding's dimensions, which the model must produce. @schema type: [integer, string] @schema |
+| config.embeddingDims | string | `""` | The embedding's dimensions, which the model must produce. |
 | config.embeddingModel | string | `""` | The embedding model, `<provider>/<model>`; set it to index each repository for similar code. |
 | config.gatewayTokenTtl | string | `""` | How long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies before revoking it; 1h unless set. |
 | config.indexGrace | string | `""` | How long the index of a repository that stopped running is kept; 720h unless set. |
-| config.indexWorkers | string | `""` | Index jobs one replica runs at once, rate-limited apart from reviews so onboarding a large account cannot starve them; 1 unless set. @schema type: [integer, string] @schema |
+| config.indexWorkers | string | `""` | Index jobs one replica runs at once, rate-limited apart from reviews so onboarding a large account cannot starve them; 1 unless set. |
 | config.leaderRetryInterval | string | `""` | How often a replica retries the leader lock, and the holder checks it still has it; 15s unless set. |
 | config.logFormat | string | `"json"` | Log format: json or text. |
 | config.logLevel | string | `"info"` | Log level: debug, info, warn or error. |
-| config.onboardWindow | string | `""` | Onboarding index jobs the leader keeps queued or running at once; 4 unless set. @schema type: [integer, string] @schema |
+| config.onboardWindow | string | `""` | Onboarding index jobs the leader keeps queued or running at once; 4 unless set. |
 | config.pollInterval | string | `""` | How often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set. |
 | config.pollLookback | string | `""` | How far back a first or long-idle poll looks; 24h unless set. |
-| config.providersApiKey | string | `""` | The provider's API key, from a Secret; set it to declare the provider here. @schema type: [string, object] @schema |
+| config.providersApiKey | string | `""` | The provider's API key, from a Secret; set it to declare the provider here. |
 | config.providersBaseUrl | string | `""` | The provider's base URL, for an OpenAI-compatible endpoint; the type's own unless set. |
 | config.providersName | string | `""` | The provider's name, which models are addressed through as `<name>/<model>`; `openrouter` unless set. |
-| config.providersRetries | string | `""` | How many more times a review's model step is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5. @schema type: [integer, string] @schema |
+| config.providersRetries | string | `""` | How many more times a review's model step is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5. |
 | config.providersType | string | `""` | The provider's type, `openrouter`, `openai` or `anthropic`; the name unless set, when the name is one of those. |
-| config.reviewWorkers | string | `""` | Review jobs one replica runs at once, each holding a runner pod open; 2 unless set. @schema type: [integer, string] @schema |
+| config.reviewWorkers | string | `""` | Review jobs one replica runs at once, each holding a runner pod open; 2 unless set. |
 | config.runnerDeadline | string | `""` | A runner Job's deadline; 15m unless set. |
 | config.runnerRuntimeClass | string | `""` | RuntimeClass runner Jobs run under, e.g. `gvisor` or a Kata class; the cluster default unless set. Advised: a runner parses untrusted repository content and runs what the model asks. |
 | config.transcriptRetention | string | `""` | How long a review's full model transcript is kept, at least 24h; 720h unless set. |
@@ -327,8 +327,8 @@ Kubernetes: `>=1.25.0-0`
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | podAnnotations | object | `{}` | Annotations added to the pods. |
 | podDisruptionBudget.enabled | bool | `true` | Create a PodDisruptionBudget when there is more than one replica. |
-| podDisruptionBudget.maxUnavailable | int | `1` | Maximum pods that may be unavailable, as a count or percentage; takes precedence over `minAvailable` when set. @schema type: [integer, string] @schema |
-| podDisruptionBudget.minAvailable | string | `""` | Minimum pods that must stay available, as a count or percentage. Used unless `maxUnavailable` is set. @schema type: [integer, string] @schema |
+| podDisruptionBudget.maxUnavailable | int | `1` | Maximum pods that may be unavailable, as a count or percentage; takes precedence over `minAvailable` when set. |
+| podDisruptionBudget.minAvailable | string | `""` | Minimum pods that must stay available, as a count or percentage. Used unless `maxUnavailable` is set. |
 | podLabels | object | `{}` | Labels added to the pods. |
 | podSecurityContext | object | `{"runAsGroup":65532,"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level securityContext (non-root uid/gid 65532, RuntimeDefault seccomp). |
 | priorityClassName | string | `""` | PriorityClass for the pods. Empty uses the cluster default. |
