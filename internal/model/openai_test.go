@@ -438,3 +438,30 @@ func TestAdaptersIdentifyKritika(t *testing.T) {
 		}
 	})
 }
+
+func TestOpenAISessionHeader(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		openCode bool
+		session  string
+		want     string
+	}{
+		{"opencode names the conversation", true, "run-1", "run-1"},
+		{"opencode without a session sends none", true, "", ""},
+		{"openai never sends one", false, "run-1", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, got := fakeProvider(t, http.StatusOK, chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", plainUsage, ""))
+			c, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", APIKey: "k", OpenCode: tt.openCode})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.Step(t.Context(), StepRequest{Model: "m", Session: tt.session}); err != nil {
+				t.Fatal(err)
+			}
+			if h := got.header.Get(sessionHeader); h != tt.want {
+				t.Fatalf("%s = %q, want %q", sessionHeader, h, tt.want)
+			}
+		})
+	}
+}

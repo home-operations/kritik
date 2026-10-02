@@ -231,6 +231,7 @@ func TestNewStepper(t *testing.T) {
 		{"openai", ProviderOpenAI, "https://gw.example.com/v1", false},
 		{"openai default url", ProviderOpenAI, "", false},
 		{"anthropic", ProviderAnthropic, "", false},
+		{"opencode default url", ProviderOpenCode, "", false},
 		{"unknown", ProviderType("cohere"), "", true},
 	}
 	for _, tt := range tests {

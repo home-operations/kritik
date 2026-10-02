@@ -46,7 +46,11 @@ const agenticConfigYAML = `
 providers:
   gateway:
     type: openai
-    baseUrl: %s/v1
+    baseUrl: %[1]s/v1
+    apiKey: { env: TEST_SECRET }
+  opencode:
+    type: opencode
+    baseUrl: %[1]s/v1
     apiKey: { env: TEST_SECRET }
 defaults:
   models:
@@ -110,6 +114,8 @@ type scriptedModel struct {
 	stalled func()
 	// bodies are the requests as the provider received them.
 	bodies [][]byte
+	// sessions are the conversations the requests named.
+	sessions []string
 }
 
 func (m *scriptedModel) reset(script modelScript) {
@@ -134,6 +140,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.step++
 	step, script := m.step, m.script
 	m.auth = append(m.auth, r.Header.Get("Authorization"))
+	m.sessions = append(m.sessions, r.Header.Get("x-opencode-session"))
 	m.maxTokens = append(m.maxTokens, req.MaxCompletionTokens)
 	if len(req.Messages) > 0 && req.Messages[0].Role == "system" {
 		m.systems = append(m.systems, fmt.Sprint(req.Messages[0].Content))
@@ -518,6 +525,32 @@ func (h *agenticHarness) modelCalls(t *testing.T, accountID, reviewID string) []
 
 // checkStepMasked checks that the run's recorded step kept its text with
 // the run token and provider key in it masked.
+// checkStepSession steps once through the gateway on the run's behalf to
+// an opencode provider and checks that it was told the run as the step's
+// conversation: a run's steps are one.
+func (h *agenticHarness) checkStepSession(t *testing.T, reviewID, runID, repositoryID string) {
+	t.Helper()
+	token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
+		RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: repositoryID, Model: "opencode/agent-model", Budget: 150,
+	}, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := model.NewOpenAI(model.OpenAIConfig{BaseURL: h.gatewayURL + "/v1", APIKey: token, ReportsModel: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Step(h.ctx, model.StepRequest{Model: gateway.ModelName, Messages: []model.Message{{Role: model.RoleUser, Text: "review"}}}); err != nil {
+		t.Fatal(err)
+	}
+	h.sm.mu.Lock()
+	session := h.sm.sessions[len(h.sm.sessions)-1]
+	h.sm.mu.Unlock()
+	if session != runID {
+		t.Fatalf("the provider was told session %q, want the run %q", session, runID)
+	}
+}
+
 func (h *agenticHarness) checkStepMasked(t *testing.T, runID string) {
 	t.Helper()
 	if text := h.checkNoSecrets(t, `runner_run_id = $1`, runID); !strings.Contains(text, "review with *** and ***") {
@@ -624,6 +657,7 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 		t.Fatalf("usage rows=%d tokens=%d", rows, tokens)
 	}
 	h.checkStepMasked(t, runID)
+	h.checkStepSession(t, reviewID, runID, pr.repositoryID)
 	if _, err := step(token, "gpt-9-max"); err == nil || !strings.Contains(err.Error(), "400") {
 		t.Fatalf("a model other than the run's = %v", err)
 	}

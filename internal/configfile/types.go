@@ -34,6 +34,7 @@ const (
 	ProviderOpenRouter = model.ProviderOpenRouter
 	ProviderOpenAI     = model.ProviderOpenAI
 	ProviderAnthropic  = model.ProviderAnthropic
+	ProviderOpenCode   = model.ProviderOpenCode
 )
 
 // Forge identifies which forge a connection talks to.
