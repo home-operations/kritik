@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
 )
@@ -202,6 +203,52 @@ func TestIgnore(t *testing.T) {
 	}
 	if n := len(f.Settings(ho, "home-operations/other").Ignore); n != len(DefaultIgnore) {
 		t.Fatalf("unlisted repo ignore = %d globs, want defaults only", n)
+	}
+}
+
+func TestDefaultIgnore(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"vendor/x/y.go", true},
+		{"web/node_modules/a/index.js", true},
+		{"Cargo.lock", true},
+		{"web/pnpm-lock.yaml", true},
+		{"infra/.terraform.lock.hcl", true},
+		{"go.work.sum", true},
+		{"api/v1/zz_generated.deepcopy.go", true},
+		{"proto/api.pb.go", true},
+		{"proto/api.pb.gw.go", true},
+		{"web/dist/app.min.js", true},
+		{"web/dist/app.js.map", true},
+		{"internal/generated/schema.go", true},
+		{"logs/run.log", true},
+		{"go.mod", false},
+		{"package.json", false},
+		{"tsconfig.json", false},
+		{".sops.yaml", false},
+		{"kubernetes/apps/foo/secret.sops.yaml", false},
+		{"web/dist/index.html", false},
+		{"build/ci.sh", false},
+		{"charts/kritika/Chart.yaml", false},
+		{"CHANGELOG.md", false},
+		{"kubernetes/apps/foo/crds/bar.yaml", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			got := false
+			for _, g := range DefaultIgnore {
+				if ok, err := doublestar.Match(g, tc.path); err != nil {
+					t.Fatalf("Match(%q): %v", g, err)
+				} else if ok {
+					got = true
+				}
+			}
+			if got != tc.want {
+				t.Fatalf("ignored = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

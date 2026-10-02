@@ -112,7 +112,7 @@ context:
 - `ignore`: path globs added to the admin's own ignore list, for
   reviews and indexing alike. A pull request whose every changed path is
   ignored, by these, the admin's globs or kritika's defaults (vendored
-  trees and lockfiles), is skipped.
+  trees, lockfiles and generated code), is skipped.
 - `rules`: checks the review makes, added after the admin's. Each has an `id` (lowercase letters,
   digits and hyphens, at most 64 characters) that findings cite it by,
   and either the `rule` itself (at most 2000 characters) or a `file`,
