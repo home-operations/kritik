@@ -300,7 +300,7 @@
         },
         "providersType": {
           "default": "",
-          "description": "The provider's type, `openrouter`, `openai` or `anthropic`; the name unless set, when the name is one of those.",
+          "description": "The provider's type, `openrouter`, `openai`, `anthropic` or `opencode`; the name unless set, when the name is one of those.",
           "title": "providersType",
           "type": "string"
         },
