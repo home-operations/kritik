@@ -72,7 +72,7 @@ func pull(p store.PullRow) Pull {
 // findPull resolves {owner}/{repo}/{number}.
 func findPull(r *http.Request, tx pgx.Tx) (store.PullRow, error) {
 	ctx := r.Context()
-	number, err := strconv.Atoi(r.PathValue("number"))
+	number, err := strconv.ParseInt(r.PathValue("number"), 10, 32)
 	if err != nil || number <= 0 {
 		return store.PullRow{}, errNotFound("pull request")
 	}
@@ -80,7 +80,7 @@ func findPull(r *http.Request, tx pgx.Tx) (store.PullRow, error) {
 	if err != nil {
 		return store.PullRow{}, err
 	}
-	p, err := store.FindPull(ctx, tx, repo.ID, number)
+	p, err := store.FindPull(ctx, tx, repo.ID, int(number))
 	if errors.Is(err, store.ErrNotFound) {
 		return p, errNotFound("pull request")
 	}

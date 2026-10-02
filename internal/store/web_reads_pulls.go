@@ -123,8 +123,8 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 		return nil, nil, ErrFilter
 	}
 	number := -1
-	if n, err := strconv.Atoi(strings.TrimPrefix(f.Query, "#")); err == nil {
-		number = n
+	if n, err := strconv.ParseInt(strings.TrimPrefix(f.Query, "#"), 10, 32); err == nil {
+		number = int(n)
 	}
 	like := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(f.Query) + "%"
 	rows, err := tx.Query(ctx, `SELECT `+pullColumns+`
