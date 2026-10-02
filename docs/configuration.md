@@ -428,8 +428,9 @@ accounts:
 ```
 
 - `limits`: `concurrency`, how many model calls it runs at once, 2 unless
-  set; `reviewsPerDay`; and `tokensPerMonth`. `defaults.limits` sets every
-  account's.
+  set, of which index runs hold all but one while they embed, so a review's
+  similar-code lookup always has a slot; `reviewsPerDay`; and
+  `tokensPerMonth`. `defaults.limits` sets every account's.
 - `providers`: its own model keys. A model named `<key name>/<model>` in
   its `owner/*` or `owner/name` entries, or in one of its repositories'
   `.kritika.yaml`, runs on that key and the account pays for it; a key's

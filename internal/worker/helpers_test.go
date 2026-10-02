@@ -83,3 +83,13 @@ func TestMentioned(t *testing.T) {
 		})
 	}
 }
+
+// TestIndexSlots: index runs leave one embed slot to similar-code lookups,
+// unless the account has only one.
+func TestIndexSlots(t *testing.T) {
+	for _, tt := range []struct{ concurrency, want int }{{1, 1}, {2, 1}, {3, 2}, {8, 7}} {
+		if got := indexSlots(tt.concurrency); got != tt.want {
+			t.Errorf("indexSlots(%d) = %d, want %d", tt.concurrency, got, tt.want)
+		}
+	}
+}
