@@ -59,15 +59,15 @@ config:
   logFormat: json
   # -- How often a replica retries the leader lock, and the holder checks it still has it; 15s unless set.
   leaderRetryInterval: ""
+  # @schema
+  # type: [integer, string]
+  # @schema
   # -- Review jobs one replica runs at once, each holding a runner pod open; 2 unless set.
-  # @schema
-  # type: [integer, string]
-  # @schema
   reviewWorkers: ""
-  # -- Index jobs one replica runs at once, rate-limited apart from reviews so onboarding a large account cannot starve them; 1 unless set.
   # @schema
   # type: [integer, string]
   # @schema
+  # -- Index jobs one replica runs at once, rate-limited apart from reviews so onboarding a large account cannot starve them; 1 unless set.
   indexWorkers: ""
   # -- How long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies before revoking it; 1h unless set.
   gatewayTokenTtl: ""
@@ -75,10 +75,10 @@ config:
   pollInterval: ""
   # -- How far back a first or long-idle poll looks; 24h unless set.
   pollLookback: ""
-  # -- Onboarding index jobs the leader keeps queued or running at once; 4 unless set.
   # @schema
   # type: [integer, string]
   # @schema
+  # -- Onboarding index jobs the leader keeps queued or running at once; 4 unless set.
   onboardWindow: ""
   # -- How long the index of a repository that stopped running is kept; 720h unless set.
   indexGrace: ""
@@ -101,10 +101,10 @@ config:
   authSessionTtl: ""
   # -- The local admin's username; `admin` unless set.
   authAdminUser: ""
-  # -- The local admin's password, from a Secret. The local admin exists only while one is set: the way into a fresh instance, and a way in when every provider is down.
   # @schema
   # type: [string, object]
   # @schema
+  # -- The local admin's password, from a Secret. The local admin exists only while one is set: the way into a fresh instance, and a way in when every provider is down.
   authAdminPassword: ""
   # -- Label of the OIDC provider on the sign-in page; "SSO" unless set.
   authOidcName: ""
@@ -112,10 +112,10 @@ config:
   authOidcIssuer: ""
   # -- OIDC client id.
   authOidcClientId: ""
-  # -- OIDC client secret, from a Secret.
   # @schema
   # type: [string, object]
   # @schema
+  # -- OIDC client secret, from a Secret.
   authOidcClientSecret: ""
   # -- OIDC scopes, comma-separated; `openid,email,profile` unless set.
   authOidcScopes: ""
@@ -127,10 +127,10 @@ config:
   authOidcDefaultRole: ""
   # -- Client id for signing in with GitHub: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub.
   authGithubClientId: ""
-  # -- Client secret for signing in with GitHub, from a Secret.
   # @schema
   # type: [string, object]
   # @schema
+  # -- Client secret for signing in with GitHub, from a Secret.
   authGithubClientSecret: ""
   # -- CEL expression mapping a GitHub sign-in to a kritika role, e.g. `login == "user-1" ? "admin" : ""`.
   authGithubRoleMappingExpr: ""
@@ -142,20 +142,20 @@ config:
   appsName: ""
   # -- The users and organizations the app serves, comma-separated; set it to declare the app here.
   appsAccounts: ""
+  # @schema
+  # type: [string, object]
+  # @schema
   # -- The GitHub App's client id, inline or from a Secret.
-  # @schema
-  # type: [string, object]
-  # @schema
   appsClientId: ""
+  # @schema
+  # type: [string, object]
+  # @schema
   # -- The GitHub App's private key (PEM), from a Secret.
-  # @schema
-  # type: [string, object]
-  # @schema
   appsPrivateKey: ""
-  # -- The GitHub App's webhook secret, from a Secret.
   # @schema
   # type: [string, object]
   # @schema
+  # -- The GitHub App's webhook secret, from a Secret.
   appsWebhookSecret: ""
 
   # One model provider (a `providers` entry), which replaces the file's of
@@ -169,15 +169,15 @@ config:
   providersType: ""
   # -- The provider's base URL, for an OpenAI-compatible endpoint; the type's own unless set.
   providersBaseUrl: ""
-  # -- How many more times a review's model step is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5.
   # @schema
   # type: [integer, string]
   # @schema
+  # -- How many more times a review's model step is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5.
   providersRetries: ""
-  # -- The provider's API key, from a Secret; set it to declare the provider here.
   # @schema
   # type: [string, object]
   # @schema
+  # -- The provider's API key, from a Secret; set it to declare the provider here.
   providersApiKey: ""
   # -- The model every review runs on unless a repository names another, `<provider>/<model>`.
   defaultsModelsReview: ""
@@ -185,19 +185,19 @@ config:
   defaultsModelsFallback: ""
   # -- How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set.
   defaultsFeedback: ""
-  # -- Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@<app slug> review`.
   # @schema
   # type: [boolean, string]
   # @schema
+  # -- Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@<app slug> review`.
   defaultsForks: ""
   # -- How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set.
   defaultsSettle: ""
   # -- The embedding model, `<provider>/<model>`; set it to index each repository for similar code.
   embeddingModel: ""
-  # -- The embedding's dimensions, which the model must produce.
   # @schema
   # type: [integer, string]
   # @schema
+  # -- The embedding's dimensions, which the model must produce.
   embeddingDims: ""
 
 # The configuration file (docs/configuration.md) holds what is reviewed and
@@ -502,15 +502,15 @@ monitoring:
 podDisruptionBudget:
   # -- Create a PodDisruptionBudget when there is more than one replica.
   enabled: true
+  # @schema
+  # type: [integer, string]
+  # @schema
   # -- Minimum pods that must stay available, as a count or percentage. Used unless `maxUnavailable` is set.
-  # @schema
-  # type: [integer, string]
-  # @schema
   minAvailable: ""
-  # -- Maximum pods that may be unavailable, as a count or percentage; takes precedence over `minAvailable` when set.
   # @schema
   # type: [integer, string]
   # @schema
+  # -- Maximum pods that may be unavailable, as a count or percentage; takes precedence over `minAvailable` when set.
   maxUnavailable: 1
 
 # -- Node selector for pod scheduling.
