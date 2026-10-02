@@ -86,9 +86,10 @@ Register a GitHub App under the account whose repositories kritika reviews
 - **Organization permissions:** Members: read-only, only for signing in
   with GitHub through this App, whose role mapping reads the
   organizations a person belongs to.
-- **Events:** Pull request, Pull request review comment, Issue comment,
-  Push and Repository, which says when a repository is created, archived
-  or unarchived. Installation events arrive without subscribing.
+- **Events:** Pull request, Pull request review comment, Pull request
+  review thread, Issue comment, Push and Repository, which says when a
+  repository is created, archived or unarchived. Installation events
+  arrive without subscribing.
 - **Where it can be installed:** only on this account, unless it should
   serve several. A public App can be installed on many organizations: list
   each one kritika should review in the App's `accounts`. A
@@ -103,7 +104,9 @@ its own, since its code comes from outside the organization, and this is
 how a maintainer gets it one. `@<app slug> dismiss <reason>`, as a reply in
 one of kritika's finding threads, dismisses that finding: its thread is
 resolved, later reviews of the pull request are told not to raise it
-again, and the dashboard lists it dismissed with the reason.
+again, and the dashboard lists it dismissed with the reason. Resolving
+one of those threads on GitHub does the same, again only for someone with
+write access, and unresolving it takes the dismissal back.
 `@<app slug> pause` stops the pull request's automatic reviews, and
 `@<app slug> resume` starts them again. Put the private key and the webhook secret
 in a Secret, set a variable from each under `env`, and declare the
