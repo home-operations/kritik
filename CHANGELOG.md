@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.0.8](https://github.com/home-operations/kritika/compare/0.0.7...0.0.8) (2026-10-02)
+
+
+### Features
+
+* **chart:** alert on no leader, two leaders, a refused configuration and drift ([#340](https://github.com/home-operations/kritika/issues/340)) ([919bcb1](https://github.com/home-operations/kritika/commit/919bcb1fe6d61440749f009b7d6ce52ededb3fdd))
+
+
+### Bug Fixes
+
+* **store:** bound the leader's lock attempt and pings, and the pools' idle pings ([#343](https://github.com/home-operations/kritika/issues/343)) ([9b67a96](https://github.com/home-operations/kritika/commit/9b67a96dac79ef4b0e37a7b1b22a546c8666f0d7))
+
+
+### Continuous Integration
+
+* boot kritika serve in kind against CloudNativePG ([#341](https://github.com/home-operations/kritika/issues/341)) ([c5bb18e](https://github.com/home-operations/kritika/commit/c5bb18e5459fe33911e58ac88c4b7d30b3acfbc4))
+
+
+### Miscellaneous Chores
+
+* **deps:** bump River to v0.48.0 ([#344](https://github.com/home-operations/kritika/issues/344)) ([d8d3239](https://github.com/home-operations/kritika/commit/d8d3239aac252eab663e0d3fdb86b4e48d0099f6))
+
 ## [0.0.7](https://github.com/home-operations/kritika/compare/0.0.6...0.0.7) (2026-10-02)
 
 
