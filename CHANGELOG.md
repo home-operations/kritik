@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.0.5](https://github.com/home-operations/kritika/compare/0.0.4...0.0.5) (2026-10-02)
+
+
+### Features
+
+* **config:** widen the default ignore globs ([#316](https://github.com/home-operations/kritika/issues/316)) ([e2d4976](https://github.com/home-operations/kritika/commit/e2d4976a4aff280cc00e850f551ffc2f6d5985f0))
+
+
+### Bug Fixes
+
+* **chart:** keep schema fences out of the README descriptions ([#317](https://github.com/home-operations/kritika/issues/317)) ([56cecff](https://github.com/home-operations/kritika/commit/56cecff6828b4afbce6f086f662128cb4edbc241))
+
+
+### Documentation
+
+* cover Secret rotation and runner resources ([#312](https://github.com/home-operations/kritika/issues/312)) ([34c7358](https://github.com/home-operations/kritika/commit/34c7358713b71839e2bcdb60b962aaeca27c1d0e))
+* **database:** mount VectorChord as an image volume extension ([#311](https://github.com/home-operations/kritika/issues/311)) ([f04f791](https://github.com/home-operations/kritika/commit/f04f7910e0682f51f9d019b4da852ae0ff73c0bd))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool yq (4.53.6 → 4.54.1) ([#315](https://github.com/home-operations/kritika/issues/315)) ([a964c63](https://github.com/home-operations/kritika/commit/a964c63e763e67cd3d939efb69f49d5f859ba259))
+
 ## [0.0.4](https://github.com/home-operations/kritika/compare/0.0.3...0.0.4) (2026-10-02)
 
 
