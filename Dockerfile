@@ -9,7 +9,7 @@ ARG NODE_VERSION
 # ---- UI build ---------------------------------------------------------------
 # The built UI is the same bytes on every platform, so it is built once, on
 # the build host, rather than per target under emulation.
-FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-trixie-slim AS ui
+FROM --platform=$BUILDPLATFORM docker.io/library/node:${NODE_VERSION}-trixie-slim AS ui
 WORKDIR /ui
 COPY internal/web/package.json internal/web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
@@ -17,7 +17,7 @@ COPY internal/web/ ./
 RUN npm run build
 
 # ---- Go build -------------------------------------------------------------
-FROM golang:${GO_VERSION}-trixie AS builder
+FROM docker.io/library/golang:${GO_VERSION}-trixie AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
@@ -47,14 +47,17 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # linux-arm64 platforms as the repository's own lockfile. mise's image has no
 # shell to copy the binaries out with, so only its static binary is taken
 # from it.
-FROM jdxcode/mise:2026.10.0 AS mise
-FROM debian:trixie-slim AS runner-tools
+FROM docker.io/jdxcode/mise:2026.10.0 AS mise
+FROM docker.io/library/debian:trixie-slim AS runner-tools
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
 WORKDIR /tools
 COPY build/tools/mise.toml build/tools/mise.lock ./
+# The manifest's symlink_bins leaves each tool's bin path holding only the
+# executables its recipe provides; of those, only the ELF binaries can run in
+# an image without a shell.
 RUN mise trust && mise install --locked && mkdir /out \
-    && mise exec -- sh -c 'for c in $RUNNER_COMMANDS; do cp "$(command -v "$c")" /out/; done'
+    && for f in $(mise bin-paths | sed 's|$|/*|'); do if head -c 4 "$f" | grep -q ELF; then cp -L "$f" /out/; fi; done
 
 # ---- Runtime with runner tools ----------------------------------------------
 # kritika with the agent's commands on PATH for its run tool, the chart's
