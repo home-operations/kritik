@@ -280,16 +280,25 @@ database:
     role: kritika_runner
 
 # Runner Jobs: one pod per review or index run, created by kritika serve in the
-# release namespace from the same image, running as a service account with
-# no permissions and a database role that can only touch its own run. The
-# server's Role reaches every Secret in the release namespace, so install
-# kritika into a namespace of its own. Their deadline and RuntimeClass are
-# `config.runnerDeadline` and `config.runnerRuntimeClass`; a sandboxed
+# release namespace from the release's -tools image, running as a service
+# account with no permissions and a database role that can only touch its own
+# run. The server's Role reaches every Secret in the release namespace, so
+# install kritika into a namespace of its own. Their deadline and RuntimeClass
+# are `config.runnerDeadline` and `config.runnerRuntimeClass`; a sandboxed
 # RuntimeClass (gVisor, Kata) is advised, since a runner parses untrusted
 # repository content and runs what the model asks.
 runner:
-  # -- Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritika:1.2.3-tools`) adds curl, fd, gh and rg for an agentic review's `agent.commands`.
-  image: ""
+  # Image for runner Jobs: the release's `-tools` image, which adds curl, fd,
+  # gh, jq, rg and yq for an agentic review's `agent.commands`.
+  image:
+    # -- Runner image repository.
+    repository: ghcr.io/home-operations/kritika
+    # -- Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY).
+    pullPolicy: IfNotPresent
+    # -- Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended.
+    tag: ""
+    # -- Pin the runner image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published `-tools` image's digest.
+    digest: ""
   # -- How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew.
   ttl: 10m
   # -- Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec.

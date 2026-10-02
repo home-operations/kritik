@@ -223,11 +223,61 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].image
           value: ghcr.io/home-operations/kritika@sha256:deadbeef
+
+  - it: runs runner Jobs on the -tools tag of the appVersion by default
+    asserts:
+      # The tag floats with the release-please-stamped appVersion.
+      - matchRegex:
+          path: spec.template.spec.containers[0].env[?(@.name == "KRITIKA_RUNNER_IMAGE")].value
+          pattern: ^ghcr\.io/home-operations/kritika:\d+\.\d+\.\d+-tools$
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_IMAGE_PULL_POLICY
+            value: IfNotPresent
+
+  - it: takes the runner repository, tag and pull policy apart from the chart's image
+    set:
+      image.tag: 1.2.3
+      runner.image.repository: registry.example/kritika-tools
+      runner.image.tag: 24h
+      runner.image.pullPolicy: Always
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/home-operations/kritika:1.2.3
       - contains:
           path: spec.template.spec.containers[0].env
           content:
             name: KRITIKA_RUNNER_IMAGE
-            value: ghcr.io/home-operations/kritika@sha256:deadbeef
+            value: registry.example/kritika-tools:24h
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_IMAGE_PULL_POLICY
+            value: Always
+
+  - it: pins the runner image by its own digest
+    set:
+      image.digest: sha256:deadbeef
+      runner.image.digest: sha256:cafef00d
+      runner.image.tag: ignored
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/home-operations/kritika@sha256:deadbeef
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_IMAGE
+            value: ghcr.io/home-operations/kritika@sha256:cafef00d
+
+  - it: refuses a config key for the runner pull policy
+    set:
+      config.runnerImagePullPolicy: Never
+    asserts:
+      - failedTemplate:
+          errorPattern: "config.runnerImagePullPolicy: the chart sets KRITIKA_RUNNER_IMAGE_PULL_POLICY from its other values"
 
   - it: leaves how kritika runs to its defaults unless values set it
     asserts:

@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # ---- Runtime with runner tools ----------------------------------------------
 # kritika with curl, fd, gh, jq, rg and yq on PATH for the agent's run tool,
-# for runner Jobs through the chart's runner.image. Built with --target
+# the chart's runner image for runner Jobs. Built with --target
 # tools; published as the -tools tag of each release.
 FROM alpine:3.24 AS tools
 RUN apk add --no-cache curl fd github-cli jq ripgrep yq-go

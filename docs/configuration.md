@@ -423,20 +423,21 @@ These come from the environment rather than the file, each a camelCased
 key of the chart's `config` (`KRITIKA_POLL_INTERVAL` is `pollInterval`)
 except where noted; a restart changes them.
 
-| Variable                       | What                                                                                                                                    |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `KRITIKA_POLL_INTERVAL`        | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set           |
-| `KRITIKA_POLL_LOOKBACK`        | how far back a first or long-idle poll looks; 24h unless set                                                                            |
-| `KRITIKA_ONBOARD_WINDOW`       | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                 |
-| `KRITIKA_INDEX_GRACE`          | how long the index of a repository that stopped running is kept; 720h unless set                                                        |
-| `KRITIKA_TRANSCRIPT_RETENTION` | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                        |
-| `KRITIKA_DIFF_RETENTION`       | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set |
-| `KRITIKA_REVIEW_WORKERS`       | review jobs one replica runs at once; 2 unless set                                                                                      |
-| `KRITIKA_INDEX_WORKERS`        | index jobs one replica runs at once; 1 unless set                                                                                       |
-| `KRITIKA_RUNNER_DEADLINE`      | a runner Job's deadline; 15m unless set                                                                                                 |
-| `KRITIKA_RUNNER_RUNTIME_CLASS` | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                          |
-| `KRITIKA_RUNNER_RESOURCES`     | a runner pod's resources, as JSON; the chart's `runner.resources` renders it                                                            |
-| `KRITIKA_RUNNER_TOOLS`         | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON; the chart's `runner.tools` renders it           |
+| Variable                           | What                                                                                                                                    |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `KRITIKA_POLL_INTERVAL`            | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set           |
+| `KRITIKA_POLL_LOOKBACK`            | how far back a first or long-idle poll looks; 24h unless set                                                                            |
+| `KRITIKA_ONBOARD_WINDOW`           | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                 |
+| `KRITIKA_INDEX_GRACE`              | how long the index of a repository that stopped running is kept; 720h unless set                                                        |
+| `KRITIKA_TRANSCRIPT_RETENTION`     | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                        |
+| `KRITIKA_DIFF_RETENTION`           | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set |
+| `KRITIKA_REVIEW_WORKERS`           | review jobs one replica runs at once; 2 unless set                                                                                      |
+| `KRITIKA_INDEX_WORKERS`            | index jobs one replica runs at once; 1 unless set                                                                                       |
+| `KRITIKA_RUNNER_DEADLINE`          | a runner Job's deadline; 15m unless set                                                                                                 |
+| `KRITIKA_RUNNER_RUNTIME_CLASS`     | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                          |
+| `KRITIKA_RUNNER_IMAGE_PULL_POLICY` | the runner container's imagePullPolicy, `Always`, `IfNotPresent` or `Never`; the chart's `runner.image.pullPolicy` renders it           |
+| `KRITIKA_RUNNER_RESOURCES`         | a runner pod's resources, as JSON; the chart's `runner.resources` renders it                                                            |
+| `KRITIKA_RUNNER_TOOLS`             | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON; the chart's `runner.tools` renders it           |
 
 A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps

@@ -146,6 +146,14 @@ func TestCommandValidation(t *testing.T) {
 	if err := cfg.ValidateServe(); err != nil {
 		t.Fatal(err)
 	}
+	cfg.RunnerImagePullPolicy = "Sometimes"
+	if err := cfg.ValidateServe(); err == nil || !strings.Contains(err.Error(), "KRITIKA_RUNNER_IMAGE_PULL_POLICY") {
+		t.Fatalf("serve with an unknown runner pull policy = %v", err)
+	}
+	cfg.RunnerImagePullPolicy = "IfNotPresent"
+	if err := cfg.ValidateServe(); err != nil {
+		t.Fatal(err)
+	}
 	cfg.Executor, cfg.RunnerImage = ExecutorLocal, ""
 	if err := cfg.ValidateServe(); err == nil || !strings.Contains(err.Error(), "KRITIKA_RUNNER_DATABASE_URL") {
 		t.Fatalf("local executor without a runner DSN = %v", err)

@@ -147,21 +147,15 @@ switch.
 A repository's `agent.commands` lets the model run allowlisted
 binaries over a checkout of the head commit: to read a dependency bump's
 release notes and compare view with `gh`, fetch anything else with
-`curl`, or search with `rg` and `fd`. The chart's image has none of them,
-so no command is offered; point `runner.image` at the release's `-tools`
-tag, an Alpine image with all four. `gh` signs in with the run's own
-token, which can read only the repository under review and public
-repositories, and an app already allows `github.com` and `api.github.com`
-through the gateway. Every other host `curl` reaches must pass the
-gateway too, so add the release hosts and registries to
-`egress.allowHosts`:
-
-```yaml
-runner:
-  image: ghcr.io/home-operations/kritika:<version>-tools
-```
-
-and, in `configFile`:
+`curl`, or search with `rg` and `fd`. Runner Jobs run on the release's
+`-tools` image, an Alpine image with all four, pinned by digest like the
+chart's image; a command is offered only when the runner image has it on
+its `PATH`, so an image set in `runner.image` without them offers none.
+`gh` signs in with the run's own token, which can read only the
+repository under review and public repositories, and an app already
+allows `github.com` and `api.github.com` through the gateway. Every other
+host `curl` reaches must pass the gateway too, so add the release hosts
+and registries to `egress.allowHosts`:
 
 ```yaml
 configFile:
@@ -329,7 +323,10 @@ Kubernetes: `>=1.25.0-0`
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"metrics"},"periodSeconds":10}` | Readiness probe, on the metrics port. A replica is ready once its configuration file has loaded and its listeners are up, before the database answers: until it does, the dashboard shows that kritika is starting and webhooks are refused with a reason, from kritika rather than the ingress. |
 | replicas | int | `2` | Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other. |
 | resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests and limits of the kritika serve pods. |
-| runner.image | string | `""` | Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritika:1.2.3-tools`) adds curl, fd, gh and rg for an agentic review's `agent.commands`. |
+| runner.image.digest | string | `""` | Pin the runner image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published `-tools` image's digest. |
+| runner.image.pullPolicy | string | `"IfNotPresent"` | Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY). |
+| runner.image.repository | string | `"ghcr.io/home-operations/kritika"` | Runner image repository. |
+| runner.image.tag | string | `""` | Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended. |
 | runner.resources | object | `{}` | Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
 | runner.serviceAccount.create | bool | `true` | Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry. |

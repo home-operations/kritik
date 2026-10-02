@@ -36,8 +36,11 @@ const noProxy = "localhost,127.0.0.1"
 type Kube struct {
 	Client    kubernetes.Interface
 	Namespace string
-	// Image is the kritika image the Job runs, normally the worker's own.
+	// Image is the kritika image the Job runs, normally the release's -tools
+	// image.
 	Image string
+	// ImagePullPolicy, when set, is the runner container's imagePullPolicy.
+	ImagePullPolicy string
 	// ServiceAccount is the permissionless runner service account.
 	ServiceAccount string
 	// DatabaseSecret and DatabaseSecretKey reference the Secret holding the
@@ -387,11 +390,12 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 		)
 	}
 	container := corev1.Container{
-		Name:      runnerRole,
-		Image:     k.Image,
-		Args:      []string{"run"},
-		Env:       env,
-		Resources: resources,
+		Name:            runnerRole,
+		Image:           k.Image,
+		ImagePullPolicy: corev1.PullPolicy(k.ImagePullPolicy),
+		Args:            []string{"run"},
+		Env:             env,
+		Resources:       resources,
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: new(false),
 			ReadOnlyRootFilesystem:   new(true),
