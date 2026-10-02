@@ -205,15 +205,19 @@ runner:
 
 ### Topology
 
-The chart runs one Deployment of `kritika serve`, `replicas: 2`
-by default with a PodDisruptionBudget. Every replica serves webhooks and the
-dashboard and works jobs, and one holds the leader lock at a time; two keep
-one serving while a rollout, such as the one a changed `configFile` starts,
-replaces the other. Runner pods are the Jobs `kritika serve` creates, one per
-review and index run, running `kritika run`. A replica that stops drains its
-jobs first; one that dies outright leaves them to the leader, which hands
-them back to the queue within a few minutes and deletes the runner Jobs they
-left, and the remaining replica works them.
+The chart runs one Deployment of `kritika serve`, one replica by default.
+Its rolling update surges a new pod and takes the old one down only once the
+new one is ready, so a rollout, such as the one a changed `configFile`
+starts, keeps one serving on its own. Every replica serves webhooks and the
+dashboard and works jobs, and one holds the leader lock at a time, so
+`replicas: 2` keeps one serving while a pod or node is lost; the chart then
+adds a PodDisruptionBudget so a drain takes one at a time. Until a lost
+replica is back, webhooks are refused and the poll picks up what they
+missed. Runner pods are the Jobs `kritika serve` creates, one per review and
+index run, running `kritika run`. A replica that stops drains its jobs
+first; one that dies outright leaves them to the leader, which hands them
+back to the queue within a few minutes and deletes the runner Jobs they
+left, and a remaining replica works them.
 
 {{ template "chart.maintainersSection" . }}
 

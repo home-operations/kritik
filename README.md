@@ -73,8 +73,8 @@ builds on) loaded, with an owner, an application and a runner role; the one
 public URL under `config.webUrl`, which the dashboard and GitHub's webhooks
 share; a way to sign in under `auth`; and the configuration file under
 `configFile`.
-It runs as one Deployment of `kritika serve`, two replicas by default, which
-creates a runner Job for each review and index run.
+It runs as one Deployment of `kritika serve`, which creates a runner Job for
+each review and index run.
 
 The [setup guide](https://kritika.home-operations.com/setup/) takes a fresh instance through its GitHub
 App, model key and embedder to its first review; the dashboard's setup

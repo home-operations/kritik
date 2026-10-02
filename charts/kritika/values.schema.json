@@ -970,8 +970,8 @@
       "type": "object"
     },
     "replicas": {
-      "default": 2,
-      "description": "kritika runs as one Deployment of `kritika serve`: webhooks, the dashboard,\nthe job queues, runner Jobs, the gateway and, on the replica holding the\nleader lock, the leader duties. Runner pods are not part of it: serve\ncreates them as Jobs, one per review and index run.\nReplicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other.",
+      "default": 1,
+      "description": "kritika runs as one Deployment of `kritika serve`: webhooks, the dashboard,\nthe job queues, runner Jobs, the gateway and, on the replica holding the\nleader lock, the leader duties. Runner pods are not part of it: serve\ncreates them as Jobs, one per review and index run.\nReplicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. A rollout keeps one serving on its own; set 2 for one to keep serving while a pod or node is lost.",
       "title": "replicas",
       "type": "integer"
     },

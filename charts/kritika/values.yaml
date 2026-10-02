@@ -27,8 +27,8 @@ fullnameOverride: ""
 # the job queues, runner Jobs, the gateway and, on the replica holding the
 # leader lock, the leader duties. Runner pods are not part of it: serve
 # creates them as Jobs, one per review and index run.
-# -- Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other.
-replicas: 2
+# -- Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. A rollout keeps one serving on its own; set 2 for one to keep serving while a pod or node is lost.
+replicas: 1
 
 # -- Deployment update strategy. A rolling update that surges one pod and takes none down keeps one replica serving while the other is replaced. Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`.
 strategy:

@@ -27,7 +27,7 @@ tests:
           value: server
       - equal:
           path: spec.replicas
-          value: 2
+          value: 1
       - equal:
           path: spec.template.spec.containers[0].args
           value: [serve]

@@ -200,15 +200,19 @@ runner:
 
 ### Topology
 
-The chart runs one Deployment of `kritika serve`, `replicas: 2`
-by default with a PodDisruptionBudget. Every replica serves webhooks and the
-dashboard and works jobs, and one holds the leader lock at a time; two keep
-one serving while a rollout, such as the one a changed `configFile` starts,
-replaces the other. Runner pods are the Jobs `kritika serve` creates, one per
-review and index run, running `kritika run`. A replica that stops drains its
-jobs first; one that dies outright leaves them to the leader, which hands
-them back to the queue within a few minutes and deletes the runner Jobs they
-left, and the remaining replica works them.
+The chart runs one Deployment of `kritika serve`, one replica by default.
+Its rolling update surges a new pod and takes the old one down only once the
+new one is ready, so a rollout, such as the one a changed `configFile`
+starts, keeps one serving on its own. Every replica serves webhooks and the
+dashboard and works jobs, and one holds the leader lock at a time, so
+`replicas: 2` keeps one serving while a pod or node is lost; the chart then
+adds a PodDisruptionBudget so a drain takes one at a time. Until a lost
+replica is back, webhooks are refused and the poll picks up what they
+missed. Runner pods are the Jobs `kritika serve` creates, one per review and
+index run, running `kritika run`. A replica that stops drains its jobs
+first; one that dies outright leaves them to the leader, which hands them
+back to the queue within a few minutes and deletes the runner Jobs they
+left, and a remaining replica works them.
 
 ## Maintainers
 
@@ -334,7 +338,7 @@ Kubernetes: `>=1.25.0-0`
 | priorityClassName | string | `""` | PriorityClass for the pods. Empty uses the cluster default. |
 | rbac.create | bool | `true` | Create the Role and RoleBinding kritika serve needs: Jobs in the release namespace, their pods and logs, and the Secrets it hands them. Nothing cluster-wide. |
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"metrics"},"periodSeconds":10}` | Readiness probe, on the metrics port. A replica is ready once its configuration file has loaded and its listeners are up, before the database answers: until it does, the dashboard shows that kritika is starting and webhooks are refused with a reason, from kritika rather than the ingress. |
-| replicas | int | `2` | Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. Two keep one serving while a rollout replaces the other. |
+| replicas | int | `1` | Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. A rollout keeps one serving on its own; set 2 for one to keep serving while a pod or node is lost. |
 | resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests and limits of the kritika serve pods. |
 | runner.image.digest | string | `""` | Pin the runner image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published `-tools` image's digest. |
 | runner.image.pullPolicy | string | `"IfNotPresent"` | Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY). |
