@@ -404,3 +404,37 @@ func TestOpenAIOpenRouterCaching(t *testing.T) {
 		}
 	}
 }
+
+func TestAdaptersIdentifyKritika(t *testing.T) {
+	Version = "1.2.3"
+	t.Cleanup(func() { Version = "dev" })
+	const want = "kritika/1.2.3"
+	t.Run("openai", func(t *testing.T) {
+		srv, got := fakeProvider(t, http.StatusOK, chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", plainUsage, ""))
+		if _, err := newTestOpenAI(t, srv, false, nil).Step(t.Context(), StepRequest{Model: "m"}); err != nil {
+			t.Fatal(err)
+		}
+		if ua := got.header.Get("User-Agent"); ua != want {
+			t.Fatalf("User-Agent = %q, want %q", ua, want)
+		}
+	})
+	t.Run("anthropic", func(t *testing.T) {
+		srv, got := fakeProvider(t, http.StatusOK, anthropicMessage(`[{"type":"text","text":"ok"}]`, "end_turn", anthropicUsage))
+		if _, err := newTestAnthropic(t, srv, nil).Step(t.Context(), StepRequest{Model: "m"}); err != nil {
+			t.Fatal(err)
+		}
+		if ua := got.header.Get("User-Agent"); ua != want {
+			t.Fatalf("User-Agent = %q, want %q", ua, want)
+		}
+	})
+	t.Run("embedder", func(t *testing.T) {
+		srv, got := fakeProvider(t, http.StatusOK,
+			`{"object":"list","model":"emb","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"usage":{"prompt_tokens":1,"total_tokens":1}}`)
+		if _, _, err := NewOpenAIEmbedder(srv.URL, "k", "emb", 1).Embed(t.Context(), []string{"x"}); err != nil {
+			t.Fatal(err)
+		}
+		if ua := got.header.Get("User-Agent"); ua != want {
+			t.Fatalf("User-Agent = %q, want %q", ua, want)
+		}
+	})
+}

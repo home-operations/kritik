@@ -20,6 +20,14 @@ var attribution = map[string]string{
 	"X-Title":      "kritika",
 }
 
+// Version is the kritika version the adapters identify themselves with to
+// a provider; main sets it once at startup. Model gateways that distinguish
+// coding agents from generic SDK traffic ask for a client's own user agent
+// rather than the SDK's.
+var Version = "dev"
+
+func userAgent() string { return "kritika/" + Version }
+
 // OpenAIConfig configures an OpenAI chat-completions adapter.
 type OpenAIConfig struct {
 	// BaseURL is the API root, ".../v1"; empty means the SDK's default.
@@ -61,6 +69,7 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
+	opts = append(opts, option.WithHeader("User-Agent", userAgent()))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}
