@@ -229,6 +229,67 @@ tests:
             name: KRITIKA_RUNNER_IMAGE
             value: ghcr.io/home-operations/kritika@sha256:deadbeef
 
+  - it: runs runner Jobs on the -tools tag of the chart's image when enabled
+    set:
+      image.tag: 1.2.3
+      runner.toolsImage.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/home-operations/kritika:1.2.3
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_IMAGE
+            value: ghcr.io/home-operations/kritika:1.2.3-tools
+
+  - it: follows the appVersion for the -tools tag when no tag is set
+    set:
+      runner.toolsImage.enabled: true
+    asserts:
+      # The tag floats with the release-please-stamped appVersion.
+      - matchRegex:
+          path: spec.template.spec.containers[0].env[?(@.name == "KRITIKA_RUNNER_IMAGE")].value
+          pattern: ^ghcr\.io/home-operations/kritika:\d+\.\d+\.\d+-tools$
+
+  - it: pins the -tools image by its own digest
+    set:
+      image.digest: sha256:deadbeef
+      runner.toolsImage.enabled: true
+      runner.toolsImage.digest: sha256:cafef00d
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/home-operations/kritika@sha256:deadbeef
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_IMAGE
+            value: ghcr.io/home-operations/kritika@sha256:cafef00d
+
+  - it: keeps the -tools digest unused until enabled
+    set:
+      image.digest: sha256:deadbeef
+      runner.toolsImage.digest: sha256:cafef00d
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_IMAGE
+            value: ghcr.io/home-operations/kritika@sha256:deadbeef
+
+  - it: prefers runner.image over the -tools image
+    set:
+      runner.image: registry.example/kritika:custom
+      runner.toolsImage.enabled: true
+      runner.toolsImage.digest: sha256:cafef00d
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_IMAGE
+            value: registry.example/kritika:custom
+
   - it: leaves how kritika runs to its defaults unless values set it
     asserts:
       - notContains:

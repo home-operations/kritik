@@ -1017,7 +1017,7 @@
       "properties": {
         "image": {
           "default": "",
-          "description": "Image for runner Jobs; empty uses the chart's image. The release's `-tools` tag (e.g. `ghcr.io/home-operations/kritika:1.2.3-tools`) adds curl, fd, gh and rg for an agentic review's `agent.commands`.",
+          "description": "Image for runner Jobs; empty uses the release's `-tools` image when `toolsImage.enabled`, else the chart's image.",
           "title": "image",
           "type": "string"
         },
@@ -1059,6 +1059,25 @@
           },
           "title": "tools",
           "type": "array"
+        },
+        "toolsImage": {
+          "properties": {
+            "digest": {
+              "default": "",
+              "description": "Pin the `-tools` image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published `-tools` image's digest.",
+              "title": "digest",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Run runner Jobs on the release's `-tools` image, which adds curl, fd, gh, jq, rg and yq for an agentic review's `agent.commands`: `image.repository` at the chart's tag with `-tools` appended, or pinned by `digest`.",
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "toolsImage",
+          "type": "object"
         },
         "ttl": {
           "default": "10m",

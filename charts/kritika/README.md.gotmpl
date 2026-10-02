@@ -153,8 +153,9 @@ A repository's `agent.commands` lets the model run allowlisted
 binaries over a checkout of the head commit: to read a dependency bump's
 release notes and compare view with `gh`, fetch anything else with
 `curl`, or search with `rg` and `fd`. The chart's image has none of them,
-so no command is offered; point `runner.image` at the release's `-tools`
-tag, an Alpine image with all four. `gh` signs in with the run's own
+so no command is offered; enable `runner.toolsImage` to run runner Jobs
+on the release's `-tools` image, an Alpine image with all four, pinned by
+digest like the chart's image. `gh` signs in with the run's own
 token, which can read only the repository under review and public
 repositories, and an app already allows `github.com` and `api.github.com`
 through the gateway. Every other host `curl` reaches must pass the
@@ -163,7 +164,8 @@ gateway too, so add the release hosts and registries to
 
 ```yaml
 runner:
-  image: ghcr.io/home-operations/kritika:<version>-tools
+  toolsImage:
+    enabled: true
 ```
 
 and, in `configFile`:

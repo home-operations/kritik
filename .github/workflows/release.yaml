@@ -115,7 +115,9 @@ jobs:
 
   helm:
     name: Helm
-    needs: release
+    needs:
+      - release
+      - release-tools
     if: ${{ github.event_name == 'release' }}
     runs-on: ubuntu-26.04
     permissions:
@@ -137,12 +139,14 @@ jobs:
           experimental: true
           install_args: --locked
 
-      - name: Pin the released image digest into the chart
+      - name: Pin the released image digests into the chart
         env:
           DIGEST: ${{ needs.release.outputs.digest }}
+          TOOLS_DIGEST: ${{ needs.release-tools.outputs.digest }}
         run: |
           [ -n "${DIGEST}" ] || { echo "::error::empty image digest from build job"; exit 1; }
-          yq -i '.image.digest = strenv(DIGEST)' charts/kritika/values.yaml
+          [ -n "${TOOLS_DIGEST}" ] || { echo "::error::empty -tools image digest from build job"; exit 1; }
+          yq -i '.image.digest = strenv(DIGEST) | .runner.toolsImage.digest = strenv(TOOLS_DIGEST)' charts/kritika/values.yaml
 
       - name: Package Helm chart
         run: helm package charts/kritika --version "${VERSION}" --app-version "${VERSION}"

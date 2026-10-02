@@ -94,10 +94,22 @@ The helm test pod's curl image.
 {{- end }}
 
 {{/*
-Runner image: the runner block's override, else the chart image.
+Runner image: the runner block's override, else the release's -tools image
+when enabled (its own digest wins over the tag, as in kritika.image), else
+the chart image.
 */}}
 {{- define "kritika.runnerImage" -}}
-{{- .Values.runner.image | default (include "kritika.image" .) -}}
+{{- if .Values.runner.image -}}
+{{- .Values.runner.image -}}
+{{- else if .Values.runner.toolsImage.enabled -}}
+{{- if .Values.runner.toolsImage.digest -}}
+{{- printf "%s@%s" .Values.image.repository .Values.runner.toolsImage.digest -}}
+{{- else -}}
+{{- printf "%s:%s-tools" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) -}}
+{{- end -}}
+{{- else -}}
+{{- include "kritika.image" . -}}
+{{- end -}}
 {{- end }}
 
 {{/*
