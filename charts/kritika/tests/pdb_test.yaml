@@ -4,7 +4,9 @@ templates:
 values:
   - ../ci/lint-values.yaml
 tests:
-  - it: keeps one of the default two replicas available
+  - it: keeps one of two replicas available
+    set:
+      replicas: 2
     asserts:
       - hasDocuments:
           count: 1
@@ -19,6 +21,7 @@ tests:
 
   - it: uses minAvailable when maxUnavailable is unset
     set:
+      replicas: 2
       podDisruptionBudget.maxUnavailable: ""
       podDisruptionBudget.minAvailable: 50%
     asserts:
@@ -30,6 +33,7 @@ tests:
 
   - it: prefers maxUnavailable when both are set
     set:
+      replicas: 2
       podDisruptionBudget.minAvailable: 1
       podDisruptionBudget.maxUnavailable: 1
     asserts:
@@ -39,15 +43,14 @@ tests:
       - notExists:
           path: spec.minAvailable
 
-  - it: renders none for one replica
-    set:
-      replicas: 1
+  - it: renders none for the default one replica
     asserts:
       - hasDocuments:
           count: 0
 
   - it: renders none when turned off
     set:
+      replicas: 2
       podDisruptionBudget.enabled: false
     asserts:
       - hasDocuments:
