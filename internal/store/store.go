@@ -135,6 +135,16 @@ func (s *Store) App() *pgxpool.Pool { return s.app }
 // LeaderEligible reports whether an owner DSN was configured.
 func (s *Store) LeaderEligible() bool { return s.owner != nil }
 
+// PoolStats is each pool's live state by name, app and, when configured,
+// owner, for the metrics.
+func (s *Store) PoolStats() map[string]func() *pgxpool.Stat {
+	stats := map[string]func() *pgxpool.Stat{"app": s.app.Stat}
+	if s.owner != nil {
+		stats["owner"] = s.owner.Stat
+	}
+	return stats
+}
+
 // ErrIsolationOff is returned when the application DSN's role could bypass
 // row-level security.
 var ErrIsolationOff = errors.New("store: application role would bypass row-level security")

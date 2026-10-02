@@ -210,7 +210,9 @@ an owner pool of up to 4, plus its `LISTEN` connections, and every runner
 Job opens a pool of its own, of which it uses one or two. Connections open
 on demand, so an idle replica holds few. A `pool_max_conns` in a URI
 replaces that pool's ceiling: raise the application pool's if jobs wait on
-the pool, or raise `max_connections` under the Cluster's
+the pool, which `kritika_db_pool_empty_acquires_total` counts and
+`kritika_db_pool_connections` shows against the ceiling
+([metrics](metrics.md)), or raise `max_connections` under the Cluster's
 `postgresql.parameters` for more replicas. CNPG's
 `cnpg_backends_total` metric shows what each `application_name`
 (`kritika-app`, `kritika-owner`, `kritika-listen`) holds.
