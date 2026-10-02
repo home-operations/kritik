@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.0.10](https://github.com/home-operations/kritika/compare/0.0.9...0.0.10) (2026-10-02)
+
+
+### Features
+
+* **go:** update module github.com/openai/openai-go/v3 (v3.66.0 → v3.67.0) ([#353](https://github.com/home-operations/kritika/issues/353)) ([7698dc7](https://github.com/home-operations/kritika/commit/7698dc7b1385c47a9fd7924bac29f861497fa1e9))
+* **go:** update module github.com/openai/openai-go/v3 (v3.67.0 → v3.68.0) ([#358](https://github.com/home-operations/kritika/issues/358)) ([0b3d749](https://github.com/home-operations/kritika/commit/0b3d749b71297efde5198ff287efef0afd763a29))
+
+
+### Bug Fixes
+
+* **store:** bind the follow-up comment id filter as bigint ([#350](https://github.com/home-operations/kritika/issues/350)) ([aeb5b58](https://github.com/home-operations/kritika/commit/aeb5b5829717b2be72fc6d254c19b57667627a93))
+* treat pull numbers outside int4 as not found ([#351](https://github.com/home-operations/kritika/issues/351)) ([76af367](https://github.com/home-operations/kritika/commit/76af36757098d40f55a8bdba9d22756acad6311e))
+
+
+### Build System
+
+* **tools:** assemble the runner tools image from pinned release builds on distroless ([#356](https://github.com/home-operations/kritika/issues/356)) ([150ebc7](https://github.com/home-operations/kritika/commit/150ebc74f28acdbfe04a58925e8c9cf0be3da009))
+
 ## [0.0.9](https://github.com/home-operations/kritika/compare/0.0.8...0.0.9) (2026-10-02)
 
 
