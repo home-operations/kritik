@@ -23,7 +23,10 @@ Install the chart as its [README](https://github.com/home-operations/kritika/blo
   ConfigMap, with the variables its secrets name set from existing Secrets
   under `env` or `envFrom`. It lives in git with the rest of the
   deployment; kritika reads it at startup, and the chart rolls the pods
-  when it changes.
+  when it changes. A changed Secret does not roll them: restart them after
+  rotating one, or have stakater's Reloader do it with
+  `deploymentAnnotations: { reloader.stakater.com/auto: "true" }`. Runner
+  Jobs read their Secret as each one starts.
 
 A minimal file names the GitHub App (below), a model key and the default
 review model:
