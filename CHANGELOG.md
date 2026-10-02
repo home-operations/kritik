@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.9](https://github.com/home-operations/kritika/compare/0.0.8...0.0.9) (2026-10-02)
+
+
+### Features
+
+* **chart:** ship a Grafana dashboard ([#347](https://github.com/home-operations/kritika/issues/347)) ([895ae6f](https://github.com/home-operations/kritika/commit/895ae6f5dcb631921cca6fbf039a3698566c0b11))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool lefthook (2.1.14 → 2.1.15) ([#346](https://github.com/home-operations/kritika/issues/346)) ([fd986a0](https://github.com/home-operations/kritika/commit/fd986a06d3af3e100f835abba41e93d089c57652))
+
 ## [0.0.8](https://github.com/home-operations/kritika/compare/0.0.7...0.0.8) (2026-10-02)
 
 
