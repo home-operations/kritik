@@ -309,7 +309,7 @@ func (l *localForge) UpdateComment(_ context.Context, _, _ string, id int64, bod
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if _, ok := l.comments[id]; !ok {
-		return fmt.Errorf("comment %d does not exist", id)
+		return fmt.Errorf("local forge: comment %d: %w", id, fs.ErrNotExist)
 	}
 	l.comments[id] = body
 	return nil
