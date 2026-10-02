@@ -24,4 +24,30 @@ account, connection or model, never by pull request or commit:
 | `kritika_db_pool_connections`, `kritika_db_pool_max_connections`                          | pool, state            | connections the app and owner pools hold, by state (idle, acquired, constructing), and each pool's ceiling; a pool at its ceiling queues jobs and requests                                                       |
 | `kritika_db_pool_acquires_total`, `kritika_db_pool_empty_acquires_total`, `kritika_db_pool_acquire_seconds_total` | pool | connections taken from a pool, how many had to wait for one to free, and the time spent waiting                                                                                                                 |
 | `kritika_config_drift`                                                                    |                        | 1 while this replica's file differs from the applied one                                                                                                                                                              |
+| `kritika_config_error`                                                                    |                        | 1 while the leader's latest attempt to apply the configuration to the store was refused; the last applied configuration stays live meanwhile                                                                      |
 | `kritika_leader`                                                                          |                        | 1 while this replica holds the leader lock                                                                                                                                                                            |
+
+## Alerts
+
+The chart's `monitoring.prometheusRule.enabled` creates a Prometheus Operator
+`PrometheusRule` with the alerts below, grouped by the metrics Service's
+`namespace` and `job`. Each one's wait is a value
+(`monitoring.prometheusRule.*For`), and `additionalRuleLabels` adds a
+routing label to every rule.
+
+| Alert                    | Fires when                                                           | Severity | Wait |
+| ------------------------ | -------------------------------------------------------------------- | -------- | ---- |
+| `KritikaNoLeader`        | `sum(kritika_leader) == 0`: no replica holds the leader lock          | critical | 5m   |
+| `KritikaMultipleLeaders` | `sum(kritika_leader) > 1`: more than one replica reports holding it   | critical | 2m   |
+| `KritikaConfigError`     | `kritika_config_error == 1`: the leader could not apply the file      | warning  | 5m   |
+| `KritikaConfigDrift`     | `kritika_config_drift == 1`: a replica's file differs from the applied one | warning | 15m |
+
+Without a leader nothing migrates, applies configuration, polls or rescues
+the jobs a dead replica left; a standby takes the lock within one leader
+retry interval once its owner connection reaches the database, and Postgres
+drops a dead leader's session, and with it the lock, within about a minute.
+Two leaders can show for one retry interval through a database failover,
+while the old leader's lock connection has not yet failed; longer than that
+means the replicas are not on one database. Drift is expected for the
+minute or two a rollout takes, until the new pod leads and applies its
+file.

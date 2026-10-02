@@ -725,6 +725,67 @@
     },
     "monitoring": {
       "properties": {
+        "prometheusRule": {
+          "properties": {
+            "additionalRuleAnnotations": {
+              "description": "Extra annotations on every alert rule.",
+              "required": [],
+              "title": "additionalRuleAnnotations",
+              "type": "object"
+            },
+            "additionalRuleLabels": {
+              "description": "Extra labels on every alert rule, e.g. a routing label for Alertmanager. The rule's own `severity` wins.",
+              "required": [],
+              "title": "additionalRuleLabels",
+              "type": "object"
+            },
+            "annotations": {
+              "description": "PrometheusRule annotations.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "configDriftFor": {
+              "default": "15m",
+              "description": "How long a replica's configuration file may differ from the applied one before KritikaConfigDrift fires; a rollout drifts briefly until the new leader applies its file.",
+              "title": "configDriftFor",
+              "type": "string"
+            },
+            "configErrorFor": {
+              "default": "5m",
+              "description": "How long the leader's latest apply of the configuration may stay refused before KritikaConfigError fires.",
+              "title": "configErrorFor",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Create a Prometheus Operator PrometheusRule with kritika's alerts (requires its CRDs): no leader, more than one leader, a configuration the leader could not apply, and a replica whose configuration file drifted from the applied one.",
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "labels": {
+              "description": "PrometheusRule labels.",
+              "required": [],
+              "title": "labels",
+              "type": "object"
+            },
+            "multipleLeadersFor": {
+              "default": "2m",
+              "description": "How long more than one replica may report the lock before KritikaMultipleLeaders fires. A database failover can show two for one leader retry interval.",
+              "title": "multipleLeadersFor",
+              "type": "string"
+            },
+            "noLeaderFor": {
+              "default": "5m",
+              "description": "How long no replica may hold the leader lock before KritikaNoLeader fires. A standby takes the lock within one leader retry interval of the database answering, and a dead leader's session is dropped by Postgres within about a minute.",
+              "title": "noLeaderFor",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "prometheusRule",
+          "type": "object"
+        },
         "serviceMonitor": {
           "properties": {
             "annotations": {

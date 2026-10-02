@@ -1,0 +1,116 @@
+suite: prometheusrule
+templates:
+  - prometheusrule.tpl
+values:
+  - ../ci/lint-values.yaml
+release:
+  name: kritika
+  namespace: kritika
+tests:
+  - it: renders none by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders the leader and config groups when enabled
+    set:
+      monitoring.prometheusRule.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PrometheusRule
+      - equal:
+          path: metadata.name
+          value: kritika
+      - equal:
+          path: metadata.namespace
+          value: kritika
+      - lengthEqual:
+          path: spec.groups
+          count: 2
+      - equal:
+          path: spec.groups[0].name
+          value: kritika.leader
+      - equal:
+          path: spec.groups[0].rules[0].alert
+          value: KritikaNoLeader
+      - equal:
+          path: spec.groups[0].rules[0].expr
+          value: sum by (namespace, job) (kritika_leader) == 0
+      - equal:
+          path: spec.groups[0].rules[0].for
+          value: 5m
+      - equal:
+          path: spec.groups[0].rules[0].labels.severity
+          value: critical
+      - equal:
+          path: spec.groups[0].rules[1].alert
+          value: KritikaMultipleLeaders
+      - equal:
+          path: spec.groups[0].rules[1].for
+          value: 2m
+      - equal:
+          path: spec.groups[1].name
+          value: kritika.config
+      - equal:
+          path: spec.groups[1].rules[0].alert
+          value: KritikaConfigError
+      - equal:
+          path: spec.groups[1].rules[0].labels.severity
+          value: warning
+      - equal:
+          path: spec.groups[1].rules[1].alert
+          value: KritikaConfigDrift
+      - equal:
+          path: spec.groups[1].rules[1].for
+          value: 15m
+      - matchRegex:
+          path: spec.groups[0].rules[0].annotations.summary
+          pattern: '\{\{ \$labels.namespace \}\} has no leader'
+
+  - it: puts the extra labels and annotations on every rule, with severity winning
+    set:
+      monitoring.prometheusRule.enabled: true
+      monitoring.prometheusRule.labels: { release: kube-prometheus-stack }
+      monitoring.prometheusRule.annotations: { team: platform }
+      monitoring.prometheusRule.additionalRuleLabels: { severity: info, cluster: home }
+      monitoring.prometheusRule.additionalRuleAnnotations:
+        { runbook_url: https://example.com/kritika }
+    asserts:
+      - equal:
+          path: metadata.labels.release
+          value: kube-prometheus-stack
+      - equal:
+          path: metadata.annotations.team
+          value: platform
+      - equal:
+          path: spec.groups[0].rules[0].labels
+          value: { severity: critical, cluster: home }
+      - equal:
+          path: spec.groups[1].rules[1].labels
+          value: { severity: warning, cluster: home }
+      - equal:
+          path: spec.groups[1].rules[0].annotations.runbook_url
+          value: https://example.com/kritika
+
+  - it: takes the wait periods from values
+    set:
+      monitoring.prometheusRule.enabled: true
+      monitoring.prometheusRule.noLeaderFor: 10m
+      monitoring.prometheusRule.multipleLeadersFor: 1m
+      monitoring.prometheusRule.configErrorFor: 1h
+      monitoring.prometheusRule.configDriftFor: 30m
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].for
+          value: 10m
+      - equal:
+          path: spec.groups[0].rules[1].for
+          value: 1m
+      - equal:
+          path: spec.groups[1].rules[0].for
+          value: 1h
+      - equal:
+          path: spec.groups[1].rules[1].for
+          value: 30m

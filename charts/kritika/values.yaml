@@ -498,6 +498,25 @@ monitoring:
     metricRelabelings: []
     # -- Prometheus relabelings.
     relabelings: []
+  prometheusRule:
+    # -- Create a Prometheus Operator PrometheusRule with kritika's alerts (requires its CRDs): no leader, more than one leader, a configuration the leader could not apply, and a replica whose configuration file drifted from the applied one.
+    enabled: false
+    # -- PrometheusRule labels.
+    labels: {}
+    # -- PrometheusRule annotations.
+    annotations: {}
+    # -- Extra labels on every alert rule, e.g. a routing label for Alertmanager. The rule's own `severity` wins.
+    additionalRuleLabels: {}
+    # -- Extra annotations on every alert rule.
+    additionalRuleAnnotations: {}
+    # -- How long no replica may hold the leader lock before KritikaNoLeader fires. A standby takes the lock within one leader retry interval of the database answering, and a dead leader's session is dropped by Postgres within about a minute.
+    noLeaderFor: 5m
+    # -- How long more than one replica may report the lock before KritikaMultipleLeaders fires. A database failover can show two for one leader retry interval.
+    multipleLeadersFor: 2m
+    # -- How long the leader's latest apply of the configuration may stay refused before KritikaConfigError fires.
+    configErrorFor: 5m
+    # -- How long a replica's configuration file may differ from the applied one before KritikaConfigDrift fires; a rollout drifts briefly until the new leader applies its file.
+    configDriftFor: 15m
 
 podDisruptionBudget:
   # -- Create a PodDisruptionBudget when there is more than one replica.
