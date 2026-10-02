@@ -288,10 +288,11 @@ const (
 )
 
 // step runs one model step through stepper, and after a transient failure
-// (model.Transient) tries again, up to retries more times with backoff,
-// while ctx lives; failed reports each failure it tries again after. It
-// returns the last answer or error and how many attempts it made. One
-// reservation covers them all: the request is the same each time.
+// (model.Transient) tries again, up to retries more times with backoff, or
+// the wait the provider asked for when that is longer, while ctx lives;
+// failed reports each failure it tries again after. It returns the last
+// answer or error and how many attempts it made. One reservation covers
+// them all: the request is the same each time.
 func step(
 	ctx context.Context, stepper model.Stepper, req model.StepRequest, retries int,
 	wait func(context.Context, time.Duration) bool, failed func(error),
@@ -302,7 +303,7 @@ func step(
 			return resp, attempt + 1, err
 		}
 		failed(err)
-		if !wait(ctx, store.Backoff(attempt, retryMin, retryMax)) {
+		if !wait(ctx, max(store.Backoff(attempt, retryMin, retryMax), model.RetryAfter(err))) {
 			return resp, attempt + 1, err
 		}
 	}
