@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.3](https://github.com/home-operations/kritika/compare/0.0.2...0.0.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* **worker:** post a fresh summary when the sticky comment was deleted ([#305](https://github.com/home-operations/kritika/issues/305)) ([ba748a0](https://github.com/home-operations/kritika/commit/ba748a0e244f60eec10b63bded38bc5a2ae0e9a8))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool aqua:astral-sh/uv (0.12.19 → 0.12.20) ([#306](https://github.com/home-operations/kritika/issues/306)) ([f8d7a11](https://github.com/home-operations/kritika/commit/f8d7a1198430032dc00ba3ef57925196850b21f2))
+
 ## [0.0.2](https://github.com/home-operations/kritika/compare/0.0.1...0.0.2) (2026-10-01)
 
 
