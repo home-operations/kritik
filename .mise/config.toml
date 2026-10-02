@@ -14,6 +14,7 @@ go = "1.27.1"
 helm = "4.3.0"
 helm-docs = "1.14.2"
 "aqua:dadav/helm-schema" = "0.23.5"
+"github:grafana/dashboard-linter" = "0.3.0"
 "go:golang.org/x/vuln/cmd/govulncheck" = "v1.8.0"
 golangci-lint = "2.14.0"
 lefthook = "2.1.14"
@@ -101,6 +102,10 @@ go run -tags bench ./bench/cmd/mine -repo ../konflate -name home-operations/konf
 [tasks.helm-lint]
 description = "Lint the Helm chart"
 run = "helm lint charts/kritika --values charts/kritika/ci/lint-values.yaml"
+
+[tasks.dashboard-lint]
+description = "Lint the chart's Grafana dashboards with grafana/dashboard-linter; exclusions live in charts/kritika/dashboards/.lint"
+run = "for f in charts/kritika/dashboards/*.json; do dashboard-linter lint --strict \"$f\"; done"
 
 [tasks.helm-unittest]
 description = "Run helm-unittest template tests (needs the helm-unittest plugin)"

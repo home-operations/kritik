@@ -222,6 +222,9 @@ jobs:
       - name: Run helm lint
         run: mise run helm-lint
 
+      - name: Lint the Grafana dashboards
+        run: mise run dashboard-lint
+
       - name: Check generated chart files are current
         run: mise run generate-check
 

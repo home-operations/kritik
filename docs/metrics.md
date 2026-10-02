@@ -51,3 +51,18 @@ while the old leader's lock connection has not yet failed; longer than that
 means the replicas are not on one database. Drift is expected for the
 minute or two a rollout takes, until the new pod leads and applies its
 file.
+
+## Grafana dashboard
+
+The chart's `monitoring.dashboards.enabled` renders a Grafana dashboard of
+the series above (`charts/kritika/dashboards/kritika.json`) as a ConfigMap
+labelled `grafana_dashboard: "1"` for the kube-prometheus-stack sidecar, or,
+with `monitoring.dashboards.grafanaOperator.enabled`, as a `GrafanaDashboard`
+for grafana-operator that imports the ConfigMap into the Grafana instance
+`grafanaOperator.matchLabels` selects. It is filtered by the metrics
+Service's `namespace` and `job`, then by `account` and `model`, and its rows
+follow a review's path: health (leaders, configuration, drift, rescued
+jobs), intake (webhooks, backstop polls, rate limits), reviews (status,
+duration, findings, follow-ups, the wait for a model slot), models (calls,
+tokens, cost per hour and over the time range), runner Jobs and the index,
+and the database pools.
