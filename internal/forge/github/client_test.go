@@ -286,6 +286,10 @@ func TestWriteBackCalls(t *testing.T) {
 	if err := c.UpdateComment(t.Context(), "o", "r", 100, "edited"); err != nil {
 		t.Fatal(err)
 	}
+	f.reply("PATCH /api/v3/repos/o/r/issues/comments/101", 404, `{"message":"Not Found"}`)
+	if err := c.UpdateComment(t.Context(), "o", "r", 101, "edited"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("UpdateComment of a deleted comment = %v, want fs.ErrNotExist", err)
+	}
 	if ids, err := c.CreateReview(t.Context(), "o", "r", 7, "abc", nil); err != nil || ids == nil || f.saw("POST /api/v3/repos/o/r/pulls/7/reviews") {
 		t.Fatal("a review with no comments must not be posted")
 	}

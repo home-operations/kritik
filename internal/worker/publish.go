@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"slices"
 	"strings"
@@ -444,21 +445,39 @@ func (p *publishPhase) postsInline(f review.Finding) bool {
 // upsertSticky edits the pull request's sticky comment to body, creating
 // it the first time, and returns its id.
 func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, error) {
+	var stored int64
+	// The row is a shortcut: no row, or a read that failed, leaves the
+	// comment to be found on the forge by its marker.
+	_ = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT forge_comment_id FROM sticky_comments WHERE pull_request_id = $1`, p.pr.id).Scan(&stored)
+	})
+	return p.writeSticky(ctx, stored, body)
+}
+
+// writeSticky edits the sticky comment stored, the one the database
+// remembers, to body, and returns its id. With none stored, or one the
+// forge no longer has, the comment is found by its marker instead and
+// created when there is none: a sticky comment someone deleted must not
+// fail every later review, and the id returned replaces the stored one.
+func (p *publishPhase) writeSticky(ctx context.Context, stored int64, body string) (int64, error) {
 	owner, repo := p.pr.ownerRepo()
+	if stored != 0 {
+		err := p.client.UpdateComment(ctx, owner, repo, stored, body)
+		if err == nil {
+			return stored, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return 0, err
+		}
+		p.logger.Warn("sticky comment no longer on the forge", "comment", stored)
+	}
 	login, err := p.client.BotLogin(ctx)
 	if err != nil {
 		return 0, err
 	}
-	var commentID int64
-	// The row is a shortcut: no row, or a read that failed, leaves the
-	// comment to be found on the forge by its marker.
-	_ = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT forge_comment_id FROM sticky_comments WHERE pull_request_id = $1`, p.pr.id).Scan(&commentID)
-	})
-	if commentID == 0 {
-		if commentID, err = p.client.FindComment(ctx, owner, repo, p.pr.number, login, review.Marker(p.pr.number)); err != nil {
-			return 0, err
-		}
+	commentID, err := p.client.FindComment(ctx, owner, repo, p.pr.number, login, review.Marker(p.pr.number))
+	if err != nil {
+		return 0, err
 	}
 	if commentID != 0 {
 		err = p.client.UpdateComment(ctx, owner, repo, commentID, body)
