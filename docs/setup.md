@@ -82,7 +82,7 @@ Register a GitHub App under the account whose repositories kritika reviews
   - Issues: read-only. GitHub delivers a pull request's conversation
     comments as issue comments, and an App subscribes to those only with
     this permission.
-  - Commit statuses: read and write, for the `kritika/review` status.
+  - Commit statuses: read and write, for the `Kritika / Review` status.
 - **Organization permissions:** Members: read-only, only for signing in
   with GitHub through this App, whose role mapping reads the
   organizations a person belongs to.
