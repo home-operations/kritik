@@ -247,6 +247,11 @@ func (t agentTools) commands() []string {
 	return t.run.Names()
 }
 
+// gatewayRetries is how many times a step the gateway answered with a 500,
+// its own database not answering, is sent again; the gateway marks every
+// other refusal final, since it has already retried the provider.
+const gatewayRetries = 2
+
 // runAgentic runs the agent over the fetched head with the prompt already
 // composed, writes its agent_runs row and marks the run done.
 func runAgentic(
@@ -255,6 +260,7 @@ func runAgentic(
 ) error {
 	stepper, err := model.NewOpenAI(model.OpenAIConfig{
 		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true,
+		Retries: gatewayRetries,
 	})
 	if err != nil {
 		return fmt.Errorf("runner: %w", err)

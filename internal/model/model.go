@@ -13,6 +13,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go/v3"
@@ -227,7 +229,8 @@ type Embedder interface {
 }
 
 // NewStepper builds the adapter for a provider. An empty baseURL means the
-// provider's default endpoint; client may be nil.
+// provider's default endpoint; client may be nil. The adapter sends each
+// request once: the gateway retries a step with the provider's retries.
 func NewStepper(t ProviderType, baseURL, apiKey string, pricing Pricing, client *http.Client) (Stepper, error) {
 	switch t {
 	case ProviderOpenRouter:
@@ -296,6 +299,26 @@ func Transient(err error) bool {
 	var netErr net.Error
 	return errors.As(err, &netErr) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) ||
 		errors.Is(err, context.DeadlineExceeded)
+}
+
+// RetryAfter is how long the provider that failed a step asked to wait
+// before the next request, from the Retry-After header of its answer, in
+// seconds as the model providers send it; zero when it asked nothing.
+func RetryAfter(err error) time.Duration {
+	var resp *http.Response
+	if e, ok := errors.AsType[*openai.Error](err); ok {
+		resp = e.Response
+	} else if e, ok := errors.AsType[*anthropic.Error](err); ok {
+		resp = e.Response
+	}
+	if resp == nil {
+		return 0
+	}
+	secs, err := strconv.Atoi(resp.Header.Get("Retry-After"))
+	if err != nil || secs <= 0 {
+		return 0
+	}
+	return time.Duration(secs) * time.Second
 }
 
 // eachModel calls step with Model, then each fallback in turn until one

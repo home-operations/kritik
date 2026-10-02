@@ -47,6 +47,12 @@ type OpenAIConfig struct {
 	// request.
 	OpenCode bool
 	Pricing  Pricing
+	// Retries is how many times the SDK's client sends a request the
+	// server failed again on its own, minding its Retry-After and
+	// x-should-retry headers; zero sends it once. A provider's adapter
+	// leaves it at zero: the gateway owns retrying, with the provider's
+	// retries, and the SDK's own would multiply its attempts.
+	Retries int
 }
 
 // sessionHeader carries StepRequest.Session to OpenCode.
@@ -77,7 +83,7 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
-	opts = append(opts, option.WithHeader("User-Agent", userAgent()))
+	opts = append(opts, option.WithHeader("User-Agent", userAgent()), option.WithMaxRetries(cfg.Retries))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}

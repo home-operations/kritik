@@ -199,10 +199,13 @@ provider fails it in a way another attempt may not: a 5xx, a 429, a
 timeout or a cut connection. The gateway waits a second, then twice as
 long each time, up to 30 seconds; it never retries a refusal of the
 request itself, such as a prompt over the model's input limit, or a spent
-budget. It is 0 unless set, one attempt, and at most 5. A routing proxy
-that picks a model per request is where it earns its keep: a step the
-proxy routed badly is answered on the next attempt. Follow-ups and the
-embedder do not retry.
+budget, and it waits out a `Retry-After` the provider sends when that is
+longer. It is 0 unless set, one attempt, and at most 5; the provider's
+client sends nothing again on its own, so `retries` is every attempt a
+step gets. A routing proxy that picks a model per request is where it
+earns its keep: a step the proxy routed badly is answered on the next
+attempt. Follow-ups do not retry; the embedder's client sends a failed
+request again twice on its own.
 
 The embedder's `model` is a model of an `openrouter` or `openai` provider
 of the instance, whose endpoint, or the type's default, and key it uses;
