@@ -1,0 +1,17 @@
+# The tools the -tools image puts on the agent's PATH, installed by the
+# Dockerfile's runner-tools stage with `mise install --locked` at the URLs
+# and checksums mise.lock pins per platform. The image carries glibc, libgcc
+# and libstdc++ and no other library, so a build may link against those or
+# be static. After changing a version, refresh the lock with
+# `mise -C build/tools lock -p linux-x64,linux-arm64`.
+[tools]
+# Each entry exposes only the executable it is there for, filter_bins for a
+# release archive and symlink_bins for an aqua recipe, so the Dockerfile
+# copies every bin path as is. curl has no registry short name; the others
+# resolve to aqua packages.
+"github:stunnel/static-curl" = { version = "8.22.0", matching = "glibc", filter_bins = "curl" }
+fd = { version = "10.5.0", symlink_bins = true }
+gh = { version = "2.102.0", symlink_bins = true }
+jq = { version = "1.8.2", symlink_bins = true }
+rg = { version = "15.2.0", symlink_bins = true }
+yq = { version = "4.54.1", symlink_bins = true }

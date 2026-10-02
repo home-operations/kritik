@@ -153,7 +153,7 @@ A repository's `agent.commands` lets the model run allowlisted
 binaries over a checkout of the head commit: to read a dependency bump's
 release notes and compare view with `gh`, fetch anything else with
 `curl`, search with `rg` and `fd`, or read JSON and YAML with `jq` and
-`yq`. Runner Jobs run on the release's `-tools` image, an Alpine image
+`yq`. Runner Jobs run on the release's `-tools` image, a distroless image
 with all six, pinned by digest like the chart's image; a command is offered only when the runner image has it on
 its `PATH`, so an image set in `runner.image` without them offers none.
 `gh` signs in with the run's own token, which can read only the
@@ -175,9 +175,10 @@ A command runs without a shell, with an environment of `PATH`, its own
 `HOME` and the gateway, `gh` also with the run's read-only token as
 `GH_TOKEN`, and the runner makes itself unreadable to it first,
 so a command cannot read the runner's credentials from `/proc`. The
-`-tools` image does have one, though, and `fd -x` or `rg --pre` can start
-it, and with it a script from the checkout: another reason to run runner
-Jobs under a sandboxed RuntimeClass.
+`-tools` image has no shell either, and the checkout is written without
+execute bits, so `fd -x` or `rg --pre` can start only the six commands. A
+runner still parses untrusted content and runs what the model asks: run
+runner Jobs under a sandboxed RuntimeClass.
 
 ### Runner sandbox
 
