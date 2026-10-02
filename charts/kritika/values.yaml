@@ -465,7 +465,7 @@ livenessProbe:
     path: /healthz
     port: metrics
   periodSeconds: 20
-# -- Readiness probe, on the metrics port. A replica is ready once its configuration file has loaded and its listeners are up, before the database answers: until it does, the dashboard shows that kritika is starting and webhooks are refused with a reason, from kritika rather than the ingress.
+# -- Readiness probe, on the metrics port. A replica is ready once its configuration file has loaded, the database answers and it serves webhooks and the dashboard, so a rollout takes the previous pod down only once the new one can hold a delivery.
 readinessProbe:
   httpGet:
     path: /readyz

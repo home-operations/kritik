@@ -208,9 +208,8 @@ runner:
 The chart runs one Deployment of `kritika serve`, one replica by default.
 Its rolling update surges a new pod and takes the old one down only once the
 new one is ready, so a rollout, such as the one a changed `configFile`
-starts, keeps one serving on its own. A pod is ready before its database
-answers, so a slow database can still leave the new pod refusing webhooks
-for a moment after the old one is gone. Every replica serves webhooks and
+starts, keeps one serving on its own: a pod is ready only once its database
+answers and it serves webhooks. Every replica serves webhooks and
 the dashboard and works jobs, and one holds the leader lock at a time, so
 `replicas: 2` keeps one serving while a pod or node is lost; the chart then
 adds a PodDisruptionBudget so a drain takes one at a time. Until a lost
