@@ -203,12 +203,15 @@ runner:
 The chart runs one Deployment of `kritika serve`, one replica by default.
 Its rolling update surges a new pod and takes the old one down only once the
 new one is ready, so a rollout, such as the one a changed `configFile`
-starts, keeps one serving on its own. Every replica serves webhooks and the
-dashboard and works jobs, and one holds the leader lock at a time, so
+starts, keeps one serving on its own. A pod is ready before its database
+answers, so a slow database can still leave the new pod refusing webhooks
+for a moment after the old one is gone. Every replica serves webhooks and
+the dashboard and works jobs, and one holds the leader lock at a time, so
 `replicas: 2` keeps one serving while a pod or node is lost; the chart then
 adds a PodDisruptionBudget so a drain takes one at a time. Until a lost
-replica is back, webhooks are refused and the poll picks up what they
-missed. Runner pods are the Jobs `kritika serve` creates, one per review and
+replica is back, webhooks are refused; the next poll picks up the pull
+requests they missed, though not the mentions, which only a webhook
+delivers. Runner pods are the Jobs `kritika serve` creates, one per review and
 index run, running `kritika run`. A replica that stops drains its jobs
 first; one that dies outright leaves them to the leader, which hands them
 back to the queue within a few minutes and deletes the runner Jobs they
@@ -360,13 +363,13 @@ Kubernetes: `>=1.25.0-0`
 | serviceAccount.create | bool | `true` | Create the ServiceAccount kritika serve runs as. |
 | serviceAccount.name | string | `""` | ServiceAccount name; generated from the release name if empty. |
 | startupProbe | object | `{"failureThreshold":30,"httpGet":{"path":"/healthz","port":"metrics"},"periodSeconds":2}` | Startup probe, on the metrics port. The liveness and readiness probes wait until it passes, so a pod still opening its listeners is not reported unready; it allows a minute. |
-| strategy | object | `{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"}` | Deployment update strategy. A rolling update that surges one pod and takes none down keeps one replica serving while the other is replaced. Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`. |
+| strategy | object | `{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"}` | Deployment update strategy. A rolling update that surges one pod and takes none down keeps a replica serving while each is replaced. Helm merges maps, so a switch to `Recreate` also sets `rollingUpdate: null`. |
 | terminationGracePeriodSeconds | int | `150` | Grace period for a clean shutdown: kritika serve keeps accepting webhooks, dashboard requests and model steps for 5s while traffic moves off the pod, stops taking jobs and lets running ones finish for up to 100s, then retries the reviews it cut, and its gateway lets model steps in flight finish for up to 2m. |
 | tests.image.pullPolicy | string | `"IfNotPresent"` | `helm test` image pull policy. |
 | tests.image.repository | string | `"mirror.gcr.io/curlimages/curl"` | `helm test` connection-pod image; a gcr-mirrored curl, so the test never pulls from Docker Hub. |
 | tests.image.tag | string | `"8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777"` | `helm test` image, pinned as `tag@sha256:digest` so Renovate bumps the tag and its digest together. |
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
-| topologySpreadConstraints | list | `[{"labelSelector":{"matchLabels":{"app.kubernetes.io/instance":"{{ .Release.Name }}","app.kubernetes.io/name":"{{ include \"kritika.name\" . }}"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway"}]` | Spread the kritika serve pods across nodes, so a node loss does not take both replicas: a soft constraint, so a one-node cluster still schedules them. Rendered through `tpl`; empty leaves scheduling to Kubernetes. |
+| topologySpreadConstraints | list | `[{"labelSelector":{"matchLabels":{"app.kubernetes.io/instance":"{{ .Release.Name }}","app.kubernetes.io/name":"{{ include \"kritika.name\" . }}"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway"}]` | Spread the kritika serve pods across nodes, so with `replicas: 2` a node loss takes one of them: a soft constraint, so a one-node cluster still schedules them. Rendered through `tpl`; empty leaves scheduling to Kubernetes. |
 | volumeMounts | list | `[]` | Additional volume mounts on the kritika serve container. |
 | volumes | list | `[]` | Additional volumes on the Deployment. |
 
