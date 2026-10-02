@@ -29,10 +29,13 @@ examples use.
 
 ## The cluster
 
-TensorChord publishes CNPG images with VectorChord built in,
-[`ghcr.io/tensorchord/cloudnative-vectorchord`](https://github.com/tensorchord/cloudnative-vectorchord),
-tagged `<postgres>-<vchord>`. Two instances with synchronous replication keep
-every committed write through a failover:
+CNPG's own `standard` image ships pgvector, and VectorChord mounts into it
+from TensorChord's
+[`vchord-scratch`](https://docs.vectorchord.ai/vectorchord/admin/kubernetes.html)
+image as an
+[image volume extension](https://cloudnative-pg.io/docs/1.30/imagevolume_extensions/).
+Two instances with synchronous replication keep every committed write through
+a failover:
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -41,9 +44,19 @@ metadata:
   name: kritika-postgres
 spec:
   instances: 2
-  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.6-1.1.1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-standard-bookworm
   enableSuperuserAccess: false
   postgresql:
+    extensions:
+      - name: vchord
+        image:
+          reference: ghcr.io/tensorchord/vchord-scratch:pg18-v1.1.1
+        # The image keeps Debian's paths rather than CNPG's default
+        # /extensions/vchord/lib and /extensions/vchord/share.
+        dynamic_library_path:
+          - /usr/lib/postgresql/18/lib/
+        extension_control_path:
+          - /usr/share/postgresql/18/
     shared_preload_libraries:
       - vchord
     # A commit waits for the standby while it is healthy, so a failover
@@ -56,6 +69,8 @@ spec:
   # Update the standby first, then switch over to it, rather than restart
   # the primary in place.
   primaryUpdateMethod: switchover
+  affinity:
+    podAntiAffinityType: required
   storage:
     size: 10Gi
   bootstrap:
@@ -66,14 +81,27 @@ spec:
         name: kritika-postgres-credentials
 ```
 
+- Image volume extensions need Kubernetes 1.35 (or 1.33 and 1.34 with the
+  `ImageVolume` feature gate on) and containerd 2.1 or CRI-O 1.31. Without
+  them, use TensorChord's
+  [`cloudnative-vectorchord`](https://github.com/tensorchord/cloudnative-vectorchord)
+  image instead, which has VectorChord built in and is tagged
+  `<postgres>-<vchord>` (`18.6-1.1.1`), and leave out `extensions`.
 - `dataDurability: preferred` relaxes the synchronous requirement while the
   standby is unavailable. `required` would block writes instead.
 - `primaryUpdateMethod: switchover` rejects an update that changes the image
   and the Postgres parameters at once; apply them one at a time.
+- `podAntiAffinityType: required` keeps the two instances on different nodes.
+  CNPG's default, `preferred`, lets them share one when the scheduler finds
+  no other, and then that node takes both down.
+- Each instance has its own volume and Postgres replicates between them, so
+  the storage class need not replicate as well: a node-local one is enough.
 - The bootstrap owner, `kritika`, is the owner role.
 
 A `Database` resource creates the extensions. The operator runs it as
-superuser, so the owner never needs that privilege:
+superuser, so the owner never needs that privilege. `vchord`'s `version` is
+the one CNPG installs, or updates the extension to when it changes, so move it
+with the `vchord-scratch` tag:
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -89,6 +117,7 @@ spec:
     - name: vector
       ensure: present
     - name: vchord
+      version: "1.1.1"
       ensure: present
 ```
 
@@ -186,6 +215,23 @@ the pool, or raise `max_connections` under the Cluster's
 `cnpg_backends_total` metric shows what each `application_name`
 (`kritika-app`, `kritika-owner`, `kritika-listen`) holds.
 
+Prometheus scrapes CNPG's metrics through a `PodMonitor`. CNPG deprecates the
+Cluster's `monitoring.enablePodMonitor` in favor of one you create
+([monitoring](https://cloudnative-pg.io/docs/1.30/monitoring/)):
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kritika-postgres
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: kritika-postgres
+  podMetricsEndpoints:
+    - port: metrics
+```
+
 ## Failover and maintenance
 
 When the primary changes, by a failover or a switchover, kritika's
@@ -221,3 +267,11 @@ the database. CNPG backs a cluster up two ways
   WAL archive in object storage.
 
 A replica is not a backup: it copies a mistake as fast as anything else.
+
+Backups hold the roles but not their Secrets, and a restored cluster's roles
+keep the passwords they had when the backup was taken
+([recovery](https://cloudnative-pg.io/docs/1.30/recovery/)). Name the owner's
+Secret in `bootstrap.recovery`, with `database: kritika` and `owner: kritika`,
+and CNPG sets the owner's password from it once recovery completes; the
+`DatabaseRole`s apply their own Secrets' passwords the same way. kritika's
+`uri` keys then match, whether the Secrets were kept or generated anew.

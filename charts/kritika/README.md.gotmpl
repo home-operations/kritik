@@ -105,10 +105,10 @@ between transactions, which breaks both. `kritika_leader` is 1 on the replica
 that holds the lock.
 
 [Postgres with CloudNativePG](https://kritika.home-operations.com/database/)
-sets this up end to end: a two-instance cluster on TensorChord's VectorChord
-image, the extensions through a `Database` resource, the application and
-runner roles as `DatabaseRole` resources, the Secrets with their `uri` key
-for `database.*.existingSecret`, failover and backups.
+sets this up end to end: a two-instance cluster with VectorChord mounted as
+an image volume extension, the extensions through a `Database` resource, the
+application and runner roles as `DatabaseRole` resources, the Secrets with
+their `uri` key for `database.*.existingSecret`, failover and backups.
 
 ### Egress gateway
 
