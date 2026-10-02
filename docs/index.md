@@ -47,7 +47,8 @@ flowchart LR
   as `@<bot> pause` does on request.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
   answer in the thread, or reply `@<bot> dismiss <reason>` in a finding's
-  thread to have it resolved and never raised again on that pull request.
+  thread to have it resolved and never raised again on that pull request;
+  resolving the thread on the forge does the same.
 - **Approvals, opt-in.** A repository or the instance can have a review that
   finds nothing blocking or important approve the pull request, and a later
   review that does withdraw it.
