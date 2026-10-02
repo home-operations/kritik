@@ -165,7 +165,7 @@ config:
 
   # -- The provider's name, which models are addressed through as `<name>/<model>`; `openrouter` unless set.
   providersName: ""
-  # -- The provider's type, `openrouter`, `openai` or `anthropic`; the name unless set, when the name is one of those.
+  # -- The provider's type, `openrouter`, `openai`, `anthropic` or `opencode`; the name unless set, when the name is one of those.
   providersType: ""
   # -- The provider's base URL, for an OpenAI-compatible endpoint; the type's own unless set.
   providersBaseUrl: ""

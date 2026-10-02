@@ -190,8 +190,8 @@ embedding:
   dims: 1024
 ```
 
-A provider is `type` (`openrouter`, `openai` or `anthropic`), an optional
-`baseUrl`, `pricing` and `retries`, and its `apiKey`. A model is named
+A provider is `type` (`openrouter`, `openai`, `anthropic` or `opencode`),
+an optional `baseUrl`, `pricing` and `retries`, and its `apiKey`. A model is named
 `<provider>/<model>`, on a provider the file declares.
 
 `retries` is how many more times a review's model step is tried when the
@@ -259,6 +259,35 @@ embedding:
   id on the server. Tokens count against an account's `limits` either
   way.
 - The embedder's `dims` must be what its model returns.
+
+### OpenCode Go and Zen
+
+OpenCode Go and OpenCode Zen are one gateway with an OpenAI-compatible
+chat completions API that routes requests, and caches prompts, by a
+per-conversation header, `x-opencode-session`, and refuses a request
+without one. A provider of type `opencode` sends it: a review's steps
+name their run, and a follow-up names its mention. Its `baseUrl` is Go's,
+`https://opencode.ai/zen/go/v1`, unless set; Zen is the same type at
+`https://opencode.ai/zen/v1`.
+
+```yaml
+providers:
+  opencode:
+    type: opencode
+    apiKey: { env: OPENCODE_API_KEY }
+  zen:
+    type: opencode
+    baseUrl: https://opencode.ai/zen/v1
+    apiKey: { env: OPENCODE_API_KEY }
+defaults:
+  models: { review: opencode/glm-5.3, fallback: zen/qwen3.8-max }
+```
+
+- Only the models the gateway serves on `/v1/chat/completions` can be
+  used; its endpoint tables say which. Models it serves on
+  `/v1/responses` or `/v1/messages` cannot.
+- A response that reports no cost makes the call cost nothing unless
+  `pricing` gives the model's prices, as for a local model.
 
 ## `defaults` and `repositories`
 
@@ -344,7 +373,7 @@ The same defaults can come from the environment:
 | Variable                           | Key                                                                                   |
 | ---------------------------------- | ------------------------------------------------------------------------------------- |
 | `KRITIKA_PROVIDERS_NAME`           | the provider's name, `openrouter` unless set                                          |
-| `KRITIKA_PROVIDERS_TYPE`           | `type`, which defaults to the name when that is `openrouter`, `openai` or `anthropic` |
+| `KRITIKA_PROVIDERS_TYPE`           | `type`, which defaults to the name when that is a provider type                       |
 | `KRITIKA_PROVIDERS_BASE_URL`       | `baseUrl`                                                                             |
 | `KRITIKA_PROVIDERS_API_KEY`        | `apiKey`                                                                              |
 | `KRITIKA_PROVIDERS_RETRIES`        | `retries`                                                                             |

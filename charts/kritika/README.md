@@ -276,7 +276,7 @@ Kubernetes: `>=1.25.0-0`
 | config.providersBaseUrl | string | `""` | The provider's base URL, for an OpenAI-compatible endpoint; the type's own unless set. |
 | config.providersName | string | `""` | The provider's name, which models are addressed through as `<name>/<model>`; `openrouter` unless set. |
 | config.providersRetries | string | `""` | How many more times a review's model step is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5. |
-| config.providersType | string | `""` | The provider's type, `openrouter`, `openai` or `anthropic`; the name unless set, when the name is one of those. |
+| config.providersType | string | `""` | The provider's type, `openrouter`, `openai`, `anthropic` or `opencode`; the name unless set, when the name is one of those. |
 | config.reviewWorkers | string | `""` | Review jobs one replica runs at once, each holding a runner pod open; 2 unless set. |
 | config.runnerDeadline | string | `""` | A runner Job's deadline; 15m unless set. |
 | config.runnerRuntimeClass | string | `""` | RuntimeClass runner Jobs run under, e.g. `gvisor` or a Kata class; the cluster default unless set. Advised: a runner parses untrusted repository content and runs what the model asks. |
