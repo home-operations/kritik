@@ -146,7 +146,7 @@ jobs:
         run: |
           [ -n "${DIGEST}" ] || { echo "::error::empty image digest from build job"; exit 1; }
           [ -n "${TOOLS_DIGEST}" ] || { echo "::error::empty -tools image digest from build job"; exit 1; }
-          yq -i '.image.digest = strenv(DIGEST) | .runner.toolsImage.digest = strenv(TOOLS_DIGEST)' charts/kritika/values.yaml
+          yq -i '.image.digest = strenv(DIGEST) | .runner.image.digest = strenv(TOOLS_DIGEST)' charts/kritika/values.yaml
 
       - name: Package Helm chart
         run: helm package charts/kritika --version "${VERSION}" --app-version "${VERSION}"

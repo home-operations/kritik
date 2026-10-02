@@ -94,21 +94,15 @@ The helm test pod's curl image.
 {{- end }}
 
 {{/*
-Runner image: the runner block's override, else the release's -tools image
-when enabled (its own digest wins over the tag, as in kritika.image), else
-the chart image.
+Runner image reference, as kritika.image but with the tag defaulting to the
+release's -tools image.
 */}}
 {{- define "kritika.runnerImage" -}}
-{{- if .Values.runner.image -}}
-{{- .Values.runner.image -}}
-{{- else if .Values.runner.toolsImage.enabled -}}
-{{- if .Values.runner.toolsImage.digest -}}
-{{- printf "%s@%s" .Values.image.repository .Values.runner.toolsImage.digest -}}
+{{- $img := .Values.runner.image -}}
+{{- if $img.digest -}}
+{{- printf "%s@%s" $img.repository $img.digest -}}
 {{- else -}}
-{{- printf "%s:%s-tools" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) -}}
-{{- end -}}
-{{- else -}}
-{{- include "kritika.image" . -}}
+{{- printf "%s:%s" $img.repository ($img.tag | default (printf "%s-tools" .Chart.AppVersion)) -}}
 {{- end -}}
 {{- end }}
 
@@ -202,6 +196,8 @@ an `env` key that would duplicate one of them.
   value: kubernetes
 - name: KRITIKA_RUNNER_IMAGE
   value: {{ include "kritika.runnerImage" . | quote }}
+- name: KRITIKA_RUNNER_IMAGE_PULL_POLICY
+  value: {{ .Values.runner.image.pullPolicy | quote }}
 - name: KRITIKA_RUNNER_SERVICE_ACCOUNT
   value: {{ include "kritika.runnerServiceAccountName" . | quote }}
 - name: KRITIKA_RUNNER_DATABASE_SECRET

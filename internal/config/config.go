@@ -145,9 +145,14 @@ type Config struct {
 	// Executor selects how runners run; see the Executor type.
 	Executor Executor `env:"KRITIKA_EXECUTOR" envDefault:"kubernetes"`
 
-	// RunnerImage is the image runner Jobs use, normally serve's own.
-	// Required to serve with the kubernetes executor.
+	// RunnerImage is the image runner Jobs use, normally the release's
+	// -tools image. Required to serve with the kubernetes executor.
 	RunnerImage string `env:"KRITIKA_RUNNER_IMAGE"`
+
+	// RunnerImagePullPolicy is the runner container's imagePullPolicy:
+	// Always, IfNotPresent or Never. Empty leaves Kubernetes' default for
+	// the image reference.
+	RunnerImagePullPolicy string `env:"KRITIKA_RUNNER_IMAGE_PULL_POLICY"`
 
 	// RunnerServiceAccount is the permissionless service account runner pods
 	// run as. RunnerDatabaseSecret and RunnerDatabaseSecretKey locate the
@@ -196,6 +201,12 @@ func (c *Config) ValidateServe() error {
 	var errs []error
 	if c.Executor == ExecutorKubernetes && c.RunnerImage == "" {
 		errs = append(errs, errors.New("config: KRITIKA_RUNNER_IMAGE is required with the kubernetes executor"))
+	}
+	switch c.RunnerImagePullPolicy {
+	case "", "Always", "IfNotPresent", "Never":
+	default:
+		errs = append(errs, fmt.Errorf("config: KRITIKA_RUNNER_IMAGE_PULL_POLICY %q is not Always, IfNotPresent or Never",
+			c.RunnerImagePullPolicy))
 	}
 	if c.Executor == ExecutorLocal && c.RunnerDatabaseURL == "" {
 		errs = append(errs, errors.New("config: KRITIKA_RUNNER_DATABASE_URL is required with the local executor"))

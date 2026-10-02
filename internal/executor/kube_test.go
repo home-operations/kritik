@@ -43,7 +43,7 @@ func spec() Spec {
 }
 
 func TestJobSpec(t *testing.T) {
-	k := &Kube{Namespace: "kritika", Image: "ttl.sh/x:1h", ServiceAccount: "kritika-runner", DatabaseSecret: "kritika-postgres-runner", DatabaseSecretKey: "uri",
+	k := &Kube{Namespace: "kritika", Image: "ttl.sh/x:1h", ImagePullPolicy: "IfNotPresent", ServiceAccount: "kritika-runner", DatabaseSecret: "kritika-postgres-runner", DatabaseSecretKey: "uri",
 		GatewayURL: "http://kritika-gateway:8082", RuntimeClass: "gvisor", TTL: 10 * time.Minute}
 	j := mustJob(t, k, spec())
 	if j.Name != "kritika-run-01234567" || j.Namespace != "kritika" {
@@ -61,8 +61,11 @@ func TestJobSpec(t *testing.T) {
 		t.Fatalf("pod spec = %+v", pod)
 	}
 	c := pod.Containers[0]
-	if c.Image != "ttl.sh/x:1h" || len(c.Args) != 1 || c.Args[0] != "run" {
+	if c.Image != "ttl.sh/x:1h" || c.ImagePullPolicy != corev1.PullIfNotPresent || len(c.Args) != 1 || c.Args[0] != "run" {
 		t.Fatalf("container = %+v", c)
+	}
+	if bare := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, spec()).Spec.Template.Spec.Containers[0]; bare.ImagePullPolicy != "" {
+		t.Fatal("a Kube without a pull policy must leave the container on Kubernetes' default")
 	}
 	checkRunnerEnv(t, c.Env)
 	checkProxyEnv(t, c.Env, "http://kritika-gateway:8082")

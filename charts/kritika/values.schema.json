@@ -1013,13 +1013,39 @@
       "type": "object"
     },
     "runner": {
-      "description": "Runner Jobs: one pod per review or index run, created by kritika serve in the\nrelease namespace from the same image, running as a service account with\nno permissions and a database role that can only touch its own run. The\nserver's Role reaches every Secret in the release namespace, so install\nkritika into a namespace of its own. Their deadline and RuntimeClass are\n`config.runnerDeadline` and `config.runnerRuntimeClass`; a sandboxed\nRuntimeClass (gVisor, Kata) is advised, since a runner parses untrusted\nrepository content and runs what the model asks.",
+      "description": "Runner Jobs: one pod per review or index run, created by kritika serve in the\nrelease namespace from the release's -tools image, running as a service\naccount with no permissions and a database role that can only touch its own\nrun. The server's Role reaches every Secret in the release namespace, so\ninstall kritika into a namespace of its own. Their deadline and RuntimeClass\nare `config.runnerDeadline` and `config.runnerRuntimeClass`; a sandboxed\nRuntimeClass (gVisor, Kata) is advised, since a runner parses untrusted\nrepository content and runs what the model asks.",
       "properties": {
         "image": {
-          "default": "",
-          "description": "Image for runner Jobs; empty uses the release's `-tools` image when `toolsImage.enabled`, else the chart's image.",
+          "description": "Image for runner Jobs: the release's `-tools` image, which adds curl, fd,\ngh, jq, rg and yq for an agentic review's `agent.commands`.",
+          "properties": {
+            "digest": {
+              "default": "",
+              "description": "Pin the runner image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published `-tools` image's digest.",
+              "title": "digest",
+              "type": "string"
+            },
+            "pullPolicy": {
+              "default": "IfNotPresent",
+              "description": "Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY).",
+              "title": "pullPolicy",
+              "type": "string"
+            },
+            "repository": {
+              "default": "ghcr.io/home-operations/kritika",
+              "description": "Runner image repository.",
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "",
+              "description": "Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended.",
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
           "title": "image",
-          "type": "string"
+          "type": "object"
         },
         "resources": {
           "description": "Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec.",
@@ -1059,25 +1085,6 @@
           },
           "title": "tools",
           "type": "array"
-        },
-        "toolsImage": {
-          "properties": {
-            "digest": {
-              "default": "",
-              "description": "Pin the `-tools` image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published `-tools` image's digest.",
-              "title": "digest",
-              "type": "string"
-            },
-            "enabled": {
-              "default": false,
-              "description": "Run runner Jobs on the release's `-tools` image, which adds curl, fd, gh, jq, rg and yq for an agentic review's `agent.commands`: `image.repository` at the chart's tag with `-tools` appended, or pinned by `digest`.",
-              "title": "enabled",
-              "type": "boolean"
-            }
-          },
-          "required": [],
-          "title": "toolsImage",
-          "type": "object"
         },
         "ttl": {
           "default": "10m",
