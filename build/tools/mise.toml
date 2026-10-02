@@ -1,0 +1,20 @@
+# The tools the -tools image puts on the agent's PATH, installed by the
+# Dockerfile's runner-tools stage with `mise install --locked` at the URLs
+# and checksums mise.lock pins per platform. The image carries glibc, libgcc
+# and libstdc++ and no other library, so a build may link against those or
+# be static. After changing a version, refresh the lock with
+# `mise -C build/tools lock -p linux-x64,linux-arm64`.
+[tools]
+# No registry short name for this one; the short names below resolve to
+# aqua packages as well.
+"aqua:stunnel/static-curl" = "8.22.0"
+fd = "10.5.0"
+gh = "2.102.0"
+jq = "1.8.2"
+rg = "15.2.0"
+yq = "4.54.1"
+
+[env]
+# The executables the stage copies into the image, since a tool's install
+# can hold more than the command it is there for.
+RUNNER_COMMANDS = "curl fd gh jq rg yq"

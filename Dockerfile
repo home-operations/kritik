@@ -9,7 +9,7 @@ ARG NODE_VERSION
 # ---- UI build ---------------------------------------------------------------
 # The built UI is the same bytes on every platform, so it is built once, on
 # the build host, rather than per target under emulation.
-FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS ui
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-trixie-slim AS ui
 WORKDIR /ui
 COPY internal/web/package.json internal/web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
@@ -17,7 +17,7 @@ COPY internal/web/ ./
 RUN npm run build
 
 # ---- Go build -------------------------------------------------------------
-FROM golang:${GO_VERSION}-alpine AS builder
+FROM golang:${GO_VERSION}-trixie AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
@@ -40,15 +40,31 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
     -o kritika ./cmd/kritika
 
+# ---- Runner tools -----------------------------------------------------------
+# The release builds of the tools the -tools image puts on PATH, installed by
+# mise from build/tools/mise.toml at the URLs and checksums its lockfile pins
+# for this platform. A glibc stage, so mise records the same linux-x64 and
+# linux-arm64 platforms as the repository's own lockfile. mise's image has no
+# shell to copy the binaries out with, so only its static binary is taken
+# from it.
+FROM jdxcode/mise:2026.10.0 AS mise
+FROM debian:trixie-slim AS runner-tools
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
+WORKDIR /tools
+COPY build/tools/mise.toml build/tools/mise.lock ./
+RUN mise trust && mise install --locked && mkdir /out \
+    && mise exec -- sh -c 'for c in $RUNNER_COMMANDS; do cp "$(command -v "$c")" /out/; done'
+
 # ---- Runtime with runner tools ----------------------------------------------
-# kritika with curl, fd, gh, jq, rg and yq on PATH for the agent's run tool,
-# the chart's runner image for runner Jobs. Built with --target
-# tools; published as the -tools tag of each release.
-FROM alpine:3.24 AS tools
-RUN apk add --no-cache curl fd github-cli jq ripgrep yq-go
+# kritika with the agent's commands on PATH for its run tool, the chart's
+# runner image for runner Jobs. Built with --target tools; published as the
+# -tools tag of each release. Distroless with glibc, libgcc and libstdc++ for
+# the tools' release builds, and no shell or package manager, so those
+# commands are the only other programs a pod can start.
+FROM gcr.io/distroless/cc:nonroot AS tools
+COPY --from=runner-tools /out/ /usr/local/bin/
 COPY --from=builder /workspace/kritika /kritika
-USER 65532:65532
-EXPOSE 8080 8081
 ENTRYPOINT ["/kritika"]
 
 # ---- Runtime --------------------------------------------------------------
@@ -56,5 +72,4 @@ ENTRYPOINT ["/kritika"]
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/kritika /kritika
-EXPOSE 8080 8081
 ENTRYPOINT ["/kritika"]

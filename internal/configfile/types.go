@@ -251,7 +251,8 @@ type Tool struct {
 	Image string `json:"image"`
 	// Path is the directory inside the image that holds the binaries; it
 	// goes first on the runner's PATH. Default "/". The binaries must be
-	// statically linked: the default runner image has no libc.
+	// statically linked or link only against glibc, libgcc and libstdc++,
+	// all the runner image carries.
 	Path string `json:"path,omitempty"`
 	// Commands are the binaries the tool provides, the names agent.commands
 	// allows; default the tool's name.
