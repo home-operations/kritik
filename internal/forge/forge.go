@@ -83,7 +83,7 @@ const (
 )
 
 // StatusContext is the commit status context kritika reports under.
-const StatusContext = "kritika/review"
+const StatusContext = "Kritika / Review"
 
 // MaxStatusDescription is the length, in characters, GitHub truncates a
 // commit status description to.
