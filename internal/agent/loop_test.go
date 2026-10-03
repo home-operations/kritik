@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -505,6 +506,54 @@ func checkStepEventToolsAndOutputBytesPopulated(t *testing.T, _ Result, events [
 	if want := len("aaaaa") + len("bbb"); first.OutputBytes != want {
 		t.Fatalf("OutputBytes = %d, want %d", first.OutputBytes, want)
 	}
+}
+
+// outageStepper fails transiently outage times, then answers with a
+// submit_review.
+type outageStepper struct {
+	outage, calls int
+}
+
+func (s *outageStepper) Step(context.Context, model.StepRequest) (model.StepResponse, error) {
+	s.calls++
+	if s.calls <= s.outage {
+		return model.StepResponse{}, fmt.Errorf("model: review: %w", io.ErrUnexpectedEOF)
+	}
+	return model.StepResponse{ToolCalls: []model.ToolCall{{ID: "1", Name: testSubmitDef.Name, Input: json.RawMessage(`{}`)}}}, nil
+}
+
+func TestRunWaitsOutATransientStepFailure(t *testing.T) {
+	old := stepRetryWaits
+	stepRetryWaits = []time.Duration{time.Millisecond, time.Millisecond}
+	t.Cleanup(func() { stepRetryWaits = old })
+	tests := []struct {
+		name      string
+		outage    int
+		wantStop  StopReason
+		wantCalls int
+	}{
+		{"an outage shorter than the waits is answered", 2, StopSubmitted, 3},
+		{"an outage past the waits ends the run", 5, StopError, 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &outageStepper{outage: tt.outage}
+			res := Run{Stepper: s, Model: "m", User: "review", Submit: testSubmitDef}.Do(t.Context())
+			if res.Stop != tt.wantStop || s.calls != tt.wantCalls {
+				t.Fatalf("stop = %s (%s) after %d calls, want %s after %d", res.Stop, res.Err, s.calls, tt.wantStop, tt.wantCalls)
+			}
+		})
+	}
+
+	t.Run("a wait the ctx cut ends the run canceled", func(t *testing.T) {
+		stepRetryWaits = []time.Duration{time.Hour}
+		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+		defer cancel()
+		s := &outageStepper{outage: 5}
+		if res := (Run{Stepper: s, Model: "m", User: "review", Submit: testSubmitDef}).Do(ctx); res.Stop != StopCanceled || s.calls != 1 {
+			t.Fatalf("stop = %s after %d calls, want canceled after one", res.Stop, s.calls)
+		}
+	})
 }
 
 func TestRun(t *testing.T) {

@@ -253,7 +253,8 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		// if the provider or the SDK echoed them.
 		msg := maskProvider(err.Error(), provider)
 		c.logger.Warn("gateway: step failed", "error", msg)
-		refuse(w, http.StatusBadGateway, "upstream_error", msg)
+		status, code := upstreamStatus(err)
+		refuse(w, status, code, msg)
 		return
 	}
 	c.logger.Debug("gateway: step", "model", resp.Model, "attempts", attempts, "input_tokens", resp.Usage.Prompt(),
@@ -265,6 +266,17 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
+}
+
+// upstreamStatus is the status and code a step its provider failed is
+// refused with. They tell the runner's loop apart what model.Transient
+// does: a provider's outage, which it may wait out and send the step again,
+// from a provider's refusal of the request, which would fail the same way.
+func upstreamStatus(err error) (int, string) {
+	if model.Transient(err) {
+		return http.StatusBadGateway, "upstream_error"
+	}
+	return http.StatusUnprocessableEntity, "upstream_refused"
 }
 
 // fallback resolves the adapter and provider of a run's fallback model on

@@ -123,6 +123,18 @@ func TestIndexArgsUniqueTags(t *testing.T) {
 	}
 }
 
+// TestReviewAttempts pins that the review, follow-up and thread jobs bound
+// their tries rather than taking River's default.
+func TestReviewAttempts(t *testing.T) {
+	for kind, opts := range map[string]river.InsertOpts{
+		"review": ReviewArgs{}.InsertOpts(), "followup": FollowUpArgs{}.InsertOpts(), "thread": ThreadArgs{}.InsertOpts(),
+	} {
+		if opts.MaxAttempts != reviewAttempts {
+			t.Fatalf("%s: MaxAttempts = %d, want %d", kind, opts.MaxAttempts, reviewAttempts)
+		}
+	}
+}
+
 // TestIndexArgsPriorities pins that updates run before forced rebuilds and
 // both before onboarding, and that every index job is retried a few times.
 func TestIndexArgsPriorities(t *testing.T) {
