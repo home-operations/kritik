@@ -1254,10 +1254,19 @@ func checkBotPatchIDSkip(
 
 	// The fake forge reports the new merge-base for the rebased head.
 	lf.setBase(newBase.String())
+	lf.mu.Lock()
+	lf.status = ""
+	lf.mu.Unlock()
 	dispatch(newHead.String(), true)
 	status, _, _ := waitReviewCount(newHead.String(), 1)
 	if status != "skipped" {
 		t.Fatalf("status = %s, want skipped for an unchanged bot patch", status)
+	}
+	lf.mu.Lock()
+	forgeStatus := lf.status
+	lf.mu.Unlock()
+	if forgeStatus != "success: kritika: skipped (patch unchanged since the last review)" {
+		t.Fatalf("forge status = %q", forgeStatus)
 	}
 	// The forge's diff told it before any runner was made for the head.
 	var runs int
