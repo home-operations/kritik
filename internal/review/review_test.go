@@ -460,6 +460,27 @@ func TestBuildRendersDescriptionAsData(t *testing.T) {
 			t.Fatalf("unexpected sections:\n%s", msg)
 		}
 	})
+	t.Run("a long description is kept whole while it fits its share of the budget", func(t *testing.T) {
+		// A Renovate body: the release notes of the oldest version in the
+		// update come last, well past the first few thousand bytes.
+		in.Body = "### Release Notes\n" + strings.Repeat("- a fix\n", 800) + "### v0.12.17\n- the oldest release in the update\n"
+		msg, _, _ := Build(in)
+		if !strings.Contains(msg, "### v0.12.17\n- the oldest release in the update\n</description>") || strings.Contains(msg, "was cut here") {
+			t.Fatalf("the whole description must reach the model:\n%s", msg)
+		}
+	})
+	t.Run("a description over its share is cut on a rune boundary with a note of what was left out", func(t *testing.T) {
+		in.BudgetTokens = 1_000 // 4,000 characters, a quarter of which the description may take
+		in.Body = strings.Repeat("x", 999) + "é" + strings.Repeat("y", 500)
+		msg, _, _ := Build(in)
+		want := strings.Repeat("x", 999) + "\n[The description was cut here to fit the prompt budget: 502 more bytes.]\n</description>"
+		if !strings.Contains(msg, want) || strings.Contains(msg, "xé") {
+			t.Fatalf("missing %q in:\n%s", want, msg)
+		}
+		if len(msg) > in.BudgetTokens*charsPerToken {
+			t.Fatalf("message is %d chars, over the budget", len(msg))
+		}
+	})
 }
 
 type node struct {

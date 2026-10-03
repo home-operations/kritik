@@ -46,4 +46,20 @@ func TestBuildIssues(t *testing.T) {
 	if msg, _, _ := Build(Input{Repository: "acme/widgets", Diff: "d"}); strings.Contains(msg, "Issues the description") {
 		t.Fatalf("a review without issues names none:\n%s", msg)
 	}
+	t.Run("the issues share a quarter of the budget, each cut with a note of what was left out", func(t *testing.T) {
+		msg, _, _ := Build(Input{
+			Repository: "acme/widgets", Number: 7, Diff: "d", BudgetTokens: 1_000, // 4,000 characters, 1,000 for the issues: 500 each
+			Issues: []Issue{
+				{Number: 12, Title: "fits", Body: strings.Repeat("a", 500)},
+				{Number: 13, Title: "over", Body: strings.Repeat("b", 600)},
+			},
+		})
+		if !strings.Contains(msg, "\n"+strings.Repeat("a", 500)+"\n</issue>") {
+			t.Fatalf("an issue within its share is whole:\n%s", msg)
+		}
+		want := "\n" + strings.Repeat("b", 500) + "\n[Issue #13 was cut here to fit the prompt budget: 100 more bytes.]\n</issue>"
+		if !strings.Contains(msg, want) {
+			t.Fatalf("missing %q in:\n%s", want, msg)
+		}
+	})
 }
