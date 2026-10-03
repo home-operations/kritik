@@ -285,6 +285,16 @@ test.describe('pulls list', () => {
     await expect(page.getByRole('button', { name: 'Clear filters' })).toHaveCount(0);
   });
 
+  test('each pull request shows how many of its reviews completed and what they all cost', async ({ page }) => {
+    const none = { ...g.pull, number: 12, url: g.pull.url.replace(/\d+$/, '12'), lastReview: null, reviewCount: 0, costUsd: 0 };
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([g.pull, none])], ...g.defaultApi()]);
+    await page.goto(`/${T}/pulls`);
+    await expect(page.getByRole('columnheader')).toContainText(['Pull request', 'Findings', 'Last review', 'Reviews', 'Cost', 'Updated']);
+    const rows = page.locator('.pull-rows .pull-row');
+    await expect(rows.nth(0).locator('td.num')).toContainText([String(g.pull.reviewCount), '$0.84']);
+    await expect(rows.nth(1).locator('td.num')).toContainText(['0', '$0']);
+  });
+
   test("a fork's pull request not reviewed says it is reviewed on request", async ({ page }) => {
     const fork = { ...g.pull, number: 12, url: g.pull.url.replace(/\d+$/, '12'), fork: true, lastReview: null };
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([fork, { ...g.pull, lastReview: null }])], ...g.defaultApi()]);
