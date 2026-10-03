@@ -103,7 +103,14 @@ func (s *Server) getPull(w http.ResponseWriter, r *http.Request, t *accountScope
 		if err != nil {
 			return err
 		}
+		job, err := store.FindLiveReviewJob(ctx, tx, p.RepositoryID, p.Number)
+		if err != nil {
+			return err
+		}
 		d = PullDetail{Pull: pull(p), Reviews: make([]Review, len(reviews)), Followups: followupList(followups)}
+		if job != nil {
+			d.Job = new(jobItem(*job))
+		}
 		for i, v := range reviews {
 			d.Reviews[i] = reviewItem(v)
 		}

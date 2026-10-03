@@ -1020,6 +1020,13 @@ input[type='checkbox'][role='switch']:focus-visible {
 }
 
 /* ---- findings -------------------------------------------------------------- */
+.job-notice {
+  margin: 0;
+}
+.job-notice .error-text {
+  display: block;
+  margin: 4px 0;
+}
 .latest-review {
   display: flex;
   flex-direction: column;

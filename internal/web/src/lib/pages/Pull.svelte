@@ -5,7 +5,7 @@
   import { repoRoute, rerunPath, accountApi, threadUrl } from '../links';
   import { isAdmin } from '../session.svelte';
   import ActionButton from '../components/ActionButton.svelte';
-  import { shortSha, SEVERITIES } from '../format';
+  import { jobCauseText, shortSha, SEVERITIES } from '../format';
   import { safeHref } from '../markdown';
   import type { PullDetail, ReviewDetail } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -41,6 +41,15 @@
       },
     ),
   );
+
+  // A job that waits or is retried changes state without an event, so poll
+  // while there is one.
+  const job = $derived(res.data?.job);
+  $effect(() => {
+    if (!job) return;
+    const t = setInterval(() => void res.load(), 15_000);
+    return () => clearInterval(t);
+  });
 
   // Label colours come from the forge; anything but a hex triplet/quad/etc.
   // falls back to the border colour rather than reaching the style attribute.
@@ -99,6 +108,25 @@
             </div>
           {/if}
         </header>
+
+        <!-- A running job with no failed attempt behind it is the running review below. -->
+        {#if d.job && (d.job.state !== 'running' || d.job.lastError)}
+          {@const j = d.job}
+          <p class="notice job-notice" role="note">
+            {#if j.state === 'running'}
+              A review is running, attempt {j.attempt} of {j.maxAttempts}.
+            {:else if j.lastError}
+              A review is waiting to run again: attempt {j.attempt} of {j.maxAttempts} failed, the next is due at
+              <time datetime={j.scheduledAt}>{new Date(j.scheduledAt).toLocaleTimeString()}</time>.
+            {:else}
+              A review is queued.
+            {/if}
+            {#if j.lastError}
+              <span class="error-text">{#if j.cause}<strong>{jobCauseText[j.cause]}</strong>{' '}{/if}{j.lastError}</span>
+            {/if}
+            <a href={href({ name: 'queue', slug })}>Open the queue</a>
+          </p>
+        {/if}
 
         {#if d.reviews.length === 0}
           <p class="state-msg">Not reviewed yet.</p>

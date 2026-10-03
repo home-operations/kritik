@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -115,36 +116,59 @@ const (
 	queueActive   = 500
 )
 
+// jobColumns selects a JobRow from the account's review, follow-up and
+// index jobs. River's tables carry no row-level security, so the account
+// comes from the transaction's own setting rather than a parameter a caller
+// could get wrong.
+const jobColumns = `j.id, j.kind, j.state::text, j.attempt, j.max_attempts, j.created_at, j.scheduled_at, j.attempted_at, j.finalized_at,
+	coalesce(j.args->>'repository_id', ''), coalesce(r.name, ''), coalesce((j.args->>'number')::int, 0),
+	coalesce(j.args->>'head_sha', j.args->>'commit_sha', ''), coalesce(j.args->>'trigger', ''),
+	coalesce((j.args->>'comment_id')::bigint, 0), coalesce(j.errors[array_length(j.errors, 1)]->>'error', '')
+	FROM river_job j LEFT JOIN repositories r ON r.id::text = j.args->>'repository_id'
+	WHERE j.args->>'account_id' = current_setting('app.account_id', true) AND j.kind IN ('review', 'followup', 'index')`
+
+func scanJob(row pgx.CollectableRow) (JobRow, error) {
+	var j JobRow
+	var state string
+	err := row.Scan(&j.ID, &j.Kind, &state, &j.Attempt, &j.MaxAttempts, &j.CreatedAt, &j.ScheduledAt, &j.AttemptedAt, &j.FinalizedAt,
+		&j.RepositoryID, &j.Repository, &j.Number, &j.Head, &j.Trigger, &j.CommentID, &j.LastError)
+	j.State = rivertype.JobState(state)
+	return j, err
+}
+
 // ListQueue returns the account's review, follow-up and index jobs that
 // have not finished, oldest first, then the most recently finished ones.
-// River's tables carry no row-level security, so the account comes from
-// the transaction's own setting rather than a parameter a caller could get
-// wrong.
 func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
-	const cols = `j.id, j.kind, j.state::text, j.attempt, j.max_attempts, j.created_at, j.scheduled_at, j.attempted_at, j.finalized_at,
-		coalesce(j.args->>'repository_id', ''), coalesce(r.name, ''), coalesce((j.args->>'number')::int, 0),
-		coalesce(j.args->>'head_sha', j.args->>'commit_sha', ''), coalesce(j.args->>'trigger', ''),
-		coalesce((j.args->>'comment_id')::bigint, 0), coalesce(j.errors[array_length(j.errors, 1)]->>'error', '')
-		FROM river_job j LEFT JOIN repositories r ON r.id::text = j.args->>'repository_id'
-		WHERE j.args->>'account_id' = current_setting('app.account_id', true) AND j.kind IN ('review', 'followup', 'index')`
-	rows, err := tx.Query(ctx, `(SELECT `+cols+` AND j.state IN (`+jobs.LiveStatesSQL()+`)
+	rows, err := tx.Query(ctx, `(SELECT `+jobColumns+` AND j.state IN (`+jobs.LiveStatesSQL()+`)
 			ORDER BY j.scheduled_at, j.id LIMIT $1)
 		UNION ALL
-		(SELECT `+cols+` AND j.state IN ('completed', 'cancelled', 'discarded')
+		(SELECT `+jobColumns+` AND j.state IN ('completed', 'cancelled', 'discarded')
 			ORDER BY j.finalized_at DESC NULLS LAST, j.id DESC LIMIT $2)`, queueActive, queueFinished)
 	if err != nil {
 		return nil, fmt.Errorf("store: list queue: %w", err)
 	}
-	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (JobRow, error) {
-		var j JobRow
-		var state string
-		err := row.Scan(&j.ID, &j.Kind, &state, &j.Attempt, &j.MaxAttempts, &j.CreatedAt, &j.ScheduledAt, &j.AttemptedAt, &j.FinalizedAt,
-			&j.RepositoryID, &j.Repository, &j.Number, &j.Head, &j.Trigger, &j.CommentID, &j.LastError)
-		j.State = rivertype.JobState(state)
-		return j, err
-	})
+	out, err := pgx.CollectRows(rows, scanJob)
 	if err != nil {
 		return nil, fmt.Errorf("store: list queue: %w", err)
 	}
 	return out, nil
+}
+
+// FindLiveReviewJob returns the review job of a pull request that has not
+// finished, the newest when there are several, or nil when there is none.
+func FindLiveReviewJob(ctx context.Context, tx pgx.Tx, repositoryID string, number int) (*JobRow, error) {
+	rows, err := tx.Query(ctx, `SELECT `+jobColumns+` AND j.kind = 'review' AND j.state IN (`+jobs.LiveStatesSQL()+`)
+			AND j.args->>'repository_id' = $1 AND (j.args->>'number')::int = $2
+		ORDER BY j.id DESC LIMIT 1`, repositoryID, number)
+	if err != nil {
+		return nil, fmt.Errorf("store: find live review job: %w", err)
+	}
+	j, err := pgx.CollectExactlyOneRow(rows, scanJob)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: find live review job: %w", err)
+	}
+	return &j, nil
 }

@@ -289,6 +289,7 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/pulls?state=all&repo=wa/one&outcome=completed&q=webapi-a", `"title":"PR of webapi-a"`},
 		{a + "/pulls?state=all&author=ADA", `"title":"PR of webapi-a"`},
 		{a + "/pulls/wa/one/7", `"title":"PR of webapi-a"`},
+		{a + "/pulls/wa/one/7", `"job":{"id":`},
 		{a + "/reviews/" + e.a.reviewID, `"logTail":"tail of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/diff", `"diff":"diff of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/transcript", `"system":"sys of webapi-a"`},

@@ -299,11 +299,15 @@ type Followup struct {
 	CreatedAt      time.Time            `json:"createdAt"`
 }
 
-// PullDetail is a pull request with every review and follow-up.
+// PullDetail is a pull request with every review and follow-up. Job is
+// its review job that has not finished, nil when there is none: a review
+// row only exists once a job got as far as starting the review, so a job
+// that waits or keeps failing before that shows nowhere else.
 type PullDetail struct {
 	Pull      Pull       `json:"pull"`
 	Reviews   []Review   `json:"reviews"`
 	Followups []Followup `json:"followups"`
+	Job       *Job       `json:"job"`
 }
 
 // PullRef names a pull request, and where it is on the forge.

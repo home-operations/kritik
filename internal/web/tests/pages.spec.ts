@@ -505,6 +505,30 @@ test.describe('review', () => {
   });
 });
 
+test('pull detail says what its unfinished review job waits on, and nothing of one that simply runs', async ({ page }) => {
+  await g.mockApi(page, g.defaultApi());
+  await page.goto(`/${T}/pulls/alpha/one/7`);
+  const j = g.job;
+  const notice = page.locator('.job-notice');
+  await expect(notice).toContainText(`A review is waiting to run again: attempt ${j.attempt} of ${j.maxAttempts} failed, the next is due at`);
+  await expect(notice).toContainText(`GitHub did not answer. ${j.lastError}`);
+  await expect(notice.getByRole('link', { name: 'Open the queue' })).toHaveAttribute('href', `#/a/${g.SLUG}/queue`);
+
+  const pull = /\/pulls\/alpha\/one\/7$/;
+  await g.mockApi(page, [[pull, { ...g.pullDetail, job: { ...j, state: 'running' } }], ...g.defaultApi()]);
+  await page.reload();
+  await expect(notice).toContainText(`A review is running, attempt ${j.attempt} of ${j.maxAttempts}.`);
+
+  await g.mockApi(page, [[pull, { ...g.pullDetail, job: { ...j, state: 'available', attempt: 0, lastError: '', cause: '' } }], ...g.defaultApi()]);
+  await page.reload();
+  await expect(notice).toHaveText('A review is queued. Open the queue');
+
+  await g.mockApi(page, [[pull, { ...g.pullDetail, job: { ...j, state: 'running', attempt: 1, lastError: '', cause: '' } }], ...g.defaultApi()]);
+  await page.reload();
+  await expect(page.locator('h1')).toContainText(g.pullDetail.pull.title);
+  await expect(notice).toHaveCount(0);
+});
+
 test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/queue`);
