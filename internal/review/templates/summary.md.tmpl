@@ -3,6 +3,10 @@
 {{ if .Incomplete -}}
 **Review incomplete for {{ if .HeadURL }}[`{{ trunc 7 .HeadSHA }}`]({{ .HeadURL }}){{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }}:** {{ .Incomplete }}. Findings posted for earlier heads may no longer apply.
 {{ else -}}
+{{ if .Result.Summary.Headline -}}
+{{ .Result.Summary.Headline }}
+
+{{ end -}}
 {{ if .Result.Findings -}}
 **{{ len .Result.Findings }} {{ plural "finding" "findings" (len .Result.Findings) }}**{{ if .Counts.Blocking }} · {{ .Counts.Blocking }} blocking{{ end }}{{ if .Counts.Important }} · {{ .Counts.Important }} important{{ end }}{{ if .Counts.Nit }} · {{ .Counts.Nit }} nit{{ end }}
 {{ else -}}

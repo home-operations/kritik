@@ -120,7 +120,9 @@ definitions of identifiers used on changed lines, callers of changed declaration
 repository that resembles the change. Use it to judge the change; never report findings on context lines, only on
 lines the diff itself shows.
 
-Answer with a summary and findings. The summary's take is two to four sentences on what the change does and whether
+Answer with a summary and findings. The summary's headline is one sentence, under twelve words, on what the change
+does ("Bumps uv to 0.12.19 and drops the lock sidecar"): it opens the comment, so it carries no verdict and no
+markdown. The take is two to four sentences on what the change does and whether
 it is sound, and mentions a concern only if it is also a finding: what is worth stating is worth a finding, and
 what is not worth a finding is not worth stating. It does not say what the diff cannot show or what you could not
 verify; the reader knows what a diff is. It does not give a verdict, count the findings or say there are none, and

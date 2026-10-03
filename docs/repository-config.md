@@ -81,7 +81,7 @@ context:
   or checksum, and not `set` or `unset`). The `template`, `define` and
   `block` actions are refused, so a template cannot read any file or call
   any other template. The summary template's dot is the review (`.Number`,
-  `.HeadSHA`, `.HeadURL`, `.Model`, `.AuthorIsBot`, `.Result.Summary.Take`,
+  `.HeadSHA`, `.HeadURL`, `.Model`, `.AuthorIsBot`, `.Result.Summary.Headline`, `.Result.Summary.Take`,
   `.Result.Summary.Praise`, `.Result.Findings`,
   `.Counts.Blocking`/`.Important`/`.Nit`, `.Unanchored`, the findings on
   lines the diff does not show, `.Notes`, `.Incremental`, `.PriorHeadSHA`,

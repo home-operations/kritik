@@ -97,8 +97,11 @@ func (c Category) Focused() bool { return slices.Contains(focusedCategories, c) 
 
 // Summary is the review's overall judgement for the sticky comment.
 type Summary struct {
-	Take   string   `json:"take"`
-	Praise []string `json:"praise"`
+	// Headline is one sentence on what the change does, the summary
+	// comment's first line; "" from a review made before it was asked for.
+	Headline string   `json:"headline,omitempty"`
+	Take     string   `json:"take"`
+	Praise   []string `json:"praise"`
 }
 
 // maxPraise bounds Summary.Praise; the schema says so and Parse enforces it.
@@ -246,6 +249,7 @@ type ParseOptions struct {
 // context, so a template sees the names the model was asked for.
 const (
 	keySummary      = "summary"
+	keyHeadline     = "headline"
 	keyTake         = "take"
 	keyPraise       = "praise"
 	keyFindings     = "findings"
@@ -330,6 +334,10 @@ func contractSchema(requireFix bool) json.RawMessage {
 			keySummary: {
 				Type: schemaObject,
 				Properties: map[string]*jsonSchema{
+					keyHeadline: {
+						Type:        schemaString,
+						Description: "One sentence, under twelve words, on what the change does; it opens the comment. No markdown.",
+					},
 					keyTake: {
 						Type:        schemaString,
 						Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
@@ -341,7 +349,7 @@ func contractSchema(requireFix bool) json.RawMessage {
 						MaxItems:    maxPraise,
 					},
 				},
-				Required: []string{keyTake, keyPraise},
+				Required: []string{keyHeadline, keyTake, keyPraise},
 			},
 			keyFindings: {
 				Type: schemaArray,
@@ -389,7 +397,7 @@ func SchemaStrict() json.RawMessage { return slices.Clone(findingsSchemaStrict) 
 func Check(raw json.RawMessage) error {
 	var res Result
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return fmt.Errorf("review: %w; the input is an object with a summary object {take, praise} and a findings array", err)
+		return fmt.Errorf("review: %w; the input is an object with a summary object {headline, take, praise} and a findings array", err)
 	}
 	if strings.TrimSpace(res.Summary.Take) == "" {
 		return errors.New("review: summary.take is required: two to four sentences on the change")
@@ -413,6 +421,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 	if err := dec.Decode(&res); err != nil {
 		return Result{}, nil, fmt.Errorf("review: model output is not the expected JSON: %w", err)
 	}
+	res.Summary.Headline = oneLine(prose(res.Summary.Headline, opts.Repository))
 	res.Summary.Take = prose(res.Summary.Take, opts.Repository)
 	praise := make([]string, 0, maxPraise)
 	for _, p := range res.Summary.Praise {

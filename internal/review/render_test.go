@@ -12,7 +12,7 @@ import (
 
 func sampleData() RenderData {
 	res := Result{
-		Summary: Summary{Take: "Solid change with one real bug.", Praise: []string{"Clear tests"}},
+		Summary: Summary{Headline: "Adds the widget cache.", Take: "Solid change with one real bug.", Praise: []string{"Clear tests"}},
 		Findings: []Finding{
 			{Path: "main.go", Line: 11, Severity: SeverityBlocking, Category: CategoryCorrectness, Title: "nil map write", Explanation: "m is nil here.",
 				SuggestedFix: "m = map[string]int{}", URL: "https://forge.example/o/r/blob/0123456789abcdef/main.go#L11"},
@@ -70,7 +70,7 @@ func TestRenderSummaryDefault(t *testing.T) {
 		t.Fatalf("first line = %q", first)
 	}
 	for _, want := range []string{
-		"## Kritika Review\n\n**2 findings**",
+		"## Kritika Review\n\nAdds the widget cache.\n\n**2 findings** · 1 blocking · 1 nit\n\n## Findings\n",
 		"**2 findings** · 1 blocking · 1 nit\n",
 		"## Findings\n\n- **[blocking",
 		"### Summary\n\nSolid change with one real bug.\n\n**What's good**\n\n- Clear tests\n",
