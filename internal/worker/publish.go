@@ -150,9 +150,10 @@ func skipDescription(reason string, maxChangedLines int) string {
 // not fully reviewed, in kritika's own template, and records the model.
 func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string) error {
 	owner, repo := p.pr.ownerRepo()
+	web, pull := p.dashboard(owner, repo)
 	body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
-		Incomplete: reason, Notes: p.repoNotes,
+		Incomplete: reason, Notes: p.repoNotes, WebURL: web, PullURL: pull,
 	})
 	commentID, err := p.upsertSticky(ctx, body)
 	if err != nil {
@@ -250,10 +251,12 @@ func (p *publishPhase) writeBack(
 	if p.agent != nil {
 		sources = review.SourceLinks(p.agent.Sources)
 	}
+	web, pull := p.dashboard(owner, repo)
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: res.Counts(), Notes: notes, Unanchored: unanchored,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources,
+		WebURL: web, PullURL: pull,
 	}
 	if data.Incremental {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
@@ -503,4 +506,13 @@ func (p *publishPhase) persist(
 			CommentID: commentID,
 		})
 	})
+}
+
+// dashboard is the dashboard's origin and the pull request's page on it,
+// both "" when the worker was given no web URL.
+func (p *publishPhase) dashboard(owner, repo string) (web, pull string) {
+	if p.w.WebURL == nil {
+		return "", ""
+	}
+	return p.w.WebURL.String(), review.PullPageURL(p.w.WebURL, string(p.account.Forge), p.account.Name, owner, repo, p.pr.number)
 }

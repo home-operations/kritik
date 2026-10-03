@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"net/url"
 	"reflect"
 	"runtime"
 	"strings"
@@ -22,6 +23,43 @@ func sampleData() RenderData {
 		Notes: []string{"1 file(s) were omitted from the diff to fit the context budget"}}
 }
 
+func TestRenderSummaryRerunBadge(t *testing.T) {
+	d := sampleData()
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	if strings.Contains(body, "badges/rerun") || !strings.Contains(body, "\n## Kritika Review\n") {
+		t.Fatalf("without a dashboard the heading is bare:\n%s", body)
+	}
+	d.WebURL, d.PullURL = "https://kritika.example/k", "https://kritika.example/k/#/a/github/acme/pulls/acme/widgets/42"
+	body, _ = RenderSummary(t.Context(), Templates{}, d)
+	want := "\n## <a href=\"https://kritika.example/k/#/a/github/acme/pulls/acme/widgets/42\"><picture>" +
+		"<source media=\"(prefers-color-scheme: dark)\" srcset=\"https://kritika.example/k/badges/rerun-dark.svg\">" +
+		"<img alt=\"Re-run\" src=\"https://kritika.example/k/badges/rerun.svg\" align=\"right\"></picture></a>Kritika Review\n"
+	if !strings.Contains(body, want) {
+		t.Fatalf("missing %q in:\n%s", want, body)
+	}
+}
+
+func TestPullPageURL(t *testing.T) {
+	web, _ := url.Parse("https://kritika.example/k")
+	tests := []struct {
+		name                        string
+		web                         *url.URL
+		forge, account, owner, repo string
+		want                        string
+	}{
+		{"no dashboard", nil, "github", "acme", "acme", "widgets", ""},
+		{"with a base path", web, "github", "acme", "acme", "widgets", "https://kritika.example/k/#/a/github/acme/pulls/acme/widgets/42"},
+		{"escaped segments", web, "forgejo", "Acme Org", "acme", "a/b", "https://kritika.example/k/#/a/forgejo/Acme%20Org/pulls/acme/a%2Fb/42"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PullPageURL(tt.web, tt.forge, tt.account, tt.owner, tt.repo, 42); got != tt.want {
+				t.Fatalf("PullPageURL = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRenderSummaryDefault(t *testing.T) {
 	body, notes := RenderSummary(t.Context(), Templates{}, sampleData())
 	if len(notes) != 0 {
@@ -32,7 +70,7 @@ func TestRenderSummaryDefault(t *testing.T) {
 		t.Fatalf("first line = %q", first)
 	}
 	for _, want := range []string{
-		"### kritika review",
+		"## Kritika Review\n\n**2 findings**",
 		"**2 findings** · 1 blocking · 1 nit\n",
 		"Solid change with one real bug.",
 		"- Clear tests",
@@ -134,7 +172,7 @@ func TestRenderSummaryIncomplete(t *testing.T) {
 		t.Fatalf("notes = %v", notes)
 	}
 	for _, want := range []string{
-		Marker(7), "### kritika review", "**Review incomplete for `0123456`:** agent stopped: max_steps.", "_a note._",
+		Marker(7), "## Kritika Review\n\n**Review incomplete for", "**Review incomplete for `0123456`:** agent stopped: max_steps.", "_a note._",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)
@@ -203,7 +241,7 @@ func TestRenderSummaryCustom(t *testing.T) {
 			if len(notes) != 1 || !strings.Contains(notes[0], tt.note) {
 				t.Fatalf("notes = %v, want one containing %q", notes, tt.note)
 			}
-			if !strings.Contains(body, "### kritika review") || !strings.Contains(body, notes[0]) {
+			if !strings.Contains(body, "## Kritika Review\n") || !strings.Contains(body, notes[0]) {
 				t.Fatalf("fallback body should be the default and carry the note:\n%s", body)
 			}
 			if len(body) > MaxRenderBytes {

@@ -5,7 +5,9 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/home-operations/kritika/internal/textcut"
@@ -63,6 +65,22 @@ type RenderData struct {
 	// the runner's record rather than the model's answer, as SourceLinks
 	// gives them.
 	Sources []string
+	// WebURL is the dashboard's origin, without a trailing slash, and
+	// PullURL the pull request's page on it, where an admin can re-run
+	// the review; both "" when the dashboard has no public URL. The
+	// default template then leaves the re-run badge out.
+	WebURL, PullURL string
+}
+
+// PullPageURL is the dashboard page of pull request number of owner/repo
+// under the account name on forge, for a dashboard served at web: "" when
+// web is nil.
+func PullPageURL(web *url.URL, forge, name, owner, repo string, number int) string {
+	if web == nil {
+		return ""
+	}
+	return web.String() + "/#/a/" + url.PathEscape(forge) + "/" + url.PathEscape(name) +
+		"/pulls/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/" + strconv.Itoa(number)
 }
 
 var (
@@ -90,7 +108,7 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 	if err != nil {
 		// The default renders data kritika bounds itself; failing here is a
 		// bug, but the comment must still carry the marker and the take.
-		out = textcut.Prefix(fmt.Sprintf("### kritika review\n\n%s\n", d.Result.Summary.Take), limit)
+		out = textcut.Prefix(fmt.Sprintf("## Kritika Review\n\n%s\n", d.Result.Summary.Take), limit)
 	}
 	return marker + out, notes
 }

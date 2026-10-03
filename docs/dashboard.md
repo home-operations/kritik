@@ -49,7 +49,9 @@ have been down for two seconds it reads "Reconnecting…", and the page may
 be out of date until they are back.
 
 It is served at `KRITIKA_WEB_URL`, the chart's `config.webUrl`, which the webhook
-listener shares under `/hooks`. People sign in as
+listener shares under `/hooks`. A review's summary comment carries a re-run
+badge that opens the pull request's page here, where an admin can queue a
+fresh review. People sign in as
 [`auth`](configuration.md#auth) configures, with the role it maps them to.
 
 ## First run

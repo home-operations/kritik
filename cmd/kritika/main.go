@@ -279,7 +279,7 @@ func startWorker(
 		return server.Serve(lingering(ctx, linger), cfg.GatewayAddr, gw, gateway.Drain, gatewayLogger)
 	})
 	river.AddWorker(workers, &worker.Review{
-		Base: base, Executor: exec, GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
+		Base: base, Executor: exec, GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL, WebURL: cfg.WebURLParsed(),
 	})
 	river.AddWorker(workers, &worker.FollowUp{Base: base, Steppers: steppers})
 	river.AddWorker(workers, &worker.Thread{Base: base})
