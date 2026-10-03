@@ -24,6 +24,25 @@ exclude = ["charts/kritika/README.md", "docs/**"]
 [pre-commit.commands.format-json]
 exclude = ["charts/kritika/values.schema.json"]
 
+# build/tools is a mise config root of its own, outside the shared format-mise
+# and mise-lock globs. Its fmt and lock run as a piped group: mise fmt rewrites
+# the config in place on every run, and a mise lock that reads it mid-rewrite
+# prunes every tool from build/tools/mise.lock.
+[[pre-commit.jobs]]
+glob = "build/tools/mise.toml"
+
+[pre-commit.jobs.group]
+piped = true
+
+[[pre-commit.jobs.group.jobs]]
+name = "mise-build-tools-fmt"
+run = "mise -C build/tools fmt"
+stage_fixed = true
+
+[[pre-commit.jobs.group.jobs]]
+name = "mise-build-tools-lock"
+run = "mise -C build/tools lock && git add build/tools/mise.lock"
+
 [pre-commit.commands.golangci-lint]
 glob = "*.go"
 run = "mise exec -- golangci-lint run"
