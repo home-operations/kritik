@@ -119,6 +119,13 @@ const submitNowText = "Call submit_review now with the summary and findings you 
 // the conversation never carries a message with neither text nor tool calls.
 const noResponseText = "(no response)"
 
+// stepRetryWaits are the waits before a step that failed transiently
+// (model.Transient) is sent again, while ctx lives. The Stepper has already
+// retried on its own schedule, so these outlast a provider outage that
+// schedule did not: the conversation so far is kept rather than the Run
+// ending with its steps spent. A variable for the tests.
+var stepRetryWaits = []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 4 * time.Minute}
+
 // checkSubmit says why input is not an acceptable Submit input.
 func (r Run) checkSubmit(input json.RawMessage) error {
 	var scratch any
@@ -181,6 +188,16 @@ func (r Run) Do(ctx context.Context) Result {
 
 		start := time.Now()
 		resp, err := r.Stepper.Step(ctx, req)
+		for _, wait := range stepRetryWaits {
+			if err == nil || !model.Transient(err) {
+				break
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(wait):
+				resp, err = r.Stepper.Step(ctx, req)
+			}
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				result.Stop = StopCanceled

@@ -53,6 +53,13 @@ const (
 // onboarding that fails every try is offered again later.
 const indexAttempts = 3
 
+// reviewAttempts bounds a review, follow-up or thread job's tries. With
+// River's backoff the last comes over an hour after the first, which
+// outlasts a restart or a database failover; a job that fails every try is
+// failing on its input, and each further try would only repeat its failed
+// review and commit status.
+const reviewAttempts = 8
+
 // LiveStates are the states a job is in while queued or running: what a
 // job's unique key spans, and what counts as a job still to come.
 var LiveStates = []rivertype.JobState{
@@ -91,7 +98,7 @@ func (ReviewArgs) Kind() string { return "review" }
 
 // InsertOpts implements river.JobArgsWithInsertOpts.
 func (ReviewArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{Queue: QueueReview, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	return river.InsertOpts{Queue: QueueReview, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 }
 
 // FollowUpArgs answers one comment that addressed the bot.
@@ -108,7 +115,7 @@ func (FollowUpArgs) Kind() string { return "followup" }
 
 // InsertOpts implements river.JobArgsWithInsertOpts.
 func (FollowUpArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{Queue: QueueFollowUp, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	return river.InsertOpts{Queue: QueueFollowUp, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 }
 
 // ThreadArgs applies a review thread someone resolved or unresolved to the
@@ -133,7 +140,9 @@ func (ThreadArgs) Kind() string { return "thread" }
 // unresolved is two jobs, the same change delivered twice is one, and a
 // thread resolved again later is a new job.
 func (ThreadArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{Queue: QueueFollowUp, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates}}
+	return river.InsertOpts{
+		Queue: QueueFollowUp, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates},
+	}
 }
 
 // IndexArgs builds or advances a repository's index to its default branch

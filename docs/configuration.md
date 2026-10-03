@@ -208,6 +208,12 @@ earns its keep: a step the proxy routed badly is answered on the next
 attempt. Follow-ups do not retry; the embedder's client sends a failed
 request again twice on its own.
 
+A step that still fails that way once the provider's `retries` and the
+fallback are spent does not end the review. The runner keeps the
+conversation and sends the step again after 30 seconds, then after one,
+two and four minutes, while the agent's `timeout` allows; only a step
+that fails after the last of those ends the review as failed.
+
 The embedder's `model` is a model of an `openrouter` or `openai` provider
 of the instance, whose endpoint, or the type's default, and key it uses;
 `dims` is its dimension, at most 4000, and the optional `maxBatch`,
