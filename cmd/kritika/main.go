@@ -314,12 +314,15 @@ func startWorker(
 
 // queueDrain is how long a stopping serve lets running jobs finish; a
 // review still running then is cut and retried. queueStopHeadroom covers
-// what a cut review does before it hands its job back, waiting for its
-// agent row above all. Both fit in the chart's 150s termination grace
-// period.
+// what a cut review does before it hands its job back, each step at its
+// own bound: deleting the runner Job and reading its pod (20s each),
+// revoking its token (10s) and waiting for its agent row (40s). A job
+// still at it when the process is killed is not recorded by River and
+// waits on the rescuer instead. Both fit in the chart's 200s termination
+// grace period.
 const (
 	queueDrain        = 100 * time.Second
-	queueStopHeadroom = 40 * time.Second
+	queueStopHeadroom = 90 * time.Second
 )
 
 // validate checks what command needs of cfg beyond the common set, and
