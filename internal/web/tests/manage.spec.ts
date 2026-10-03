@@ -91,7 +91,7 @@ test.describe('actions', () => {
         () =>
           sent.filter((s) => s.url.pathname.endsWith('/rerun')).length <= 1
             ? { status: 202, body: g.accepted }
-            : g.apiError(409, 'already_queued', 'a review of this head is already queued or running'),
+            : g.apiError(409, 'already_queued', 'review job #42 failed attempt 2 of 5 and will run again: GitHub did not answer'),
       ],
       ['POST', new RegExp(`${API}/reviews/rev-1/cancel$`), g.apiError(409, 'not_cancelable', 'the review is not running')],
       ['POST', new RegExp(`${API}/repos/alpha/one/reindex$`), g.apiError(409, 'already_queued', 'a reindex is already queued for this repository')],
@@ -117,6 +117,7 @@ test.describe('actions', () => {
     await page.getByRole('dialog').getByRole('button', { name: 'Re-run' }).click();
     await expect.poll(() => sent.filter((s) => s.url.pathname.endsWith('/rerun')).length).toBe(2);
     await expect(page.getByRole('status')).toContainText('already queued or running');
+    await expect(page.getByRole('status')).toContainText('review job #42 failed attempt 2 of 5 and will run again: GitHub did not answer');
 
     await page.goto(`/#/a/${S}/repos/alpha/one`);
     await page.getByRole('button', { name: 'Reindex' }).click();

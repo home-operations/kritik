@@ -3,11 +3,13 @@ package webapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
@@ -59,7 +61,11 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *accountScope) 
 		case errors.Is(err, jobs.ErrNoHead):
 			return errStatus(http.StatusConflict, CodeNoHead, "the pull request has no known head to review")
 		case errors.Is(err, jobs.ErrRerunQueued):
-			return errStatus(http.StatusConflict, CodeAlreadyQueued, "a review of this head is already queued or running")
+			live, err := store.FindLiveReviewJob(ctx, tx, p.RepositoryID, p.Number)
+			if err != nil {
+				return err
+			}
+			return errStatus(http.StatusConflict, CodeAlreadyQueued, queuedMessage(live))
 		case err != nil:
 			return err
 		}
@@ -71,6 +77,30 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *accountScope) 
 	}
 	writeJSON(w, http.StatusAccepted, Accepted{JobID: job})
 	return nil
+}
+
+// queuedMessage says what the review job that stands in a re-run's way is
+// doing, so whoever asked again learns why no review has shown up. j is nil
+// when a running review has no unfinished job to name.
+func queuedMessage(j *store.JobRow) string {
+	if j == nil {
+		return "a review of this head is already queued or running"
+	}
+	running := j.State == rivertype.JobStateRunning
+	if j.LastError == "" {
+		if running {
+			return fmt.Sprintf("review job #%d is running", j.ID)
+		}
+		return fmt.Sprintf("review job #%d is queued", j.ID)
+	}
+	why := j.LastError
+	if jobCause(j.LastError) == CauseForgeUnavailable {
+		why = "GitHub did not answer"
+	}
+	if running {
+		return fmt.Sprintf("review job #%d is on attempt %d of %d, the one before failed: %s", j.ID, j.Attempt, j.MaxAttempts, why)
+	}
+	return fmt.Sprintf("review job #%d failed attempt %d of %d and will run again: %s", j.ID, j.Attempt, j.MaxAttempts, why)
 }
 
 func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *accountScope) error {
