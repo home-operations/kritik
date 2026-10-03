@@ -182,7 +182,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 		logger.Error("agent run not read", "error", agentErr)
 		w.Metrics.Review(account.Key(), string(store.ReviewFailed), time.Since(started))
 		// A retry would run the agent again; the review ends here.
-		return w.finishReview(cctx, args.AccountID, reviewID, store.ReviewFailed, "", agentErr.Error())
+		return w.failReview(cctx, ended, "", agentErr.Error())
 	}
 	switch {
 	case res.Err != nil && errors.Is(cause, errSuperseded):
@@ -192,11 +192,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	case res.Err != nil && errors.Is(cause, errHeartbeatLost):
 		logger.Warn("runner heartbeat lost", "job", res.JobName)
 		w.Metrics.Review(account.Key(), string(store.ReviewFailed), time.Since(started))
-		return w.finishReview(cctx, args.AccountID, reviewID, store.ReviewFailed, "", "runner heartbeat lost")
+		return w.failReview(cctx, ended, "", "runner heartbeat lost")
 	case res.Err != nil:
 		logger.Warn("runner failed", "error", res.Err, "job", res.JobName, "reason", res.TerminationReason)
 		w.Metrics.Review(account.Key(), string(store.ReviewFailed), time.Since(started))
-		return w.finishReview(cctx, args.AccountID, reviewID, store.ReviewFailed, "", res.Err.Error())
+		return w.failReview(cctx, ended, "", res.Err.Error())
 	}
 	prep, status, err := w.afterRun(ctx, args, account, pr, eff, b.notes, client, reviewID, runID, prior, logger)
 	if err != nil {
@@ -235,6 +235,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	w.Metrics.Review(account.Key(), string(status), time.Since(started))
 	fctx, fcancel := detach(ctx)
 	defer fcancel()
+	if status == store.ReviewFailed && !phase.statusReported {
+		return w.failReview(fctx, ended, patchID, errText(perr))
+	}
 	return w.finishReview(fctx, args.AccountID, reviewID, status, patchID, errText(perr))
 }
 
@@ -593,6 +596,16 @@ func (w *Review) finishReview(ctx context.Context, accountID, reviewID string, s
 	return err
 }
 
+// failReview ends a review as failed and reports that on the head commit:
+// a head whose review broke must not read as one still waiting for it.
+// The description stays generic since the error can name internal hosts.
+func (w *Review) failReview(ctx context.Context, e endedReview, patchID, errText string) error {
+	if err := e.client.SetStatus(ctx, e.owner, e.repo, e.headSHA, forge.StatusError, "kritika: review failed"); err != nil {
+		e.logger.Warn("commit status not set", "error", err)
+	}
+	return w.finishReview(ctx, e.accountID, e.reviewID, store.ReviewFailed, patchID, errText)
+}
+
 // endedReview is what finishEnded needs to know of the review whose job
 // ended.
 type endedReview struct {
@@ -658,7 +671,7 @@ func (w *Review) agentSpecFailed(ctx context.Context, e endedReview, runID strin
 		}
 		return w.finishEnded(ctx, e, err)
 	}
-	return errors.Join(err, w.finishReview(dctx, e.accountID, e.reviewID, store.ReviewFailed, "", err.Error()), runErr)
+	return errors.Join(err, w.failReview(dctx, e, "", err.Error()), runErr)
 }
 
 // workerStopping reports whether ctx, a job's, ended because its River

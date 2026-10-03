@@ -1208,7 +1208,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("supervision ends a running review", func(t *testing.T) {
-		checkSupervision(ctx, t, appStore, exec, dispatch, waitReview, account.ID(), repoID)
+		checkSupervision(ctx, t, appStore, lf, exec, dispatch, waitReview, account.ID(), repoID)
 	})
 
 	t.Run("a job that ends after the runner still ends its review", func(t *testing.T) {
@@ -1699,7 +1699,7 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 // checkSupervision holds review runs open and moves the head, then stales
 // the heartbeat, expecting supervision to cancel each run.
 func checkSupervision(
-	ctx context.Context, t *testing.T, appStore *store.Store, exec *gateExecutor, dispatch func(string, bool),
+	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, exec *gateExecutor, dispatch func(string, bool),
 	waitReview func(string) (string, string, string), accountID, repoID string,
 ) {
 	exec.setBlock(true)
@@ -1747,6 +1747,9 @@ func checkSupervision(
 
 	t.Run("failed when the runner heartbeat goes stale", func(t *testing.T) {
 		const running = "3333333333333333333333333333333333333333"
+		lf.mu.Lock()
+		lf.status = ""
+		lf.mu.Unlock()
 		dispatch(running, false)
 		spec := started()
 		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -1761,6 +1764,12 @@ func checkSupervision(
 		}
 		if text := reviewError(running); text != "runner heartbeat lost" {
 			t.Fatalf("error = %q", text)
+		}
+		lf.mu.Lock()
+		forgeStatus := lf.status
+		lf.mu.Unlock()
+		if forgeStatus != "error: kritika: review failed" {
+			t.Fatalf("forge status = %q", forgeStatus)
 		}
 	})
 }

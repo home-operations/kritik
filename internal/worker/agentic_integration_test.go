@@ -1130,17 +1130,21 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 	stopped, cancelStop := context.WithCancelCause(h.ctx)
 	cancelStop(errors.New("stop initiated"))
 	tests := []struct {
-		name      string
-		ctx       context.Context
-		head      string
-		retried   bool
-		status    store.ReviewStatus
-		errPrefix string
+		name        string
+		ctx         context.Context
+		head        string
+		retried     bool
+		status      store.ReviewStatus
+		errPrefix   string
+		forgeStatus string
 	}{
-		{"the job still runs: River retries", h.ctx, strings.Repeat("e", 40), true, store.ReviewFailed, boom.Error()},
-		{"a remote cancel ends it canceled", remote, strings.Repeat("f", 40), false, store.ReviewCanceled, ""},
-		{"a timeout ends it failed", timedOut, strings.Repeat("9", 40), false, store.ReviewFailed, "review timed out"},
-		{"a stopping worker's cut is retried", stopped, strings.Repeat("8", 40), true, store.ReviewSuperseded, "cut by a restart"},
+		{"the job still runs: River retries", h.ctx, strings.Repeat("e", 40), true, store.ReviewFailed, boom.Error(),
+			"error: kritika: review failed"},
+		{"a remote cancel ends it canceled", remote, strings.Repeat("f", 40), false, store.ReviewCanceled, "",
+			"error: kritika: review canceled"},
+		{"a timeout ends it failed", timedOut, strings.Repeat("9", 40), false, store.ReviewFailed, "review timed out",
+			"error: kritika: review timed out"},
+		{"a stopping worker's cut is retried", stopped, strings.Repeat("8", 40), true, store.ReviewSuperseded, "cut by a restart", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1156,9 +1160,18 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 			}
 			e := endedReview{accountID: h.account.ID(), accountKey: h.account.Key(), reviewID: reviewID, headSHA: tt.head,
 				owner: "acme", repo: "widgets", client: h.lf, started: time.Now(), logger: slog.New(slog.DiscardHandler)}
+			h.lf.mu.Lock()
+			h.lf.status = ""
+			h.lf.mu.Unlock()
 			err = h.review.agentSpecFailed(tt.ctx, e, runID, boom)
 			if (err != nil) != tt.retried {
 				t.Fatalf("agentSpecFailed = %v, want an error only when River should retry", err)
+			}
+			h.lf.mu.Lock()
+			forgeStatus := h.lf.status
+			h.lf.mu.Unlock()
+			if forgeStatus != tt.forgeStatus {
+				t.Fatalf("forge status = %q, want %q", forgeStatus, tt.forgeStatus)
 			}
 			var status, errText, phase string
 			err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
