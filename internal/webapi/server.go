@@ -75,10 +75,14 @@ func New(cfg Config) *Server {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	h := newHub(cfg.Current, cfg.Logger)
+	if cfg.Auth != nil {
+		h.stands = cfg.Auth.Stands
+	}
 	return &Server{
 		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, actions: cfg.Actions, version: cfg.Version,
 		webURL: cfg.WebURL, ui: cfg.UI, basePath: strings.TrimRight(cfg.WebURL.Path, "/"),
-		logger: cfg.Logger, now: cfg.Now, hub: newHub(cfg.Current, cfg.Logger), env: cfg.Env,
+		logger: cfg.Logger, now: cfg.Now, hub: h, env: cfg.Env,
 		githubAPI: cfg.GitHubAPI,
 	}
 }
