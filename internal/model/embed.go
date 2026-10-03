@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -32,12 +33,17 @@ const (
 	DefaultEmbedMaxItemChars  = 16_000
 )
 
+// EmbedTimeout bounds one embeddings request, a batch of at most MaxBatch
+// short texts. A variable for the tests.
+var EmbedTimeout = time.Minute
+
 // NewOpenAIEmbedder builds an embedder. dims is sent to the server so the
 // vectors match the table; models that ignore it return their native size
 // and the caller must check.
 func NewOpenAIEmbedder(baseURL, apiKey, model string, dims int) *OpenAIEmbedder {
-	opts := make([]option.RequestOption, 0, 3+len(attribution))
-	opts = append(opts, option.WithBaseURL(baseURL), option.WithAPIKey(apiKey), option.WithHeader("User-Agent", userAgent()))
+	opts := make([]option.RequestOption, 0, 4+len(attribution))
+	opts = append(opts, option.WithBaseURL(baseURL), option.WithAPIKey(apiKey), option.WithHeader("User-Agent", userAgent()),
+		option.WithRequestTimeout(EmbedTimeout))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}

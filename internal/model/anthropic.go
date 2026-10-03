@@ -41,7 +41,7 @@ func NewAnthropic(cfg AnthropicConfig) (*Anthropic, error) {
 	}
 	opts := []option.RequestOption{
 		option.WithoutEnvironmentDefaults(), option.WithAPIKey(cfg.APIKey), option.WithHeader("User-Agent", userAgent()),
-		option.WithMaxRetries(cfg.Retries),
+		option.WithMaxRetries(cfg.Retries), option.WithRequestTimeout(StepTimeout),
 	}
 	if cfg.BaseURL != "" {
 		if err := checkBaseURL(cfg.BaseURL); err != nil {

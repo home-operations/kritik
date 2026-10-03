@@ -200,7 +200,8 @@ timeout or a cut connection. The gateway waits a second, then twice as
 long each time, up to 30 seconds; it never retries a refusal of the
 request itself, such as a prompt over the model's input limit, or a spent
 budget, and it waits out a `Retry-After` the provider sends when that is
-longer. It is 0 unless set, one attempt, and at most 5; the provider's
+longer, up to a minute. A request the provider has not answered in five
+minutes counts as a timeout. It is 0 unless set, one attempt, and at most 5; the provider's
 client sends nothing again on its own, so `retries` is every attempt a
 step gets. A routing proxy that picks a model per request is where it
 earns its keep: a step the proxy routed badly is answered on the next

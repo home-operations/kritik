@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // capture is one request a fake provider received.
@@ -363,6 +364,28 @@ func TestOpenAIErrors(t *testing.T) {
 	_, err := c.Step(t.Context(), StepRequest{Model: "acme/large", Messages: []Message{{Role: RoleUser, Text: "hi"}}})
 	if err == nil || !strings.Contains(err.Error(), "model:") || !strings.Contains(err.Error(), "acme/large") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestStalledProviderTimesOut(t *testing.T) {
+	old := StepTimeout
+	StepTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { StepTimeout = old })
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	for _, pt := range []ProviderType{ProviderOpenAI, ProviderOpenRouter, ProviderOpenCode, ProviderAnthropic} {
+		t.Run(string(pt), func(t *testing.T) {
+			s, err := NewStepper(pt, srv.URL, "k", Pricing{}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = s.Step(t.Context(), StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+			if err == nil || !Transient(err) {
+				t.Fatalf("err = %v, want a transient timeout", err)
+			}
+		})
 	}
 }
 
