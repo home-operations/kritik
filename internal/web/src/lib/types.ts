@@ -359,6 +359,7 @@ export interface ReviewInfo extends Review {
 }
 
 export interface Summary {
+  headline?: string;
   take: string;
   praise: string[];
 }

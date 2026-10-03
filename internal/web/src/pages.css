@@ -1109,6 +1109,11 @@ input[type='checkbox'][role='switch']:focus-visible {
   margin: 0 12px 10px;
   padding-left: 18px;
 }
+.headline {
+  margin: 0 0 6px;
+  font-weight: 600;
+  line-height: 1.5;
+}
 .md p {
   margin: 0 0 6px;
   white-space: pre-wrap;

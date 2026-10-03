@@ -13,7 +13,10 @@
 {#if d.summary}
   <section class="panel" aria-labelledby="sum-take">
     <header class="panel-head"><h2 id="sum-take">Take</h2></header>
-    <div class="panel-body"><Markdown text={d.summary.take} /></div>
+    <div class="panel-body">
+      {#if d.summary.headline}<p class="headline">{d.summary.headline}</p>{/if}
+      <Markdown text={d.summary.take} />
+    </div>
     {#if d.summary.praise.length}
       <h3 class="subhead">Praise</h3>
       <ul class="praise">

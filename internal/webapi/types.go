@@ -327,8 +327,9 @@ type ReviewInfo struct {
 
 // Summary is a review's overall take and praise.
 type Summary struct {
-	Take   string   `json:"take"`
-	Praise []string `json:"praise"`
+	Headline string   `json:"headline,omitempty"`
+	Take     string   `json:"take"`
+	Praise   []string `json:"praise"`
 }
 
 // Finding is one finding in full.

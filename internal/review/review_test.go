@@ -98,25 +98,27 @@ func TestCheck(t *testing.T) {
 func TestParse(t *testing.T) {
 	anchors := Anchors(sampleDiff)
 	tests := []struct {
-		name    string
-		raw     string
-		opts    ParseOptions
-		kept    []string // "path:line:title" in order
-		dropped map[string]DropReason
-		praise  []string
-		take    string
-		wantErr bool
+		name     string
+		raw      string
+		opts     ParseOptions
+		kept     []string // "path:line:title" in order
+		dropped  map[string]DropReason
+		praise   []string
+		take     string
+		headline string
+		wantErr  bool
 	}{
 		{
 			name: "valid findings are kept and sorted by severity, then path and line",
-			raw: `{"summary": {"take": " Changes y and adds z. ", "praise": []}, "findings": [
+			raw: `{"summary": {"headline": "  Changes y\nand adds z. ", "take": " Changes y and adds z. ", "praise": []}, "findings": [
 			  {"path": "main.go", "line": 12, "severity": "nit", "category": "correctness", "title": "n", "explanation": "e"},
 			  {"path": "main.go", "line": 11, "severity": "important", "category": "correctness", "title": "i2", "explanation": "e"},
 			  {"path": "README.md", "line": 2, "severity": "important", "category": "correctness", "title": "i1", "explanation": "e"},
 			  {"path": "main.go", "line": 13, "severity": "blocking", "category": "correctness", "title": "b", "explanation": "e", "suggested_fix": "do x"}
 			]}`,
-			take: "Changes y and adds z.",
-			kept: []string{"main.go:13:b", "README.md:2:i1", "main.go:11:i2", "main.go:12:n"},
+			take:     "Changes y and adds z.",
+			headline: "Changes y and adds z.",
+			kept:     []string{"main.go:13:b", "README.md:2:i1", "main.go:11:i2", "main.go:12:n"},
 		},
 		{
 			name: "references to other repositories are redirected, the review's own kept",
@@ -242,6 +244,9 @@ func TestParse(t *testing.T) {
 			}
 			if res.Summary.Take != tt.take {
 				t.Errorf("take = %q, want %q", res.Summary.Take, tt.take)
+			}
+			if res.Summary.Headline != tt.headline {
+				t.Errorf("headline = %q, want %q", res.Summary.Headline, tt.headline)
 			}
 			if !slices.Equal(res.Summary.Praise, tt.praise) && (len(res.Summary.Praise) != 0 || len(tt.praise) != 0) {
 				t.Errorf("praise = %q, want %q", res.Summary.Praise, tt.praise)
@@ -474,7 +479,7 @@ type node struct {
 func checkContract(t *testing.T, n node, required []string) {
 	t.Helper()
 	summary := n.Properties["summary"]
-	if summary == nil || summary.Type != "object" || !slices.Equal(summary.Required, []string{"take", "praise"}) ||
+	if summary == nil || summary.Type != "object" || !slices.Equal(summary.Required, []string{"headline", "take", "praise"}) ||
 		summary.Properties["praise"].Type != "array" || summary.Properties["praise"].MaxItems != 3 {
 		t.Fatalf("summary = %+v", summary)
 	}
@@ -533,7 +538,7 @@ func TestSchemas(t *testing.T) {
 // schemas declare, at the summary and the finding level.
 func TestSchemaMatchesJSONTags(t *testing.T) {
 	raw, err := json.Marshal(Result{
-		Summary: Summary{Take: "t", Praise: []string{"p"}},
+		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}},
 		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityNit, Title: "t", Explanation: "e", SuggestedFix: "f",
 			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, URL: "ignored"}},
 	})
