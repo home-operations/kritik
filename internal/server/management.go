@@ -69,6 +69,17 @@ func (m *Management) Run(ctx context.Context) error {
 	return Serve(ctx, m.addr, m.Handler(), shutdownTimeout, m.logger.With("listener", "management"))
 }
 
+// readTimeout bounds reading one request, body included, so a client that
+// trickles a body does not hold its connection open. It does not bound the
+// handler: an event stream or a model step runs on past it. idleTimeout is
+// how long a keep-alive connection may wait for its next request. There is
+// no write timeout, which would cut the event streams. Variables for the
+// tests.
+var (
+	readTimeout = time.Minute
+	idleTimeout = 2 * time.Minute
+)
+
 // Serve runs h on addr until ctx is cancelled, then drains within drain.
 // Requests still in flight when it runs out are cut: a stopping process is
 // not failing.
@@ -77,6 +88,8 @@ func Serve(ctx context.Context, addr string, h http.Handler, drain time.Duration
 		Addr:              addr,
 		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       readTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 	errc := make(chan error, 1)
 	go func() {
