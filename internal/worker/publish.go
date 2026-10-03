@@ -49,6 +49,9 @@ type publishPhase struct {
 	// agent is the review's agent run, whose usage the gateway recorded
 	// step by step.
 	agent *store.AgentRunRow
+	// statusReported is set once incomplete has written the head's commit
+	// status with its reason, which the job's ending then leaves alone.
+	statusReported bool
 }
 
 // run publishes what the runner's agent submitted; the run's usage is
@@ -158,6 +161,7 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusError, "kritika: review incomplete ("+reason+")"); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
+	p.statusReported = true
 	return p.persist(ctx, review.Result{}, nil, modelName, commentID)
 }
 
