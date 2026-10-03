@@ -342,6 +342,8 @@ export interface PullDetail {
   pull: Pull;
   reviews: Review[];
   followups: Followup[];
+  // The pull request's review job that has not finished, if any.
+  job: Job | null;
 }
 
 export interface PullRef {

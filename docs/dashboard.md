@@ -32,7 +32,9 @@ at once, and holds a tab for each of an account's sections:
   list with `repo:owner/name`, `author:login` and `status:` a last review
   status, and suggests each as you type. An admin can pick pull requests,
   by checkbox or with Space on the keyboard's row, and re-run them
-  together.
+  together. A pull request's page says when its review is queued or
+  waiting to run again after a failed attempt, with the attempt's error,
+  and the queue names the cause when GitHub did not answer.
 - **Rules:** what its reviews check: rules written in the configuration, as text or a file, and context files
   that explain the code, each with where it is set (a layer
   of the configuration, a repository's entry, or a repository's

@@ -32,6 +32,12 @@ var goldenReview = Review{
 	CreatedAt: t0, FinishedAt: &t1, SkipReason: repoconfig.SkipFiltered, Error: "",
 }
 
+var goldenJob = Job{
+	ID: 42, Kind: "review", State: rivertype.JobStateRetryable, Attempt: 2, MaxAttempts: 5, CreatedAt: t0, ScheduledAt: t1,
+	AttemptedAt: &t0, FinalizedAt: nil, LastError: "github: list files: context deadline exceeded", Cause: CauseForgeUnavailable,
+	Args: JobArgs{Repository: "alpha/one", Number: 7, Head: "abc123", Trigger: "push", CommentID: 0},
+}
+
 var goldenPullRef = PullRef{Repository: "alpha/one", Number: 7, Title: "Add widgets", URL: "https://git.example/alpha/one/pulls/7"}
 
 var goldenSummary = AccountSummary{
@@ -129,7 +135,7 @@ var goldens = map[string]any{
 	"review":    goldenReview,
 	"followup":  goldenFollowup,
 	"pull_detail": PullDetail{
-		Pull: goldenPull, Reviews: []Review{goldenReview}, Followups: []Followup{goldenFollowup},
+		Pull: goldenPull, Reviews: []Review{goldenReview}, Followups: []Followup{goldenFollowup}, Job: &goldenJob,
 	},
 	"review_detail": ReviewDetail{
 		Review: ReviewInfo{
@@ -219,11 +225,7 @@ var goldens = map[string]any{
 		Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap an error with the package name before returning it.", Paths: []string{"**/*.go"},
 		Source: RuleFromEntry, Repositories: []string{"alpha/one"}, Findings: 3, Addressed: 1,
 	},
-	"job": Job{
-		ID: 42, Kind: "review", State: rivertype.JobStateRetryable, Attempt: 2, MaxAttempts: 5, CreatedAt: t0, ScheduledAt: t1,
-		AttemptedAt: &t0, FinalizedAt: nil, LastError: "github: list files: context deadline exceeded", Cause: CauseForgeUnavailable,
-		Args: JobArgs{Repository: "alpha/one", Number: 7, Head: "abc123", Trigger: "push", CommentID: 0},
-	},
+	"job":   goldenJob,
 	"event": Event{Kind: store.EventReview, Account: "alpha", ID: "rev-1", ReviewID: new("rev-1")},
 	"error": ErrorBody{Code: CodeNotFound, Message: "account not found"},
 }
