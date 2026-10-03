@@ -479,8 +479,8 @@ startupProbe:
   periodSeconds: 2
   failureThreshold: 30
 
-# -- Grace period for a clean shutdown: kritika serve keeps accepting webhooks, dashboard requests and model steps for 5s while traffic moves off the pod, stops taking jobs and lets running ones finish for up to 100s, then retries the reviews it cut, and its gateway lets model steps in flight finish for up to 2m.
-terminationGracePeriodSeconds: 150
+# -- Grace period for a clean shutdown: kritika serve keeps accepting webhooks, dashboard requests and model steps for 5s while traffic moves off the pod, stops taking jobs and lets running ones finish for up to 100s, then takes up to 90s to hand back the reviews it cut for a retry, and its gateway lets model steps in flight finish for up to 2m.
+terminationGracePeriodSeconds: 200
 
 monitoring:
   serviceMonitor:
