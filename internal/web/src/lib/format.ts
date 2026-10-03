@@ -1,6 +1,6 @@
 // Pure display formatting shared by every page. No runes, so tests and
 // tooling can import it directly.
-import type { JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus, Category } from './types';
+import type { JobCause, JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus, Category } from './types';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 const whole = new Intl.NumberFormat('en');
@@ -77,6 +77,11 @@ export const jobTone: Record<JobState, Tone> = {
   completed: 'ok',
   cancelled: 'muted',
   discarded: 'danger',
+};
+
+// jobCauseText says a job's cause in words, ahead of the error's own text.
+export const jobCauseText: Record<JobCause, string> = {
+  forge_unavailable: 'GitHub did not answer.',
 };
 
 export const indexTone: Record<IndexRunStatus, Tone> = {

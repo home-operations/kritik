@@ -71,7 +71,7 @@ func (s *Server) listQueue(w http.ResponseWriter, r *http.Request, t *accountSco
 	for i, j := range rows {
 		out[i] = Job{
 			ID: j.ID, Kind: j.Kind, State: j.State, Attempt: j.Attempt, MaxAttempts: j.MaxAttempts, CreatedAt: j.CreatedAt,
-			ScheduledAt: j.ScheduledAt, AttemptedAt: j.AttemptedAt, FinalizedAt: j.FinalizedAt, LastError: j.LastError,
+			ScheduledAt: j.ScheduledAt, AttemptedAt: j.AttemptedAt, FinalizedAt: j.FinalizedAt, LastError: j.LastError, Cause: jobCause(j.LastError),
 			Args: JobArgs{Repository: j.Repository, Number: j.Number, Head: j.Head, Trigger: j.Trigger, CommentID: j.CommentID},
 		}
 	}

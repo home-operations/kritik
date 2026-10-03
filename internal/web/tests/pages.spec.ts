@@ -508,7 +508,7 @@ test.describe('review', () => {
 test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/queue`);
-  await expect(page.locator('tbody tr')).toContainText(g.job.lastError);
+  await expect(page.locator('tbody tr')).toContainText(`GitHub did not answer. ${g.job.lastError}`);
   await expect(page.locator('tbody tr')).toContainText(`${g.job.attempt}/${g.job.maxAttempts}`);
 
   await page.goto(`/${T}/usage`);
