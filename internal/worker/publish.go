@@ -155,7 +155,7 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 	if err != nil {
 		return err
 	}
-	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritika: review incomplete ("+reason+")"); err != nil {
+	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusError, "kritika: review incomplete ("+reason+")"); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
 	return p.persist(ctx, review.Result{}, nil, modelName, commentID)

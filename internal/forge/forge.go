@@ -72,8 +72,9 @@ type InlineComment struct {
 
 // StatusState is the outcome a commit status reports. kritika never reports
 // failure for a review that ran: a review informs, it does not block.
-// StatusError is the one exception, for a review that did not run to a
-// verdict at all (canceled), which is not a finding to weigh.
+// StatusError is the one exception, for a review that reached no verdict:
+// canceled, timed out, or ended by an agent that never submitted a valid
+// review. That is not a finding to weigh, and a success would read as one.
 type StatusState string
 
 // States kritika reports.

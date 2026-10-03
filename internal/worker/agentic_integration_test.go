@@ -800,7 +800,7 @@ func checkAgentNeverSubmits(t *testing.T, h *agenticHarness) {
 	comments, sticky, forgeStatus := len(h.lf.comments), h.lf.comments[commentBase+1], h.lf.status
 	h.lf.mu.Unlock()
 	if comments != 1 || !strings.Contains(sticky, "**Review incomplete for [`"+next[:7]+"`](local://acme/widgets/commit/"+next+"):** agent stopped: no_submit.") ||
-		strings.Contains(sticky, "b is unused") || !strings.Contains(forgeStatus, "incomplete") {
+		strings.Contains(sticky, "b is unused") || forgeStatus != "error: kritika: review incomplete (agent stopped: no_submit)" {
 		t.Fatalf("comments=%d status=%q sticky:\n%s", comments, forgeStatus, sticky)
 	}
 }
