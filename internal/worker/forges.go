@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/forge/github"
@@ -98,4 +100,60 @@ func (a *Apps) Reach(ctx context.Context, in *configfile.Connection) (map[string
 		out[strings.ToLower(r.Account)] = repos
 	}
 	return out, nil
+}
+
+// ForgeCache is the forge.Clients over configured GitHub Apps. One client
+// per App and repository owner, built on first use and kept for the life of
+// the process, as the configuration is.
+type ForgeCache struct {
+	Build func(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error)
+
+	mu      sync.Mutex
+	clients map[string]forge.Client
+	// building shares one build per key among the callers that find none
+	// cached, outside mu: a build asks the forge, and a slow answer must
+	// not hold up the callers of every other connection and owner.
+	building singleflight.Group
+}
+
+// forgeBuildTimeout bounds a client's build, which runs on no caller's ctx.
+const forgeBuildTimeout = time.Minute
+
+// For implements forge.Clients. A caller whose ctx ends while a build is
+// under way returns with ctx's error; the build goes on for the others,
+// whichever caller started it.
+func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
+	owner, _, _ := strings.Cut(repo, "/")
+	key := in.Name + "/" + strings.ToLower(owner)
+	c.mu.Lock()
+	client, ok := c.clients[key]
+	c.mu.Unlock()
+	if ok {
+		return client, nil
+	}
+	results := c.building.DoChan(key, func() (any, error) {
+		bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), forgeBuildTimeout)
+		defer cancel()
+		client, err := c.Build(bctx, in, repo)
+		if err != nil {
+			return nil, err
+		}
+		c.mu.Lock()
+		if c.clients == nil {
+			c.clients = map[string]forge.Client{}
+		}
+		c.clients[key] = client
+		c.mu.Unlock()
+		return client, nil
+	})
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("worker: forge client for %s: %w", key, ctx.Err())
+	case res := <-results:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		client, _ := res.Val.(forge.Client)
+		return client, nil
+	}
 }

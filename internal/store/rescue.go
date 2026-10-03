@@ -115,6 +115,30 @@ func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Dura
 	return true, nil
 }
 
+// JobHead is the head a review job reviewed.
+type JobHead struct {
+	AccountID, Repository, HeadSHA string
+}
+
+// JobHead returns the head the reviews of River job jobID were of, false
+// when the job started none. Owner connection.
+func (s *Store) JobHead(ctx context.Context, jobID int64) (JobHead, bool, error) {
+	if s.owner == nil {
+		return JobHead{}, false, errors.New("store: JobHead needs the owner connection")
+	}
+	var h JobHead
+	err := s.owner.QueryRow(ctx, `SELECT r.account_id::text, repo.name, r.head_sha
+		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id JOIN repositories repo ON repo.id = p.repository_id
+		WHERE r.river_job_id = $1 ORDER BY r.created_at DESC LIMIT 1`, jobID).Scan(&h.AccountID, &h.Repository, &h.HeadSHA)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return JobHead{}, false, nil
+	}
+	if err != nil {
+		return JobHead{}, false, fmt.Errorf("store: head of job %d: %w", jobID, err)
+	}
+	return h, true, nil
+}
+
 // OrphanedRun is a runner run that never ended although the River job that
 // started it is no longer running: its worker died, and its Kubernetes Job,
 // if one was created, runs on with nobody watching it.
