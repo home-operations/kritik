@@ -73,6 +73,7 @@ func commandTool(
 	return agent.NewRunTool(agent.RunConfig{
 		Dir: dir, Env: env, CommandEnv: commandEnvs, Commands: found, Timeout: time.Duration(p.Agent.CommandTimeoutSeconds) * time.Second,
 		MaxOutputBytes: maxOutput, Proxied: proxied, Note: note,
+		Mask: Secrets{GitToken: gitToken}.Mask,
 	}), cleanup
 }
 

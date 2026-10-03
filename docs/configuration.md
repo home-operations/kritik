@@ -350,7 +350,10 @@ level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
   must submit the findings, over the same prompt. The runner's `-tools` image has `gh`, `curl`,
   `fd`, `jq`, `rg` and `yq`; the agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under
-  review and public repositories.
+  review and public repositories. The run tool refuses the arguments that
+  would print that token or run a program outside the list (`gh auth`,
+  `alias`, `config` and `extension`, `fd -x` and `-X`, `rg --pre`), and
+  masks the token in a command's output and in the submitted review.
 - `settle`: how long a new head waits before its review starts, so a
   burst of pushes is reviewed once.
 - `maxAutoReviews`: how many automatic reviews a pull request gets before

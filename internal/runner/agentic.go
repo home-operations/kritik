@@ -330,8 +330,9 @@ type agentRecord struct {
 }
 
 // newAgentRecord encodes a finished Run and the sources its commands
-// fetched. The error text and the sources are masked: an error may carry a
-// token, and the worker shows both.
+// fetched. The error text, the sources and the submitted review are
+// masked: an error may carry a token, a steered model may write one into
+// its review, and the worker shows all three.
 func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []string, secrets Secrets) (agentRecord, error) {
 	rec := agentRecord{stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, model: res.Model, err: secrets.Mask(res.Err)}
 	masked := make([]string, len(sources))
@@ -349,7 +350,7 @@ func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []s
 		return agentRecord{}, fmt.Errorf("runner: encode timeline: %w", err)
 	}
 	if res.Stop == agent.StopSubmitted {
-		rec.result = string(res.Submitted)
+		rec.result = secrets.Mask(string(res.Submitted))
 	}
 	return rec, nil
 }
