@@ -281,18 +281,21 @@ func (g *Server) fallback(c runCall, fb configfile.ModelRef) (model.Stepper, con
 }
 
 // A step that failed in a way another attempt may not is tried again after
-// retryMin, doubled each time up to retryMax.
+// retryMin, doubled each time up to retryMax. A provider's Retry-After is
+// honored up to retryAfterMax: a longer one would sleep the step past the
+// run's deadline with the remaining retries and the fallback untried.
 const (
-	retryMin = time.Second
-	retryMax = 30 * time.Second
+	retryMin      = time.Second
+	retryMax      = 30 * time.Second
+	retryAfterMax = time.Minute
 )
 
 // step runs one model step through stepper, and after a transient failure
 // (model.Transient) tries again, up to retries more times with backoff, or
-// the wait the provider asked for when that is longer, while ctx lives;
-// failed reports each failure it tries again after. It returns the last
-// answer or error and how many attempts it made. One reservation covers
-// them all: the request is the same each time.
+// the wait the provider asked for when that is longer, up to retryAfterMax,
+// while ctx lives; failed reports each failure it tries again after. It
+// returns the last answer or error and how many attempts it made. One
+// reservation covers them all: the request is the same each time.
 func step(
 	ctx context.Context, stepper model.Stepper, req model.StepRequest, retries int,
 	wait func(context.Context, time.Duration) bool, failed func(error),
@@ -303,7 +306,7 @@ func step(
 			return resp, attempt + 1, err
 		}
 		failed(err)
-		if !wait(ctx, max(store.Backoff(attempt, retryMin, retryMax), model.RetryAfter(err))) {
+		if !wait(ctx, max(store.Backoff(attempt, retryMin, retryMax), min(model.RetryAfter(err), retryAfterMax))) {
 			return resp, attempt + 1, err
 		}
 	}

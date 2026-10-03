@@ -120,6 +120,19 @@ func TestStepRetries(t *testing.T) {
 		}
 	})
 
+	t.Run("a Retry-After past the cap is cut to it", func(t *testing.T) {
+		limited := &openai.Error{StatusCode: http.StatusTooManyRequests, Response: &http.Response{Header: http.Header{"Retry-After": {"3600"}}}}
+		s := &stepperFunc{errs: []error{limited}}
+		var waited time.Duration
+		wait := func(_ context.Context, d time.Duration) bool { waited = d; return true }
+		if _, attempts, err := step(t.Context(), s, model.StepRequest{Model: "m"}, 1, wait, func(error) {}); err != nil || attempts != 2 {
+			t.Fatalf("step = %d attempts, %v; want an answer after two", attempts, err)
+		}
+		if waited != retryAfterMax {
+			t.Fatalf("waited %s, want the %s cap", waited, retryAfterMax)
+		}
+	})
+
 	t.Run("a wait the ctx cut ends with the failure", func(t *testing.T) {
 		s := &stepperFunc{errs: []error{transient}}
 		wait := func(context.Context, time.Duration) bool { return false }

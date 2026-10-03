@@ -83,7 +83,8 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
-	opts = append(opts, option.WithHeader("User-Agent", userAgent()), option.WithMaxRetries(cfg.Retries))
+	opts = append(opts, option.WithHeader("User-Agent", userAgent()), option.WithMaxRetries(cfg.Retries),
+		option.WithRequestTimeout(StepTimeout))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}
