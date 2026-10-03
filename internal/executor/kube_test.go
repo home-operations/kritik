@@ -631,3 +631,80 @@ func TestTailKeepsValidUTF8(t *testing.T) {
 		t.Fatalf("tail = %q", got)
 	}
 }
+
+// runnerPod is a Job's pod as the fake holds it, with status.
+func runnerPod(job string, status corev1.PodStatus) *corev1.Pod {
+	return &corev1.Pod{
+		Name: job + "-abcde", Namespace: "kritika", Labels: map[string]string{"job-name": job},
+		Status: status,
+	}
+}
+
+func waiting(reason, message string) corev1.PodStatus {
+	return corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+		State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason, Message: message}},
+	}}}
+}
+
+func TestPodStart(t *testing.T) {
+	unschedulable := corev1.PodStatus{Conditions: []corev1.PodCondition{{
+		Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: corev1.PodReasonUnschedulable, Message: "0/3 nodes are available",
+	}}}
+	running := corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}}}
+	tests := []struct {
+		name        string
+		status      *corev1.PodStatus
+		wantStarted bool
+		wantStuck   string
+	}{
+		{name: "no pod yet"},
+		{name: "pulling its image", status: new(waiting("ContainerCreating", ""))},
+		{name: "running", status: &running, wantStarted: true},
+		{name: "an image that cannot be pulled", status: new(waiting("ImagePullBackOff", `Back-off pulling image "img"`)), wantStuck: `ImagePullBackOff: Back-off pulling image "img"`},
+		{name: "a missing Secret", status: new(waiting("CreateContainerConfigError", `secret "s" not found`)), wantStuck: `CreateContainerConfigError: secret "s" not found`},
+		{name: "a reason without a message", status: new(waiting("ErrImagePull", "")), wantStuck: "ErrImagePull"},
+		{name: "unschedulable", status: &unschedulable, wantStuck: "Unschedulable: 0/3 nodes are available"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewSimpleClientset()
+			if tt.status != nil {
+				if _, err := client.CoreV1().Pods("kritika").Create(t.Context(), runnerPod("job", *tt.status), metav1.CreateOptions{}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			started, stuck := newKube(client).podStart(t.Context(), "job")
+			if started != tt.wantStarted || stuck != tt.wantStuck {
+				t.Fatalf("podStart = %v, %q; want %v, %q", started, stuck, tt.wantStarted, tt.wantStuck)
+			}
+		})
+	}
+}
+
+// TestKubeRunGivesUpAPodThatNeverStarts: a pod stuck past the start grace
+// ends the run with why, its Job deleted, instead of holding it until the
+// Job's deadline.
+func TestKubeRunGivesUpAPodThatNeverStarts(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	k := newKube(client)
+	k.StartGrace = 30 * time.Millisecond
+	created := reacted(client, "create", "jobs")
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(t.Context(), spec()) }()
+	j := waitJob(t, client, created)
+	if _, err := client.CoreV1().Pods("kritika").Create(t.Context(), runnerPod(j.Name, waiting("ImagePullBackOff", "no such tag")), metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case res := <-done:
+		if res.Err == nil || !strings.Contains(res.Err.Error(), "never started: ImagePullBackOff: no such tag") || res.TerminationReason == "" {
+			t.Fatalf("res = %+v, want a run that never started", res)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not give the stuck pod up")
+	}
+	jobs, err := client.BatchV1().Jobs("kritika").List(t.Context(), metav1.ListOptions{})
+	if err != nil || len(jobs.Items) != 0 {
+		t.Fatalf("the stuck Job must be deleted, %d left (%v)", len(jobs.Items), err)
+	}
+}
