@@ -64,6 +64,13 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 	return err
 }
 
+// maxPackDiffBytes is how much of a diff, and of a delta diff, a context
+// pack keeps: whole files in order, a file that would pass it left out. A
+// pull request that regenerates a large text file would otherwise put the
+// whole of it in the service's memory. The prompt's own budget is far
+// smaller, so the agent is sent no less for it. A variable for the tests.
+var maxPackDiffBytes = 4 << 20
+
 func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, logger *slog.Logger) error {
 	if err := setPhase(ctx, st, p.RunID, "fetching"); err != nil {
 		return err
@@ -163,6 +170,15 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		notes = []string{}
 	}
 
+	// The pack is read whole by the service, on every publish and
+	// follow-up, so what it keeps of the diffs is bounded here.
+	packDiff, cut := review.FitDiff(res.Diff, maxPackDiffBytes)
+	packDelta, _ := review.FitDiff(res.DeltaDiff, maxPackDiffBytes)
+	if len(cut) > 0 {
+		logger.Warn("diff too large to keep whole", "diff_bytes", len(res.Diff), "kept_bytes", len(packDiff), "files_cut", len(cut))
+		notes = append(notes, fmt.Sprintf(noteDiffNotKept, len(cut), namePaths(cut)))
+	}
+
 	if err := setPhase(ctx, st, p.RunID, "writing"); err != nil {
 		return err
 	}
@@ -173,8 +189,8 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 			INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes,
 				prior_head_sha, delta_diff, delta_paths, scope, scope_reason, skip_reason, rule_ids)
 			SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16 FROM runner_runs WHERE id = $1`,
-			p.RunID, p.Head, p.Base, res.PatchID, res.Diff, res.Changed, stagesJSON, filesJSON, notes,
-			priorHead, res.DeltaDiff, deltaPaths, string(scope), scopeReason, skip, in.ruleIDs())
+			p.RunID, p.Head, p.Base, res.PatchID, packDiff, res.Changed, stagesJSON, filesJSON, notes,
+			priorHead, packDelta, deltaPaths, string(scope), scopeReason, skip, in.ruleIDs())
 		if err != nil {
 			return fmt.Errorf("runner: write context pack: %w", err)
 		}
