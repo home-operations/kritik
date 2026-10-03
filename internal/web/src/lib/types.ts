@@ -71,6 +71,8 @@ export type JobState =
   | 'completed'
   | 'cancelled'
   | 'discarded';
+// Why a job's last attempt failed, where the server can tell; '' otherwise.
+export type JobCause = 'forge_unavailable';
 export type EventKind = 'review' | 'runner_run' | 'index_run' | 'followup' | 'model_call';
 export type TranscriptKind = 'agent_step' | 'followup';
 export type MessageRole = 'user' | 'assistant';
@@ -696,6 +698,7 @@ export interface Job {
   finalizedAt: string | null;
   args: JobArgs;
   lastError: string;
+  cause: JobCause | '';
 }
 
 // One server-sent event's data; the SSE event name is its kind, plus

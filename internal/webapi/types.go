@@ -721,6 +721,8 @@ type Job struct {
 	FinalizedAt *time.Time         `json:"finalizedAt"`
 	Args        JobArgs            `json:"args"`
 	LastError   string             `json:"lastError"`
+	// Cause is why the last attempt failed, "" when the error does not say.
+	Cause JobCause `json:"cause"`
 }
 
 // Event is one server-sent event's data: a row of Kind changed in the

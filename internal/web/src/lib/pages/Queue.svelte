@@ -2,7 +2,7 @@
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
-  import { jobTone, shortSha } from '../format';
+  import { jobCauseText, jobTone, shortSha } from '../format';
   import { pullRoute, accountApi } from '../links';
   import type { Job } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -59,7 +59,7 @@
                   </td>
                   <td><Time iso={j.scheduledAt} /></td>
                   <td><Time iso={j.attemptedAt} /></td>
-                  <td class="error-cell">{j.lastError}</td>
+                  <td class="error-cell">{#if j.cause}<strong>{jobCauseText[j.cause]}</strong>{' '}{/if}{j.lastError}</td>
                 </tr>
               {/each}
             </tbody>

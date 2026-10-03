@@ -221,7 +221,7 @@ var goldens = map[string]any{
 	},
 	"job": Job{
 		ID: 42, Kind: "review", State: rivertype.JobStateRetryable, Attempt: 2, MaxAttempts: 5, CreatedAt: t0, ScheduledAt: t1,
-		AttemptedAt: &t0, FinalizedAt: nil, LastError: "boom",
+		AttemptedAt: &t0, FinalizedAt: nil, LastError: "github: list files: context deadline exceeded", Cause: CauseForgeUnavailable,
 		Args: JobArgs{Repository: "alpha/one", Number: 7, Head: "abc123", Trigger: "push", CommentID: 0},
 	},
 	"event": Event{Kind: store.EventReview, Account: "alpha", ID: "rev-1", ReviewID: new("rev-1")},
