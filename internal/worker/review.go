@@ -756,8 +756,12 @@ type ForgeCache struct {
 	building singleflight.Group
 }
 
+// forgeBuildTimeout bounds a client's build, which runs on no caller's ctx.
+const forgeBuildTimeout = time.Minute
+
 // For implements forge.Clients. A caller whose ctx ends while a build is
-// under way returns with ctx's error; the build goes on for the others.
+// under way returns with ctx's error; the build goes on for the others,
+// whichever caller started it.
 func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
 	owner, _, _ := strings.Cut(repo, "/")
 	key := in.Name + "/" + strings.ToLower(owner)
@@ -768,7 +772,9 @@ func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo st
 		return client, nil
 	}
 	results := c.building.DoChan(key, func() (any, error) {
-		client, err := c.Build(ctx, in, repo)
+		bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), forgeBuildTimeout)
+		defer cancel()
+		client, err := c.Build(bctx, in, repo)
 		if err != nil {
 			return nil, err
 		}

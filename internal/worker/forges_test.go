@@ -175,3 +175,39 @@ func TestForgeCacheBuildsOutsideItsLock(t *testing.T) {
 		t.Fatalf("builds = %v, want one per connection", builds)
 	}
 }
+
+// TestForgeCacheBuildOutlivesItsFirstCaller: the caller that started a
+// build ending does not fail the build for the callers sharing it.
+func TestForgeCacheBuildOutlivesItsFirstCaller(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "pem")
+	t.Setenv("TEST_WEBHOOK_SECRET", "s")
+	in := appConnection(t, "Iv1.app")
+	building, release := make(chan struct{}), make(chan struct{})
+	cache := &ForgeCache{Build: func(ctx context.Context, _ *configfile.Connection, _ string) (forge.Client, error) {
+		close(building)
+		<-release
+		return nil, ctx.Err()
+	}}
+	first, cancel := context.WithCancel(t.Context())
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := cache.For(first, in, "acme/widgets")
+		firstDone <- err
+	}()
+	<-building
+	second := make(chan error, 1)
+	go func() {
+		_, err := cache.For(t.Context(), in, "acme/widgets")
+		second <- err
+	}()
+	cancel()
+	if err := <-firstDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the cancelled caller got %v, want its cancellation", err)
+	}
+	// The second caller may join the build or find it done; either way the
+	// build must not have seen the first caller's cancellation.
+	close(release)
+	if err := <-second; err != nil {
+		t.Fatalf("a caller sharing the build got %v", err)
+	}
+}
