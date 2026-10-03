@@ -10,6 +10,8 @@ import (
 
 	"github.com/riverqueue/river/rivertype"
 
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -20,6 +22,8 @@ type fakeRescueStore struct {
 	orphaned  []store.OrphanedRun
 	// rescued says which job ids RescueJob reports as handed back.
 	rescued map[int64]bool
+	// head is the head every review job reviewed.
+	head store.JobHead
 	// endErr fails EndOrphanedRun for the run id.
 	endErr string
 
@@ -37,6 +41,10 @@ func (f *fakeRescueStore) RescueJob(_ context.Context, job store.AbandonedJob, _
 	}
 	f.rescues = append(f.rescues, string(job.RescueState()))
 	return f.rescued[job.ID], nil
+}
+
+func (f *fakeRescueStore) JobHead(context.Context, int64) (store.JobHead, bool, error) {
+	return f.head, f.head != (store.JobHead{}), nil
 }
 
 func (f *fakeRescueStore) OrphanedRuns(context.Context, int) ([]store.OrphanedRun, error) {
@@ -167,6 +175,74 @@ func TestRescue(t *testing.T) {
 			}
 			if tt.st.swept != 1 {
 				t.Errorf("heartbeat sweeps = %d, want 1", tt.st.swept)
+			}
+		})
+	}
+}
+
+// statusForge records the commit statuses it is asked to set.
+type statusForge struct {
+	forge.Client
+	set []string
+}
+
+func (f *statusForge) SetStatus(_ context.Context, owner, repo, sha string, state forge.StatusState, desc string) error {
+	f.set = append(f.set, owner+"/"+repo+"@"+sha+" "+string(state)+" "+desc)
+	return nil
+}
+
+// clientsFunc is a forge.Clients from a function.
+type clientsFunc func(repo string) (forge.Client, error)
+
+func (f clientsFunc) For(_ context.Context, _ *configfile.Connection, repo string) (forge.Client, error) {
+	return f(repo)
+}
+
+// TestRescueReportsAReviewThatWillNotRunAgain: a review job rescued into
+// discarded or cancelled has its head's pending status replaced; one that
+// is retried, or a job of another kind, does not.
+func TestRescueReportsAReviewThatWillNotRunAgain(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "pem")
+	t.Setenv("TEST_WEBHOOK_SECRET", "s")
+	file, err := configfile.Parse([]byte(`
+apps:
+  acme-bot:
+    accounts: [acme]
+    clientId: Iv1.app
+    privateKey: { env: TEST_PRIVATE_KEY }
+    webhookSecret: { env: TEST_WEBHOOK_SECRET }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := store.JobHead{AccountID: file.Accounts[0].ID(), Repository: "acme/widgets", HeadSHA: "abc"}
+	tests := []struct {
+		name string
+		job  store.AbandonedJob
+		head store.JobHead
+		want []string
+	}{
+		{"discarded on its last attempt", store.AbandonedJob{ID: 1, Kind: "review", Attempt: 8, MaxAttempts: 8}, head,
+			[]string{"acme/widgets@abc error kritika: review failed"}},
+		{"cancelled", store.AbandonedJob{ID: 1, Kind: "review", Attempt: 1, MaxAttempts: 8, CancelRequested: true}, head,
+			[]string{"acme/widgets@abc error kritika: review canceled"}},
+		{"retried", store.AbandonedJob{ID: 1, Kind: "review", Attempt: 1, MaxAttempts: 8}, head, nil},
+		{"an index job", store.AbandonedJob{ID: 1, Kind: "index", Attempt: 3, MaxAttempts: 3}, head, nil},
+		{"a job that started no review", store.AbandonedJob{ID: 1, Kind: "review", Attempt: 8, MaxAttempts: 8}, store.JobHead{}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &statusForge{}
+			r := &Rescuer{
+				Store:   &fakeRescueStore{abandoned: []store.AbandonedJob{tt.job}, rescued: map[int64]bool{1: true}, head: tt.head},
+				Current: configfile.NewCurrent(file), Forges: clientsFunc(func(string) (forge.Client, error) { return client, nil }),
+				Logger: slog.New(slog.DiscardHandler),
+			}
+			if err := r.Rescue(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(client.set, tt.want) {
+				t.Fatalf("statuses = %v, want %v", client.set, tt.want)
 			}
 		})
 	}

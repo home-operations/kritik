@@ -286,3 +286,16 @@ func TestOrphanedRuns(t *testing.T) {
 		t.Fatalf("OrphanedRuns after ending = %v, %v; want none", left, err)
 	}
 }
+
+func TestJobHead(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newRescueFixture(t, ctx, s)
+	head, ok, err := s.JobHead(ctx, f.silent)
+	if err != nil || !ok || head.AccountID != f.alpha || head.Repository == "" || head.HeadSHA == "" {
+		t.Fatalf("JobHead = %+v, %v, %v; want the head of the job's review", head, ok, err)
+	}
+	if _, ok, err := s.JobHead(ctx, f.lastTry); err != nil || ok {
+		t.Fatalf("JobHead of a job with no review = %v, %v; want none", ok, err)
+	}
+}

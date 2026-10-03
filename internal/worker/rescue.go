@@ -5,8 +5,14 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
+	"github.com/riverqueue/river/rivertype"
+
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
 )
@@ -33,6 +39,7 @@ type RunDeleter interface {
 type rescueStore interface {
 	AbandonedJobs(ctx context.Context, stale time.Duration, limit int) ([]store.AbandonedJob, error)
 	RescueJob(ctx context.Context, job store.AbandonedJob, stale time.Duration, reason string) (bool, error)
+	JobHead(ctx context.Context, jobID int64) (store.JobHead, bool, error)
 	OrphanedRuns(ctx context.Context, limit int) ([]store.OrphanedRun, error)
 	RevokeGatewayTokens(ctx context.Context, runID string) error
 	EndOrphanedRun(ctx context.Context, run store.OrphanedRun, reason string) error
@@ -48,8 +55,12 @@ type Rescuer struct {
 	Store rescueStore
 	// Runs deletes the Kubernetes Job of an orphaned run; nil when runs
 	// are not Jobs, as with the local executor.
-	Runs   RunDeleter
-	Logger *slog.Logger
+	Runs RunDeleter
+	// Current and Forges report a review that will not be tried again on
+	// its head commit; without them nothing is reported.
+	Current *configfile.Current
+	Forges  forge.Clients
+	Logger  *slog.Logger
 	// Metrics may be nil.
 	Metrics *metrics.Metrics
 	// every overrides rescueInterval, and stale jobAbandonedAfter.
@@ -97,6 +108,11 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 		state := string(job.RescueState())
 		r.Logger.Warn("job rescued from a dead worker", "job", job.ID, "kind", job.Kind, "attempt", job.Attempt, "state", state)
 		r.Metrics.JobRescued(job.Kind, state)
+		if job.Kind == (jobs.ReviewArgs{}).Kind() && job.RescueState() != rivertype.JobStateRetryable {
+			if err := r.reportEnded(ctx, job); err != nil {
+				r.Logger.Warn("commit status not set for a rescued review", "job", job.ID, "error", err)
+			}
+		}
 	}
 	orphaned, err := r.Store.OrphanedRuns(ctx, rescueBatch)
 	if err != nil {
@@ -113,6 +129,38 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+// reportEnded replaces the pending status on the head of a review job
+// that was rescued into a state River does not run again: its dead worker
+// set the status and nothing else would replace it.
+func (r *Rescuer) reportEnded(ctx context.Context, job store.AbandonedJob) error {
+	if r.Current == nil || r.Forges == nil {
+		return nil
+	}
+	head, ok, err := r.Store.JobHead(ctx, job.ID)
+	if err != nil || !ok {
+		return err
+	}
+	file := r.Current.Get()
+	account, ok := file.AccountByID(head.AccountID)
+	if !ok {
+		return nil
+	}
+	in := file.ConnectionFor(account)
+	if in == nil {
+		return nil
+	}
+	client, err := r.Forges.For(ctx, in, head.Repository)
+	if err != nil {
+		return err
+	}
+	desc := "kritika: review failed"
+	if job.CancelRequested {
+		desc = "kritika: review canceled"
+	}
+	owner, repo, _ := strings.Cut(head.Repository, "/")
+	return client.SetStatus(ctx, owner, repo, head.HeadSHA, forge.StatusError, desc)
 }
 
 // reap deletes run's Job, revokes its gateway tokens and ends it. The Job

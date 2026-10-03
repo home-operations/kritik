@@ -502,7 +502,7 @@ func lead(
 	duties.Go(func() { onboarder.Run(pollCtx) })
 	// And so is rescuing the jobs of a replica that died, and reaping the
 	// runner Jobs they left, which only a Kubernetes executor has.
-	rescuer := &worker.Rescuer{Store: st, Logger: logger, Metrics: m}
+	rescuer := &worker.Rescuer{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
 	if sweeper != nil {
 		rescuer.Runs = sweeper
 	}
