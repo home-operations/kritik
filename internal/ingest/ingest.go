@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/metrics"
@@ -57,6 +58,9 @@ type DeliveryRecorder interface {
 	RecordDelivery(ctx context.Context, connectionID string) error
 	RecordUnsigned(ctx context.Context, connectionID string) error
 }
+
+// dispatchTimeout bounds one dispatch, which does not end with its request.
+const dispatchTimeout = 30 * time.Second
 
 // Handler serves POST /hooks/{connection}.
 type Handler struct {
@@ -163,7 +167,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger = logger.With("account", account.Key())
-	out, err := h.disp.Dispatch(r.Context(), Request{File: file, Account: account, Event: ev})
+	// The forge gives up on a delivery after ten seconds and does not send
+	// it again, so a dispatch that outlasts the request still finishes: a
+	// comment or thread event that rolled back with it would be lost.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), dispatchTimeout)
+	defer cancel()
+	out, err := h.disp.Dispatch(ctx, Request{File: file, Account: account, Event: ev})
 	if err != nil {
 		logger.Error("webhook dispatch failed", "error", err)
 		h.Metrics.Webhook(name, "error")

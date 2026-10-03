@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
@@ -198,5 +199,45 @@ func TestHandlerRejectsOversizedBody(t *testing.T) {
 	body := `{"pad":"` + strings.Repeat("x", webhook.MaxBody) + `"}`
 	if resp := post(t, srv, "/hooks/bot-ross", "push", "s3cret", body); resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+// dispatcherFunc is a Dispatcher from a function.
+type dispatcherFunc func(context.Context, Request) (Outcome, error)
+
+func (f dispatcherFunc) Dispatch(ctx context.Context, req Request) (Outcome, error) {
+	return f(ctx, req)
+}
+
+// TestHandlerDispatchOutlivesTheRequest: a delivery the forge gave up
+// waiting on is still dispatched to the end.
+func TestHandlerDispatchOutlivesTheRequest(t *testing.T) {
+	entered, release, ended := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	srv := setup(t, dispatcherFunc(func(ctx context.Context, _ Request) (Outcome, error) {
+		close(entered)
+		<-release
+		ended <- ctx.Err()
+		return Outcome{Status: Enqueued}, nil
+	}))
+	ctx, cancel := context.WithCancel(t.Context())
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/hooks/bot-ross", strings.NewReader(prBody))
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	req.Header.Set("X-GitHub-Delivery", "d-1")
+	req.Header.Set("X-Hub-Signature-256", sign("s3cret", []byte(prBody)))
+	gone := make(chan struct{})
+	go func() {
+		defer close(gone)
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	<-entered
+	cancel()
+	<-gone
+	// Long enough for the server to notice the client left.
+	time.Sleep(200 * time.Millisecond)
+	close(release)
+	if err := <-ended; err != nil {
+		t.Fatalf("the dispatch's context ended with the request: %v", err)
 	}
 }
