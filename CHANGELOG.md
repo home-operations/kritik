@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.16](https://github.com/home-operations/kritika/compare/0.0.15...0.0.16) (2026-10-03)
+
+
+### Bug Fixes
+
+* **deps:** update pending dependencies and keep a provider's reason in OpenAI errors ([#404](https://github.com/home-operations/kritika/issues/404)) ([c138897](https://github.com/home-operations/kritika/commit/c138897ee90e83b022add3e57fbc603746764792))
+
 ## [0.0.15](https://github.com/home-operations/kritika/compare/0.0.14...0.0.15) (2026-10-03)
 
 
