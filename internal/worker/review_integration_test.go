@@ -1761,6 +1761,12 @@ func checkSupervision(
 		lf.mu.Unlock()
 		dispatch(running, false)
 		spec := started()
+		lf.mu.Lock()
+		forgeStatus := lf.status
+		lf.mu.Unlock()
+		if forgeStatus != "pending: kritika: review running" {
+			t.Fatalf("forge status while the runner works = %q", forgeStatus)
+		}
 		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `UPDATE runner_runs SET heartbeat_at = now() - interval '5 minutes' WHERE id = $1`, spec.Job.RunID)
 			return err
@@ -1775,7 +1781,7 @@ func checkSupervision(
 			t.Fatalf("error = %q", text)
 		}
 		lf.mu.Lock()
-		forgeStatus := lf.status
+		forgeStatus = lf.status
 		lf.mu.Unlock()
 		if forgeStatus != "error: kritika: review failed" {
 			t.Fatalf("forge status = %q", forgeStatus)

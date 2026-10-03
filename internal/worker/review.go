@@ -110,6 +110,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) erro
 	if err != nil {
 		return err
 	}
+	// The status says the review is under way until its outcome replaces
+	// it, so a head is never silent while its runner works.
+	if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusPending, "kritika: review running"); err != nil {
+		logger.Warn("commit status not set", "error", err)
+	}
 	deadline, resources := file.RunnerFor()
 	spec := runner.Spec{
 		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),

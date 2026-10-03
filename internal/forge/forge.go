@@ -75,10 +75,12 @@ type InlineComment struct {
 // StatusError is the one exception, for a review that reached no verdict:
 // canceled, timed out, or ended by an agent that never submitted a valid
 // review. That is not a finding to weigh, and a success would read as one.
+// StatusPending stands from a review's start until its outcome replaces it.
 type StatusState string
 
 // States kritika reports.
 const (
+	StatusPending StatusState = "pending"
 	StatusSuccess StatusState = "success"
 	StatusError   StatusState = "error"
 )
