@@ -253,6 +253,9 @@ func testRerunDedupes(t *testing.T, e *actionsEnv) {
 	const path = "/api/v1/accounts/github/aj/pulls/aj/one/11/rerun"
 	status, body := e.do(path)
 	e.expect(status, body, http.StatusConflict, CodeAlreadyQueued)
+	if !strings.Contains(string(body), "review job #") || !strings.Contains(string(body), "is queued") {
+		t.Errorf("body = %s, want it to name the queued job", body)
+	}
 
 	e.scalar(`UPDATE river_job SET state = 'completed', finalized_at = now()
 		WHERE kind = 'review' AND args->>'repository_id' = $1 RETURNING 'done'`, e.repoID)
@@ -260,6 +263,9 @@ func testRerunDedupes(t *testing.T, e *actionsEnv) {
 		VALUES ($1, $2, 'headA', 'running') RETURNING id::text`, e.accountID, e.prID)
 	status, body = e.do(path)
 	e.expect(status, body, http.StatusConflict, CodeAlreadyQueued)
+	if !strings.Contains(string(body), "already queued or running") {
+		t.Errorf("body = %s, want the plain refusal when no job is left to name", body)
+	}
 
 	e.scalar(`UPDATE reviews SET status = 'completed' WHERE id = $1 RETURNING 'done'`, review)
 	status, body = e.do(path)
