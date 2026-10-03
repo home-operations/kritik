@@ -87,7 +87,7 @@ func settleLeft(trigger string, settle time.Duration, created, now time.Time) ti
 // skipByRepo ends a review the merge-base .kritika.yaml disables or filters
 // out before a runner is spent on it, with a success status saying why. It
 // reports whether it ended the review, with the error of recording that.
-func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective, client forge.Client, owner, repo string) (bool, error) {
+func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective) (bool, error) {
 	var vars map[string]any
 	if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 		var err error
@@ -106,14 +106,7 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective, cli
 	}
 	e.logger.Info("review skipped before its runner", "reason", reason)
 	e.skip = reason
-	if err := w.end(ctx, e, store.ReviewSkipped, ""); err != nil {
-		return true, err
-	}
-	desc := "kritika: skipped (" + reason.Description() + ")"
-	if err := client.SetStatus(ctx, owner, repo, e.args.HeadSHA, forge.StatusSuccess, desc); err != nil {
-		e.logger.Warn("commit status not set", "error", err)
-	}
-	return true, nil
+	return true, w.end(ctx, e, store.ReviewSkipped, "")
 }
 
 // filterVars rebuilds the filter's pr variable for a review started by

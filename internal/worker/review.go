@@ -349,18 +349,56 @@ type earlyEnd struct {
 	skip    repoconfig.SkipReason
 	started time.Time
 	logger  *slog.Logger
+	// client reports the end on the head commit, under owner/repo; nil
+	// until begin has built it, when a superseded head is the only end.
+	client      forge.Client
+	owner, repo string
 }
 
-// end records a review that never ran as status, for reason, and counts
-// it.
+// end records a review that never ran as status, for reason, counts it,
+// and says so on the head commit, so a head no runner was spent on does
+// not read as one still waiting for its review.
 func (w *Review) end(ctx context.Context, e earlyEnd, status store.ReviewStatus, reason string) error {
 	w.Metrics.Review(e.accountKey, string(status), time.Since(e.started))
-	return w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
+	err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 		return store.RecordEndedReview(ctx, tx, store.EndedReview{
 			AccountID: e.args.AccountID, PullRequestID: e.pr.id, HeadSHA: e.args.HeadSHA, MergeBaseSHA: e.mergeBase,
 			ForgePatchID: e.forgePatch, Status: status, SkipReason: e.skip, Trigger: e.args.Trigger, Error: reason,
 		})
 	})
+	if err != nil {
+		return err
+	}
+	state, desc := e.status(status, reason)
+	if state == "" || e.client == nil {
+		return nil
+	}
+	if err := e.client.SetStatus(ctx, e.owner, e.repo, e.args.HeadSHA, state, desc); err != nil {
+		e.logger.Warn("commit status not set", "error", err)
+	}
+	return nil
+}
+
+// status is the commit status an early end reports, or "" for none: a
+// superseded head leaves the status to its successor.
+func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.StatusState, string) {
+	switch status {
+	case store.ReviewFailed:
+		return forge.StatusError, "kritika: review failed (" + reason + ")"
+	case store.ReviewCapped:
+		return forge.StatusSuccess, "kritika: capped (" + reason + ")"
+	case store.ReviewSkipped:
+		switch {
+		case e.skip.Valid():
+			reason = e.skip.Description()
+		case reason == "":
+			// The one skip with neither a repository reason nor an
+			// admission reason is an unchanged bot patch.
+			reason = skipDescription(runner.SkipUnchangedPatch, 0)
+		}
+		return forge.StatusSuccess, "kritika: skipped (" + reason + ")"
+	}
+	return "", ""
 }
 
 // skipUnchangedBot ends a bot's review whose rebase changed nothing,
@@ -425,6 +463,7 @@ func (w *Review) begin(
 		return begun{}, true, err
 	}
 	owner, repo := pr.ownerRepo()
+	e.client, e.owner, e.repo = client, owner, repo
 	if e.mergeBase, err = client.MergeBase(ctx, owner, repo, pr.baseRef, pr.headSHA); err != nil {
 		return begun{}, true, err
 	}
@@ -437,7 +476,7 @@ func (w *Review) begin(
 		logger.Info("review snoozed until its settle time is over", "for", wait.Round(time.Second))
 		return begun{}, true, river.JobSnooze(wait)
 	}
-	if done, err := w.skipByRepo(ctx, e, &eff, client, owner, repo); done {
+	if done, err := w.skipByRepo(ctx, e, &eff); done {
 		return begun{}, true, err
 	}
 	if eff.Models.Review != settings.Models.Review {

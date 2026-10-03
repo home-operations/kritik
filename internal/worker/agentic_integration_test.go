@@ -383,6 +383,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
 	t.Run("an agent spec cut short by the job ending is not retried", func(t *testing.T) { checkAgentSpecFailed(t, h) })
 	t.Run("a capped review is capped under the lease and lets it go", func(t *testing.T) { checkAgentCappedUnderLease(t, h) })
+	t.Run("a review model on no configured provider fails before its runner", func(t *testing.T) { checkAgentProviderMissing(t, h) })
 	t.Run("the gateway serves a run token's steps within its budget", func(t *testing.T) { checkGatewayEndpoint(t, h) })
 	t.Run("the gateway serves similar code into the agent's prompt", func(t *testing.T) { checkGatewaySimilar(t, h) })
 	t.Run("an agentic review snoozes while every model slot is held", func(t *testing.T) { checkAgentSnoozes(t, h) })
@@ -1040,6 +1041,37 @@ func checkAgentOutlivesJobTimeout(t *testing.T, h *agenticHarness) {
 	}
 }
 
+// checkAgentProviderMissing points the review model at a provider the
+// configuration does not have: the review fails at admission, before a
+// runner is spent, and the head commit says so.
+func checkAgentProviderMissing(t *testing.T, h *agenticHarness) {
+	missing := *h.file
+	missing.Defaults.Models.Review = new(configfile.ModelRef("nowhere/model"))
+	h.review.Current.Set(&missing)
+	t.Cleanup(func() { h.review.Current.Set(h.file) })
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc missing() {}\n")
+	h.lf.mu.Lock()
+	h.lf.status = ""
+	h.lf.mu.Unlock()
+	h.dispatch(t, next)
+	reviewID, status, errText := h.waitReview(t, next)
+	if status != "failed" || errText != `provider "nowhere" is not in the configuration` {
+		t.Fatalf("status = %s, error = %q", status, errText)
+	}
+	var runs int
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT count(*) FROM runner_runs WHERE review_id = $1`, reviewID).Scan(&runs)
+	}); err != nil || runs != 0 {
+		t.Fatalf("%d runner runs for a review failed at admission, err=%v", runs, err)
+	}
+	h.lf.mu.Lock()
+	forgeStatus := h.lf.status
+	h.lf.mu.Unlock()
+	if forgeStatus != `error: kritika: review failed (provider "nowhere" is not in the configuration)` {
+		t.Fatalf("forge status = %q", forgeStatus)
+	}
+}
+
 // checkAgentCappedUnderLease caps a review on the account's daily count,
 // which earlier subtests have already spent, and checks the lease taken to
 // read the caps is released rather than held for the capped review.
@@ -1049,10 +1081,19 @@ func checkAgentCappedUnderLease(t *testing.T, h *agenticHarness) {
 	h.review.Current.Set(&capped)
 	t.Cleanup(func() { h.review.Current.Set(h.file) })
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc capped() {}\n")
+	h.lf.mu.Lock()
+	h.lf.status = ""
+	h.lf.mu.Unlock()
 	h.dispatch(t, next)
 	_, status, errText := h.waitReview(t, next)
 	if status != string(store.ReviewCapped) || !strings.Contains(errText, "reviewsPerDay") {
 		t.Fatalf("status = %s (%s), want capped on reviewsPerDay", status, errText)
+	}
+	h.lf.mu.Lock()
+	forgeStatus := h.lf.status
+	h.lf.mu.Unlock()
+	if forgeStatus != "success: kritika: capped ("+errText+")" {
+		t.Fatalf("forge status = %q, want the cap as the description", forgeStatus)
 	}
 	var held int
 	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
