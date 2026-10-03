@@ -365,6 +365,12 @@ func TestOpenAIErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "model:") || !strings.Contains(err.Error(), "acme/large") {
 		t.Fatalf("err = %v", err)
 	}
+	if !strings.Contains(err.Error(), "429") || !strings.Contains(err.Error(), "rate limited") {
+		t.Fatalf("err = %v, want the status and the provider's reason", err)
+	}
+	if !Transient(err) {
+		t.Fatalf("err = %v, want it transient", err)
+	}
 }
 
 func TestStalledProviderTimesOut(t *testing.T) {
