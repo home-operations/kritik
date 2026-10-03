@@ -2,6 +2,7 @@ package store
 
 import (
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 )
@@ -150,4 +151,48 @@ func TestEnqueueReconnect(t *testing.T) {
 			t.Errorf("dropped = %d, want 1 (the evicted item should be counted as a drop)", warner.dropped)
 		}
 	})
+}
+
+// TestDeliverResyncsAfterADrop: a full queue drops the event and queues one
+// resync for the whole run of drops, and a later run queues another.
+func TestDeliverResyncsAfterADrop(t *testing.T) {
+	notifications := make(chan func(), 2)
+	warner := &dropWarner{logger: slog.New(slog.DiscardHandler), lastWarnAt: time.Now()}
+	var ran []string
+	event := func(name string) func() { return func() { ran = append(ran, name) } }
+	resync := func() { ran = append(ran, "resync") }
+	drain := func() {
+		for len(notifications) > 0 {
+			(<-notifications)()
+		}
+	}
+
+	dropping := false
+	for _, name := range []string{"a", "b", "c", "d"} {
+		dropping = deliver(notifications, event(name), resync, dropping, warner)
+	}
+	if !dropping {
+		t.Fatal("the events past the queue's room were not reported dropped")
+	}
+	drain()
+	// c's drop evicted a for the resync; d's found one already waiting.
+	if want := []string{"b", "resync"}; !slices.Equal(ran, want) {
+		t.Fatalf("ran = %v, want %v", ran, want)
+	}
+
+	ran = nil
+	if dropping = deliver(notifications, event("e"), resync, dropping, warner); dropping {
+		t.Fatal("an event with room in the queue was dropped")
+	}
+	for _, name := range []string{"f", "g"} {
+		dropping = deliver(notifications, event(name), resync, dropping, warner)
+	}
+	drain()
+	if want := []string{"f", "resync"}; !slices.Equal(ran, want) {
+		t.Fatalf("ran = %v, want %v: a new run of drops queues its own resync", ran, want)
+	}
+
+	if deliver(notifications, event("h"), nil, false, warner); len(notifications) != 1 {
+		t.Fatalf("queue holds %d, want the one event", len(notifications))
+	}
 }
