@@ -76,7 +76,9 @@ func parseEvent(payload string) (Event, error) {
 // inline.
 //
 // Once the queue is full, a new OnEvent notification is dropped
-// (see dropWarner). OnReconnect is treated as more important than any
+// (see dropWarner), and OnReconnect is queued in its place, once for a run
+// of drops, so consumers re-fetch what the dropped events would have told
+// them (see deliver). OnReconnect is treated as more important than any
 // single dropped event — a consumer that misses it can go on serving
 // stale state indefinitely — so if the queue is full when OnReconnect is
 // due, the oldest queued notification is evicted to make room rather than
@@ -232,6 +234,7 @@ func (s *Store) listenOnce(
 		enqueueReconnect(notifications, handlers.OnReconnect, warner)
 	}
 
+	dropping := false
 	for {
 		n, err := conn.WaitForNotification(ctx)
 		if err != nil {
@@ -251,13 +254,29 @@ func (s *Store) listenOnce(
 		if handlers.OnEvent == nil {
 			continue
 		}
-		fn := func() { handlers.OnEvent(event) }
-		select {
-		case notifications <- fn:
-		default:
-			warner.drop()
-		}
+		dropping = deliver(notifications, func() { handlers.OnEvent(event) }, handlers.OnReconnect, dropping, warner)
 	}
+}
+
+// deliver queues fn, an OnEvent callback, or drops it when the queue is
+// full. A dropped event would leave consumers stale for good, so the first
+// drop of a run also queues resync, the OnReconnect callback, as
+// enqueueReconnect does. One is enough for the run: nothing has left a
+// queue that is still full, so that resync is still waiting behind
+// everything else and re-fetches what the later drops changed too. It
+// returns whether fn was dropped, which the caller passes back as dropping
+// for the next event.
+func deliver(notifications chan func(), fn, resync func(), dropping bool, warner *dropWarner) bool {
+	select {
+	case notifications <- fn:
+		return false
+	default:
+	}
+	warner.drop()
+	if !dropping && resync != nil {
+		enqueueReconnect(notifications, resync, warner)
+	}
+	return true
 }
 
 // enqueueReconnect delivers fn (an OnReconnect callback) through the same
