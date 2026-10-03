@@ -58,29 +58,51 @@ func PrincipalFrom(ctx context.Context) *Principal {
 // began.
 func (h *Handler) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie(SessionCookieName(h.webURL))
-		if err != nil || c.Value == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
 		ctx := r.Context()
-		sess, err := h.store.LookupSession(ctx, c.Value, h.now())
-		if errors.Is(err, store.ErrSession) {
-			next.ServeHTTP(w, r)
-			return
-		}
+		file := h.current.Get()
+		sess, ok, err := h.session(r, file)
 		if err != nil {
 			h.logger.ErrorContext(ctx, "auth: look up session", "error", err)
 			writeJSON(w, http.StatusInternalServerError, errorBody{Code: codeInternal})
 			return
 		}
-		file := h.current.Get()
-		if !honoured(file.Auth, sess) {
+		if !ok {
 			next.ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principalFor(file, sess))))
 	})
+}
+
+// session resolves r's session cookie to the session it names, false when
+// there is none, it has expired or been signed out, or file no longer
+// honours it.
+func (h *Handler) session(r *http.Request, file *configfile.File) (store.Session, bool, error) {
+	c, err := r.Cookie(SessionCookieName(h.webURL))
+	if err != nil || c.Value == "" {
+		return store.Session{}, false, nil
+	}
+	sess, err := h.store.LookupSession(r.Context(), c.Value, h.now())
+	if errors.Is(err, store.ErrSession) {
+		return store.Session{}, false, nil
+	}
+	if err != nil {
+		return store.Session{}, false, err
+	}
+	return sess, honoured(file.Auth, sess), nil
+}
+
+// Stands reports whether the session r was authenticated with still
+// stands, for a request that outlives its authentication, as an event
+// stream does. A lookup the database fails counts as standing: a stream
+// is not ended over a failover.
+func (h *Handler) Stands(r *http.Request) bool {
+	_, ok, err := h.session(r, h.current.Get())
+	if err != nil {
+		h.logger.WarnContext(r.Context(), "auth: look up session", "error", err)
+		return true
+	}
+	return ok
 }
 
 // honoured reports whether a session still stands under auth: its sign-in

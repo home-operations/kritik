@@ -488,6 +488,14 @@ func TestSessionLifecycle(t *testing.T) {
 		if e.principal(cookie) == nil {
 			t.Fatal("logout ended another session")
 		}
+		stands := func(c *http.Cookie) bool {
+			r := httptest.NewRequest(http.MethodGet, "/api/events", nil)
+			r.AddCookie(c)
+			return e.h.Stands(r)
+		}
+		if stands(other) || !stands(cookie) {
+			t.Fatalf("Stands = %v for the signed-out session and %v for the other; want false and true", stands(other), stands(cookie))
+		}
 	})
 	t.Run("expiry", func(t *testing.T) {
 		e.now = e.now.Add(configfile.DefaultSessionTTL)

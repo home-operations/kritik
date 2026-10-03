@@ -32,6 +32,10 @@ type hub struct {
 	logger    *slog.Logger
 	heartbeat time.Duration
 	buffer    int
+	// stands, when set, is asked at every heartbeat whether the stream's
+	// session still stands; a stream whose session ended is closed, and
+	// the browser's reconnect is refused.
+	stands func(*http.Request) bool
 
 	mu      sync.Mutex
 	clients map[*client]struct{}
@@ -173,6 +177,9 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-ticker.C:
+			if h.stands != nil && !h.stands(r) {
+				return
+			}
 			frame = []byte(": heartbeat\n\n")
 		}
 	}

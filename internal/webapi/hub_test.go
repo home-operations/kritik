@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -108,6 +109,43 @@ func expectResync(t *testing.T, br *bufio.Reader) {
 	}
 	if got := sseLine(t, br); got != "data: {}" {
 		t.Fatalf("resync data = %q", got)
+	}
+}
+
+// TestHubServeEndsWithItsSession: a stream whose session no longer stands
+// is closed at the next heartbeat.
+func TestHubServeEndsWithItsSession(t *testing.T) {
+	h, _ := testHub(t)
+	h.heartbeat = 20 * time.Millisecond
+	var ended atomic.Bool
+	h.stands = func(*http.Request) bool { return !ended.Load() }
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.serve(w, r.WithContext(auth.WithPrincipal(r.Context(), &auth.Principal{Admin: true})))
+	}))
+	defer srv.Close()
+	resp, err := srv.Client().Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	br := bufio.NewReader(resp.Body)
+	expectResync(t, br)
+	if l := sseLine(t, br); l != ": heartbeat" {
+		t.Fatalf("line = %q, want a heartbeat while the session stands", l)
+	}
+	ended.Store(true)
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(io.Discard, br)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("stream ended with %v, want a clean close", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stream outlived its session")
 	}
 }
 

@@ -228,6 +228,10 @@ func TestServeBoundsReadsAndIdleConnections(t *testing.T) {
 		return string(b)
 	}
 
+	// http.Get does not retry a refused connection, so the listener is up
+	// before the first request.
+	_ = dial().Close()
+
 	t.Run("a handler outlasting the read timeout answers", func(t *testing.T) {
 		resp, err := http.Get("http://" + addr + "/slow")
 		if err != nil {
