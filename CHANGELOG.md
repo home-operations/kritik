@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.0.13](https://github.com/home-operations/kritika/compare/0.0.12...0.0.13) (2026-10-03)
+
+
+### Features
+
+* **agent:** read_description returns the whole pull request description ([#379](https://github.com/home-operations/kritika/issues/379)) ([7cc9e0b](https://github.com/home-operations/kritika/commit/7cc9e0b9ff7245e5554dd3ac5708522187e82cc7))
+* **review:** group the summary comment into Findings and Summary sections ([#382](https://github.com/home-operations/kritika/issues/382)) ([338bf4c](https://github.com/home-operations/kritika/commit/338bf4c0568a6bfac1230b70100db360545a521d))
+* **review:** open the summary comment with a one-sentence headline ([#384](https://github.com/home-operations/kritika/issues/384)) ([0afce2e](https://github.com/home-operations/kritika/commit/0afce2ec221bd6f2e9956939d3e08e6d8a43b97f))
+* **review:** size the description and issue bodies to the prompt budget ([#378](https://github.com/home-operations/kritika/issues/378)) ([ec503f0](https://github.com/home-operations/kritika/commit/ec503f04d02c557761e001da7de0c96821801e80))
+* **review:** title the summary comment and link a re-run badge to the dashboard ([#381](https://github.com/home-operations/kritika/issues/381)) ([e6f6025](https://github.com/home-operations/kritika/commit/e6f6025a11b416d2e56e380444dc5b957dd6deab))
+* **worker:** report a running review as pending on the head commit ([#377](https://github.com/home-operations/kritika/issues/377)) ([861c3db](https://github.com/home-operations/kritika/commit/861c3db2a8c3f499c0297369e1c689c137980583))
+
+
+### Bug Fixes
+
+* **worker:** report a failed review on the head commit ([#375](https://github.com/home-operations/kritika/issues/375)) ([59b6ade](https://github.com/home-operations/kritika/commit/59b6adee03bb85ad8a648be60090d4a6c900b5e4))
+* **worker:** report a review ended at admission on the head commit ([#376](https://github.com/home-operations/kritika/issues/376)) ([8f816fd](https://github.com/home-operations/kritika/commit/8f816fdc17709a9410f636c32c1661187e0abd0e))
+* **worker:** report an incomplete review as error, not success ([#374](https://github.com/home-operations/kritika/issues/374)) ([20545b4](https://github.com/home-operations/kritika/commit/20545b47724439429e0183cd440fb6b6b5b37028))
+
+
+### Documentation
+
+* **agents:** point to the org AI Usage Policy instead of restating it ([77702cb](https://github.com/home-operations/kritika/commit/77702cbcbd1ac827b0087ba73436d8a3bdd83254))
+* **agents:** update AI usage policy summary ([806c98c](https://github.com/home-operations/kritika/commit/806c98ca56b8519e4e289c0aa39bcc74b24b53a4))
+
+
+### Miscellaneous Chores
+
+* **github-release:** update release helm-unittest/helm-unittest (v1.2.0 → v1.2.1) ([#373](https://github.com/home-operations/kritika/issues/373)) ([cd03a41](https://github.com/home-operations/kritika/commit/cd03a4117f83aca7e2a7a470fa5a8e3b3dff5358))
+* **mise:** update tool aqua:astral-sh/uv (0.12.20 → 0.12.21) ([#368](https://github.com/home-operations/kritika/issues/368)) ([ccd45b6](https://github.com/home-operations/kritika/commit/ccd45b6b657bd188a87fce008615b930afd0f065))
+* **mise:** upgrade lockfile to format revision 3 ([4338054](https://github.com/home-operations/kritika/commit/433805494bdbb5a21f0e41386589c0841c60f691))
+
 ## [0.0.12](https://github.com/home-operations/kritika/compare/0.0.11...0.0.12) (2026-10-02)
 
 
