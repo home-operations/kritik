@@ -12,35 +12,39 @@
 _Incremental review of the changes since {{ if .PriorHeadURL }}[`{{ trunc 7 .PriorHeadSHA }}`]({{ .PriorHeadURL }}){{ else }}`{{ trunc 7 .PriorHeadSHA }}`{{ end }}._
 
 {{ end -}}
-{{ .Result.Summary.Take }}
-{{ if and .Result.Summary.Praise (not .AuthorIsBot) }}
-**What's good**
+{{ if or .Result.Findings .Unanchored .Prior -}}
+## Findings
 
-{{ range .Result.Summary.Praise -}}
-- {{ . }}
-{{ end -}}
-{{ end -}}
-{{ if .Result.Findings }}
-**Findings**
-
+{{ if .Result.Findings -}}
 {{ range .Result.Findings -}}
 - **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}
+{{ end }}
 {{ end -}}
-{{ end -}}
-{{ if .Unanchored }}
+{{ if .Unanchored -}}
 **Outside the diff**
 
 {{ range .Unanchored -}}
 - **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** `{{ .Path }}:{{ .Line }}` {{ .Title }}
 
 {{ .Explanation | indent 2 }}
+{{ end }}
 {{ end -}}
-{{ end -}}
-{{ if .Prior }}
+{{ if .Prior -}}
 **Earlier findings**
 
 {{ range .Prior -}}
 - **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }} · {{ if .Dismissed }}dismissed{{ if .DismissReason }}: {{ .DismissReason }}{{ end }}{{ else if .Resolved }}resolved{{ else }}still open{{ end }}
+{{ end }}
+{{ end -}}
+{{ end -}}
+### Summary
+
+{{ .Result.Summary.Take }}
+{{ if and .Result.Summary.Praise (not .AuthorIsBot) }}
+**What's good**
+
+{{ range .Result.Summary.Praise -}}
+- {{ . }}
 {{ end -}}
 {{ end -}}
 {{ end -}}
