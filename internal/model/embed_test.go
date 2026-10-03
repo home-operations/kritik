@@ -50,3 +50,11 @@ func strconvInt(i int) string {
 	b, _ := json.Marshal(i)
 	return string(b)
 }
+
+func TestOpenAIEmbedderErrorSaysWhy(t *testing.T) {
+	srv, _ := fakeProvider(t, http.StatusBadRequest, `{"error":{"message":"input too long"}}`)
+	_, _, err := NewOpenAIEmbedder(srv.URL, "k", "emb", 3).Embed(t.Context(), []string{"a"})
+	if err == nil || !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "input too long") {
+		t.Fatalf("err = %v, want the status and the provider's reason", err)
+	}
+}

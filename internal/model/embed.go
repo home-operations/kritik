@@ -81,7 +81,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 		}
 		resp, err := e.client.Embeddings.New(ctx, params)
 		if err != nil {
-			return nil, tokens, fmt.Errorf("model: embed batch %d..%d: %w", start, end, err)
+			return nil, tokens, fmt.Errorf("model: embed batch %d..%d: %w", start, end, openAIError(err))
 		}
 		if len(resp.Data) != len(batch) {
 			return nil, tokens, fmt.Errorf("model: embed returned %d vectors for %d inputs", len(resp.Data), len(batch))

@@ -149,7 +149,7 @@ func (o *OpenAI) step(
 		return StepResponse{}, fmt.Errorf("%w: %s", ErrBudget, apiErr.Message)
 	}
 	if err != nil {
-		return StepResponse{}, err
+		return StepResponse{}, openAIError(err)
 	}
 	if len(cc.Choices) == 0 {
 		return StepResponse{}, errors.New("response has no choices")
@@ -196,6 +196,15 @@ func (o *OpenAI) step(
 		out.CostUSD = o.pricing.cost(modelID, out.Usage)
 	}
 	return out, nil
+}
+
+// openAIError adds the body a server refused a request with to the SDK's
+// error, whose own text is only the status; the body says why.
+func openAIError(err error) error {
+	if e, ok := errors.AsType[*openai.Error](err); ok && e.RawJSON() != "" {
+		return fmt.Errorf("%w %s", err, e.RawJSON())
+	}
+	return err
 }
 
 func openAIStop(finish string) StopReason {
