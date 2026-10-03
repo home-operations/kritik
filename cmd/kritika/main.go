@@ -600,7 +600,8 @@ func retentionSweep(ctx context.Context, st retentionStore, current *configfile.
 // would crash-loop on it in turn: it is logged and raised on the gauge,
 // the last applied state stays, and the same content would be refused
 // again, so it is not retried before a restart. Any other error is
-// returned, which ends the process for a restart.
+// returned, which ends this tenure: the lock is released and competed for
+// again.
 func applyConfig(
 	ctx context.Context, f *configfile.File, apply func(context.Context, *configfile.File) error,
 	onApplied func(context.Context) error, gauge *server.ConfigErrorGauge, logger *slog.Logger,

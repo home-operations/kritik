@@ -20,9 +20,14 @@ const lockTimeout = 5 * time.Second
 
 // RunAsLeader competes for the leader lock and, once held, calls lead with a
 // context that is cancelled if the lock is lost or ctx ends. It returns when
-// ctx ends, or when lead returns an error. Only one replica per database
-// holds the lock at a time; the holder is the only replica that migrates
-// and writes configuration.
+// ctx ends. Only one replica per database holds the lock at a time; the
+// holder is the only replica that migrates and writes configuration.
+//
+// An error from lead ends that tenure, not the process: the lock is
+// released and competed for again after retry, by this replica and the
+// others. A failover, a lock timeout or a deadlock under a migration or a
+// configuration apply clears on a later try, and ending the process for it
+// would cut the reviews this replica is running.
 //
 // The lock is session-level on a dedicated connection held for the whole
 // tenure, so it releases on its own if the process dies. The holder pings
@@ -41,11 +46,11 @@ func (s *Store) RunAsLeader(ctx context.Context, retry time.Duration, lead func(
 	}
 	for {
 		held, err := s.tryLead(ctx, retry, lead)
-		if err != nil {
-			return err
-		}
 		if ctx.Err() != nil {
 			return nil
+		}
+		if err != nil {
+			s.logger.Error("leader duties failed, lock released and retried", "error", err, "after", retry)
 		}
 		if !held {
 			s.logger.Debug("leader lock held elsewhere, retrying", "after", retry)

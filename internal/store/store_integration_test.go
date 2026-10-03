@@ -939,3 +939,39 @@ func checkReservations(t *testing.T, s *Store, token string) {
 		t.Fatalf("reserve after a refund = %v, %v", ok, err)
 	}
 }
+
+// TestLeaderDutiesAreRetried: a tenure whose duties fail releases the lock
+// and is tried again rather than ending RunAsLeader, and with it the process.
+func TestLeaderDutiesAreRetried(t *testing.T) {
+	s := openStore(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tenures := make(chan int, 2)
+	done := make(chan error, 1)
+	go func() {
+		n := 0
+		done <- s.RunAsLeader(ctx, 20*time.Millisecond, func(ctx context.Context) error {
+			n++
+			tenures <- n
+			if n == 1 {
+				return errors.New("deadlock detected")
+			}
+			<-ctx.Done()
+			return nil
+		})
+	}()
+	for want := 1; want <= 2; want++ {
+		select {
+		case got := <-tenures:
+			if got != want {
+				t.Fatalf("tenure %d, want %d", got, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("tenure %d never started", want)
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("RunAsLeader = %v, want nil once ctx ends", err)
+	}
+}
