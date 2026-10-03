@@ -299,6 +299,9 @@ export interface Pull {
   updatedAt: string;
   labels: Label[];
   lastReview: ReviewBrief | null;
+  // Reviews that completed, and what every review of it spent.
+  reviewCount: number;
+  costUsd: number;
 }
 
 export interface TokenCounts {

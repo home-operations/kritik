@@ -7,6 +7,7 @@
   import { href, navigate } from '../router.svelte';
   import { pullKey, pullRoute } from '../links';
   import type { Pull } from '../types';
+  import { usd } from '../format';
   import Icon from '../Icon.svelte';
   import { mdiSourceMerge, mdiSourceBranchRemove, mdiFileDocumentEditOutline } from '../icons';
   import Time from './Time.svelte';
@@ -52,6 +53,8 @@
         <th scope="col">Pull request</th>
         <th scope="col" title="Blocking, important and nit, in that order">Findings</th>
         <th scope="col">Last review</th>
+        <th scope="col" class="num" title="Reviews that completed; skipped ones are not counted">Reviews</th>
+        <th scope="col" class="num" title="What every review of the pull request spent">Cost</th>
         <th scope="col" class="num">Updated</th>
       </tr>
     </thead>
@@ -91,6 +94,8 @@
               <span class="small muted">not reviewed</span>
             {/if}
           </td>
+          <td class="num">{p.reviewCount}</td>
+          <td class="num">{usd(p.costUsd)}</td>
           <td class="num"><Time iso={p.updatedAt} /></td>
         </tr>
       {/each}

@@ -59,6 +59,12 @@ type PullRow struct {
 	UpdatedAt  time.Time
 	Labels     []Label
 	LastReview *ReviewBrief
+	// Reviews counts the reviews that completed: not those skipped, capped,
+	// superseded, failed or canceled.
+	Reviews int
+	// CostUSD is what every review of the pull request spent, whatever
+	// became of it.
+	CostUSD float64
 }
 
 // PullFilter narrows ListPulls. Zero fields match everything; Author is
@@ -74,7 +80,9 @@ type PullFilter struct {
 
 const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.fork, p.merged,
 	p.head_sha, p.head_ref, p.base_ref, p.url, p.opened_at, p.updated_at, p.labels,
-	lr.id, lr.status, lr.scope, lr.created_at, lr.blocking, lr.important, lr.nit
+	lr.id, lr.status, lr.scope, lr.created_at, lr.blocking, lr.important, lr.nit,
+	(SELECT count(*) FROM reviews WHERE pull_request_id = p.id AND status = 'completed'),
+	(SELECT coalesce(sum(u.cost_usd), 0)::float8 FROM usage u JOIN reviews v ON v.id = u.review_id WHERE v.pull_request_id = p.id)
 	FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
 	LEFT JOIN LATERAL (SELECT v.id, v.status, v.scope, v.created_at,
 		count(f.id) FILTER (WHERE f.severity = 'blocking') AS blocking,
@@ -92,7 +100,7 @@ func scanPull(row pgx.CollectableRow) (PullRow, error) {
 	var blocking, important, nit *int
 	if err := row.Scan(&p.ID, &p.RepositoryID, &p.Repository, &p.Number, &p.Title, &p.Author, &p.State, &p.Draft, &p.Fork, &p.Merged,
 		&p.HeadSHA, &p.HeadRef, &p.BaseRef, &p.URL, &p.OpenedAt, &p.UpdatedAt, &labels,
-		&id, &status, &scope, &at, &blocking, &important, &nit); err != nil {
+		&id, &status, &scope, &at, &blocking, &important, &nit, &p.Reviews, &p.CostUSD); err != nil {
 		return p, err
 	}
 	p.Labels = []Label{}

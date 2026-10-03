@@ -81,6 +81,7 @@ var goldenPull = Pull{
 		ID: "rev-1", Status: store.ReviewCompleted, Scope: review.ScopeFull,
 		Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, CreatedAt: t0,
 	},
+	ReviewCount: 2, CostUSD: 0.84,
 }
 
 var goldenFollowup = Followup{
