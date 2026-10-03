@@ -189,6 +189,10 @@ func reviewAgent(
 	defer cancel()
 	limits := p.Agent.limits()
 	tree := agent.NewTree(head, ignore)
+	issues := make(map[int]string, len(p.Prompt.Issues))
+	for _, is := range p.Prompt.Issues {
+		issues[is.Number] = is.Body
+	}
 	timeline := []store.TimelineStep{}
 	res := agent.Run{
 		Stepper: stepper, Model: p.Model.Model, System: system, User: user,
@@ -196,6 +200,7 @@ func reviewAgent(
 			agent.ReadFileTool(tree, limits.MaxToolOutputBytes),
 			agent.GrepTool(tree, limits.MaxToolOutputBytes),
 			agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
+			agent.ReadDescriptionTool(p.Prompt.PullRequest.Body, issues, limits.MaxToolOutputBytes),
 		}, extra...),
 		Submit:   SubmitTool(strict),
 		Validate: review.Check,

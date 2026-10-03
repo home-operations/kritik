@@ -17,7 +17,7 @@ func TestSystemPrompt(t *testing.T) {
 	if got != want {
 		t.Fatalf("system prompt:\n%s", got)
 	}
-	for _, want := range []string{"read_file", "grep", "list_files", "verify", "only to lines the diff shows",
+	for _, want := range []string{"read_file", "grep", "list_files", "read_description", "verify", "only to lines the diff shows",
 		"call submit_review exactly once", reportThorough + systemRules} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
