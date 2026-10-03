@@ -24,6 +24,15 @@ exclude = ["charts/kritika/README.md", "docs/**"]
 [pre-commit.commands.format-json]
 exclude = ["charts/kritika/values.schema.json"]
 
+# build/tools is a mise config root of its own, outside the shared format-mise
+# and mise-lock globs. Formatting and locking share one command because the
+# shared pre-commit runs in parallel, and mise lock must not read the config
+# while mise fmt is rewriting it.
+[pre-commit.commands.mise-build-tools]
+glob = "build/tools/mise.toml"
+run = "mise -C build/tools fmt && mise -C build/tools lock && git add build/tools/mise.lock"
+stage_fixed = true
+
 [pre-commit.commands.golangci-lint]
 glob = "*.go"
 run = "mise exec -- golangci-lint run"
