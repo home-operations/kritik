@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.0.14](https://github.com/home-operations/kritika/compare/0.0.13...0.0.14) (2026-10-03)
+
+
+### Bug Fixes
+
+* **agent:** refuse run tool arguments that leak the token or run other programs ([#392](https://github.com/home-operations/kritika/issues/392)) ([66753c1](https://github.com/home-operations/kritika/commit/66753c1be9ac5585b544063437a153fc320b97a0))
+* **agent:** wait out a provider outage and bound review job attempts ([#386](https://github.com/home-operations/kritika/issues/386)) ([00ba480](https://github.com/home-operations/kritika/commit/00ba480ac67605be44f72923ed3ae91df98163d5))
+* **executor:** give up a runner pod that never starts ([#388](https://github.com/home-operations/kritika/issues/388)) ([47afe36](https://github.com/home-operations/kritika/commit/47afe36d0353e0b1f90f5b67a1dea0d2f23d3d43))
+* **gateway:** time out a stalled model request and cap Retry-After ([#385](https://github.com/home-operations/kritika/issues/385)) ([84ac3b4](https://github.com/home-operations/kritika/commit/84ac3b4a88127ffebe25bb24167c8cc1c49cebfb))
+* **runner:** bound the diff a context pack keeps and comment listings ([#390](https://github.com/home-operations/kritika/issues/390)) ([cf9a496](https://github.com/home-operations/kritika/commit/cf9a49683f522a945a7e98cd5771bf525fd12db8))
+* **serve:** give a cut review time to hand its job back before the kill ([#396](https://github.com/home-operations/kritika/issues/396)) ([28f885f](https://github.com/home-operations/kritika/commit/28f885fbc4ad069969791917d847e5b2acf6f7d0))
+* **server:** bound request reads and idle connections on every listener ([#395](https://github.com/home-operations/kritika/issues/395)) ([d5b38a5](https://github.com/home-operations/kritika/commit/d5b38a53b48c3d0dd606f96d26a25fd84646bff6))
+* **store:** bound application pool statements and batch retention sweeps ([#389](https://github.com/home-operations/kritika/issues/389)) ([18a8d67](https://github.com/home-operations/kritika/commit/18a8d671899eb7b3cc4360c49fa53db2dce9a7b1))
+* **store:** resync consumers when the event listener drops a notification ([#397](https://github.com/home-operations/kritika/issues/397)) ([8046322](https://github.com/home-operations/kritika/commit/8046322b3ee9f135fbc9e20c637365a6afdf1a99))
+* **store:** retry a failed leader tenure instead of ending the process ([#393](https://github.com/home-operations/kritika/issues/393)) ([e44f406](https://github.com/home-operations/kritika/commit/e44f4060120981ef31521cca515cdd978b6e2e95))
+* **worker:** build the shared forge client apart from its first caller ([#398](https://github.com/home-operations/kritika/issues/398)) ([03c2bc7](https://github.com/home-operations/kritika/commit/03c2bc785cbace18d8d0cb2c05f0bdf91c8a3714))
+
+
+### Miscellaneous Chores
+
+* **mise:** format and lock build/tools on commit and upgrade its lockfile to revision 3 ([#391](https://github.com/home-operations/kritika/issues/391)) ([df6c97b](https://github.com/home-operations/kritika/commit/df6c97baca579ad506e58a6ad06f68d311e59308))
+
 ## [0.0.13](https://github.com/home-operations/kritika/compare/0.0.12...0.0.13) (2026-10-03)
 
 
