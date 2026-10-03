@@ -116,9 +116,37 @@ func scanModelCall(row pgx.CollectableRow) (transcript.StoredRow, error) {
 	return r, err
 }
 
+// Rows one statement of a retention sweep takes. A sweep is many such
+// statements, each committed on its own, so a backlog too large for the
+// owner connection's statement timeout is worked off rather than rolled
+// back whole every time. A context pack carries a diff, so its batch is
+// the smaller. Variables for the tests.
+var (
+	modelCallSweepBatch = 5000
+	diffSweepBatch      = 200
+)
+
+// sweepBatches runs stmt, which sweeps at most $2 rows older than $1
+// seconds, until it finds fewer than a batch, and returns how many rows
+// were swept, counting those before an error.
+func (s *Store) sweepBatches(ctx context.Context, stmt string, olderThan time.Duration, batch int) (int64, error) {
+	var total int64
+	for {
+		tag, err := s.owner.Exec(ctx, stmt, olderThan.Seconds(), batch)
+		if err != nil {
+			return total, err
+		}
+		total += tag.RowsAffected()
+		if tag.RowsAffected() < int64(batch) {
+			return total, nil
+		}
+	}
+}
+
 // SweepModelCalls deletes every account's model calls recorded more than
-// olderThan ago and returns how many it deleted. It runs on the owner
-// connection, which row-level security does not restrict. Leader only.
+// olderThan ago, a batch at a time, and returns how many it deleted. It
+// runs on the owner connection, which row-level security does not
+// restrict. Leader only.
 func (s *Store) SweepModelCalls(ctx context.Context, olderThan time.Duration) (int64, error) {
 	if s.owner == nil {
 		return 0, errors.New("store: SweepModelCalls needs the owner connection")
@@ -126,18 +154,19 @@ func (s *Store) SweepModelCalls(ctx context.Context, olderThan time.Duration) (i
 	if olderThan <= 0 {
 		return 0, fmt.Errorf("store: model call retention %s is not positive", olderThan)
 	}
-	tag, err := s.owner.Exec(ctx, `DELETE FROM model_calls WHERE created_at < now() - make_interval(secs => $1)`, olderThan.Seconds())
+	n, err := s.sweepBatches(ctx, `DELETE FROM model_calls WHERE id IN (
+		SELECT id FROM model_calls WHERE created_at < now() - make_interval(secs => $1) LIMIT $2)`, olderThan, modelCallSweepBatch)
 	if err != nil {
-		return 0, fmt.Errorf("store: sweep model calls: %w", err)
+		return n, fmt.Errorf("store: sweep model calls: %w", err)
 	}
-	return tag.RowsAffected(), nil
+	return n, nil
 }
 
 // SweepDiffs empties the bodies of every account's context packs written
 // more than olderThan ago, the diffs, the stage texts and the repository
-// files, keeping the metadata, and returns how many packs it swept. A
-// swept pack is stamped so the next sweep passes it over. Owner
-// connection, leader only, like SweepModelCalls.
+// files, keeping the metadata, a batch at a time, and returns how many
+// packs it swept. A swept pack is stamped so the next sweep passes it over.
+// Owner connection, leader only, like SweepModelCalls.
 func (s *Store) SweepDiffs(ctx context.Context, olderThan time.Duration) (int64, error) {
 	if s.owner == nil {
 		return 0, errors.New("store: SweepDiffs needs the owner connection")
@@ -145,11 +174,12 @@ func (s *Store) SweepDiffs(ctx context.Context, olderThan time.Duration) (int64,
 	if olderThan <= 0 {
 		return 0, fmt.Errorf("store: diff retention %s is not positive", olderThan)
 	}
-	tag, err := s.owner.Exec(ctx, `UPDATE context_packs SET diff = '', delta_diff = '', repo_files = '{}'::jsonb, swept_at = now(),
+	n, err := s.sweepBatches(ctx, `UPDATE context_packs SET diff = '', delta_diff = '', repo_files = '{}'::jsonb, swept_at = now(),
 		stages = (SELECT coalesce(jsonb_agg(e - 'text' ORDER BY n), '[]'::jsonb) FROM jsonb_array_elements(stages) WITH ORDINALITY AS s(e, n))
-		WHERE swept_at IS NULL AND created_at < now() - make_interval(secs => $1)`, olderThan.Seconds())
+		WHERE runner_run_id IN (SELECT runner_run_id FROM context_packs
+			WHERE swept_at IS NULL AND created_at < now() - make_interval(secs => $1) LIMIT $2)`, olderThan, diffSweepBatch)
 	if err != nil {
-		return 0, fmt.Errorf("store: sweep diffs: %w", err)
+		return n, fmt.Errorf("store: sweep diffs: %w", err)
 	}
-	return tag.RowsAffected(), nil
+	return n, nil
 }

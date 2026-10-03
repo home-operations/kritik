@@ -217,6 +217,14 @@ the pool, which `kritika_db_pool_empty_acquires_total` counts and
 `cnpg_backends_total` metric shows what each `application_name`
 (`kritika-app`, `kritika-owner`, `kritika-listen`) holds.
 
+Both pools set a `statement_timeout` on their sessions: one minute on the
+application pool, so a slow dashboard query cannot hold the connections
+webhooks and jobs need, and ten minutes on the owner pool, for a migration
+that builds an index. The leader's hourly retention sweeps delete and
+empty rows in batches, each its own statement, so a backlog larger than
+one statement could clear is worked off over the sweep rather than rolled
+back.
+
 Prometheus scrapes CNPG's metrics through a `PodMonitor`. CNPG deprecates the
 Cluster's `monitoring.enablePodMonitor` in favor of one you create
 ([monitoring](https://cloudnative-pg.io/docs/1.30/monitoring/)):

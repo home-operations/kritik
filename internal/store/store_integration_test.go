@@ -55,6 +55,22 @@ func openStore(t *testing.T) *Store {
 	return s
 }
 
+// TestPoolStatementTimeouts: both pools bound their statements, the
+// application pool tightly since everything serving shares it.
+func TestPoolStatementTimeouts(t *testing.T) {
+	s := openStore(t)
+	var app, owner string
+	if err := s.app.QueryRow(t.Context(), `SHOW statement_timeout`).Scan(&app); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.owner.QueryRow(t.Context(), `SHOW statement_timeout`).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if app != "1min" || owner != "10min" {
+		t.Fatalf("statement_timeout = %s on the application pool and %s on the owner's, want 1min and 10min", app, owner)
+	}
+}
+
 func TestOpenRefusesUnsafeApplicationDSN(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)

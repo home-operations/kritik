@@ -39,6 +39,13 @@ const (
 	ownerPoolMaxConns = 4
 )
 
+// appStatementTimeout bounds every statement on the application pool. The
+// pool is shared by River, webhook ingest, the gateway and the dashboard,
+// so a dashboard query over a large account that ran unbounded could hold
+// its connections and stall the rest; nothing the pool runs is meant to
+// take anywhere near this long.
+const appStatementTimeout = time.Minute
+
 // pingTimeout bounds the ping a pool gives an idle connection before
 // handing it out. Without it the ping waits on the kernel's TCP
 // retransmissions, about fifteen minutes, when the server died without
@@ -104,7 +111,7 @@ type Options struct {
 // the vector extension is missing, because either would be invisible at
 // runtime and wrong.
 func Open(ctx context.Context, opts Options) (*Store, error) {
-	app, err := newPool(ctx, opts.AppURL, "kritika-app", 0, appPoolMaxConns)
+	app, err := newPool(ctx, opts.AppURL, "kritika-app", appStatementTimeout, appPoolMaxConns)
 	if err != nil {
 		return nil, fmt.Errorf("store: application pool: %w", err)
 	}
