@@ -198,7 +198,9 @@ type Client interface {
 	// GetComment fetches one comment; inline selects the review-comment
 	// namespace, which the forge keeps apart from conversation comments.
 	GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (Comment, error)
-	// ListConversation returns the PR's conversation comments, oldest first.
+	// ListConversation returns the PR's conversation comments, oldest
+	// first. It and ListInline may stop short of the end of a pull request
+	// with thousands.
 	ListConversation(ctx context.Context, owner, repo string, number int) ([]Comment, error)
 	// ListInline returns the PR's inline review comments, oldest first.
 	ListInline(ctx context.Context, owner, repo string, number int) ([]Comment, error)

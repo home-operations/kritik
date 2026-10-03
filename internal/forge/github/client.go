@@ -316,6 +316,11 @@ func (c *Client) GetComment(ctx context.Context, owner, repo string, id int64, i
 	return conversationComment(cm), nil
 }
 
+// maxListedComments is how many comments ListConversation and ListInline
+// each return, the oldest: a pull request with more is not read to its end
+// into memory. A variable for the tests.
+var maxListedComments = 5000
+
 // ListConversation implements forge.Client.
 func (c *Client) ListConversation(ctx context.Context, owner, repo string, number int) ([]forge.Comment, error) {
 	opts := &gh.IssueListCommentsOptions{Sort: new("created"), Direction: new("asc"), PerPage: 100}
@@ -324,7 +329,9 @@ func (c *Client) ListConversation(ctx context.Context, owner, repo string, numbe
 		if err != nil {
 			return nil, fmt.Errorf("github: list comments on #%d: %w", number, err)
 		}
-		out = append(out, conversationComment(cm))
+		if out = append(out, conversationComment(cm)); len(out) >= maxListedComments {
+			break
+		}
 	}
 	return out, nil
 }
@@ -337,7 +344,9 @@ func (c *Client) ListInline(ctx context.Context, owner, repo string, number int)
 		if err != nil {
 			return nil, fmt.Errorf("github: list review comments on #%d: %w", number, err)
 		}
-		out = append(out, inlineComment(cm))
+		if out = append(out, inlineComment(cm)); len(out) >= maxListedComments {
+			break
+		}
 	}
 	return out, nil
 }

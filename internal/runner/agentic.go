@@ -62,6 +62,7 @@ const (
 	noteRulesLeft             = "%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"
 	noteDiffOmitted           = "%d diff file(s) left out of the prompt to fit its budget: %s"
 	noteContextOmitted        = "%d context chunk(s) left out of the prompt to fit its budget"
+	noteDiffNotKept           = "%d diff file(s) too large to keep, so findings in them have no line to attach to: %s"
 )
 
 // promptInputs is what the repository's files and the settings give the
@@ -121,15 +122,19 @@ type agentPrompt struct {
 // noteOmittedPaths is how many omitted paths a note names.
 const noteOmittedPaths = 5
 
+// namePaths names the first noteOmittedPaths of paths and counts the rest.
+func namePaths(paths []string) string {
+	if n := len(paths); n > noteOmittedPaths {
+		paths = append(slices.Clone(paths[:noteOmittedPaths]), fmt.Sprintf("and %d more", n-noteOmittedPaths))
+	}
+	return strings.Join(paths, ", ")
+}
+
 // notes are what the summary states about the prompt's cuts.
 func (a agentPrompt) notes() []string {
 	var notes []string
 	if n := len(a.omitted); n > 0 {
-		named := a.omitted
-		if n > noteOmittedPaths {
-			named = append(slices.Clone(a.omitted[:noteOmittedPaths]), fmt.Sprintf("and %d more", n-noteOmittedPaths))
-		}
-		notes = append(notes, fmt.Sprintf(noteDiffOmitted, n, strings.Join(named, ", ")))
+		notes = append(notes, fmt.Sprintf(noteDiffOmitted, n, namePaths(a.omitted)))
 	}
 	if a.contextOmitted > 0 {
 		notes = append(notes, fmt.Sprintf(noteContextOmitted, a.contextOmitted))

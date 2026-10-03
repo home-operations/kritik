@@ -442,3 +442,25 @@ func TestOpenPullRequestForkDetection(t *testing.T) {
 		})
 	}
 }
+
+// TestCommentListingsAreBounded: a listing stops at maxListedComments
+// rather than reading a pull request's every comment into memory.
+func TestCommentListingsAreBounded(t *testing.T) {
+	old := maxListedComments
+	maxListedComments = 2
+	t.Cleanup(func() { maxListedComments = old })
+	f, c := newFakeAPI(t)
+	f.reply("GET /api/v3/repos/o/r/issues/7/comments", 200,
+		`[{"id":1,"body":"a","user":{"login":"u"}},{"id":2,"body":"b","user":{"login":"u"}},{"id":3,"body":"c","user":{"login":"u"}}]`)
+	f.reply("GET /api/v3/repos/o/r/pulls/7/comments", 200,
+		`[{"id":4,"body":"a","path":"a.go","line":1,"user":{"login":"u"}},{"id":5,"body":"b","path":"a.go","line":2,"user":{"login":"u"}},
+		  {"id":6,"body":"c","path":"a.go","line":3,"user":{"login":"u"}}]`)
+	conv, err := c.ListConversation(t.Context(), "o", "r", 7)
+	if err != nil || len(conv) != 2 || conv[1].ID != 2 {
+		t.Fatalf("ListConversation = %+v, %v; want the two oldest", conv, err)
+	}
+	inl, err := c.ListInline(t.Context(), "o", "r", 7)
+	if err != nil || len(inl) != 2 || inl[1].ID != 5 {
+		t.Fatalf("ListInline = %+v, %v; want the two oldest", inl, err)
+	}
+}

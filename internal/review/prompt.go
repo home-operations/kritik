@@ -269,7 +269,7 @@ func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 	b.WriteString("\nDiff (unified, base to head):\n\n")
 
 	room := budget - b.Len() - 512 // headroom for the omission note
-	diff, omitted := fitDiff(in.Diff, room)
+	diff, omitted := FitDiff(in.Diff, room)
 	b.WriteString(diff)
 	if len(omitted) > 0 {
 		fmt.Fprintf(&b, "\n\n[%d file(s) omitted to fit the context budget: %s]\n", len(omitted), strings.Join(omitted, ", "))
@@ -312,7 +312,7 @@ func incrementalSections(inc *IncrementalInput, room int) string {
 		"which lines a finding may point at):\n\n", ShortSHA(inc.PriorHeadSHA))
 	delta, omitted := inc.DeltaDiff, []string(nil)
 	if len(header)+len(delta) > room {
-		delta, omitted = fitDiff(inc.DeltaDiff, room-len(header)-noteRoom)
+		delta, omitted = FitDiff(inc.DeltaDiff, room-len(header)-noteRoom)
 	}
 	switch {
 	case inc.DeltaDiff == "":
@@ -485,9 +485,9 @@ func writeContext(b *strings.Builder, chunks []contextpack.Chunk, budget int) in
 	return 0
 }
 
-// fitDiff keeps whole file sections of a unified diff until the next one
-// would overflow room, and reports the paths it left out.
-func fitDiff(diff string, room int) (string, []string) {
+// FitDiff keeps the whole file sections of a unified diff that fit in room
+// bytes, in order, and reports the paths of those it left out.
+func FitDiff(diff string, room int) (string, []string) {
 	if len(diff) <= room {
 		return diff, nil
 	}
