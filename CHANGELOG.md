@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.15](https://github.com/home-operations/kritika/compare/0.0.14...0.0.15) (2026-10-03)
+
+
+### Bug Fixes
+
+* **ingest:** finish a webhook's dispatch when its request ends first ([#399](https://github.com/home-operations/kritika/issues/399)) ([db421bb](https://github.com/home-operations/kritika/commit/db421bb5872006714377610b32c2d8385ca0557c))
+* **webapi:** end an event stream when its session no longer stands ([#402](https://github.com/home-operations/kritika/issues/402)) ([0ee01ca](https://github.com/home-operations/kritika/commit/0ee01caa7bfbf7cf0e27f26bee9fd534e5402f01))
+* **worker:** replace the pending status of a review that will not run again ([#400](https://github.com/home-operations/kritika/issues/400)) ([e0599b4](https://github.com/home-operations/kritika/commit/e0599b4aad9424a9e43e877e711dceba5cf6ea57))
+
 ## [0.0.14](https://github.com/home-operations/kritika/compare/0.0.13...0.0.14) (2026-10-03)
 
 
