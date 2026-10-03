@@ -47,7 +47,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # linux-arm64 platforms as the repository's own lockfile. mise's image has no
 # shell to copy the binaries out with, so its static binary and the CA roots
 # it downloads with are taken from it instead.
-FROM docker.io/jdxcode/mise:2026.10.0 AS mise
+FROM docker.io/jdxcode/mise:2026.10.1 AS mise
 FROM docker.io/library/debian:trixie-slim AS runner-tools
 COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
 COPY --from=mise /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
