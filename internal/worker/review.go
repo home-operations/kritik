@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,6 +41,9 @@ type Review struct {
 	// long its run token outlives the Job's deadline.
 	GatewayURL      string
 	GatewayTokenTTL time.Duration
+	// WebURL is the dashboard's origin, which the summary comment links
+	// back to for a re-run; nil leaves the link out.
+	WebURL *url.URL
 
 	// superviseEvery overrides superviseInterval, and rowWait agentRowWait.
 	superviseEvery time.Duration

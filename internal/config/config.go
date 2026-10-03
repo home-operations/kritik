@@ -97,8 +97,9 @@ type Config struct {
 	// WebURL is the dashboard's externally reachable origin: an absolute
 	// http(s) URL with a host and no query or fragment. It is how the
 	// dashboard builds absolute links (OIDC redirect URIs, session cookie
-	// scope) back to itself, so it must match how the ingress/HTTPRoute
-	// actually exposes it. A trailing slash is trimmed. Required to serve.
+	// scope) back to itself, and how a review's summary comment links its
+	// re-run badge to the pull request's page, so it must match how the
+	// ingress/HTTPRoute actually exposes it. A trailing slash is trimmed. Required to serve.
 	// Parsed once into an unexported *url.URL, read back with
 	// [Config.WebURLParsed].
 	WebURL string `env:"KRITIKA_WEB_URL"`

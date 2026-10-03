@@ -403,7 +403,7 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	in := Input{Repository: "a/b", Number: 1, Title: "t", Author: "u", BaseRef: "main", Changed: []string{"main.go"}, Diff: sampleDiff}
 	findings := []Finding{{Path: "main.go", Line: 11, Severity: SeverityImportant, Title: "y changed", Explanation: "why\nit matters"}}
 	thread := []Message{
-		{Author: "kritika[bot]", Body: "### kritika review\n\nFine."},
+		{Author: "kritika[bot]", Body: "## Kritika Review\n\nFine."},
 		{Author: "onedr0p", Body: "@kritika why is y changed?", When: time.Date(2026, 9, 24, 21, 0, 0, 0, time.UTC)},
 	}
 	msg := BuildFollowUp(in, findings, thread)

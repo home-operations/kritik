@@ -87,7 +87,9 @@ context:
   lines the diff does not show, `.Notes`, `.Incremental`, `.PriorHeadSHA`,
   `.PriorHeadURL`, `.Prior`, the last review's findings each with
   `.Resolved`, and the dismissed ones each with `.Dismissed` and
-  `.DismissReason`, `.Sources` and `.Incomplete`). The inline template's dot is
+  `.DismissReason`, `.Sources`, `.Incomplete`, and `.WebURL` and `.PullURL`, the
+  dashboard's origin and the pull request's page on it, where the built-in
+  template's re-run badge points). The inline template's dot is
   one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Category`, `.Title`,
   `.Explanation`, `.SuggestedFix`, `.Replacement`, `.AgentPrompt`, `.Rules`,
   the ids of the rules it enforces, `.URL`, a link to the lines at the head
