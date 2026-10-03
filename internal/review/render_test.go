@@ -72,8 +72,8 @@ func TestRenderSummaryDefault(t *testing.T) {
 	for _, want := range []string{
 		"## Kritika Review\n\n**2 findings**",
 		"**2 findings** · 1 blocking · 1 nit\n",
-		"Solid change with one real bug.",
-		"- Clear tests",
+		"## Findings\n\n- **[blocking",
+		"### Summary\n\nSolid change with one real bug.\n\n**What's good**\n\n- Clear tests\n",
 		"- **[blocking · correctness]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write",
 		"- **[nit]** `README.md:2` typo",
 		"_1 file(s) were omitted from the diff to fit the context budget._",
@@ -86,16 +86,16 @@ func TestRenderSummaryDefault(t *testing.T) {
 	if strings.Contains(body, "\n\n\n") {
 		t.Fatalf("blank lines doubled:\n%s", body)
 	}
-	if strings.Index(body, "2 findings") > strings.Index(body, "Solid change") || strings.Index(body, "Solid change") > strings.Index(body, "`main.go:11`") {
-		t.Fatalf("sections out of order:\n%s", body)
+	if strings.Index(body, "2 findings") > strings.Index(body, "`main.go:11`") || strings.Index(body, "`main.go:11`") > strings.Index(body, "### Summary") {
+		t.Fatalf("the findings come before the summary:\n%s", body)
 	}
 
 	empty := sampleData()
 	empty.Result.Findings, empty.Counts, empty.Notes, empty.Result.Summary.Praise = nil, Counts{}, nil, nil
 	empty.Incremental, empty.PriorHeadSHA = true, "fedcba9876543210"
 	body, _ = RenderSummary(t.Context(), Templates{}, empty)
-	if !strings.Contains(body, "**No findings**\n\n_Incremental review of the changes since `fedcba9`._\n\nSolid change") ||
-		strings.Contains(body, "_1 file") || strings.Contains(body, "0 findings") || strings.Contains(body, "**Findings**") ||
+	if !strings.Contains(body, "**No findings**\n\n_Incremental review of the changes since `fedcba9`._\n\n### Summary\n\nSolid change") ||
+		strings.Contains(body, "_1 file") || strings.Contains(body, "0 findings") || strings.Contains(body, "Findings\n") ||
 		strings.Contains(body, "\n\n\n") {
 		t.Fatalf("empty body:\n%s", body)
 	}
@@ -138,9 +138,9 @@ func TestRenderSummaryLinks(t *testing.T) {
 	if strings.Contains(body, "What's good") || strings.Contains(body, "Clear tests") || strings.Contains(body, "\n\n\n") {
 		t.Fatalf("a bot's pull request is praised, or blank lines doubled:\n%s", body)
 	}
-	if strings.Index(body, "**Findings**") > strings.Index(body, "**Outside the diff**") ||
+	if strings.Index(body, "## Findings") > strings.Index(body, "**Outside the diff**") ||
 		strings.Index(body, "**Outside the diff**") > strings.Index(body, "**Earlier findings**") ||
-		strings.Index(body, "**Earlier findings**") > strings.Index(body, "_1 file") {
+		strings.Index(body, "**Earlier findings**") > strings.Index(body, "### Summary") || strings.Index(body, "### Summary") > strings.Index(body, "_1 file") {
 		t.Fatalf("sections out of order:\n%s", body)
 	}
 }
