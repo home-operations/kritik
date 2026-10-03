@@ -57,8 +57,11 @@ type Kube struct {
 	// TTL is ttlSecondsAfterFinished; the run row outlives the Job.
 	TTL time.Duration
 	// Poll is how often the Job is checked.
-	Poll   time.Duration
-	Logger *slog.Logger
+	Poll time.Duration
+	// StartGrace is how long a pod may stay unable to start before its run
+	// is given up; startGrace unless set.
+	StartGrace time.Duration
+	Logger     *slog.Logger
 }
 
 // NewKubeInCluster returns a Kubernetes client from the pod's service
@@ -120,6 +123,8 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	t := time.NewTicker(poll)
 	defer t.Stop()
 	unread := 0
+	started := false
+	var stuckSince time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -154,7 +159,61 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			}
 			return res
 		}
+		if started {
+			continue
+		}
+		var stuck string
+		if started, stuck = k.podStart(ctx, created.Name); stuck == "" {
+			stuckSince = time.Time{}
+			continue
+		}
+		if stuckSince.IsZero() {
+			stuckSince = time.Now()
+		}
+		if time.Since(stuckSince) >= cmp.Or(k.StartGrace, startGrace) {
+			k.deleteJob(ctx, created.Name)
+			k.finish(ctx, &res, spec.Secrets)
+			res.TerminationReason = stuck
+			res.Err = fmt.Errorf("executor: job %s never started: %s", created.Name, stuck)
+			return res
+		}
 	}
+}
+
+// startGrace is how long a runner pod may stay unable to start, unscheduled
+// or its container refused, before the run is given up rather than holding
+// its review's slot until the Job's deadline. It outlasts what clears on
+// its own: a registry's hiccup, a node on its way from an autoscaler.
+const startGrace = 3 * time.Minute
+
+// stuckReasons are the container waiting reasons of a pod that will not
+// start as it is: an image that cannot be pulled, or a container the
+// kubelet cannot build, as from a Secret or key that does not exist.
+var stuckReasons = []string{"ErrImagePull", "ImagePullBackOff", "InvalidImageName", "CreateContainerConfigError", "CreateContainerError"}
+
+// podStart reports whether the Job's pod has started its container, and
+// otherwise why it cannot, empty while it is only on its way: not yet
+// created, or pulling its image. A pod that cannot be read is on its way.
+func (k *Kube) podStart(ctx context.Context, job string) (started bool, stuck string) {
+	pods, err := k.Client.CoreV1().Pods(k.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "job-name=" + job})
+	if err != nil || len(pods.Items) == 0 {
+		return false, ""
+	}
+	pod := pods.Items[len(pods.Items)-1]
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.State.Running != nil || cs.State.Terminated != nil {
+			return true, ""
+		}
+		if w := cs.State.Waiting; w != nil && slices.Contains(stuckReasons, w.Reason) {
+			return false, strings.TrimSuffix(w.Reason+": "+w.Message, ": ")
+		}
+	}
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Reason == corev1.PodReasonUnschedulable {
+			return false, strings.TrimSuffix(c.Reason+": "+c.Message, ": ")
+		}
+	}
+	return false, ""
 }
 
 // maxUnreadStatus is how many status reads in a row may fail before the
