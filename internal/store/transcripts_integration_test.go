@@ -139,20 +139,24 @@ func TestSweepModelCalls(t *testing.T) {
 		}
 		return id
 	}
-	old, fresh := insert(), insert()
-	t.Cleanup(func() { deleteModelCalls(t, s, `id IN ($1, $2)`, old, fresh) })
-	if _, err := s.owner.Exec(ctx, `UPDATE model_calls SET created_at = now() - interval '40 days' WHERE id = $1`, old); err != nil {
+	old, older, fresh := insert(), insert(), insert()
+	t.Cleanup(func() { deleteModelCalls(t, s, `id IN ($1, $2, $3)`, old, older, fresh) })
+	if _, err := s.owner.Exec(ctx, `UPDATE model_calls SET created_at = now() - interval '40 days' WHERE id IN ($1, $2)`, old, older); err != nil {
 		t.Fatal(err)
 	}
+	// One row a statement, so the sweep has to go round more than once.
+	batch := modelCallSweepBatch
+	modelCallSweepBatch = 1
+	t.Cleanup(func() { modelCallSweepBatch = batch })
 	if _, err := s.SweepModelCalls(ctx, 0); err == nil {
 		t.Fatal("a zero retention was accepted")
 	}
 	n, err := s.SweepModelCalls(ctx, 30*24*time.Hour)
-	if err != nil || n < 1 {
+	if err != nil || n < 2 {
 		t.Fatalf("swept %d, %v", n, err)
 	}
 	var left []string
-	if err := s.owner.QueryRow(ctx, `SELECT array_agg(id::text) FROM model_calls WHERE id IN ($1, $2)`, old, fresh).Scan(&left); err != nil {
+	if err := s.owner.QueryRow(ctx, `SELECT array_agg(id::text) FROM model_calls WHERE id IN ($1, $2, $3)`, old, older, fresh).Scan(&left); err != nil {
 		t.Fatal(err)
 	}
 	if len(left) != 1 || left[0] != fresh {
@@ -182,20 +186,24 @@ func TestSweepDiffs(t *testing.T) {
 		}
 		return id
 	}
-	old, fresh := insert(), insert()
+	old, older, fresh := insert(), insert(), insert()
 	t.Cleanup(func() {
-		_, _ = s.owner.Exec(ctx, `DELETE FROM context_packs WHERE runner_run_id IN ($1, $2)`, old, fresh)
-		_, _ = s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE id IN ($1, $2)`, old, fresh)
+		_, _ = s.owner.Exec(ctx, `DELETE FROM context_packs WHERE runner_run_id IN ($1, $2, $3)`, old, older, fresh)
+		_, _ = s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE id IN ($1, $2, $3)`, old, older, fresh)
 	})
-	if _, err := s.owner.Exec(ctx, `UPDATE context_packs SET created_at = now() - interval '40 days' WHERE runner_run_id = $1`, old); err != nil {
+	if _, err := s.owner.Exec(ctx, `UPDATE context_packs SET created_at = now() - interval '40 days' WHERE runner_run_id IN ($1, $2)`, old, older); err != nil {
 		t.Fatal(err)
 	}
+	// One pack a statement, so the sweep has to go round more than once.
+	batch := diffSweepBatch
+	diffSweepBatch = 1
+	t.Cleanup(func() { diffSweepBatch = batch })
 	if _, err := s.SweepDiffs(ctx, 0); err == nil {
 		t.Fatal("a zero retention was accepted")
 	}
 	n, err := s.SweepDiffs(ctx, 30*24*time.Hour)
-	if err != nil || n != 1 {
-		t.Fatalf("swept %d, %v; want the one old pack", n, err)
+	if err != nil || n != 2 {
+		t.Fatalf("swept %d, %v; want the two old packs", n, err)
 	}
 	if n, err := s.SweepDiffs(ctx, 30*24*time.Hour); err != nil || n != 0 {
 		t.Fatalf("second sweep swept %d, %v; want a swept pack passed over", n, err)
