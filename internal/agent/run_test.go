@@ -173,6 +173,64 @@ func TestRunToolRecordsCurlSources(t *testing.T) {
 
 // TestRunToolGH: only gh is given its extra environment, what it reads is
 // a source, and the tool steers GitHub lookups to it.
+func TestRefusedArgs(t *testing.T) {
+	tests := []struct {
+		command string
+		args    []string
+		refused bool
+	}{
+		{"gh", []string{"api", "repos/a/b"}, false},
+		{"gh", []string{"release", "view", "auth", "-R", "a/b"}, false},
+		{"gh", []string{"auth", "token"}, true},
+		{"gh", []string{"--help", "auth", "status", "--show-token"}, true},
+		{"gh", []string{"alias", "set", "x", "!env"}, true},
+		{"gh", []string{"extension", "exec", "x"}, true},
+		{"gh", []string{"config", "list"}, true},
+		{"rg", []string{"-C", "3", "pattern"}, false},
+		{"rg", []string{"--pre-glob", "*.pdf", "pattern"}, false},
+		{"rg", []string{"--", "--pre"}, false},
+		{"rg", []string{"--pre", "sh", "pattern"}, true},
+		{"rg", []string{"--pre=sh", "pattern"}, true},
+		{"rg", []string{"--hostname-bin=sh", "pattern"}, true},
+		{"fd", []string{"-e", "yaml", "values"}, false},
+		{"fd", []string{"-exml"}, false},
+		{"fd", []string{"-HI", "-t", "x", "name"}, false},
+		{"fd", []string{"--", "-x"}, false},
+		{"fd", []string{".", "-x", "sh", "-c", "id"}, true},
+		{"fd", []string{"-HIX", "sh"}, true},
+		{"fd", []string{"--exec", "sh"}, true},
+		{"fd", []string{"--exec-batch=sh"}, true},
+		{"jq", []string{"-x", "."}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command+" "+strings.Join(tt.args, " "), func(t *testing.T) {
+			if why := refusedArgs(tt.command, tt.args); (why != "") != tt.refused {
+				t.Fatalf("refusedArgs = %q, want refused %v", why, tt.refused)
+			}
+		})
+	}
+}
+
+func TestRunToolRefusesAndMasks(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := NewRunTool(RunConfig{
+		Dir: t.TempDir(), Env: []string{helperEnv + "=1", "GOCOVERDIR=" + t.TempDir()},
+		CommandEnv: map[string][]string{"gh": {"GH_TOKEN=ghs_run"}},
+		Commands:   map[string]string{"gh": self}, Timeout: 2 * time.Second, MaxOutputBytes: 4096,
+		Mask: func(s string) string { return strings.ReplaceAll(s, "ghs_run", "***") },
+	})
+	if out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["auth","token"]}`)); err == nil {
+		t.Fatalf("gh auth token ran: %q", out)
+	}
+	out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["api","user"]}`))
+	if err != nil || strings.Contains(out, "ghs_run") || !strings.Contains(out, "env=GH_TOKEN=***") {
+		t.Fatalf("out = %q, %v; want the token masked", out, err)
+	}
+}
+
 func TestRunToolGH(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {

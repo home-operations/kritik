@@ -45,6 +45,10 @@ type RunConfig struct {
 	Proxied bool
 	// Note, when set, is appended to the tool's description.
 	Note string
+	// Mask, when set, is applied to a command's output before the model
+	// sees it, to keep a credential a command printed out of the
+	// conversation.
+	Mask func(string) string
 }
 
 // RunTool executes one allowlisted binary with the model's arguments,
@@ -132,6 +136,9 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	if !ok {
 		return "", fmt.Errorf("agent: run: %q is not one of %s", req.Command, strings.Join(rt.names, ", "))
 	}
+	if why := refusedArgs(req.Command, req.Args); why != "" {
+		return "", fmt.Errorf("agent: run: %s: %s", req.Command, why)
+	}
 	switch req.Command {
 	case "curl":
 		rt.record(req.Args)
@@ -154,13 +161,78 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	case ctx.Err() != nil:
 		return "", fmt.Errorf("agent: run: %w", ctx.Err())
 	case cctx.Err() != nil:
-		return fmt.Sprintf("stopped after %s\n%s", rt.cfg.Timeout, out), nil
+		return fmt.Sprintf("stopped after %s\n%s", rt.cfg.Timeout, rt.mask(out.String())), nil
 	case err != nil:
 		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 			return "", fmt.Errorf("agent: run: %s: %w", req.Command, err)
 		}
 	}
-	return fmt.Sprintf("exit code %d\n%s", cmd.ProcessState.ExitCode(), out), nil
+	return fmt.Sprintf("exit code %d\n%s", cmd.ProcessState.ExitCode(), rt.mask(out.String())), nil
+}
+
+func (rt *RunTool) mask(out string) string {
+	if rt.cfg.Mask == nil {
+		return out
+	}
+	return rt.cfg.Mask(out)
+}
+
+// ghRefused are the gh commands that print the token gh is signed in with
+// or run a program of the caller's choosing.
+var ghRefused = []string{"auth", "alias", "config", "extension", "extensions", "ext"}
+
+// fdValueFlags are fd's short flags that take a value, which ends a group
+// of short flags: what follows one in the same argument is its value.
+const fdValueFlags = "dEteSocjC"
+
+// refusedArgs says why command must not run with args, or "": the
+// commands are an allowlist, and these arguments would have one run a
+// program outside it or print a credential. The model's arguments are
+// steered by the content under review, so they are not trusted.
+func refusedArgs(command string, args []string) string {
+	switch command {
+	case "gh":
+		for _, a := range args {
+			if strings.HasPrefix(a, "-") {
+				continue
+			}
+			if slices.Contains(ghRefused, a) {
+				return "gh " + a + " is not offered"
+			}
+			break
+		}
+	case "rg":
+		for _, a := range args {
+			name, _, _ := strings.Cut(a, "=")
+			switch {
+			case a == "--":
+				return ""
+			case name == "--pre" || name == "--hostname-bin":
+				return name + " is not offered: it runs another program"
+			}
+		}
+	case "fd":
+		for _, a := range args {
+			name, _, _ := strings.Cut(a, "=")
+			switch {
+			case a == "--":
+				return ""
+			case name == "--exec" || name == "--exec-batch":
+				return name + " is not offered: it runs another program"
+			case strings.HasPrefix(a, "--") || !strings.HasPrefix(a, "-"):
+				continue
+			}
+			for _, f := range a[1:] {
+				if f == 'x' || f == 'X' {
+					return "-" + string(f) + " is not offered: it runs another program"
+				}
+				if strings.ContainsRune(fdValueFlags, f) {
+					break
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // record keeps each http(s) URL in args as a source, without any

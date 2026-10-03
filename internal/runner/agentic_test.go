@@ -202,6 +202,11 @@ func TestAgentErrorsAreMasked(t *testing.T) {
 	if string(rec.sources) != `["https://example.com/?key=***"]` {
 		t.Fatalf("sources = %s", rec.sources)
 	}
+	submitted, err := newAgentRecord(agent.Result{Stop: agent.StopSubmitted, Submitted: json.RawMessage(`{"summary":"the token is git-token"}`)},
+		nil, nil, secrets)
+	if err != nil || submitted.result != `{"summary":"the token is ***"}` {
+		t.Fatalf("submitted review = %s, %v", submitted.result, err)
+	}
 	if rec, err := newAgentRecord(agent.Result{Stop: agent.StopMaxSteps}, nil, nil, secrets); err != nil || string(rec.sources) != "[]" {
 		t.Fatalf("sources of a run without commands = %s, %v", rec.sources, err)
 	}
